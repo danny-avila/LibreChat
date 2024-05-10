@@ -93,6 +93,16 @@ describe('AppService', () => {
     expect(app.locals).toEqual({
       socialLogins: ['testLogin'],
       fileStrategy: 'testStrategy',
+      interfaceConfig: expect.objectContaining({
+        privacyPolicy: undefined,
+        termsOfService: undefined,
+        endpointsMenu: true,
+        modelSelect: true,
+        parameters: true,
+        sidePanel: true,
+        presets: true,
+      }),
+      modelSpecs: undefined,
       availableTools: {
         ExampleTool: {
           type: 'function',
@@ -109,7 +119,6 @@ describe('AppService', () => {
       },
       paths: expect.anything(),
       imageOutputType: expect.any(String),
-      interface: undefined,
       fileConfig: undefined,
       secureImageLinks: undefined,
     });
@@ -181,7 +190,6 @@ describe('AppService', () => {
 
     expect(loadAndFormatTools).toHaveBeenCalledWith({
       directory: expect.anything(),
-      filter: expect.anything(),
     });
 
     expect(app.locals.availableTools.ExampleTool).toBeDefined();
@@ -338,6 +346,69 @@ describe('AppService', () => {
     expect(process.env.FILE_UPLOAD_IP_WINDOW).toEqual('initialWindow');
     expect(process.env.FILE_UPLOAD_USER_MAX).toEqual('initialUserMax');
     expect(process.env.FILE_UPLOAD_USER_WINDOW).toEqual('initialUserWindow');
+  });
+
+  it('should not modify IMPORT environment variables without rate limits', async () => {
+    // Setup initial environment variables
+    process.env.IMPORT_IP_MAX = '10';
+    process.env.IMPORT_IP_WINDOW = '15';
+    process.env.IMPORT_USER_MAX = '5';
+    process.env.IMPORT_USER_WINDOW = '20';
+
+    const initialEnv = { ...process.env };
+
+    await AppService(app);
+
+    // Expect environment variables to remain unchanged
+    expect(process.env.IMPORT_IP_MAX).toEqual(initialEnv.IMPORT_IP_MAX);
+    expect(process.env.IMPORT_IP_WINDOW).toEqual(initialEnv.IMPORT_IP_WINDOW);
+    expect(process.env.IMPORT_USER_MAX).toEqual(initialEnv.IMPORT_USER_MAX);
+    expect(process.env.IMPORT_USER_WINDOW).toEqual(initialEnv.IMPORT_USER_WINDOW);
+  });
+
+  it('should correctly set IMPORT environment variables based on rate limits', async () => {
+    // Define and mock a custom configuration with rate limits
+    const importLimitsConfig = {
+      rateLimits: {
+        conversationsImport: {
+          ipMax: '150',
+          ipWindowInMinutes: '60',
+          userMax: '50',
+          userWindowInMinutes: '30',
+        },
+      },
+    };
+
+    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+      Promise.resolve(importLimitsConfig),
+    );
+
+    await AppService(app);
+
+    // Verify that process.env has been updated according to the rate limits config
+    expect(process.env.IMPORT_IP_MAX).toEqual('150');
+    expect(process.env.IMPORT_IP_WINDOW).toEqual('60');
+    expect(process.env.IMPORT_USER_MAX).toEqual('50');
+    expect(process.env.IMPORT_USER_WINDOW).toEqual('30');
+  });
+
+  it('should fallback to default IMPORT environment variables when rate limits are unspecified', async () => {
+    // Setup initial environment variables to non-default values
+    process.env.IMPORT_IP_MAX = 'initialMax';
+    process.env.IMPORT_IP_WINDOW = 'initialWindow';
+    process.env.IMPORT_USER_MAX = 'initialUserMax';
+    process.env.IMPORT_USER_WINDOW = 'initialUserWindow';
+
+    // Mock a custom configuration without specific rate limits
+    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve({}));
+
+    await AppService(app);
+
+    // Verify that process.env falls back to the initial values
+    expect(process.env.IMPORT_IP_MAX).toEqual('initialMax');
+    expect(process.env.IMPORT_IP_WINDOW).toEqual('initialWindow');
+    expect(process.env.IMPORT_USER_MAX).toEqual('initialUserMax');
+    expect(process.env.IMPORT_USER_WINDOW).toEqual('initialUserWindow');
   });
 });
 

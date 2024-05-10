@@ -6,8 +6,10 @@ import {
   useRecoilValue,
   useSetRecoilState,
 } from 'recoil';
+import { LocalStorageKeys } from 'librechat-data-provider';
 import type { TMessage, TPreset, TConversation, TSubmission } from 'librechat-data-provider';
 import type { TOptionSettings, ExtendedFile } from '~/common';
+import { storeEndpointSettings } from '~/utils';
 import { useEffect } from 'react';
 
 const conversationByIndex = atomFamily<TConversation | null, string | number>({
@@ -15,11 +17,23 @@ const conversationByIndex = atomFamily<TConversation | null, string | number>({
   default: null,
   effects: [
     ({ onSet, node }) => {
-      onSet(async (newValue: TConversation | null) => {
+      onSet(async (newValue) => {
         const index = Number(node.key.split('__')[1]);
         if (newValue?.assistant_id) {
-          localStorage.setItem(`assistant_id__${index}`, newValue.assistant_id);
+          localStorage.setItem(`${LocalStorageKeys.ASST_ID_PREFIX}${index}`, newValue.assistant_id);
         }
+        if (newValue?.spec) {
+          localStorage.setItem(LocalStorageKeys.LAST_SPEC, newValue.spec);
+        }
+        if (newValue?.tools && Array.isArray(newValue.tools)) {
+          localStorage.setItem(
+            LocalStorageKeys.LAST_TOOLS,
+            JSON.stringify(newValue.tools.filter((el) => !!el)),
+          );
+        }
+
+        storeEndpointSettings(newValue);
+        localStorage.setItem(LocalStorageKeys.LAST_CONVO_SETUP, JSON.stringify(newValue));
       });
     },
   ] as const,
@@ -93,6 +107,11 @@ const showPopoverFamily = atomFamily({
   default: false,
 });
 
+const showMentionPopoverFamily = atomFamily<boolean, string | number | null>({
+  key: 'showMentionPopoverByIndex',
+  default: false,
+});
+
 const latestMessageFamily = atomFamily<TMessage | null, string | number | null>({
   key: 'latestMessageByIndex',
   default: null,
@@ -128,4 +147,5 @@ export default {
   latestMessageFamily,
   allConversationsSelector,
   useCreateConversationAtom,
+  showMentionPopoverFamily,
 };

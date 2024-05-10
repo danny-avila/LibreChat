@@ -115,6 +115,7 @@ export default {
   com_ui_new_footer: 'All AI conversations in one place.',
   com_ui_enter: 'Enter',
   com_ui_submit: 'Submit',
+  com_ui_none_selected: 'None selected',
   com_ui_upload_success: 'Successfully uploaded file',
   com_ui_upload_error: 'There was an error uploading your file',
   com_ui_upload_invalid: 'Invalid file for upload. Must be an image not exceeding 2 MB',
@@ -124,6 +125,37 @@ export default {
   com_user_message: 'You',
   com_ui_copy_to_clipboard: 'Copy to clipboard',
   com_ui_copied_to_clipboard: 'Copied to clipboard',
+  com_ui_fork: 'Fork',
+  com_ui_fork_info_1: 'Use this setting to fork messages with the desired behavior.',
+  com_ui_fork_info_2:
+    '"Forking" refers to creating a new conversation that start/end from specific messages in the current conversation, creating a copy according to the options selected.',
+  com_ui_fork_info_3:
+    'The "target message" refers to either the message this popup was opened from, or, if you check "{0}", the latest message in the conversation.',
+  com_ui_fork_info_visible:
+    'This option forks only the visible messages; in other words, the direct path to the target message, without any branches.',
+  com_ui_fork_info_branches:
+    'This option forks the visible messages, along with related branches; in other words, the direct path to the target message, including branches along the path.',
+  com_ui_fork_info_target:
+    'This option forks all messages leading up to the target message, including its neighbors; in other words, all message branches, whether or not they are visible or along the same path, are included.',
+  com_ui_fork_info_start:
+    'If checked, forking will commence from this message to the latest message in the conversation, according to the behavior selected above.',
+  com_ui_fork_info_remember:
+    'Check this to remember the options you select for future usage, making it quicker to fork conversations as preferred.',
+  com_ui_fork_success: 'Successfully forked conversation',
+  com_ui_fork_processing: 'Forking conversation...',
+  com_ui_fork_error: 'There was an error forking the conversation',
+  com_ui_fork_change_default: 'Default fork option',
+  com_ui_fork_default: 'Use default fork option',
+  com_ui_fork_remember: 'Remember',
+  com_ui_fork_split_target_setting: 'Start fork from target message by default',
+  com_ui_fork_split_target: 'Start fork here',
+  com_ui_fork_remember_checked:
+    'Your selection will be remembered after usage. Change this at any time in the settings.',
+  com_ui_fork_all_target: 'Include all to/from here',
+  com_ui_fork_branches: 'Include related branches',
+  com_ui_fork_visible: 'Visible messages only',
+  com_ui_fork_from_message: 'Select a fork option',
+  com_ui_mention: 'Mention an endpoint, assistant, or preset to quickly switch to it',
   com_ui_regenerate: 'Regenerate',
   com_ui_continue: 'Continue',
   com_ui_edit: 'Edit',
@@ -132,6 +164,11 @@ export default {
   com_ui_clear: 'Clear',
   com_ui_revoke: 'Revoke',
   com_ui_revoke_info: 'Revoke all user provided credentials',
+  com_ui_import_conversation: 'Import',
+  com_ui_import_conversation_info: 'Import conversations from a JSON file',
+  com_ui_import_conversation_success: 'Conversations imported successfully',
+  com_ui_import_conversation_error: 'There was an error importing your conversations',
+  com_ui_import_conversation_file_type_error: 'Unsupported import type',
   com_ui_confirm_action: 'Confirm Action',
   com_ui_chats: 'chats',
   com_ui_avatar: 'Avatar',
@@ -150,6 +187,12 @@ export default {
   com_ui_delete_tool_confirm: 'Are you sure you want to delete this tool?',
   com_ui_delete_assistant_confirm:
     'Are you sure you want to delete this Assistant? This cannot be undone.',
+  com_ui_rename: 'Rename',
+  com_ui_archive: 'Archive',
+  com_ui_archive_error: 'Failed to archive conversation',
+  com_ui_unarchive: 'Unarchive',
+  com_ui_unarchive_error: 'Failed to unarchive conversation',
+  com_ui_more_options: 'More',
   com_ui_preview: 'Preview',
   com_ui_upload: 'Upload',
   com_ui_connect: 'Connect',
@@ -228,6 +271,7 @@ export default {
     'WARNING: Misuse of this feature can get you BANNED from using Bing! Click on \'System Message\' for full instructions and the default message if omitted, which is the \'Sydney\' preset that is considered safe.',
   com_endpoint_system_message: 'System Message',
   com_endpoint_message: 'Message',
+  com_endpoint_messages: 'Messages',
   com_endpoint_message_not_appendable: 'Edit your message or Regenerate.',
   com_endpoint_default_blank: 'default: blank',
   com_endpoint_default_false: 'default: false',
@@ -238,6 +282,9 @@ export default {
   com_endpoint_tone_style: 'Tone Style',
   com_endpoint_token_count: 'Token count',
   com_endpoint_output: 'Output',
+  com_endpoint_context_tokens: 'Max Context Tokens',
+  com_endpoint_context_info: `The maximum number of tokens that can be used for context. Use this for control of how many tokens are sent per request.
+  If unspecified, will use system defaults based on known models' context size. Setting higher values may result in errors and/or higher token cost.`,
   com_endpoint_google_temp:
     'Higher values = more random, while lower values = more focused and deterministic. We recommend altering this or Top P but not both.',
   com_endpoint_google_topp:
@@ -263,6 +310,9 @@ export default {
   com_endpoint_max_output_tokens: 'Max Output Tokens',
   com_endpoint_stop: 'Stop Sequences',
   com_endpoint_stop_placeholder: 'Separate values by pressing `Enter`',
+  com_endpoint_openai_max_tokens: `Optional \`max_tokens\` field, representing the maximum number of tokens that can be generated in the chat completion.
+    
+    The total length of input tokens and generated tokens is limited by the models context length. You may experience errors if this number exceeds the max context tokens.`,
   com_endpoint_openai_temp:
     'Higher values = more random, while lower values = more focused and deterministic. We recommend altering this or Top P but not both.',
   com_endpoint_openai_max:
@@ -383,8 +433,8 @@ export default {
     'Make sure to click \'Create and Continue\' to give at least the \'Vertex AI User\' role. Lastly, create a JSON key to import here.',
   com_nav_welcome_assistant: 'Please Select an Assistant',
   com_nav_welcome_message: 'How can I help you today?',
-  com_nav_auto_scroll: 'Auto-scroll to Newest on Open',
-  com_nav_hide_panel: 'Hide Right-most Side Panel',
+  com_nav_auto_scroll: 'Auto-Scroll to latest message on chat open',
+  com_nav_hide_panel: 'Hide right-most side panel',
   com_nav_modular_chat: 'Enable switching Endpoints mid-conversation',
   com_nav_latex_parsing: 'Parsing LaTeX in messages (may affect performance)',
   com_nav_profile_picture: 'Profile Picture',
@@ -429,6 +479,13 @@ export default {
   com_nav_send_message: 'Send message',
   com_nav_log_out: 'Log out',
   com_nav_user: 'USER',
+  com_nav_archived_chats: 'Archived chats',
+  com_nav_archived_chats_manage: 'Manage',
+  com_nav_archived_chats_empty: 'You have no archived conversations.',
+  com_nav_archive_all_chats: 'Archive all chats',
+  com_nav_archive_all: 'Archive all',
+  com_nav_archive_name: 'Name',
+  com_nav_archive_created_at: 'DateCreated',
   com_nav_clear_conversation: 'Clear conversations',
   com_nav_clear_conversation_confirm_message:
     'Are you sure you want to clear all conversations? This is irreversible.',

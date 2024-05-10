@@ -69,6 +69,8 @@ src/style - official.css
 /playwright/.cache/
 .DS_Store
 *.code-workspace
+.idx
+monospace.json
 .idea
 *.iml
 *.pem
@@ -76,6 +78,7 @@ config.local.ts
 **/storageState.json
 junit.xml
 **/.venv/
+**/venv/
 
 # docker override file
 docker-compose.override.yaml

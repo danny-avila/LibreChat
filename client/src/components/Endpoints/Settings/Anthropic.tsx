@@ -1,7 +1,6 @@
 import React from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
-import type { TModelSelectProps } from '~/common';
-import { ESide } from '~/common';
+import type { TModelSelectProps, OnInputNumberChange } from '~/common';
 import {
   Input,
   Label,
@@ -12,17 +11,35 @@ import {
   SelectDropDown,
   HoverCardTrigger,
 } from '~/components/ui';
+import { cn, defaultTextProps, optionText, removeFocusOutlines } from '~/utils';
+import OptionHoverAlt from '~/components/SidePanel/Parameters/OptionHover';
+import { useLocalize, useDebouncedInput } from '~/hooks';
 import OptionHover from './OptionHover';
-import { cn, defaultTextProps, optionText, removeFocusOutlines } from '~/utils/';
-import { useLocalize } from '~/hooks';
+import { ESide } from '~/common';
 
 export default function Settings({ conversation, setOption, models, readonly }: TModelSelectProps) {
   const localize = useLocalize();
+  const {
+    model,
+    modelLabel,
+    promptPrefix,
+    temperature,
+    topP,
+    topK,
+    maxOutputTokens,
+    maxContextTokens,
+    resendFiles,
+  } = conversation ?? {};
+  const [setMaxContextTokens, maxContextTokensValue] = useDebouncedInput<number | null | undefined>(
+    {
+      setOption,
+      optionKey: 'maxContextTokens',
+      initialValue: maxContextTokens,
+    },
+  );
   if (!conversation) {
     return null;
   }
-  const { model, modelLabel, promptPrefix, temperature, topP, topK, maxOutputTokens, resendFiles } =
-    conversation;
 
   const setModel = setOption('model');
   const setModelLabel = setOption('modelLabel');
@@ -83,6 +100,40 @@ export default function Settings({ conversation, setOption, models, readonly }: 
         </div>
       </div>
       <div className="col-span-5 flex flex-col items-center justify-start gap-6 px-3 sm:col-span-2">
+        <HoverCard openDelay={300}>
+          <HoverCardTrigger className="grid w-full items-center gap-2">
+            <div className="mt-1 flex w-full justify-between">
+              <Label htmlFor="max-context-tokens" className="text-left text-sm font-medium">
+                {localize('com_endpoint_context_tokens')}{' '}
+              </Label>
+              <InputNumber
+                id="max-context-tokens"
+                stringMode={false}
+                disabled={readonly}
+                value={maxContextTokensValue as number}
+                onChange={setMaxContextTokens as OnInputNumberChange}
+                placeholder={localize('com_nav_theme_system')}
+                min={10}
+                max={2000000}
+                step={1000}
+                controls={false}
+                className={cn(
+                  defaultTextProps,
+                  cn(
+                    optionText,
+                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                    'w-1/3',
+                  ),
+                )}
+              />
+            </div>
+          </HoverCardTrigger>
+          <OptionHoverAlt
+            description="com_endpoint_context_info"
+            langCode={true}
+            side={ESide.Left}
+          />
+        </HoverCard>
         <HoverCard openDelay={300}>
           <HoverCardTrigger className="grid w-full items-center gap-2">
             <div className="flex justify-between">

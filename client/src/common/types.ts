@@ -1,21 +1,25 @@
 import { FileSources } from 'librechat-data-provider';
+import type * as InputNumberPrimitive from 'rc-input-number';
 import type { ColumnDef } from '@tanstack/react-table';
 import type { SetterOrUpdater } from 'recoil';
 import type {
-  TSetOption as SetOption,
-  TConversation,
-  TMessage,
-  TPreset,
-  TLoginUser,
   TUser,
-  EModelEndpoint,
   Action,
+  TPreset,
+  TPlugin,
+  TMessage,
+  TLoginUser,
   AuthTypeEnum,
+  TConversation,
+  EModelEndpoint,
   AuthorizationTypeEnum,
+  TSetOption as SetOption,
   TokenExchangeMethodEnum,
 } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type { LucideIcon } from 'lucide-react';
+
+export type TPluginMap = Record<string, TPlugin>;
 
 export type GenericSetter<T> = (value: T | ((currentValue: T) => T)) => void;
 
@@ -31,6 +35,16 @@ export enum IconContext {
   nav = 'nav',
   message = 'message',
 }
+
+export type IconMapProps = {
+  className?: string;
+  iconURL?: string;
+  context?: 'landing' | 'menu-item' | 'nav' | 'message';
+  endpoint?: string | null;
+  assistantName?: string;
+  avatar?: string;
+  size?: number;
+};
 
 export type NavLink = {
   title: string;
@@ -101,6 +115,8 @@ export type TSetExample = (
   type: string,
   newValue: number | string | boolean | null,
 ) => void;
+
+export type OnInputNumberChange = InputNumberPrimitive.InputNumberProps['onChange'];
 
 export const defaultDebouncedDelay = 450;
 
@@ -311,6 +327,7 @@ export type Option = Record<string, unknown> & {
 };
 
 export type OptionWithIcon = Option & { icon?: React.ReactNode };
+export type MentionOption = OptionWithIcon & { type: string; value: string; description?: string };
 
 export type TOptionSettings = {
   showExamples?: boolean;

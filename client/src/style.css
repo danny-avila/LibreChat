@@ -283,20 +283,6 @@ select {
   display: none;
 }
 
-.endpointOptionsPopover-container {
-  pointer-events: none;
-  opacity: 0;
-  transition: all 0.2s ease-in-out;
-  transform: scaleY(0);
-  transform-origin: bottom center;
-}
-
-.endpointOptionsPopover-container.show {
-  pointer-events: fill;
-  opacity: 1;
-  transform: scaleY(1)
-}
-
 .creative-tab {
   /* background: linear-gradient(90deg, #904887 10.79%, #8B257E 87.08%); */
   background: linear-gradient(90deg, #904887 10.79%, #8B257E 87.08%);
@@ -1739,10 +1725,13 @@ html {
   height:1rem;
   width:1rem
 }
-.icon-md {
+.icon-md, .icon-md-heavy {
   stroke-width:1.5;
-  height:1.25rem;
-  width:1.25rem
+  height:1.125rem;
+  width:1.125rem
+}
+.icon-md-heavy {
+  stroke-width: 2.5;
 }
 .icon-lg {
   stroke-width:1.5;

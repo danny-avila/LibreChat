@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { Settings } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
-import { EModelEndpoint, modularEndpoints } from 'librechat-data-provider';
+import { EModelEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
-import type { TPreset, TConversation } from 'librechat-data-provider';
+import type { TConversation } from 'librechat-data-provider';
 import type { FC } from 'react';
+import { cn, getConvoSwitchLogic, getEndpointField, getIconKey } from '~/utils';
 import { useLocalize, useUserKey, useDefaultConvo } from '~/hooks';
 import { SetKeyDialog } from '~/components/Input/SetKeyDialog';
-import { cn, getEndpointField } from '~/utils';
 import { useChatContext } from '~/Providers';
 import { icons } from './Icons';
 import store from '~/store';
@@ -43,58 +43,44 @@ const MenuItem: FC<MenuItemProps> = ({
   const onSelectEndpoint = (newEndpoint: EModelEndpoint) => {
     if (!newEndpoint) {
       return;
-    } else {
-      if (!expiryTime) {
-        setDialogOpen(true);
-      }
-
-      const currentEndpoint = conversation?.endpoint;
-      const template: Partial<TPreset> = {
-        ...conversation,
-        endpoint: newEndpoint,
-        conversationId: 'new',
-      };
-      const isAssistantSwitch =
-        newEndpoint === EModelEndpoint.assistants &&
-        currentEndpoint === EModelEndpoint.assistants &&
-        currentEndpoint === newEndpoint;
-
-      const { conversationId } = conversation ?? {};
-      const isExistingConversation = conversationId && conversationId !== 'new';
-      const currentEndpointType =
-        getEndpointField(endpointsConfig, currentEndpoint, 'type') ?? currentEndpoint;
-      const newEndpointType = getEndpointField(endpointsConfig, newEndpoint, 'type') ?? newEndpoint;
-
-      const hasEndpoint = modularEndpoints.has(currentEndpoint ?? '');
-      const hasCurrentEndpointType = modularEndpoints.has(currentEndpointType ?? '');
-      const isCurrentModular = hasEndpoint || hasCurrentEndpointType || isAssistantSwitch;
-
-      const hasNewEndpoint = modularEndpoints.has(newEndpoint ?? '');
-      const hasNewEndpointType = modularEndpoints.has(newEndpointType ?? '');
-      const isNewModular = hasNewEndpoint || hasNewEndpointType || isAssistantSwitch;
-
-      const endpointsMatch = currentEndpoint === newEndpoint;
-      const shouldSwitch = endpointsMatch || modularChat || isAssistantSwitch;
-
-      if (isExistingConversation && isCurrentModular && isNewModular && shouldSwitch) {
-        template.endpointType = newEndpointType;
-
-        const currentConvo = getDefaultConversation({
-          /* target endpointType is necessary to avoid endpoint mixing */
-          conversation: { ...(conversation ?? {}), endpointType: template.endpointType },
-          preset: template,
-        });
-
-        /* We don't reset the latest message, only when changing settings mid-converstion */
-        newConversation({ template: currentConvo, preset: currentConvo, keepLatestMessage: true });
-        return;
-      }
-      newConversation({ template: { ...(template as Partial<TConversation>) } });
     }
+
+    if (!expiryTime) {
+      setDialogOpen(true);
+    }
+
+    const {
+      shouldSwitch,
+      isNewModular,
+      isCurrentModular,
+      isExistingConversation,
+      newEndpointType,
+      template,
+    } = getConvoSwitchLogic({
+      newEndpoint,
+      modularChat,
+      conversation,
+      endpointsConfig,
+    });
+
+    if (isExistingConversation && isCurrentModular && isNewModular && shouldSwitch) {
+      template.endpointType = newEndpointType;
+
+      const currentConvo = getDefaultConversation({
+        /* target endpointType is necessary to avoid endpoint mixing */
+        conversation: { ...(conversation ?? {}), endpointType: template.endpointType },
+        preset: template,
+      });
+
+      /* We don't reset the latest message, only when changing settings mid-converstion */
+      newConversation({ template: currentConvo, preset: currentConvo, keepLatestMessage: true });
+      return;
+    }
+    newConversation({ template: { ...(template as Partial<TConversation>) } });
   };
 
   const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
-  const iconKey = endpointType ? 'unknown' : endpoint ?? 'unknown';
+  const iconKey = getIconKey({ endpoint, endpointsConfig, endpointType });
   const Icon = icons[iconKey];
 
   return (
@@ -132,7 +118,7 @@ const MenuItem: FC<MenuItemProps> = ({
                     'invisible flex gap-x-1 group-hover:visible',
                     selected ? 'visible' : '',
                     expiryTime
-                      ? 'w-full rounded-lg p-2 hover:bg-gray-200 dark:hover:bg-gray-600'
+                      ? 'w-full rounded-lg p-2 hover:text-gray-400 dark:hover:text-gray-400'
                       : '',
                   )}
                   onClick={(e) => {

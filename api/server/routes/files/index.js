@@ -1,6 +1,6 @@
 const express = require('express');
-const createMulterInstance = require('./multer');
 const { uaParser, checkBan, requireJwtAuth, createFileLimiters } = require('~/server/middleware');
+const { createMulterInstance } = require('./multer');
 
 const files = require('./files');
 const images = require('./images');

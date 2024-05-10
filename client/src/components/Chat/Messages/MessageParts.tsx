@@ -1,5 +1,6 @@
-import ContentParts from './Content/ContentParts';
 import type { TMessageProps } from '~/common';
+import Icon from '~/components/Chat/Messages/MessageIcon';
+import ContentParts from './Content/ContentParts';
 import SiblingSwitch from './SiblingSwitch';
 import { useMessageHelpers } from '~/hooks';
 // eslint-disable-next-line import/no-cycle
@@ -14,7 +15,6 @@ export default function Message(props: TMessageProps) {
 
   const {
     ask,
-    icon,
     edit,
     isLast,
     enterEdit,
@@ -47,11 +47,7 @@ export default function Message(props: TMessageProps) {
               <div>
                 <div className="pt-0.5">
                   <div className="shadow-stroke flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-                    {typeof icon === 'string' && /[^\\x00-\\x7F]+/.test(icon as string) ? (
-                      <span className=" direction-rtl w-40 overflow-x-scroll">{icon}</span>
-                    ) : (
-                      icon
-                    )}
+                    <Icon message={message} conversation={conversation} assistant={assistant} />
                   </div>
                 </div>
               </div>

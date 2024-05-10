@@ -1,6 +1,10 @@
 import React from 'react';
 
-export default function DotsIcon() {
+export default function DotsIcon({
+  className = 'h-4 w-4 flex-shrink-0 text-gray-500',
+}: {
+  className?: string;
+}) {
   return (
     <svg
       stroke="currentColor"
@@ -9,7 +13,7 @@ export default function DotsIcon() {
       viewBox="0 0 24 24"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="h-4 w-4 flex-shrink-0 text-gray-500"
+      className={className}
       height="1em"
       width="1em"
       xmlns="http://www.w3.org/2000/svg"

@@ -49,9 +49,9 @@ const EditPresetDialog = ({
         title={`${localize('com_ui_edit') + ' ' + localize('com_endpoint_preset')} - ${
           preset?.title
         }`}
-        className="h-full max-w-full overflow-y-auto pb-4 sm:w-[680px] sm:pb-0 md:h-[720px] md:w-[750px] md:overflow-y-hidden lg:w-[950px] xl:h-[720px]"
+        className="h-full max-w-full overflow-y-auto pb-4 sm:w-[680px] sm:pb-0 md:h-[720px] md:w-[750px] md:overflow-y-hidden md:overflow-y-hidden lg:w-[950px] xl:h-[720px]"
         main={
-          <div className="flex w-full flex-col items-center gap-2 md:h-[530px]">
+          <div className="flex w-full flex-col items-center gap-2 md:h-[550px] md:overflow-y-auto">
             <div className="grid w-full">
               <div className="col-span-4 flex flex-col items-start justify-start gap-6 pb-4 md:flex-row">
                 <div className="flex w-full flex-col">
@@ -105,7 +105,6 @@ const EditPresetDialog = ({
                 conversation={preset}
                 setOption={setOption}
                 isPreset={true}
-                isMultiChat={true}
                 className="h-full md:mb-4 md:h-[440px]"
               />
             </div>
@@ -127,6 +126,7 @@ const EditPresetDialog = ({
             </DialogClose>
           </div>
         }
+        footerClassName="bg-white dark:bg-gray-700"
       />
     </Dialog>
   );

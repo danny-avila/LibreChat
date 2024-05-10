@@ -1,11 +1,14 @@
 import * as Tabs from '@radix-ui/react-tabs';
 import {
-  useRevokeAllUserKeysMutation,
   useRevokeUserKeyMutation,
+  useRevokeAllUserKeysMutation,
+  useClearConversationsMutation,
 } from 'librechat-data-provider/react-query';
 import { SettingsTabValues } from 'librechat-data-provider';
 import React, { useState, useCallback, useRef } from 'react';
-import { useOnClickOutside } from '~/hooks';
+import { useConversation, useConversations, useOnClickOutside } from '~/hooks';
+import ImportConversations from './ImportConversations';
+import { ClearChatsButton } from './ClearChats';
 import DangerButton from '../DangerButton';
 
 export const RevokeKeysButton = ({
@@ -19,42 +22,43 @@ export const RevokeKeysButton = ({
   all?: boolean;
   disabled?: boolean;
 }) => {
-  const [confirmClear, setConfirmClear] = useState(false);
-  const revokeKeyMutation = useRevokeUserKeyMutation(endpoint);
-  const revokeKeysMutation = useRevokeAllUserKeysMutation();
+  const [confirmRevoke, setConfirmRevoke] = useState(false);
 
-  const contentRef = useRef(null);
-  useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);
+  const revokeKeysMutation = useRevokeAllUserKeysMutation();
+  const revokeKeyMutation = useRevokeUserKeyMutation(endpoint);
+
+  const revokeContentRef = useRef(null);
+  useOnClickOutside(revokeContentRef, () => confirmRevoke && setConfirmRevoke(false), []);
 
   const revokeAllUserKeys = useCallback(() => {
-    if (confirmClear) {
+    if (confirmRevoke) {
       revokeKeysMutation.mutate({});
-      setConfirmClear(false);
+      setConfirmRevoke(false);
     } else {
-      setConfirmClear(true);
+      setConfirmRevoke(true);
     }
-  }, [confirmClear, revokeKeysMutation]);
+  }, [confirmRevoke, revokeKeysMutation]);
 
   const revokeUserKey = useCallback(() => {
     if (!endpoint) {
       return;
-    } else if (confirmClear) {
+    } else if (confirmRevoke) {
       revokeKeyMutation.mutate({});
-      setConfirmClear(false);
+      setConfirmRevoke(false);
     } else {
-      setConfirmClear(true);
+      setConfirmRevoke(true);
     }
-  }, [confirmClear, revokeKeyMutation, endpoint]);
+  }, [confirmRevoke, revokeKeyMutation, endpoint]);
 
   const onClick = all ? revokeAllUserKeys : revokeUserKey;
 
   return (
     <DangerButton
-      ref={contentRef}
+      ref={revokeContentRef}
       showText={showText}
       onClick={onClick}
       disabled={disabled}
-      confirmClear={confirmClear}
+      confirmClear={confirmRevoke}
       id={'revoke-all-user-keys'}
       actionTextCode={'com_ui_revoke'}
       infoTextCode={'com_ui_revoke_info'}
@@ -66,15 +70,54 @@ export const RevokeKeysButton = ({
 };
 
 function Data() {
+  const dataTabRef = useRef(null);
+  const [confirmClearConvos, setConfirmClearConvos] = useState(false);
+  useOnClickOutside(dataTabRef, () => confirmClearConvos && setConfirmClearConvos(false), []);
+
+  const { newConversation } = useConversation();
+  const { refreshConversations } = useConversations();
+  const clearConvosMutation = useClearConversationsMutation();
+
+  const clearConvos = () => {
+    if (confirmClearConvos) {
+      console.log('Clearing conversations...');
+      setConfirmClearConvos(false);
+      clearConvosMutation.mutate(
+        {},
+        {
+          onSuccess: () => {
+            newConversation();
+            refreshConversations();
+          },
+        },
+      );
+    } else {
+      setConfirmClearConvos(true);
+    }
+  };
+
   return (
     <Tabs.Content
       value={SettingsTabValues.DATA}
       role="tabpanel"
-      className="w-full md:min-h-[300px]"
+      className="w-full md:min-h-[271px]"
+      ref={dataTabRef}
     >
       <div className="flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-50">
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
+          <ImportConversations />
+        </div>
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <RevokeKeysButton all={true} />
+        </div>
+
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
+          <ClearChatsButton
+            confirmClear={confirmClearConvos}
+            onClick={clearConvos}
+            showText={true}
+            mutation={clearConvosMutation}
+          />
         </div>
       </div>
     </Tabs.Content>

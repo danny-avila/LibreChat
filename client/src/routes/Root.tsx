@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Outlet } from 'react-router-dom';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { useSetRecoilState } from 'recoil';
 import { useGetSearchEnabledQuery } from 'librechat-data-provider/react-query';
 import type { ContextType } from '~/common';
-import { useAuthContext, useServerStream, useAssistantsMap, useFileMap } from '~/hooks';
+import { useAuthContext, useAssistantsMap, useFileMap } from '~/hooks';
 import { AssistantsMapContext, FileMapContext } from '~/Providers';
 import { Nav, MobileNav } from '~/components/Nav';
 import store from '~/store';
@@ -14,9 +14,6 @@ export default function Root() {
     const savedNavVisible = localStorage.getItem('navVisible');
     return savedNavVisible !== null ? JSON.parse(savedNavVisible) : true;
   });
-
-  const submission = useRecoilValue(store.submission);
-  useServerStream(submission ?? null);
 
   const setIsSearchEnabled = useSetRecoilState(store.isSearchEnabled);
 

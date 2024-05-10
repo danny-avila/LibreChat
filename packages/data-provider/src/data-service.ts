@@ -191,6 +191,28 @@ export const uploadFile = (data: FormData): Promise<f.TFileUpload> => {
   return request.postMultiPart(endpoints.files(), data);
 };
 
+/**
+ * Imports a conversations file.
+ *
+ * @param data - The FormData containing the file to import.
+ * @returns A Promise that resolves to the import start response.
+ */
+export const importConversationsFile = (data: FormData): Promise<t.TImportStartResponse> => {
+  return request.postMultiPart(endpoints.importConversation(), data);
+};
+
+/**
+ * Retrieves the status of an import conversation job.
+ *
+ * @param jobId - The ID of the import conversation job.
+ * @returns A promise that resolves to the import job status.
+ */
+export const queryImportConversationJobStatus = async (
+  jobId: string,
+): Promise<t.TImportJobStatus> => {
+  return request.get(endpoints.importConversationJobStatus(jobId));
+};
+
 export const uploadAvatar = (data: FormData): Promise<f.AvatarUploadResponse> => {
   return request.postMultiPart(endpoints.avatar(), data);
 };
@@ -239,6 +261,10 @@ export const deleteAction = async (
 
 /* conversations */
 
+export function forkConversation(payload: t.TForkConvoRequest): Promise<t.TForkConvoResponse> {
+  return request.post(endpoints.forkConversation(), payload);
+}
+
 export function deleteConversation(payload: t.TDeleteConversationRequest) {
   //todo: this should be a DELETE request
   return request.post(endpoints.deleteConversation(), { arg: payload });
@@ -253,7 +279,8 @@ export const listConversations = (
 ): Promise<q.ConversationListResponse> => {
   // Assuming params has a pageNumber property
   const pageNumber = params?.pageNumber || '1'; // Default to page 1 if not provided
-  return request.get(endpoints.conversations(pageNumber));
+  const isArchived = params?.isArchived || false; // Default to false if not provided
+  return request.get(endpoints.conversations(pageNumber, isArchived));
 };
 
 export const listConversationsByQuery = (
@@ -287,6 +314,12 @@ export function getConversationById(id: string): Promise<s.TConversation> {
 export function updateConversation(
   payload: t.TUpdateConversationRequest,
 ): Promise<t.TUpdateConversationResponse> {
+  return request.post(endpoints.updateConversation(), { arg: payload });
+}
+
+export function archiveConversation(
+  payload: t.TArchiveConversationRequest,
+): Promise<t.TArchiveConversationResponse> {
   return request.post(endpoints.updateConversation(), { arg: payload });
 }
 

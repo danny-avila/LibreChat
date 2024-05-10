@@ -162,13 +162,15 @@ TITLE_CONVO=true
 - see also: [Custom Configuration](./custom_config.md)
 
 ```sh
-GROQ_API_KEY=
-SHUTTLEAI_KEY=
-OPENROUTER_KEY=
-MISTRAL_API_KEY=
 ANYSCALE_API_KEY=
+APIPIE_API_KEY=
 FIREWORKS_API_KEY=
+GROQ_API_KEY=
+HUGGINGFACE_TOKEN=
+MISTRAL_API_KEY=
+OPENROUTER_KEY=
 PERPLEXITY_API_KEY=
+SHUTTLEAI_API_KEY=
 TOGETHERAI_API_KEY=
 ```
 
@@ -231,7 +233,7 @@ AZURE_OPENAI_BASEURL=https://gateway.ai.cloudflare.com/v1/ACCOUNT_TAG/GATEWAY/az
 - Sets the base URL for Azure OpenAI API requests.
 - Can include `${INSTANCE_NAME}` and `${DEPLOYMENT_NAME}` placeholders or specific credentials.
 - Example: "https://gateway.ai.cloudflare.com/v1/ACCOUNT_TAG/GATEWAY/azure-openai/${INSTANCE_NAME}/${DEPLOYMENT_NAME}"
-- [More info about `AZURE_OPENAI_BASEURL` here](./ai_setup.md#using-a-specified-base-url-with-azure)
+- [More info about `AZURE_OPENAI_BASEURL` here](./azure_openai.md#using-a-specified-base-url-with-azure)
 
 > Note: as deployment names can't have periods, they will be removed when the endpoint is generated.
 
@@ -295,14 +297,48 @@ GOOGLE_KEY=user_provided
 GOOGLE_REVERSE_PROXY=
 ```
 
-- Customize the available models, separated by commas, **without spaces**.
-    - The first will be default.
-    - Leave it blank or commented out to use internal settings (default: all listed below).
+Depending on whether you are using the Vertex AI or Gemini API, you can choose the corresponding set of models. Customize the available models, separated by commas, **without spaces**. The first model in the list will be used as the default. Leave the line blank or commented out to use the internal settings (default: all models listed below).
 
 ```bash
-# all available models as of 12/16/23
-GOOGLE_MODELS=gemini-pro,gemini-pro-vision,chat-bison,chat-bison-32k,codechat-bison,codechat-bison-32k,text-bison,text-bison-32k,text-unicorn,code-gecko,code-bison,code-bison-32k
+# Gemini API
+# GOOGLE_MODELS=gemini-1.0-pro,gemini-1.0-pro-001,gemini-1.0-pro-latest,gemini-1.0-pro-vision-latest,gemini-1.5-pro-latest,gemini-pro,gemini-pro-vision
+
+# Vertex AI
+# GOOGLE_MODELS=gemini-1.5-pro-preview-0409,gemini-1.0-pro-vision-001,gemini-pro,gemini-pro-vision,chat-bison,chat-bison-32k,codechat-bison,codechat-bison-32k,text-bison,text-bison-32k,text-unicorn,code-gecko,code-bison,code-bison-32k
 ```
+
+Both the Vertex AI and Gemini API provide safety settings that allow you to control the level of content filtering based on different categories. You can configure these settings using the following environment variables:
+
+```bash
+# Google Safety Settings
+# NOTE: You do not have access to the BLOCK_NONE setting by default.
+# To use this restricted HarmBlockThreshold setting, you will need to either:
+#
+# (a) Get access through an allowlist via your Google account team
+# (b) Switch your account type to monthly invoiced billing following this instruction:
+#     https://cloud.google.com/billing/docs/how-to/invoiced-billing
+#
+# GOOGLE_SAFETY_SEXUALLY_EXPLICIT=BLOCK_ONLY_HIGH
+# GOOGLE_SAFETY_HATE_SPEECH=BLOCK_ONLY_HIGH
+# GOOGLE_SAFETY_HARASSMENT=BLOCK_ONLY_HIGH
+# GOOGLE_SAFETY_DANGEROUS_CONTENT=BLOCK_ONLY_HIGH
+```
+
+The available safety settings are:
+
+- `GOOGLE_SAFETY_SEXUALLY_EXPLICIT`: Controls the filtering of sexually explicit content.
+- `GOOGLE_SAFETY_HATE_SPEECH`: Controls the filtering of hate speech content.
+- `GOOGLE_SAFETY_HARASSMENT`: Controls the filtering of harassment content.
+- `GOOGLE_SAFETY_DANGEROUS_CONTENT`: Controls the filtering of dangerous content.
+
+For each setting, you can choose one of the following values:
+
+- `BLOCK_NONE`: Do not block any content in this category (requires additional access).
+- `BLOCK_LOW_AND_ABOVE`: Block content with low or higher probability of belonging to this category.
+- `BLOCK_MED_AND_ABOVE`: Block content with medium or higher probability of belonging to this category.
+- `BLOCK_ONLY_HIGH`: Only block content with high probability of belonging to this category.
+
+If you leave the safety settings commented out, the default values provided by the API will be used.
 
 ### OpenAI
 
@@ -411,7 +447,7 @@ ASSISTANTS_BASE_URL=http://your-alt-baseURL:3080/
 - There is additional, optional configuration, depending on your needs, such as disabling the assistant builder UI, and determining which assistants can be used, that are available via the [`librechat.yaml` custom config file](./custom_config.md#assistants-endpoint-object-structure).
 
 ### OpenRouter
-See [OpenRouter](./free_ai_apis.md#openrouter-preferred) for more info.
+See [OpenRouter](./ai_endpoints.md#openrouter) for more info.
 
 - OpenRouter is a legitimate proxy service to a multitude of LLMs, both closed and open source, including: OpenAI models, Anthropic models, Meta's Llama models, pygmalionai/mythalion-13b and many more open source models. Newer integrations are usually discounted, too!
 

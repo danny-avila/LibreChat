@@ -2,12 +2,12 @@
 # https://docs.librechat.ai/install/configuration/custom_config.html
 
 # Configuration version (required)
-version: 1.0.6
+version: 1.0.9
 
 # Cache settings: Set to true to enable caching
 cache: true
 
-# Custom nterface configuration
+# Custom interface configuration
 interface:
   # Privacy policy settings
   privacyPolicy:
@@ -31,6 +31,11 @@ registration:
 #     ipWindowInMinutes: 60  # Rate limit window for file uploads per IP
 #     userMax: 50
 #     userWindowInMinutes: 60  # Rate limit window for file uploads per user
+#   conversationsImport:
+#     ipMax: 100
+#     ipWindowInMinutes: 60  # Rate limit window for conversation imports per IP
+#     userMax: 50
+#     userWindowInMinutes: 60  # Rate limit window for conversation imports per user
 
 # Definition of custom endpoints
 endpoints:
