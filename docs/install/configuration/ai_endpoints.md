@@ -249,7 +249,7 @@ Some of the endpoints are marked as **Known,** which means they might have speci
 ![image](https://github.com/danny-avila/LibreChat/assets/110412045/cc4f0710-7e27-4f82-8b4f-81f788a6cb13)
 
 ## Huggingface
-> groq API key: [wow.groq.com](https://wow.groq.com/)
+> HuggingFace API key: [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
 
 **Notes:**
 
