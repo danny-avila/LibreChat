@@ -3,7 +3,7 @@ import { useRecoilValue } from 'recoil';
 import TextareaAutosize from 'react-textarea-autosize';
 import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
 import type { TPlugin } from 'librechat-data-provider';
-import type { TModelSelectProps } from '~/common';
+import type { TModelSelectProps, OnInputNumberChange } from '~/common';
 import {
   Input,
   Label,
@@ -22,7 +22,7 @@ import {
   processPlugins,
   selectPlugins,
 } from '~/utils';
-import { DynamicInputNumber } from '~/components/SidePanel/Parameters';
+import OptionHoverAlt from '~/components/SidePanel/Parameters/OptionHover';
 import { useLocalize, useDebouncedInput } from '~/hooks';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
@@ -69,6 +69,7 @@ export default function Settings({
     top_p: topP,
     frequency_penalty: freqP,
     presence_penalty: presP,
+    maxContextTokens,
   } = conversation ?? {};
 
   const [setChatGptLabel, chatGptLabelValue] = useDebouncedInput<string | null | undefined>({
@@ -101,6 +102,13 @@ export default function Settings({
     optionKey: 'presence_penalty',
     initialValue: presP,
   });
+  const [setMaxContextTokens, maxContextTokensValue] = useDebouncedInput<number | null | undefined>(
+    {
+      setOption,
+      optionKey: 'maxContextTokens',
+      initialValue: maxContextTokens,
+    },
+  );
 
   const setModel = setOption('model');
 
@@ -177,28 +185,40 @@ export default function Settings({
           containerClassName="flex w-full resize-none border border-transparent"
           labelClassName="dark:text-white"
         />
-        <DynamicInputNumber
-          columnSpan={2}
-          settingKey="maxContextTokens"
-          setOption={setOption}
-          label="com_endpoint_context_tokens"
-          labelCode={true}
-          description="com_endpoint_context_info"
-          descriptionCode={true}
-          placeholder="com_nav_theme_system"
-          placeholderCode={true}
-          descriptionSide="right"
-          conversation={conversation}
-          readonly={readonly}
-          range={{
-            min: 10,
-            max: 2000000,
-            step: 1000,
-          }}
-          className="mt-1 w-full justify-between"
-          inputClassName="w-1/3"
-          showDefault={false}
-        />
+        <HoverCard openDelay={300}>
+          <HoverCardTrigger className="grid w-full items-center gap-2">
+            <div className="mt-1 flex w-full justify-between">
+              <Label htmlFor="max-context-tokens" className="text-left text-sm font-medium">
+                {localize('com_endpoint_context_tokens')}{' '}
+              </Label>
+              <InputNumber
+                id="max-context-tokens"
+                stringMode={false}
+                disabled={readonly}
+                value={maxContextTokensValue as number}
+                onChange={setMaxContextTokens as OnInputNumberChange}
+                placeholder={localize('com_nav_theme_system')}
+                min={10}
+                max={2000000}
+                step={1000}
+                controls={false}
+                className={cn(
+                  defaultTextProps,
+                  cn(
+                    optionText,
+                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                    'w-1/3',
+                  ),
+                )}
+              />
+            </div>
+          </HoverCardTrigger>
+          <OptionHoverAlt
+            description="com_endpoint_context_info"
+            langCode={true}
+            side={ESide.Left}
+          />
+        </HoverCard>
         <HoverCard openDelay={300}>
           <HoverCardTrigger className="grid w-full items-center gap-2">
             <div className="flex justify-between">
