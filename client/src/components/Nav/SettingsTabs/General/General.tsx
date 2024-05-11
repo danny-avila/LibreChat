@@ -34,8 +34,6 @@ export const ThemeSelector = ({
         onChange={onChange}
         options={themeOptions}
         width={220}
-        position={'left'}
-        maxHeight="200px"
         testId="theme-selector"
       />
     </div>
@@ -108,8 +106,7 @@ export const LangSelector = ({
       <Dropdown
         value={langcode}
         onChange={onChange}
-        position={'left'}
-        maxHeight="271px"
+        maxHeight={256} // h-64
         options={languageOptions}
       />
     </div>

@@ -22,7 +22,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
   return (
     <Transition appear show={open}>
       <Dialog as="div" className="relative z-50 focus:outline-none" onClose={onOpenChange}>
-        <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
+        <div className="fixed inset-0 bg-gray-600/65" aria-hidden="true" />
 
         <div className="fixed inset-0 flex w-screen items-center justify-center p-4">
           <TransitionChild
@@ -153,7 +153,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                       {localize('com_nav_setting_account')}
                     </Tabs.Trigger>
                   </Tabs.List>
-                  <div className="h-screen max-h-[373px] overflow-auto sm:w-full sm:max-w-none md:pr-0.5 md:pt-0.5">
+                  <div className="max-h-[373px] overflow-auto sm:w-full sm:max-w-none md:pr-0.5 md:pt-0.5">
                     <General />
                     <Messages />
                     <Beta />
