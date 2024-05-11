@@ -22,7 +22,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
   return (
     <Transition appear show={open}>
       <Dialog as="div" className="relative z-50 focus:outline-none" onClose={onOpenChange}>
-        <div className="fixed inset-0 bg-gray-600/65" aria-hidden="true" />
+        <div className="fixed inset-0 bg-black/50 dark:bg-black/80" aria-hidden="true" />
 
         <div className="fixed inset-0 flex w-screen items-center justify-center p-4">
           <TransitionChild

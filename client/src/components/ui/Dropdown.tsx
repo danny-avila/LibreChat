@@ -1,5 +1,11 @@
 import React, { FC, useContext, useState } from 'react';
-import { Listbox, Transition } from '@headlessui/react';
+import {
+  Listbox,
+  ListboxButton,
+  ListboxOption,
+  ListboxOptions,
+  Transition,
+} from '@headlessui/react';
 import { AnchorPropsWithSelection } from '@headlessui/react/dist/internal/floating';
 import { cn } from '~/utils/';
 
@@ -27,7 +33,7 @@ const Dropdown: FC<DropdownProps> = ({
   options,
   className = '',
   anchor = 'bottom start',
-  width,
+  width = 'auto',
   maxHeight = 432,
   testId = 'dropdown-menu',
 }) => {
@@ -43,7 +49,7 @@ const Dropdown: FC<DropdownProps> = ({
         }}
       >
         <div className={cn('relative', className)}>
-          <Listbox.Button
+          <ListboxButton
             data-testid={testId}
             className={cn(
               'relative inline-flex items-center justify-between rounded-md border-gray-300 bg-white py-2 pl-3 pr-8 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600',
@@ -69,22 +75,23 @@ const Dropdown: FC<DropdownProps> = ({
                 <polyline points="6 9 12 15 18 9"></polyline>
               </svg>
             </span>
-          </Listbox.Button>
+          </ListboxButton>
           <Transition
             leave="transition ease-in duration-100"
             leaveFrom="opacity-100"
             leaveTo="opacity-0"
           >
-            <Listbox.Options
+            <ListboxOptions
               className={cn(
                 'mt-1 flex flex-col items-start gap-1 overflow-auto rounded-lg border border-gray-300 bg-white p-1.5 text-gray-700 shadow-lg transition-opacity focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-white',
-                `[--anchor-max-height:${maxHeight}px] w-[${width}px]`,
+                `[--anchor-max-height:${maxHeight}px]`,
                 className,
               )}
+              style={{ width: `${width}px` }}
               anchor={anchor}
             >
               {options.map((item, index) => (
-                <Listbox.Option
+                <ListboxOption
                   key={index}
                   value={typeof item === 'string' ? item : item.value}
                   className={cn(
@@ -96,9 +103,9 @@ const Dropdown: FC<DropdownProps> = ({
                   <span className="block truncate">
                     {typeof item === 'string' ? item : (item as OptionType).display}
                   </span>
-                </Listbox.Option>
+                </ListboxOption>
               ))}
-            </Listbox.Options>
+            </ListboxOptions>
           </Transition>
         </div>
       </Listbox>
