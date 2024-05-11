@@ -15,6 +15,19 @@ function getProvider(ttsSchema) {
   }
 }
 
+function removeUndefined(obj) {
+  Object.keys(obj).forEach((key) => {
+    if (obj[key] && typeof obj[key] === 'object') {
+      removeUndefined(obj[key]);
+      if (Object.keys(obj[key]).length === 0) {
+        delete obj[key];
+      }
+    } else if (obj[key] === undefined) {
+      delete obj[key];
+    }
+  });
+}
+
 /**
  * This function prepares the necessary data and headers for making a request to the OpenAI TTS
  * It uses the provided TTS schema, input text, and voice to create the request
@@ -86,7 +99,7 @@ function elevenLabsProvider(ttsSchema, input, voice) {
       similarity_boost: ttsSchema.elevenlabs?.voice_settings?.similarity_boost,
       stability: ttsSchema.elevenlabs?.voice_settings?.stability,
       style: ttsSchema.elevenlabs?.voice_settings?.style,
-      use_speaker_boost: ttsSchema.elevenlabs?.voice_settings?.use_speaker_boost || false,
+      use_speaker_boost: ttsSchema.elevenlabs?.voice_settings?.use_speaker_boost || undefined,
     },
     pronunciation_dictionary_locators: ttsSchema.elevenlabs?.pronunciation_dictionary_locators,
   };
@@ -97,13 +110,7 @@ function elevenLabsProvider(ttsSchema, input, voice) {
     Accept: 'audio/mpeg',
   };
 
-  [data, headers].forEach((obj) => {
-    Object.keys(obj).forEach((key) => {
-      if (obj[key] === undefined) {
-        delete obj[key];
-      }
-    });
-  });
+  [data, headers].forEach(removeUndefined);
 
   return [url, data, headers];
 }
