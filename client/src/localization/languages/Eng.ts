@@ -503,6 +503,7 @@ export default {
   com_nav_external: 'External',
   com_nav_delete_cache_storage: 'Delete cache storage',
   com_nav_enable_cache_tts: 'Enable cache TTS',
+  com_nav_voice_select: 'Voice',
   com_nav_setting_general: 'General',
   com_nav_setting_beta: 'Beta features',
   com_nav_setting_data: 'Data controls',

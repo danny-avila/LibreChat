@@ -7,6 +7,7 @@ import store from '~/store';
 function useTextToSpeechExternal() {
   const { showToast } = useToastContext();
   const [cacheTTS] = useRecoilState<boolean>(store.cacheTTS);
+  const [voice] = useRecoilState<string>(store.voice);
   const [downloadFile, setDownloadFile] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [audio, setAudio] = useState<HTMLAudioElement | null>(null);
@@ -87,6 +88,7 @@ function useTextToSpeechExternal() {
     } else {
       const formData = new FormData();
       formData.append('input', text);
+      formData.append('voice', voice);
       setDownloadFile(download);
       processAudio(formData);
     }

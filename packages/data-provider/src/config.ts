@@ -215,6 +215,41 @@ export const azureEndpointSchema = z
 export type TAzureConfig = Omit<z.infer<typeof azureEndpointSchema>, 'groups'> &
   TAzureConfigValidationResult;
 
+const ttsSchema = z.object({
+  openai: z
+    .object({
+      url: z.string().optional(),
+      apiKey: z.string(),
+      model: z.string(),
+      voices: z.record(z.string()).optional(),
+      backend: z.string().optional(),
+    })
+    .optional(),
+  elevenLabs: z
+    .object({
+      url: z.string().optional(),
+      apiKey: z.string(),
+      model: z.string(),
+      voices: z.record(z.string()).optional(),
+      voice_settings: z
+        .object({
+          similarity_boost: z.number().optional(),
+          stability: z.number().optional(),
+          style: z.number().optional(),
+          use_speaker_boost: z.boolean().optional(),
+        })
+        .optional(),
+      pronunciation_dictionary_locators: z.array(z.string()).optional(),
+    })
+    .optional(),
+});
+
+const sttSchema = z.object({
+  url: z.string().optional(),
+  apiKey: z.string(),
+  model: z.string().optional(),
+});
+
 export const rateLimitSchema = z.object({
   fileUploads: z
     .object({
@@ -280,32 +315,8 @@ export const configSchema = z.object({
       allowedDomains: z.array(z.string()).optional(),
     })
     .default({ socialLogins: defaultSocialLogins }),
-  tts: z
-    .object({
-      url: z.string().optional(),
-      apiKey: z.string(),
-      model: z.string(),
-      backend: z.string().optional(),
-      voice: z.string().optional(),
-      compatibility: z.string().optional(),
-      voice_settings: z
-        .object({
-          similarity_boost: z.number().optional(),
-          stability: z.number().optional(),
-          style: z.number().optional(),
-          use_speaker_boost: z.boolean().optional(),
-        })
-        .optional(),
-      pronunciation_dictionary_locators: z.array(z.string()).optional(),
-    })
-    .optional(),
-  stt: z
-    .object({
-      url: z.string().optional(),
-      apiKey: z.string(),
-      model: z.string(),
-    })
-    .optional(),
+  tts: ttsSchema.optional(),
+  stt: sttSchema.optional(),
   rateLimits: rateLimitSchema.optional(),
   fileConfig: fileConfigSchema.optional(),
   modelSpecs: specsConfigSchema.optional(),

@@ -35,6 +35,7 @@ export enum MutationKeys {
   avatarUpload = 'avatarUpload',
   speechToText = 'speechToText',
   textToSpeech = 'textToSpeech',
+  voices = 'voices',
   assistantAvatarUpload = 'assistantAvatarUpload',
   updateAction = 'updateAction',
   deleteAction = 'deleteAction',

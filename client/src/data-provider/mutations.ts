@@ -461,6 +461,20 @@ export const useTextToSpeechMutation = (
   });
 };
 
+/* Text to speech voices */
+export const useVoicesMutation = (
+  options?: t.VoiceOptions,
+): UseMutationResult<
+  t.VoiceResponse, // response data
+  unknown, // error
+  unknown // context
+> => {
+  return useMutation([MutationKeys.voices], {
+    mutationFn: () => dataService.getVoices(),
+    ...(options || {}),
+  });
+};
+
 /**
  * ASSISTANTS
  */

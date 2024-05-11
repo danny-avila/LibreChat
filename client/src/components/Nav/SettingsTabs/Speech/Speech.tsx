@@ -5,7 +5,7 @@ import { useRecoilState } from 'recoil';
 import { useOnClickOutside } from '~/hooks';
 import store from '~/store';
 import ConversationModeSwitch from './ConversationModeSwitch';
-import { TextToSpeechSwitch, EngineTTSDropdown, CacheTTSSwitch } from './TTS';
+import { TextToSpeechSwitch, EngineTTSDropdown, CacheTTSSwitch, VoiceDropdown } from './TTS';
 import {
   SpeechToTextSwitch,
   AutoSendTextSwitch,
@@ -61,6 +61,9 @@ function Speech() {
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <EngineTTSDropdown />
+        </div>
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+          <VoiceDropdown />
         </div>
         {advancedMode && (
           <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">

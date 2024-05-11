@@ -22,7 +22,8 @@ export default function EngineSTTDropdown() {
         value={endpointSTT}
         onChange={handleSelect}
         options={endpointOptions}
-        width={150}
+        width={220}
+        position={'left'}
         testId="EngineSTTDropdown"
       />
     </div>

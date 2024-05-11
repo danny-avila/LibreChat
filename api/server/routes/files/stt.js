@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const { requireJwtAuth } = require('~/server/middleware/');
 const multer = require('multer');
+const { requireJwtAuth } = require('~/server/middleware/');
 const { speechToText } = require('~/server/services/Files/Audio');
 
 const upload = multer();

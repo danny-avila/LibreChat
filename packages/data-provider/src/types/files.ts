@@ -78,9 +78,8 @@ export type TextToSpeechResponse = {
   audio: ArrayBuffer;
 };
 
-export type FileUploadBody = {
-  formData: FormData;
-  file_id: string;
+export type VoiceResponse = {
+  voices: string[];
 };
 
 export type UploadMutationOptions = {
@@ -105,6 +104,12 @@ export type TextToSpeechOptions = {
   onSuccess?: (data: TextToSpeechResponse, variables: FormData, context?: unknown) => void;
   onMutate?: (variables: FormData) => void | Promise<unknown>;
   onError?: (error: unknown, variables: FormData, context?: unknown) => void;
+};
+
+export type VoiceOptions = {
+  onSuccess?: (data: VoiceResponse, variables: unknown, context?: unknown) => void;
+  onMutate?: () => void | Promise<unknown>;
+  onError?: (error: unknown, variables: unknown, context?: unknown) => void;
 };
 
 export type DeleteFilesResponse = {

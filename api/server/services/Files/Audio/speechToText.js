@@ -24,35 +24,73 @@ async function handleResponse(response) {
   return response.data.text.trim();
 }
 
+function getProvider(sttSchema) {
+  if (sttSchema.openai) {
+    return 'openai';
+  }
+
+  throw new Error('Invalid provider');
+}
+
 /**
- * Convert speech to text
- * @param {Object} req - The request object
- * @param {Object} res - The response object
+ * This function prepares the necessary data and headers for making a request to the OpenAI API
+ * It uses the provided speech-to-text schema and audio buffer to create the request
  *
- * @returns {Object} The response object with the text from the STT API
+ * @param {Object} sttSchema - The speech-to-text schema containing the OpenAI configuration
+ * @param {Buffer} audioBuffer - The audio data to be transcribed
  *
- * @throws Will throw an error if an error occurs while processing the audio
+ * @returns {Array} An array containing the URL for the API request, the data to be sent, and the headers for the request
+ * If an error occurs, it returns an array with three null values and logs the error with logger
  */
-async function speechToText(req, res) {
-  const customConfig = await getCustomConfig();
-  if (!customConfig) {
-    return res.status(500).send('Custom config not found');
+function openAIProvider(sttSchema, audioBuffer) {
+  try {
+    if (!sttSchema.openai) {
+      throw new Error('No OpenAI configuration found in the schema');
+    }
+
+    let headers = {
+      'Content-Type': 'multipart/form-data',
+      Authorization: 'Bearer ' + extractEnvVariable(sttSchema.openai.apiKey),
+    };
+
+    let data = {
+      file: audioBuffer,
+      model: sttSchema.openai.model,
+    };
+
+    return [
+      sttSchema.openai.url || 'https://api.openai.com/v1/audio/transcriptions',
+      data,
+      headers,
+    ];
+  } catch (error) {
+    logger.error('An error occurred while preparing the OpenAI API STT request: ', error);
+    return [null, null, null];
   }
+}
 
-  if (!req.file || !req.file.buffer) {
-    return res.status(400).json({ message: 'No audio file provided in the FormData' });
-  }
+/**
+ * This function prepares the necessary data and headers for making a request to the Azure API
+ * It uses the provided request and audio buffer to create the request
+ *
+ * @param {Object} req - The request object, which should contain the endpoint in its body
+ * @param {Buffer} audioBuffer - The audio data to be transcribed
+ *
+ * @returns {Array} An array containing the URL for the API request, the data to be sent, and the headers for the request
+ * If an error occurs, it returns an array with three null values and logs the error with logger
+ */
+function azureProvider(req, audioBuffer) {
+  try {
+    const { endpoint } = req.body;
+    const azureConfig = req.app.locals[endpoint];
 
-  const audioBuffer = req.file.buffer;
-  const audioReadStream = Readable.from(audioBuffer);
-  audioReadStream.path = 'audio.wav';
+    if (!azureConfig) {
+      throw new Error(`No configuration found for endpoint: ${endpoint}`);
+    }
 
-  const azureConfig = req.app.locals.azureOpenAI;
-
-  let apiKey, instanceName, whisperModel, apiVersion;
-
-  if (azureConfig) {
-    const azureDetails = Object.entries(azureConfig.groupMap).reduce((acc, [, value]) => {
+    const { apiKey, instanceName, whisperModel, apiVersion } = Object.entries(
+      azureConfig.groupMap,
+    ).reduce((acc, [, value]) => {
       if (acc) {
         return acc;
       }
@@ -73,39 +111,81 @@ async function speechToText(req, res) {
       return null;
     }, null);
 
-    if (azureDetails) {
-      apiKey = azureDetails.apiKey;
-      instanceName = azureDetails.instanceName;
-      whisperModel = azureDetails.whisperModel;
-      apiVersion = azureDetails.apiVersion;
+    if (!apiKey || !instanceName || !whisperModel || !apiVersion) {
+      throw new Error('Required Azure configuration values are missing');
     }
+
+    const baseURL = `https://${instanceName}.openai.azure.com`;
+
+    const url = `${baseURL}/openai/deployments/${whisperModel}/audio/transcriptions?api-version=${apiVersion}`;
+
+    let data = {
+      file: audioBuffer,
+      filename: 'audio.wav',
+      contentType: 'audio/wav',
+      knownLength: audioBuffer.length,
+    };
+
+    const headers = {
+      ...data.getHeaders(),
+      'Content-Type': 'multipart/form-data',
+      'api-key': apiKey,
+    };
+
+    return [url, data, headers];
+  } catch (error) {
+    logger.error('An error occurred while preparing the Azure API STT request: ', error);
+    return [null, null, null];
+  }
+}
+
+/**
+ * Convert speech to text
+ * @param {Object} req - The request object
+ * @param {Object} res - The response object
+ *
+ * @returns {Object} The response object with the text from the STT API
+ *
+ * @throws Will throw an error if an error occurs while processing the audio
+ */
+
+async function speechToText(req, res) {
+  const customConfig = await getCustomConfig();
+  if (!customConfig) {
+    return res.status(500).send('Custom config not found');
   }
 
-  const resolvedApiKey = extractEnvVariable(customConfig?.stt?.apiKey);
-
-  const url = whisperModel
-    ? `https://${instanceName}.openai.azure.com/openai/deployments/${whisperModel}/audio/transcriptions?api-version=${apiVersion}`
-    : customConfig?.stt?.url || 'https://api.openai.com/v1/audio/transcriptions';
-
-  const headers = {
-    'Content-Type': 'multipart/form-data',
-    Authorization: 'Bearer ' + (apiKey || resolvedApiKey),
-  };
-
-  const data = {
-    file: audioReadStream,
-    model: customConfig?.stt?.model,
-  };
+  if (!req.file || !req.file.buffer) {
+    return res.status(400).json({ message: 'No audio file provided in the FormData' });
+  }
 
   if (!Readable.from) {
-    // If Readable.from is not supported
     const audioBlob = new Blob([audioBuffer], { type: req.file.mimetype });
     delete data['file'];
     data['file'] = audioBlob;
   }
 
+  const audioBuffer = req.file.buffer;
+  const audioReadStream = Readable.from(audioBuffer);
+  audioReadStream.path = 'audio.wav';
+
+  const provider = getProvider(customConfig.stt);
+
+  let [url, data, headers] = [];
+
+  switch (provider) {
+    case 'openai':
+      [url, data, headers] = openAIProvider(customConfig.stt, audioBuffer);
+      break;
+    case 'azure':
+      [url, data, headers] = azureProvider(req, audioBuffer);
+      break;
+    default:
+      throw new Error('Invalid provider');
+  }
+
   try {
-    const response = await axios.post(url, data, { headers: headers });
+    const response = await axios.post(url, data, { headers });
     const text = await handleResponse(response);
 
     res.json({ text });

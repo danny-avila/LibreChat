@@ -58,6 +58,7 @@ const localStorageAtoms = {
   endpointSTT: atomWithLocalStorage('endpointSTT', 'browser'),
   endpointTTS: atomWithLocalStorage('endpointTTS', 'browser'),
   cacheTTS: atomWithLocalStorage('cacheTTS', true),
+  voice: atomWithLocalStorage('voice', ''),
   forkSetting: atomWithLocalStorage('forkSetting', ''),
   splitAtTarget: atomWithLocalStorage('splitAtTarget', false),
   rememberForkOption: atomWithLocalStorage('rememberForkOption', true),
