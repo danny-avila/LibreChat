@@ -38,6 +38,7 @@ const Dropdown: FC<DropdownProps> = ({
   testId = 'dropdown-menu',
 }) => {
   const [selectedValue, setSelectedValue] = useState(initialValue);
+  const widthClass = `w-[${width}px]`;
 
   return (
     <div className={cn('relative', className)}>
@@ -85,9 +86,9 @@ const Dropdown: FC<DropdownProps> = ({
               className={cn(
                 'mt-1 flex flex-col items-start gap-1 overflow-auto rounded-lg border border-gray-300 bg-white p-1.5 text-gray-700 shadow-lg transition-opacity focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-white',
                 `[--anchor-max-height:${maxHeight}px]`,
+                widthClass,
                 className,
               )}
-              style={{ width: `${width}px` }}
               anchor={anchor}
             >
               {options.map((item, index) => (
