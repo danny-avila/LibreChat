@@ -13,14 +13,14 @@ type ArchiveButtonProps = {
   retainView: () => void;
   shouldArchive: boolean;
   icon: React.ReactNode;
-  twcss?: string;
+  className?: string;
 };
 export default function ArchiveButton({
   conversationId,
   retainView,
   shouldArchive,
   icon,
-  twcss = undefined,
+  className = '',
 }: ArchiveButtonProps) {
   const localize = useLocalize();
   const { newConversation } = useNewConvo();
@@ -58,14 +58,9 @@ export default function ArchiveButton({
       },
     );
   };
-  const classProp: { className?: string } = {
-    className: 'z-50 hover:text-black dark:hover:text-white',
-  };
-  if (twcss) {
-    classProp.className = twcss;
-  }
+
   return (
-    <button type="button" className={classProp.className} onClick={archiveHandler}>
+    <button type="button" className={className} onClick={archiveHandler}>
       <TooltipProvider delayDuration={250}>
         <Tooltip>
           <TooltipTrigger asChild>

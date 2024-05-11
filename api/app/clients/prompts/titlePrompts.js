@@ -59,25 +59,57 @@ Submit a brief title in the conversation's language, following the parameter des
 </tool_description>
 </tools>`;
 
+const genTranslationPrompt = (
+  translationPrompt,
+) => `In this environment you have access to a set of tools you can use to translate text.
+  
+You may call them like this:
+<function_calls>
+<invoke>
+<tool_name>$TOOL_NAME</tool_name>
+<parameters>
+<$PARAMETER_NAME>$PARAMETER_VALUE</$PARAMETER_NAME>
+...
+</parameters>
+</invoke>
+</function_calls>
+
+Here are the tools available:
+<tools>
+<tool_description>
+<tool_name>submit_translation</tool_name>
+<description>
+Submit a translation in the target language, following the parameter description and its language closely.
+</description>
+<parameters>
+<parameter>
+<name>translation</name>
+<type>string</type>
+<description>${translationPrompt}
+ONLY include the generated translation without quotations, nor its related key</description>
+</parameter>
+</parameters>
+</tool_description>
+</tools>`;
+
 /**
- * Parses titles from title functions based on the provided prompt.
- * @param {string} prompt - The prompt containing the title function.
- * @returns {string} The parsed title. "New Chat" if no title is found.
+ * Parses specified parameter from the provided prompt.
+ * @param {string} prompt - The prompt containing the desired parameter.
+ * @param {string} paramName - The name of the parameter to extract.
+ * @returns {string} The parsed parameter's value or a default value if not found.
  */
-function parseTitleFromPrompt(prompt) {
-  const titleRegex = /<title>(.+?)<\/title>/;
-  const titleMatch = prompt.match(titleRegex);
+function parseParamFromPrompt(prompt, paramName) {
+  const paramRegex = new RegExp(`<${paramName}>([\\s\\S]+?)</${paramName}>`);
+  const paramMatch = prompt.match(paramRegex);
 
-  if (titleMatch && titleMatch[1]) {
-    const title = titleMatch[1].trim();
-
-    // // Capitalize the first letter of each word; Note: unnecessary due to title case prompting
-    // const capitalizedTitle = title.replace(/\b\w/g, (char) => char.toUpperCase());
-
-    return title;
+  if (paramMatch && paramMatch[1]) {
+    return paramMatch[1].trim();
   }
 
-  return 'New Chat';
+  if (prompt && prompt.length) {
+    return `NO TOOL INVOCATION: ${prompt}`;
+  }
+  return `No ${paramName} provided`;
 }
 
 module.exports = {
@@ -85,5 +117,6 @@ module.exports = {
   titleInstruction,
   createTitlePrompt,
   titleFunctionPrompt,
-  parseTitleFromPrompt,
+  parseParamFromPrompt,
+  genTranslationPrompt,
 };

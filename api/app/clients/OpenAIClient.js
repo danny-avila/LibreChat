@@ -129,6 +129,10 @@ class OpenAIClient extends BaseClient {
       this.useOpenRouter = true;
     }
 
+    if (this.options.endpoint?.toLowerCase() === 'ollama') {
+      this.isOllama = true;
+    }
+
     this.FORCE_PROMPT =
       isEnabled(OPENAI_FORCE_PROMPT) ||
       (reverseProxy && reverseProxy.includes('completions') && !reverseProxy.includes('chat'));
@@ -1121,7 +1125,7 @@ ${convo}
       });
 
       /* Re-orders system message to the top of the messages payload, as not allowed anywhere else */
-      if (opts.baseURL.includes('api.mistral.ai') && modelOptions.messages) {
+      if (modelOptions.messages && (opts.baseURL.includes('api.mistral.ai') || this.isOllama)) {
         const { messages } = modelOptions;
 
         const systemMessageIndex = messages.findIndex((msg) => msg.role === 'system');
@@ -1165,7 +1169,7 @@ ${convo}
         });
       }
 
-      if (this.message_file_map && this.options.endpoint?.toLowerCase() === 'ollama') {
+      if (this.message_file_map && this.isOllama) {
         const ollamaClient = new OllamaClient({ baseURL });
         return await ollamaClient.chatCompletion({
           payload: modelOptions,
