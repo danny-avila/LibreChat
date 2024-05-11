@@ -112,13 +112,13 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
     let quota = 0;
     if ('proMemberExpiredAt' in cur_user && cur_user.proMemberExpiredAt > currentTime) {
       // If not proMember, check quota
-      quota = JSON.parse(process.env['CHAT_QUOTA_PER_DAY_PRO_MEMBER']);
+      quota = JSON.parse(process.env['CHAT_QUOTA_PER_MONTH_PRO_MEMBER']);
     } else {
-      quota = JSON.parse(process.env['CHAT_QUOTA_PER_DAY']);
+      quota = JSON.parse(process.env['CHAT_QUOTA_PER_MONTH']);
     }
 
     let someTimeAgo = currentTime;
-    someTimeAgo.setSeconds(currentTime.getSeconds() - 60 * 60 * 24); // 24 hours
+    someTimeAgo.setSeconds(currentTime.getSeconds() - 60 * 60 * 24 * 30); // 30 days
     if (endpointOption.modelOptions.model in quota) {
       let messagesCount = await getMessagesCount({
         $and: [
@@ -127,11 +127,11 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
           { updatedAt: { $gte: someTimeAgo } },
         ],
       });
-      let dailyQuota = quota[endpointOption.modelOptions.model].toFixed(0);
-      if (messagesCount >= dailyQuota) {
+      let monthlyQuota = quota[endpointOption.modelOptions.model].toFixed(0);
+      if (messagesCount >= monthlyQuota) {
         // TODO: this error message should be implemented by the client based on locale
         throw new Error(
-          `超出了您的使用额度(${endpointOption.modelOptions.model}模型每天${dailyQuota}条消息)。由于需要支付越来越多、每月上万元的API费用，如果您经常使用我们的服务，请打开“我的主页”进行购买，支持我们持续提供GPT服务。`,
+          `超出了您的使用额度(${endpointOption.modelOptions.model}模型每30天${monthlyQuota}条消息)。由于需要支付越来越多、每月上万元的API费用，如果您经常使用我们的服务，请打开“我的主页”进行购买，支持我们持续提供GPT服务。`,
         );
       }
     }
