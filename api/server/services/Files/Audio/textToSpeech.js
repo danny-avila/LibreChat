@@ -42,11 +42,6 @@ function removeUndefined(obj) {
 function openAIProvider(ttsSchema, input, voice) {
   const url = ttsSchema.openai?.url || 'https://api.openai.com/v1/audio/speech';
 
-  console.log(ttsSchema.openai?.voices);
-  console.log(voice);
-  console.log(ttsSchema.openai?.voices.includes(voice));
-  console.log(ttsSchema.openai?.voices.includes('ALL'));
-
   if (
     ttsSchema.openai?.voices &&
     ttsSchema.openai.voices.length > 0 &&
@@ -68,13 +63,7 @@ function openAIProvider(ttsSchema, input, voice) {
     Authorization: 'Bearer ' + extractEnvVariable(ttsSchema.openai?.apiKey),
   };
 
-  [data, headers].forEach((obj) => {
-    Object.keys(obj).forEach((key) => {
-      if (obj[key] === undefined) {
-        delete obj[key];
-      }
-    });
-  });
+  [data, headers].forEach(removeUndefined);
 
   return [url, data, headers];
 }

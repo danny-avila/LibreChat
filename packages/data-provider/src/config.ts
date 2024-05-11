@@ -221,7 +221,7 @@ const ttsSchema = z.object({
       url: z.string().optional(),
       apiKey: z.string(),
       model: z.string(),
-      voices: z.record(z.string()).optional(),
+      voices: z.array(z.string()),
       backend: z.string().optional(),
     })
     .optional(),
@@ -230,7 +230,7 @@ const ttsSchema = z.object({
       url: z.string().optional(),
       apiKey: z.string(),
       model: z.string(),
-      voices: z.record(z.string()).optional(),
+      voices: z.array(z.string()),
       voice_settings: z
         .object({
           similarity_boost: z.number().optional(),
