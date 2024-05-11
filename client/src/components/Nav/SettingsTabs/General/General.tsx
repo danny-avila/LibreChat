@@ -1,24 +1,15 @@
 import { useRecoilState } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
 import { SettingsTabValues } from 'librechat-data-provider';
-import React, { useState, useContext, useCallback, useRef } from 'react';
-import { useClearConversationsMutation } from 'librechat-data-provider/react-query';
-import {
-  ThemeContext,
-  useLocalize,
-  useOnClickOutside,
-  useConversation,
-  useConversations,
-  useLocalStorage,
-} from '~/hooks';
+import React, { useContext, useCallback, useRef } from 'react';
 import type { TDangerButtonProps } from '~/common';
+import { ThemeContext, useLocalize, useLocalStorage } from '~/hooks';
 import HideSidePanelSwitch from './HideSidePanelSwitch';
 import AutoScrollSwitch from './AutoScrollSwitch';
-import SendMessageKeyEnter from './EnterToSend';
-import ShowCodeSwitch from './ShowCodeSwitch';
 import { Dropdown } from '~/components/ui';
 import DangerButton from '../DangerButton';
 import store from '~/store';
+import ArchivedChats from './ArchivedChats';
 
 export const ThemeSelector = ({
   theme,
@@ -42,7 +33,9 @@ export const ThemeSelector = ({
         value={theme}
         onChange={onChange}
         options={themeOptions}
-        width={150}
+        width={220}
+        position={'left'}
+        maxHeight="200px"
         testId="theme-selector"
       />
     </div>
@@ -112,40 +105,24 @@ export const LangSelector = ({
   return (
     <div className="flex items-center justify-between">
       <div> {localize('com_nav_language')} </div>
-      <Dropdown value={langcode} onChange={onChange} options={languageOptions} />
+      <Dropdown
+        value={langcode}
+        onChange={onChange}
+        position={'left'}
+        maxHeight="271px"
+        options={languageOptions}
+      />
     </div>
   );
 };
 
 function General() {
   const { theme, setTheme } = useContext(ThemeContext);
-  const clearConvosMutation = useClearConversationsMutation();
-  const [confirmClear, setConfirmClear] = useState(false);
+
   const [langcode, setLangcode] = useRecoilState(store.lang);
   const [selectedLang, setSelectedLang] = useLocalStorage('selectedLang', langcode);
-  const { newConversation } = useConversation();
-  const { refreshConversations } = useConversations();
 
   const contentRef = useRef(null);
-  useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);
-
-  const clearConvos = () => {
-    if (confirmClear) {
-      console.log('Clearing conversations...');
-      setConfirmClear(false);
-      clearConvosMutation.mutate(
-        {},
-        {
-          onSuccess: () => {
-            newConversation();
-            refreshConversations();
-          },
-        },
-      );
-    } else {
-      setConfirmClear(true);
-    }
-  };
 
   const changeTheme = useCallback(
     (value: string) => {
@@ -173,38 +150,27 @@ function General() {
     <Tabs.Content
       value={SettingsTabValues.GENERAL}
       role="tabpanel"
-      className="w-full md:min-h-[300px]"
+      className="w-full md:min-h-[271px]"
       ref={contentRef}
     >
       <div className="flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-50">
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <ThemeSelector theme={theme} onChange={changeTheme} />
         </div>
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <LangSelector langcode={selectedLang} onChange={changeLang} />
         </div>
-
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <AutoScrollSwitch />
         </div>
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-          <SendMessageKeyEnter />
-        </div>
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-          <ShowCodeSwitch />
-        </div>
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <HideSidePanelSwitch />
         </div>
-        {/* Clear Chats should be last */}
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-          <ClearChatsButton
-            confirmClear={confirmClear}
-            onClick={clearConvos}
-            showText={true}
-            mutation={clearConvosMutation}
-          />
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
+          <ArchivedChats />
         </div>
+        {/* <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
+        </div> */}
       </div>
     </Tabs.Content>
   );

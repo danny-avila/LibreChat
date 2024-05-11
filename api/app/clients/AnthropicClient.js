@@ -7,10 +7,10 @@ const {
 } = require('librechat-data-provider');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const {
-  titleFunctionPrompt,
-  parseTitleFromPrompt,
   truncateText,
   formatMessage,
+  titleFunctionPrompt,
+  parseParamFromPrompt,
   createContextHandlers,
 } = require('./prompts');
 const spendTokens = require('~/models/spendTokens');
@@ -75,7 +75,9 @@ class AnthropicClient extends BaseClient {
     this.options.attachments?.then((attachments) => this.checkVisionRequest(attachments));
 
     this.maxContextTokens =
-      getModelMaxTokens(this.modelOptions.model, EModelEndpoint.anthropic) ?? 100000;
+      this.options.maxContextTokens ??
+      getModelMaxTokens(this.modelOptions.model, EModelEndpoint.anthropic) ??
+      100000;
     this.maxResponseTokens = this.modelOptions.maxOutputTokens || 1500;
     this.maxPromptTokens =
       this.options.maxPromptTokens || this.maxContextTokens - this.maxResponseTokens;
@@ -652,6 +654,7 @@ class AnthropicClient extends BaseClient {
 
   getSaveOptions() {
     return {
+      maxContextTokens: this.options.maxContextTokens,
       promptPrefix: this.options.promptPrefix,
       modelLabel: this.options.modelLabel,
       resendFiles: this.options.resendFiles,
@@ -745,7 +748,7 @@ class AnthropicClient extends BaseClient {
           context: 'title',
         });
         const text = response.content[0].text;
-        title = parseTitleFromPrompt(text);
+        title = parseParamFromPrompt(text, 'title');
       } catch (e) {
         logger.error('[AnthropicClient] There was an issue generating the title', e);
       }

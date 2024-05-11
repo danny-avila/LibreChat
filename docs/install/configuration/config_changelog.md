@@ -6,6 +6,10 @@ weight: -10
 
 # 🖥️ Config Changelog
 
+## v1.0.9
+
+- Added `conversationsImport` to [rateLimits](./custom_config.md#ratelimits) along with the [new feature](https://github.com/danny-avila/LibreChat/pull/2355) for importing conversations from LibreChat, ChatGPT, and Chatbot UI.
+
 ## v1.0.8
 
 - Added additional fields to [interface config](./custom_config.md#interface-object-structure) to toggle access to specific features:

@@ -21,6 +21,10 @@ coverage
 # Grunt intermediate storage (http://gruntjs.com/creating-plugins#storing-task-files)
 .grunt
 
+# translation services
+config/translations/stores/*
+client/src/localization/languages/*_missing_keys.json
+
 # Compiled Dirs (http://nodejs.org/api/addons.html)
 build/
 dist/
@@ -69,6 +73,8 @@ src/style - official.css
 /playwright/.cache/
 .DS_Store
 *.code-workspace
+.idx
+monospace.json
 .idea
 *.iml
 *.pem
@@ -76,6 +82,7 @@ config.local.ts
 **/storageState.json
 junit.xml
 **/.venv/
+**/venv/
 
 # docker override file
 docker-compose.override.yaml

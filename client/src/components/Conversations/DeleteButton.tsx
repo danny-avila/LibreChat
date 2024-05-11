@@ -4,12 +4,27 @@ import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import type { TMessage } from 'librechat-data-provider';
 import { useDeleteConversationMutation } from '~/data-provider';
-import { Dialog, DialogTrigger, Label } from '~/components/ui';
+import {
+  Dialog,
+  DialogTrigger,
+  Label,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { TrashIcon, CrossIcon } from '~/components/svg';
 import { useLocalize, useNewConvo } from '~/hooks';
 
-export default function DeleteButton({ conversationId, renaming, retainView, title }) {
+export default function DeleteButton({
+  conversationId,
+  renaming,
+  retainView,
+  title,
+  appendLabel = false,
+  className = '',
+}) {
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const { newConversation } = useNewConvo();
@@ -30,12 +45,34 @@ export default function DeleteButton({ conversationId, renaming, retainView, tit
     deleteConvoMutation.mutate({ conversationId, thread_id, source: 'button' });
   }, [conversationId, deleteConvoMutation, queryClient]);
 
+  const renderDeleteButton = () => {
+    if (appendLabel) {
+      return (
+        <>
+          <TrashIcon /> {localize('com_ui_delete')}
+        </>
+      );
+    }
+    return (
+      <TooltipProvider delayDuration={250}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span>
+              <TrashIcon className="h-5 w-5" />
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="top" sideOffset={0}>
+            {localize('com_ui_delete')}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  };
+
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <button className="p-1 hover:text-black dark:hover:text-white">
-          {renaming ? <CrossIcon /> : <TrashIcon />}
-        </button>
+        <button className={className}>{renaming ? <CrossIcon /> : renderDeleteButton()}</button>
       </DialogTrigger>
       <DialogTemplate
         showCloseButton={false}

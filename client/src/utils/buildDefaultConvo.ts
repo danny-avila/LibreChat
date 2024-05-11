@@ -64,6 +64,11 @@ const buildDefaultConvo = ({
     endpoint,
   };
 
+  // Ensures assistant_id is always defined
+  if (endpoint === EModelEndpoint.assistants && !defaultConvo.assistant_id && convo.assistant_id) {
+    defaultConvo.assistant_id = convo.assistant_id;
+  }
+
   defaultConvo.tools = lastConversationSetup?.tools ?? lastSelectedTools ?? defaultConvo.tools;
   defaultConvo.jailbreak = jailbreak ?? defaultConvo.jailbreak;
   defaultConvo.toneStyle = toneStyle ?? defaultConvo.toneStyle;

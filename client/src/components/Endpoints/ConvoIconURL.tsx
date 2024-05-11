@@ -41,7 +41,9 @@ const ConvoIconURL: React.FC<ConvoIconURLProps> = ({
     },
   ) => React.JSX.Element;
 
-  if (!iconURL?.includes('http')) {
+  const isURL = iconURL && (iconURL.includes('http') || iconURL.startsWith('/images/'));
+
+  if (!isURL) {
     Icon = icons[iconURL] ?? icons.unknown;
   } else {
     Icon = () => (

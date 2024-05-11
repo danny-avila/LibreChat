@@ -20,6 +20,16 @@ const storage = multer.diskStorage({
   },
 });
 
+const importFileFilter = (req, file, cb) => {
+  if (file.mimetype === 'application/json') {
+    cb(null, true);
+  } else if (path.extname(file.originalname).toLowerCase() === '.json') {
+    cb(null, true);
+  } else {
+    cb(new Error('Only JSON files are allowed'), false);
+  }
+};
+
 const fileFilter = (req, file, cb) => {
   if (!file) {
     return cb(new Error('No file provided'), false);
@@ -42,4 +52,4 @@ const createMulterInstance = async () => {
   });
 };
 
-module.exports = createMulterInstance;
+module.exports = { createMulterInstance, storage, importFileFilter };

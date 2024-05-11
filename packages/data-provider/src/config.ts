@@ -224,6 +224,14 @@ export const rateLimitSchema = z.object({
       userWindowInMinutes: z.number().optional(),
     })
     .optional(),
+  conversationsImport: z
+    .object({
+      ipMax: z.number().optional(),
+      ipWindowInMinutes: z.number().optional(),
+      userMax: z.number().optional(),
+      userWindowInMinutes: z.number().optional(),
+    })
+    .optional(),
 });
 
 export enum EImageOutputType {
@@ -298,7 +306,9 @@ export enum KnownEndpoints {
   cohere = 'cohere',
   fireworks = 'fireworks',
   groq = 'groq',
+  huggingface = 'huggingface',
   mistral = 'mistral',
+  mlx = 'mlx',
   ollama = 'ollama',
   openrouter = 'openrouter',
   perplexity = 'perplexity',
@@ -336,14 +346,16 @@ export const alternateName = {
 
 export const defaultModels = {
   [EModelEndpoint.assistants]: [
+    'gpt-3.5-turbo',
     'gpt-3.5-turbo-0125',
+    'gpt-4-turbo',
+    'gpt-4-turbo-2024-04-09',
     'gpt-4-0125-preview',
     'gpt-4-turbo-preview',
     'gpt-4-1106-preview',
     'gpt-3.5-turbo-1106',
     'gpt-3.5-turbo-16k-0613',
     'gpt-3.5-turbo-16k',
-    'gpt-3.5-turbo',
     'gpt-4',
     'gpt-4-0314',
     'gpt-4-32k-0314',
@@ -378,6 +390,8 @@ export const defaultModels = {
   ],
   [EModelEndpoint.openAI]: [
     'gpt-3.5-turbo-0125',
+    'gpt-4-turbo',
+    'gpt-4-turbo-2024-04-09',
     'gpt-3.5-turbo-16k-0613',
     'gpt-3.5-turbo-16k',
     'gpt-4-turbo-preview',
@@ -446,13 +460,13 @@ export const supportsBalanceCheck = {
 };
 
 export const visionModels = [
+  'gpt-4-turbo',
   'gpt-4-vision',
   'llava',
   'llava-13b',
   'gemini-pro-vision',
   'claude-3',
   'gemini-1.5',
-  'gpt-4-turbo',
 ];
 export enum VisionModes {
   generative = 'generative',
@@ -641,6 +655,10 @@ export enum SettingsTabValues {
    */
   GENERAL = 'general',
   /**
+   * Tab for Messages Settings
+   */
+  MESSAGES = 'messages',
+  /**
    * Tab for Beta Features
    */
   BETA = 'beta',
@@ -657,9 +675,9 @@ export enum SettingsTabValues {
 /** Enum for app-wide constants */
 export enum Constants {
   /** Key for the app's version. */
-  VERSION = 'v0.7.1',
+  VERSION = 'v0.7.2',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.0.8',
+  CONFIG_VERSION = '1.0.9',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Fixed, encoded domain length for Azure OpenAI Assistants Function name parsing. */
@@ -685,6 +703,21 @@ export enum LocalStorageKeys {
   FILES_TO_DELETE = 'filesToDelete',
   /** Prefix key for the last selected assistant ID by index */
   ASST_ID_PREFIX = 'assistant_id__',
+  /** Key for the last selected fork setting */
+  FORK_SETTING = 'forkSetting',
+  /** Key for remembering the last selected option, instead of manually selecting */
+  REMEMBER_FORK_OPTION = 'rememberForkOption',
+  /** Key for remembering the split at target fork option modifier */
+  FORK_SPLIT_AT_TARGET = 'splitAtTarget',
+}
+
+export enum ForkOptions {
+  /** Key for direct path option */
+  DIRECT_PATH = 'directPath',
+  /** Key for including branches */
+  INCLUDE_BRANCHES = 'includeBranches',
+  /** Key for target level fork (default) */
+  TARGET_LEVEL = '',
 }
 
 /**

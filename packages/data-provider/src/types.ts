@@ -17,6 +17,7 @@ export type TEndpointOption = {
   endpointType?: EModelEndpoint;
   modelDisplayLabel?: string;
   resendFiles?: boolean;
+  maxContextTokens?: number;
   imageDetail?: ImageDetail;
   model?: string | null;
   promptPrefix?: string;
@@ -123,6 +124,26 @@ export type TDeleteConversationResponse = {
     acknowledged: boolean;
     deletedCount: number;
   };
+};
+
+export type TArchiveConversationRequest = {
+  conversationId: string;
+  isArchived: boolean;
+};
+
+export type TArchiveConversationResponse = TConversation;
+
+export type TForkConvoRequest = {
+  messageId: string;
+  conversationId: string;
+  option?: string;
+  splitAtTarget?: boolean;
+  latestMessageId?: string;
+};
+
+export type TForkConvoResponse = {
+  conversation: TConversation;
+  messages: TMessage[];
 };
 
 export type TSearchResults = {
@@ -246,4 +267,44 @@ export type TCheckUserKeyResponse = {
 export type TRequestPasswordResetResponse = {
   link?: string;
   message?: string;
+};
+
+/**
+ * Represents the response from the import endpoint.
+ */
+export type TImportStartResponse = {
+  /**
+   * The message associated with the response.
+   */
+  message: string;
+
+  /**
+   * The ID of the job associated with the import.
+   */
+  jobId: string;
+};
+
+/**
+ * Represents the status of an import job.
+ */
+export type TImportJobStatus = {
+  /**
+   * The name of the job.
+   */
+  name: string;
+
+  /**
+   * The ID of the job.
+   */
+  id: string;
+
+  /**
+   * The status of the job.
+   */
+  status: 'scheduled' | 'running' | 'completed' | 'failed';
+
+  /**
+   * The reason the job failed, if applicable.
+   */
+  failReason?: string;
 };
