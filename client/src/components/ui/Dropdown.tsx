@@ -34,13 +34,8 @@ const Dropdown: FC<DropdownProps> = ({
 }) => {
   const [selectedValue, setSelectedValue] = useState(initialValue);
 
-  const positionClasses = {
-    right: 'origin-bottom-left left-0 md:left-auto',
-    left: 'origin-bottom-right right-0 md:right-auto',
-  };
-
   return (
-    <div className={cn('relative', className)}>
+    <div className={cn('meeta relative', className)}>
       <Listbox
         value={selectedValue}
         onChange={(newValue) => {
@@ -78,10 +73,12 @@ const Dropdown: FC<DropdownProps> = ({
           </Listbox.Button>
           <Listbox.Options
             className={cn(
-              `absolute z-50 mt-1 flex max-h-[40vh] flex-col items-start gap-1 overflow-auto rounded-lg border border-gray-300 bg-white p-1.5 text-gray-700 shadow-lg transition-opacity focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-white md:fixed ${positionClasses[position]}`,
+              'absolute z-50 mt-1 flex max-h-[40vh] flex-col items-start gap-1 overflow-auto rounded-lg border border-gray-300 bg-white p-1.5 text-gray-700 shadow-lg transition-opacity focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-white',
               className,
             )}
             style={{ width: width ? `${width}px` : 'auto', maxHeight: maxHeight }}
+            anchor="bottom start"
+            // modal={true}
           >
             {options.map((item, index) => (
               <Listbox.Option
