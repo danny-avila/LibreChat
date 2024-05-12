@@ -22,7 +22,7 @@ export default function MentionItem({
       <div
         className={cn(
           'text-token-text-primary bg-token-main-surface-secondary group flex h-10 items-center gap-2 rounded-lg px-2 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-600',
-          isActive ? 'dark:bg-gray-600' : '',
+          isActive ? 'bg-gray-100 dark:bg-gray-600' : '',
         )}
       >
         {icon ? icon : null}
