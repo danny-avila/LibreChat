@@ -44,7 +44,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
           <div
             className={cn(
               'fixed inset-0 flex w-screen items-center justify-center p-4',
-              isSmallScreen ? '-top-36' : '',
+              isSmallScreen ? '' : '',
             )}
           >
             <DialogPanel
@@ -93,7 +93,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     role="tablist"
                     aria-orientation="horizontal"
                     className={cn(
-                      'min-w-auto max-w-auto -ml-[8px] flex flex-shrink-0 flex-col flex-wrap overflow-auto sm:max-w-none',
+                      'min-w-auto max-w-auto -ml-[8px] flex flex-shrink-0 flex-col flex-nowrap overflow-auto sm:max-w-none',
                       isSmallScreen ? 'flex-row rounded-lg bg-gray-200 p-1 dark:bg-gray-800' : '',
                     )}
                     style={{ outline: 'none' }}
@@ -102,7 +102,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                       className={cn(
                         'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
                         isSmallScreen
-                          ? 'flex-1 flex-col items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
+                          ? 'flex-1 items-center justify-center text-nowrap text-sm dark:text-gray-500 dark:radix-state-active:text-white'
                           : 'bg-white radix-state-active:bg-gray-200',
                         isSmallScreen ? '' : 'dark:bg-gray-700',
                       )}
@@ -116,7 +116,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                       className={cn(
                         'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
                         isSmallScreen
-                          ? 'flex-1 flex-col items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
+                          ? 'flex-1 items-center justify-center text-nowrap text-sm dark:text-gray-500 dark:radix-state-active:text-white'
                           : 'bg-white radix-state-active:bg-gray-200',
                         isSmallScreen ? '' : 'dark:bg-gray-700',
                       )}
@@ -130,7 +130,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                       className={cn(
                         'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
                         isSmallScreen
-                          ? 'flex-1 flex-col items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
+                          ? 'flex-1 items-center justify-center text-nowrap text-sm dark:text-gray-500 dark:radix-state-active:text-white'
                           : 'bg-white radix-state-active:bg-gray-200',
                         isSmallScreen ? '' : 'dark:bg-gray-700',
                       )}
@@ -144,7 +144,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                       className={cn(
                         'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
                         isSmallScreen
-                          ? 'flex-1 flex-col items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
+                          ? 'flex-1 items-center justify-center text-nowrap text-sm dark:text-gray-500 dark:radix-state-active:text-white'
                           : 'bg-white radix-state-active:bg-gray-200',
                         isSmallScreen ? '' : 'dark:bg-gray-700',
                       )}
@@ -158,7 +158,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                       className={cn(
                         'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
                         isSmallScreen
-                          ? 'flex-1 flex-col items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
+                          ? 'flex-1 items-center justify-center text-nowrap text-sm dark:text-gray-500 dark:radix-state-active:text-white'
                           : 'bg-white radix-state-active:bg-gray-200',
                         isSmallScreen ? '' : 'dark:bg-gray-700',
                       )}
