@@ -5,11 +5,13 @@ const baseDirPath = './client/src/localization/languages';
 const promptsDirPath = './client/src/localization/prompts/instructions';
 
 async function ensureDirectoryExists(directory: string) {
-  return fs.promises.access(directory).catch(() => fs.promises.mkdir(directory, { recursive: true }));
+  return fs.promises
+    .access(directory)
+    .catch(() => fs.promises.mkdir(directory, { recursive: true }));
 }
 
 // Helper function to generate Markdown from an object, recursively if needed
-function generateMarkdownFromObject(obj: any, depth: number = 0): string {
+function generateMarkdownFromObject(obj: object, depth = 0): string {
   if (typeof obj !== 'object' || obj === null) {
     return String(obj);
   }
@@ -61,7 +63,8 @@ async function createPromptsForTranslations() {
   const files = await fs.promises.readdir(baseDirPath);
 
   for (const file of files) {
-    if (!file.includes('Eng.ts')) { // Ensure English or base file is excluded
+    if (!file.includes('Eng.ts')) {
+      // Ensure English or base file is excluded
       const filePath = path.join(baseDirPath, file);
       const promptContent = await generatePromptForFile(filePath, file);
       const outputFilePath = path.join(promptsDirPath, `${path.basename(file, '.ts')}.md`);
