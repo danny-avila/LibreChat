@@ -22,20 +22,29 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
   return (
     <Transition appear show={open}>
       <Dialog as="div" className="relative z-50 focus:outline-none" onClose={onOpenChange}>
-        <div className="fixed inset-0 bg-black/50 dark:bg-black/80" aria-hidden="true" />
+        <TransitionChild
+          enter="ease-out duration-200"
+          enterFrom="opacity-0"
+          enterTo="opacity-100"
+          leave="ease-in duration-100"
+          leaveFrom="opacity-100"
+          leaveTo="opacity-0"
+        >
+          <div className="fixed inset-0 bg-black/50 dark:bg-black/80" aria-hidden="true" />
+        </TransitionChild>
 
-        <div className="fixed inset-0 flex w-screen items-center justify-center p-4">
-          <TransitionChild
-            enter="ease-out duration-300"
-            enterFrom="opacity-0 transform-[scale(95%)]"
-            enterTo="opacity-100 transform-[scale(100%)]"
-            leave="ease-in duration-200"
-            leaveFrom="opacity-100 transform-[scale(100%)]"
-            leaveTo="opacity-0 transform-[scale(95%)]"
-          >
+        <TransitionChild
+          enter="ease-out duration-200"
+          enterFrom="opacity-0 scale-95"
+          enterTo="opacity-100 scale-100"
+          leave="ease-in duration-100"
+          leaveFrom="opacity-100 scale-100"
+          leaveTo="opacity-0 scale-95"
+        >
+          <div className="fixed inset-0 flex w-screen items-center justify-center p-4">
             <DialogPanel
               className={cn(
-                'overflow-hidden rounded-xl rounded-b-lg bg-white pb-6 shadow-2xl animate-in dark:bg-gray-700 sm:rounded-lg md:min-h-[373px] md:w-[680px]',
+                'overflow-hidden rounded-xl rounded-xl rounded-b-lg bg-white pb-6 shadow-2xl backdrop-blur-2xl animate-in dark:bg-gray-700 sm:rounded-lg md:min-h-[373px] md:w-[680px]',
                 isSmallScreen ? 'top-5 -translate-y-0' : '',
               )}
             >
@@ -163,8 +172,8 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                 </Tabs.Root>
               </div>
             </DialogPanel>
-          </TransitionChild>
-        </div>
+          </div>
+        </TransitionChild>
       </Dialog>
     </Transition>
   );
