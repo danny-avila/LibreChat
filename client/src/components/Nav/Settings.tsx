@@ -41,11 +41,15 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
           leaveFrom="opacity-100 scale-100"
           leaveTo="opacity-0 scale-95"
         >
-          <div className="fixed inset-0 flex w-screen items-center justify-center p-4">
+          <div
+            className={cn(
+              'fixed inset-0 flex w-screen items-center justify-center p-4',
+              isSmallScreen ? 'top-12 -translate-y-1/4' : '',
+            )}
+          >
             <DialogPanel
               className={cn(
                 'overflow-hidden rounded-xl rounded-b-lg bg-white pb-6 shadow-2xl backdrop-blur-2xl animate-in dark:bg-gray-700 sm:rounded-lg md:min-h-[373px] md:w-[680px]',
-                isSmallScreen ? 'top-5 -translate-y-0' : '',
               )}
             >
               <DialogTitle
