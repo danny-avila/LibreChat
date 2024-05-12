@@ -21,8 +21,7 @@ interface DropdownProps {
   options: (string | OptionType)[];
   className?: string;
   anchor?: AnchorPropsWithSelection;
-  width?: number;
-  maxHeight?: number;
+  sizeClasses?: string;
   testId?: string;
 }
 
@@ -32,13 +31,11 @@ const Dropdown: FC<DropdownProps> = ({
   onChange,
   options,
   className = '',
-  anchor = 'bottom start',
-  width = 'auto',
-  maxHeight = 432,
+  anchor,
+  sizeClasses,
   testId = 'dropdown-menu',
 }) => {
   const [selectedValue, setSelectedValue] = useState(initialValue);
-  const widthClass = `w-[${width}px]`;
 
   return (
     <div className={cn('relative', className)}>
@@ -78,15 +75,14 @@ const Dropdown: FC<DropdownProps> = ({
             </span>
           </ListboxButton>
           <Transition
-            leave="transition ease-in duration-100"
+            leave="transition ease-in duration-50"
             leaveFrom="opacity-100"
             leaveTo="opacity-0"
           >
             <ListboxOptions
               className={cn(
-                'mt-1 flex flex-col items-start gap-1 overflow-auto rounded-lg border border-gray-300 bg-white p-1.5 text-gray-700 shadow-lg transition-opacity focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-white',
-                `[--anchor-max-height:${maxHeight}px]`,
-                widthClass,
+                'absolute z-50 mt-1 flex flex-col items-start gap-1 overflow-auto rounded-lg border border-gray-300 bg-white bg-white p-1.5 text-gray-700 shadow-lg transition-opacity focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-white',
+                sizeClasses,
                 className,
               )}
               anchor={anchor}
