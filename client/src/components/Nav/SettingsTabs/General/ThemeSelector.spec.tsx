@@ -13,6 +13,11 @@ describe('ThemeSelector', () => {
   });
 
   it('renders correctly', () => {
+    global.ResizeObserver = class MockedResizeObserver {
+      observe = jest.fn();
+      unobserve = jest.fn();
+      disconnect = jest.fn();
+    };
     const { getByText } = render(
       <RecoilRoot>
         <ThemeSelector theme="system" onChange={mockOnChange} />
@@ -24,6 +29,11 @@ describe('ThemeSelector', () => {
   });
 
   it('calls onChange when the select value changes', async () => {
+    global.ResizeObserver = class MockedResizeObserver {
+      observe = jest.fn();
+      unobserve = jest.fn();
+      disconnect = jest.fn();
+    };
     const { getByText, getByTestId } = render(
       <RecoilRoot>
         <ThemeSelector theme="system" onChange={mockOnChange} />
