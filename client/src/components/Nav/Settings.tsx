@@ -44,7 +44,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
           <div
             className={cn(
               'fixed inset-0 flex w-screen items-center justify-center p-4',
-              isSmallScreen ? 'top-12 -translate-y-1/4' : '',
+              isSmallScreen ? '-top-36' : '',
             )}
           >
             <DialogPanel
