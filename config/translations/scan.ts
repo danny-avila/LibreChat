@@ -6,11 +6,15 @@ async function scanDirectory(baseFilePath: string, languagesDir: string) {
   const files = fs.readdirSync(languagesDir);
   for (const file of files) {
     const ext = path.extname(file);
-    if (ext !== '.ts' && ext !== '.tsx') continue;
-    
+    if (ext !== '.ts' && ext !== '.tsx') {
+      continue;
+    }
+
     const compareFilePath = path.resolve(languagesDir, file);
-    if (compareFilePath === baseFilePath) continue;
-    
+    if (compareFilePath === baseFilePath) {
+      continue;
+    }
+
     await main(baseFilePath, compareFilePath);
   }
 }
