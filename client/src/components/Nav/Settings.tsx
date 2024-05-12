@@ -44,7 +44,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
           <div className="fixed inset-0 flex w-screen items-center justify-center p-4">
             <DialogPanel
               className={cn(
-                'overflow-hidden rounded-xl rounded-xl rounded-b-lg bg-white pb-6 shadow-2xl backdrop-blur-2xl animate-in dark:bg-gray-700 sm:rounded-lg md:min-h-[373px] md:w-[680px]',
+                'overflow-hidden rounded-xl rounded-b-lg bg-white pb-6 shadow-2xl backdrop-blur-2xl animate-in dark:bg-gray-700 sm:rounded-lg md:min-h-[373px] md:w-[680px]',
                 isSmallScreen ? 'top-5 -translate-y-0' : '',
               )}
             >
