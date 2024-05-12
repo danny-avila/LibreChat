@@ -48,7 +48,10 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                 isSmallScreen ? 'top-5 -translate-y-0' : '',
               )}
             >
-              <DialogTitle className="mb-3 flex items-center justify-between border-b border-black/10 p-6 pb-5 text-left dark:border-white/10">
+              <DialogTitle
+                className="mb-3 flex items-center justify-between border-b border-black/10 p-6 pb-5 text-left dark:border-white/10"
+                as="div"
+              >
                 <h2 className="text-lg font-medium leading-6 text-gray-800 dark:text-gray-200">
                   {localize('com_nav_settings')}
                 </h2>
