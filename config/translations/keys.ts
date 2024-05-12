@@ -8,21 +8,25 @@ async function readKeysFromFile(filePath: string): Promise<string[]> {
 }
 
 async function compareKeys(baseKeys: string[], keysFromOtherFile: string[]): Promise<string[]> {
-  const missingKeys = baseKeys.filter(key => !keysFromOtherFile.includes(key));
+  const missingKeys = baseKeys.filter((key) => !keysFromOtherFile.includes(key));
   return missingKeys;
 }
 
 async function main(baseFilePath: string, languagesDir: string) {
   const baseKeys = await readKeysFromFile(baseFilePath);
-  
+
   const files = fs.readdirSync(languagesDir);
   for (const file of files) {
     const ext = path.extname(file);
-    if (ext !== '.ts' && ext !== '.tsx') continue; // Ensure it's a TypeScript file
-    
+    if (ext !== '.ts' && ext !== '.tsx') {
+      continue;
+    } // Ensure it's a TypeScript file
+
     const compareFilePath = path.resolve(languagesDir, file);
-    if (compareFilePath === baseFilePath) continue; // Skip the base file
-    
+    if (compareFilePath === baseFilePath) {
+      continue;
+    } // Skip the base file
+
     try {
       const keysFromOtherFile = await readKeysFromFile(compareFilePath);
       const missingKeys = await compareKeys(baseKeys, keysFromOtherFile);
