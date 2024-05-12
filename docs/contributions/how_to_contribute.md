@@ -27,6 +27,7 @@ weight: -10
 4. ✅ [Github Desktop](https://desktop.github.com/) - ^^Optional^^
 5. ✨ [VSCode](https://code.visualstudio.com/Download) - ^^Recommended^^ Source-code Editor
 6. 🐳 [Docker Desktop](https://www.docker.com/products/docker-desktop/) - ^^Recommended^^ (more on that later)
+7. 🐳 [Mongodb](https://www.mongodb.com/) - ^^Recommended^^.
 
 ### Recommended VSCode extensions
 
