@@ -16,11 +16,11 @@ export default async function main(baseFilePath: string, compareFilePath: string
   const compareModule = await import(compareFilePath);
   const compareKeys = Object.keys(compareModule.default);
 
-  const missingKeys = baseKeys.filter(key => !compareKeys.includes(key));
+  const missingKeys = baseKeys.filter((key) => !compareKeys.includes(key));
   if (missingKeys.length > 0) {
     const keyTranslations = {};
     for (const key of missingKeys) {
-      const baselineTranslation = baseModule.default[key] || "No baseline translation available";
+      const baselineTranslation = baseModule.default[key] || 'No baseline translation available';
       const result = await processMissingKey({
         key,
         baselineTranslation,
@@ -31,7 +31,10 @@ export default async function main(baseFilePath: string, compareFilePath: string
     }
 
     const outputDir = path.dirname(compareFilePath);
-    const outputFileName = `${path.basename(compareFilePath, path.extname(compareFilePath))}_missing_keys.json`;
+    const outputFileName = `${path.basename(
+      compareFilePath,
+      path.extname(compareFilePath),
+    )}_missing_keys.json`;
     const outputFilePath = path.join(outputDir, outputFileName);
     fs.writeFileSync(outputFilePath, JSON.stringify(keyTranslations, null, 2));
   }
