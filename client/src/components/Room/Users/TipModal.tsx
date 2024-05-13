@@ -3,7 +3,7 @@ import React, { Dispatch, SetStateAction, useEffect, useState } from 'react';
 import {
   BlockchainNetwork,
   blockchainNetworks,
-} from '~/components/Nav/SettingsTabs/Crypto/blockchain';
+} from '~/components/Nav/SettingsTabs/Crypto/Blockchain';
 import { CheckMark, CoinIcon, CopyIcon } from '~/components/svg';
 import { Button, Dialog, DialogTrigger } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
