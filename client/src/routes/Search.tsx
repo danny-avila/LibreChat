@@ -2,10 +2,11 @@ import { useMemo } from 'react';
 import MinimalMessagesWrapper from '~/components/Chat/Messages/MinimalMessages';
 import SearchMessage from '~/components/Chat/Messages/SearchMessage';
 import { useSearchContext, useFileMapContext } from '~/Providers';
-import { useNavScrolling } from '~/hooks';
+import { useNavScrolling, useLocalize } from '~/hooks';
 import { buildTree } from '~/utils';
 
 export default function Search() {
+  const localize = useLocalize();
   const fileMap = useFileMapContext();
   const { searchQuery, searchQueryRes } = useSearchContext();
 
@@ -30,7 +31,7 @@ export default function Search() {
     <MinimalMessagesWrapper ref={containerRef}>
       {(messages && messages?.length == 0) || messages === null ? (
         <div className="my-auto flex h-full w-full items-center justify-center gap-1 bg-gray-50 p-3 text-lg text-gray-500 dark:border-gray-800/50 dark:bg-gray-800 dark:text-gray-300">
-          Nothing found
+          {localize('com_ui_nothing_found')}
         </div>
       ) : (
         messages?.map((message) => <SearchMessage key={message.messageId} message={message} />)

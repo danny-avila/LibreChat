@@ -165,6 +165,8 @@ export default {
   com_ui_revoke: 'Revoke',
   com_ui_revoke_info: 'Revoke all user provided credentials',
   com_ui_import_conversation: 'Import',
+  com_ui_nothing_found: 'Nothing found',
+  com_ui_go_to_conversation: 'Go to conversation',
   com_ui_import_conversation_info: 'Import conversations from a JSON file',
   com_ui_import_conversation_success: 'Conversations imported successfully',
   com_ui_import_conversation_error: 'There was an error importing your conversations',

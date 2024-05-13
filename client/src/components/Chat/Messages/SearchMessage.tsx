@@ -3,6 +3,8 @@ import { useAuthContext, useLocalize } from '~/hooks';
 import type { TMessageProps } from '~/common';
 import Icon from '~/components/Chat/Messages/MessageIcon';
 import SearchContent from './Content/SearchContent';
+import SearchButtons from './SearchButtons';
+import SubRow from './SubRow';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -47,6 +49,9 @@ export default function Message({ message }: Pick<TMessageProps, 'message'>) {
                   <SearchContent message={message} />
                 </div>
               </div>
+              <SubRow classes="text-xs">
+                <SearchButtons message={message} />
+              </SubRow>
             </div>
           </div>
         </div>
