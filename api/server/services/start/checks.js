@@ -30,9 +30,9 @@ function checkVariables() {
     logger.info(
       `Please replace any default secret values.
       
-      For your conveninence, fork & run this replit to generate your own secret values:
+      For your conveninence, use this tool to generate your own secret values:
 
-      https://replit.com/@daavila/crypto#index.js
+      https://www.librechat.ai/toolkit/creds_generator
       
       `,
     );
