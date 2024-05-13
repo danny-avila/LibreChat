@@ -5,6 +5,7 @@ export type TOpenAIMessage = OpenAI.Chat.ChatCompletionMessageParam;
 export type TOpenAIFunction = OpenAI.Chat.ChatCompletionCreateParams.Function;
 export type TOpenAIFunctionCall = OpenAI.Chat.ChatCompletionCreateParams.FunctionCallOption;
 
+// eslint-disable-next-line import/no-cycle
 export * from './schemas';
 
 export type TMessages = TMessage[];
@@ -74,7 +75,7 @@ export type TError = {
   };
 };
 
-export declare enum CryptoId {
+export enum CryptoId {
   ETH = 'ETH',
   BTC = 'BTC',
   BNB = 'BNB',

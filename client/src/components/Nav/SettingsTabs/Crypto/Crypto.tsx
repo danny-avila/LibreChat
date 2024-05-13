@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { CryptoAddress, CryptoId, SettingsTabValues, request } from 'librechat-data-provider';
 import { Button, Input } from '~/components/ui';
-import { BlockchainNetwork, blockchainNetworks } from './blockchain';
+import { BlockchainNetwork, blockchainNetworks } from './Blockchain';
 import { useAuthContext, useToast } from '~/hooks';
 import { useSetRecoilState } from 'recoil';
 import store from '~/store';

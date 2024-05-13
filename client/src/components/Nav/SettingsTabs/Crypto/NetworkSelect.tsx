@@ -2,7 +2,7 @@ import { Plus } from 'lucide-react';
 import React from 'react';
 import { Button, Dialog, DialogTrigger } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
-import { blockchainNetworks } from './blockchain';
+import { blockchainNetworks } from './Blockchain';
 import { CryptoAddress } from 'librechat-data-provider/dist/types';
 
 export default function NetworkSelect({ networks }: { networks: CryptoAddress[] }) {
