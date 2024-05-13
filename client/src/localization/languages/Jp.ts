@@ -455,6 +455,8 @@ export default {
   com_nav_setting_data: 'データ管理',
   com_nav_setting_account: 'アカウント',
   /* The following are AI translated */
+  com_ui_nothing_found: '該当するものが見つかりませんでした',
+  com_ui_go_to_conversation: '会話に移動する',
   com_error_invalid_user_key: '無効なキーが提供されました。キーを入力して再試行してください。',
   com_ui_none_selected: '選択されていません',
   com_ui_fork: '分岐',

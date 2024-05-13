@@ -458,6 +458,8 @@ export default {
   com_nav_lang_auto: 'Detección automática',
   com_nav_lang_spanish: 'Español',
   /* The following are AI Translated */
+  com_ui_nothing_found: 'No se encontró nada',
+  com_ui_go_to_conversation: 'Ir a la conversación',
   com_error_moderation:
     'Parece que el contenido enviado ha sido marcado por nuestro sistema de moderación por no estar alineado con nuestras pautas comunitarias. No podemos proceder con este tema específico. Si tiene alguna otra pregunta o tema que le gustaría explorar, por favor edite su mensaje o cree una nueva conversación.',
   com_error_no_user_key:

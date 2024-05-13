@@ -464,6 +464,8 @@ export default {
   com_nav_setting_account: 'Konto',
   com_nav_language: 'Sprache',
   /* The following are AI Translated */
+  com_ui_nothing_found: 'Keine Ergebnisse gefunden',
+  com_ui_go_to_conversation: 'Zum Chat wechseln',
   com_error_moderation:
     'Es sieht so aus, als ob der übermittelte Inhalt von unserem Moderationssystem als nicht konform mit unseren Gemeinschaftsrichtlinien markiert wurde. Wir können mit diesem spezifischen Thema leider nicht fortfahren. Wenn du andere Fragen oder Themen hast, die du gerne erörtern möchtest, bearbeite bitte deine Nachricht oder starte eine neue Konversation.',
   com_error_no_user_key:

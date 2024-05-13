@@ -508,6 +508,8 @@ export default {
   com_nav_setting_data: 'Controlli dati',
   com_nav_setting_account: 'Account',
   /* The following are AI Translated */
+  com_ui_nothing_found: 'Non è stato trovato nulla',
+  com_ui_go_to_conversation: 'Vai alla conversazione',
   com_user_message: 'Mostra nome utente nei messaggi',
   com_ui_fork: 'Duplica',
   com_ui_mention: 'Menziona un endpoint, assistente o preset per passare rapidamente ad esso',

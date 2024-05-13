@@ -266,6 +266,8 @@ export default {
   com_nav_setting_general: '一般',
   com_nav_setting_data: '資料控制',
   /* The following are AI translated */
+  com_ui_nothing_found: '找不到任何內容',
+  com_ui_go_to_conversation: '前往對話',
   com_error_moderation:
     '似乎您所提交的內容被我們的內容審查系統標記為不符合社群準則。我們無法就此特定主題繼續進行。如果您有任何其他問題或想要探討的主題,請編輯您的訊息或開啟新的對話。',
   com_error_no_user_key: '找不到金鑰，請提供金鑰後再試一次。',

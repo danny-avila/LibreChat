@@ -417,6 +417,8 @@ export default {
   com_nav_setting_data: '数据管理',
   com_nav_setting_account: '账户',
   /* The following are AI Translated */
+  com_ui_nothing_found: '未找到任何内容',
+  com_ui_go_to_conversation: '转到对话',
   com_error_moderation:
     '很抱歉,您提交的内容被我们的审核系统标记为不符合社区指引。我们无法就此特定主题继续交流。如果您有任何其他问题或想探讨的话题,请编辑您的消息或开启新的对话。',
   com_error_no_user_key: '没有找到密钥。请提供密钥后重试。',
