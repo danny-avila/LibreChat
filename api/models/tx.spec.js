@@ -92,16 +92,12 @@ describe('getMultiplier', () => {
   });
 
   it('should return the correct multiplier for gpt-4o', () => {
-    expect(getMultiplier({ valueKey: 'gpt-4o', tokenType: 'prompt' })).toBe(
-      tokenValues['gpt-4o'].prompt,
-    );
-    expect(getMultiplier({ valueKey: 'gpt-4o-2024-05-13', tokenType: 'prompt' })).toBe(
-      tokenValues['gpt-4o'].prompt,
-    );
-    expect(getMultiplier({ valueKey: 'gpt-4o', tokenType: 'completion' })).toBe(
+    const valueKey = getValueKey('gpt-4o-2024-05-13');
+    expect(getMultiplier({ valueKey, tokenType: 'prompt' })).toBe(tokenValues['gpt-4o'].prompt);
+    expect(getMultiplier({ valueKey, tokenType: 'completion' })).toBe(
       tokenValues['gpt-4o'].completion,
     );
-    expect(getMultiplier({ valueKey: 'gpt-4o', tokenType: 'completion' })).not.toBe(
+    expect(getMultiplier({ valueKey, tokenType: 'completion' })).not.toBe(
       tokenValues['gpt-4-1106'].completion,
     );
   });
