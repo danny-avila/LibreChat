@@ -43,7 +43,7 @@
 - 🖥️ UI matching ChatGPT, including Dark mode, Streaming, and latest updates
 - 🤖 AI model selection:
   - OpenAI, Azure OpenAI, BingAI, ChatGPT, Google Vertex AI, Anthropic (Claude), Plugins, Assistants API (including Azure Assistants)
-- ✅ Compatible across both **[Remote & Local AI services](https://docs.librechat.ai/install/configuration/ai_endpoints.html#intro):**
+- ✅ Compatible across both **[Remote & Local AI services](https://www.librechat.ai/docs/configuration/librechat_yaml/ai_endpoints):**
   - groq, Ollama, Cohere, Mistral AI, Apple MLX, koboldcpp, OpenRouter, together.ai, Perplexity, ShuttleAI, and more
 - 💾 Create, Save, & Share Custom Presets
 - 🔀 Switch between AI Endpoints and Presets, mid-chat
