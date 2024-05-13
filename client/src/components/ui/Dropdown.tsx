@@ -51,7 +51,18 @@ const Dropdown: FC<DropdownProps> = ({
         }}
       >
         <div className={cn('relative', className)}>
-          <Float as="div" placement="bottom-start" portal>
+          <Float
+            as="div"
+            placement="bottom-start"
+            portal
+            enter="transition duration-200 ease-out"
+            enterFrom="scale-95 opacity-0"
+            enterTo="scale-100 opacity-100"
+            leave="transition duration-150 ease-in"
+            leaveFrom="scale-100 opacity-100"
+            leaveTo="scale-95 opacity-0"
+            tailwindcssOriginClass
+          >
             <Listbox.Button
               data-testid={testId}
               className={cn(
