@@ -222,7 +222,6 @@ const ttsSchema = z.object({
       apiKey: z.string(),
       model: z.string(),
       voices: z.array(z.string()),
-      backend: z.string().optional(),
     })
     .optional(),
   elevenLabs: z
@@ -242,12 +241,24 @@ const ttsSchema = z.object({
       pronunciation_dictionary_locators: z.array(z.string()).optional(),
     })
     .optional(),
+  localai: z
+    .object({
+      url: z.string(),
+      apiKey: z.string().optional(),
+      voices: z.array(z.string()),
+      backend: z.string(),
+    })
+    .optional(),
 });
 
 const sttSchema = z.object({
-  url: z.string().optional(),
-  apiKey: z.string(),
-  model: z.string().optional(),
+  openai: z
+    .object({
+      url: z.string().optional(),
+      apiKey: z.string().optional(),
+      model: z.string().optional(),
+    })
+    .optional(),
 });
 
 export const rateLimitSchema = z.object({

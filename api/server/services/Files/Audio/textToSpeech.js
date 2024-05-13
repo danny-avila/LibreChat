@@ -3,6 +3,15 @@ const { logger } = require('~/config');
 const getCustomConfig = require('~/server/services/Config/getCustomConfig');
 const { extractEnvVariable } = require('librechat-data-provider');
 
+/**
+ * getProvider function
+ * This function takes the ttsSchema object and returns the name of the provider
+ * If more than one provider is set or no provider is set, it throws an error
+ *
+ * @param {Object} ttsSchema - The TTS schema containing the provider configuration
+ * @returns {string} The name of the provider
+ * @throws {Error} Throws an error if multiple providers are set or no provider is set
+ */
 function getProvider(ttsSchema) {
   const providers = Object.entries(ttsSchema).filter(([, value]) => Object.keys(value).length > 0);
 
@@ -15,6 +24,14 @@ function getProvider(ttsSchema) {
   }
 }
 
+/**
+ * removeUndefined function
+ * This function takes an object and removes all keys with undefined values
+ * It also removes keys with empty objects as values
+ *
+ * @param {Object} obj - The object to be cleaned
+ * @returns {void} This function does not return a value. It modifies the input object directly
+ */
 function removeUndefined(obj) {
   Object.keys(obj).forEach((key) => {
     if (obj[key] && typeof obj[key] === 'object') {
@@ -68,6 +85,18 @@ function openAIProvider(ttsSchema, input, voice) {
   return [url, data, headers];
 }
 
+/**
+ * elevenLabsProvider function
+ * This function prepares the necessary data and headers for making a request to the Eleven Labs TTS
+ * It uses the provided TTS schema, input text, and voice to create the request
+ *
+ * @param {Object} ttsSchema - The TTS schema containing the Eleven Labs configuration
+ * @param {string} input - The text to be converted to speech
+ * @param {string} voice - The voice to be used for the speech
+ *
+ * @returns {Array} An array containing the URL for the API request, the data to be sent, and the headers for the request
+ * @throws {Error} Throws an error if the selected voice is not available
+ */
 function elevenLabsProvider(ttsSchema, input, voice) {
   let url = ttsSchema.elevenlabs?.url || 'https://api.elevenlabs.io/v1/text-to-speech/{voice_id}';
 
@@ -100,6 +129,50 @@ function elevenLabsProvider(ttsSchema, input, voice) {
   };
 
   [data, headers].forEach(removeUndefined);
+
+  return [url, data, headers];
+}
+
+/**
+ * localAIProvider function
+ * This function prepares the necessary data and headers for making a request to the LocalAI TTS
+ * It uses the provided TTS schema, input text, and voice to create the request
+ *
+ * @param {Object} ttsSchema - The TTS schema containing the LocalAI configuration
+ * @param {string} input - The text to be converted to speech
+ * @param {string} voice - The voice to be used for the speech
+ *
+ * @returns {Array} An array containing the URL for the API request, the data to be sent, and the headers for the request
+ * @throws {Error} Throws an error if the selected voice is not available
+ */
+function localAIProvider(ttsSchema, input, voice) {
+  let url = ttsSchema.localai?.url;
+
+  if (
+    ttsSchema.localai?.voices &&
+    ttsSchema.localai.voices.length > 0 &&
+    !ttsSchema.localai.voices.includes(voice) &&
+    !ttsSchema.localai.voices.includes('ALL')
+  ) {
+    throw new Error(`Voice ${voice} is not available.`);
+  }
+
+  let data = {
+    input,
+    model: ttsSchema.localai?.voices && ttsSchema.localai.voices.length > 0 ? voice : undefined,
+    backend: ttsSchema.localai?.backend,
+  };
+
+  let headers = {
+    'Content-Type': 'application/json',
+    Authorization: 'Bearer ' + extractEnvVariable(ttsSchema.localai?.apiKey),
+  };
+
+  [data, headers].forEach(removeUndefined);
+
+  if (extractEnvVariable(ttsSchema.localai.apiKey) === '') {
+    delete headers.Authorization;
+  }
 
   return [url, data, headers];
 }
@@ -140,6 +213,9 @@ async function textToSpeech(req, res) {
       break;
     case 'elevenlabs':
       [url, data, headers] = elevenLabsProvider(ttsSchema, input, voice);
+      break;
+    case 'localai':
+      [url, data, headers] = localAIProvider(ttsSchema, input, voice);
       break;
     default:
       throw new Error('Invalid provider');

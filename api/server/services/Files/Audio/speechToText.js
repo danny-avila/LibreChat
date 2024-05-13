@@ -32,17 +32,30 @@ function getProvider(sttSchema) {
   throw new Error('Invalid provider');
 }
 
+function removeUndefined(obj) {
+  Object.keys(obj).forEach((key) => {
+    if (obj[key] && typeof obj[key] === 'object') {
+      removeUndefined(obj[key]);
+      if (Object.keys(obj[key]).length === 0) {
+        delete obj[key];
+      }
+    } else if (obj[key] === undefined) {
+      delete obj[key];
+    }
+  });
+}
+
 /**
  * This function prepares the necessary data and headers for making a request to the OpenAI API
- * It uses the provided speech-to-text schema and audio buffer to create the request
+ * It uses the provided speech-to-text schema and audio stream to create the request
  *
  * @param {Object} sttSchema - The speech-to-text schema containing the OpenAI configuration
- * @param {Buffer} audioBuffer - The audio data to be transcribed
+ * @param {Stream} audioReadStream - The audio data to be transcribed
  *
  * @returns {Array} An array containing the URL for the API request, the data to be sent, and the headers for the request
  * If an error occurs, it returns an array with three null values and logs the error with logger
  */
-function openAIProvider(sttSchema, audioBuffer) {
+function openAIProvider(sttSchema, audioReadStream) {
   try {
     if (!sttSchema.openai) {
       throw new Error('No OpenAI configuration found in the schema');
@@ -54,9 +67,15 @@ function openAIProvider(sttSchema, audioBuffer) {
     };
 
     let data = {
-      file: audioBuffer,
+      file: audioReadStream,
       model: sttSchema.openai.model,
     };
+
+    [data, headers].forEach(removeUndefined);
+
+    if (extractEnvVariable(sttSchema.openai.apiKey) === '') {
+      delete headers.Authorization;
+    }
 
     return [
       sttSchema.openai.url || 'https://api.openai.com/v1/audio/transcriptions',
@@ -71,15 +90,15 @@ function openAIProvider(sttSchema, audioBuffer) {
 
 /**
  * This function prepares the necessary data and headers for making a request to the Azure API
- * It uses the provided request and audio buffer to create the request
+ * It uses the provided request and audio stream to create the request
  *
  * @param {Object} req - The request object, which should contain the endpoint in its body
- * @param {Buffer} audioBuffer - The audio data to be transcribed
+ * @param {Stream} audioReadStream - The audio data to be transcribed
  *
  * @returns {Array} An array containing the URL for the API request, the data to be sent, and the headers for the request
  * If an error occurs, it returns an array with three null values and logs the error with logger
  */
-function azureProvider(req, audioBuffer) {
+function azureProvider(req, audioReadStream) {
   try {
     const { endpoint } = req.body;
     const azureConfig = req.app.locals[endpoint];
@@ -120,10 +139,10 @@ function azureProvider(req, audioBuffer) {
     const url = `${baseURL}/openai/deployments/${whisperModel}/audio/transcriptions?api-version=${apiVersion}`;
 
     let data = {
-      file: audioBuffer,
+      file: audioReadStream,
       filename: 'audio.wav',
       contentType: 'audio/wav',
-      knownLength: audioBuffer.length,
+      knownLength: audioReadStream.length,
     };
 
     const headers = {
@@ -159,12 +178,6 @@ async function speechToText(req, res) {
     return res.status(400).json({ message: 'No audio file provided in the FormData' });
   }
 
-  if (!Readable.from) {
-    const audioBlob = new Blob([audioBuffer], { type: req.file.mimetype });
-    delete data['file'];
-    data['file'] = audioBlob;
-  }
-
   const audioBuffer = req.file.buffer;
   const audioReadStream = Readable.from(audioBuffer);
   audioReadStream.path = 'audio.wav';
@@ -175,13 +188,19 @@ async function speechToText(req, res) {
 
   switch (provider) {
     case 'openai':
-      [url, data, headers] = openAIProvider(customConfig.stt, audioBuffer);
+      [url, data, headers] = openAIProvider(customConfig.stt, audioReadStream);
       break;
     case 'azure':
-      [url, data, headers] = azureProvider(req, audioBuffer);
+      [url, data, headers] = azureProvider(req, audioReadStream);
       break;
     default:
       throw new Error('Invalid provider');
+  }
+
+  if (!Readable.from) {
+    const audioBlob = new Blob([audioBuffer], { type: req.file.mimetype });
+    delete data['file'];
+    data['file'] = audioBlob;
   }
 
   try {
