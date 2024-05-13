@@ -27,15 +27,13 @@ function checkVariables() {
   }
 
   if (hasDefaultSecrets) {
-    logger.info(
-      `Please replace any default secret values.
-      
-      For your conveninence, fork & run this replit to generate your own secret values:
+    logger.info('Please replace any default secret values.');
+    logger.info(`\u200B
 
-      https://replit.com/@daavila/crypto#index.js
-      
-      `,
-    );
+    For your convenience, use this tool to generate your own secret values:
+    https://www.librechat.ai/toolkit/creds_generator
+
+    \u200B`);
   }
 
   if (process.env.GOOGLE_API_KEY) {
