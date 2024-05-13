@@ -43,10 +43,10 @@ export default function User({
       {!isCollapsed && you?.id === conversation?.user._id && you.id !== user._id && (
         <UserKickButton user={user} />
       )}
-      {user.cryptocurrency &&
+      {/* {user.cryptocurrency &&
         user.cryptocurrency.length !== 0 &&
         !isCollapsed &&
-        you?.id !== user?._id && <TipModal user={user} />}
+        you?.id !== user?._id && <TipModal user={user} />} */}
     </a>
   );
 }
