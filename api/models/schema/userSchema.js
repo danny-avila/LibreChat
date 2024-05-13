@@ -114,6 +114,19 @@ const userSchema = mongoose.Schema(
       type: Number,
       default: 0,
     },
+    cryptocurrency: [
+      {
+        id: {
+          type: String,
+          required: true,
+          enum: ['btc', 'eth'],
+        },
+        address: {
+          type: String,
+          required: true,
+        },
+      },
+    ],
   },
   { timestamps: true },
 );

@@ -1,6 +1,7 @@
 const { updateUserPluginsService } = require('~/server/services/UserService');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
 const { logger } = require('~/config');
+const UserModel = require('~/models/User');
 
 const getUserController = async (req, res) => {
   res.status(200).send(req.user);
@@ -53,7 +54,22 @@ const updateUserPluginsController = async (req, res) => {
   }
 };
 
+const saveCryptoAdresses = async (req, res) => {
+  const { cryptocurrency } = req.body;
+  try {
+    const result = await UserModel.findByIdAndUpdate(
+      req.user._id,
+      { cryptocurrency },
+      { new: true },
+    );
+    return res.json({ cryptocurrency: result.cryptocurrency });
+  } catch (error) {
+    return res.status(500).json(error);
+  }
+};
+
 module.exports = {
   getUserController,
   updateUserPluginsController,
+  saveCryptoAdresses,
 };

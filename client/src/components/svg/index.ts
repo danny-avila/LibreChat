@@ -53,3 +53,9 @@ export { default as Sparkles } from './Sparkles';
 export { default as ChartBarIcon } from './ChartBarIcon';
 export { default as LoadingIcon } from './LoadingIcon';
 export { default as SdImageIcon } from './SdImageIcon';
+
+export { default as CoinIcon } from './CoinIcon';
+export { default as BtcIcon } from './BtcIcon';
+export { default as EthIcon } from './EthIcon';
+export { default as BinanceIcon } from './BinanceIcon';
+export { default as CopyIcon } from './CopyIcon';

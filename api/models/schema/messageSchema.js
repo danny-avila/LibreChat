@@ -111,6 +111,11 @@ const messageSchema = mongoose.Schema(
     thread_id: {
       type: String,
     },
+    botType: {
+      type: String,
+      enum: ['chatbot', 'karma-bot', 'tip-bot'],
+      default: 'chatbot',
+    },
   },
   { timestamps: true },
 );

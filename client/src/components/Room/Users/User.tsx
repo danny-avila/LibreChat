@@ -5,6 +5,7 @@ import UserKickButton from './UserKickButton';
 import { useChatContext } from '~/Providers';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
+import TipModal from './TipModal';
 
 export default function User({
   user,
@@ -42,6 +43,10 @@ export default function User({
       {!isCollapsed && you?.id === conversation?.user._id && you.id !== user._id && (
         <UserKickButton user={user} />
       )}
+      {user.cryptocurrency &&
+        user.cryptocurrency.length !== 0 &&
+        !isCollapsed &&
+        you?.id !== user?._id && <TipModal user={user} />}
     </a>
   );
 }

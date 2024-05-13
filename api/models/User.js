@@ -20,6 +20,7 @@ userSchema.methods.toJSON = function () {
     updatedAt: this.updatedAt,
     subscription: this.subscription,
     credits: this.credits,
+    cryptocurrency: this.cryptocurrency,
   };
 };
 

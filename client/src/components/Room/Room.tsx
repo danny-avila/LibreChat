@@ -6,7 +6,7 @@ import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
 import DeleteButton from '../Conversations/DeleteButton';
 import RenameButton from '../Conversations/RenameButton';
-import { EModelEndpoint, TConversation, TUser, request } from 'librechat-data-provider';
+import { EModelEndpoint, TUser, request } from 'librechat-data-provider';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import store from '~/store';
 import LeaveButton from '../Conversations/LeaveButton';

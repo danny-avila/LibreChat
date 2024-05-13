@@ -227,6 +227,14 @@ export const tUserSchema = z.object({
     .optional(),
   credits: z.number().optional(),
   active: z.boolean().optional(),
+  cryptocurrency: z
+    .array(
+      z.object({
+        id: z.string(),
+        address: z.string(),
+      }),
+    )
+    .optional(),
 });
 
 export const tConversationSchema = z.object({

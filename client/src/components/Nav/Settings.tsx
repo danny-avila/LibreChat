@@ -3,7 +3,14 @@ import * as Tabs from '@radix-ui/react-tabs';
 import { SettingsTabValues, TUser } from 'librechat-data-provider';
 import type { TDialogProps } from '~/common';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui';
-import { GearIcon, DataIcon, UserIcon, ExperimentIcon, ChartBarIcon } from '~/components/svg';
+import {
+  GearIcon,
+  DataIcon,
+  UserIcon,
+  ExperimentIcon,
+  ChartBarIcon,
+  CoinIcon,
+} from '~/components/svg';
 import { General, Beta, Data, Account } from './SettingsTabs';
 import { useMediaQuery, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -13,6 +20,7 @@ import { useRecoilValue } from 'recoil';
 import store from '~/store';
 import { useSearchParams } from 'react-router-dom';
 import { isPremiumUser } from '~/utils/checkUserValid';
+import Crypto from './SettingsTabs/Crypto/Crypto';
 
 export default function Settings({ open, onOpenChange }: TDialogProps) {
   const user = useRecoilValue(store.user);
@@ -40,9 +48,6 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                 ? SettingsTabValues[(searchParams.get('tab') as string).toUpperCase()]
                 : SettingsTabValues.GENERAL
             }
-            onValueChange={(e) => {
-              console.log(e);
-            }}
             className="flex flex-col gap-10 md:flex-row"
             orientation="vertical"
           >
@@ -78,12 +83,17 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                   {localize('com_nav_setting_credits')}
                 </SettingsTab>
               )}
+              {/* <SettingsTab value={SettingsTabValues.CRYPTO}>
+                <CoinIcon size={18} />
+                Cryptocurrency
+              </SettingsTab> */}
             </Tabs.List>
             <General />
             <Beta />
             <Data />
             <Account />
             <Credits />
+            <Crypto />
           </Tabs.Root>
         </div>
       </DialogContent>

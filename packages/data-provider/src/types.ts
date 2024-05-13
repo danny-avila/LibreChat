@@ -74,8 +74,53 @@ export type TError = {
   };
 };
 
+export declare enum CryptoId {
+  ETH = 'ETH',
+  BTC = 'BTC',
+  BNB = 'BNB',
+  USDT = 'USDT',
+  ADA = 'ADA',
+  XRP = 'XRP',
+  DOGE = 'DOGE',
+  DOT = 'DOT',
+  BCH = 'BCH',
+  UNI = 'UNI',
+  LTC = 'LTC',
+  SOL = 'SOL',
+  LINK = 'LINK',
+  MATIC = 'MATIC',
+  WBTC = 'WBTC',
+  THETA = 'THETA',
+  XLM = 'XLM',
+  DAI = 'DAI',
+  ICP = 'ICP',
+  VET = 'VET',
+  FIL = 'FIL',
+  TRX = 'TRX',
+  EOS = 'EOS',
+  XMR = 'XMR',
+  LUNA = 'LUNA',
+  AAVE = 'AAVE',
+  CAKE = 'CAKE',
+  SHIB = 'SHIB',
+  NEO = 'NEO',
+  COMP = 'COMP',
+  IOTA = 'IOTA',
+  AVAX = 'AVAX',
+  DASH = 'DASH',
+  NEM = 'NEM',
+  ZEC = 'ZEC',
+  SLORP = 'SLORP',
+}
+
+export type CryptoAddress = {
+  id: CryptoId;
+  address: string;
+};
+
 export type TUser = {
   id: string;
+  _id?: string;
   username: string;
   email: string;
   name: string;
@@ -94,6 +139,7 @@ export type TUser = {
   };
   credits: number;
   active: boolean;
+  cryptocurrency: CryptoAddress[];
 };
 
 export type TGetConversationsResponse = {

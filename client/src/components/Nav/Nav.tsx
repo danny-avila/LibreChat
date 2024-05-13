@@ -83,8 +83,6 @@ const Nav = ({ navVisible, setNavVisible }) => {
     [data, searchQuery, searchQueryRes?.data],
   );
 
-  console.log(conversations);
-
   const onSearchSuccess = useCallback(({ data }: { data: ConversationListResponse }) => {
     const res = data;
     searchPlaceholderConversation();

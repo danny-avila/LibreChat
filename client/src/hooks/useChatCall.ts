@@ -64,5 +64,20 @@ export const useChatCall = (socket?: Socket) => {
     [socket, convoType],
   );
 
-  return { socket, sendMessage, updateMessage, joinRoom };
+  const sendBotMessage = useCallback(
+    async (message: TMessage | TMessage[], botType: 'karma-bot' | 'tip-bot') => {
+      if (!socket || convoType !== 'r') {
+        return null;
+      }
+
+      socket.emit('send bot message', {
+        userId: user?.id,
+        roomId: conversationId,
+        message: message,
+      });
+    },
+    [socket, user, conversationId, convoType],
+  );
+
+  return { socket, sendMessage, updateMessage, joinRoom, sendBotMessage };
 };
