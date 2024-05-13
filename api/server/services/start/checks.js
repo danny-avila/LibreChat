@@ -99,7 +99,7 @@ function checkAzureVariables() {
 function checkConfig(config) {
   if (config.version !== Constants.CONFIG_VERSION) {
     logger.info(
-      `\nOutdated Config version: ${config.version}. Current version: ${Constants.CONFIG_VERSION}\n\nCheck out the latest config file guide for new options and features.\nhttps://docs.librechat.ai/install/configuration/custom_config.html\n\n`,
+      `\nOutdated Config version: ${config.version}. Current version: ${Constants.CONFIG_VERSION}\n\nCheck out the latest config file guide for new options and features.\nhttps://www.librechat.ai/docs/configuration/librechat_yaml\n\n`,
     );
   }
 }
