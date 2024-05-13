@@ -1,9 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type * as a from '@anthropic-ai/sdk';
-import {
-  parseParamFromPrompt,
-  genTranslationPrompt,
-} from '../../api/app/clients/prompts/titlePrompts';
+import { parseParamFromPrompt, genTranslationPrompt } from '~/app/clients/prompts/titlePrompts';
 
 /**
  * Get the initialized Anthropic client.

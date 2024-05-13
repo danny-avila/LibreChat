@@ -18,10 +18,14 @@ async function main(baseFilePath: string, languagesDir: string) {
   const files = fs.readdirSync(languagesDir);
   for (const file of files) {
     const ext = path.extname(file);
-    if (ext !== '.ts' && ext !== '.tsx') {continue;} // Ensure it's a TypeScript file
+    if (ext !== '.ts' && ext !== '.tsx') {
+      continue;
+    } // Ensure it's a TypeScript file
 
     const compareFilePath = path.resolve(languagesDir, file);
-    if (compareFilePath === baseFilePath) {continue;} // Skip the base file
+    if (compareFilePath === baseFilePath) {
+      continue;
+    } // Skip the base file
 
     try {
       const keysFromOtherFile = await readKeysFromFile(compareFilePath);

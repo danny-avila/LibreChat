@@ -11,7 +11,7 @@ async function ensureDirectoryExists(directory: string) {
 }
 
 // Helper function to generate Markdown from an object, recursively if needed
-function generateMarkdownFromObject(obj: unknown, depth = 0): string {
+function generateMarkdownFromObject(obj: object, depth = 0): string {
   if (typeof obj !== 'object' || obj === null) {
     return String(obj);
   }

@@ -8,10 +8,14 @@ async function main(baseFilePath: string, languagesDir: string) {
 
   for (const file of files) {
     const ext = path.extname(file);
-    if (ext !== '.ts' && ext !== '.tsx') {continue;} // Only process TypeScript files
+    if (ext !== '.ts' && ext !== '.tsx') {
+      continue;
+    }
 
     const filePath = path.resolve(languagesDir, file);
-    if (filePath === baseFilePath) {continue;} // Skip the base language file
+    if (filePath === baseFilePath) {
+      continue;
+    }
 
     const { default: otherLanguage } = await import(filePath);
     const comparisons = {};
@@ -43,7 +47,7 @@ async function main(baseFilePath: string, languagesDir: string) {
       fileContent = fileContent.trim() + comparisonsExport;
     }
 
-    fs.writeFileSync(filePath, fileContent); // Write updated content back to file
+    fs.writeFileSync(filePath, fileContent);
   }
 
   // Execute ESLint with the --fix option on the entire directory
