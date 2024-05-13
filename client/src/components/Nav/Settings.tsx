@@ -2,24 +2,26 @@ import * as Tabs from '@radix-ui/react-tabs';
 import { MessageSquare } from 'lucide-react';
 import { SettingsTabValues } from 'librechat-data-provider';
 import type { TDialogProps } from '~/common';
-import { Button, Dialog, Transition } from '@headlessui/react';
+import { Dialog, Transition } from '@headlessui/react';
 import { GearIcon, DataIcon, UserIcon, ExperimentIcon } from '~/components/svg';
 import { General, Messages, Beta, Data, Account } from './SettingsTabs';
 import { useMediaQuery, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+import { Fragment } from 'react';
 
 export default function Settings({ open, onOpenChange }: TDialogProps) {
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
   const localize = useLocalize();
 
   return (
-    <Transition appear show={open}>
+    <Transition appear show={open} as={Fragment}>
       <Dialog as="div" className="relative z-50 focus:outline-none" onClose={onOpenChange}>
         <Transition.Child
-          enter="ease-out duration-200"
+          as={Fragment}
+          enter="ease-out duration-300"
           enterFrom="opacity-0"
           enterTo="opacity-100"
-          leave="ease-in duration-100"
+          leave="ease-in duration-200"
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
@@ -27,12 +29,13 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
         </Transition.Child>
 
         <Transition.Child
-          enter="ease-out duration-200"
+          enter="ease-out duration-300"
           enterFrom="opacity-0 scale-95"
           enterTo="opacity-100 scale-100"
           leave="ease-in duration-100"
           leaveFrom="opacity-100 scale-100"
           leaveTo="opacity-0 scale-95"
+          as={Fragment}
         >
           <div
             className={cn(
