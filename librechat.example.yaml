@@ -1,5 +1,5 @@
 # For more information, see the Configuration Guide:
-# https://docs.librechat.ai/install/configuration/custom_config.html
+# https://www.librechat.ai/docs/configuration/librechat_yaml
 
 # Configuration version (required)
 version: 1.0.9
