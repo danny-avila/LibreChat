@@ -1,13 +1,14 @@
 const { updateUserPluginsService } = require('../services/UserService');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('../services/PluginService');
+const { getUserMessageQuotaUsagePastDays } = require('../middleware/messageQuota');
 const User = require('../../models/User');
 
 const getUserController = async (req, res) => {
   try {
     const { userId } = req.params;
-    if (userId == undefined || userId === req.user.id) {
+    if (userId === undefined || userId === req.user.id) {
       // information about the current user
-      const monthlyQuotaConsumed = 250; // This value might be dynamic based on your application logic
+      const monthlyQuotaConsumed = await getUserMessageQuotaUsagePastDays(req.user, 30); // This value might be dynamic based on your application logic
 
       // Extend req.user with the new field
       const response = {
