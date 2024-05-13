@@ -390,6 +390,7 @@ export const defaultModels = {
     'claude-instant-1-100k',
   ],
   [EModelEndpoint.openAI]: [
+    'gpt-4o',
     'gpt-3.5-turbo-0125',
     'gpt-4-turbo',
     'gpt-4-turbo-2024-04-09',
@@ -461,6 +462,7 @@ export const supportsBalanceCheck = {
 };
 
 export const visionModels = [
+  'gpt-4o',
   'gpt-4-turbo',
   'gpt-4-vision',
   'llava',
