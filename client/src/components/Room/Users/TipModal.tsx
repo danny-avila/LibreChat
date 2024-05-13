@@ -36,7 +36,7 @@ const AddressPicker = ({
         <p>{prettyEthAddress(item.address.toLowerCase())}</p>
       </div>
       <button onClick={() => copyToClipboard()} type="button">
-        {isCopied ? <CheckMark /> : <CopyIcon />}
+        {isCopied ? <CheckMark /> : <CopyIcon className="text-gray-500 dark:text-white" />}
       </button>
     </div>
   );
@@ -51,7 +51,6 @@ export const TipCopiedContent = ({
   username: string;
   confirmTip: (v: boolean) => void;
 }) => {
-
   console.log(network);
   return (
     <div className="w-full text-center">
@@ -108,7 +107,7 @@ export default function TipModal({ user }: { user: TUser }) {
         main={
           <>
             <div className="flex w-full flex-col items-center gap-2">
-              <div className="grid w-full items-center gap-2">
+              <div className="grid w-full items-center gap-2 text-gray-850 dark:text-white">
                 {selectedNetwork === null ? (
                   user.cryptocurrency &&
                   user.cryptocurrency.map((i) => (

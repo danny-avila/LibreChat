@@ -50,9 +50,12 @@ export default function Crypto() {
     setCrypto(user?.cryptocurrency ? user.cryptocurrency : []);
   }, [user]);
 
-  console.log(crypto, user);
-
   const handleSave = () => {
+    if (crypto.filter((i) => i.address === '0').length !== 0) {
+      showToast({ message: 'Please fill out all addresses you added', status: 'warning' });
+      return;
+    }
+
     request
       .post('/api/user/crypto', { cryptocurrency: crypto })
       .then((res) => {
@@ -68,6 +71,12 @@ export default function Crypto() {
       });
   };
 
+  console.log(
+    crypto.filter((item) =>
+      user ? user.cryptocurrency.filter((i) => i.id === item.id).length !== 0 : false,
+    ),
+  );
+
   return (
     <Tabs.Content
       value={SettingsTabValues.CRYPTO}
@@ -77,31 +86,30 @@ export default function Crypto() {
       <div className="flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-50">
         <div className="flex justify-between border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           Please Add your crypto wallet address by networks
-          <NetworkSelect networks={crypto} />
+          <NetworkSelect
+            networks={crypto}
+            newNetwork={(id: CryptoId) => setCrypto([...crypto, { id: id, address: '' }])}
+          />
         </div>
         <div className="flex w-full flex-col items-center justify-between gap-2 border-b pb-3 dark:border-gray-700">
-          {crypto
-            .filter((item) =>
-              user ? user.cryptocurrency.filter((i) => i.id === item.id).length !== 0 : false,
-            )
-            .map((item) => (
-              <CryptoInput
-                item={blockchainNetworks.filter((i) => i.id === item.id)[0]}
-                key={item.id}
-                value={
-                  crypto.filter((i) => i.id === item.id)[0]
-                    ? crypto.filter((i) => i.id === item.id)[0].address
-                    : initialCryptoState.filter((i) => i.id === item.id)[0].address
-                }
-                setValue={(value) =>
-                  setCrypto([
-                    ...crypto.filter((i) => i.id !== item.id),
-                    { id: item.id, address: value },
-                  ])
-                }
-                clearCrypto={() => setCrypto(crypto.filter((i) => i.id !== item.id))}
-              />
-            ))}
+          {crypto.map((item) => (
+            <CryptoInput
+              item={blockchainNetworks.filter((i) => i.id === item.id)[0]}
+              key={item.id}
+              value={
+                crypto.filter((i) => i.id === item.id)[0]
+                  ? crypto.filter((i) => i.id === item.id)[0].address
+                  : initialCryptoState.filter((i) => i.id === item.id)[0].address
+              }
+              setValue={(value) =>
+                setCrypto([
+                  ...crypto.filter((i) => i.id !== item.id),
+                  { id: item.id, address: value },
+                ])
+              }
+              clearCrypto={() => setCrypto(crypto.filter((i) => i.id !== item.id))}
+            />
+          ))}
         </div>
       </div>
       <div className="mt-3 flex justify-end border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">

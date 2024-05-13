@@ -119,7 +119,6 @@ const userSchema = mongoose.Schema(
         id: {
           type: String,
           required: true,
-          enum: ['btc', 'eth'],
         },
         address: {
           type: String,

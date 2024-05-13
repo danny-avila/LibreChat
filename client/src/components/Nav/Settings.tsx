@@ -83,10 +83,10 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                   {localize('com_nav_setting_credits')}
                 </SettingsTab>
               )}
-              {/* <SettingsTab value={SettingsTabValues.CRYPTO}>
+              <SettingsTab value={SettingsTabValues.CRYPTO}>
                 <CoinIcon size={18} />
                 Cryptocurrency
-              </SettingsTab> */}
+              </SettingsTab>
             </Tabs.List>
             <General />
             <Beta />

@@ -48,13 +48,13 @@ export const blockchainNetworks: BlockchainNetwork[] = [
   {
     id: CryptoId.DOGE,
     label: 'Dogecoin',
-    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/ripple.png" />,
+    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/doge.png" />,
     placeholder: 'Enter your DOGE address',
   },
   {
     id: CryptoId.DOT,
     label: 'Polkadot',
-    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/polkadot.png" />,
+    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/dot.png" />,
     placeholder: 'Enter your DOT address',
   },
   {
@@ -102,7 +102,7 @@ export const blockchainNetworks: BlockchainNetwork[] = [
   {
     id: CryptoId.THETA,
     label: 'Theta',
-    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/teth.png" />,
+    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/theta.png" />,
     placeholder: 'Enter your THETA address',
   },
   {
@@ -216,19 +216,13 @@ export const blockchainNetworks: BlockchainNetwork[] = [
   {
     id: CryptoId.ZEC,
     label: 'Zcash',
-    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/zcash.png" />,
+    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/zec.png" />,
     placeholder: 'Enter your ZEC address',
   },
   {
     id: CryptoId.SLORP,
     label: 'Slorp',
-    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/slorp.png" />,
+    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/SlorpCoin.png" />,
     placeholder: 'Enter your SLORP address',
-  },
-  {
-    id: CryptoId.DASH,
-    label: 'Dash',
-    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/dash.png" />,
-    placeholder: 'Enter your DASH address',
   },
 ];
