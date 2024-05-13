@@ -55,6 +55,7 @@ const getAvailablePluginsController = async (req, res) => {
       return;
     }
 
+    /** @type {{ filteredTools: string[], includedTools: string[] }} */
     const { filteredTools = [], includedTools = [] } = req.app.locals;
     const pluginManifest = await fs.readFile(req.app.locals.paths.pluginManifest, 'utf8');
     const jsonData = JSON.parse(pluginManifest);
