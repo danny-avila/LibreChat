@@ -72,7 +72,7 @@ Please specify a correct \`imageOutputType\` value (case-sensitive).
       - ${EImageOutputType.WEBP}
       
       Refer to the latest config file guide for more information:
-      https://docs.librechat.ai/install/configuration/custom_config.html`,
+      https://www.librechat.ai/docs/configuration/librechat_yaml`,
     );
   }
   if (!result.success) {
