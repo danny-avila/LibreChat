@@ -37,7 +37,7 @@ async function loadCustomConfig() {
     if (!customConfig) {
       i === 0 &&
         logger.info(
-          'Custom config file missing or YAML format invalid.\n\nCheck out the latest config file guide for configurable options and features.\nhttps://docs.librechat.ai/install/configuration/custom_config.html\n\n',
+          'Custom config file missing or YAML format invalid.\n\nCheck out the latest config file guide for configurable options and features.\nhttps://www.librechat.ai/docs/configuration/librechat_yaml\n\n',
         );
       i === 0 && i++;
       return null;
@@ -72,7 +72,7 @@ Please specify a correct \`imageOutputType\` value (case-sensitive).
       - ${EImageOutputType.WEBP}
       
       Refer to the latest config file guide for more information:
-      https://docs.librechat.ai/install/configuration/custom_config.html`,
+      https://www.librechat.ai/docs/configuration/librechat_yaml`,
     );
   }
   if (!result.success) {
