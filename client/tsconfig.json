@@ -32,7 +32,6 @@
     "src/**/*",
     "test/**/*",
     "../e2e/**/*",
-    "../config/**/*",
     "setupTests.js",
     "vite.config.ts",
     "env.d.ts",
