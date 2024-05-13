@@ -245,6 +245,7 @@ export const configSchema = z.object({
   cache: z.boolean().default(true),
   secureImageLinks: z.boolean().optional(),
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
+  includedTools: z.array(z.string()).optional(),
   filteredTools: z.array(z.string()).optional(),
   interface: z
     .object({
@@ -677,7 +678,7 @@ export enum Constants {
   /** Key for the app's version. */
   VERSION = 'v0.7.2',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.0.9',
+  CONFIG_VERSION = '1.1.0',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Fixed, encoded domain length for Azure OpenAI Assistants Function name parsing. */
