@@ -48,6 +48,14 @@ export const forkConversation = () => `${conversationsRoot}/fork`;
 export const importConversationJobStatus = (jobId: string) =>
   `${conversationsRoot}/import/jobs/${jobId}`;
 
+export const exportAllConversations = () => `${conversationsRoot}/export`;
+
+export const exportAllConversationsJobStatus = (jobId: string) =>
+  `${conversationsRoot}/export/jobs/${jobId}`;
+
+export const downloadExportedConversations = (jobId: string) =>
+  `${conversationsRoot}/export/jobs/${jobId}/conversations.json`;
+
 export const search = (q: string, pageNumber: string) =>
   `/api/search?q=${q}&pageNumber=${pageNumber}`;
 

@@ -75,6 +75,15 @@ module.exports = {
       return { message: 'Error getting conversations' };
     }
   },
+  getAllConvos: async (user) => {
+    try {
+      const convos = await Conversation.find({ user }).sort({ updatedAt: -1 }).lean();
+      return { conversations: convos };
+    } catch (error) {
+      logger.error('[getAllConvos] Error getting conversations', error);
+      return { message: 'Error getting conversations' };
+    }
+  },
   getConvosQueried: async (user, convoIds, pageNumber = 1, pageSize = 25) => {
     try {
       if (!convoIds || convoIds.length === 0) {

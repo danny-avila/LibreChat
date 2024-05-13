@@ -8,6 +8,7 @@ import { DeleteCacheButton } from './DeleteCacheButton';
 import ImportConversations from './ImportConversations';
 import { ClearChatsButton } from './ClearChats';
 import SharedLinks from './SharedLinks';
+import ExportConversations from './ExportConversations';
 
 function Data() {
   const dataTabRef = useRef(null);
@@ -46,6 +47,9 @@ function Data() {
       <div className="flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-50">
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <ImportConversations />
+        </div>
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+          <ExportConversations />
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <SharedLinks />

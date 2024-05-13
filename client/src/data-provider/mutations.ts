@@ -430,6 +430,67 @@ export const useUploadConversationsMutation = (
   });
 };
 
+export const useExportConversationsMutation = (
+  _options?: t.MutationOptions<t.TImportJobStatus, FormData>,
+) => {
+  const queryClient = useQueryClient();
+  const { onSuccess, onError } = _options || {};
+
+  const checkJobStatus = async (jobId) => {
+    try {
+      const response = await dataService.queryExportAllConversationJobStatus(jobId);
+      return response;
+    } catch (error) {
+      throw new Error('Failed to check job status');
+    }
+  };
+
+  const pollJobStatus = (jobId, onSuccess, onError) => {
+    const intervalId = setInterval(async () => {
+      try {
+        const statusResponse = await checkJobStatus(jobId);
+        console.log('Polling job status:', statusResponse);
+        if (statusResponse.status === 'completed' || statusResponse.status === 'failed') {
+          clearInterval(intervalId);
+          if (statusResponse.status === 'completed') {
+            onSuccess && onSuccess();
+          } else {
+            onError &&
+              onError(new Error(statusResponse.failReason || 'Failed to export conversations'));
+          }
+        }
+      } catch (error) {
+        clearInterval(intervalId);
+        onError && onError(error);
+      }
+    }, 500); // Poll every 0,5 seconds. Adjust time as necessary.
+  };
+
+  return useMutation<t.ImportStartResponse, unknown, FormData>({
+    mutationFn: (formData: FormData) => dataService.exportAllConversationsToJson(formData),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries(QueryKeys.allConversations);
+      const jobId = data.jobId;
+      if (jobId) {
+        console.log('Job ID:', jobId);
+        pollJobStatus(
+          jobId,
+          async () => {
+            queryClient.invalidateQueries(QueryKeys.allConversations);
+            onSuccess?.(await dataService.exportConversationsFile(jobId));
+          },
+          (error) => {
+            onError?.(error, { jobId }, { context: 'ExportJobFailed' });
+          },
+        );
+      }
+    },
+    onError: (err, variables, context) => {
+      onError?.(err, variables, context);
+    },
+  });
+};
+
 export const useUploadFileMutation = (
   _options?: t.UploadMutationOptions,
 ): UseMutationResult<

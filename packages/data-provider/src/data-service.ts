@@ -307,6 +307,20 @@ export const queryImportConversationJobStatus = async (
   return request.get(endpoints.importConversationJobStatus(jobId));
 };
 
+export const exportAllConversationsToJson = (data: FormData): Promise<t.TImportStartResponse> => {
+  return request.postMultiPart(endpoints.exportAllConversations(), data);
+};
+
+export const queryExportAllConversationJobStatus = async (
+  jobId: string,
+): Promise<t.TImportJobStatus> => {
+  return request.get(endpoints.exportAllConversationsJobStatus(jobId));
+};
+
+export const exportConversationsFile = async (jobId: string): Promise<AxiosResponse> => {
+  return request.get(endpoints.downloadExportedConversations(jobId));
+};
+
 export const uploadAvatar = (data: FormData): Promise<f.AvatarUploadResponse> => {
   return request.postMultiPart(endpoints.avatar(), data);
 };
