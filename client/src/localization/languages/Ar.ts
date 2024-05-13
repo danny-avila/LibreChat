@@ -1536,6 +1536,14 @@ export const comparisons = {
     english: 'Data controls',
     translated: 'تحكم في البيانات',
   },
+  com_ui_nothing_found: {
+    english: 'Nothing found',
+    translated: 'لم يتم العثور على أي شيء',
+  },
+  com_ui_go_to_conversation: {
+    english: 'Go to conversation',
+    translated: 'انتقل إلى المحادثة',
+  },
   com_error_moderation: {
     english:
       'It appears that the content submitted has been flagged by our moderation system for not aligning with our community guidelines. We\'re unable to proceed with this specific topic. If you have any other questions or topics you\'d like to explore, please edit your message, or create a new conversation.',

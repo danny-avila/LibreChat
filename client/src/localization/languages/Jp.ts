@@ -2195,6 +2195,14 @@ export const comparisons = {
     english: 'Account',
     translated: 'アカウント',
   },
+  com_ui_nothing_found: {
+    english: 'Nothing found',
+    translated: '該当するものが見つかりませんでした',
+  },
+  com_ui_go_to_conversation: {
+    english: 'Go to conversation',
+    translated: '会話に移動する',
+  },
   com_error_invalid_user_key: {
     english: 'Invalid key provided. Please provide a key and try again.',
     translated: '無効なキーが提供されました。キーを入力して再試行してください。',

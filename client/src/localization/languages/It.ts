@@ -2343,6 +2343,14 @@ export const comparisons = {
     english: 'Account',
     translated: 'Account',
   },
+  com_ui_nothing_found: {
+    english: 'Nothing found',
+    translated: 'Non è stato trovato nulla',
+  },
+  com_ui_go_to_conversation: {
+    english: 'Go to conversation',
+    translated: 'Vai alla conversazione',
+  },
   com_user_message: {
     english: 'You',
     translated: 'Mostra nome utente nei messaggi',

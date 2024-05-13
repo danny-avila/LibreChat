@@ -1763,6 +1763,134 @@ export const comparisons = {
     english: 'Account',
     translated: 'Compte',
   },
+  com_ui_nothing_found: {
+    english: 'Nothing found',
+    translated: 'Aucun résultat trouvé',
+  },
+  com_ui_go_to_conversation: {
+    english: 'Go to conversation',
+    translated: 'Aller à la conversation',
+  },
+  com_nav_tool_add: {
+    english: 'Add',
+    translated: 'Ajouter',
+  },
+  com_nav_tool_remove: {
+    english: 'Remove',
+    translated: 'Supprimer',
+  },
+  com_nav_tool_dialog: {
+    english: 'Assistant Tools',
+    translated: 'Outils de l\'assistant',
+  },
+  com_nav_tool_dialog_description: {
+    english: 'Assistant must be saved to persist tool selections.',
+    translated: 'L\'assistant doit être sauvegardé pour conserver les sélections d\'outils.',
+  },
+  com_nav_tool_search: {
+    english: 'Search tools',
+    translated: 'Outils de recherche',
+  },
+  com_nav_my_files: {
+    english: 'My Files',
+    translated: 'Mes fichiers',
+  },
+  com_nav_enter_to_send: {
+    english: 'Press Enter to send messages',
+    translated: 'Appuyez sur Entrée pour envoyer des messages',
+  },
+  com_nav_show_code: {
+    english: 'Always show code when using code interpreter',
+    translated: 'Toujours afficher le code lors de l\'utilisation de l\'interpréteur de code',
+  },
+  com_nav_archived_chats_empty: {
+    english: 'You have no archived conversations.',
+    translated: 'Vous n\'avez aucune conversation archivée.',
+  },
+  com_nav_language: {
+    english: 'Language',
+    translated: 'Langue',
+  },
+  com_nav_lang_auto: {
+    english: 'Auto detect',
+    translated: 'Détection automatique',
+  },
+  com_nav_lang_english: {
+    english: 'English',
+    translated: 'Anglais',
+  },
+  com_nav_lang_chinese: {
+    english: '中文',
+    translated: 'Chinois',
+  },
+  com_nav_lang_german: {
+    english: 'Deutsch',
+    translated: 'Allemand',
+  },
+  com_nav_lang_spanish: {
+    english: 'Español',
+    translated: 'Espagnol',
+  },
+  com_nav_lang_french: {
+    english: 'Français ',
+    translated: 'Français',
+  },
+  com_nav_lang_italian: {
+    english: 'Italiano',
+    translated: 'Italien',
+  },
+  com_nav_lang_polish: {
+    english: 'Polski',
+    translated: 'Polonais',
+  },
+  com_nav_lang_brazilian_portuguese: {
+    english: 'Português Brasileiro',
+    translated: 'Portugais brésilien',
+  },
+  com_nav_lang_russian: {
+    english: 'Русский',
+    translated: 'Russe',
+  },
+  com_nav_lang_japanese: {
+    english: '日本語',
+    translated: 'Japonais',
+  },
+  com_nav_lang_swedish: {
+    english: 'Svenska',
+    translated: 'Suédois',
+  },
+  com_nav_lang_korean: {
+    english: '한국어',
+    translated: 'Coréen',
+  },
+  com_nav_lang_vietnamese: {
+    english: 'Tiếng Việt',
+    translated: 'Vietnamien',
+  },
+  com_nav_lang_traditionalchinese: {
+    english: '繁體中文',
+    translated: 'Chinois traditionnel',
+  },
+  com_nav_lang_arabic: {
+    english: 'العربية',
+    translated: 'Arabe',
+  },
+  com_nav_lang_turkish: {
+    english: 'Türkçe',
+    translated: 'Turc',
+  },
+  com_nav_lang_dutch: {
+    english: 'Nederlands',
+    translated: 'Néerlandais',
+  },
+  com_nav_lang_indonesia: {
+    english: 'Indonesia',
+    translated: 'Indonésie',
+  },
+  com_nav_lang_hebrew: {
+    english: 'עברית',
+    translated: 'Hébreu',
+  },
   com_error_moderation: {
     english:
       'It appears that the content submitted has been flagged by our moderation system for not aligning with our community guidelines. We\'re unable to proceed with this specific topic. If you have any other questions or topics you\'d like to explore, please edit your message, or create a new conversation.',
