@@ -52,7 +52,6 @@ const Nav = ({ navVisible, setNavVisible }) => {
   const isSearchEnabled = useRecoilValue(store.isSearchEnabled);
 
   const { refreshConversations } = useConversations();
-
   const { pageNumber, searchQuery, setPageNumber, searchQueryRes } = useSearchContext();
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useConversationsInfiniteQuery(
