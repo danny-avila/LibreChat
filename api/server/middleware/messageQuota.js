@@ -19,8 +19,11 @@ const getUserMessageQuotaUsagePastDays = async (user, days = 30) => {
     let messagesCount = await getMessagesCount({
       $and: [{ senderId: user.id }, { model: model }, { updatedAt: { $gte: someTimeAgo } }],
     });
-    quotaUsage[model] = messagesCount;
-    console.log('model=%s: %d/%d used', model, quotaUsage[model], quota[model]);
+    quotaUsage[model] = {
+      consumed: messagesCount,
+      quota: quota[model],
+    };
+    console.log(model, quotaUsage[model]);
   });
   await Promise.all(promises);
   return quotaUsage;
