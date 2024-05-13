@@ -56,19 +56,17 @@ function removeUndefined(obj) {
  * If an error occurs, it returns an array with three null values and logs the error with logger
  */
 function openAIProvider(sttSchema, audioReadStream) {
+  const url = sttSchema.openai?.url || 'https://api.openai.com/v1/audio/transcriptions';
+
   try {
-    if (!sttSchema.openai) {
-      throw new Error('No OpenAI configuration found in the schema');
-    }
+    let data = {
+      file: audioReadStream,
+      model: sttSchema.openai.model,
+    };
 
     let headers = {
       'Content-Type': 'multipart/form-data',
       Authorization: 'Bearer ' + extractEnvVariable(sttSchema.openai.apiKey),
-    };
-
-    let data = {
-      file: audioReadStream,
-      model: sttSchema.openai.model,
     };
 
     [data, headers].forEach(removeUndefined);
@@ -77,11 +75,7 @@ function openAIProvider(sttSchema, audioReadStream) {
       delete headers.Authorization;
     }
 
-    return [
-      sttSchema.openai.url || 'https://api.openai.com/v1/audio/transcriptions',
-      data,
-      headers,
-    ];
+    return [url, data, headers];
   } catch (error) {
     logger.error('An error occurred while preparing the OpenAI API STT request: ', error);
     return [null, null, null];
@@ -204,7 +198,7 @@ async function speechToText(req, res) {
   }
 
   try {
-    const response = await axios.post(url, data, { headers });
+    const response = await axios.post(url, data, { headers: headers });
     const text = await handleResponse(response);
 
     res.json({ text });
