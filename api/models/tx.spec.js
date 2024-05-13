@@ -95,6 +95,9 @@ describe('getMultiplier', () => {
     expect(getMultiplier({ valueKey: 'gpt-4o', tokenType: 'prompt' })).toBe(
       tokenValues['gpt-4o'].prompt,
     );
+    expect(getMultiplier({ valueKey: 'gpt-4o-2024-05-13', tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-4o'].prompt,
+    );
     expect(getMultiplier({ valueKey: 'gpt-4o', tokenType: 'completion' })).toBe(
       tokenValues['gpt-4o'].completion,
     );
