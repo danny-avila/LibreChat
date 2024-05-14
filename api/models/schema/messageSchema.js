@@ -28,6 +28,10 @@ const messageSchema = mongoose.Schema(
     endpoint: {
       type: String,
     },
+    bot: {
+      type: String,
+      enum: ['tip', 'karma'],
+    },
     conversationSignature: {
       type: String,
     },

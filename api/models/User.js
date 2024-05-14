@@ -21,6 +21,7 @@ userSchema.methods.toJSON = function () {
     subscription: this.subscription,
     credits: this.credits,
     cryptocurrency: this.cryptocurrency,
+    karma: this.karma,
   };
 };
 

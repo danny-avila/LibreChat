@@ -68,8 +68,20 @@ const saveCryptoAdresses = async (req, res) => {
   }
 };
 
+const sendKarma = async (req, res) => {
+  const { karma, userId } = req.body;
+  try {
+    await UserModel.findByIdAndUpdate(userId, { $inc: { karma } }, { new: true });
+    await UserModel.findByIdAndUpdate(req.user._id, { $dec: { karma } }, { new: true });
+    res.json({ success: true });
+  } catch (error) {
+    return res.status(500).json(error);
+  }
+};
+
 module.exports = {
   getUserController,
   updateUserPluginsController,
   saveCryptoAdresses,
+  sendKarma,
 };

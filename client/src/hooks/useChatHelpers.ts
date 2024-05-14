@@ -112,6 +112,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined, s
       isRegenerate = false,
       isContinued = false,
       isEdited = false,
+      isBot = '',
     } = {},
   ) => {
     setShowStopButton(false);
@@ -183,8 +184,8 @@ export default function useChatHelpers(index = 0, paramId: string | undefined, s
 
     const currentMsg: TMessage = {
       text,
-      sender: 'User',
-      isCreatedByUser: true,
+      sender: isBot !== '' ? isBot : 'User',
+      isCreatedByUser: isBot !== '' ? false : true,
       parentMessageId,
       conversationId,
       messageId: isContinued && messageId ? messageId : fakeMessageId,
@@ -279,16 +280,22 @@ export default function useChatHelpers(index = 0, paramId: string | undefined, s
       setLatestMessage(initialResponse);
       setSubmission(submission);
     } else if (convoType === 'r') {
-      const command = isBotCommand(text);
-      if (command) {
-        // const message = { ...currentMsg, text };
-        setMessages([...submission.messages, currentMsg, initialResponse]);
-        setLatestMessage(initialResponse);
-        setSubmission(submission);
-      } else {
+      if (isBot) {
         setMessages([...submission.messages, currentMsg]);
         setLatestMessage(currentMsg);
         sendMessage(currentMsg);
+      } else {
+        const command = isBotCommand(text);
+        if (command) {
+          // const message = { ...currentMsg, text };
+          setMessages([...submission.messages, currentMsg, initialResponse]);
+          setLatestMessage(initialResponse);
+          setSubmission(submission);
+        } else {
+          setMessages([...submission.messages, currentMsg]);
+          setLatestMessage(currentMsg);
+          sendMessage(currentMsg);
+        }
       }
     }
   };

@@ -159,7 +159,7 @@ module.exports = {
     try {
       const result = await Message.find(filter)
         .sort({ createdAt: 1 })
-        .populate('user', ['name', 'avatar'])
+        .populate('user', ['name', 'avatar', 'karma'])
         .lean();
       return result;
     } catch (err) {

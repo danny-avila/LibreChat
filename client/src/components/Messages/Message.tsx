@@ -135,8 +135,6 @@ export default function Message(props: TMessageProps) {
       queryKey: [message?.conversationId],
     });
 
-    console.log('getConversationQuery response.data:', response.data);
-
     if (response.data) {
       switchToConversation(response.data);
     }

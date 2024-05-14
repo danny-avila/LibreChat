@@ -235,6 +235,7 @@ export const tUserSchema = z.object({
       }),
     )
     .optional(),
+  karma: z.number(),
 });
 
 export const tConversationSchema = z.object({

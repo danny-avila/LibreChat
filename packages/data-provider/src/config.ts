@@ -526,10 +526,6 @@ export enum SettingsTabValues {
    * Tab for Credit Settings
    */
   CREDITS = 'credits',
-  /**
-   * Tab for Crypto Settings
-   */
-  CRYPTO = 'crypto',
 }
 
 /**

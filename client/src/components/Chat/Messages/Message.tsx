@@ -74,6 +74,10 @@ export default function Message(props: TMessageProps) {
         messageLabel = message.user.name;
         userAvatar = message.user.avatar;
       }
+
+      if (message.sender === 'Tip Bot' || message.sender === 'Karma Bot') {
+        messageLabel = message.sender;
+      }
     } else {
       messageLabel = user?.name as string;
       userAvatar = user?.avatar as string;
@@ -91,30 +95,49 @@ export default function Message(props: TMessageProps) {
           <div className="final-completion group mx-auto flex flex-1 gap-3 text-base md:max-w-3xl md:px-5 lg:max-w-[40rem] lg:px-1 xl:max-w-[48rem] xl:px-5">
             <div className="relative flex flex-shrink-0 flex-col items-end">
               <div>
-                <div className="relative pt-0.5">
-                  {isPremiumUser(user as TUser) && (
-                    <img
-                      src="/assets/premium.png"
-                      alt="premium"
-                      className="absolute -right-1 -top-1 h-4 w-4"
-                    />
-                  )}
-                  <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-                    {userAvatar ? (
-                      <img src={userAvatar} />
-                    ) : typeof icon === 'string' && /[^\\x00-\\x7F]+/.test(icon as string) ? (
-                      <span className=" direction-rtl w-40 overflow-x-scroll">{icon}</span>
-                    ) : (
-                      icon
-                    )}
+                {message.sender === 'Tip Bot' ? (
+                  <div className="relative pt-0.5">
+                    <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
+                      <img src="/assets/tipbot.png" />
+                    </div>
                   </div>
-                </div>
+                ) : message.sender === 'Karma Bot' ? (
+                  <div className="relative pt-0.5">
+                    <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
+                      <img src="/assets/karmabot.png" />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="relative pt-0.5">
+                    {isPremiumUser(user as TUser) && (
+                      <img
+                        src="/assets/premium.png"
+                        alt="premium"
+                        className="absolute -right-1 -top-1 h-4 w-4"
+                      />
+                    )}
+                    <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
+                      {userAvatar ? (
+                        <img src={userAvatar} />
+                      ) : typeof icon === 'string' && /[^\\x00-\\x7F]+/.test(icon as string) ? (
+                        <span className=" direction-rtl w-40 overflow-x-scroll">{icon}</span>
+                      ) : (
+                        icon
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
             <div
               className={cn('relative flex w-11/12 flex-col', isCreatedByUser ? '' : 'agent-turn')}
             >
-              <div className="select-none font-semibold">{messageLabel}</div>
+              <div className="select-none font-semibold">
+                {messageLabel}{' '}
+                {message.sender === 'User' && (
+                  <i className="text-xs font-thin text-gray-600">{message.user?.karma} karma</i>
+                )}
+              </div>
               <div className="flex-col gap-1 md:gap-3">
                 <div className="flex max-w-full flex-grow flex-col gap-0">
                   {/* Legacy Plugins */}
@@ -147,21 +170,23 @@ export default function Message(props: TMessageProps) {
                     siblingCount={siblingCount}
                     setSiblingIdx={setSiblingIdx}
                   />
-                  <HoverButtons
-                    isEditing={edit}
-                    message={message}
-                    enterEdit={enterEdit}
-                    isSubmitting={isSubmitting}
-                    conversation={conversation ?? null}
-                    regenerate={() => regenerateMessage()}
-                    copyToClipboard={copyToClipboard}
-                    handleContinue={handleContinue}
-                    latestMessage={latestMessage}
-                    isLast={isLast}
-                    isImage={isImage}
-                    downloadImage={downloadImage}
-                    copyDisabled={copyDisabled}
-                  />
+                  {message.sender !== 'Tip Bot' && message.sender !== 'Karma Bot' && (
+                    <HoverButtons
+                      isEditing={edit}
+                      message={message}
+                      enterEdit={enterEdit}
+                      isSubmitting={isSubmitting}
+                      conversation={conversation ?? null}
+                      regenerate={() => regenerateMessage()}
+                      copyToClipboard={copyToClipboard}
+                      handleContinue={handleContinue}
+                      latestMessage={latestMessage}
+                      isLast={isLast}
+                      isImage={isImage}
+                      downloadImage={downloadImage}
+                      copyDisabled={copyDisabled}
+                    />
+                  )}
                 </SubRow>
               )}
             </div>

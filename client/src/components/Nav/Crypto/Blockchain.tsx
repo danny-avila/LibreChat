@@ -1,5 +1,13 @@
 import { CryptoId } from 'librechat-data-provider';
 import { ReactNode } from 'react';
+import {
+  AdaIcon,
+  TerraIcon,
+  ShibIcon,
+  IotalIcon,
+  PancakeSwapIcon,
+  NemIcon,
+} from '~/components/svg';
 
 export interface BlockchainNetwork {
   label: string;
@@ -36,7 +44,7 @@ export const blockchainNetworks: BlockchainNetwork[] = [
   {
     id: CryptoId.ADA,
     label: 'Cardano',
-    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/cardano.png" />,
+    icon: <AdaIcon />,
     placeholder: 'Enter your ADA address',
   },
   {
@@ -156,7 +164,7 @@ export const blockchainNetworks: BlockchainNetwork[] = [
   {
     id: CryptoId.LUNA,
     label: 'Terra',
-    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/luna.png" />,
+    icon: <TerraIcon />,
     placeholder: 'Enter your LUNA address',
   },
   {
@@ -168,13 +176,13 @@ export const blockchainNetworks: BlockchainNetwork[] = [
   {
     id: CryptoId.CAKE,
     label: 'Panecakeswap',
-    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/cake.png" />,
+    icon: <PancakeSwapIcon />,
     placeholder: 'Enter your CAKE address',
   },
   {
     id: CryptoId.SHIB,
     label: 'Shiba',
-    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/shib.png" />,
+    icon: <ShibIcon />,
     placeholder: 'Enter your SHIB address',
   },
   {
@@ -192,7 +200,7 @@ export const blockchainNetworks: BlockchainNetwork[] = [
   {
     id: CryptoId.IOTA,
     label: 'IOTA',
-    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/iota.png" />,
+    icon: <IotalIcon />,
     placeholder: 'Enter your IOTA address',
   },
   {
@@ -210,7 +218,7 @@ export const blockchainNetworks: BlockchainNetwork[] = [
   {
     id: CryptoId.NEM,
     label: 'NEM',
-    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/nem.png" />,
+    icon: <NemIcon />,
     placeholder: 'Enter your NEM address',
   },
   {

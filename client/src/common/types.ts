@@ -181,6 +181,7 @@ export type TOptions = {
   isRegenerate?: boolean;
   isContinued?: boolean;
   isEdited?: boolean;
+  isBot?: string;
 };
 
 export type TAskFunction = (props: TAskProps, options?: TOptions) => void;

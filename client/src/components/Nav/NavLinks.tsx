@@ -9,14 +9,15 @@ import FilesView from '~/components/Chat/Input/Files/FilesView';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useAvatar from '~/hooks/Messages/useAvatar';
 import { ExportModal } from './ExportConversation';
-import { LinkIcon, GearIcon } from '~/components';
-import { UserIcon } from '~/components/svg';
+import { GearIcon } from '~/components';
+import { CoinIcon, UserIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 import Settings from './Settings';
 import NavLink from './NavLink';
 import Logout from './Logout';
 import { cn } from '~/utils/';
 import store from '~/store';
+import CryptoModal from './Crypto/CryptoModal';
 
 function NavLinks() {
   const localize = useLocalize();
@@ -35,12 +36,7 @@ function NavLinks() {
   const globalConvo = useRecoilValue(store.conversation) ?? ({} as TConversation);
 
   const avatarSrc = useAvatar(user);
-
-  // useEffect(() => {
-  //   if (!showSettings) {
-  //     setSearchParams({ settings: showSettings });
-  //   }
-  // }, [showSettings]);
+  const [tipOpen, setTipOpen] = useState<boolean>(false);
 
   useEffect(() => {
     if (searchParams.get('settings') === 'open') {
@@ -147,9 +143,9 @@ function NavLinks() {
                   <Menu.Item as="div">
                     <NavLink
                       className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-black transition-colors duration-200 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"
-                      svg={() => <LinkIcon />}
-                      text={localize('com_nav_help_faq')}
-                      clickHandler={() => window.open(startupConfig?.helpAndFaqURL, '_blank')}
+                      svg={() => <CoinIcon size={18} />}
+                      text="Crypto Tips"
+                      clickHandler={() => setTipOpen(true)}
                     />
                   </Menu.Item>
                 )}
@@ -186,6 +182,7 @@ function NavLinks() {
           }}
         />
       )}
+      <CryptoModal open={tipOpen} setOpen={setTipOpen} />
     </>
   );
 }

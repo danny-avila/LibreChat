@@ -141,6 +141,7 @@ export type TUser = {
   credits: number;
   active: boolean;
   cryptocurrency: CryptoAddress[];
+  karma: number;
 };
 
 export type TGetConversationsResponse = {

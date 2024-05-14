@@ -1,14 +1,14 @@
-import { CryptoAddress, TUser } from 'librechat-data-provider';
+import { CryptoAddress, TUser, request } from 'librechat-data-provider';
 import React, { Dispatch, SetStateAction, useEffect, useState } from 'react';
-import {
-  BlockchainNetwork,
-  blockchainNetworks,
-} from '~/components/Nav/SettingsTabs/Crypto/Blockchain';
+import { BlockchainNetwork, blockchainNetworks } from '~/components/Nav/Crypto/Blockchain';
 import { CheckMark, CoinIcon, CopyIcon } from '~/components/svg';
 import { Button, Dialog, DialogTrigger } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { prettyEthAddress } from '~/utils/addressWrap';
+import { useChatContext, useToastContext } from '~/Providers';
 import copy from 'copy-to-clipboard';
+import store from '~/store';
+import { useRecoilState } from 'recoil';
 
 const AddressPicker = ({
   item,
@@ -51,7 +51,6 @@ export const TipCopiedContent = ({
   username: string;
   confirmTip: (v: boolean) => void;
 }) => {
-  console.log(network);
   return (
     <div className="w-full text-center">
       <div className="w-full">
@@ -77,10 +76,48 @@ export const TipCopiedContent = ({
 };
 
 export default function TipModal({ user }: { user: TUser }) {
+  const [you, setYou] = useRecoilState(store.user);
   const [open, setOpen] = useState<boolean>(true);
   const [selectedNetwork, setSelectedNetwork] = useState<BlockchainNetwork | null>(null);
+  const [karma, setKarma] = useState<number>(1);
+  const { showToast } = useToastContext();
+
+  const { ask } = useChatContext();
+
   const confirmTip = (v: boolean) => {
+    if (v) {
+      ask(
+        {
+          text: `@${you?.username} has copied @${user.username} ${
+            selectedNetwork?.label
+          } Address: ${
+            user.cryptocurrency.filter((i) => selectedNetwork?.id === i.id)[0].address
+          } - awaiting confirmation`,
+        },
+        { isBot: 'Tip Bot' },
+      );
+    }
     setOpen(false);
+    setSelectedNetwork(null);
+  };
+
+  const sendKarma = () => {
+    if (you) {
+      if (you.karma < karma) {
+        showToast({ message: 'You dont have enough karma points', status: 'error' });
+      }
+
+      request.post('/api/user/sendkarma', { karma, userId: user.id }).then(() => {
+        setYou({ ...you, karma: you.karma - karma });
+        ask(
+          {
+            text: `@${you?.username} sent ${karma} to @${user.username} `,
+          },
+          { isBot: 'Karma Bot' },
+        );
+        showToast({ message: 'Karma sent successfully', status: 'success' });
+      });
+    }
   };
 
   useEffect(() => {
@@ -88,8 +125,6 @@ export default function TipModal({ user }: { user: TUser }) {
       setSelectedNetwork(null);
     }
   }, [open]);
-
-  console.log(open);
 
   return (
     <Dialog
@@ -107,6 +142,58 @@ export default function TipModal({ user }: { user: TUser }) {
         main={
           <>
             <div className="flex w-full flex-col items-center gap-2">
+              <div className="flex w-full flex-col items-start justify-around gap-1">
+                <p>Send Karma Points to @{user.username}</p>
+                <p className="text-xs text-gray-700">Your Karma Points Balance: {you?.karma}</p>
+                <div className="flex gap-1">
+                  <button
+                    className={`rounded-full border-2 border-black px-3 ${
+                      karma === 1 ? 'bg-green-500' : ''
+                    }`}
+                    onClick={() => setKarma(1)}
+                  >
+                    1
+                  </button>
+                  <button
+                    className={`rounded-full border-2 border-black px-3 ${
+                      karma === 2 ? 'bg-green-500' : ''
+                    }`}
+                    onClick={() => setKarma(2)}
+                  >
+                    2
+                  </button>
+                  <button
+                    className={`rounded-full border-2 border-black px-3 ${
+                      karma === 3 ? 'bg-green-500' : ''
+                    }`}
+                    onClick={() => setKarma(3)}
+                  >
+                    3
+                  </button>
+                  <button
+                    className={`rounded-full border-2 border-black px-3 ${
+                      karma === 4 ? 'bg-green-500' : ''
+                    }`}
+                    onClick={() => setKarma(4)}
+                  >
+                    4
+                  </button>
+                  <button
+                    className={`rounded-full border-2 border-black px-3 ${
+                      karma === 5 ? 'bg-green-500' : ''
+                    }`}
+                    onClick={() => setKarma(5)}
+                  >
+                    5
+                  </button>
+                </div>
+                <button
+                  className="rounded-full bg-green-500 px-5 py-1 text-white transition hover:bg-green-550"
+                  onClick={sendKarma}
+                >
+                  Send {karma} Karma points
+                </button>
+              </div>
               <div className="grid w-full items-center gap-2 text-gray-850 dark:text-white">
                 {selectedNetwork === null ? (
                   user.cryptocurrency &&
@@ -135,12 +222,6 @@ export default function TipModal({ user }: { user: TUser }) {
               </Button>
             ) : (
               <>
-                {/* <Button
-                  className="border border-gray-20 bg-transparent text-gray-400 hover:bg-gray-50"
-                  onClick={() => setSelectedNetwork(null)}
-                >
-                  Cancel
-                </Button> */}
                 <Button
                   className="rounded-2xl border border-gray-20 bg-transparent text-gray-400 hover:bg-gray-50"
                   onClick={() => confirmTip(false)}
