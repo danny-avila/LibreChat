@@ -1,4 +1,4 @@
-import { ExternalLink } from 'lucide-react';
+import { Link } from 'lucide-react';
 import type { TMessage } from 'librechat-data-provider';
 import { useLocalize, useNavigateToConvo } from '~/hooks';
 import { useSearchContext } from '~/Providers';
@@ -32,7 +32,7 @@ export default function SearchButtons({ message }: { message: TMessage }) {
         onClick={clickHandler}
         title={localize('com_ui_go_to_conversation')}
       >
-        <ExternalLink className="icon-md" />
+        <Link className="icon-sm" />
         {message.title}
       </a>
     </div>
