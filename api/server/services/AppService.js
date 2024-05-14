@@ -72,7 +72,14 @@ const AppService = async (app) => {
   }
 
   if (config?.endpoints?.[EModelEndpoint.azureOpenAI]?.assistants) {
-    endpointLocals[EModelEndpoint.assistants] = azureAssistantsDefaults();
+    endpointLocals[EModelEndpoint.azureAssistants] = azureAssistantsDefaults();
+  }
+
+  if (config?.endpoints?.[EModelEndpoint.azureAssistants]) {
+    endpointLocals[EModelEndpoint.azureAssistants] = assistantsConfigSetup(
+      config,
+      endpointLocals[EModelEndpoint.azureAssistants],
+    );
   }
 
   if (config?.endpoints?.[EModelEndpoint.assistants]) {

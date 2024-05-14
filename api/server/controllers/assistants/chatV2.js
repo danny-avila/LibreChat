@@ -1,14 +1,13 @@
 const { v4 } = require('uuid');
-const express = require('express');
 const {
   Constants,
   RunStatus,
   CacheKeys,
-  FileSources,
   ContentTypes,
+  ToolCallTypes,
   EModelEndpoint,
   ViolationTypes,
-  ImageVisionTool,
+  retrievalMimeTypes,
   AssistantStreamEvents,
 } = require('librechat-data-provider');
 const {
@@ -21,27 +20,17 @@ const {
 } = require('~/server/services/Threads');
 const { sendResponse, sendMessage, sleep, isEnabled, countTokens } = require('~/server/utils');
 const { runAssistant, createOnTextProgress } = require('~/server/services/AssistantService');
-const { addTitle, initializeClient } = require('~/server/services/Endpoints/assistants');
-const { formatMessage, createVisionPrompt } = require('~/app/clients/prompts');
 const { createRun, StreamRunManager } = require('~/server/services/Runs');
+const { addTitle } = require('~/server/services/Endpoints/assistants');
 const { getTransactions } = require('~/models/Transaction');
 const checkBalance = require('~/models/checkBalance');
 const { getConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
 const { getModelMaxTokens } = require('~/utils');
+const { getOpenAIClient } = require('./helpers');
 const { logger } = require('~/config');
 
-const router = express.Router();
-const {
-  setHeaders,
-  handleAbort,
-  validateModel,
-  handleAbortError,
-  // validateEndpoint,
-  buildEndpointOption,
-} = require('~/server/middleware');
-
-router.post('/abort', handleAbort());
+const { handleAbortError } = require('~/server/middleware');
 
 const ten_minutes = 1000 * 60 * 10;
 
@@ -49,16 +38,18 @@ const ten_minutes = 1000 * 60 * 10;
  * @route POST /
  * @desc Chat with an assistant
  * @access Public
- * @param {express.Request} req - The request object, containing the request data.
- * @param {express.Response} res - The response object, used to send back a response.
+ * @param {Express.Request} req - The request object, containing the request data.
+ * @param {Express.Response} res - The response object, used to send back a response.
  * @returns {void}
  */
-router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res) => {
+const chatV2 = async (req, res) => {
   logger.debug('[/assistants/chat/] req.body', req.body);
 
+  /** @type {{ files: MongoFile[]}} */
   const {
     text,
     model,
+    endpoint,
     files = [],
     promptPrefix,
     assistant_id,
@@ -70,7 +61,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
   } = req.body;
 
   /** @type {Partial<TAssistantEndpoint>} */
-  const assistantsConfig = req.app.locals?.[EModelEndpoint.assistants];
+  const assistantsConfig = req.app.locals?.[endpoint];
 
   if (assistantsConfig) {
     const { supportedIds, excludedIds } = assistantsConfig;
@@ -111,8 +102,6 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
   let attachedFileIds = new Set();
   /** @type {TMessage | null} */
   let requestMessage = null;
-  /** @type {undefined | Promise<ChatCompletion>} */
-  let visionPromise;
 
   const userMessageId = v4();
   const responseMessageId = v4();
@@ -138,7 +127,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
       user: req.user.id,
       shouldSaveMessage: false,
       messageId: responseMessageId,
-      endpoint: EModelEndpoint.assistants,
+      endpoint,
     };
 
     if (error.message === 'Run cancelled') {
@@ -149,7 +138,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
       logger.debug('[/assistants/chat/] Request aborted on close');
     } else if (/Files.*are invalid/.test(error.message)) {
       const errorMessage = `Files are invalid, or may not have uploaded yet.${
-        req.app.locals?.[EModelEndpoint.azureOpenAI].assistants
+        endpoint === EModelEndpoint.azureAssistants
           ? ' If using Azure OpenAI, files are only available in the region of the assistant\'s model at the time of upload.'
           : ''
       }`;
@@ -205,6 +194,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
       const runMessages = await checkMessageGaps({
         openai,
         run_id,
+        endpoint,
         thread_id,
         conversationId,
         latestMessageId: responseMessageId,
@@ -311,8 +301,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
       });
     };
 
-    /** @type {{ openai: OpenAIClient }} */
-    const { openai: _openai, client } = await initializeClient({
+    const { openai: _openai, client } = await getOpenAIClient({
       req,
       res,
       endpointOption: req.body.endpointOption,
@@ -327,7 +316,12 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
 
     let userMessage = {
       role: 'user',
-      content: text,
+      content: [
+        {
+          type: ContentTypes.TEXT,
+          text,
+        },
+      ],
       metadata: {
         messageId: userMessageId,
       },
@@ -356,70 +350,48 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
         }
       }
 
-      file_ids = files.map(({ file_id }) => file_id);
-      if (file_ids.length || thread_file_ids.length) {
-        userMessage.file_ids = file_ids;
+      if (files.length || thread_file_ids.length) {
         attachedFileIds = new Set([...file_ids, ...thread_file_ids]);
+
+        let attachmentIndex = 0;
+        for (const file of files) {
+          file_ids.push(file.file_id);
+          if (file.type.startsWith('image')) {
+            userMessage.content.push({
+              type: ContentTypes.IMAGE_FILE,
+              [ContentTypes.IMAGE_FILE]: { file_id: file.file_id },
+            });
+          }
+
+          if (!userMessage.attachments) {
+            userMessage.attachments = [];
+          }
+
+          userMessage.attachments.push({
+            file_id: file.file_id,
+            tools: [{ type: ToolCallTypes.CODE_INTERPRETER }],
+          });
+
+          if (file.type.startsWith('image')) {
+            continue;
+          }
+
+          const mimeType = file.type;
+          const isSupportedByRetrieval = retrievalMimeTypes.some((regex) => regex.test(mimeType));
+          if (isSupportedByRetrieval) {
+            userMessage.attachments[attachmentIndex].tools.push({
+              type: ToolCallTypes.FILE_SEARCH,
+            });
+          }
+
+          attachmentIndex++;
+        }
       }
-    };
-
-    const addVisionPrompt = async () => {
-      if (!req.body.endpointOption.attachments) {
-        return;
-      }
-
-      /** @type {MongoFile[]} */
-      const attachments = await req.body.endpointOption.attachments;
-      if (
-        attachments &&
-        attachments.every((attachment) => attachment.source === FileSources.openai)
-      ) {
-        return;
-      }
-
-      const assistant = await openai.beta.assistants.retrieve(assistant_id);
-      const visionToolIndex = assistant.tools.findIndex(
-        (tool) => tool?.function && tool?.function?.name === ImageVisionTool.function.name,
-      );
-
-      if (visionToolIndex === -1) {
-        return;
-      }
-
-      let visionMessage = {
-        role: 'user',
-        content: '',
-      };
-      const files = await client.addImageURLs(visionMessage, attachments);
-      if (!visionMessage.image_urls?.length) {
-        return;
-      }
-
-      const imageCount = visionMessage.image_urls.length;
-      const plural = imageCount > 1;
-      visionMessage.content = createVisionPrompt(plural);
-      visionMessage = formatMessage({ message: visionMessage, endpoint: EModelEndpoint.openAI });
-
-      visionPromise = openai.chat.completions.create({
-        model: 'gpt-4-vision-preview',
-        messages: [visionMessage],
-        max_tokens: 4000,
-      });
-
-      const pluralized = plural ? 's' : '';
-      body.additional_instructions = `${
-        body.additional_instructions ? `${body.additional_instructions}\n` : ''
-      }The user has uploaded ${imageCount} image${pluralized}.
-      Use the \`${ImageVisionTool.function.name}\` tool to retrieve ${
-  plural ? '' : 'a '
-}detailed text description${pluralized} for ${plural ? 'each' : 'the'} image${pluralized}.`;
-
-      return files;
     };
 
     const initializeThread = async () => {
-      /** @type {[ undefined | MongoFile[]]}*/
-      const [processedFiles] = await Promise.all([addVisionPrompt(), getRequestFileIds()]);
+      await getRequestFileIds();
+
       // TODO: may allow multiple messages to be created beforehand in a future update
       const initThreadBody = {
         messages: [userMessage],
@@ -428,20 +400,6 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
           conversationId,
         },
       };
-
-      if (processedFiles) {
-        for (const file of processedFiles) {
-          if (file.source !== FileSources.openai) {
-            attachedFileIds.delete(file.file_id);
-            const index = file_ids.indexOf(file.file_id);
-            if (index > -1) {
-              file_ids.splice(index, 1);
-            }
-          }
-        }
-
-        userMessage.file_ids = file_ids;
-      }
 
       const result = await initThread({ openai, body: initThreadBody, thread_id });
       thread_id = result.thread_id;
@@ -467,6 +425,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
         assistant_id,
         thread_id,
         model: assistant_id,
+        endpoint,
       };
 
       previousMessages.push(requestMessage);
@@ -476,7 +435,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
 
       conversation = {
         conversationId,
-        endpoint: EModelEndpoint.assistants,
+        endpoint,
         promptPrefix: promptPrefix,
         instructions: instructions,
         assistant_id,
@@ -513,10 +472,9 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
     let response;
 
     const processRun = async (retry = false) => {
-      if (req.app.locals[EModelEndpoint.azureOpenAI]?.assistants) {
+      if (endpoint === EModelEndpoint.azureAssistants) {
         body.model = openai._options.model;
         openai.attachedFileIds = attachedFileIds;
-        openai.visionPromise = visionPromise;
         if (retry) {
           response = await runAssistant({
             openai,
@@ -561,7 +519,6 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
         openai,
         handlers,
         thread_id,
-        visionPromise,
         attachedFileIds,
         responseMessage: openai.responseMessage,
         // streamOptions: {
@@ -603,6 +560,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
       assistant_id,
       thread_id,
       model: assistant_id,
+      endpoint,
     };
 
     sendMessage(res, {
@@ -655,6 +613,6 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
   } catch (error) {
     await handleError(error);
   }
-});
+};
 
-module.exports = router;
+module.exports = chatV2;

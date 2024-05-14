@@ -62,8 +62,24 @@ const deleteAction = async (searchParams, session = null) => {
   return await Action.findOneAndDelete(searchParams, options).lean();
 };
 
+/**
+ * Deletes actions by params, within a transaction session if provided.
+ *
+ * @param {Object} searchParams - The search parameters to find the actions to delete.
+ * @param {string} searchParams.action_id - The ID of the action(s) to delete.
+ * @param {string} searchParams.user - The user ID of the action's author.
+ * @param {mongoose.ClientSession} [session] - The transaction session to use (optional).
+ * @returns {Promise<Number>} A promise that resolves to the number of deleted action documents.
+ */
+const deleteActions = async (searchParams, session = null) => {
+  const options = session ? { session } : {};
+  const result = await Action.deleteMany(searchParams, options);
+  return result.deletedCount;
+};
+
 module.exports = {
-  updateAction,
   getActions,
+  updateAction,
   deleteAction,
+  deleteActions,
 };

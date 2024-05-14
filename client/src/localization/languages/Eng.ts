@@ -196,6 +196,8 @@ export default {
   com_ui_result: 'Result',
   com_ui_image_gen: 'Image Gen',
   com_ui_assistant: 'Assistant',
+  com_ui_assistant_deleted: 'Successfully deleted assistant',
+  com_ui_assistant_delete_error: 'There was an error deleting the assistant',
   com_ui_assistants: 'Assistants',
   com_ui_attachment: 'Attachment',
   com_ui_assistants_output: 'Assistants Output',

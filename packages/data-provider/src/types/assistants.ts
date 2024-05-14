@@ -1,4 +1,5 @@
 import type { OpenAPIV3 } from 'openapi-types';
+import type { AssistantsEndpoint } from 'src/schemas';
 import type { TFile } from './files';
 
 export type Schema = OpenAPIV3.SchemaObject & { description?: string };
@@ -10,6 +11,7 @@ export type Metadata = {
 
 export enum Tools {
   code_interpreter = 'code_interpreter',
+  file_search = 'file_search',
   retrieval = 'retrieval',
   function = 'function',
 }
@@ -27,6 +29,35 @@ export type FunctionTool = {
   };
 };
 
+/**
+ * A set of resources that are used by the assistant's tools. The resources are
+ * specific to the type of tool. For example, the `code_interpreter` tool requires
+ * a list of file IDs, while the `file_search` tool requires a list of vector store
+ * IDs.
+ */
+export interface ToolResources {
+  code_interpreter?: CodeInterpreterResource;
+  file_search?: FileSearchResource;
+}
+export interface CodeInterpreterResource {
+  /**
+   * A list of [file](https://platform.openai.com/docs/api-reference/files) IDs made
+   * available to the `code_interpreter`` tool. There can be a maximum of 20 files
+   * associated with the tool.
+   */
+  file_ids?: Array<string>;
+}
+
+export interface FileSearchResource {
+  /**
+   * The ID of the
+   * [vector store](https://platform.openai.com/docs/api-reference/vector-stores/object)
+   * attached to this assistant. There can be a maximum of 1 vector store attached to
+   * the assistant.
+   */
+  vector_store_ids?: Array<string>;
+}
+
 export type Assistant = {
   id: string;
   created_at: number;
@@ -38,7 +69,10 @@ export type Assistant = {
   name: string | null;
   object: string;
   tools: FunctionTool[];
+  tool_resources?: ToolResources;
 };
+
+export type TAssistantsMap = Record<AssistantsEndpoint, Record<string, Assistant>>;
 
 export type AssistantCreateParams = {
   model: string;
@@ -48,6 +82,8 @@ export type AssistantCreateParams = {
   metadata?: Metadata | null;
   name?: string | null;
   tools?: Array<FunctionTool | string>;
+  endpoint: AssistantsEndpoint;
+  version: number | string;
 };
 
 export type AssistantUpdateParams = {
@@ -58,6 +94,7 @@ export type AssistantUpdateParams = {
   metadata?: Metadata | null;
   name?: string | null;
   tools?: Array<FunctionTool | string>;
+  endpoint: AssistantsEndpoint;
 };
 
 export type AssistantListParams = {
@@ -65,6 +102,7 @@ export type AssistantListParams = {
   before?: string | null;
   after?: string | null;
   order?: 'asc' | 'desc';
+  endpoint: AssistantsEndpoint;
 };
 
 export type AssistantListResponse = {
@@ -124,11 +162,21 @@ export type RetrievalToolCall = {
 };
 
 /**
+ * Details of a Retrieval tool call the run step was involved in.
+ * Includes the tool call ID and the type of tool call.
+ */
+export type FileSearchToolCall = {
+  id: string; // The ID of the tool call object.
+  file_search: unknown; // An empty object for now.
+  type: 'file_search'; // The type of tool call, always 'retrieval'.
+};
+
+/**
  * Details of the tool calls involved in a run step.
  * Can be associated with one of three types of tools: `code_interpreter`, `retrieval`, or `function`.
  */
 export type ToolCallsStepDetails = {
-  tool_calls: Array<CodeToolCall | RetrievalToolCall | FunctionToolCall>; // An array of tool calls the run step was involved in.
+  tool_calls: Array<CodeToolCall | RetrievalToolCall | FileSearchToolCall | FunctionToolCall>; // An array of tool calls the run step was involved in.
   type: 'tool_calls'; // Always 'tool_calls'.
 };
 
@@ -203,6 +251,7 @@ export enum StepTypes {
 export enum ToolCallTypes {
   FUNCTION = 'function',
   RETRIEVAL = 'retrieval',
+  FILE_SEARCH = 'file_search',
   CODE_INTERPRETER = 'code_interpreter',
 }
 
@@ -239,7 +288,14 @@ export type PartMetadata = {
   action?: boolean;
 };
 
-export type ContentPart = (CodeToolCall | RetrievalToolCall | FunctionToolCall | ImageFile | Text) &
+export type ContentPart = (
+  | CodeToolCall
+  | RetrievalToolCall
+  | FileSearchToolCall
+  | FunctionToolCall
+  | ImageFile
+  | Text
+) &
   PartMetadata;
 
 export type TMessageContentParts =
@@ -247,7 +303,8 @@ export type TMessageContentParts =
   | { type: ContentTypes.TEXT; text: Text & PartMetadata }
   | {
       type: ContentTypes.TOOL_CALL;
-      tool_call: (CodeToolCall | RetrievalToolCall | FunctionToolCall) & PartMetadata;
+      tool_call: (CodeToolCall | RetrievalToolCall | FileSearchToolCall | FunctionToolCall) &
+        PartMetadata;
     }
   | { type: ContentTypes.IMAGE_FILE; image_file: ImageFile & PartMetadata };
 
@@ -315,6 +372,7 @@ export type Action = {
   type?: string;
   settings?: Record<string, unknown>;
   metadata: ActionMetadata;
+  version: number | string;
 };
 
 export type AssistantAvatar = {
@@ -334,6 +392,7 @@ export type AssistantDocument = {
 };
 
 export enum FilePurpose {
+  Vision = 'vision',
   FineTune = 'fine-tune',
   FineTuneResults = 'fine-tune-results',
   Assistants = 'assistants',

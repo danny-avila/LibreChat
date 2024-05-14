@@ -11,14 +11,19 @@ const {
   mergeFileConfig,
   hostImageIdSuffix,
   hostImageNamePrefix,
+  isAssistantsEndpoint,
 } = require('librechat-data-provider');
 const { convertImage, resizeAndConvert } = require('~/server/services/Files/images');
-const { initializeClient } = require('~/server/services/Endpoints/assistants');
+const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { createFile, updateFileUsage, deleteFiles } = require('~/models/File');
+const { addResourceFileId } = require('~/server/controllers/assistants/v2');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
 const { logger } = require('~/config');
+
+const checkOpenAIStorage = (source) =>
+  source === FileSources.openai || source === FileSources.azure;
 
 const processFiles = async (files) => {
   const promises = [];
@@ -41,7 +46,7 @@ const processFiles = async (files) => {
  * @param {OpenAI | undefined} [openai] - If an OpenAI file, the initialized OpenAI client.
  */
 function enqueueDeleteOperation(req, file, deleteFile, promises, openai) {
-  if (file.source === FileSources.openai) {
+  if (checkOpenAIStorage(file.source)) {
     // Enqueue to leaky bucket
     promises.push(
       new Promise((resolve, reject) => {
@@ -93,14 +98,14 @@ const processDeleteRequest = async ({ req, files }) => {
   /** @type {OpenAI | undefined} */
   let openai;
   if (req.body.assistant_id) {
-    ({ openai } = await initializeClient({ req }));
+    ({ openai } = await getOpenAIClient({ req }));
   }
 
   for (const file of files) {
     const source = file.source ?? FileSources.local;
 
-    if (source === FileSources.openai && !openai) {
-      ({ openai } = await initializeClient({ req }));
+    if (checkOpenAIStorage(source) && !openai) {
+      ({ openai } = await getOpenAIClient({ req }));
     }
 
     if (req.body.assistant_id) {
@@ -180,12 +185,13 @@ const processFileURL = async ({ fileStrategy, userId, URL, fileName, basePath, c
  *
  * @param {Object} params - The parameters object.
  * @param {Express.Request} params.req - The Express request object.
- * @param {Express.Response} params.res - The Express response object.
+ * @param {Express.Response} [params.res] - The Express response object.
  * @param {Express.Multer.File} params.file - The uploaded file.
  * @param {ImageMetadata} params.metadata - Additional metadata for the file.
+ * @param {boolean} params.returnFile - Whether to return the file metadata or return response as normal.
  * @returns {Promise<void>}
  */
-const processImageFile = async ({ req, res, file, metadata }) => {
+const processImageFile = async ({ req, res, file, metadata, returnFile = false }) => {
   const source = req.app.locals.fileStrategy;
   const { handleImageUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id, endpoint } = metadata;
@@ -213,6 +219,10 @@ const processImageFile = async ({ req, res, file, metadata }) => {
     },
     true,
   );
+
+  if (returnFile) {
+    return result;
+  }
   res.status(200).json({ message: 'File uploaded and processed successfully', ...result });
 };
 
@@ -274,28 +284,57 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
  * @returns {Promise<void>}
  */
 const processFileUpload = async ({ req, res, file, metadata }) => {
-  const isAssistantUpload = metadata.endpoint === EModelEndpoint.assistants;
-  const source = isAssistantUpload ? FileSources.openai : FileSources.vectordb;
+  const isAssistantUpload = isAssistantsEndpoint(metadata.endpoint);
+  const assistantSource =
+    metadata.endpoint === EModelEndpoint.azureAssistants ? FileSources.azure : FileSources.openai;
+  const source = isAssistantUpload ? assistantSource : FileSources.vectordb;
   const { handleFileUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id } = metadata;
 
   /** @type {OpenAI | undefined} */
   let openai;
-  if (source === FileSources.openai) {
-    ({ openai } = await initializeClient({ req }));
+  if (checkOpenAIStorage(source)) {
+    ({ openai } = await getOpenAIClient({ req }));
   }
 
-  const { id, bytes, filename, filepath, embedded } = await handleFileUpload({
+  const {
+    id,
+    bytes,
+    filename,
+    filepath: _filepath,
+    embedded,
+    height,
+    width,
+  } = await handleFileUpload({
     req,
     file,
     file_id,
     openai,
   });
 
-  if (isAssistantUpload && !metadata.message_file) {
+  if (isAssistantUpload && !metadata.message_file && !metadata.tool_resource) {
     await openai.beta.assistants.files.create(metadata.assistant_id, {
       file_id: id,
     });
+  } else if (isAssistantUpload && !metadata.message_file) {
+    await addResourceFileId({
+      req,
+      openai,
+      file_id: id,
+      assistant_id: metadata.assistant_id,
+      tool_resource: metadata.tool_resource,
+    });
+  }
+
+  let filepath = isAssistantUpload ? `${openai.baseURL}/files/${id}` : _filepath;
+  if (isAssistantUpload && file.mimetype.startsWith('image')) {
+    const result = await processImageFile({
+      req,
+      file,
+      metadata: { file_id: v4() },
+      returnFile: true,
+    });
+    filepath = result.filepath;
   }
 
   const result = await createFile(
@@ -304,13 +343,15 @@ const processFileUpload = async ({ req, res, file, metadata }) => {
       file_id: id ?? file_id,
       temp_file_id,
       bytes,
+      filepath,
       filename: filename ?? file.originalname,
-      filepath: isAssistantUpload ? `${openai.baseURL}/files/${id}` : filepath,
       context: isAssistantUpload ? FileContext.assistants : FileContext.message_attachment,
       model: isAssistantUpload ? req.body.model : undefined,
       type: file.mimetype,
       embedded,
       source,
+      height,
+      width,
     },
     true,
   );
@@ -500,7 +541,12 @@ async function retrieveAndProcessFile({
  * Filters a file based on its size and the endpoint origin.
  *
  * @param {Object} params - The parameters for the function.
- * @param {Express.Request} params.req - The request object from Express.
+ * @param {object} params.req - The request object from Express.
+ * @param {string} [params.req.endpoint]
+ * @param {string} [params.req.file_id]
+ * @param {number} [params.req.width]
+ * @param {number} [params.req.height]
+ * @param {number} [params.req.version]
  * @param {Express.Multer.File} params.file - The file uploaded to the server via multer.
  * @param {boolean} [params.image] - Whether the file expected is an image.
  * @returns {void}

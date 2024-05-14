@@ -2,6 +2,7 @@ const {
   Capabilities,
   EModelEndpoint,
   assistantEndpointSchema,
+  defaultAssistantsVersion,
 } = require('librechat-data-provider');
 const { logger } = require('~/config');
 
@@ -12,6 +13,7 @@ const { logger } = require('~/config');
 function azureAssistantsDefaults() {
   return {
     capabilities: [Capabilities.tools, Capabilities.actions, Capabilities.code_interpreter],
+    version: defaultAssistantsVersion.azureAssistants,
   };
 }
 
