@@ -2,6 +2,7 @@ import { useMemo, memo } from 'react';
 import { parseISO, isToday } from 'date-fns';
 import { TConversation } from 'librechat-data-provider';
 import { groupConversationsByDate } from '~/utils';
+import { useLocalize } from '~/hooks';
 import Convo from './Convo';
 
 const Conversations = ({
@@ -13,6 +14,7 @@ const Conversations = ({
   moveToTop: () => void;
   toggleNav: () => void;
 }) => {
+  const localize = useLocalize();
   const groupedConversations = useMemo(
     () => groupConversationsByDate(conversations),
     [conversations],
@@ -38,7 +40,7 @@ const Conversations = ({
                   paddingLeft: '10px',
                 }}
               >
-                {groupName}
+                {localize(groupName) || groupName}
               </div>
               {convos.map((convo, i) => (
                 <Convo
