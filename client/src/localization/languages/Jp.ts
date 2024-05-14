@@ -455,6 +455,24 @@ export default {
   com_nav_setting_data: 'データ管理',
   com_nav_setting_account: 'アカウント',
   /* The following are AI translated */
+  com_ui_date_today: '今日',
+  com_ui_date_yesterday: '昨日',
+  com_ui_date_previous_7_days: '過去7日間',
+  com_ui_date_previous_30_days: '過去30日間',
+  com_ui_date_january: '1月',
+  com_ui_date_february: '2月',
+  com_ui_date_march: '3月',
+  com_ui_date_april: '4月',
+  com_ui_date_may: '5月',
+  com_ui_date_june: '6月',
+  com_ui_date_july: '7月',
+  com_ui_date_august: '8月',
+  com_ui_date_september: '9月',
+  com_ui_date_october: '10月',
+  com_ui_date_november: '11月',
+  com_ui_date_december: '12月',
+  com_ui_nothing_found: '該当するものが見つかりませんでした',
+  com_ui_go_to_conversation: '会話に移動する',
   com_error_invalid_user_key: '無効なキーが提供されました。キーを入力して再試行してください。',
   com_ui_none_selected: '選択されていません',
   com_ui_fork: '分岐',
@@ -2192,6 +2210,78 @@ export const comparisons = {
   com_nav_setting_account: {
     english: 'Account',
     translated: 'アカウント',
+  },
+  com_ui_date_today: {
+    english: 'Today',
+    translated: '今日',
+  },
+  com_ui_date_yesterday: {
+    english: 'Yesterday',
+    translated: '昨日',
+  },
+  com_ui_date_previous_7_days: {
+    english: 'Previous 7 days',
+    translated: '過去7日間',
+  },
+  com_ui_date_previous_30_days: {
+    english: 'Previous 30 days',
+    translated: '過去30日間',
+  },
+  com_ui_date_january: {
+    english: 'January',
+    translated: '1月',
+  },
+  com_ui_date_february: {
+    english: 'February',
+    translated: '2月',
+  },
+  com_ui_date_march: {
+    english: 'March',
+    translated: '3月',
+  },
+  com_ui_date_april: {
+    english: 'April',
+    translated: '4月',
+  },
+  com_ui_date_may: {
+    english: 'May',
+    translated: '5月',
+  },
+  com_ui_date_june: {
+    english: 'June',
+    translated: '6月',
+  },
+  com_ui_date_july: {
+    english: 'July',
+    translated: '7月',
+  },
+  com_ui_date_august: {
+    english: 'August',
+    translated: '8月',
+  },
+  com_ui_date_september: {
+    english: 'September',
+    translated: '9月',
+  },
+  com_ui_date_october: {
+    english: 'October',
+    translated: '10月',
+  },
+  com_ui_date_november: {
+    english: 'November',
+    translated: '11月',
+  },
+  com_ui_date_december: {
+    english: 'December',
+    translated: '12月',
+  },
+  com_ui_nothing_found: {
+    english: 'Nothing found',
+    translated: '該当するものが見つかりませんでした',
+  },
+  com_ui_go_to_conversation: {
+    english: 'Go to conversation',
+    translated: '会話に移動する',
   },
   com_error_invalid_user_key: {
     english: 'Invalid key provided. Please provide a key and try again.',

@@ -417,6 +417,21 @@ export default {
   com_nav_setting_data: '数据管理',
   com_nav_setting_account: '账户',
   /* The following are AI Translated */
+  com_ui_date_today: '今天',
+  com_ui_date_yesterday: '昨天',
+  com_ui_date_previous_7_days: '过去7天',
+  com_ui_date_previous_30_days: '过去30天',
+  com_ui_date_january: '一月',
+  com_ui_date_february: '二月',
+  com_ui_date_march: '三月',
+  com_ui_date_april: '四月',
+  com_ui_date_may: '五月',
+  com_ui_date_june: '六月',
+  com_ui_date_july: '七月',
+  com_ui_date_august: '八月',
+  com_ui_date_september: '九月',
+  com_ui_nothing_found: '未找到任何内容',
+  com_ui_go_to_conversation: '转到对话',
   com_error_moderation:
     '很抱歉,您提交的内容被我们的审核系统标记为不符合社区指引。我们无法就此特定主题继续交流。如果您有任何其他问题或想探讨的话题,请编辑您的消息或开启新的对话。',
   com_error_no_user_key: '没有找到密钥。请提供密钥后重试。',
@@ -2095,6 +2110,66 @@ export const comparisons = {
   com_nav_setting_account: {
     english: 'Account',
     translated: '账户',
+  },
+  com_ui_date_today: {
+    english: 'Today',
+    translated: '今天',
+  },
+  com_ui_date_yesterday: {
+    english: 'Yesterday',
+    translated: '昨天',
+  },
+  com_ui_date_previous_7_days: {
+    english: 'Previous 7 days',
+    translated: '过去7天',
+  },
+  com_ui_date_previous_30_days: {
+    english: 'Previous 30 days',
+    translated: '过去30天',
+  },
+  com_ui_date_january: {
+    english: 'January',
+    translated: '一月',
+  },
+  com_ui_date_february: {
+    english: 'February',
+    translated: '二月',
+  },
+  com_ui_date_march: {
+    english: 'March',
+    translated: '三月',
+  },
+  com_ui_date_april: {
+    english: 'April',
+    translated: '四月',
+  },
+  com_ui_date_may: {
+    english: 'May',
+    translated: '五月',
+  },
+  com_ui_date_june: {
+    english: 'June',
+    translated: '六月',
+  },
+  com_ui_date_july: {
+    english: 'July',
+    translated: '七月',
+  },
+  com_ui_date_august: {
+    english: 'August',
+    translated: '八月',
+  },
+  com_ui_date_september: {
+    english: 'September',
+    translated: '九月',
+  },
+  com_ui_nothing_found: {
+    english: 'Nothing found',
+    translated: '未找到任何内容',
+  },
+  com_ui_go_to_conversation: {
+    english: 'Go to conversation',
+    translated: '转到对话',
   },
   com_error_moderation: {
     english:
