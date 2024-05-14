@@ -37,7 +37,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
 
   const sendRequest = useCallback(
     (value: string) => {
-      queryClient.invalidateQueries([QueryKeys.messages, 'new']);
+      queryClient.invalidateQueries([QueryKeys.messages]);
       clearConvoState();
       setSearchQuery(value);
     },
@@ -47,6 +47,10 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
 
   const onChange = (e: React.FormEvent<HTMLInputElement>) => {
     const { value } = e.target as HTMLInputElement;
+    if (!value) {
+      clearText();
+      return;
+    }
     setShowClearIcon(value.length > 0);
     setText(value);
     debouncedSendRequest(value);
