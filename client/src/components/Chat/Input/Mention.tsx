@@ -99,7 +99,7 @@ export default function Mention({
             } else if (e.key === 'ArrowUp') {
               setActiveIndex((prevIndex) => (prevIndex - 1 + matches.length) % matches.length);
             } else if (e.key === 'Enter' || e.key === 'Tab') {
-              const mentionOption = matches[0] as MentionOption | undefined;
+              const mentionOption = matches[activeIndex] as MentionOption | undefined;
               if (mentionOption?.type === 'endpoint') {
                 e.preventDefault();
               } else if (e.key === 'Enter') {
