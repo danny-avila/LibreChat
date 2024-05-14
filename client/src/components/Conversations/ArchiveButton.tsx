@@ -1,12 +1,10 @@
-import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
+import { useParams, useNavigate } from 'react-router-dom';
 import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
-import { useParams } from 'react-router-dom';
-
-import { useArchiveConversationMutation } from '~/data-provider';
-
+import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
 import { useConversations, useLocalize, useNewConvo } from '~/hooks';
-import { useToastContext } from '~/Providers';
+import { useArchiveConversationMutation } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
+import { useToastContext } from '~/Providers';
 
 type ArchiveButtonProps = {
   conversationId: string;
@@ -23,8 +21,9 @@ export default function ArchiveButton({
   className = '',
 }: ArchiveButtonProps) {
   const localize = useLocalize();
-  const { newConversation } = useNewConvo();
+  const navigate = useNavigate();
   const { showToast } = useToastContext();
+  const { newConversation } = useNewConvo();
   const { refreshConversations } = useConversations();
   const { conversationId: currentConvoId } = useParams();
 
@@ -42,8 +41,9 @@ export default function ArchiveButton({
       { conversationId, isArchived: shouldArchive },
       {
         onSuccess: () => {
-          if (currentConvoId === conversationId) {
+          if (currentConvoId === conversationId || currentConvoId === 'new') {
             newConversation();
+            navigate('/c/new', { replace: true });
           }
           refreshConversations();
           retainView();
