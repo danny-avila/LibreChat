@@ -5,6 +5,7 @@ import {
   useRecoilState,
   useRecoilValue,
   useSetRecoilState,
+  useRecoilCallback,
 } from 'recoil';
 import { LocalStorageKeys } from 'librechat-data-provider';
 import type { TMessage, TPreset, TConversation, TSubmission } from 'librechat-data-provider';
@@ -30,6 +31,10 @@ const conversationByIndex = atomFamily<TConversation | null, string | number>({
             LocalStorageKeys.LAST_TOOLS,
             JSON.stringify(newValue.tools.filter((el) => !!el)),
           );
+        }
+
+        if (!newValue) {
+          return;
         }
 
         storeEndpointSettings(newValue);
@@ -131,6 +136,29 @@ function useCreateConversationAtom(key: string | number) {
   return { conversation, setConversation };
 }
 
+function useClearConvoState() {
+  const clearAllConversations = useRecoilCallback(
+    ({ reset, snapshot }) =>
+      async () => {
+        const conversationKeys = await snapshot.getPromise(conversationKeysAtom);
+
+        for (const conversationKey of conversationKeys) {
+          reset(conversationByIndex(conversationKey));
+
+          const conversation = await snapshot.getPromise(conversationByIndex(conversationKey));
+          if (conversation) {
+            reset(latestMessageFamily(conversationKey));
+          }
+        }
+
+        reset(conversationKeysAtom);
+      },
+    [],
+  );
+
+  return clearAllConversations;
+}
+
 export default {
   conversationByIndex,
   filesByIndex,
@@ -146,6 +174,7 @@ export default {
   showPopoverFamily,
   latestMessageFamily,
   allConversationsSelector,
+  useClearConvoState,
   useCreateConversationAtom,
   showMentionPopoverFamily,
 };

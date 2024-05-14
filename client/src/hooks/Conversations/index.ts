@@ -1,3 +1,4 @@
+export { default as useSearch } from './useSearch';
 export { default as usePresets } from './usePresets';
 export { default as useGetSender } from './useGetSender';
 export { default as useDefaultConvo } from './useDefaultConvo';

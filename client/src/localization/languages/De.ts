@@ -40,7 +40,7 @@ export default {
     'Beim Erstellen oder Aktualisieren der Aktion ist ein Fehler aufgetreten.',
   com_assistants_delete_actions_error: 'Beim Löschen der Aktion ist ein Fehler aufgetreten.',
   com_assistants_actions_info:
-    "Lass deinen Assistenten Informationen abrufen oder Aktionen über API's ausführen",
+    'Lass deinen Assistenten Informationen abrufen oder Aktionen über API\'s ausführen',
   com_assistants_name_placeholder: 'Optional: Der Name des Assistenten',
   com_assistants_instructions_placeholder: 'Die Systemanweisungen, die der Assistent verwendet',
   com_assistants_description_placeholder: 'Optional: Beschreibe hier deinen Assistenten',
@@ -240,9 +240,9 @@ export default {
   com_endpoint_bing_to_enable_sydney: 'Um Sydney zu aktivieren',
   com_endpoint_bing_jailbreak: 'Jailbreak',
   com_endpoint_bing_context_placeholder:
-    "Bing kann bis zu 7k Token für 'context' verwenden, auf die es in der Konversation Bezug nehmen kann. Der genaue Grenzwert ist nicht bekannt, aber mehr als 7k Token können zu Fehlern führen.",
+    'Bing kann bis zu 7k Token für \'context\' verwenden, auf die es in der Konversation Bezug nehmen kann. Der genaue Grenzwert ist nicht bekannt, aber mehr als 7k Token können zu Fehlern führen.',
   com_endpoint_bing_system_message_placeholder:
-    "WARNUNG: Der Missbrauch dieser Funktion kann dazu führen, dass du von der Nutzung von Bing ausgeschlossen wirst! Klicken Sie auf 'Systemaufforderung', um vollständige Anweisungen und die Standardnachricht zu erhalten, die als sicher gilt.",
+    'WARNUNG: Der Missbrauch dieser Funktion kann dazu führen, dass du von der Nutzung von Bing ausgeschlossen wirst! Klicken Sie auf \'Systemaufforderung\', um vollständige Anweisungen und die Standardnachricht zu erhalten, die als sicher gilt.',
   com_endpoint_system_message: 'Systemaufforderung',
   com_endpoint_message: 'Nachricht an',
   com_endpoint_message_not_appendable: 'Bearbeite deine Nachricht oder generiere sie neu.',
@@ -399,7 +399,7 @@ export default {
   com_endpoint_config_key_edge_full_key_string:
     'um die vollständigen Cookie-Strings bereitzustellen.',
   com_endpoint_config_key_chatgpt:
-    "Um dein Zugangstoken für ChatGPT 'Free Version' zu erhalten, melde dich bei",
+    'Um dein Zugangstoken für ChatGPT \'Free Version\' zu erhalten, melde dich bei',
   com_endpoint_config_key_chatgpt_then_visit: 'dann besuche',
   com_endpoint_config_key_chatgpt_copy_token: 'Kopiere das Zugangstoken.',
   com_endpoint_config_key_google_need_to: 'Du musst',
@@ -407,7 +407,7 @@ export default {
   com_endpoint_config_key_google_vertex_api: 'API auf Google Cloud, dann',
   com_endpoint_config_key_google_service_account: 'Ein Service-Konto erstellen',
   com_endpoint_config_key_google_vertex_api_role:
-    "Stelle sicher, dass du auf 'Erstellen und Fortfahren' klickst, um mindestens die 'Vertex AI User'-Rolle zu vergeben. Erstelle schließlich einen JSON-Schlüssel, den du hier importieren kannst.",
+    'Stelle sicher, dass du auf \'Erstellen und Fortfahren\' klickst, um mindestens die \'Vertex AI User\'-Rolle zu vergeben. Erstelle schließlich einen JSON-Schlüssel, den du hier importieren kannst.',
   com_nav_welcome_assistant: 'Bitte wähle einen Assistenten',
   com_nav_welcome_message: 'Wie kann ich dir heute helfen?',
   com_nav_auto_scroll: 'Beim Öffnen automatisch zum Neuesten scrollen',
@@ -481,6 +481,24 @@ export default {
   com_nav_setting_account: 'Konto',
   com_nav_language: 'Sprache',
   /* The following are AI Translated */
+  com_ui_date_today: 'Heute',
+  com_ui_date_yesterday: 'Gestern',
+  com_ui_date_previous_7_days: 'Letzte 7 Tage',
+  com_ui_date_previous_30_days: 'Letzte 30 Tage',
+  com_ui_date_january: 'Januar',
+  com_ui_date_february: 'Februar',
+  com_ui_date_march: 'März',
+  com_ui_date_april: 'April',
+  com_ui_date_may: 'Mai',
+  com_ui_date_june: 'Juni',
+  com_ui_date_july: 'Juli',
+  com_ui_date_august: 'August',
+  com_ui_date_september: 'September',
+  com_ui_date_october: 'Oktober',
+  com_ui_date_november: 'November',
+  com_ui_date_december: 'Dezember',
+  com_ui_nothing_found: 'Keine Ergebnisse gefunden',
+  com_ui_go_to_conversation: 'Zum Chat wechseln',
   com_error_moderation:
     'Es sieht so aus, als ob der übermittelte Inhalt von unserem Moderationssystem als nicht konform mit unseren Gemeinschaftsrichtlinien markiert wurde. Wir können mit diesem spezifischen Thema leider nicht fortfahren. Wenn du andere Fragen oder Themen hast, die du gerne erörtern möchtest, bearbeite bitte deine Nachricht oder starte eine neue Konversation.',
   com_error_no_user_key:
@@ -2223,6 +2241,78 @@ export const comparisons = {
   com_nav_language: {
     english: 'Language',
     translated: 'Sprache',
+  },
+  com_ui_date_today: {
+    english: 'Today',
+    translated: 'Heute',
+  },
+  com_ui_date_yesterday: {
+    english: 'Yesterday',
+    translated: 'Gestern',
+  },
+  com_ui_date_previous_7_days: {
+    english: 'Previous 7 days',
+    translated: 'Letzte 7 Tage',
+  },
+  com_ui_date_previous_30_days: {
+    english: 'Previous 30 days',
+    translated: 'Letzte 30 Tage',
+  },
+  com_ui_date_january: {
+    english: 'January',
+    translated: 'Januar',
+  },
+  com_ui_date_february: {
+    english: 'February',
+    translated: 'Februar',
+  },
+  com_ui_date_march: {
+    english: 'March',
+    translated: 'März',
+  },
+  com_ui_date_april: {
+    english: 'April',
+    translated: 'April',
+  },
+  com_ui_date_may: {
+    english: 'May',
+    translated: 'Mai',
+  },
+  com_ui_date_june: {
+    english: 'June',
+    translated: 'Juni',
+  },
+  com_ui_date_july: {
+    english: 'July',
+    translated: 'Juli',
+  },
+  com_ui_date_august: {
+    english: 'August',
+    translated: 'August',
+  },
+  com_ui_date_september: {
+    english: 'September',
+    translated: 'September',
+  },
+  com_ui_date_october: {
+    english: 'October',
+    translated: 'Oktober',
+  },
+  com_ui_date_november: {
+    english: 'November',
+    translated: 'November',
+  },
+  com_ui_date_december: {
+    english: 'December',
+    translated: 'Dezember',
+  },
+  com_ui_nothing_found: {
+    english: 'Nothing found',
+    translated: 'Keine Ergebnisse gefunden',
+  },
+  com_ui_go_to_conversation: {
+    english: 'Go to conversation',
+    translated: 'Zum Chat wechseln',
   },
   com_error_moderation: {
     english:
