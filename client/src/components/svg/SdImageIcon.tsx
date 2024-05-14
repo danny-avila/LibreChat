@@ -1,14 +1,8 @@
+/* eslint-disable import/no-cycle */
 import { useContext } from 'react';
 import { ThemeContext } from '~/hooks';
-import { cn } from '~/utils';
 
-export default function SdImageIcon({
-  size = 25,
-  className = '',
-}: {
-  size?: number;
-  className?: string;
-}) {
+export default function SdImageIcon() {
   const { theme } = useContext(ThemeContext);
 
   return (

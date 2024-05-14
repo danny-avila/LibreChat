@@ -193,7 +193,7 @@ export type TMessageProps = {
   messagesTree?: TMessage[];
   currentEditId: string | number | null;
   isSearchView?: boolean;
-  scrollToBottom?: any;
+  scrollToBottom?: unknown;
   siblingIdx?: number;
   siblingCount?: number;
   setCurrentEditId?: React.Dispatch<React.SetStateAction<string | number | null>> | null;
