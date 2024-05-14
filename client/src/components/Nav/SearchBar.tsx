@@ -1,7 +1,9 @@
-import { forwardRef, useState, useCallback, useMemo, Ref } from 'react';
+import debounce from 'lodash/debounce';
 import { Search, X } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
-import debounce from 'lodash/debounce';
+import { QueryKeys } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
+import { forwardRef, useState, useCallback, useMemo, Ref } from 'react';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -12,6 +14,8 @@ type SearchBarProps = {
 
 const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) => {
   const { clearSearch } = props;
+  const queryClient = useQueryClient();
+  const clearConvoState = store.useClearConvoState();
   const setSearchQuery = useSetRecoilState(store.searchQuery);
   const [showClearIcon, setShowClearIcon] = useState(false);
   const [text, setText] = useState('');
@@ -31,7 +35,14 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
     }
   };
 
-  const sendRequest = useCallback((value: string) => setSearchQuery(value), [setSearchQuery]);
+  const sendRequest = useCallback(
+    (value: string) => {
+      queryClient.invalidateQueries([QueryKeys.messages, 'new']);
+      clearConvoState();
+      setSearchQuery(value);
+    },
+    [queryClient, clearConvoState, setSearchQuery],
+  );
   const debouncedSendRequest = useMemo(() => debounce(sendRequest, 350), [sendRequest]);
 
   const onChange = (e: React.FormEvent<HTMLInputElement>) => {
