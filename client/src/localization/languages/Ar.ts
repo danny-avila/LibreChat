@@ -1552,6 +1552,70 @@ export const comparisons = {
     english: 'Data controls',
     translated: 'تحكم في البيانات',
   },
+  com_ui_date_today: {
+    english: 'Today',
+    translated: 'اليوم',
+  },
+  com_ui_date_yesterday: {
+    english: 'Yesterday',
+    translated: 'أمس',
+  },
+  com_ui_date_previous_7_days: {
+    english: 'Previous 7 days',
+    translated: 'الأيام السبعة السابقة',
+  },
+  com_ui_date_previous_30_days: {
+    english: 'Previous 30 days',
+    translated: 'الـ 30 يومًا السابقة',
+  },
+  com_ui_date_january: {
+    english: 'January',
+    translated: 'يناير',
+  },
+  com_ui_date_february: {
+    english: 'February',
+    translated: 'فبراير',
+  },
+  com_ui_date_march: {
+    english: 'March',
+    translated: 'مارس',
+  },
+  com_ui_date_april: {
+    english: 'April',
+    translated: 'أبريل',
+  },
+  com_ui_date_may: {
+    english: 'May',
+    translated: 'مايو',
+  },
+  com_ui_date_june: {
+    english: 'June',
+    translated: 'يونيو',
+  },
+  com_ui_date_july: {
+    english: 'July',
+    translated: 'يوليو',
+  },
+  com_ui_date_august: {
+    english: 'August',
+    translated: 'أغسطس',
+  },
+  com_ui_date_september: {
+    english: 'September',
+    translated: 'سبتمبر',
+  },
+  com_ui_date_october: {
+    english: 'October',
+    translated: 'أكتوبر',
+  },
+  com_ui_date_november: {
+    english: 'November',
+    translated: 'نوفمبر',
+  },
+  com_ui_date_december: {
+    english: 'December',
+    translated: 'ديسمبر',
+  },
   com_ui_nothing_found: {
     english: 'Nothing found',
     translated: 'لم يتم العثور على أي شيء',

@@ -1497,6 +1497,70 @@ export const comparisons = {
     english: 'Data controls',
     translated: '데이터 제어',
   },
+  com_ui_date_today: {
+    english: 'Today',
+    translated: '오늘',
+  },
+  com_ui_date_yesterday: {
+    english: 'Yesterday',
+    translated: '어제',
+  },
+  com_ui_date_previous_7_days: {
+    english: 'Previous 7 days',
+    translated: '지난 7일',
+  },
+  com_ui_date_previous_30_days: {
+    english: 'Previous 30 days',
+    translated: '지난 30일',
+  },
+  com_ui_date_january: {
+    english: 'January',
+    translated: '1월',
+  },
+  com_ui_date_february: {
+    english: 'February',
+    translated: '2월',
+  },
+  com_ui_date_march: {
+    english: 'March',
+    translated: '3월',
+  },
+  com_ui_date_april: {
+    english: 'April',
+    translated: '4월',
+  },
+  com_ui_date_may: {
+    english: 'May',
+    translated: '5월',
+  },
+  com_ui_date_june: {
+    english: 'June',
+    translated: '6월',
+  },
+  com_ui_date_july: {
+    english: 'July',
+    translated: '7월',
+  },
+  com_ui_date_august: {
+    english: 'August',
+    translated: '8월',
+  },
+  com_ui_date_september: {
+    english: 'September',
+    translated: '9월',
+  },
+  com_ui_date_october: {
+    english: 'October',
+    translated: '10월',
+  },
+  com_ui_date_november: {
+    english: 'November',
+    translated: '11월',
+  },
+  com_ui_date_december: {
+    english: 'December',
+    translated: '12월',
+  },
   com_assistants_domain_info: {
     english: 'Assistant sent this info to {0}',
     translated: '어시스턴트가 {0}에게 이 정보를 보냈습니다',

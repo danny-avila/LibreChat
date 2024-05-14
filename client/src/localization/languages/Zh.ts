@@ -2111,6 +2111,58 @@ export const comparisons = {
     english: 'Account',
     translated: '账户',
   },
+  com_ui_date_today: {
+    english: 'Today',
+    translated: '今天',
+  },
+  com_ui_date_yesterday: {
+    english: 'Yesterday',
+    translated: '昨天',
+  },
+  com_ui_date_previous_7_days: {
+    english: 'Previous 7 days',
+    translated: '过去7天',
+  },
+  com_ui_date_previous_30_days: {
+    english: 'Previous 30 days',
+    translated: '过去30天',
+  },
+  com_ui_date_january: {
+    english: 'January',
+    translated: '一月',
+  },
+  com_ui_date_february: {
+    english: 'February',
+    translated: '二月',
+  },
+  com_ui_date_march: {
+    english: 'March',
+    translated: '三月',
+  },
+  com_ui_date_april: {
+    english: 'April',
+    translated: '四月',
+  },
+  com_ui_date_may: {
+    english: 'May',
+    translated: '五月',
+  },
+  com_ui_date_june: {
+    english: 'June',
+    translated: '六月',
+  },
+  com_ui_date_july: {
+    english: 'July',
+    translated: '七月',
+  },
+  com_ui_date_august: {
+    english: 'August',
+    translated: '八月',
+  },
+  com_ui_date_september: {
+    english: 'September',
+    translated: '九月',
+  },
   com_ui_nothing_found: {
     english: 'Nothing found',
     translated: '未找到任何内容',

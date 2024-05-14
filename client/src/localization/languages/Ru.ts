@@ -1864,6 +1864,70 @@ export const comparisons = {
     english: 'You',
     translated: 'Вы',
   },
+  com_ui_date_today: {
+    english: 'Today',
+    translated: 'Сегодня',
+  },
+  com_ui_date_yesterday: {
+    english: 'Yesterday',
+    translated: 'Вчера',
+  },
+  com_ui_date_previous_7_days: {
+    english: 'Previous 7 days',
+    translated: 'Предыдущие 7 дней',
+  },
+  com_ui_date_previous_30_days: {
+    english: 'Previous 30 days',
+    translated: 'За последние 30 дней',
+  },
+  com_ui_date_january: {
+    english: 'January',
+    translated: 'Январь',
+  },
+  com_ui_date_february: {
+    english: 'February',
+    translated: 'Февраль',
+  },
+  com_ui_date_march: {
+    english: 'March',
+    translated: 'Март',
+  },
+  com_ui_date_april: {
+    english: 'April',
+    translated: 'Апрель',
+  },
+  com_ui_date_may: {
+    english: 'May',
+    translated: 'Май',
+  },
+  com_ui_date_june: {
+    english: 'June',
+    translated: 'Июнь',
+  },
+  com_ui_date_july: {
+    english: 'July',
+    translated: 'Июль',
+  },
+  com_ui_date_august: {
+    english: 'August',
+    translated: 'Август',
+  },
+  com_ui_date_september: {
+    english: 'September',
+    translated: 'Сентябрь',
+  },
+  com_ui_date_october: {
+    english: 'October',
+    translated: 'Октябрь',
+  },
+  com_ui_date_november: {
+    english: 'November',
+    translated: 'Ноябрь',
+  },
+  com_ui_date_december: {
+    english: 'December',
+    translated: 'Декабрь',
+  },
   com_ui_nothing_found: {
     english: 'Nothing found',
     translated: 'Ничего не найдено',
