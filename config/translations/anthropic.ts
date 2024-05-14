@@ -1,44 +1,40 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type * as a from '@anthropic-ai/sdk';
-import {
-  parseParamFromPrompt,
-  genTranslationPrompt,
-} from '../../api/app/clients/prompts/titlePrompts';
+import { parseParamFromPrompt, genTranslationPrompt } from '~/app/clients/prompts/titlePrompts';
 
+/**
+ * Get the initialized Anthropic client.
+ * @returns {Anthropic} The Anthropic client instance.
+ */
+export function getClient() {
+  /** @type {Anthropic.default.RequestOptions} */
+  const options = {
+    apiKey: process.env.ANTHROPIC_API_KEY,
+  };
 
-   /**
-   * Get the initialized Anthropic client.
-   * @returns {Anthropic} The Anthropic client instance.
-   */
-   export function getClient() {
-    /** @type {Anthropic.default.RequestOptions} */
-    const options = {
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    };
+  return new Anthropic(options);
+}
 
-    return new Anthropic(options);
-  }
+/**
+ * This function capitlizes on [Anthropic's function calling training](https://docs.anthropic.com/claude/docs/functions-external-tools).
+ *
+ * @param {Object} params - The parameters for the generation.
+ * @param {string} params.key
+ * @param {string} params.baselineTranslation
+ * @param {string} params.translationPrompt
+ * @param {Array<{ pageContent: string }>} params.context
+ *
+ * @returns {Promise<string | 'New Chat'>} A promise that resolves to the generated conversation title.
+ *                            In case of failure, it will return the default title, "New Chat".
+ */
+export async function translateKeyPhrase({ key, baselineTranslation, translationPrompt, context }) {
+  let translation: string | undefined;
+  const model = 'claude-3-sonnet-20240229';
+  const prompt = genTranslationPrompt(translationPrompt);
+  const system = prompt;
 
-  /**
-   * This function capitlizes on [Anthropic's function calling training](https://docs.anthropic.com/claude/docs/functions-external-tools).
-   *
-   * @param {Object} params - The parameters for the generation.
-   * @param {string} params.key
-   * @param {string} params.baselineTranslation
-   * @param {string} params.translationPrompt
-   * @param {Array<{ pageContent: string }>} params.context
-   *
-   * @returns {Promise<string | 'New Chat'>} A promise that resolves to the generated conversation title.
-   *                            In case of failure, it will return the default title, "New Chat".
-   */
-  export async function translateKeyPhrase({ key, baselineTranslation, translationPrompt, context }) {
-    let translation: string | undefined;
-    const model = 'claude-3-sonnet-20240229';
-    const prompt = genTranslationPrompt(translationPrompt);
-    const system = prompt;
-
-    const translateCompletion = async () => {
-      const content = `Current key: \`${key}\`
+  const translateCompletion = async () => {
+    const content = `Current key: \`${key}\`
 
     Baseline translation: ${baselineTranslation}
     
@@ -50,27 +46,27 @@ import {
     
     <invoke>\n<tool_name>submit_translation</tool_name>\n<parameters>\n<translation>Your Translation Here</translation>\n</parameters>\n</invoke>`;
 
-      const message: a.Anthropic.MessageParam = { role: 'user', content };
-      const requestOptions: a.Anthropic.MessageCreateParamsNonStreaming = {
-        model,
-        temperature: 0.3,
-        max_tokens: 1024,
-        system,
-        stop_sequences: ['\n\nHuman:', '\n\nAssistant', '</function_calls>'],
-        messages: [message],
-        stream: false,
-      };
-
-      try {
-        const client = getClient();
-        const response = await client.messages.create(requestOptions);
-        const text = response.content[0].text;
-        translation = parseParamFromPrompt(text, 'translation');
-      } catch (e) {
-        console.error('[AnthropicClient] There was an issue generating the translation', e);
-      }
+    const message: a.Anthropic.MessageParam = { role: 'user', content };
+    const requestOptions: a.Anthropic.MessageCreateParamsNonStreaming = {
+      model,
+      temperature: 0.3,
+      max_tokens: 1024,
+      system,
+      stop_sequences: ['\n\nHuman:', '\n\nAssistant', '</function_calls>'],
+      messages: [message],
+      stream: false,
     };
 
-    await translateCompletion();
-    return translation;
-  }
+    try {
+      const client = getClient();
+      const response = await client.messages.create(requestOptions);
+      const text = response.content[0].text;
+      translation = parseParamFromPrompt(text, 'translation');
+    } catch (e) {
+      console.error('[AnthropicClient] There was an issue generating the translation', e);
+    }
+  };
+
+  await translateCompletion();
+  return translation;
+}

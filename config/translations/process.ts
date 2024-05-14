@@ -20,7 +20,7 @@ export async function processLanguageModule(moduleName: string, modulePath: stri
   await storeEmbeddings(modulePath);
   vectorStoreMap[moduleName] = await loadEmbeddings(modulePath);
   const baseKeys = Object.keys((await import(modulePath)).default);
-  console.log(`Keys in module: ${moduleName}:`, baseKeys.length)
+  console.log(`Keys in module: ${moduleName}:`, baseKeys.length);
   missingKeyMap[moduleName] = 0;
   return prompt;
 }
@@ -30,8 +30,11 @@ export async function processMissingKey({
   baselineTranslation,
   moduleName,
   translationPrompt,
-} : {
-  key: string, baselineTranslation: string, moduleName: string, translationPrompt: string
+}: {
+  key: string;
+  baselineTranslation: string;
+  moduleName: string;
+  translationPrompt: string;
 }) {
   missingKeyMap[moduleName]++;
   const vectorStore = vectorStoreMap[moduleName];
@@ -42,6 +45,6 @@ export async function processMissingKey({
     translationPrompt,
     context,
   });
-  console.log(`"${key}": "${translation}",\n`)
+  console.log(`"${key}": "${translation}",\n`);
   return translation;
 }

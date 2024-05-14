@@ -42,6 +42,15 @@ async function buildEndpointOption(req, res, next) {
       return handleError(res, { text: 'Model spec mismatch' });
     }
 
+    if (
+      currentModelSpec.preset.endpoint !== EModelEndpoint.gptPlugins &&
+      currentModelSpec.preset.tools
+    ) {
+      return handleError(res, {
+        text: `Only the "${EModelEndpoint.gptPlugins}" endpoint can have tools defined in the preset`,
+      });
+    }
+
     const isValidModelSpec = enforceModelSpec(currentModelSpec, parsedBody);
     if (!isValidModelSpec) {
       return handleError(res, { text: 'Model spec mismatch' });
