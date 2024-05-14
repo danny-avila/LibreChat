@@ -10,7 +10,7 @@ import { useConversations, useNavigateToConvo } from '~/hooks';
 import { NotificationSeverity } from '~/common';
 import { ArchiveIcon } from '~/components/svg';
 import { useToastContext } from '~/Providers';
-import EditMenuButton from './EditMenuButton';
+import DropDownMenu from './DropDownMenu';
 import ArchiveButton from './ArchiveButton';
 import DeleteButton from './DeleteButton';
 import RenameButton from './RenameButton';
@@ -142,7 +142,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
           isPopoverActive={isPopoverActive}
           setIsPopoverActive={setIsPopoverActive}
         >
-          <EditMenuButton>
+          <DropDownMenu>
             <ShareButton
               conversationId={conversationId}
               title={title}
@@ -166,7 +166,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
               appendLabel={true}
               className="group m-1.5 mt-[3.5px] flex w-full cursor-pointer items-center gap-2 rounded p-2.5 text-sm hover:bg-gray-200 focus-visible:bg-gray-200 focus-visible:outline-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-600 dark:focus-visible:bg-gray-600"
             />
-          </EditMenuButton>
+          </DropDownMenu>
           <ArchiveButton
             className="z-50 hover:text-black dark:hover:text-white"
             conversationId={conversationId}

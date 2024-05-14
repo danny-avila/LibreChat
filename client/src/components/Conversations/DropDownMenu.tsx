@@ -6,18 +6,18 @@ import { useToggle } from './ToggleContext';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
-type EditMenuButtonProps = {
+type DropDownMenuProps = {
   children: React.ReactNode;
   icon?: React.ReactElement;
   tooltip?: string;
   className?: string;
 };
-const EditMenuButton: FC<EditMenuButtonProps> = ({
+const DropDownMenu: FC<DropDownMenuProps> = ({
   children,
   icon = <DotsIcon />,
   tooltip = 'More',
   className,
-}: EditMenuButtonProps) => {
+}: DropDownMenuProps) => {
   const localize = useLocalize();
   const { isPopoverActive, setPopoverActive } = useToggle();
 
@@ -68,4 +68,4 @@ const EditMenuButton: FC<EditMenuButtonProps> = ({
   );
 };
 
-export default EditMenuButton;
+export default DropDownMenu;

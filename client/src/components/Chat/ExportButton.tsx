@@ -6,13 +6,24 @@ import { Download } from 'lucide-react';
 import { useLocalize } from '~/hooks';
 import { ExportModal } from '../Nav';
 
-function ExportButton({ conversation }: { conversation: TConversation }) {
+function ExportButton({
+  conversation,
+  setPopoverActive,
+}: {
+  conversation: TConversation;
+  setPopoverActive: (value: boolean) => void;
+}) {
   const localize = useLocalize();
 
   const [showExports, setShowExports] = useState(false);
 
   const clickHandler = () => {
     setShowExports(true);
+  };
+
+  const onOpenChange = (value: boolean) => {
+    setShowExports(value);
+    setPopoverActive(value);
   };
 
   return (
@@ -25,7 +36,7 @@ function ExportButton({ conversation }: { conversation: TConversation }) {
       </button>
 
       {showExports && (
-        <ExportModal open={showExports} onOpenChange={setShowExports} conversation={conversation} />
+        <ExportModal open={showExports} onOpenChange={onOpenChange} conversation={conversation} />
       )}
     </>
   );
