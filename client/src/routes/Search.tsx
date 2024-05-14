@@ -1,58 +1,42 @@
-import React, { useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { useRecoilState, useRecoilValue } from 'recoil';
-// import TextChat from '~/components/Input/TextChat';
-
-import { useConversation } from '~/hooks';
-import store from '~/store';
+import { useMemo } from 'react';
+import MinimalMessagesWrapper from '~/components/Chat/Messages/MinimalMessages';
+import SearchMessage from '~/components/Chat/Messages/SearchMessage';
+import { useSearchContext, useFileMapContext } from '~/Providers';
+import { useNavScrolling, useLocalize } from '~/hooks';
+import { buildTree } from '~/utils';
 
 export default function Search() {
-  const [searchQuery, setSearchQuery] = useRecoilState(store.searchQuery);
-  const conversation = useRecoilValue(store.conversation);
-  const { searchPlaceholderConversation } = useConversation();
-  const { query } = useParams();
-  const navigate = useNavigate();
+  const localize = useLocalize();
+  const fileMap = useFileMapContext();
+  const { searchQuery, searchQueryRes } = useSearchContext();
 
-  // when conversation changed or conversationId (in url) changed
-  useEffect(() => {
-    if (conversation === null) {
-      // no current conversation, we need to do something
-      if (query) {
-        // create new
-        searchPlaceholderConversation();
-        setSearchQuery(query);
-      } else {
-        navigate('/c/new');
-      }
-    } else if (conversation?.conversationId === 'search') {
-      // jump to search page
-      if (searchQuery !== query) {
-        navigate(`/search/${searchQuery}`);
-      }
-    } else {
-      // conversationId (in url) should always follow conversation?.conversationId, unless conversation is null
-      navigate(`/chat/${conversation?.conversationId}`);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversation, query, searchQuery]);
+  const { containerRef } = useNavScrolling({
+    setShowLoading: () => ({}),
+    hasNextPage: searchQueryRes?.hasNextPage,
+    fetchNextPage: searchQueryRes?.fetchNextPage,
+    isFetchingNextPage: searchQueryRes?.isFetchingNextPage,
+  });
 
-  // if not a search
-  if (conversation?.conversationId !== 'search') {
-    return null;
-  }
-  // if query not match
-  if (searchQuery !== query) {
-    return null;
-  }
-  // if query is null
-  if (!query) {
+  const messages = useMemo(() => {
+    const msgs = searchQueryRes?.data?.pages.flatMap((page) => page.messages) || [];
+    const dataTree = buildTree({ messages: msgs, fileMap });
+    return dataTree?.length === 0 ? null : dataTree ?? null;
+  }, [fileMap, searchQueryRes?.data?.pages]);
+
+  if (!searchQuery || !searchQueryRes?.data) {
     return null;
   }
 
   return (
-    <>
-      {/* <Messages isSearchView={true} /> */}
-      {/* <TextChat isSearchView={true} /> */}
-    </>
+    <MinimalMessagesWrapper ref={containerRef} className="pt-4">
+      {(messages && messages?.length == 0) || messages === null ? (
+        <div className="my-auto flex h-full w-full items-center justify-center gap-1 bg-gray-50 p-3 text-lg text-gray-500 dark:border-gray-800/50 dark:bg-gray-800 dark:text-gray-300">
+          {localize('com_ui_nothing_found')}
+        </div>
+      ) : (
+        messages?.map((message) => <SearchMessage key={message.messageId} message={message} />)
+      )}
+      <div className="absolute bottom-0 left-0 right-0 h-[5%] bg-gradient-to-t from-gray-800 to-transparent" />
+    </MinimalMessagesWrapper>
   );
 }

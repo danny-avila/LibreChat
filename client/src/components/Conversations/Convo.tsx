@@ -1,7 +1,6 @@
 import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { useState, useRef, useMemo } from 'react';
-import { EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
 import { useUpdateConversationMutation } from '~/data-provider';
@@ -26,8 +25,8 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
   const updateConvoMutation = useUpdateConversationMutation(currentConvoId ?? '');
   const activeConvos = useRecoilValue(store.allConversationsSelector);
   const { data: endpointsConfig } = useGetEndpointsQuery();
+  const { navigateWithLastTools } = useNavigateToConvo();
   const { refreshConversations } = useConversations();
-  const { navigateToConvo } = useNavigateToConvo();
   const { showToast } = useToastContext();
 
   const { conversationId, title } = conversation;
@@ -51,23 +50,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
 
     // set document title
     document.title = title;
-
-    // set conversation to the new conversation
-    if (conversation?.endpoint === EModelEndpoint.gptPlugins) {
-      let lastSelectedTools = [];
-      try {
-        lastSelectedTools =
-          JSON.parse(localStorage.getItem(LocalStorageKeys.LAST_TOOLS) ?? '') ?? [];
-      } catch (e) {
-        // console.error(e);
-      }
-      navigateToConvo({
-        ...conversation,
-        tools: conversation?.tools?.length ? conversation?.tools : lastSelectedTools,
-      });
-    } else {
-      navigateToConvo(conversation);
-    }
+    navigateWithLastTools(conversation);
   };
 
   const renameHandler = (e: MouseEvent<HTMLButtonElement>) => {

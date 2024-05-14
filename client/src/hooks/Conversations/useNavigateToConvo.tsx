@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useSetRecoilState, useResetRecoilState } from 'recoil';
-import { QueryKeys } from 'librechat-data-provider';
+import { QueryKeys, EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import type { TConversation, TEndpointsConfig, TModelsConfig } from 'librechat-data-provider';
 import { buildDefaultConvo, getDefaultEndpoint, getEndpointField } from '~/utils';
 import useOriginNavigate from '../useOriginNavigate';
@@ -51,8 +51,28 @@ const useNavigateToConvo = (index = 0) => {
     navigate(convo?.conversationId);
   };
 
+  const navigateWithLastTools = (conversation: TConversation) => {
+    // set conversation to the new conversation
+    if (conversation?.endpoint === EModelEndpoint.gptPlugins) {
+      let lastSelectedTools = [];
+      try {
+        lastSelectedTools =
+          JSON.parse(localStorage.getItem(LocalStorageKeys.LAST_TOOLS) ?? '') ?? [];
+      } catch (e) {
+        // console.error(e);
+      }
+      navigateToConvo({
+        ...conversation,
+        tools: conversation?.tools?.length ? conversation?.tools : lastSelectedTools,
+      });
+    } else {
+      navigateToConvo(conversation);
+    }
+  };
+
   return {
     navigateToConvo,
+    navigateWithLastTools,
   };
 };
 
