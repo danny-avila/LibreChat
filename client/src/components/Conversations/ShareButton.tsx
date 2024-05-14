@@ -10,13 +10,25 @@ import {
 } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { useLocalize } from '~/hooks';
-import { ShareIcon } from 'lucide-react';
+import { Share2Icon } from 'lucide-react';
 import ShareDialog from './ShareDialog';
 import { TSharedLink } from 'librechat-data-provider';
 import SharedLinkButton from './SharedLinkButton';
 import { cn } from '~/utils';
 
-export default function ShareButton({ conversationId, title, className, appendLabel = false }) {
+export default function ShareButton({
+  conversationId,
+  title,
+  className,
+  appendLabel = false,
+  setPopoverActive,
+}: {
+  conversationId: string;
+  title: string;
+  className?: string;
+  appendLabel?: boolean;
+  setPopoverActive: (isActive: boolean) => void;
+}) {
   const localize = useLocalize();
   const [share, setShare] = useState<TSharedLink | null>(null);
   const [open, setOpen] = useState(false);
@@ -32,7 +44,7 @@ export default function ShareButton({ conversationId, title, className, appendLa
     if (appendLabel) {
       return (
         <>
-          <ShareIcon className="h-4 w-4" /> {localize('com_ui_share')}
+          <Share2Icon className="h-4 w-4" /> {localize('com_ui_share')}
         </>
       );
     }
@@ -41,7 +53,7 @@ export default function ShareButton({ conversationId, title, className, appendLa
         <Tooltip>
           <TooltipTrigger asChild>
             <span>
-              <ShareIcon />
+              <Share2Icon />
             </span>
           </TooltipTrigger>
           <TooltipContent side="top" sideOffset={0}>
@@ -61,8 +73,13 @@ export default function ShareButton({ conversationId, title, className, appendLa
       setIsUpdated={setIsUpdated}
     />
   );
+
+  const onOpenChange = (open: boolean) => {
+    setPopoverActive(open);
+    setOpen(open);
+  };
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>
         <button
           className={cn(

@@ -148,6 +148,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
               title={title}
               appendLabel={true}
               className="mb-[3.5px]"
+              setPopoverActive={setIsPopoverActive}
             />
 
             <RenameButton
@@ -181,7 +182,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
         onClick={clickHandler}
         className={cn(
           isActiveConvo || isPopoverActive
-            ? 'group relative mt-2 flex cursor-pointer items-center gap-2 break-all rounded-lg rounded-lg bg-gray-200 px-2 py-2 active:opacity-50 dark:bg-gray-700'
+            ? 'group relative mt-2 flex cursor-pointer items-center gap-2 break-all rounded-lg bg-gray-200 px-2 py-2 active:opacity-50 dark:bg-gray-700'
             : 'group relative mt-2 flex grow cursor-pointer items-center gap-2 overflow-hidden whitespace-nowrap break-all rounded-lg rounded-lg px-2 py-2 hover:bg-gray-200 active:opacity-50 dark:hover:bg-gray-700',
           !isActiveConvo && !renaming ? 'peer-hover:bg-gray-200 dark:peer-hover:bg-gray-800' : '',
         )}
