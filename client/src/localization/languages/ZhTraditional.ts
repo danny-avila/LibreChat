@@ -251,6 +251,7 @@ export default {
   com_nav_export_recursive_or_sequential: '遞迴還是序列？',
   com_nav_export_recursive: '遞迴',
   com_nav_export_conversation: '匯出對話',
+  com_nav_export: '匯出',
   com_nav_shared_links: '共享連結',
   com_nav_shared_links_manage: '管理',
   com_nav_shared_links_empty: '您沒有任何共享連結。',
@@ -1424,6 +1425,10 @@ export const comparisons = {
   com_nav_export_conversation: {
     english: 'Export conversation',
     translated: '匯出對話',
+  },
+  com_nav_export: {
+    english: 'Export',
+    translated: '匯出',
   },
   com_nav_theme: {
     english: 'Theme',

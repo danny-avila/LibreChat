@@ -265,6 +265,7 @@ export default {
   com_nav_export_recursive_or_sequential: 'التراجع أو التسلسل؟',
   com_nav_export_recursive: 'تكراري',
   com_nav_export_conversation: 'تصدير المحادثة',
+  com_nav_export: 'تصدير',
   com_nav_shared_links: 'روابط مشتركة',
   com_nav_shared_links_manage: 'الإدارة',
   com_nav_shared_links_empty: 'ليس لديك أي روابط مشتركة.',
@@ -1453,6 +1454,10 @@ export const comparisons = {
   com_nav_export_conversation: {
     english: 'Export conversation',
     translated: 'تصدير المحادثة',
+  },
+  com_nav_export: {
+    english: 'Export',
+    translated: 'تصدير',
   },
   com_nav_theme: {
     english: 'Theme',

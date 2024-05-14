@@ -272,6 +272,7 @@ export default {
   com_nav_export_recursive_or_sequential: 'Recursief of sequentieel?',
   com_nav_export_recursive: 'Recursief',
   com_nav_export_conversation: 'Conversatie exporteren',
+  com_nav_export: 'Exporteren',
   com_nav_shared_links: 'Gedeelde links',
   com_nav_shared_links_manage: 'Beheren',
   com_nav_shared_links_empty: 'U hebt geen gedeeld links.',
@@ -1235,6 +1236,10 @@ export const comparisons = {
   com_nav_export_conversation: {
     english: 'Export conversation',
     translated: 'Conversatie exporteren',
+  },
+  com_nav_export: {
+    english: 'Export',
+    translated: 'Exporteren',
   },
   com_nav_theme: {
     english: 'Theme',

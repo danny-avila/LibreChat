@@ -315,6 +315,7 @@ export default {
   com_nav_export_recursive_or_sequential: 'Rekursif atau berurutan?',
   com_nav_export_recursive: 'Rekursif',
   com_nav_export_conversation: 'Ekspor percakapan',
+  com_nav_export: 'Ekspor',
   com_nav_shared_links: 'Link berbagi',
   com_nav_shared_links_manage: 'Pengeluaran',
   com_nav_shared_links_empty: 'Anda tidak memiliki link berbagi.',
@@ -1472,6 +1473,10 @@ export const comparisons = {
   com_nav_export_conversation: {
     english: 'Export conversation',
     translated: 'Ekspor percakapan',
+  },
+  com_nav_export: {
+    english: 'Export',
+    translated: 'Ekspor',
   },
   com_nav_theme: {
     english: 'Theme',

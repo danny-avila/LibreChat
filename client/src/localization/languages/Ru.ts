@@ -313,6 +313,7 @@ export default {
   com_nav_export_recursive_or_sequential: 'Рекурсивно или последовательно?',
   com_nav_export_recursive: 'Рекурсивно',
   com_nav_export_conversation: 'Экспортировать разговор',
+  com_nav_export: 'Экспорт',
   com_nav_shared_links: 'Связываемые ссылки',
   com_nav_shared_links_manage: 'Управление',
   com_nav_shared_links_empty: 'У вас нет связываемых ссылок.',
@@ -1632,6 +1633,10 @@ export const comparisons = {
   com_nav_export_conversation: {
     english: 'Export conversation',
     translated: 'Экспортировать разговор',
+  },
+  com_nav_export: {
+    english: 'Export',
+    translated: 'Экспорт',
   },
   com_nav_my_files: {
     english: 'My Files',

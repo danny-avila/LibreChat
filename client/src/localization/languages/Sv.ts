@@ -260,6 +260,7 @@ export default {
   com_nav_export_recursive_or_sequential: 'Rekursiv eller sekventiell?',
   com_nav_export_recursive: 'Rekursiv',
   com_nav_export_conversation: 'Exportera konversation',
+  com_nav_export: 'Exportera',
   com_nav_shared_links: 'Delade länkar',
   com_nav_shared_links_manage: 'Hantera',
   com_nav_shared_links_empty: 'Du har inga delade länkar.',
@@ -1200,6 +1201,10 @@ export const comparisons = {
   com_nav_export_conversation: {
     english: 'Export conversation',
     translated: 'Exportera konversation',
+  },
+  com_nav_export: {
+    english: 'Export',
+    translated: 'Exportera',
   },
   com_nav_theme: {
     english: 'Theme',

@@ -397,6 +397,7 @@ export default {
   com_nav_export_recursive_or_sequential: '递归或顺序？',
   com_nav_export_recursive: '递归',
   com_nav_export_conversation: '导出对话',
+  com_nav_export: '导出',
   com_nav_shared_links: '共享链接',
   com_nav_shared_links_manage: '管理',
   com_nav_shared_links_empty: '您没有共享链接。',
@@ -1991,6 +1992,10 @@ export const comparisons = {
   com_nav_export_conversation: {
     english: 'Export conversation',
     translated: '导出对话',
+  },
+  com_nav_export: {
+    english: 'Export',
+    translated: '导出',
   },
   com_nav_my_files: {
     english: 'My Files',

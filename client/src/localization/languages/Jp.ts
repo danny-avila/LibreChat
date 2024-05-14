@@ -434,6 +434,7 @@ export default {
   com_nav_export_recursive_or_sequential: '再帰的? or 順次的?',
   com_nav_export_recursive: '再帰的',
   com_nav_export_conversation: '会話をエクスポートする',
+  com_nav_export: 'エクスポート',
   com_nav_shared_links: '共有リンク',
   com_nav_shared_links_manage: '管理',
   com_nav_shared_links_empty: '共有リンクはありません。',
@@ -2085,6 +2086,10 @@ export const comparisons = {
   com_nav_export_conversation: {
     english: 'Export conversation',
     translated: '会話をエクスポートする',
+  },
+  com_nav_export: {
+    english: 'Export',
+    translated: 'エクスポート',
   },
   com_nav_my_files: {
     english: 'My Files',

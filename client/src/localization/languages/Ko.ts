@@ -245,6 +245,7 @@ export default {
   com_nav_export_recursive_or_sequential: '재귀적 또는 순차적?',
   com_nav_export_recursive: '재귀적',
   com_nav_export_conversation: '대화 내보내기',
+  com_nav_export: '내보내기',
   com_nav_shared_links: '공유 링크',
   com_nav_shared_links_manage: '관리',
   com_nav_shared_links_empty: '공유 링크가 없습니다.',
@@ -1142,6 +1143,10 @@ export const comparisons = {
   com_nav_export_conversation: {
     english: 'Export conversation',
     translated: '대화 내보내기',
+  },
+  com_nav_export: {
+    english: 'Export',
+    translated: '내보내기',
   },
   com_nav_theme: {
     english: 'Theme',

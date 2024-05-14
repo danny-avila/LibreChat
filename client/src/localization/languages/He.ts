@@ -356,6 +356,7 @@ export default {
   com_nav_export_recursive_or_sequential: 'רקורסיבי או רציף?',
   com_nav_export_recursive: 'רקורסיבי',
   com_nav_export_conversation: 'ייצא שיחה',
+  com_nav_export: 'ייצא',
   com_nav_shared_links: 'קישורים משותפים',
   com_nav_shared_links_manage: 'ניהול',
   com_nav_shared_links_empty: 'אין לך קישורים משותפים.',
@@ -1674,6 +1675,10 @@ export const comparisons = {
   com_nav_export_conversation: {
     english: 'Export conversation',
     translated: 'ייצא שיחה',
+  },
+  com_nav_export: {
+    english: 'Export',
+    translated: 'ייצא',
   },
   com_nav_theme: {
     english: 'Theme',

@@ -288,6 +288,7 @@ export default {
   com_nav_export_recursive_or_sequential: 'Yinelemeli mi yoksa sıralı mı?',
   com_nav_export_recursive: 'Yinelemeli',
   com_nav_export_conversation: 'Konuşmayı dışa aktar',
+  com_nav_export: 'Dışa Aktar',
   com_nav_shared_links: 'Paylaşılan linkler',
   com_nav_shared_links_manage: 'Ynetmek',
   com_nav_shared_links_empty: 'Paylaşılan linkleriniz yok.',
@@ -1317,6 +1318,10 @@ export const comparisons = {
   com_nav_export_conversation: {
     english: 'Export conversation',
     translated: 'Konuşmayı dışa aktar',
+  },
+  com_nav_export: {
+    english: 'Export',
+    translated: 'Dışa Aktar',
   },
   com_nav_theme: {
     english: 'Theme',

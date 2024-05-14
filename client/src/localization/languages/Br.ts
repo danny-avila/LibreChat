@@ -428,6 +428,7 @@ export default {
   com_nav_export_recursive_or_sequential: 'Recursivo ou sequencial?',
   com_nav_export_recursive: 'Recursivo',
   com_nav_export_conversation: 'Exportar conversa',
+  com_nav_export: 'Exportar',
   com_nav_shared_links: 'Links Compartilhados',
   com_nav_shared_links_manage: 'Gerenciar',
   com_nav_shared_links_empty: 'Você não tem nenhum link compartilhado.',
@@ -1966,6 +1967,10 @@ export const comparisons = {
   com_nav_export_conversation: {
     english: 'Export conversation',
     translated: 'Exportar conversa',
+  },
+  com_nav_export: {
+    english: 'Export',
+    translated: 'Exportar',
   },
   com_nav_my_files: {
     english: 'My Files',

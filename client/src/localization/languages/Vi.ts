@@ -265,6 +265,7 @@ export default {
   com_nav_export_recursive_or_sequential: 'Đệ quy hay tuần tự?',
   com_nav_export_recursive: 'Đệ quy',
   com_nav_export_conversation: 'Xuất cuộc trò chuyện',
+  com_nav_export: 'Xuất',
   com_nav_shared_links: 'Liên kết được chia sẻ',
   com_nav_shared_links_manage: 'Quản l',
   com_nav_shared_links_empty: 'Bạn không có link được chia sẻ.',
@@ -1208,6 +1209,10 @@ export const comparisons = {
   com_nav_export_conversation: {
     english: 'Export conversation',
     translated: 'Xuất cuộc trò chuyện',
+  },
+  com_nav_export: {
+    english: 'Export',
+    translated: 'Xuất',
   },
   com_nav_theme: {
     english: 'Theme',
