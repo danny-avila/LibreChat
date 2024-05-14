@@ -364,6 +364,24 @@ export default {
   com_ui_upload_error: 'Произошла ошибка при загрузке вашего файла',
   com_user_message: 'Вы',
   /* The following are AI Translated */
+  com_ui_date_today: 'Сегодня',
+  com_ui_date_yesterday: 'Вчера',
+  com_ui_date_previous_7_days: 'Предыдущие 7 дней',
+  com_ui_date_previous_30_days: 'За последние 30 дней',
+  com_ui_date_january: 'Январь',
+  com_ui_date_february: 'Февраль',
+  com_ui_date_march: 'Март',
+  com_ui_date_april: 'Апрель',
+  com_ui_date_may: 'Май',
+  com_ui_date_june: 'Июнь',
+  com_ui_date_july: 'Июль',
+  com_ui_date_august: 'Август',
+  com_ui_date_september: 'Сентябрь',
+  com_ui_date_october: 'Октябрь',
+  com_ui_date_november: 'Ноябрь',
+  com_ui_date_december: 'Декабрь',
+  com_ui_nothing_found: 'Ничего не найдено',
+  com_ui_go_to_conversation: 'Перейти к беседе',
   com_error_moderation:
     'К сожалению, отправленный вами контент был помечен нашей системой модерации как не соответствующий правилам сообщества. Мы не можем продолжить обсуждение этой конкретной темы. Если у вас есть другие вопросы или темы, которые вы хотели бы обсудить, пожалуйста, отредактируйте сообщение или начните новый диалог.',
   com_error_no_user_key: 'Ключ не найден. Пожалуйста, укажите ключ и повторите попытку.',
@@ -1845,6 +1863,78 @@ export const comparisons = {
   com_user_message: {
     english: 'You',
     translated: 'Вы',
+  },
+  com_ui_date_today: {
+    english: 'Today',
+    translated: 'Сегодня',
+  },
+  com_ui_date_yesterday: {
+    english: 'Yesterday',
+    translated: 'Вчера',
+  },
+  com_ui_date_previous_7_days: {
+    english: 'Previous 7 days',
+    translated: 'Предыдущие 7 дней',
+  },
+  com_ui_date_previous_30_days: {
+    english: 'Previous 30 days',
+    translated: 'За последние 30 дней',
+  },
+  com_ui_date_january: {
+    english: 'January',
+    translated: 'Январь',
+  },
+  com_ui_date_february: {
+    english: 'February',
+    translated: 'Февраль',
+  },
+  com_ui_date_march: {
+    english: 'March',
+    translated: 'Март',
+  },
+  com_ui_date_april: {
+    english: 'April',
+    translated: 'Апрель',
+  },
+  com_ui_date_may: {
+    english: 'May',
+    translated: 'Май',
+  },
+  com_ui_date_june: {
+    english: 'June',
+    translated: 'Июнь',
+  },
+  com_ui_date_july: {
+    english: 'July',
+    translated: 'Июль',
+  },
+  com_ui_date_august: {
+    english: 'August',
+    translated: 'Август',
+  },
+  com_ui_date_september: {
+    english: 'September',
+    translated: 'Сентябрь',
+  },
+  com_ui_date_october: {
+    english: 'October',
+    translated: 'Октябрь',
+  },
+  com_ui_date_november: {
+    english: 'November',
+    translated: 'Ноябрь',
+  },
+  com_ui_date_december: {
+    english: 'December',
+    translated: 'Декабрь',
+  },
+  com_ui_nothing_found: {
+    english: 'Nothing found',
+    translated: 'Ничего не найдено',
+  },
+  com_ui_go_to_conversation: {
+    english: 'Go to conversation',
+    translated: 'Перейти к беседе',
   },
   com_error_moderation: {
     english:

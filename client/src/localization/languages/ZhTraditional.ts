@@ -266,6 +266,24 @@ export default {
   com_nav_setting_general: '一般',
   com_nav_setting_data: '資料控制',
   /* The following are AI translated */
+  com_ui_date_today: '今天',
+  com_ui_date_yesterday: '昨天',
+  com_ui_date_previous_7_days: '前 7 天',
+  com_ui_date_previous_30_days: '過去 30 天',
+  com_ui_date_january: '一月',
+  com_ui_date_february: '二月',
+  com_ui_date_march: '三月',
+  com_ui_date_april: '四月',
+  com_ui_date_may: '五月',
+  com_ui_date_june: '六月',
+  com_ui_date_july: '七月',
+  com_ui_date_august: '八月',
+  com_ui_date_september: '九月',
+  com_ui_date_october: '十月',
+  com_ui_date_november: '十一月',
+  com_ui_date_december: '十二月',
+  com_ui_nothing_found: '找不到任何內容',
+  com_ui_go_to_conversation: '前往對話',
   com_error_moderation:
     '似乎您所提交的內容被我們的內容審查系統標記為不符合社群準則。我們無法就此特定主題繼續進行。如果您有任何其他問題或想要探討的主題,請編輯您的訊息或開啟新的對話。',
   com_error_no_user_key: '找不到金鑰，請提供金鑰後再試一次。',
@@ -1508,6 +1526,78 @@ export const comparisons = {
   com_nav_setting_data: {
     english: 'Data controls',
     translated: '資料控制',
+  },
+  com_ui_date_today: {
+    english: 'Today',
+    translated: '今天',
+  },
+  com_ui_date_yesterday: {
+    english: 'Yesterday',
+    translated: '昨天',
+  },
+  com_ui_date_previous_7_days: {
+    english: 'Previous 7 days',
+    translated: '前 7 天',
+  },
+  com_ui_date_previous_30_days: {
+    english: 'Previous 30 days',
+    translated: '過去 30 天',
+  },
+  com_ui_date_january: {
+    english: 'January',
+    translated: '一月',
+  },
+  com_ui_date_february: {
+    english: 'February',
+    translated: '二月',
+  },
+  com_ui_date_march: {
+    english: 'March',
+    translated: '三月',
+  },
+  com_ui_date_april: {
+    english: 'April',
+    translated: '四月',
+  },
+  com_ui_date_may: {
+    english: 'May',
+    translated: '五月',
+  },
+  com_ui_date_june: {
+    english: 'June',
+    translated: '六月',
+  },
+  com_ui_date_july: {
+    english: 'July',
+    translated: '七月',
+  },
+  com_ui_date_august: {
+    english: 'August',
+    translated: '八月',
+  },
+  com_ui_date_september: {
+    english: 'September',
+    translated: '九月',
+  },
+  com_ui_date_october: {
+    english: 'October',
+    translated: '十月',
+  },
+  com_ui_date_november: {
+    english: 'November',
+    translated: '十一月',
+  },
+  com_ui_date_december: {
+    english: 'December',
+    translated: '十二月',
+  },
+  com_ui_nothing_found: {
+    english: 'Nothing found',
+    translated: '找不到任何內容',
+  },
+  com_ui_go_to_conversation: {
+    english: 'Go to conversation',
+    translated: '前往對話',
   },
   com_error_moderation: {
     english:

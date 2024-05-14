@@ -308,7 +308,7 @@ class OpenAIClient extends BaseClient {
     let tokenizer;
     this.encoding = 'text-davinci-003';
     if (this.isChatCompletion) {
-      this.encoding = 'cl100k_base';
+      this.encoding = this.modelOptions.model.includes('gpt-4o') ? 'o200k_base' : 'cl100k_base';
       tokenizer = this.constructor.getTokenizer(this.encoding);
     } else if (this.isUnofficialChatGptModel) {
       const extendSpecialTokens = {
