@@ -56,9 +56,10 @@ function removeUndefined(obj) {
  * If an error occurs, it returns an array with three null values and logs the error with logger
  */
 function openAIProvider(sttSchema, audioReadStream) {
-  const url = sttSchema.openai?.url || 'https://api.openai.com/v1/audio/transcriptions';
-
   try {
+    const url = sttSchema.openai?.url || 'https://api.openai.com/v1/audio/transcriptions';
+    const apiKey = sttSchema.openai.apiKey ? extractEnvVariable(sttSchema.openai.apiKey) : '';
+
     let data = {
       file: audioReadStream,
       model: sttSchema.openai.model,
@@ -66,13 +67,12 @@ function openAIProvider(sttSchema, audioReadStream) {
 
     let headers = {
       'Content-Type': 'multipart/form-data',
-      Authorization: 'Bearer ' + extractEnvVariable(sttSchema.openai.apiKey),
     };
 
-    [data, headers].forEach(removeUndefined);
+    [headers].forEach(removeUndefined);
 
-    if (extractEnvVariable(sttSchema.openai.apiKey) === '') {
-      delete headers.Authorization;
+    if (apiKey) {
+      headers.Authorization = 'Bearer ' + apiKey;
     }
 
     return [url, data, headers];
