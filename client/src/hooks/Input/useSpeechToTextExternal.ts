@@ -81,7 +81,7 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
       setAudioChunks([]);
 
       const formData = new FormData();
-      formData.append('audio', audioBlob, 'recording.wav');
+      formData.append('audio', audioBlob, 'audio.wav');
       setIsRequestBeingMade(true);
       cleanup();
       processAudio(formData);
