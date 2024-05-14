@@ -473,6 +473,7 @@ export default {
   com_nav_export_recursive_or_sequential: 'Recursive or sequential?',
   com_nav_export_recursive: 'Recursive',
   com_nav_export_conversation: 'Export conversation',
+  com_nav_export: 'Export',
   com_nav_shared_links: 'Shared links',
   com_nav_shared_links_manage: 'Manage',
   com_nav_shared_links_empty: 'You have no shared links.',
