@@ -110,7 +110,7 @@ const EditMessage = ({
   );
 
   return (
-    <Container message={message} className="rounded-3xl bg-gray-100 px-3 py-3">
+    <Container message={message} className="rounded-3xl bg-gray-100 px-3 py-3 dark:bg-gray-600">
       <TextareaAutosize
         ref={textAreaRef}
         onChange={(e) => {
