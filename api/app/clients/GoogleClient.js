@@ -683,11 +683,12 @@ class GoogleClient extends BaseClient {
       const safetySettings = _payload.safetySettings;
       requestOptions.safetySettings = safetySettings;
 
+      const delay = modelName.includes('flash') ? 8 : 14;
       const result = await client.generateContentStream(requestOptions);
       for await (const chunk of result.stream) {
         const chunkText = chunk.text();
-        this.generateTextStream(chunkText, onProgress, {
-          delay: 12,
+        await this.generateTextStream(chunkText, onProgress, {
+          delay,
         });
         reply += chunkText;
       }
