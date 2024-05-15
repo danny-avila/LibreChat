@@ -14,6 +14,7 @@ import { QueryKeys } from '../keys';
 import request from '../request';
 import * as s from '../schemas';
 import * as t from '../types';
+import { AxiosError } from 'axios';
 
 export const useAbortRequestWithMessage = (): UseMutationResult<
   void,
@@ -414,14 +415,17 @@ export const useUpdateUserPluginsMutation = (): UseMutationResult<
   });
 };
 
-export const useGetStartupConfig = (): QueryObserverResult<t.TStartupConfig> => {
-  return useQuery<t.TStartupConfig>(
+export const useGetStartupConfig = (
+  config?: UseQueryOptions<t.TStartupConfig, AxiosError>,
+): QueryObserverResult<t.TStartupConfig, AxiosError> => {
+  return useQuery<t.TStartupConfig, AxiosError>(
     [QueryKeys.startupConfig],
     () => dataService.getStartupConfig(),
     {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
+      ...config,
     },
   );
 };
