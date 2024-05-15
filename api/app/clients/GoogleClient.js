@@ -683,11 +683,12 @@ class GoogleClient extends BaseClient {
       const safetySettings = _payload.safetySettings;
       requestOptions.safetySettings = safetySettings;
 
+      const delay = modelName.includes('flash') ? 8 : 14;
       const result = await client.generateContentStream(requestOptions);
       for await (const chunk of result.stream) {
         const chunkText = chunk.text();
-        this.generateTextStream(chunkText, onProgress, {
-          delay: 12,
+        await this.generateTextStream(chunkText, onProgress, {
+          delay,
         });
         reply += chunkText;
       }
@@ -701,10 +702,14 @@ class GoogleClient extends BaseClient {
       safetySettings: safetySettings,
     });
 
+    let delay = this.isGenerativeModel ? 12 : 8;
+    if (modelName.includes('flash')) {
+      delay = 5;
+    }
     for await (const chunk of stream) {
       const chunkText = chunk?.content ?? chunk;
-      this.generateTextStream(chunkText, onProgress, {
-        delay: this.isGenerativeModel ? 12 : 8,
+      await this.generateTextStream(chunkText, onProgress, {
+        delay,
       });
       reply += chunkText;
     }
