@@ -188,13 +188,13 @@ const Icon: React.FC<IconProps> = (props) => {
         height: size,
       }}
       className={cn(
-        'relative flex h-9 w-9 items-center justify-center rounded-sm p-1 text-white',
+        'relative flex h-9 w-9 items-center justify-center rounded-full text-white',
         props.className || '',
       )}
     >
       {icon}
       {error && (
-        <span className="absolute right-0 top-[20px] -mr-2 flex h-3 w-3 items-center justify-center rounded-full border border-white bg-red-500 text-[10px] text-white">
+        <span className="absolute right-1 top-0.5 -mr-2 flex h-4 w-4 items-center justify-center rounded-full border border-white bg-red-500 text-[10px] text-white">
           !
         </span>
       )}
