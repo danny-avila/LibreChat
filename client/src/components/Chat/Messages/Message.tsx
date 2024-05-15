@@ -185,7 +185,13 @@ export default function Message(props: TMessageProps) {
                       </div>
                     </div>
                     <div className="-ml-3 mt-3 flex gap-3 empty:hidden">
-                      <div className="bg-token-main-surface-primary -mt-1 items-center justify-start rounded-xl p-1 md:invisible md:absolute md:border md:group-hover:visible md:dark:border-gray-600">
+                      <div
+                        className={cn({
+                          'flex items-center justify-start rounded-xl p-1': isLast,
+                          'bg-token-main-surface-primary -mt-1 items-center justify-start rounded-xl p-1 md:absolute md:hidden md:border md:group-hover:block md:dark:border-gray-600':
+                            !isLast,
+                        })}
+                      >
                         <div className="flex items-center">
                           {isLast && isSubmitting ? null : (
                             <SubRow classes="text-xs">
