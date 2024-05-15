@@ -398,7 +398,9 @@ export const useUpdateUserPluginsMutation = (): UseMutationResult<
   });
 };
 
-export const useGetStartupConfig = (): QueryObserverResult<t.TStartupConfig> => {
+export const useGetStartupConfig = (
+  config?: UseQueryOptions<t.TStartupConfig>,
+): QueryObserverResult<t.TStartupConfig> => {
   return useQuery<t.TStartupConfig>(
     [QueryKeys.startupConfig],
     () => dataService.getStartupConfig(),
@@ -406,6 +408,7 @@ export const useGetStartupConfig = (): QueryObserverResult<t.TStartupConfig> => 
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
+      ...config,
     },
   );
 };
