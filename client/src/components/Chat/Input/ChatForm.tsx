@@ -100,7 +100,7 @@ const ChatForm = ({ index = 0 }) => {
           {showMentionPopover && (
             <Mention setShowMentionPopover={setShowMentionPopover} textAreaRef={textAreaRef} />
           )}
-          <div className="bg-token-main-surface-primary relative flex w-full flex-grow flex-col overflow-hidden rounded-2xl border dark:border-gray-600 dark:text-white [&:has(textarea:focus)]:border-gray-300 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)] dark:[&:has(textarea:focus)]:border-gray-500">
+          <div className="relative flex w-full flex-grow flex-col overflow-hidden rounded-[26px] bg-[#f4f4f4] dark:text-white">
             <FileRow
               files={files}
               setFiles={setFiles}
