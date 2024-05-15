@@ -51,7 +51,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
                 endpointsConfig={endpointsConfig}
                 containerClassName={containerClassName}
                 context="landing"
-                className="h-12 w-12 p-1.5"
+                className="h-12 w-12 dark:bg-gray-800 dark:text-white"
                 size={41}
               />
               <TooltipTrigger>
