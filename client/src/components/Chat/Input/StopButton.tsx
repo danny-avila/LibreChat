@@ -1,6 +1,6 @@
 export default function StopButton({ stop, setShowStopButton }) {
   return (
-    <div className="absolute bottom-0 right-2 top-0 p-1 md:right-3 md:p-2">
+    <div className="p-1.5">
       <div className="flex h-full">
         <div className="flex h-full flex-row items-center justify-center gap-3">
           <button
