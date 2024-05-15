@@ -100,7 +100,7 @@ const ChatForm = ({ index = 0 }) => {
           {showMentionPopover && (
             <Mention setShowMentionPopover={setShowMentionPopover} textAreaRef={textAreaRef} />
           )}
-          <div className="dark:bg-gray-700 flex w-full flex-col gap-1.5 rounded-[26px] bg-[#f4f4f4] p-2.5 transition-colors">
+          <div className="flex w-full flex-col gap-1.5 rounded-[26px] bg-[#f4f4f4] p-2.5 transition-colors dark:bg-gray-700">
             <div className="flex items-center gap-1.5 md:gap-3.5">
               <FileRow
                 files={files}
@@ -148,7 +148,13 @@ const ChatForm = ({ index = 0 }) => {
                 )}
               </div>
               {isSubmitting && showStopButton ? (
-                <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
+                <StopButton
+                  callback={(e) => {
+                    setShowStopButton(false);
+                    // @ts-ignore
+                    handleStopGenerating(e);
+                  }}
+                />
               ) : (
                 endpoint && (
                   <SendButton
