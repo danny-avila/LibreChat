@@ -1,12 +1,24 @@
 const { updateUserPluginsService } = require('../services/UserService');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('../services/PluginService');
+const { getUserMessageQuotaUsagePastDays } = require('../middleware/messageQuota');
 const User = require('../../models/User');
 
 const getUserController = async (req, res) => {
   try {
     const { userId } = req.params;
-    if (userId == undefined || userId === req.user.id) {res.status(200).send(req.user);}
-    else {
+    if (userId === undefined || userId === req.user.id) {
+      // information about the current user
+      const monthlyQuotaConsumed = await getUserMessageQuotaUsagePastDays(req.user, 30); // This value might be dynamic based on your application logic
+
+      // Extend req.user with the new field
+      const response = {
+        ...req.user.toJSON(),
+        monthlyQuotaConsumed: monthlyQuotaConsumed,
+      };
+      res.status(200).send(response);
+    } else {
+      // information about another user, without even authentification.
+      // TODO: this might be a security issue
       const user = await User.findById(userId).exec();
       const id = user._id;
       const name = user.name;
