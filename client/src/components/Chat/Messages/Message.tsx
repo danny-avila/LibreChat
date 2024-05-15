@@ -143,7 +143,7 @@ export default function Message(props: TMessageProps) {
                     <div className="mr-1 mt-1 flex flex-row-reverse gap-3 empty:hidden">
                       <div className={cn('flex items-center justify-start rounded-xl p-1')}>
                         {isLast && isSubmitting ? null : (
-                          <SubRow classes="text-xs">
+                          <SubRow classes="text-xs flex-wrap">
                             <SiblingSwitch
                               siblingIdx={siblingIdx}
                               siblingCount={siblingCount}
@@ -162,6 +162,7 @@ export default function Message(props: TMessageProps) {
                                 handleContinue={handleContinue}
                                 latestMessage={latestMessage}
                                 isLast={isLast}
+                                flat={true}
                               />
                             </div>
                           </SubRow>
@@ -227,7 +228,7 @@ export default function Message(props: TMessageProps) {
                       >
                         <div className="flex items-center">
                           {isLast && isSubmitting ? null : (
-                            <SubRow classes="text-xs">
+                            <SubRow classes="text-xs flex-wrap">
                               <SiblingSwitch
                                 siblingIdx={siblingIdx}
                                 siblingCount={siblingCount}
