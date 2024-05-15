@@ -22,9 +22,9 @@ export default function SiblingSwitch({
   };
 
   return siblingCount > 1 ? (
-    <div className="visible flex items-center justify-center gap-1 self-center pt-0 text-xs">
+    <div className="text-token-text-secondary flex items-center justify-center rounded-lg">
       <button
-        className="disabled:text-gray-300 dark:text-white dark:disabled:text-gray-400"
+        className="flex h-[30px] w-[30px] items-center justify-center rounded-md text-[#7D7D7D] hover:bg-gray-50 disabled:opacity-50 disabled:hover:bg-transparent dark:text-[#b4b4b4] dark:hover:bg-gray-700 dark:disabled:hover:bg-transparent"
         onClick={previous}
         disabled={siblingIdx == 0}
       >
@@ -35,7 +35,7 @@ export default function SiblingSwitch({
           viewBox="0 0 24 24"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className="h-3 w-3"
+          className="icon-md-heavy"
           height="1em"
           width="1em"
           xmlns="http://www.w3.org/2000/svg"
@@ -43,11 +43,11 @@ export default function SiblingSwitch({
           <polyline points="15 18 9 12 15 6" />
         </svg>
       </button>
-      <span className="flex-shrink-0 flex-grow tabular-nums">
+      <span className="px-0.5 text-sm font-medium tabular-nums">
         {siblingIdx + 1} / {siblingCount}
       </span>
       <button
-        className="disabled:text-gray-300 dark:text-white dark:disabled:text-gray-400"
+        className="flex h-[30px] w-[30px] items-center justify-center rounded-md text-[#7D7D7D] hover:bg-gray-50 disabled:opacity-50 disabled:hover:bg-transparent dark:text-[#b4b4b4] dark:hover:bg-gray-700 dark:disabled:hover:bg-transparent"
         onClick={next}
         disabled={siblingIdx == siblingCount - 1}
       >
@@ -58,7 +58,7 @@ export default function SiblingSwitch({
           viewBox="0 0 24 24"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className="h-3 w-3"
+          className="icon-md-heavy"
           height="1em"
           width="1em"
           xmlns="http://www.w3.org/2000/svg"
