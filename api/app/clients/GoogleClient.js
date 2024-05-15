@@ -702,10 +702,14 @@ class GoogleClient extends BaseClient {
       safetySettings: safetySettings,
     });
 
+    let delay = this.isGenerativeModel ? 12 : 8;
+    if (modelName.includes('flash')) {
+      delay = 5;
+    }
     for await (const chunk of stream) {
       const chunkText = chunk?.content ?? chunk;
-      this.generateTextStream(chunkText, onProgress, {
-        delay: this.isGenerativeModel ? 12 : 8,
+      await this.generateTextStream(chunkText, onProgress, {
+        delay,
       });
       reply += chunkText;
     }
