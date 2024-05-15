@@ -159,28 +159,26 @@ export default function Message(props: TMessageProps) {
                         className="text-message flex min-h-[20px] w-full flex-col items-start items-end gap-2 overflow-x-auto"
                       >
                         <div className="flex w-full flex-col gap-1 first:pt-[3px]">
-                          <p>
-                            {message?.plugin && <Plugin plugin={message?.plugin} />}
-                            <MessageContent
-                              ask={ask}
-                              edit={edit}
-                              isLast={isLast}
-                              text={text ?? ''}
-                              message={message}
-                              enterEdit={enterEdit}
-                              error={!!error}
-                              isSubmitting={isSubmitting}
-                              unfinished={unfinished ?? false}
-                              isCreatedByUser={isCreatedByUser ?? true}
-                              siblingIdx={siblingIdx ?? 0}
-                              setSiblingIdx={
-                                setSiblingIdx ??
-                                (() => {
-                                  return;
-                                })
-                              }
-                            />
-                          </p>
+                          {message?.plugin && <Plugin plugin={message?.plugin} />}
+                          <MessageContent
+                            ask={ask}
+                            edit={edit}
+                            isLast={isLast}
+                            text={text ?? ''}
+                            message={message}
+                            enterEdit={enterEdit}
+                            error={!!error}
+                            isSubmitting={isSubmitting}
+                            unfinished={unfinished ?? false}
+                            isCreatedByUser={isCreatedByUser ?? true}
+                            siblingIdx={siblingIdx ?? 0}
+                            setSiblingIdx={
+                              setSiblingIdx ??
+                              (() => {
+                                return;
+                              })
+                            }
+                          />
                         </div>
                       </div>
                     </div>
