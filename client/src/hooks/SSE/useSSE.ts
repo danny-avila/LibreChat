@@ -390,6 +390,11 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
         });
         setIsSubmitting(false);
         return;
+      } else if (!data.conversationId) {
+        const errorResponse = parseErrorResponse(data);
+        setMessages([...messages, message, errorResponse]);
+        setIsSubmitting(false);
+        return;
       }
 
       console.log('Error:', data);
@@ -587,7 +592,6 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
         console.error(error);
         console.log(e);
         setIsSubmitting(false);
-        return;
       }
 
       errorHandler({ data, submission: { ...submission, message } });
