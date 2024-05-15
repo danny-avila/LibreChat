@@ -160,7 +160,7 @@ const Nav = ({ navVisible, setNavVisible }) => {
           setIsHovering={setIsToggleHovering}
           onToggle={toggleNavVisible}
           navVisible={navVisible}
-          className="fixed left-0 top-1/2 z-40"
+          className="fixed left-0 top-1/2 z-40 hidden md:flex"
         />
         <div className={`nav-mask${navVisible ? ' active' : ''}`} onClick={toggleNavVisible} />
       </Tooltip>
