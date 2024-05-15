@@ -107,7 +107,8 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
       )}
     >
       {renaming ? (
-        <div className="absolute inset-0 z-50 flex w-full items-center rounded-lg bg-gray-200 p-1.5 dark:bg-gray-700">
+        <div className="absolute inset-0 z-50 flex w-full items-center rounded-lg bg-gray-200 p-1.5 dark:bg-gray-800">
+          {/* TODO: When rename is in progress but is dismissed the color still stays (this is present on older versions of LC before this P.R too, so fix might not be added) */}
           <input
             ref={inputRef}
             type="text"
