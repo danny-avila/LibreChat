@@ -31,7 +31,6 @@ const AttachFile = ({
 
   return (
     <div className="">
-      {/* left-3 matches CGPT but looks off place */}
       <FileUpload handleFileChange={handleFileChange} className="flex">
         <button
           disabled={!!disabled}
