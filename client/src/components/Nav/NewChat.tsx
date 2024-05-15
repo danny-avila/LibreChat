@@ -33,7 +33,7 @@ const NewChatButtonIcon = ({ conversation }: { conversation: TConversation | nul
   const Icon = icons[iconKey];
 
   return (
-    <div className="h-7 w-7 flex-shrink-0">
+    <div className="h-6 w-6 flex-shrink-0">
       {iconURL && iconURL.includes('http') ? (
         <ConvoIconURL preset={conversation} endpointIconURL={iconURL} context="nav" />
       ) : (
@@ -88,17 +88,17 @@ export default function NewChat({
               href="/"
               data-testid="nav-new-chat-button"
               onClick={clickHandler}
-              className="group flex h-10 items-center gap-2 rounded-lg px-2 font-medium hover:bg-gray-200 dark:hover:bg-gray-700"
+              className="group flex h-10 items-center gap-2.5 rounded-lg px-2 font-medium hover:bg-gray-200 dark:hover:bg-gray-800"
             >
               <NewChatButtonIcon conversation={conversation} />
-              <div className="text-token-text-primary grow overflow-hidden text-ellipsis whitespace-nowrap text-sm">
+              <div className="text-token-text-primary grow overflow-hidden text-ellipsis whitespace-nowrap text-sm font-normal">
                 {localize('com_ui_new_chat')}
               </div>
-              <div className="flex gap-3">
+              <div className="invisible flex gap-3 group-hover:visible">
                 <span className="flex items-center" data-state="closed">
                   <TooltipTrigger asChild>
                     <button type="button" className="text-token-text-primary">
-                      <NewChatIcon className="h-[18px] w-[18px]" />
+                      <NewChatIcon className="h-[18px] w-[18px] text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white" />
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="right" sideOffset={20}>
