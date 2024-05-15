@@ -63,7 +63,7 @@ export default function Message(props: TMessageProps) {
                     <div className="flex max-w-full flex-grow flex-col">
                       <div className="text-message flex min-h-[20px] w-full flex-col items-start items-end gap-2 overflow-x-auto">
                         <div className="flex w-full flex-col items-end gap-1 rtl:items-start">
-                          <div className="group/text-message dark:bg-token-main-surface-secondary relative max-w-[90%] rounded-3xl bg-[#f4f4f4] px-5 py-2.5">
+                          <div className="group/text-message relative max-w-[90%] rounded-3xl bg-[#f4f4f4] px-5 py-2.5 dark:bg-gray-700">
                             {/* Legacy Plugins */}
                             {message?.plugin && <Plugin plugin={message?.plugin} />}
                             <MessageContent
@@ -120,8 +120,8 @@ export default function Message(props: TMessageProps) {
                 <div className="relative flex flex-shrink-0 flex-col items-end">
                   <div>
                     <div className="pt-0.5">
-                      <div className="flex h-6 h-8 w-6 w-8 items-center justify-center overflow-hidden rounded-full border">
-                        <div className="bg-token-main-surface-primary text-token-text-primary relative flex h-8 w-8 items-center justify-center rounded-sm p-1">
+                      <div className="flex h-6 h-8 w-6 w-8 items-center justify-center overflow-hidden rounded-full border dark:border-gray-600">
+                        <div className="relative flex h-8 w-8 items-center justify-center rounded-sm bg-gray-800 p-1 text-gray-100">
                           <svg
                             width="41"
                             height="41"
@@ -153,35 +153,33 @@ export default function Message(props: TMessageProps) {
                         className="text-message flex min-h-[20px] w-full flex-col items-start items-end gap-2 overflow-x-auto"
                       >
                         <div className="flex w-full flex-col gap-1 first:pt-[3px]">
-                          <div className="markdown prose dark:prose-invert light w-full break-words">
-                            <p>
-                              {message?.plugin && <Plugin plugin={message?.plugin} />}
-                              <MessageContent
-                                ask={ask}
-                                edit={edit}
-                                isLast={isLast}
-                                text={text ?? ''}
-                                message={message}
-                                enterEdit={enterEdit}
-                                error={!!error}
-                                isSubmitting={isSubmitting}
-                                unfinished={unfinished ?? false}
-                                isCreatedByUser={isCreatedByUser ?? true}
-                                siblingIdx={siblingIdx ?? 0}
-                                setSiblingIdx={
-                                  setSiblingIdx ??
-                                  (() => {
-                                    return;
-                                  })
-                                }
-                              />
-                            </p>
-                          </div>
+                          <p>
+                            {message?.plugin && <Plugin plugin={message?.plugin} />}
+                            <MessageContent
+                              ask={ask}
+                              edit={edit}
+                              isLast={isLast}
+                              text={text ?? ''}
+                              message={message}
+                              enterEdit={enterEdit}
+                              error={!!error}
+                              isSubmitting={isSubmitting}
+                              unfinished={unfinished ?? false}
+                              isCreatedByUser={isCreatedByUser ?? true}
+                              siblingIdx={siblingIdx ?? 0}
+                              setSiblingIdx={
+                                setSiblingIdx ??
+                                (() => {
+                                  return;
+                                })
+                              }
+                            />
+                          </p>
                         </div>
                       </div>
                     </div>
                     <div className="-ml-3 mt-3 flex gap-3 empty:hidden">
-                      <div className="bg-token-main-surface-primary md:border-token-border-light z-10 -mt-1 items-center justify-start rounded-xl p-1 md:invisible md:absolute md:border md:group-hover:visible">
+                      <div className="bg-token-main-surface-primary -mt-1 items-center justify-start rounded-xl p-1 md:invisible md:absolute md:border md:group-hover:visible md:dark:border-gray-600">
                         <div className="flex items-center">
                           {isLast && isSubmitting ? null : (
                             <SubRow classes="text-xs">

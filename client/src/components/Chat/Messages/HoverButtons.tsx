@@ -61,7 +61,7 @@ export default function HoverButtons({
       {endpoint !== EModelEndpoint.assistants && (
         <button
           className={cn(
-            'flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-gray-200 hover:text-gray-700 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400',
+            'flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-gray-200 hover:text-gray-700 dark:text-gray-100/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400',
             'md:opacity-0 md:group-hover:opacity-100',
             isCreatedByUser ? '' : 'active h-7 w-7 rounded-md',
             hideEditButton ? 'opacity-0' : '',
@@ -77,7 +77,7 @@ export default function HoverButtons({
       )}
       <button
         className={cn(
-          'flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-gray-200 hover:text-gray-700 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400',
+          'flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-gray-200 hover:text-gray-700 dark:text-gray-100/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400',
           'md:opacity-0 md:group-hover:opacity-100',
           isCreatedByUser ? '' : 'active h-7 w-7 rounded-md',
           isSubmitting && isCreatedByUser ? 'md:opacity-0 md:group-hover:opacity-100' : '',
@@ -93,7 +93,7 @@ export default function HoverButtons({
       {regenerateEnabled ? (
         <button
           className={cn(
-            'flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-gray-200 hover:text-gray-700 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400',
+            'flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-gray-200 hover:text-gray-700 dark:text-gray-100/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400',
             'md:opacity-0 md:group-hover:opacity-100',
             isCreatedByUser ? '' : 'active h-7 w-7 rounded-md',
           )}
@@ -115,7 +115,7 @@ export default function HoverButtons({
       {continueSupported ? (
         <button
           className={cn(
-            'flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-gray-200 hover:text-gray-700 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400',
+            'flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-gray-200 hover:text-gray-700 dark:text-gray-100/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400',
             'md:opacity-0 md:group-hover:opacity-100',
             isCreatedByUser ? '' : 'active h-7 w-7 rounded-md',
           )}
