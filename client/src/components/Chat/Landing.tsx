@@ -36,7 +36,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
   const avatar = (assistant && (assistant?.metadata?.avatar as string)) || '';
 
   const containerClassName =
-    'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black';
+    'relative flex h-full items-center justify-center rounded-full bg-white text-black';
 
   return (
     <TooltipProvider delayDuration={50}>
@@ -44,14 +44,14 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
         <div className="relative h-full">
           <div className="absolute left-0 right-0">{Header && Header}</div>
           <div className="flex h-full flex-col items-center justify-center">
-            <div className={cn('relative h-12 w-12', assistantName && avatar ? 'mb-0' : 'mb-3')}>
+            <div className={cn('relative h-12 w-12')}>
               <ConvoIcon
                 conversation={conversation}
                 assistantMap={assistantMap}
                 endpointsConfig={endpointsConfig}
                 containerClassName={containerClassName}
                 context="landing"
-                className="h-2/3 w-2/3"
+                className="h-12 w-12"
                 size={41}
               />
               <TooltipTrigger>
@@ -63,8 +63,9 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
                 {localize('com_ui_happy_birthday')}
               </TooltipContent>
             </div>
+            {/* Examples: mx-3 mt-12 flex max-w-3xl flex-wrap items-stretch justify-center gap-4 */}
             {assistantName ? (
-              <div className="flex flex-col items-center gap-0 p-2">
+              <div className="mx-3 mt-8 flex flex-col items-center gap-0 p-2">
                 <div className="text-center text-2xl font-medium dark:text-white">
                   {assistantName}
                 </div>
@@ -76,7 +77,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
             </div> */}
               </div>
             ) : (
-              <div className="mb-5 text-2xl font-medium dark:text-white">
+              <div className="mx-3 mb-5 mt-8 text-2xl font-medium dark:text-white">
                 {endpoint === EModelEndpoint.assistants
                   ? conversation?.greeting ?? localize('com_nav_welcome_assistant')
                   : conversation?.greeting ?? localize('com_nav_welcome_message')}
