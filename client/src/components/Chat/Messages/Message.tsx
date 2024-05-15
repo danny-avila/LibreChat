@@ -11,6 +11,7 @@ import HoverButtons from './HoverButtons';
 import SubRow from './SubRow';
 import { cn } from '~/utils';
 import store from '~/store';
+import { useState } from 'react';
 
 export default function Message(props: TMessageProps) {
   const UsernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
@@ -30,6 +31,8 @@ export default function Message(props: TMessageProps) {
     copyToClipboard,
     regenerateMessage,
   } = useMessageHelpers(props);
+
+  const [isForking, setIsForking] = useState<boolean>(false);
 
   const { message, siblingIdx, siblingCount, setSiblingIdx, currentEditId, setCurrentEditId } =
     props;
@@ -106,15 +109,18 @@ export default function Message(props: TMessageProps) {
                                   })
                                 }
                               />
-                              <div className="absolute bottom-0 right-full top-0 -mr-3.5 hidden pr-5 pt-1 group-hover/text-message:block">
+                              <div
+                                className={cn(
+                                  'absolute bottom-0 right-full top-0 -mr-3.5 hidden pr-5 pt-1 md:group-hover/text-message:block',
+                                  {
+                                    'md:block': edit || isForking,
+                                  },
+                                )}
+                              >
                                 {isLast && isSubmitting ? null : (
                                   <SubRow classes="text-xs">
-                                    <SiblingSwitch
-                                      siblingIdx={siblingIdx}
-                                      siblingCount={siblingCount}
-                                      setSiblingIdx={setSiblingIdx}
-                                    />
                                     <HoverButtons
+                                      setIsForking={setIsForking}
                                       isEditing={edit}
                                       message={message}
                                       enterEdit={enterEdit}
@@ -133,6 +139,34 @@ export default function Message(props: TMessageProps) {
                           </div>
                         </div>
                       )}
+                    </div>
+                    <div className="mr-1 mt-1 flex flex-row-reverse gap-3 empty:hidden">
+                      <div className={cn('flex items-center justify-start rounded-xl p-1')}>
+                        {isLast && isSubmitting ? null : (
+                          <SubRow classes="text-xs">
+                            <SiblingSwitch
+                              siblingIdx={siblingIdx}
+                              siblingCount={siblingCount}
+                              setSiblingIdx={setSiblingIdx}
+                            />
+                            <div className="md:hidden">
+                              <HoverButtons
+                                setIsForking={setIsForking}
+                                isEditing={edit}
+                                message={message}
+                                enterEdit={enterEdit}
+                                isSubmitting={isSubmitting}
+                                conversation={conversation ?? null}
+                                regenerate={() => regenerateMessage()}
+                                copyToClipboard={copyToClipboard}
+                                handleContinue={handleContinue}
+                                latestMessage={latestMessage}
+                                isLast={isLast}
+                              />
+                            </div>
+                          </SubRow>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -188,6 +222,7 @@ export default function Message(props: TMessageProps) {
                           'flex items-center justify-start rounded-xl p-1': isLast,
                           'bg-token-main-surface-primary -mt-1 items-center justify-start rounded-xl p-1 md:absolute md:hidden md:border md:group-hover:block md:dark:border-gray-600':
                             !isLast,
+                          'md:block': edit || isForking,
                         })}
                       >
                         <div className="flex items-center">
@@ -199,6 +234,7 @@ export default function Message(props: TMessageProps) {
                                 setSiblingIdx={setSiblingIdx}
                               />
                               <HoverButtons
+                                setIsForking={setIsForking}
                                 isEditing={edit}
                                 message={message}
                                 enterEdit={enterEdit}

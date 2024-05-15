@@ -68,7 +68,7 @@ const PopoverButton: React.FC<PopoverButtonProps> = ({
             setActiveSetting(optionLabels.default);
           }, 175);
         }}
-        className="mx-1 max-w-14 flex-1 rounded-lg border-2 bg-white text-gray-700 transition duration-300 ease-in-out hover:bg-gray-200 hover:text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:hover:bg-gray-600 dark:hover:text-gray-100 "
+        className="mx-1 max-w-14 flex-1 rounded-lg border-2 bg-white text-gray-700 transition duration-300 ease-in-out hover:bg-gray-200 hover:text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:hover:bg-gray-600 dark:hover:text-gray-100"
         type="button"
       >
         {children}
@@ -101,6 +101,7 @@ export default function Fork({
   forkingSupported,
   latestMessage,
   className,
+  setIsForking,
 }: {
   isLast?: boolean;
   messageId: string;
@@ -108,6 +109,7 @@ export default function Fork({
   forkingSupported?: boolean;
   latestMessage: TMessage | null;
   className?: string;
+  setIsForking: (isForking: boolean) => void;
 }) {
   const localize = useLocalize();
   const { index } = useChatContext();
@@ -128,18 +130,21 @@ export default function Fork({
           status: 'success',
         });
       }
+      setIsForking(false);
     },
     onMutate: () => {
       showToast({
         message: localize('com_ui_fork_processing'),
         status: 'info',
       });
+      setIsForking(true);
     },
     onError: () => {
       showToast({
         message: localize('com_ui_fork_error'),
         status: 'error',
       });
+      setIsForking(false);
     },
   });
 
@@ -163,7 +168,7 @@ export default function Fork({
   };
 
   return (
-    <Popover.Root>
+    <Popover.Root onOpenChange={(open) => setIsForking(open)}>
       <Popover.Trigger asChild>
         <button
           className={cn(

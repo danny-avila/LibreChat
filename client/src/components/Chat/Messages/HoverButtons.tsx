@@ -17,6 +17,7 @@ type THoverButtons = {
   handleContinue: (e: React.MouseEvent<HTMLButtonElement>) => void;
   latestMessage: TMessage | null;
   isLast: boolean;
+  setIsForking: (isForking: boolean) => void;
 };
 
 export default function HoverButtons({
@@ -30,6 +31,7 @@ export default function HoverButtons({
   handleContinue,
   latestMessage,
   isLast,
+  setIsForking,
 }: THoverButtons) {
   const localize = useLocalize();
   const { endpoint: _endpoint, endpointType } = conversation ?? {};
@@ -106,6 +108,7 @@ export default function HoverButtons({
       ) : null}
       <Fork
         isLast={isLast}
+        setIsForking={setIsForking}
         messageId={message.messageId}
         conversationId={conversation.conversationId}
         forkingSupported={forkingSupported}
