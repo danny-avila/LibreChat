@@ -151,14 +151,18 @@ const EditMessage = ({
         >
           {localize('com_ui_save_submit')}
         </button>
+        {/* btn-secondary has off styles */}
         <button
-          className="btn btn-secondary relative mr-2"
+          className="btn btn-primary relative mr-2"
           disabled={isSubmitting}
           onClick={updateMessage}
         >
           {localize('com_ui_save')}
         </button>
-        <button className="btn btn-neutral relative" onClick={() => enterEdit(true)}>
+        <button
+          className="btn btn-neutral relative dark:bg-white dark:text-black dark:hover:bg-white/80"
+          onClick={() => enterEdit(true)}
+        >
           {localize('com_ui_cancel')}
         </button>
       </div>
