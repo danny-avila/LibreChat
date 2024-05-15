@@ -110,7 +110,7 @@ const EditMessage = ({
   );
 
   return (
-    <Container message={message}>
+    <Container message={message} className="rounded-3xl bg-gray-100 px-3 py-3">
       <TextareaAutosize
         ref={textAreaRef}
         onChange={(e) => {
@@ -120,7 +120,7 @@ const EditMessage = ({
         data-testid="message-text-editor"
         className={cn(
           'markdown prose dark:prose-invert light whitespace-pre-wrap break-words dark:text-gray-20',
-          'm-0 w-full resize-none border-0 bg-transparent p-0',
+          'm-0 w-full resize-none border-0 bg-transparent p-0 p-2',
           removeFocusOutlines,
         )}
         onPaste={(e) => {
@@ -141,7 +141,7 @@ const EditMessage = ({
         value={editedText}
         suppressContentEditableWarning={true}
       />
-      <div className="mt-2 flex w-full justify-center text-center">
+      <div className="mt-2 flex w-full items-center justify-end text-center">
         <button
           className="btn btn-primary relative mr-2"
           disabled={

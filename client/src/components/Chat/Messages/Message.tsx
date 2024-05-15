@@ -61,56 +61,78 @@ export default function Message(props: TMessageProps) {
                 <div className="relative flex w-full min-w-0 flex-col">
                   <div className="flex-col gap-1 md:gap-3">
                     <div className="flex max-w-full flex-grow flex-col">
-                      <div className="text-message flex min-h-[20px] w-full flex-col items-start items-end gap-2 overflow-x-auto">
-                        <div className="flex w-full flex-col items-end gap-1 rtl:items-start">
-                          <div className="group/text-message relative max-w-[90%] rounded-3xl bg-[#f4f4f4] px-5 py-2.5 dark:bg-gray-700">
-                            {/* Legacy Plugins */}
-                            {message?.plugin && <Plugin plugin={message?.plugin} />}
-                            <MessageContent
-                              ask={ask}
-                              edit={edit}
-                              isLast={isLast}
-                              text={text ?? ''}
-                              message={message}
-                              enterEdit={enterEdit}
-                              error={!!error}
-                              isSubmitting={isSubmitting}
-                              unfinished={unfinished ?? false}
-                              isCreatedByUser={isCreatedByUser ?? true}
-                              siblingIdx={siblingIdx ?? 0}
-                              setSiblingIdx={
-                                setSiblingIdx ??
-                                (() => {
-                                  return;
-                                })
-                              }
-                            />
-                            <div className="absolute bottom-0 right-full top-0 -mr-3.5 hidden pr-5 pt-1 group-hover/text-message:block">
-                              {isLast && isSubmitting ? null : (
-                                <SubRow classes="text-xs">
-                                  <SiblingSwitch
-                                    siblingIdx={siblingIdx}
-                                    siblingCount={siblingCount}
-                                    setSiblingIdx={setSiblingIdx}
-                                  />
-                                  <HoverButtons
-                                    isEditing={edit}
-                                    message={message}
-                                    enterEdit={enterEdit}
-                                    isSubmitting={isSubmitting}
-                                    conversation={conversation ?? null}
-                                    regenerate={() => regenerateMessage()}
-                                    copyToClipboard={copyToClipboard}
-                                    handleContinue={handleContinue}
-                                    latestMessage={latestMessage}
-                                    isLast={isLast}
-                                  />
-                                </SubRow>
-                              )}
+                      {edit ? (
+                        <MessageContent
+                          ask={ask}
+                          edit={edit}
+                          isLast={isLast}
+                          text={text ?? ''}
+                          message={message}
+                          enterEdit={enterEdit}
+                          error={!!error}
+                          isSubmitting={isSubmitting}
+                          unfinished={unfinished ?? false}
+                          isCreatedByUser={isCreatedByUser ?? true}
+                          siblingIdx={siblingIdx ?? 0}
+                          setSiblingIdx={
+                            setSiblingIdx ??
+                            (() => {
+                              return;
+                            })
+                          }
+                        />
+                      ) : (
+                        <div className="text-message flex min-h-[20px] w-full flex-col items-start items-end gap-2 overflow-x-auto">
+                          <div className="flex w-full flex-col items-end gap-1 rtl:items-start">
+                            <div className="group/text-message relative max-w-[90%] rounded-3xl bg-[#f4f4f4] px-5 py-2.5 dark:bg-gray-700">
+                              {/* Legacy Plugins */}
+                              {message?.plugin && <Plugin plugin={message?.plugin} />}
+                              <MessageContent
+                                ask={ask}
+                                edit={edit}
+                                isLast={isLast}
+                                text={text ?? ''}
+                                message={message}
+                                enterEdit={enterEdit}
+                                error={!!error}
+                                isSubmitting={isSubmitting}
+                                unfinished={unfinished ?? false}
+                                isCreatedByUser={isCreatedByUser ?? true}
+                                siblingIdx={siblingIdx ?? 0}
+                                setSiblingIdx={
+                                  setSiblingIdx ??
+                                  (() => {
+                                    return;
+                                  })
+                                }
+                              />
+                              <div className="absolute bottom-0 right-full top-0 -mr-3.5 hidden pr-5 pt-1 group-hover/text-message:block">
+                                {isLast && isSubmitting ? null : (
+                                  <SubRow classes="text-xs">
+                                    <SiblingSwitch
+                                      siblingIdx={siblingIdx}
+                                      siblingCount={siblingCount}
+                                      setSiblingIdx={setSiblingIdx}
+                                    />
+                                    <HoverButtons
+                                      isEditing={edit}
+                                      message={message}
+                                      enterEdit={enterEdit}
+                                      isSubmitting={isSubmitting}
+                                      conversation={conversation ?? null}
+                                      regenerate={() => regenerateMessage()}
+                                      copyToClipboard={copyToClipboard}
+                                      handleContinue={handleContinue}
+                                      latestMessage={latestMessage}
+                                      isLast={isLast}
+                                    />
+                                  </SubRow>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                   </div>
                 </div>
