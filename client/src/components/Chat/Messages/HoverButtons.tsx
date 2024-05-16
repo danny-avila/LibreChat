@@ -66,7 +66,7 @@ export default function HoverButtons({
         <button
           className={cn(
             'flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-gray-200 hover:text-gray-700 dark:text-gray-100/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400',
-            !flat || !isCreatedByUser ? '' : 'active h-7 w-7 rounded-md',
+            flat || !isCreatedByUser ? 'active h-7 w-7 rounded-md' : '',
             hideEditButton ? 'hidden' : '',
             isEditing ? 'active bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200' : '',
           )}
@@ -82,7 +82,7 @@ export default function HoverButtons({
         className={cn(
           'flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-gray-200 hover:text-gray-700 dark:text-gray-100/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400',
 
-          !flat || !isCreatedByUser ? '' : 'active h-7 w-7 rounded-md',
+          flat || !isCreatedByUser ? 'active h-7 w-7 rounded-md' : '',
           isSubmitting && (!flat || isCreatedByUser)
             ? 'md:opacity-0 md:group-hover:opacity-100'
             : '',
@@ -100,7 +100,7 @@ export default function HoverButtons({
           className={cn(
             'flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-gray-200 hover:text-gray-700 dark:text-gray-100/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400',
 
-            !flat || !isCreatedByUser ? '' : 'active h-7 w-7 rounded-md',
+            flat || !isCreatedByUser ? 'active h-7 w-7 rounded-md' : '',
           )}
           onClick={regenerate}
           type="button"
@@ -116,13 +116,13 @@ export default function HoverButtons({
         conversationId={conversation.conversationId}
         forkingSupported={forkingSupported}
         latestMessage={latestMessage}
-        className={!flat || !isCreatedByUser ? '' : 'active h-7 w-7 rounded-md'}
+        className={flat || !isCreatedByUser ? 'active h-7 w-7 rounded-md' : ''}
       />
       {continueSupported ? (
         <button
           className={cn(
             'flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-gray-200 hover:text-gray-700 dark:text-gray-100/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400',
-            !flat || !isCreatedByUser ? '' : 'active h-7 w-7 rounded-md',
+            flat || !isCreatedByUser ? 'active h-7 w-7 rounded-md' : '',
           )}
           onClick={handleContinue}
           type="button"
