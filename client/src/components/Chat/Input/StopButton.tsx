@@ -1,33 +1,48 @@
-export default function StopButton({ stop, setShowStopButton }) {
+import React, { forwardRef } from 'react';
+import { useWatch } from 'react-hook-form';
+import type { Control } from 'react-hook-form';
+import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
+import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
+
+type StopButtonProps = {
+  callback: (e: unknown) => void;
+  disabled?: boolean;
+};
+
+const StopButton = ({ callback, disabled }: StopButtonProps) => {
+  const localize = useLocalize();
   return (
-    <div className="absolute bottom-0 right-2 top-0 p-1 md:right-3 md:p-2">
-      <div className="flex h-full">
-        <div className="flex h-full flex-row items-center justify-center gap-3">
+    <TooltipProvider delayDuration={250}>
+      <Tooltip>
+        <TooltipTrigger asChild>
           <button
-            type="button"
-            className="border-gizmo-gray-900 rounded-full border-2 p-1 dark:border-gray-200"
-            aria-label="Stop generating"
-            onClick={(e) => {
-              setShowStopButton(false);
-              stop(e);
-            }}
+            disabled={disabled}
+            className={cn(
+              'rounded-full border border-black p-0.5 text-white transition-colors enabled:bg-black disabled:bg-black disabled:text-gray-400 disabled:opacity-10 dark:border-white dark:bg-white dark:disabled:bg-white dark:disabled:opacity-25',
+            )}
+            onClick={callback}
+            data-testid="stop-button"
+            type="submit"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 16 16"
-              fill="currentColor"
-              className="text-gizmo-gray-900 h-2 w-2 dark:text-gray-200"
-              height="16"
-              width="16"
+              width="26"
+              height="26"
+              fill="none"
+              viewBox="0 0 24 24"
+              // className="icon-lg"
             >
-              <path
-                d="M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2z"
-                strokeWidth="0"
-              ></path>
+              <rect width="10" height="10" x="7" y="7" fill="currentColor" rx="1.25"></rect>
             </svg>
           </button>
-        </div>
-      </div>
-    </div>
+        </TooltipTrigger>
+        <TooltipContent side="top" sideOffset={10}>
+          {localize('com_endpoint_stop')}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
-}
+};
+
+export default StopButton;
