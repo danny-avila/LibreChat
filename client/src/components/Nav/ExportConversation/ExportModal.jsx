@@ -5,6 +5,12 @@ import { useEffect, useState } from 'react';
 import exportFromJSON from 'export-from-json';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { useGetMessagesByConvoId } from 'librechat-data-provider/react-query';
+import {
+  ContentTypes,
+  ToolCallTypes,
+  imageGenTools,
+  isImageVisionTool,
+} from 'librechat-data-provider';
 import { Dialog, DialogButton, Input, Label, Checkbox, Dropdown } from '~/components/ui/';
 import { cn, defaultTextProps, removeFocusOutlines, cleanupPreset } from '~/utils/';
 import { useScreenshot, useLocalize } from '~/hooks';
@@ -123,6 +129,97 @@ export default function ExportModal({ open, onOpenChange, conversation }) {
     }
   };
 
+  const getMessageText = (message, format = 'text') => {
+    if (!message) {
+      return '';
+    }
+
+    const formatText = (sender, text) => {
+      if (format === 'text') {
+        return `>> ${sender}:\n${text}`;
+      }
+      return `**${sender}**\n${text}`;
+    };
+
+    if (!message.content) {
+      return formatText(message.sender, message.text);
+    }
+
+    return message.content
+      .map((content) => getMessageContent(message.sender, content))
+      .map((text) => {
+        return formatText(text[0], text[1]);
+      })
+      .join('\n\n\n');
+  };
+
+  /**
+   * Format and return message texts according to the type of content.
+   * Currently, content whose type is `TOOL_CALL` basically returns JSON as is.
+   * In the future, different formatted text may be returned for each type.
+   * @param {string} sender
+   * @param {object} content
+   * @returns {array} [sender, text]
+   */
+  const getMessageContent = (sender, content) => {
+    if (!content) {
+      return [];
+    }
+
+    if (content.type === ContentTypes.ERROR) {
+      // ERROR
+      return [sender, content[ContentTypes.TEXT].value];
+    }
+
+    if (content.type === ContentTypes.TEXT) {
+      // TEXT
+      return [sender, content[ContentTypes.TEXT].value];
+    }
+
+    if (content.type === ContentTypes.TOOL_CALL) {
+      const type = content[ContentTypes.TOOL_CALL].type;
+
+      if (type === ToolCallTypes.CODE_INTERPRETER) {
+        // CODE_INTERPRETER
+        const toolCall = content[ContentTypes.TOOL_CALL];
+        const code_interpreter = toolCall[ToolCallTypes.CODE_INTERPRETER];
+        return ['Code Interpreter', JSON.stringify(code_interpreter)];
+      }
+
+      if (type === ToolCallTypes.RETRIEVAL) {
+        // RETRIEVAL
+        const toolCall = content[ContentTypes.TOOL_CALL];
+        return ['Retrieval', JSON.stringify(toolCall)];
+      }
+
+      if (
+        type === ToolCallTypes.FUNCTION &&
+        imageGenTools.has(content[ContentTypes.TOOL_CALL].function.name)
+      ) {
+        // IMAGE_GENERATION
+        const toolCall = content[ContentTypes.TOOL_CALL];
+        return ['Tool', JSON.stringify(toolCall)];
+      }
+
+      if (type === ToolCallTypes.FUNCTION) {
+        // IMAGE_VISION
+        const toolCall = content[ContentTypes.TOOL_CALL];
+        if (isImageVisionTool(toolCall)) {
+          return ['Tool', JSON.stringify(toolCall)];
+        }
+        return ['Tool', JSON.stringify(toolCall)];
+      }
+    }
+
+    if (content.type === ContentTypes.IMAGE_FILE) {
+      // IMAGE
+      const imageFile = content[ContentTypes.IMAGE_FILE];
+      return ['Image', JSON.stringify(imageFile)];
+    }
+
+    return [sender, JSON.stringify(content)];
+  };
+
   const exportScreenshot = async () => {
     let data;
     try {
@@ -215,7 +312,7 @@ export default function ExportModal({ open, onOpenChange, conversation }) {
 
     data += '\n## History\n';
     for (const message of messages) {
-      data += `**${message?.sender}:**\n${message?.text}\n`;
+      data += `${getMessageText(message, 'md')}\n`;
       if (message.error) {
         data += '*(This is an error message)*\n';
       }
@@ -261,7 +358,7 @@ export default function ExportModal({ open, onOpenChange, conversation }) {
 
     data += '\nHistory\n########################\n';
     for (const message of messages) {
-      data += `>> ${message?.sender}:\n${message?.text}\n`;
+      data += `${getMessageText(message)}\n`;
       if (message.error) {
         data += '(This is an error message)\n';
       }
