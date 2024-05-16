@@ -68,7 +68,7 @@ const PopoverButton: React.FC<PopoverButtonProps> = ({
             setActiveSetting(optionLabels.default);
           }, 175);
         }}
-        className="mx-1 max-w-14 flex-1 rounded-lg border-2 bg-white text-gray-700 transition duration-300 ease-in-out hover:bg-gray-200 hover:text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:hover:bg-gray-600 dark:hover:text-gray-100 "
+        className="mx-1 max-w-14 flex-1 rounded-lg border-2 bg-white text-gray-700 transition duration-300 ease-in-out hover:bg-gray-200 hover:text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:hover:bg-gray-600 dark:hover:text-gray-100"
         type="button"
       >
         {children}
@@ -100,12 +100,16 @@ export default function Fork({
   conversationId,
   forkingSupported,
   latestMessage,
+  className,
+  setIsForking,
 }: {
   isLast?: boolean;
   messageId: string;
   conversationId: string | null;
   forkingSupported?: boolean;
   latestMessage: TMessage | null;
+  className?: string;
+  setIsForking: (isForking: boolean) => void;
 }) {
   const localize = useLocalize();
   const { index } = useChatContext();
@@ -126,18 +130,21 @@ export default function Fork({
           status: 'success',
         });
       }
+      setIsForking(false);
     },
     onMutate: () => {
       showToast({
         message: localize('com_ui_fork_processing'),
         status: 'info',
       });
+      setIsForking(true);
     },
     onError: () => {
       showToast({
         message: localize('com_ui_fork_error'),
         status: 'error',
       });
+      setIsForking(false);
     },
   });
 
@@ -161,13 +168,14 @@ export default function Fork({
   };
 
   return (
-    <Popover.Root>
+    <Popover.Root onOpenChange={(open) => setIsForking(open)}>
       <Popover.Trigger asChild>
         <button
           className={cn(
-            'hover-button active rounded-md p-1 hover:bg-gray-200 hover:text-gray-700 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible ',
+            'flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-gray-200 hover:text-gray-700 dark:text-gray-100/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400',
             'data-[state=open]:active data-[state=open]:bg-gray-200 data-[state=open]:text-gray-700 data-[state=open]:dark:bg-gray-700 data-[state=open]:dark:text-gray-200',
-            !isLast ? 'data-[state=open]:opacity-100 md:opacity-0 md:group-hover:opacity-100' : '',
+            'data-[state=open]:opacity-100',
+            className,
           )}
           onClick={(e) => {
             if (rememberGlobal) {

@@ -957,6 +957,10 @@ button {
   cursor: pointer;
 }
 
+button.btn {
+  border-radius: 9999px;
+}
+
 .btn {
   align-items:center;
   border-color:transparent;
@@ -990,12 +994,12 @@ button {
 .btn-primary {
   --tw-bg-opacity: 1;
   --tw-text-opacity: 1;
-  background-color: rgba(16, 163, 127, var(--tw-bg-opacity));
+  background-color: var(--gray-900);
   color: rgba(255, 255, 255, var(--tw-text-opacity));
 }
 .btn-primary:hover {
   --tw-bg-opacity: 1;
-  background-color: rgba(26, 127, 100, var(--tw-bg-opacity));
+  background-color: var(--gray-700);
 }
 .btn-primary:focus {
   --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width)
@@ -1009,11 +1013,11 @@ button {
 }
 .btn-primary.focus-visible {
   --tw-ring-opacity: 1;
-  --tw-ring-color: rgba(25, 195, 125, var(--tw-ring-opacity));
+  --tw-ring-color: rgba(255, 255, 255, var(--tw-ring-opacity));
 }
 .btn-primary:focus-visible {
   --tw-ring-opacity: 1;
-  --tw-ring-color: rgba(25, 195, 125, var(--tw-ring-opacity));
+  --tw-ring-color: rgba(255, 255, 255, var(--tw-ring-opacity));
 }
 .btn-primary:disabled:hover {
   --tw-bg-opacity: 1;
