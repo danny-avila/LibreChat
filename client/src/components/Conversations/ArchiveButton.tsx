@@ -5,19 +5,21 @@ import { useConversations, useLocalize, useNewConvo } from '~/hooks';
 import { useArchiveConversationMutation } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
+import { ArchiveIcon } from '~/components/svg';
 
 type ArchiveButtonProps = {
   conversationId: string;
   retainView: () => void;
   shouldArchive: boolean;
-  icon: React.ReactNode;
+  appendLabel?: boolean;
   className?: string;
 };
+
 export default function ArchiveButton({
   conversationId,
   retainView,
   shouldArchive,
-  icon,
+  appendLabel = false,
   className = '',
 }: ArchiveButtonProps) {
   const localize = useLocalize();
@@ -64,7 +66,16 @@ export default function ArchiveButton({
       <TooltipProvider delayDuration={250}>
         <Tooltip>
           <TooltipTrigger asChild>
-            <span className="h-5 w-5">{icon}</span>
+            <>
+              {appendLabel ? (
+                <ArchiveIcon />
+              ) : (
+                <span className="h-5 w-5">
+                  <ArchiveIcon className="hover:text-gray-400" />
+                </span>
+              )}
+              {appendLabel && localize(`com_ui_${label}`)}
+            </>
           </TooltipTrigger>
           <TooltipContent side="top" sideOffset={0}>
             {localize(`com_ui_${label}`)}
