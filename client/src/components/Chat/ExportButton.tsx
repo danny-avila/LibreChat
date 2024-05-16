@@ -3,7 +3,7 @@ import React from 'react';
 import { useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import type { TConversation } from 'librechat-data-provider';
-import { Download } from 'lucide-react';
+import { Upload } from 'lucide-react';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import { ExportModal } from '../Nav';
@@ -50,7 +50,7 @@ function ExportButton() {
                   onClick={clickHandler}
                 >
                   <div className="flex w-full items-center justify-center gap-2">
-                    <Download size={16} />
+                    <Upload size={16} />
                   </div>
                 </button>
               </TooltipTrigger>
