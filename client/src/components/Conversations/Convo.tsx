@@ -68,6 +68,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
   const onRename = (e: MouseEvent<HTMLButtonElement> | FocusEvent<HTMLInputElement> | KeyEvent) => {
     e.preventDefault();
     setRenaming(false);
+    setIsPopoverActive(false);
     if (titleInput === title) {
       return;
     }
@@ -91,6 +92,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
     if (e.key === 'Escape') {
       setTitleInput(title);
       setRenaming(false);
+      setIsPopoverActive(false);
     } else if (e.key === 'Enter') {
       onRename(e);
     }
@@ -108,7 +110,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
     >
       {renaming ? (
         <div className="absolute inset-0 z-50 flex w-full items-center rounded-lg bg-gray-200 p-1.5 dark:bg-gray-800">
-          {/* TODO: When rename is in progress but is dismissed the color still stays (this is present on older versions of LC before this P.R too, so fix might not be added) */}
+          {/* TODO: When rename is in progress but is dismissed the color still stays (this is present on older versions of LC before this P.R too, so fix might not be added) (isPopoverActive) */}
           <input
             ref={inputRef}
             type="text"
@@ -180,7 +182,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
             )}
           />
         ) : (
-          <div className="absolute bottom-0 right-0 top-0 w-12 rounded-r-lg bg-gradient-to-l from-gray-50 from-0% to-transparent group-hover:from-gray-200 group-hover:from-60% dark:from-[#181818] dark:group-hover:from-gray-800" />
+          <div className="absolute bottom-0 right-0 top-0 w-12 rounded-r-lg bg-gradient-to-l from-gray-50 from-0% to-transparent group-hover:from-gray-200 group-hover:from-60% dark:from-[#171717] dark:group-hover:from-gray-800" />
         )}
       </a>
     </div>
