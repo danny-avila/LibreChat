@@ -46,11 +46,11 @@ function ExportButton() {
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  className="btn btn-neutral btn-small relative flex h-9 w-9 items-center justify-center whitespace-nowrap rounded-lg"
+                  className="h-10 rounded-lg px-2.5 text-token-text-secondary focus-visible:outline-0 hover:bg-gray-100 dark:hover:bg-gray-700 focus-visible:bg-token-main-surface-secondary"
                   onClick={clickHandler}
                 >
                   <div className="flex w-full items-center justify-center gap-2">
-                    <Download size={16} />
+                    <Download size={24} />
                   </div>
                 </button>
               </TooltipTrigger>
