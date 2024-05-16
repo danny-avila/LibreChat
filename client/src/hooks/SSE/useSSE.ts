@@ -592,7 +592,6 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
         console.error(error);
         console.log(e);
         setIsSubmitting(false);
-        return;
       }
 
       errorHandler({ data, submission: { ...submission, message } });
