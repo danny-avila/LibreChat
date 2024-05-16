@@ -51,12 +51,12 @@ function ProfileButton({ className }: ProfileButtonProps) {
           <>
             <Menu.Button
               className={cn(
-                'flex h-10 w-10 items-center justify-center rounded-lg hover:bg-gray-100 focus-visible:bg-gray-100 focus-visible:outline-0 dark:hover:bg-gray-700',
+                'flex h-10 w-10 items-center justify-center rounded-full hover:bg-gray-100 focus-visible:bg-gray-100 focus-visible:outline-0 dark:hover:bg-gray-700',
                 open ? 'bg-gray-100 dark:bg-gray-700' : '',
               )}
               data-testid="nav-user"
             >
-              <div className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full">
+              <div className="flex items-center justify-center overflow-hidden rounded-full">
                 <div className="relative flex">
                   {!user?.avatar && !user?.username ? (
                     <div
@@ -71,7 +71,7 @@ function ProfileButton({ className }: ProfileButtonProps) {
                       <UserIcon />
                     </div>
                   ) : (
-                    <img className="rounded-full" src={user?.avatar || avatarSrc} alt="avatar" />
+                    <img className="rounded-sm" width={32} height={32} src={user?.avatar || avatarSrc} alt="avatar" />
                   )}
                 </div>
               </div>
