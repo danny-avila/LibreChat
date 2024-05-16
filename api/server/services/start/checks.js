@@ -27,15 +27,13 @@ function checkVariables() {
   }
 
   if (hasDefaultSecrets) {
-    logger.info(
-      `Please replace any default secret values.
-      
-      For your conveninence, fork & run this replit to generate your own secret values:
+    logger.info('Please replace any default secret values.');
+    logger.info(`\u200B
 
-      https://replit.com/@daavila/crypto#index.js
-      
-      `,
-    );
+    For your convenience, use this tool to generate your own secret values:
+    https://www.librechat.ai/toolkit/creds_generator
+
+    \u200B`);
   }
 
   if (process.env.GOOGLE_API_KEY) {
@@ -99,7 +97,12 @@ function checkAzureVariables() {
 function checkConfig(config) {
   if (config.version !== Constants.CONFIG_VERSION) {
     logger.info(
-      `\nOutdated Config version: ${config.version}. Current version: ${Constants.CONFIG_VERSION}\n\nCheck out the latest config file guide for new options and features.\nhttps://docs.librechat.ai/install/configuration/custom_config.html\n\n`,
+      `\nOutdated Config version: ${config.version}
+Latest version: ${Constants.CONFIG_VERSION}
+
+      Check out the Config changelogs for the latest options and features added.
+
+      https://www.librechat.ai/changelog\n\n`,
     );
   }
 }

@@ -464,6 +464,24 @@ export default {
   com_nav_setting_account: 'Konto',
   com_nav_language: 'Sprache',
   /* The following are AI Translated */
+  com_ui_date_today: 'Heute',
+  com_ui_date_yesterday: 'Gestern',
+  com_ui_date_previous_7_days: 'Letzte 7 Tage',
+  com_ui_date_previous_30_days: 'Letzte 30 Tage',
+  com_ui_date_january: 'Januar',
+  com_ui_date_february: 'Februar',
+  com_ui_date_march: 'März',
+  com_ui_date_april: 'April',
+  com_ui_date_may: 'Mai',
+  com_ui_date_june: 'Juni',
+  com_ui_date_july: 'Juli',
+  com_ui_date_august: 'August',
+  com_ui_date_september: 'September',
+  com_ui_date_october: 'Oktober',
+  com_ui_date_november: 'November',
+  com_ui_date_december: 'Dezember',
+  com_ui_nothing_found: 'Keine Ergebnisse gefunden',
+  com_ui_go_to_conversation: 'Zum Chat wechseln',
   com_error_moderation:
     'Es sieht so aus, als ob der übermittelte Inhalt von unserem Moderationssystem als nicht konform mit unseren Gemeinschaftsrichtlinien markiert wurde. Wir können mit diesem spezifischen Thema leider nicht fortfahren. Wenn du andere Fragen oder Themen hast, die du gerne erörtern möchtest, bearbeite bitte deine Nachricht oder starte eine neue Konversation.',
   com_error_no_user_key:
@@ -2202,6 +2220,78 @@ export const comparisons = {
   com_nav_language: {
     english: 'Language',
     translated: 'Sprache',
+  },
+  com_ui_date_today: {
+    english: 'Today',
+    translated: 'Heute',
+  },
+  com_ui_date_yesterday: {
+    english: 'Yesterday',
+    translated: 'Gestern',
+  },
+  com_ui_date_previous_7_days: {
+    english: 'Previous 7 days',
+    translated: 'Letzte 7 Tage',
+  },
+  com_ui_date_previous_30_days: {
+    english: 'Previous 30 days',
+    translated: 'Letzte 30 Tage',
+  },
+  com_ui_date_january: {
+    english: 'January',
+    translated: 'Januar',
+  },
+  com_ui_date_february: {
+    english: 'February',
+    translated: 'Februar',
+  },
+  com_ui_date_march: {
+    english: 'March',
+    translated: 'März',
+  },
+  com_ui_date_april: {
+    english: 'April',
+    translated: 'April',
+  },
+  com_ui_date_may: {
+    english: 'May',
+    translated: 'Mai',
+  },
+  com_ui_date_june: {
+    english: 'June',
+    translated: 'Juni',
+  },
+  com_ui_date_july: {
+    english: 'July',
+    translated: 'Juli',
+  },
+  com_ui_date_august: {
+    english: 'August',
+    translated: 'August',
+  },
+  com_ui_date_september: {
+    english: 'September',
+    translated: 'September',
+  },
+  com_ui_date_october: {
+    english: 'October',
+    translated: 'Oktober',
+  },
+  com_ui_date_november: {
+    english: 'November',
+    translated: 'November',
+  },
+  com_ui_date_december: {
+    english: 'December',
+    translated: 'Dezember',
+  },
+  com_ui_nothing_found: {
+    english: 'Nothing found',
+    translated: 'Keine Ergebnisse gefunden',
+  },
+  com_ui_go_to_conversation: {
+    english: 'Go to conversation',
+    translated: 'Zum Chat wechseln',
   },
   com_error_moderation: {
     english:

@@ -1,11 +1,12 @@
 import { convoData } from './convos.fakeData';
 import {
-  groupConversationsByDate,
+  dateKeys,
   addConversation,
-  updateConversation,
   updateConvoFields,
+  updateConversation,
   deleteConversation,
   findPageForConversation,
+  groupConversationsByDate,
 } from './convos';
 import type { TConversation, ConversationData } from 'librechat-data-provider';
 
@@ -20,13 +21,13 @@ describe('Conversation Utilities', () => {
         { conversationId: '5', updatedAt: new Date(Date.now() - 86400000 * 8).toISOString() }, // 8 days ago (previous 30 days)
       ];
       const grouped = groupConversationsByDate(conversations as TConversation[]);
-      expect(grouped[0][0]).toBe('Today');
+      expect(grouped[0][0]).toBe(dateKeys.today);
       expect(grouped[0][1]).toHaveLength(1);
-      expect(grouped[1][0]).toBe('Yesterday');
+      expect(grouped[1][0]).toBe(dateKeys.yesterday);
       expect(grouped[1][1]).toHaveLength(1);
-      expect(grouped[2][0]).toBe('Previous 7 days');
+      expect(grouped[2][0]).toBe(dateKeys.previous7Days);
       expect(grouped[2][1]).toHaveLength(1);
-      expect(grouped[3][0]).toBe('Previous 30 days');
+      expect(grouped[3][0]).toBe(dateKeys.previous30Days);
       expect(grouped[3][1]).toHaveLength(1);
       expect(grouped[4][0]).toBe(' 2023');
       expect(grouped[4][1]).toHaveLength(1);

@@ -280,6 +280,24 @@ export default {
   com_nav_setting_general: 'عام',
   com_nav_setting_data: 'تحكم في البيانات',
   /* The following are AI translated */
+  com_ui_date_today: 'اليوم',
+  com_ui_date_yesterday: 'أمس',
+  com_ui_date_previous_7_days: 'الأيام السبعة السابقة',
+  com_ui_date_previous_30_days: 'الـ 30 يومًا السابقة',
+  com_ui_date_january: 'يناير',
+  com_ui_date_february: 'فبراير',
+  com_ui_date_march: 'مارس',
+  com_ui_date_april: 'أبريل',
+  com_ui_date_may: 'مايو',
+  com_ui_date_june: 'يونيو',
+  com_ui_date_july: 'يوليو',
+  com_ui_date_august: 'أغسطس',
+  com_ui_date_september: 'سبتمبر',
+  com_ui_date_october: 'أكتوبر',
+  com_ui_date_november: 'نوفمبر',
+  com_ui_date_december: 'ديسمبر',
+  com_ui_nothing_found: 'لم يتم العثور على أي شيء',
+  com_ui_go_to_conversation: 'انتقل إلى المحادثة',
   com_error_moderation:
     'يبدو أن المحتوى المقدم قد تم وضع علامة عليه من قبل نظام الرقابة لدينا لعدم توافقه مع إرشادات مجتمعنا. لا نستطيع المضي قدمًا في هذا الموضوع المحدد. إذا كانت لديك أسئلة أخرى أو مواضيع ترغب في استكشافها، يرجى تحرير رسالتك، أو إنشاء محادثة جديدة.',
   com_error_no_user_key: 'لم يتم العثور على مفتاح. يرجى تقديم مفتاح والمحاولة مرة أخرى.',
@@ -1533,6 +1551,78 @@ export const comparisons = {
   com_nav_setting_data: {
     english: 'Data controls',
     translated: 'تحكم في البيانات',
+  },
+  com_ui_date_today: {
+    english: 'Today',
+    translated: 'اليوم',
+  },
+  com_ui_date_yesterday: {
+    english: 'Yesterday',
+    translated: 'أمس',
+  },
+  com_ui_date_previous_7_days: {
+    english: 'Previous 7 days',
+    translated: 'الأيام السبعة السابقة',
+  },
+  com_ui_date_previous_30_days: {
+    english: 'Previous 30 days',
+    translated: 'الـ 30 يومًا السابقة',
+  },
+  com_ui_date_january: {
+    english: 'January',
+    translated: 'يناير',
+  },
+  com_ui_date_february: {
+    english: 'February',
+    translated: 'فبراير',
+  },
+  com_ui_date_march: {
+    english: 'March',
+    translated: 'مارس',
+  },
+  com_ui_date_april: {
+    english: 'April',
+    translated: 'أبريل',
+  },
+  com_ui_date_may: {
+    english: 'May',
+    translated: 'مايو',
+  },
+  com_ui_date_june: {
+    english: 'June',
+    translated: 'يونيو',
+  },
+  com_ui_date_july: {
+    english: 'July',
+    translated: 'يوليو',
+  },
+  com_ui_date_august: {
+    english: 'August',
+    translated: 'أغسطس',
+  },
+  com_ui_date_september: {
+    english: 'September',
+    translated: 'سبتمبر',
+  },
+  com_ui_date_october: {
+    english: 'October',
+    translated: 'أكتوبر',
+  },
+  com_ui_date_november: {
+    english: 'November',
+    translated: 'نوفمبر',
+  },
+  com_ui_date_december: {
+    english: 'December',
+    translated: 'ديسمبر',
+  },
+  com_ui_nothing_found: {
+    english: 'Nothing found',
+    translated: 'لم يتم العثور على أي شيء',
+  },
+  com_ui_go_to_conversation: {
+    english: 'Go to conversation',
+    translated: 'انتقل إلى المحادثة',
   },
   com_error_moderation: {
     english:

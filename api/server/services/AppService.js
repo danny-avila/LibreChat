@@ -21,6 +21,7 @@ const AppService = async (app) => {
   const configDefaults = getConfigDefaults();
 
   const filteredTools = config.filteredTools;
+  const includedTools = config.includedTools;
   const fileStrategy = config.fileStrategy ?? configDefaults.fileStrategy;
   const imageOutputType = config?.imageOutputType ?? configDefaults.imageOutputType;
 
@@ -37,23 +38,26 @@ const AppService = async (app) => {
   const availableTools = loadAndFormatTools({
     directory: paths.structuredTools,
     adminFilter: filteredTools,
+    adminIncluded: includedTools,
   });
 
   const socialLogins =
     config?.registration?.socialLogins ?? configDefaults?.registration?.socialLogins;
   const interfaceConfig = loadDefaultInterface(config, configDefaults);
 
-  if (!Object.keys(config).length) {
-    app.locals = {
-      paths,
-      fileStrategy,
-      socialLogins,
-      filteredTools,
-      availableTools,
-      imageOutputType,
-      interfaceConfig,
-    };
+  const defaultLocals = {
+    paths,
+    fileStrategy,
+    socialLogins,
+    filteredTools,
+    includedTools,
+    availableTools,
+    imageOutputType,
+    interfaceConfig,
+  };
 
+  if (!Object.keys(config).length) {
+    app.locals = defaultLocals;
     return;
   }
 
@@ -79,13 +83,7 @@ const AppService = async (app) => {
   }
 
   app.locals = {
-    paths,
-    socialLogins,
-    fileStrategy,
-    filteredTools,
-    availableTools,
-    imageOutputType,
-    interfaceConfig,
+    ...defaultLocals,
     modelSpecs: config.modelSpecs,
     fileConfig: config?.fileConfig,
     secureImageLinks: config?.secureImageLinks,
