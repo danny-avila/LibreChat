@@ -110,7 +110,7 @@ const EditMessage = ({
   );
 
   return (
-    <Container message={message}>
+    <Container message={message} className="rounded-3xl bg-gray-100 px-3 py-3 dark:bg-gray-600">
       <TextareaAutosize
         ref={textAreaRef}
         onChange={(e) => {
@@ -120,7 +120,7 @@ const EditMessage = ({
         data-testid="message-text-editor"
         className={cn(
           'markdown prose dark:prose-invert light whitespace-pre-wrap break-words dark:text-gray-20',
-          'm-0 w-full resize-none border-0 bg-transparent p-0',
+          'm-0 w-full resize-none border-0 bg-transparent p-0 p-2',
           removeFocusOutlines,
         )}
         onPaste={(e) => {
@@ -141,7 +141,7 @@ const EditMessage = ({
         value={editedText}
         suppressContentEditableWarning={true}
       />
-      <div className="mt-2 flex w-full justify-center text-center">
+      <div className="mt-2 flex w-full items-center justify-end text-center">
         <button
           className="btn btn-primary relative mr-2"
           disabled={
@@ -151,14 +151,18 @@ const EditMessage = ({
         >
           {localize('com_ui_save_submit')}
         </button>
+        {/* btn-secondary has off styles */}
         <button
-          className="btn btn-secondary relative mr-2"
+          className="btn btn-primary relative mr-2"
           disabled={isSubmitting}
           onClick={updateMessage}
         >
           {localize('com_ui_save')}
         </button>
-        <button className="btn btn-neutral relative" onClick={() => enterEdit(true)}>
+        <button
+          className="btn btn-neutral relative dark:bg-white dark:text-black dark:hover:bg-white/80"
+          onClick={() => enterEdit(true)}
+        >
           {localize('com_ui_cancel')}
         </button>
       </div>
