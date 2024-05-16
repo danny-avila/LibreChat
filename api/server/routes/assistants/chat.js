@@ -514,6 +514,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
 
     const processRun = async (retry = false) => {
       if (req.app.locals[EModelEndpoint.azureOpenAI]?.assistants) {
+        body.model = openai._options.model;
         openai.attachedFileIds = attachedFileIds;
         openai.visionPromise = visionPromise;
         if (retry) {
