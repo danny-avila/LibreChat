@@ -1,65 +1,23 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useRecoilState } from 'recoil';
 import { useToastContext } from '~/Providers';
 import store from '~/store';
+import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
 
 const useSpeechToTextBrowser = () => {
   const { showToast } = useToastContext();
-  const [isSpeechSupported, setIsSpeechSupported] = useState(false);
-  const [isListening, setIsListening] = useState(false);
   const [endpointSTT] = useRecoilState<string>(store.endpointSTT);
-  const [text, setText] = useState('');
 
-  const initializeSpeechRecognition = () => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
-    recognition.interimResults = true;
-
-    recognition.onresult = (event) => {
-      const transcript = Array.from(event.results)
-        .map((result: unknown) => (result as SpeechRecognitionResult)[0].transcript)
-        .join('');
-      setText(transcript);
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-    };
-
-    recognition.onerror = (event) => {
-      showToast({
-        message: 'An error occurred in SpeechRecognition: ' + event.error,
-        status: 'error',
-      });
-    };
-
-    return recognition;
-  };
-
-  useEffect(() => {
-    if (
-      ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) &&
-      endpointSTT === 'browser'
-    ) {
-      setIsSpeechSupported(true);
-    } else {
-      setIsSpeechSupported(false);
-    }
-
-    const recognition = initializeSpeechRecognition();
-
-    if (isListening) {
-      recognition.start();
-    }
-
-    return () => {
-      recognition.stop();
-    };
-  }, [isListening, endpointSTT, showToast]);
+  const { transcript, listening, resetTranscript, browserSupportsSpeechRecognition } =
+    useSpeechRecognition();
 
   const toggleListening = () => {
-    if (isSpeechSupported) {
-      setIsListening((prevState) => !prevState);
+    if (browserSupportsSpeechRecognition) {
+      if (listening) {
+        SpeechRecognition.stopListening();
+      } else {
+        SpeechRecognition.startListening();
+      }
     } else {
       showToast({
         message: 'Browser does not support SpeechRecognition',
@@ -80,11 +38,14 @@ const useSpeechToTextBrowser = () => {
   }, []);
 
   return {
-    isListening,
+    isListening: listening,
     isLoading: false,
-    text,
+    text: transcript,
     startRecording: toggleListening,
-    stopRecording: () => setIsListening(false),
+    stopRecording: () => {
+      SpeechRecognition.stopListening();
+      resetTranscript();
+    },
   };
 };
 
