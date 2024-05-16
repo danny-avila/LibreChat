@@ -140,7 +140,7 @@ export default function Message(props: TMessageProps) {
                         </div>
                       )}
                     </div>
-                    <div className="mr-1 mt-1 flex flex-row-reverse gap-3 empty:hidden">
+                    <div className="mr-1 mt-1 flex flex-row-reverse empty:hidden">
                       <div className={cn('flex items-center justify-start rounded-xl p-1')}>
                         {isLast && isSubmitting ? null : (
                           <SubRow classes="text-xs flex-wrap">
