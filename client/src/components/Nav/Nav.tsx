@@ -19,6 +19,7 @@ import NavToggle from './NavToggle';
 import NavLinks from './NavLinks';
 import NewChat from './NewChat';
 import { cn } from '~/utils';
+import { ConversationListResponse } from 'librechat-data-provider';
 import store from '~/store';
 
 const Nav = ({ navVisible, setNavVisible }) => {
@@ -59,7 +60,7 @@ const Nav = ({ navVisible, setNavVisible }) => {
     { enabled: isAuthenticated },
   );
 
-  const { containerRef, moveToTop } = useNavScrolling({
+  const { containerRef, moveToTop } = useNavScrolling<ConversationListResponse>({
     setShowLoading,
     hasNextPage: searchQuery ? searchQueryRes.hasNextPage : hasNextPage,
     fetchNextPage: searchQuery ? searchQueryRes.fetchNextPage : fetchNextPage,
