@@ -19,6 +19,7 @@ const validateImageRequest = require('./validateImageRequest');
 const moderateText = require('./moderateText');
 const noIndex = require('./noIndex');
 const importLimiters = require('./importLimiters');
+const messageQuota = require('./messageQuota');
 
 module.exports = {
   ...uploadLimiters,
@@ -42,4 +43,5 @@ module.exports = {
   noIndex,
   ...importLimiters,
   checkDomainAllowed,
+  messageQuota,
 };
