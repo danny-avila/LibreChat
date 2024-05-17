@@ -9,6 +9,7 @@ function useTextToSpeechExternal() {
   const [cacheTTS] = useRecoilState<boolean>(store.cacheTTS);
   const [voice] = useRecoilState<string>(store.voice);
   const [downloadFile, setDownloadFile] = useState(false);
+  const [websocket, setWebsocket] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [audio, setAudio] = useState<HTMLAudioElement | null>(null);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
@@ -46,21 +47,33 @@ function useTextToSpeechExternal() {
   const { mutate: processAudio, isLoading: isProcessing } = useTextToSpeechMutation({
     onSuccess: async (data: ArrayBuffer) => {
       try {
-        const audioBlob = new Blob([data], { type: 'audio/mpeg' });
-        const blobUrl = URL.createObjectURL(audioBlob);
+        const mediaSource = new MediaSource();
+        const audio = new Audio();
+        audio.src = URL.createObjectURL(mediaSource);
+        audio.autoplay = true; // Start playing the audio as soon as enough data has been received
+
+        mediaSource.onsourceopen = () => {
+          const sourceBuffer = mediaSource.addSourceBuffer('audio/mpeg');
+          sourceBuffer.appendBuffer(data);
+        };
+
+        audio.onended = () => {
+          URL.revokeObjectURL(audio.src);
+          setIsSpeaking(false);
+        };
+
+        setAudio(audio);
 
         if (cacheTTS) {
           const cache = await caches.open('tts-responses');
           const request = new Request(text!);
-          cache.put(request, new Response(audioBlob));
+          cache.put(request, new Response(new Blob([data], { type: 'audio/mpeg' })));
         }
 
         if (downloadFile === true) {
-          downloadAudio(blobUrl);
+          downloadAudio(audio.src);
           return;
         }
-
-        playAudio(blobUrl);
       } catch (error) {
         showToast({
           message: `Error processing audio: ${(error as Error).message}`,
@@ -73,25 +86,42 @@ function useTextToSpeechExternal() {
     },
   });
 
-  const generateSpeechExternal = async (text, download) => {
+  const generateSpeechExternal = async (text, download, websocket) => {
     setText(text);
-    const cachedResponse = await caches.match(text);
+    const cachedResponse = await getCachedResponse(text);
 
     if (cachedResponse && cacheTTS) {
-      const audioBlob = await cachedResponse.blob();
-      const blobUrl = URL.createObjectURL(audioBlob);
-      if (download) {
-        downloadAudio(blobUrl);
-      } else {
-        playAudio(blobUrl);
-      }
+      handleCachedResponse(cachedResponse, download);
     } else {
-      const formData = new FormData();
-      formData.append('input', text);
-      formData.append('voice', voice);
+      const formData = createFormData(text, websocket);
       setDownloadFile(download);
+      setWebsocket(websocket);
       processAudio(formData);
     }
+  };
+
+  const getCachedResponse = async (text) => {
+    return await caches.match(text);
+  };
+
+  const handleCachedResponse = async (cachedResponse, download) => {
+    const audioBlob = await cachedResponse.blob();
+    const blobUrl = URL.createObjectURL(audioBlob);
+    if (download) {
+      downloadAudio(blobUrl);
+    } else {
+      playAudio(blobUrl);
+    }
+  };
+
+  const createFormData = (text, websocket) => {
+    const formData = new FormData();
+    formData.append('input', text);
+    formData.append('voice', voice);
+    if (websocket) {
+      formData.append('websocket', 'true');
+    }
+    return formData;
   };
 
   const cancelSpeech = () => {
