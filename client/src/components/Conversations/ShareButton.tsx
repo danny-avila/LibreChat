@@ -1,19 +1,18 @@
 import { useState } from 'react';
-
 import {
   Dialog,
-  DialogTrigger,
   Tooltip,
+  DialogTrigger,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
+  TooltipProvider,
 } from '~/components/ui';
-import DialogTemplate from '~/components/ui/DialogTemplate';
-import { useLocalize } from '~/hooks';
 import { Share2Icon } from 'lucide-react';
-import ShareDialog from './ShareDialog';
-import { TSharedLink } from 'librechat-data-provider';
+import type { TSharedLink } from 'librechat-data-provider';
+import DialogTemplate from '~/components/ui/DialogTemplate';
 import SharedLinkButton from './SharedLinkButton';
+import ShareDialog from './ShareDialog';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 export default function ShareButton({

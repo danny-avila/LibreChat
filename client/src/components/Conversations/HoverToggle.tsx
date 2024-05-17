@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { ToggleContext } from './ToggleContext';
 import { cn } from '~/utils';
 
