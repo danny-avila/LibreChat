@@ -1,14 +1,13 @@
 import { useState } from 'react';
+import { Upload } from 'lucide-react';
+import { useRecoilValue } from 'recoil';
 import { useLocation } from 'react-router-dom';
-import { TConversation } from 'librechat-data-provider';
-
-import ExportButton from './ExportButton';
+import type { TConversation } from 'librechat-data-provider';
 import DropDownMenu from '../Conversations/DropDownMenu';
 import ShareButton from '../Conversations/ShareButton';
 import HoverToggle from '../Conversations/HoverToggle';
-import { useRecoilValue } from 'recoil';
+import ExportButton from './ExportButton';
 import store from '~/store';
-import { Download } from 'lucide-react';
 
 export default function ExportAndShareMenu() {
   const location = useLocation();
@@ -42,7 +41,7 @@ export default function ExportAndShareMenu() {
       setIsPopoverActive={setIsPopoverActive}
     >
       <DropDownMenu
-        icon={<Download />}
+        icon={<Upload />}
         tooltip="Export/Share"
         className="pointer-cursor relative z-50 flex h-[40px] min-w-4 flex-none flex-col items-center justify-center rounded-md border border-gray-100 bg-white px-3 text-left hover:bg-gray-50 focus:outline-none focus:ring-0 focus:ring-offset-0 radix-state-open:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700 dark:radix-state-open:bg-gray-700 sm:text-sm"
       >
