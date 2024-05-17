@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { ToggleContext } from './ToggleContext';
 import { cn } from '~/utils';
 
@@ -15,7 +15,7 @@ const HoverToggle = ({
 }) => {
   const setPopoverActive = (value: boolean) => setIsPopoverActive(value);
   return (
-    <ToggleContext.Provider value={{ setPopoverActive }}>
+    <ToggleContext.Provider value={{ isPopoverActive, setPopoverActive }}>
       <div
         className={cn(
           'peer absolute bottom-0 right-0 top-0 items-center gap-1.5 rounded-r-lg from-gray-500 from-gray-900 pl-2 pr-2 dark:text-white',
