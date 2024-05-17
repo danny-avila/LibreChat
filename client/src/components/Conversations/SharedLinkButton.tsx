@@ -1,10 +1,11 @@
+import { useState } from 'react';
 import copy from 'copy-to-clipboard';
 import { Copy, Link } from 'lucide-react';
-import { Button } from '~/components/ui';
-import { Spinner } from '~/components/svg';
-import { useState } from 'react';
 import { useUpdateSharedLinkMutation } from '~/data-provider';
-import { TSharedLink } from 'librechat-data-provider';
+import type { TSharedLink } from 'librechat-data-provider';
+import { Spinner } from '~/components/svg';
+import { Button } from '~/components/ui';
+import { useLocalize } from '~/hooks';
 
 export default function SharedLinkButton({
   conversationId,
@@ -19,8 +20,8 @@ export default function SharedLinkButton({
   isUpdated: boolean;
   setIsUpdated: (isUpdated: boolean) => void;
 }) {
+  const localize = useLocalize();
   const [isCopying, setIsCopying] = useState(false);
-
   const { mutateAsync, isLoading } = useUpdateSharedLinkMutation();
 
   const copyLink = () => {
@@ -62,7 +63,7 @@ export default function SharedLinkButton({
         label: (
           <>
             <Copy className="mr-2 h-4 w-4" />
-            Copy link
+            {localize('com_ui_copy_link')}
           </>
         ),
       };
@@ -76,7 +77,7 @@ export default function SharedLinkButton({
         label: (
           <>
             <Link className="mr-2 h-4 w-4" />
-            Update link
+            {localize('com_ui_update_link')}
           </>
         ),
       };
@@ -86,7 +87,7 @@ export default function SharedLinkButton({
       label: (
         <>
           <Link className="mr-2 h-4 w-4" />
-          Create link
+          {localize('com_ui_create_link')}
         </>
       ),
     };
@@ -99,12 +100,12 @@ export default function SharedLinkButton({
       onClick={() => {
         handlers.handler();
       }}
-      className="min-w-32 whitespace-nowrap bg-green-500 text-white hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-800"
+      className="min-w-32 whitespace-nowrap bg-green-500 text-white hover:bg-green-600 dark:bg-green-600 dark:text-white dark:hover:bg-green-800"
     >
       {isCopying && (
         <>
           <Copy className="mr-2 h-4 w-4" />
-          Copied!
+          {localize('com_ui_copied')}
         </>
       )}
       {!isCopying && !isLoading && handlers.label}
