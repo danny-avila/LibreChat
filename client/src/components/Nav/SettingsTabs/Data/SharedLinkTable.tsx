@@ -98,14 +98,14 @@ function ShareLinkRow({ sharedLink }: { sharedLink: TSharedLink }) {
           </div>
           <div
             className={cn(
-              'flex items-center justify-end gap-1 text-gray-400',
+              'flex items-center justify-end gap-3 text-gray-400',
               isDeleting && 'opacity-50',
             )}
           >
             {sharedLink.conversationId && (
               <>
                 <SourceChatButton conversationId={sharedLink.conversationId} />
-                <div className={cn('h-4 w-4', !isDeleting && 'hover:text-gray-300')}>
+                <div className={cn('h-4 w-4 cursor-pointer', !isDeleting && 'hover:text-gray-300')}>
                   <SharedLinkDeleteButton
                     shareId={sharedLink.shareId}
                     setIsDeleting={setIsDeleting}
