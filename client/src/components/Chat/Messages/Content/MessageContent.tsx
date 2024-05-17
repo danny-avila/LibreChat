@@ -17,12 +17,37 @@ export const ErrorMessage = ({
   return (
     <Container message={message}>
       <div
+        // TODO: Update tailwind.config.js and styles.css to match OpenAI's new color scheme, and update all reference of those colors to updated ones
         className={cn(
-          'rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200',
+          'mt-0 flex w-full items-start gap-3 rounded-2xl border border-[#ffdbda] dark:border-[#4C2727] dark:bg-[#2D2322] bg-red-300/10 bg-opacity-5 p-4 text-sm',
           className,
         )}
       >
-        <Error text={text} />
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="24"
+          height="24"
+          fill="none"
+          viewBox="0 0 24 24"
+          className="icon-lg shrink-0 text-[#f93a37]"
+          // shrink-0 looks off
+        >
+          <path
+            fill="currentColor"
+            d="M13 12a1 1 0 1 0-2 0v4a1 1 0 1 0 2 0zM12 9.5A1.25 1.25 0 1 0 12 7a1.25 1.25 0 0 0 0 2.5"
+          ></path>
+          <path
+            fill="currentColor"
+            fill-rule="evenodd"
+            d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2M4 12a8 8 0 1 1 16 0 8 8 0 0 1-16 0"
+            clip-rule="evenodd"
+          ></path>
+        </svg>
+        <div className="pt-px">
+          <div className="markdown prose dark:prose-invert w-full break-words">
+            <Error text={text} />
+          </div>
+        </div>
       </div>
     </Container>
   );
