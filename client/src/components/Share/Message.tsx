@@ -1,5 +1,7 @@
 import type { TMessageProps } from '~/common';
+import MinimalHoverButtons from '~/components/Chat/Messages/MinimalHoverButtons';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
+import SearchContent from '~/components/Chat/Messages/Content/SearchContent';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import { Plugin } from '~/components/Messages/Content';
 import SubRow from '~/components/Chat/Messages/SubRow';
@@ -54,29 +56,24 @@ export default function Message(props: TMessageProps) {
                 <div className="flex max-w-full flex-grow flex-col gap-0">
                   {/* Legacy Plugins */}
                   {message?.plugin && <Plugin plugin={message?.plugin} />}
-                  <MessageContent
-                    edit={false}
-                    error={error}
-                    isSubmitting={false}
-                    unfinished={!!unfinished}
-                    isLast={false}
-                    enterEdit={() => {
-                      return;
-                    }}
-                    ask={() => {
-                      return;
-                    }}
-                    text={text ?? ''}
-                    message={message}
-                    isCreatedByUser={isCreatedByUser ?? true}
-                    siblingIdx={siblingIdx ?? 0}
-                    setSiblingIdx={
-                      setSiblingIdx ??
-                      (() => {
-                        return;
-                      })
-                    }
-                  />
+                  {message?.content ? (
+                    <SearchContent message={message} />
+                  ) : (
+                    <MessageContent
+                      edit={false}
+                      error={error}
+                      isLast={false}
+                      ask={() => ({})}
+                      text={text ?? ''}
+                      message={message}
+                      isSubmitting={false}
+                      enterEdit={() => ({})}
+                      unfinished={!!unfinished}
+                      isCreatedByUser={isCreatedByUser ?? true}
+                      siblingIdx={siblingIdx ?? 0}
+                      setSiblingIdx={setSiblingIdx ?? (() => ({}))}
+                    />
+                  )}
                 </div>
               </div>
               <SubRow classes="text-xs">
@@ -85,6 +82,7 @@ export default function Message(props: TMessageProps) {
                   siblingCount={siblingCount}
                   setSiblingIdx={setSiblingIdx}
                 />
+                <MinimalHoverButtons message={message} />
               </SubRow>
             </div>
           </div>
