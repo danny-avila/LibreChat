@@ -1,5 +1,6 @@
 const passport = require('passport');
 const jwtDecode = require('jsonwebtoken/decode');
+const fetch = require('node-fetch');
 const { Issuer, Strategy: OpenIDStrategy } = require('openid-client');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logger } = require('~/config');
