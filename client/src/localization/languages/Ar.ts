@@ -297,6 +297,12 @@ export default {
   com_nav_setting_general: 'عام',
   com_nav_setting_data: 'تحكم في البيانات',
   /* The following are AI translated */
+  com_ui_copied: 'تم النسخ',
+  com_ui_copy_code: 'نسخ الكود',
+  com_ui_copy_link: 'نسخ الرابط',
+  com_ui_update_link: 'رابط التحديث',
+  com_ui_create_link: 'إنشاء رابط',
+  com_nav_source_chat: 'عرض محادثة المصدر',
   com_ui_date_today: 'اليوم',
   com_ui_date_yesterday: 'أمس',
   com_ui_date_previous_7_days: 'الأيام السبعة السابقة',

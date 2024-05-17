@@ -283,6 +283,12 @@ export default {
   com_nav_setting_general: '一般',
   com_nav_setting_data: '資料控制',
   /* The following are AI translated */
+  com_ui_copied: '已複製！',
+  com_ui_copy_code: '複製程式碼',
+  com_ui_copy_link: '複製連結',
+  com_ui_update_link: '更新連結',
+  com_ui_create_link: '創建連結',
+  com_nav_source_chat: '檢視原始對話',
   com_ui_date_today: '今天',
   com_ui_date_yesterday: '昨天',
   com_ui_date_previous_7_days: '前 7 天',

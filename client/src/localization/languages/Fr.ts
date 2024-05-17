@@ -364,6 +364,12 @@ export default {
   com_nav_setting_data: 'Contrôles des données',
   com_nav_setting_account: 'Compte',
   /* The following are AI Translated */
+  com_ui_copied: 'Copié !',
+  com_ui_copy_code: 'Copier le code',
+  com_ui_copy_link: 'Copier le lien',
+  com_ui_update_link: 'Mettre à jour le lien',
+  com_ui_create_link: 'Créer un lien',
+  com_nav_source_chat: 'Afficher la conversation source',
   com_ui_date_today: 'Aujourd\'hui',
   com_ui_date_yesterday: 'Hier',
   com_ui_date_previous_7_days: '7 derniers jours',

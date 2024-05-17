@@ -481,6 +481,12 @@ export default {
   com_nav_setting_account: 'Konto',
   com_nav_language: 'Sprache',
   /* The following are AI Translated */
+  com_ui_copied: 'Kopiert',
+  com_ui_copy_code: 'Code kopieren',
+  com_ui_copy_link: 'Link kopieren',
+  com_ui_update_link: 'Link aktualisieren',
+  com_ui_create_link: 'Link erstellen',
+  com_nav_source_chat: 'Quellchat anzeigen',
   com_ui_date_today: 'Heute',
   com_ui_date_yesterday: 'Gestern',
   com_ui_date_previous_7_days: 'Letzte 7 Tage',

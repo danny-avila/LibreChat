@@ -473,6 +473,12 @@ export default {
   com_nav_setting_data: 'データ管理',
   com_nav_setting_account: 'アカウント',
   /* The following are AI translated */
+  com_ui_copied: 'コピーしました',
+  com_ui_copy_code: 'コードをコピーする',
+  com_ui_copy_link: 'リンクをコピー',
+  com_ui_update_link: 'リンクを更新する',
+  com_ui_create_link: 'リンクを作成する',
+  com_nav_source_chat: 'ソースチャットを表示する',
   com_ui_date_today: '今日',
   com_ui_date_yesterday: '昨日',
   com_ui_date_previous_7_days: '過去7日間',

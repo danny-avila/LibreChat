@@ -381,6 +381,12 @@ export default {
   com_ui_upload_error: 'Произошла ошибка при загрузке вашего файла',
   com_user_message: 'Вы',
   /* The following are AI Translated */
+  com_ui_copied: 'Скопировано',
+  com_ui_copy_code: 'Копировать код',
+  com_ui_copy_link: 'Копировать ссылку',
+  com_ui_update_link: 'Обновить ссылку',
+  com_ui_create_link: 'Создать ссылку',
+  com_nav_source_chat: 'Просмотреть исходный чат',
   com_ui_date_today: 'Сегодня',
   com_ui_date_yesterday: 'Вчера',
   com_ui_date_previous_7_days: 'Предыдущие 7 дней',

@@ -475,6 +475,12 @@ export default {
   com_nav_lang_auto: 'Detección automática',
   com_nav_lang_spanish: 'Español',
   /* The following are AI Translated */
+  com_ui_copied: '¡Copiado!',
+  com_ui_copy_code: 'Copiar código',
+  com_ui_copy_link: 'Copiar enlace',
+  com_ui_update_link: 'Actualizar enlace',
+  com_ui_create_link: 'Crear enlace',
+  com_nav_source_chat: 'Ver chat de origen',
   com_ui_date_today: 'Hoy',
   com_ui_date_yesterday: 'Ayer',
   com_ui_date_previous_7_days: 'Últimos 7 días',

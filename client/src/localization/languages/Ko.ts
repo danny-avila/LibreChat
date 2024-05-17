@@ -278,6 +278,12 @@ export default {
   com_nav_setting_general: '일반',
   com_nav_setting_data: '데이터 제어',
   /* The following are AI Translated */
+  com_ui_copied: '복사됨',
+  com_ui_copy_code: '코드 복사',
+  com_ui_copy_link: '링크 복사',
+  com_ui_update_link: '링크 업데이트',
+  com_ui_create_link: '링크 만들기',
+  com_nav_source_chat: '소스 채팅 보기',
   com_ui_date_today: '오늘',
   com_ui_date_yesterday: '어제',
   com_ui_date_previous_7_days: '지난 7일',

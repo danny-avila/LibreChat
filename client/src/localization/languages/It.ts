@@ -525,6 +525,12 @@ export default {
   com_nav_setting_data: 'Controlli dati',
   com_nav_setting_account: 'Account',
   /* The following are AI Translated */
+  com_ui_copied: 'Copiato!',
+  com_ui_copy_code: 'Copia codice',
+  com_ui_copy_link: 'Copia link',
+  com_ui_update_link: 'Aggiorna link',
+  com_ui_create_link: 'Crea link',
+  com_nav_source_chat: 'Visualizza chat sorgente',
   com_ui_date_today: 'Oggi',
   com_ui_date_yesterday: 'Ieri',
   com_ui_date_previous_7_days: 'Ultimi 7 giorni',
