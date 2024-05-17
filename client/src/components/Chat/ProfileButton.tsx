@@ -51,8 +51,8 @@ function ProfileButton({ className }: ProfileButtonProps) {
           <>
             <Menu.Button
               className={cn(
-                'flex h-10 w-10 items-center justify-center rounded-lg hover:bg-gray-100 focus-visible:bg-gray-100 focus-visible:outline-0 dark:hover:bg-gray-700',
-                open ? 'bg-gray-100 dark:bg-gray-700' : '',
+                'flex h-10 w-10 items-center justify-center rounded-lg hover:bg-gray-100 focus-visible:bg-gray-100 focus-visible:outline-0 dark:hover:bg-gray-750',
+                open ? 'bg-gray-100 dark:bg-gray-750' : '',
               )}
               data-testid="nav-user"
             >
@@ -86,7 +86,7 @@ function ProfileButton({ className }: ProfileButtonProps) {
               leaveFrom="translate-y-0 opacity-100"
               leaveTo="translate-y-2 opacity-0"
             >
-              <Menu.Items className="top-15 absolute right-0 z-[100] mb-1 mr-2 mt-1 w-64 translate-y-0 overflow-hidden rounded-2xl border border-gray-300 bg-white p-2 opacity-100 shadow-lg outline-none dark:border-gray-600 dark:bg-gray-700">
+              <Menu.Items className="top-15 absolute right-0 z-[100] mb-1 mr-2 mt-1 w-64 translate-y-0 overflow-hidden rounded-2xl border border-gray-300 bg-white p-2 opacity-100 shadow-lg outline-none dark:border-gray-700 dark:bg-gray-750">
                 {startupConfig?.checkBalance &&
                   balanceQuery.data &&
                   !isNaN(parseFloat(balanceQuery.data)) && (
