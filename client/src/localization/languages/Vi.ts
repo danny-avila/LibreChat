@@ -135,9 +135,9 @@ export default {
   com_endpoint_bing_to_enable_sydney: 'Để bật Sydney',
   com_endpoint_bing_jailbreak: 'Bẻ khóa',
   com_endpoint_bing_context_placeholder:
-    "Bing có thể sử dụng tối đa 7k mã thông báo cho 'ngữ cảnh', mà nó có thể tham khảo trong cuộc trò chuyện. Giới hạn cụ thể không được biết nhưng có thể gặp lỗi vượt quá 7k mã thông báo",
+    'Bing có thể sử dụng tối đa 7k mã thông báo cho \'ngữ cảnh\', mà nó có thể tham khảo trong cuộc trò chuyện. Giới hạn cụ thể không được biết nhưng có thể gặp lỗi vượt quá 7k mã thông báo',
   com_endpoint_bing_system_message_placeholder:
-    "CẢNH BÁO: Sử dụng sai chức năng này có thể bị CẤM sử dụng Bing! Nhấp vào 'Thông điệp hệ thống' để có hướng dẫn đầy đủ và thông điệp mặc định nếu không có (mặc định là 'Sydney') được coi là an toàn.",
+    'CẢNH BÁO: Sử dụng sai chức năng này có thể bị CẤM sử dụng Bing! Nhấp vào \'Thông điệp hệ thống\' để có hướng dẫn đầy đủ và thông điệp mặc định nếu không có (mặc định là \'Sydney\') được coi là an toàn.',
   com_endpoint_system_message: 'Thông điệp hệ thống',
   com_endpoint_default_blank: 'mặc định: trống',
   com_endpoint_default_false: 'mặc định: sai',
@@ -242,7 +242,7 @@ export default {
   com_endpoint_config_key_edge_instructions: 'hướng dẫn',
   com_endpoint_config_key_edge_full_key_string: 'để cung cấp chuỗi cookie đầy đủ.',
   com_endpoint_config_key_chatgpt:
-    "Để nhận Mã truy cập của bạn cho ChatGPT 'Phiên bản miễn phí', đăng nhập vào",
+    'Để nhận Mã truy cập của bạn cho ChatGPT \'Phiên bản miễn phí\', đăng nhập vào',
   com_endpoint_config_key_chatgpt_then_visit: 'sau đó truy cập',
   com_endpoint_config_key_chatgpt_copy_token: 'Sao chép mã truy cập.',
   com_endpoint_config_key_google_need_to: 'Bạn cần',
@@ -250,7 +250,7 @@ export default {
   com_endpoint_config_key_google_vertex_api: 'API trên Google Cloud, sau đó',
   com_endpoint_config_key_google_service_account: 'Tạo một Tài khoản Dịch vụ',
   com_endpoint_config_key_google_vertex_api_role:
-    "Hãy chắc chắn nhấp vào 'Tạo và Tiếp tục' để cấp ít nhất vai trò 'Người dùng Vertex AI' thì còn lại, tạo một khóa JSON để nhập vào đây.",
+    'Hãy chắc chắn nhấp vào \'Tạo và Tiếp tục\' để cấp ít nhất vai trò \'Người dùng Vertex AI\' thì còn lại, tạo một khóa JSON để nhập vào đây.',
   com_nav_auto_scroll: 'Cuộn tự động đến tin nhắn mới nhất khi mở',
   com_nav_plugin_store: 'Cửa hàng Plugin',
   com_nav_plugin_search: 'Tìm kiếm plugin',
@@ -489,6 +489,43 @@ export const comparisons = {
   com_ui_chats: {
     english: 'chats',
     translated: 'cuộc trò chuyện',
+  },
+  com_ui_share: {
+    english: 'Share',
+    translated: 'Share',
+  },
+  com_ui_share_link_to_chat: {
+    english: 'Share link to chat',
+    translated: 'Share link to chat',
+  },
+  com_ui_share_error: {
+    english: 'There was an error sharing the chat link',
+    translated: 'There was an error sharing the chat link',
+  },
+  com_ui_share_create_message: {
+    english: 'Your name and any messages you add after sharing stay private.',
+    translated: 'Your name and any messages you add after sharing stay private.',
+  },
+  com_ui_share_created_message: {
+    english:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_share_update_message: {
+    english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated:
+      'Your name, custom instructions, and any messages you add after sharing stay private.',
+  },
+  com_ui_share_updated_message: {
+    english:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_shared_link_not_found: {
+    english: 'Shared link not found',
+    translated: 'Shared link not found',
   },
   com_ui_delete: {
     english: 'Delete',
@@ -1213,6 +1250,26 @@ export const comparisons = {
   com_nav_export: {
     english: 'Export',
     translated: 'Xuất',
+  },
+  com_nav_shared_links: {
+    english: 'Shared links',
+    translated: 'Liên kết được chia sẻ',
+  },
+  com_nav_shared_links_manage: {
+    english: 'Manage',
+    translated: 'Quản l',
+  },
+  com_nav_shared_links_empty: {
+    english: 'You have no shared links.',
+    translated: 'Bạn không có link được chia sẻ.',
+  },
+  com_nav_shared_links_name: {
+    english: 'Name',
+    translated: 'Tên',
+  },
+  com_nav_shared_links_date_shared: {
+    english: 'Date shared',
+    translated: 'Ngày chia sẻ',
   },
   com_nav_theme: {
     english: 'Theme',

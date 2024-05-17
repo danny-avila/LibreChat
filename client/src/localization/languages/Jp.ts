@@ -1122,6 +1122,43 @@ export const comparisons = {
     english: 'Create',
     translated: '作成',
   },
+  com_ui_share: {
+    english: 'Share',
+    translated: '共有',
+  },
+  com_ui_share_link_to_chat: {
+    english: 'Share link to chat',
+    translated: 'チャットへの共有リンク',
+  },
+  com_ui_share_error: {
+    english: 'There was an error sharing the chat link',
+    translated: 'チャットの共有リンクの共有中にエラーが発生しました',
+  },
+  com_ui_share_create_message: {
+    english: 'Your name and any messages you add after sharing stay private.',
+    translated: 'あなたの名前と共有リンクを作成した後のメッセージは、共有されません。',
+  },
+  com_ui_share_created_message: {
+    english:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated:
+      'チャットへの公開された共有リンクが作成されました。設定から以前共有したチャットを管理できます。',
+  },
+  com_ui_share_update_message: {
+    english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated:
+      'あなたの名前、カスタム指示、共有リンクを作成した後のメッセージは、共有されません。',
+  },
+  com_ui_share_updated_message: {
+    english:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated:
+      'チャットへの公開された共有リンクが更新されました。設定から以前共有したチャットを管理できます。',
+  },
+  com_ui_shared_link_not_found: {
+    english: 'Shared link not found',
+    translated: '共有リンクが見つかりません',
+  },
   com_ui_delete_conversation: {
     english: 'Delete chat?',
     translated: 'チャットを削除しますか？',
@@ -2115,6 +2152,26 @@ export const comparisons = {
     english: 'Export',
     translated: 'エクスポート',
   },
+  com_nav_shared_links: {
+    english: 'Shared links',
+    translated: '共有リンク',
+  },
+  com_nav_shared_links_manage: {
+    english: 'Manage',
+    translated: '管理',
+  },
+  com_nav_shared_links_empty: {
+    english: 'You have no shared links.',
+    translated: '共有リンクはありません。',
+  },
+  com_nav_shared_links_name: {
+    english: 'Name',
+    translated: 'タイトル',
+  },
+  com_nav_shared_links_date_shared: {
+    english: 'Date shared',
+    translated: '共有日',
+  },
   com_nav_my_files: {
     english: 'My Files',
     translated: 'My Files',
@@ -2238,6 +2295,30 @@ export const comparisons = {
   com_nav_setting_account: {
     english: 'Account',
     translated: 'アカウント',
+  },
+  com_ui_copied: {
+    english: 'Copied!',
+    translated: 'コピーしました',
+  },
+  com_ui_copy_code: {
+    english: 'Copy code',
+    translated: 'コードをコピーする',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: 'リンクをコピー',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: 'リンクを更新する',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: 'リンクを作成する',
+  },
+  com_nav_source_chat: {
+    english: 'View source chat',
+    translated: 'ソースチャットを表示する',
   },
   com_ui_date_today: {
     english: 'Today',

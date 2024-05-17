@@ -1245,6 +1245,43 @@ export const comparisons = {
     english: 'Create',
     translated: 'Crea',
   },
+  com_ui_share: {
+    english: 'Share',
+    translated: 'Share',
+  },
+  com_ui_share_link_to_chat: {
+    english: 'Share link to chat',
+    translated: 'Share link to chat',
+  },
+  com_ui_share_error: {
+    english: 'There was an error sharing the chat link',
+    translated: 'There was an error sharing the chat link',
+  },
+  com_ui_share_create_message: {
+    english: 'Your name and any messages you add after sharing stay private.',
+    translated: 'Your name and any messages you add after sharing stay private.',
+  },
+  com_ui_share_created_message: {
+    english:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_share_update_message: {
+    english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated:
+      'Your name, custom instructions, and any messages you add after sharing stay private.',
+  },
+  com_ui_share_updated_message: {
+    english:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_shared_link_not_found: {
+    english: 'Shared link not found',
+    translated: 'Shared link not found',
+  },
   com_ui_delete_conversation: {
     english: 'Delete chat?',
     translated: 'Eliminare la chat?',
@@ -2261,6 +2298,26 @@ export const comparisons = {
     english: 'Export',
     translated: 'Esporta',
   },
+  com_nav_shared_links: {
+    english: 'Shared links',
+    translated: 'Link condivisi',
+  },
+  com_nav_shared_links_manage: {
+    english: 'Manage',
+    translated: 'Gestisci',
+  },
+  com_nav_shared_links_empty: {
+    english: 'You have no shared links.',
+    translated: 'Non hai link condivisi.',
+  },
+  com_nav_shared_links_name: {
+    english: 'Name',
+    translated: 'Nome',
+  },
+  com_nav_shared_links_date_shared: {
+    english: 'Date shared',
+    translated: 'Data condivisione',
+  },
   com_nav_my_files: {
     english: 'My Files',
     translated: 'I miei file',
@@ -2385,6 +2442,30 @@ export const comparisons = {
   com_nav_setting_account: {
     english: 'Account',
     translated: 'Account',
+  },
+  com_ui_copied: {
+    english: 'Copied!',
+    translated: 'Copiato!',
+  },
+  com_ui_copy_code: {
+    english: 'Copy code',
+    translated: 'Copia codice',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: 'Copia link',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: 'Aggiorna link',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: 'Crea link',
+  },
+  com_nav_source_chat: {
+    english: 'View source chat',
+    translated: 'Visualizza chat sorgente',
   },
   com_ui_date_today: {
     english: 'Today',

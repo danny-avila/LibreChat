@@ -227,9 +227,9 @@ export default {
   com_endpoint_bing_to_enable_sydney: 'Para habilitar Sydney',
   com_endpoint_bing_jailbreak: 'Jailbreak',
   com_endpoint_bing_context_placeholder:
-    "O Bing pode usar até 7k tokens para 'contexto', que ele pode referenciar para a conversa. O limite específico não é conhecido, mas pode causar erros ao exceder 7k tokens",
+    'O Bing pode usar até 7k tokens para \'contexto\', que ele pode referenciar para a conversa. O limite específico não é conhecido, mas pode causar erros ao exceder 7k tokens',
   com_endpoint_bing_system_message_placeholder:
-    "AVISO: O uso indevido deste recurso pode fazer com que você seja BANIDO de usar o Bing! Clique em 'Mensagem do Sistem' para obter instruções completas e a mensagem padrão, caso omitida, que é a predefinição 'Sydney', considerada segura.",
+    'AVISO: O uso indevido deste recurso pode fazer com que você seja BANIDO de usar o Bing! Clique em \'Mensagem do Sistem\' para obter instruções completas e a mensagem padrão, caso omitida, que é a predefinição \'Sydney\', considerada segura.',
   com_endpoint_system_message: 'Mensagem do Sistema',
   com_endpoint_message: 'Conversar com',
   com_endpoint_message_not_appendable: 'Edite sua mensagem ou Regenere.',
@@ -384,7 +384,7 @@ export default {
   com_endpoint_config_key_edge_instructions: 'instruções',
   com_endpoint_config_key_edge_full_key_string: 'para fornecer as strings completas de cookies.',
   com_endpoint_config_key_chatgpt:
-    "Para obter seu Token de Acesso para o ChatGPT 'Versão Gratuita', faça login em",
+    'Para obter seu Token de Acesso para o ChatGPT \'Versão Gratuita\', faça login em',
   com_endpoint_config_key_chatgpt_then_visit: 'então visite',
   com_endpoint_config_key_chatgpt_copy_token: 'Copiar token de acesso.',
   com_endpoint_config_key_google_need_to: 'Você precisa',
@@ -392,7 +392,7 @@ export default {
   com_endpoint_config_key_google_vertex_api: 'API no Google Cloud, então',
   com_endpoint_config_key_google_service_account: 'Criar uma Conta de Serviço',
   com_endpoint_config_key_google_vertex_api_role:
-    "Certifique-se de clicar em 'Criar e Continuar' para dar pelo menos a função 'Usuário do Vertex AI'. Por último, crie uma chave JSON para importar aqui.",
+    'Certifique-se de clicar em \'Criar e Continuar\' para dar pelo menos a função \'Usuário do Vertex AI\'. Por último, crie uma chave JSON para importar aqui.',
   com_nav_welcome_assistant: 'Por favor, Selecione um Assistente',
   com_nav_welcome_message: 'Como posso ajudar você hoje?',
   com_nav_auto_scroll: 'Auto-rolagem para o mais recente ao abrir',
@@ -979,6 +979,43 @@ export const comparisons = {
   com_ui_create: {
     english: 'Create',
     translated: 'Criar',
+  },
+  com_ui_share: {
+    english: 'Share',
+    translated: 'Share',
+  },
+  com_ui_share_link_to_chat: {
+    english: 'Share link to chat',
+    translated: 'Share link to chat',
+  },
+  com_ui_share_error: {
+    english: 'There was an error sharing the chat link',
+    translated: 'There was an error sharing the chat link',
+  },
+  com_ui_share_create_message: {
+    english: 'Your name and any messages you add after sharing stay private.',
+    translated: 'Your name and any messages you add after sharing stay private.',
+  },
+  com_ui_share_created_message: {
+    english:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_share_update_message: {
+    english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated:
+      'Your name, custom instructions, and any messages you add after sharing stay private.',
+  },
+  com_ui_share_updated_message: {
+    english:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_shared_link_not_found: {
+    english: 'Shared link not found',
+    translated: 'Shared link not found',
   },
   com_ui_delete_conversation: {
     english: 'Delete chat?',
@@ -1971,6 +2008,26 @@ export const comparisons = {
   com_nav_export: {
     english: 'Export',
     translated: 'Exportar',
+  },
+  com_nav_shared_links: {
+    english: 'Shared links',
+    translated: 'Links Compartilhados',
+  },
+  com_nav_shared_links_manage: {
+    english: 'Manage',
+    translated: 'Gerenciar',
+  },
+  com_nav_shared_links_empty: {
+    english: 'You have no shared links.',
+    translated: 'Você não tem nenhum link compartilhado.',
+  },
+  com_nav_shared_links_name: {
+    english: 'Name',
+    translated: 'Nome',
+  },
+  com_nav_shared_links_date_shared: {
+    english: 'Date shared',
+    translated: 'Data compartilhada',
   },
   com_nav_my_files: {
     english: 'My Files',

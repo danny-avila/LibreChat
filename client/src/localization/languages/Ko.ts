@@ -752,6 +752,43 @@ export const comparisons = {
     english: 'chats',
     translated: '채팅',
   },
+  com_ui_share: {
+    english: 'Share',
+    translated: 'Share',
+  },
+  com_ui_share_link_to_chat: {
+    english: 'Share link to chat',
+    translated: 'Share link to chat',
+  },
+  com_ui_share_error: {
+    english: 'There was an error sharing the chat link',
+    translated: 'There was an error sharing the chat link',
+  },
+  com_ui_share_create_message: {
+    english: 'Your name and any messages you add after sharing stay private.',
+    translated: 'Your name and any messages you add after sharing stay private.',
+  },
+  com_ui_share_created_message: {
+    english:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_share_update_message: {
+    english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated:
+      'Your name, custom instructions, and any messages you add after sharing stay private.',
+  },
+  com_ui_share_updated_message: {
+    english:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_shared_link_not_found: {
+    english: 'Shared link not found',
+    translated: 'Shared link not found',
+  },
   com_ui_delete: {
     english: 'Delete',
     translated: '삭제',
@@ -1424,6 +1461,26 @@ export const comparisons = {
     english: 'Export',
     translated: '내보내기',
   },
+  com_nav_shared_links: {
+    english: 'Shared links',
+    translated: '공유 링크',
+  },
+  com_nav_shared_links_manage: {
+    english: 'Manage',
+    translated: '관리',
+  },
+  com_nav_shared_links_empty: {
+    english: 'You have no shared links.',
+    translated: '공유 링크가 없습니다.',
+  },
+  com_nav_shared_links_name: {
+    english: 'Name',
+    translated: '이름',
+  },
+  com_nav_shared_links_date_shared: {
+    english: 'Date shared',
+    translated: '공유 날짜',
+  },
   com_nav_theme: {
     english: 'Theme',
     translated: '테마',
@@ -1523,6 +1580,30 @@ export const comparisons = {
   com_nav_setting_data: {
     english: 'Data controls',
     translated: '데이터 제어',
+  },
+  com_ui_copied: {
+    english: 'Copied!',
+    translated: '복사됨',
+  },
+  com_ui_copy_code: {
+    english: 'Copy code',
+    translated: '코드 복사',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: '링크 복사',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: '링크 업데이트',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: '링크 만들기',
+  },
+  com_nav_source_chat: {
+    english: 'View source chat',
+    translated: '소스 채팅 보기',
   },
   com_ui_date_today: {
     english: 'Today',

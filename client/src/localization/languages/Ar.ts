@@ -759,6 +759,43 @@ export const comparisons = {
     english: 'chats',
     translated: 'الدردشات',
   },
+  com_ui_share: {
+    english: 'Share',
+    translated: 'Share',
+  },
+  com_ui_share_link_to_chat: {
+    english: 'Share link to chat',
+    translated: 'Share link to chat',
+  },
+  com_ui_share_error: {
+    english: 'There was an error sharing the chat link',
+    translated: 'There was an error sharing the chat link',
+  },
+  com_ui_share_create_message: {
+    english: 'Your name and any messages you add after sharing stay private.',
+    translated: 'Your name and any messages you add after sharing stay private.',
+  },
+  com_ui_share_created_message: {
+    english:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_share_update_message: {
+    english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated:
+      'Your name, custom instructions, and any messages you add after sharing stay private.',
+  },
+  com_ui_share_updated_message: {
+    english:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_shared_link_not_found: {
+    english: 'Shared link not found',
+    translated: 'Shared link not found',
+  },
   com_ui_delete: {
     english: 'Delete',
     translated: 'حذف',
@@ -1483,6 +1520,26 @@ export const comparisons = {
     english: 'Export',
     translated: 'تصدير',
   },
+  com_nav_shared_links: {
+    english: 'Shared links',
+    translated: 'روابط مشتركة',
+  },
+  com_nav_shared_links_manage: {
+    english: 'Manage',
+    translated: 'الإدارة',
+  },
+  com_nav_shared_links_empty: {
+    english: 'You have no shared links.',
+    translated: 'ليس لديك أي روابط مشتركة.',
+  },
+  com_nav_shared_links_name: {
+    english: 'Name',
+    translated: 'الاسم',
+  },
+  com_nav_shared_links_date_shared: {
+    english: 'Date shared',
+    translated: 'تاريخ المشترك',
+  },
   com_nav_theme: {
     english: 'Theme',
     translated: 'المظهر',
@@ -1578,6 +1635,30 @@ export const comparisons = {
   com_nav_setting_data: {
     english: 'Data controls',
     translated: 'تحكم في البيانات',
+  },
+  com_ui_copied: {
+    english: 'Copied!',
+    translated: 'تم النسخ',
+  },
+  com_ui_copy_code: {
+    english: 'Copy code',
+    translated: 'نسخ الكود',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: 'نسخ الرابط',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: 'رابط التحديث',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: 'إنشاء رابط',
+  },
+  com_nav_source_chat: {
+    english: 'View source chat',
+    translated: 'عرض محادثة المصدر',
   },
   com_ui_date_today: {
     english: 'Today',
