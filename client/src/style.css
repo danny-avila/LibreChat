@@ -1714,6 +1714,24 @@ html.dark {
   --surface-error: 249 58 55
 }
 
+.popover {
+  --main-surface-primary: var(--white)!important;
+  --main-surface-secondary: var(--gray-100)!important;
+  --main-surface-tertiary: var(--gray-200)!important;
+  --sidebar-surface-primary: var(--white)!important
+}
+
+.dark .popover,.dark.popover,.popover .dark {
+  --main-surface-primary: var(--gray-750)!important;
+  --main-surface-secondary: var(--gray-700)!important;
+  --main-surface-tertiary: var(--gray-600)!important;
+  --text-primary: var(--gray-50)!important;
+  --text-secondary: var(--gray-200)!important;
+  --text-tertiary: var(--gray-400)!important;
+  --text-quaternary: var(--gray-500)!important;
+  --sidebar-surface-primary: var(--gray-750)!important
+}
+
 .gizmo {
   --text-primary:var(--gizmo-gray-950);
   --text-secondary:var(--gizmo-gray-600);

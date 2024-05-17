@@ -3,4 +3,9 @@
 - [ ] Phase out style.css, remove all the extra css in style.css make it clean
 - [ ] Phase out old legacy duplicate code
 
+
+gray-700 -> gray-750
+gray-600 -> gray-700
+~~gray-850 -> gray-900~~
+
 This P.R cannot do all of this, but is aiming to do the first or second one in a period of time.
