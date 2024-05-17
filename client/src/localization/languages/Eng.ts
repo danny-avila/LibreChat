@@ -140,6 +140,7 @@ export default {
   com_ui_save_submit: 'Save & Submit',
   com_user_message: 'You',
   com_ui_copied: 'Copied!',
+  com_ui_copy_code: 'Copy code',
   com_ui_copy_to_clipboard: 'Copy to clipboard',
   com_ui_copied_to_clipboard: 'Copied to clipboard',
   com_ui_fork: 'Fork',
