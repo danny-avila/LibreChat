@@ -2,6 +2,8 @@ const axios = require('axios');
 const { logger } = require('~/config');
 const getCustomConfig = require('~/server/services/Config/getCustomConfig');
 const { extractEnvVariable } = require('librechat-data-provider');
+const { sendTextToWebsocket } = require('./webSocket');
+const WebSocket = require('ws');
 
 /**
  * getProvider function
@@ -177,6 +179,46 @@ function localAIProvider(ttsSchema, input, voice) {
   return [url, data, headers];
 }
 
+async function streamAudioFromWebSocket(req, res) {
+  const { voice } = req.body;
+  const customConfig = await getCustomConfig();
+
+  if (!customConfig) {
+    return res.status(500).send('Custom config not found');
+  }
+
+  const ttsSchema = customConfig.tts;
+  const provider = getProvider(ttsSchema);
+
+  if (provider !== 'elevenlabs') {
+    return res.status(400).send('WebSocket streaming is only supported for Eleven Labs');
+  }
+
+  const url =
+    ttsSchema.elevenlabs.websocketUrl ||
+    'wss://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream-input?model_id={model}'
+      .replace('{voice_id}', voice)
+      .replace('{model}', ttsSchema.elevenlabs.model);
+  const ws = new WebSocket(url);
+
+  ws.onopen = () => {
+    console.log('WebSocket connection opened');
+    sendTextToWebsocket(ws, (data) => {
+      res.write(data); // Stream data directly to the response
+    });
+  };
+
+  ws.onclose = () => {
+    console.log('WebSocket connection closed');
+    res.end(); // End the response when the WebSocket is closed
+  };
+
+  ws.onerror = (error) => {
+    console.error('WebSocket error:', error);
+    res.status(500).send('WebSocket error');
+  };
+}
+
 /**
  * Handles a text-to-speech request. Extracts input and voice from the request, retrieves the TTS configuration,
  * and sends a request to the appropriate provider. The resulting audio data is sent in the response
@@ -189,8 +231,7 @@ function localAIProvider(ttsSchema, input, voice) {
  * @throws {Error} Throws an error if the provider is invalid
  */
 async function textToSpeech(req, res) {
-  const { input } = req.body;
-  const { voice } = req.body;
+  const { input, voice } = req.body;
 
   if (!input) {
     return res.status(400).send('Missing text in request body');
@@ -236,4 +277,5 @@ async function textToSpeech(req, res) {
 module.exports = {
   textToSpeech,
   getProvider,
+  streamAudioFromWebSocket,
 };

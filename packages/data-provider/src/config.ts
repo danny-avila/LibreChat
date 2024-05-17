@@ -227,6 +227,7 @@ const ttsSchema = z.object({
   elevenLabs: z
     .object({
       url: z.string().optional(),
+      websocketUrl: z.string().optional(),
       apiKey: z.string(),
       model: z.string(),
       voices: z.array(z.string()),
