@@ -66,6 +66,17 @@ export default {
   com_ui_preview: 'Предпросмотр',
   com_ui_upload: 'Загрузить',
   com_ui_connect: 'Подключить',
+  com_ui_share: 'Share',
+  com_ui_share_link_to_chat: 'Share link to chat',
+  com_ui_share_error: 'There was an error sharing the chat link',
+  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share_created_message:
+    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  com_ui_share_update_message:
+    'Your name, custom instructions, and any messages you add after sharing stay private.',
+  com_ui_share_updated_message:
+    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete_conversation: 'Удалить чат?',
   com_ui_delete_conversation_confirm: 'Будет удален следующий чат: ',
   com_ui_rename: 'Переименовать',
@@ -302,6 +313,12 @@ export default {
   com_nav_export_recursive_or_sequential: 'Рекурсивно или последовательно?',
   com_nav_export_recursive: 'Рекурсивно',
   com_nav_export_conversation: 'Экспортировать разговор',
+  com_nav_export: 'Экспорт',
+  com_nav_shared_links: 'Связываемые ссылки',
+  com_nav_shared_links_manage: 'Управление',
+  com_nav_shared_links_empty: 'У вас нет связываемых ссылок.',
+  com_nav_shared_links_name: 'Naam',
+  com_nav_shared_links_date_shared: 'Datum gedeeld',
   com_nav_my_files: 'Мои файлы',
   com_nav_theme: 'Тема',
   com_nav_theme_system: 'Системная',
@@ -364,6 +381,30 @@ export default {
   com_ui_upload_error: 'Произошла ошибка при загрузке вашего файла',
   com_user_message: 'Вы',
   /* The following are AI Translated */
+  com_ui_copied: 'Скопировано',
+  com_ui_copy_code: 'Копировать код',
+  com_ui_copy_link: 'Копировать ссылку',
+  com_ui_update_link: 'Обновить ссылку',
+  com_ui_create_link: 'Создать ссылку',
+  com_nav_source_chat: 'Просмотреть исходный чат',
+  com_ui_date_today: 'Сегодня',
+  com_ui_date_yesterday: 'Вчера',
+  com_ui_date_previous_7_days: 'Предыдущие 7 дней',
+  com_ui_date_previous_30_days: 'За последние 30 дней',
+  com_ui_date_january: 'Январь',
+  com_ui_date_february: 'Февраль',
+  com_ui_date_march: 'Март',
+  com_ui_date_april: 'Апрель',
+  com_ui_date_may: 'Май',
+  com_ui_date_june: 'Июнь',
+  com_ui_date_july: 'Июль',
+  com_ui_date_august: 'Август',
+  com_ui_date_september: 'Сентябрь',
+  com_ui_date_october: 'Октябрь',
+  com_ui_date_november: 'Ноябрь',
+  com_ui_date_december: 'Декабрь',
+  com_ui_nothing_found: 'Ничего не найдено',
+  com_ui_go_to_conversation: 'Перейти к беседе',
   com_error_moderation:
     'К сожалению, отправленный вами контент был помечен нашей системой модерации как не соответствующий правилам сообщества. Мы не можем продолжить обсуждение этой конкретной темы. Если у вас есть другие вопросы или темы, которые вы хотели бы обсудить, пожалуйста, отредактируйте сообщение или начните новый диалог.',
   com_error_no_user_key: 'Ключ не найден. Пожалуйста, укажите ключ и повторите попытку.',
@@ -781,6 +822,43 @@ export const comparisons = {
   com_ui_connect: {
     english: 'Connect',
     translated: 'Подключить',
+  },
+  com_ui_share: {
+    english: 'Share',
+    translated: 'Share',
+  },
+  com_ui_share_link_to_chat: {
+    english: 'Share link to chat',
+    translated: 'Share link to chat',
+  },
+  com_ui_share_error: {
+    english: 'There was an error sharing the chat link',
+    translated: 'There was an error sharing the chat link',
+  },
+  com_ui_share_create_message: {
+    english: 'Your name and any messages you add after sharing stay private.',
+    translated: 'Your name and any messages you add after sharing stay private.',
+  },
+  com_ui_share_created_message: {
+    english:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_share_update_message: {
+    english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated:
+      'Your name, custom instructions, and any messages you add after sharing stay private.',
+  },
+  com_ui_share_updated_message: {
+    english:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_shared_link_not_found: {
+    english: 'Shared link not found',
+    translated: 'Shared link not found',
   },
   com_ui_delete_conversation: {
     english: 'Delete chat?',
@@ -1617,6 +1695,30 @@ export const comparisons = {
     english: 'Export conversation',
     translated: 'Экспортировать разговор',
   },
+  com_nav_export: {
+    english: 'Export',
+    translated: 'Экспорт',
+  },
+  com_nav_shared_links: {
+    english: 'Shared links',
+    translated: 'Связываемые ссылки',
+  },
+  com_nav_shared_links_manage: {
+    english: 'Manage',
+    translated: 'Управление',
+  },
+  com_nav_shared_links_empty: {
+    english: 'You have no shared links.',
+    translated: 'У вас нет связываемых ссылок.',
+  },
+  com_nav_shared_links_name: {
+    english: 'Name',
+    translated: 'Naam',
+  },
+  com_nav_shared_links_date_shared: {
+    english: 'Date shared',
+    translated: 'Datum gedeeld',
+  },
   com_nav_my_files: {
     english: 'My Files',
     translated: 'Мои файлы',
@@ -1845,6 +1947,102 @@ export const comparisons = {
   com_user_message: {
     english: 'You',
     translated: 'Вы',
+  },
+  com_ui_copied: {
+    english: 'Copied!',
+    translated: 'Скопировано',
+  },
+  com_ui_copy_code: {
+    english: 'Copy code',
+    translated: 'Копировать код',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: 'Копировать ссылку',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: 'Обновить ссылку',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: 'Создать ссылку',
+  },
+  com_nav_source_chat: {
+    english: 'View source chat',
+    translated: 'Просмотреть исходный чат',
+  },
+  com_ui_date_today: {
+    english: 'Today',
+    translated: 'Сегодня',
+  },
+  com_ui_date_yesterday: {
+    english: 'Yesterday',
+    translated: 'Вчера',
+  },
+  com_ui_date_previous_7_days: {
+    english: 'Previous 7 days',
+    translated: 'Предыдущие 7 дней',
+  },
+  com_ui_date_previous_30_days: {
+    english: 'Previous 30 days',
+    translated: 'За последние 30 дней',
+  },
+  com_ui_date_january: {
+    english: 'January',
+    translated: 'Январь',
+  },
+  com_ui_date_february: {
+    english: 'February',
+    translated: 'Февраль',
+  },
+  com_ui_date_march: {
+    english: 'March',
+    translated: 'Март',
+  },
+  com_ui_date_april: {
+    english: 'April',
+    translated: 'Апрель',
+  },
+  com_ui_date_may: {
+    english: 'May',
+    translated: 'Май',
+  },
+  com_ui_date_june: {
+    english: 'June',
+    translated: 'Июнь',
+  },
+  com_ui_date_july: {
+    english: 'July',
+    translated: 'Июль',
+  },
+  com_ui_date_august: {
+    english: 'August',
+    translated: 'Август',
+  },
+  com_ui_date_september: {
+    english: 'September',
+    translated: 'Сентябрь',
+  },
+  com_ui_date_october: {
+    english: 'October',
+    translated: 'Октябрь',
+  },
+  com_ui_date_november: {
+    english: 'November',
+    translated: 'Ноябрь',
+  },
+  com_ui_date_december: {
+    english: 'December',
+    translated: 'Декабрь',
+  },
+  com_ui_nothing_found: {
+    english: 'Nothing found',
+    translated: 'Ничего не найдено',
+  },
+  com_ui_go_to_conversation: {
+    english: 'Go to conversation',
+    translated: 'Перейти к беседе',
   },
   com_error_moderation: {
     english:

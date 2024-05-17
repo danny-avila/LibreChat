@@ -6,6 +6,7 @@ import type { ContextType } from '~/common';
 import { EndpointsMenu, ModelSpecsMenu, PresetsMenu, HeaderNewChat } from './Menus';
 import HeaderOptions from './Input/HeaderOptions';
 import ExportButton from './ExportButton';
+import ExportAndShareMenu from './ExportAndShareMenu';
 
 const defaultInterface = getConfigDefaults().interface;
 
@@ -28,7 +29,7 @@ export default function Header() {
           {<HeaderOptions interfaceConfig={interfaceConfig} />}
           {interfaceConfig.presets && <PresetsMenu />}
         </div>
-        <ExportButton />
+        <ExportAndShareMenu />
       </div>
       {/* Empty div for spacing */}
       <div />

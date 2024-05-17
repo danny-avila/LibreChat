@@ -7,6 +7,8 @@ import {
   updateConversation,
   deleteConversation,
   updateConvoFields,
+  deleteSharedLink,
+  addSharedLink,
 } from '~/utils';
 import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
 import { useSetRecoilState } from 'recoil';
@@ -115,6 +117,96 @@ export const useArchiveConversationMutation = (
       },
     },
   );
+};
+
+export const useCreateSharedLinkMutation = (
+  options?: t.CreateSharedLinkOptions,
+): UseMutationResult<t.TSharedLinkResponse, unknown, t.TSharedLinkRequest, unknown> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, ..._options } = options || {};
+  return useMutation((payload: t.TSharedLinkRequest) => dataService.createSharedLink(payload), {
+    onSuccess: (_data, vars, context) => {
+      if (!vars.conversationId) {
+        return;
+      }
+
+      queryClient.setQueryData<t.SharedLinkListData>([QueryKeys.sharedLinks], (sharedLink) => {
+        if (!sharedLink) {
+          return sharedLink;
+        }
+
+        // If the shared link is public, add it to the shared links cache list
+        if (vars.isPublic) {
+          return addSharedLink(sharedLink, _data);
+        } else {
+          return deleteSharedLink(sharedLink, _data.shareId);
+        }
+      });
+
+      queryClient.setQueryData([QueryKeys.sharedLinks, _data.shareId], _data);
+
+      onSuccess?.(_data, vars, context);
+    },
+    ...(_options || {}),
+  });
+};
+
+export const useUpdateSharedLinkMutation = (
+  options?: t.UpdateSharedLinkOptions,
+): UseMutationResult<t.TSharedLinkResponse, unknown, t.TSharedLinkRequest, unknown> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, ..._options } = options || {};
+  return useMutation((payload: t.TSharedLinkRequest) => dataService.updateSharedLink(payload), {
+    onSuccess: (_data, vars, context) => {
+      if (!vars.conversationId) {
+        return;
+      }
+
+      queryClient.setQueryData<t.SharedLinkListData>([QueryKeys.sharedLinks], (sharedLink) => {
+        if (!sharedLink) {
+          return sharedLink;
+        }
+
+        // If the shared link is public, add it to the shared links cache list.
+        if (vars.isPublic) {
+          // Even if the SharedLink data exists in the database, it is not registered in the cache when isPublic is false.
+          // Therefore, when isPublic is true, use addSharedLink instead of updateSharedLink.
+          return addSharedLink(sharedLink, _data);
+        } else {
+          return deleteSharedLink(sharedLink, _data.shareId);
+        }
+      });
+
+      queryClient.setQueryData([QueryKeys.sharedLinks, _data.shareId], _data);
+
+      onSuccess?.(_data, vars, context);
+    },
+    ...(_options || {}),
+  });
+};
+
+export const useDeleteSharedLinkMutation = (
+  options?: t.DeleteSharedLinkOptions,
+): UseMutationResult<t.TDeleteSharedLinkResponse, unknown, { shareId: string }, unknown> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, ..._options } = options || {};
+  return useMutation(({ shareId }) => dataService.deleteSharedLink(shareId), {
+    onSuccess: (_data, vars, context) => {
+      if (!vars.shareId) {
+        return;
+      }
+
+      queryClient.setQueryData([QueryKeys.sharedMessages, vars.shareId], null);
+      queryClient.setQueryData<t.SharedLinkListData>([QueryKeys.sharedLinks], (data) => {
+        if (!data) {
+          return data;
+        }
+        return deleteSharedLink(data, vars.shareId);
+      });
+      onSuccess?.(_data, vars, context);
+    },
+    ...(_options || {}),
+  });
 };
 
 export const useDeleteConversationMutation = (

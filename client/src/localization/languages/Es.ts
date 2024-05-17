@@ -137,6 +137,17 @@ export default {
   com_ui_assistants_output: 'Salida de Asistentes',
   com_ui_delete: 'Eliminar',
   com_ui_create: 'Crear',
+  com_ui_share: 'Share',
+  com_ui_share_link_to_chat: 'Share link to chat',
+  com_ui_share_error: 'There was an error sharing the chat link',
+  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share_created_message:
+    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  com_ui_share_update_message:
+    'Your name, custom instructions, and any messages you add after sharing stay private.',
+  com_ui_share_updated_message:
+    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete_conversation: '¿Eliminar Chat?',
   com_ui_delete_conversation_confirm: 'Esto eliminará',
   com_ui_delete_assistant_confirm:
@@ -423,6 +434,12 @@ export default {
   com_nav_export_recursive_or_sequential: '¿Recursivo o secuencial?',
   com_nav_export_recursive: 'Recursivo',
   com_nav_export_conversation: 'Exportar conversación',
+  com_nav_export: 'Exportar',
+  com_nav_shared_links: 'Links Compartidos',
+  com_nav_shared_links_manage: 'Gerenciar',
+  com_nav_shared_links_empty: 'Você não tem nenhum link compartilhado.',
+  com_nav_shared_links_name: 'Nome',
+  com_nav_shared_links_date_shared: 'Data compartilhada',
   com_nav_my_files: 'Mis archivos',
   com_nav_theme: 'Tema',
   com_nav_theme_system: 'Sistema',
@@ -458,6 +475,30 @@ export default {
   com_nav_lang_auto: 'Detección automática',
   com_nav_lang_spanish: 'Español',
   /* The following are AI Translated */
+  com_ui_copied: '¡Copiado!',
+  com_ui_copy_code: 'Copiar código',
+  com_ui_copy_link: 'Copiar enlace',
+  com_ui_update_link: 'Actualizar enlace',
+  com_ui_create_link: 'Crear enlace',
+  com_nav_source_chat: 'Ver chat de origen',
+  com_ui_date_today: 'Hoy',
+  com_ui_date_yesterday: 'Ayer',
+  com_ui_date_previous_7_days: 'Últimos 7 días',
+  com_ui_date_previous_30_days: 'Últimos 30 días',
+  com_ui_date_january: 'Enero',
+  com_ui_date_february: 'Febrero',
+  com_ui_date_march: 'Marzo',
+  com_ui_date_april: 'Abril',
+  com_ui_date_may: 'Mayo',
+  com_ui_date_june: 'Junio',
+  com_ui_date_july: 'Julio',
+  com_ui_date_august: 'Agosto',
+  com_ui_date_september: 'Septiembre',
+  com_ui_date_october: 'Octubre',
+  com_ui_date_november: 'Noviembre',
+  com_ui_date_december: 'Diciembre',
+  com_ui_nothing_found: 'No se encontró nada',
+  com_ui_go_to_conversation: 'Ir a la conversación',
   com_error_moderation:
     'Parece que el contenido enviado ha sido marcado por nuestro sistema de moderación por no estar alineado con nuestras pautas comunitarias. No podemos proceder con este tema específico. Si tiene alguna otra pregunta o tema que le gustaría explorar, por favor edite su mensaje o cree una nueva conversación.',
   com_error_no_user_key:
@@ -1054,6 +1095,43 @@ export const comparisons = {
   com_ui_create: {
     english: 'Create',
     translated: 'Crear',
+  },
+  com_ui_share: {
+    english: 'Share',
+    translated: 'Share',
+  },
+  com_ui_share_link_to_chat: {
+    english: 'Share link to chat',
+    translated: 'Share link to chat',
+  },
+  com_ui_share_error: {
+    english: 'There was an error sharing the chat link',
+    translated: 'There was an error sharing the chat link',
+  },
+  com_ui_share_create_message: {
+    english: 'Your name and any messages you add after sharing stay private.',
+    translated: 'Your name and any messages you add after sharing stay private.',
+  },
+  com_ui_share_created_message: {
+    english:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_share_update_message: {
+    english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated:
+      'Your name, custom instructions, and any messages you add after sharing stay private.',
+  },
+  com_ui_share_updated_message: {
+    english:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_shared_link_not_found: {
+    english: 'Shared link not found',
+    translated: 'Shared link not found',
   },
   com_ui_delete_conversation: {
     english: 'Delete chat?',
@@ -2051,6 +2129,30 @@ export const comparisons = {
     english: 'Export conversation',
     translated: 'Exportar conversación',
   },
+  com_nav_export: {
+    english: 'Export',
+    translated: 'Exportar',
+  },
+  com_nav_shared_links: {
+    english: 'Shared links',
+    translated: 'Links Compartidos',
+  },
+  com_nav_shared_links_manage: {
+    english: 'Manage',
+    translated: 'Gerenciar',
+  },
+  com_nav_shared_links_empty: {
+    english: 'You have no shared links.',
+    translated: 'Você não tem nenhum link compartilhado.',
+  },
+  com_nav_shared_links_name: {
+    english: 'Name',
+    translated: 'Nome',
+  },
+  com_nav_shared_links_date_shared: {
+    english: 'Date shared',
+    translated: 'Data compartilhada',
+  },
   com_nav_my_files: {
     english: 'My Files',
     translated: 'Mis archivos',
@@ -2183,6 +2285,102 @@ export const comparisons = {
   com_nav_lang_spanish: {
     english: 'Español',
     translated: 'Español',
+  },
+  com_ui_copied: {
+    english: 'Copied!',
+    translated: '¡Copiado!',
+  },
+  com_ui_copy_code: {
+    english: 'Copy code',
+    translated: 'Copiar código',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: 'Copiar enlace',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: 'Actualizar enlace',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: 'Crear enlace',
+  },
+  com_nav_source_chat: {
+    english: 'View source chat',
+    translated: 'Ver chat de origen',
+  },
+  com_ui_date_today: {
+    english: 'Today',
+    translated: 'Hoy',
+  },
+  com_ui_date_yesterday: {
+    english: 'Yesterday',
+    translated: 'Ayer',
+  },
+  com_ui_date_previous_7_days: {
+    english: 'Previous 7 days',
+    translated: 'Últimos 7 días',
+  },
+  com_ui_date_previous_30_days: {
+    english: 'Previous 30 days',
+    translated: 'Últimos 30 días',
+  },
+  com_ui_date_january: {
+    english: 'January',
+    translated: 'Enero',
+  },
+  com_ui_date_february: {
+    english: 'February',
+    translated: 'Febrero',
+  },
+  com_ui_date_march: {
+    english: 'March',
+    translated: 'Marzo',
+  },
+  com_ui_date_april: {
+    english: 'April',
+    translated: 'Abril',
+  },
+  com_ui_date_may: {
+    english: 'May',
+    translated: 'Mayo',
+  },
+  com_ui_date_june: {
+    english: 'June',
+    translated: 'Junio',
+  },
+  com_ui_date_july: {
+    english: 'July',
+    translated: 'Julio',
+  },
+  com_ui_date_august: {
+    english: 'August',
+    translated: 'Agosto',
+  },
+  com_ui_date_september: {
+    english: 'September',
+    translated: 'Septiembre',
+  },
+  com_ui_date_october: {
+    english: 'October',
+    translated: 'Octubre',
+  },
+  com_ui_date_november: {
+    english: 'November',
+    translated: 'Noviembre',
+  },
+  com_ui_date_december: {
+    english: 'December',
+    translated: 'Diciembre',
+  },
+  com_ui_nothing_found: {
+    english: 'Nothing found',
+    translated: 'No se encontró nada',
+  },
+  com_ui_go_to_conversation: {
+    english: 'Go to conversation',
+    translated: 'Ir a la conversación',
   },
   com_error_moderation: {
     english:

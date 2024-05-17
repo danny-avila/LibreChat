@@ -7,6 +7,7 @@ export * from './presets';
 export * from './textarea';
 export * from './languages';
 export * from './endpoints';
+export * from './sharedLink';
 export { default as cn } from './cn';
 export { default as buildTree } from './buildTree';
 export { default as getLoginError } from './getLoginError';
