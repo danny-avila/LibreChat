@@ -85,8 +85,8 @@ junit.xml
 **/venv/
 
 # docker override file
-docker-compose.override.yaml
-docker-compose.override.yml
+# docker-compose.override.yaml
+# docker-compose.override.yml
 
 # meilisearch
 meilisearch
