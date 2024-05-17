@@ -56,28 +56,24 @@ export default function ShareDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (isLoading) {
-    return (
-      <div className="flex h-40 items-center justify-center">
-        <Spinner className="h-6 w-6 animate-spin text-gray-400" />
-      </div>
-    );
-  }
-
   return (
-    <div className="">
-      <div className="py-2 text-gray-400">
-        {isUpdated ? (
-          isNewSharedLink ? (
-            localize('com_ui_share_created_message')
-          ) : (
-            <>{localize('com_ui_share_updated_message')}</>
-          )
-        ) : share?.isPublic ? (
-          localize('com_ui_share_update_message')
-        ) : (
-          localize('com_ui_share_create_message')
-        )}
+    <div>
+      <div className="h-full py-2 text-gray-400 dark:text-gray-200">
+        {(() => {
+          if (isLoading) {
+            return <Spinner className="m-auto h-14 animate-spin" />;
+          }
+
+          if (isUpdated) {
+            return isNewSharedLink
+              ? localize('com_ui_share_created_message')
+              : localize('com_ui_share_updated_message');
+          }
+
+          return share?.isPublic
+            ? localize('com_ui_share_update_message')
+            : localize('com_ui_share_create_message');
+        })()}
       </div>
     </div>
   );
