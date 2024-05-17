@@ -28,7 +28,7 @@ export default function Files({ open, onOpenChange }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className={cn('w-11/12 overflow-x-auto shadow-2xl dark:bg-gray-700 dark:text-white')}
+        className={cn('w-11/12 overflow-x-auto shadow-2xl dark:bg-gray-750 dark:text-white')}
       >
         <DialogHeader>
           <DialogTitle className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">

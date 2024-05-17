@@ -47,14 +47,14 @@ export default function Templates({ showTemplates }: { showTemplates: () => void
             <div className="xs:mt-0 mt-2 inline-flex">
               <button
                 // onclick="prevPromptTemplatesPage()"
-                className="bg-gray-200 px-4  py-2 font-medium hover:bg-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:hover:text-white"
+                className="bg-gray-200 px-4  py-2 font-medium hover:bg-gray-200 dark:border-gray-700 dark:bg-gray-750 dark:text-gray-400 dark:hover:text-white"
                 style={{ borderRadius: '6px 0 0 6px' }}
               >
                 {localize('com_ui_prev')}
               </button>
               <button
                 // onclick="nextPromptTemplatesPage()"
-                className="border-0 border-l  border-gray-500 bg-gray-200 px-4 py-2 font-medium hover:bg-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:hover:text-white"
+                className="border-0 border-l  border-gray-500 bg-gray-200 px-4 py-2 font-medium hover:bg-gray-200 dark:border-gray-700 dark:bg-gray-750 dark:text-gray-400 dark:hover:text-white"
                 style={{ borderRadius: '6px 0 0 6px' }}
               >
                 {localize('com_ui_next')}

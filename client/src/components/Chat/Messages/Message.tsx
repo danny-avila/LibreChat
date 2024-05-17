@@ -221,7 +221,7 @@ export default function Message(props: TMessageProps) {
                       <div
                         className={cn({
                           'flex items-center justify-start rounded-xl p-1': isLast,
-                          'bg-token-main-surface-primary -mt-1 items-center justify-start rounded-xl p-1 md:absolute md:hidden md:border md:group-hover:block md:dark:border-gray-600':
+                          'bg-token-main-surface-primary -mt-1 items-center justify-start rounded-xl p-1 md:absolute md:hidden md:border md:group-hover:block md:dark:border-gray-700':
                             !isLast,
                           'md:block': edit || isForking,
                         })}

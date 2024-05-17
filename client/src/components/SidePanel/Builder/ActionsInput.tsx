@@ -250,7 +250,7 @@ export default function ActionsInput({
             </label>
           </span>
         </div>
-        <div className="rounded-md border border-gray-300 px-3 py-2 shadow-none focus-within:border-gray-800 focus-within:ring-1 focus-within:ring-gray-800 dark:border-gray-700 dark:bg-gray-700 dark:focus-within:border-gray-500 dark:focus-within:ring-gray-500">
+        <div className="rounded-md border border-gray-300 px-3 py-2 shadow-none focus-within:border-gray-800 focus-within:ring-1 focus-within:ring-gray-800 dark:border-gray-700 dark:bg-gray-750 dark:focus-within:border-gray-500 dark:focus-within:ring-gray-500">
           <label
             htmlFor="privacyPolicyUrl"
             className="block text-xs font-medium text-gray-900 dark:text-gray-100"
@@ -259,7 +259,7 @@ export default function ActionsInput({
             <input
               name="privacyPolicyUrl"
               id="privacyPolicyUrl"
-              className="block w-full border-0 p-0 text-gray-900 placeholder-gray-500 shadow-none outline-none focus-within:shadow-none focus-within:outline-none focus-within:ring-0 focus:border-none focus:ring-0 dark:bg-gray-700 dark:text-gray-100 sm:text-sm"
+              className="block w-full border-0 p-0 text-gray-900 placeholder-gray-500 shadow-none outline-none focus-within:shadow-none focus-within:outline-none focus-within:ring-0 focus:border-none focus:ring-0 dark:bg-gray-750 dark:text-gray-100 sm:text-sm"
               placeholder="https://api.example-weather-app.com/privacy"
               // value=""
             />

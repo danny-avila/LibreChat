@@ -17,7 +17,7 @@ function OptionHover({ side, description, langCode, sideOffset = 30 }: TOptionHo
     <HoverCardPortal>
       <HoverCardContent
         side={side}
-        className="z-[999] w-80 dark:bg-gray-700"
+        className="z-[999] w-80 dark:bg-gray-750"
         sideOffset={sideOffset}
       >
         <div className="space-y-2">

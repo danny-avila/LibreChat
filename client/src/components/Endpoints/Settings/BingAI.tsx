@@ -96,7 +96,7 @@ export default function Settings({ conversation, setOption, readonly }: TSetting
               id="jailbreak"
               disabled={readonly}
               checked={jailbreak}
-              className="focus:ring-opacity-20 dark:border-gray-500 dark:bg-gray-700 dark:text-gray-50 dark:focus:ring-gray-600 dark:focus:ring-opacity-50 dark:focus:ring-offset-0"
+              className="focus:ring-opacity-20 dark:border-gray-500 dark:bg-gray-750 dark:text-gray-50 dark:focus:ring-gray-600 dark:focus:ring-opacity-50 dark:focus:ring-offset-0"
               onCheckedChange={setJailbreak}
             />
             <label

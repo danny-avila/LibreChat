@@ -9,7 +9,7 @@ export default function Switcher(props: SwitcherProps) {
     return (
       <>
         <AssistantSwitcher {...props} />
-        <Separator className="bg-gray-100/50 dark:bg-gray-600" />
+        <Separator className="bg-gray-100/50 dark:bg-gray-750" />
       </>
     );
   } else if (props.endpoint === EModelEndpoint.assistants) {
@@ -19,7 +19,7 @@ export default function Switcher(props: SwitcherProps) {
   return (
     <>
       <ModelSwitcher {...props} />
-      <Separator className="bg-gray-100/50 dark:bg-gray-600" />
+      <Separator className="bg-gray-100/50 dark:bg-gray-750" />
     </>
   );
 }

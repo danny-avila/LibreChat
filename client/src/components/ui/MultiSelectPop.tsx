@@ -114,7 +114,7 @@ function MultiSelectPop({
               side="bottom"
               align="center"
               className={cn(
-                'mt-2 max-h-[52vh] min-w-full overflow-hidden overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-700 dark:text-white',
+                'mt-2 max-h-[52vh] min-w-full overflow-hidden overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-750 dark:text-white',
                 hasSearchRender && 'relative',
               )}
             >

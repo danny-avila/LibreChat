@@ -90,7 +90,7 @@ const EditPresetDialog = ({
                     {'ㅤ'}
                   </Label>
                   <PopoverButtons
-                    buttonClass="ml-0 w-full border border-gray-100 dark:border-gray-600 dark:bg-gray-700 dark:hover:bg-gray-600 p-2 h-[40px] justify-center mt-0"
+                    buttonClass="ml-0 w-full border border-gray-100 dark:border-gray-700 dark:bg-gray-750 dark:hover:bg-gray-700 p-2 h-[40px] justify-center mt-0"
                     iconClass="hidden lg:block w-4 "
                     endpoint={endpoint}
                     endpointType={endpointType}
@@ -99,7 +99,7 @@ const EditPresetDialog = ({
                 </div>
               </div>
             </div>
-            <div className="my-4 w-full border-t border-gray-300 dark:border-gray-600" />
+            <div className="my-4 w-full border-t border-gray-300 dark:border-gray-700" />
             <div className="w-full p-0">
               <EndpointSettings
                 conversation={preset}
@@ -114,7 +114,7 @@ const EditPresetDialog = ({
           <div className="mb-6 md:mb-2">
             <DialogButton
               onClick={exportPreset}
-              className="border-gray-100 hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-gray-600"
+              className="border-gray-100 hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-700"
             >
               {localize('com_endpoint_export')}
             </DialogButton>
@@ -126,7 +126,7 @@ const EditPresetDialog = ({
             </DialogClose>
           </div>
         }
-        footerClassName="bg-white dark:bg-gray-700"
+        footerClassName="bg-white dark:bg-gray-750"
       />
     </Dialog>
   );

@@ -181,7 +181,7 @@ export default function Settings({
           isSelected={checkPluginSelection}
           searchPlaceholder={localize('com_ui_select_search_plugin')}
           className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusOutlines)}
-          optionsClassName="w-full max-h-[275px] dark:bg-gray-700 z-10 border dark:border-gray-600"
+          optionsClassName="w-full max-h-[275px] dark:bg-gray-750 z-10 border dark:border-gray-700"
           containerClassName="flex w-full resize-none border border-transparent"
           labelClassName="dark:text-white"
         />

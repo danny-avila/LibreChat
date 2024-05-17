@@ -68,7 +68,7 @@ const PopoverButton: React.FC<PopoverButtonProps> = ({
             setActiveSetting(optionLabels.default);
           }, 175);
         }}
-        className="mx-1 max-w-14 flex-1 rounded-lg border-2 bg-white text-gray-700 transition duration-300 ease-in-out hover:bg-gray-200 hover:text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:hover:bg-gray-600 dark:hover:text-gray-100"
+        className="mx-1 max-w-14 flex-1 rounded-lg border-2 bg-white text-gray-700 transition duration-300 ease-in-out hover:bg-gray-200 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-750 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100"
         type="button"
       >
         {children}
@@ -77,7 +77,7 @@ const PopoverButton: React.FC<PopoverButtonProps> = ({
         <HoverCardPortal>
           <HoverCardContent
             side="right"
-            className="z-[999] w-80 dark:bg-gray-700"
+            className="z-[999] w-80 dark:bg-gray-750"
             sideOffset={sideOffset}
           >
             <div className="space-y-2">
@@ -173,7 +173,7 @@ export default function Fork({
         <button
           className={cn(
             'flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-gray-200 hover:text-gray-700 dark:text-gray-100/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400',
-            'data-[state=open]:active data-[state=open]:bg-gray-200 data-[state=open]:text-gray-700 data-[state=open]:dark:bg-gray-700 data-[state=open]:dark:text-gray-200',
+            'data-[state=open]:active data-[state=open]:bg-gray-200 data-[state=open]:text-gray-700 data-[state=open]:dark:bg-gray-750 data-[state=open]:dark:text-gray-200',
             'data-[state=open]:opacity-100',
             className,
           )}
@@ -200,7 +200,7 @@ export default function Fork({
           <Popover.Content
             side="top"
             role="menu"
-            className="bg-token-surface-primary flex min-h-[120px] min-w-[215px] flex-col gap-3 overflow-hidden rounded-lg bg-white p-2 px-3 shadow-lg dark:bg-gray-700"
+            className="bg-token-surface-primary flex min-h-[120px] min-w-[215px] flex-col gap-3 overflow-hidden rounded-lg bg-white p-2 px-3 shadow-lg dark:bg-gray-750"
             style={{ outline: 'none', pointerEvents: 'auto', boxSizing: 'border-box' }}
             tabIndex={-1}
             sideOffset={5}
@@ -215,7 +215,7 @@ export default function Fork({
                 <HoverCardPortal>
                   <HoverCardContent
                     side="right"
-                    className="z-[999] w-80 dark:bg-gray-700"
+                    className="z-[999] w-80 dark:bg-gray-750"
                     sideOffset={19}
                   >
                     <div className="flex flex-col gap-2 space-y-2 text-sm text-gray-600 dark:text-gray-300">

@@ -20,7 +20,7 @@ export default function AssistantAction({
         >
           {action.metadata.domain}
         </div>
-        <div className="w-px bg-gray-300 dark:bg-gray-600" />
+        <div className="w-px bg-gray-300 dark:bg-gray-750" />
         <button
           type="button"
           className="flex h-9 w-9 min-w-9 items-center justify-center rounded-lg rounded-l-none"

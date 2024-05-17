@@ -25,7 +25,7 @@ function Account({ onCheckedChange }: { onCheckedChange?: (value: boolean) => vo
       className="w-full md:min-h-[271px]"
     >
       <div className="flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-50">
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <Avatar />
         </div>
         <div className="flex items-center justify-between">
@@ -39,7 +39,7 @@ function Account({ onCheckedChange }: { onCheckedChange?: (value: boolean) => vo
           />
         </div>
       </div>
-      <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600"></div>
+      <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700"></div>
     </Tabs.Content>
   );
 }

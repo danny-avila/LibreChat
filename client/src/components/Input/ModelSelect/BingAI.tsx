@@ -22,7 +22,7 @@ export default function BingAI({
   }
 
   const defaultClasses =
-    'p-2 rounded-md min-w-[75px] font-normal bg-white/[.60] dark:bg-gray-700 text-black text-xs';
+    'p-2 rounded-md min-w-[75px] font-normal bg-white/[.60] dark:bg-gray-750 text-black text-xs';
   const defaultSelected = cn(
     defaultClasses,
     'font-medium data-[state=active]:text-white text-xs text-white',
@@ -54,7 +54,7 @@ export default function BingAI({
         )}
         onValueChange={(value) => setOption('toneStyle')(value.toLowerCase())}
       >
-        <TabsList className="bg-white/[.60] dark:bg-gray-700">
+        <TabsList className="bg-white/[.60] dark:bg-gray-750">
           <TabsTrigger
             value="creative"
             className={`${toneStyle === 'creative' ? selectedClass('creative') : defaultClasses}`}

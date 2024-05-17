@@ -21,7 +21,7 @@ function PluginStoreItem({ plugin, onInstall, onUninstall, isInstalled }: TPlugi
 
   return (
     <>
-      <div className="flex flex-col gap-4 rounded border border-black/10 bg-white p-6 dark:border-gray-500 dark:bg-gray-700">
+      <div className="flex flex-col gap-4 rounded border border-black/10 bg-white p-6 dark:border-gray-500 dark:bg-gray-750">
         <div className="flex gap-4">
           <div className="h-[70px] w-[70px] shrink-0">
             <div className="relative h-full w-full">

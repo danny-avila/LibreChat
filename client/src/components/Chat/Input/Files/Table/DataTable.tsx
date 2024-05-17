@@ -157,7 +157,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                   return (
                     <TableHead
                       key={header.id}
-                      className="align-start sticky top-0 rounded-t border-b border-black/10 bg-white px-2 py-1 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-700 dark:text-gray-100 sm:px-4 sm:py-2"
+                      className="align-start sticky top-0 rounded-t border-b border-black/10 bg-white px-2 py-1 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-750 dark:text-gray-100 sm:px-4 sm:py-2"
                       style={style}
                     >
                       {header.isPlaceholder
@@ -220,7 +220,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           )}
         </div>
         <Button
-          className="dark:border-gray-500 dark:hover:bg-gray-600"
+          className="dark:border-gray-500 dark:hover:bg-gray-700"
           variant="outline"
           size="sm"
           onClick={() => table.previousPage()}
@@ -229,7 +229,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           {localize('com_ui_prev')}
         </Button>
         <Button
-          className="dark:border-gray-500 dark:hover:bg-gray-600"
+          className="dark:border-gray-500 dark:hover:bg-gray-700"
           variant="outline"
           size="sm"
           onClick={() => table.nextPage()}

@@ -92,7 +92,7 @@ function NavLinks({ className }: NavLinksProps) {
               leaveFrom="translate-y-0 opacity-100"
               leaveTo="translate-y-2 opacity-0"
             >
-              <Menu.Items className="absolute bottom-full left-0 z-[100] mb-1 mt-1 w-full translate-y-0 overflow-hidden rounded-lg border border-gray-300 bg-white p-1.5 opacity-100 shadow-lg outline-none dark:border-gray-600 dark:bg-gray-700">
+              <Menu.Items className="absolute bottom-full left-0 z-[100] mb-1 mt-1 w-full translate-y-0 overflow-hidden rounded-lg border border-gray-300 bg-white p-1.5 opacity-100 shadow-lg outline-none dark:border-gray-700 dark:bg-gray-750">
                 <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm" role="none">
                   {user?.email || localize('com_nav_user')}
                 </div>

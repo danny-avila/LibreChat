@@ -50,7 +50,7 @@ export default function ArchivedChatsTable({ className }: { className?: string }
       ref={containerRef}
     >
       <table className="table-fixed text-left">
-        <thead className="sticky top-0 bg-white dark:bg-gray-700">
+        <thead className="sticky top-0 bg-white dark:bg-gray-750">
           <tr className="border-b border-gray-200 text-sm font-semibold text-gray-500 dark:border-white/10 dark:text-gray-200">
             <th className="p-3">{localize('com_nav_archive_name')}</th>
             <th className="p-3">{localize('com_nav_archive_created_at')}</th>
@@ -92,7 +92,7 @@ export default function ArchivedChatsTable({ className }: { className?: string }
                             renaming={false}
                             title={conversation.title}
                             appendLabel={false}
-                            className="group ml-4 flex w-full cursor-pointer items-center items-center gap-2 rounded text-sm hover:bg-gray-200 focus-visible:bg-gray-200 focus-visible:outline-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-600 dark:focus-visible:bg-gray-600"
+                            className="group ml-4 flex w-full cursor-pointer items-center items-center gap-2 rounded text-sm hover:bg-gray-200 focus-visible:bg-gray-200 focus-visible:outline-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-700 dark:focus-visible:bg-gray-600"
                           />
                         </div>
                       </>

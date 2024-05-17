@@ -38,7 +38,7 @@ export default function ToolPopover({
                 : localize('com_assistants_function_use', function_name)}
             </div>
             <div className="bg-token-surface-secondary text-token-text-primary dark rounded-md text-xs">
-              <div className="max-h-32 overflow-y-auto rounded-md p-2 dark:bg-gray-700">
+              <div className="max-h-32 overflow-y-auto rounded-md p-2 dark:bg-gray-750">
                 <code className="!whitespace-pre-wrap ">{formatText(input)}</code>
               </div>
             </div>
@@ -48,7 +48,7 @@ export default function ToolPopover({
                   {localize('com_ui_result')}
                 </div>
                 <div className="bg-token-surface-secondary text-token-text-primary dark rounded-md text-xs">
-                  <div className="max-h-32 overflow-y-auto rounded-md p-2 dark:bg-gray-700">
+                  <div className="max-h-32 overflow-y-auto rounded-md p-2 dark:bg-gray-750">
                     <code className="!whitespace-pre-wrap ">{formatText(output)}</code>
                   </div>
                 </div>

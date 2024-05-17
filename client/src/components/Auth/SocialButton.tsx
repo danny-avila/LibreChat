@@ -29,10 +29,10 @@ const SocialButton = ({ id, enabled, serverDomain, oauthPath, Icon, label }) => 
 
   const getButtonStyles = () => {
     // Define Tailwind CSS classes based on state
-    const baseStyles = 'border border-solid border-gray-300 dark:border-gray-600 transition-colors';
+    const baseStyles = 'border border-solid border-gray-300 dark:border-gray-700 transition-colors';
 
     const pressedStyles = 'bg-blue-200 border-blue-200 dark:bg-blue-900 dark:border-blue-600';
-    const hoverStyles = 'bg-gray-100 dark:bg-gray-700';
+    const hoverStyles = 'bg-gray-100 dark:bg-gray-750';
 
     return `${baseStyles} ${
       isPressed && activeButton === id ? pressedStyles : isHovered ? hoverStyles : ''

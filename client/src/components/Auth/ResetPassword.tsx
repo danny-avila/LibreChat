@@ -145,7 +145,7 @@ function ResetPassword() {
                       },
                     })}
                     aria-invalid={!!errors.password}
-                    className="webkit-dark-styles peer block w-full appearance-none rounded-md border border-gray-300 bg-transparent px-3.5 pb-3.5 pt-4 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0 dark:border-gray-600 dark:text-white dark:focus:border-green-500"
+                    className="webkit-dark-styles peer block w-full appearance-none rounded-md border border-gray-300 bg-transparent px-3.5 pb-3.5 pt-4 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0 dark:border-gray-700 dark:text-white dark:focus:border-green-500"
                     placeholder=" "
                   ></input>
                   <label
@@ -174,7 +174,7 @@ function ResetPassword() {
                         value === password || localize('com_auth_password_not_match'),
                     })}
                     aria-invalid={!!errors.confirm_password}
-                    className="webkit-dark-styles peer block w-full appearance-none rounded-md border border-gray-300 bg-transparent px-3.5 pb-3.5 pt-4 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0 dark:border-gray-600 dark:text-white dark:focus:border-green-500"
+                    className="webkit-dark-styles peer block w-full appearance-none rounded-md border border-gray-300 bg-transparent px-3.5 pb-3.5 pt-4 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0 dark:border-gray-700 dark:text-white dark:focus:border-green-500"
                     placeholder=" "
                   ></input>
                   <label
@@ -219,7 +219,7 @@ function ResetPassword() {
         <div className="align-end m-4 flex justify-center gap-2">
           {privacyPolicyRender}
           {privacyPolicyRender && termsOfServiceRender && (
-            <div className="border-r-[1px] border-gray-300 dark:border-gray-600" />
+            <div className="border-r-[1px] border-gray-300 dark:border-gray-700" />
           )}
           {termsOfServiceRender}
         </div>

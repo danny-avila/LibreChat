@@ -80,12 +80,12 @@ export default function Mention({
 
   return (
     <div className="absolute bottom-16 z-10 w-full space-y-2">
-      <div className="popover border-token-border-light rounded-2xl border bg-white p-2 shadow-lg dark:bg-gray-700">
+      <div className="popover border-token-border-light rounded-2xl border bg-white p-2 shadow-lg dark:bg-gray-750">
         <input
           autoFocus
           ref={inputRef}
           placeholder={localize('com_ui_mention')}
-          className="mb-1 w-full border-0 bg-white p-2 text-sm focus:outline-none dark:bg-gray-700 dark:text-gray-200"
+          className="mb-1 w-full border-0 bg-white p-2 text-sm focus:outline-none dark:bg-gray-750 dark:text-gray-200"
           autoComplete="off"
           value={searchValue}
           onKeyDown={(e) => {

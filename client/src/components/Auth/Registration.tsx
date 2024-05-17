@@ -64,7 +64,7 @@ const Registration: React.FC = () => {
             validation,
           )}
           aria-invalid={!!errors[id]}
-          className="webkit-dark-styles peer block w-full appearance-none rounded-md border border-gray-300 bg-transparent px-3.5 pb-3.5 pt-4 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0 dark:border-gray-600 dark:text-white dark:focus:border-green-500"
+          className="webkit-dark-styles peer block w-full appearance-none rounded-md border border-gray-300 bg-transparent px-3.5 pb-3.5 pt-4 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0 dark:border-gray-700 dark:text-white dark:focus:border-green-500"
           placeholder=" "
           data-testid={id}
         ></input>
@@ -274,7 +274,7 @@ const Registration: React.FC = () => {
             <>
               {startupConfig.emailLoginEnabled && (
                 <>
-                  <div className="relative mt-6 flex w-full items-center justify-center border border-t border-gray-300 uppercase dark:border-gray-600">
+                  <div className="relative mt-6 flex w-full items-center justify-center border border-t border-gray-300 uppercase dark:border-gray-700">
                     <div className="absolute bg-white px-3 text-xs text-black dark:bg-gray-900 dark:text-white">
                       Or
                     </div>
@@ -292,7 +292,7 @@ const Registration: React.FC = () => {
       <div className="align-end m-4 flex justify-center gap-2">
         {privacyPolicyRender}
         {privacyPolicyRender && termsOfServiceRender && (
-          <div className="border-r-[1px] border-gray-300 dark:border-gray-600" />
+          <div className="border-r-[1px] border-gray-300 dark:border-gray-700" />
         )}
         {termsOfServiceRender}
       </div>
