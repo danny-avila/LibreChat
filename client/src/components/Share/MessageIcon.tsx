@@ -1,18 +1,16 @@
 import { useMemo } from 'react';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { TMessage, TPreset, Assistant } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
-import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
-import { getEndpointField, getIconEndpoint } from '~/utils';
-import { UserIcon } from '../svg';
 import MessageEndpointIcon from '../Endpoints/MessageEndpointIcon';
+import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
+import { getIconEndpoint } from '~/utils';
+import { UserIcon } from '../svg';
 
 export default function MessageIcon(
   props: Pick<TMessageProps, 'message' | 'conversation'> & {
     assistant?: false | Assistant;
   },
 ) {
-  const { data: endpointsConfig } = useGetEndpointsQuery();
   const { message, conversation, assistant } = props;
 
   const assistantName = assistant ? (assistant.name as string | undefined) : '';
@@ -31,8 +29,7 @@ export default function MessageIcon(
 
   const iconURL = messageSettings?.iconURL;
   let endpoint = messageSettings?.endpoint;
-  endpoint = getIconEndpoint({ endpointsConfig, iconURL, endpoint });
-  const endpointIconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
+  endpoint = getIconEndpoint({ endpointsConfig: undefined, iconURL, endpoint });
 
   if (!message?.isCreatedByUser && iconURL && iconURL.includes('http')) {
     return (
@@ -40,7 +37,6 @@ export default function MessageIcon(
         preset={messageSettings as typeof messageSettings & TPreset}
         context="message"
         assistantAvatar={assistantAvatar}
-        endpointIconURL={endpointIconURL}
         assistantName={assistantName}
       />
     );
@@ -66,7 +62,7 @@ export default function MessageIcon(
     <MessageEndpointIcon
       {...messageSettings}
       endpoint={endpoint}
-      iconURL={!assistant ? endpointIconURL : assistantAvatar}
+      iconURL={!assistant ? undefined : assistantAvatar}
       model={message?.model ?? conversation?.model}
       assistantName={assistantName}
       size={28.8}

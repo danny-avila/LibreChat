@@ -10,7 +10,6 @@ export default function MessagesView({
   conversationId: string;
 }) {
   const [currentEditId, setCurrentEditId] = useState<number | string | null>(-1);
-  console.log(_messagesTree);
   return (
     <div className="flex-1 pb-[50px]">
       <div className="dark:gpt-dark-gray relative h-full">
