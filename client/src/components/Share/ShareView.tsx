@@ -48,7 +48,7 @@ function SharedView() {
               </div>
             )}
             <div className="w-full border-t-0 pl-0 pt-2 dark:border-white/20 md:w-[calc(100%-.5rem)] md:border-t-0 md:border-transparent md:pl-0 md:pt-0 md:dark:border-transparent">
-              <Footer className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-center gap-2 bg-white px-2 pb-2 pt-8 text-xs text-gray-600 dark:bg-transparent dark:text-gray-300 md:px-[60px]" />
+              <Footer className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-center gap-2 bg-gradient-to-t from-gray-50 to-transparent px-2 pb-2 pt-8 text-xs text-gray-600 dark:from-gray-800 dark:text-gray-300 md:px-[60px]" />
             </div>
           </div>
         </div>
