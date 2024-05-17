@@ -1,19 +1,19 @@
 import type { TMessageProps } from '~/common';
-import { Plugin } from '~/components/Messages/Content';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
-
+import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
+import { Plugin } from '~/components/Messages/Content';
+import SubRow from '~/components/Chat/Messages/SubRow';
 // eslint-disable-next-line import/no-cycle
 import MultiMessage from './MultiMessage';
-
 import { cn } from '~/utils';
 
 import Icon from './MessageIcon';
 export default function Message(props: TMessageProps) {
   const {
     message,
-    conversation,
     siblingIdx,
-
+    siblingCount,
+    conversation,
     setSiblingIdx,
     currentEditId,
     setCurrentEditId,
@@ -79,6 +79,13 @@ export default function Message(props: TMessageProps) {
                   />
                 </div>
               </div>
+              <SubRow classes="text-xs">
+                <SiblingSwitch
+                  siblingIdx={siblingIdx}
+                  siblingCount={siblingCount}
+                  setSiblingIdx={setSiblingIdx}
+                />
+              </SubRow>
             </div>
           </div>
         </div>
