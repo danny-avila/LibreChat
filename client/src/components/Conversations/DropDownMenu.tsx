@@ -1,4 +1,4 @@
-import type { FC } from 'react';
+import { cloneElement, type FC } from 'react';
 import { DotsIcon } from '~/components/svg';
 import { Content, Portal, Root, Trigger } from '@radix-ui/react-popover';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
@@ -6,15 +6,23 @@ import { useToggle } from './ToggleContext';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
-type EditMenuButtonProps = {
+type DropDownMenuProps = {
   children: React.ReactNode;
+  icon?: React.ReactElement;
+  tooltip?: string;
+  className?: string;
 };
-const EditMenuButton: FC<EditMenuButtonProps> = ({ children }: EditMenuButtonProps) => {
+const DropDownMenu: FC<DropDownMenuProps> = ({
+  children,
+  icon = <DotsIcon />,
+  tooltip = 'More',
+  className,
+}: DropDownMenuProps) => {
   const localize = useLocalize();
-  const { setPopoverActive } = useToggle();
+  const { isPopoverActive, setPopoverActive } = useToggle();
 
   return (
-    <Root onOpenChange={(open) => setPopoverActive(open)}>
+    <Root open={isPopoverActive} onOpenChange={(open) => setPopoverActive(open)}>
       <Trigger asChild>
         <div
           className={cn(
@@ -29,12 +37,15 @@ const EditMenuButton: FC<EditMenuButtonProps> = ({ children }: EditMenuButtonPro
           <TooltipProvider delayDuration={500}>
             <Tooltip>
               <TooltipTrigger asChild>
-                <button type="button" className="">
-                  <DotsIcon className="h-[18px] w-[18px] flex-shrink-0 text-gray-500 hover:text-gray-400 dark:text-gray-300 dark:hover:text-gray-400" />
+                <button type="button" className={className}>
+                  {cloneElement(icon, {
+                    className:
+                      'h-[18px] w-[18px] flex-shrink-0 text-gray-500 hover:text-gray-400 dark:text-gray-300 dark:hover:text-gray-400',
+                  })}
                 </button>
               </TooltipTrigger>
               <TooltipContent side="top" sideOffset={0}>
-                {localize('com_ui_more_options')}
+                {tooltip}
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -57,4 +68,4 @@ const EditMenuButton: FC<EditMenuButtonProps> = ({ children }: EditMenuButtonPro
   );
 };
 
-export default EditMenuButton;
+export default DropDownMenu;
