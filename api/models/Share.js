@@ -7,24 +7,19 @@ module.exports = {
   SharedLink,
   getSharedMessages: async (shareId) => {
     try {
-      const share = await SharedLink.findOne({ shareId }).populate('messages').lean();
+      const share = await SharedLink.findOne({ shareId })
+        .populate({
+          path: 'messages',
+          select: '-_id -__v -user',
+        })
+        .select('-_id -__v -user')
+        .lean();
+
       if (!share || !share.conversationId || !share.isPublic) {
         return null;
       }
 
-      const anonymousMessage = share.messages.map((message) => {
-        if (share.isAnonymous) {
-          return {
-            ...message,
-            user: 'anonymous',
-          };
-        }
-        return message;
-      });
-      return {
-        ...share,
-        messages: anonymousMessage,
-      };
+      return share;
     } catch (error) {
       logger.error('[getShare] Error getting share link', error);
       return { message: 'Error getting share link' };
@@ -40,7 +35,9 @@ module.exports = {
         .sort({ updatedAt: -1 })
         .skip((pageNumber - 1) * pageSize)
         .limit(pageSize)
+        .select('-_id -__v -user')
         .lean();
+
       return { sharedLinks: shares, pages: totalPages, pageNumber, pageSize };
     } catch (error) {
       logger.error('[getShareByPage] Error getting shares', error);
@@ -49,7 +46,7 @@ module.exports = {
   },
 
   createSharedLink: async (user, { conversationId, ...shareData }) => {
-    const share = await SharedLink.findOne({ conversationId }).lean();
+    const share = await SharedLink.findOne({ conversationId }).select('-_id -__v -user').lean();
     if (share) {
       return share;
     }
@@ -67,8 +64,9 @@ module.exports = {
       return { message: 'Error saving conversation' };
     }
   },
+
   updateSharedLink: async (user, { conversationId, ...shareData }) => {
-    const share = await SharedLink.findOne({ conversationId }).lean();
+    const share = await SharedLink.findOne({ conversationId }).select('-_id -__v -user').lean();
     if (!share) {
       return { message: 'Share not found' };
     }
