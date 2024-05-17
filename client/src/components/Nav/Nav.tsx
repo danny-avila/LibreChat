@@ -103,7 +103,7 @@ const Nav = ({ navVisible, setNavVisible }) => {
       <Tooltip>
         <div
           className={
-            'nav active max-w-[320px] flex-shrink-0 overflow-x-hidden bg-gray-50 dark:bg-gray-750 md:max-w-[260px]'
+            'nav active max-w-[320px] flex-shrink-0 overflow-x-hidden bg-gray-50 dark:bg-gray-900 dark:text-white md:max-w-[260px]'
           }
           style={{
             width: navVisible ? navWidth : '0px',

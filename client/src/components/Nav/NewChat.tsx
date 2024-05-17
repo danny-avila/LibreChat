@@ -82,7 +82,7 @@ export default function NewChat({
   return (
     <TooltipProvider delayDuration={250}>
       <Tooltip>
-        <div className="static left-0 right-0 top-0 z-20 bg-gray-50 dark:bg-gray-750 pt-0">
+        <div className="static left-0 right-0 top-0 z-20 bg-gray-50 dark:bg-gray-900 pt-0">
           <div className="pb-0.5 last:pb-0" tabIndex={0} style={{ transform: 'none' }}>
             <a
               href="/"

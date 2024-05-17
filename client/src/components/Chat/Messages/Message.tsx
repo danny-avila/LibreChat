@@ -87,7 +87,7 @@ export default function Message(props: TMessageProps) {
                       ) : (
                         <div className="text-message flex min-h-[20px] w-full flex-col items-start items-end gap-2 overflow-x-auto">
                           <div className="flex w-full flex-col items-end gap-1 rtl:items-start">
-                            <div className="group/text-message relative max-w-[90%] rounded-3xl bg-[#f4f4f4] px-5 py-2.5 dark:bg-gray-700">
+                            <div className="group/text-message relative max-w-[90%] rounded-3xl bg-[#f4f4f4] px-5 py-2.5 dark:bg-gray-750">
                               {/* Legacy Plugins */}
                               {message?.plugin && <Plugin plugin={message?.plugin} />}
                               <MessageContent
@@ -177,7 +177,7 @@ export default function Message(props: TMessageProps) {
                 <div className="relative flex flex-shrink-0 flex-col items-end">
                   <div>
                     <div className="pt-0.5">
-                      <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border dark:border-gray-600">
+                      <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border dark:border-gray-700">
                         <div className="relative flex">
                           <Icon message={message} conversation={conversation} />
                         </div>
