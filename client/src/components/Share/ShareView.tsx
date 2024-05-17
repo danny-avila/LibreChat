@@ -1,14 +1,11 @@
 import { memo } from 'react';
-
 import { useParams } from 'react-router-dom';
 import { useGetSharedMessages } from 'librechat-data-provider/react-query';
-import MessagesView from './MessagesView';
-
 import { Spinner } from '~/components/svg';
-
+import MessagesView from './MessagesView';
+import { useLocalize } from '~/hooks';
 import { buildTree } from '~/utils';
 import Footer from '../Chat/Footer';
-import { useLocalize } from '~/hooks';
 
 function SharedView() {
   const { shareId } = useParams();
