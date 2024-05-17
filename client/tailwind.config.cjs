@@ -1,22 +1,14 @@
-// const { fontFamily } = require('tailwindcss/defaultTheme');
+const { fontFamily } = require('tailwindcss/defaultTheme');
 
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: ['./src/**/*.{js,jsx,ts,tsx}'],
-  // darkMode: 'class',
   darkMode: ['class'],
   theme: {
-    // colors: {
-    //   'gpt-dark-gray': '#171717',
-    // },
     fontFamily: {
       sans: ['Inter', 'sans-serif'],
       mono: ['Roboto Mono', 'monospace'],
     },
-    // fontFamily: {
-    //   sans: ['Söhne', 'sans-serif'],
-    //   mono: ['Söhne Mono', 'monospace'],
-    // },
     extend: {
       width: {
         'authPageWidth': '370px',
@@ -36,20 +28,21 @@ module.exports = {
         'accordion-up': 'accordion-up 0.2s ease-out',
       },
       colors: {
+        white: '#fff',
+        black: '#000',
         gray: {
-          20: '#ececf1',
-          50: '#f7f7f8',
+          50: '#f9f9f9',
           100: '#ececec',
           200: '#e3e3e3',
           300: '#cdcdcd',
-          400: '#999696',
-          500: '#595959',
-          600: '#424242',
-          700: '#2f2f2f', // Replacing .dark .dark:bg-gray-700 and .dark .dark:hover:bg-gray-700:hover
-          750: '#171717',
-          800: '#212121', // Replacing .dark .dark:bg-gray-800, .bg-gray-800, and .dark .dark:hover:bg-gray-800\/90
-          850: '#171717',
-          900: '#0d0d0d', // Replacing .dark .dark:bg-gray-900, .bg-gray-900, and .dark .dark:hover:bg-gray-900:hover
+          400: '#b4b4b4',
+          500: '#9b9b9b',
+          600: '#676767',
+          700: '#424242',
+          750: '#2f2f2f',
+          800: '#212121',
+          900: '#171717',
+          950: '#0d0d0d',
         },
         green: {
           50: '#f1f9f7',
@@ -64,23 +57,15 @@ module.exports = {
           800: '#06373e',
           900: '#031f29',
         },
-        'brand-purple': '#ab68ff',
-        'text-primary': 'var(--gray-800)',
-        'text-secondary': 'var(--gray-600)',
-        'text-tertiary': 'var(--gray-500)',
-        'surface-primary': 'var(--white)',
-        'surface-secondary': 'var(--gray-50)',
-        'surface-tertiary': 'var(--gray-100)',
-        'border-light': 'var(--gray-100)',
-        'border-medium': 'var(--gray-200)',
-        'border-heavy': 'var(--gray-300)',
-        'border-xheavy': 'var(--gray-400',
+        red: {
+          500: '#ef4444',
+          700: '#b91c1c',
+        },
       },
     },
   },
   plugins: [
     require('tailwindcss-animate'),
     require('tailwindcss-radix')(),
-    // require('@tailwindcss/typography'),
   ],
 };
