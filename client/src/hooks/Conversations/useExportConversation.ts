@@ -16,6 +16,7 @@ import type {
 import useBuildMessageTree from '~/hooks/Messages/useBuildMessageTree';
 import { useScreenshot } from '~/hooks/ScreenshotContext';
 import { cleanupPreset, buildTree } from '~/utils';
+import { useParams } from 'react-router-dom';
 
 export default function useExportConversation({
   conversation,
@@ -34,15 +35,16 @@ export default function useExportConversation({
 }) {
   const { captureScreenshot } = useScreenshot();
   const buildMessageTree = useBuildMessageTree();
-  const { data: messagesTree = null } = useGetMessagesByConvoId(
-    conversation?.conversationId ?? '',
-    {
-      select: (data) => {
-        const dataTree = buildTree({ messages: data });
-        return dataTree?.length === 0 ? null : dataTree ?? null;
-      },
+
+  const { conversationId: paramId } = useParams();
+  const queryParam = paramId === 'new' ? paramId : conversation?.conversationId ?? paramId ?? '';
+
+  const { data: messagesTree = null } = useGetMessagesByConvoId(queryParam, {
+    select: (data) => {
+      const dataTree = buildTree({ messages: data });
+      return dataTree?.length === 0 ? null : dataTree ?? null;
     },
-  );
+  });
 
   const getMessageText = (message: TMessage, format = 'text') => {
     if (!message) {
