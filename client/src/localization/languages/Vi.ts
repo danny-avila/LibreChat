@@ -53,6 +53,17 @@ export default {
   com_ui_import_conversation_error: 'Đã xảy ra lỗi khi nhập khẩu cuộc trò chuyện của bạn',
   com_ui_confirm_action: 'Xác nhận hành động',
   com_ui_chats: 'cuộc trò chuyện',
+  com_ui_share: 'Share',
+  com_ui_share_link_to_chat: 'Share link to chat',
+  com_ui_share_error: 'There was an error sharing the chat link',
+  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share_created_message:
+    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  com_ui_share_update_message:
+    'Your name, custom instructions, and any messages you add after sharing stay private.',
+  com_ui_share_updated_message:
+    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete: 'Xóa',
   com_ui_delete_conversation: 'Xóa cuộc trò chuyện?',
   com_ui_delete_conversation_confirm: 'Điều này sẽ xóa',
@@ -254,6 +265,12 @@ export default {
   com_nav_export_recursive_or_sequential: 'Đệ quy hay tuần tự?',
   com_nav_export_recursive: 'Đệ quy',
   com_nav_export_conversation: 'Xuất cuộc trò chuyện',
+  com_nav_export: 'Xuất',
+  com_nav_shared_links: 'Liên kết được chia sẻ',
+  com_nav_shared_links_manage: 'Quản l',
+  com_nav_shared_links_empty: 'Bạn không có link được chia sẻ.',
+  com_nav_shared_links_name: 'Tên',
+  com_nav_shared_links_date_shared: 'Ngày chia sẻ',
   com_nav_theme: 'Chủ đề',
   com_nav_theme_system: 'Hệ thống',
   com_nav_theme_dark: 'Tối',
@@ -472,6 +489,43 @@ export const comparisons = {
   com_ui_chats: {
     english: 'chats',
     translated: 'cuộc trò chuyện',
+  },
+  com_ui_share: {
+    english: 'Share',
+    translated: 'Share',
+  },
+  com_ui_share_link_to_chat: {
+    english: 'Share link to chat',
+    translated: 'Share link to chat',
+  },
+  com_ui_share_error: {
+    english: 'There was an error sharing the chat link',
+    translated: 'There was an error sharing the chat link',
+  },
+  com_ui_share_create_message: {
+    english: 'Your name and any messages you add after sharing stay private.',
+    translated: 'Your name and any messages you add after sharing stay private.',
+  },
+  com_ui_share_created_message: {
+    english:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_share_update_message: {
+    english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated:
+      'Your name, custom instructions, and any messages you add after sharing stay private.',
+  },
+  com_ui_share_updated_message: {
+    english:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_shared_link_not_found: {
+    english: 'Shared link not found',
+    translated: 'Shared link not found',
   },
   com_ui_delete: {
     english: 'Delete',
@@ -1192,6 +1246,30 @@ export const comparisons = {
   com_nav_export_conversation: {
     english: 'Export conversation',
     translated: 'Xuất cuộc trò chuyện',
+  },
+  com_nav_export: {
+    english: 'Export',
+    translated: 'Xuất',
+  },
+  com_nav_shared_links: {
+    english: 'Shared links',
+    translated: 'Liên kết được chia sẻ',
+  },
+  com_nav_shared_links_manage: {
+    english: 'Manage',
+    translated: 'Quản l',
+  },
+  com_nav_shared_links_empty: {
+    english: 'You have no shared links.',
+    translated: 'Bạn không có link được chia sẻ.',
+  },
+  com_nav_shared_links_name: {
+    english: 'Name',
+    translated: 'Tên',
+  },
+  com_nav_shared_links_date_shared: {
+    english: 'Date shared',
+    translated: 'Ngày chia sẻ',
   },
   com_nav_theme: {
     english: 'Theme',
