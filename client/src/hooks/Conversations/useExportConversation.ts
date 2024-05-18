@@ -41,7 +41,6 @@ export default function useExportConversation({
         const dataTree = buildTree({ messages: data });
         return dataTree?.length === 0 ? null : dataTree ?? null;
       },
-      refetchOnMount: true,
     },
   );
 
