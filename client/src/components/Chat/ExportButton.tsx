@@ -1,42 +1,30 @@
 import React from 'react';
 
 import { useState } from 'react';
-import { useLocation } from 'react-router-dom';
 import type { TConversation } from 'librechat-data-provider';
-import { Download } from 'lucide-react';
-import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
+import { Upload } from 'lucide-react';
 import { useLocalize } from '~/hooks';
 import { ExportModal } from '../Nav';
-import { useRecoilValue } from 'recoil';
-import store from '~/store';
 
-function ExportButton() {
+function ExportButton({
+  conversation,
+  setPopoverActive,
+}: {
+  conversation: TConversation;
+  setPopoverActive: (value: boolean) => void;
+}) {
   const localize = useLocalize();
-  const location = useLocation();
 
   const [showExports, setShowExports] = useState(false);
 
-  const activeConvo = useRecoilValue(store.conversationByIndex(0));
-  const globalConvo = useRecoilValue(store.conversation) ?? ({} as TConversation);
-
-  let conversation: TConversation | null | undefined;
-  if (location.state?.from?.pathname.includes('/chat')) {
-    conversation = globalConvo;
-  } else {
-    conversation = activeConvo;
-  }
-
   const clickHandler = () => {
-    if (exportable) {
-      setShowExports(true);
-    }
+    setShowExports(true);
   };
 
-  const exportable =
-    conversation &&
-    conversation.conversationId &&
-    conversation.conversationId !== 'new' &&
-    conversation.conversationId !== 'search';
+  const onOpenChange = (value: boolean) => {
+    setShowExports(value);
+    setPopoverActive(value);
+  };
 
   return (
     <>
@@ -62,7 +50,7 @@ function ExportButton() {
         </div>
       )}
       {showExports && (
-        <ExportModal open={showExports} onOpenChange={setShowExports} conversation={conversation} />
+        <ExportModal open={showExports} onOpenChange={onOpenChange} conversation={conversation} />
       )}
     </>
   );

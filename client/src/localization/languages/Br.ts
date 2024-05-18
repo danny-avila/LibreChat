@@ -135,6 +135,17 @@ export default {
   com_ui_assistants_output: 'Saída dos Assistentes',
   com_ui_delete: 'Excluir',
   com_ui_create: 'Criar',
+  com_ui_share: 'Share',
+  com_ui_share_link_to_chat: 'Share link to chat',
+  com_ui_share_error: 'There was an error sharing the chat link',
+  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share_created_message:
+    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  com_ui_share_update_message:
+    'Your name, custom instructions, and any messages you add after sharing stay private.',
+  com_ui_share_updated_message:
+    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete_conversation: 'Excluir conversa?',
   com_ui_delete_conversation_confirm: 'Isso excluirá',
   com_ui_delete_assistant_confirm:
@@ -417,6 +428,12 @@ export default {
   com_nav_export_recursive_or_sequential: 'Recursivo ou sequencial?',
   com_nav_export_recursive: 'Recursivo',
   com_nav_export_conversation: 'Exportar conversa',
+  com_nav_export: 'Exportar',
+  com_nav_shared_links: 'Links Compartilhados',
+  com_nav_shared_links_manage: 'Gerenciar',
+  com_nav_shared_links_empty: 'Você não tem nenhum link compartilhado.',
+  com_nav_shared_links_name: 'Nome',
+  com_nav_shared_links_date_shared: 'Data compartilhada',
   com_nav_my_files: 'Meus arquivos',
   com_nav_theme: 'Tema',
   com_nav_theme_system: 'Sistema',
@@ -962,6 +979,43 @@ export const comparisons = {
   com_ui_create: {
     english: 'Create',
     translated: 'Criar',
+  },
+  com_ui_share: {
+    english: 'Share',
+    translated: 'Share',
+  },
+  com_ui_share_link_to_chat: {
+    english: 'Share link to chat',
+    translated: 'Share link to chat',
+  },
+  com_ui_share_error: {
+    english: 'There was an error sharing the chat link',
+    translated: 'There was an error sharing the chat link',
+  },
+  com_ui_share_create_message: {
+    english: 'Your name and any messages you add after sharing stay private.',
+    translated: 'Your name and any messages you add after sharing stay private.',
+  },
+  com_ui_share_created_message: {
+    english:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_share_update_message: {
+    english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated:
+      'Your name, custom instructions, and any messages you add after sharing stay private.',
+  },
+  com_ui_share_updated_message: {
+    english:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_shared_link_not_found: {
+    english: 'Shared link not found',
+    translated: 'Shared link not found',
   },
   com_ui_delete_conversation: {
     english: 'Delete chat?',
@@ -1950,6 +2004,30 @@ export const comparisons = {
   com_nav_export_conversation: {
     english: 'Export conversation',
     translated: 'Exportar conversa',
+  },
+  com_nav_export: {
+    english: 'Export',
+    translated: 'Exportar',
+  },
+  com_nav_shared_links: {
+    english: 'Shared links',
+    translated: 'Links Compartilhados',
+  },
+  com_nav_shared_links_manage: {
+    english: 'Manage',
+    translated: 'Gerenciar',
+  },
+  com_nav_shared_links_empty: {
+    english: 'You have no shared links.',
+    translated: 'Você não tem nenhum link compartilhado.',
+  },
+  com_nav_shared_links_name: {
+    english: 'Name',
+    translated: 'Nome',
+  },
+  com_nav_shared_links_date_shared: {
+    english: 'Date shared',
+    translated: 'Data compartilhada',
   },
   com_nav_my_files: {
     english: 'My Files',

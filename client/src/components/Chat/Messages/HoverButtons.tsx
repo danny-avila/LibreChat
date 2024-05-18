@@ -87,7 +87,7 @@ export default function HoverButtons({
           isCopied ? localize('com_ui_copied_to_clipboard') : localize('com_ui_copy_to_clipboard')
         }
       >
-        {isCopied ? <CheckMark /> : <Clipboard />}
+        {isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard />}
       </button>
       {regenerateEnabled ? (
         <button

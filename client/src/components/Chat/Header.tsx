@@ -7,6 +7,7 @@ import { EndpointsMenu, ModelSpecsMenu, PresetsMenu, HeaderNewChat } from './Men
 import HeaderOptions from './Input/HeaderOptions';
 import ExportButton from './ExportButton';
 import ProfileButton from './ProfileButton';
+import ExportAndShareMenu from './ExportAndShareMenu';
 
 const defaultInterface = getConfigDefaults().interface;
 
@@ -30,7 +31,7 @@ export default function Header() {
           {interfaceConfig.presets && <PresetsMenu />}
         </div>
         <div className="flex items-center gap-2 font-normal">
-          <ExportButton />
+          <ExportAndShareMenu />
           <ProfileButton className="hidden md:block" />
         </div>
       </div>

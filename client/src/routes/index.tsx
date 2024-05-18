@@ -7,6 +7,7 @@ import {
   ApiErrorWatcher,
 } from '~/components/Auth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
+import ShareRoute from './ShareRoute';
 import ChatRoute from './ChatRoute';
 import Search from './Search';
 import Root from './Root';
@@ -30,6 +31,10 @@ export const router = createBrowserRouter([
   {
     path: 'reset-password',
     element: <ResetPassword />,
+  },
+  {
+    path: 'share/:shareId',
+    element: <ShareRoute />,
   },
   {
     element: <AuthLayout />,
