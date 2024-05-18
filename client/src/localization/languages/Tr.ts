@@ -53,6 +53,17 @@ export default {
   com_ui_import_conversation_error: 'Sohbetlerinizi içe aktarırken bir hata oluştu',
   com_ui_confirm_action: 'İşlemi Onayla',
   com_ui_chats: 'sohbetler',
+  com_ui_share: 'Share',
+  com_ui_share_link_to_chat: 'Share link to chat',
+  com_ui_share_error: 'There was an error sharing the chat link',
+  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share_created_message:
+    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  com_ui_share_update_message:
+    'Your name, custom instructions, and any messages you add after sharing stay private.',
+  com_ui_share_updated_message:
+    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete: 'Sil',
   com_ui_delete_conversation: 'Sohbet silinecek?',
   com_ui_delete_conversation_confirm: 'Bu silinecek',
@@ -277,6 +288,12 @@ export default {
   com_nav_export_recursive_or_sequential: 'Yinelemeli mi yoksa sıralı mı?',
   com_nav_export_recursive: 'Yinelemeli',
   com_nav_export_conversation: 'Konuşmayı dışa aktar',
+  com_nav_export: 'Dışa Aktar',
+  com_nav_shared_links: 'Paylaşılan linkler',
+  com_nav_shared_links_manage: 'Ynetmek',
+  com_nav_shared_links_empty: 'Paylaşılan linkleriniz yok.',
+  com_nav_shared_links_name: 'İsim',
+  com_nav_shared_links_date_shared: 'Paylaşılan tarih',
   com_nav_theme: 'Tema',
   com_nav_theme_system: 'Sistem',
   com_nav_theme_dark: 'Koyu',
@@ -509,6 +526,43 @@ export const comparisons = {
   com_ui_chats: {
     english: 'chats',
     translated: 'sohbetler',
+  },
+  com_ui_share: {
+    english: 'Share',
+    translated: 'Share',
+  },
+  com_ui_share_link_to_chat: {
+    english: 'Share link to chat',
+    translated: 'Share link to chat',
+  },
+  com_ui_share_error: {
+    english: 'There was an error sharing the chat link',
+    translated: 'There was an error sharing the chat link',
+  },
+  com_ui_share_create_message: {
+    english: 'Your name and any messages you add after sharing stay private.',
+    translated: 'Your name and any messages you add after sharing stay private.',
+  },
+  com_ui_share_created_message: {
+    english:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_share_update_message: {
+    english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated:
+      'Your name, custom instructions, and any messages you add after sharing stay private.',
+  },
+  com_ui_share_updated_message: {
+    english:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_shared_link_not_found: {
+    english: 'Shared link not found',
+    translated: 'Shared link not found',
   },
   com_ui_delete: {
     english: 'Delete',
@@ -1301,6 +1355,30 @@ export const comparisons = {
   com_nav_export_conversation: {
     english: 'Export conversation',
     translated: 'Konuşmayı dışa aktar',
+  },
+  com_nav_export: {
+    english: 'Export',
+    translated: 'Dışa Aktar',
+  },
+  com_nav_shared_links: {
+    english: 'Shared links',
+    translated: 'Paylaşılan linkler',
+  },
+  com_nav_shared_links_manage: {
+    english: 'Manage',
+    translated: 'Ynetmek',
+  },
+  com_nav_shared_links_empty: {
+    english: 'You have no shared links.',
+    translated: 'Paylaşılan linkleriniz yok.',
+  },
+  com_nav_shared_links_name: {
+    english: 'Name',
+    translated: 'İsim',
+  },
+  com_nav_shared_links_date_shared: {
+    english: 'Date shared',
+    translated: 'Paylaşılan tarih',
   },
   com_nav_theme: {
     english: 'Theme',
