@@ -30,6 +30,17 @@ export default {
   com_ui_entries: 'wpisów',
   com_ui_pay_per_call:
     'Wszystkie rozmowy z AI w jednym miejscu. Płatność za połączenie, a nie za miesiąc',
+  com_ui_share: 'Share',
+  com_ui_share_link_to_chat: 'Share link to chat',
+  com_ui_share_error: 'There was an error sharing the chat link',
+  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share_created_message:
+    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  com_ui_share_update_message:
+    'Your name, custom instructions, and any messages you add after sharing stay private.',
+  com_ui_share_updated_message:
+    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_rename: 'Zmień nazwę',
   com_ui_archive: 'Archiwum',
   com_ui_archive_error: 'Nie udało się archiwizować rozmowy',
@@ -192,6 +203,11 @@ export default {
   com_nav_export_recursive_or_sequential: 'Rekurencyjny czy sekwencyjny?',
   com_nav_export_recursive: 'Rekurencyjny',
   com_nav_export_conversation: 'Eksportuj konwersację',
+  com_nav_shared_links: 'Linki udostępnione',
+  com_nav_shared_links_manage: 'Beheren',
+  com_nav_shared_links_empty: 'U hebt geen gedeeld links.',
+  com_nav_shared_links_name: 'Naam',
+  com_nav_shared_links_date_shared: 'Datum gedeeld',
   com_nav_theme: 'Motyw',
   com_nav_theme_system: 'Domyślny',
   com_nav_theme_dark: 'Ciemny',
@@ -320,6 +336,43 @@ export const comparisons = {
   com_ui_pay_per_call: {
     english: 'All AI conversations in one place. Pay per call and not per month',
     translated: 'Wszystkie rozmowy z AI w jednym miejscu. Płatność za połączenie, a nie za miesiąc',
+  },
+  com_ui_share: {
+    english: 'Share',
+    translated: 'Share',
+  },
+  com_ui_share_link_to_chat: {
+    english: 'Share link to chat',
+    translated: 'Share link to chat',
+  },
+  com_ui_share_error: {
+    english: 'There was an error sharing the chat link',
+    translated: 'There was an error sharing the chat link',
+  },
+  com_ui_share_create_message: {
+    english: 'Your name and any messages you add after sharing stay private.',
+    translated: 'Your name and any messages you add after sharing stay private.',
+  },
+  com_ui_share_created_message: {
+    english:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_share_update_message: {
+    english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated:
+      'Your name, custom instructions, and any messages you add after sharing stay private.',
+  },
+  com_ui_share_updated_message: {
+    english:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_shared_link_not_found: {
+    english: 'Shared link not found',
+    translated: 'Shared link not found',
   },
   com_ui_rename: {
     english: 'Rename',
@@ -897,6 +950,26 @@ export const comparisons = {
   com_nav_export_conversation: {
     english: 'Export conversation',
     translated: 'Eksportuj konwersację',
+  },
+  com_nav_shared_links: {
+    english: 'Shared links',
+    translated: 'Linki udostępnione',
+  },
+  com_nav_shared_links_manage: {
+    english: 'Manage',
+    translated: 'Beheren',
+  },
+  com_nav_shared_links_empty: {
+    english: 'You have no shared links.',
+    translated: 'U hebt geen gedeeld links.',
+  },
+  com_nav_shared_links_name: {
+    english: 'Name',
+    translated: 'Naam',
+  },
+  com_nav_shared_links_date_shared: {
+    english: 'Date shared',
+    translated: 'Datum gedeeld',
   },
   com_nav_theme: {
     english: 'Theme',
