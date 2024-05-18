@@ -1014,7 +1014,7 @@ ${convo}
         context,
         model: this.modelOptions.model,
         conversationId: this.conversationId,
-        user: this.user ?? this.options.req.user.id,
+        user: this.user ?? this.options.req.user?.id,
         endpointTokenConfig: this.options.endpointTokenConfig,
       },
       { promptTokens, completionTokens },

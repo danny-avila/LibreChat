@@ -33,8 +33,8 @@ describe('initializeClient', () => {
   });
 
   test('initializes OpenAI client with default API key and URL', async () => {
-    process.env.ASSISTANTS_API_KEY = 'default-api-key';
-    process.env.ASSISTANTS_BASE_URL = 'https://default.api.url';
+    process.env.AZURE_ASSISTANTS_API_KEY = 'default-api-key';
+    process.env.AZURE_ASSISTANTS_BASE_URL = 'https://default.api.url';
 
     // Assuming 'isUserProvided' to return false for this test case
     jest.mock('~/server/utils', () => ({
@@ -51,8 +51,8 @@ describe('initializeClient', () => {
   });
 
   test('initializes OpenAI client with user-provided API key and URL', async () => {
-    process.env.ASSISTANTS_API_KEY = 'user_provided';
-    process.env.ASSISTANTS_BASE_URL = 'user_provided';
+    process.env.AZURE_ASSISTANTS_API_KEY = 'user_provided';
+    process.env.AZURE_ASSISTANTS_BASE_URL = 'user_provided';
 
     getUserKeyValues.mockResolvedValue({ apiKey: 'user-api-key', baseURL: 'https://user.api.url' });
     getUserKeyExpiry.mockResolvedValue(isoString);
@@ -67,7 +67,7 @@ describe('initializeClient', () => {
   });
 
   test('throws error for invalid JSON in user-provided values', async () => {
-    process.env.ASSISTANTS_API_KEY = 'user_provided';
+    process.env.AZURE_ASSISTANTS_API_KEY = 'user_provided';
     getUserKey.mockResolvedValue('invalid-json');
     getUserKeyExpiry.mockResolvedValue(isoString);
     getUserKeyValues.mockImplementation(() => {
@@ -91,7 +91,7 @@ describe('initializeClient', () => {
   });
 
   test('throws error if API key is not provided', async () => {
-    delete process.env.ASSISTANTS_API_KEY; // Simulate missing API key
+    delete process.env.AZURE_ASSISTANTS_API_KEY; // Simulate missing API key
 
     const req = { user: { id: 'user123' }, app };
     const res = {};
@@ -100,7 +100,7 @@ describe('initializeClient', () => {
   });
 
   test('initializes OpenAI client with proxy configuration', async () => {
-    process.env.ASSISTANTS_API_KEY = 'test-key';
+    process.env.AZURE_ASSISTANTS_API_KEY = 'test-key';
     process.env.PROXY = 'http://proxy.server';
 
     const req = { user: { id: 'user123' }, app };
