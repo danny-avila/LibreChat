@@ -3,11 +3,11 @@ const {
   Constants,
   RunStatus,
   CacheKeys,
-  FileSources,
   ContentTypes,
   EModelEndpoint,
   ViolationTypes,
   ImageVisionTool,
+  checkOpenAIStorage,
   AssistantStreamEvents,
 } = require('librechat-data-provider');
 const {
@@ -361,10 +361,7 @@ const chatV2 = async (req, res) => {
 
       /** @type {MongoFile[]} */
       const attachments = await req.body.endpointOption.attachments;
-      if (
-        attachments &&
-        attachments.every((attachment) => attachment.source === FileSources.openai)
-      ) {
+      if (attachments && attachments.every((attachment) => checkOpenAIStorage(attachment.source))) {
         return;
       }
 
@@ -422,7 +419,7 @@ const chatV2 = async (req, res) => {
 
       if (processedFiles) {
         for (const file of processedFiles) {
-          if (file.source !== FileSources.openai) {
+          if (!checkOpenAIStorage(file.source)) {
             attachedFileIds.delete(file.file_id);
             const index = file_ids.indexOf(file.file_id);
             if (index > -1) {

@@ -58,23 +58,23 @@ export default function useMentions({ assistantMap }: { assistantMap: TAssistant
   const assistantListMap = useMemo(
     () => ({
       [EModelEndpoint.assistants]: listMap[EModelEndpoint.assistants]
-        .map(
+        ?.map(
           assistantMapFn({
             endpoint: EModelEndpoint.assistants,
             assistantMap,
             endpointsConfig,
           }),
         )
-        .filter(Boolean),
+        ?.filter(Boolean),
       [EModelEndpoint.azureAssistants]: listMap[EModelEndpoint.azureAssistants]
-        .map(
+        ?.map(
           assistantMapFn({
             endpoint: EModelEndpoint.azureAssistants,
             assistantMap,
             endpointsConfig,
           }),
         )
-        .filter(Boolean),
+        ?.filter(Boolean),
     }),
     [listMap, assistantMap, endpointsConfig],
   );

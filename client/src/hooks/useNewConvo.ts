@@ -4,6 +4,7 @@ import {
   useGetStartupConfig,
   useGetEndpointsQuery,
 } from 'librechat-data-provider/react-query';
+import { useNavigate } from 'react-router-dom';
 import { FileSources, LocalStorageKeys, isAssistantsEndpoint } from 'librechat-data-provider';
 import {
   useRecoilState,
@@ -30,12 +31,12 @@ import {
 } from '~/utils';
 import useAssistantListMap from './Assistants/useAssistantListMap';
 import { useDeleteFilesMutation } from '~/data-provider';
-import useOriginNavigate from './useOriginNavigate';
+
 import { mainTextareaId } from '~/common';
 import store from '~/store';
 
 const useNewConvo = (index = 0) => {
-  const navigate = useOriginNavigate();
+  const navigate = useNavigate();
   const { data: startupConfig } = useGetStartupConfig();
   const defaultPreset = useRecoilValue(store.defaultPreset);
   const { setConversation } = store.useCreateConversationAtom(index);
@@ -147,7 +148,7 @@ const useNewConvo = (index = 0) => {
           if (appTitle) {
             document.title = appTitle;
           }
-          navigate('new');
+          navigate('/c/new');
         }
 
         clearTimeout(timeoutIdRef.current);

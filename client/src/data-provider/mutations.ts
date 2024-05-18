@@ -1,4 +1,8 @@
-import { Capabilities, LocalStorageKeys, defaultAssistantsVersion } from 'librechat-data-provider';
+import {
+  EToolResources,
+  LocalStorageKeys,
+  defaultAssistantsVersion,
+} from 'librechat-data-provider';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
@@ -420,7 +424,7 @@ export const useUploadFileMutation = (
               if (!tool_resource) {
                 update['file_ids'] = [...assistant.file_ids, data.file_id];
               }
-              if (tool_resource === Capabilities.code_interpreter) {
+              if (tool_resource === EToolResources.code_interpreter) {
                 const prevResources = assistant.tool_resources ?? {};
                 const prevResource = assistant.tool_resources?.[tool_resource as string] ?? {
                   file_ids: [],
@@ -455,7 +459,8 @@ export const useDeleteFilesMutation = (
   const queryClient = useQueryClient();
   const { onSuccess, ...options } = _options || {};
   return useMutation([MutationKeys.fileDelete], {
-    mutationFn: (body: t.DeleteFilesBody) => dataService.deleteFiles(body.files, body.assistant_id),
+    mutationFn: (body: t.DeleteFilesBody) =>
+      dataService.deleteFiles(body.files, body.assistant_id, body.tool_resource),
     ...(options || {}),
     onSuccess: (data, ...args) => {
       queryClient.setQueryData<t.TFile[] | undefined>([QueryKeys.files], (cachefiles) => {

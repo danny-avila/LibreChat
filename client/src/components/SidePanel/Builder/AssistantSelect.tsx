@@ -4,6 +4,7 @@ import {
   Tools,
   FileSources,
   Capabilities,
+  EModelEndpoint,
   LocalStorageKeys,
   isImageVisionTool,
   defaultAssistantFormValues,
@@ -52,6 +53,8 @@ export default function AssistantSelect({
   const assistants = useListAssistantsQuery(endpoint, undefined, {
     select: (res) =>
       res.data.map((_assistant) => {
+        const source =
+          endpoint === EModelEndpoint.assistants ? FileSources.openai : FileSources.azure;
         const assistant = {
           ..._assistant,
           label: _assistant?.name ?? '',
@@ -77,7 +80,7 @@ export default function AssistantSelect({
                 size: file.bytes,
                 preview: file.filepath,
                 progress: 1,
-                source: FileSources.openai,
+                source,
               },
             ]);
           } else {
@@ -90,7 +93,7 @@ export default function AssistantSelect({
                 size: 1,
                 progress: 1,
                 filepath: endpoint,
-                source: FileSources.openai,
+                source,
               },
             ]);
           }

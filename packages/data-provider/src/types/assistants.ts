@@ -16,6 +16,11 @@ export enum Tools {
   function = 'function',
 }
 
+export enum EToolResources {
+  code_interpreter = 'code_interpreter',
+  file_search = 'file_search',
+}
+
 export type Tool = {
   [type: string]: Tools;
 };
@@ -94,6 +99,7 @@ export type AssistantUpdateParams = {
   metadata?: Metadata | null;
   name?: string | null;
   tools?: Array<FunctionTool | string>;
+  tool_resources?: ToolResources;
   endpoint: AssistantsEndpoint;
 };
 

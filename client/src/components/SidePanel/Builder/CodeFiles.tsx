@@ -1,5 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
-import { mergeFileConfig, fileConfig as defaultFileConfig } from 'librechat-data-provider';
+import {
+  EToolResources,
+  mergeFileConfig,
+  fileConfig as defaultFileConfig,
+} from 'librechat-data-provider';
 import type { AssistantsEndpoint } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
@@ -8,17 +12,17 @@ import { useFileHandling } from '~/hooks/Files';
 import useLocalize from '~/hooks/useLocalize';
 import { useChatContext } from '~/Providers';
 
-export default function Knowledge({
+const tool_resource = EToolResources.code_interpreter;
+
+export default function CodeFiles({
   endpoint,
   assistant_id,
   files: _files,
-  tool_resource,
 }: {
   version: number | string;
   endpoint: AssistantsEndpoint;
   assistant_id: string;
   files?: [string, ExtendedFile][];
-  tool_resource?: string;
 }) {
   const localize = useLocalize();
   const { setFilesLoading } = useChatContext();
@@ -57,13 +61,14 @@ export default function Knowledge({
     <div className={'mb-2'}>
       <div className="flex flex-col gap-4">
         <div className="text-token-text-tertiary rounded-lg text-xs">
-          {assistant_id ? localize('com_assistants_knowledge_info') : ''}
+          {localize('com_assistants_code_interpreter_files')}
         </div>
         <FileRow
           files={files}
           setFiles={setFiles}
-          setFilesLoading={setFilesLoading}
           assistant_id={assistant_id}
+          tool_resource={tool_resource}
+          setFilesLoading={setFilesLoading}
           Wrapper={({ children }) => <div className="flex flex-wrap gap-2">{children}</div>}
         />
         <div>

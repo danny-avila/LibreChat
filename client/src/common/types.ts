@@ -326,6 +326,7 @@ export type IconProps = Pick<TMessage, 'isCreatedByUser' | 'model'> &
     iconURL?: string;
     message?: boolean;
     className?: string;
+    iconClassName?: string;
     endpoint?: EModelEndpoint | string | null;
     endpointType?: EModelEndpoint | null;
     assistantName?: string;

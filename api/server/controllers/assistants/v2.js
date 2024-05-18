@@ -1,3 +1,4 @@
+const { ToolCallTypes } = require('librechat-data-provider');
 const { validateAndUpdateTool } = require('~/server/services/ActionService');
 const { getOpenAIClient } = require('./helpers');
 const { logger } = require('~/config');
@@ -54,11 +55,16 @@ const createAssistant = async (req, res) => {
 const updateAssistant = async ({ req, openai, assistant_id, updateData }) => {
   const tools = [];
 
+  let hasFileSearch = false;
   for (const tool of updateData.tools ?? []) {
     let actualTool = typeof tool === 'string' ? req.app.locals.availableTools[tool] : tool;
 
     if (!actualTool) {
       continue;
+    }
+
+    if (actualTool.type === ToolCallTypes.FILE_SEARCH) {
+      hasFileSearch = true;
     }
 
     if (!actualTool.function) {
@@ -70,6 +76,20 @@ const updateAssistant = async ({ req, openai, assistant_id, updateData }) => {
     if (updatedTool) {
       tools.push(updatedTool);
     }
+  }
+
+  if (hasFileSearch && !updateData.tool_resources) {
+    const assistant = await openai.beta.assistants.retrieve(assistant_id);
+    updateData.tool_resources = assistant.tool_resources ?? null;
+  }
+
+  if (hasFileSearch && !updateData.tool_resources?.file_search) {
+    updateData.tool_resources = {
+      ...(updateData.tool_resources ?? {}),
+      file_search: {
+        vector_store_ids: [],
+      },
+    };
   }
 
   updateData.tools = tools;

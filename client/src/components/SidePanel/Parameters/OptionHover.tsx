@@ -7,11 +7,21 @@ type TOptionHoverProps = {
   description: string;
   langCode?: boolean;
   sideOffset?: number;
+  disabled?: boolean;
   side: ESide;
 };
 
-function OptionHover({ side, description, langCode, sideOffset = 30 }: TOptionHoverProps) {
+function OptionHover({
+  side,
+  description,
+  disabled,
+  langCode,
+  sideOffset = 30,
+}: TOptionHoverProps) {
   const localize = useLocalize();
+  if (disabled) {
+    return null;
+  }
   const text = langCode ? localize(description) : description;
   return (
     <HoverCardPortal>

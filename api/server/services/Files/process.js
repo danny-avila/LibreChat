@@ -10,20 +10,18 @@ const {
   EModelEndpoint,
   mergeFileConfig,
   hostImageIdSuffix,
+  checkOpenAIStorage,
   hostImageNamePrefix,
   isAssistantsEndpoint,
 } = require('librechat-data-provider');
+const { addResourceFileId, deleteResourceFileId } = require('~/server/controllers/assistants/v2');
 const { convertImage, resizeAndConvert } = require('~/server/services/Files/images');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { createFile, updateFileUsage, deleteFiles } = require('~/models/File');
-const { addResourceFileId } = require('~/server/controllers/assistants/v2');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
 const { logger } = require('~/config');
-
-const checkOpenAIStorage = (source) =>
-  source === FileSources.openai || source === FileSources.azure;
 
 const processFiles = async (files) => {
   const promises = [];
@@ -39,13 +37,15 @@ const processFiles = async (files) => {
 /**
  * Enqueues the delete operation to the leaky bucket queue if necessary, or adds it directly to promises.
  *
- * @param {Express.Request} req - The express request object.
- * @param {MongoFile} file - The file object to delete.
- * @param {Function} deleteFile - The delete file function.
- * @param {Promise[]} promises - The array of promises to await.
- * @param {OpenAI | undefined} [openai] - If an OpenAI file, the initialized OpenAI client.
+ * @param {object} params - The passed parameters.
+ * @param {Express.Request} params.req - The express request object.
+ * @param {MongoFile} params.file - The file object to delete.
+ * @param {Function} params.deleteFile - The delete file function.
+ * @param {Promise[]} params.promises - The array of promises to await.
+ * @param {string[]} params.resolvedFileIds - The array of promises to await.
+ * @param {OpenAI | undefined} [params.openai] - If an OpenAI file, the initialized OpenAI client.
  */
-function enqueueDeleteOperation(req, file, deleteFile, promises, openai) {
+function enqueueDeleteOperation({ req, file, deleteFile, promises, resolvedFileIds, openai }) {
   if (checkOpenAIStorage(file.source)) {
     // Enqueue to leaky bucket
     promises.push(
@@ -58,6 +58,7 @@ function enqueueDeleteOperation(req, file, deleteFile, promises, openai) {
               logger.error('Error deleting file from OpenAI source', err);
               reject(err);
             } else {
+              resolvedFileIds.push(file.file_id);
               resolve(result);
             }
           },
@@ -67,10 +68,12 @@ function enqueueDeleteOperation(req, file, deleteFile, promises, openai) {
   } else {
     // Add directly to promises
     promises.push(
-      deleteFile(req, file).catch((err) => {
-        logger.error('Error deleting file', err);
-        return Promise.reject(err);
-      }),
+      deleteFile(req, file)
+        .then(() => resolvedFileIds.push(file.file_id))
+        .catch((err) => {
+          logger.error('Error deleting file', err);
+          return Promise.reject(err);
+        }),
     );
   }
 }
@@ -85,35 +88,71 @@ function enqueueDeleteOperation(req, file, deleteFile, promises, openai) {
  * @param {Express.Request} params.req - The express request object.
  * @param {DeleteFilesBody} params.req.body - The request body.
  * @param {string} [params.req.body.assistant_id] - The assistant ID if file uploaded is associated to an assistant.
+ * @param {string} [params.req.body.tool_resource] - The tool resource if assistant file uploaded is associated to a tool resource.
  *
  * @returns {Promise<void>}
  */
 const processDeleteRequest = async ({ req, files }) => {
-  const file_ids = files.map((file) => file.file_id);
-
+  const resolvedFileIds = [];
   const deletionMethods = {};
   const promises = [];
-  promises.push(deleteFiles(file_ids));
 
-  /** @type {OpenAI | undefined} */
-  let openai;
-  if (req.body.assistant_id) {
-    ({ openai } = await getOpenAIClient({ req }));
+  /** @type {Record<string, OpenAI | undefined>} */
+  const client = { [FileSources.openai]: undefined, [FileSources.azure]: undefined };
+  const initializeClients = async () => {
+    const openAIClient = await getOpenAIClient({
+      req,
+      overrideEndpoint: EModelEndpoint.assistants,
+    });
+    client[FileSources.openai] = openAIClient.openai;
+
+    if (!req.app.locals[EModelEndpoint.azureOpenAI]?.assistants) {
+      return;
+    }
+
+    const azureClient = await getOpenAIClient({
+      req,
+      overrideEndpoint: EModelEndpoint.azureAssistants,
+    });
+    client[FileSources.azure] = azureClient.openai;
+  };
+
+  if (req.body.assistant_id !== undefined) {
+    await initializeClients();
   }
 
   for (const file of files) {
     const source = file.source ?? FileSources.local;
 
-    if (checkOpenAIStorage(source) && !openai) {
-      ({ openai } = await getOpenAIClient({ req }));
+    if (checkOpenAIStorage(source) && !client[source]) {
+      await initializeClients();
     }
 
-    if (req.body.assistant_id) {
+    const openai = client[source];
+
+    if (req.body.assistant_id && req.body.tool_resource) {
+      promises.push(
+        deleteResourceFileId({
+          req,
+          openai,
+          file_id: file.file_id,
+          assistant_id: req.body.assistant_id,
+          tool_resource: req.body.tool_resource,
+        }),
+      );
+    } else if (req.body.assistant_id) {
       promises.push(openai.beta.assistants.files.del(req.body.assistant_id, file.file_id));
     }
 
     if (deletionMethods[source]) {
-      enqueueDeleteOperation(req, file, deletionMethods[source], promises, openai);
+      enqueueDeleteOperation({
+        req,
+        file,
+        deleteFile: deletionMethods[source],
+        promises,
+        resolvedFileIds,
+        openai,
+      });
       continue;
     }
 
@@ -123,10 +162,11 @@ const processDeleteRequest = async ({ req, files }) => {
     }
 
     deletionMethods[source] = deleteFile;
-    enqueueDeleteOperation(req, file, deleteFile, promises, openai);
+    enqueueDeleteOperation({ req, file, deleteFile, promises, resolvedFileIds, openai });
   }
 
   await Promise.allSettled(promises);
+  await deleteFiles(resolvedFileIds);
 };
 
 /**
@@ -381,7 +421,10 @@ const processOpenAIFile = async ({
     originalName ? `/${originalName}` : ''
   }`;
   const type = mime.getType(originalName ?? file_id);
-
+  const source =
+    openai.req.body.endpoint === EModelEndpoint.azureAssistants
+      ? FileSources.azure
+      : FileSources.openai;
   const file = {
     ..._file,
     type,
@@ -390,7 +433,7 @@ const processOpenAIFile = async ({
     usage: 1,
     user: userId,
     context: _file.purpose,
-    source: FileSources.openai,
+    source,
     model: openai.req.body.model,
     filename: originalName ?? file_id,
   };
@@ -435,12 +478,14 @@ const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileEx
     filename: `${hostImageNamePrefix}${filename}`,
   };
   createFile(file, true);
+  const source =
+    req.body.endpoint === EModelEndpoint.azureAssistants ? FileSources.azure : FileSources.openai;
   createFile(
     {
       ...file,
       file_id,
       filename,
-      source: FileSources.openai,
+      source,
       type: mime.getType(fileExt),
     },
     true,

@@ -334,9 +334,10 @@ export const getFileDownload = async (userId: string, file_id: string): Promise<
 export const deleteFiles = async (
   files: f.BatchFile[],
   assistant_id?: string,
+  tool_resource?: a.EToolResources,
 ): Promise<f.DeleteFilesResponse> =>
   request.deleteWithOptions(endpoints.files(), {
-    data: { files, assistant_id },
+    data: { files, assistant_id, tool_resource },
   });
 
 /* actions */

@@ -63,7 +63,6 @@ export default function Code({
           version={version}
           endpoint={endpoint}
           files={files}
-          tool_resource={Capabilities.code_interpreter}
         />
       )}
     </>

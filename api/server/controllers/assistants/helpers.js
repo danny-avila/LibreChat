@@ -1,9 +1,4 @@
-const {
-  EModelEndpoint,
-  FileSources,
-  CacheKeys,
-  defaultAssistantsVersion,
-} = require('librechat-data-provider');
+const { EModelEndpoint, CacheKeys, defaultAssistantsVersion } = require('librechat-data-provider');
 const {
   initializeClient: initAzureClient,
 } = require('~/server/services/Endpoints/azureAssistants');
@@ -121,13 +116,8 @@ const listAssistantsForAzure = async ({ req, res, version, azureConfig = {}, que
   };
 };
 
-async function getOpenAIClient({ req, res, endpointOption, initAppClient }) {
-  let endpoint = req.body.endpoint ?? req.query.endpoint;
-  if (!endpoint && req.baseUrl.includes('files') && req.body.files) {
-    const source = req.body.files[0]?.source;
-    endpoint =
-      source === FileSources.openai ? EModelEndpoint.assistants : EModelEndpoint.azureAssistants;
-  }
+async function getOpenAIClient({ req, res, endpointOption, initAppClient, overrideEndpoint }) {
+  let endpoint = overrideEndpoint ?? req.body.endpoint ?? req.query.endpoint;
   const version = await getCurrentVersion(req, endpoint);
   if (!endpoint) {
     throw new Error(`[${req.baseUrl}] Endpoint is required`);
