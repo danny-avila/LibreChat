@@ -1,4 +1,4 @@
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import UnknownIcon from '~/components/Chat/Menus/Endpoints/UnknownIcon';
 import {
   Plugin,
@@ -27,35 +27,38 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
     assistantName,
   } = props;
 
+  const assistantsIcon = {
+    icon: props.iconURL ? (
+      <div className="relative flex h-6 w-6 items-center justify-center">
+        <div
+          title={assistantName}
+          style={{
+            width: size,
+            height: size,
+          }}
+          className={cn('overflow-hidden rounded-full', props.className ?? '')}
+        >
+          <img
+            className="shadow-stroke h-full w-full object-cover"
+            src={props.iconURL}
+            alt={assistantName}
+            style={{ height: '80', width: '80' }}
+          />
+        </div>
+      </div>
+    ) : (
+      <div className="h-6 w-6">
+        <div className="shadow-stroke flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
+          <AssistantIcon className="h-2/3 w-2/3 text-gray-400" />
+        </div>
+      </div>
+    ),
+    name: endpoint,
+  };
+
   const endpointIcons = {
-    [EModelEndpoint.assistants]: {
-      icon: props.iconURL ? (
-        <div className="relative flex h-6 w-6 items-center justify-center">
-          <div
-            title={assistantName}
-            style={{
-              width: size,
-              height: size,
-            }}
-            className={cn('overflow-hidden rounded-full', props.className ?? '')}
-          >
-            <img
-              className="shadow-stroke h-full w-full object-cover"
-              src={props.iconURL}
-              alt={assistantName}
-              style={{ height: '80', width: '80' }}
-            />
-          </div>
-        </div>
-      ) : (
-        <div className="h-6 w-6">
-          <div className="shadow-stroke flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-            <AssistantIcon className="h-2/3 w-2/3 text-gray-400" />
-          </div>
-        </div>
-      ),
-      name: endpoint,
-    },
+    [EModelEndpoint.assistants]: assistantsIcon,
+    [EModelEndpoint.azureAssistants]: assistantsIcon,
     [EModelEndpoint.azureOpenAI]: {
       icon: <AzureMinimalIcon size={size * 0.5555555555555556} />,
       bg: 'linear-gradient(0.375turn, #61bde2, #4389d0)',
@@ -136,7 +139,7 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
     ({ icon, bg, name } = endpointIcons[iconURL]);
   }
 
-  if (endpoint === EModelEndpoint.assistants) {
+  if (isAssistantsEndpoint(endpoint)) {
     return icon;
   }
 

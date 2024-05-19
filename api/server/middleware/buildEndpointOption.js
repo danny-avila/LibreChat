@@ -1,5 +1,6 @@
 const { parseConvo, EModelEndpoint } = require('librechat-data-provider');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
+const azureAssistants = require('~/server/services/Endpoints/azureAssistants');
 const assistants = require('~/server/services/Endpoints/assistants');
 const gptPlugins = require('~/server/services/Endpoints/gptPlugins');
 const { processFiles } = require('~/server/services/Files/process');
@@ -18,6 +19,7 @@ const buildFunction = {
   [EModelEndpoint.anthropic]: anthropic.buildOptions,
   [EModelEndpoint.gptPlugins]: gptPlugins.buildOptions,
   [EModelEndpoint.assistants]: assistants.buildOptions,
+  [EModelEndpoint.azureAssistants]: azureAssistants.buildOptions,
 };
 
 async function buildEndpointOption(req, res, next) {
