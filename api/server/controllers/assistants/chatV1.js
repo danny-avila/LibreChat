@@ -43,7 +43,7 @@ const ten_minutes = 1000 * 60 * 10;
  * @param {Express.Response} res - The response object, used to send back a response.
  * @returns {void}
  */
-const chatV2 = async (req, res) => {
+const chatV1 = async (req, res) => {
   logger.debug('[/assistants/chat/] req.body', req.body);
 
   const {
@@ -647,4 +647,4 @@ const chatV2 = async (req, res) => {
   }
 };
 
-module.exports = chatV2;
+module.exports = chatV1;

@@ -17,7 +17,7 @@ const createAssistant = async (req, res) => {
   try {
     const { openai } = await getOpenAIClient({ req, res });
 
-    const { tools = [], endpoint: _e, ...assistantData } = req.body;
+    const { tools = [], endpoint, ...assistantData } = req.body;
     assistantData.tools = tools
       .map((tool) => {
         if (typeof tool !== 'string') {
@@ -33,6 +33,11 @@ const createAssistant = async (req, res) => {
       azureModelIdentifier = assistantData.model;
       assistantData.model = openai.locals.azureOptions.azureOpenAIApiDeploymentName;
     }
+
+    assistantData.metadata = {
+      author: req.user.id,
+      endpoint,
+    };
 
     const assistant = await openai.beta.assistants.create(assistantData);
     if (azureModelIdentifier) {
