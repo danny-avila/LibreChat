@@ -1,7 +1,15 @@
 const WebSocket = require('ws');
 
 const ELEVENLABS_API_KEY = 'a495399653cc5824ba1e41d914473e07';
-const VOICE_ID = '1RVpBInY9YUYMLSUQReV';
+const VOICE_ID_1 = '1RVpBInY9YUYMLSUQReV';
+const VOICE_ID_2 = 'pNInz6obpgDQGcFmaJgB';
+const VOICE_ID_3 = 'zvBAbtHEaG9XNBKqbWMi ';
+
+function getRandomVoiceId() {
+  const voiceIds = [VOICE_ID_1, VOICE_ID_2, VOICE_ID_3];
+  const randomIndex = Math.floor(Math.random() * voiceIds.length);
+  return voiceIds[randomIndex];
+}
 
 /**
  * @typedef {Object} VoiceSettings
@@ -37,6 +45,50 @@ const VOICE_ID = '1RVpBInY9YUYMLSUQReV';
  */
 
 /**
+ *
+ * @param {Record<string, unknown | undefined>} parameters
+ * @returns
+ */
+function assembleQuery(parameters) {
+  let query = '';
+  let hasQuestionMark = false;
+
+  for (const [key, value] of Object.entries(parameters)) {
+    if (value == null) {
+      continue;
+    }
+
+    if (!hasQuestionMark) {
+      query += '?';
+      hasQuestionMark = true;
+    } else {
+      query += '&';
+    }
+
+    query += `${key}=${value}`;
+  }
+
+  return query;
+}
+
+/**
+ *
+ * @param {string} text
+ * @param {string[] | undefined} [separators]
+ * @returns
+ */
+function findLastSeparatorIndex(text, separators = ['. ', '? ', '! ']) {
+  let lastIndex = -1;
+  for (const separator of separators) {
+    const index = text.lastIndexOf(separator);
+    if (index > lastIndex) {
+      lastIndex = index;
+    }
+  }
+  return lastIndex;
+}
+
+/**
  * Input stream text to speech
  * @param {Express.Response} res
  * @param {AsyncIterable<string>} textStream
@@ -45,7 +97,14 @@ const VOICE_ID = '1RVpBInY9YUYMLSUQReV';
  */
 function inputStreamTextToSpeech(res, textStream, callback) {
   const model = 'eleven_turbo_v2';
-  const wsUrl = `wss://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}/stream-input?model_id=${model}`;
+  const wsUrl = `wss://api.elevenlabs.io/v1/text-to-speech/${getRandomVoiceId()}/stream-input${assembleQuery(
+    {
+      model_id: model,
+      // optimize_streaming_latency: this.settings.optimizeStreamingLatency,
+      optimize_streaming_latency: 1,
+      // output_format: this.settings.outputFormat,
+    },
+  )}`;
   const socket = new WebSocket(wsUrl);
 
   socket.onopen = function () {
@@ -56,6 +115,7 @@ function inputStreamTextToSpeech(res, textStream, callback) {
         similarity_boost: 0.8,
       },
       xi_api_key: ELEVENLABS_API_KEY,
+      generation_config: { chunk_length_schedule: [50, 90, 120, 150, 200] },
     };
 
     socket.send(JSON.stringify(streamStart));
@@ -63,16 +123,45 @@ function inputStreamTextToSpeech(res, textStream, callback) {
     // send stream until done
     const streamComplete = new Promise((resolve, reject) => {
       (async () => {
-        for await (const message of textStream) {
-          const request = {
-            text: message,
-            try_trigger_generation: true,
-          };
-          const shouldContinue = await callback(message);
-          socket.send(JSON.stringify(request));
+        let textBuffer = '';
+        let shouldContinue = true;
+        for await (const textDelta of textStream) {
+          textBuffer += textDelta;
+
+          // using ". " as separator: sending in full sentences improves the quality
+          // of the audio output significantly.
+          const separatorIndex = findLastSeparatorIndex(textBuffer);
+
+          // Callback for textStream (will return false if signal is aborted)
+          shouldContinue = await callback(textDelta);
+
+          if (separatorIndex === -1) {
+            continue;
+          }
+
           if (!shouldContinue) {
             break;
           }
+
+          const textToProcess = textBuffer.slice(0, separatorIndex);
+          textBuffer = textBuffer.slice(separatorIndex + 1);
+
+          const request = {
+            text: textToProcess,
+            try_trigger_generation: true,
+          };
+
+          socket.send(JSON.stringify(request));
+        }
+
+        // send remaining text:
+        if (shouldContinue && textBuffer.length > 0) {
+          socket.send(
+            JSON.stringify({
+              text: `${textBuffer} `, // append space
+              try_trigger_generation: true,
+            }),
+          );
         }
       })()
         .then(resolve)

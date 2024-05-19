@@ -25,6 +25,7 @@ import type {
   TSubmission,
   ConversationData,
 } from 'librechat-data-provider';
+import { MediaSourceAppender } from '~/hooks/Audio/MediaSourceAppender';
 import {
   addConversation,
   deleteConversation,
@@ -61,6 +62,7 @@ type TSyncData = {
 export default function useSSE(submission: TSubmission | null, index = 0) {
   const queryClient = useQueryClient();
   const genTitle = useGenTitleMutation();
+  const setAudioUrl = useSetRecoilState(store.audioURLFamily(index));
 
   const { conversationId: paramId } = useParams();
   const { token, isAuthenticated } = useAuthContext();
@@ -524,6 +526,9 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     });
 
+    const audioSource = new MediaSourceAppender('audio/mpeg');
+    setAudioUrl(audioSource.mediaSourceUrl);
+
     events.onmessage = (e: MessageEvent) => {
       const data = JSON.parse(e.data);
 
@@ -560,45 +565,14 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       }
     };
 
-    let audioContext: AudioContext | null = null;
-
     events.onaudio = (e: MessageEvent) => {
       const data = JSON.parse(e.data);
       if (data.audio) {
-        console.log('audio', data.audio);
-        // Create a new AudioContext if it doesn't exist
-        if (!audioContext) {
-          audioContext = new AudioContext();
-        }
-
-        // Decode the base64-encoded audio data
-        const audioData = atob(data.audio);
-        const arrayBuffer = new ArrayBuffer(audioData.length);
-        const uint8Array = new Uint8Array(arrayBuffer);
-        for (let i = 0; i < audioData.length; i++) {
-          uint8Array[i] = audioData.charCodeAt(i);
-        }
-
-        // Create a Blob from the Uint8Array
-        const blob = new Blob([uint8Array], { type: 'audio/wav' });
-
-        // Create a URL for the Blob
-        const url = URL.createObjectURL(blob);
-
-        // Load the audio data from the URL
-        const audio = new Audio(url);
-
-        // Play the audio when it's loaded
-        audio.oncanplaythrough = () => {
-          audio.play();
-        };
-
-        // Clean up the URL when the audio is done playing
-        audio.onended = () => {
-          URL.revokeObjectURL(url);
-        };
+        audioSource.addBase64Data(data.audio);
       }
     };
+
+    events.onend = () => audioSource.close();
 
     events.onopen = () => console.log('connection is opened');
 

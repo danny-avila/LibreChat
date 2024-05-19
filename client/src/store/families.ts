@@ -9,7 +9,7 @@ import {
 } from 'recoil';
 import { LocalStorageKeys } from 'librechat-data-provider';
 import type { TMessage, TPreset, TConversation, TSubmission } from 'librechat-data-provider';
-import type { TOptionSettings, ExtendedFile } from '~/common';
+import type { TOptionSettings, ExtendedFile, AudioChunk } from '~/common';
 import { storeEndpointSettings } from '~/utils';
 import { useEffect } from 'react';
 
@@ -117,6 +117,11 @@ const showMentionPopoverFamily = atomFamily<boolean, string | number | null>({
   default: false,
 });
 
+const audioURLFamily = atomFamily<string | null, string | number | null>({
+  key: 'audioURLByIndex',
+  default: null,
+});
+
 const latestMessageFamily = atomFamily<TMessage | null, string | number | null>({
   key: 'latestMessageByIndex',
   default: null,
@@ -177,4 +182,5 @@ export default {
   useClearConvoState,
   useCreateConversationAtom,
   showMentionPopoverFamily,
+  audioURLFamily,
 };

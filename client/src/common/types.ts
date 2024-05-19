@@ -19,6 +19,21 @@ import type {
 import type { UseMutationResult } from '@tanstack/react-query';
 import type { LucideIcon } from 'lucide-react';
 
+export type AudioChunk = {
+  audio: string;
+  isFinal: boolean;
+  alignment: {
+    char_start_times_ms: number[];
+    chars_durations_ms: number[];
+    chars: string[];
+  };
+  normalizedAlignment: {
+    char_start_times_ms: number[];
+    chars_durations_ms: number[];
+    chars: string[];
+  };
+};
+
 export type TPluginMap = Record<string, TPlugin>;
 
 export type GenericSetter<T> = (value: T | ((currentValue: T) => T)) => void;

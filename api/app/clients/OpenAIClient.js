@@ -1236,8 +1236,10 @@ ${convo}
             llmMessageStream,
             tokenStreamCallback,
           )) {
-            const { audio: _a, ...rest } = audio;
-            console.log('audio metadata', rest);
+            const { audio: _a } = audio;
+            // const { audio: _a, ...rest } = audio;
+            console.log('audio metadata');
+            // console.log('audio metadata', rest);
           }
         } else {
           for await (const token of stream) {

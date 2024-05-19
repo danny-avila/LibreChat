@@ -1,5 +1,5 @@
-import { useRecoilState } from 'recoil';
 import { useForm } from 'react-hook-form';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import { memo, useCallback, useRef, useMemo, useEffect } from 'react';
 import {
   supportsFiles,
@@ -23,6 +23,7 @@ import store from '~/store';
 
 const ChatForm = ({ index = 0 }) => {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
+  const audioURL = useRecoilValue(store.audioURLFamily(index));
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const [SpeechToText] = useRecoilState<boolean>(store.SpeechToText);
   const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
@@ -177,6 +178,16 @@ const ChatForm = ({ index = 0 }) => {
                 />
               )
             )}
+            {/* {audioURL != null && (
+              <div className="flex justify-center mt-4">
+                <audio
+                  controls
+                  controlsList="nodownload nofullscreen noremoteplayback"
+                  autoPlay={true}
+                  src={audioURL}
+                />
+              </div>
+            )} */}
             {SpeechToText && (
               <AudioRecorder
                 isListening={isListening}
