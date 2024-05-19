@@ -31,6 +31,34 @@ export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage
   return request.get(endpoints.messages(conversationId));
 }
 
+export function getSharedMessages(shareId: string): Promise<t.TSharedMessagesResponse> {
+  return request.get(endpoints.shareMessages(shareId));
+}
+
+export const listSharedLinks = (
+  params?: q.SharedLinkListParams,
+): Promise<q.SharedLinksResponse> => {
+  const pageNumber = params?.pageNumber || '1'; // Default to page 1 if not provided
+  const isPublic = params?.isPublic || true; // Default to true if not provided
+  return request.get(endpoints.getSharedLinks(pageNumber, isPublic));
+};
+
+export function getSharedLink(shareId: string): Promise<t.TSharedLinkResponse> {
+  return request.get(endpoints.shareMessages(shareId));
+}
+
+export function createSharedLink(payload: t.TSharedLinkRequest): Promise<t.TSharedLinkResponse> {
+  return request.post(endpoints.createSharedLink, payload);
+}
+
+export function updateSharedLink(payload: t.TSharedLinkRequest): Promise<t.TSharedLinkResponse> {
+  return request.patch(endpoints.updateSharedLink, payload);
+}
+
+export function deleteSharedLink(shareId: string): Promise<t.TDeleteSharedLinkResponse> {
+  return request.delete(endpoints.shareMessages(shareId));
+}
+
 export function updateMessage(payload: t.TUpdateMessageRequest): Promise<unknown> {
   const { conversationId, messageId, text } = payload;
   if (!conversationId) {

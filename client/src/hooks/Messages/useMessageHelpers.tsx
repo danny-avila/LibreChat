@@ -1,8 +1,8 @@
-import copy from 'copy-to-clipboard';
 import { useEffect, useRef, useCallback } from 'react';
-import { EModelEndpoint, ContentTypes } from 'librechat-data-provider';
+import { EModelEndpoint } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
+import useCopyToClipboard from './useCopyToClipboard';
 
 export default function useMessageHelpers(props: TMessageProps) {
   const latestText = useRef<string | number>('');
@@ -65,26 +65,7 @@ export default function useMessageHelpers(props: TMessageProps) {
     regenerate(message);
   };
 
-  const copyToClipboard = useCallback(
-    (setIsCopied: React.Dispatch<React.SetStateAction<boolean>>) => {
-      setIsCopied(true);
-      let messageText = text ?? '';
-      if (content) {
-        messageText = content.reduce((acc, curr, i) => {
-          if (curr.type === ContentTypes.TEXT) {
-            return acc + curr.text.value + (i === content.length - 1 ? '' : '\n');
-          }
-          return acc;
-        }, '');
-      }
-      copy(messageText ?? '');
-
-      setTimeout(() => {
-        setIsCopied(false);
-      }, 3000);
-    },
-    [text, content],
-  );
+  const copyToClipboard = useCopyToClipboard({ text, content });
 
   return {
     ask,

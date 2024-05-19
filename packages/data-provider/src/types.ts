@@ -1,5 +1,12 @@
 import OpenAI from 'openai';
-import type { TResPlugin, TMessage, TConversation, EModelEndpoint, ImageDetail } from './schemas';
+import type {
+  TResPlugin,
+  TMessage,
+  TConversation,
+  EModelEndpoint,
+  ImageDetail,
+  TSharedLink,
+} from './schemas';
 import type { TSpecsConfig } from './models';
 export type TOpenAIMessage = OpenAI.Chat.ChatCompletionMessageParam;
 export type TOpenAIFunction = OpenAI.Chat.ChatCompletionCreateParams.Function;
@@ -132,6 +139,19 @@ export type TArchiveConversationRequest = {
 };
 
 export type TArchiveConversationResponse = TConversation;
+
+export type TSharedMessagesResponse = Omit<TSharedLink, 'messages'> & {
+  messages: TMessage[];
+};
+export type TSharedLinkRequest = Partial<
+  Omit<TSharedLink, 'messages' | 'createdAt' | 'updatedAt'>
+> & {
+  conversationId: string;
+};
+
+export type TSharedLinkResponse = TSharedLink;
+export type TSharedLinksResponse = TSharedLink[];
+export type TDeleteSharedLinkResponse = TSharedLink;
 
 export type TForkConvoRequest = {
   messageId: string;
