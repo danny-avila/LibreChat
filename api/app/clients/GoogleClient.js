@@ -21,10 +21,8 @@ const { getModelMaxTokens } = require('~/utils');
 const BaseClient = require('./BaseClient');
 const { logger } = require('~/config');
 
-const loc = 'us-central1';
+const locations = ['us-central1', 'us-west1', 'us-west4', 'us-south1', 'us-east1', 'us-east4', 'northamerica-northeast1'];
 const publisher = 'google';
-const endpointPrefix = `https://${loc}-aiplatform.googleapis.com`;
-// const apiEndpoint = loc + '-aiplatform.googleapis.com';
 const tokenizersCache = {};
 
 const settings = endpointSettings[EModelEndpoint.google];
@@ -57,7 +55,16 @@ class GoogleClient extends BaseClient {
   }
 
   /* Google specific methods */
+  pickRegion() {
+    // Load balancing across US/CA regions.
+    // It's needed due to request limit quota on Google Vertex AI API, which is usually 1 per minute per region.
+    // TODO: expand the list; implement LRU on this; allow users to pick locations in configs
+    return locations[Math.floor(Math.random() * locations.length)];
+  }
+
   constructUrl() {
+    const loc = this.pickRegion();
+    const endpointPrefix = `https://${loc}-aiplatform.googleapis.com`;
     return `${endpointPrefix}/v1/projects/${this.project_id}/locations/${loc}/publishers/${publisher}/models/${this.modelOptions.model}:serverStreamingPredict`;
   }
 
