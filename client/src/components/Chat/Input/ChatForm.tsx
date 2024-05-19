@@ -1,5 +1,5 @@
 import { useForm } from 'react-hook-form';
-import { useRecoilState, useRecoilValue } from 'recoil';
+import { useRecoilState } from 'recoil';
 import { memo, useCallback, useRef, useMemo, useEffect } from 'react';
 import {
   supportsFiles,
@@ -13,17 +13,17 @@ import { TextareaAutosize } from '~/components/ui';
 import { useGetFileConfig } from '~/data-provider';
 import { cn, removeFocusOutlines } from '~/utils';
 import AttachFile from './Files/AttachFile';
+import AudioRecorder from './AudioRecorder';
 import { mainTextareaId } from '~/common';
+import StreamAudio from './StreamAudio';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
 import FileRow from './Files/FileRow';
-import AudioRecorder from './AudioRecorder';
 import Mention from './Mention';
 import store from '~/store';
 
 const ChatForm = ({ index = 0 }) => {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
-  const audioURL = useRecoilValue(store.audioURLFamily(index));
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const [SpeechToText] = useRecoilState<boolean>(store.SpeechToText);
   const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
@@ -179,16 +179,6 @@ const ChatForm = ({ index = 0 }) => {
                 />
               )
             )}
-            {audioURL != null && (
-              <div className="mt-4 flex justify-center">
-                <audio
-                  controls
-                  controlsList="nodownload nofullscreen noremoteplayback"
-                  autoPlay={true}
-                  src={audioURL}
-                />
-              </div>
-            )}
             {SpeechToText && (
               <AudioRecorder
                 isListening={isListening}
@@ -198,6 +188,7 @@ const ChatForm = ({ index = 0 }) => {
                 disabled={!!disableInputs}
               />
             )}
+            <StreamAudio index={index} />
           </div>
         </div>
       </div>

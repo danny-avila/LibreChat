@@ -565,15 +565,15 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       }
     };
 
-    events.onaudio = (e: MessageEvent) => {
-      const data = JSON.parse(e.data);
-      console.log('audio', data);
-      if (data.audio) {
-        audioSource.addBase64Data(data.audio);
-      }
-    };
+    // events.onaudio = (e: MessageEvent) => {
+    //   const data = JSON.parse(e.data);
+    //   console.log('audio', data);
+    //   if (data.audio) {
+    //     audioSource.addBase64Data(data.audio);
+    //   }
+    // };
 
-    events.onend = () => audioSource.close();
+    // events.onend = () => audioSource.close();
 
     events.onopen = () => console.log('connection is opened');
 
