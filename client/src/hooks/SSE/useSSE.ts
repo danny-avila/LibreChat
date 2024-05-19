@@ -2,7 +2,7 @@ import { v4 } from 'uuid';
 import { useSetRecoilState } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   /* @ts-ignore */
   SSE,
@@ -61,6 +61,9 @@ type TSyncData = {
 export default function useSSE(submission: TSubmission | null, index = 0) {
   const queryClient = useQueryClient();
   const genTitle = useGenTitleMutation();
+
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const sourceRef = useRef<AudioBufferSourceNode | null>(null);
 
   const { conversationId: paramId } = useParams();
   const { token, isAuthenticated } = useAuthContext();
@@ -524,10 +527,45 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     });
 
+    let audioContext: AudioContext | null = null;
+
     events.onmessage = (e: MessageEvent) => {
       const data = JSON.parse(e.data);
 
-      if (data.final) {
+      if (data.audio) {
+        console.log('audio', data.audio);
+        // Create a new AudioContext if it doesn't exist
+        if (!audioContext) {
+          audioContext = new AudioContext();
+        }
+
+        // Decode the base64-encoded audio data
+        const audioData = atob(data.audio);
+        const arrayBuffer = new ArrayBuffer(audioData.length);
+        const uint8Array = new Uint8Array(arrayBuffer);
+        for (let i = 0; i < audioData.length; i++) {
+          uint8Array[i] = audioData.charCodeAt(i);
+        }
+
+        // Create a Blob from the Uint8Array
+        const blob = new Blob([uint8Array], { type: 'audio/wav' });
+
+        // Create a URL for the Blob
+        const url = URL.createObjectURL(blob);
+
+        // Load the audio data from the URL
+        const audio = new Audio(url);
+
+        // Play the audio when it's loaded
+        audio.oncanplaythrough = () => {
+          audio.play();
+        };
+
+        // Clean up the URL when the audio is done playing
+        audio.onended = () => {
+          URL.revokeObjectURL(url);
+        };
+      } else if (data.final) {
         const { plugins } = data;
         finalHandler(data, { ...submission, plugins, message });
         startupConfig?.checkBalance && balanceQuery.refetch();

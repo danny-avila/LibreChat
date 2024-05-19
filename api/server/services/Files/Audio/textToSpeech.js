@@ -226,7 +226,7 @@ async function streamAudioFromWebSocket(req, res) {
  * @param {Object} req - The request object, which should contain the input text and voice in its body
  * @param {Object} res - The response object, used to send the audio data or an error message
  *
- * @returns {void} This function does not return a value. It sends the audio data or an error message in the response
+ * @returns {Promise<void>} This function does not return a value. It sends the audio data or an error message in the response
  *
  * @throws {Error} Throws an error if the provider is invalid
  */

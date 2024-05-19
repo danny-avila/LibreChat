@@ -9,7 +9,7 @@ const { getProvider } = require('./textToSpeech');
  *
  * @param {Object} req - The request object
  * @param {Object} res - The response object
- * @returns {void}
+ * @returns {Promise<void>}
  * @throws {Error} - If the provider is not 'openai' or 'elevenlabs', an error is thrown
  */
 async function getVoices(req, res) {
