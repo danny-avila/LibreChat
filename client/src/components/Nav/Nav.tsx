@@ -19,6 +19,7 @@ import NavToggle from './NavToggle';
 import NavLinks from './NavLinks';
 import NewChat from './NewChat';
 import { cn } from '~/utils';
+import { ConversationListResponse } from 'librechat-data-provider';
 import store from '~/store';
 
 const Nav = ({ navVisible, setNavVisible }) => {
@@ -59,7 +60,7 @@ const Nav = ({ navVisible, setNavVisible }) => {
     { enabled: isAuthenticated },
   );
 
-  const { containerRef, moveToTop } = useNavScrolling({
+  const { containerRef, moveToTop } = useNavScrolling<ConversationListResponse>({
     setShowLoading,
     hasNextPage: searchQuery ? searchQueryRes.hasNextPage : hasNextPage,
     fetchNextPage: searchQuery ? searchQueryRes.fetchNextPage : fetchNextPage,
@@ -160,7 +161,7 @@ const Nav = ({ navVisible, setNavVisible }) => {
           setIsHovering={setIsToggleHovering}
           onToggle={toggleNavVisible}
           navVisible={navVisible}
-          className="fixed left-0 top-1/2 z-40"
+          className="fixed left-0 top-1/2 z-40 hidden md:flex"
         />
         <div className={`nav-mask${navVisible ? ' active' : ''}`} onClick={toggleNavVisible} />
       </Tooltip>
