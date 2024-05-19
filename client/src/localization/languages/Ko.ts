@@ -1590,6 +1590,36 @@ export const comparisons = {
     english: 'Data controls',
     translated: '데이터 제어',
   },
+  com_assistants_file_search: {
+    english: 'File Search',
+    translated: '파일 검색',
+  },
+  com_assistants_file_search_info: {
+    english:
+      'Attaching vector stores for File Search is not yet supported. You can attach them from the Provider Playground or attach files to messages for file search on a thread basis.',
+    translated:
+      '파일 검색을 위한 벡터 저장소 연결은 아직 지원되지 않습니다. Provider Playground에서 연결하거나 스레드 기반으로 메시지에 파일을 첨부하여 파일 검색을 할 수 있습니다.',
+  },
+  com_assistants_non_retrieval_model: {
+    english: 'File search is not enabled on this model. Please select another model.',
+    translated: '이 모델에서는 파일 검색 기능을 사용할 수 없습니다. 다른 모델을 선택하세요.',
+  },
+  com_ui_attach_error_openai: {
+    english: 'Cannot attach Assistant files to other endpoints',
+    translated: '어시스턴트 파일을 다른 엔드포인트에 첨부할 수 없습니다.',
+  },
+  com_ui_attach_warn_endpoint: {
+    english: 'Non-Assistant files may be ignored without a compatible tool',
+    translated: '호환되는 도구가 없으면 비어시스턴트 파일이 무시될 수 있습니다.',
+  },
+  com_ui_assistant_deleted: {
+    english: 'Successfully deleted assistant',
+    translated: '어시스턴트가 성공적으로 삭제되었습니다',
+  },
+  com_ui_assistant_delete_error: {
+    english: 'There was an error deleting the assistant',
+    translated: '어시스턴트 삭제 중 오류가 발생했습니다.',
+  },
   com_ui_copied: {
     english: 'Copied!',
     translated: '복사됨',

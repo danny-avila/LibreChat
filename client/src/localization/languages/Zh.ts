@@ -2206,6 +2206,36 @@ export const comparisons = {
     english: 'Account',
     translated: '账户',
   },
+  com_assistants_file_search: {
+    english: 'File Search',
+    translated: '文件搜索',
+  },
+  com_assistants_file_search_info: {
+    english:
+      'Attaching vector stores for File Search is not yet supported. You can attach them from the Provider Playground or attach files to messages for file search on a thread basis.',
+    translated:
+      '暂不支持为文件搜索附加向量存储。您可以从提供程序游乐场附加它们,或者在线程基础上为文件搜索附加文件。',
+  },
+  com_assistants_non_retrieval_model: {
+    english: 'File search is not enabled on this model. Please select another model.',
+    translated: '此模型未启用文件搜索功能。请选择其他模型。',
+  },
+  com_ui_attach_error_openai: {
+    english: 'Cannot attach Assistant files to other endpoints',
+    translated: '无法将助手文件附加到其他渠道',
+  },
+  com_ui_attach_warn_endpoint: {
+    english: 'Non-Assistant files may be ignored without a compatible tool',
+    translated: '不兼容的工具可能会忽略非助手文件',
+  },
+  com_ui_assistant_deleted: {
+    english: 'Successfully deleted assistant',
+    translated: '助手已成功删除',
+  },
+  com_ui_assistant_delete_error: {
+    english: 'There was an error deleting the assistant',
+    translated: '删除助手时出错。',
+  },
   com_ui_date_october: {
     english: 'October',
     translated: '十月',
