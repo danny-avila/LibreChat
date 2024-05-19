@@ -71,6 +71,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
         }}
         placeholder={localize('com_nav_search_placeholder')}
         onKeyUp={handleKeyUp}
+        autoComplete="off"
       />
       <X
         className={cn(

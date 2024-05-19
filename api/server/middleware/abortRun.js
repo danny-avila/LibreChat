@@ -10,7 +10,7 @@ const three_minutes = 1000 * 60 * 3;
 
 async function abortRun(req, res) {
   res.setHeader('Content-Type', 'application/json');
-  const { abortKey } = req.body;
+  const { abortKey, endpoint } = req.body;
   const [conversationId, latestMessageId] = abortKey.split(':');
   const conversation = await getConvo(req.user.id, conversationId);
 
@@ -68,9 +68,10 @@ async function abortRun(req, res) {
 
   runMessages = await checkMessageGaps({
     openai,
-    latestMessageId,
+    endpoint,
     thread_id,
     run_id,
+    latestMessageId,
     conversationId,
   });
 

@@ -76,7 +76,7 @@
     "nodejs-gpt": "^1.37.4",
     "nodemailer": "^6.9.4",
     "ollama": "^0.5.0",
-    "openai": "4.36.0",
+    "openai": "^4.47.1",
     "openai-chat-tokens": "^0.2.8",
     "openid-client": "^5.4.2",
     "passport": "^0.6.0",

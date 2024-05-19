@@ -283,6 +283,14 @@ export default {
   com_nav_setting_general: '一般',
   com_nav_setting_data: '資料控制',
   /* The following are AI translated */
+  com_assistants_file_search: '檔案搜尋',
+  com_assistants_file_search_info:
+    '目前尚不支援為檔案搜尋附加向量存儲。您可以從提供者遊樂場附加它們，或在每個主題的基礎上為檔案搜尋附加檔案。',
+  com_assistants_non_retrieval_model: '此模型未啟用檔案搜尋功能。請選擇其他模型。',
+  com_ui_attach_error_openai: '無法將助理檔案附加至其他端點',
+  com_ui_attach_warn_endpoint: '非相容工具的非助理檔案可能會被忽略',
+  com_ui_assistant_deleted: '已成功刪除助理',
+  com_ui_assistant_delete_error: '刪除助理時發生錯誤',
   com_ui_copied: '已複製！',
   com_ui_copy_code: '複製程式碼',
   com_ui_copy_link: '複製連結',
@@ -1610,6 +1618,36 @@ export const comparisons = {
   com_nav_setting_data: {
     english: 'Data controls',
     translated: '資料控制',
+  },
+  com_assistants_file_search: {
+    english: 'File Search',
+    translated: '檔案搜尋',
+  },
+  com_assistants_file_search_info: {
+    english:
+      'Attaching vector stores for File Search is not yet supported. You can attach them from the Provider Playground or attach files to messages for file search on a thread basis.',
+    translated:
+      '目前尚不支援為檔案搜尋附加向量存儲。您可以從提供者遊樂場附加它們，或在每個主題的基礎上為檔案搜尋附加檔案。',
+  },
+  com_assistants_non_retrieval_model: {
+    english: 'File search is not enabled on this model. Please select another model.',
+    translated: '此模型未啟用檔案搜尋功能。請選擇其他模型。',
+  },
+  com_ui_attach_error_openai: {
+    english: 'Cannot attach Assistant files to other endpoints',
+    translated: '無法將助理檔案附加至其他端點',
+  },
+  com_ui_attach_warn_endpoint: {
+    english: 'Non-Assistant files may be ignored without a compatible tool',
+    translated: '非相容工具的非助理檔案可能會被忽略',
+  },
+  com_ui_assistant_deleted: {
+    english: 'Successfully deleted assistant',
+    translated: '已成功刪除助理',
+  },
+  com_ui_assistant_delete_error: {
+    english: 'There was an error deleting the assistant',
+    translated: '刪除助理時發生錯誤',
   },
   com_ui_copied: {
     english: 'Copied!',

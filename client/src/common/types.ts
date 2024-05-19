@@ -8,10 +8,12 @@ import type {
   TPreset,
   TPlugin,
   TMessage,
+  Assistant,
   TLoginUser,
   AuthTypeEnum,
   TConversation,
   EModelEndpoint,
+  AssistantsEndpoint,
   AuthorizationTypeEnum,
   TSetOption as SetOption,
   TokenExchangeMethodEnum,
@@ -32,6 +34,13 @@ export type AudioChunk = {
     chars_durations_ms: number[];
     chars: string[];
   };
+};
+
+export type AssistantListItem = {
+  id: string;
+  name: string;
+  metadata: Assistant['metadata'];
+  model: string;
 };
 
 export type TPluginMap = Record<string, TPlugin>;
@@ -116,6 +125,8 @@ export type AssistantPanelProps = {
   actions?: Action[];
   assistant_id?: string;
   activePanel?: string;
+  endpoint: AssistantsEndpoint;
+  version: number | string;
   setAction: React.Dispatch<React.SetStateAction<Action | undefined>>;
   setCurrentAssistantId: React.Dispatch<React.SetStateAction<string | undefined>>;
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
@@ -330,6 +341,7 @@ export type IconProps = Pick<TMessage, 'isCreatedByUser' | 'model'> &
     iconURL?: string;
     message?: boolean;
     className?: string;
+    iconClassName?: string;
     endpoint?: EModelEndpoint | string | null;
     endpointType?: EModelEndpoint | null;
     assistantName?: string;
@@ -342,7 +354,11 @@ export type Option = Record<string, unknown> & {
 };
 
 export type OptionWithIcon = Option & { icon?: React.ReactNode };
-export type MentionOption = OptionWithIcon & { type: string; value: string; description?: string };
+export type MentionOption = OptionWithIcon & {
+  type: string;
+  value: string;
+  description?: string;
+};
 
 export type TOptionSettings = {
   showExamples?: boolean;

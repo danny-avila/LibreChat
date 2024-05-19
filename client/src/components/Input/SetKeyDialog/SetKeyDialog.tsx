@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
-import { EModelEndpoint, alternateName } from 'librechat-data-provider';
+import { EModelEndpoint, alternateName, isAssistantsEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { TDialogProps } from '~/common';
 import DialogTemplate from '~/components/ui/DialogTemplate';
@@ -21,6 +21,7 @@ const endpointComponents = {
   [EModelEndpoint.azureOpenAI]: OpenAIConfig,
   [EModelEndpoint.gptPlugins]: OpenAIConfig,
   [EModelEndpoint.assistants]: OpenAIConfig,
+  [EModelEndpoint.azureAssistants]: OpenAIConfig,
   default: OtherConfig,
 };
 
@@ -30,6 +31,7 @@ const formSet: Set<string> = new Set([
   EModelEndpoint.azureOpenAI,
   EModelEndpoint.gptPlugins,
   EModelEndpoint.assistants,
+  EModelEndpoint.azureAssistants,
 ]);
 
 const EXPIRY = {
@@ -97,7 +99,7 @@ const SetKeyDialog = ({
           isAzure ||
           endpoint === EModelEndpoint.openAI ||
           endpoint === EModelEndpoint.gptPlugins ||
-          endpoint === EModelEndpoint.assistants;
+          isAssistantsEndpoint(endpoint);
         if (isAzure) {
           data.apiKey = 'n/a';
         }

@@ -5,15 +5,42 @@ import {
   useGetEndpointsQuery,
 } from 'librechat-data-provider/react-query';
 import { getConfigDefaults, EModelEndpoint, alternateName } from 'librechat-data-provider';
-import type { Assistant } from 'librechat-data-provider';
-import { useGetPresetsQuery, useListAssistantsQuery } from '~/data-provider';
+import type { AssistantsEndpoint, TAssistantsMap, TEndpointsConfig } from 'librechat-data-provider';
+import type { MentionOption } from '~/common';
+import useAssistantListMap from '~/hooks/Assistants/useAssistantListMap';
 import { mapEndpoints, getPresetTitle } from '~/utils';
 import { EndpointIcon } from '~/components/Endpoints';
+import { useGetPresetsQuery } from '~/data-provider';
 import useSelectMention from './useSelectMention';
 
 const defaultInterface = getConfigDefaults().interface;
 
-export default function useMentions({ assistantMap }: { assistantMap: Record<string, Assistant> }) {
+const assistantMapFn =
+  ({
+    endpoint,
+    assistantMap,
+    endpointsConfig,
+  }: {
+    endpoint: AssistantsEndpoint;
+    assistantMap: TAssistantsMap;
+    endpointsConfig: TEndpointsConfig;
+  }) =>
+    ({ id, name, description }) => ({
+      type: endpoint,
+      label: name ?? '',
+      value: id,
+      description: description ?? '',
+      icon: EndpointIcon({
+        conversation: { assistant_id: id, endpoint },
+        containerClassName: 'shadow-stroke overflow-hidden rounded-full',
+        endpointsConfig: endpointsConfig,
+        context: 'menu-item',
+        assistantMap,
+        size: 20,
+      }),
+    });
+
+export default function useMentions({ assistantMap }: { assistantMap: TAssistantsMap }) {
   const { data: presets } = useGetPresetsQuery();
   const { data: modelsConfig } = useGetModelsQuery();
   const { data: startupConfig } = useGetStartupConfig();
@@ -21,30 +48,43 @@ export default function useMentions({ assistantMap }: { assistantMap: Record<str
   const { data: endpoints = [] } = useGetEndpointsQuery({
     select: mapEndpoints,
   });
-  const { data: assistants = [] } = useListAssistantsQuery(undefined, {
-    select: (res) =>
-      res.data
-        .map(({ id, name, description }) => ({
-          type: 'assistant',
-          label: name ?? '',
-          value: id,
-          description: description ?? '',
-          icon: EndpointIcon({
-            conversation: { assistant_id: id, endpoint: EModelEndpoint.assistants },
-            containerClassName: 'shadow-stroke overflow-hidden rounded-full',
-            endpointsConfig: endpointsConfig,
-            context: 'menu-item',
+  const listMap = useAssistantListMap((res) =>
+    res.data.map(({ id, name, description }) => ({
+      id,
+      name,
+      description,
+    })),
+  );
+  const assistantListMap = useMemo(
+    () => ({
+      [EModelEndpoint.assistants]: listMap[EModelEndpoint.assistants]
+        ?.map(
+          assistantMapFn({
+            endpoint: EModelEndpoint.assistants,
             assistantMap,
-            size: 20,
+            endpointsConfig,
           }),
-        }))
-        .filter(Boolean),
-  });
+        )
+        ?.filter(Boolean),
+      [EModelEndpoint.azureAssistants]: listMap[EModelEndpoint.azureAssistants]
+        ?.map(
+          assistantMapFn({
+            endpoint: EModelEndpoint.azureAssistants,
+            assistantMap,
+            endpointsConfig,
+          }),
+        )
+        ?.filter(Boolean),
+    }),
+    [listMap, assistantMap, endpointsConfig],
+  );
+
   const modelSpecs = useMemo(() => startupConfig?.modelSpecs?.list ?? [], [startupConfig]);
   const interfaceConfig = useMemo(
     () => startupConfig?.interface ?? defaultInterface,
     [startupConfig],
   );
+
   const { onSelectMention } = useSelectMention({
     modelSpecs,
     endpointsConfig,
@@ -52,7 +92,7 @@ export default function useMentions({ assistantMap }: { assistantMap: Record<str
     assistantMap,
   });
 
-  const options = useMemo(() => {
+  const options: MentionOption[] = useMemo(() => {
     const mentions = [
       ...(modelSpecs?.length > 0 ? modelSpecs : []).map((modelSpec) => ({
         value: modelSpec.name,
@@ -67,12 +107,12 @@ export default function useMentions({ assistantMap }: { assistantMap: Record<str
           context: 'menu-item',
           size: 20,
         }),
-        type: 'modelSpec',
+        type: 'modelSpec' as const,
       })),
       ...(interfaceConfig.endpointsMenu ? endpoints : []).map((endpoint) => ({
         value: endpoint,
         label: alternateName[endpoint] ?? endpoint ?? '',
-        type: 'endpoint',
+        type: 'endpoint' as const,
         icon: EndpointIcon({
           conversation: { endpoint },
           endpointsConfig,
@@ -80,7 +120,12 @@ export default function useMentions({ assistantMap }: { assistantMap: Record<str
           size: 20,
         }),
       })),
-      ...(endpointsConfig?.[EModelEndpoint.assistants] ? assistants : []),
+      ...(endpointsConfig?.[EModelEndpoint.assistants]
+        ? assistantListMap[EModelEndpoint.assistants]
+        : []),
+      ...(endpointsConfig?.[EModelEndpoint.azureAssistants]
+        ? assistantListMap[EModelEndpoint.azureAssistants]
+        : []),
       ...((interfaceConfig.presets ? presets : [])?.map((preset, index) => ({
         value: preset.presetId ?? `preset-${index}`,
         label: preset.title ?? preset.modelLabel ?? preset.chatGptLabel ?? '',
@@ -93,7 +138,7 @@ export default function useMentions({ assistantMap }: { assistantMap: Record<str
           assistantMap,
           size: 20,
         }),
-        type: 'preset',
+        type: 'preset' as const,
       })) ?? []),
     ];
 
@@ -102,17 +147,17 @@ export default function useMentions({ assistantMap }: { assistantMap: Record<str
     presets,
     endpoints,
     modelSpecs,
-    assistants,
     assistantMap,
     endpointsConfig,
+    assistantListMap,
     interfaceConfig.presets,
     interfaceConfig.endpointsMenu,
   ]);
 
   return {
     options,
-    assistants,
     modelsConfig,
     onSelectMention,
+    assistantListMap,
   };
 }

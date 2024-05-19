@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useRecoilState } from 'recoil';
-import { EModelEndpoint } from 'librechat-data-provider';
 import type { TConversation, TMessage } from 'librechat-data-provider';
 import {
   Clipboard,
@@ -52,14 +51,19 @@ export default function HoverButtons({
     message?.text ?? '',
   );
 
-  const { hideEditButton, regenerateEnabled, continueSupported, forkingSupported } =
-    useGenerationsByLatest({
-      isEditing,
-      isSubmitting,
-      message,
-      endpoint: endpoint ?? '',
-      latestMessage,
-    });
+  const {
+    hideEditButton,
+    regenerateEnabled,
+    continueSupported,
+    forkingSupported,
+    isEditableEndpoint,
+  } = useGenerationsByLatest({
+    isEditing,
+    isSubmitting,
+    message,
+    endpoint: endpoint ?? '',
+    latestMessage,
+  });
   if (!conversation) {
     return null;
   }
@@ -93,7 +97,7 @@ export default function HoverButtons({
           )}
         </button>
       )}
-      {endpoint !== EModelEndpoint.assistants && (
+      {isEditableEndpoint && (
         <button
           className={cn(
             'hover-button rounded-md p-1 text-gray-400 hover:text-gray-900 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',

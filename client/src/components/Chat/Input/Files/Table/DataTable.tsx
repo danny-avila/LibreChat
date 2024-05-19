@@ -48,7 +48,12 @@ const contextMap = {
   [FileContext.bytes]: 'com_ui_size',
 };
 
-type Style = { width?: number | string; maxWidth?: number | string; minWidth?: number | string };
+type Style = {
+  width?: number | string;
+  maxWidth?: number | string;
+  minWidth?: number | string;
+  zIndex?: number;
+};
 
 export default function DataTable<TData, TValue>({ columns, data }: DataTableProps<TData, TValue>) {
   const localize = useLocalize();
@@ -142,7 +147,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header, index) => {
-                  const style: Style = { maxWidth: '32px', minWidth: '125px' };
+                  const style: Style = { maxWidth: '32px', minWidth: '125px', zIndex: 50 };
                   if (header.id === 'filename') {
                     style.maxWidth = '50%';
                     style.width = '50%';
