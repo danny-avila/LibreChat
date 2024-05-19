@@ -71,7 +71,7 @@ export default function NewChat({
   const { conversation } = store.useCreateConversationAtom(index);
 
   const clickHandler = (event: React.MouseEvent<HTMLAnchorElement>) => {
-    if (event.button === 0 && !event.ctrlKey) {
+    if (event.button === 0 && !(event.ctrlKey || event.metaKey)) {
       event.preventDefault();
       newConvo();
       navigate('/c/new');
