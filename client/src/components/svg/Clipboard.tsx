@@ -4,16 +4,13 @@ export default function Clipboard({ className = 'icon-md-heavy', size = '1em' })
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
+      height={size}
+      width={size}
       fill="none"
       viewBox="0 0 24 24"
       strokeLinecap="round"
       strokeLinejoin="round"
       className={cn(className)}
-      height={size}
-      width={size}
-      xmlns="http://www.w3.org/2000/svg"
     >
       <path
         fill="currentColor"
