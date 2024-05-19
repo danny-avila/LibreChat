@@ -2,7 +2,7 @@ import { v4 } from 'uuid';
 import { useSetRecoilState } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   /* @ts-ignore */
   SSE,
@@ -61,9 +61,6 @@ type TSyncData = {
 export default function useSSE(submission: TSubmission | null, index = 0) {
   const queryClient = useQueryClient();
   const genTitle = useGenTitleMutation();
-
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const sourceRef = useRef<AudioBufferSourceNode | null>(null);
 
   const { conversationId: paramId } = useParams();
   const { token, isAuthenticated } = useAuthContext();
@@ -527,11 +524,46 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     });
 
-    let audioContext: AudioContext | null = null;
-
     events.onmessage = (e: MessageEvent) => {
       const data = JSON.parse(e.data);
 
+      if (data.final) {
+        const { plugins } = data;
+        finalHandler(data, { ...submission, plugins, message });
+        startupConfig?.checkBalance && balanceQuery.refetch();
+        console.log('final', data);
+      }
+      if (data.created) {
+        message = {
+          ...message,
+          ...data.message,
+          overrideParentMessageId: message?.overrideParentMessageId,
+        };
+        createdHandler(data, { ...submission, message });
+      } else if (data.sync) {
+        /* synchronize messages to Assistants API as well as with real DB ID's */
+        syncHandler(data, { ...submission, message });
+      } else if (data.type) {
+        const { text, index } = data;
+        if (text && index !== textIndex) {
+          textIndex = index;
+        }
+
+        contentHandler({ data, submission });
+      } else {
+        const text = data.text || data.response;
+        const { plugin, plugins } = data;
+
+        if (data.message) {
+          messageHandler(text, { ...submission, plugin, plugins, message });
+        }
+      }
+    };
+
+    let audioContext: AudioContext | null = null;
+
+    events.onaudio = (e: MessageEvent) => {
+      const data = JSON.parse(e.data);
       if (data.audio) {
         console.log('audio', data.audio);
         // Create a new AudioContext if it doesn't exist
@@ -565,36 +597,6 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
         audio.onended = () => {
           URL.revokeObjectURL(url);
         };
-      } else if (data.final) {
-        const { plugins } = data;
-        finalHandler(data, { ...submission, plugins, message });
-        startupConfig?.checkBalance && balanceQuery.refetch();
-        console.log('final', data);
-      }
-      if (data.created) {
-        message = {
-          ...message,
-          ...data.message,
-          overrideParentMessageId: message?.overrideParentMessageId,
-        };
-        createdHandler(data, { ...submission, message });
-      } else if (data.sync) {
-        /* synchronize messages to Assistants API as well as with real DB ID's */
-        syncHandler(data, { ...submission, message });
-      } else if (data.type) {
-        const { text, index } = data;
-        if (text && index !== textIndex) {
-          textIndex = index;
-        }
-
-        contentHandler({ data, submission });
-      } else {
-        const text = data.text || data.response;
-        const { plugin, plugins } = data;
-
-        if (data.message) {
-          messageHandler(text, { ...submission, plugin, plugins, message });
-        }
       }
     };
 

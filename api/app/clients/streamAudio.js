@@ -1,6 +1,4 @@
 const WebSocket = require('ws');
-// const { Readable } = require('stream');
-// const wav = require('wav');
 
 const ELEVENLABS_API_KEY = 'a495399653cc5824ba1e41d914473e07';
 const VOICE_ID = '1RVpBInY9YUYMLSUQReV';
@@ -38,36 +36,6 @@ const VOICE_ID = '1RVpBInY9YUYMLSUQReV';
  * @property {string[]} normalizedAlignment.chars
  */
 
-// /**
-//  * Stream text to speech
-//  * @param {string} text
-//  * @param {Object} [options]
-//  * @param {TextToSpeechClient} [options.ttsClient]
-//  * @returns {Promise<stream.Readable>}
-//  */
-// async function streamTextToSpeech(text, options) {
-//   const ttsClient = options?.ttsClient ?? new ElevenLabsClient({
-//     apiKey: ELEVENLABS_API_KEY,
-//   });
-
-//   const data = {
-//     model_id: 'eleven_turbo_v2',
-//     text: text,
-//     voice_settings: {
-//       similarity_boost: 0.75,
-//       stability: 0.5,
-//       use_speaker_boost: true,
-//     },
-//   };
-
-//   // NOTE: using voice ID saves an API roundtrip to get voice name -> voice ID
-//   return ttsClient.generate({
-//     voice: VOICE_ID,
-//     stream: true,
-//     ...data,
-//   });
-// }
-
 /**
  * Input stream text to speech
  * @param {Express.Response} res
@@ -77,7 +45,7 @@ const VOICE_ID = '1RVpBInY9YUYMLSUQReV';
  */
 function inputStreamTextToSpeech(res, textStream, callback) {
   const model = 'eleven_turbo_v2';
-  const wsUrl = `wss://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}/stream-input?model_id=${model}&output_format=pcm_24000`;
+  const wsUrl = `wss://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}/stream-input?model_id=${model}`;
   const socket = new WebSocket(wsUrl);
 
   socket.onopen = function () {
@@ -135,7 +103,7 @@ function inputStreamTextToSpeech(res, textStream, callback) {
       // console.log(event);
       const audioChunk = JSON.parse(event.data);
       if (audioChunk.audio && audioChunk.alignment) {
-        res.write(`event: message\ndata: ${event.data}\n\n`);
+        res.write(`event: audio\ndata: ${event.data}\n\n`);
         chunks.push(audioChunk);
         resolve(null);
         waitForMessage = new Promise((r) => (resolve = r));
@@ -163,6 +131,8 @@ function inputStreamTextToSpeech(res, textStream, callback) {
       yield* chunks;
       chunks = [];
     }
+
+    res.write('event: end\ndata: \n\n');
   })();
 }
 
@@ -181,6 +151,5 @@ async function* llmMessageSource(llmStream) {
 
 module.exports = {
   inputStreamTextToSpeech,
-  // streamTextToSpeech,
   llmMessageSource,
 };
