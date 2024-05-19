@@ -7,6 +7,7 @@ export const supportsFiles = {
   [EModelEndpoint.openAI]: true,
   [EModelEndpoint.google]: true,
   [EModelEndpoint.assistants]: true,
+  [EModelEndpoint.azureAssistants]: true,
   [EModelEndpoint.azureOpenAI]: true,
   [EModelEndpoint.anthropic]: true,
   [EModelEndpoint.custom]: true,
@@ -152,24 +153,28 @@ export const megabyte = 1024 * 1024;
 /** Helper function to get megabytes value */
 export const mbToBytes = (mb: number): number => mb * megabyte;
 
+const defaultSizeLimit = mbToBytes(512);
+const assistantsFileConfig = {
+  fileLimit: 10,
+  fileSizeLimit: defaultSizeLimit,
+  totalSizeLimit: defaultSizeLimit,
+  supportedMimeTypes,
+  disabled: false,
+};
+
 export const fileConfig = {
   endpoints: {
-    [EModelEndpoint.assistants]: {
-      fileLimit: 10,
-      fileSizeLimit: mbToBytes(512),
-      totalSizeLimit: mbToBytes(512),
-      supportedMimeTypes,
-      disabled: false,
-    },
+    [EModelEndpoint.assistants]: assistantsFileConfig,
+    [EModelEndpoint.azureAssistants]: assistantsFileConfig,
     default: {
       fileLimit: 10,
-      fileSizeLimit: mbToBytes(512),
-      totalSizeLimit: mbToBytes(512),
+      fileSizeLimit: defaultSizeLimit,
+      totalSizeLimit: defaultSizeLimit,
       supportedMimeTypes,
       disabled: false,
     },
   },
-  serverFileSizeLimit: mbToBytes(512),
+  serverFileSizeLimit: defaultSizeLimit,
   avatarSizeLimit: mbToBytes(2),
   checkType: function (fileType: string, supportedTypes: RegExp[] = supportedMimeTypes) {
     return supportedTypes.some((regex) => regex.test(fileType));

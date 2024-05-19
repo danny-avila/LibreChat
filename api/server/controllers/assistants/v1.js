@@ -1,34 +1,11 @@
-const multer = require('multer');
-const express = require('express');
-const { FileContext, EModelEndpoint } = require('librechat-data-provider');
-const {
-  initializeClient,
-  listAssistantsForAzure,
-  listAssistants,
-} = require('~/server/services/Endpoints/assistants');
+const { FileContext } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { deleteAssistantActions } = require('~/server/services/ActionService');
 const { uploadImageBuffer } = require('~/server/services/Files/process');
 const { updateAssistant, getAssistants } = require('~/models/Assistant');
+const { getOpenAIClient, fetchAssistants } = require('./helpers');
 const { deleteFileByFilter } = require('~/models/File');
 const { logger } = require('~/config');
-const actions = require('./actions');
-const tools = require('./tools');
-
-const upload = multer();
-const router = express.Router();
-
-/**
- * Assistant actions route.
- * @route GET|POST /assistants/actions
- */
-router.use('/actions', actions);
-
-/**
- * Create an assistant.
- * @route GET /assistants/tools
- * @returns {TPlugin[]} 200 - application/json
- */
-router.use('/tools', tools);
 
 /**
  * Create an assistant.
@@ -36,12 +13,11 @@ router.use('/tools', tools);
  * @param {AssistantCreateParams} req.body - The assistant creation parameters.
  * @returns {Assistant} 201 - success response - application/json
  */
-router.post('/', async (req, res) => {
+const createAssistant = async (req, res) => {
   try {
-    /** @type {{ openai: OpenAI }} */
-    const { openai } = await initializeClient({ req, res });
+    const { openai } = await getOpenAIClient({ req, res });
 
-    const { tools = [], ...assistantData } = req.body;
+    const { tools = [], endpoint, ...assistantData } = req.body;
     assistantData.tools = tools
       .map((tool) => {
         if (typeof tool !== 'string') {
@@ -52,18 +28,28 @@ router.post('/', async (req, res) => {
       })
       .filter((tool) => tool);
 
+    let azureModelIdentifier = null;
     if (openai.locals?.azureOptions) {
+      azureModelIdentifier = assistantData.model;
       assistantData.model = openai.locals.azureOptions.azureOpenAIApiDeploymentName;
     }
 
+    assistantData.metadata = {
+      author: req.user.id,
+      endpoint,
+    };
+
     const assistant = await openai.beta.assistants.create(assistantData);
+    if (azureModelIdentifier) {
+      assistant.model = azureModelIdentifier;
+    }
     logger.debug('/assistants/', assistant);
     res.status(201).json(assistant);
   } catch (error) {
     logger.error('[/assistants] Error creating assistant', error);
     res.status(500).json({ error: error.message });
   }
-});
+};
 
 /**
  * Retrieves an assistant.
@@ -71,10 +57,10 @@ router.post('/', async (req, res) => {
  * @param {string} req.params.id - Assistant identifier.
  * @returns {Assistant} 200 - success response - application/json
  */
-router.get('/:id', async (req, res) => {
+const retrieveAssistant = async (req, res) => {
   try {
-    /** @type {{ openai: OpenAI }} */
-    const { openai } = await initializeClient({ req, res });
+    /* NOTE: not actually being used right now */
+    const { openai } = await getOpenAIClient({ req, res });
 
     const assistant_id = req.params.id;
     const assistant = await openai.beta.assistants.retrieve(assistant_id);
@@ -83,22 +69,23 @@ router.get('/:id', async (req, res) => {
     logger.error('[/assistants/:id] Error retrieving assistant', error);
     res.status(500).json({ error: error.message });
   }
-});
+};
 
 /**
  * Modifies an assistant.
  * @route PATCH /assistants/:id
+ * @param {object} req - Express Request
+ * @param {object} req.params - Request params
  * @param {string} req.params.id - Assistant identifier.
  * @param {AssistantUpdateParams} req.body - The assistant update parameters.
  * @returns {Assistant} 200 - success response - application/json
  */
-router.patch('/:id', async (req, res) => {
+const patchAssistant = async (req, res) => {
   try {
-    /** @type {{ openai: OpenAI }} */
-    const { openai } = await initializeClient({ req, res });
+    const { openai } = await getOpenAIClient({ req, res });
 
     const assistant_id = req.params.id;
-    const updateData = req.body;
+    const { endpoint: _e, ...updateData } = req.body;
     updateData.tools = (updateData.tools ?? [])
       .map((tool) => {
         if (typeof tool !== 'string') {
@@ -119,52 +106,46 @@ router.patch('/:id', async (req, res) => {
     logger.error('[/assistants/:id] Error updating assistant', error);
     res.status(500).json({ error: error.message });
   }
-});
+};
 
 /**
  * Deletes an assistant.
  * @route DELETE /assistants/:id
+ * @param {object} req - Express Request
+ * @param {object} req.params - Request params
  * @param {string} req.params.id - Assistant identifier.
  * @returns {Assistant} 200 - success response - application/json
  */
-router.delete('/:id', async (req, res) => {
+const deleteAssistant = async (req, res) => {
   try {
-    /** @type {{ openai: OpenAI }} */
-    const { openai } = await initializeClient({ req, res });
+    const { openai } = await getOpenAIClient({ req, res });
 
     const assistant_id = req.params.id;
     const deletionStatus = await openai.beta.assistants.del(assistant_id);
+    if (deletionStatus?.deleted) {
+      await deleteAssistantActions({ req, assistant_id });
+    }
     res.json(deletionStatus);
   } catch (error) {
     logger.error('[/assistants/:id] Error deleting assistant', error);
     res.status(500).json({ error: 'Error deleting assistant' });
   }
-});
+};
 
 /**
  * Returns a list of assistants.
  * @route GET /assistants
+ * @param {object} req - Express Request
  * @param {AssistantListParams} req.query - The assistant list parameters for pagination and sorting.
  * @returns {AssistantListResponse} 200 - success response - application/json
  */
-router.get('/', async (req, res) => {
+const listAssistants = async (req, res) => {
   try {
-    const { limit = 100, order = 'desc', after, before } = req.query;
-    const query = { limit, order, after, before };
+    const body = await fetchAssistants(req, res);
 
-    const azureConfig = req.app.locals[EModelEndpoint.azureOpenAI];
-    /** @type {AssistantListResponse} */
-    let body;
-
-    if (azureConfig?.assistants) {
-      body = await listAssistantsForAzure({ req, res, azureConfig, query });
-    } else {
-      ({ body } = await listAssistants({ req, res, query }));
-    }
-
-    if (req.app.locals?.[EModelEndpoint.assistants]) {
+    if (req.app.locals?.[req.query.endpoint]) {
       /** @type {Partial<TAssistantEndpoint>} */
-      const assistantsConfig = req.app.locals[EModelEndpoint.assistants];
+      const assistantsConfig = req.app.locals[req.query.endpoint];
       const { supportedIds, excludedIds } = assistantsConfig;
       if (supportedIds?.length) {
         body.data = body.data.filter((assistant) => supportedIds.includes(assistant.id));
@@ -178,31 +159,34 @@ router.get('/', async (req, res) => {
     logger.error('[/assistants] Error listing assistants', error);
     res.status(500).json({ message: 'Error listing assistants' });
   }
-});
+};
 
 /**
  * Returns a list of the user's assistant documents (metadata saved to database).
  * @route GET /assistants/documents
  * @returns {AssistantDocument[]} 200 - success response - application/json
  */
-router.get('/documents', async (req, res) => {
+const getAssistantDocuments = async (req, res) => {
   try {
     res.json(await getAssistants({ user: req.user.id }));
   } catch (error) {
     logger.error('[/assistants/documents] Error listing assistant documents', error);
     res.status(500).json({ error: error.message });
   }
-});
+};
 
 /**
  * Uploads and updates an avatar for a specific assistant.
  * @route POST /avatar/:assistant_id
+ * @param {object} req - Express Request
+ * @param {object} req.params - Request params
  * @param {string} req.params.assistant_id - The ID of the assistant.
  * @param {Express.Multer.File} req.file - The avatar image file.
+ * @param {object} req.body - Request body
  * @param {string} [req.body.metadata] - Optional metadata for the assistant's avatar.
  * @returns {Object} 200 - success response - application/json
  */
-router.post('/avatar/:assistant_id', upload.single('file'), async (req, res) => {
+const uploadAssistantAvatar = async (req, res) => {
   try {
     const { assistant_id } = req.params;
     if (!assistant_id) {
@@ -210,8 +194,7 @@ router.post('/avatar/:assistant_id', upload.single('file'), async (req, res) => 
     }
 
     let { metadata: _metadata = '{}' } = req.body;
-    /** @type {{ openai: OpenAI }} */
-    const { openai } = await initializeClient({ req, res });
+    const { openai } = await getOpenAIClient({ req, res });
 
     const image = await uploadImageBuffer({
       req,
@@ -266,6 +249,14 @@ router.post('/avatar/:assistant_id', upload.single('file'), async (req, res) => 
     logger.error(message, error);
     res.status(500).json({ message });
   }
-});
+};
 
-module.exports = router;
+module.exports = {
+  createAssistant,
+  retrieveAssistant,
+  patchAssistant,
+  deleteAssistant,
+  listAssistants,
+  getAssistantDocuments,
+  uploadAssistantAvatar,
+};

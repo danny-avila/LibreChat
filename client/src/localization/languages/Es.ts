@@ -475,6 +475,17 @@ export default {
   com_nav_lang_auto: 'Detección automática',
   com_nav_lang_spanish: 'Español',
   /* The following are AI Translated */
+  com_assistants_file_search: 'Búsqueda de Archivos',
+  com_assistants_file_search_info:
+    'Adjuntar almacenes vectoriales para la Búsqueda de Archivos aún no está soportado. Puede adjuntarlos desde el Área de Pruebas del Proveedor o adjuntar archivos a los mensajes para la búsqueda de archivos en una conversación específica.',
+  com_assistants_non_retrieval_model:
+    'La búsqueda de archivos no está habilitada en este modelo. Por favor, seleccione otro modelo.',
+  com_ui_attach_error_openai:
+    'No se pueden adjuntar archivos del Asistente a otros puntos de conexión',
+  com_ui_attach_warn_endpoint:
+    'Es posible que los archivos no compatibles con la herramienta sean ignorados',
+  com_ui_assistant_deleted: 'Asistente eliminado con éxito',
+  com_ui_assistant_delete_error: 'Hubo un error al eliminar el asistente',
   com_ui_copied: '¡Copiado!',
   com_ui_copy_code: 'Copiar código',
   com_ui_copy_link: 'Copiar enlace',
@@ -2285,6 +2296,37 @@ export const comparisons = {
   com_nav_lang_spanish: {
     english: 'Español',
     translated: 'Español',
+  },
+  com_assistants_file_search: {
+    english: 'File Search',
+    translated: 'Búsqueda de Archivos',
+  },
+  com_assistants_file_search_info: {
+    english:
+      'Attaching vector stores for File Search is not yet supported. You can attach them from the Provider Playground or attach files to messages for file search on a thread basis.',
+    translated:
+      'Adjuntar almacenes vectoriales para la Búsqueda de Archivos aún no está soportado. Puede adjuntarlos desde el Área de Pruebas del Proveedor o adjuntar archivos a los mensajes para la búsqueda de archivos en una conversación específica.',
+  },
+  com_assistants_non_retrieval_model: {
+    english: 'File search is not enabled on this model. Please select another model.',
+    translated:
+      'La búsqueda de archivos no está habilitada en este modelo. Por favor, seleccione otro modelo.',
+  },
+  com_ui_attach_error_openai: {
+    english: 'Cannot attach Assistant files to other endpoints',
+    translated: 'No se pueden adjuntar archivos del Asistente a otros puntos de conexión',
+  },
+  com_ui_attach_warn_endpoint: {
+    english: 'Non-Assistant files may be ignored without a compatible tool',
+    translated: 'Es posible que los archivos no compatibles con la herramienta sean ignorados',
+  },
+  com_ui_assistant_deleted: {
+    english: 'Successfully deleted assistant',
+    translated: 'Asistente eliminado con éxito',
+  },
+  com_ui_assistant_delete_error: {
+    english: 'There was an error deleting the assistant',
+    translated: 'Hubo un error al eliminar el asistente',
   },
   com_ui_copied: {
     english: 'Copied!',
