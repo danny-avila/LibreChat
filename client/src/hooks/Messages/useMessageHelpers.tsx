@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
 import useCopyToClipboard from './useCopyToClipboard';
@@ -55,7 +55,8 @@ export default function useMessageHelpers(props: TMessageProps) {
   }, [isSubmitting, setAbortScroll]);
 
   const assistant =
-    conversation?.endpoint === EModelEndpoint.assistants && assistantMap?.[message?.model ?? ''];
+    isAssistantsEndpoint(conversation?.endpoint) &&
+    assistantMap?.[conversation?.endpoint ?? '']?.[message?.model ?? ''];
 
   const regenerateMessage = () => {
     if ((isSubmitting && isCreatedByUser) || !message) {

@@ -37,7 +37,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
   const [isPopoverActive, setIsPopoverActive] = useState(false);
 
   const clickHandler = async (event: React.MouseEvent<HTMLAnchorElement>) => {
-    if (event.button === 0 && event.ctrlKey) {
+    if (event.button === 0 && (event.ctrlKey || event.metaKey)) {
       toggleNav();
       return;
     }
