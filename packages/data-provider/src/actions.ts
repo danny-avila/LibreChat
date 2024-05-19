@@ -212,6 +212,10 @@ export function resolveRef(
   return schema as OpenAPIV3.SchemaObject;
 }
 
+function sanitizeOperationId(input: string) {
+  return input.replace(/[^a-zA-Z0-9_-]/g, '');
+}
+
 /** Function to convert OpenAPI spec to function signatures and request builders */
 export function openapiToFunction(openapiSpec: OpenAPIV3.Document): {
   functionSignatures: FunctionSignature[];
@@ -231,7 +235,8 @@ export function openapiToFunction(openapiSpec: OpenAPIV3.Document): {
       };
 
       // Operation ID is used as the function name
-      const operationId = operationObj.operationId || `${method}_${path}`;
+      const defaultOperationId = `${method}_${path}`;
+      const operationId = operationObj.operationId || sanitizeOperationId(defaultOperationId);
       const description = operationObj.summary || operationObj.description || '';
 
       const parametersSchema: ParametersSchema = { type: 'object', properties: {}, required: [] };

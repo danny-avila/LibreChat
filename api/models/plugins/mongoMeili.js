@@ -155,7 +155,7 @@ const createMeiliMongooseModel = function ({ index, attributesToIndex }) {
             function (results, value, key) {
               return { ...results, [key]: 1 };
             },
-            { _id: 1 },
+            { _id: 1, __v: 1 },
           ),
         ).lean();
 

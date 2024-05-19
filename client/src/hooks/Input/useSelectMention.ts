@@ -1,12 +1,12 @@
 import { useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type {
+  TPreset,
   TModelSpec,
   TConversation,
+  TAssistantsMap,
   TEndpointsConfig,
-  TPreset,
-  Assistant,
 } from 'librechat-data-provider';
 import type { MentionOption } from '~/common';
 import { getConvoSwitchLogic, getModelSpecIconURL, removeUnavailableTools } from '~/utils';
@@ -23,7 +23,7 @@ export default function useSelectMention({
   presets?: TPreset[];
   modelSpecs: TModelSpec[];
   endpointsConfig: TEndpointsConfig;
-  assistantMap: Record<string, Assistant>;
+  assistantMap: TAssistantsMap;
 }) {
   const { conversation } = useChatContext();
   const { newConversation } = useNewConvo();
@@ -194,10 +194,10 @@ export default function useSelectMention({
         onSelectEndpoint(key, { model: option.label });
       } else if (option.type === 'endpoint') {
         onSelectEndpoint(key);
-      } else if (option.type === 'assistant') {
-        onSelectEndpoint(EModelEndpoint.assistants, {
+      } else if (isAssistantsEndpoint(option.type)) {
+        onSelectEndpoint(option.type, {
           assistant_id: key,
-          model: assistantMap?.[key]?.model ?? '',
+          model: assistantMap?.[option.type]?.[key]?.model ?? '',
         });
       }
     },

@@ -12,10 +12,10 @@ import {
   createPayload,
   tPresetSchema,
   tMessageSchema,
-  EModelEndpoint,
   LocalStorageKeys,
   tConvoUpdateSchema,
   removeNullishValues,
+  isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import { useGetUserBalance, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type {
@@ -441,7 +441,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
-            abortKey: _endpoint === EModelEndpoint.assistants ? runAbortKey : conversationId,
+            abortKey: isAssistantsEndpoint(_endpoint) ? runAbortKey : conversationId,
             endpoint,
           }),
         });
@@ -513,7 +513,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
     const payloadData = createPayload(submission);
     let { payload } = payloadData;
-    if (payload.endpoint === EModelEndpoint.assistants) {
+    if (isAssistantsEndpoint(payload.endpoint)) {
       payload = removeNullishValues(payload);
     }
 
