@@ -1,6 +1,5 @@
 const WebSocket = require('ws');
 
-const ELEVENLABS_API_KEY = 'a495399653cc5824ba1e41d914473e07';
 const VOICE_ID_1 = '1RVpBInY9YUYMLSUQReV';
 const VOICE_ID_2 = 'pNInz6obpgDQGcFmaJgB';
 const VOICE_ID_3 = 'zvBAbtHEaG9XNBKqbWMi ';
@@ -96,10 +95,11 @@ function findLastSeparatorIndex(text, separators = ['. ', '? ', '! ']) {
  * @returns {AsyncGenerator<AudioChunk>}
  */
 function inputStreamTextToSpeech(res, textStream, callback) {
-  const model = 'eleven_turbo_v2';
+  const model = 'eleven_monolingual_v1';
   const wsUrl = `wss://api.elevenlabs.io/v1/text-to-speech/${getRandomVoiceId()}/stream-input${assembleQuery(
     {
       model_id: model,
+      // flush: true,
       // optimize_streaming_latency: this.settings.optimizeStreamingLatency,
       optimize_streaming_latency: 1,
       // output_format: this.settings.outputFormat,
@@ -114,8 +114,8 @@ function inputStreamTextToSpeech(res, textStream, callback) {
         stability: 0.5,
         similarity_boost: 0.8,
       },
-      xi_api_key: ELEVENLABS_API_KEY,
-      generation_config: { chunk_length_schedule: [50, 90, 120, 150, 200] },
+      xi_api_key: process.env.ELEVENLABS_API_KEY,
+      // generation_config: { chunk_length_schedule: [50, 90, 120, 150, 200] },
     };
 
     socket.send(JSON.stringify(streamStart));
@@ -207,7 +207,7 @@ function inputStreamTextToSpeech(res, textStream, callback) {
 
     socket.onerror = function (error) {
       console.error('WebSocket error:', error);
-      throw error;
+      // throw error;
     };
 
     socket.onclose = function () {

@@ -1231,15 +1231,12 @@ ${convo}
           };
 
           const llmMessageStream = llmMessageSource(stream);
-          for await (const audio of inputStreamTextToSpeech(
+          for await (const _audioData of inputStreamTextToSpeech(
             this.options.res,
             llmMessageStream,
             tokenStreamCallback,
           )) {
-            const { audio: _a } = audio;
-            // const { audio: _a, ...rest } = audio;
-            console.log('audio metadata');
-            // console.log('audio metadata', rest);
+            logger.info('audio metadata');
           }
         } else {
           for await (const token of stream) {

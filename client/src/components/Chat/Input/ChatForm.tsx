@@ -178,8 +178,8 @@ const ChatForm = ({ index = 0 }) => {
                 />
               )
             )}
-            {/* {audioURL != null && (
-              <div className="flex justify-center mt-4">
+            {audioURL != null && (
+              <div className="mt-4 flex justify-center">
                 <audio
                   controls
                   controlsList="nodownload nofullscreen noremoteplayback"
@@ -187,7 +187,7 @@ const ChatForm = ({ index = 0 }) => {
                   src={audioURL}
                 />
               </div>
-            )} */}
+            )}
             {SpeechToText && (
               <AudioRecorder
                 isListening={isListening}
