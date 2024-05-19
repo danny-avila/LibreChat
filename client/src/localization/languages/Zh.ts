@@ -434,6 +434,14 @@ export default {
   com_nav_setting_data: '数据管理',
   com_nav_setting_account: '账户',
   /* The following are AI Translated */
+  com_assistants_file_search: '文件搜索',
+  com_assistants_file_search_info:
+    '暂不支持为文件搜索附加向量存储。您可以从提供程序游乐场附加它们,或者在线程基础上为文件搜索附加文件。',
+  com_assistants_non_retrieval_model: '此模型未启用文件搜索功能。请选择其他模型。',
+  com_ui_attach_error_openai: '无法将助手文件附加到其他渠道',
+  com_ui_attach_warn_endpoint: '不兼容的工具可能会忽略非助手文件',
+  com_ui_assistant_deleted: '助手已成功删除',
+  com_ui_assistant_delete_error: '删除助手时出错。',
   com_ui_date_october: '十月',
   com_ui_date_november: '十一月',
   com_ui_date_december: '十二月',

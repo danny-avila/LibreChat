@@ -481,6 +481,16 @@ export default {
   com_nav_setting_account: 'Konto',
   com_nav_language: 'Sprache',
   /* The following are AI Translated */
+  com_assistants_file_search: 'Dateisuche',
+  com_assistants_file_search_info:
+    'Das Anhängen von Vektorspeichern für die Dateisuche wird derzeit noch nicht unterstützt. Du kannst sie im Provider Playground anhängen oder Dateien für die Dateisuche pro Thread anhängen.',
+  com_assistants_non_retrieval_model:
+    'Die Dateisuche ist für dieses Modell nicht aktiviert. Bitte wähle ein anderes Modell aus.',
+  com_ui_attach_error_openai: 'Assistent-Dateien können nicht an andere Endpunkte angehängt werden',
+  com_ui_attach_warn_endpoint:
+    'Nicht-Assistent-Dateien könnten ohne ein kompatibles Werkzeug ignoriert werden',
+  com_ui_assistant_deleted: 'Assistent erfolgreich gelöscht',
+  com_ui_assistant_delete_error: 'Beim Löschen des Assistenten ist ein Fehler aufgetreten.',
   com_ui_copied: 'Kopiert',
   com_ui_copy_code: 'Code kopieren',
   com_ui_copy_link: 'Link kopieren',

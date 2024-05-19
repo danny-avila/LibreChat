@@ -364,6 +364,16 @@ export default {
   com_nav_setting_data: 'Contrôles des données',
   com_nav_setting_account: 'Compte',
   /* The following are AI Translated */
+  com_assistants_file_search: 'Recherche de fichiers',
+  com_assistants_file_search_info:
+    'L\'ajout de vecteurs de stockage pour la recherche de fichiers n\'est pas encore pris en charge. Vous pouvez les ajouter depuis le terrain de jeu du fournisseur ou joindre des fichiers aux messages pour une recherche de fichiers au niveau du fil de discussion.',
+  com_assistants_non_retrieval_model:
+    'La recherche de fichiers n\'est pas activée pour ce modèle. Veuillez sélectionner un autre modèle.',
+  com_ui_attach_error_openai:
+    'Impossible de joindre les fichiers de l\'Assistant à d\'autres points d\'accès',
+  com_ui_attach_warn_endpoint: 'Les fichiers non compatibles avec l\'outil peuvent être ignorés',
+  com_ui_assistant_deleted: 'Assistant supprimé avec succès',
+  com_ui_assistant_delete_error: 'Une erreur s\'est produite lors de la suppression de l\'assistant.',
   com_ui_copied: 'Copié !',
   com_ui_copy_code: 'Copier le code',
   com_ui_copy_link: 'Copier le lien',

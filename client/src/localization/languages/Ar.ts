@@ -297,6 +297,15 @@ export default {
   com_nav_setting_general: 'عام',
   com_nav_setting_data: 'تحكم في البيانات',
   /* The following are AI translated */
+  com_assistants_file_search: 'بحث الملفات',
+  com_assistants_file_search_info:
+    'لا يتم دعم إرفاق مخازن الكتل الرقمية لميزة البحث في الملفات بعد. يمكنك إرفاقها من ملعب المزود أو إرفاق ملفات إلى الرسائل للبحث في الملفات على أساس المحادثة.',
+  com_assistants_non_retrieval_model:
+    'البحث في الملفات غير مُمكّن على هذا النموذج. يرجى تحديد نموذج آخر.',
+  com_ui_attach_error_openai: 'لا يمكن إرفاق ملفات المساعد إلى نقاط نهائية أخرى',
+  com_ui_attach_warn_endpoint: 'قد يتم تجاهل الملفات غير المساعدة دون وجود أداة متوافقة',
+  com_ui_assistant_deleted: 'تم حذف المساعد بنجاح',
+  com_ui_assistant_delete_error: 'حدث خطأ أثناء حذف المساعد',
   com_ui_copied: 'تم النسخ',
   com_ui_copy_code: 'نسخ الكود',
   com_ui_copy_link: 'نسخ الرابط',

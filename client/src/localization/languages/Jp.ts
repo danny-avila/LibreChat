@@ -473,6 +473,16 @@ export default {
   com_nav_setting_data: 'データ管理',
   com_nav_setting_account: 'アカウント',
   /* The following are AI translated */
+  com_assistants_file_search: 'ファイル検索',
+  com_assistants_file_search_info:
+    'ファイル検索用のベクトル ストアを添付することはまだサポートされていません。Provider Playgroundからそれらを添付するか、スレッド単位でメッセージにファイルを添付してファイル検索を行うことができます。',
+  com_assistants_non_retrieval_model:
+    'このモデルではファイル検索機能は有効になっていません。別のモデルを選択してください。',
+  com_ui_attach_error_openai: '他のエンドポイントにAssistantファイルを添付することはできません',
+  com_ui_attach_warn_endpoint:
+    '互換性のあるツールがない場合、非アシスタントのファイルは無視される可能性があります',
+  com_ui_assistant_deleted: 'アシスタントが正常に削除されました',
+  com_ui_assistant_delete_error: 'アシスタントの削除中にエラーが発生しました。',
   com_ui_copied: 'コピーしました',
   com_ui_copy_code: 'コードをコピーする',
   com_ui_copy_link: 'リンクをコピー',
