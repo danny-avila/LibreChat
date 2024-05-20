@@ -22,8 +22,18 @@ export enum EModelEndpoint {
   gptPlugins = 'gptPlugins',
   anthropic = 'anthropic',
   assistants = 'assistants',
+  azureAssistants = 'azureAssistants',
   custom = 'custom',
 }
+
+export type AssistantsEndpoint = EModelEndpoint.assistants | EModelEndpoint.azureAssistants;
+
+export const isAssistantsEndpoint = (endpoint?: AssistantsEndpoint | null | string): boolean => {
+  if (!endpoint) {
+    return false;
+  }
+  return endpoint.toLowerCase().endsWith(EModelEndpoint.assistants);
+};
 
 export enum ImageDetail {
   low = 'low',

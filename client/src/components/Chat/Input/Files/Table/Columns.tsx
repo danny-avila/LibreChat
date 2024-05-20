@@ -7,6 +7,7 @@ import ImagePreview from '~/components/Chat/Input/Files/ImagePreview';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
 import { SortFilterHeader } from './SortFilterHeader';
 import { OpenAIMinimalIcon } from '~/components/svg';
+import { AzureMinimalIcon } from '~/components/svg';
 import { Button, Checkbox } from '~/components/ui';
 import { formatDate, getFileType } from '~/utils';
 import useLocalize from '~/hooks/useLocalize';
@@ -71,10 +72,11 @@ export const columns: ColumnDef<TFile>[] = [
       const file = row.original;
       if (file.type?.startsWith('image')) {
         return (
-          <div className="flex gap-2 ">
+          <div className="flex gap-2">
             <ImagePreview
               url={file.filepath}
-              className="h-10 w-10  shrink-0 overflow-hidden  rounded-md"
+              className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md"
+              source={file?.source}
             />
             <span className="self-center truncate ">{file.filename}</span>
           </div>
@@ -84,7 +86,7 @@ export const columns: ColumnDef<TFile>[] = [
       const fileType = getFileType(file.type);
       return (
         <div className="flex gap-2">
-          {fileType && <FilePreview fileType={fileType} />}
+          {fileType && <FilePreview fileType={fileType} className="relative" file={file} />}
           <span className="self-center truncate">{file.filename}</span>
         </div>
       );
@@ -108,7 +110,7 @@ export const columns: ColumnDef<TFile>[] = [
     cell: ({ row }) => formatDate(row.original.updatedAt),
   },
   {
-    accessorKey: 'source',
+    accessorKey: 'filterSource',
     header: ({ column }) => {
       const localize = useLocalize();
       return (
@@ -117,10 +119,14 @@ export const columns: ColumnDef<TFile>[] = [
           title={localize('com_ui_storage')}
           filters={{
             Storage: Object.values(FileSources).filter(
-              (value) => value === FileSources.local || value === FileSources.openai,
+              (value) =>
+                value === FileSources.local ||
+                value === FileSources.openai ||
+                value === FileSources.azure,
             ),
           }}
           valueMap={{
+            [FileSources.azure]: 'Azure',
             [FileSources.openai]: 'OpenAI',
             [FileSources.local]: 'com_ui_host',
           }}
@@ -135,6 +141,13 @@ export const columns: ColumnDef<TFile>[] = [
           <div className="flex flex-wrap items-center gap-2">
             <OpenAIMinimalIcon className="icon-sm text-green-600/50" />
             {'OpenAI'}
+          </div>
+        );
+      } else if (source === FileSources.azure) {
+        return (
+          <div className="flex flex-wrap items-center gap-2">
+            <AzureMinimalIcon className="icon-sm text-cyan-700" />
+            {'Azure'}
           </div>
         );
       }

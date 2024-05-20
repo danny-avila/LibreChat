@@ -15,6 +15,24 @@ import {
 import UnknownIcon from './UnknownIcon';
 import { cn } from '~/utils';
 
+const AssistantAvatar = ({ className = '', assistantName, avatar, size }: IconMapProps) => {
+  if (assistantName && avatar) {
+    return (
+      <img
+        src={avatar}
+        className="bg-token-surface-secondary dark:bg-token-surface-tertiary h-full w-full rounded-full object-cover"
+        alt={assistantName}
+        width="80"
+        height="80"
+      />
+    );
+  } else if (assistantName) {
+    return <AssistantIcon className={cn('text-token-secondary', className)} size={size} />;
+  }
+
+  return <Sparkles className={cn(assistantName === '' ? 'icon-2xl' : '', className)} />;
+};
+
 export const icons = {
   [EModelEndpoint.azureOpenAI]: AzureMinimalIcon,
   [EModelEndpoint.openAI]: GPTIcon,
@@ -24,22 +42,7 @@ export const icons = {
   [EModelEndpoint.google]: GoogleMinimalIcon,
   [EModelEndpoint.bingAI]: BingAIMinimalIcon,
   [EModelEndpoint.custom]: CustomMinimalIcon,
-  [EModelEndpoint.assistants]: ({ className = '', assistantName, avatar, size }: IconMapProps) => {
-    if (assistantName && avatar) {
-      return (
-        <img
-          src={avatar}
-          className="bg-token-surface-secondary dark:bg-token-surface-tertiary h-full w-full rounded-full object-cover"
-          alt={assistantName}
-          width="80"
-          height="80"
-        />
-      );
-    } else if (assistantName) {
-      return <AssistantIcon className={cn('text-token-secondary', className)} size={size} />;
-    }
-
-    return <Sparkles className={cn(assistantName === '' ? 'icon-2xl' : '', className)} />;
-  },
+  [EModelEndpoint.assistants]: AssistantAvatar,
+  [EModelEndpoint.azureAssistants]: AssistantAvatar,
   unknown: UnknownIcon,
 };
