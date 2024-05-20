@@ -10,6 +10,8 @@ import { TModelsConfig } from './types';
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord'];
 
 export const defaultRetrievalModels = [
+  'gpt-4o',
+  'gpt-4o-2024-05-13',
   'gpt-4-turbo-preview',
   'gpt-3.5-turbo-0125',
   'gpt-4-0125-preview',
@@ -129,11 +131,17 @@ export enum Capabilities {
   tools = 'tools',
 }
 
+export const defaultAssistantsVersion = {
+  [EModelEndpoint.assistants]: 2,
+  [EModelEndpoint.azureAssistants]: 1,
+};
+
 export const assistantEndpointSchema = z.object({
   /* assistants specific */
   disableBuilder: z.boolean().optional(),
   pollIntervalMs: z.number().optional(),
   timeoutMs: z.number().optional(),
+  version: z.union([z.string(), z.number()]).default(2),
   supportedIds: z.array(z.string()).min(1).optional(),
   excludedIds: z.array(z.string()).min(1).optional(),
   retrievalModels: z.array(z.string()).min(1).optional().default(defaultRetrievalModels),
@@ -287,6 +295,7 @@ export const configSchema = z.object({
   endpoints: z
     .object({
       [EModelEndpoint.azureOpenAI]: azureEndpointSchema.optional(),
+      [EModelEndpoint.azureAssistants]: assistantEndpointSchema.optional(),
       [EModelEndpoint.assistants]: assistantEndpointSchema.optional(),
       custom: z.array(endpointSchema.partial()).optional(),
     })
@@ -324,6 +333,7 @@ export enum FetchTokenConfig {
 export const defaultEndpoints: EModelEndpoint[] = [
   EModelEndpoint.openAI,
   EModelEndpoint.assistants,
+  EModelEndpoint.azureAssistants,
   EModelEndpoint.azureOpenAI,
   EModelEndpoint.bingAI,
   EModelEndpoint.chatGPTBrowser,
@@ -336,6 +346,7 @@ export const defaultEndpoints: EModelEndpoint[] = [
 export const alternateName = {
   [EModelEndpoint.openAI]: 'OpenAI',
   [EModelEndpoint.assistants]: 'Assistants',
+  [EModelEndpoint.azureAssistants]: 'Azure Assistants',
   [EModelEndpoint.azureOpenAI]: 'Azure OpenAI',
   [EModelEndpoint.bingAI]: 'Bing',
   [EModelEndpoint.chatGPTBrowser]: 'ChatGPT',
@@ -345,24 +356,27 @@ export const alternateName = {
   [EModelEndpoint.custom]: 'Custom',
 };
 
+const sharedOpenAIModels = [
+  'gpt-3.5-turbo',
+  'gpt-3.5-turbo-0125',
+  'gpt-4-turbo',
+  'gpt-4-turbo-2024-04-09',
+  'gpt-4-0125-preview',
+  'gpt-4-turbo-preview',
+  'gpt-4-1106-preview',
+  'gpt-3.5-turbo-1106',
+  'gpt-3.5-turbo-16k-0613',
+  'gpt-3.5-turbo-16k',
+  'gpt-4',
+  'gpt-4-0314',
+  'gpt-4-32k-0314',
+  'gpt-4-0613',
+  'gpt-3.5-turbo-0613',
+];
+
 export const defaultModels = {
-  [EModelEndpoint.assistants]: [
-    'gpt-3.5-turbo',
-    'gpt-3.5-turbo-0125',
-    'gpt-4-turbo',
-    'gpt-4-turbo-2024-04-09',
-    'gpt-4-0125-preview',
-    'gpt-4-turbo-preview',
-    'gpt-4-1106-preview',
-    'gpt-3.5-turbo-1106',
-    'gpt-3.5-turbo-16k-0613',
-    'gpt-3.5-turbo-16k',
-    'gpt-4',
-    'gpt-4-0314',
-    'gpt-4-32k-0314',
-    'gpt-4-0613',
-    'gpt-3.5-turbo-0613',
-  ],
+  [EModelEndpoint.azureAssistants]: sharedOpenAIModels,
+  [EModelEndpoint.assistants]: ['gpt-4o', ...sharedOpenAIModels],
   [EModelEndpoint.google]: [
     'gemini-pro',
     'gemini-pro-vision',
@@ -391,25 +405,12 @@ export const defaultModels = {
   ],
   [EModelEndpoint.openAI]: [
     'gpt-4o',
-    'gpt-3.5-turbo-0125',
-    'gpt-4-turbo',
-    'gpt-4-turbo-2024-04-09',
-    'gpt-3.5-turbo-16k-0613',
-    'gpt-3.5-turbo-16k',
-    'gpt-4-turbo-preview',
-    'gpt-4-0125-preview',
-    'gpt-4-1106-preview',
-    'gpt-3.5-turbo',
-    'gpt-3.5-turbo-1106',
+    ...sharedOpenAIModels,
     'gpt-4-vision-preview',
-    'gpt-4',
     'gpt-3.5-turbo-instruct-0914',
-    'gpt-3.5-turbo-0613',
     'gpt-3.5-turbo-0301',
     'gpt-3.5-turbo-instruct',
-    'gpt-4-0613',
     'text-davinci-003',
-    'gpt-4-0314',
   ],
 };
 
@@ -440,7 +441,8 @@ export const EndpointURLs: { [key in EModelEndpoint]: string } = {
   [EModelEndpoint.gptPlugins]: `/api/ask/${EModelEndpoint.gptPlugins}`,
   [EModelEndpoint.azureOpenAI]: `/api/ask/${EModelEndpoint.azureOpenAI}`,
   [EModelEndpoint.chatGPTBrowser]: `/api/ask/${EModelEndpoint.chatGPTBrowser}`,
-  [EModelEndpoint.assistants]: '/api/assistants/chat',
+  [EModelEndpoint.azureAssistants]: '/api/assistants/v1/chat',
+  [EModelEndpoint.assistants]: '/api/assistants/v2/chat',
 };
 
 export const modularEndpoints = new Set<EModelEndpoint | string>([
@@ -458,6 +460,7 @@ export const supportsBalanceCheck = {
   [EModelEndpoint.anthropic]: true,
   [EModelEndpoint.gptPlugins]: true,
   [EModelEndpoint.assistants]: true,
+  [EModelEndpoint.azureAssistants]: true,
   [EModelEndpoint.azureOpenAI]: true,
 };
 
@@ -680,7 +683,7 @@ export enum Constants {
   /** Key for the app's version. */
   VERSION = 'v0.7.2',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.1.0',
+  CONFIG_VERSION = '1.1.1',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Fixed, encoded domain length for Azure OpenAI Assistants Function name parsing. */

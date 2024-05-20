@@ -1,4 +1,4 @@
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { ReactNode } from 'react';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
@@ -30,7 +30,8 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
   const iconURL = conversation?.iconURL;
   endpoint = getIconEndpoint({ endpointsConfig, iconURL, endpoint });
 
-  const assistant = endpoint === EModelEndpoint.assistants && assistantMap?.[assistant_id ?? ''];
+  const isAssistant = isAssistantsEndpoint(endpoint);
+  const assistant = isAssistant && assistantMap?.[endpoint]?.[assistant_id ?? ''];
   const assistantName = (assistant && assistant?.name) || '';
   const assistantDesc = (assistant && assistant?.description) || '';
   const avatar = (assistant && (assistant?.metadata?.avatar as string)) || '';
@@ -77,7 +78,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
               </div>
             ) : (
               <div className="mb-5 max-w-[75vh] px-12 text-center text-lg font-medium dark:text-white md:px-0 md:text-2xl">
-                {endpoint === EModelEndpoint.assistants
+                {isAssistant
                   ? conversation?.greeting ?? localize('com_nav_welcome_assistant')
                   : conversation?.greeting ?? localize('com_nav_welcome_message')}
               </div>

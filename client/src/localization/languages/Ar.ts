@@ -51,6 +51,17 @@ export default {
   com_ui_import_conversation_error: 'حدث خطأ أثناء استيراد محادثاتك',
   com_ui_confirm_action: 'تأكيد الإجراء',
   com_ui_chats: 'الدردشات',
+  com_ui_share: 'Share',
+  com_ui_share_link_to_chat: 'Share link to chat',
+  com_ui_share_error: 'There was an error sharing the chat link',
+  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share_created_message:
+    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  com_ui_share_update_message:
+    'Your name, custom instructions, and any messages you add after sharing stay private.',
+  com_ui_share_updated_message:
+    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete: 'حذف',
   com_ui_delete_conversation: 'حذف الدردشة؟',
   com_ui_delete_conversation_confirm: 'سيتم حذف هذا',
@@ -254,6 +265,12 @@ export default {
   com_nav_export_recursive_or_sequential: 'التراجع أو التسلسل؟',
   com_nav_export_recursive: 'تكراري',
   com_nav_export_conversation: 'تصدير المحادثة',
+  com_nav_export: 'تصدير',
+  com_nav_shared_links: 'روابط مشتركة',
+  com_nav_shared_links_manage: 'الإدارة',
+  com_nav_shared_links_empty: 'ليس لديك أي روابط مشتركة.',
+  com_nav_shared_links_name: 'الاسم',
+  com_nav_shared_links_date_shared: 'تاريخ المشترك',
   com_nav_theme: 'المظهر',
   com_nav_theme_system: 'النظام',
   com_nav_theme_dark: 'داكن',
@@ -280,6 +297,21 @@ export default {
   com_nav_setting_general: 'عام',
   com_nav_setting_data: 'تحكم في البيانات',
   /* The following are AI translated */
+  com_assistants_file_search: 'بحث الملفات',
+  com_assistants_file_search_info:
+    'لا يتم دعم إرفاق مخازن الكتل الرقمية لميزة البحث في الملفات بعد. يمكنك إرفاقها من ملعب المزود أو إرفاق ملفات إلى الرسائل للبحث في الملفات على أساس المحادثة.',
+  com_assistants_non_retrieval_model:
+    'البحث في الملفات غير مُمكّن على هذا النموذج. يرجى تحديد نموذج آخر.',
+  com_ui_attach_error_openai: 'لا يمكن إرفاق ملفات المساعد إلى نقاط نهائية أخرى',
+  com_ui_attach_warn_endpoint: 'قد يتم تجاهل الملفات غير المساعدة دون وجود أداة متوافقة',
+  com_ui_assistant_deleted: 'تم حذف المساعد بنجاح',
+  com_ui_assistant_delete_error: 'حدث خطأ أثناء حذف المساعد',
+  com_ui_copied: 'تم النسخ',
+  com_ui_copy_code: 'نسخ الكود',
+  com_ui_copy_link: 'نسخ الرابط',
+  com_ui_update_link: 'رابط التحديث',
+  com_ui_create_link: 'إنشاء رابط',
+  com_nav_source_chat: 'عرض محادثة المصدر',
   com_ui_date_today: 'اليوم',
   com_ui_date_yesterday: 'أمس',
   com_ui_date_previous_7_days: 'الأيام السبعة السابقة',
@@ -735,6 +767,43 @@ export const comparisons = {
   com_ui_chats: {
     english: 'chats',
     translated: 'الدردشات',
+  },
+  com_ui_share: {
+    english: 'Share',
+    translated: 'Share',
+  },
+  com_ui_share_link_to_chat: {
+    english: 'Share link to chat',
+    translated: 'Share link to chat',
+  },
+  com_ui_share_error: {
+    english: 'There was an error sharing the chat link',
+    translated: 'There was an error sharing the chat link',
+  },
+  com_ui_share_create_message: {
+    english: 'Your name and any messages you add after sharing stay private.',
+    translated: 'Your name and any messages you add after sharing stay private.',
+  },
+  com_ui_share_created_message: {
+    english:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_share_update_message: {
+    english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated:
+      'Your name, custom instructions, and any messages you add after sharing stay private.',
+  },
+  com_ui_share_updated_message: {
+    english:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_shared_link_not_found: {
+    english: 'Shared link not found',
+    translated: 'Shared link not found',
   },
   com_ui_delete: {
     english: 'Delete',
@@ -1456,6 +1525,30 @@ export const comparisons = {
     english: 'Export conversation',
     translated: 'تصدير المحادثة',
   },
+  com_nav_export: {
+    english: 'Export',
+    translated: 'تصدير',
+  },
+  com_nav_shared_links: {
+    english: 'Shared links',
+    translated: 'روابط مشتركة',
+  },
+  com_nav_shared_links_manage: {
+    english: 'Manage',
+    translated: 'الإدارة',
+  },
+  com_nav_shared_links_empty: {
+    english: 'You have no shared links.',
+    translated: 'ليس لديك أي روابط مشتركة.',
+  },
+  com_nav_shared_links_name: {
+    english: 'Name',
+    translated: 'الاسم',
+  },
+  com_nav_shared_links_date_shared: {
+    english: 'Date shared',
+    translated: 'تاريخ المشترك',
+  },
   com_nav_theme: {
     english: 'Theme',
     translated: 'المظهر',
@@ -1551,6 +1644,60 @@ export const comparisons = {
   com_nav_setting_data: {
     english: 'Data controls',
     translated: 'تحكم في البيانات',
+  },
+  com_assistants_file_search: {
+    english: 'File Search',
+    translated: 'بحث الملفات',
+  },
+  com_assistants_file_search_info: {
+    english:
+      'Attaching vector stores for File Search is not yet supported. You can attach them from the Provider Playground or attach files to messages for file search on a thread basis.',
+    translated:
+      'لا يتم دعم إرفاق مخازن الكتل الرقمية لميزة البحث في الملفات بعد. يمكنك إرفاقها من ملعب المزود أو إرفاق ملفات إلى الرسائل للبحث في الملفات على أساس المحادثة.',
+  },
+  com_assistants_non_retrieval_model: {
+    english: 'File search is not enabled on this model. Please select another model.',
+    translated: 'البحث في الملفات غير مُمكّن على هذا النموذج. يرجى تحديد نموذج آخر.',
+  },
+  com_ui_attach_error_openai: {
+    english: 'Cannot attach Assistant files to other endpoints',
+    translated: 'لا يمكن إرفاق ملفات المساعد إلى نقاط نهائية أخرى',
+  },
+  com_ui_attach_warn_endpoint: {
+    english: 'Non-Assistant files may be ignored without a compatible tool',
+    translated: 'قد يتم تجاهل الملفات غير المساعدة دون وجود أداة متوافقة',
+  },
+  com_ui_assistant_deleted: {
+    english: 'Successfully deleted assistant',
+    translated: 'تم حذف المساعد بنجاح',
+  },
+  com_ui_assistant_delete_error: {
+    english: 'There was an error deleting the assistant',
+    translated: 'حدث خطأ أثناء حذف المساعد',
+  },
+  com_ui_copied: {
+    english: 'Copied!',
+    translated: 'تم النسخ',
+  },
+  com_ui_copy_code: {
+    english: 'Copy code',
+    translated: 'نسخ الكود',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: 'نسخ الرابط',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: 'رابط التحديث',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: 'إنشاء رابط',
+  },
+  com_nav_source_chat: {
+    english: 'View source chat',
+    translated: 'عرض محادثة المصدر',
   },
   com_ui_date_today: {
     english: 'Today',

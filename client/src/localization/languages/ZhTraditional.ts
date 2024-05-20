@@ -50,6 +50,17 @@ export default {
   com_ui_import_conversation_error: '導入對話時發生錯誤',
   com_ui_confirm_action: '確認操作',
   com_ui_chats: '對話',
+  com_ui_share: 'Share',
+  com_ui_share_link_to_chat: 'Share link to chat',
+  com_ui_share_error: 'There was an error sharing the chat link',
+  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share_created_message:
+    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  com_ui_share_update_message:
+    'Your name, custom instructions, and any messages you add after sharing stay private.',
+  com_ui_share_updated_message:
+    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete: '刪除',
   com_ui_delete_conversation: '刪除對話？',
   com_ui_delete_conversation_confirm: '這將刪除',
@@ -240,6 +251,12 @@ export default {
   com_nav_export_recursive_or_sequential: '遞迴還是序列？',
   com_nav_export_recursive: '遞迴',
   com_nav_export_conversation: '匯出對話',
+  com_nav_export: '匯出',
+  com_nav_shared_links: '共享連結',
+  com_nav_shared_links_manage: '管理',
+  com_nav_shared_links_empty: '您沒有任何共享連結。',
+  com_nav_shared_links_name: '名称',
+  com_nav_shared_links_date_shared: '共享日期',
   com_nav_theme: '主題',
   com_nav_theme_system: '跟隨系統設定',
   com_nav_theme_dark: '深色',
@@ -266,6 +283,20 @@ export default {
   com_nav_setting_general: '一般',
   com_nav_setting_data: '資料控制',
   /* The following are AI translated */
+  com_assistants_file_search: '檔案搜尋',
+  com_assistants_file_search_info:
+    '目前尚不支援為檔案搜尋附加向量存儲。您可以從提供者遊樂場附加它們，或在每個主題的基礎上為檔案搜尋附加檔案。',
+  com_assistants_non_retrieval_model: '此模型未啟用檔案搜尋功能。請選擇其他模型。',
+  com_ui_attach_error_openai: '無法將助理檔案附加至其他端點',
+  com_ui_attach_warn_endpoint: '非相容工具的非助理檔案可能會被忽略',
+  com_ui_assistant_deleted: '已成功刪除助理',
+  com_ui_assistant_delete_error: '刪除助理時發生錯誤',
+  com_ui_copied: '已複製！',
+  com_ui_copy_code: '複製程式碼',
+  com_ui_copy_link: '複製連結',
+  com_ui_update_link: '更新連結',
+  com_ui_create_link: '創建連結',
+  com_nav_source_chat: '檢視原始對話',
   com_ui_date_today: '今天',
   com_ui_date_yesterday: '昨天',
   com_ui_date_previous_7_days: '前 7 天',
@@ -710,6 +741,43 @@ export const comparisons = {
   com_ui_chats: {
     english: 'chats',
     translated: '對話',
+  },
+  com_ui_share: {
+    english: 'Share',
+    translated: 'Share',
+  },
+  com_ui_share_link_to_chat: {
+    english: 'Share link to chat',
+    translated: 'Share link to chat',
+  },
+  com_ui_share_error: {
+    english: 'There was an error sharing the chat link',
+    translated: 'There was an error sharing the chat link',
+  },
+  com_ui_share_create_message: {
+    english: 'Your name and any messages you add after sharing stay private.',
+    translated: 'Your name and any messages you add after sharing stay private.',
+  },
+  com_ui_share_created_message: {
+    english:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_share_update_message: {
+    english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated:
+      'Your name, custom instructions, and any messages you add after sharing stay private.',
+  },
+  com_ui_share_updated_message: {
+    english:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_shared_link_not_found: {
+    english: 'Shared link not found',
+    translated: 'Shared link not found',
   },
   com_ui_delete: {
     english: 'Delete',
@@ -1427,6 +1495,30 @@ export const comparisons = {
     english: 'Export conversation',
     translated: '匯出對話',
   },
+  com_nav_export: {
+    english: 'Export',
+    translated: '匯出',
+  },
+  com_nav_shared_links: {
+    english: 'Shared links',
+    translated: '共享連結',
+  },
+  com_nav_shared_links_manage: {
+    english: 'Manage',
+    translated: '管理',
+  },
+  com_nav_shared_links_empty: {
+    english: 'You have no shared links.',
+    translated: '您沒有任何共享連結。',
+  },
+  com_nav_shared_links_name: {
+    english: 'Name',
+    translated: '名称',
+  },
+  com_nav_shared_links_date_shared: {
+    english: 'Date shared',
+    translated: '共享日期',
+  },
   com_nav_theme: {
     english: 'Theme',
     translated: '主題',
@@ -1526,6 +1618,60 @@ export const comparisons = {
   com_nav_setting_data: {
     english: 'Data controls',
     translated: '資料控制',
+  },
+  com_assistants_file_search: {
+    english: 'File Search',
+    translated: '檔案搜尋',
+  },
+  com_assistants_file_search_info: {
+    english:
+      'Attaching vector stores for File Search is not yet supported. You can attach them from the Provider Playground or attach files to messages for file search on a thread basis.',
+    translated:
+      '目前尚不支援為檔案搜尋附加向量存儲。您可以從提供者遊樂場附加它們，或在每個主題的基礎上為檔案搜尋附加檔案。',
+  },
+  com_assistants_non_retrieval_model: {
+    english: 'File search is not enabled on this model. Please select another model.',
+    translated: '此模型未啟用檔案搜尋功能。請選擇其他模型。',
+  },
+  com_ui_attach_error_openai: {
+    english: 'Cannot attach Assistant files to other endpoints',
+    translated: '無法將助理檔案附加至其他端點',
+  },
+  com_ui_attach_warn_endpoint: {
+    english: 'Non-Assistant files may be ignored without a compatible tool',
+    translated: '非相容工具的非助理檔案可能會被忽略',
+  },
+  com_ui_assistant_deleted: {
+    english: 'Successfully deleted assistant',
+    translated: '已成功刪除助理',
+  },
+  com_ui_assistant_delete_error: {
+    english: 'There was an error deleting the assistant',
+    translated: '刪除助理時發生錯誤',
+  },
+  com_ui_copied: {
+    english: 'Copied!',
+    translated: '已複製！',
+  },
+  com_ui_copy_code: {
+    english: 'Copy code',
+    translated: '複製程式碼',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: '複製連結',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: '更新連結',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: '創建連結',
+  },
+  com_nav_source_chat: {
+    english: 'View source chat',
+    translated: '檢視原始對話',
   },
   com_ui_date_today: {
     english: 'Today',

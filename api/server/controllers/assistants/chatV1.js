@@ -1,14 +1,13 @@
 const { v4 } = require('uuid');
-const express = require('express');
 const {
   Constants,
   RunStatus,
   CacheKeys,
-  FileSources,
   ContentTypes,
   EModelEndpoint,
   ViolationTypes,
   ImageVisionTool,
+  checkOpenAIStorage,
   AssistantStreamEvents,
 } = require('librechat-data-provider');
 const {
@@ -21,27 +20,18 @@ const {
 } = require('~/server/services/Threads');
 const { sendResponse, sendMessage, sleep, isEnabled, countTokens } = require('~/server/utils');
 const { runAssistant, createOnTextProgress } = require('~/server/services/AssistantService');
-const { addTitle, initializeClient } = require('~/server/services/Endpoints/assistants');
 const { formatMessage, createVisionPrompt } = require('~/app/clients/prompts');
 const { createRun, StreamRunManager } = require('~/server/services/Runs');
+const { addTitle } = require('~/server/services/Endpoints/assistants');
 const { getTransactions } = require('~/models/Transaction');
 const checkBalance = require('~/models/checkBalance');
 const { getConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
 const { getModelMaxTokens } = require('~/utils');
+const { getOpenAIClient } = require('./helpers');
 const { logger } = require('~/config');
 
-const router = express.Router();
-const {
-  setHeaders,
-  handleAbort,
-  validateModel,
-  handleAbortError,
-  // validateEndpoint,
-  buildEndpointOption,
-} = require('~/server/middleware');
-
-router.post('/abort', handleAbort());
+const { handleAbortError } = require('~/server/middleware');
 
 const ten_minutes = 1000 * 60 * 10;
 
@@ -49,16 +39,17 @@ const ten_minutes = 1000 * 60 * 10;
  * @route POST /
  * @desc Chat with an assistant
  * @access Public
- * @param {express.Request} req - The request object, containing the request data.
- * @param {express.Response} res - The response object, used to send back a response.
+ * @param {Express.Request} req - The request object, containing the request data.
+ * @param {Express.Response} res - The response object, used to send back a response.
  * @returns {void}
  */
-router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res) => {
+const chatV1 = async (req, res) => {
   logger.debug('[/assistants/chat/] req.body', req.body);
 
   const {
     text,
     model,
+    endpoint,
     files = [],
     promptPrefix,
     assistant_id,
@@ -70,7 +61,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
   } = req.body;
 
   /** @type {Partial<TAssistantEndpoint>} */
-  const assistantsConfig = req.app.locals?.[EModelEndpoint.assistants];
+  const assistantsConfig = req.app.locals?.[endpoint];
 
   if (assistantsConfig) {
     const { supportedIds, excludedIds } = assistantsConfig;
@@ -138,7 +129,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
       user: req.user.id,
       shouldSaveMessage: false,
       messageId: responseMessageId,
-      endpoint: EModelEndpoint.assistants,
+      endpoint,
     };
 
     if (error.message === 'Run cancelled') {
@@ -149,7 +140,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
       logger.debug('[/assistants/chat/] Request aborted on close');
     } else if (/Files.*are invalid/.test(error.message)) {
       const errorMessage = `Files are invalid, or may not have uploaded yet.${
-        req.app.locals?.[EModelEndpoint.azureOpenAI].assistants
+        endpoint === EModelEndpoint.azureAssistants
           ? ' If using Azure OpenAI, files are only available in the region of the assistant\'s model at the time of upload.'
           : ''
       }`;
@@ -205,6 +196,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
       const runMessages = await checkMessageGaps({
         openai,
         run_id,
+        endpoint,
         thread_id,
         conversationId,
         latestMessageId: responseMessageId,
@@ -311,8 +303,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
       });
     };
 
-    /** @type {{ openai: OpenAIClient }} */
-    const { openai: _openai, client } = await initializeClient({
+    const { openai: _openai, client } = await getOpenAIClient({
       req,
       res,
       endpointOption: req.body.endpointOption,
@@ -370,10 +361,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
 
       /** @type {MongoFile[]} */
       const attachments = await req.body.endpointOption.attachments;
-      if (
-        attachments &&
-        attachments.every((attachment) => attachment.source === FileSources.openai)
-      ) {
+      if (attachments && attachments.every((attachment) => checkOpenAIStorage(attachment.source))) {
         return;
       }
 
@@ -431,7 +419,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
 
       if (processedFiles) {
         for (const file of processedFiles) {
-          if (file.source !== FileSources.openai) {
+          if (!checkOpenAIStorage(file.source)) {
             attachedFileIds.delete(file.file_id);
             const index = file_ids.indexOf(file.file_id);
             if (index > -1) {
@@ -467,6 +455,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
         assistant_id,
         thread_id,
         model: assistant_id,
+        endpoint,
       };
 
       previousMessages.push(requestMessage);
@@ -476,7 +465,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
 
       conversation = {
         conversationId,
-        endpoint: EModelEndpoint.assistants,
+        endpoint,
         promptPrefix: promptPrefix,
         instructions: instructions,
         assistant_id,
@@ -513,7 +502,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
     let response;
 
     const processRun = async (retry = false) => {
-      if (req.app.locals[EModelEndpoint.azureOpenAI]?.assistants) {
+      if (endpoint === EModelEndpoint.azureAssistants) {
         body.model = openai._options.model;
         openai.attachedFileIds = attachedFileIds;
         openai.visionPromise = visionPromise;
@@ -603,6 +592,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
       assistant_id,
       thread_id,
       model: assistant_id,
+      endpoint,
     };
 
     sendMessage(res, {
@@ -655,6 +645,6 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
   } catch (error) {
     await handleError(error);
   }
-});
+};
 
-module.exports = router;
+module.exports = chatV1;

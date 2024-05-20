@@ -9,13 +9,14 @@ import { useConversations, useNavigateToConvo } from '~/hooks';
 import { NotificationSeverity } from '~/common';
 import { ArchiveIcon } from '~/components/svg';
 import { useToastContext } from '~/Providers';
-import EditMenuButton from './EditMenuButton';
+import DropDownMenu from './DropDownMenu';
 import ArchiveButton from './ArchiveButton';
 import DeleteButton from './DeleteButton';
 import RenameButton from './RenameButton';
 import HoverToggle from './HoverToggle';
 import { cn } from '~/utils';
 import store from '~/store';
+import ShareButton from './ShareButton';
 
 type KeyEvent = KeyboardEvent<HTMLInputElement>;
 
@@ -36,7 +37,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
   const [isPopoverActive, setIsPopoverActive] = useState(false);
 
   const clickHandler = async (event: React.MouseEvent<HTMLAnchorElement>) => {
-    if (event.button === 0 && event.ctrlKey) {
+    if (event.button === 0 && (event.ctrlKey || event.metaKey)) {
       toggleNav();
       return;
     }
@@ -127,7 +128,15 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
           isPopoverActive={isPopoverActive}
           setIsPopoverActive={setIsPopoverActive}
         >
-          <EditMenuButton>
+          <DropDownMenu>
+            <ShareButton
+              conversationId={conversationId}
+              title={title}
+              appendLabel={true}
+              className="mb-[3.5px]"
+              setPopoverActive={setIsPopoverActive}
+            />
+
             <RenameButton
               renaming={renaming}
               onRename={onRename}
@@ -150,7 +159,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
               retainView={retainView}
               shouldArchive={true}
             />
-          </EditMenuButton>
+          </DropDownMenu>
         </HoverToggle>
       )}
       <a
