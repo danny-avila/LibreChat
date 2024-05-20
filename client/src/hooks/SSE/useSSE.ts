@@ -527,9 +527,6 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     });
 
-    const runId = v4();
-    setActiveRunId(runId);
-
     const audioSource = new MediaSourceAppender('audio/mpeg');
     setAudioUrl(audioSource.mediaSourceUrl);
 
@@ -543,6 +540,8 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
         console.log('final', data);
       }
       if (data.created) {
+        const runId = v4();
+        setActiveRunId(runId);
         message = {
           ...message,
           ...data.message,
