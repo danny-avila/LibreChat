@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { EModelEndpoint } from 'librechat-data-provider';
 import type { TConversation, TMessage } from 'librechat-data-provider';
 import { Clipboard, CheckMark, EditIcon, RegenerateIcon, ContinueIcon } from '~/components/svg';
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
@@ -39,14 +38,19 @@ export default function HoverButtons({
   const { endpoint: _endpoint, endpointType } = conversation ?? {};
   const endpoint = endpointType ?? _endpoint;
   const [isCopied, setIsCopied] = useState(false);
-  const { hideEditButton, regenerateEnabled, continueSupported, forkingSupported } =
-    useGenerationsByLatest({
-      isEditing,
-      isSubmitting,
-      message,
-      endpoint: endpoint ?? '',
-      latestMessage,
-    });
+  const {
+    hideEditButton,
+    regenerateEnabled,
+    continueSupported,
+    forkingSupported,
+    isEditableEndpoint,
+  } = useGenerationsByLatest({
+    isEditing,
+    isSubmitting,
+    message,
+    endpoint: endpoint ?? '',
+    latestMessage,
+  });
   if (!conversation) {
     return null;
   }
@@ -62,7 +66,7 @@ export default function HoverButtons({
 
   return (
     <div className="visible mt-0 flex justify-center gap-1 self-end text-gray-400 lg:justify-start">
-      {endpoint !== EModelEndpoint.assistants && (
+      {isEditableEndpoint && (
         <button
           className={cn(
             'flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-gray-200 hover:text-gray-700 dark:text-gray-100/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400',

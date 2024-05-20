@@ -1,4 +1,9 @@
-import { EModelEndpoint, QueryKeys, dataService, defaultOrderQuery } from 'librechat-data-provider';
+import {
+  QueryKeys,
+  dataService,
+  defaultOrderQuery,
+  defaultAssistantsVersion,
+} from 'librechat-data-provider';
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   UseInfiniteQueryOptions,
@@ -194,43 +199,46 @@ export const useSharedLinksInfiniteQuery = (
 /**
  * Hook for getting all available tools for Assistants
  */
-export const useAvailableToolsQuery = (): QueryObserverResult<TPlugin[]> => {
+export const useAvailableToolsQuery = (
+  endpoint: t.AssistantsEndpoint,
+): QueryObserverResult<TPlugin[]> => {
   const queryClient = useQueryClient();
   const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
-  const keyExpiry = queryClient.getQueryData<TCheckUserKeyResponse>([
-    QueryKeys.name,
-    EModelEndpoint.assistants,
-  ]);
-  const userProvidesKey = !!endpointsConfig?.[EModelEndpoint.assistants]?.userProvide;
+  const keyExpiry = queryClient.getQueryData<TCheckUserKeyResponse>([QueryKeys.name, endpoint]);
+  const userProvidesKey = !!endpointsConfig?.[endpoint]?.userProvide;
   const keyProvided = userProvidesKey ? !!keyExpiry?.expiresAt : true;
-  const enabled = !!endpointsConfig?.[EModelEndpoint.assistants] && keyProvided;
-  return useQuery<TPlugin[]>([QueryKeys.tools], () => dataService.getAvailableTools(), {
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
-    enabled,
-  });
+  const enabled = !!endpointsConfig?.[endpoint] && keyProvided;
+  const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
+  return useQuery<TPlugin[]>(
+    [QueryKeys.tools],
+    () => dataService.getAvailableTools(version, endpoint),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      enabled,
+    },
+  );
 };
 
 /**
  * Hook for listing all assistants, with optional parameters provided for pagination and sorting
  */
 export const useListAssistantsQuery = <TData = AssistantListResponse>(
-  params: AssistantListParams = defaultOrderQuery,
+  endpoint: t.AssistantsEndpoint,
+  params: Omit<AssistantListParams, 'endpoint'> = defaultOrderQuery,
   config?: UseQueryOptions<AssistantListResponse, unknown, TData>,
 ): QueryObserverResult<TData> => {
   const queryClient = useQueryClient();
   const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
-  const keyExpiry = queryClient.getQueryData<TCheckUserKeyResponse>([
-    QueryKeys.name,
-    EModelEndpoint.assistants,
-  ]);
-  const userProvidesKey = !!endpointsConfig?.[EModelEndpoint.assistants]?.userProvide;
+  const keyExpiry = queryClient.getQueryData<TCheckUserKeyResponse>([QueryKeys.name, endpoint]);
+  const userProvidesKey = !!endpointsConfig?.[endpoint]?.userProvide;
   const keyProvided = userProvidesKey ? !!keyExpiry?.expiresAt : true;
-  const enabled = !!endpointsConfig?.[EModelEndpoint.assistants] && keyProvided;
+  const enabled = !!endpointsConfig?.[endpoint] && keyProvided;
+  const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
   return useQuery<AssistantListResponse, unknown, TData>(
-    [QueryKeys.assistants, params],
-    () => dataService.listAssistants(params),
+    [QueryKeys.assistants, endpoint, params],
+    () => dataService.listAssistants({ ...params, endpoint }, version),
     {
       // Example selector to sort them by created_at
       // select: (res) => {
@@ -246,6 +254,7 @@ export const useListAssistantsQuery = <TData = AssistantListResponse>(
   );
 };
 
+/*
 export const useListAssistantsInfiniteQuery = (
   params?: AssistantListParams,
   config?: UseInfiniteQueryOptions<AssistantListResponse, Error>,
@@ -275,26 +284,31 @@ export const useListAssistantsInfiniteQuery = (
     },
   );
 };
+*/
 
 /**
  * Hook for retrieving details about a single assistant
  */
 export const useGetAssistantByIdQuery = (
+  endpoint: t.AssistantsEndpoint,
   assistant_id: string,
   config?: UseQueryOptions<Assistant>,
 ): QueryObserverResult<Assistant> => {
   const queryClient = useQueryClient();
   const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
-  const keyExpiry = queryClient.getQueryData<TCheckUserKeyResponse>([
-    QueryKeys.name,
-    EModelEndpoint.assistants,
-  ]);
-  const userProvidesKey = !!endpointsConfig?.[EModelEndpoint.assistants]?.userProvide;
+  const keyExpiry = queryClient.getQueryData<TCheckUserKeyResponse>([QueryKeys.name, endpoint]);
+  const userProvidesKey = !!endpointsConfig?.[endpoint]?.userProvide;
   const keyProvided = userProvidesKey ? !!keyExpiry?.expiresAt : true;
-  const enabled = !!endpointsConfig?.[EModelEndpoint.assistants] && keyProvided;
+  const enabled = !!endpointsConfig?.[endpoint] && keyProvided;
+  const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
   return useQuery<Assistant>(
     [QueryKeys.assistant, assistant_id],
-    () => dataService.getAssistantById(assistant_id),
+    () =>
+      dataService.getAssistantById({
+        endpoint,
+        assistant_id,
+        version,
+      }),
     {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
@@ -311,43 +325,53 @@ export const useGetAssistantByIdQuery = (
  * Hook for retrieving user's saved Assistant Actions
  */
 export const useGetActionsQuery = <TData = Action[]>(
+  endpoint: t.AssistantsEndpoint,
   config?: UseQueryOptions<Action[], unknown, TData>,
 ): QueryObserverResult<TData> => {
   const queryClient = useQueryClient();
   const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
-  const keyExpiry = queryClient.getQueryData<TCheckUserKeyResponse>([
-    QueryKeys.name,
-    EModelEndpoint.assistants,
-  ]);
-  const userProvidesKey = !!endpointsConfig?.[EModelEndpoint.assistants]?.userProvide;
+  const keyExpiry = queryClient.getQueryData<TCheckUserKeyResponse>([QueryKeys.name, endpoint]);
+  const userProvidesKey = !!endpointsConfig?.[endpoint]?.userProvide;
   const keyProvided = userProvidesKey ? !!keyExpiry?.expiresAt : true;
-  const enabled = !!endpointsConfig?.[EModelEndpoint.assistants] && keyProvided;
-  return useQuery<Action[], unknown, TData>([QueryKeys.actions], () => dataService.getActions(), {
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
-    ...config,
-    enabled: config?.enabled !== undefined ? config?.enabled && enabled : enabled,
-  });
+  const enabled = !!endpointsConfig?.[endpoint] && keyProvided;
+  const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
+  return useQuery<Action[], unknown, TData>(
+    [QueryKeys.actions],
+    () =>
+      dataService.getActions({
+        endpoint,
+        version,
+      }),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      ...config,
+      enabled: config?.enabled !== undefined ? config?.enabled && enabled : enabled,
+    },
+  );
 };
 /**
  * Hook for retrieving user's saved Assistant Documents (metadata saved to Database)
  */
 export const useGetAssistantDocsQuery = (
+  endpoint: t.AssistantsEndpoint,
   config?: UseQueryOptions<AssistantDocument[]>,
 ): QueryObserverResult<AssistantDocument[], unknown> => {
   const queryClient = useQueryClient();
   const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
-  const keyExpiry = queryClient.getQueryData<TCheckUserKeyResponse>([
-    QueryKeys.name,
-    EModelEndpoint.assistants,
-  ]);
-  const userProvidesKey = !!endpointsConfig?.[EModelEndpoint.assistants]?.userProvide;
+  const keyExpiry = queryClient.getQueryData<TCheckUserKeyResponse>([QueryKeys.name, endpoint]);
+  const userProvidesKey = !!endpointsConfig?.[endpoint]?.userProvide;
   const keyProvided = userProvidesKey ? !!keyExpiry?.expiresAt : true;
-  const enabled = !!endpointsConfig?.[EModelEndpoint.assistants] && keyProvided;
+  const enabled = !!endpointsConfig?.[endpoint] && keyProvided;
+  const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
   return useQuery<AssistantDocument[]>(
     [QueryKeys.assistantDocs],
-    () => dataService.getAssistantDocs(),
+    () =>
+      dataService.getAssistantDocs({
+        endpoint,
+        version,
+      }),
     {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,

@@ -1,13 +1,11 @@
-import {
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import type {
   UseQueryOptions,
-  useQuery,
-  useMutation,
-  useQueryClient,
   UseMutationResult,
   QueryObserverResult,
 } from '@tanstack/react-query';
-import { defaultOrderQuery } from '../types/assistants';
 import { initialModelsConfig, LocalStorageKeys } from '../config';
+import { defaultOrderQuery } from '../types/assistants';
 import * as dataService from '../data-service';
 import * as m from '../types/mutations';
 import { QueryKeys } from '../keys';
@@ -154,8 +152,8 @@ export const useRevokeUserKeyMutation = (name: string): UseMutationResult<unknow
   return useMutation(() => dataService.revokeUserKey(name), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.name, name]);
-      if (name === s.EModelEndpoint.assistants) {
-        queryClient.invalidateQueries([QueryKeys.assistants, defaultOrderQuery]);
+      if (s.isAssistantsEndpoint(name)) {
+        queryClient.invalidateQueries([QueryKeys.assistants, name, defaultOrderQuery]);
         queryClient.invalidateQueries([QueryKeys.assistantDocs]);
         queryClient.invalidateQueries([QueryKeys.assistants]);
         queryClient.invalidateQueries([QueryKeys.assistant]);
@@ -171,7 +169,16 @@ export const useRevokeAllUserKeysMutation = (): UseMutationResult<unknown> => {
   return useMutation(() => dataService.revokeAllUserKeys(), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.name]);
-      queryClient.invalidateQueries([QueryKeys.assistants, defaultOrderQuery]);
+      queryClient.invalidateQueries([
+        QueryKeys.assistants,
+        s.EModelEndpoint.assistants,
+        defaultOrderQuery,
+      ]);
+      queryClient.invalidateQueries([
+        QueryKeys.assistants,
+        s.EModelEndpoint.azureAssistants,
+        defaultOrderQuery,
+      ]);
       queryClient.invalidateQueries([QueryKeys.assistantDocs]);
       queryClient.invalidateQueries([QueryKeys.assistants]);
       queryClient.invalidateQueries([QueryKeys.assistant]);
