@@ -309,7 +309,7 @@ async function streamAudio(req, res) {
       const updates = [
         { text: 'This is a test.', id: 1, isEndPoint: false },
         { text: 'This is only a test.', id: 2, isEndPoint: false },
-        { text: 'You have the voice of Fergie and Jesus combined.', id: 3, isEndPoint: true },
+        { text: 'Your voice is like a combination of Fergie and Jesus!', id: 3, isEndPoint: true },
       ];
 
       if (updates.length === 0) {

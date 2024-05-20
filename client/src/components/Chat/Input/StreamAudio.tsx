@@ -4,22 +4,30 @@ import { MediaSourceAppender } from '~/hooks/Audio/MediaSourceAppender';
 import store from '~/store';
 
 export default function StreamAudio({ index = 0 }) {
+  const audioRunId = useRef<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioSourceRef = useRef<MediaSourceAppender | null>(null);
+  const [isFetching, setIsFetching] = useState(false);
+
+  const activeRunId = useRecoilValue(store.activeRunFamily(index));
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
   const latestMessage = useRecoilValue(store.latestMessageFamily(index));
   const [audioURL, setAudioURL] = useRecoilState(store.audioURLFamily(index));
-  const [isFetching, setIsFetching] = useState(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const audioSourceRef = useRef<MediaSourceAppender | null>(null);
 
   useEffect(() => {
-    console.log('StreamAudio effect', { isSubmitting, latestMessage, isFetching, audioURL });
+    console.log('StreamAudio effect', { isSubmitting, latestMessage });
     const shouldFetch =
-      isSubmitting && latestMessage && (latestMessage.text || latestMessage.content) && !isFetching;
+      isSubmitting &&
+      latestMessage &&
+      (latestMessage.text || latestMessage.content) &&
+      !isFetching &&
+      activeRunId &&
+      activeRunId !== audioRunId.current;
 
     console.log('shouldFetch', shouldFetch);
+    console.log({ isSubmitting, latestMessage, activeRunId, audioRunId: audioRunId.current });
     if (shouldFetch) {
       setIsFetching(true);
-
       const fetchAudio = async () => {
         try {
           const response = await fetch('/api/files/tts', {
@@ -43,17 +51,6 @@ export default function StreamAudio({ index = 0 }) {
           audioSourceRef.current = new MediaSourceAppender('audio/mpeg');
           setAudioURL(audioSourceRef.current.mediaSourceUrl);
 
-          if (audioRef.current) {
-            audioRef.current.onended = () => {
-              console.log('Audio ended');
-              if (!audioRef.current) {
-                return;
-              }
-              URL.revokeObjectURL(audioRef.current.src);
-              setIsFetching(false);
-            };
-          }
-
           let done = false;
           while (!done) {
             const { value, done: readerDone } = await reader.read();
@@ -66,6 +63,19 @@ export default function StreamAudio({ index = 0 }) {
             }
           }
 
+          audioRunId.current = activeRunId;
+
+          if (audioRef.current) {
+            audioRef.current.onended = () => {
+              console.log('Audio ended');
+              if (!audioRef.current) {
+                return;
+              }
+              URL.revokeObjectURL(audioRef.current.src);
+              setIsFetching(false);
+            };
+          }
+
           console.log('Audio fetched successfully');
         } catch (error) {
           console.error('Failed to fetch audio:', error);
@@ -76,7 +86,7 @@ export default function StreamAudio({ index = 0 }) {
 
       fetchAudio();
     }
-  }, [isSubmitting, latestMessage, isFetching, setAudioURL]);
+  }, [isSubmitting, latestMessage, activeRunId, isFetching]);
 
   return (
     <audio

@@ -63,6 +63,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
   const queryClient = useQueryClient();
   const genTitle = useGenTitleMutation();
   const setAudioUrl = useSetRecoilState(store.audioURLFamily(index));
+  const setActiveRunId = useSetRecoilState(store.activeRunFamily(index));
 
   const { conversationId: paramId } = useParams();
   const { token, isAuthenticated } = useAuthContext();
@@ -525,6 +526,9 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       payload: JSON.stringify(payload),
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     });
+
+    const runId = v4();
+    setActiveRunId(runId);
 
     const audioSource = new MediaSourceAppender('audio/mpeg');
     setAudioUrl(audioSource.mediaSourceUrl);
