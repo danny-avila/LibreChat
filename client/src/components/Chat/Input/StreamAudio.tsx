@@ -15,7 +15,6 @@ export default function StreamAudio({ index = 0 }) {
   const [audioURL, setAudioURL] = useRecoilState(store.audioURLFamily(index));
 
   useEffect(() => {
-    console.log('StreamAudio effect', { isSubmitting, latestMessage });
     const shouldFetch =
       isSubmitting &&
       latestMessage &&
@@ -24,18 +23,17 @@ export default function StreamAudio({ index = 0 }) {
       activeRunId &&
       activeRunId !== audioRunId.current;
 
-    console.log('shouldFetch', shouldFetch);
-    console.log({ isSubmitting, latestMessage, activeRunId, audioRunId: audioRunId.current });
     if (shouldFetch) {
       setIsFetching(true);
       const fetchAudio = async () => {
         try {
+          console.log('Fetching audio...');
           const response = await fetch('/api/files/tts', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ messageId: latestMessage.messageId }),
+            body: JSON.stringify({ messageId: latestMessage.messageId, runId: activeRunId }),
           });
 
           if (!response.ok) {
@@ -50,6 +48,10 @@ export default function StreamAudio({ index = 0 }) {
 
           audioSourceRef.current = new MediaSourceAppender('audio/mpeg');
           setAudioURL(audioSourceRef.current.mediaSourceUrl);
+          audioRunId.current = activeRunId;
+          console.log('audioRunId.current', audioRunId.current);
+          setIsFetching(false);
+          console.log('setting fetching to false');
 
           let done = false;
           while (!done) {
@@ -58,35 +60,17 @@ export default function StreamAudio({ index = 0 }) {
               audioSourceRef.current.addData(value);
             }
             done = readerDone;
-            if (!done) {
-              setIsFetching(false);
-            }
-          }
-
-          audioRunId.current = activeRunId;
-
-          if (audioRef.current) {
-            audioRef.current.onended = () => {
-              console.log('Audio ended');
-              if (!audioRef.current) {
-                return;
-              }
-              URL.revokeObjectURL(audioRef.current.src);
-              setIsFetching(false);
-            };
           }
 
           console.log('Audio fetched successfully');
         } catch (error) {
           console.error('Failed to fetch audio:', error);
-        } finally {
-          setIsFetching(false);
         }
       };
 
       fetchAudio();
     }
-  }, [isSubmitting, latestMessage, activeRunId, isFetching]);
+  }, [isSubmitting, latestMessage, activeRunId]);
 
   return (
     <audio

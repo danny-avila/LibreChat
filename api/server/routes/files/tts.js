@@ -1,4 +1,4 @@
-const multer = require('multer');
+// const multer = require('multer');
 const express = require('express');
 const {
   getVoices,
@@ -6,11 +6,11 @@ const {
   // textToSpeech,
   // streamAudioFromWebSocket,
 } = require('~/server/services/Files/Audio');
-const { requireJwtAuth } = require('~/server/middleware/');
-const { Message } = require('~/models/Message');
+// const { requireJwtAuth } = require('~/server/middleware/');
+// const { Message } = require('~/models/Message');
 const router = express.Router();
 
-const upload = multer();
+// const upload = multer();
 
 // router.use(requireJwtAuth);
 
@@ -23,9 +23,15 @@ const upload = multer();
 //   }
 // });
 
+let runIds = new Set();
 router.post('/', async (req, res) => {
   try {
     console.log('start stream audio');
+    if (runIds.has(req.body.runId)) {
+      console.log('stream audio already running');
+      return;
+    }
+    runIds.add(req.body.runId);
     await streamAudio(req, res);
     console.log('end stream audio');
   } catch (error) {
