@@ -1,4 +1,5 @@
 const WebSocket = require('ws');
+const { Message } = require('~/models/Message');
 
 const VOICE_ID_1 = '1RVpBInY9YUYMLSUQReV';
 const VOICE_ID_2 = 'pNInz6obpgDQGcFmaJgB';
@@ -69,13 +70,15 @@ function assembleQuery(parameters) {
   return query;
 }
 
+const SEPARATORS = ['.', '?', '!', '۔', '。', '‥', ';', '¡', '¿', '\n'];
+
 /**
  *
  * @param {string} text
  * @param {string[] | undefined} [separators]
  * @returns
  */
-function findLastSeparatorIndex(text, separators = ['. ', '? ', '! ']) {
+function findLastSeparatorIndex(text, separators = SEPARATORS) {
   let lastIndex = -1;
   for (const separator of separators) {
     const index = text.lastIndexOf(separator);
@@ -84,6 +87,52 @@ function findLastSeparatorIndex(text, separators = ['. ', '? ', '! ']) {
     }
   }
   return lastIndex;
+}
+
+/**
+ * @param {string} msgId
+ * @returns {() => Promise<{ text: string, isFinished: boolean }[]>}
+ */
+function createChunkProcessor(msgId) {
+  let processedText = '';
+  if (!msgId) {
+    throw new Error('Message ID is required');
+  }
+  const messageId = msgId.split('_')[0];
+
+  /**
+   * @returns {Promise<{ text: string, isFinished: boolean }[]>}
+   */
+  async function processChunks() {
+    const message = await Message.findOne({ messageId }, 'text unfinished').lean();
+
+    if (!message || !message.text) {
+      return [];
+    }
+
+    const { text, unfinished } = message;
+    const remainingText = text.slice(processedText.length);
+    const chunks = [];
+
+    if (unfinished && remainingText.length >= 50) {
+      const separatorIndex = findLastSeparatorIndex(remainingText);
+      if (separatorIndex !== -1) {
+        const chunkText = remainingText.slice(0, separatorIndex + 1);
+        chunks.push({ text: chunkText, isFinished: false });
+        processedText += chunkText;
+      } else {
+        chunks.push({ text: remainingText, isFinished: false });
+        processedText = text;
+      }
+    } else if (!unfinished && remainingText.trim().length > 0) {
+      chunks.push({ text: remainingText.trim(), isFinished: true });
+      processedText = text;
+    }
+
+    return chunks;
+  }
+
+  return processChunks;
 }
 
 /**
@@ -239,6 +288,8 @@ async function* llmMessageSource(llmStream) {
 
 module.exports = {
   inputStreamTextToSpeech,
+  findLastSeparatorIndex,
+  createChunkProcessor,
   llmMessageSource,
   getRandomVoiceId,
 };

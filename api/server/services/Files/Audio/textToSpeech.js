@@ -1,9 +1,9 @@
 const axios = require('axios');
 const { logger } = require('~/config');
 const getCustomConfig = require('~/server/services/Config/getCustomConfig');
+const { getRandomVoiceId, createChunkProcessor } = require('./streamAudio');
 const { extractEnvVariable } = require('librechat-data-provider');
 const { sendTextToWebsocket } = require('./webSocket');
-const { getRandomVoiceId } = require('./streamAudio');
 const WebSocket = require('ws');
 
 /**
@@ -304,13 +304,16 @@ async function streamAudio(req, res) {
   try {
     const voice = getRandomVoiceId();
     let shouldContinue = true;
+    const processChunks = createChunkProcessor(req.body.messageId);
 
     while (shouldContinue) {
-      const updates = [
-        { text: 'This is a test.', id: 1, isEndPoint: false },
-        { text: 'This is only a test.', id: 2, isEndPoint: false },
-        { text: 'Your voice is like a combination of Fergie and Jesus!', id: 3, isEndPoint: true },
-      ];
+      // const updates = [
+      //   { text: 'This is a test.', isFinished: false },
+      //   { text: 'This is only a test.', isFinished: false },
+      //   { text: 'Your voice is like a combination of Fergie and Jesus!', isFinished: true },
+      // ];
+
+      const updates = await processChunks();
 
       if (updates.length === 0) {
         await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -346,7 +349,7 @@ async function streamAudio(req, res) {
             });
           });
 
-          if (update.isEndPoint) {
+          if (update.isFinished) {
             shouldContinue = false;
             break;
           }

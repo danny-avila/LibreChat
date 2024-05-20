@@ -18,6 +18,7 @@ export default function StreamAudio({ index = 0 }) {
     const shouldFetch =
       isSubmitting &&
       latestMessage &&
+      latestMessage.isCreatedByUser === false &&
       (latestMessage.text || latestMessage.content) &&
       !isFetching &&
       activeRunId &&
@@ -28,6 +29,7 @@ export default function StreamAudio({ index = 0 }) {
       const fetchAudio = async () => {
         try {
           console.log('Fetching audio...');
+          console.log('latestMessage', latestMessage);
           const response = await fetch('/api/files/tts', {
             method: 'POST',
             headers: {
