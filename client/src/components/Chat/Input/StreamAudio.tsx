@@ -9,14 +9,15 @@ export default function StreamAudio({ index = 0 }) {
   const [audioURL, setAudioURL] = useRecoilState(store.audioURLFamily(index));
   const [isFetching, setIsFetching] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioSourceRef = useRef<MediaSourceAppender | null>(null);
 
   useEffect(() => {
-    if (
-      isSubmitting &&
-      latestMessage &&
-      (latestMessage.text || latestMessage.content) &&
-      !isFetching
-    ) {
+    console.log('StreamAudio effect', { isSubmitting, latestMessage, isFetching, audioURL });
+    const shouldFetch =
+      isSubmitting && latestMessage && (latestMessage.text || latestMessage.content) && !isFetching;
+
+    console.log('shouldFetch', shouldFetch);
+    if (shouldFetch) {
       setIsFetching(true);
 
       const fetchAudio = async () => {
@@ -38,16 +39,31 @@ export default function StreamAudio({ index = 0 }) {
           }
 
           const reader = response.body.getReader();
-          const audioSource = new MediaSourceAppender('audio/mpeg');
-          setAudioURL(audioSource.mediaSourceUrl);
+
+          audioSourceRef.current = new MediaSourceAppender('audio/mpeg');
+          setAudioURL(audioSourceRef.current.mediaSourceUrl);
+
+          if (audioRef.current) {
+            audioRef.current.onended = () => {
+              console.log('Audio ended');
+              if (!audioRef.current) {
+                return;
+              }
+              URL.revokeObjectURL(audioRef.current.src);
+              setIsFetching(false);
+            };
+          }
 
           let done = false;
           while (!done) {
             const { value, done: readerDone } = await reader.read();
             if (value) {
-              audioSource.addData(value);
+              audioSourceRef.current.addData(value);
             }
             done = readerDone;
+            if (!done) {
+              setIsFetching(false);
+            }
           }
 
           console.log('Audio fetched successfully');
@@ -62,21 +78,14 @@ export default function StreamAudio({ index = 0 }) {
     }
   }, [isSubmitting, latestMessage, isFetching, setAudioURL]);
 
-  useEffect(() => {
-    if (audioURL && audioRef.current) {
-      audioRef.current.play();
-    }
-  }, [audioURL]);
-
   return (
-    audioURL != null && (
-      <audio
-        ref={audioRef}
-        controls
-        controlsList="nodownload nofullscreen noremoteplayback"
-        className="absolute h-0 w-0 overflow-hidden"
-        src={audioURL}
-      />
-    )
+    <audio
+      ref={audioRef}
+      controls
+      controlsList="nodownload nofullscreen noremoteplayback"
+      className="absolute h-0 w-0 overflow-hidden"
+      src={audioURL ? audioURL : undefined}
+      autoPlay
+    />
   );
 }

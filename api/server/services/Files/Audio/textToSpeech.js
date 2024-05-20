@@ -298,12 +298,13 @@ async function streamAudio(req, res) {
   res.setHeader('Content-Type', 'audio/mpeg');
   const customConfig = await getCustomConfig();
   if (!customConfig) {
-    res.status(500).send('Custom config not found');
+    return res.status(500).send('Custom config not found');
   }
 
   try {
     const voice = getRandomVoiceId();
     let shouldContinue = true;
+
     while (shouldContinue) {
       const updates = [
         { text: 'This is a test.', id: 1, isEndPoint: false },
@@ -312,31 +313,65 @@ async function streamAudio(req, res) {
       ];
 
       if (updates.length === 0) {
-        // No new updates, wait for a short interval before polling again
         await new Promise((resolve) => setTimeout(resolve, 1000));
         continue;
       }
 
       for (const update of updates) {
-        const response = await ttsRequest(customConfig, {
-          input: update.text,
-          voice,
-          stream: true,
-        });
-        response.data.pipe(res, { end: false });
+        try {
+          const response = await ttsRequest(customConfig, {
+            input: update.text,
+            voice,
+            stream: true,
+          });
 
-        if (update.isEndPoint) {
-          // Reached the defined end point in the database record
-          shouldContinue = false;
-          break;
+          response.data.on('error', (err) => {
+            console.error('Error streaming audio:', err);
+            shouldContinue = false;
+            if (!res.headersSent) {
+              res.status(500).end();
+            }
+          });
+
+          if (!shouldContinue) {
+            break;
+          }
+
+          console.log('writing');
+          await new Promise((resolve) => {
+            response.data.pipe(res, { end: false });
+            response.data.on('end', () => {
+              console.log('resolved and written');
+              resolve();
+            });
+          });
+
+          if (update.isEndPoint) {
+            shouldContinue = false;
+            break;
+          }
+        } catch (innerError) {
+          console.error('Error processing update:', update.id, innerError);
+          if (!res.headersSent) {
+            res.status(500).end();
+          }
+          return;
         }
+      }
+
+      if (!shouldContinue) {
+        break;
       }
     }
 
-    res.end();
+    if (!res.headersSent) {
+      res.end();
+    }
   } catch (error) {
     console.error('Failed to fetch audio:', error);
-    res.status(500).end();
+    if (!res.headersSent) {
+      res.status(500).end();
+    }
   }
 }
 
