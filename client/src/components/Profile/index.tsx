@@ -34,6 +34,7 @@ function ProfileContent() {
   const [proMemberExpiredAt, setProMemberExpiredAt] = useState<Date>(new Date());
   const [editMode, setEditMode] = useState<boolean>(false);
   const [bio, setBio] = useState(initialBio || '');
+  const [quotaUsage, setQuotaUsage] = useState<object>({}); // Monthly quota usage
   // const [profession, setProfession] = useState(initialProfession || '');
   // new commit
   const { userId = '' } = useParams();
@@ -261,6 +262,12 @@ function ProfileContent() {
         setProMemberExpiredAt(new Date(getUserByIdQuery.data?.proMemberExpiredAt));
       } else {
         setProMemberExpiredAt(new Date());
+      }
+
+      if (getUserByIdQuery.data.monthlyQuotaConsumed) {
+        setQuotaUsage(getUserByIdQuery.data.monthlyQuotaConsumed);
+      } else {
+        setQuotaUsage({});
       }
     }
   }, [getUserByIdQuery.isSuccess, getUserByIdQuery.data, user]);
@@ -502,6 +509,30 @@ function ProfileContent() {
         ) : (
           <div></div>
         )}
+
+        {/* Monthly Quota Usage: a table of quota and usage based on object quotaUsage */}
+        <div className="w-full rounded-lg p-6 dark:text-gray-200">
+          <div className="pl-7">
+            <table className="w-full border-collapse border-2 border-gray-500">
+              <thead>
+                <tr>
+                  <th className="border-2 border-gray-500 text-left">{localize('com_ui_model')}</th>
+                  <th className="border-2 border-gray-500 text-left">{localize('com_ui_usage')}</th>
+                  <th className="border-2 border-gray-500 text-left">{localize('com_ui_quota')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(quotaUsage).map(([key, value]) => (
+                  <tr key={key}>
+                    <td className="border-2 border-gray-500">{key}</td>
+                    <td className="border-2 border-gray-500">{value.consumed}</td>
+                    <td className="border-2 border-gray-500">{value.quota}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
 
         {/* User bio */}
         {userId === user?.id ? (

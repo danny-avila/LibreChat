@@ -69,6 +69,7 @@ export type TUser = {
   followers: object;
   following: object;
   proMemberExpiredAt: Date;
+  monthlyQuotaConsumed: object;
 };
 
 export type TGetConversationsResponse = {
