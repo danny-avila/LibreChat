@@ -10,6 +10,7 @@ const tts = require('./tts');
 
 const initialize = async () => {
   const router = express.Router();
+  router.use('/tts', tts);
   router.use(requireJwtAuth);
   router.use(checkBan);
   router.use(uaParser);
@@ -21,7 +22,7 @@ const initialize = async () => {
   router.post('/images', upload.single('file'));
 
   router.use('/stt', stt);
-  router.use('/tts', tts);
+
   router.use('/', files);
   router.use('/images', images);
   router.use('/images/avatar', avatar);

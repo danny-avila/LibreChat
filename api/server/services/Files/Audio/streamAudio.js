@@ -2,10 +2,9 @@ const WebSocket = require('ws');
 
 const VOICE_ID_1 = '1RVpBInY9YUYMLSUQReV';
 const VOICE_ID_2 = 'pNInz6obpgDQGcFmaJgB';
-const VOICE_ID_3 = 'zvBAbtHEaG9XNBKqbWMi ';
 
 function getRandomVoiceId() {
-  const voiceIds = [VOICE_ID_1, VOICE_ID_2, VOICE_ID_3];
+  const voiceIds = [VOICE_ID_1, VOICE_ID_2];
   const randomIndex = Math.floor(Math.random() * voiceIds.length);
   return voiceIds[randomIndex];
 }
@@ -241,4 +240,5 @@ async function* llmMessageSource(llmStream) {
 module.exports = {
   inputStreamTextToSpeech,
   llmMessageSource,
+  getRandomVoiceId,
 };

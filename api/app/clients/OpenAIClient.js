@@ -1,5 +1,4 @@
 const OpenAI = require('openai');
-const { llmMessageSource, inputStreamTextToSpeech } = require('./streamAudio');
 const { OllamaClient } = require('./OllamaClient');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const {
@@ -1220,43 +1219,17 @@ ${convo}
 
         const azureDelay = this.modelOptions.model?.includes('gpt-4') ? 30 : 17;
 
-        const STREAM_AUDIO = true;
-        if (STREAM_AUDIO) {
-          const tokenStreamCallback = async (token) => {
-            intermediateReply += token;
-            onProgress(token);
-            if (abortController.signal.aborted) {
-              stream.controller.abort();
-              return;
-            }
-
-            if (this.azure) {
-              await sleep(azureDelay);
-            }
-
-            return true;
-          };
-
-          const llmMessageStream = llmMessageSource(stream);
-          for await (const _audioData of inputStreamTextToSpeech(
-            this.options.res,
-            llmMessageStream,
-            tokenStreamCallback,
-          )) {
-            logger.info('audio metadata');
+        for await (const chunk of stream) {
+          const token = chunk.choices[0]?.delta?.content || '';
+          intermediateReply += token;
+          onProgress(token);
+          if (abortController.signal.aborted) {
+            stream.controller.abort();
+            break;
           }
-        } else {
-          for await (const token of stream) {
-            intermediateReply += token;
-            onProgress(token);
-            if (abortController.signal.aborted) {
-              stream.controller.abort();
-              break;
-            }
 
-            if (this.azure) {
-              await sleep(azureDelay);
-            }
+          if (this.azure) {
+            await sleep(azureDelay);
           }
         }
 

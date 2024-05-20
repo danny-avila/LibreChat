@@ -3,6 +3,7 @@ const { logger } = require('~/config');
 const getCustomConfig = require('~/server/services/Config/getCustomConfig');
 const { extractEnvVariable } = require('librechat-data-provider');
 const { sendTextToWebsocket } = require('./webSocket');
+const { getRandomVoiceId } = require('./streamAudio');
 const WebSocket = require('ws');
 
 /**
@@ -95,12 +96,15 @@ function openAIProvider(ttsSchema, input, voice) {
  * @param {Object} ttsSchema - The TTS schema containing the Eleven Labs configuration
  * @param {string} input - The text to be converted to speech
  * @param {string} voice - The voice to be used for the speech
+ * @param {boolean} stream - Whether to stream the audio or not
  *
  * @returns {Array} An array containing the URL for the API request, the data to be sent, and the headers for the request
  * @throws {Error} Throws an error if the selected voice is not available
  */
-function elevenLabsProvider(ttsSchema, input, voice) {
-  let url = ttsSchema.elevenlabs?.url || 'https://api.elevenlabs.io/v1/text-to-speech/{voice_id}';
+function elevenLabsProvider(ttsSchema, input, voice, stream) {
+  let url =
+    ttsSchema.elevenlabs?.url ||
+    `https://api.elevenlabs.io/v1/text-to-speech/{voice_id}${stream ? '/stream' : ''}`;
 
   if (
     !ttsSchema.elevenlabs?.voices.includes(voice) &&
@@ -114,7 +118,7 @@ function elevenLabsProvider(ttsSchema, input, voice) {
   let data = {
     model_id: ttsSchema.elevenlabs?.model,
     text: input,
-    voice_id: voice,
+    // voice_id: voice,
     voice_settings: {
       similarity_boost: ttsSchema.elevenlabs?.voice_settings?.similarity_boost,
       stability: ttsSchema.elevenlabs?.voice_settings?.stability,
@@ -220,6 +224,42 @@ async function streamAudioFromWebSocket(req, res) {
 }
 
 /**
+ *
+ * @param {TCustomConfig} customConfig
+ * @param {string} voice
+ * @returns {Promise<ArrayBuffer>}
+ */
+async function ttsRequest(
+  customConfig,
+  { input, voice, stream } = { input: '', voice: getRandomVoiceId(), stream: true },
+) {
+  const ttsSchema = customConfig.tts;
+  const provider = getProvider(ttsSchema);
+
+  let [url, data, headers] = [];
+
+  switch (provider) {
+    case 'openai':
+      [url, data, headers] = openAIProvider(ttsSchema, input, voice);
+      break;
+    case 'elevenlabs':
+      [url, data, headers] = elevenLabsProvider(ttsSchema, input, voice, stream);
+      break;
+    case 'localai':
+      [url, data, headers] = localAIProvider(ttsSchema, input, voice);
+      break;
+    default:
+      throw new Error('Invalid provider');
+  }
+
+  if (stream) {
+    return await axios.post(url, data, { headers, responseType: 'stream' });
+  }
+
+  return await axios.post(url, data, { headers, responseType: 'arraybuffer' });
+}
+
+/**
  * Handles a text-to-speech request. Extracts input and voice from the request, retrieves the TTS configuration,
  * and sends a request to the appropriate provider. The resulting audio data is sent in the response
  *
@@ -242,28 +282,8 @@ async function textToSpeech(req, res) {
     res.status(500).send('Custom config not found');
   }
 
-  const ttsSchema = customConfig.tts;
-
-  const provider = getProvider(ttsSchema);
-
-  let [url, data, headers] = [];
-
-  switch (provider) {
-    case 'openai':
-      [url, data, headers] = openAIProvider(ttsSchema, input, voice);
-      break;
-    case 'elevenlabs':
-      [url, data, headers] = elevenLabsProvider(ttsSchema, input, voice);
-      break;
-    case 'localai':
-      [url, data, headers] = localAIProvider(ttsSchema, input, voice);
-      break;
-    default:
-      throw new Error('Invalid provider');
-  }
-
   try {
-    const response = await axios.post(url, data, { headers, responseType: 'arraybuffer' });
+    const response = await ttsRequest(customConfig, { input, voice });
     const audioData = response.data;
 
     res.setHeader('Content-Type', 'audio/mpeg');
@@ -274,8 +294,55 @@ async function textToSpeech(req, res) {
   }
 }
 
+async function streamAudio(req, res) {
+  res.setHeader('Content-Type', 'audio/mpeg');
+  const customConfig = await getCustomConfig();
+  if (!customConfig) {
+    res.status(500).send('Custom config not found');
+  }
+
+  try {
+    const voice = getRandomVoiceId();
+    let shouldContinue = true;
+    while (shouldContinue) {
+      const updates = [
+        { text: 'This is a test.', id: 1, isEndPoint: false },
+        { text: 'This is only a test.', id: 2, isEndPoint: false },
+        { text: 'You have the voice of Fergie and Jesus combined.', id: 3, isEndPoint: true },
+      ];
+
+      if (updates.length === 0) {
+        // No new updates, wait for a short interval before polling again
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        continue;
+      }
+
+      for (const update of updates) {
+        const response = await ttsRequest(customConfig, {
+          input: update.text,
+          voice,
+          stream: true,
+        });
+        response.data.pipe(res, { end: false });
+
+        if (update.isEndPoint) {
+          // Reached the defined end point in the database record
+          shouldContinue = false;
+          break;
+        }
+      }
+    }
+
+    res.end();
+  } catch (error) {
+    console.error('Failed to fetch audio:', error);
+    res.status(500).end();
+  }
+}
+
 module.exports = {
+  streamAudioFromWebSocket,
   textToSpeech,
   getProvider,
-  streamAudioFromWebSocket,
+  streamAudio,
 };
