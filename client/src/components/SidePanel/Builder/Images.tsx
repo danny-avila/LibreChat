@@ -41,10 +41,10 @@ export const AssistantAvatar = ({
 
   return (
     <div>
-      <div className="relative overflow-hidden rounded-full">
+      <div className="relative h-20 w-20 overflow-hidden rounded-full">
         <img
           src={url}
-          className="bg-token-surface-secondary dark:bg-token-surface-tertiary h-full w-full"
+          className="bg-token-surface-secondary dark:bg-token-surface-tertiary h-full w-full rounded-full object-cover"
           alt="GPT"
           width="80"
           height="80"

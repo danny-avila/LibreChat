@@ -4,8 +4,8 @@ import { useForm } from 'react-hook-form';
 import { memo, useCallback, useRef, useMemo, useEffect } from 'react';
 import {
   supportsFiles,
-  EModelEndpoint,
   mergeFileConfig,
+  isAssistantsEndpoint,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
@@ -84,8 +84,9 @@ const ChatForm = ({ index = 0 }) => {
   const endpointFileConfig = fileConfig.endpoints[endpoint ?? ''];
   const invalidAssistant = useMemo(
     () =>
-      conversation?.endpoint === EModelEndpoint.assistants &&
-      (!conversation?.assistant_id || !assistantMap?.[conversation?.assistant_id ?? '']),
+      isAssistantsEndpoint(conversation?.endpoint) &&
+      (!conversation?.assistant_id ||
+        !assistantMap?.[conversation?.endpoint ?? '']?.[conversation?.assistant_id ?? '']),
     [conversation?.assistant_id, conversation?.endpoint, assistantMap],
   );
   const disableInputs = useMemo(

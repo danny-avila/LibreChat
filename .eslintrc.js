@@ -133,6 +133,13 @@ module.exports = {
       ],
     },
     {
+      files: './config/translations/**/*.ts',
+      parser: '@typescript-eslint/parser',
+      parserOptions: {
+        project: './config/translations/tsconfig.json',
+      },
+    },
+    {
       files: ['./packages/data-provider/specs/**/*.ts'],
       parserOptions: {
         project: './packages/data-provider/tsconfig.spec.json',

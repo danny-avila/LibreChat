@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import ProgressCircle from './ProgressCircle';
+import CancelledIcon from './CancelledIcon';
 import ProgressText from './ProgressText';
 import FinishedIcon from './FinishedIcon';
 import MarkdownLite from './MarkdownLite';
@@ -11,10 +12,12 @@ export default function CodeAnalyze({
   initialProgress = 0.1,
   code,
   outputs = [],
+  isSubmitting,
 }: {
   initialProgress: number;
   code: string;
   outputs: Record<string, unknown>[];
+  isSubmitting: boolean;
 }) {
   const showCodeDefault = useRecoilValue(store.showCode);
   const [showCode, setShowCode] = useState(showCodeDefault);
@@ -35,7 +38,13 @@ export default function CodeAnalyze({
       <div className="my-2.5 flex items-center gap-2.5">
         <div className="relative h-5 w-5 shrink-0">
           {progress < 1 ? (
-            <CodeInProgress offset={offset} circumference={circumference} radius={radius} />
+            <CodeInProgress
+              offset={offset}
+              radius={radius}
+              progress={progress}
+              isSubmitting={isSubmitting}
+              circumference={circumference}
+            />
           ) : (
             <FinishedIcon />
           )}
@@ -74,11 +83,18 @@ const CodeInProgress = ({
   offset,
   circumference,
   radius,
+  isSubmitting,
+  progress,
 }: {
+  progress: number;
   offset: number;
   circumference: number;
   radius: number;
+  isSubmitting: boolean;
 }) => {
+  if (progress < 1 && !isSubmitting) {
+    return <CancelledIcon />;
+  }
   return (
     <div
       className="absolute left-0 top-0 flex h-full w-full items-center justify-center rounded-full bg-transparent text-white"

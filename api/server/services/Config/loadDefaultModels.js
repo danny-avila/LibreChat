@@ -25,6 +25,7 @@ async function loadDefaultModels(req) {
     plugins: true,
   });
   const assistants = await getOpenAIModels({ assistants: true });
+  const azureAssistants = await getOpenAIModels({ azureAssistants: true });
 
   return {
     [EModelEndpoint.openAI]: openAI,
@@ -35,6 +36,7 @@ async function loadDefaultModels(req) {
     [EModelEndpoint.bingAI]: ['BingAI', 'Sydney'],
     [EModelEndpoint.chatGPTBrowser]: chatGPTBrowser,
     [EModelEndpoint.assistants]: assistants,
+    [EModelEndpoint.azureAssistants]: azureAssistants,
   };
 }
 

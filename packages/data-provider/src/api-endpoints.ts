@@ -1,3 +1,5 @@
+import type { AssistantsEndpoint } from './schemas';
+
 export const user = () => '/api/user';
 
 export const balance = () => '/api/balance';
@@ -9,6 +11,13 @@ export const userPlugins = () => '/api/user/plugins';
 
 export const messages = (conversationId: string, messageId?: string) =>
   `/api/messages/${conversationId}${messageId ? `/${messageId}` : ''}`;
+
+const shareRoot = '/api/share';
+export const shareMessages = (shareId: string) => `${shareRoot}/${shareId}`;
+export const getSharedLinks = (pageNumber: string, isPublic: boolean) =>
+  `${shareRoot}?pageNumber=${pageNumber}&isPublic=${isPublic}`;
+export const createSharedLink = shareRoot;
+export const updateSharedLink = shareRoot;
 
 const keysEndpoint = '/api/keys';
 
@@ -107,15 +116,32 @@ export const likeConversation = () => {
   return '/api/convos/like';
 };
 
-export const assistants = (id?: string, options?: Record<string, string>) => {
-  let url = '/api/assistants';
+export const assistants = ({
+  path,
+  options,
+  version,
+  endpoint,
+}: {
+  path?: string;
+  options?: object;
+  endpoint?: AssistantsEndpoint;
+  version: number | string;
+}) => {
+  let url = `/api/assistants/v${version}`;
 
-  if (id) {
-    url += `/${id}`;
+  if (path) {
+    url += `/${path}`;
+  }
+
+  if (endpoint) {
+    options = {
+      ...(options ?? {}),
+      endpoint,
+    };
   }
 
   if (options && Object.keys(options).length > 0) {
-    const queryParams = new URLSearchParams(options).toString();
+    const queryParams = new URLSearchParams(options as Record<string, string>).toString();
     url += `?${queryParams}`;
   }
 

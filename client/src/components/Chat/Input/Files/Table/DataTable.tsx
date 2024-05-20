@@ -48,7 +48,12 @@ const contextMap = {
   [FileContext.bytes]: 'com_ui_size',
 };
 
-type Style = { width?: number | string; maxWidth?: number | string; minWidth?: number | string };
+type Style = {
+  width?: number | string;
+  maxWidth?: number | string;
+  minWidth?: number | string;
+  zIndex?: number;
+};
 
 export default function DataTable<TData, TValue>({ columns, data }: DataTableProps<TData, TValue>) {
   const localize = useLocalize();
@@ -142,7 +147,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header, index) => {
-                  const style: Style = { maxWidth: '32px', minWidth: '125px' };
+                  const style: Style = { maxWidth: '32px', minWidth: '125px', zIndex: 50 };
                   if (header.id === 'filename') {
                     style.maxWidth = '50%';
                     style.width = '50%';
@@ -220,7 +225,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           )}
         </div>
         <Button
-          className="dark:border-gray-500 dark:hover:bg-gray-600"
+          className="select-none dark:border-gray-500 dark:hover:bg-gray-600"
           variant="outline"
           size="sm"
           onClick={() => table.previousPage()}
@@ -229,7 +234,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           {localize('com_ui_prev')}
         </Button>
         <Button
-          className="dark:border-gray-500 dark:hover:bg-gray-600"
+          className="select-none dark:border-gray-500 dark:hover:bg-gray-600"
           variant="outline"
           size="sm"
           onClick={() => table.nextPage()}

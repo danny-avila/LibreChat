@@ -1,13 +1,18 @@
 import { v4 } from 'uuid';
 import debounce from 'lodash/debounce';
+import { useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useCallback } from 'react';
 import {
   megabyte,
+  QueryKeys,
   EModelEndpoint,
   codeTypeMapping,
   mergeFileConfig,
+  isAssistantsEndpoint,
+  defaultAssistantsVersion,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
+import type { TEndpointsConfig } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import { useUploadFileMutation, useGetFileConfig } from '~/data-provider';
 import { useDelayedUploadToast } from './useDelayedUploadToast';
@@ -20,10 +25,12 @@ const { checkType } = defaultFileConfig;
 type UseFileHandling = {
   overrideEndpoint?: EModelEndpoint;
   fileSetter?: FileSetter;
-  additionalMetadata?: Record<string, string>;
+  fileFilter?: (file: File) => boolean;
+  additionalMetadata?: Record<string, string | undefined>;
 };
 
 const useFileHandling = (params?: UseFileHandling) => {
+  const queryClient = useQueryClient();
   const { showToast } = useToastContext();
   const [errors, setErrors] = useState<string[]>([]);
   const { startUploadTimer, clearUploadTimer } = useDelayedUploadToast();
@@ -141,15 +148,20 @@ const useFileHandling = (params?: UseFileHandling) => {
 
     if (params?.additionalMetadata) {
       for (const [key, value] of Object.entries(params.additionalMetadata)) {
-        formData.append(key, value);
+        if (value) {
+          formData.append(key, value);
+        }
       }
     }
 
     if (
-      endpoint === EModelEndpoint.assistants &&
+      isAssistantsEndpoint(endpoint) &&
       !formData.get('assistant_id') &&
       conversation?.assistant_id
     ) {
+      const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
+      const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
+      formData.append('version', version);
       formData.append('assistant_id', conversation.assistant_id);
       formData.append('model', conversation?.model ?? '');
       formData.append('message_file', 'true');

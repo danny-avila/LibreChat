@@ -20,6 +20,7 @@ const assistants = require('./assistants');
 const files = require('./files');
 const webhooks = require('./webhooks');
 const staticRoute = require('./static');
+const share = require('./share');
 
 module.exports = {
   search,
@@ -44,4 +45,5 @@ module.exports = {
   files,
   webhooks,
   staticRoute,
+  share,
 };

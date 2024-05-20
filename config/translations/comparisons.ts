@@ -10,19 +10,21 @@ async function main(baseFilePath: string, languagesDir: string) {
     const ext = path.extname(file);
     if (ext !== '.ts' && ext !== '.tsx') {
       continue;
-    } // Only process TypeScript files
+    }
 
     const filePath = path.resolve(languagesDir, file);
     if (filePath === baseFilePath) {
       continue;
-    } // Skip the base language file
+    }
 
     const { default: otherLanguage } = await import(filePath);
     const comparisons = {};
 
     for (const key in otherLanguage) {
-      // eslint-disable-next-line no-prototype-builtins
-      if (otherLanguage.hasOwnProperty(key) && baseLanguage.hasOwnProperty(key)) {
+      if (
+        Object.prototype.hasOwnProperty.call(otherLanguage, key) &&
+        Object.prototype.hasOwnProperty.call(baseLanguage, key)
+      ) {
         comparisons[key] = {
           english: baseLanguage[key],
           translated: otherLanguage[key],
@@ -45,7 +47,7 @@ async function main(baseFilePath: string, languagesDir: string) {
       fileContent = fileContent.trim() + comparisonsExport;
     }
 
-    fs.writeFileSync(filePath, fileContent); // Write updated content back to file
+    fs.writeFileSync(filePath, fileContent);
   }
 
   // Execute ESLint with the --fix option on the entire directory

@@ -17,7 +17,9 @@ export default function Mention({
 }) {
   const localize = useLocalize();
   const assistantMap = useAssistantsMapContext();
-  const { options, modelsConfig, assistants, onSelectMention } = useMentions({ assistantMap });
+  const { options, modelsConfig, assistantListMap, onSelectMention } = useMentions({
+    assistantMap,
+  });
 
   const [activeIndex, setActiveIndex] = useState(0);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -47,7 +49,12 @@ export default function Mention({
 
     if (mention.type === 'endpoint' && mention.value === EModelEndpoint.assistants) {
       setSearchValue('');
-      setInputOptions(assistants);
+      setInputOptions(assistantListMap[EModelEndpoint.assistants]);
+      setActiveIndex(0);
+      inputRef.current?.focus();
+    } else if (mention.type === 'endpoint' && mention.value === EModelEndpoint.azureAssistants) {
+      setSearchValue('');
+      setInputOptions(assistantListMap[EModelEndpoint.azureAssistants]);
       setActiveIndex(0);
       inputRef.current?.focus();
     } else if (mention.type === 'endpoint') {
@@ -99,7 +106,7 @@ export default function Mention({
             } else if (e.key === 'ArrowUp') {
               setActiveIndex((prevIndex) => (prevIndex - 1 + matches.length) % matches.length);
             } else if (e.key === 'Enter' || e.key === 'Tab') {
-              const mentionOption = matches[0] as MentionOption | undefined;
+              const mentionOption = matches[activeIndex] as MentionOption | undefined;
               if (mentionOption?.type === 'endpoint') {
                 e.preventDefault();
               } else if (e.key === 'Enter') {

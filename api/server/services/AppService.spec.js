@@ -253,8 +253,8 @@ describe('AppService', () => {
     process.env.EASTUS_API_KEY = 'eastus-key';
 
     await AppService(app);
-    expect(app.locals).toHaveProperty(EModelEndpoint.assistants);
-    expect(app.locals[EModelEndpoint.assistants].capabilities.length).toEqual(3);
+    expect(app.locals).toHaveProperty(EModelEndpoint.azureAssistants);
+    expect(app.locals[EModelEndpoint.azureAssistants].capabilities.length).toEqual(3);
   });
 
   it('should correctly configure Azure OpenAI endpoint based on custom config', async () => {

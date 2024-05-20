@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { EModelEndpoint } from 'librechat-data-provider';
 import type { TConversation, TMessage } from 'librechat-data-provider';
 // import { Clipboard, CheckMark, EditIcon, RegenerateIcon, ContinueIcon } from '~/components/svg';
 // import { useGenerationsByLatest, useLocalize } from '~/hooks';
@@ -65,14 +64,19 @@ export default function HoverButtons({
   const endpoint = endpointType ?? _endpoint;
   const [isCopied, setIsCopied] = useState(false);
   const [playbackStatus, setPlaybackStatus] = useState({ isPaused: false, isStopped: true });
-  const { hideEditButton, regenerateEnabled, continueSupported, forkingSupported } =
-    useGenerationsByLatest({
-      isEditing,
-      isSubmitting,
-      message,
-      endpoint: endpoint ?? '',
-      latestMessage,
-    });
+  const {
+    hideEditButton,
+    regenerateEnabled,
+    continueSupported,
+    forkingSupported,
+    isEditableEndpoint,
+  } = useGenerationsByLatest({
+    isEditing,
+    isSubmitting,
+    message,
+    endpoint: endpoint ?? '',
+    latestMessage,
+  });
   if (!conversation) {
     return null;
   }
@@ -122,7 +126,7 @@ export default function HoverButtons({
           <StopIcon />
         </button>
       ) : null}
-      {endpoint !== EModelEndpoint.assistants && (
+      {isEditableEndpoint && (
         <button
           className={cn(
             'hover-button rounded-md p-1 text-gray-400 hover:text-gray-900 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
@@ -151,7 +155,7 @@ export default function HoverButtons({
           isCopied ? localize('com_ui_copied_to_clipboard') : localize('com_ui_copy_to_clipboard')
         }
       >
-        {isCopied ? <CheckMark /> : <Clipboard />}
+        {isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard />}
       </button>
       {regenerateEnabled ? (
         <button

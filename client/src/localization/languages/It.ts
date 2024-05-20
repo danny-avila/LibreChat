@@ -16,9 +16,7 @@ export default {
   com_ui_conversations: 'Conversazioni',
   com_ui_my_likes: 'Mi piace',
   com_ui_profile: 'Profilo',
-  com_ui_copy_link: 'Copia collegamento',
   com_ui_copy_success: 'Copiato',
-  com_ui_share: 'Condividi',
   com_ui_public: 'Pubblico',
   com_ui_private: 'Privato',
   com_ui_homepage: 'Casa',
@@ -26,7 +24,6 @@ export default {
   com_ui_register_before_like: 'Creiamo un account',
   com_ui_number_of_likes: '{0} Mi piace',
   com_ui_register_here: 'Non hai ancora un account? Clicca qui per registrarti.',
-  com_ui_copied: 'Conversazione copiata condividi link agli appunti',
   com_ui_private_conversation:
     'La conversazione che stai cercando di visualizzare è una conversazione privata',
   com_ui_recommendation: 'Sfoglia le conversazioni',
@@ -218,6 +215,17 @@ export default {
   com_ui_assistants_output: 'Output Assistenti',
   com_ui_delete: 'Elimina',
   com_ui_create: 'Crea',
+  com_ui_share: 'Share',
+  com_ui_share_link_to_chat: 'Share link to chat',
+  com_ui_share_error: 'There was an error sharing the chat link',
+  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share_created_message:
+    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  com_ui_share_update_message:
+    'Your name, custom instructions, and any messages you add after sharing stay private.',
+  com_ui_share_updated_message:
+    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete_conversation: 'Eliminare la chat?',
   com_ui_delete_conversation_confirm: 'Questo eliminerà',
   com_ui_rename: 'Rinominare',
@@ -546,6 +554,12 @@ export default {
   com_endpoint_config_token_google2: ' API su Google Cloud, quindi ',
   com_endpoint_config_token_google3:
     '. Assicurati di fare clic su\' Crea e continua\' per assegnare almeno il ruolo\'Vertex AI User\'.\nInfine, crea una chiave JSON da importare qui.',
+  com_nav_export: 'Esporta',
+  com_nav_shared_links: 'Link condivisi',
+  com_nav_shared_links_manage: 'Gestisci',
+  com_nav_shared_links_empty: 'Non hai link condivisi.',
+  com_nav_shared_links_name: 'Nome',
+  com_nav_shared_links_date_shared: 'Data condivisione',
   com_nav_my_files: 'I miei file',
   com_nav_theme: 'Tema',
   com_nav_theme_system: 'Sistema',
@@ -606,6 +620,40 @@ export default {
   com_nav_setting_beta: 'Funzioni Beta',
   com_nav_setting_account: 'Profilo',
   /* The following are AI Translated */
+  com_assistants_file_search: 'Ricerca File',
+  com_assistants_file_search_info:
+    'L\'aggiunta di archivi vettoriali per la Ricerca File non è ancora supportata. Puoi aggiungerli dal Provider Playground o allegare file ai messaggi per la ricerca file su base di thread.',
+  com_assistants_non_retrieval_model:
+    'La ricerca di file non è abilitata su questo modello. Seleziona un altro modello.',
+  com_ui_attach_error_openai: 'Non è possibile allegare file dell\'Assistente ad altri endpoint',
+  com_ui_attach_warn_endpoint:
+    'Attenzione: i file non compatibili con lo strumento potrebbero essere ignorati',
+  com_ui_assistant_deleted: 'Assistente eliminato con successo',
+  com_ui_assistant_delete_error: 'Si è verificato un errore durante l\'eliminazione dell\'assistente',
+  com_ui_copied: 'Copiato!',
+  com_ui_copy_code: 'Copia codice',
+  com_ui_copy_link: 'Copia link',
+  com_ui_update_link: 'Aggiorna link',
+  com_ui_create_link: 'Crea link',
+  com_nav_source_chat: 'Visualizza chat sorgente',
+  com_ui_date_today: 'Oggi',
+  com_ui_date_yesterday: 'Ieri',
+  com_ui_date_previous_7_days: 'Ultimi 7 giorni',
+  com_ui_date_previous_30_days: 'Ultimi 30 giorni',
+  com_ui_date_january: 'Gennaio',
+  com_ui_date_february: 'Febbraio',
+  com_ui_date_march: 'Marzo',
+  com_ui_date_april: 'Aprile',
+  com_ui_date_may: 'Maggio',
+  com_ui_date_june: 'Giugno',
+  com_ui_date_july: 'Luglio',
+  com_ui_date_august: 'Agosto',
+  com_ui_date_september: 'Settembre',
+  com_ui_date_october: 'Ottobre',
+  com_ui_date_november: 'Novembre',
+  com_ui_date_december: 'Dicembre',
+  com_ui_nothing_found: 'Non è stato trovato nulla',
+  com_ui_go_to_conversation: 'Vai alla conversazione',
   com_user_message: 'Mostra nome utente nei messaggi',
   com_ui_fork: 'Duplica',
   com_ui_mention: 'Menziona un endpoint, assistente o preset per passare rapidamente ad esso',
@@ -1293,6 +1341,43 @@ export const comparisons = {
   com_ui_create: {
     english: 'Create',
     translated: 'Crea',
+  },
+  com_ui_share: {
+    english: 'Share',
+    translated: 'Share',
+  },
+  com_ui_share_link_to_chat: {
+    english: 'Share link to chat',
+    translated: 'Share link to chat',
+  },
+  com_ui_share_error: {
+    english: 'There was an error sharing the chat link',
+    translated: 'There was an error sharing the chat link',
+  },
+  com_ui_share_create_message: {
+    english: 'Your name and any messages you add after sharing stay private.',
+    translated: 'Your name and any messages you add after sharing stay private.',
+  },
+  com_ui_share_created_message: {
+    english:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_share_update_message: {
+    english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated:
+      'Your name, custom instructions, and any messages you add after sharing stay private.',
+  },
+  com_ui_share_updated_message: {
+    english:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_shared_link_not_found: {
+    english: 'Shared link not found',
+    translated: 'Shared link not found',
   },
   com_ui_delete_conversation: {
     english: 'Delete chat?',
@@ -2306,6 +2391,30 @@ export const comparisons = {
     english: 'Export conversation',
     translated: 'Esporta conversazione',
   },
+  com_nav_export: {
+    english: 'Export',
+    translated: 'Esporta',
+  },
+  com_nav_shared_links: {
+    english: 'Shared links',
+    translated: 'Link condivisi',
+  },
+  com_nav_shared_links_manage: {
+    english: 'Manage',
+    translated: 'Gestisci',
+  },
+  com_nav_shared_links_empty: {
+    english: 'You have no shared links.',
+    translated: 'Non hai link condivisi.',
+  },
+  com_nav_shared_links_name: {
+    english: 'Name',
+    translated: 'Nome',
+  },
+  com_nav_shared_links_date_shared: {
+    english: 'Date shared',
+    translated: 'Data condivisione',
+  },
   com_nav_my_files: {
     english: 'My Files',
     translated: 'I miei file',
@@ -2430,6 +2539,132 @@ export const comparisons = {
   com_nav_setting_account: {
     english: 'Account',
     translated: 'Account',
+  },
+  com_assistants_file_search: {
+    english: 'File Search',
+    translated: 'Ricerca File',
+  },
+  com_assistants_file_search_info: {
+    english:
+      'Attaching vector stores for File Search is not yet supported. You can attach them from the Provider Playground or attach files to messages for file search on a thread basis.',
+    translated:
+      'L\'aggiunta di archivi vettoriali per la Ricerca File non è ancora supportata. Puoi aggiungerli dal Provider Playground o allegare file ai messaggi per la ricerca file su base di thread.',
+  },
+  com_assistants_non_retrieval_model: {
+    english: 'File search is not enabled on this model. Please select another model.',
+    translated: 'La ricerca di file non è abilitata su questo modello. Seleziona un altro modello.',
+  },
+  com_ui_attach_error_openai: {
+    english: 'Cannot attach Assistant files to other endpoints',
+    translated: 'Non è possibile allegare file dell\'Assistente ad altri endpoint',
+  },
+  com_ui_attach_warn_endpoint: {
+    english: 'Non-Assistant files may be ignored without a compatible tool',
+    translated: 'Attenzione: i file non compatibili con lo strumento potrebbero essere ignorati',
+  },
+  com_ui_assistant_deleted: {
+    english: 'Successfully deleted assistant',
+    translated: 'Assistente eliminato con successo',
+  },
+  com_ui_assistant_delete_error: {
+    english: 'There was an error deleting the assistant',
+    translated: 'Si è verificato un errore durante l\'eliminazione dell\'assistente',
+  },
+  com_ui_copied: {
+    english: 'Copied!',
+    translated: 'Copiato!',
+  },
+  com_ui_copy_code: {
+    english: 'Copy code',
+    translated: 'Copia codice',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: 'Copia link',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: 'Aggiorna link',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: 'Crea link',
+  },
+  com_nav_source_chat: {
+    english: 'View source chat',
+    translated: 'Visualizza chat sorgente',
+  },
+  com_ui_date_today: {
+    english: 'Today',
+    translated: 'Oggi',
+  },
+  com_ui_date_yesterday: {
+    english: 'Yesterday',
+    translated: 'Ieri',
+  },
+  com_ui_date_previous_7_days: {
+    english: 'Previous 7 days',
+    translated: 'Ultimi 7 giorni',
+  },
+  com_ui_date_previous_30_days: {
+    english: 'Previous 30 days',
+    translated: 'Ultimi 30 giorni',
+  },
+  com_ui_date_january: {
+    english: 'January',
+    translated: 'Gennaio',
+  },
+  com_ui_date_february: {
+    english: 'February',
+    translated: 'Febbraio',
+  },
+  com_ui_date_march: {
+    english: 'March',
+    translated: 'Marzo',
+  },
+  com_ui_date_april: {
+    english: 'April',
+    translated: 'Aprile',
+  },
+  com_ui_date_may: {
+    english: 'May',
+    translated: 'Maggio',
+  },
+  com_ui_date_june: {
+    english: 'June',
+    translated: 'Giugno',
+  },
+  com_ui_date_july: {
+    english: 'July',
+    translated: 'Luglio',
+  },
+  com_ui_date_august: {
+    english: 'August',
+    translated: 'Agosto',
+  },
+  com_ui_date_september: {
+    english: 'September',
+    translated: 'Settembre',
+  },
+  com_ui_date_october: {
+    english: 'October',
+    translated: 'Ottobre',
+  },
+  com_ui_date_november: {
+    english: 'November',
+    translated: 'Novembre',
+  },
+  com_ui_date_december: {
+    english: 'December',
+    translated: 'Dicembre',
+  },
+  com_ui_nothing_found: {
+    english: 'Nothing found',
+    translated: 'Non è stato trovato nulla',
+  },
+  com_ui_go_to_conversation: {
+    english: 'Go to conversation',
+    translated: 'Vai alla conversazione',
   },
   com_user_message: {
     english: 'You',

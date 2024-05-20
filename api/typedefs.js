@@ -658,6 +658,12 @@
  */
 
 /**
+ * @exports OpenAISpecClient
+ * @typedef {import('./app/clients/OpenAIClient')} OpenAISpecClient
+ * @memberof typedefs
+ */
+
+/**
  * @exports ImportBatchBuilder
  * @typedef {import('./server/utils/import/importBatchBuilder.js').ImportBatchBuilder} ImportBatchBuilder
  * @memberof typedefs

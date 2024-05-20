@@ -37,7 +37,7 @@ export default function Message(props: TMessageProps) {
   const { isSubmitting, ask, regenerate, handleContinue } = useMessageHandler();
   const { switchToConversation } = useConversation();
   const { conversationId } = useParams();
-  const isSearching = useRecoilValue(store.isSearching);
+  //   const isSearching = useRecoilValue(store.isSearching);
   const { token } = useAuthContext();
 
   const {
@@ -64,11 +64,17 @@ export default function Message(props: TMessageProps) {
     }
   }, [isSubmitting, text, scrollToBottom, abortScroll]);
 
+  //   useEffect(() => {
+  //     if (scrollToBottom && autoScroll && !isSearching && conversationId !== 'new') {
+  //       scrollToBottom();
+  //     }
+  //   }, [autoScroll, conversationId, scrollToBottom, isSearching]);
+
   useEffect(() => {
-    if (scrollToBottom && autoScroll && !isSearching && conversationId !== 'new') {
+    if (scrollToBottom && autoScroll && conversationId !== 'new') {
       scrollToBottom();
     }
-  }, [autoScroll, conversationId, scrollToBottom, isSearching]);
+  }, [autoScroll, conversationId, scrollToBottom]);
 
   useEffect(() => {
     if (!message) {
