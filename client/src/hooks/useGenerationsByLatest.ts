@@ -1,5 +1,5 @@
 import type { TMessage } from 'librechat-data-provider';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 
 type TUseGenerations = {
   endpoint?: string;
@@ -21,7 +21,6 @@ export default function useGenerationsByLatest({
     EModelEndpoint.openAI,
     EModelEndpoint.custom,
     EModelEndpoint.google,
-    EModelEndpoint.assistants,
     EModelEndpoint.anthropic,
     EModelEndpoint.gptPlugins,
     EModelEndpoint.azureOpenAI,
@@ -58,12 +57,13 @@ export default function useGenerationsByLatest({
     !branchingSupported ||
     (!isEditableEndpoint && !isCreatedByUser);
 
-  const forkingSupported = endpoint !== EModelEndpoint.assistants && !searchResult;
+  const forkingSupported = !isAssistantsEndpoint(endpoint) && !searchResult;
 
   return {
     forkingSupported,
     continueSupported,
     regenerateEnabled,
+    isEditableEndpoint,
     hideEditButton,
   };
 }

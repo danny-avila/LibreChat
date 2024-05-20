@@ -1,12 +1,10 @@
 import { useState, useMemo, useEffect } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
-import { defaultOrderQuery } from 'librechat-data-provider';
 import type { TPreset } from 'librechat-data-provider';
 import type { TModelSelectProps, Option } from '~/common';
 import { Label, HoverCard, SelectDropDown, HoverCardTrigger } from '~/components/ui';
 import { cn, defaultTextProps, removeFocusOutlines, mapAssistants } from '~/utils';
-import { useLocalize, useDebouncedInput } from '~/hooks';
-import { useListAssistantsQuery } from '~/data-provider';
+import { useLocalize, useDebouncedInput, useAssistantListMap } from '~/hooks';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
 
@@ -17,23 +15,21 @@ export default function Settings({ conversation, setOption, models, readonly }: 
     [localize],
   );
 
-  const { data: assistants = [] } = useListAssistantsQuery(defaultOrderQuery, {
-    select: (res) =>
-      [
-        defaultOption,
-        ...res.data.map(({ id, name }) => ({
-          label: name,
-          value: id,
-        })),
-      ].filter(Boolean),
-  });
-
-  const { data: assistantMap = {} } = useListAssistantsQuery(defaultOrderQuery, {
-    select: (res) => mapAssistants(res.data),
-  });
+  const assistantListMap = useAssistantListMap((res) => mapAssistants(res.data));
 
   const { model, endpoint, assistant_id, endpointType, promptPrefix, instructions } =
     conversation ?? {};
+
+  const assistants = useMemo(() => {
+    return [
+      defaultOption,
+      ...(assistantListMap[endpoint ?? ''] ?? []).map(({ id, name }) => ({
+        label: name,
+        value: id,
+      })),
+    ].filter(Boolean);
+  }, [assistantListMap, endpoint, defaultOption]);
+
   const [onPromptPrefixChange, promptPrefixValue] = useDebouncedInput({
     setOption,
     optionKey: 'promptPrefix',
@@ -47,11 +43,11 @@ export default function Settings({ conversation, setOption, models, readonly }: 
 
   const activeAssistant = useMemo(() => {
     if (assistant_id) {
-      return assistantMap[assistant_id];
+      return assistantListMap[endpoint ?? '']?.[assistant_id];
     }
 
     return null;
-  }, [assistant_id, assistantMap]);
+  }, [assistant_id, assistantListMap, endpoint]);
 
   const modelOptions = useMemo(() => {
     return models.map((model) => ({
@@ -89,7 +85,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
       return;
     }
 
-    const assistant = assistantMap[value];
+    const assistant = assistantListMap[endpoint ?? '']?.[value];
     if (!assistant) {
       setAssistantValue(defaultOption);
       return;

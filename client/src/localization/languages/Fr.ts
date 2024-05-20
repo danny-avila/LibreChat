@@ -364,6 +364,16 @@ export default {
   com_nav_setting_data: 'Contrôles des données',
   com_nav_setting_account: 'Compte',
   /* The following are AI Translated */
+  com_assistants_file_search: 'Recherche de fichiers',
+  com_assistants_file_search_info:
+    'L\'ajout de vecteurs de stockage pour la recherche de fichiers n\'est pas encore pris en charge. Vous pouvez les ajouter depuis le terrain de jeu du fournisseur ou joindre des fichiers aux messages pour une recherche de fichiers au niveau du fil de discussion.',
+  com_assistants_non_retrieval_model:
+    'La recherche de fichiers n\'est pas activée pour ce modèle. Veuillez sélectionner un autre modèle.',
+  com_ui_attach_error_openai:
+    'Impossible de joindre les fichiers de l\'Assistant à d\'autres points d\'accès',
+  com_ui_attach_warn_endpoint: 'Les fichiers non compatibles avec l\'outil peuvent être ignorés',
+  com_ui_assistant_deleted: 'Assistant supprimé avec succès',
+  com_ui_assistant_delete_error: 'Une erreur s\'est produite lors de la suppression de l\'assistant.',
   com_ui_copied: 'Copié !',
   com_ui_copy_code: 'Copier le code',
   com_ui_copy_link: 'Copier le lien',
@@ -1862,6 +1872,37 @@ export const comparisons = {
   com_nav_setting_account: {
     english: 'Account',
     translated: 'Compte',
+  },
+  com_assistants_file_search: {
+    english: 'File Search',
+    translated: 'Recherche de fichiers',
+  },
+  com_assistants_file_search_info: {
+    english:
+      'Attaching vector stores for File Search is not yet supported. You can attach them from the Provider Playground or attach files to messages for file search on a thread basis.',
+    translated:
+      'L\'ajout de vecteurs de stockage pour la recherche de fichiers n\'est pas encore pris en charge. Vous pouvez les ajouter depuis le terrain de jeu du fournisseur ou joindre des fichiers aux messages pour une recherche de fichiers au niveau du fil de discussion.',
+  },
+  com_assistants_non_retrieval_model: {
+    english: 'File search is not enabled on this model. Please select another model.',
+    translated:
+      'La recherche de fichiers n\'est pas activée pour ce modèle. Veuillez sélectionner un autre modèle.',
+  },
+  com_ui_attach_error_openai: {
+    english: 'Cannot attach Assistant files to other endpoints',
+    translated: 'Impossible de joindre les fichiers de l\'Assistant à d\'autres points d\'accès',
+  },
+  com_ui_attach_warn_endpoint: {
+    english: 'Non-Assistant files may be ignored without a compatible tool',
+    translated: 'Les fichiers non compatibles avec l\'outil peuvent être ignorés',
+  },
+  com_ui_assistant_deleted: {
+    english: 'Successfully deleted assistant',
+    translated: 'Assistant supprimé avec succès',
+  },
+  com_ui_assistant_delete_error: {
+    english: 'There was an error deleting the assistant',
+    translated: 'Une erreur s\'est produite lors de la suppression de l\'assistant.',
   },
   com_ui_copied: {
     english: 'Copied!',

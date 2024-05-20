@@ -1,10 +1,16 @@
+import { EToolResources } from './assistants';
+
 export enum FileSources {
   local = 'local',
   firebase = 'firebase',
+  azure = 'azure',
   openai = 'openai',
   s3 = 's3',
   vectordb = 'vectordb',
 }
+
+export const checkOpenAIStorage = (source: string) =>
+  source === FileSources.openai || source === FileSources.azure;
 
 export enum FileContext {
   avatar = 'avatar',
@@ -54,6 +60,7 @@ export type TFile = {
   usage: number;
   context?: FileContext;
   source?: FileSources;
+  filterSource?: FileSources;
   width?: number;
   height?: number;
   expiresAt?: string | Date;
@@ -97,6 +104,7 @@ export type BatchFile = {
 export type DeleteFilesBody = {
   files: BatchFile[];
   assistant_id?: string;
+  tool_resource?: EToolResources;
 };
 
 export type DeleteMutationOptions = {

@@ -1,5 +1,5 @@
 import type { TSubmission, TMessage, TEndpointOption } from './types';
-import { tConvoUpdateSchema, EModelEndpoint } from './schemas';
+import { tConvoUpdateSchema, EModelEndpoint, isAssistantsEndpoint } from './schemas';
 import { EndpointURLs } from './config';
 
 export default function createPayload(submission: TSubmission) {
@@ -12,7 +12,7 @@ export default function createPayload(submission: TSubmission) {
 
   let server = EndpointURLs[endpointType ?? endpoint];
 
-  if (isEdited && endpoint === EModelEndpoint.assistants) {
+  if (isEdited && isAssistantsEndpoint(endpoint)) {
     server += '/modify';
   } else if (isEdited) {
     server = server.replace('/ask/', '/edit/');

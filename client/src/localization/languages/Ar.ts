@@ -297,6 +297,15 @@ export default {
   com_nav_setting_general: 'عام',
   com_nav_setting_data: 'تحكم في البيانات',
   /* The following are AI translated */
+  com_assistants_file_search: 'بحث الملفات',
+  com_assistants_file_search_info:
+    'لا يتم دعم إرفاق مخازن الكتل الرقمية لميزة البحث في الملفات بعد. يمكنك إرفاقها من ملعب المزود أو إرفاق ملفات إلى الرسائل للبحث في الملفات على أساس المحادثة.',
+  com_assistants_non_retrieval_model:
+    'البحث في الملفات غير مُمكّن على هذا النموذج. يرجى تحديد نموذج آخر.',
+  com_ui_attach_error_openai: 'لا يمكن إرفاق ملفات المساعد إلى نقاط نهائية أخرى',
+  com_ui_attach_warn_endpoint: 'قد يتم تجاهل الملفات غير المساعدة دون وجود أداة متوافقة',
+  com_ui_assistant_deleted: 'تم حذف المساعد بنجاح',
+  com_ui_assistant_delete_error: 'حدث خطأ أثناء حذف المساعد',
   com_ui_copied: 'تم النسخ',
   com_ui_copy_code: 'نسخ الكود',
   com_ui_copy_link: 'نسخ الرابط',
@@ -1635,6 +1644,36 @@ export const comparisons = {
   com_nav_setting_data: {
     english: 'Data controls',
     translated: 'تحكم في البيانات',
+  },
+  com_assistants_file_search: {
+    english: 'File Search',
+    translated: 'بحث الملفات',
+  },
+  com_assistants_file_search_info: {
+    english:
+      'Attaching vector stores for File Search is not yet supported. You can attach them from the Provider Playground or attach files to messages for file search on a thread basis.',
+    translated:
+      'لا يتم دعم إرفاق مخازن الكتل الرقمية لميزة البحث في الملفات بعد. يمكنك إرفاقها من ملعب المزود أو إرفاق ملفات إلى الرسائل للبحث في الملفات على أساس المحادثة.',
+  },
+  com_assistants_non_retrieval_model: {
+    english: 'File search is not enabled on this model. Please select another model.',
+    translated: 'البحث في الملفات غير مُمكّن على هذا النموذج. يرجى تحديد نموذج آخر.',
+  },
+  com_ui_attach_error_openai: {
+    english: 'Cannot attach Assistant files to other endpoints',
+    translated: 'لا يمكن إرفاق ملفات المساعد إلى نقاط نهائية أخرى',
+  },
+  com_ui_attach_warn_endpoint: {
+    english: 'Non-Assistant files may be ignored without a compatible tool',
+    translated: 'قد يتم تجاهل الملفات غير المساعدة دون وجود أداة متوافقة',
+  },
+  com_ui_assistant_deleted: {
+    english: 'Successfully deleted assistant',
+    translated: 'تم حذف المساعد بنجاح',
+  },
+  com_ui_assistant_delete_error: {
+    english: 'There was an error deleting the assistant',
+    translated: 'حدث خطأ أثناء حذف المساعد',
   },
   com_ui_copied: {
     english: 'Copied!',
