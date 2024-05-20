@@ -21,6 +21,10 @@ function Login() {
     }
   }, [isAuthenticated, navigate]);
 
+  useEffect(() => {
+    document.title = startupConfig?.appTitle || 'LibreChat';
+  }, [startupConfig?.appTitle]);
+
   if (!startupConfig) {
     return null;
   }

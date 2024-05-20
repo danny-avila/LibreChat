@@ -13,6 +13,10 @@ const Registration: React.FC = () => {
   const { data: startupConfig } = useGetStartupConfig();
   const localize = useLocalize();
 
+  useEffect(() => {
+    document.title = startupConfig?.appTitle || 'LibreChat';
+  }, [startupConfig?.appTitle]);
+
   const {
     register,
     watch,
