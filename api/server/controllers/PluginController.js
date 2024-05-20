@@ -55,19 +55,27 @@ const getAvailablePluginsController = async (req, res) => {
       return;
     }
 
+    /** @type {{ filteredTools: string[], includedTools: string[] }} */
+    const { filteredTools = [], includedTools = [] } = req.app.locals;
     const pluginManifest = await fs.readFile(req.app.locals.paths.pluginManifest, 'utf8');
-
     const jsonData = JSON.parse(pluginManifest);
-    /** @type {TPlugin[]} */
+
     const uniquePlugins = filterUniquePlugins(jsonData);
-    const authenticatedPlugins = uniquePlugins.map((plugin) => {
-      if (isPluginAuthenticated(plugin)) {
-        return { ...plugin, authenticated: true };
-      } else {
-        return plugin;
-      }
-    });
-    const plugins = await addOpenAPISpecs(authenticatedPlugins);
+    let authenticatedPlugins = [];
+    for (const plugin of uniquePlugins) {
+      authenticatedPlugins.push(
+        isPluginAuthenticated(plugin) ? { ...plugin, authenticated: true } : plugin,
+      );
+    }
+
+    let plugins = await addOpenAPISpecs(authenticatedPlugins);
+
+    if (includedTools.length > 0) {
+      plugins = plugins.filter((plugin) => includedTools.includes(plugin.pluginKey));
+    } else {
+      plugins = plugins.filter((plugin) => !filteredTools.includes(plugin.pluginKey));
+    }
+
     await cache.set(CacheKeys.PLUGINS, plugins);
     res.status(200).json(plugins);
   } catch (error) {

@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import type { TResPlugin, TMessage, TConversation, EModelEndpoint, ImageDetail } from './schemas';
-
+import type { TSpecsConfig } from './models';
 export type TOpenAIMessage = OpenAI.Chat.ChatCompletionMessageParam;
 export type TOpenAIFunction = OpenAI.Chat.ChatCompletionCreateParams.Function;
 export type TOpenAIFunctionCall = OpenAI.Chat.ChatCompletionCreateParams.FunctionCallOption;
@@ -16,7 +16,8 @@ export type TEndpointOption = {
   endpoint: EModelEndpoint;
   endpointType?: EModelEndpoint;
   modelDisplayLabel?: string;
-  resendImages?: boolean;
+  resendFiles?: boolean;
+  maxContextTokens?: number;
   imageDetail?: ImageDetail;
   model?: string | null;
   promptPrefix?: string;
@@ -125,6 +126,26 @@ export type TDeleteConversationResponse = {
   };
 };
 
+export type TArchiveConversationRequest = {
+  conversationId: string;
+  isArchived: boolean;
+};
+
+export type TArchiveConversationResponse = TConversation;
+
+export type TForkConvoRequest = {
+  messageId: string;
+  conversationId: string;
+  option?: string;
+  splitAtTarget?: boolean;
+  latestMessageId?: string;
+};
+
+export type TForkConvoResponse = {
+  conversation: TConversation;
+  messages: TMessage[];
+};
+
 export type TSearchResults = {
   conversations: TConversation[];
   messages: TMessage[];
@@ -146,6 +167,8 @@ export type TConfig = {
   userProvide?: boolean | null;
   userProvideURL?: boolean | null;
   disableBuilder?: boolean;
+  retrievalModels?: string[];
+  capabilities?: string[];
 };
 
 export type TEndpointsConfig =
@@ -193,9 +216,26 @@ export type TResetPassword = {
   confirm_password?: string;
 };
 
+export type TInterfaceConfig = {
+  privacyPolicy?: {
+    externalUrl?: string;
+    openNewTab?: boolean;
+  };
+  termsOfService?: {
+    externalUrl?: string;
+    openNewTab?: boolean;
+  };
+  endpointsMenu: boolean;
+  modelSelect: boolean;
+  parameters: boolean;
+  sidePanel: boolean;
+  presets: boolean;
+};
+
 export type TStartupConfig = {
   appTitle: string;
   socialLogins?: string[];
+  interface?: TInterfaceConfig;
   discordLoginEnabled: boolean;
   facebookLoginEnabled: boolean;
   githubLoginEnabled: boolean;
@@ -210,7 +250,9 @@ export type TStartupConfig = {
   emailEnabled: boolean;
   checkBalance: boolean;
   showBirthdayIcon: boolean;
+  helpAndFaqURL: string;
   customFooter?: string;
+  modelSpecs?: TSpecsConfig;
 };
 
 export type TRefreshTokenResponse = {
@@ -225,4 +267,44 @@ export type TCheckUserKeyResponse = {
 export type TRequestPasswordResetResponse = {
   link?: string;
   message?: string;
+};
+
+/**
+ * Represents the response from the import endpoint.
+ */
+export type TImportStartResponse = {
+  /**
+   * The message associated with the response.
+   */
+  message: string;
+
+  /**
+   * The ID of the job associated with the import.
+   */
+  jobId: string;
+};
+
+/**
+ * Represents the status of an import job.
+ */
+export type TImportJobStatus = {
+  /**
+   * The name of the job.
+   */
+  name: string;
+
+  /**
+   * The ID of the job.
+   */
+  id: string;
+
+  /**
+   * The status of the job.
+   */
+  status: 'scheduled' | 'running' | 'completed' | 'failed';
+
+  /**
+   * The reason the job failed, if applicable.
+   */
+  failReason?: string;
 };

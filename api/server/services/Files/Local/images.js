@@ -6,31 +6,37 @@ const { updateUser } = require('~/models/userMethods');
 const { updateFile } = require('~/models/File');
 
 /**
- * Converts an image file to the WebP format. The function first resizes the image based on the specified
+ * Converts an image file to the target format. The function first resizes the image based on the specified
  * resolution.
  *
- * If the original image is already in WebP format, it writes the resized image back. Otherwise,
- * it converts the image to WebP format before saving.
+ * If the original image is already in target format, it writes the resized image back. Otherwise,
+ * it converts the image to target format before saving.
  *
  * The original image is deleted after conversion.
- *
- * @param {Object} req - The request object from Express. It should have a `user` property with an `id`
+ * @param {Object} params - The params object.
+ * @param {Object} params.req - The request object from Express. It should have a `user` property with an `id`
  *                       representing the user, and an `app.locals.paths` object with an `imageOutput` path.
- * @param {Express.Multer.File} file - The file object, which is part of the request. The file object should
+ * @param {Express.Multer.File} params.file - The file object, which is part of the request. The file object should
  *                                     have a `path` property that points to the location of the uploaded file.
- * @param {string} [resolution='high'] - Optional. The desired resolution for the image resizing. Default is 'high'.
+ * @param {string} params.file_id - The file ID.
+ * @param {EModelEndpoint} params.endpoint - The params object.
+ * @param {string} [params.resolution='high'] - Optional. The desired resolution for the image resizing. Default is 'high'.
  *
  * @returns {Promise<{ filepath: string, bytes: number, width: number, height: number}>}
  *          A promise that resolves to an object containing:
- *            - filepath: The path where the converted WebP image is saved.
+ *            - filepath: The path where the converted image is saved.
  *            - bytes: The size of the converted image in bytes.
  *            - width: The width of the converted image.
  *            - height: The height of the converted image.
  */
-async function uploadLocalImage(req, file, resolution = 'high') {
+async function uploadLocalImage({ req, file, file_id, endpoint, resolution = 'high' }) {
   const inputFilePath = file.path;
   const inputBuffer = await fs.promises.readFile(inputFilePath);
-  const { buffer: resizedBuffer, width, height } = await resizeImageBuffer(inputBuffer, resolution);
+  const {
+    buffer: resizedBuffer,
+    width,
+    height,
+  } = await resizeImageBuffer(inputBuffer, resolution, endpoint);
   const extension = path.extname(inputFilePath);
 
   const { imageOutput } = req.app.locals.paths;
@@ -40,17 +46,19 @@ async function uploadLocalImage(req, file, resolution = 'high') {
     fs.mkdirSync(userPath, { recursive: true });
   }
 
-  const newPath = path.join(userPath, path.basename(inputFilePath));
+  const fileName = `${file_id}__${path.basename(inputFilePath)}`;
+  const newPath = path.join(userPath, fileName);
+  const targetExtension = `.${req.app.locals.imageOutputType}`;
 
-  if (extension.toLowerCase() === '.webp') {
+  if (extension.toLowerCase() === targetExtension) {
     const bytes = Buffer.byteLength(resizedBuffer);
     await fs.promises.writeFile(newPath, resizedBuffer);
     const filepath = path.posix.join('/', 'images', req.user.id, path.basename(newPath));
     return { filepath, bytes, width, height };
   }
 
-  const outputFilePath = newPath.replace(extension, '.webp');
-  const data = await sharp(resizedBuffer).toFormat('webp').toBuffer();
+  const outputFilePath = newPath.replace(extension, targetExtension);
+  const data = await sharp(resizedBuffer).toFormat(req.app.locals.imageOutputType).toBuffer();
   await fs.promises.writeFile(outputFilePath, data);
   const bytes = Buffer.byteLength(data);
   const filepath = path.posix.join('/', 'images', req.user.id, path.basename(outputFilePath));
@@ -102,7 +110,7 @@ async function prepareImagesLocal(req, file) {
  * If the 'manual' flag is set to 'true', it also updates the user's avatar URL in the database.
  *
  * @param {object} params - The parameters object.
- * @param {Buffer} params.buffer - The Buffer containing the avatar image in WebP format.
+ * @param {Buffer} params.buffer - The Buffer containing the avatar image.
  * @param {string} params.userId - The user ID.
  * @param {string} params.manual - A string flag indicating whether the update is manual ('true' or 'false').
  * @returns {Promise<string>} - A promise that resolves with the URL of the uploaded avatar.

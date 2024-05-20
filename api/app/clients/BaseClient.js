@@ -3,6 +3,7 @@ const { supportsBalanceCheck, Constants } = require('librechat-data-provider');
 const { getConvo, getMessages, saveMessage, updateMessage, saveConvo } = require('~/models');
 const { addSpaceIfNeeded, isEnabled } = require('~/server/utils');
 const checkBalance = require('~/models/checkBalance');
+const { getFiles } = require('~/models/File');
 const TextStream = require('./TextStream');
 const { logger } = require('~/config');
 
@@ -22,7 +23,7 @@ class BaseClient {
     throw new Error('Method \'setOptions\' must be implemented.');
   }
 
-  getCompletion() {
+  async getCompletion() {
     throw new Error('Method \'getCompletion\' must be implemented.');
   }
 
@@ -44,10 +45,6 @@ class BaseClient {
 
   async getTokenCountForResponse(response) {
     logger.debug('`[BaseClient] recordTokenUsage` not implemented.', response);
-  }
-
-  async addPreviousAttachments(messages) {
-    return messages;
   }
 
   async recordTokenUsage({ promptTokens, completionTokens }) {
@@ -447,6 +444,8 @@ class BaseClient {
     }
 
     const completion = await this.sendCompletion(payload, opts);
+    this.abortController.requestCompleted = true;
+
     const responseMessage = {
       messageId: responseMessageId,
       conversationId,
@@ -457,6 +456,9 @@ class BaseClient {
       sender: this.sender,
       text: addSpaceIfNeeded(generation) + completion,
       promptTokens,
+      iconURL: this.options.iconURL,
+      endpoint: this.options.endpoint,
+      ...(this.metadata ?? {}),
     };
 
     if (
@@ -525,8 +527,19 @@ class BaseClient {
     return _messages;
   }
 
+  /**
+   * Save a message to the database.
+   * @param {TMessage} message
+   * @param {Partial<TConversation>} endpointOptions
+   * @param {string | null} user
+   */
   async saveMessageToDatabase(message, endpointOptions, user = null) {
-    await saveMessage({ ...message, endpoint: this.options.endpoint, user, unfinished: false });
+    await saveMessage({
+      ...message,
+      endpoint: this.options.endpoint,
+      unfinished: false,
+      user,
+    });
     await saveConvo(user, {
       conversationId: message.conversationId,
       endpoint: this.options.endpoint,
@@ -556,11 +569,11 @@ class BaseClient {
    * the message is considered a root message.
    *
    * @param {Object} options - The options for the function.
-   * @param {Array} options.messages - An array of message objects. Each object should have either an 'id' or 'messageId' property, and may have a 'parentMessageId' property.
+   * @param {TMessage[]} options.messages - An array of message objects. Each object should have either an 'id' or 'messageId' property, and may have a 'parentMessageId' property.
    * @param {string} options.parentMessageId - The ID of the parent message to start the traversal from.
    * @param {Function} [options.mapMethod] - An optional function to map over the ordered messages. If provided, it will be applied to each message in the resulting array.
    * @param {boolean} [options.summary=false] - If set to true, the traversal modifies messages with 'summary' and 'summaryTokenCount' properties and stops at the message with a 'summary' property.
-   * @returns {Array} An array containing the messages in the order they should be displayed, starting with the most recent message with a 'summary' property if the 'summary' option is true, and ending with the message identified by 'parentMessageId'.
+   * @returns {TMessage[]} An array containing the messages in the order they should be displayed, starting with the most recent message with a 'summary' property if the 'summary' option is true, and ending with the message identified by 'parentMessageId'.
    */
   static getMessagesForConversation({
     messages,
@@ -680,6 +693,54 @@ class BaseClient {
     }
 
     return await this.sendCompletion(payload, opts);
+  }
+
+  /**
+   *
+   * @param {TMessage[]} _messages
+   * @returns {Promise<TMessage[]>}
+   */
+  async addPreviousAttachments(_messages) {
+    if (!this.options.resendFiles) {
+      return _messages;
+    }
+
+    /**
+     *
+     * @param {TMessage} message
+     */
+    const processMessage = async (message) => {
+      if (!this.message_file_map) {
+        /** @type {Record<string, MongoFile[]> */
+        this.message_file_map = {};
+      }
+
+      const fileIds = message.files.map((file) => file.file_id);
+      const files = await getFiles({
+        file_id: { $in: fileIds },
+      });
+
+      await this.addImageURLs(message, files);
+
+      this.message_file_map[message.messageId] = files;
+      return message;
+    };
+
+    const promises = [];
+
+    for (const message of _messages) {
+      if (!message.files) {
+        promises.push(message);
+        continue;
+      }
+
+      promises.push(processMessage(message));
+    }
+
+    const messages = await Promise.all(promises);
+
+    this.checkVisionRequest(Object.values(this.message_file_map ?? {}).flat());
+    return messages;
   }
 }
 

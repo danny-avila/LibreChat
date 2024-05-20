@@ -48,8 +48,10 @@ const openAIModels = {
   'gpt-4-32k-0613': 32758, // -10 from max
   'gpt-4-1106': 127990, // -10 from max
   'gpt-4-0125': 127990, // -10 from max
+  'gpt-4o': 127990, // -10 from max
   'gpt-4-turbo': 127990, // -10 from max
-  'gpt-3.5-turbo': 4092, // -5 from max
+  'gpt-4-vision': 127990, // -10 from max
+  'gpt-3.5-turbo': 16375, // -10 from max
   'gpt-3.5-turbo-0613': 4092, // -5 from max
   'gpt-3.5-turbo-0301': 4092, // -5 from max
   'gpt-3.5-turbo-16k': 16375, // -10 from max
@@ -59,9 +61,20 @@ const openAIModels = {
   'mistral-': 31990, // -10 from max
 };
 
+const cohereModels = {
+  'command-light': 4086, // -10 from max
+  'command-light-nightly': 8182, // -10 from max
+  command: 4086, // -10 from max
+  'command-nightly': 8182, // -10 from max
+  'command-r': 127500, // -500 from max
+  'command-r-plus': 127500, // -500 from max
+};
+
 const googleModels = {
   /* Max I/O is combined so we subtract the amount from max response tokens for actual total */
-  gemini: 32750, // -10 from max
+  gemini: 30720, // -2048 from max
+  'gemini-pro-vision': 12288, // -4096 from max
+  'gemini-1.5': 1048576, // -8192 from max
   'text-bison-32k': 32758, // -10 from max
   'chat-bison-32k': 32758, // -10 from max
   'code-bison-32k': 32758, // -10 from max
@@ -75,15 +88,21 @@ const googleModels = {
 };
 
 const anthropicModels = {
-  'claude-2.1': 200000,
   'claude-': 100000,
+  'claude-2': 100000,
+  'claude-2.1': 200000,
+  'claude-3-haiku': 200000,
+  'claude-3-sonnet': 200000,
+  'claude-3-opus': 200000,
 };
+
+const aggregateModels = { ...openAIModels, ...googleModels, ...anthropicModels, ...cohereModels };
 
 // Order is important here: by model series and context size (gpt-4 then gpt-3, ascending)
 const maxTokensMap = {
   [EModelEndpoint.azureOpenAI]: openAIModels,
-  [EModelEndpoint.openAI]: { ...openAIModels, ...googleModels, ...anthropicModels },
-  [EModelEndpoint.custom]: { ...openAIModels, ...googleModels, ...anthropicModels },
+  [EModelEndpoint.openAI]: aggregateModels,
+  [EModelEndpoint.custom]: aggregateModels,
   [EModelEndpoint.google]: googleModels,
   [EModelEndpoint.anthropic]: anthropicModels,
 };
@@ -200,6 +219,12 @@ function processModelData(input) {
 
   for (const model of data) {
     const modelKey = model.id;
+    if (modelKey === 'openrouter/auto') {
+      model.pricing = {
+        prompt: '0.00001',
+        completion: '0.00003',
+      };
+    }
     const prompt = parseFloat(model.pricing.prompt) * 1000000;
     const completion = parseFloat(model.pricing.completion) * 1000000;
 

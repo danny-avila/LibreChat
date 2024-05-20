@@ -1,7 +1,6 @@
 import { useParams } from 'react-router-dom';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
-import { useCallback, useEffect, useState, useMemo } from 'react';
-import type { ConversationListResponse } from 'librechat-data-provider';
+import { useRecoilValue } from 'recoil';
+import { useCallback, useEffect, useState, useMemo, memo } from 'react';
 import {
   useMediaQuery,
   useAuthContext,
@@ -10,18 +9,19 @@ import {
   useNavScrolling,
   useConversations,
 } from '~/hooks';
-import { useSearchInfiniteQuery, useConversationsInfiniteQuery } from '~/data-provider';
+import { useConversationsInfiniteQuery } from '~/data-provider';
 import { TooltipProvider, Tooltip } from '~/components/ui';
 import { Conversations } from '~/components/Conversations';
+import { useSearchContext } from '~/Providers';
 import { Spinner } from '~/components/svg';
 import SearchBar from './SearchBar';
 import NavToggle from './NavToggle';
-import NavLinks from './NavLinksQima';
+import NavLinks from './NavLinks';
 import NewChat from './NewChat';
 import { cn } from '~/utils';
 import store from '~/store';
 
-export default function Nav({ navVisible, setNavVisible }) {
+const Nav = ({ navVisible, setNavVisible }) => {
   const { conversationId } = useParams();
   const { isAuthenticated } = useAuthContext();
 
@@ -31,6 +31,14 @@ export default function Nav({ navVisible, setNavVisible }) {
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
   const [isToggleHovering, setIsToggleHovering] = useState(false);
 
+  const handleMouseEnter = useCallback(() => {
+    setIsHovering(true);
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    setIsHovering(false);
+  }, []);
+
   useEffect(() => {
     if (isSmallScreen) {
       setNavWidth('320px');
@@ -39,24 +47,16 @@ export default function Nav({ navVisible, setNavVisible }) {
     }
   }, [isSmallScreen]);
 
-  const [pageNumber, setPageNumber] = useState(1);
+  const { newConversation } = useConversation();
   const [showLoading, setShowLoading] = useState(false);
-
-  const searchQuery = useRecoilValue(store.searchQuery);
   const isSearchEnabled = useRecoilValue(store.isSearchEnabled);
-  const { newConversation, searchPlaceholderConversation } = useConversation();
 
   const { refreshConversations } = useConversations();
-  const setSearchResultMessages = useSetRecoilState(store.searchResultMessages);
+  const { pageNumber, searchQuery, setPageNumber, searchQueryRes } = useSearchContext();
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useConversationsInfiniteQuery(
-    { pageNumber: pageNumber.toString() },
+    { pageNumber: pageNumber.toString(), isArchived: false },
     { enabled: isAuthenticated },
-  );
-
-  const searchQueryRes = useSearchInfiniteQuery(
-    { pageNumber: pageNumber.toString(), searchQuery: searchQuery },
-    { enabled: isAuthenticated && !!searchQuery.length },
   );
 
   const { containerRef, moveToTop } = useNavScrolling({
@@ -73,21 +73,6 @@ export default function Nav({ navVisible, setNavVisible }) {
     [data, searchQuery, searchQueryRes?.data],
   );
 
-  const onSearchSuccess = useCallback(({ data }: { data: ConversationListResponse }) => {
-    const res = data;
-    searchPlaceholderConversation();
-    setSearchResultMessages(res.messages);
-    /* disabled due recoil methods not recognized as state setters */
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Empty dependency array
-
-  useEffect(() => {
-    //we use isInitialLoading here instead of isLoading because query is disabled by default
-    if (searchQueryRes.data) {
-      onSearchSuccess({ data: searchQueryRes.data.pages[0] });
-    }
-  }, [searchQueryRes.data, searchQueryRes.isInitialLoading, onSearchSuccess]);
-
   const clearSearch = () => {
     setPageNumber(1);
     refreshConversations();
@@ -97,7 +82,10 @@ export default function Nav({ navVisible, setNavVisible }) {
   };
 
   const toggleNavVisible = () => {
-    setNavVisible((prev: boolean) => !prev);
+    setNavVisible((prev: boolean) => {
+      localStorage.setItem('navVisible', JSON.stringify(!prev));
+      return !prev;
+    });
     if (newUser) {
       setNewUser(false);
     }
@@ -110,11 +98,11 @@ export default function Nav({ navVisible, setNavVisible }) {
   };
 
   return (
-    <TooltipProvider delayDuration={150}>
+    <TooltipProvider delayDuration={250}>
       <Tooltip>
         <div
           className={
-            'nav active dark max-w-[320px] flex-shrink-0 overflow-x-hidden bg-black md:max-w-[260px]'
+            'nav active max-w-[320px] flex-shrink-0 overflow-x-hidden bg-gray-50 dark:bg-gray-750 md:max-w-[260px]'
           }
           style={{
             width: navVisible ? navWidth : '0px',
@@ -141,8 +129,8 @@ export default function Nav({ navVisible, setNavVisible }) {
                         '-mr-2 flex-1 flex-col overflow-y-auto pr-2 transition-opacity duration-500',
                         isHovering ? '' : 'scrollbar-transparent',
                       )}
-                      onMouseEnter={() => setIsHovering(true)}
-                      onMouseLeave={() => setIsHovering(false)}
+                      onMouseEnter={handleMouseEnter}
+                      onMouseLeave={handleMouseLeave}
                       ref={containerRef}
                     >
                       <NewChat
@@ -154,12 +142,11 @@ export default function Nav({ navVisible, setNavVisible }) {
                         moveToTop={moveToTop}
                         toggleNav={itemToggleNav}
                       />
-                      <Spinner
-                        className={cn(
-                          'm-1 mx-auto mb-4 h-4 w-4',
-                          isFetchingNextPage || showLoading ? 'opacity-1' : 'opacity-0',
-                        )}
-                      />
+                      {(isFetchingNextPage || showLoading) && (
+                        <Spinner
+                          className={cn('m-1 mx-auto mb-4 h-4 w-4 text-black dark:text-white')}
+                        />
+                      )}
                     </div>
                     <NavLinks />
                   </nav>
@@ -179,4 +166,6 @@ export default function Nav({ navVisible, setNavVisible }) {
       </Tooltip>
     </TooltipProvider>
   );
-}
+};
+
+export default memo(Nav);

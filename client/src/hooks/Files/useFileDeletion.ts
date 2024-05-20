@@ -48,6 +48,7 @@ const useFileDeletion = ({
         temp_file_id = '',
         filepath = '',
         source = FileSources.local,
+        embedded,
         attached,
       } = _file as TFile & { attached?: boolean };
 
@@ -58,6 +59,7 @@ const useFileDeletion = ({
       }
       const file: BatchFile = {
         file_id,
+        embedded,
         filepath,
         source,
       };
@@ -89,12 +91,13 @@ const useFileDeletion = ({
   const deleteFiles = useCallback(
     ({ files, setFiles }: { files: ExtendedFile[] | TFile[]; setFiles?: FileMapSetter }) => {
       const batchFiles = files.map((_file) => {
-        const { file_id, filepath = '', source = FileSources.local } = _file;
+        const { file_id, embedded, filepath = '', source = FileSources.local } = _file;
 
         return {
+          source,
           file_id,
           filepath,
-          source,
+          embedded,
         };
       });
 

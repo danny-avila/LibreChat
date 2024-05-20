@@ -1,5 +1,6 @@
+const { ViolationTypes } = require('librechat-data-provider');
+const { logViolation } = require('~/cache');
 const Balance = require('./Balance');
-const { logViolation } = require('../cache');
 /**
  * Checks the balance for a user and determines if they can spend a certain amount.
  * If the user cannot spend the amount, it logs a violation and denies the request.
@@ -25,7 +26,7 @@ const checkBalance = async ({ req, res, txData }) => {
     return true;
   }
 
-  const type = 'token_balance';
+  const type = ViolationTypes.TOKEN_BALANCE;
   const errorMessage = {
     type,
     balance,

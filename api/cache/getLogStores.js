@@ -1,11 +1,12 @@
 const Keyv = require('keyv');
-const { CacheKeys } = require('librechat-data-provider');
+const { CacheKeys, ViolationTypes } = require('librechat-data-provider');
 const { logFile, violationFile } = require('./keyvFiles');
 const { math, isEnabled } = require('~/server/utils');
 const keyvRedis = require('./keyvRedis');
 const keyvMongo = require('./keyvMongo');
 
 const { BAN_DURATION, USE_REDIS } = process.env ?? {};
+const THIRTY_MINUTES = 1800000;
 
 const duration = math(BAN_DURATION, 7200000);
 
@@ -24,8 +25,8 @@ const config = isEnabled(USE_REDIS)
   : new Keyv({ namespace: CacheKeys.CONFIG_STORE });
 
 const tokenConfig = isEnabled(USE_REDIS) // ttl: 30 minutes
-  ? new Keyv({ store: keyvRedis, ttl: 1800000 })
-  : new Keyv({ namespace: CacheKeys.TOKEN_CONFIG, ttl: 1800000 });
+  ? new Keyv({ store: keyvRedis, ttl: THIRTY_MINUTES })
+  : new Keyv({ namespace: CacheKeys.TOKEN_CONFIG, ttl: THIRTY_MINUTES });
 
 const genTitle = isEnabled(USE_REDIS) // ttl: 2 minutes
   ? new Keyv({ store: keyvRedis, ttl: 120000 })
@@ -37,19 +38,27 @@ const modelQueries = isEnabled(process.env.USE_REDIS)
 
 const abortKeys = isEnabled(USE_REDIS)
   ? new Keyv({ store: keyvRedis })
-  : new Keyv({ namespace: CacheKeys.ABORT_KEYS });
+  : new Keyv({ namespace: CacheKeys.ABORT_KEYS, ttl: 600000 });
 
 const namespaces = {
   [CacheKeys.CONFIG_STORE]: config,
   pending_req,
-  ban: new Keyv({ store: keyvMongo, namespace: 'bans', ttl: duration }),
+  [ViolationTypes.BAN]: new Keyv({ store: keyvMongo, namespace: CacheKeys.BANS, ttl: duration }),
+  [CacheKeys.ENCODED_DOMAINS]: new Keyv({
+    store: keyvMongo,
+    namespace: CacheKeys.ENCODED_DOMAINS,
+    ttl: 0,
+  }),
   general: new Keyv({ store: logFile, namespace: 'violations' }),
   concurrent: createViolationInstance('concurrent'),
   non_browser: createViolationInstance('non_browser'),
   message_limit: createViolationInstance('message_limit'),
-  token_balance: createViolationInstance('token_balance'),
+  token_balance: createViolationInstance(ViolationTypes.TOKEN_BALANCE),
   registrations: createViolationInstance('registrations'),
-  [CacheKeys.FILE_UPLOAD_LIMIT]: createViolationInstance(CacheKeys.FILE_UPLOAD_LIMIT),
+  [ViolationTypes.FILE_UPLOAD_LIMIT]: createViolationInstance(ViolationTypes.FILE_UPLOAD_LIMIT),
+  [ViolationTypes.ILLEGAL_MODEL_REQUEST]: createViolationInstance(
+    ViolationTypes.ILLEGAL_MODEL_REQUEST,
+  ),
   logins: createViolationInstance('logins'),
   [CacheKeys.ABORT_KEYS]: abortKeys,
   [CacheKeys.TOKEN_CONFIG]: tokenConfig,

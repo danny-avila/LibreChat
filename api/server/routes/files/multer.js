@@ -15,9 +15,20 @@ const storage = multer.diskStorage({
   },
   filename: function (req, file, cb) {
     req.file_id = crypto.randomUUID();
+    file.originalname = decodeURIComponent(file.originalname);
     cb(null, `${file.originalname}`);
   },
 });
+
+const importFileFilter = (req, file, cb) => {
+  if (file.mimetype === 'application/json') {
+    cb(null, true);
+  } else if (path.extname(file.originalname).toLowerCase() === '.json') {
+    cb(null, true);
+  } else {
+    cb(new Error('Only JSON files are allowed'), false);
+  }
+};
 
 const fileFilter = (req, file, cb) => {
   if (!file) {
@@ -41,4 +52,4 @@ const createMulterInstance = async () => {
   });
 };
 
-module.exports = createMulterInstance;
+module.exports = { createMulterInstance, storage, importFileFilter };

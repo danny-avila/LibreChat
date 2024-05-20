@@ -1,6 +1,7 @@
 export enum QueryKeys {
   messages = 'messages',
   allConversations = 'allConversations',
+  archivedConversations = 'archivedConversations',
   searchConversations = 'searchConversations',
   conversation = 'conversation',
   searchEnabled = 'searchEnabled',
@@ -22,6 +23,7 @@ export enum QueryKeys {
   tools = 'tools',
   actions = 'actions',
   assistantDocs = 'assistantDocs',
+  fileDownload = 'fileDownload',
 }
 
 export enum MutationKeys {

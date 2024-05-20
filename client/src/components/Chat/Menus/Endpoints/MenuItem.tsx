@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { Settings } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
-import { EModelEndpoint, modularEndpoints } from 'librechat-data-provider';
+import { EModelEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
-import type { TPreset, TConversation } from 'librechat-data-provider';
+import type { TConversation } from 'librechat-data-provider';
 import type { FC } from 'react';
+import { cn, getConvoSwitchLogic, getEndpointField, getIconKey } from '~/utils';
 import { useLocalize, useUserKey, useDefaultConvo } from '~/hooks';
 import { SetKeyDialog } from '~/components/Input/SetKeyDialog';
-import { cn, getEndpointField } from '~/utils';
 import { useChatContext } from '~/Providers';
 import { icons } from './Icons';
 import store from '~/store';
@@ -43,63 +43,51 @@ const MenuItem: FC<MenuItemProps> = ({
   const onSelectEndpoint = (newEndpoint: EModelEndpoint) => {
     if (!newEndpoint) {
       return;
-    } else {
-      if (!expiryTime) {
-        setDialogOpen(true);
-      }
-
-      const currentEndpoint = conversation?.endpoint;
-      const template: Partial<TPreset> = {
-        ...conversation,
-        endpoint: newEndpoint,
-        conversationId: 'new',
-      };
-      const isAssistantSwitch =
-        newEndpoint === EModelEndpoint.assistants &&
-        currentEndpoint === EModelEndpoint.assistants &&
-        currentEndpoint === newEndpoint;
-
-      const { conversationId } = conversation ?? {};
-      const isExistingConversation = conversationId && conversationId !== 'new';
-      const currentEndpointType =
-        getEndpointField(endpointsConfig, currentEndpoint, 'type') ?? currentEndpoint;
-      const newEndpointType = getEndpointField(endpointsConfig, newEndpoint, 'type') ?? newEndpoint;
-
-      if (
-        isExistingConversation &&
-        (modularEndpoints.has(endpoint ?? '') ||
-          modularEndpoints.has(currentEndpointType ?? '') ||
-          isAssistantSwitch) &&
-        (modularEndpoints.has(newEndpoint ?? '') ||
-          modularEndpoints.has(newEndpointType ?? '') ||
-          isAssistantSwitch) &&
-        (endpoint === newEndpoint || modularChat || isAssistantSwitch)
-      ) {
-        template.endpointType = newEndpointType;
-
-        const currentConvo = getDefaultConversation({
-          /* target endpointType is necessary to avoid endpoint mixing */
-          conversation: { ...(conversation ?? {}), endpointType: template.endpointType },
-          preset: template,
-        });
-
-        /* We don't reset the latest message, only when changing settings mid-converstion */
-        newConversation({ template: currentConvo, preset: currentConvo, keepLatestMessage: true });
-        return;
-      }
-      newConversation({ template: { ...(template as Partial<TConversation>) } });
     }
+
+    if (!expiryTime) {
+      setDialogOpen(true);
+    }
+
+    const {
+      shouldSwitch,
+      isNewModular,
+      isCurrentModular,
+      isExistingConversation,
+      newEndpointType,
+      template,
+    } = getConvoSwitchLogic({
+      newEndpoint,
+      modularChat,
+      conversation,
+      endpointsConfig,
+    });
+
+    if (isExistingConversation && isCurrentModular && isNewModular && shouldSwitch) {
+      template.endpointType = newEndpointType;
+
+      const currentConvo = getDefaultConversation({
+        /* target endpointType is necessary to avoid endpoint mixing */
+        conversation: { ...(conversation ?? {}), endpointType: template.endpointType },
+        preset: template,
+      });
+
+      /* We don't reset the latest message, only when changing settings mid-converstion */
+      newConversation({ template: currentConvo, preset: currentConvo, keepLatestMessage: true });
+      return;
+    }
+    newConversation({ template: { ...(template as Partial<TConversation>) } });
   };
 
   const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
-  const iconKey = endpointType ? 'unknown' : endpoint ?? 'unknown';
+  const iconKey = getIconKey({ endpoint, endpointsConfig, endpointType });
   const Icon = icons[iconKey];
 
   return (
     <>
       <div
         role="menuitem"
-        className="group m-1.5 flex max-h-[40px] cursor-pointer gap-2 rounded px-5 py-2.5 !pr-3 text-sm !opacity-100 hover:bg-black/5 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-white/5"
+        className="group m-1.5 flex max-h-[40px] cursor-pointer gap-2 rounded px-5 py-2.5 !pr-3 text-sm !opacity-100 hover:bg-black/5 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-600"
         tabIndex={-1}
         {...rest}
         onClick={() => onSelectEndpoint(endpoint)}
@@ -130,7 +118,7 @@ const MenuItem: FC<MenuItemProps> = ({
                     'invisible flex gap-x-1 group-hover:visible',
                     selected ? 'visible' : '',
                     expiryTime
-                      ? 'w-full rounded-lg p-2 hover:bg-gray-200 dark:hover:bg-gray-900'
+                      ? 'w-full rounded-lg p-2 hover:text-gray-400 dark:hover:text-gray-400'
                       : '',
                   )}
                   onClick={(e) => {

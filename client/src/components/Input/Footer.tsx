@@ -1,3 +1,4 @@
+import { Constants } from 'librechat-data-provider';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { useLocalize } from '~/hooks';
 
@@ -11,13 +12,8 @@ export default function Footer() {
         config.customFooter
       ) : (
         <>
-          <a
-            href="https://github.com/danny-avila/LibreChat"
-            target="_blank"
-            rel="noreferrer"
-            className="underline"
-          >
-            {config?.appTitle || 'LibreChat'} v0.6.10
+          <a href="https://librechat.ai" target="_blank" rel="noreferrer" className="underline">
+            {config?.appTitle || 'LibreChat'} {Constants.VERSION}
           </a>
           {' - '}. {localize('com_ui_pay_per_call')}
         </>

@@ -1,8 +1,4 @@
 import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom';
-import Root from './Root';
-import Chat from './Chat';
-import ChatRoute from './ChatRoute';
-import Search from './Search';
 import {
   Login,
   Registration,
@@ -11,6 +7,9 @@ import {
   ApiErrorWatcher,
 } from '~/components/Auth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
+import ChatRoute from './ChatRoute';
+import Search from './Search';
+import Root from './Root';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -52,14 +51,14 @@ export const router = createBrowserRouter([
             element: <ChatRoute />,
           },
           {
-            path: 'chat/:conversationId?',
-            element: <Chat />,
-          },
-          {
-            path: 'search/:query?',
+            path: 'search',
             element: <Search />,
           },
         ],
+      },
+      {
+        path: '*',
+        element: <Navigate to="/c/new" replace={true} />,
       },
     ],
   },

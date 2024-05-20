@@ -1,6 +1,6 @@
-import { parseConvo } from 'librechat-data-provider';
+import { parseConvo, EModelEndpoint } from 'librechat-data-provider';
+import type { TConversation } from 'librechat-data-provider';
 import getLocalStorageItems from './getLocalStorageItems';
-import type { TConversation, EModelEndpoint } from 'librechat-data-provider';
 
 const buildDefaultConvo = ({
   conversation,
@@ -29,7 +29,7 @@ const buildDefaultConvo = ({
   const availableModels = models;
   const model = lastConversationSetup?.model ?? lastSelectedModel?.[endpoint];
   const secondaryModel =
-    endpoint === 'gptPlugins'
+    endpoint === EModelEndpoint.gptPlugins
       ? lastConversationSetup?.agentOptions?.model ?? lastSelectedModel?.secondaryModel
       : null;
 
@@ -64,7 +64,12 @@ const buildDefaultConvo = ({
     endpoint,
   };
 
-  defaultConvo.tools = lastSelectedTools ?? defaultConvo.tools;
+  // Ensures assistant_id is always defined
+  if (endpoint === EModelEndpoint.assistants && !defaultConvo.assistant_id && convo.assistant_id) {
+    defaultConvo.assistant_id = convo.assistant_id;
+  }
+
+  defaultConvo.tools = lastConversationSetup?.tools ?? lastSelectedTools ?? defaultConvo.tools;
   defaultConvo.jailbreak = jailbreak ?? defaultConvo.jailbreak;
   defaultConvo.toneStyle = toneStyle ?? defaultConvo.toneStyle;
 

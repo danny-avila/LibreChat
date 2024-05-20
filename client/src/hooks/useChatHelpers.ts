@@ -9,7 +9,7 @@ import {
   ContentTypes,
 } from 'librechat-data-provider';
 import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
-import { useGetMessagesByConvoId, useGetEndpointsQuery } from 'librechat-data-provider/react-query';
+import { useGetMessagesByConvoId } from 'librechat-data-provider/react-query';
 import type {
   TMessage,
   TSubmission,
@@ -21,12 +21,12 @@ import useSetFilesToDelete from './Files/useSetFilesToDelete';
 import useGetSender from './Conversations/useGetSender';
 import { useAuthContext } from './AuthContext';
 import useUserKey from './Input/useUserKey';
+import { getEndpointField } from '~/utils';
 import useNewConvo from './useNewConvo';
 import store from '~/store';
 
 // this to be set somewhere else
 export default function useChatHelpers(index = 0, paramId: string | undefined) {
-  const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
   const [filesLoading, setFilesLoading] = useState(false);
@@ -39,7 +39,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
   const { newConversation } = useNewConvo(index);
   const { useCreateConversationAtom } = store;
   const { conversation, setConversation } = useCreateConversationAtom(index);
-  const { conversationId, endpoint, endpointType } = conversation ?? {};
+  const { conversationId, endpoint } = conversation ?? {};
 
   const queryParam = paramId === 'new' ? paramId : conversationId ?? paramId ?? '';
 
@@ -94,6 +94,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     {
       editedText = null,
       editedMessageId = null,
+      resubmitFiles = false,
       isRegenerate = false,
       isContinued = false,
       isEdited = false,
@@ -140,7 +141,13 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       (msg) => msg.messageId === latestMessage?.parentMessageId,
     );
 
-    const thread_id = parentMessage?.thread_id ?? latestMessage?.thread_id;
+    let thread_id = parentMessage?.thread_id ?? latestMessage?.thread_id;
+    if (!thread_id) {
+      thread_id = currentMessages.find((message) => message.thread_id)?.thread_id;
+    }
+
+    const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
+    const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
 
     // set the endpoint option
     const convo = parseCompactConvo({
@@ -171,7 +178,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       error: false,
     };
 
-    const reuseFiles = isRegenerate && parentMessage?.files;
+    const reuseFiles = (isRegenerate || resubmitFiles) && parentMessage?.files;
     if (reuseFiles && parentMessage.files?.length) {
       currentMsg.files = parentMessage.files;
       setFiles(new Map());
@@ -204,6 +211,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       unfinished: false,
       isCreatedByUser: false,
       isEdited: isEditOrContinue,
+      iconURL: convo.iconURL,
       error: false,
     };
 

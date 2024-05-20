@@ -1,4 +1,5 @@
 const sharp = require('sharp');
+const { EModelEndpoint } = require('librechat-data-provider');
 
 /**
  * Resizes an image from a given buffer based on the specified resolution.
@@ -7,13 +8,14 @@ const sharp = require('sharp');
  * @param {'low' | 'high'} resolution - The resolution to resize the image to.
  *                                      'low' for a maximum of 512x512 resolution,
  *                                      'high' for a maximum of 768x2000 resolution.
+ * @param {EModelEndpoint} endpoint - Identifier for specific endpoint handling
  * @returns {Promise<{buffer: Buffer, width: number, height: number}>} An object containing the resized image buffer and its dimensions.
  * @throws Will throw an error if the resolution parameter is invalid.
  */
-async function resizeImageBuffer(inputBuffer, resolution) {
+async function resizeImageBuffer(inputBuffer, resolution, endpoint) {
   const maxLowRes = 512;
   const maxShortSideHighRes = 768;
-  const maxLongSideHighRes = 2000;
+  const maxLongSideHighRes = endpoint === EModelEndpoint.anthropic ? 1568 : 2000;
 
   let newWidth, newHeight;
   let resizeOptions = { fit: 'inside', withoutEnlargement: true };
@@ -60,14 +62,20 @@ async function resizeImageBuffer(inputBuffer, resolution) {
 }
 
 /**
- * Resizes an image buffer to webp format as well as reduces 150 px width.
+ * Resizes an image buffer to a specified format and width.
  *
- * @param {Buffer} inputBuffer - The buffer of the image to be resized.
- * @returns {Promise<{ buffer: Buffer, width: number, height: number, bytes: number }>} An object containing the resized image buffer, its size and dimensions.
- * @throws Will throw an error if the resolution parameter is invalid.
+ * @param {Object} options - The options for resizing and converting the image.
+ * @param {Buffer} options.inputBuffer - The buffer of the image to be resized.
+ * @param {string} options.desiredFormat - The desired output format of the image.
+ * @param {number} [options.width=150] - The desired width of the image. Defaults to 150 pixels.
+ * @returns {Promise<{ buffer: Buffer, width: number, height: number, bytes: number }>} An object containing the resized image buffer, its size, and dimensions.
+ * @throws Will throw an error if the resolution or format parameters are invalid.
  */
-async function resizeAndConvert(inputBuffer) {
-  const resizedBuffer = await sharp(inputBuffer).resize({ width: 150 }).toFormat('webp').toBuffer();
+async function resizeAndConvert({ inputBuffer, desiredFormat, width = 150 }) {
+  const resizedBuffer = await sharp(inputBuffer)
+    .resize({ width })
+    .toFormat(desiredFormat)
+    .toBuffer();
   const resizedMetadata = await sharp(resizedBuffer).metadata();
   return {
     buffer: resizedBuffer,

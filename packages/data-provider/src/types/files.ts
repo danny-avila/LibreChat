@@ -3,6 +3,7 @@ export enum FileSources {
   firebase = 'firebase',
   openai = 'openai',
   s3 = 's3',
+  vectordb = 'vectordb',
 }
 
 export enum FileContext {
@@ -12,6 +13,11 @@ export enum FileContext {
   image_generation = 'image_generation',
   assistants_output = 'assistants_output',
   message_attachment = 'message_attachment',
+  filename = 'filename',
+  updatedAt = 'updatedAt',
+  source = 'source',
+  context = 'context',
+  bytes = 'bytes',
 }
 
 export type EndpointFileConfig = {
@@ -40,6 +46,7 @@ export type TFile = {
   file_id: string;
   temp_file_id?: string;
   bytes: number;
+  embedded: boolean;
   filename: string;
   filepath: string;
   object: 'file';
@@ -83,6 +90,7 @@ export type DeleteFilesResponse = {
 export type BatchFile = {
   file_id: string;
   filepath: string;
+  embedded: boolean;
   source: FileSources;
 };
 

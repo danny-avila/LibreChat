@@ -1,4 +1,4 @@
-import { EModelEndpoint, QueryKeys, dataService } from 'librechat-data-provider';
+import { EModelEndpoint, QueryKeys, dataService, defaultOrderQuery } from 'librechat-data-provider';
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   UseInfiniteQueryOptions,
@@ -21,7 +21,7 @@ import type {
   TEndpointsConfig,
   TCheckUserKeyResponse,
 } from 'librechat-data-provider';
-import { findPageForConversation } from '~/utils';
+import { findPageForConversation, addFileToCache } from '~/utils';
 
 export const useGetFiles = <TData = TFile[] | boolean>(
   config?: UseQueryOptions<TFile[], unknown, TData>,
@@ -136,9 +136,13 @@ export const useConversationsInfiniteQuery = (
   config?: UseInfiniteQueryOptions<ConversationListResponse, unknown>,
 ) => {
   return useInfiniteQuery<ConversationListResponse, unknown>(
-    [QueryKeys.allConversations],
+    params?.isArchived ? [QueryKeys.archivedConversations] : [QueryKeys.allConversations],
     ({ pageParam = '' }) =>
-      dataService.listConversations({ ...params, pageNumber: pageParam?.toString() }),
+      dataService.listConversations({
+        ...params,
+        pageNumber: pageParam?.toString(),
+        isArchived: params?.isArchived || false,
+      }),
     {
       getNextPageParam: (lastPage) => {
         const currentPageNumber = Number(lastPage.pageNumber);
@@ -183,7 +187,7 @@ export const useAvailableToolsQuery = (): QueryObserverResult<TPlugin[]> => {
  * Hook for listing all assistants, with optional parameters provided for pagination and sorting
  */
 export const useListAssistantsQuery = <TData = AssistantListResponse>(
-  params?: AssistantListParams,
+  params: AssistantListParams = defaultOrderQuery,
   config?: UseQueryOptions<AssistantListResponse, unknown, TData>,
 ): QueryObserverResult<TData> => {
   const queryClient = useQueryClient();
@@ -321,6 +325,39 @@ export const useGetAssistantDocsQuery = (
       refetchOnMount: false,
       ...config,
       enabled: config?.enabled !== undefined ? config?.enabled && enabled : enabled,
+    },
+  );
+};
+
+export const useFileDownload = (userId?: string, file_id?: string): QueryObserverResult<string> => {
+  const queryClient = useQueryClient();
+  return useQuery(
+    [QueryKeys.fileDownload, file_id],
+    async () => {
+      if (!userId || !file_id) {
+        console.warn('No user ID provided for file download');
+        return;
+      }
+      const response = await dataService.getFileDownload(userId, file_id);
+      const blob = response.data;
+      const downloadURL = window.URL.createObjectURL(blob);
+      try {
+        const metadata: TFile | undefined = JSON.parse(response.headers['x-file-metadata']);
+        if (!metadata) {
+          console.warn('No metadata found for file download', response.headers);
+          return downloadURL;
+        }
+
+        addFileToCache(queryClient, metadata);
+      } catch (e) {
+        console.error('Error parsing file metadata, skipped updating file query cache', e);
+      }
+
+      return downloadURL;
+    },
+    {
+      enabled: false,
+      retry: false,
     },
   );
 };

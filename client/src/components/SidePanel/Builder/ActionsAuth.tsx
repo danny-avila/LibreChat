@@ -22,7 +22,7 @@ export default function ActionsAuth({
       aria-describedby="radix-:rf7:"
       aria-labelledby="radix-:rf6:"
       data-state="open"
-      className="left-1/2 col-auto col-start-2 row-auto row-start-2 w-full max-w-md -translate-x-1/2 rounded-xl bg-white pb-0 text-left shadow-xl transition-all dark:bg-gray-900 dark:text-gray-100"
+      className="left-1/2 col-auto col-start-2 row-auto row-start-2 w-full max-w-md -translate-x-1/2 rounded-xl bg-white pb-0 text-left shadow-xl transition-all dark:bg-gray-700 dark:text-gray-100"
       tabIndex={-1}
       style={{ pointerEvents: 'auto' }}
     >
@@ -61,7 +61,7 @@ export default function ActionsAuth({
                   role="radio"
                   value={AuthTypeEnum.None}
                   id=":rf8:"
-                  className="mr-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500 bg-white dark:border-gray-600 dark:bg-gray-700"
+                  className="mr-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500 bg-white dark:border-gray-500 dark:bg-gray-500"
                   tabIndex={-1}
                 >
                   <RadioGroup.Indicator className="h-2 w-2 rounded-full bg-gray-950 dark:bg-white"></RadioGroup.Indicator>
@@ -76,7 +76,7 @@ export default function ActionsAuth({
                   role="radio"
                   value={AuthTypeEnum.ServiceHttp}
                   id=":rfa:"
-                  className="mr-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500 bg-white dark:border-gray-600 dark:bg-gray-700"
+                  className="mr-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500 bg-white dark:border-gray-500 dark:bg-gray-500"
                   tabIndex={0}
                 >
                   <RadioGroup.Indicator className="h-2 w-2 rounded-full bg-gray-950 dark:bg-white"></RadioGroup.Indicator>
@@ -92,7 +92,7 @@ export default function ActionsAuth({
                   disabled={true}
                   value={AuthTypeEnum.OAuth}
                   id=":rfc:"
-                  className="mr-1 flex h-5 w-5 cursor-not-allowed items-center justify-center rounded-full border border-gray-500 bg-gray-300 dark:border-gray-600 dark:bg-gray-900"
+                  className="mr-1 flex h-5 w-5 cursor-not-allowed items-center justify-center rounded-full border border-gray-500 bg-gray-300 dark:border-gray-600 dark:bg-gray-700"
                   tabIndex={-1}
                 >
                   <RadioGroup.Indicator className="h-2 w-2 rounded-full bg-gray-950 dark:bg-white"></RadioGroup.Indicator>
@@ -106,7 +106,7 @@ export default function ActionsAuth({
         {/* Cancel/Save */}
         <div className="mt-5 flex flex-col gap-3 sm:mt-4 sm:flex-row-reverse">
           <button
-            className="btn btn-dark relative"
+            className="btn relative bg-green-500 text-white hover:bg-green-600 dark:hover:bg-green-600"
             onClick={async () => {
               const result = await trigger(undefined, { shouldFocus: true });
               setValue('saved_auth_fields', result);
@@ -135,7 +135,7 @@ const ApiKey = () => {
         placeholder="<HIDDEN>"
         type="password"
         autoComplete="off"
-        className="border-token-border-medium mb-2 h-9 w-full resize-none overflow-y-auto rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400 dark:bg-gray-800"
+        className="border-token-border-medium mb-2 h-9 w-full resize-none overflow-y-auto rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400 dark:bg-gray-600"
         {...register('api_key', { required: type === AuthTypeEnum.ServiceHttp })}
       />
       <label className="mb-1 block text-sm font-medium">Auth Type</label>
@@ -157,7 +157,7 @@ const ApiKey = () => {
               role="radio"
               value={AuthorizationTypeEnum.Basic}
               id=":rfu:"
-              className="mr-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500 bg-white dark:border-gray-600 dark:bg-gray-700"
+              className="mr-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500 bg-white dark:border-gray-500 dark:bg-gray-500"
               tabIndex={-1}
             >
               <RadioGroup.Indicator className="h-2 w-2 rounded-full bg-gray-950 dark:bg-white"></RadioGroup.Indicator>
@@ -172,7 +172,7 @@ const ApiKey = () => {
               role="radio"
               value={AuthorizationTypeEnum.Bearer}
               id=":rg0:"
-              className="mr-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500 bg-white dark:border-gray-600 dark:bg-gray-700"
+              className="mr-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500 bg-white dark:border-gray-500 dark:bg-gray-500"
               tabIndex={-1}
             >
               <RadioGroup.Indicator className="h-2 w-2 rounded-full bg-gray-950 dark:bg-white"></RadioGroup.Indicator>
@@ -187,7 +187,7 @@ const ApiKey = () => {
               role="radio"
               value={AuthorizationTypeEnum.Custom}
               id=":rg2:"
-              className="mr-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500 bg-white dark:border-gray-600 dark:bg-gray-700"
+              className="mr-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500 bg-white dark:border-gray-500 dark:bg-gray-500"
               tabIndex={0}
             >
               <RadioGroup.Indicator className="h-2 w-2 rounded-full bg-gray-950 dark:bg-white"></RadioGroup.Indicator>
@@ -200,7 +200,7 @@ const ApiKey = () => {
         <div className="mt-2">
           <label className="mb-1 block text-sm font-medium">Custom Header Name</label>
           <input
-            className="border-token-border-medium mb-2 h-9 w-full resize-none overflow-y-auto rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400 dark:bg-gray-800"
+            className="border-token-border-medium mb-2 h-9 w-full resize-none overflow-y-auto rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400 dark:bg-gray-600"
             placeholder="X-Api-Key"
             {...register('custom_auth_header', {
               required: authorization_type === AuthorizationTypeEnum.Custom,
@@ -267,7 +267,7 @@ const OAuth = () => {
               role="radio"
               value={TokenExchangeMethodEnum.DefaultPost}
               id=":rj1:"
-              className="mr-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500 bg-white dark:border-gray-600 dark:bg-gray-700"
+              className="mr-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500 bg-white dark:border-gray-700 dark:bg-gray-700"
               tabIndex={-1}
             >
               <RadioGroup.Indicator className="h-2 w-2 rounded-full bg-gray-950 dark:bg-white"></RadioGroup.Indicator>
@@ -282,7 +282,7 @@ const OAuth = () => {
               role="radio"
               value={TokenExchangeMethodEnum.BasicAuthHeader}
               id=":rj3:"
-              className="mr-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500 bg-white dark:border-gray-600 dark:bg-gray-700"
+              className="mr-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500 bg-white dark:border-gray-700 dark:bg-gray-700"
               tabIndex={-1}
             >
               <RadioGroup.Indicator className="h-2 w-2 rounded-full bg-gray-950 dark:bg-white"></RadioGroup.Indicator>

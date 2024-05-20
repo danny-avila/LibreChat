@@ -1,9 +1,9 @@
 import { useCallback } from 'react';
 import { EModelEndpoint, defaultOrderQuery } from 'librechat-data-provider';
 import type { TConversation, TPreset } from 'librechat-data-provider';
+import useDefaultConvo from '~/hooks/Conversations/useDefaultConvo';
 import { useListAssistantsQuery } from '~/data-provider';
 import { useChatContext } from '~/Providers/ChatContext';
-import useDefaultConvo from '~/hooks/useDefaultConvo';
 import { mapAssistants } from '~/utils';
 
 export default function useSelectAssistant() {

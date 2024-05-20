@@ -1,21 +1,19 @@
-const path = require('path');
 const { klona } = require('klona');
 const {
   StepTypes,
   RunStatus,
   StepStatus,
-  FilePurpose,
   ContentTypes,
   ToolCallTypes,
-  imageExtRegex,
   imageGenTools,
   EModelEndpoint,
   defaultOrderQuery,
 } = require('librechat-data-provider');
 const { retrieveAndProcessFile } = require('~/server/services/Files/process');
-const { RunManager, waitForRun, sleep } = require('~/server/services/Runs');
 const { processRequiredActions } = require('~/server/services/ToolService');
-const { createOnProgress, sendMessage } = require('~/server/utils');
+const { createOnProgress, sendMessage, sleep } = require('~/server/utils');
+const { RunManager, waitForRun } = require('~/server/services/Runs');
+const { processMessages } = require('~/server/services/Threads');
 const { TextStream } = require('~/app/clients');
 const { logger } = require('~/config');
 
@@ -230,17 +228,13 @@ function createInProgressHandler(openai, thread_id, messages) {
             const { file_id } = output.image;
             const file = await retrieveAndProcessFile({
               openai,
+              client: openai,
               file_id,
               basename: `${file_id}.png`,
             });
-            // toolCall.asset_pointer = file.filepath;
-            const prelimImage = {
-              file_id,
-              filename: path.basename(file.filepath),
-              filepath: file.filepath,
-              height: file.height,
-              width: file.width,
-            };
+
+            const prelimImage = file;
+
             // check if every key has a value before adding to content
             const prelimImageKeys = Object.keys(prelimImage);
             const validImageFile = prelimImageKeys.every((key) => prelimImage[key]);
@@ -286,6 +280,9 @@ function createInProgressHandler(openai, thread_id, messages) {
       openai.seenCompletedMessages.add(message_id);
 
       const message = await openai.beta.threads.messages.retrieve(thread_id, message_id);
+      if (!message?.content?.length) {
+        return;
+      }
       messages.push(message);
 
       let messageIndex = openai.mappedOrder.get(step.id);
@@ -296,7 +293,7 @@ function createInProgressHandler(openai, thread_id, messages) {
         openai.index++;
       }
 
-      const result = await processMessages(openai, [message]);
+      const result = await processMessages({ openai, client: openai, messages: [message] });
       openai.addContentData({
         [ContentTypes.TEXT]: { value: result.text },
         type: ContentTypes.TEXT,
@@ -315,8 +312,8 @@ function createInProgressHandler(openai, thread_id, messages) {
         res: openai.res,
         index: messageIndex,
         messageId: openai.responseMessage.messageId,
+        conversationId: openai.responseMessage.conversationId,
         type: ContentTypes.TEXT,
-        stream: true,
         thread_id,
       });
 
@@ -413,7 +410,13 @@ async function runAssistant({
     // const { messages: sortedMessages, text } = await processMessages(openai, messages);
     // return { run, steps, messages: sortedMessages, text };
     const sortedMessages = messages.sort((a, b) => a.created_at - b.created_at);
-    return { run, steps, messages: sortedMessages };
+    return {
+      run,
+      steps,
+      messages: sortedMessages,
+      finalMessage: openai.responseMessage,
+      text: openai.responseText,
+    };
   }
 
   const { submit_tool_outputs } = run.required_action;
@@ -444,98 +447,8 @@ async function runAssistant({
   });
 }
 
-/**
- * Sorts, processes, and flattens messages to a single string.
- *
- * @param {OpenAIClient} openai - The OpenAI client instance.
- * @param {ThreadMessage[]} messages - An array of messages.
- * @returns {Promise<{messages: ThreadMessage[], text: string}>} The sorted messages and the flattened text.
- */
-async function processMessages(openai, messages = []) {
-  const sorted = messages.sort((a, b) => a.created_at - b.created_at);
-
-  let text = '';
-  for (const message of sorted) {
-    message.files = [];
-    for (const content of message.content) {
-      const processImageFile =
-        content.type === 'image_file' && !openai.processedFileIds.has(content.image_file?.file_id);
-      if (processImageFile) {
-        const { file_id } = content.image_file;
-
-        const file = await retrieveAndProcessFile({ openai, file_id, basename: `${file_id}.png` });
-        openai.processedFileIds.add(file_id);
-        message.files.push(file);
-        continue;
-      }
-
-      text += (content.text?.value ?? '') + ' ';
-      logger.debug('[processMessages] Processing message:', { value: text });
-
-      // Process annotations if they exist
-      if (!content.text?.annotations?.length) {
-        continue;
-      }
-
-      logger.debug('[processMessages] Processing annotations:', content.text.annotations);
-      for (const annotation of content.text.annotations) {
-        logger.debug('Current annotation:', annotation);
-        let file;
-        const processFilePath =
-          annotation.file_path && !openai.processedFileIds.has(annotation.file_path?.file_id);
-
-        if (processFilePath) {
-          const basename = imageExtRegex.test(annotation.text)
-            ? path.basename(annotation.text)
-            : null;
-          file = await retrieveAndProcessFile({
-            openai,
-            file_id: annotation.file_path.file_id,
-            basename,
-          });
-          openai.processedFileIds.add(annotation.file_path.file_id);
-        }
-
-        const processFileCitation =
-          annotation.file_citation &&
-          !openai.processedFileIds.has(annotation.file_citation?.file_id);
-
-        if (processFileCitation) {
-          file = await retrieveAndProcessFile({
-            openai,
-            file_id: annotation.file_citation.file_id,
-            unknownType: true,
-          });
-          openai.processedFileIds.add(annotation.file_citation.file_id);
-        }
-
-        if (!file && (annotation.file_path || annotation.file_citation)) {
-          const { file_id } = annotation.file_citation || annotation.file_path || {};
-          file = await retrieveAndProcessFile({ openai, file_id, unknownType: true });
-          openai.processedFileIds.add(file_id);
-        }
-
-        if (!file) {
-          continue;
-        }
-
-        if (file.purpose && file.purpose === FilePurpose.Assistants) {
-          text = text.replace(annotation.text, file.filename);
-        } else if (file.filepath) {
-          text = text.replace(annotation.text, file.filepath);
-        }
-
-        message.files.push(file);
-      }
-    }
-  }
-
-  return { messages: sorted, text };
-}
-
 module.exports = {
   getResponse,
   runAssistant,
-  processMessages,
   createOnTextProgress,
 };

@@ -1,7 +1,11 @@
+const fs = require('fs');
+const path = require('path');
+const axios = require('axios');
 const fetch = require('node-fetch');
-const { ref, uploadBytes, getDownloadURL, deleteObject } = require('firebase/storage');
+const { ref, uploadBytes, getDownloadURL, getStream, deleteObject } = require('firebase/storage');
 const { getBufferMetadata } = require('~/server/utils');
 const { getFirebaseStorage } = require('./initialize');
+const { logger } = require('~/config');
 
 /**
  * Deletes a file from Firebase Storage.
@@ -12,7 +16,7 @@ const { getFirebaseStorage } = require('./initialize');
 async function deleteFile(basePath, fileName) {
   const storage = getFirebaseStorage();
   if (!storage) {
-    console.error('Firebase is not initialized. Cannot delete file from Firebase Storage.');
+    logger.error('Firebase is not initialized. Cannot delete file from Firebase Storage.');
     throw new Error('Firebase is not initialized');
   }
 
@@ -20,9 +24,9 @@ async function deleteFile(basePath, fileName) {
 
   try {
     await deleteObject(storageRef);
-    console.log('File deleted successfully from Firebase Storage');
+    logger.debug('File deleted successfully from Firebase Storage');
   } catch (error) {
-    console.error('Error deleting file from Firebase Storage:', error.message);
+    logger.error('Error deleting file from Firebase Storage:', error.message);
     throw error;
   }
 }
@@ -48,7 +52,7 @@ async function deleteFile(basePath, fileName) {
 async function saveURLToFirebase({ userId, URL, fileName, basePath = 'images' }) {
   const storage = getFirebaseStorage();
   if (!storage) {
-    console.error('Firebase is not initialized. Cannot save file to Firebase Storage.');
+    logger.error('Firebase is not initialized. Cannot save file to Firebase Storage.');
     return null;
   }
 
@@ -60,7 +64,7 @@ async function saveURLToFirebase({ userId, URL, fileName, basePath = 'images' })
     await uploadBytes(storageRef, buffer);
     return await getBufferMetadata(buffer);
   } catch (error) {
-    console.error('Error uploading file to Firebase Storage:', error.message);
+    logger.error('Error uploading file to Firebase Storage:', error.message);
     return null;
   }
 }
@@ -84,7 +88,7 @@ async function saveURLToFirebase({ userId, URL, fileName, basePath = 'images' })
 async function getFirebaseURL({ fileName, basePath = 'images' }) {
   const storage = getFirebaseStorage();
   if (!storage) {
-    console.error('Firebase is not initialized. Cannot get image URL from Firebase Storage.');
+    logger.error('Firebase is not initialized. Cannot get image URL from Firebase Storage.');
     return null;
   }
 
@@ -93,7 +97,7 @@ async function getFirebaseURL({ fileName, basePath = 'images' }) {
   try {
     return await getDownloadURL(storageRef);
   } catch (error) {
-    console.error('Error fetching file URL from Firebase Storage:', error.message);
+    logger.error('Error fetching file URL from Firebase Storage:', error.message);
     return null;
   }
 }
@@ -160,6 +164,18 @@ function extractFirebaseFilePath(urlString) {
  *          Throws an error if there is an issue with deletion.
  */
 const deleteFirebaseFile = async (req, file) => {
+  if (file.embedded && process.env.RAG_API_URL) {
+    const jwtToken = req.headers.authorization.split(' ')[1];
+    axios.delete(`${process.env.RAG_API_URL}/documents`, {
+      headers: {
+        Authorization: `Bearer ${jwtToken}`,
+        'Content-Type': 'application/json',
+        accept: 'application/json',
+      },
+      data: [file.file_id],
+    });
+  }
+
   const fileName = extractFirebaseFilePath(file.filepath);
   if (!fileName.includes(req.user.id)) {
     throw new Error('Invalid file path');
@@ -167,10 +183,62 @@ const deleteFirebaseFile = async (req, file) => {
   await deleteFile('', fileName);
 };
 
+/**
+ * Uploads a file to Firebase Storage.
+ *
+ * @param {Object} params - The params object.
+ * @param {Express.Request} params.req - The request object from Express. It should have a `user` property with an `id`
+ *                       representing the user.
+ * @param {Express.Multer.File} params.file - The file object, which is part of the request. The file object should
+ *                                     have a `path` property that points to the location of the uploaded file.
+ * @param {string} params.file_id - The file ID.
+ *
+ * @returns {Promise<{ filepath: string, bytes: number }>}
+ *          A promise that resolves to an object containing:
+ *            - filepath: The download URL of the uploaded file.
+ *            - bytes: The size of the uploaded file in bytes.
+ */
+async function uploadFileToFirebase({ req, file, file_id }) {
+  const inputFilePath = file.path;
+  const inputBuffer = await fs.promises.readFile(inputFilePath);
+  const bytes = Buffer.byteLength(inputBuffer);
+  const userId = req.user.id;
+
+  const fileName = `${file_id}__${path.basename(inputFilePath)}`;
+
+  const downloadURL = await saveBufferToFirebase({ userId, buffer: inputBuffer, fileName });
+
+  await fs.promises.unlink(inputFilePath);
+
+  return { filepath: downloadURL, bytes };
+}
+
+/**
+ * Retrieves a readable stream for a file from Firebase storage.
+ *
+ * @param {string} filepath - The filepath.
+ * @returns {ReadableStream} A readable stream of the file.
+ */
+function getFirebaseFileStream(filepath) {
+  try {
+    const storage = getFirebaseStorage();
+    if (!storage) {
+      throw new Error('Firebase is not initialized');
+    }
+    const fileRef = ref(storage, filepath);
+    return getStream(fileRef);
+  } catch (error) {
+    logger.error('Error getting Firebase file stream:', error);
+    throw error;
+  }
+}
+
 module.exports = {
   deleteFile,
   getFirebaseURL,
   saveURLToFirebase,
   deleteFirebaseFile,
+  uploadFileToFirebase,
   saveBufferToFirebase,
+  getFirebaseFileStream,
 };

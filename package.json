@@ -1,6 +1,6 @@
 {
   "name": "LibreChat",
-  "version": "0.6.10",
+  "version": "0.7.2",
   "description": "",
   "workspaces": [
     "api",
@@ -11,6 +11,7 @@
     "update": "node config/update.js",
     "add-balance": "node config/add-balance.js",
     "list-balances": "node config/list-balances.js",
+    "user-stats": "node config/user-stats.js",
     "rebuild:package-lock": "node config/packages",
     "reinstall": "node config/update.js -l -g",
     "b:reinstall": "bun config/update.js -b -l -g",
@@ -49,6 +50,7 @@
     "lint": "eslint \"{,!(node_modules)/**/}*.{js,jsx,ts,tsx}\"",
     "format": "prettier-eslint --write \"{,!(node_modules)/**/}*.{js,jsx,ts,tsx}\"",
     "b:api": "NODE_ENV=production bun run api/server/index.js",
+    "b:api-inspect": "NODE_ENV=production bun --inspect run api/server/index.js",
     "b:api:dev": "NODE_ENV=production bun run --watch api/server/index.js",
     "b:data": "cd packages/data-provider && bun run b:build",
     "b:client": "bun --bun run b:data && cd client && bun --bun run b:build",
@@ -67,7 +69,7 @@
   "bugs": {
     "url": "https://github.com/danny-avila/LibreChat/issues"
   },
-  "homepage": "https://github.com/danny-avila/LibreChat#readme",
+  "homepage": "https://librechat.ai/",
   "devDependencies": {
     "@playwright/test": "^1.38.1",
     "@typescript-eslint/eslint-plugin": "^5.62.0",

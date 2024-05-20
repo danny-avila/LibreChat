@@ -98,12 +98,12 @@ export function AvatarMenu({
   return (
     <Popover.Portal>
       <Popover.Content
-        className="flex min-w-[100px] max-w-xs flex-col rounded-xl border border-gray-400 bg-white shadow-lg dark:border-gray-700 dark:bg-black dark:text-white"
+        className="flex min-w-[100px] max-w-xs flex-col rounded-xl border border-gray-400 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-850 dark:text-white"
         sideOffset={5}
       >
         <div
           role="menuitem"
-          className="group m-1.5 flex cursor-pointer gap-2 rounded p-2.5 text-sm hover:bg-black/5 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-white/5"
+          className="group m-1.5 flex cursor-pointer gap-2 rounded p-2.5 text-sm hover:bg-gray-100 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-800 dark:hover:bg-white/5"
           tabIndex={-1}
           data-orientation="vertical"
           onClick={onItemClick}

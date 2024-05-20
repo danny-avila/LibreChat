@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/rules-of-hooks */
 import { ArrowUpDown, Database } from 'lucide-react';
 import { FileSources, FileContext } from 'librechat-data-provider';
 import type { ColumnDef } from '@tanstack/react-table';
@@ -8,37 +9,43 @@ import { SortFilterHeader } from './SortFilterHeader';
 import { OpenAIMinimalIcon } from '~/components/svg';
 import { Button, Checkbox } from '~/components/ui';
 import { formatDate, getFileType } from '~/utils';
+import useLocalize from '~/hooks/useLocalize';
 
 const contextMap = {
-  [FileContext.avatar]: 'Avatar',
-  [FileContext.unknown]: 'Unknown',
-  [FileContext.assistants]: 'Assistants',
-  [FileContext.image_generation]: 'Image Gen',
-  [FileContext.assistants_output]: 'Assistant Output',
-  [FileContext.message_attachment]: 'Attachment',
+  [FileContext.avatar]: 'com_ui_avatar',
+  [FileContext.unknown]: 'com_ui_unknown',
+  [FileContext.assistants]: 'com_ui_assistants',
+  [FileContext.image_generation]: 'com_ui_image_gen',
+  [FileContext.assistants_output]: 'com_ui_assistants_output',
+  [FileContext.message_attachment]: 'com_ui_attachment',
 };
 
 export const columns: ColumnDef<TFile>[] = [
   {
     id: 'select',
-    header: ({ table }) => (
-      <Checkbox
-        checked={
-          table.getIsAllPageRowsSelected() || (table.getIsSomePageRowsSelected() && 'indeterminate')
-        }
-        onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-        aria-label="Select all"
-        className="flex"
-      />
-    ),
-    cell: ({ row }) => (
-      <Checkbox
-        checked={row.getIsSelected()}
-        onCheckedChange={(value) => row.toggleSelected(!!value)}
-        aria-label="Select row"
-        className="flex"
-      />
-    ),
+    header: ({ table }) => {
+      return (
+        <Checkbox
+          checked={
+            table.getIsAllPageRowsSelected() ||
+            (table.getIsSomePageRowsSelected() && 'indeterminate')
+          }
+          onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+          aria-label="Select all"
+          className="flex"
+        />
+      );
+    },
+    cell: ({ row }) => {
+      return (
+        <Checkbox
+          checked={row.getIsSelected()}
+          onCheckedChange={(value) => row.toggleSelected(!!value)}
+          aria-label="Select row"
+          className="flex"
+        />
+      );
+    },
     enableSorting: false,
     enableHiding: false,
   },
@@ -48,13 +55,14 @@ export const columns: ColumnDef<TFile>[] = [
     },
     accessorKey: 'filename',
     header: ({ column }) => {
+      const localize = useLocalize();
       return (
         <Button
           variant="ghost"
           className="px-2 py-0 text-xs sm:px-2 sm:py-2 sm:text-sm"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
         >
-          Name
+          {localize('com_ui_name')}
           <ArrowUpDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
         </Button>
       );
@@ -85,13 +93,14 @@ export const columns: ColumnDef<TFile>[] = [
   {
     accessorKey: 'updatedAt',
     header: ({ column }) => {
+      const localize = useLocalize();
       return (
         <Button
           variant="ghost"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
           className="px-2 py-0 text-xs sm:px-2 sm:py-2 sm:text-sm"
         >
-          Date
+          {localize('com_ui_date')}
           <ArrowUpDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
         </Button>
       );
@@ -101,10 +110,11 @@ export const columns: ColumnDef<TFile>[] = [
   {
     accessorKey: 'source',
     header: ({ column }) => {
+      const localize = useLocalize();
       return (
         <SortFilterHeader
           column={column}
-          title="Storage"
+          title={localize('com_ui_storage')}
           filters={{
             Storage: Object.values(FileSources).filter(
               (value) => value === FileSources.local || value === FileSources.openai,
@@ -112,12 +122,13 @@ export const columns: ColumnDef<TFile>[] = [
           }}
           valueMap={{
             [FileSources.openai]: 'OpenAI',
-            [FileSources.local]: 'Host',
+            [FileSources.local]: 'com_ui_host',
           }}
         />
       );
     },
     cell: ({ row }) => {
+      const localize = useLocalize();
       const { source } = row.original;
       if (source === FileSources.openai) {
         return (
@@ -130,7 +141,7 @@ export const columns: ColumnDef<TFile>[] = [
       return (
         <div className="flex flex-wrap items-center gap-2">
           <Database className="icon-sm text-cyan-700" />
-          {'Host'}
+          {localize('com_ui_host')}
         </div>
       );
     },
@@ -138,10 +149,11 @@ export const columns: ColumnDef<TFile>[] = [
   {
     accessorKey: 'context',
     header: ({ column }) => {
+      const localize = useLocalize();
       return (
         <SortFilterHeader
           column={column}
-          title="Context"
+          title={localize('com_ui_context')}
           filters={{
             Context: Object.values(FileContext).filter(
               (value) => value === FileContext[value ?? ''],
@@ -153,9 +165,10 @@ export const columns: ColumnDef<TFile>[] = [
     },
     cell: ({ row }) => {
       const { context } = row.original;
+      const localize = useLocalize();
       return (
         <div className="flex flex-wrap items-center gap-2">
-          {contextMap[context ?? FileContext.unknown] ?? 'Unknown'}
+          {localize(contextMap[context ?? FileContext.unknown] ?? 'com_ui_unknown')}
         </div>
       );
     },
@@ -163,13 +176,14 @@ export const columns: ColumnDef<TFile>[] = [
   {
     accessorKey: 'bytes',
     header: ({ column }) => {
+      const localize = useLocalize();
       return (
         <Button
           variant="ghost"
           className="px-2 py-0 text-xs sm:px-2 sm:py-2 sm:text-sm"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
         >
-          Size
+          {localize('com_ui_size')}
           <ArrowUpDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
         </Button>
       );

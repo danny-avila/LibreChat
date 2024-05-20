@@ -1,5 +1,18 @@
 [
   {
+    "name": "Traversaal",
+    "pluginKey": "traversaal_search",
+    "description": "Traversaal is a robust search API tailored for LLM Agents. Get an API key here: https://api.traversaal.ai",
+    "icon": "https://traversaal.ai/favicon.ico",
+    "authConfig": [
+      {
+        "authField": "TRAVERSAAL_API_KEY",
+        "label": "Traversaal API Key",
+        "description": "Get your API key here: <a href=\"https://api.traversaal.ai\" target=\"_blank\">https://api.traversaal.ai</a>"
+      }
+    ]
+  },
+  {
     "name": "Google",
     "pluginKey": "google",
     "description": "Use Google Search to find information about the weather, news, sports, and more.",
@@ -11,7 +24,7 @@
         "description": "This is your Google Custom Search Engine ID. For instructions on how to obtain this, see <a href='https://github.com/danny-avila/LibreChat/blob/main/docs/features/plugins/google_search.md'>Our Docs</a>."
       },
       {
-        "authField": "GOOGLE_API_KEY",
+        "authField": "GOOGLE_SEARCH_API_KEY",
         "label": "Google API Key",
         "description": "This is your Google Custom Search API Key. For instructions on how to obtain this, see <a href='https://github.com/danny-avila/LibreChat/blob/main/docs/features/plugins/google_search.md'>Our Docs</a>."
       }
@@ -47,7 +60,7 @@
     "name": "CodeSherpa",
     "pluginKey": "codesherpa_tools",
     "description": "[Experimental] A REPL for your chat. Requires https://github.com/iamgreggarcia/codesherpa",
-    "icon": "https://github.com/iamgreggarcia/codesherpa/blob/main/localserver/_logo.png",
+    "icon": "https://raw.githubusercontent.com/iamgreggarcia/codesherpa/main/localserver/_logo.png",
     "authConfig": [
       {
         "authField": "CODESHERPA_SERVER_URL",
@@ -111,7 +124,7 @@
   {
     "name": "Tavily Search",
     "pluginKey": "tavily_search_results_json",
-    "description": "Tavily Search is a robust search API tailored specifically for LLM Agents. It seamlessly integrates with diverse data sources to ensure a superior, relevant search experience.",
+    "description": "Tavily Search is a robust search API tailored for LLM Agents. It seamlessly integrates with diverse data sources to ensure a superior, relevant search experience.",
     "icon": "https://tavily.com/favicon.ico",
     "authConfig": [
       {
