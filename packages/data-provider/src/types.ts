@@ -40,7 +40,7 @@ export type TEndpointOption = {
 export type TSubmission = {
   plugin?: TResPlugin;
   plugins?: TResPlugin[];
-  message: TMessage;
+  userMessage: TMessage;
   isEdited?: boolean;
   isContinued?: boolean;
   messages: TMessage[];
