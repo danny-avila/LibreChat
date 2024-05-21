@@ -2,6 +2,7 @@ const { updateUserPluginsService } = require('~/server/services/UserService');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
 const { logger } = require('~/config');
 const UserModel = require('~/models/User');
+const TipTrackModel = require('~/models/schema/tipTrackSchema');
 
 const getUserController = async (req, res) => {
   res.status(200).send(req.user);
@@ -73,7 +74,67 @@ const sendKarma = async (req, res) => {
   try {
     await UserModel.findByIdAndUpdate(userId, { $inc: { karma } }, { new: true });
     await UserModel.findByIdAndUpdate(req.user._id, { $inc: { karma: -karma } }, { new: true });
+    await new TipTrackModel({
+      sender: req.user._id,
+      recipient: userId,
+      sendType: 'karma',
+      karma,
+      convoId: req.body.convoId,
+    }).save();
     res.json({ success: true });
+  } catch (error) {
+    return res.status(500).json(error);
+  }
+};
+
+const copyCryptoAddress = async (req, res) => {
+  try {
+    const result = await new TipTrackModel({
+      sender: req.user._id,
+      recipient: req.body.recipient,
+      network: req.body.network,
+      convoId: req.body.convoId,
+    }).save();
+
+    return res.json(result);
+  } catch (error) {
+    return res.status(500).json(error);
+  }
+};
+
+const getTipTrack = async (req, res) => {
+  try {
+    const result = await TipTrackModel.find({
+      recipient: req.user._id,
+      status: 'Pending',
+    }).populate('sender');
+    return res.json(result);
+  } catch (error) {
+    return res.status(500).json(error);
+  }
+};
+
+const deleteTip = async (req, res) => {
+  try {
+    const result = await TipTrackModel.findByIdAndDelete(req.params.id);
+    return res.json(result);
+  } catch (error) {
+    return res.status(500).json(error);
+  }
+};
+
+const confirmCryptoTip = async (req, res) => {
+  const { trxId } = req.body;
+
+  try {
+    const result = await TipTrackModel.findOneAndUpdate(
+      { _id: trxId, recipient: req.user._id },
+      {
+        status: 'Confirmed',
+      },
+      { new: true },
+    );
+    return res.json(result);
   } catch (error) {
     return res.status(500).json(error);
   }
@@ -84,4 +145,8 @@ module.exports = {
   updateUserPluginsController,
   saveCryptoAdresses,
   sendKarma,
+  copyCryptoAddress,
+  confirmCryptoTip,
+  getTipTrack,
+  deleteTip,
 };

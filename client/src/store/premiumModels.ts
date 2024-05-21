@@ -13,6 +13,7 @@ const premiumModelsConfig = atom<string[]>({
     'gpt-4-0125-preview',
     'gpt-4-turbo-preview',
     'gpt-4-1106-preview',
+    'gpt-4o',
     // Anthropic Premium Models
     'claude-2.1',
     'claude-2',

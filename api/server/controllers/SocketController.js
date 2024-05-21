@@ -61,7 +61,6 @@ const addConnection = (socket, userId, roomId) => {
  * @param {string} roomId
  */
 const sendMessage = async (socket, msg, roomId, isBot = false) => {
-  console.log('--- new message ---', msg, roomId, isBot);
   try {
     let message = msg;
     if (!isBot) {

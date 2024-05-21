@@ -77,12 +77,6 @@ export default function CryptoModal({
       });
   };
 
-  console.log(
-    crypto.filter((item) =>
-      user ? user.cryptocurrency.filter((i) => i.id === item.id).length !== 0 : false,
-    ),
-  );
-
   return (
     <Dialog onOpenChange={(e) => setOpen(e)} open={open}>
       <DialogTemplate

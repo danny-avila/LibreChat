@@ -26,7 +26,7 @@ export default function buildTree({
   }
   if (!groupAll) {
     // Traverse the messages array and store each element in messageMap.
-    messages.forEach((message) => {
+    messages.forEach((message, i) => {
       messageMap[message.messageId] = { ...message, children: [] };
 
       if (message.files && fileMap) {
@@ -35,11 +35,16 @@ export default function buildTree({
         );
       }
 
-      const parentMessage = messageMap[message.parentMessageId ?? ''];
+      let parentMessage = messageMap[message.parentMessageId ?? ''];
       if (parentMessage) {
         parentMessage.children.push(messageMap[message.messageId]);
       } else {
-        rootMessages.push(messageMap[message.messageId]);
+        if (message.parentMessageId === '00000000-0000-0000-0000-000000000000') {
+          rootMessages.push(messageMap[message.messageId]);
+        } else {
+          parentMessage = { ...messages[i - 1], children: [] };
+          parentMessage.children.push(messageMap[message.messageId]);
+        }
       }
     });
 

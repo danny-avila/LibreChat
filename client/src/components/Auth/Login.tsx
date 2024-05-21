@@ -15,7 +15,6 @@ function Login() {
   const localize = useLocalize();
   const navigate = useNavigate();
   const { theme } = useContext(ThemeContext);
-  console.log(user?.username);
   useEffect(() => {
     if (isAuthenticated && user?.username !== 'guest-user') {
       navigate('/c/new', { replace: true });

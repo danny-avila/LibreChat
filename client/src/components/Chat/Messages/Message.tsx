@@ -135,7 +135,9 @@ export default function Message(props: TMessageProps) {
               <div className="select-none font-semibold">
                 {messageLabel}{' '}
                 {message.sender === 'User' && (
-                  <i className="text-xs font-thin text-gray-600">{message.user?.karma} karma</i>
+                  <i className="text-xs font-thin text-gray-600">
+                    {message.user?.karma ?? 0} karma
+                  </i>
                 )}
               </div>
               <div className="flex-col gap-1 md:gap-3">
