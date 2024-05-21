@@ -1,11 +1,11 @@
 const WebSocket = require('ws');
 const { Message } = require('~/models/Message');
 
-const VOICE_ID_1 = '1RVpBInY9YUYMLSUQReV';
-const VOICE_ID_2 = 'pNInz6obpgDQGcFmaJgB';
+const VOICE_ID_1 = 'ryn3WBvkCsp4dPZksMIf';
+// const VOICE_ID_2 = 'pNInz6obpgDQGcFmaJgB';
 
 function getRandomVoiceId() {
-  const voiceIds = [VOICE_ID_1, VOICE_ID_2];
+  const voiceIds = [VOICE_ID_1];
   const randomIndex = Math.floor(Math.random() * voiceIds.length);
   return voiceIds[randomIndex];
 }
@@ -90,15 +90,14 @@ function findLastSeparatorIndex(text, separators = SEPARATORS) {
 }
 
 /**
- * @param {string} msgId
+ * @param {string} messageId
  * @returns {() => Promise<{ text: string, isFinished: boolean }[]>}
  */
-function createChunkProcessor(msgId) {
+function createChunkProcessor(messageId) {
   let processedText = '';
-  if (!msgId) {
+  if (!messageId) {
     throw new Error('Message ID is required');
   }
-  const messageId = msgId.split('_')[0];
 
   /**
    * @returns {Promise<{ text: string, isFinished: boolean }[]>}
@@ -114,7 +113,7 @@ function createChunkProcessor(msgId) {
     const remainingText = text.slice(processedText.length);
     const chunks = [];
 
-    if (unfinished && remainingText.length >= 50) {
+    if (unfinished && remainingText.length >= 20) {
       const separatorIndex = findLastSeparatorIndex(remainingText);
       if (separatorIndex !== -1) {
         const chunkText = remainingText.slice(0, separatorIndex + 1);

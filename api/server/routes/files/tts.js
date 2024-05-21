@@ -34,6 +34,10 @@ router.post('/', async (req, res) => {
     runIds.add(req.body.runId);
     await streamAudio(req, res);
     console.log('end stream audio');
+    if (!res.headersSent) {
+      console.log('Closed response');
+      res.end();
+    }
   } catch (error) {
     console.error('Failed to stream audio:', error);
     res.status(500).json({ error: 'Failed to stream audio' });

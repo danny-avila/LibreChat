@@ -20,6 +20,7 @@ export default function StreamAudio({ index = 0 }) {
       latestMessage &&
       latestMessage.isCreatedByUser === false &&
       (latestMessage.text || latestMessage.content) &&
+      !latestMessage.messageId.includes('_') &&
       !isFetching &&
       activeRunId &&
       activeRunId !== audioRunId.current;
@@ -67,12 +68,14 @@ export default function StreamAudio({ index = 0 }) {
           console.log('Audio fetched successfully');
         } catch (error) {
           console.error('Failed to fetch audio:', error);
+          setIsFetching(false);
+          setAudioURL(null);
         }
       };
 
       fetchAudio();
     }
-  }, [isSubmitting, latestMessage, activeRunId]);
+  }, [isSubmitting, latestMessage, activeRunId, isFetching, setAudioURL]);
 
   return (
     <audio

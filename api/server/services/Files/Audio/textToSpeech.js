@@ -316,7 +316,7 @@ async function streamAudio(req, res) {
       const updates = await processChunks();
 
       if (updates.length === 0) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await new Promise((resolve) => setTimeout(resolve, 1500));
         continue;
       }
 
@@ -326,14 +326,6 @@ async function streamAudio(req, res) {
             input: update.text,
             voice,
             stream: true,
-          });
-
-          response.data.on('error', (err) => {
-            console.error('Error streaming audio:', err);
-            shouldContinue = false;
-            if (!res.headersSent) {
-              res.status(500).end();
-            }
           });
 
           if (!shouldContinue) {
@@ -354,7 +346,7 @@ async function streamAudio(req, res) {
             break;
           }
         } catch (innerError) {
-          console.error('Error processing update:', update.id, innerError);
+          console.error('Error processing update:', update, innerError);
           if (!res.headersSent) {
             res.status(500).end();
           }
