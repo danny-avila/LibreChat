@@ -307,6 +307,7 @@ async function streamAudio(req, res) {
     const processChunks = createChunkProcessor(req.body.messageId);
 
     while (shouldContinue) {
+      // example updates
       // const updates = [
       //   { text: 'This is a test.', isFinished: false },
       //   { text: 'This is only a test.', isFinished: false },

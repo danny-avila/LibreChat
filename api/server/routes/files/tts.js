@@ -38,6 +38,7 @@ router.post('/', async (req, res) => {
       console.log('Closed response');
       res.end();
     }
+    res.status(200).end();
   } catch (error) {
     console.error('Failed to stream audio:', error);
     res.status(500).json({ error: 'Failed to stream audio' });
