@@ -29,6 +29,7 @@ export default function StreamAudio({ index = 0 }) {
       latestMessage &&
       !latestMessage.isCreatedByUser &&
       (latestMessage.text || latestMessage.content) &&
+      latestMessage.messageId &&
       !latestMessage.messageId.includes('_') &&
       !isFetching &&
       activeRunId &&
