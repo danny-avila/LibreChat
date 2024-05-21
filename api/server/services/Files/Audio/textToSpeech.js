@@ -321,11 +321,8 @@ async function streamAudio(req, res) {
         return;
       }
 
-      // small buffer to allow for more updates to come in
-      await new Promise((resolve) => setTimeout(resolve, 250));
-
       if (updates.length === 0) {
-        await new Promise((resolve) => setTimeout(resolve, 1500));
+        await new Promise((resolve) => setTimeout(resolve, 1250));
         continue;
       }
 
