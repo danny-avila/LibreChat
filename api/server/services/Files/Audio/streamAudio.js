@@ -89,27 +89,44 @@ function findLastSeparatorIndex(text, separators = SEPARATORS) {
   return lastIndex;
 }
 
+const MAX_NOT_FOUND_COUNT = 6;
+const MAX_NO_CHANGE_COUNT = 12;
+
 /**
  * @param {string} messageId
  * @returns {() => Promise<{ text: string, isFinished: boolean }[]>}
  */
 function createChunkProcessor(messageId) {
+  let notFoundCount = 0;
+  let noChangeCount = 0;
   let processedText = '';
   if (!messageId) {
     throw new Error('Message ID is required');
   }
 
   /**
-   * @returns {Promise<{ text: string, isFinished: boolean }[]>}
+   * @returns {Promise<{ text: string, isFinished: boolean }[] | string>}
    */
   async function processChunks() {
+    if (notFoundCount >= MAX_NOT_FOUND_COUNT) {
+      return `Message not found after ${MAX_NOT_FOUND_COUNT} attempts`;
+    }
+
+    if (noChangeCount >= MAX_NO_CHANGE_COUNT) {
+      return `No change in message after ${MAX_NO_CHANGE_COUNT} attempts`;
+    }
+
     const message = await Message.findOne({ messageId }, 'text unfinished').lean();
 
     if (!message || !message.text) {
+      notFoundCount++;
       return [];
     }
 
     const { text, unfinished } = message;
+    if (text === processedText) {
+      noChangeCount++;
+    }
     const remainingText = text.slice(processedText.length);
     const chunks = [];
 

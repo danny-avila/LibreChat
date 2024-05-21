@@ -315,6 +315,14 @@ async function streamAudio(req, res) {
       // ];
 
       const updates = await processChunks();
+      if (typeof updates === 'string') {
+        console.error('Error processing updates:', updates);
+        res.status(500).end();
+        return;
+      }
+
+      // small buffer to allow for more updates to come in
+      await new Promise((resolve) => setTimeout(resolve, 250));
 
       if (updates.length === 0) {
         await new Promise((resolve) => setTimeout(resolve, 1500));

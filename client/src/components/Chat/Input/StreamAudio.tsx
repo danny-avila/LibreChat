@@ -52,7 +52,7 @@ export default function StreamAudio({ index = 0 }) {
         const response = await fetch('/api/files/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messageId: latestMessage.messageId, runId: activeRunId }),
+          body: JSON.stringify({ messageId: latestMessage?.messageId, runId: activeRunId }),
         });
 
         if (!response.ok) {
@@ -68,19 +68,12 @@ export default function StreamAudio({ index = 0 }) {
         audioRunId.current = activeRunId;
 
         let done = false;
-        const startTime = Date.now();
 
         while (!done) {
-          const timeElapsed = Date.now() - startTime;
-          if (timeElapsed > maxPromiseTime) {
-            console.warn('Reader operation timed out');
-            break;
-          }
-
           const readPromise = reader.read();
           const { value, done: readerDone } = (await Promise.race([
             readPromise,
-            timeoutPromise(maxPromiseTime - timeElapsed, promiseTimeoutMessage),
+            timeoutPromise(maxPromiseTime, promiseTimeoutMessage),
           ])) as ReadableStreamReadResult<Uint8Array>;
 
           if (value) {
@@ -89,7 +82,7 @@ export default function StreamAudio({ index = 0 }) {
           done = readerDone;
         }
 
-        console.log('Stream reading ended client-side');
+        console.log('Audio stream reading ended');
       } catch (error) {
         if (error?.['message'] !== promiseTimeoutMessage) {
           console.log(promiseTimeoutMessage);
