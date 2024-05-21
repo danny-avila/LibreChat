@@ -21,7 +21,7 @@ describe('MessagesUISwitch', () => {
       </RecoilRoot>,
     );
 
-    expect(getByTestId('messageUI')).toBeInTheDocument();
+    expect(getByTestId('messagesUI')).toBeInTheDocument();
   });
 
   it('calls onCheckedChange when the switch is toggled', () => {
@@ -30,7 +30,7 @@ describe('MessagesUISwitch', () => {
         <MessagesUISwitch onCheckedChange={mockSetMessagesUI} />
       </RecoilRoot>,
     );
-    const switchElement = getByTestId('messageUI');
+    const switchElement = getByTestId('messagesUI');
     fireEvent.click(switchElement);
 
     expect(mockSetMessagesUI).toHaveBeenCalledWith(true);
