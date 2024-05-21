@@ -20,7 +20,7 @@ export default function MessagesUISwitch({
 
   return (
     <div className="flex items-center justify-between">
-      <div> {localize('com_nav_auto_scroll')} </div>
+      <div> {localize('com_nav_messages_ui')} </div>
       <Switch
         id="messagesUI"
         checked={messagesUI}

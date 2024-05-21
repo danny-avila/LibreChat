@@ -62,8 +62,8 @@ const autoScroll = atom<boolean>({
 });
 
 const messagesUI = atom<boolean>({
-  key: 'autoScroll',
-  default: localStorage.getItem('messagesUI') === 'true',
+  key: 'messagesUI',
+  default: true,
   effects: [
     ({ setSelf, onSet }) => {
       const savedValue = localStorage.getItem('messagesUI');
