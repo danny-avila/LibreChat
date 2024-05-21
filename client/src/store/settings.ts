@@ -61,6 +61,25 @@ const autoScroll = atom<boolean>({
   ] as const,
 });
 
+const messagesUI = atom<boolean>({
+  key: 'autoScroll',
+  default: localStorage.getItem('messagesUI') === 'true',
+  effects: [
+    ({ setSelf, onSet }) => {
+      const savedValue = localStorage.getItem('messagesUI');
+      if (savedValue != null) {
+        setSelf(savedValue === 'true');
+      }
+
+      onSet((newValue: unknown) => {
+        if (typeof newValue === 'boolean') {
+          localStorage.setItem('messagesUI', newValue.toString());
+        }
+      });
+    },
+  ] as const,
+});
+
 const showCode = atom<boolean>({
   key: 'showCode',
   default: localStorage.getItem('showCode') === 'true',
@@ -242,6 +261,7 @@ export default {
   showBingToneSetting,
   showPopover,
   autoScroll,
+  messagesUI,
   enterToSend,
   showCode,
   hideSidePanel,
