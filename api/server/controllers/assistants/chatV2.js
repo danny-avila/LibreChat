@@ -19,9 +19,9 @@ const {
   saveAssistantMessage,
 } = require('~/server/services/Threads');
 const { sendResponse, sendMessage, sleep, isEnabled, countTokens } = require('~/server/utils');
-const { runAssistant, createOnTextProgress } = require('~/server/services/AssistantService');
-const { createRun, StreamRunManager } = require('~/server/services/Runs');
+const { createOnTextProgress } = require('~/server/services/AssistantService');
 const { addTitle } = require('~/server/services/Endpoints/assistants');
+const { StreamRunManager } = require('~/server/services/Runs');
 const { getTransactions } = require('~/models/Transaction');
 const checkBalance = require('~/models/checkBalance');
 const { getConvo } = require('~/models/Conversation');
@@ -471,39 +471,7 @@ const chatV2 = async (req, res) => {
     /** @type {RunResponse | typeof StreamRunManager | undefined} */
     let response;
 
-    const processRun = async (retry = false) => {
-      if (endpoint === EModelEndpoint.azureAssistants) {
-        body.model = openai._options.model;
-        openai.attachedFileIds = attachedFileIds;
-        if (retry) {
-          response = await runAssistant({
-            openai,
-            thread_id,
-            run_id,
-            in_progress: openai.in_progress,
-          });
-          return;
-        }
-
-        /* NOTE:
-         * By default, a Run will use the model and tools configuration specified in Assistant object,
-         * but you can override most of these when creating the Run for added flexibility:
-         */
-        const run = await createRun({
-          openai,
-          thread_id,
-          body,
-        });
-
-        run_id = run.id;
-        await cache.set(cacheKey, `${thread_id}:${run_id}`, ten_minutes);
-        sendInitialResponse();
-
-        // todo: retry logic
-        response = await runAssistant({ openai, thread_id, run_id });
-        return;
-      }
-
+    const processRun = async () => {
       /** @type {{[AssistantStreamEvents.ThreadRunCreated]: (event: ThreadRunCreated) => Promise<void>}} */
       const handlers = {
         [AssistantStreamEvents.ThreadRunCreated]: async (event) => {

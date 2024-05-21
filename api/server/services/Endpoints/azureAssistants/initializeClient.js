@@ -15,44 +15,6 @@ const OpenAIClient = require('~/app/clients/OpenAIClient');
 const { isUserProvided } = require('~/server/utils');
 const { constructAzureURL } = require('~/utils');
 
-class Files {
-  constructor(client) {
-    this._client = client;
-  }
-  /**
-   * Create an assistant file by attaching a
-   * [File](https://platform.openai.com/docs/api-reference/files) to an
-   * [assistant](https://platform.openai.com/docs/api-reference/assistants).
-   */
-  create(assistantId, body, options) {
-    return this._client.post(`/assistants/${assistantId}/files`, {
-      body,
-      ...options,
-      headers: { 'OpenAI-Beta': 'assistants=v1', ...options?.headers },
-    });
-  }
-
-  /**
-   * Retrieves an AssistantFile.
-   */
-  retrieve(assistantId, fileId, options) {
-    return this._client.get(`/assistants/${assistantId}/files/${fileId}`, {
-      ...options,
-      headers: { 'OpenAI-Beta': 'assistants=v1', ...options?.headers },
-    });
-  }
-
-  /**
-   * Delete an assistant file.
-   */
-  del(assistantId, fileId, options) {
-    return this._client.delete(`/assistants/${assistantId}/files/${fileId}`, {
-      ...options,
-      headers: { 'OpenAI-Beta': 'assistants=v1', ...options?.headers },
-    });
-  }
-}
-
 const initializeClient = async ({ req, res, version, endpointOption, initAppClient = false }) => {
   const { PROXY, OPENAI_ORGANIZATION, AZURE_ASSISTANTS_API_KEY, AZURE_ASSISTANTS_BASE_URL } =
     process.env;
@@ -167,8 +129,6 @@ const initializeClient = async ({ req, res, version, endpointOption, initAppClie
     apiKey,
     ...opts,
   });
-
-  openai.beta.assistants.files = new Files(openai);
 
   openai.req = req;
   openai.res = res;

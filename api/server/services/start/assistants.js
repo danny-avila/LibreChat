@@ -12,7 +12,12 @@ const { logger } = require('~/config');
  */
 function azureAssistantsDefaults() {
   return {
-    capabilities: [Capabilities.tools, Capabilities.actions, Capabilities.code_interpreter],
+    capabilities: [
+      Capabilities.tools,
+      Capabilities.actions,
+      Capabilities.code_interpreter,
+      Capabilities.retrieval,
+    ],
     version: defaultAssistantsVersion.azureAssistants,
   };
 }
