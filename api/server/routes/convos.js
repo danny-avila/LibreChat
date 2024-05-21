@@ -224,10 +224,10 @@ router.post('/duplicate', requireJwtAuth, async (req, res) => {
 
 router.post('/like', async (req, res) => {
   const { conversationId, userId, liked } = req.body.arg;
-  console.log('hit like router');
+  // console.log('hit like router');
   try {
     const dbResponse = await likeConvo(conversationId, userId, liked);
-    console.log('saved in like router');
+    // console.log('saved in like router');
 
     res.status(201).send(dbResponse);
   } catch (error) {
@@ -241,9 +241,9 @@ router.post('/:conversationId/viewcount/increment', async (req, res) => {
   console.log(`routes: hit viewcount increment router for conversationId ${conversationId}`);
   try {
     const dbResponse = await increaseConvoViewCount(conversationId);
-    console.log(
-      `routes: viewcount updated for conversationId ${conversationId}: viewCount=${dbResponse?.viewCount}`,
-    );
+    // console.log(
+    //   `routes: viewcount updated for conversationId ${conversationId}: viewCount=${dbResponse?.viewCount}`,
+    // );
 
     res.status(200).send(dbResponse);
   } catch (error) {

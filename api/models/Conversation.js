@@ -300,7 +300,7 @@ module.exports = {
   },
   //increase conversation view count
   increaseConvoViewCount: async (conversationId) => {
-    console.log(`increaseConvoViewCount(${conversationId}) called.`);
+    // console.log(`increaseConvoViewCount(${conversationId}) called.`);
     try {
       return await Conversation.findOneAndUpdate(
         { conversationId },
