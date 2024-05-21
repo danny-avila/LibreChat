@@ -2,24 +2,29 @@ import { useRecoilState } from 'recoil';
 import { Settings2 } from 'lucide-react';
 import { Root, Anchor } from '@radix-ui/react-popover';
 import { useState, useEffect, useMemo } from 'react';
-import { tPresetSchema, EModelEndpoint } from 'librechat-data-provider';
-import { EndpointSettings, SaveAsPresetDialog } from '~/components/Endpoints';
+import { tPresetUpdateSchema, EModelEndpoint } from 'librechat-data-provider';
+import type { TPreset, TInterfaceConfig } from 'librechat-data-provider';
+import { EndpointSettings, SaveAsPresetDialog, AlternativeSettings } from '~/components/Endpoints';
 import { ModelSelect } from '~/components/Input/ModelSelect';
 import { PluginStoreDialog } from '~/components';
 import OptionsPopover from './OptionsPopover';
 import PopoverButtons from './PopoverButtons';
-import { useSetIndexOptions } from '~/hooks';
+import { useAuthContext, useSetIndexOptions } from '~/hooks';
 import { useChatContext } from '~/Providers';
 import { Button } from '~/components/ui';
 import { cn, cardStyle } from '~/utils/';
 import store from '~/store';
 
-export default function OptionsBar() {
+export default function HeaderOptions({
+  interfaceConfig,
+}: {
+  interfaceConfig?: Partial<TInterfaceConfig>;
+}) {
   const [saveAsDialogShow, setSaveAsDialogShow] = useState<boolean>(false);
   const [showPluginStoreDialog, setShowPluginStoreDialog] = useRecoilState(
     store.showPluginStoreDialog,
   );
-
+  const { user } = useAuthContext();
   const { showPopover, conversation, latestMessage, setShowPopover, setShowBingToneSetting } =
     useChatContext();
   const { setOption } = useSetIndexOptions();
@@ -50,7 +55,13 @@ export default function OptionsBar() {
   }, [endpoint, noSettings]);
 
   const saveAsPreset = () => {
-    setSaveAsDialogShow(true);
+    if (user) {
+      setSaveAsDialogShow(true);
+    } else {
+      console.error('conversation.user is null or undefined');
+      // 这里你可以添加任何错误处理逻辑
+    }
+    // setSaveAsDialogShow(true);
   };
 
   if (!endpoint) {
@@ -69,19 +80,21 @@ export default function OptionsBar() {
         <div className="my-auto lg:max-w-2xl xl:max-w-3xl">
           <span className="flex w-full flex-col items-center justify-center gap-0 md:order-none md:m-auto md:gap-2">
             <div className="z-[61] flex w-full items-center justify-center gap-2">
-              <ModelSelect
-                conversation={conversation}
-                setOption={setOption}
-                isMultiChat={true}
-                showAbove={false}
-              />
-              {!noSettings[endpoint] && (
+              {interfaceConfig?.modelSelect && (
+                <ModelSelect
+                  conversation={conversation}
+                  setOption={setOption}
+                  showAbove={false}
+                  popover={true}
+                />
+              )}
+              {!noSettings[endpoint] && interfaceConfig?.parameters && (
                 <Button
                   type="button"
                   className={cn(
                     cardStyle,
-                    'min-w-4 z-50 flex h-[40px] flex-none items-center justify-center px-3 focus:ring-0 focus:ring-offset-0',
-                    'hover:bg-gray-50 radix-state-open:bg-gray-50 dark:hover:bg-black/10 dark:radix-state-open:bg-black/20',
+                    'z-50 flex h-[40px] min-w-4 flex-none items-center justify-center px-3 focus:ring-0 focus:ring-offset-0',
+                    'hover:bg-gray-50 radix-state-open:bg-gray-50 dark:hover:bg-gray-700 dark:radix-state-open:bg-gray-700',
                   )}
                   onClick={triggerAdvancedMode}
                 >
@@ -89,29 +102,41 @@ export default function OptionsBar() {
                 </Button>
               )}
             </div>
-            <OptionsPopover
-              visible={showPopover}
-              saveAsPreset={saveAsPreset}
-              closePopover={() => setShowPopover(false)}
-              PopoverButtons={<PopoverButtons endpoint={endpoint} />}
-            >
-              <div className="px-4 py-4">
-                <EndpointSettings
-                  conversation={conversation}
-                  setOption={setOption}
-                  isMultiChat={true}
-                />
-              </div>
-            </OptionsPopover>
-            <SaveAsPresetDialog
-              open={saveAsDialogShow}
-              onOpenChange={setSaveAsDialogShow}
-              preset={tPresetSchema.parse({ ...conversation })}
-            />
-            <PluginStoreDialog
-              isOpen={showPluginStoreDialog}
-              setIsOpen={setShowPluginStoreDialog}
-            />
+            {interfaceConfig?.parameters && (
+              <OptionsPopover
+                visible={showPopover}
+                saveAsPreset={saveAsPreset}
+                presetsDisabled={!interfaceConfig?.presets}
+                PopoverButtons={<PopoverButtons />}
+                closePopover={() => setShowPopover(false)}
+              >
+                <div className="px-4 py-4">
+                  <EndpointSettings
+                    className="[&::-webkit-scrollbar]:w-2"
+                    conversation={conversation}
+                    setOption={setOption}
+                  />
+                  <AlternativeSettings conversation={conversation} setOption={setOption} />
+                </div>
+              </OptionsPopover>
+            )}
+            {interfaceConfig?.presets && (
+              <SaveAsPresetDialog
+                open={saveAsDialogShow}
+                onOpenChange={setSaveAsDialogShow}
+                preset={
+                  tPresetUpdateSchema.parse({
+                    ...conversation,
+                  }) as TPreset
+                }
+              />
+            )}
+            {interfaceConfig?.parameters && (
+              <PluginStoreDialog
+                isOpen={showPluginStoreDialog}
+                setIsOpen={setShowPluginStoreDialog}
+              />
+            )}
           </span>
         </div>
       </Anchor>

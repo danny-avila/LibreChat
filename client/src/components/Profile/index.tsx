@@ -3,21 +3,18 @@ import { Tabs, TabsList, TabsTrigger } from '../ui/Tabs';
 import { cn } from '~/utils';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
 import { useNavigate, useParams } from 'react-router-dom';
+import { TUser } from 'librechat-data-provider';
 import {
-  TUser,
   useFollowUserMutation,
   useGetStartupConfig,
   useGetUserByIdQuery,
-} from 'librechat-data-provider';
+} from 'librechat-data-provider/react-query';
 import { useAuthContext } from '~/hooks/AuthContext';
 import LikedConversations from './LikedConversation';
-import { useRecoilValue } from 'recoil';
-import store from '~/store';
 import PublicConversations from './PublicConversations';
 import { Spinner } from '../svg';
 import UserIcon from '../svg/UserIcon';
 import CheckMark from '../svg/CheckMark';
-import { log } from 'console';
 import EditIcon from '../svg/EditIcon';
 import { useLocalize } from '~/hooks';
 
@@ -59,7 +56,6 @@ function ProfileContent() {
   // Displays username only
   function ListItem({ id, info }: { id: string; info: TUser }) {
     const [copied, setCopied] = useState<boolean>(false);
-    const lang = useRecoilValue(store.lang);
 
     return (
       <div className="group relative my-2 flex cursor-pointer flex-row items-center">
@@ -300,7 +296,7 @@ function ProfileContent() {
         setNumOfFollowing(Object.keys(followUserMutation.data.following).length);
       }
     }
-  }, [followUserMutation.isSuccess, followUserMutation.data]);
+  }, [followUserMutation.isSuccess, followUserMutation.data, isFollower]);
 
   const [isEditing, setIsEditing] = useState(false);
   const handleUsernameClick = () => {
@@ -628,21 +624,21 @@ function ProfileContent() {
             onValueChange={(value: string) => setTabValue(value)}
             className={defaultClasses}
           >
-            <TabsList className="bg-white">
+            <TabsList className="rounded-lg bg-blue-500 dark:bg-blue-500">
               {userId === user?.id && (
-                <TabsTrigger value="likes" className="text-gray-500 dark:text-gray-200">
+                <TabsTrigger value="likes" className="px-4 py-2 text-white dark:text-white">
                   {localize('com_ui_my_likes')}
                 </TabsTrigger>
               )}
               {userId != user?.id && (
-                <TabsTrigger value="conversations" className="text-gray-500 dark:text-gray-200">
+                <TabsTrigger value="conversations" className="px-4 py-2 text-white dark:text-white">
                   {localize('com_ui_conversations')}
                 </TabsTrigger>
               )}
-              <TabsTrigger value="followers" className="text-gray-500 dark:text-gray-200">
+              <TabsTrigger value="followers" className="px-4 py-2 text-white dark:text-white">
                 {localize('com_ui_followers')}
               </TabsTrigger>
-              <TabsTrigger value="following" className="text-gray-500 dark:text-gray-200">
+              <TabsTrigger value="following" className="px-4 py-2 text-white dark:text-white">
                 {localize('com_ui_following')}
               </TabsTrigger>
             </TabsList>

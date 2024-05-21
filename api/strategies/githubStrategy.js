@@ -1,5 +1,7 @@
 const { Strategy: GitHubStrategy } = require('passport-github2');
-const User = require('../models/User');
+const { createNewUser, handleExistingUser } = require('./process');
+const { logger } = require('~/config');
+const User = require('~/models/User');
 
 const githubLogin = async (accessToken, refreshToken, profile, cb) => {
   try {
@@ -8,28 +10,28 @@ const githubLogin = async (accessToken, refreshToken, profile, cb) => {
     const oldUser = await User.findOne({ email });
     const ALLOW_SOCIAL_REGISTRATION =
       process.env.ALLOW_SOCIAL_REGISTRATION?.toLowerCase() === 'true';
+    const avatarUrl = profile.photos[0].value;
 
     if (oldUser) {
-      oldUser.avatar = profile.photos[0].value;
-      await oldUser.save();
+      await handleExistingUser(oldUser, avatarUrl);
       return cb(null, oldUser);
-    } else if (ALLOW_SOCIAL_REGISTRATION) {
-      const newUser = await new User({
-        provider: 'github',
-        githubId,
-        username: profile.username,
-        email,
-        emailVerified: profile.emails[0].verified,
-        name: profile.displayName,
-        avatar: profile.photos[0].value,
-      }).save();
-
-      return cb(null, newUser);
     }
 
-    return cb(null, false, { message: 'User not found.' });
+    if (ALLOW_SOCIAL_REGISTRATION) {
+      const newUser = await createNewUser({
+        email,
+        avatarUrl,
+        provider: 'github',
+        providerKey: 'githubId',
+        providerId: githubId,
+        username: profile.username,
+        name: profile.displayName,
+        emailVerified: profile.emails[0].verified,
+      });
+      return cb(null, newUser);
+    }
   } catch (err) {
-    console.error(err);
+    logger.error('[githubLogin]', err);
     return cb(err);
   }
 };

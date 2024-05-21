@@ -1,5 +1,6 @@
 require('dotenv').config();
 const { KeyvFile } = require('keyv-file');
+const { Constants, EModelEndpoint } = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('../server/services/UserService');
 
 const browserClient = async ({
@@ -17,10 +18,7 @@ const browserClient = async ({
 
   let key = null;
   if (expiresAt && isUserProvided) {
-    checkUserKeyExpiry(
-      expiresAt,
-      'Your ChatGPT Access Token has expired. Please provide your token again.',
-    );
+    checkUserKeyExpiry(expiresAt, EModelEndpoint.chatGPTBrowser);
     key = await getUserKey({ userId, name: 'chatGPTBrowser' });
   }
 
@@ -49,7 +47,7 @@ const browserClient = async ({
     options = { ...options, parentMessageId, conversationId };
   }
 
-  if (parentMessageId === '00000000-0000-0000-0000-000000000000') {
+  if (parentMessageId === Constants.NO_PARENT) {
     delete options.conversationId;
   }
 

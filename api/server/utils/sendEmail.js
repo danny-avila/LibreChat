@@ -1,7 +1,9 @@
-const nodemailer = require('nodemailer');
-const handlebars = require('handlebars');
 const fs = require('fs');
 const path = require('path');
+const nodemailer = require('nodemailer');
+const handlebars = require('handlebars');
+const { isEnabled } = require('~/server/utils/handleText');
+const logger = require('~/config/winston');
 
 const sendEmail = async (email, subject, payload, template) => {
   try {
@@ -12,7 +14,7 @@ const sendEmail = async (email, subject, payload, template) => {
       requireTls: process.env.EMAIL_ENCRYPTION === 'starttls',
       tls: {
         // Whether to accept unsigned certificates
-        rejectUnauthorized: process.env.EMAIL_ALLOW_SELFSIGNED === 'true',
+        rejectUnauthorized: !isEnabled(process.env.EMAIL_ALLOW_SELFSIGNED),
       },
       auth: {
         user: process.env.EMAIL_USERNAME,
@@ -59,15 +61,15 @@ const sendEmail = async (email, subject, payload, template) => {
     // Send email
     transporter.sendMail(options(), (error, info) => {
       if (error) {
-        console.log(error);
+        logger.error('[sendEmail]', error);
         return error;
       } else {
-        console.log(info);
+        logger.debug('[sendEmail]', info);
         return info;
       }
     });
   } catch (error) {
-    console.log(error);
+    logger.error('[sendEmail]', error);
     return error;
   }
 };

@@ -6,8 +6,9 @@ import store from '~/store';
 import { useAuthContext } from '~/hooks/AuthContext';
 import {
   useLikeConversationMutation,
-  useUpdateConversationMutation,
-} from 'librechat-data-provider';
+  // useUpdateConversationMutation,
+} from 'librechat-data-provider/react-query';
+import { useUpdateConversationMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
 export default function MessageHeaderButtons({ conversationId, index = 0 }) {
@@ -142,7 +143,7 @@ export default function MessageHeaderButtons({ conversationId, index = 0 }) {
       </div>
       {/*Copied indicator*/}
       <CSSTransition in={copied} timeout={2000} classNames="copied-toast" unmountOnExit={false}>
-        <div className="text-md invisible absolute bottom-32 z-10 rounded-full bg-gray-200 px-3 py-1 text-black opacity-0">
+        <div className="text-md bottom-81 invisible absolute left-40 z-10 flex items-center justify-center bg-gray-200 px-4 py-1 text-black opacity-0 ">
           {localize('com_ui_copied')}
         </div>
       </CSSTransition>

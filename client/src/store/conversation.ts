@@ -18,7 +18,7 @@ const messages = atom<TMessagesAtom>({
 const messagesTree = selector({
   key: 'messagesTree',
   get: ({ get }) => {
-    return buildTree(get(messages), false);
+    return buildTree({ messages: get(messages) });
   },
 });
 

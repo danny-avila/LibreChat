@@ -1,5 +1,6 @@
-const { formatMessage, formatLangChainMessages, formatFromLangChain } = require('./formatMessages');
+const { Constants } = require('librechat-data-provider');
 const { HumanMessage, AIMessage, SystemMessage } = require('langchain/schema');
+const { formatMessage, formatLangChainMessages, formatFromLangChain } = require('./formatMessages');
 
 describe('formatMessage', () => {
   it('formats user message', () => {
@@ -54,7 +55,6 @@ describe('formatMessage', () => {
         _id: '6512cdfb92cbf69fea615331',
         messageId: 'b620bf73-c5c3-4a38-b724-76886aac24c4',
         __v: 0,
-        cancelled: false,
         conversationId: '5c23d24f-941f-4aab-85df-127b596c8aa5',
         createdAt: Date.now(),
         error: false,
@@ -62,7 +62,7 @@ describe('formatMessage', () => {
         isCreatedByUser: true,
         isEdited: false,
         model: null,
-        parentMessageId: '00000000-0000-0000-0000-000000000000',
+        parentMessageId: Constants.NO_PARENT,
         sender: 'User',
         text: 'hi',
         tokenCount: 5,

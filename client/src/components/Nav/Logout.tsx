@@ -7,14 +7,10 @@ const Logout = forwardRef(() => {
   const { user, logout } = useAuthContext();
   const localize = useLocalize();
 
-  const handleLogout = () => {
-    logout();
-  };
-
   return (
     <button
-      className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
-      onClick={handleLogout}
+      className="group group flex w-full cursor-pointer items-center gap-2 rounded p-2.5 text-sm transition-colors duration-200 hover:bg-gray-500/10 focus:ring-0 dark:text-white dark:hover:bg-gray-600"
+      onClick={() => logout()}
     >
       <LogOutIcon />
       {user?.username || 'USER'} {localize('com_nav_log_out')}

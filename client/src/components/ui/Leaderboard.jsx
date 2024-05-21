@@ -1,4 +1,4 @@
-import { useGetLeaderboardQuery } from 'librechat-data-provider';
+import { useGetLeaderboardQuery } from 'librechat-data-provider/react-query';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { AgGridReact } from 'ag-grid-react'; // the AG Grid React Component
 

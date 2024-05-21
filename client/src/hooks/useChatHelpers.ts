@@ -1,33 +1,37 @@
 import { v4 } from 'uuid';
 import { useCallback, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
 import {
+  Constants,
   QueryKeys,
+  ContentTypes,
   parseCompactConvo,
-  getResponseSender,
-  useGetMessagesByConvoId,
+  isAssistantsEndpoint,
 } from 'librechat-data-provider';
+import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
+import { useGetMessagesByConvoId } from 'librechat-data-provider/react-query';
 import type {
   TMessage,
   TSubmission,
   TEndpointOption,
-  TConversation,
-  TGetConversationsResponse,
+  TEndpointsConfig,
 } from 'librechat-data-provider';
 import type { TAskFunction } from '~/common';
-import useSetFilesToDelete from './useSetFilesToDelete';
+import useSetFilesToDelete from './Files/useSetFilesToDelete';
+import useGetSender from './Conversations/useGetSender';
 import { useAuthContext } from './AuthContext';
+import useUserKey from './Input/useUserKey';
+import { getEndpointField } from '~/utils';
 import useNewConvo from './useNewConvo';
-import useUserKey from './useUserKey';
 import store from '~/store';
 
 // this to be set somewhere else
 export default function useChatHelpers(index = 0, paramId: string | undefined) {
+  const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
-  const [showStopButton, setShowStopButton] = useState(true);
   const [filesLoading, setFilesLoading] = useState(false);
   const setFilesToDelete = useSetFilesToDelete();
+  const getSender = useGetSender();
 
   const queryClient = useQueryClient();
   const { isAuthenticated } = useAuthContext();
@@ -60,42 +64,6 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     [queryParam, queryClient],
   );
 
-  const addConvo = useCallback(
-    (convo: TConversation) => {
-      const convoData = queryClient.getQueryData<TGetConversationsResponse>([
-        QueryKeys.allConversations,
-        { pageNumber: '1', active: true },
-      ]) ?? { conversations: [] as TConversation[], pageNumber: '1', pages: 1, pageSize: 14 };
-
-      let { conversations: convos, pageSize = 14 } = convoData;
-      pageSize = Number(pageSize);
-      convos = convos.filter((c) => c.conversationId !== convo.conversationId);
-      convos = convos.length < pageSize ? convos : convos.slice(0, -1);
-
-      const conversations = [
-        {
-          ...convo,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        ...convos,
-      ];
-
-      queryClient.setQueryData<TGetConversationsResponse>(
-        [QueryKeys.allConversations, { pageNumber: '1', active: true }],
-        {
-          ...convoData,
-          conversations,
-        },
-      );
-    },
-    [queryClient],
-  );
-
-  const invalidateConvos = useCallback(() => {
-    queryClient.invalidateQueries([QueryKeys.allConversations, { active: true }]);
-  }, [queryClient]);
-
   const getMessages = useCallback(() => {
     return queryClient.getQueryData<TMessage[]>([QueryKeys.messages, queryParam]);
   }, [queryParam, queryClient]);
@@ -126,12 +94,13 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     {
       editedText = null,
       editedMessageId = null,
+      resubmitFiles = false,
       isRegenerate = false,
       isContinued = false,
       isEdited = false,
     } = {},
   ) => {
-    setShowStopButton(true);
+    setShowStopButton(false);
     if (!!isSubmitting || text === '') {
       return;
     }
@@ -154,29 +123,50 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
 
     const isEditOrContinue = isEdited || isContinued;
 
-    // set the endpoint option
-    const convo = parseCompactConvo(endpoint, conversation ?? {});
-    const endpointOption = {
-      ...convo,
-      endpoint,
-      key: getExpiry(),
-    } as TEndpointOption;
-    const responseSender = getResponseSender({ model: conversation?.model, ...endpointOption });
-
     let currentMessages: TMessage[] | null = getMessages() ?? [];
 
     // construct the query message
     // this is not a real messageId, it is used as placeholder before real messageId returned
     text = text.trim();
     const fakeMessageId = v4();
-    parentMessageId =
-      parentMessageId || latestMessage?.messageId || '00000000-0000-0000-0000-000000000000';
+    parentMessageId = parentMessageId || latestMessage?.messageId || Constants.NO_PARENT;
 
     if (conversationId == 'new') {
-      parentMessageId = '00000000-0000-0000-0000-000000000000';
+      parentMessageId = Constants.NO_PARENT;
       currentMessages = [];
       conversationId = null;
     }
+
+    const parentMessage = currentMessages?.find(
+      (msg) => msg.messageId === latestMessage?.parentMessageId,
+    );
+
+    let thread_id = parentMessage?.thread_id ?? latestMessage?.thread_id;
+    if (!thread_id) {
+      thread_id = currentMessages.find((message) => message.thread_id)?.thread_id;
+    }
+
+    const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
+    const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
+
+    // set the endpoint option
+    const convo = parseCompactConvo({
+      endpoint,
+      endpointType,
+      conversation: conversation ?? {},
+    });
+
+    const { modelDisplayLabel } = endpointsConfig?.[endpoint ?? ''] ?? {};
+    const endpointOption = {
+      ...convo,
+      endpoint,
+      endpointType,
+      modelDisplayLabel,
+      key: getExpiry(),
+      thread_id,
+    } as TEndpointOption;
+    const responseSender = getSender({ model: conversation?.model, ...endpointOption });
+
     const currentMsg: TMessage = {
       text,
       sender: 'User',
@@ -184,13 +174,11 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       parentMessageId,
       conversationId,
       messageId: isContinued && messageId ? messageId : fakeMessageId,
+      thread_id,
       error: false,
     };
 
-    const parentMessage = currentMessages?.find(
-      (msg) => msg.messageId === latestMessage?.parentMessageId,
-    );
-    const reuseFiles = isRegenerate && parentMessage?.files;
+    const reuseFiles = (isRegenerate || resubmitFiles) && parentMessage?.files;
     if (reuseFiles && parentMessage.files?.length) {
       currentMsg.files = parentMessage.files;
       setFiles(new Map());
@@ -209,23 +197,38 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
 
     // construct the placeholder response message
     const generation = editedText ?? latestMessage?.text ?? '';
-    const responseText = isEditOrContinue
-      ? generation
-      : '<span className="result-streaming">█</span>';
+    const responseText = isEditOrContinue ? generation : '';
 
     const responseMessageId = editedMessageId ?? latestMessage?.messageId ?? null;
     const initialResponse: TMessage = {
       sender: responseSender,
       text: responseText,
+      endpoint: endpoint ?? '',
       parentMessageId: isRegenerate ? messageId : fakeMessageId,
       messageId: responseMessageId ?? `${isRegenerate ? messageId : fakeMessageId}_`,
+      thread_id,
       conversationId,
       unfinished: false,
-      submitting: true,
       isCreatedByUser: false,
       isEdited: isEditOrContinue,
+      iconURL: convo.iconURL,
       error: false,
     };
+
+    if (isAssistantsEndpoint(endpoint)) {
+      initialResponse.model = conversation?.assistant_id ?? '';
+      initialResponse.text = '';
+      initialResponse.content = [
+        {
+          type: ContentTypes.TEXT,
+          [ContentTypes.TEXT]: {
+            value: responseText,
+          },
+        },
+      ];
+    } else {
+      setShowStopButton(true);
+    }
 
     if (isContinued) {
       currentMessages = currentMessages.filter((msg) => msg.messageId !== responseMessageId);
@@ -324,7 +327,6 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
   const [showPopover, setShowPopover] = useRecoilState(store.showPopoverFamily(index));
   const [abortScroll, setAbortScroll] = useRecoilState(store.abortScrollFamily(index));
   const [preset, setPreset] = useRecoilState(store.presetByIndex(index));
-  const [textareaHeight, setTextareaHeight] = useRecoilState(store.textareaHeightFamily(index));
   const [optionSettings, setOptionSettings] = useRecoilState(store.optionSettingsFamily(index));
   const [showAgentSettings, setShowAgentSettings] = useRecoilState(
     store.showAgentSettingsFamily(index),
@@ -334,7 +336,6 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     newConversation,
     conversation,
     setConversation,
-    addConvo,
     // getConvos,
     // setConvos,
     isSubmitting,
@@ -364,14 +365,9 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     setOptionSettings,
     showAgentSettings,
     setShowAgentSettings,
-    textareaHeight,
-    setTextareaHeight,
     files,
     setFiles,
-    invalidateConvos,
     filesLoading,
     setFilesLoading,
-    showStopButton,
-    setShowStopButton,
   };
 }

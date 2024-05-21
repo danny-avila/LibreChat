@@ -1,21 +1,32 @@
-# Base node image
-FROM node:19-alpine AS node
+# v0.7.2
 
-COPY . /app
+# Base node image
+FROM node:20-alpine AS node
+
+RUN apk --no-cache add curl
+
+RUN mkdir -p /app && chown node:node /app
 WORKDIR /app
 
-# Install call deps - Install curl for health check
-RUN apk --no-cache add curl && \
-    # We want to inherit env from the container, not the file
-    # This will preserve any existing env file if it's already in source
-    # otherwise it will create a new one
-    touch .env && \
-    # Build deps in seperate 
-    npm ci
+USER node
 
-# React client build
-ENV NODE_OPTIONS="--max-old-space-size=2048"
-RUN npm run frontend
+COPY --chown=node:node . .
+
+RUN \
+    # Allow mounting of these files, which have no default
+    touch .env ; \
+    # Create directories for the volumes to inherit the correct permissions
+    mkdir -p /app/client/public/images /app/api/logs ; \
+    npm config set fetch-retry-maxtimeout 600000 ; \
+    npm config set fetch-retries 5 ; \
+    npm config set fetch-retry-mintimeout 15000 ; \
+    npm install --no-audit; \
+    # React client build
+    NODE_OPTIONS="--max-old-space-size=2048" npm run frontend; \
+    npm prune --production; \
+    npm cache clean --force
+
+RUN mkdir -p /app/client/public/images /app/api/logs
 
 # Node API setup
 EXPOSE 3080

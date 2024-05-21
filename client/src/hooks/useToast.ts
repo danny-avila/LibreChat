@@ -25,6 +25,7 @@ export default function useToast(showDelay = 100) {
     severity = NotificationSeverity.SUCCESS,
     showIcon = true,
     duration = 3000, // default duration for the toast to be visible
+    status,
   }: TShowToast) => {
     // Clear existing timeouts
     if (showTimerRef.current !== null) {
@@ -36,7 +37,12 @@ export default function useToast(showDelay = 100) {
 
     // Timeout to show the toast
     showTimerRef.current = window.setTimeout(() => {
-      setToast({ open: true, message, severity, showIcon });
+      setToast({
+        open: true,
+        message,
+        severity: (status as NotificationSeverity) ?? severity,
+        showIcon,
+      });
       // Hides the toast after the specified duration
       hideTimerRef.current = window.setTimeout(() => {
         setToast((prevToast) => ({ ...prevToast, open: false }));

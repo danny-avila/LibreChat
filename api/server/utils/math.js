@@ -38,8 +38,7 @@ function math(str, fallbackValue) {
     if (fallback) {
       return fallbackValue;
     }
-    console.error('str', str);
-    throw new Error(`str did not evaluate to a number but to a ${typeof value}`);
+    throw new Error(`[math] str did not evaluate to a number but to a ${typeof value}`);
   }
 
   return value;

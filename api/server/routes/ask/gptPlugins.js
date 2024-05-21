@@ -1,79 +1,88 @@
 const express = require('express');
-const router = express.Router();
-const { getResponseSender } = require('../endpoints/schemas');
-const { validateTools } = require('../../../app');
-const { addTitle } = require('../endpoints/openAI');
-const { initializeClient } = require('../endpoints/gptPlugins');
-const { saveMessage, getConvoTitle, getConvo } = require('../../../models');
-const { sendMessage, createOnProgress } = require('../../utils');
+const throttle = require('lodash/throttle');
+const { getResponseSender, Constants } = require('librechat-data-provider');
+const { initializeClient } = require('~/server/services/Endpoints/gptPlugins');
+const { saveMessage, getConvoTitle, getConvo } = require('~/models');
+const { sendMessage, createOnProgress } = require('~/server/utils');
+const { addTitle } = require('~/server/services/Endpoints/openAI');
 const {
   handleAbort,
   createAbortController,
   handleAbortError,
   setHeaders,
+  validateModel,
   validateEndpoint,
   buildEndpointOption,
-} = require('../../middleware');
+  moderateText,
+} = require('~/server/middleware');
+const { validateTools } = require('~/app');
+const { logger } = require('~/config');
 
+const router = express.Router();
+
+router.use(moderateText);
 router.post('/abort', handleAbort());
 
-router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, res) => {
-  let {
-    text,
-    endpointOption,
-    conversationId,
-    parentMessageId = null,
-    overrideParentMessageId = null,
-  } = req.body;
-  console.log('ask log');
-  console.dir({ text, conversationId, endpointOption }, { depth: null });
-  let metadata;
-  let userMessage;
-  let promptTokens;
-  let userMessageId;
-  let responseMessageId;
-  let lastSavedTimestamp = 0;
-  let saveDelay = 100;
-  const sender = getResponseSender({ ...endpointOption, model: endpointOption.modelOptions.model });
-  const newConvo = !conversationId;
-  const user = req.user.id;
+router.post(
+  '/',
+  validateEndpoint,
+  validateModel,
+  buildEndpointOption,
+  setHeaders,
+  async (req, res) => {
+    let {
+      text,
+      endpointOption,
+      conversationId,
+      parentMessageId = null,
+      overrideParentMessageId = null,
+    } = req.body;
 
-  const plugins = [];
+    logger.debug('[/ask/gptPlugins]', { text, conversationId, ...endpointOption });
 
-  const addMetadata = (data) => (metadata = data);
-  const getReqData = (data = {}) => {
-    for (let key in data) {
-      if (key === 'userMessage') {
-        userMessage = data[key];
-        userMessageId = data[key].messageId;
-      } else if (key === 'responseMessageId') {
-        responseMessageId = data[key];
-      } else if (key === 'promptTokens') {
-        promptTokens = data[key];
-      } else if (!conversationId && key === 'conversationId') {
-        conversationId = data[key];
+    let userMessage;
+    let promptTokens;
+    let userMessageId;
+    let responseMessageId;
+    const sender = getResponseSender({
+      ...endpointOption,
+      model: endpointOption.modelOptions.model,
+    });
+    const newConvo = !conversationId;
+    const user = req.user.id;
+
+    const plugins = [];
+
+    const getReqData = (data = {}) => {
+      for (let key in data) {
+        if (key === 'userMessage') {
+          userMessage = data[key];
+          userMessageId = data[key].messageId;
+        } else if (key === 'responseMessageId') {
+          responseMessageId = data[key];
+        } else if (key === 'promptTokens') {
+          promptTokens = data[key];
+        } else if (!conversationId && key === 'conversationId') {
+          conversationId = data[key];
+        }
       }
-    }
-  };
+    };
 
-  let streaming = null;
-  let timer = null;
+    const throttledSaveMessage = throttle(saveMessage, 3000, { trailing: false });
+    let streaming = null;
+    let timer = null;
 
-  const {
-    onProgress: progressCallback,
-    sendIntermediateMessage,
-    getPartialText,
-  } = createOnProgress({
-    onProgress: ({ text: partialText }) => {
-      const currentTimestamp = Date.now();
+    const {
+      onProgress: progressCallback,
+      sendIntermediateMessage,
+      getPartialText,
+    } = createOnProgress({
+      onProgress: ({ text: partialText }) => {
+        if (timer) {
+          clearTimeout(timer);
+        }
 
-      if (timer) {
-        clearTimeout(timer);
-      }
-
-      if (currentTimestamp - lastSavedTimestamp > saveDelay) {
-        lastSavedTimestamp = currentTimestamp;
-        saveMessage({
+        throttledSaveMessage({
           messageId: responseMessageId,
           sender,
           conversationId,
@@ -81,145 +90,135 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
           text: partialText,
           model: endpointOption.modelOptions.model,
           unfinished: true,
-          cancelled: false,
           error: false,
           plugins,
           user,
         });
-      }
 
-      if (saveDelay < 500) {
-        saveDelay = 500;
-      }
+        streaming = new Promise((resolve) => {
+          timer = setTimeout(() => {
+            resolve();
+          }, 250);
+        });
+      },
+    });
 
-      streaming = new Promise((resolve) => {
-        timer = setTimeout(() => {
-          resolve();
-        }, 250);
-      });
-    },
-  });
-
-  const pluginMap = new Map();
-  const onAgentAction = async (action, runId) => {
-    pluginMap.set(runId, action.tool);
-    sendIntermediateMessage(res, { plugins });
-  };
-
-  const onToolStart = async (tool, input, runId, parentRunId) => {
-    const pluginName = pluginMap.get(parentRunId);
-    const latestPlugin = {
-      runId,
-      loading: true,
-      inputs: [input],
-      latest: pluginName,
-      outputs: null,
+    const pluginMap = new Map();
+    const onAgentAction = async (action, runId) => {
+      pluginMap.set(runId, action.tool);
+      sendIntermediateMessage(res, { plugins });
     };
 
-    if (streaming) {
-      await streaming;
-    }
-    const extraTokens = ':::plugin:::\n';
-    plugins.push(latestPlugin);
-    sendIntermediateMessage(res, { plugins }, extraTokens);
-  };
+    const onToolStart = async (tool, input, runId, parentRunId) => {
+      const pluginName = pluginMap.get(parentRunId);
+      const latestPlugin = {
+        runId,
+        loading: true,
+        inputs: [input],
+        latest: pluginName,
+        outputs: null,
+      };
 
-  const onToolEnd = async (output, runId) => {
-    if (streaming) {
-      await streaming;
-    }
+      if (streaming) {
+        await streaming;
+      }
+      const extraTokens = ':::plugin:::\n';
+      plugins.push(latestPlugin);
+      sendIntermediateMessage(res, { plugins }, extraTokens);
+    };
 
-    const pluginIndex = plugins.findIndex((plugin) => plugin.runId === runId);
+    const onToolEnd = async (output, runId) => {
+      if (streaming) {
+        await streaming;
+      }
 
-    if (pluginIndex !== -1) {
-      plugins[pluginIndex].loading = false;
-      plugins[pluginIndex].outputs = output;
-    }
-  };
+      const pluginIndex = plugins.findIndex((plugin) => plugin.runId === runId);
 
-  const onChainEnd = () => {
-    saveMessage({ ...userMessage, user });
-    sendIntermediateMessage(res, { plugins });
-  };
+      if (pluginIndex !== -1) {
+        plugins[pluginIndex].loading = false;
+        plugins[pluginIndex].outputs = output;
+      }
+    };
 
-  const getAbortData = () => ({
-    sender,
-    conversationId,
-    messageId: responseMessageId,
-    parentMessageId: overrideParentMessageId ?? userMessageId,
-    text: getPartialText(),
-    plugins: plugins.map((p) => ({ ...p, loading: false })),
-    userMessage,
-    promptTokens,
-  });
-  const { abortController, onStart } = createAbortController(req, res, getAbortData);
+    const onChainEnd = () => {
+      saveMessage({ ...userMessage, user });
+      sendIntermediateMessage(res, { plugins });
+    };
 
-  try {
-    endpointOption.tools = await validateTools(user, endpointOption.tools);
-    const { client } = await initializeClient({ req, res, endpointOption });
-
-    let response = await client.sendMessage(text, {
-      user,
+    const getAbortData = () => ({
+      sender,
       conversationId,
-      parentMessageId,
-      overrideParentMessageId,
-      getReqData,
-      onAgentAction,
-      onChainEnd,
-      onToolStart,
-      onToolEnd,
-      onStart,
-      addMetadata,
-      getPartialText,
-      ...endpointOption,
-      onProgress: progressCallback.call(null, {
-        res,
-        text,
-        parentMessageId: overrideParentMessageId || userMessageId,
-        plugins,
-      }),
-      abortController,
+      messageId: responseMessageId,
+      parentMessageId: overrideParentMessageId ?? userMessageId,
+      text: getPartialText(),
+      plugins: plugins.map((p) => ({ ...p, loading: false })),
+      userMessage,
+      promptTokens,
     });
+    const { abortController, onStart } = createAbortController(req, res, getAbortData);
 
-    if (overrideParentMessageId) {
-      response.parentMessageId = overrideParentMessageId;
-    }
+    try {
+      endpointOption.tools = await validateTools(user, endpointOption.tools);
+      const { client } = await initializeClient({ req, res, endpointOption });
 
-    if (metadata) {
-      response = { ...response, ...metadata };
-    }
+      let response = await client.sendMessage(text, {
+        user,
+        conversationId,
+        parentMessageId,
+        overrideParentMessageId,
+        getReqData,
+        onAgentAction,
+        onChainEnd,
+        onToolStart,
+        onToolEnd,
+        onStart,
+        getPartialText,
+        ...endpointOption,
+        onProgress: progressCallback.call(null, {
+          res,
+          text,
+          parentMessageId: overrideParentMessageId || userMessageId,
+          plugins,
+        }),
+        abortController,
+      });
 
-    console.log('CLIENT RESPONSE');
-    console.dir(response, { depth: null });
-    response.plugins = plugins.map((p) => ({ ...p, loading: false }));
-    await saveMessage({ ...response, user });
+      if (overrideParentMessageId) {
+        response.parentMessageId = overrideParentMessageId;
+      }
 
-    sendMessage(res, {
-      title: await getConvoTitle(user, conversationId),
-      final: true,
-      conversation: await getConvo(user, conversationId),
-      requestMessage: userMessage,
-      responseMessage: response,
-    });
-    res.end();
+      logger.debug('[/ask/gptPlugins]', response);
 
-    if (parentMessageId === '00000000-0000-0000-0000-000000000000' && newConvo) {
-      addTitle(req, {
-        text,
-        response,
-        client,
+      response.plugins = plugins.map((p) => ({ ...p, loading: false }));
+      await saveMessage({ ...response, user });
+
+      sendMessage(res, {
+        title: await getConvoTitle(user, conversationId),
+        final: true,
+        conversation: await getConvo(user, conversationId),
+        requestMessage: userMessage,
+        responseMessage: response,
+      });
+      res.end();
+
+      if (parentMessageId === Constants.NO_PARENT && newConvo) {
+        addTitle(req, {
+          text,
+          response,
+          client,
+        });
+      }
+    } catch (error) {
+      const partialText = getPartialText();
+      handleAbortError(res, req, error, {
+        partialText,
+        conversationId,
+        sender,
+        messageId: responseMessageId,
+        parentMessageId: userMessageId ?? parentMessageId,
       });
     }
-  } catch (error) {
-    const partialText = getPartialText();
-    handleAbortError(res, req, error, {
-      partialText,
-      conversationId,
-      sender,
-      messageId: responseMessageId,
-      parentMessageId: userMessageId ?? parentMessageId,
-    });
-  }
-});
+  },
+);
 
 module.exports = router;

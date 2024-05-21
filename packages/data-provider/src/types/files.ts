@@ -1,24 +1,92 @@
-export type FileUploadResponse = {
-  message: string;
-  file_id: string;
-  temp_file_id: string;
-  filepath: string;
-  filename: string;
-  type: string;
-  size: number;
-  height: number;
-  width: number;
+import { EToolResources } from './assistants';
+
+export enum FileSources {
+  local = 'local',
+  firebase = 'firebase',
+  azure = 'azure',
+  openai = 'openai',
+  s3 = 's3',
+  vectordb = 'vectordb',
+}
+
+export const checkOpenAIStorage = (source: string) =>
+  source === FileSources.openai || source === FileSources.azure;
+
+export enum FileContext {
+  avatar = 'avatar',
+  unknown = 'unknown',
+  assistants = 'assistants',
+  image_generation = 'image_generation',
+  assistants_output = 'assistants_output',
+  message_attachment = 'message_attachment',
+  filename = 'filename',
+  updatedAt = 'updatedAt',
+  source = 'source',
+  context = 'context',
+  bytes = 'bytes',
+}
+
+export type EndpointFileConfig = {
+  disabled?: boolean;
+  fileLimit?: number;
+  fileSizeLimit?: number;
+  totalSizeLimit?: number;
+  supportedMimeTypes?: RegExp[];
 };
 
-export type FileUploadBody = {
-  formData: FormData;
+export type FileConfig = {
+  endpoints: {
+    [key: string]: EndpointFileConfig;
+  };
+  serverFileSizeLimit?: number;
+  avatarSizeLimit?: number;
+  checkType?: (fileType: string, supportedTypes: RegExp[]) => boolean;
+};
+
+export type TFile = {
+  _id?: string;
+  __v?: number;
+  user: string;
+  conversationId?: string;
+  message?: string;
   file_id: string;
+  temp_file_id?: string;
+  bytes: number;
+  embedded: boolean;
+  filename: string;
+  filepath: string;
+  object: 'file';
+  type: string;
+  usage: number;
+  context?: FileContext;
+  source?: FileSources;
+  filterSource?: FileSources;
+  width?: number;
+  height?: number;
+  expiresAt?: string | Date;
+  preview?: string;
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
+};
+
+export type TFileUpload = TFile & {
+  temp_file_id: string;
+};
+
+export type AvatarUploadResponse = {
+  url: string;
 };
 
 export type UploadMutationOptions = {
-  onSuccess?: (data: FileUploadResponse, variables: FileUploadBody, context?: unknown) => void;
-  onMutate?: (variables: FileUploadBody) => void | Promise<unknown>;
-  onError?: (error: unknown, variables: FileUploadBody, context?: unknown) => void;
+  onSuccess?: (data: TFileUpload, variables: FormData, context?: unknown) => void;
+  onMutate?: (variables: FormData) => void | Promise<unknown>;
+  onError?: (error: unknown, variables: FormData, context?: unknown) => void;
+};
+
+export type UploadAvatarOptions = {
+  onSuccess?: (data: AvatarUploadResponse, variables: FormData, context?: unknown) => void;
+  onMutate?: (variables: FormData) => void | Promise<unknown>;
+  onError?: (error: unknown, variables: FormData, context?: unknown) => void;
 };
 
 export type DeleteFilesResponse = {
@@ -29,10 +97,14 @@ export type DeleteFilesResponse = {
 export type BatchFile = {
   file_id: string;
   filepath: string;
+  embedded: boolean;
+  source: FileSources;
 };
 
 export type DeleteFilesBody = {
   files: BatchFile[];
+  assistant_id?: string;
+  tool_resource?: EToolResources;
 };
 
 export type DeleteMutationOptions = {

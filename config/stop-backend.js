@@ -1,7 +1,5 @@
-// eslint-disable-next-line
-const helpers = require('./helpers');
-const { exec } = require('child_process');
 const { promisify } = require('util');
+const { exec } = require('child_process');
 
 const isWindows = process.platform === 'win32';
 const execAsync = promisify(exec);

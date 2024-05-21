@@ -1,46 +1,46 @@
 const { Strategy: DiscordStrategy } = require('passport-discord');
-const User = require('../models/User');
+const { createNewUser, handleExistingUser } = require('./process');
+const { logger } = require('~/config');
+const User = require('~/models/User');
 
 const discordLogin = async (accessToken, refreshToken, profile, cb) => {
   try {
     const email = profile.email;
     const discordId = profile.id;
-    const oldUser = await User.findOne({
-      email,
-    });
+
+    // TODO: remove direct access of User model
+    const oldUser = await User.findOne({ email });
     const ALLOW_SOCIAL_REGISTRATION =
       process.env.ALLOW_SOCIAL_REGISTRATION?.toLowerCase() === 'true';
-    let avatarURL;
+    let avatarUrl;
+
     if (profile.avatar) {
       const format = profile.avatar.startsWith('a_') ? 'gif' : 'png';
-      avatarURL = `https://cdn.discordapp.com/avatars/${profile.id}/${profile.avatar}.${format}`;
+      avatarUrl = `https://cdn.discordapp.com/avatars/${profile.id}/${profile.avatar}.${format}`;
     } else {
       const defaultAvatarNum = Number(profile.discriminator) % 5;
-      avatarURL = `https://cdn.discordapp.com/embed/avatars/${defaultAvatarNum}.png`;
+      avatarUrl = `https://cdn.discordapp.com/embed/avatars/${defaultAvatarNum}.png`;
     }
 
     if (oldUser) {
-      oldUser.avatar = avatarURL;
-      await oldUser.save();
+      await handleExistingUser(oldUser, avatarUrl);
       return cb(null, oldUser);
-    } else if (ALLOW_SOCIAL_REGISTRATION) {
-      const newUser = await new User({
-        provider: 'discord',
-        discordId,
-        username: profile.username,
-        email,
-        name: profile.global_name,
-        avatar: avatarURL,
-      }).save();
-
-      return cb(null, newUser);
     }
 
-    return cb(null, false, {
-      message: 'User not found.',
-    });
+    if (ALLOW_SOCIAL_REGISTRATION) {
+      const newUser = await createNewUser({
+        email,
+        avatarUrl,
+        provider: 'discord',
+        providerKey: 'discordId',
+        providerId: discordId,
+        username: profile.username,
+        name: profile.global_name,
+      });
+      return cb(null, newUser);
+    }
   } catch (err) {
-    console.error(err);
+    logger.error('[discordLogin]', err);
     return cb(err);
   }
 };

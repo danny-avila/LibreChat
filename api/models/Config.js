@@ -1,4 +1,6 @@
 const mongoose = require('mongoose');
+const { logger } = require('~/config');
+
 const major = [0, 0];
 const minor = [0, 0];
 const patch = [0, 5];
@@ -69,7 +71,7 @@ module.exports = {
     try {
       return await Config.find(filter).lean();
     } catch (error) {
-      console.error(error);
+      logger.error('Error getting configs', error);
       return { config: 'Error getting configs' };
     }
   },
@@ -77,7 +79,7 @@ module.exports = {
     try {
       return await Config.deleteMany(filter);
     } catch (error) {
-      console.error(error);
+      logger.error('Error deleting configs', error);
       return { config: 'Error deleting configs' };
     }
   },

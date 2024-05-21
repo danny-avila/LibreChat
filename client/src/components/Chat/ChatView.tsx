@@ -1,15 +1,13 @@
 import { memo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
-import { useGetMessagesByConvoId } from 'librechat-data-provider';
-import { useChatHelpers, useSSE } from '~/hooks';
-// import GenerationButtons from './Input/GenerationButtons';
+import { useGetMessagesByConvoId } from 'librechat-data-provider/react-query';
+import { ChatContext, useFileMapContext } from '~/Providers';
 import MessagesView from './Messages/MessagesView';
-// import OptionsBar from './Input/OptionsBar';
-import { ChatContext } from '~/Providers';
+import { useChatHelpers, useSSE } from '~/hooks';
+import { Spinner } from '~/components/svg';
 import Presentation from './Presentation';
 import ChatForm from './Input/ChatForm';
-import { Spinner } from '~/components';
 import { buildTree } from '~/utils';
 import Landing from './Landing';
 import Header from './Header';
@@ -23,18 +21,21 @@ function ChatView({ index = 0 }: { index?: number }) {
   const submissionAtIndex = useRecoilValue(store.submissionByIndex(0));
   useSSE(submissionAtIndex);
 
+  const fileMap = useFileMapContext();
+
   const { data: messagesTree = null, isLoading } = useGetMessagesByConvoId(conversationId ?? '', {
     select: (data) => {
-      const dataTree = buildTree(data, false);
+      const dataTree = buildTree({ messages: data, fileMap });
       return dataTree?.length === 0 ? null : dataTree ?? null;
     },
+    enabled: !!fileMap,
   });
 
   const chatHelpers = useChatHelpers(index, conversationId);
 
   return (
     <ChatContext.Provider value={chatHelpers}>
-      <Presentation>
+      <Presentation useSidePanel={true}>
         {isLoading && conversationId !== 'new' ? (
           <div className="flex h-screen items-center justify-center">
             <Spinner className="opacity-0" />
@@ -48,7 +49,7 @@ function ChatView({ index = 0 }: { index?: number }) {
           <Landing Header={<Header />} />
         )}
         {/* <OptionsBar messagesTree={messagesTree} /> */}
-        <div className="relative flex flex-row py-2 md:mb-[-16px] md:py-4 lg:mb-[-32px]">
+        <div className="relative ml-[-16px] flex flex-row py-2 md:mb-[-16px] md:py-4 lg:mb-[+24px]">
           <span className="flex w-full flex-row items-center justify-center gap-0 md:order-none md:m-auto md:gap-2">
             <ChatWidget />
           </span>

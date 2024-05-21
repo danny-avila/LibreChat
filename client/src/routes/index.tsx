@@ -1,9 +1,4 @@
 import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom';
-import Root from './Root';
-import Chat from './Chat';
-import ChatRoute from './ChatRoute';
-import AssistantsRoute from './AssistantsRoute';
-import Search from './Search';
 import {
   Login,
   Registration,
@@ -17,6 +12,10 @@ import Leaderboard from '~/components/ui/Leaderboard';
 import SharedConvo from '~/components/ui/SharedConvo';
 import Recommendations from '~/components/ui/Recommendations';
 import { useEffect } from 'react';
+import ShareRoute from './ShareRoute';
+import ChatRoute from './ChatRoute';
+import Search from './Search';
+import Root from './Root';
 
 const AuthLayout = () => {
   useEffect(() => {
@@ -45,6 +44,10 @@ export const router = createBrowserRouter([
     element: <ResetPassword />,
   },
   {
+    path: 'share/:shareId',
+    element: <ShareRoute />,
+  },
+  {
     element: <AuthLayout />,
     children: [
       {
@@ -67,18 +70,14 @@ export const router = createBrowserRouter([
             path: 'c/:conversationId?',
             element: <ChatRoute />,
           },
-          {
-            path: 'chat/:conversationId?',
-            element: <Chat />,
-          },
-          {
-            path: 'a/:conversationId?',
-            element: <AssistantsRoute />,
-          },
-          {
-            path: 'search/:query?',
-            element: <Search />,
-          },
+          // {
+          //   path: 'chat/:conversationId?',
+          //   element: <Chat />,
+          // },
+          // {
+          //   path: 'search/:query?',
+          //   element: <Search />,
+          // },
           {
             path: 'leaderboard',
             element: <Leaderboard />,
@@ -90,6 +89,14 @@ export const router = createBrowserRouter([
           {
             path: 'profile/:userId?',
             element: <Profile />,
+          },
+          // {
+          //   path: 'search/:query?',
+          //   element: <Search />,
+          // },
+          {
+            path: 'search',
+            element: <Search />,
           },
         ],
       },

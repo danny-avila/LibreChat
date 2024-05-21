@@ -1,8 +1,12 @@
+// file deepcode ignore NoRateLimitingForLogin: Rate limiting is handled by the `loginLimiter` middleware
+
 const passport = require('passport');
 const express = require('express');
 const router = express.Router();
-const { setAuthTokens } = require('../services/AuthService');
-const { loginLimiter, checkBan } = require('../middleware');
+const { setAuthTokens } = require('~/server/services/AuthService');
+const { loginLimiter, checkBan, checkDomainAllowed } = require('~/server/middleware');
+const { logger } = require('~/config');
+
 const domains = {
   client: process.env.DOMAIN_CLIENT,
   server: process.env.DOMAIN_SERVER,
@@ -12,6 +16,7 @@ router.use(loginLimiter);
 
 const oauthHandler = async (req, res) => {
   try {
+    await checkDomainAllowed(req, res);
     await checkBan(req, res);
     if (req.banned) {
       return;
@@ -19,7 +24,7 @@ const oauthHandler = async (req, res) => {
     await setAuthTokens(req.user._id, res);
     res.redirect(domains.client);
   } catch (err) {
-    console.error('Error in setting authentication tokens:', err);
+    logger.error('Error in setting authentication tokens:', err);
   }
 };
 

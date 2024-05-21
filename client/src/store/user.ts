@@ -1,14 +1,14 @@
 import { atom } from 'recoil';
-import { TPlugin } from 'librechat-data-provider';
+import type { TUser, TPlugin } from 'librechat-data-provider';
 
-const user = atom({
+const user = atom<TUser | undefined>({
   key: 'user',
-  default: null,
+  default: undefined,
 });
 
-const availableTools = atom<TPlugin[]>({
+const availableTools = atom<Record<string, TPlugin>>({
   key: 'availableTools',
-  default: [],
+  default: {},
 });
 
 export default {

@@ -17,6 +17,12 @@ const presetSchema = mongoose.Schema(
       type: String,
       default: null,
     },
+    defaultPreset: {
+      type: Boolean,
+    },
+    order: {
+      type: Number,
+    },
     // google only
     examples: [{ type: mongoose.Schema.Types.Mixed }],
     ...conversationPreset,

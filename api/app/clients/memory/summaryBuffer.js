@@ -1,6 +1,7 @@
 const { ConversationSummaryBufferMemory, ChatMessageHistory } = require('langchain/memory');
 const { formatLangChainMessages, SUMMARY_PROMPT } = require('../prompts');
 const { predictNewSummary } = require('../chains');
+const { logger } = require('~/config');
 
 const createSummaryBufferMemory = ({ llm, prompt, messages, ...rest }) => {
   const chatHistory = new ChatMessageHistory(messages);
@@ -22,9 +23,8 @@ const summaryBuffer = async ({
   prompt = SUMMARY_PROMPT,
   signal,
 }) => {
-  if (debug && previous_summary) {
-    console.log('<-----------PREVIOUS SUMMARY----------->\n\n');
-    console.log(previous_summary);
+  if (previous_summary) {
+    logger.debug('[summaryBuffer]', { previous_summary });
   }
 
   const formattedMessages = formatLangChainMessages(context, formatOptions);
@@ -46,8 +46,7 @@ const summaryBuffer = async ({
   const messages = await chatPromptMemory.chatHistory.getMessages();
 
   if (debug) {
-    console.log('<-----------SUMMARY BUFFER MESSAGES----------->\n\n');
-    console.log(JSON.stringify(messages));
+    logger.debug('[summaryBuffer]', { summary_buffer_messages: messages.length });
   }
 
   const predictSummary = await predictNewSummary({
@@ -58,8 +57,7 @@ const summaryBuffer = async ({
   });
 
   if (debug) {
-    console.log('<-----------SUMMARY----------->\n\n');
-    console.log(JSON.stringify(predictSummary));
+    logger.debug('[summaryBuffer]', { summary: predictSummary });
   }
 
   return { role: 'system', content: predictSummary };

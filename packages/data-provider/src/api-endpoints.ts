@@ -1,3 +1,5 @@
+import type { AssistantsEndpoint } from './schemas';
+
 export const user = () => '/api/user';
 
 export const balance = () => '/api/balance';
@@ -9,6 +11,13 @@ export const userPlugins = () => '/api/user/plugins';
 
 export const messages = (conversationId: string, messageId?: string) =>
   `/api/messages/${conversationId}${messageId ? `/${messageId}` : ''}`;
+
+const shareRoot = '/api/share';
+export const shareMessages = (shareId: string) => `${shareRoot}/${shareId}`;
+export const getSharedLinks = (pageNumber: string, isPublic: boolean) =>
+  `${shareRoot}?pageNumber=${pageNumber}&isPublic=${isPublic}`;
+export const createSharedLink = shareRoot;
+export const updateSharedLink = shareRoot;
 
 const keysEndpoint = '/api/keys';
 
@@ -22,13 +31,25 @@ export const revokeAllUserKeys = () => `${keysEndpoint}?all=true`;
 
 export const abortRequest = (endpoint: string) => `/api/ask/${endpoint}/abort`;
 
-export const conversations = (pageNumber: string) => `/api/convos?pageNumber=${pageNumber}`;
+export const conversationsRoot = '/api/convos';
 
-export const conversationById = (id: string) => `/api/convos/${id}`;
+export const conversations = (pageNumber: string, isArchived?: boolean) =>
+  `${conversationsRoot}?pageNumber=${pageNumber}${isArchived ? '&isArchived=true' : ''}`;
 
-export const updateConversation = () => '/api/convos/update';
+export const conversationById = (id: string) => `${conversationsRoot}/${id}`;
 
-export const deleteConversation = () => '/api/convos/clear';
+export const genTitle = () => `${conversationsRoot}/gen_title`;
+
+export const updateConversation = () => `${conversationsRoot}/update`;
+
+export const deleteConversation = () => `${conversationsRoot}/clear`;
+
+export const importConversation = () => `${conversationsRoot}/import`;
+
+export const forkConversation = () => `${conversationsRoot}/fork`;
+
+export const importConversationJobStatus = (jobId: string) =>
+  `${conversationsRoot}/import/jobs/${jobId}`;
 
 export const search = (q: string, pageNumber: string) =>
   `/api/search?q=${q}&pageNumber=${pageNumber}`;
@@ -40,6 +61,8 @@ export const presets = () => '/api/presets';
 export const deletePreset = () => '/api/presets/delete';
 
 export const aiEndpoints = () => '/api/endpoints';
+
+export const endpointsConfigOverride = () => '/api/endpoints/config/override';
 
 export const models = () => '/api/models';
 
@@ -93,8 +116,40 @@ export const likeConversation = () => {
   return '/api/convos/like';
 };
 
-export const assistants = (id?: string) => `/api/assistants${id ? `/${id}` : ''}`;
+export const assistants = ({
+  path,
+  options,
+  version,
+  endpoint,
+}: {
+  path?: string;
+  options?: object;
+  endpoint?: AssistantsEndpoint;
+  version: number | string;
+}) => {
+  let url = `/api/assistants/v${version}`;
+
+  if (path) {
+    url += `/${path}`;
+  }
+
+  if (endpoint) {
+    options = {
+      ...(options ?? {}),
+      endpoint,
+    };
+  }
+
+  if (options && Object.keys(options).length > 0) {
+    const queryParams = new URLSearchParams(options as Record<string, string>).toString();
+    url += `?${queryParams}`;
+  }
+
+  return url;
+};
 
 export const files = () => '/api/files';
 
 export const images = () => `${files()}/images`;
+
+export const avatar = () => `${images()}/avatar`;

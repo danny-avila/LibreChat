@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { useRecoilState, useSetRecoilState } from 'recoil';
-import { useUpdateConversationMutation } from 'librechat-data-provider';
+import { useUpdateConversationMutation } from '~/data-provider';
 import { useConversations, useConversation } from '~/hooks';
 import { MinimalIcon } from '~/components/Endpoints';
 import { NotificationSeverity } from '~/common';
@@ -138,7 +138,7 @@ export default function Conversation({ conversation, retainView }) {
 
   const aProps = {
     className:
-      'animate-flash group relative flex cursor-pointer items-center gap-3 break-all rounded-md bg-gray-800 py-3 px-3 pr-14 hover:bg-gray-800',
+      'animate-flash group relative flex cursor-pointer items-center gap-3 break-all rounded-md bg-gray-300 dark:bg-gray-800 py-3 px-3 pr-14',
   };
 
   if (
@@ -146,7 +146,7 @@ export default function Conversation({ conversation, retainView }) {
     currentConversation?.conversationId !== convoId
   ) {
     aProps.className =
-      'group relative flex cursor-pointer items-center gap-3 break-all rounded-md py-3 px-3 hover:bg-gray-900 hover:pr-4';
+      'group relative flex cursor-pointer items-center gap-3 break-all rounded-md py-3 px-3 hover:bg-gray-200 dark:hover:bg-gray-800 hover:pr-4';
   }
 
   return (
@@ -167,29 +167,25 @@ export default function Conversation({ conversation, retainView }) {
           title
         )}
       </div>
-
-      {currentConversation?.conversationId === conversationId &&
-      currentConversation?.conversationId === convoId &&
-      conversationId === convoId ? (
-          <div className="visible absolute right-1 z-10 ml-3 flex text-gray-300">
-            <RenameButton
-              conversationId={conversationId}
-              renaming={renaming}
-              renameHandler={renameHandler}
-              onRename={onRename}
-            />
-            <DeleteButton
-              conversationId={conversationId}
-              renaming={renaming}
-              cancelHandler={cancelHandler}
-              retainView={retainView}
-              title={title}
-            />
-          </div>
-        ) : (
-        // <div className="absolute inset-y-0 right-0 z-10 w-8 rounded-r-md bg-gradient-to-l from-gray-900 group-hover:from-gray-700/70" />
-          <div className="absolute inset-y-0 right-0 z-10 w-8 rounded-r-md bg-gradient-to-l from-black group-hover:from-gray-900" />
-        )}
+      {currentConversation?.conversationId === conversationId ? (
+        <div className="visible absolute right-1 z-10 flex text-gray-300">
+          <RenameButton
+            conversationId={conversationId}
+            renaming={renaming}
+            renameHandler={renameHandler}
+            onRename={onRename}
+          />
+          <DeleteButton
+            conversationId={conversationId}
+            renaming={renaming}
+            cancelHandler={cancelHandler}
+            retainView={retainView}
+            title={title}
+          />
+        </div>
+      ) : (
+        <div className="absolute inset-y-0 right-0 z-10 w-8 rounded-r-md bg-gradient-to-l from-gray-50 group-hover:from-gray-50 dark:from-gray-900 dark:group-hover:from-gray-800" />
+      )}
     </a>
   );
 }

@@ -1,6 +1,8 @@
 require('dotenv').config();
 const { KeyvFile } = require('keyv-file');
-const { getUserKey, checkUserKeyExpiry } = require('../server/services/UserService');
+const { EModelEndpoint } = require('librechat-data-provider');
+const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
+const { logger } = require('~/config');
 
 const askBing = async ({
   text,
@@ -22,10 +24,7 @@ const askBing = async ({
 
   let key = null;
   if (expiresAt && isUserProvided) {
-    checkUserKeyExpiry(
-      expiresAt,
-      'Your BingAI Cookies have expired. Please provide your cookies again.',
-    );
+    checkUserKeyExpiry(expiresAt, EModelEndpoint.bingAI);
     key = await getUserKey({ userId, name: 'bingAI' });
   }
 
@@ -100,7 +99,7 @@ const askBing = async ({
     }
   }
 
-  console.log('bing options', options);
+  logger.debug('bing options', options);
 
   const res = await bingAIClient.sendMessage(text, options);
 

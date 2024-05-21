@@ -1,11 +1,15 @@
 /* eslint-disable no-useless-escape */
 const axios = require('axios');
-const { StructuredTool } = require('langchain/tools');
 const { z } = require('zod');
+const { StructuredTool } = require('langchain/tools');
+const { logger } = require('~/config');
 
 class WolframAlphaAPI extends StructuredTool {
   constructor(fields) {
     super();
+    /* Used to initialize the Tool without necessary variables. */
+    this.override = fields.override ?? false;
+
     this.name = 'wolfram';
     this.apiKey = fields.WOLFRAM_APP_ID || this.getAppId();
     this.description_for_model = `// Access dynamic computation and curated data from WolframAlpha and Wolfram Cloud.
@@ -47,14 +51,14 @@ class WolframAlphaAPI extends StructuredTool {
       const response = await axios.get(url, { responseType: 'text' });
       return response.data;
     } catch (error) {
-      console.error(`Error fetching raw text: ${error}`);
+      logger.error('[WolframAlphaAPI] Error fetching raw text:', error);
       throw error;
     }
   }
 
   getAppId() {
     const appId = process.env.WOLFRAM_APP_ID || '';
-    if (!appId) {
+    if (!appId && !this.override) {
       throw new Error('Missing WOLFRAM_APP_ID environment variable.');
     }
     return appId;
@@ -78,11 +82,10 @@ class WolframAlphaAPI extends StructuredTool {
       return response;
     } catch (error) {
       if (error.response && error.response.data) {
-        console.log('Error data:', error.response.data);
+        logger.error('[WolframAlphaAPI] Error data:', error);
         return error.response.data;
       } else {
-        console.log('Error querying Wolfram Alpha', error.message);
-        // throw error;
+        logger.error('[WolframAlphaAPI] Error querying Wolfram Alpha', error);
         return 'There was an error querying Wolfram Alpha.';
       }
     }

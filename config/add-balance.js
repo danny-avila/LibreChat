@@ -1,34 +1,12 @@
-const connectDb = require('../api/lib/db/connectDb');
+const path = require('path');
+require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, silentExit } = require('./helpers');
-const User = require('../api/models/User');
-const Transaction = require('../api/models/Transaction');
+const { Transaction } = require('~/models/Transaction');
+const User = require('~/models/User');
+const connect = require('./connect');
 
 (async () => {
-  /**
-   * Connect to the database
-   * - If it takes a while, we'll warn the user
-   */
-  // Warn the user if this is taking a while
-  let timeout = setTimeout(() => {
-    console.orange(
-      'This is taking a while... You may need to check your connection if this fails.',
-    );
-    timeout = setTimeout(() => {
-      console.orange('Still going... Might as well assume the connection failed...');
-      timeout = setTimeout(() => {
-        console.orange('Error incoming in 3... 2... 1...');
-      }, 13000);
-    }, 10000);
-  }, 5000);
-  // Attempt to connect to the database
-  try {
-    console.orange('Warming up the engines...');
-    await connectDb();
-    clearTimeout(timeout);
-  } catch (e) {
-    console.error(e);
-    silentExit(1);
-  }
+  await connect();
 
   /**
    * Show the welcome / help menu
@@ -106,7 +84,7 @@ const Transaction = require('../api/models/Transaction');
   }
 
   // Check the result
-  if (!result?.tokenCredits) {
+  if (!result?.balance) {
     console.red('Error: Something went wrong while updating the balance!');
     console.error(result);
     silentExit(1);
@@ -115,7 +93,7 @@ const Transaction = require('../api/models/Transaction');
   // Done!
   console.green('Transaction created successfully!');
   console.purple(`Amount: ${amount}
-New Balance: ${result.tokenCredits}`);
+New Balance: ${result.balance}`);
   silentExit(0);
 })();
 

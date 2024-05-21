@@ -1,9 +1,11 @@
-/* const jose = require('jose');
-* No longer using this strategy as Bun now supports JWTs natively.
+/*
+const jose = require('jose');
+const { logger } = require('~/config');
+// No longer using this strategy as Bun now supports JWTs natively.
 
 const passportCustom = require('passport-custom');
 const CustomStrategy = passportCustom.Strategy;
-const User = require('../models/User');
+const User = require('~/models/User');
 
 const joseLogin = async () =>
   new CustomStrategy(async (req, done) => {
@@ -23,15 +25,15 @@ const joseLogin = async () =>
       if (user) {
         done(null, user);
       } else {
-        console.log('JoseJwtStrategy => no user found');
+        logger.debug('JoseJwtStrategy => no user found');
         done(null, false, { message: 'No user found' });
       }
     } catch (err) {
       if (err?.code === 'ERR_JWT_EXPIRED') {
-        console.error('JoseJwtStrategy => token expired');
+        logger.error('JoseJwtStrategy => token expired');
       } else {
-        console.error('JoseJwtStrategy => error');
-        console.error(err);
+        logger.error('JoseJwtStrategy => error');
+        logger.error(err);
       }
       done(null, false, { message: 'Invalid token' });
     }

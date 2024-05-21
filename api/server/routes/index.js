@@ -19,6 +19,8 @@ const leaderboard = require('./leaderboard');
 const assistants = require('./assistants');
 const files = require('./files');
 const webhooks = require('./webhooks');
+const staticRoute = require('./static');
+const share = require('./share');
 
 module.exports = {
   search,
@@ -42,4 +44,6 @@ module.exports = {
   assistants,
   files,
   webhooks,
+  staticRoute,
+  share,
 };

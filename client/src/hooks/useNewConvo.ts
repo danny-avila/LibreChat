@@ -1,21 +1,52 @@
-import { useCallback } from 'react';
-import { useGetEndpointsQuery } from 'librechat-data-provider';
-import { useSetRecoilState, useResetRecoilState, useRecoilCallback, useRecoilState } from 'recoil';
-import type { TConversation, TSubmission, TPreset, TModelsConfig } from 'librechat-data-provider';
-import { buildDefaultConvo, getDefaultEndpoint } from '~/utils';
+import { useCallback, useRef } from 'react';
+import {
+  useGetModelsQuery,
+  useGetStartupConfig,
+  useGetEndpointsQuery,
+} from 'librechat-data-provider/react-query';
+import { useNavigate } from 'react-router-dom';
+import { FileSources, LocalStorageKeys, isAssistantsEndpoint } from 'librechat-data-provider';
+import {
+  useRecoilState,
+  useRecoilValue,
+  useSetRecoilState,
+  useRecoilCallback,
+  useResetRecoilState,
+} from 'recoil';
+import type {
+  TPreset,
+  TSubmission,
+  TModelsConfig,
+  TConversation,
+  TEndpointsConfig,
+} from 'librechat-data-provider';
+import type { AssistantListItem } from '~/common';
+import {
+  getEndpointField,
+  buildDefaultConvo,
+  getDefaultEndpoint,
+  getDefaultModelSpec,
+  getModelSpecIconURL,
+  updateLastSelectedModel,
+} from '~/utils';
+import useAssistantListMap from './Assistants/useAssistantListMap';
 import { useDeleteFilesMutation } from '~/data-provider';
-import useOriginNavigate from './useOriginNavigate';
-import useSetStorage from './useSetStorage';
+
+import { mainTextareaId } from '~/common';
 import store from '~/store';
 
 const useNewConvo = (index = 0) => {
-  const setStorage = useSetStorage();
-  const navigate = useOriginNavigate();
+  const navigate = useNavigate();
+  const { data: startupConfig } = useGetStartupConfig();
+  const defaultPreset = useRecoilValue(store.defaultPreset);
   const { setConversation } = store.useCreateConversationAtom(index);
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
   const setSubmission = useSetRecoilState<TSubmission | null>(store.submissionByIndex(index));
   const resetLatestMessage = useResetRecoilState(store.latestMessageFamily(index));
-  const { data: endpointsConfig = {} } = useGetEndpointsQuery();
+  const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
+  const modelsQuery = useGetModelsQuery();
+  const timeoutIdRef = useRef<NodeJS.Timeout>();
+  const assistantsListMap = useAssistantListMap();
 
   const { mutateAsync } = useDeleteFilesMutation({
     onSuccess: () => {
@@ -27,54 +58,123 @@ const useNewConvo = (index = 0) => {
   });
 
   const switchToConversation = useRecoilCallback(
-    ({ snapshot }) =>
+    () =>
       async (
         conversation: TConversation,
-        preset: TPreset | null = null,
+        preset: Partial<TPreset> | null = null,
         modelsData?: TModelsConfig,
         buildDefault?: boolean,
+        keepLatestMessage?: boolean,
       ) => {
-        const modelsConfig = modelsData ?? snapshot.getLoadable(store.modelsConfig).contents;
+        const modelsConfig = modelsData ?? modelsQuery.data;
         const { endpoint = null } = conversation;
+        const buildDefaultConversation = endpoint === null || buildDefault;
+        const activePreset =
+          // use default preset only when it's defined,
+          // preset is not provided,
+          // endpoint matches or is null (to allow endpoint change),
+          // and buildDefaultConversation is true
+          defaultPreset &&
+          !preset &&
+          (defaultPreset.endpoint === endpoint || !endpoint) &&
+          buildDefaultConversation
+            ? defaultPreset
+            : preset;
 
-        if (endpoint === null || buildDefault) {
+        if (buildDefaultConversation) {
           const defaultEndpoint = getDefaultEndpoint({
-            convoSetup: preset ?? conversation,
+            convoSetup: activePreset ?? conversation,
             endpointsConfig,
           });
+
+          const endpointType = getEndpointField(endpointsConfig, defaultEndpoint, 'type');
+          if (!conversation.endpointType && endpointType) {
+            conversation.endpointType = endpointType;
+          } else if (conversation.endpointType && !endpointType) {
+            conversation.endpointType = undefined;
+          }
+
+          const isAssistantEndpoint = isAssistantsEndpoint(defaultEndpoint);
+          const assistants: AssistantListItem[] = assistantsListMap[defaultEndpoint] ?? [];
+
+          if (
+            conversation.assistant_id &&
+            !assistantsListMap[defaultEndpoint]?.[conversation.assistant_id]
+          ) {
+            conversation.assistant_id = undefined;
+          }
+
+          if (!conversation.assistant_id && isAssistantEndpoint) {
+            conversation.assistant_id =
+              localStorage.getItem(
+                `${LocalStorageKeys.ASST_ID_PREFIX}${index}${defaultEndpoint}`,
+              ) ?? assistants[0]?.id;
+          }
+
+          if (
+            conversation.assistant_id &&
+            isAssistantEndpoint &&
+            conversation.conversationId === 'new'
+          ) {
+            const assistant = assistants.find((asst) => asst.id === conversation.assistant_id);
+            conversation.model = assistant?.model;
+            updateLastSelectedModel({
+              endpoint: defaultEndpoint,
+              model: conversation.model,
+            });
+          }
+
+          if (conversation.assistant_id && !isAssistantEndpoint) {
+            conversation.assistant_id = undefined;
+          }
 
           const models = modelsConfig?.[defaultEndpoint] ?? [];
           conversation = buildDefaultConvo({
             conversation,
-            lastConversationSetup: preset as TConversation,
+            lastConversationSetup: activePreset as TConversation,
             endpoint: defaultEndpoint,
             models,
           });
         }
 
-        setStorage(conversation);
         setConversation(conversation);
         setSubmission({} as TSubmission);
-        resetLatestMessage();
+        if (!keepLatestMessage) {
+          resetLatestMessage();
+        }
 
         if (conversation.conversationId === 'new' && !modelsData) {
-          navigate('new');
+          const appTitle = localStorage.getItem(LocalStorageKeys.APP_TITLE);
+          if (appTitle) {
+            document.title = appTitle;
+          }
+          navigate('/c/new');
         }
+
+        clearTimeout(timeoutIdRef.current);
+        timeoutIdRef.current = setTimeout(() => {
+          const textarea = document.getElementById(mainTextareaId);
+          if (textarea) {
+            textarea.focus();
+          }
+        }, 150);
       },
-    [endpointsConfig],
+    [endpointsConfig, defaultPreset, assistantsListMap, modelsQuery.data],
   );
 
   const newConversation = useCallback(
     ({
       template = {},
-      preset,
+      preset: _preset,
       modelsData,
       buildDefault = true,
+      keepLatestMessage = false,
     }: {
       template?: Partial<TConversation>;
-      preset?: TPreset;
+      preset?: Partial<TPreset>;
       modelsData?: TModelsConfig;
       buildDefault?: boolean;
+      keepLatestMessage?: boolean;
     } = {}) => {
       const conversation = {
         conversationId: 'new',
@@ -85,25 +185,37 @@ const useNewConvo = (index = 0) => {
         updatedAt: '',
       };
 
+      let preset = _preset;
+      const defaultModelSpec = getDefaultModelSpec(startupConfig?.modelSpecs?.list);
+      if (!preset && startupConfig && startupConfig.modelSpecs?.prioritize && defaultModelSpec) {
+        preset = {
+          ...defaultModelSpec.preset,
+          iconURL: getModelSpecIconURL(defaultModelSpec),
+          spec: defaultModelSpec.name,
+        } as TConversation;
+      }
+
       if (conversation.conversationId === 'new' && !modelsData) {
         const filesToDelete = Array.from(files.values())
-          .filter((file) => file.filepath)
+          .filter((file) => file.filepath && file.source && !file.embedded && file.temp_file_id)
           .map((file) => ({
             file_id: file.file_id,
+            embedded: !!file.embedded,
             filepath: file.filepath as string,
+            source: file.source as FileSources, // Ensure that the source is of type FileSources
           }));
 
         setFiles(new Map());
-        localStorage.setItem('filesToDelete', JSON.stringify({}));
+        localStorage.setItem(LocalStorageKeys.FILES_TO_DELETE, JSON.stringify({}));
 
         if (filesToDelete.length > 0) {
           mutateAsync({ files: filesToDelete });
         }
       }
 
-      switchToConversation(conversation, preset, modelsData, buildDefault);
+      switchToConversation(conversation, preset, modelsData, buildDefault, keepLatestMessage);
     },
-    [switchToConversation, files, mutateAsync, setFiles],
+    [switchToConversation, files, mutateAsync, setFiles, startupConfig],
   );
 
   return {

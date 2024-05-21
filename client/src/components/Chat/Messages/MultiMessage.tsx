@@ -3,13 +3,14 @@ import { useRecoilState } from 'recoil';
 import type { TMessageProps } from '~/common';
 // eslint-disable-next-line import/no-cycle
 import Message from './Message';
+// eslint-disable-next-line import/no-cycle
+import MessageParts from './MessageParts';
 import store from '~/store';
 
 export default function MultiMessage({
   // messageId is used recursively here
   messageId,
   messagesTree,
-  scrollToBottom,
   currentEditId,
   setCurrentEditId,
 }: TMessageProps) {
@@ -41,11 +42,24 @@ export default function MultiMessage({
     return null;
   }
 
+  if (message.content) {
+    return (
+      <MessageParts
+        key={message.messageId}
+        message={message}
+        currentEditId={currentEditId}
+        setCurrentEditId={setCurrentEditId}
+        siblingIdx={messagesTree.length - siblingIdx - 1}
+        siblingCount={messagesTree.length}
+        setSiblingIdx={setSiblingIdxRev}
+      />
+    );
+  }
+
   return (
     <Message
       key={message.messageId}
       message={message}
-      scrollToBottom={scrollToBottom}
       currentEditId={currentEditId}
       setCurrentEditId={setCurrentEditId}
       siblingIdx={messagesTree.length - siblingIdx - 1}

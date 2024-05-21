@@ -1,4 +1,10 @@
-export default function MinimalPlugin({ size, className = 'icon-md' }) {
+export default function MinimalPlugin({
+  size,
+  className = 'icon-md',
+}: {
+  size?: number;
+  className?: string;
+}) {
   return (
     <svg
       width={size}

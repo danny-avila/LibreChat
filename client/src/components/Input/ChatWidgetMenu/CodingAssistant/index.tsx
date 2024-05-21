@@ -43,6 +43,7 @@ function CodingAssistant() {
     } else if (type === '生成文档字符串') {
       setText(`以Markdown的形式为下面的${lang}代码生成文档字符串：\n${topic}`);
     }
+    setWidget(''); //close window
   };
   const showExampleHandler = () => {
     if (showExample) {

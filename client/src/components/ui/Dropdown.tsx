@@ -1,12 +1,13 @@
 import React, { FC, useContext, useState } from 'react';
 import { Listbox } from '@headlessui/react';
 import { cn } from '~/utils/';
-import { ThemeContext } from '~/hooks';
 
 type OptionType = {
   value: string;
   display?: string;
 };
+
+type DropdownPosition = 'left' | 'right';
 
 interface DropdownProps {
   value: string;
@@ -14,7 +15,9 @@ interface DropdownProps {
   onChange: (value: string) => void;
   options: (string | OptionType)[];
   className?: string;
+  position?: DropdownPosition;
   width?: number;
+  maxHeight?: string;
   testId?: string;
 }
 
@@ -24,25 +27,17 @@ const Dropdown: FC<DropdownProps> = ({
   onChange,
   options,
   className = '',
+  position = 'right',
   width,
+  maxHeight = 'auto',
   testId = 'dropdown-menu',
 }) => {
-  const { theme } = useContext(ThemeContext);
   const [selectedValue, setSelectedValue] = useState(initialValue);
 
-  const themeStyles = {
-    light: 'bg-white text-gray-700 hover:bg-gray-200 border-gray-300',
-    dark: 'bg-[#202123] text-white hover:bg-[#323236] border-gray-600',
+  const positionClasses = {
+    right: 'origin-bottom-left left-0',
+    left: 'origin-bottom-right right-0',
   };
-
-  const isSystemDark =
-    window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const currentThemeStyle =
-    theme === 'system'
-      ? isSystemDark
-        ? themeStyles.dark
-        : themeStyles.light
-      : themeStyles[theme] || themeStyles.light;
 
   return (
     <div className={cn('relative', className)}>
@@ -57,13 +52,12 @@ const Dropdown: FC<DropdownProps> = ({
           <Listbox.Button
             data-testid={testId}
             className={cn(
-              'relative inline-flex items-center justify-between rounded-md py-2 pl-3 pr-10',
-              currentThemeStyle,
+              'relative inline-flex items-center justify-between rounded-md border-gray-300 bg-white py-2 pl-3 pr-8 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600',
               'w-auto',
               className,
             )}
           >
-            <span className="block truncate font-medium">
+            <span className="block truncate">
               {label}
               {options
                 .map((o) => (typeof o === 'string' ? { value: o, display: o } : o))
@@ -74,35 +68,29 @@ const Dropdown: FC<DropdownProps> = ({
                 xmlns="http://www.w3.org/2000/svg"
                 fill="none"
                 viewBox="0 0 24 24"
-                strokeWidth="1.5"
+                strokeWidth="2"
                 stroke="currentColor"
-                className="h-5 w-5 rotate-0 transform text-gray-400 transition-transform duration-300 ease-in-out"
+                className="h-4 w-5 rotate-0 transform text-gray-400 transition-transform duration-300 ease-in-out"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M19.5 8.25l-7.5 7.5-7.5-7.5"
-                />
+                <polyline points="6 9 12 15 18 9"></polyline>
               </svg>
             </span>
           </Listbox.Button>
           <Listbox.Options
             className={cn(
-              'absolute z-50 mt-1 max-h-[40vh] overflow-auto rounded-md shadow-lg transition-opacity focus:outline-none',
-              currentThemeStyle,
+              `absolute z-50 mt-1 flex max-h-[40vh] flex-col items-start gap-1 overflow-auto rounded-lg border border-gray-300 bg-white p-1.5 text-gray-700 shadow-lg transition-opacity focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-white ${positionClasses[position]}`,
               className,
             )}
-            style={{ width: width ? `${width}px` : 'auto' }}
+            style={{ width: width ? `${width}px` : 'auto', maxHeight: maxHeight }}
           >
             {options.map((item, index) => (
               <Listbox.Option
                 key={index}
                 value={typeof item === 'string' ? item : item.value}
                 className={cn(
-                  'relative cursor-pointer select-none py-1 pl-3 pr-6',
-                  currentThemeStyle,
+                  'relative cursor-pointer select-none rounded border-gray-300 bg-white py-2.5 pl-3 pr-6 text-gray-700 hover:bg-gray-100 dark:border-gray-300 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600',
                 )}
-                style={{ width: width ? `${width}px` : 'auto' }}
+                style={{ width: '100%' }}
                 data-theme={typeof item === 'string' ? item : (item as OptionType).value}
               >
                 <span className="block truncate">

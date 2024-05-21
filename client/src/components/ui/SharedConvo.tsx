@@ -1,16 +1,13 @@
-import {
-  TConversation,
-  TUser,
-  TMessage,
-  useLikeConversationMutation,
-} from 'librechat-data-provider';
+import { TConversation, TUser, TMessage } from 'librechat-data-provider';
+import { useLikeConversationMutation } from 'librechat-data-provider/react-query';
 import React, { useEffect, useState } from 'react';
 import { CSSTransition } from 'react-transition-group';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthContext } from '~/hooks/AuthContext';
-import buildTree from '~/utils/buildTree';
+import { useGetFiles } from '~/data-provider';
+import { buildTree, mapFiles } from '~/utils';
 import { Spinner } from '../svg';
-import MultiMessage from '../Messages/MultiMessage';
+import OldMultiMessage from '../Messages/MultiMessage';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
 import { useScreenshot } from '~/hooks/';
 // import { useRecoilValue } from 'recoil';
@@ -18,6 +15,7 @@ import { useLocalize } from '~/hooks';
 import { Plugin } from '../svg';
 // import { alternateName } from '~/utils/';
 import { alternateName } from 'librechat-data-provider';
+import MessagesView from '../Share/MessagesView';
 
 export default function SharedConvo() {
   const [conversation, setConversation] = useState<TConversation | null>(null);
@@ -38,7 +36,9 @@ export default function SharedConvo() {
   const { conversationId } = useParams();
   const likeConversationMutation = useLikeConversationMutation(conversationId || '');
   const navigate = useNavigate();
-
+  const { data: fileMap } = useGetFiles({
+    select: mapFiles,
+  });
   const [viewCount, setViewCount] = useState<number>(0);
 
   const plugins = (
@@ -185,7 +185,7 @@ export default function SharedConvo() {
         },
       });
       const responseObject = await response.json();
-      setMsgTree(buildTree(responseObject));
+      setMsgTree(buildTree({ messages: responseObject, fileMap }) || []);
     } catch (error) {
       console.log(error);
     }
@@ -216,7 +216,7 @@ export default function SharedConvo() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          // Authorization: `Bearer ${token}`,
         },
       });
       const responseObject = await response.json();
@@ -263,7 +263,6 @@ export default function SharedConvo() {
   }, [conversation]);
 
   useDocumentTitle(pageTitle);
-
   return (
     <div className="z-0 mt-2 justify-center overflow-y-auto">
       {!conversation ? (
@@ -387,19 +386,23 @@ export default function SharedConvo() {
               >
                 <div className="dark:gpt-dark-gray flex h-auto flex-col items-center text-sm">
                   {conversation && msgTree && convoUser ? (
-                    <MultiMessage
-                      key={conversation.conversationId} // avoid internal state mixture
-                      messageId={conversation.conversationId}
-                      conversation={conversation}
+                    <MessagesView
                       messagesTree={msgTree}
-                      scrollToBottom={null || undefined}
-                      currentEditId={-1}
-                      setCurrentEditId={null}
-                      isSearchView={true}
-                      name={convoUser?.name}
-                      userId={convoUser?.id}
+                      conversationId={conversation.conversationId ?? ''}
                     />
                   ) : (
+                    // <OldMultiMessage
+                    //   key={conversation.conversationId} // avoid internal state mixture
+                    //   messageId={conversation.conversationId}
+                    //   conversation={conversation}
+                    //   messagesTree={msgTree}
+                    //   scrollToBottom={null || undefined}
+                    //   currentEditId={-1}
+                    //   setCurrentEditId={null}
+                    //   isSearchView={true}
+                    //   name={convoUser?.name}
+                    //   userId={convoUser?.id}
+                    // />
                     <div className="flex h-[25vh] w-full flex-row items-end justify-end">
                       <Spinner />
                     </div>

@@ -1,72 +1,136 @@
-const fs = require('fs');
-const path = require('path');
-const { updateFile } = require('~/models');
+const axios = require('axios');
+const { EModelEndpoint, FileSources, VisionModes } = require('librechat-data-provider');
+const { getStrategyFunctions } = require('../strategies');
+const { logger } = require('~/config');
 
-function encodeImage(imagePath) {
-  return new Promise((resolve, reject) => {
-    fs.readFile(imagePath, (err, data) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(data.toString('base64'));
-      }
+/**
+ * Fetches an image from a URL and returns its base64 representation.
+ *
+ * @async
+ * @param {string} url The URL of the image.
+ * @returns {Promise<string>} The base64-encoded string of the image.
+ * @throws {Error} If there's an issue fetching the image or encoding it.
+ */
+async function fetchImageToBase64(url) {
+  try {
+    const response = await axios.get(url, {
+      responseType: 'arraybuffer',
     });
-  });
+    return Buffer.from(response.data).toString('base64');
+  } catch (error) {
+    logger.error('Error fetching image to convert to base64', error);
+    throw error;
+  }
 }
 
-async function updateAndEncode(req, file) {
-  const { publicPath, imageOutput } = req.app.locals.config;
-  const userPath = path.join(imageOutput, req.user.id);
+const base64Only = new Set([EModelEndpoint.google, EModelEndpoint.anthropic, 'Ollama', 'ollama']);
 
-  if (!fs.existsSync(userPath)) {
-    fs.mkdirSync(userPath, { recursive: true });
-  }
-  const filepath = path.join(publicPath, file.filepath);
-
+/**
+ * Encodes and formats the given files.
+ * @param {Express.Request} req - The request object.
+ * @param {Array<MongoFile>} files - The array of files to encode and format.
+ * @param {EModelEndpoint} [endpoint] - Optional: The endpoint for the image.
+ * @param {string} [mode] - Optional: The endpoint mode for the image.
+ * @returns {Promise<Object>} - A promise that resolves to the result object containing the encoded images and file details.
+ */
+async function encodeAndFormat(req, files, endpoint, mode) {
   const promises = [];
-  promises.push(updateFile({ file_id: file.file_id }));
-  promises.push(encodeImage(filepath));
-  return await Promise.all(promises);
-}
-
-async function encodeAndFormat(req, files) {
-  const promises = [];
-  for (let file of files) {
-    promises.push(updateAndEncode(req, file));
-  }
-
-  // TODO: make detail configurable, as of now resizing is done
-  // to prefer "high" but "low" may be used if the image is small enough
-  const detail = req.body.detail ?? 'auto';
-  const encodedImages = await Promise.all(promises);
-
+  const encodingMethods = {};
   const result = {
     files: [],
     image_urls: [],
   };
 
-  for (const [file, base64] of encodedImages) {
-    result.image_urls.push({
-      type: 'image_url',
-      image_url: {
-        url: `data:image/webp;base64,${base64}`,
-        detail,
-      },
-    });
+  if (!files || !files.length) {
+    return result;
+  }
 
-    result.files.push({
+  for (let file of files) {
+    const source = file.source ?? FileSources.local;
+
+    if (!file.height) {
+      promises.push([file, null]);
+      continue;
+    }
+
+    if (!encodingMethods[source]) {
+      const { prepareImagePayload } = getStrategyFunctions(source);
+      if (!prepareImagePayload) {
+        throw new Error(`Encoding function not implemented for ${source}`);
+      }
+
+      encodingMethods[source] = prepareImagePayload;
+    }
+
+    const preparePayload = encodingMethods[source];
+
+    /* Google & Anthropic don't support passing URLs to payload */
+    if (source !== FileSources.local && base64Only.has(endpoint)) {
+      const [_file, imageURL] = await preparePayload(req, file);
+      promises.push([_file, await fetchImageToBase64(imageURL)]);
+      continue;
+    }
+    promises.push(preparePayload(req, file));
+  }
+
+  const detail = req.body.imageDetail ?? 'auto';
+
+  /** @type {Array<[MongoFile, string]>} */
+  const formattedImages = await Promise.all(promises);
+
+  for (const [file, imageContent] of formattedImages) {
+    const fileMetadata = {
+      type: file.type,
       file_id: file.file_id,
       filepath: file.filepath,
       filename: file.filename,
-      type: file.type,
-      height: file.height,
-      width: file.width,
-    });
+      embedded: !!file.embedded,
+    };
+
+    if (file.height && file.width) {
+      fileMetadata.height = file.height;
+      fileMetadata.width = file.width;
+    }
+
+    if (!imageContent) {
+      result.files.push(fileMetadata);
+      continue;
+    }
+
+    const imagePart = {
+      type: 'image_url',
+      image_url: {
+        url: imageContent.startsWith('http')
+          ? imageContent
+          : `data:${file.type};base64,${imageContent}`,
+        detail,
+      },
+    };
+
+    if (endpoint && endpoint === EModelEndpoint.google && mode === VisionModes.generative) {
+      delete imagePart.image_url;
+      imagePart.inlineData = {
+        mimeType: file.type,
+        data: imageContent,
+      };
+    } else if (endpoint && endpoint === EModelEndpoint.google) {
+      imagePart.image_url = imagePart.image_url.url;
+    } else if (endpoint && endpoint === EModelEndpoint.anthropic) {
+      imagePart.type = 'image';
+      imagePart.source = {
+        type: 'base64',
+        media_type: file.type,
+        data: imageContent,
+      };
+      delete imagePart.image_url;
+    }
+
+    result.image_urls.push(imagePart);
+    result.files.push(fileMetadata);
   }
   return result;
 }
 
 module.exports = {
-  encodeImage,
   encodeAndFormat,
 };

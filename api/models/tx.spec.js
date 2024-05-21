@@ -34,6 +34,20 @@ describe('getValueKey', () => {
     expect(getValueKey('openai/gpt-4-1106')).toBe('gpt-4-1106');
     expect(getValueKey('gpt-4-1106/openai/')).toBe('gpt-4-1106');
   });
+
+  it('should return "gpt-4-1106" for model type of "gpt-4-1106"', () => {
+    expect(getValueKey('gpt-4-vision-preview')).toBe('gpt-4-1106');
+    expect(getValueKey('openai/gpt-4-1106')).toBe('gpt-4-1106');
+    expect(getValueKey('gpt-4-turbo')).toBe('gpt-4-1106');
+    expect(getValueKey('gpt-4-0125')).toBe('gpt-4-1106');
+  });
+
+  it('should return "gpt-4o" for model type of "gpt-4o"', () => {
+    expect(getValueKey('gpt-4o-2024-05-13')).toBe('gpt-4o');
+    expect(getValueKey('openai/gpt-4o')).toBe('gpt-4o');
+    expect(getValueKey('gpt-4o-turbo')).toBe('gpt-4o');
+    expect(getValueKey('gpt-4o-0125')).toBe('gpt-4o');
+  });
 });
 
 describe('getMultiplier', () => {
@@ -77,12 +91,32 @@ describe('getMultiplier', () => {
     );
   });
 
+  it('should return the correct multiplier for gpt-4o', () => {
+    const valueKey = getValueKey('gpt-4o-2024-05-13');
+    expect(getMultiplier({ valueKey, tokenType: 'prompt' })).toBe(tokenValues['gpt-4o'].prompt);
+    expect(getMultiplier({ valueKey, tokenType: 'completion' })).toBe(
+      tokenValues['gpt-4o'].completion,
+    );
+    expect(getMultiplier({ valueKey, tokenType: 'completion' })).not.toBe(
+      tokenValues['gpt-4-1106'].completion,
+    );
+  });
+
   it('should derive the valueKey from the model if not provided for new models', () => {
     expect(
       getMultiplier({ tokenType: 'prompt', model: 'gpt-3.5-turbo-1106-some-other-info' }),
     ).toBe(tokenValues['gpt-3.5-turbo-1106'].prompt);
     expect(getMultiplier({ tokenType: 'completion', model: 'gpt-4-1106-vision-preview' })).toBe(
       tokenValues['gpt-4-1106'].completion,
+    );
+    expect(getMultiplier({ tokenType: 'completion', model: 'gpt-4-0125-preview' })).toBe(
+      tokenValues['gpt-4-1106'].completion,
+    );
+    expect(getMultiplier({ tokenType: 'completion', model: 'gpt-4-turbo-vision-preview' })).toBe(
+      tokenValues['gpt-4-1106'].completion,
+    );
+    expect(getMultiplier({ tokenType: 'completion', model: 'gpt-3.5-turbo-0125' })).toBe(
+      tokenValues['gpt-3.5-turbo-0125'].completion,
     );
   });
 

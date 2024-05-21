@@ -1,8 +1,27 @@
-const Conversation = require('../../models/schema/convoSchema');
-const Message = require('../../models/schema/messageSchema');
 const { MeiliSearch } = require('meilisearch');
-let currentTimeout = null;
+const Conversation = require('~/models/schema/convoSchema');
+const Message = require('~/models/schema/messageSchema');
+const { logger } = require('~/config');
+
 const searchEnabled = process.env?.SEARCH?.toLowerCase() === 'true';
+let currentTimeout = null;
+
+class MeiliSearchClient {
+  static instance = null;
+
+  static getInstance() {
+    if (!MeiliSearchClient.instance) {
+      if (!process.env.MEILI_HOST || !process.env.MEILI_MASTER_KEY) {
+        throw new Error('Meilisearch configuration is missing.');
+      }
+      MeiliSearchClient.instance = new MeiliSearch({
+        host: process.env.MEILI_HOST,
+        apiKey: process.env.MEILI_MASTER_KEY,
+      });
+    }
+    return MeiliSearchClient.instance;
+  }
+}
 
 // eslint-disable-next-line no-unused-vars
 async function indexSync(req, res, next) {
@@ -11,20 +30,10 @@ async function indexSync(req, res, next) {
   }
 
   try {
-    if (!process.env.MEILI_HOST || !process.env.MEILI_MASTER_KEY || !searchEnabled) {
-      throw new Error('Meilisearch not configured, search will be disabled.');
-    }
-
-    const client = new MeiliSearch({
-      host: process.env.MEILI_HOST,
-      apiKey: process.env.MEILI_MASTER_KEY,
-    });
+    const client = MeiliSearchClient.getInstance();
 
     const { status } = await client.health();
-    // console.log(`Meilisearch: ${status}`);
-    const result = status === 'available' && !!process.env.SEARCH;
-
-    if (!result) {
+    if (status !== 'available' || !process.env.SEARCH) {
       throw new Error('Meilisearch not available');
     }
 
@@ -35,39 +44,40 @@ async function indexSync(req, res, next) {
     const messagesIndexed = messages.numberOfDocuments;
     const convosIndexed = convos.numberOfDocuments;
 
-    console.log(`There are ${messageCount} messages in the database, ${messagesIndexed} indexed`);
-    console.log(`There are ${convoCount} convos in the database, ${convosIndexed} indexed`);
+    logger.debug(`[indexSync] There are ${messageCount} messages and ${messagesIndexed} indexed`);
+    logger.debug(`[indexSync] There are ${convoCount} convos and ${convosIndexed} indexed`);
 
     if (messageCount !== messagesIndexed) {
-      console.log('Messages out of sync, indexing');
+      logger.debug('[indexSync] Messages out of sync, indexing');
       Message.syncWithMeili();
     }
 
     if (convoCount !== convosIndexed) {
-      console.log('Convos out of sync, indexing');
+      logger.debug('[indexSync] Convos out of sync, indexing');
       Conversation.syncWithMeili();
     }
   } catch (err) {
-    // console.log('in index sync');
     if (err.message.includes('not found')) {
-      console.log('Creating indices...');
+      logger.debug('[indexSync] Creating indices...');
       currentTimeout = setTimeout(async () => {
         try {
           await Message.syncWithMeili();
           await Conversation.syncWithMeili();
         } catch (err) {
-          console.error('Trouble creating indices, try restarting the server.');
+          logger.error('[indexSync] Trouble creating indices, try restarting the server.', err);
         }
       }, 750);
+    } else if (err.message.includes('Meilisearch not configured')) {
+      logger.info('[indexSync] Meilisearch not configured, search will be disabled.');
     } else {
-      console.error(err);
+      logger.error('[indexSync] error', err);
       // res.status(500).json({ error: 'Server error' });
     }
   }
 }
 
 process.on('exit', () => {
-  console.log('Clearing sync timeouts before exiting...');
+  logger.debug('[indexSync] Clearing sync timeouts before exiting...');
   clearTimeout(currentTimeout);
 });
 

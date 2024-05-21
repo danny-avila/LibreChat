@@ -23,7 +23,7 @@ const getUserMessageQuotaUsagePastDays = async (user, days = 30) => {
       consumed: messagesCount,
       quota: quota[model],
     };
-    console.log(model, quotaUsage[model]);
+    // console.log(model, quotaUsage[model]);
   });
   await Promise.all(promises);
   return quotaUsage;

@@ -1,5 +1,6 @@
-const User = require('../../../models/User');
-const { setAuthTokens } = require('../../services/AuthService');
+const User = require('~/models/User');
+const { setAuthTokens } = require('~/server/services/AuthService');
+const { logger } = require('~/config');
 
 const loginController = async (req, res) => {
   try {
@@ -15,7 +16,7 @@ const loginController = async (req, res) => {
 
     return res.status(200).send({ token, user });
   } catch (err) {
-    console.log(err);
+    logger.error('[loginController]', err);
   }
 
   // Generic error messages are safer

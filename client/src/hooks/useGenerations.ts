@@ -22,12 +22,12 @@ export default function useGenerations({
 
   const { error, messageId, searchResult, finish_reason, isCreatedByUser } = message ?? {};
   const isEditableEndpoint = !![
-    EModelEndpoint.azureOpenAI,
     EModelEndpoint.openAI,
-    EModelEndpoint.assistant,
+    EModelEndpoint.google,
+    EModelEndpoint.assistants,
+    EModelEndpoint.anthropic,
     EModelEndpoint.gptPlugins,
-    EModelEndpoint.anthropic,
-    EModelEndpoint.anthropic,
+    EModelEndpoint.azureOpenAI,
   ].find((e) => e === endpoint);
 
   const continueSupported =

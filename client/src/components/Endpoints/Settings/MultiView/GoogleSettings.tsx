@@ -12,11 +12,14 @@ export default function GoogleView({ conversation, models, isPreset = false }) {
     return null;
   }
 
-  const { examples } = conversation;
-  const { showExamples, isCodeChat } = optionSettings;
-  return showExamples && !isCodeChat ? (
+  const { examples, model } = conversation;
+  const isGenerativeModel = model?.toLowerCase()?.includes('gemini');
+  const isChatModel = !isGenerativeModel && model?.toLowerCase()?.includes('chat');
+  const isTextModel = !isGenerativeModel && !isChatModel && /code|text/.test(model ?? '');
+  const { showExamples } = optionSettings;
+  return showExamples && isChatModel && !isTextModel ? (
     <Examples
-      examples={examples ?? []}
+      examples={examples ?? [{ input: { content: '' }, output: { content: '' } }]}
       setExample={setExample}
       addExample={addExample}
       removeExample={removeExample}

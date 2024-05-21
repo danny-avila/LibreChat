@@ -1,46 +1,60 @@
+require('dotenv').config();
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
 const cors = require('cors');
+const axios = require('axios');
 const express = require('express');
 const passport = require('passport');
 const mongoSanitize = require('express-mongo-sanitize');
+const validateImageRequest = require('./middleware/validateImageRequest');
 const errorController = require('./controllers/ErrorController');
+const { jwtLogin, passportLogin } = require('~/strategies');
 const configureSocialLogins = require('./socialLogins');
-const { connectDb, indexSync } = require('../lib/db');
-const config = require('../config');
+const { connectDb, indexSync } = require('~/lib/db');
+const AppService = require('./services/AppService');
+const noIndex = require('./middleware/noIndex');
+const { isEnabled } = require('~/server/utils');
+const { logger } = require('~/config');
+
 const routes = require('./routes');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN } = process.env ?? {};
 
 const port = Number(PORT) || 3080;
 const host = HOST || 'localhost';
-const projectPath = path.join(__dirname, '..', '..', 'client');
-const { jwtLogin, passportLogin } = require('../strategies');
 
 const startServer = async () => {
+  if (typeof Bun !== 'undefined') {
+    axios.defaults.headers.common['Accept-Encoding'] = 'gzip';
+  }
   await connectDb();
-  console.log('Connected to MongoDB');
+  logger.info('Connected to MongoDB');
   await indexSync();
 
   const app = express();
-  app.locals.config = config;
+  app.disable('x-powered-by');
+  await AppService(app);
+
+  app.get('/health', (_req, res) => res.status(200).send('OK'));
 
   // Web Hooks, note that is has to be ahead of the express.json() call since webhooks uses RAW
   app.use('/api/webhooks', routes.webhooks);
 
   // Middleware
+  app.use(noIndex);
   app.use(errorController);
   app.use(express.json({ limit: '3mb' }));
   app.use(mongoSanitize());
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
-  app.use(express.static(path.join(projectPath, 'dist')));
-  app.use(express.static(path.join(projectPath, 'public')));
+  app.use(express.static(app.locals.paths.dist));
+  app.use(express.static(app.locals.paths.fonts));
+  app.use(express.static(app.locals.paths.assets));
   app.set('trust proxy', 1); // trust first proxy
   app.use(cors());
 
   if (!ALLOW_SOCIAL_LOGIN) {
     console.warn(
-      'Social logins are disabled. Set Envrionment Variable "ALLOW_SOCIAL_LOGIN" to true to enable them.',
+      'Social logins are disabled. Set Environment Variable "ALLOW_SOCIAL_LOGIN" to true to enable them.',
     );
   }
 
@@ -49,7 +63,7 @@ const startServer = async () => {
   passport.use(await jwtLogin());
   passport.use(passportLogin());
 
-  if (ALLOW_SOCIAL_LOGIN?.toLowerCase() === 'true') {
+  if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
     configureSocialLogins(app);
   }
 
@@ -73,20 +87,21 @@ const startServer = async () => {
   app.use('/api/config', routes.config);
   app.use('/api/leaderboard', routes.leaderboard);
   app.use('/api/assistants', routes.assistants);
-  app.use('/api/files', routes.files);
+  app.use('/api/files', await routes.files.initialize());
+  app.use('/images/', validateImageRequest, routes.staticRoute);
+  app.use('/api/share', routes.share);
 
-  // Static files
-  app.get('/*', function (req, res) {
-    res.sendFile(path.join(projectPath, 'dist', 'index.html'));
+  app.use((req, res) => {
+    res.status(404).sendFile(path.join(app.locals.paths.dist, 'index.html'));
   });
 
   app.listen(port, host, () => {
     if (host == '0.0.0.0') {
-      console.log(
+      logger.info(
         `Server listening on all interfaces at port ${port}. Use http://localhost:${port} to access it`,
       );
     } else {
-      console.log(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
+      logger.info(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
     }
   });
 };
@@ -96,21 +111,20 @@ startServer();
 let messageCount = 0;
 process.on('uncaughtException', (err) => {
   if (!err.message.includes('fetch failed')) {
-    console.error('There was an uncaught error:');
-    console.error(err);
+    logger.error('There was an uncaught error:', err);
   }
 
   if (err.message.includes('fetch failed')) {
     if (messageCount === 0) {
-      console.error('Meilisearch error, search will be disabled');
+      logger.warn('Meilisearch error, search will be disabled');
       messageCount++;
     }
 
     return;
   }
 
-  if (err.message.includes('OpenAIError')) {
-    console.error(
+  if (err.message.includes('OpenAIError') || err.message.includes('ChatCompletionMessage')) {
+    logger.error(
       '\n\nAn Uncaught `OpenAIError` error may be due to your reverse-proxy setup or stream configuration, or a bug in the `openai` node package.',
     );
     return;

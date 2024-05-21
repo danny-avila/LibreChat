@@ -1,13 +1,14 @@
 import React from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { useGetStartupConfig } from 'librechat-data-provider/react-query';
+import LightningIcon from '~/components/svg/LightningIcon';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
-import SunIcon from '../svg/SunIcon';
-import LightningIcon from '../svg/LightningIcon';
-import CautionIcon from '../svg/CautionIcon';
-import store from '~/store';
+import CautionIcon from '~/components/svg/CautionIcon';
+import SunIcon from '~/components/svg/SunIcon';
 import { useLocalize } from '~/hooks';
-import { useGetStartupConfig } from 'librechat-data-provider';
+// import { useGetStartupConfig } from 'librechat-data-provider';
 import WarningIcon from '../svg/WarningIcon';
+import store from '~/store';
 
 export default function Landing() {
   const { data: config } = useGetStartupConfig();
@@ -27,11 +28,11 @@ export default function Landing() {
 
   return (
     <div className="flex h-full flex-col items-center overflow-y-auto pt-0 text-sm dark:bg-gray-800">
-      <div className="w-full px-6 text-gray-800 dark:text-gray-100 md:flex md:max-w-2xl md:flex-col lg:max-w-3xl">
+      <div className="w-full px-6 text-gray-800 dark:text-gray-200 md:flex md:max-w-2xl md:flex-col lg:max-w-3xl">
         <h1
           id="landing-title"
           data-testid="landing-title"
-          className="mb-10 ml-auto mr-auto mt-6 flex items-center justify-center gap-2 text-center text-4xl font-semibold sm:mb-16 md:mt-[10vh]"
+          className="mb-10 ml-auto mr-auto mt-6 flex items-center justify-center gap-2 text-center text-4xl font-semibold dark:text-gray-600 sm:mb-16 md:mt-[10vh]"
         >
           {config?.appTitle || 'LibreChat'}
         </h1>
@@ -44,19 +45,19 @@ export default function Landing() {
             <ul className="m-auto flex w-full flex-col gap-3.5 sm:max-w-md">
               <button
                 onClick={clickHandler}
-                className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900"
+                className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-600"
               >
                 &quot;{localize('com_ui_example_quantum_computing')}&quot; →
               </button>
               <button
                 onClick={clickHandler}
-                className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900"
+                className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-600"
               >
                 &quot;{localize('com_ui_example_10_year_old_b_day')}&quot; →
               </button>
               <button
                 onClick={clickHandler}
-                className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900"
+                className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-600"
               >
                 &quot;{localize('com_ui_example_http_in_js')}&quot; →
               </button>
@@ -119,7 +120,7 @@ export default function Landing() {
           </div>
         )}
         {!!showingTemplates && <Templates showTemplates={showTemplates}/>} */}
-        {/* <div className="group h-32 w-full flex-shrink-0 dark:border-gray-900/50 dark:bg-gray-800 md:h-48" /> */}
+        {/* <div className="group h-32 w-full flex-shrink-0 dark:border-gray-800/50 dark:bg-gray-800 md:h-48" /> */}
       </div>
     </div>
   );

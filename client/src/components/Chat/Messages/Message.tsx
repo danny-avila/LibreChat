@@ -1,13 +1,10 @@
-/* eslint-disable react-hooks/exhaustive-deps */
-import { useEffect } from 'react';
-import copy from 'copy-to-clipboard';
 import { useRecoilValue } from 'recoil';
+import { useAuthContext, useMessageHelpers, useLocalize } from '~/hooks';
+import type { TMessageProps } from '~/common';
+import Icon from '~/components/Chat/Messages/MessageIcon';
 import { Plugin } from '~/components/Messages/Content';
 import MessageContent from './Content/MessageContent';
-import { Icon } from '~/components/Endpoints';
 import SiblingSwitch from './SiblingSwitch';
-import type { TMessageProps } from '~/common';
-import { useChatContext } from '~/Providers';
 // eslint-disable-next-line import/no-cycle
 import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
@@ -17,11 +14,14 @@ import store from '~/store';
 import Error from '~/components/Messages/Content/Error';
 
 export default function Message(props: TMessageProps) {
+  const UsernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
+  const { user } = useAuthContext();
+  const localize = useLocalize();
   const synth = window.speechSynthesis;
   const autoScroll = useRecoilValue(store.autoScroll);
   const {
     message,
-    scrollToBottom,
+    // scrollToBottom,
     currentEditId,
     setCurrentEditId,
     siblingIdx,
@@ -31,92 +31,32 @@ export default function Message(props: TMessageProps) {
 
   const {
     ask,
-    regenerate,
-    abortScroll,
-    isSubmitting,
+    edit,
+    isLast,
+    enterEdit,
+    handleScroll,
     conversation,
-    setAbortScroll,
-    handleContinue,
+    isSubmitting,
     latestMessage,
-    setLatestMessage,
-  } = useChatContext();
+    handleContinue,
+    copyToClipboard,
+    regenerateMessage,
+  } = useMessageHelpers(props);
 
-  const { conversationId } = conversation ?? {};
-
-  const { text, children, messageId = null, isCreatedByUser, error, unfinished } = message ?? {};
-
-  const isLast = !children?.length;
-  const edit = messageId === currentEditId;
-
-  useEffect(() => {
-    if (isSubmitting && scrollToBottom && !abortScroll) {
-      scrollToBottom();
-    }
-  }, [isSubmitting, text, scrollToBottom, abortScroll]);
-
-  useEffect(() => {
-    if (scrollToBottom && autoScroll && conversationId !== 'new') {
-      scrollToBottom();
-    }
-  }, [autoScroll, conversationId, scrollToBottom]);
-
-  useEffect(() => {
-    if (!message) {
-      return;
-    } else if (isLast) {
-      setLatestMessage({ ...message });
-    }
-  }, [isLast, message, setLatestMessage]);
+  //   const { message, siblingIdx, siblingCount, setSiblingIdx, currentEditId, setCurrentEditId } = props;
 
   if (!message) {
     return null;
   }
 
-  const enterEdit = (cancel?: boolean) =>
-    setCurrentEditId && setCurrentEditId(cancel ? -1 : messageId);
+  const { text, children, messageId = null, isCreatedByUser, error, unfinished } = message ?? {};
 
-  const handleScroll = () => {
-    if (isSubmitting) {
-      setAbortScroll(true);
-    } else {
-      setAbortScroll(false);
-    }
-  };
-
-  // const commonClasses =
-  //   'w-full border-b text-gray-800 group border-black/10 dark:border-gray-900/50 dark:text-gray-100 dark:border-none';
-  // const uniqueClasses = isCreatedByUser
-  //   ? 'bg-white dark:bg-gray-800 dark:text-gray-20'
-  //   : 'bg-white dark:bg-gray-800 dark:text-gray-70';
-
-  // const messageProps = {
-  //   className: cn(commonClasses, uniqueClasses),
-  //   titleclass: '',
-  // };
-
-  const icon = Icon({
-    ...conversation,
-    ...message,
-    model: message?.model ?? conversation?.model,
-    size: 28.8,
-  });
-
-  const regenerateMessage = () => {
-    if (isSubmitting && isCreatedByUser) {
-      return;
-    }
-
-    regenerate(message);
-  };
-
-  const copyToClipboard = (setIsCopied: React.Dispatch<React.SetStateAction<boolean>>) => {
-    setIsCopied(true);
-    copy(text ?? '');
-
-    setTimeout(() => {
-      setIsCopied(false);
-    }, 3000);
-  };
+  let messageLabel = '';
+  if (isCreatedByUser) {
+    messageLabel = UsernameDisplay ? user?.name || user?.username : localize('com_user_message');
+  } else {
+    messageLabel = message.sender;
+  }
 
   const speak = (msg, updateHoverButtons) => {
     const cb = Symbol('stopCallback');
@@ -196,26 +136,20 @@ export default function Message(props: TMessageProps) {
         onTouchMove={handleScroll}
       >
         <div className="m-auto justify-center p-4 py-2 text-base md:gap-6 ">
-          <div className="} group mx-auto flex flex-1 gap-3 text-base md:max-w-3xl md:px-5 lg:max-w-[40rem] lg:px-1 xl:max-w-[48rem] xl:px-5">
+          <div className="final-completion group mx-auto flex flex-1 gap-3 text-base md:max-w-3xl md:px-5 lg:max-w-[40rem] lg:px-1 xl:max-w-[48rem] xl:px-5">
             <div className="relative flex flex-shrink-0 flex-col items-end">
               <div>
                 <div className="pt-0.5">
-                  <div className="gizmo-shadow-stroke flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-                    {typeof icon === 'string' && /[^\\x00-\\x7F]+/.test(icon as string) ? (
-                      <span className=" direction-rtl w-40 overflow-x-scroll">{icon}</span>
-                    ) : (
-                      icon
-                    )}
+                  <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
+                    <Icon message={message} conversation={conversation} />
                   </div>
                 </div>
               </div>
             </div>
             <div
-              className={cn('relative flex w-full flex-col', isCreatedByUser ? '' : 'agent-turn')}
+              className={cn('relative flex w-11/12 flex-col', isCreatedByUser ? '' : 'agent-turn')}
             >
-              <div className="select-none font-semibold">
-                {isCreatedByUser ? 'You' : message.sender}
-              </div>
+              <div className="select-none font-semibold">{messageLabel}</div>
               <div className="flex-col gap-1 md:gap-3">
                 <div className="flex max-w-full flex-grow flex-col gap-0">
                   {/* Legacy Plugins */}
@@ -261,6 +195,7 @@ export default function Message(props: TMessageProps) {
                     latestMessage={latestMessage}
                     stopPlaybackMessage={stopPlaybackMessage}
                     playbackMessage={playbackMessage}
+                    isLast={isLast}
                   />
                 </SubRow>
               )}
@@ -273,7 +208,6 @@ export default function Message(props: TMessageProps) {
         messageId={messageId}
         conversation={conversation}
         messagesTree={children ?? []}
-        scrollToBottom={scrollToBottom}
         currentEditId={currentEditId}
         setCurrentEditId={setCurrentEditId}
       />

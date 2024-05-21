@@ -1,104 +1,35 @@
 import type { FC } from 'react';
-import { useState } from 'react';
-import { useRecoilState } from 'recoil';
 import { BookCopy } from 'lucide-react';
-import {
-  modularEndpoints,
-  useDeletePresetMutation,
-  useCreatePresetMutation,
-} from 'librechat-data-provider';
-import type { TPreset } from 'librechat-data-provider';
 import { Content, Portal, Root, Trigger } from '@radix-ui/react-popover';
-import { useLocalize, useDefaultConvo, useNavigateToConvo } from '~/hooks';
-import { useChatContext, useToastContext } from '~/Providers';
 import { EditPresetDialog, PresetItems } from './Presets';
-import { cleanupPreset, cn } from '~/utils';
-import store from '~/store';
+import { useLocalize, usePresets } from '~/hooks';
+import { useChatContext } from '~/Providers';
+import { cn } from '~/utils';
 
 const PresetsMenu: FC = () => {
   const localize = useLocalize();
-  const { showToast } = useToastContext();
-  const { conversation, newConversation, setPreset } = useChatContext();
-  const { navigateToConvo } = useNavigateToConvo();
-  const getDefaultConversation = useDefaultConvo();
+  const {
+    presetsQuery,
+    onSetDefaultPreset,
+    onFileSelected,
+    onSelectPreset,
+    onChangePreset,
+    clearAllPresets,
+    onDeletePreset,
+    submitPreset,
+    exportPreset,
+  } = usePresets();
+  const { preset } = useChatContext();
 
-  const [presetModalVisible, setPresetModalVisible] = useState(false);
-  // TODO: rely on react query for presets data
-  const [presets, setPresets] = useRecoilState(store.presets);
-
-  const deletePresetsMutation = useDeletePresetMutation();
-  const createPresetMutation = useCreatePresetMutation();
-
-  const { endpoint } = conversation ?? {};
-
-  const importPreset = (jsonPreset: TPreset) => {
-    createPresetMutation.mutate(
-      { ...jsonPreset },
-      {
-        onSuccess: (data) => {
-          setPresets(data);
-        },
-        onError: (error) => {
-          console.error('Error uploading the preset:', error);
-        },
-      },
-    );
-  };
-  const onFileSelected = (jsonData: Record<string, unknown>) => {
-    const jsonPreset = { ...cleanupPreset({ preset: jsonData }), presetId: null };
-    importPreset(jsonPreset);
-  };
-  const onSelectPreset = (newPreset: TPreset) => {
-    if (!newPreset) {
-      return;
-    }
-
-    showToast({
-      message: localize('com_endpoint_preset_selected'),
-      showIcon: false,
-      duration: 750,
-    });
-
-    if (
-      modularEndpoints.has(endpoint ?? '') &&
-      modularEndpoints.has(newPreset?.endpoint ?? '') &&
-      endpoint === newPreset?.endpoint
-    ) {
-      const currentConvo = getDefaultConversation({
-        conversation: conversation ?? {},
-        preset: newPreset,
-      });
-
-      /* We don't reset the latest message, only when changing settings mid-converstion */
-      navigateToConvo(currentConvo, false);
-      return;
-    }
-
-    console.log('preset', newPreset, endpoint);
-    newConversation({ preset: newPreset });
-  };
-
-  const onChangePreset = (preset: TPreset) => {
-    setPreset(preset);
-    setPresetModalVisible(true);
-  };
-
-  const clearAllPresets = () => {
-    deletePresetsMutation.mutate({ arg: {} });
-  };
-
-  const onDeletePreset = (preset: TPreset) => {
-    deletePresetsMutation.mutate({ arg: preset });
-  };
-
+  const presets = presetsQuery.data || [];
   return (
     <Root>
       <Trigger asChild>
         <button
           className={cn(
-            'pointer-cursor relative flex flex-col rounded-md border border-black/10 bg-white text-left focus:outline-none focus:ring-0 focus:ring-offset-0 dark:border-white/20 dark:bg-gray-800 sm:text-sm',
-            'hover:bg-gray-50 radix-state-open:bg-gray-50 dark:hover:bg-black/10 dark:radix-state-open:bg-black/20',
-            'min-w-4 z-50 flex h-[40px] flex-none items-center justify-center px-3 focus:ring-0 focus:ring-offset-0',
+            'pointer-cursor relative flex flex-col rounded-md border border-gray-100 bg-white text-left focus:outline-none focus:ring-0 focus:ring-offset-0 dark:border-gray-700 dark:bg-gray-800 sm:text-sm',
+            'hover:bg-gray-50 radix-state-open:bg-gray-50 dark:hover:bg-gray-700 dark:radix-state-open:bg-gray-700',
+            'z-50 flex h-[40px] min-w-4 flex-none items-center justify-center px-3 focus:ring-0 focus:ring-offset-0',
           )}
           id="presets-button"
           data-testid="presets-button"
@@ -121,10 +52,11 @@ const PresetsMenu: FC = () => {
           <Content
             side="bottom"
             align="center"
-            className="mt-2 max-h-[495px] overflow-x-hidden rounded-lg border border-gray-100 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-white md:min-w-[400px]"
+            className="mt-2 max-h-[495px] overflow-x-hidden rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-700 dark:text-white md:min-w-[400px]"
           >
             <PresetItems
               presets={presets}
+              onSetDefaultPreset={onSetDefaultPreset}
               onSelectPreset={onSelectPreset}
               onChangePreset={onChangePreset}
               onDeletePreset={onDeletePreset}
@@ -134,7 +66,7 @@ const PresetsMenu: FC = () => {
           </Content>
         </div>
       </Portal>
-      <EditPresetDialog open={presetModalVisible} onOpenChange={setPresetModalVisible} />
+      {preset && <EditPresetDialog submitPreset={submitPreset} exportPreset={exportPreset} />}
     </Root>
   );
 };
