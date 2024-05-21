@@ -1,5 +1,9 @@
-import { useEffect, useState, useRef } from 'react';
+import { useParams } from 'react-router-dom';
+import { QueryKeys } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilState, useRecoilValue } from 'recoil';
+import { useEffect, useState, useRef, useCallback } from 'react';
+import type { TMessage } from 'librechat-data-provider';
 import { MediaSourceAppender } from '~/hooks/Audio/MediaSourceAppender';
 import store from '~/store';
 
@@ -18,10 +22,19 @@ export default function StreamAudio({ index = 0 }) {
   const audioSourceRef = useRef<MediaSourceAppender | null>(null);
   const [isFetching, setIsFetching] = useState(false);
 
+  const cacheTTS = useRecoilValue(store.cacheTTS);
   const activeRunId = useRecoilValue(store.activeRunFamily(index));
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
   const latestMessage = useRecoilValue(store.latestMessageFamily(index));
   const [audioURL, setAudioURL] = useRecoilState(store.audioURLFamily(index));
+
+  const { conversationId: paramId } = useParams();
+  const queryParam = paramId === 'new' ? paramId : latestMessage?.conversationId ?? paramId ?? '';
+
+  const queryClient = useQueryClient();
+  const getMessages = useCallback(() => {
+    return queryClient.getQueryData<TMessage[]>([QueryKeys.messages, queryParam]);
+  }, [queryParam, queryClient]);
 
   useEffect(() => {
     const shouldFetch =
@@ -49,6 +62,20 @@ export default function StreamAudio({ index = 0 }) {
           setAudioURL(null);
         }
 
+        let cacheKey = latestMessage?.text ?? '';
+        const cache = await caches.open('tts-responses');
+        const cachedResponse = await cache.match(cacheKey);
+
+        if (cachedResponse) {
+          console.log('Audio found in cache');
+          const audioBlob = await cachedResponse.blob();
+          const blobUrl = URL.createObjectURL(audioBlob);
+          setAudioURL(blobUrl);
+          audioRunId.current = activeRunId;
+          setIsFetching(false);
+          return;
+        }
+
         const response = await fetch('/api/files/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -68,6 +95,7 @@ export default function StreamAudio({ index = 0 }) {
         audioRunId.current = activeRunId;
 
         let done = false;
+        const chunks: Uint8Array[] = [];
 
         while (!done) {
           const readPromise = reader.read();
@@ -76,10 +104,27 @@ export default function StreamAudio({ index = 0 }) {
             timeoutPromise(maxPromiseTime, promiseTimeoutMessage),
           ])) as ReadableStreamReadResult<Uint8Array>;
 
+          if (cacheTTS && value) {
+            chunks.push(value);
+          }
           if (value) {
             audioSourceRef.current.addData(value);
           }
           done = readerDone;
+        }
+
+        if (chunks.length) {
+          console.log('Adding audio to cache');
+          const latestMessages = getMessages() ?? [];
+          const targetMessage = latestMessages.find(
+            (msg) => msg.messageId === latestMessage?.messageId,
+          );
+          cacheKey = targetMessage?.text ?? '';
+          if (!cacheKey) {
+            throw new Error('Cache key not found');
+          }
+          const audioBlob = new Blob(chunks, { type: 'audio/mpeg' });
+          cache.put(cacheKey, new Response(audioBlob));
         }
 
         console.log('Audio stream reading ended');
@@ -97,7 +142,7 @@ export default function StreamAudio({ index = 0 }) {
     }
 
     fetchAudio();
-  }, [isSubmitting, latestMessage, activeRunId, isFetching, setAudioURL]);
+  }, [isSubmitting, latestMessage, activeRunId, isFetching, setAudioURL, cacheTTS, getMessages]);
 
   return (
     <audio
