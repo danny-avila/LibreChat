@@ -105,8 +105,8 @@ export default function MessageOld(props: TMessageProps) {
                     setSiblingIdx={setSiblingIdx}
                   />
                   <div
-                    className={cn('opacity-0 group-hover:opacity-100', {
-                      'opacity-100': isLast,
+                    className={cn('md:opacity-0 md:group-hover:opacity-100', {
+                      'md:opacity-100': isLast,
                     })}
                   >
                     <HoverButtons
