@@ -27,85 +27,82 @@ export default function StreamAudio({ index = 0 }) {
     const shouldFetch =
       isSubmitting &&
       latestMessage &&
-      latestMessage.isCreatedByUser === false &&
+      !latestMessage.isCreatedByUser &&
       (latestMessage.text || latestMessage.content) &&
       !latestMessage.messageId.includes('_') &&
       !isFetching &&
       activeRunId &&
       activeRunId !== audioRunId.current;
 
-    if (shouldFetch) {
+    if (!shouldFetch) {
+      return;
+    }
+
+    async function fetchAudio() {
       setIsFetching(true);
-      const fetchAudio = async () => {
-        try {
-          console.log('Fetching audio...');
-          console.log('latestMessage', latestMessage);
-          if (audioRef.current) {
-            console.log('Pausing and resetting audio');
-            audioRef.current.pause();
-            URL.revokeObjectURL(audioRef.current.src);
-            setAudioURL(null);
-          }
-          const response = await fetch('/api/files/tts', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ messageId: latestMessage.messageId, runId: activeRunId }),
-          });
 
-          if (!response.ok) {
-            throw new Error('Failed to fetch audio');
-          }
-
-          if (!response.body) {
-            throw new Error('Null Response body');
-          }
-
-          const reader = response.body.getReader();
-
-          audioSourceRef.current = new MediaSourceAppender('audio/mpeg');
-          setAudioURL(audioSourceRef.current.mediaSourceUrl);
-          audioRunId.current = activeRunId;
-          setIsFetching(false);
-
-          let done = false;
-          const startTime = Date.now();
-
-          while (!done) {
-            const timeElapsed = Date.now() - startTime;
-            if (timeElapsed > maxPromiseTime) {
-              console.warn('Reader operation timed out');
-              break;
-            }
-
-            const readPromise = reader.read();
-            const { value, done: readerDone } = (await Promise.race([
-              readPromise,
-              timeoutPromise(maxPromiseTime - timeElapsed, promiseTimeoutMessage),
-            ])) as ReadableStreamReadResult<Uint8Array>;
-
-            if (value) {
-              audioSourceRef.current.addData(value);
-            }
-
-            done = readerDone;
-          }
-
-          console.log('Stream reading ended client-side');
-        } catch (error) {
-          if (error?.['message'] === promiseTimeoutMessage) {
-            console.log(promiseTimeoutMessage);
-            return;
-          }
-          console.error('Failed to fetch audio:', error);
-          setIsFetching(false);
+      try {
+        if (audioRef.current) {
+          audioRef.current.pause();
+          URL.revokeObjectURL(audioRef.current.src);
           setAudioURL(null);
         }
-      };
 
-      fetchAudio();
+        const response = await fetch('/api/files/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messageId: latestMessage.messageId, runId: activeRunId }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch audio');
+        }
+        if (!response.body) {
+          throw new Error('Null Response body');
+        }
+
+        const reader = response.body.getReader();
+        audioSourceRef.current = new MediaSourceAppender('audio/mpeg');
+        setAudioURL(audioSourceRef.current.mediaSourceUrl);
+        audioRunId.current = activeRunId;
+
+        let done = false;
+        const startTime = Date.now();
+
+        while (!done) {
+          const timeElapsed = Date.now() - startTime;
+          if (timeElapsed > maxPromiseTime) {
+            console.warn('Reader operation timed out');
+            break;
+          }
+
+          const readPromise = reader.read();
+          const { value, done: readerDone } = (await Promise.race([
+            readPromise,
+            timeoutPromise(maxPromiseTime - timeElapsed, promiseTimeoutMessage),
+          ])) as ReadableStreamReadResult<Uint8Array>;
+
+          if (value) {
+            audioSourceRef.current.addData(value);
+          }
+          done = readerDone;
+        }
+
+        console.log('Stream reading ended client-side');
+      } catch (error) {
+        if (error?.['message'] !== promiseTimeoutMessage) {
+          console.log(promiseTimeoutMessage);
+          return;
+        }
+        console.error('Error fetching audio:', error);
+        setIsFetching(false);
+        setAudioURL(null);
+      } finally {
+        setIsFetching(false);
+      }
     }
+
+    fetchAudio();
   }, [isSubmitting, latestMessage, activeRunId, isFetching, setAudioURL]);
 
   return (
@@ -114,7 +111,7 @@ export default function StreamAudio({ index = 0 }) {
       controls
       controlsList="nodownload nofullscreen noremoteplayback"
       className="absolute h-0 w-0 overflow-hidden"
-      src={audioURL ? audioURL : undefined}
+      src={audioURL || undefined}
       autoPlay
     />
   );
