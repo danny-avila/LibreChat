@@ -155,8 +155,10 @@ const EditMessage = ({
         })}
       >
         <button
-          className={cn('btn btn-primary relative mr-2', {
-            'rounded-md dark:rounded-md dark:bg-green-500 dark:hover:bg-green-500/60': !messagesUI,
+          className={cn('relative mr-2', {
+            'btn btn-primary': messagesUI,
+            'inline-flex items-center rounded-md bg-green-500 px-3 py-2 text-sm font-medium text-white hover:bg-green-500/80 dark:hover:bg-green-500/60':
+              !messagesUI,
           })}
           disabled={
             isSubmitting || (endpoint === EModelEndpoint.google && !message.isCreatedByUser)
@@ -167,8 +169,10 @@ const EditMessage = ({
         </button>
         {/* btn-secondary has off styles */}
         <button
-          className={cn('btn btn-primary relative mr-2', {
-            'rounded-md dark:rounded-md dark:bg-green-500 dark:hover:bg-green-500/60': !messagesUI,
+          className={cn('relative mr-2', {
+            'btn btn-primary': messagesUI,
+            'inline-flex items-center rounded-md bg-green-500 px-3 py-2 text-sm font-medium text-white hover:bg-green-500/80 dark:hover:bg-green-500/60':
+              !messagesUI,
           })}
           disabled={isSubmitting}
           onClick={updateMessage}
@@ -176,13 +180,11 @@ const EditMessage = ({
           {localize('com_ui_save')}
         </button>
         <button
-          className={cn(
-            'btn btn-neutral relative dark:bg-white dark:text-black dark:hover:bg-white/80',
-            {
-              'rounded-md dark:rounded-md dark:bg-transparent dark:text-white dark:hover:bg-gray-600':
-                !messagesUI,
-            },
-          )}
+          className={cn('relative', {
+            'btn btn-neutral dark:bg-white dark:text-black dark:hover:bg-white/80': messagesUI,
+            'inline-flex items-center rounded-md border bg-transparent px-3 py-2 text-sm font-medium text-black hover:bg-gray-100 dark:border-gray-600 dark:text-white dark:hover:bg-gray-600':
+              !messagesUI,
+          })}
           onClick={() => enterEdit(true)}
         >
           {localize('com_ui_cancel')}
