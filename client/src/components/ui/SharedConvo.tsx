@@ -15,6 +15,7 @@ import { useLocalize } from '~/hooks';
 import { Plugin } from '../svg';
 // import { alternateName } from '~/utils/';
 import { alternateName } from 'librechat-data-provider';
+import MessagesView from '../Share/MessagesView';
 
 export default function SharedConvo() {
   const [conversation, setConversation] = useState<TConversation | null>(null);
@@ -385,19 +386,23 @@ export default function SharedConvo() {
               >
                 <div className="dark:gpt-dark-gray flex h-auto flex-col items-center text-sm">
                   {conversation && msgTree && convoUser ? (
-                    <OldMultiMessage
-                      key={conversation.conversationId} // avoid internal state mixture
-                      messageId={conversation.conversationId}
-                      conversation={conversation}
+                    <MessagesView
                       messagesTree={msgTree}
-                      scrollToBottom={null || undefined}
-                      currentEditId={-1}
-                      setCurrentEditId={null}
-                      isSearchView={true}
-                      name={convoUser?.name}
-                      userId={convoUser?.id}
+                      conversationId={conversation.conversationId ?? ''}
                     />
                   ) : (
+                    // <OldMultiMessage
+                    //   key={conversation.conversationId} // avoid internal state mixture
+                    //   messageId={conversation.conversationId}
+                    //   conversation={conversation}
+                    //   messagesTree={msgTree}
+                    //   scrollToBottom={null || undefined}
+                    //   currentEditId={-1}
+                    //   setCurrentEditId={null}
+                    //   isSearchView={true}
+                    //   name={convoUser?.name}
+                    //   userId={convoUser?.id}
+                    // />
                     <div className="flex h-[25vh] w-full flex-row items-end justify-end">
                       <Spinner />
                     </div>
