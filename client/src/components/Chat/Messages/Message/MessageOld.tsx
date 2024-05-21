@@ -104,20 +104,26 @@ export default function MessageOld(props: TMessageProps) {
                     siblingCount={siblingCount}
                     setSiblingIdx={setSiblingIdx}
                   />
-                  <HoverButtons
-                    isEditing={edit}
-                    setIsForking={setIsForking}
-                    message={message}
-                    enterEdit={enterEdit}
-                    isSubmitting={isSubmitting}
-                    conversation={conversation ?? null}
-                    regenerate={() => regenerateMessage()}
-                    copyToClipboard={copyToClipboard}
-                    handleContinue={handleContinue}
-                    latestMessage={latestMessage}
-                    isLast={isLast}
-                    flat={true}
-                  />
+                  <div
+                    className={cn('opacity-0 group-hover:opacity-100', {
+                      'opacity-100': isLast,
+                    })}
+                  >
+                    <HoverButtons
+                      isEditing={edit}
+                      setIsForking={setIsForking}
+                      message={message}
+                      enterEdit={enterEdit}
+                      isSubmitting={isSubmitting}
+                      conversation={conversation ?? null}
+                      regenerate={() => regenerateMessage()}
+                      copyToClipboard={copyToClipboard}
+                      handleContinue={handleContinue}
+                      latestMessage={latestMessage}
+                      isLast={isLast}
+                      flat={true}
+                    />
+                  </div>
                 </SubRow>
               )}
             </div>
