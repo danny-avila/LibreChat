@@ -124,7 +124,7 @@ const Nav = ({ navVisible, setNavVisible }) => {
                     'scrollbar-trigger relative h-full w-full flex-1 items-start border-white/20',
                   )}
                 >
-                  <nav className="flex h-full w-full flex-col px-3 pb-3.5">
+                  <nav className="flex h-full w-full flex-col px-3 pb-0">
                     <div
                       className={cn(
                         '-mr-2 flex-1 flex-col overflow-y-auto pr-2 transition-opacity duration-500',
@@ -149,7 +149,9 @@ const Nav = ({ navVisible, setNavVisible }) => {
                         />
                       )}
                     </div>
-                    <NavLinks />
+                    <div className="flex flex-col py-2 empty:hidden dark:border-white/20">
+                      <NavLinks />
+                    </div>
                   </nav>
                 </div>
               </div>
