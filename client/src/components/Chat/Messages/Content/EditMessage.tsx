@@ -7,6 +7,8 @@ import { cn, removeFocusOutlines } from '~/utils';
 import { useChatContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import Container from './Container';
+import { useRecoilState } from 'recoil';
+import store from '~/store';
 
 const EditMessage = ({
   text,
@@ -20,6 +22,7 @@ const EditMessage = ({
   const { getMessages, setMessages, conversation } = useChatContext();
 
   const [editedText, setEditedText] = useState<string>(text ?? '');
+  const [messagesUI, setMessagesUI] = useRecoilState<boolean>(store.messagesUI);
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const { conversationId, parentMessageId, messageId } = message;
@@ -110,7 +113,12 @@ const EditMessage = ({
   );
 
   return (
-    <Container message={message} className="rounded-3xl bg-gray-100 px-3 py-3 dark:bg-gray-600">
+    <Container
+      message={message}
+      className={cn({
+        'rounded-3xl bg-gray-100 px-3 py-3 dark:bg-gray-600': messagesUI,
+      })}
+    >
       <TextareaAutosize
         ref={textAreaRef}
         onChange={(e) => {
@@ -141,9 +149,15 @@ const EditMessage = ({
         value={editedText}
         suppressContentEditableWarning={true}
       />
-      <div className="mt-2 flex w-full items-center justify-end text-center">
+      <div
+        className={cn('mt-2 flex w-full items-center justify-center text-center', {
+          'justify-end': messagesUI,
+        })}
+      >
         <button
-          className="btn btn-primary relative mr-2"
+          className={cn('btn btn-primary relative mr-2', {
+            'rounded-md dark:rounded-md dark:bg-green-500 dark:hover:bg-green-500/60': !messagesUI,
+          })}
           disabled={
             isSubmitting || (endpoint === EModelEndpoint.google && !message.isCreatedByUser)
           }
@@ -153,14 +167,22 @@ const EditMessage = ({
         </button>
         {/* btn-secondary has off styles */}
         <button
-          className="btn btn-primary relative mr-2"
+          className={cn('btn btn-primary relative mr-2', {
+            'rounded-md dark:rounded-md dark:bg-green-500 dark:hover:bg-green-500/60': !messagesUI,
+          })}
           disabled={isSubmitting}
           onClick={updateMessage}
         >
           {localize('com_ui_save')}
         </button>
         <button
-          className="btn btn-neutral relative dark:bg-white dark:text-black dark:hover:bg-white/80"
+          className={cn(
+            'btn btn-neutral relative dark:bg-white dark:text-black dark:hover:bg-white/80',
+            {
+              'rounded-md dark:rounded-md dark:bg-transparent dark:text-white dark:hover:bg-gray-600':
+                !messagesUI,
+            },
+          )}
           onClick={() => enterEdit(true)}
         >
           {localize('com_ui_cancel')}
