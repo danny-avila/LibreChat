@@ -1,11 +1,13 @@
 import { useRecoilState } from 'recoil';
-import MessageOld from './MessageOld';
-import MessageNew from './MessageNew';
+// eslint-disable-next-line import/no-cycle
+import MessageOld from './Message/MessageOld';
+// eslint-disable-next-line import/no-cycle
+import MessageNew from './Message/MessageNew';
 import store from '~/store';
 import { TMessageProps } from '~/common';
 
 function Message(props: TMessageProps) {
-  const [messagesUI,] = useRecoilState<boolean>(store.messagesUI);
+  const [messagesUI, setMessagesUI] = useRecoilState<boolean>(store.messagesUI);
 
   if (messagesUI) {
     return <MessageNew {...props} />;

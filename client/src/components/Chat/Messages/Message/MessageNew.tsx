@@ -3,12 +3,12 @@ import { useAuthContext, useMessageHelpers, useLocalize } from '~/hooks';
 import type { TMessageProps } from '~/common';
 import Icon from '~/components/Chat/Messages/MessageIcon';
 import { Plugin } from '~/components/Messages/Content';
-import MessageContent from './Content/MessageContent';
-import SiblingSwitch from './SiblingSwitch';
+import MessageContent from '../Content/MessageContent';
+import SiblingSwitch from '../SiblingSwitch';
 // eslint-disable-next-line import/no-cycle
-import MultiMessage from './MultiMessage';
-import HoverButtons from './HoverButtons';
-import SubRow from './SubRow';
+import MultiMessage from '../MultiMessage';
+import HoverButtons from '../HoverButtons';
+import SubRow from '../SubRow';
 import { cn } from '~/utils';
 import store from '~/store';
 import { useState } from 'react';
