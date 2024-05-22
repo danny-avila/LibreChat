@@ -5,6 +5,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
 import { useCustomAudioRef, MediaSourceAppender } from '~/hooks/Audio';
+import { useAuthContext } from '~/hooks';
 import { globalAudioId } from '~/common';
 import store from '~/store';
 
@@ -18,6 +19,7 @@ const promiseTimeoutMessage = 'Reader promise timed out';
 const maxPromiseTime = 15000;
 
 export default function StreamAudio({ index = 0 }) {
+  const { token } = useAuthContext();
   const audioRunId = useRef<string | null>(null);
 
   const cacheTTS = useRecoilValue(store.cacheTTS);
@@ -44,6 +46,7 @@ export default function StreamAudio({ index = 0 }) {
 
   useEffect(() => {
     const shouldFetch =
+      token &&
       automaticPlayback &&
       isSubmitting &&
       latestMessage &&
@@ -86,7 +89,7 @@ export default function StreamAudio({ index = 0 }) {
         console.log('Fetching audio...');
         const response = await fetch('/api/files/tts', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ messageId: latestMessage?.messageId, runId: activeRunId }),
         });
 
@@ -161,6 +164,7 @@ export default function StreamAudio({ index = 0 }) {
     isFetching,
     cacheTTS,
     audioRef,
+    token,
   ]);
 
   useEffect(() => {
