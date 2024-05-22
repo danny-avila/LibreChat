@@ -1,31 +1,34 @@
 const multer = require('multer');
 const express = require('express');
 const { getVoices, streamAudio, textToSpeech } = require('~/server/services/Files/Audio');
-// const { requireJwtAuth } = require('~/server/middleware/');
+const { logger } = require('~/config');
+
 const router = express.Router();
-
 const upload = multer();
-
-// router.use(requireJwtAuth);
 
 router.post('/manual', upload.none(), async (req, res) => {
   await textToSpeech(req, res);
 });
 
+const logDebugMessage = (req, message) =>
+  logger.debug(`[streamAudio] user: ${req.user.id} | ${message}`);
+
+// TODO: cache this with TTL
 let runIds = new Set();
+
 router.post('/', async (req, res) => {
   try {
-    console.log('start stream audio');
+    logDebugMessage(req, 'start stream audio');
     if (runIds.has(req.body.runId)) {
-      console.log('stream audio already running');
+      logDebugMessage(req, 'stream audio already running');
       return;
     }
     runIds.add(req.body.runId);
     await streamAudio(req, res);
-    console.log('end stream audio');
+    logDebugMessage(req, 'end stream audio');
     res.status(200).end();
   } catch (error) {
-    console.error('Failed to stream audio:', error);
+    logger.error(`[streamAudio] user: ${req.user.id} | Failed to stream audio: ${error}`);
     res.status(500).json({ error: 'Failed to stream audio' });
   }
 });

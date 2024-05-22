@@ -1,8 +1,8 @@
 const axios = require('axios');
-const { logger } = require('~/config');
 const getCustomConfig = require('~/server/services/Config/getCustomConfig');
 const { getRandomVoiceId, createChunkProcessor } = require('./streamAudio');
 const { extractEnvVariable } = require('librechat-data-provider');
+const { logger } = require('~/config');
 
 /**
  * getProvider function
@@ -210,19 +210,19 @@ async function streamAudioFromWebSocket(req, res) {
   const ws = new WebSocket(url);
 
   ws.onopen = () => {
-    console.log('WebSocket connection opened');
+    logger.debug('WebSocket connection opened');
     sendTextToWebsocket(ws, (data) => {
       res.write(data); // Stream data directly to the response
     });
   };
 
   ws.onclose = () => {
-    console.log('WebSocket connection closed');
+    logger.debug('WebSocket connection closed');
     res.end(); // End the response when the WebSocket is closed
   };
 
   ws.onerror = (error) => {
-    console.error('WebSocket error:', error);
+    logger.error('WebSocket error:', error);
     res.status(500).send('WebSocket error');
   };
 }
@@ -325,7 +325,7 @@ async function streamAudio(req, res) {
 
       const updates = await processChunks();
       if (typeof updates === 'string') {
-        console.error('Error processing updates:', updates);
+        logger.error('Error processing updates:', updates);
         res.status(500).end();
         return;
       }
@@ -346,11 +346,10 @@ async function streamAudio(req, res) {
             break;
           }
 
-          console.log('writing');
+          logger.debug(`[streamAudio] user: ${req.user.id} | writing audio stream`);
           await new Promise((resolve) => {
             response.data.pipe(res, { end: false });
             response.data.on('end', () => {
-              console.log('resolved and written');
               resolve();
             });
           });
@@ -360,7 +359,7 @@ async function streamAudio(req, res) {
             break;
           }
         } catch (innerError) {
-          console.error('Error processing update:', update, innerError);
+          logger.error('Error processing update:', update, innerError);
           if (!res.headersSent) {
             res.status(500).end();
           }
@@ -377,7 +376,7 @@ async function streamAudio(req, res) {
       res.end();
     }
   } catch (error) {
-    console.error('Failed to fetch audio:', error);
+    logger.error('Failed to fetch audio:', error);
     if (!res.headersSent) {
       res.status(500).end();
     }
