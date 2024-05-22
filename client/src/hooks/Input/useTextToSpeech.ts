@@ -4,7 +4,7 @@ import useTextToSpeechExternal from './useTextToSpeechExternal';
 import { useRecoilState } from 'recoil';
 import store from '~/store';
 
-const useTextToSpeech = (message: string) => {
+const useTextToSpeech = (message: string, isLast: boolean, index = 0) => {
   const [endpointTTS] = useRecoilState<string>(store.endpointTTS);
   const useExternalTextToSpeech = endpointTTS === 'external';
 
@@ -17,9 +17,10 @@ const useTextToSpeech = (message: string) => {
   const {
     generateSpeechExternal: generateSpeechExternal,
     cancelSpeech: cancelSpeechExternal,
-    isLoading: isLoading,
     isSpeaking: isSpeakingExternal,
-  } = useTextToSpeechExternal();
+    isLoading: isLoading,
+    pauseGlobalAudio,
+  } = useTextToSpeechExternal(isLast, index);
 
   const generateSpeech = useExternalTextToSpeech ? generateSpeechExternal : generateSpeechLocal;
   const cancelSpeech = useExternalTextToSpeech ? cancelSpeechExternal : cancelSpeechLocal;
@@ -47,6 +48,7 @@ const useTextToSpeech = (message: string) => {
   const toggleSpeech = () => {
     if (isSpeaking) {
       cancelSpeech();
+      isLast && pauseGlobalAudio();
     } else {
       generateSpeech(message, false);
     }

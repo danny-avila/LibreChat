@@ -27,9 +27,11 @@ type THoverButtons = {
   handleContinue: (e: React.MouseEvent<HTMLButtonElement>) => void;
   latestMessage: TMessage | null;
   isLast: boolean;
+  index: number;
 };
 
 export default function HoverButtons({
+  index,
   isEditing,
   enterEdit,
   copyToClipboard,
@@ -49,6 +51,8 @@ export default function HoverButtons({
 
   const { handleMouseDown, handleMouseUp, toggleSpeech, isSpeaking, isLoading } = useTextToSpeech(
     message?.text ?? '',
+    isLast,
+    index,
   );
 
   const {

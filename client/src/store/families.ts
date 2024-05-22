@@ -125,6 +125,11 @@ const globalAudioURLFamily = atomFamily<string | null, string | number | null>({
   default: null,
 });
 
+const globalAudioFetchingFamily = atomFamily<boolean, string | number | null>({
+  key: 'globalAudioisFetchingByIndex',
+  default: false,
+});
+
 const globalAudioPlayingFamily = atomFamily<boolean, string | number | null>({
   key: 'globalAudioisPlayingByIndex',
   default: false,
@@ -198,4 +203,5 @@ export default {
   globalAudioURLFamily,
   activeRunFamily,
   globalAudioPlayingFamily,
+  globalAudioFetchingFamily,
 };

@@ -1,7 +1,8 @@
-import { useRecoilValue } from 'recoil';
-import { useCallback, useEffect, useState } from 'react';
+import { useRecoilValue, useRecoilState } from 'recoil';
+import { useCallback, useEffect, useState, useMemo } from 'react';
 import { useTextToSpeechMutation } from '~/data-provider';
 import { useToastContext } from '~/Providers';
+import { globalAudioId } from '~/common';
 import store from '~/store';
 
 const createFormData = (text: string, voice: string) => {
@@ -11,17 +12,24 @@ const createFormData = (text: string, voice: string) => {
   return formData;
 };
 
-function useTextToSpeechExternal() {
+function useTextToSpeechExternal(isLast: boolean, index = 0) {
   const { showToast } = useToastContext();
   const voice = useRecoilValue(store.voice);
   const cacheTTS = useRecoilValue(store.cacheTTS);
   const playbackRate = useRecoilValue(store.playbackRate);
 
-  const [isSpeaking, setIsSpeaking] = useState(false);
   const [text, setText] = useState<string | null>(null);
   const [downloadFile, setDownloadFile] = useState(false);
+  const [isLocalSpeaking, setIsSpeaking] = useState(false);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [audio, setAudio] = useState<HTMLAudioElement | null>(null);
+
+  /* Global Audio Variables */
+  const globalIsFetching = useRecoilValue(store.globalAudioFetchingFamily(index));
+  const [globalAudioURL, setGlobalAudioURL] = useRecoilState(store.globalAudioURLFamily(index));
+  const [globalIsPlaying, setGlobalIsPlaying] = useRecoilState(
+    store.globalAudioPlayingFamily(index),
+  );
 
   const playAudio = (blobUrl: string) => {
     const newAudio = new Audio(blobUrl);
@@ -29,16 +37,21 @@ function useTextToSpeechExternal() {
       newAudio.playbackRate = playbackRate;
     }
 
-    newAudio
-      .play()
-      .then(() => {
-        setIsSpeaking(true);
-      })
-      .catch((error: Error) => {
-        showToast({ message: `Error playing audio: ${error.message}`, status: 'error' });
-      });
+    const playPromise = () => newAudio.play().then(() => setIsSpeaking(true));
+
+    playPromise().catch((error: Error) => {
+      if (
+        error?.message &&
+        error.message.includes('The play() request was interrupted by a call to pause()')
+      ) {
+        return playPromise().catch(console.error);
+      }
+      console.error(error);
+      showToast({ message: `Error playing audio: ${error.message}`, status: 'error' });
+    });
 
     newAudio.onended = () => {
+      console.log('Target message audio ended');
       URL.revokeObjectURL(blobUrl);
       setIsSpeaking(false);
     };
@@ -130,9 +143,30 @@ function useTextToSpeechExternal() {
     }
   }, [audio, blobUrl]);
 
+  const pauseGlobalAudio = useCallback(() => {
+    if (globalAudioURL) {
+      const globalAudio = document.getElementById(globalAudioId);
+      if (globalAudio) {
+        console.log('Pausing global audio', globalAudioURL);
+        (globalAudio as HTMLAudioElement).pause();
+        setGlobalIsPlaying(false);
+      }
+      URL.revokeObjectURL(globalAudioURL);
+      setGlobalAudioURL(null);
+    }
+  }, [globalAudioURL, setGlobalAudioURL, setGlobalIsPlaying]);
+
   useEffect(() => cancelSpeech, [cancelSpeech]);
 
-  return { generateSpeechExternal, cancelSpeech, isLoading: isProcessing, isSpeaking };
+  const isLoading = useMemo(() => {
+    return isProcessing || (isLast && globalIsFetching && !globalIsPlaying);
+  }, [isProcessing, globalIsFetching, globalIsPlaying, isLast]);
+
+  const isSpeaking = useMemo(() => {
+    return isLocalSpeaking || (isLast && globalIsPlaying);
+  }, [isLocalSpeaking, globalIsPlaying, isLast]);
+
+  return { generateSpeechExternal, cancelSpeech, isLoading, isSpeaking, pauseGlobalAudio };
 }
 
 export default useTextToSpeechExternal;

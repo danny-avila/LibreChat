@@ -1,10 +1,11 @@
 import { useParams } from 'react-router-dom';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
 import { useCustomAudioRef, MediaSourceAppender } from '~/hooks/Audio';
+import { globalAudioId } from '~/common';
 import store from '~/store';
 
 function timeoutPromise(ms: number, message?: string) {
@@ -18,7 +19,6 @@ const maxPromiseTime = 15000;
 
 export default function StreamAudio({ index = 0 }) {
   const audioRunId = useRef<string | null>(null);
-  const [isFetching, setIsFetching] = useState(false);
 
   const cacheTTS = useRecoilValue(store.cacheTTS);
   const playbackRate = useRecoilValue(store.playbackRate);
@@ -27,6 +27,7 @@ export default function StreamAudio({ index = 0 }) {
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
   const latestMessage = useRecoilValue(store.latestMessageFamily(index));
   const setIsPlaying = useSetRecoilState(store.globalAudioPlayingFamily(index));
+  const [isFetching, setIsFetching] = useRecoilState(store.globalAudioFetchingFamily(index));
   const [globalAudioURL, setGlobalAudioURL] = useRecoilState(store.globalAudioURLFamily(index));
 
   const { audioRef } = useCustomAudioRef({ setIsPlaying });
@@ -149,6 +150,7 @@ export default function StreamAudio({ index = 0 }) {
     fetchAudio();
   }, [
     setGlobalAudioURL,
+    setIsFetching,
     latestMessage,
     isSubmitting,
     activeRunId,
@@ -176,6 +178,7 @@ export default function StreamAudio({ index = 0 }) {
       controlsList="nodownload nofullscreen noremoteplayback"
       className="absolute h-0 w-0 overflow-hidden"
       src={globalAudioURL || undefined}
+      id={globalAudioId}
       autoPlay
     />
   );

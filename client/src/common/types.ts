@@ -52,6 +52,7 @@ export type LastSelectedModels = Record<EModelEndpoint, string>;
 export type LocalizeFunction = (phraseKey: string, ...values: string[]) => string;
 
 export const mainTextareaId = 'prompt-textarea';
+export const globalAudioId = 'global-audio';
 
 export enum IconContext {
   landing = 'landing',
