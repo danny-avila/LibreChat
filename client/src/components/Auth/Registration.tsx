@@ -1,16 +1,16 @@
 import { useForm } from 'react-hook-form';
-import { useNavigate } from 'react-router-dom';
 import React, { useState, useEffect } from 'react';
-import { useRegisterUserMutation, useGetStartupConfig } from 'librechat-data-provider/react-query';
-import type { TRegisterUser } from 'librechat-data-provider';
-import { useLocalize } from '~/hooks';
+import { useNavigate, useOutletContext } from 'react-router-dom';
+import { useRegisterUserMutation } from 'librechat-data-provider/react-query';
+import type { TRegisterUser, TError } from 'librechat-data-provider';
+import type { TLoginLayoutContext } from '~/common';
 import { ErrorMessage } from './ErrorMessage';
-import AuthLayout from './AuthLayout';
+import { useLocalize } from '~/hooks';
 
 const Registration: React.FC = () => {
   const navigate = useNavigate();
-  const { data: startupConfig, error: startupConfigError, isFetching } = useGetStartupConfig();
   const localize = useLocalize();
+  const { startupConfig, startupConfigError, isFetching } = useOutletContext<TLoginLayoutContext>();
 
   const {
     register,
@@ -30,10 +30,8 @@ const Registration: React.FC = () => {
       navigate('/c/new');
     } catch (error) {
       setError(true);
-      //@ts-ignore - error is of type unknown
-      if (error.response?.data?.message) {
-        //@ts-ignore - error is of type unknown
-        setErrorMessage(error.response?.data?.message);
+      if ((error as TError).response?.data?.message) {
+        setErrorMessage((error as TError).response?.data?.message ?? '');
       }
     }
   };
@@ -60,7 +58,7 @@ const Registration: React.FC = () => {
           className="webkit-dark-styles peer block w-full appearance-none rounded-md border border-gray-300 bg-transparent px-3.5 pb-3.5 pt-4 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0 dark:border-gray-600 dark:text-white dark:focus:border-green-500"
           placeholder=" "
           data-testid={id}
-        ></input>
+        />
         <label
           htmlFor={id}
           className="absolute start-1 top-2 z-10 origin-[0] -translate-y-4 scale-75 transform bg-white px-3 text-sm text-gray-500 duration-100 peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:scale-100 peer-focus:top-2 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:px-3 peer-focus:text-green-600 dark:bg-gray-900 dark:text-gray-400 dark:peer-focus:text-green-500 rtl:peer-focus:left-auto rtl:peer-focus:translate-x-1/4"
@@ -77,12 +75,7 @@ const Registration: React.FC = () => {
   );
 
   return (
-    <AuthLayout
-      header={localize('com_auth_create_account')}
-      isFetching={isFetching}
-      startupConfig={startupConfig}
-      startupConfigError={startupConfigError}
-    >
+    <>
       {error && (
         <ErrorMessage>
           {localize('com_auth_error_create')} {errorMessage}
@@ -145,7 +138,8 @@ const Registration: React.FC = () => {
               },
             })}
             {renderInput('confirm_password', 'com_auth_password_confirm', 'password', {
-              validate: (value) => value === password || localize('com_auth_password_not_match'),
+              validate: (value: string) =>
+                value === password || localize('com_auth_password_not_match'),
             })}
             <div className="mt-6">
               <button
@@ -167,7 +161,7 @@ const Registration: React.FC = () => {
           </p>
         </>
       )}
-    </AuthLayout>
+    </>
   );
 };
 
