@@ -15,6 +15,7 @@ const { requireJwtAuth } = require('~/server/middleware/');
 const router = express.Router();
 
 router.get('/', getRoomsByQuery);
+router.get('/query', requireJwtAuth, getRoomByUser);
 router.post('/', requireJwtAuth, createNewRoom);
 router.post('/:roomId/report', requireJwtAuth, reportRoom);
 router.post('/join/:roomId', requireJwtAuth, joinRoom);

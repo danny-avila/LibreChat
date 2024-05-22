@@ -23,7 +23,7 @@ export default function Rooms({
 
   useEffect(() => {
     request
-      .get('/api/rooms')
+      .get('/api/rooms/query')
       .then((res: unknown) => setRooms(res as TConversation[]))
       .catch((error) => console.error(error));
   }, [setRooms]);

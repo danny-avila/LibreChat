@@ -3,6 +3,7 @@ import { useRecoilValue } from 'recoil';
 import type { Dispatch, SetStateAction } from 'react';
 import { useLocalize, useNewConvo } from '~/hooks';
 import store from '~/store';
+import Marquee from 'react-fast-marquee';
 
 export default function MobileNav({
   setNavVisible,
@@ -45,7 +46,11 @@ export default function MobileNav({
         </svg>
       </button>
       <h1 className="flex-1 text-center text-base font-normal">
-        {title || localize('com_ui_new_chat')}
+        {title && title.length > 30 ? (
+          <Marquee speed={30}>{title}</Marquee>
+        ) : (
+          title || localize('com_ui_new_chat')
+        )}
       </h1>
       <button
         type="button"
