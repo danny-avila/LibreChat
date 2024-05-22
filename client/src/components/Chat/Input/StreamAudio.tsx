@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
-import { MediaSourceAppender } from '~/hooks/Audio/MediaSourceAppender';
+import { useCustomAudioRef, MediaSourceAppender } from '~/hooks/Audio';
 import store from '~/store';
 
 function timeoutPromise(ms: number, message?: string) {
@@ -18,7 +18,6 @@ const maxPromiseTime = 15000;
 
 export default function StreamAudio({ index = 0 }) {
   const audioRunId = useRef<string | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isFetching, setIsFetching] = useState(false);
 
   const cacheTTS = useRecoilValue(store.cacheTTS);
@@ -27,6 +26,8 @@ export default function StreamAudio({ index = 0 }) {
   const latestMessage = useRecoilValue(store.latestMessageFamily(index));
   const setIsPlaying = useSetRecoilState(store.globalAudioPlayingFamily(index));
   const [globalAudioURL, setGlobalAudioURL] = useRecoilState(store.globalAudioURLFamily(index));
+
+  const { audioRef } = useCustomAudioRef({ setIsPlaying });
 
   const { conversationId: paramId } = useParams();
   const queryParam = paramId === 'new' ? paramId : latestMessage?.conversationId ?? paramId ?? '';
@@ -144,13 +145,14 @@ export default function StreamAudio({ index = 0 }) {
 
     fetchAudio();
   }, [
-    isSubmitting,
-    latestMessage,
-    activeRunId,
-    isFetching,
     setGlobalAudioURL,
-    cacheTTS,
+    latestMessage,
+    isSubmitting,
+    activeRunId,
     getMessages,
+    isFetching,
+    cacheTTS,
+    audioRef,
   ]);
 
   return (
@@ -160,10 +162,6 @@ export default function StreamAudio({ index = 0 }) {
       controlsList="nodownload nofullscreen noremoteplayback"
       className="absolute h-0 w-0 overflow-hidden"
       src={globalAudioURL || undefined}
-      onEnded={() => {
-        setIsPlaying(false);
-        console.log('global audio ended');
-      }}
       autoPlay
     />
   );
