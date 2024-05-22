@@ -16,7 +16,8 @@ interface UserListProps {
   children: React.ReactNode;
 }
 
-const defaultMinSize = 20;
+const defaultMinSize = 0;
+// const defaultMinSize = 20;
 
 function UserList({
   defaultLayout = [97, 3],
