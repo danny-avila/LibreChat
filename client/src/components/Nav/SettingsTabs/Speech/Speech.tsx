@@ -8,6 +8,7 @@ import ConversationModeSwitch from './ConversationModeSwitch';
 import {
   TextToSpeechSwitch,
   EngineTTSDropdown,
+  AutomaticPlayback,
   CacheTTSSwitch,
   VoiceDropdown,
   PlaybackRate,
@@ -22,8 +23,8 @@ import {
 
 function Speech() {
   const [confirmClear, setConfirmClear] = useState(false);
-  const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
   const [advancedMode] = useRecoilState<boolean>(store.advancedMode);
+  const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
 
   const contentRef = useRef(null);
   useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);
@@ -66,14 +67,19 @@ function Speech() {
           <TextToSpeechSwitch />
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+          <AutomaticPlayback />
+        </div>
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <EngineTTSDropdown />
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <VoiceDropdown />
         </div>
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-          <PlaybackRate />
-        </div>
+        {advancedMode && (
+          <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+            <PlaybackRate />
+          </div>
+        )}
         {advancedMode && (
           <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
             <CacheTTSSwitch />

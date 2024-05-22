@@ -24,6 +24,7 @@ export default function StreamAudio({ index = 0 }) {
   const playbackRate = useRecoilValue(store.playbackRate);
 
   const activeRunId = useRecoilValue(store.activeRunFamily(index));
+  const automaticPlayback = useRecoilValue(store.automaticPlayback);
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
   const latestMessage = useRecoilValue(store.latestMessageFamily(index));
   const setIsPlaying = useSetRecoilState(store.globalAudioPlayingFamily(index));
@@ -43,6 +44,7 @@ export default function StreamAudio({ index = 0 }) {
 
   useEffect(() => {
     const shouldFetch =
+      automaticPlayback &&
       isSubmitting &&
       latestMessage &&
       !latestMessage.isCreatedByUser &&
@@ -149,6 +151,7 @@ export default function StreamAudio({ index = 0 }) {
 
     fetchAudio();
   }, [
+    automaticPlayback,
     setGlobalAudioURL,
     setIsFetching,
     latestMessage,

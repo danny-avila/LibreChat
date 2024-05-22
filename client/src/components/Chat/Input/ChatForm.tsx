@@ -1,5 +1,5 @@
 import { useForm } from 'react-hook-form';
-import { useRecoilState } from 'recoil';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import { memo, useCallback, useRef, useMemo, useEffect } from 'react';
 import {
   supportsFiles,
@@ -25,7 +25,9 @@ import store from '~/store';
 const ChatForm = ({ index = 0 }) => {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
-  const [SpeechToText] = useRecoilState<boolean>(store.SpeechToText);
+  const SpeechToText = useRecoilValue(store.SpeechToText);
+  const TextToSpeech = useRecoilValue(store.TextToSpeech);
+  const automaticPlayback = useRecoilValue(store.automaticPlayback);
   const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
   const [showMentionPopover, setShowMentionPopover] = useRecoilState(
     store.showMentionPopoverFamily(index),
@@ -188,7 +190,7 @@ const ChatForm = ({ index = 0 }) => {
                 disabled={!!disableInputs}
               />
             )}
-            <StreamAudio index={index} />
+            {TextToSpeech && automaticPlayback && <StreamAudio index={index} />}
           </div>
         </div>
       </div>
