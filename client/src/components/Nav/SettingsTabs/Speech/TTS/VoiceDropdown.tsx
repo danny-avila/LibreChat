@@ -15,16 +15,12 @@ export default function VoiceDropdown() {
     [data],
   );
 
-  const handleSelect = (value: string) => {
-    setVoice(value);
-  };
-
   return (
     <div className="flex items-center justify-between">
       <div>{localize('com_nav_voice_select')}</div>
       <Dropdown
         value={voice}
-        onChange={handleSelect}
+        onChange={(value: string) => setVoice(value)}
         options={voiceOptions}
         width={220}
         position={'left'}
