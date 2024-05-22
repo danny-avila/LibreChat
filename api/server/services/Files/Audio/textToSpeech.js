@@ -312,7 +312,6 @@ async function streamAudio(req, res) {
   }
 
   try {
-    const voice = getRandomVoiceId();
     let shouldContinue = true;
     const processChunks = createChunkProcessor(req.body.messageId);
 
@@ -340,7 +339,6 @@ async function streamAudio(req, res) {
         try {
           const response = await ttsRequest(customConfig, {
             input: update.text,
-            voice,
             stream: true,
           });
 
