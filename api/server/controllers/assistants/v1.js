@@ -61,7 +61,6 @@ const retrieveAssistant = async (req, res) => {
   try {
     /* NOTE: not actually being used right now */
     const { openai } = await getOpenAIClient({ req, res });
-
     const assistant_id = req.params.id;
     const assistant = await openai.beta.assistants.retrieve(assistant_id);
     res.json(assistant);
@@ -142,24 +141,6 @@ const deleteAssistant = async (req, res) => {
 const listAssistants = async (req, res) => {
   try {
     const body = await fetchAssistants(req, res);
-
-    if (req.app.locals?.[req.query.endpoint]) {
-      /** @type {Partial<TAssistantEndpoint>} */
-      const assistantsConfig = req.app.locals[req.query.endpoint];
-      const { supportedIds, excludedIds, private } = assistantsConfig;
-      if (private) {
-        const userId = req.user.id.toString();
-        body.data = body.data.filter(
-          (assistant) =>
-            userId === assistant.metadata?.author || assistant.metadata?.author === undefined,
-        );
-      } else if (supportedIds?.length) {
-        body.data = body.data.filter((assistant) => supportedIds.includes(assistant.id));
-      } else if (excludedIds?.length) {
-        body.data = body.data.filter((assistant) => !excludedIds.includes(assistant.id));
-      }
-    }
-
     res.json(body);
   } catch (error) {
     logger.error('[/assistants] Error listing assistants', error);

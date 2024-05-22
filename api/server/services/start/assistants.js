@@ -29,7 +29,15 @@ function assistantsConfigSetup(config, prevConfig = {}) {
   const parsedConfig = assistantEndpointSchema.parse(assistantsConfig);
   if (assistantsConfig.supportedIds?.length && assistantsConfig.excludedIds?.length) {
     logger.warn(
-      `Both \`supportedIds\` and \`excludedIds\` are defined for the ${EModelEndpoint.assistants} endpoint; \`excludedIds\` field will be ignored.`,
+      `Configuration conflict: The '${EModelEndpoint.assistants}' endpoint has both 'supportedIds' and 'excludedIds' defined. The 'excludedIds' will be ignored.`,
+    );
+  }
+  if (
+    assistantsConfig.privateAssistants &&
+    (assistantsConfig.supportedIds?.length || assistantsConfig.excludedIds?.length)
+  ) {
+    logger.warn(
+      `Configuration conflict: The '${EModelEndpoint.assistants}' endpoint has both 'privateAssistants' and 'supportedIds' or 'excludedIds' defined. The 'supportedIds' and 'excludedIds' will be ignored.`,
     );
   }
 
@@ -41,7 +49,7 @@ function assistantsConfigSetup(config, prevConfig = {}) {
     supportedIds: parsedConfig.supportedIds,
     capabilities: parsedConfig.capabilities,
     excludedIds: parsedConfig.excludedIds,
-    private: parsedConfig.private,
+    privateAssistants: parsedConfig.privateAssistants,
     timeoutMs: parsedConfig.timeoutMs,
   };
 }
