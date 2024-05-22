@@ -7,6 +7,7 @@ const keyvMongo = require('./keyvMongo');
 
 const { BAN_DURATION, USE_REDIS } = process.env ?? {};
 const THIRTY_MINUTES = 1800000;
+const TEN_MINUTES = 600000;
 
 const duration = math(BAN_DURATION, 7200000);
 
@@ -23,6 +24,10 @@ const pending_req = isEnabled(USE_REDIS)
 const config = isEnabled(USE_REDIS)
   ? new Keyv({ store: keyvRedis })
   : new Keyv({ namespace: CacheKeys.CONFIG_STORE });
+
+const audioRuns = isEnabled(USE_REDIS) // ttl: 30 minutes
+  ? new Keyv({ store: keyvRedis, ttl: TEN_MINUTES })
+  : new Keyv({ namespace: CacheKeys.AUDIO_RUNS, ttl: TEN_MINUTES });
 
 const tokenConfig = isEnabled(USE_REDIS) // ttl: 30 minutes
   ? new Keyv({ store: keyvRedis, ttl: THIRTY_MINUTES })
@@ -64,6 +69,7 @@ const namespaces = {
   [CacheKeys.TOKEN_CONFIG]: tokenConfig,
   [CacheKeys.GEN_TITLE]: genTitle,
   [CacheKeys.MODEL_QUERIES]: modelQueries,
+  [CacheKeys.AUDIO_RUNS]: audioRuns,
 };
 
 /**
