@@ -128,27 +128,25 @@ export const openAISettings = {
 
 export const googleSettings = {
   model: {
-    default: 'chat-bison',
+    default: 'gemini-1.5-flash-latest',
   },
   maxOutputTokens: {
     min: 1,
-    max: 2048,
+    max: 8192,
     step: 1,
-    default: 1024,
-    maxGemini: 8192,
-    defaultGemini: 8192,
+    default: 8192,
   },
   temperature: {
     min: 0,
-    max: 1,
+    max: 2,
     step: 0.01,
-    default: 0.2,
+    default: 1,
   },
   topP: {
     min: 0,
     max: 1,
     step: 0.01,
-    default: 0.8,
+    default: 0.95,
   },
   topK: {
     min: 1,
@@ -484,18 +482,6 @@ export const googleSchema = tConversationSchema
     maxContextTokens: true,
   })
   .transform((obj) => {
-    const isGemini = obj?.model?.toLowerCase()?.includes('gemini');
-
-    const maxOutputTokensMax = isGemini
-      ? google.maxOutputTokens.maxGemini
-      : google.maxOutputTokens.max;
-    const maxOutputTokensDefault = isGemini
-      ? google.maxOutputTokens.defaultGemini
-      : google.maxOutputTokens.default;
-
-    let maxOutputTokens = obj.maxOutputTokens ?? maxOutputTokensDefault;
-    maxOutputTokens = Math.min(maxOutputTokens, maxOutputTokensMax);
-
     return {
       ...obj,
       model: obj.model ?? google.model.default,
@@ -503,7 +489,7 @@ export const googleSchema = tConversationSchema
       promptPrefix: obj.promptPrefix ?? null,
       examples: obj.examples ?? [{ input: { content: '' }, output: { content: '' } }],
       temperature: obj.temperature ?? google.temperature.default,
-      maxOutputTokens,
+      maxOutputTokens: obj.maxOutputTokens ?? google.maxOutputTokens.default,
       topP: obj.topP ?? google.topP.default,
       topK: obj.topK ?? google.topK.default,
       iconURL: obj.iconURL ?? undefined,
