@@ -61,6 +61,17 @@ export default {
   com_ui_import_conversation_error: 'Terjadi kesalahan saat mengimpor percakapan Anda',
   com_ui_confirm_action: 'Konfirmasi Aksi',
   com_ui_chats: 'chat',
+  com_ui_share: 'Share',
+  com_ui_share_link_to_chat: 'Share link to chat',
+  com_ui_share_error: 'There was an error sharing the chat link',
+  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share_created_message:
+    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  com_ui_share_update_message:
+    'Your name, custom instructions, and any messages you add after sharing stay private.',
+  com_ui_share_updated_message:
+    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete: 'Hapus',
   com_ui_delete_conversation: 'Hapus chat?',
   com_ui_delete_conversation_confirm: 'Ini akan menghapus',
@@ -304,6 +315,12 @@ export default {
   com_nav_export_recursive_or_sequential: 'Rekursif atau berurutan?',
   com_nav_export_recursive: 'Rekursif',
   com_nav_export_conversation: 'Ekspor percakapan',
+  com_nav_export: 'Ekspor',
+  com_nav_shared_links: 'Link berbagi',
+  com_nav_shared_links_manage: 'Pengeluaran',
+  com_nav_shared_links_empty: 'Anda tidak memiliki link berbagi.',
+  com_nav_shared_links_name: 'Nama',
+  com_nav_shared_links_date_shared: 'Tanggal berbagi',
   com_nav_theme: 'Tema',
   com_nav_theme_system: 'Sistem',
   com_nav_theme_dark: 'Gelap',
@@ -575,6 +592,43 @@ export const comparisons = {
   com_ui_chats: {
     english: 'chats',
     translated: 'chat',
+  },
+  com_ui_share: {
+    english: 'Share',
+    translated: 'Share',
+  },
+  com_ui_share_link_to_chat: {
+    english: 'Share link to chat',
+    translated: 'Share link to chat',
+  },
+  com_ui_share_error: {
+    english: 'There was an error sharing the chat link',
+    translated: 'There was an error sharing the chat link',
+  },
+  com_ui_share_create_message: {
+    english: 'Your name and any messages you add after sharing stay private.',
+    translated: 'Your name and any messages you add after sharing stay private.',
+  },
+  com_ui_share_created_message: {
+    english:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_share_update_message: {
+    english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated:
+      'Your name, custom instructions, and any messages you add after sharing stay private.',
+  },
+  com_ui_share_updated_message: {
+    english:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_shared_link_not_found: {
+    english: 'Shared link not found',
+    translated: 'Shared link not found',
   },
   com_ui_delete: {
     english: 'Delete',
@@ -1456,6 +1510,30 @@ export const comparisons = {
   com_nav_export_conversation: {
     english: 'Export conversation',
     translated: 'Ekspor percakapan',
+  },
+  com_nav_export: {
+    english: 'Export',
+    translated: 'Ekspor',
+  },
+  com_nav_shared_links: {
+    english: 'Shared links',
+    translated: 'Link berbagi',
+  },
+  com_nav_shared_links_manage: {
+    english: 'Manage',
+    translated: 'Pengeluaran',
+  },
+  com_nav_shared_links_empty: {
+    english: 'You have no shared links.',
+    translated: 'Anda tidak memiliki link berbagi.',
+  },
+  com_nav_shared_links_name: {
+    english: 'Name',
+    translated: 'Nama',
+  },
+  com_nav_shared_links_date_shared: {
+    english: 'Date shared',
+    translated: 'Tanggal berbagi',
   },
   com_nav_theme: {
     english: 'Theme',

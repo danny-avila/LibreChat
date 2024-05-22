@@ -55,7 +55,7 @@ async function createRun({ openai, thread_id, body }) {
  * @param {string} params.run_id - The ID of the run to wait for.
  * @param {string} params.thread_id - The ID of the thread associated with the run.
  * @param {RunManager} params.runManager - The RunManager instance to manage run steps.
- * @param {number} [params.pollIntervalMs=750] - The interval for polling the run status; default is 750 milliseconds.
+ * @param {number} [params.pollIntervalMs=2000] - The interval for polling the run status; default is 2000 milliseconds.
  * @param {number} [params.timeout=180000] - The period to wait until timing out polling; default is 3 minutes (in ms).
  * @return {Promise<Run>} A promise that resolves to the last fetched run object.
  */
@@ -64,7 +64,7 @@ async function waitForRun({
   run_id,
   thread_id,
   runManager,
-  pollIntervalMs = 750,
+  pollIntervalMs = 2000,
   timeout = 60000 * 3,
 }) {
   let timeElapsed = 0;
@@ -233,7 +233,7 @@ async function _handleRun({ openai, run_id, thread_id }) {
     run_id,
     thread_id,
     runManager,
-    pollIntervalMs: 750,
+    pollIntervalMs: 2000,
     timeout: 60000,
   });
   const actions = [];

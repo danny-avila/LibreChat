@@ -66,6 +66,17 @@ export default {
   com_ui_preview: 'Предпросмотр',
   com_ui_upload: 'Загрузить',
   com_ui_connect: 'Подключить',
+  com_ui_share: 'Share',
+  com_ui_share_link_to_chat: 'Share link to chat',
+  com_ui_share_error: 'There was an error sharing the chat link',
+  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share_created_message:
+    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  com_ui_share_update_message:
+    'Your name, custom instructions, and any messages you add after sharing stay private.',
+  com_ui_share_updated_message:
+    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete_conversation: 'Удалить чат?',
   com_ui_delete_conversation_confirm: 'Будет удален следующий чат: ',
   com_ui_rename: 'Переименовать',
@@ -302,6 +313,12 @@ export default {
   com_nav_export_recursive_or_sequential: 'Рекурсивно или последовательно?',
   com_nav_export_recursive: 'Рекурсивно',
   com_nav_export_conversation: 'Экспортировать разговор',
+  com_nav_export: 'Экспорт',
+  com_nav_shared_links: 'Связываемые ссылки',
+  com_nav_shared_links_manage: 'Управление',
+  com_nav_shared_links_empty: 'У вас нет связываемых ссылок.',
+  com_nav_shared_links_name: 'Naam',
+  com_nav_shared_links_date_shared: 'Datum gedeeld',
   com_nav_my_files: 'Мои файлы',
   com_nav_theme: 'Тема',
   com_nav_theme_system: 'Системная',
@@ -364,6 +381,22 @@ export default {
   com_ui_upload_error: 'Произошла ошибка при загрузке вашего файла',
   com_user_message: 'Вы',
   /* The following are AI Translated */
+  com_assistants_file_search: 'Поиск файлов',
+  com_assistants_file_search_info:
+    'Прикрепление векторных хранилищ для Поиска по файлам пока не поддерживается. Вы можете прикрепить их из Песочницы провайдера или прикрепить файлы к сообщениям для поиска по файлам в отдельных диалогах.',
+  com_assistants_non_retrieval_model:
+    'Поиск по файлам недоступен для этой модели. Пожалуйста, выберите другую модель.',
+  com_ui_attach_error_openai: 'Невозможно прикрепить файлы ассистента к другим режимам',
+  com_ui_attach_warn_endpoint:
+    'Файлы сторонних приложений могут быть проигнорированы без совместимого плагина',
+  com_ui_assistant_deleted: 'Ассистент успешно удален',
+  com_ui_assistant_delete_error: 'Произошла ошибка при удалении ассистента',
+  com_ui_copied: 'Скопировано',
+  com_ui_copy_code: 'Копировать код',
+  com_ui_copy_link: 'Копировать ссылку',
+  com_ui_update_link: 'Обновить ссылку',
+  com_ui_create_link: 'Создать ссылку',
+  com_nav_source_chat: 'Просмотреть исходный чат',
   com_ui_date_today: 'Сегодня',
   com_ui_date_yesterday: 'Вчера',
   com_ui_date_previous_7_days: 'Предыдущие 7 дней',
@@ -799,6 +832,43 @@ export const comparisons = {
   com_ui_connect: {
     english: 'Connect',
     translated: 'Подключить',
+  },
+  com_ui_share: {
+    english: 'Share',
+    translated: 'Share',
+  },
+  com_ui_share_link_to_chat: {
+    english: 'Share link to chat',
+    translated: 'Share link to chat',
+  },
+  com_ui_share_error: {
+    english: 'There was an error sharing the chat link',
+    translated: 'There was an error sharing the chat link',
+  },
+  com_ui_share_create_message: {
+    english: 'Your name and any messages you add after sharing stay private.',
+    translated: 'Your name and any messages you add after sharing stay private.',
+  },
+  com_ui_share_created_message: {
+    english:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_share_update_message: {
+    english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated:
+      'Your name, custom instructions, and any messages you add after sharing stay private.',
+  },
+  com_ui_share_updated_message: {
+    english:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_shared_link_not_found: {
+    english: 'Shared link not found',
+    translated: 'Shared link not found',
   },
   com_ui_delete_conversation: {
     english: 'Delete chat?',
@@ -1635,6 +1705,30 @@ export const comparisons = {
     english: 'Export conversation',
     translated: 'Экспортировать разговор',
   },
+  com_nav_export: {
+    english: 'Export',
+    translated: 'Экспорт',
+  },
+  com_nav_shared_links: {
+    english: 'Shared links',
+    translated: 'Связываемые ссылки',
+  },
+  com_nav_shared_links_manage: {
+    english: 'Manage',
+    translated: 'Управление',
+  },
+  com_nav_shared_links_empty: {
+    english: 'You have no shared links.',
+    translated: 'У вас нет связываемых ссылок.',
+  },
+  com_nav_shared_links_name: {
+    english: 'Name',
+    translated: 'Naam',
+  },
+  com_nav_shared_links_date_shared: {
+    english: 'Date shared',
+    translated: 'Datum gedeeld',
+  },
   com_nav_my_files: {
     english: 'My Files',
     translated: 'Мои файлы',
@@ -1863,6 +1957,60 @@ export const comparisons = {
   com_user_message: {
     english: 'You',
     translated: 'Вы',
+  },
+  com_assistants_file_search: {
+    english: 'File Search',
+    translated: 'Поиск файлов',
+  },
+  com_assistants_file_search_info: {
+    english:
+      'Attaching vector stores for File Search is not yet supported. You can attach them from the Provider Playground or attach files to messages for file search on a thread basis.',
+    translated:
+      'Прикрепление векторных хранилищ для Поиска по файлам пока не поддерживается. Вы можете прикрепить их из Песочницы провайдера или прикрепить файлы к сообщениям для поиска по файлам в отдельных диалогах.',
+  },
+  com_assistants_non_retrieval_model: {
+    english: 'File search is not enabled on this model. Please select another model.',
+    translated: 'Поиск по файлам недоступен для этой модели. Пожалуйста, выберите другую модель.',
+  },
+  com_ui_attach_error_openai: {
+    english: 'Cannot attach Assistant files to other endpoints',
+    translated: 'Невозможно прикрепить файлы ассистента к другим режимам',
+  },
+  com_ui_attach_warn_endpoint: {
+    english: 'Non-Assistant files may be ignored without a compatible tool',
+    translated: 'Файлы сторонних приложений могут быть проигнорированы без совместимого плагина',
+  },
+  com_ui_assistant_deleted: {
+    english: 'Successfully deleted assistant',
+    translated: 'Ассистент успешно удален',
+  },
+  com_ui_assistant_delete_error: {
+    english: 'There was an error deleting the assistant',
+    translated: 'Произошла ошибка при удалении ассистента',
+  },
+  com_ui_copied: {
+    english: 'Copied!',
+    translated: 'Скопировано',
+  },
+  com_ui_copy_code: {
+    english: 'Copy code',
+    translated: 'Копировать код',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: 'Копировать ссылку',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: 'Обновить ссылку',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: 'Создать ссылку',
+  },
+  com_nav_source_chat: {
+    english: 'View source chat',
+    translated: 'Просмотреть исходный чат',
   },
   com_ui_date_today: {
     english: 'Today',
