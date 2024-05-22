@@ -21,6 +21,8 @@ export default function StreamAudio({ index = 0 }) {
   const [isFetching, setIsFetching] = useState(false);
 
   const cacheTTS = useRecoilValue(store.cacheTTS);
+  const playbackRate = useRecoilValue(store.playbackRate);
+
   const activeRunId = useRecoilValue(store.activeRunFamily(index));
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
   const latestMessage = useRecoilValue(store.latestMessageFamily(index));
@@ -155,6 +157,17 @@ export default function StreamAudio({ index = 0 }) {
     cacheTTS,
     audioRef,
   ]);
+
+  useEffect(() => {
+    if (
+      playbackRate &&
+      globalAudioURL &&
+      audioRef.current &&
+      audioRef.current.playbackRate !== playbackRate
+    ) {
+      audioRef.current.playbackRate = playbackRate;
+    }
+  }, [audioRef, globalAudioURL, playbackRate]);
 
   return (
     <audio

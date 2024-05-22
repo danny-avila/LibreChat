@@ -5,13 +5,19 @@ import { useRecoilState } from 'recoil';
 import { useOnClickOutside } from '~/hooks';
 import store from '~/store';
 import ConversationModeSwitch from './ConversationModeSwitch';
-import { TextToSpeechSwitch, EngineTTSDropdown, CacheTTSSwitch, VoiceDropdown } from './TTS';
 import {
+  TextToSpeechSwitch,
+  EngineTTSDropdown,
+  CacheTTSSwitch,
+  VoiceDropdown,
+  PlaybackRate,
+} from './TTS';
+import {
+  DecibelSelector,
+  EngineSTTDropdown,
   SpeechToTextSwitch,
   AutoSendTextSwitch,
   AutoTranscribeAudioSwitch,
-  DecibelSelector,
-  EngineSTTDropdown,
 } from './STT';
 
 function Speech() {
@@ -26,7 +32,7 @@ function Speech() {
     <Tabs.Content
       value={SettingsTabValues.SPEECH}
       role="tabpanel"
-      className="w-full md:min-h-[300px]"
+      className="w-full px-4 md:min-h-[300px]"
       ref={contentRef}
     >
       <div className="flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-50">
@@ -64,6 +70,9 @@ function Speech() {
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <VoiceDropdown />
+        </div>
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+          <PlaybackRate />
         </div>
         {advancedMode && (
           <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">

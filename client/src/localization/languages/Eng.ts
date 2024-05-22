@@ -548,6 +548,7 @@ export default {
   com_nav_auto_send_text: 'Auto send text (after 3 sec)',
   com_nav_auto_transcribe_audio: 'Auto transcribe audio',
   com_nav_db_sensitivity: 'Decibel sensitivity',
+  com_nav_playback_rate: 'Audio Playback Rate',
   com_nav_engine: 'Engine',
   com_nav_browser: 'Browser',
   com_nav_external: 'External',

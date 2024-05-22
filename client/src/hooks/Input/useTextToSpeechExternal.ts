@@ -1,4 +1,4 @@
-import { useRecoilState } from 'recoil';
+import { useRecoilValue } from 'recoil';
 import { useCallback, useEffect, useState } from 'react';
 import { useTextToSpeechMutation } from '~/data-provider';
 import { useToastContext } from '~/Providers';
@@ -13,8 +13,9 @@ const createFormData = (text: string, voice: string) => {
 
 function useTextToSpeechExternal() {
   const { showToast } = useToastContext();
-  const [voice] = useRecoilState<string>(store.voice);
-  const [cacheTTS] = useRecoilState<boolean>(store.cacheTTS);
+  const voice = useRecoilValue(store.voice);
+  const cacheTTS = useRecoilValue(store.cacheTTS);
+  const playbackRate = useRecoilValue(store.playbackRate);
 
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [text, setText] = useState<string | null>(null);
@@ -24,6 +25,9 @@ function useTextToSpeechExternal() {
 
   const playAudio = (blobUrl: string) => {
     const newAudio = new Audio(blobUrl);
+    if (playbackRate && playbackRate !== 1) {
+      newAudio.playbackRate = playbackRate;
+    }
 
     newAudio
       .play()

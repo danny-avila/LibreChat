@@ -62,6 +62,7 @@ const localStorageAtoms = {
   forkSetting: atomWithLocalStorage('forkSetting', ''),
   splitAtTarget: atomWithLocalStorage('splitAtTarget', false),
   rememberForkOption: atomWithLocalStorage('rememberForkOption', true),
+  playbackRate: atomWithLocalStorage<number | null>('playbackRate', null),
 };
 
 export default { ...staticAtoms, ...localStorageAtoms };

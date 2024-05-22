@@ -35,7 +35,7 @@ export default function ConversationModeSwitch({
       </div>
       <div className="flex items-center justify-between">
         <label
-          className="flex h-auto cursor-pointer items-center rounded bg-transparent px-2 py-1 text-xs font-medium font-normal transition-colors hover:bg-gray-100 hover:text-green-700 dark:bg-transparent dark:text-white dark:hover:bg-gray-600 dark:hover:text-green-500"
+          className="flex h-auto cursor-pointer items-center rounded border border-gray-500/70 bg-transparent px-2 py-1 text-xs font-medium font-normal transition-colors hover:border-gray-500/95 hover:bg-gray-100 hover:text-green-700 dark:bg-transparent dark:text-white dark:hover:bg-gray-600 dark:hover:text-green-500"
           onClick={() => setAdvancedMode(!advancedMode)}
         >
           <span>{advancedMode ? 'Advanced Mode' : 'Simple Mode'}</span>
