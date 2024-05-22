@@ -127,6 +127,7 @@ function createChunkProcessor(messageId) {
     if (text === processedText) {
       noChangeCount++;
     }
+
     const remainingText = text.slice(processedText.length);
     const chunks = [];
 

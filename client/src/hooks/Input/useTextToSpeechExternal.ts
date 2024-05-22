@@ -1,8 +1,7 @@
-import { useRecoilValue, useRecoilState } from 'recoil';
+import { useRecoilValue } from 'recoil';
 import { useCallback, useEffect, useState, useMemo } from 'react';
 import { useTextToSpeechMutation } from '~/data-provider';
 import { useToastContext } from '~/Providers';
-import { globalAudioId } from '~/common';
 import store from '~/store';
 
 const createFormData = (text: string, voice: string) => {
@@ -26,10 +25,7 @@ function useTextToSpeechExternal(isLast: boolean, index = 0) {
 
   /* Global Audio Variables */
   const globalIsFetching = useRecoilValue(store.globalAudioFetchingFamily(index));
-  const [globalAudioURL, setGlobalAudioURL] = useRecoilState(store.globalAudioURLFamily(index));
-  const [globalIsPlaying, setGlobalIsPlaying] = useRecoilState(
-    store.globalAudioPlayingFamily(index),
-  );
+  const globalIsPlaying = useRecoilValue(store.globalAudioPlayingFamily(index));
 
   const playAudio = (blobUrl: string) => {
     const newAudio = new Audio(blobUrl);
@@ -143,19 +139,6 @@ function useTextToSpeechExternal(isLast: boolean, index = 0) {
     }
   }, [audio, blobUrl]);
 
-  const pauseGlobalAudio = useCallback(() => {
-    if (globalAudioURL) {
-      const globalAudio = document.getElementById(globalAudioId);
-      if (globalAudio) {
-        console.log('Pausing global audio', globalAudioURL);
-        (globalAudio as HTMLAudioElement).pause();
-        setGlobalIsPlaying(false);
-      }
-      URL.revokeObjectURL(globalAudioURL);
-      setGlobalAudioURL(null);
-    }
-  }, [globalAudioURL, setGlobalAudioURL, setGlobalIsPlaying]);
-
   useEffect(() => cancelSpeech, [cancelSpeech]);
 
   const isLoading = useMemo(() => {
@@ -166,7 +149,7 @@ function useTextToSpeechExternal(isLast: boolean, index = 0) {
     return isLocalSpeaking || (isLast && globalIsPlaying);
   }, [isLocalSpeaking, globalIsPlaying, isLast]);
 
-  return { generateSpeechExternal, cancelSpeech, isLoading, isSpeaking, pauseGlobalAudio };
+  return { generateSpeechExternal, cancelSpeech, isLoading, isSpeaking };
 }
 
 export default useTextToSpeechExternal;

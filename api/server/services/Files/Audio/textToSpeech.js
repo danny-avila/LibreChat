@@ -299,7 +299,7 @@ async function textToSpeech(req, res) {
     const response = await ttsRequest(customConfig, { input, voice });
     response.data.pipe(res);
   } catch (error) {
-    logger.error('An error occurred while creating the audio:', error);
+    logger.error('An error occurred while creating the audio stream:', error);
     res.status(500).send('An error occurred');
   }
 }
@@ -325,7 +325,7 @@ async function streamAudio(req, res) {
 
       const updates = await processChunks();
       if (typeof updates === 'string') {
-        logger.error('Error processing updates:', updates);
+        logger.error(`Error processing audio stream updates: ${JSON.stringify(updates)}`);
         res.status(500).end();
         return;
       }

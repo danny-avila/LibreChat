@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import useTextToSpeechBrowser from './useTextToSpeechBrowser';
 import useTextToSpeechExternal from './useTextToSpeechExternal';
+import { usePauseGlobalAudio } from '../Audio';
 import { useRecoilState } from 'recoil';
 import store from '~/store';
 
@@ -19,8 +20,8 @@ const useTextToSpeech = (message: string, isLast: boolean, index = 0) => {
     cancelSpeech: cancelSpeechExternal,
     isSpeaking: isSpeakingExternal,
     isLoading: isLoading,
-    pauseGlobalAudio,
   } = useTextToSpeechExternal(isLast, index);
+  const { pauseGlobalAudio } = usePauseGlobalAudio(index);
 
   const generateSpeech = useExternalTextToSpeech ? generateSpeechExternal : generateSpeechLocal;
   const cancelSpeech = useExternalTextToSpeech ? cancelSpeechExternal : cancelSpeechLocal;
@@ -48,7 +49,7 @@ const useTextToSpeech = (message: string, isLast: boolean, index = 0) => {
   const toggleSpeech = () => {
     if (isSpeaking) {
       cancelSpeech();
-      isLast && pauseGlobalAudio();
+      pauseGlobalAudio();
     } else {
       generateSpeech(message, false);
     }

@@ -530,6 +530,8 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
         createdHandler(data, { ...submission, userMessage });
       } else if (data.sync) {
+        const runId = v4();
+        setActiveRunId(runId);
         /* synchronize messages to Assistants API as well as with real DB ID's */
         syncHandler(data, { ...submission, userMessage });
       } else if (data.type) {
