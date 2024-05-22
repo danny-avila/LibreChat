@@ -1,27 +1,16 @@
-// const multer = require('multer');
+const multer = require('multer');
 const express = require('express');
-const {
-  getVoices,
-  streamAudio,
-  // textToSpeech,
-  // streamAudioFromWebSocket,
-} = require('~/server/services/Files/Audio');
+const { getVoices, streamAudio, textToSpeech } = require('~/server/services/Files/Audio');
 // const { requireJwtAuth } = require('~/server/middleware/');
-// const { Message } = require('~/models/Message');
 const router = express.Router();
 
-// const upload = multer();
+const upload = multer();
 
 // router.use(requireJwtAuth);
 
-// router.post('/', upload.none(), async (req, res) => {
-//   const { websocket } = req.body;
-//   if (websocket) {
-//     streamAudioFromWebSocket(req, res);
-//   } else {
-//     await textToSpeech(req, res);
-//   }
-// });
+router.post('/manual', upload.none(), async (req, res) => {
+  await textToSpeech(req, res);
+});
 
 let runIds = new Set();
 router.post('/', async (req, res) => {

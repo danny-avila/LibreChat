@@ -127,4 +127,6 @@ export const speechToText = () => `${files()}/stt`;
 
 export const textToSpeech = () => `${files()}/tts`;
 
+export const textToSpeechManual = () => `${textToSpeech()}/manual`;
+
 export const textToSpeechVoices = () => `${textToSpeech()}/voices`;

@@ -11,7 +11,7 @@ export default function VoiceDropdown() {
   const { data } = useVoicesQuery();
 
   const voiceOptions = useMemo(
-    () => (data?.voices ?? []).map((v: string) => ({ value: v, display: v })),
+    () => (data ?? []).map((v: string) => ({ value: v, display: v })),
     [data],
   );
 

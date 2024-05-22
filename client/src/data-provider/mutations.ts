@@ -566,7 +566,7 @@ export const useSpeechToTextMutation = (
 export const useTextToSpeechMutation = (
   options?: t.TextToSpeechOptions,
 ): UseMutationResult<
-  t.TextToSpeechResponse, // response data
+  ArrayBuffer, // response data
   unknown, // error
   FormData, // request
   unknown // context

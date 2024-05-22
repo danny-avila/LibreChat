@@ -1,11 +1,11 @@
 const WebSocket = require('ws');
 const { Message } = require('~/models/Message');
 
-const VOICE_ID_1 = 'ryn3WBvkCsp4dPZksMIf';
-// const VOICE_ID_2 = 'pNInz6obpgDQGcFmaJgB';
-
-function getRandomVoiceId() {
-  const voiceIds = [VOICE_ID_1];
+/**
+ * @param {string[]} voiceIds - Array of voice IDs
+ * @returns {string}
+ */
+function getRandomVoiceId(voiceIds) {
   const randomIndex = Math.floor(Math.random() * voiceIds.length);
   return voiceIds[randomIndex];
 }

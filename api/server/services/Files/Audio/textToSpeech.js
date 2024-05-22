@@ -3,8 +3,6 @@ const { logger } = require('~/config');
 const getCustomConfig = require('~/server/services/Config/getCustomConfig');
 const { getRandomVoiceId, createChunkProcessor } = require('./streamAudio');
 const { extractEnvVariable } = require('librechat-data-provider');
-const { sendTextToWebsocket } = require('./webSocket');
-const WebSocket = require('ws');
 
 /**
  * getProvider function
@@ -16,6 +14,10 @@ const WebSocket = require('ws');
  * @throws {Error} Throws an error if multiple providers are set or no provider is set
  */
 function getProvider(ttsSchema) {
+  if (!ttsSchema) {
+    throw new Error(`No TTS schema is set. Did you configure TTS in the custom config (librechat.yaml)?
+# Example TTS configuration`);
+  }
   const providers = Object.entries(ttsSchema).filter(([, value]) => Object.keys(value).length > 0);
 
   if (providers.length > 1) {
@@ -183,6 +185,8 @@ function localAIProvider(ttsSchema, input, voice) {
   return [url, data, headers];
 }
 
+/* not used */
+/*
 async function streamAudioFromWebSocket(req, res) {
   const { voice } = req.body;
   const customConfig = await getCustomConfig();
@@ -222,6 +226,7 @@ async function streamAudioFromWebSocket(req, res) {
     res.status(500).send('WebSocket error');
   };
 }
+*/
 
 /**
  *
@@ -231,10 +236,17 @@ async function streamAudioFromWebSocket(req, res) {
  */
 async function ttsRequest(
   customConfig,
-  { input, voice, stream } = { input: '', voice: getRandomVoiceId(), stream: true },
+  { input, voice: _v, stream = true } = { input: '', stream: true },
 ) {
   const ttsSchema = customConfig.tts;
   const provider = getProvider(ttsSchema);
+  const voices = ttsSchema[provider].voices.filter(
+    (voice) => voice && voice.toUpperCase() !== 'ALL',
+  );
+  let voice = _v;
+  if (!voice || !voices.includes(voice) || (voice.toUpperCase() === 'ALL' && voices.length > 1)) {
+    voice = getRandomVoiceId(voices);
+  }
 
   let [url, data, headers] = [];
 
@@ -283,11 +295,9 @@ async function textToSpeech(req, res) {
   }
 
   try {
-    const response = await ttsRequest(customConfig, { input, voice });
-    const audioData = response.data;
-
     res.setHeader('Content-Type', 'audio/mpeg');
-    res.send(audioData);
+    const response = await ttsRequest(customConfig, { input, voice });
+    response.data.pipe(res);
   } catch (error) {
     logger.error('An error occurred while creating the audio:', error);
     res.status(500).send('An error occurred');
@@ -377,7 +387,6 @@ async function streamAudio(req, res) {
 }
 
 module.exports = {
-  streamAudioFromWebSocket,
   textToSpeech,
   getProvider,
   streamAudio,

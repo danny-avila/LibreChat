@@ -81,13 +81,7 @@ export type SpeechToTextResponse = {
   text: string;
 };
 
-export type TextToSpeechResponse = {
-  audio: ArrayBuffer;
-};
-
-export type VoiceResponse = {
-  voices: string[];
-};
+export type VoiceResponse = string[];
 
 export type UploadMutationOptions = {
   onSuccess?: (data: TFileUpload, variables: FormData, context?: unknown) => void;
@@ -108,7 +102,7 @@ export type SpeechToTextOptions = {
 };
 
 export type TextToSpeechOptions = {
-  onSuccess?: (data: TextToSpeechResponse, variables: FormData, context?: unknown) => void;
+  onSuccess?: (data: ArrayBuffer, variables: FormData, context?: unknown) => void;
   onMutate?: (variables: FormData) => void | Promise<unknown>;
   onError?: (error: unknown, variables: FormData, context?: unknown) => void;
 };

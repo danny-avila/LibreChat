@@ -1,24 +1,31 @@
-import { useEffect, useState } from 'react';
 import { useRecoilState } from 'recoil';
+import { useCallback, useEffect, useState } from 'react';
 import { useTextToSpeechMutation } from '~/data-provider';
 import { useToastContext } from '~/Providers';
 import store from '~/store';
 
+const createFormData = (text: string, voice: string) => {
+  const formData = new FormData();
+  formData.append('input', text);
+  formData.append('voice', voice);
+  return formData;
+};
+
 function useTextToSpeechExternal() {
   const { showToast } = useToastContext();
-  const [cacheTTS] = useRecoilState<boolean>(store.cacheTTS);
   const [voice] = useRecoilState<string>(store.voice);
-  const [downloadFile, setDownloadFile] = useState(false);
-  const [websocket, setWebsocket] = useState(false);
+  const [cacheTTS] = useRecoilState<boolean>(store.cacheTTS);
+
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [audio, setAudio] = useState<HTMLAudioElement | null>(null);
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [text, setText] = useState<string | null>(null);
+  const [downloadFile, setDownloadFile] = useState(false);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [audio, setAudio] = useState<HTMLAudioElement | null>(null);
 
   const playAudio = (blobUrl: string) => {
-    const audio = new Audio(blobUrl);
+    const newAudio = new Audio(blobUrl);
 
-    audio
+    newAudio
       .play()
       .then(() => {
         setIsSpeaking(true);
@@ -27,12 +34,12 @@ function useTextToSpeechExternal() {
         showToast({ message: `Error playing audio: ${error.message}`, status: 'error' });
       });
 
-    audio.onended = () => {
+    newAudio.onended = () => {
       URL.revokeObjectURL(blobUrl);
       setIsSpeaking(false);
     };
 
-    setAudio(audio);
+    setAudio(newAudio);
     setBlobUrl(blobUrl);
   };
 
@@ -50,7 +57,7 @@ function useTextToSpeechExternal() {
         const mediaSource = new MediaSource();
         const audio = new Audio();
         audio.src = URL.createObjectURL(mediaSource);
-        audio.autoplay = true; // Start playing the audio as soon as enough data has been received
+        audio.autoplay = true;
 
         mediaSource.onsourceopen = () => {
           const sourceBuffer = mediaSource.addSourceBuffer('audio/mpeg');
@@ -67,12 +74,12 @@ function useTextToSpeechExternal() {
         if (cacheTTS) {
           const cache = await caches.open('tts-responses');
           const request = new Request(text!);
-          cache.put(request, new Response(new Blob([data], { type: 'audio/mpeg' })));
+          const response = new Response(new Blob([data], { type: 'audio/mpeg' }));
+          cache.put(request, response);
         }
 
-        if (downloadFile === true) {
+        if (downloadFile) {
           downloadAudio(audio.src);
-          return;
         }
       } catch (error) {
         showToast({
@@ -86,25 +93,22 @@ function useTextToSpeechExternal() {
     },
   });
 
-  const generateSpeechExternal = async (text, download, websocket) => {
+  const generateSpeechExternal = async (text: string, download: boolean) => {
     setText(text);
     const cachedResponse = await getCachedResponse(text);
 
     if (cachedResponse && cacheTTS) {
       handleCachedResponse(cachedResponse, download);
     } else {
-      const formData = createFormData(text, websocket);
+      const formData = createFormData(text, voice);
       setDownloadFile(download);
-      setWebsocket(websocket);
       processAudio(formData);
     }
   };
 
-  const getCachedResponse = async (text) => {
-    return await caches.match(text);
-  };
+  const getCachedResponse = async (text: string) => await caches.match(text);
 
-  const handleCachedResponse = async (cachedResponse, download) => {
+  const handleCachedResponse = async (cachedResponse: Response, download: boolean) => {
     const audioBlob = await cachedResponse.blob();
     const blobUrl = URL.createObjectURL(audioBlob);
     if (download) {
@@ -114,29 +118,15 @@ function useTextToSpeechExternal() {
     }
   };
 
-  const createFormData = (text, websocket) => {
-    const formData = new FormData();
-    formData.append('input', text);
-    formData.append('voice', voice);
-    if (websocket) {
-      formData.append('websocket', 'true');
-    }
-    return formData;
-  };
-
-  const cancelSpeech = () => {
+  const cancelSpeech = useCallback(() => {
     if (audio) {
-      (audio as HTMLAudioElement).pause();
-      if (blobUrl) {
-        URL.revokeObjectURL(blobUrl);
-      }
+      audio.pause();
+      blobUrl && URL.revokeObjectURL(blobUrl);
       setIsSpeaking(false);
     }
-  };
+  }, [audio, blobUrl]);
 
-  useEffect(() => {
-    return cancelSpeech;
-  }, []);
+  useEffect(() => cancelSpeech, [cancelSpeech]);
 
   return { generateSpeechExternal, cancelSpeech, isLoading: isProcessing, isSpeaking };
 }

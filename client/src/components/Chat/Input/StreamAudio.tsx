@@ -33,9 +33,10 @@ export default function StreamAudio({ index = 0 }) {
   const queryParam = paramId === 'new' ? paramId : latestMessage?.conversationId ?? paramId ?? '';
 
   const queryClient = useQueryClient();
-  const getMessages = useCallback(() => {
-    return queryClient.getQueryData<TMessage[]>([QueryKeys.messages, queryParam]);
-  }, [queryParam, queryClient]);
+  const getMessages = useCallback(
+    () => queryClient.getQueryData<TMessage[]>([QueryKeys.messages, queryParam]),
+    [queryParam, queryClient],
+  );
 
   useEffect(() => {
     const shouldFetch =
