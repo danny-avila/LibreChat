@@ -1,68 +1,41 @@
 import React from 'react';
 
 import { useState } from 'react';
-import { useLocation } from 'react-router-dom';
 import type { TConversation } from 'librechat-data-provider';
-import { Download } from 'lucide-react';
-import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
+import { Upload } from 'lucide-react';
 import { useLocalize } from '~/hooks';
 import { ExportModal } from '../Nav';
-import { useRecoilValue } from 'recoil';
-import store from '~/store';
 
-function ExportButton() {
+function ExportButton({
+  conversation,
+  setPopoverActive,
+}: {
+  conversation: TConversation;
+  setPopoverActive: (value: boolean) => void;
+}) {
   const localize = useLocalize();
-  const location = useLocation();
 
   const [showExports, setShowExports] = useState(false);
 
-  const activeConvo = useRecoilValue(store.conversationByIndex(0));
-  const globalConvo = useRecoilValue(store.conversation) ?? ({} as TConversation);
-
-  let conversation: TConversation | null | undefined;
-  if (location.state?.from?.pathname.includes('/chat')) {
-    conversation = globalConvo;
-  } else {
-    conversation = activeConvo;
-  }
-
   const clickHandler = () => {
-    if (exportable) {
-      setShowExports(true);
-    }
+    setShowExports(true);
   };
 
-  const exportable =
-    conversation &&
-    conversation.conversationId &&
-    conversation.conversationId !== 'new' &&
-    conversation.conversationId !== 'search';
+  const onOpenChange = (value: boolean) => {
+    setShowExports(value);
+    setPopoverActive(value);
+  };
 
   return (
     <>
-      {exportable && (
-        <div className="flex gap-1 gap-2 pr-1">
-          <TooltipProvider delayDuration={50}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  className="btn btn-neutral btn-small relative flex h-9 w-9 items-center justify-center whitespace-nowrap rounded-lg"
-                  onClick={clickHandler}
-                >
-                  <div className="flex w-full items-center justify-center gap-2">
-                    <Download size={16} />
-                  </div>
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="right" sideOffset={5}>
-                {localize('com_nav_export_conversation')}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        </div>
-      )}
+      <button
+        onClick={clickHandler}
+        className="group m-1.5 flex w-full cursor-pointer items-center gap-2 rounded p-2.5 text-sm hover:bg-gray-200 focus-visible:bg-gray-200 focus-visible:outline-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-600 dark:focus-visible:bg-gray-600"
+      >
+        <Upload size={16} /> {localize('com_nav_export')}
+      </button>
       {showExports && (
-        <ExportModal open={showExports} onOpenChange={setShowExports} conversation={conversation} />
+        <ExportModal open={showExports} onOpenChange={onOpenChange} conversation={conversation} />
       )}
     </>
   );

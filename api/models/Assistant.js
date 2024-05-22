@@ -39,8 +39,21 @@ const getAssistants = async (searchParams) => {
   return await Assistant.find(searchParams).lean();
 };
 
+/**
+ * Deletes an assistant based on the provided ID.
+ *
+ * @param {Object} searchParams - The search parameters to find the assistant to delete.
+ * @param {string} searchParams.assistant_id - The ID of the assistant to delete.
+ * @param {string} searchParams.user - The user ID of the assistant's author.
+ * @returns {Promise<void>} Resolves when the assistant has been successfully deleted.
+ */
+const deleteAssistant = async (searchParams) => {
+  return await Assistant.findOneAndDelete(searchParams);
+};
+
 module.exports = {
   updateAssistant,
+  deleteAssistant,
   getAssistants,
   getAssistant,
 };

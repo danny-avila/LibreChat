@@ -10,6 +10,7 @@ import { useConversation, useConversations, useOnClickOutside } from '~/hooks';
 import ImportConversations from './ImportConversations';
 import { ClearChatsButton } from './ClearChats';
 import DangerButton from '../DangerButton';
+import SharedLinks from './SharedLinks';
 
 export const RevokeKeysButton = ({
   showText = true,
@@ -106,6 +107,9 @@ function Data() {
       <div className="flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-50">
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <ImportConversations />
+        </div>
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
+          <SharedLinks />
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <RevokeKeysButton all={true} />

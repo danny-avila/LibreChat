@@ -1,5 +1,5 @@
 import throttle from 'lodash/throttle';
-import { EModelEndpoint, getConfigDefaults } from 'librechat-data-provider';
+import { getConfigDefaults } from 'librechat-data-provider';
 import { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react';
 import {
   useGetEndpointsQuery,
@@ -61,7 +61,7 @@ const SidePanel = ({
     return activePanel ? activePanel : undefined;
   }, []);
 
-  const assistants = useMemo(() => endpointsConfig?.[EModelEndpoint.assistants], [endpointsConfig]);
+  const assistants = useMemo(() => endpointsConfig?.[endpoint ?? ''], [endpoint, endpointsConfig]);
   const userProvidesKey = useMemo(
     () => !!endpointsConfig?.[endpoint ?? '']?.userProvide,
     [endpointsConfig, endpoint],
