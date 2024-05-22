@@ -1,6 +1,8 @@
 const multer = require('multer');
 const express = require('express');
+const { CacheKeys } = require('librechat-data-provider');
 const { getVoices, streamAudio, textToSpeech } = require('~/server/services/Files/Audio');
+const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
 
 const router = express.Router();
@@ -13,17 +15,17 @@ router.post('/manual', upload.none(), async (req, res) => {
 const logDebugMessage = (req, message) =>
   logger.debug(`[streamAudio] user: ${req?.user?.id ?? 'UNDEFINED_USER'} | ${message}`);
 
-// TODO: cache this with TTL
-let runIds = new Set();
-
+// TODO: test caching
 router.post('/', async (req, res) => {
   try {
+    const audioRunsCache = getLogStores(CacheKeys.AUDIO_RUNS);
+    const audioRun = await audioRunsCache.get(req.body.runId);
     logDebugMessage(req, 'start stream audio');
-    if (runIds.has(req.body.runId)) {
+    if (audioRun) {
       logDebugMessage(req, 'stream audio already running');
-      return;
+      return res.status(401).json({ error: 'Audio stream already running' });
     }
-    runIds.add(req.body.runId);
+    audioRunsCache.set(req.body.runId, true);
     await streamAudio(req, res);
     logDebugMessage(req, 'end stream audio');
     res.status(200).end();
