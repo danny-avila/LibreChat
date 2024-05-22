@@ -306,9 +306,9 @@ export const tConversationSchema = z.object({
   tools: z.union([z.array(tPluginSchema), z.array(z.string())]).optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
-  systemMessage: z.string().nullable().optional(),
   modelLabel: z.string().nullable().optional(),
   examples: z.array(tExampleSchema).optional(),
+  /* Prefer modelLabel over chatGptLabel */
   chatGptLabel: z.string().nullable().optional(),
   userLabel: z.string().optional(),
   model: z.string().nullable().optional(),
@@ -320,20 +320,12 @@ export const tConversationSchema = z.object({
   top_p: z.number().optional(),
   frequency_penalty: z.number().optional(),
   presence_penalty: z.number().optional(),
-  jailbreak: z.boolean().optional(),
-  jailbreakConversationId: z.string().nullable().optional(),
-  conversationSignature: z.string().nullable().optional(),
   parentMessageId: z.string().optional(),
-  clientId: z.string().nullable().optional(),
-  invocationId: z.number().nullable().optional(),
-  toneStyle: z.string().nullable().optional(),
   maxOutputTokens: z.number().optional(),
   agentOptions: tAgentOptionsSchema.nullable().optional(),
   file_ids: z.array(z.string()).optional(),
   maxContextTokens: coerceNumber.optional(),
   max_tokens: coerceNumber.optional(),
-  /** @deprecated */
-  resendImages: z.boolean().optional(),
   /* vision */
   resendFiles: z.boolean().optional(),
   imageDetail: eImageDetailSchema.optional(),
@@ -347,6 +339,25 @@ export const tConversationSchema = z.object({
   iconURL: z.string().optional(),
   greeting: z.string().optional(),
   spec: z.string().optional(),
+  /*
+  Deprecated fields
+  */
+  /** @deprecated */
+  systemMessage: z.string().nullable().optional(),
+  /** @deprecated */
+  jailbreak: z.boolean().optional(),
+  /** @deprecated */
+  jailbreakConversationId: z.string().nullable().optional(),
+  /** @deprecated */
+  conversationSignature: z.string().nullable().optional(),
+  /** @deprecated */
+  clientId: z.string().nullable().optional(),
+  /** @deprecated */
+  invocationId: z.number().nullable().optional(),
+  /** @deprecated */
+  toneStyle: z.string().nullable().optional(),
+  /** @deprecated */
+  resendImages: z.boolean().optional(),
 });
 
 export const tPresetSchema = tConversationSchema

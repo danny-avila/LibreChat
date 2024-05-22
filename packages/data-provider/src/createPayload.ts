@@ -3,7 +3,7 @@ import { tConvoUpdateSchema, EModelEndpoint, isAssistantsEndpoint } from './sche
 import { EndpointURLs } from './config';
 
 export default function createPayload(submission: TSubmission) {
-  const { conversation, message, messages, endpointOption, isEdited, isContinued } = submission;
+  const { conversation, userMessage, messages, endpointOption, isEdited, isContinued } = submission;
   const { conversationId } = tConvoUpdateSchema.parse(conversation);
   const { endpoint, endpointType } = endpointOption as {
     endpoint: EModelEndpoint;
@@ -26,7 +26,7 @@ export default function createPayload(submission: TSubmission) {
     };
 
   const payload: Payload = {
-    ...message,
+    ...userMessage,
     ...endpointOption,
     isContinued: !!(isEdited && isContinued),
     conversationId,
