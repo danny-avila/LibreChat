@@ -15,7 +15,7 @@ import { cn } from '~/utils';
 import { IconProps } from '~/common';
 
 const MinimalIcon: React.FC<IconProps> = (props) => {
-  const { size = 30, error } = props;
+  const { size = 30, iconClassName, error } = props;
 
   let endpoint = 'default'; // Default value for endpoint
 
@@ -25,10 +25,13 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
 
   const endpointIcons = {
     [EModelEndpoint.azureOpenAI]: {
-      icon: <AzureMinimalIcon />,
+      icon: <AzureMinimalIcon className={iconClassName} />,
       name: props.chatGptLabel || 'ChatGPT',
     },
-    [EModelEndpoint.openAI]: { icon: <OpenAIMinimalIcon />, name: props.chatGptLabel || 'ChatGPT' },
+    [EModelEndpoint.openAI]: {
+      icon: <OpenAIMinimalIcon className={iconClassName} />,
+      name: props.chatGptLabel || 'ChatGPT',
+    },
     [EModelEndpoint.gptPlugins]: { icon: <MinimalPlugin />, name: 'Plugins' },
     [EModelEndpoint.google]: { icon: <GoogleMinimalIcon />, name: props.modelLabel || 'Google' },
     [EModelEndpoint.anthropic]: {
@@ -42,6 +45,7 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
     [EModelEndpoint.bingAI]: { icon: <BingAIMinimalIcon />, name: 'BingAI' },
     [EModelEndpoint.chatGPTBrowser]: { icon: <LightningIcon />, name: 'ChatGPT' },
     [EModelEndpoint.assistants]: { icon: <Sparkles className="icon-sm" />, name: 'Assistant' },
+    [EModelEndpoint.azureAssistants]: { icon: <Sparkles className="icon-sm" />, name: 'Assistant' },
     default: {
       icon: (
         <UnknownIcon

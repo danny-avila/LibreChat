@@ -381,6 +381,16 @@ export default {
   com_ui_upload_error: 'Произошла ошибка при загрузке вашего файла',
   com_user_message: 'Вы',
   /* The following are AI Translated */
+  com_assistants_file_search: 'Поиск файлов',
+  com_assistants_file_search_info:
+    'Прикрепление векторных хранилищ для Поиска по файлам пока не поддерживается. Вы можете прикрепить их из Песочницы провайдера или прикрепить файлы к сообщениям для поиска по файлам в отдельных диалогах.',
+  com_assistants_non_retrieval_model:
+    'Поиск по файлам недоступен для этой модели. Пожалуйста, выберите другую модель.',
+  com_ui_attach_error_openai: 'Невозможно прикрепить файлы ассистента к другим режимам',
+  com_ui_attach_warn_endpoint:
+    'Файлы сторонних приложений могут быть проигнорированы без совместимого плагина',
+  com_ui_assistant_deleted: 'Ассистент успешно удален',
+  com_ui_assistant_delete_error: 'Произошла ошибка при удалении ассистента',
   com_ui_copied: 'Скопировано',
   com_ui_copy_code: 'Копировать код',
   com_ui_copy_link: 'Копировать ссылку',
@@ -1947,6 +1957,36 @@ export const comparisons = {
   com_user_message: {
     english: 'You',
     translated: 'Вы',
+  },
+  com_assistants_file_search: {
+    english: 'File Search',
+    translated: 'Поиск файлов',
+  },
+  com_assistants_file_search_info: {
+    english:
+      'Attaching vector stores for File Search is not yet supported. You can attach them from the Provider Playground or attach files to messages for file search on a thread basis.',
+    translated:
+      'Прикрепление векторных хранилищ для Поиска по файлам пока не поддерживается. Вы можете прикрепить их из Песочницы провайдера или прикрепить файлы к сообщениям для поиска по файлам в отдельных диалогах.',
+  },
+  com_assistants_non_retrieval_model: {
+    english: 'File search is not enabled on this model. Please select another model.',
+    translated: 'Поиск по файлам недоступен для этой модели. Пожалуйста, выберите другую модель.',
+  },
+  com_ui_attach_error_openai: {
+    english: 'Cannot attach Assistant files to other endpoints',
+    translated: 'Невозможно прикрепить файлы ассистента к другим режимам',
+  },
+  com_ui_attach_warn_endpoint: {
+    english: 'Non-Assistant files may be ignored without a compatible tool',
+    translated: 'Файлы сторонних приложений могут быть проигнорированы без совместимого плагина',
+  },
+  com_ui_assistant_deleted: {
+    english: 'Successfully deleted assistant',
+    translated: 'Ассистент успешно удален',
+  },
+  com_ui_assistant_delete_error: {
+    english: 'There was an error deleting the assistant',
+    translated: 'Произошла ошибка при удалении ассистента',
   },
   com_ui_copied: {
     english: 'Copied!',

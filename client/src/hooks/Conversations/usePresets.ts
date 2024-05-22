@@ -3,7 +3,7 @@ import exportFromJSON from 'export-from-json';
 import { useCallback, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilState, useSetRecoilState, useRecoilValue } from 'recoil';
-import { QueryKeys, modularEndpoints, EModelEndpoint } from 'librechat-data-provider';
+import { QueryKeys, modularEndpoints, isAssistantsEndpoint } from 'librechat-data-provider';
 import { useCreatePresetMutation, useGetModelsQuery } from 'librechat-data-provider/react-query';
 import type { TPreset, TEndpointsConfig } from 'librechat-data-provider';
 import {
@@ -174,8 +174,8 @@ export default function usePresets() {
     const currentEndpointType = getEndpointField(endpointsConfig, endpoint, 'type');
     const endpointType = getEndpointField(endpointsConfig, newPreset.endpoint, 'type');
     const isAssistantSwitch =
-      newPreset.endpoint === EModelEndpoint.assistants &&
-      conversation?.endpoint === EModelEndpoint.assistants &&
+      isAssistantsEndpoint(newPreset.endpoint) &&
+      isAssistantsEndpoint(conversation?.endpoint) &&
       conversation?.endpoint === newPreset.endpoint;
 
     if (

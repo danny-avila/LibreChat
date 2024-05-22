@@ -525,6 +525,16 @@ export default {
   com_nav_setting_data: 'Controlli dati',
   com_nav_setting_account: 'Account',
   /* The following are AI Translated */
+  com_assistants_file_search: 'Ricerca File',
+  com_assistants_file_search_info:
+    'L\'aggiunta di archivi vettoriali per la Ricerca File non è ancora supportata. Puoi aggiungerli dal Provider Playground o allegare file ai messaggi per la ricerca file su base di thread.',
+  com_assistants_non_retrieval_model:
+    'La ricerca di file non è abilitata su questo modello. Seleziona un altro modello.',
+  com_ui_attach_error_openai: 'Non è possibile allegare file dell\'Assistente ad altri endpoint',
+  com_ui_attach_warn_endpoint:
+    'Attenzione: i file non compatibili con lo strumento potrebbero essere ignorati',
+  com_ui_assistant_deleted: 'Assistente eliminato con successo',
+  com_ui_assistant_delete_error: 'Si è verificato un errore durante l\'eliminazione dell\'assistente',
   com_ui_copied: 'Copiato!',
   com_ui_copy_code: 'Copia codice',
   com_ui_copy_link: 'Copia link',
@@ -2442,6 +2452,36 @@ export const comparisons = {
   com_nav_setting_account: {
     english: 'Account',
     translated: 'Account',
+  },
+  com_assistants_file_search: {
+    english: 'File Search',
+    translated: 'Ricerca File',
+  },
+  com_assistants_file_search_info: {
+    english:
+      'Attaching vector stores for File Search is not yet supported. You can attach them from the Provider Playground or attach files to messages for file search on a thread basis.',
+    translated:
+      'L\'aggiunta di archivi vettoriali per la Ricerca File non è ancora supportata. Puoi aggiungerli dal Provider Playground o allegare file ai messaggi per la ricerca file su base di thread.',
+  },
+  com_assistants_non_retrieval_model: {
+    english: 'File search is not enabled on this model. Please select another model.',
+    translated: 'La ricerca di file non è abilitata su questo modello. Seleziona un altro modello.',
+  },
+  com_ui_attach_error_openai: {
+    english: 'Cannot attach Assistant files to other endpoints',
+    translated: 'Non è possibile allegare file dell\'Assistente ad altri endpoint',
+  },
+  com_ui_attach_warn_endpoint: {
+    english: 'Non-Assistant files may be ignored without a compatible tool',
+    translated: 'Attenzione: i file non compatibili con lo strumento potrebbero essere ignorati',
+  },
+  com_ui_assistant_deleted: {
+    english: 'Successfully deleted assistant',
+    translated: 'Assistente eliminato con successo',
+  },
+  com_ui_assistant_delete_error: {
+    english: 'There was an error deleting the assistant',
+    translated: 'Si è verificato un errore durante l\'eliminazione dell\'assistente',
   },
   com_ui_copied: {
     english: 'Copied!',

@@ -1,4 +1,8 @@
-import { LocalStorageKeys } from 'librechat-data-provider';
+import {
+  EToolResources,
+  LocalStorageKeys,
+  defaultAssistantsVersion,
+} from 'librechat-data-provider';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
@@ -376,9 +380,10 @@ export const useUploadFileMutation = (
   const { onSuccess, ...options } = _options || {};
   return useMutation([MutationKeys.fileUpload], {
     mutationFn: (body: FormData) => {
-      const height = body.get('height');
       const width = body.get('width');
-      if (height && width) {
+      const height = body.get('height');
+      const version = body.get('version') as number | string;
+      if (height && width && (!version || version != 2)) {
         return dataService.uploadImage(body);
       }
 
@@ -391,8 +396,10 @@ export const useUploadFileMutation = (
         ...(_files ?? []),
       ]);
 
+      const endpoint = formData.get('endpoint');
       const assistant_id = formData.get('assistant_id');
       const message_file = formData.get('message_file');
+      const tool_resource = formData.get('tool_resource');
 
       if (!assistant_id || message_file === 'true') {
         onSuccess?.(data, formData, context);
@@ -400,7 +407,7 @@ export const useUploadFileMutation = (
       }
 
       queryClient.setQueryData<t.AssistantListResponse>(
-        [QueryKeys.assistants, defaultOrderQuery],
+        [QueryKeys.assistants, endpoint, defaultOrderQuery],
         (prev) => {
           if (!prev) {
             return prev;
@@ -409,13 +416,29 @@ export const useUploadFileMutation = (
           return {
             ...prev,
             data: prev?.data.map((assistant) => {
-              if (assistant.id === assistant_id) {
-                return {
-                  ...assistant,
-                  file_ids: [...assistant.file_ids, data.file_id],
+              if (assistant.id !== assistant_id) {
+                return assistant;
+              }
+
+              const update = {};
+              if (!tool_resource) {
+                update['file_ids'] = [...assistant.file_ids, data.file_id];
+              }
+              if (tool_resource === EToolResources.code_interpreter) {
+                const prevResources = assistant.tool_resources ?? {};
+                const prevResource = assistant.tool_resources?.[tool_resource as string] ?? {
+                  file_ids: [],
+                };
+                prevResource.file_ids.push(data.file_id);
+                update['tool_resources'] = {
+                  ...prevResources,
+                  [tool_resource as string]: prevResource,
                 };
               }
-              return assistant;
+              return {
+                ...assistant,
+                ...update,
+              };
             }),
           };
         },
@@ -436,7 +459,8 @@ export const useDeleteFilesMutation = (
   const queryClient = useQueryClient();
   const { onSuccess, ...options } = _options || {};
   return useMutation([MutationKeys.fileDelete], {
-    mutationFn: (body: t.DeleteFilesBody) => dataService.deleteFiles(body.files, body.assistant_id),
+    mutationFn: (body: t.DeleteFilesBody) =>
+      dataService.deleteFiles(body.files, body.assistant_id, body.tool_resource),
     ...(options || {}),
     onSuccess: (data, ...args) => {
       queryClient.setQueryData<t.TFile[] | undefined>([QueryKeys.files], (cachefiles) => {
@@ -542,6 +566,7 @@ export const useCreateAssistantMutation = (
       onSuccess: (newAssistant, variables, context) => {
         const listRes = queryClient.getQueryData<t.AssistantListResponse>([
           QueryKeys.assistants,
+          variables.endpoint,
           defaultOrderQuery,
         ]);
 
@@ -552,7 +577,7 @@ export const useCreateAssistantMutation = (
         const currentAssistants = [newAssistant, ...JSON.parse(JSON.stringify(listRes.data))];
 
         queryClient.setQueryData<t.AssistantListResponse>(
-          [QueryKeys.assistants, defaultOrderQuery],
+          [QueryKeys.assistants, variables.endpoint, defaultOrderQuery],
           {
             ...listRes,
             data: currentAssistants,
@@ -576,14 +601,23 @@ export const useUpdateAssistantMutation = (
 > => {
   const queryClient = useQueryClient();
   return useMutation(
-    ({ assistant_id, data }: { assistant_id: string; data: t.AssistantUpdateParams }) =>
-      dataService.updateAssistant(assistant_id, data),
+    ({ assistant_id, data }: { assistant_id: string; data: t.AssistantUpdateParams }) => {
+      const { endpoint } = data;
+      const endpointsConfig = queryClient.getQueryData<t.TEndpointsConfig>([QueryKeys.endpoints]);
+      const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
+      return dataService.updateAssistant({
+        data,
+        version,
+        assistant_id,
+      });
+    },
     {
       onMutate: (variables) => options?.onMutate?.(variables),
       onError: (error, variables, context) => options?.onError?.(error, variables, context),
       onSuccess: (updatedAssistant, variables, context) => {
         const listRes = queryClient.getQueryData<t.AssistantListResponse>([
           QueryKeys.assistants,
+          variables.data.endpoint,
           defaultOrderQuery,
         ]);
 
@@ -592,7 +626,7 @@ export const useUpdateAssistantMutation = (
         }
 
         queryClient.setQueryData<t.AssistantListResponse>(
-          [QueryKeys.assistants, defaultOrderQuery],
+          [QueryKeys.assistants, variables.data.endpoint, defaultOrderQuery],
           {
             ...listRes,
             data: listRes.data.map((assistant) => {
@@ -617,14 +651,18 @@ export const useDeleteAssistantMutation = (
 ): UseMutationResult<void, Error, t.DeleteAssistantBody> => {
   const queryClient = useQueryClient();
   return useMutation(
-    ({ assistant_id, model }: t.DeleteAssistantBody) =>
-      dataService.deleteAssistant(assistant_id, model),
+    ({ assistant_id, model, endpoint }: t.DeleteAssistantBody) => {
+      const endpointsConfig = queryClient.getQueryData<t.TEndpointsConfig>([QueryKeys.endpoints]);
+      const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
+      return dataService.deleteAssistant({ assistant_id, model, version, endpoint });
+    },
     {
       onMutate: (variables) => options?.onMutate?.(variables),
       onError: (error, variables, context) => options?.onError?.(error, variables, context),
       onSuccess: (_data, variables, context) => {
         const listRes = queryClient.getQueryData<t.AssistantListResponse>([
           QueryKeys.assistants,
+          variables.endpoint,
           defaultOrderQuery,
         ]);
 
@@ -635,7 +673,7 @@ export const useDeleteAssistantMutation = (
         const data = listRes.data.filter((assistant) => assistant.id !== variables.assistant_id);
 
         queryClient.setQueryData<t.AssistantListResponse>(
-          [QueryKeys.assistants, defaultOrderQuery],
+          [QueryKeys.assistants, variables.endpoint, defaultOrderQuery],
           {
             ...listRes,
             data,
@@ -687,6 +725,7 @@ export const useUpdateAction = (
     onSuccess: (updateActionResponse, variables, context) => {
       const listRes = queryClient.getQueryData<t.AssistantListResponse>([
         QueryKeys.assistants,
+        variables.endpoint,
         defaultOrderQuery,
       ]);
 
@@ -696,15 +735,18 @@ export const useUpdateAction = (
 
       const updatedAssistant = updateActionResponse[1];
 
-      queryClient.setQueryData<t.AssistantListResponse>([QueryKeys.assistants, defaultOrderQuery], {
-        ...listRes,
-        data: listRes.data.map((assistant) => {
-          if (assistant.id === variables.assistant_id) {
-            return updatedAssistant;
-          }
-          return assistant;
-        }),
-      });
+      queryClient.setQueryData<t.AssistantListResponse>(
+        [QueryKeys.assistants, variables.endpoint, defaultOrderQuery],
+        {
+          ...listRes,
+          data: listRes.data.map((assistant) => {
+            if (assistant.id === variables.assistant_id) {
+              return updatedAssistant;
+            }
+            return assistant;
+          }),
+        },
+      );
 
       queryClient.setQueryData<t.Action[]>([QueryKeys.actions], (prev) => {
         return prev
@@ -735,8 +777,15 @@ export const useDeleteAction = (
 > => {
   const queryClient = useQueryClient();
   return useMutation([MutationKeys.deleteAction], {
-    mutationFn: (variables: t.DeleteActionVariables) =>
-      dataService.deleteAction(variables.assistant_id, variables.action_id, variables.model),
+    mutationFn: (variables: t.DeleteActionVariables) => {
+      const { endpoint } = variables;
+      const endpointsConfig = queryClient.getQueryData<t.TEndpointsConfig>([QueryKeys.endpoints]);
+      const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
+      return dataService.deleteAction({
+        ...variables,
+        version,
+      });
+    },
 
     onMutate: (variables) => options?.onMutate?.(variables),
     onError: (error, variables, context) => options?.onError?.(error, variables, context),
@@ -750,7 +799,7 @@ export const useDeleteAction = (
       });
 
       queryClient.setQueryData<t.AssistantListResponse>(
-        [QueryKeys.assistants, defaultOrderQuery],
+        [QueryKeys.assistants, variables.endpoint, defaultOrderQuery],
         (prev) => {
           if (!prev) {
             return prev;
