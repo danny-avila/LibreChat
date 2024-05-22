@@ -140,6 +140,11 @@ const activeRunFamily = atomFamily<string | null, string | number | null>({
   default: null,
 });
 
+const audioRunFamily = atomFamily<string | null, string | number | null>({
+  key: 'audioRunByIndex',
+  default: null,
+});
+
 const latestMessageFamily = atomFamily<TMessage | null, string | number | null>({
   key: 'latestMessageByIndex',
   default: null,
@@ -202,6 +207,7 @@ export default {
   showMentionPopoverFamily,
   globalAudioURLFamily,
   activeRunFamily,
+  audioRunFamily,
   globalAudioPlayingFamily,
   globalAudioFetchingFamily,
 };

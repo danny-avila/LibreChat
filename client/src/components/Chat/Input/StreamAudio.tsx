@@ -1,7 +1,7 @@
 import { useParams } from 'react-router-dom';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useCallback } from 'react';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
 import { useCustomAudioRef, MediaSourceAppender } from '~/hooks/Audio';
@@ -20,7 +20,6 @@ const maxPromiseTime = 15000;
 
 export default function StreamAudio({ index = 0 }) {
   const { token } = useAuthContext();
-  const audioRunId = useRef<string | null>(null);
 
   const cacheTTS = useRecoilValue(store.cacheTTS);
   const playbackRate = useRecoilValue(store.playbackRate);
@@ -30,6 +29,7 @@ export default function StreamAudio({ index = 0 }) {
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
   const latestMessage = useRecoilValue(store.latestMessageFamily(index));
   const setIsPlaying = useSetRecoilState(store.globalAudioPlayingFamily(index));
+  const [audioRunId, setAudioRunId] = useRecoilState(store.audioRunFamily(index));
   const [isFetching, setIsFetching] = useRecoilState(store.globalAudioFetchingFamily(index));
   const [globalAudioURL, setGlobalAudioURL] = useRecoilState(store.globalAudioURLFamily(index));
 
@@ -56,7 +56,7 @@ export default function StreamAudio({ index = 0 }) {
       !latestMessage.messageId.includes('_') &&
       !isFetching &&
       activeRunId &&
-      activeRunId !== audioRunId.current;
+      activeRunId !== audioRunId;
 
     if (!shouldFetch) {
       return;
@@ -81,7 +81,7 @@ export default function StreamAudio({ index = 0 }) {
           const audioBlob = await cachedResponse.blob();
           const blobUrl = URL.createObjectURL(audioBlob);
           setGlobalAudioURL(blobUrl);
-          audioRunId.current = activeRunId;
+          setAudioRunId(activeRunId);
           setIsFetching(false);
           return;
         }
@@ -103,7 +103,7 @@ export default function StreamAudio({ index = 0 }) {
         const reader = response.body.getReader();
         const mediaSource = new MediaSourceAppender('audio/mpeg');
         setGlobalAudioURL(mediaSource.mediaSourceUrl);
-        audioRunId.current = activeRunId;
+        setAudioRunId(activeRunId);
 
         let done = false;
         const chunks: Uint8Array[] = [];
@@ -156,12 +156,14 @@ export default function StreamAudio({ index = 0 }) {
   }, [
     automaticPlayback,
     setGlobalAudioURL,
+    setAudioRunId,
     setIsFetching,
     latestMessage,
     isSubmitting,
     activeRunId,
     getMessages,
     isFetching,
+    audioRunId,
     cacheTTS,
     audioRef,
     token,
