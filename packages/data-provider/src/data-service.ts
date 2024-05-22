@@ -348,7 +348,7 @@ export const textToSpeech = (data: FormData): Promise<f.TextToSpeechResponse> =>
   return request.postTTS(endpoints.textToSpeech(), data);
 };
 
-export const getVoices = (): Promise<f.VoiceResponse[]> => {
+export const getVoices = (): Promise<f.VoiceResponse> => {
   return request.get(endpoints.textToSpeechVoices());
 };
 

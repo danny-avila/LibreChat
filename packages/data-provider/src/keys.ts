@@ -26,6 +26,7 @@ export enum QueryKeys {
   actions = 'actions',
   assistantDocs = 'assistantDocs',
   fileDownload = 'fileDownload',
+  voices = 'voices',
 }
 
 export enum MutationKeys {
@@ -37,7 +38,6 @@ export enum MutationKeys {
   avatarUpload = 'avatarUpload',
   speechToText = 'speechToText',
   textToSpeech = 'textToSpeech',
-  voices = 'voices',
   assistantAvatarUpload = 'assistantAvatarUpload',
   updateAction = 'updateAction',
   deleteAction = 'deleteAction',
