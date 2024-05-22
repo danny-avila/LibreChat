@@ -146,8 +146,14 @@ const listAssistants = async (req, res) => {
     if (req.app.locals?.[req.query.endpoint]) {
       /** @type {Partial<TAssistantEndpoint>} */
       const assistantsConfig = req.app.locals[req.query.endpoint];
-      const { supportedIds, excludedIds } = assistantsConfig;
-      if (supportedIds?.length) {
+      const { supportedIds, excludedIds, private } = assistantsConfig;
+      if (private) {
+        const userId = req.user.id.toString();
+        body.data = body.data.filter(
+          (assistant) =>
+            userId === assistant.metadata?.author || assistant.metadata?.author === undefined,
+        );
+      } else if (supportedIds?.length) {
         body.data = body.data.filter((assistant) => supportedIds.includes(assistant.id));
       } else if (excludedIds?.length) {
         body.data = body.data.filter((assistant) => !excludedIds.includes(assistant.id));
