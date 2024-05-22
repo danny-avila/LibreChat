@@ -3,7 +3,7 @@ import {
   ArrowRightToLine,
   // Settings2,
 } from 'lucide-react';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TConfig, TInterfaceConfig } from 'librechat-data-provider';
 import type { NavLink } from '~/common';
 import PanelSwitch from '~/components/SidePanel/Builder/PanelSwitch';
@@ -26,7 +26,7 @@ export default function useSideNavLinks({
 }) {
   const Links = useMemo(() => {
     const links: NavLink[] = [];
-    // if (endpoint !== EModelEndpoint.assistants) {
+    // if (!isAssistantsEndpoint(endpoint)) {
     //   links.push({
     //     title: 'com_sidepanel_parameters',
     //     label: '',
@@ -36,7 +36,7 @@ export default function useSideNavLinks({
     //   });
     // }
     if (
-      endpoint === EModelEndpoint.assistants &&
+      isAssistantsEndpoint(endpoint) &&
       assistants &&
       assistants.disableBuilder !== true &&
       keyProvided &&

@@ -10,9 +10,10 @@ import {
 import type { UseMutationResult } from '@tanstack/react-query';
 import type {
   Metadata,
-  AssistantListResponse,
   Assistant,
+  AssistantsEndpoint,
   AssistantCreateParams,
+  AssistantListResponse,
 } from 'librechat-data-provider';
 import { useUploadAssistantAvatarMutation, useGetFileConfig } from '~/data-provider';
 import { AssistantAvatar, NoImage, AvatarMenu } from './Images';
@@ -22,10 +23,14 @@ import { useLocalize } from '~/hooks';
 // import { cn } from '~/utils/';
 
 function Avatar({
+  endpoint,
+  version,
   assistant_id,
   metadata,
   createMutation,
 }: {
+  endpoint: AssistantsEndpoint;
+  version: number | string;
   assistant_id: string | null;
   metadata: null | Metadata;
   createMutation: UseMutationResult<Assistant, Error, AssistantCreateParams>;
@@ -46,8 +51,8 @@ function Avatar({
   const { showToast } = useToastContext();
 
   const activeModel = useMemo(() => {
-    return assistantsMap[assistant_id ?? '']?.model ?? '';
-  }, [assistant_id, assistantsMap]);
+    return assistantsMap[endpoint][assistant_id ?? '']?.model ?? '';
+  }, [assistantsMap, endpoint, assistant_id]);
 
   const { mutate: uploadAvatar } = useUploadAssistantAvatarMutation({
     onMutate: () => {
@@ -65,6 +70,7 @@ function Avatar({
 
       const res = queryClient.getQueryData<AssistantListResponse>([
         QueryKeys.assistants,
+        endpoint,
         defaultOrderQuery,
       ]);
 
@@ -83,10 +89,13 @@ function Avatar({
           return assistant;
         }) ?? [];
 
-      queryClient.setQueryData<AssistantListResponse>([QueryKeys.assistants, defaultOrderQuery], {
-        ...res,
-        data: assistants,
-      });
+      queryClient.setQueryData<AssistantListResponse>(
+        [QueryKeys.assistants, endpoint, defaultOrderQuery],
+        {
+          ...res,
+          data: assistants,
+        },
+      );
 
       setProgress(1);
     },
@@ -149,9 +158,20 @@ function Avatar({
         model: activeModel,
         postCreation: true,
         formData,
+        endpoint,
+        version,
       });
     }
-  }, [createMutation.data, createMutation.isSuccess, input, previewUrl, uploadAvatar, activeModel]);
+  }, [
+    createMutation.data,
+    createMutation.isSuccess,
+    input,
+    previewUrl,
+    uploadAvatar,
+    activeModel,
+    endpoint,
+    version,
+  ]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
     const file = event.target.files?.[0];
@@ -183,6 +203,8 @@ function Avatar({
         assistant_id,
         model: activeModel,
         formData,
+        endpoint,
+        version,
       });
     } else {
       showToast({

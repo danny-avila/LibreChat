@@ -20,6 +20,9 @@ export default {
   com_sidepanel_attach_files: 'Attach Files',
   com_sidepanel_manage_files: 'Manage Files',
   com_assistants_capabilities: 'Capabilities',
+  com_assistants_file_search: 'File Search',
+  com_assistants_file_search_info:
+    'Attaching vector stores for File Search is not yet supported. You can attach them from the Provider Playground or attach files to messages for file search on a thread basis.',
   com_assistants_knowledge: 'Knowledge',
   com_assistants_knowledge_info:
     'If you upload files under Knowledge, conversations with your Assistant may include file contents.',
@@ -35,6 +38,8 @@ export default {
   com_assistants_actions: 'Actions',
   com_assistants_add_tools: 'Add Tools',
   com_assistants_add_actions: 'Add Actions',
+  com_assistants_non_retrieval_model:
+    'File search is not enabled on this model. Please select another model.',
   com_assistants_available_actions: 'Available Actions',
   com_assistants_running_action: 'Running action',
   com_assistants_completed_action: 'Talked to {0}',
@@ -73,6 +78,8 @@ export default {
   com_ui_field_required: 'This field is required',
   com_ui_download_error: 'Error downloading file. The file may have been deleted.',
   com_ui_attach_error_type: 'Unsupported file type for endpoint:',
+  com_ui_attach_error_openai: 'Cannot attach Assistant files to other endpoints',
+  com_ui_attach_warn_endpoint: 'Non-Assistant files may be ignored without a compatible tool',
   com_ui_attach_error_size: 'File size limit exceeded for endpoint:',
   com_ui_attach_error:
     'Cannot attach file. Create or select a conversation, or try refreshing the page.',
@@ -196,6 +203,8 @@ export default {
   com_ui_result: 'Result',
   com_ui_image_gen: 'Image Gen',
   com_ui_assistant: 'Assistant',
+  com_ui_assistant_deleted: 'Successfully deleted assistant',
+  com_ui_assistant_delete_error: 'There was an error deleting the assistant',
   com_ui_assistants: 'Assistants',
   com_ui_attachment: 'Attachment',
   com_ui_assistants_output: 'Assistants Output',

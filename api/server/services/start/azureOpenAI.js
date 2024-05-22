@@ -41,6 +41,17 @@ function azureConfigSetup(config) {
     );
   }
 
+  if (
+    azureConfiguration.assistants &&
+    process.env.ENDPOINTS &&
+    !process.env.ENDPOINTS.includes(EModelEndpoint.azureAssistants)
+  ) {
+    logger.warn(
+      `Azure Assistants are configured, but the endpoint will not be accessible as it's not included in the ENDPOINTS environment variable.
+      Please add the value "${EModelEndpoint.azureAssistants}" to the ENDPOINTS list if expected.`,
+    );
+  }
+
   return {
     modelNames,
     modelGroupMap,
