@@ -34,6 +34,10 @@ export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: b
     }
   }, [isAuthenticated, navigate, data]);
 
+  useEffect(() => {
+    document.title = startupConfig?.appTitle || 'LibreChat';
+  }, [startupConfig?.appTitle]);
+
   const contextValue = {
     startupConfig,
     startupConfigError,
