@@ -120,9 +120,14 @@ const showMentionPopoverFamily = atomFamily<boolean, string | number | null>({
   default: false,
 });
 
-const audioURLFamily = atomFamily<string | null, string | number | null>({
-  key: 'audioURLByIndex',
+const globalAudioURLFamily = atomFamily<string | null, string | number | null>({
+  key: 'globalAudioURLByIndex',
   default: null,
+});
+
+const globalAudioPlayingFamily = atomFamily<boolean, string | number | null>({
+  key: 'globalAudioisPlayingByIndex',
+  default: false,
 });
 
 const activeRunFamily = atomFamily<string | null, string | number | null>({
@@ -190,6 +195,7 @@ export default {
   useClearConvoState,
   useCreateConversationAtom,
   showMentionPopoverFamily,
-  audioURLFamily,
+  globalAudioURLFamily,
   activeRunFamily,
+  globalAudioPlayingFamily,
 };
