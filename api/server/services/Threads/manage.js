@@ -121,6 +121,7 @@ async function saveUserMessage(params) {
  * @param {Object} params - The parameters of the Assistant message
  * @param {string} params.user - The user's ID.
  * @param {string} params.messageId - The message Id.
+ * @param {string} params.text - The concatenated text of the message.
  * @param {string} params.assistant_id - The assistant Id.
  * @param {string} params.thread_id - The thread Id.
  * @param {string} params.model - The model used by the assistant.
@@ -134,14 +135,6 @@ async function saveUserMessage(params) {
  * @return {Promise<Run>} A promise that resolves to the created run object.
  */
 async function saveAssistantMessage(params) {
-  const text = params.content.reduce((acc, part) => {
-    if (!part.value) {
-      return acc;
-    }
-
-    return acc + ' ' + part.value;
-  }, '');
-
   // const tokenCount = // TODO: need to count each content part
 
   const message = await recordMessage({
@@ -156,7 +149,8 @@ async function saveAssistantMessage(params) {
     content: params.content,
     sender: 'Assistant',
     isCreatedByUser: false,
-    text: text.trim(),
+    text: params.text,
+    unfinished: false,
     // tokenCount,
   });
 
@@ -302,6 +296,7 @@ async function syncMessages({
         aggregateMessages: [{ id: apiMessage.id }],
         model: apiMessage.role === 'user' ? null : apiMessage.assistant_id,
         user: openai.req.user.id,
+        unfinished: false,
       };
 
       if (apiMessage.file_ids?.length) {

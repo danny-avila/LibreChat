@@ -547,6 +547,36 @@ export const useUploadAvatarMutation = (
   });
 };
 
+/* Speech to text */
+export const useSpeechToTextMutation = (
+  options?: t.SpeechToTextOptions,
+): UseMutationResult<
+  t.SpeechToTextResponse, // response data
+  unknown, // error
+  FormData, // request
+  unknown // context
+> => {
+  return useMutation([MutationKeys.speechToText], {
+    mutationFn: (variables: FormData) => dataService.speechToText(variables),
+    ...(options || {}),
+  });
+};
+
+/* Text to speech */
+export const useTextToSpeechMutation = (
+  options?: t.TextToSpeechOptions,
+): UseMutationResult<
+  ArrayBuffer, // response data
+  unknown, // error
+  FormData, // request
+  unknown // context
+> => {
+  return useMutation([MutationKeys.textToSpeech], {
+    mutationFn: (variables: FormData) => dataService.textToSpeech(variables),
+    ...(options || {}),
+  });
+};
+
 /**
  * ASSISTANTS
  */

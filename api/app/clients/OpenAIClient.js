@@ -27,6 +27,7 @@ const {
   createContextHandlers,
 } = require('./prompts');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { updateTokenWebsocket } = require('~/server/services/Files/Audio');
 const { isEnabled, sleep } = require('~/server/utils');
 const { handleOpenAIErrors } = require('./tools/util');
 const spendTokens = require('~/models/spendTokens');
@@ -594,6 +595,7 @@ class OpenAIClient extends BaseClient {
         payload,
         (progressMessage) => {
           if (progressMessage === '[DONE]') {
+            updateTokenWebsocket('[DONE]');
             return;
           }
 
@@ -1216,6 +1218,7 @@ ${convo}
           });
 
         const azureDelay = this.modelOptions.model?.includes('gpt-4') ? 30 : 17;
+
         for await (const chunk of stream) {
           const token = chunk.choices[0]?.delta?.content || '';
           intermediateReply += token;

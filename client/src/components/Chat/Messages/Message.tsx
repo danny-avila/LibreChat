@@ -20,6 +20,7 @@ export default function Message(props: TMessageProps) {
   const {
     ask,
     edit,
+    index,
     isLast,
     enterEdit,
     handleScroll,
@@ -102,6 +103,7 @@ export default function Message(props: TMessageProps) {
                     setSiblingIdx={setSiblingIdx}
                   />
                   <HoverButtons
+                    index={index}
                     isEditing={edit}
                     message={message}
                     enterEdit={enterEdit}

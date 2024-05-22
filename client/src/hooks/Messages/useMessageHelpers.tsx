@@ -10,6 +10,7 @@ export default function useMessageHelpers(props: TMessageProps) {
 
   const {
     ask,
+    index,
     regenerate,
     isSubmitting,
     conversation,
@@ -71,6 +72,7 @@ export default function useMessageHelpers(props: TMessageProps) {
   return {
     ask,
     edit,
+    index,
     isLast,
     assistant,
     enterEdit,
