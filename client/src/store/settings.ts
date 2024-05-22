@@ -48,7 +48,7 @@ const localStorageAtoms = {
   LaTeXParsing: atomWithLocalStorage('LaTeXParsing', true),
   UsernameDisplay: atomWithLocalStorage('UsernameDisplay', true),
   TextToSpeech: atomWithLocalStorage('textToSpeech', true),
-  automaticPlayback: atomWithLocalStorage('automaticPlayback', true),
+  automaticPlayback: atomWithLocalStorage('automaticPlayback', false),
   enterToSend: atomWithLocalStorage('enterToSend', true),
   SpeechToText: atomWithLocalStorage('speechToText', true),
   conversationMode: atomWithLocalStorage('conversationMode', false),
