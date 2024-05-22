@@ -11,7 +11,7 @@ router.post('/manual', upload.none(), async (req, res) => {
 });
 
 const logDebugMessage = (req, message) =>
-  logger.debug(`[streamAudio] user: ${req.user.id} | ${message}`);
+  logger.debug(`[streamAudio] user: ${req?.user?.id ?? 'UNDEFINED_USER'} | ${message}`);
 
 // TODO: cache this with TTL
 let runIds = new Set();

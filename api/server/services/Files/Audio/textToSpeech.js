@@ -346,7 +346,7 @@ async function streamAudio(req, res) {
             break;
           }
 
-          logger.debug(`[streamAudio] user: ${req.user.id} | writing audio stream`);
+          logger.debug(`[streamAudio] user: ${req?.user?.id} | writing audio stream`);
           await new Promise((resolve) => {
             response.data.pipe(res, { end: false });
             response.data.on('end', () => {
