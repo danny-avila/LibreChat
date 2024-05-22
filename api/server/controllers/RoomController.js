@@ -7,9 +7,19 @@ const {
   saveMessage,
   removeUserFromRoom,
   getConvo,
+  getConvosByQuery,
 } = require('~/models');
 const bcrypt = require('bcryptjs');
 const ReportModel = require('~/models/Report');
+
+const getRoomsByQuery = async (req, res) => {
+  try {
+    const rooms = await getConvosByQuery(req.query.title ?? '');
+    res.json(rooms);
+  } catch (error) {
+    return res.status(500).json(error);
+  }
+};
 
 const createNewRoom = async (req, res) => {
   // const { title, isPrivate, password, endpoint } = req.body;
@@ -178,4 +188,5 @@ module.exports = {
   leaveRoom,
   kickUser,
   reportRoom,
+  getRoomsByQuery,
 };

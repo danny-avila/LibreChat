@@ -2,6 +2,15 @@ const Conversation = require('./schema/convoSchema');
 const { getMessages, deleteMessages } = require('./Message');
 const logger = require('~/config/winston');
 
+const getConvosByQuery = async (title) => {
+  try {
+    return await Conversation.find({ isRoom: true, active: true, title: new RegExp(title, 'i') });
+  } catch (error) {
+    logger.error('[getConvo] Error getting single conversation', error);
+    return { message: 'Error getting single conversation' };
+  }
+};
+
 const getConvo = async (user, conversationId) => {
   try {
     return await Conversation.findOne({
@@ -145,4 +154,5 @@ module.exports = {
     deleteCount.messages = await deleteMessages({ conversationId: { $in: ids } });
     return deleteCount;
   },
+  getConvosByQuery,
 };

@@ -7,7 +7,13 @@ const {
   deleteMessages,
   getMessageById,
 } = require('./Message');
-const { getConvoTitle, getConvo, saveConvo, deleteConvos } = require('./Conversation');
+const {
+  getConvoTitle,
+  getConvo,
+  saveConvo,
+  deleteConvos,
+  getConvosByQuery,
+} = require('./Conversation');
 const { getPreset, getPresets, savePreset, deletePresets } = require('./Preset');
 const { hashPassword, getUser, updateUser } = require('./userMethods');
 const {
@@ -69,4 +75,5 @@ module.exports = {
   getRooms,
   getRoomsByUser,
   removeUserFromRoom,
+  getConvosByQuery,
 };

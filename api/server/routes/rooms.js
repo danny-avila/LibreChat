@@ -8,6 +8,7 @@ const {
   leaveRoom,
   kickUser,
   reportRoom,
+  getRoomsByQuery,
 } = require('~/server/controllers/RoomController');
 const { requireJwtAuth } = require('~/server/middleware/');
 
@@ -15,6 +16,7 @@ const router = express.Router();
 
 router.use(requireJwtAuth);
 
+router.get('/', getRoomsByQuery);
 router.post('/', createNewRoom);
 router.post('/:roomId/report', reportRoom);
 router.post('/join/:roomId', joinRoom);
