@@ -81,6 +81,18 @@ export default function HoverButtons({
     enterEdit();
   };
 
+  const renderIcon = (size: string) => {
+    if (isLoading) {
+      return <Spinner size={size} />;
+    }
+
+    if (isSpeaking) {
+      return <VolumeMuteIcon size={size} />;
+    }
+
+    return <VolumeIcon size={size} />;
+  };
+
   return (
     <div className="visible mt-0 flex justify-center gap-1 self-end text-gray-400 lg:justify-start">
       {TextToSpeech && (
@@ -92,13 +104,7 @@ export default function HoverButtons({
           type="button"
           title={isSpeaking ? localize('com_ui_stop') : localize('com_ui_read_aloud')}
         >
-          {isLoading ? (
-            <Spinner size="19" />
-          ) : isSpeaking ? (
-            <VolumeMuteIcon size="19" />
-          ) : (
-            <VolumeIcon size="19" />
-          )}
+          {renderIcon('19')}
         </button>
       )}
       {isEditableEndpoint && (
