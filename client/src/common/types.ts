@@ -12,6 +12,7 @@ import type {
   TLoginUser,
   AuthTypeEnum,
   TConversation,
+  TStartupConfig,
   EModelEndpoint,
   AssistantsEndpoint,
   AuthorizationTypeEnum,
@@ -390,3 +391,9 @@ export interface SwitcherProps {
   endpointKeyProvided: boolean;
   isCollapsed: boolean;
 }
+
+export type TLoginLayoutContext = {
+  startupConfig: TStartupConfig | null;
+  startupConfigError: unknown;
+  isFetching: boolean;
+};
