@@ -31,6 +31,9 @@ async function getVoices(req, res) {
       case 'elevenlabs':
         voices = ttsSchema.elevenlabs?.voices;
         break;
+      case 'localai':
+        voices = ttsSchema.localai?.voices;
+        break;
       default:
         throw new Error('Invalid provider');
     }
