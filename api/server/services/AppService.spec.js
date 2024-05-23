@@ -505,7 +505,31 @@ describe('AppService updating app.locals and issuing warnings', () => {
 
     const { logger } = require('~/config');
     expect(logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining('endpoint has both \'supportedIds\' and \'excludedIds\' defined'),
+      expect.stringContaining(
+        'The \'assistants\' endpoint has both \'supportedIds\' and \'excludedIds\' defined.',
+      ),
+    );
+  });
+
+  it('should log a warning when privateAssistants and supportedIds or excludedIds are provided', async () => {
+    const mockConfig = {
+      endpoints: {
+        assistants: {
+          privateAssistants: true,
+          supportedIds: ['id1'],
+        },
+      },
+    };
+    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(mockConfig));
+
+    const app = { locals: {} };
+    await require('./AppService')(app);
+
+    const { logger } = require('~/config');
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'The \'assistants\' endpoint has both \'privateAssistants\' and \'supportedIds\' or \'excludedIds\' defined.',
+      ),
     );
   });
 
