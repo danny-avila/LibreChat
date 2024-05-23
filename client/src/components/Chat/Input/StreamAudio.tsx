@@ -1,10 +1,10 @@
 import { useParams } from 'react-router-dom';
+import { useEffect, useCallback } from 'react';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useCallback } from 'react';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
-import { useCustomAudioRef, MediaSourceAppender } from '~/hooks/Audio';
+import { useCustomAudioRef, MediaSourceAppender, usePauseGlobalAudio } from '~/hooks/Audio';
 import { useAuthContext } from '~/hooks';
 import { globalAudioId } from '~/common';
 import store from '~/store';
@@ -35,6 +35,7 @@ export default function StreamAudio({ index = 0 }) {
   const [globalAudioURL, setGlobalAudioURL] = useRecoilState(store.globalAudioURLFamily(index));
 
   const { audioRef } = useCustomAudioRef({ setIsPlaying });
+  const { pauseGlobalAudio } = usePauseGlobalAudio();
 
   const { conversationId: paramId } = useParams();
   const queryParam = paramId === 'new' ? paramId : latestMessage?.conversationId ?? paramId ?? '';
@@ -181,6 +182,12 @@ export default function StreamAudio({ index = 0 }) {
       audioRef.current.playbackRate = playbackRate;
     }
   }, [audioRef, globalAudioURL, playbackRate]);
+
+  useEffect(() => {
+    pauseGlobalAudio();
+    // We only want the effect to run when the paramId changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paramId]);
 
   return (
     <audio

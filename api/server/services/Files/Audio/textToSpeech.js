@@ -328,6 +328,12 @@ async function streamAudio(req, res) {
 
   try {
     let shouldContinue = true;
+
+    req.on('close', () => {
+      logger.warn('[streamAudio] Audio Stream Request closed by client');
+      shouldContinue = false;
+    });
+
     const processChunks = createChunkProcessor(req.body.messageId);
 
     while (shouldContinue) {
