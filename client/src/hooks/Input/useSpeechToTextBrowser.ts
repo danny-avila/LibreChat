@@ -7,6 +7,7 @@ import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognitio
 const useSpeechToTextBrowser = () => {
   const { showToast } = useToastContext();
   const [endpointSTT] = useRecoilState<string>(store.endpointSTT);
+  const [lang] = useRecoilState<string>(store.lang);
 
   const { transcript, listening, resetTranscript, browserSupportsSpeechRecognition } =
     useSpeechRecognition();
@@ -16,7 +17,7 @@ const useSpeechToTextBrowser = () => {
       if (listening) {
         SpeechRecognition.stopListening();
       } else {
-        SpeechRecognition.startListening();
+        SpeechRecognition.startListening({ language: lang });
       }
     } else {
       showToast({
