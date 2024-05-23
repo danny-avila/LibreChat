@@ -78,16 +78,16 @@ const AppService = async (app) => {
   if (config?.endpoints?.[EModelEndpoint.azureAssistants]) {
     endpointLocals[EModelEndpoint.azureAssistants] = assistantsConfigSetup(
       config,
-      endpointLocals[EModelEndpoint.azureAssistants],
       EModelEndpoint.azureAssistants,
+      endpointLocals[EModelEndpoint.azureAssistants],
     );
   }
 
   if (config?.endpoints?.[EModelEndpoint.assistants]) {
     endpointLocals[EModelEndpoint.assistants] = assistantsConfigSetup(
       config,
-      endpointLocals[EModelEndpoint.assistants],
       EModelEndpoint.assistants,
+      endpointLocals[EModelEndpoint.assistants],
     );
   }
 
