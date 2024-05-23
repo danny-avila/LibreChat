@@ -218,6 +218,7 @@ describe('AppService', () => {
             pollIntervalMs: 5000,
             timeoutMs: 30000,
             supportedIds: ['id1', 'id2'],
+            privateAssistants: false,
           },
         },
       }),
@@ -232,6 +233,7 @@ describe('AppService', () => {
         pollIntervalMs: 5000,
         timeoutMs: 30000,
         supportedIds: expect.arrayContaining(['id1', 'id2']),
+        privateAssistants: false,
       }),
     );
   });
