@@ -50,7 +50,7 @@ export default function HoverButtons({
   const [TextToSpeech] = useRecoilState<boolean>(store.TextToSpeech);
 
   const { handleMouseDown, handleMouseUp, toggleSpeech, isSpeaking, isLoading } = useTextToSpeech(
-    message?.text ?? '',
+    message?.content ?? message?.text ?? '',
     isLast,
     index,
   );
