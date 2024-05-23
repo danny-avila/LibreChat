@@ -225,7 +225,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           )}
         </div>
         <Button
-          className="dark:border-gray-500 dark:hover:bg-gray-600 select-none"
+          className="select-none dark:border-gray-500 dark:hover:bg-gray-600"
           variant="outline"
           size="sm"
           onClick={() => table.previousPage()}
@@ -234,7 +234,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           {localize('com_ui_prev')}
         </Button>
         <Button
-          className="dark:border-gray-500 dark:hover:bg-gray-600 select-none"
+          className="select-none dark:border-gray-500 dark:hover:bg-gray-600"
           variant="outline"
           size="sm"
           onClick={() => table.nextPage()}
