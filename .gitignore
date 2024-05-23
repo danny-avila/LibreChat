@@ -104,3 +104,6 @@ uploads/
 
 # owner
 release/
+
+# nginx override for SSL
+client/nginx.conf
