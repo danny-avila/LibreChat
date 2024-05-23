@@ -3,15 +3,11 @@ const uap = require('ua-parser-js');
 const { ViolationTypes } = require('librechat-data-provider');
 const { isEnabled, removePorts } = require('../utils');
 const keyvMongo = require('~/cache/keyvMongo');
-const keyvRedis = require('~/cache/keyvRedis');
 const denyRequest = require('./denyRequest');
 const { getLogStores } = require('~/cache');
 const User = require('~/models/User');
 
-const banCache = isEnabled(process.env.USE_REDIS)
-  ? new Keyv({ store: keyvRedis })
-  : new Keyv({ store: keyvMongo, namespace: ViolationTypes.BAN, ttl: 0 });
-
+const banCache = new Keyv({ store: keyvMongo, namespace: ViolationTypes.BAN, ttl: 0 });
 const message = 'Your account has been temporarily banned due to violations of our service.';
 
 /**
