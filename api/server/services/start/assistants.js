@@ -20,7 +20,7 @@ function azureAssistantsDefaults() {
 /**
  * Sets up the Assistants configuration from the config (`librechat.yaml`) file.
  * @param {TCustomConfig} config - The loaded custom configuration.
- * @param {EModelEndpoint.assistants|EModelEndpoint.azureAssistants} [assistantsEndpoint] - The Assistants endpoint name.
+ * @param {EModelEndpoint.assistants|EModelEndpoint.azureAssistants} assistantsEndpoint - The Assistants endpoint name.
  * - The previously loaded assistants configuration from Azure OpenAI Assistants option.
  * @param {Partial<TAssistantEndpoint>} [prevConfig]
  * @returns {Partial<TAssistantEndpoint>} The Assistants endpoint configuration.
