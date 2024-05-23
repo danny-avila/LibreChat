@@ -146,11 +146,11 @@ describe('Conversation Utilities', () => {
           },
         ],
       };
-      const { pageIndex, convIndex } = findPageForConversation(data as ConversationData, {
+      const { pageIndex, index } = findPageForConversation(data as ConversationData, {
         conversationId: '2',
       });
       expect(pageIndex).toBe(0);
-      expect(convIndex).toBe(1);
+      expect(index).toBe(1);
     });
   });
 });
@@ -219,11 +219,11 @@ describe('Conversation Utilities with Fake Data', () => {
   describe('findPageForConversation', () => {
     it('finds the correct page and index for a given conversation in fake data', () => {
       const targetConversation = convoData.pages[0].conversations[0];
-      const { pageIndex, convIndex } = findPageForConversation(convoData, {
+      const { pageIndex, index } = findPageForConversation(convoData, {
         conversationId: targetConversation.conversationId as string,
       });
       expect(pageIndex).toBeGreaterThanOrEqual(0);
-      expect(convIndex).toBeGreaterThanOrEqual(0);
+      expect(index).toBeGreaterThanOrEqual(0);
     });
   });
 });

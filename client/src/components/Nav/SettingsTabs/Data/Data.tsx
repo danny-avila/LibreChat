@@ -1,73 +1,13 @@
+import React, { useState, useRef } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
-import {
-  useRevokeUserKeyMutation,
-  useRevokeAllUserKeysMutation,
-  useClearConversationsMutation,
-} from 'librechat-data-provider/react-query';
+import { useClearConversationsMutation } from 'librechat-data-provider/react-query';
 import { SettingsTabValues } from 'librechat-data-provider';
-import React, { useState, useCallback, useRef } from 'react';
 import { useConversation, useConversations, useOnClickOutside } from '~/hooks';
+import { RevokeKeysButton } from './RevokeKeysButton';
+import { DeleteCacheButton } from './DeleteCacheButton';
 import ImportConversations from './ImportConversations';
 import { ClearChatsButton } from './ClearChats';
-import DangerButton from '../DangerButton';
-
-export const RevokeKeysButton = ({
-  showText = true,
-  endpoint = '',
-  all = false,
-  disabled = false,
-}: {
-  showText?: boolean;
-  endpoint?: string;
-  all?: boolean;
-  disabled?: boolean;
-}) => {
-  const [confirmRevoke, setConfirmRevoke] = useState(false);
-
-  const revokeKeysMutation = useRevokeAllUserKeysMutation();
-  const revokeKeyMutation = useRevokeUserKeyMutation(endpoint);
-
-  const revokeContentRef = useRef(null);
-  useOnClickOutside(revokeContentRef, () => confirmRevoke && setConfirmRevoke(false), []);
-
-  const revokeAllUserKeys = useCallback(() => {
-    if (confirmRevoke) {
-      revokeKeysMutation.mutate({});
-      setConfirmRevoke(false);
-    } else {
-      setConfirmRevoke(true);
-    }
-  }, [confirmRevoke, revokeKeysMutation]);
-
-  const revokeUserKey = useCallback(() => {
-    if (!endpoint) {
-      return;
-    } else if (confirmRevoke) {
-      revokeKeyMutation.mutate({});
-      setConfirmRevoke(false);
-    } else {
-      setConfirmRevoke(true);
-    }
-  }, [confirmRevoke, revokeKeyMutation, endpoint]);
-
-  const onClick = all ? revokeAllUserKeys : revokeUserKey;
-
-  return (
-    <DangerButton
-      ref={revokeContentRef}
-      showText={showText}
-      onClick={onClick}
-      disabled={disabled}
-      confirmClear={confirmRevoke}
-      id={'revoke-all-user-keys'}
-      actionTextCode={'com_ui_revoke'}
-      infoTextCode={'com_ui_revoke_info'}
-      dataTestIdInitial={'revoke-all-keys-initial'}
-      dataTestIdConfirm={'revoke-all-keys-confirm'}
-      mutation={all ? revokeKeysMutation : revokeKeyMutation}
-    />
-  );
-};
+import SharedLinks from './SharedLinks';
 
 function Data() {
   const dataTabRef = useRef(null);
@@ -108,9 +48,14 @@ function Data() {
           <ImportConversations />
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
+          <SharedLinks />
+        </div>
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <RevokeKeysButton all={true} />
         </div>
-
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
+          <DeleteCacheButton />
+        </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <ClearChatsButton
             confirmClear={confirmClearConvos}

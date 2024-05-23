@@ -80,13 +80,18 @@ class StableDiffusionAPI extends StructuredTool {
     const payload = {
       prompt,
       negative_prompt,
-      sampler_index: 'DPM++ 2M Karras',
       cfg_scale: 4.5,
       steps: 22,
       width: 1024,
       height: 1024,
     };
-    const generationResponse = await axios.post(`${url}/sdapi/v1/txt2img`, payload);
+    let generationResponse;
+    try {
+      generationResponse = await axios.post(`${url}/sdapi/v1/txt2img`, payload);
+    } catch (error) {
+      logger.error('[StableDiffusion] Error while generating image:', error);
+      return 'Error making API request.';
+    }
     const image = generationResponse.data.images[0];
 
     /** @type {{ height: number, width: number, seed: number, infotexts: string[] }} */
