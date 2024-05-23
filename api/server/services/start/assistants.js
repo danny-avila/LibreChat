@@ -25,7 +25,7 @@ function azureAssistantsDefaults() {
  * - The previously loaded assistants configuration from Azure OpenAI Assistants option.
  * @returns {Partial<TAssistantEndpoint>} The Assistants endpoint configuration.
  */
-function assistantsConfigSetup(config, prevConfig = {}, assistantsEndpoint) {
+function assistantsConfigSetup(config, assistantsEndpoint, prevConfig = {}) {
   const assistantsConfig = config.endpoints[assistantsEndpoint];
   const parsedConfig = assistantEndpointSchema.parse(assistantsConfig);
   if (assistantsConfig.supportedIds?.length && assistantsConfig.excludedIds?.length) {
