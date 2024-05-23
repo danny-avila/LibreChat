@@ -153,12 +153,13 @@ router.post(
         onChainEnd,
         onStart,
         ...endpointOption,
-        onProgress: progressCallback.call(null, {
+        progressCallback,
+        progressOptions: {
           res,
           text,
           plugin,
-          parentMessageId: overrideParentMessageId || userMessageId,
-        }),
+          // parentMessageId: overrideParentMessageId || userMessageId,
+        },
         abortController,
       });
 

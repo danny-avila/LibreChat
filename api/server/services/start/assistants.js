@@ -20,16 +20,17 @@ function azureAssistantsDefaults() {
 /**
  * Sets up the Assistants configuration from the config (`librechat.yaml`) file.
  * @param {TCustomConfig} config - The loaded custom configuration.
- * @param {Partial<TAssistantEndpoint>} [prevConfig]
+ * @param {EModelEndpoint.assistants|EModelEndpoint.azureAssistants} assistantsEndpoint - The Assistants endpoint name.
  * - The previously loaded assistants configuration from Azure OpenAI Assistants option.
+ * @param {Partial<TAssistantEndpoint>} [prevConfig]
  * @returns {Partial<TAssistantEndpoint>} The Assistants endpoint configuration.
  */
-function assistantsConfigSetup(config, prevConfig = {}) {
-  const assistantsConfig = config.endpoints[EModelEndpoint.assistants];
+function assistantsConfigSetup(config, assistantsEndpoint, prevConfig = {}) {
+  const assistantsConfig = config.endpoints[assistantsEndpoint];
   const parsedConfig = assistantEndpointSchema.parse(assistantsConfig);
   if (assistantsConfig.supportedIds?.length && assistantsConfig.excludedIds?.length) {
     logger.warn(
-      `Both \`supportedIds\` and \`excludedIds\` are defined for the ${EModelEndpoint.assistants} endpoint; \`excludedIds\` field will be ignored.`,
+      `Both \`supportedIds\` and \`excludedIds\` are defined for the ${assistantsEndpoint} endpoint; \`excludedIds\` field will be ignored.`,
     );
   }
 
