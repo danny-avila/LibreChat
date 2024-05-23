@@ -1,5 +1,5 @@
+const { createChunkProcessor, splitTextIntoChunks } = require('./streamAudio');
 const { Message } = require('~/models/Message');
-const { createChunkProcessor } = require('./streamAudio');
 
 jest.mock('~/models/Message', () => ({
   Message: {
@@ -84,5 +84,54 @@ describe('processChunks', () => {
     expect(result).toEqual([]);
     expect(Message.findOne).toHaveBeenCalledWith({ messageId: 'message-id' }, 'text unfinished');
     expect(Message.findOne().lean).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('splitTextIntoChunks', () => {
+  test('splits text into chunks of specified size with default separators', () => {
+    const text = 'This is a test. This is only a test! Make sure it works properly? Okay.';
+    const chunkSize = 20;
+    const expectedChunks = [
+      { text: 'This is a test.', isFinished: false },
+      { text: 'This is only a test!', isFinished: false },
+      { text: 'Make sure it works p', isFinished: false },
+      { text: 'roperly? Okay.', isFinished: true },
+    ];
+
+    const result = splitTextIntoChunks(text, chunkSize);
+    expect(result).toEqual(expectedChunks);
+  });
+
+  test('splits text into chunks with default size', () => {
+    const text = 'A'.repeat(8000) + '. The end.';
+    const expectedChunks = [
+      { text: 'A'.repeat(4000), isFinished: false },
+      { text: 'A'.repeat(4000), isFinished: false },
+      { text: '. The end.', isFinished: true },
+    ];
+
+    const result = splitTextIntoChunks(text);
+    expect(result).toEqual(expectedChunks);
+  });
+
+  test('returns a single chunk if text length is less than chunk size', () => {
+    const text = 'Short text.';
+    const expectedChunks = [{ text: 'Short text.', isFinished: true }];
+
+    const result = splitTextIntoChunks(text, 4000);
+    expect(result).toEqual(expectedChunks);
+  });
+
+  test('handles text with no separators correctly', () => {
+    const text = 'ThisTextHasNoSeparatorsAndIsVeryLong'.repeat(100);
+    const chunkSize = 4000;
+    const expectedChunks = [{ text: text, isFinished: true }];
+
+    const result = splitTextIntoChunks(text, chunkSize);
+    expect(result).toEqual(expectedChunks);
+  });
+
+  test('throws an error when text is empty', () => {
+    expect(() => splitTextIntoChunks('')).toThrow('Text is required');
   });
 });
