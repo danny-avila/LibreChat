@@ -1,11 +1,13 @@
 import { useRef } from 'react';
-import useTextToSpeechBrowser from './useTextToSpeechBrowser';
+import { parseTextParts } from 'librechat-data-provider';
+import type { TMessageContentParts } from 'librechat-data-provider';
 import useTextToSpeechExternal from './useTextToSpeechExternal';
+import useTextToSpeechBrowser from './useTextToSpeechBrowser';
 import { usePauseGlobalAudio } from '../Audio';
 import { useRecoilState } from 'recoil';
 import store from '~/store';
 
-const useTextToSpeech = (message: string, isLast: boolean, index = 0) => {
+const useTextToSpeech = (message: string | TMessageContentParts[], isLast: boolean, index = 0) => {
   const [endpointTTS] = useRecoilState<string>(store.endpointTTS);
   const useExternalTextToSpeech = endpointTTS === 'external';
 
@@ -34,7 +36,8 @@ const useTextToSpeech = (message: string, isLast: boolean, index = 0) => {
     isMouseDownRef.current = true;
     timerRef.current = window.setTimeout(() => {
       if (isMouseDownRef.current) {
-        generateSpeech(message, true);
+        const parsedMessage = typeof message === 'string' ? message : parseTextParts(message);
+        generateSpeech(parsedMessage, true);
       }
     }, 1000);
   };
@@ -51,7 +54,8 @@ const useTextToSpeech = (message: string, isLast: boolean, index = 0) => {
       cancelSpeech();
       pauseGlobalAudio();
     } else {
-      generateSpeech(message, false);
+      const parsedMessage = typeof message === 'string' ? message : parseTextParts(message);
+      generateSpeech(parsedMessage, false);
     }
   };
 
