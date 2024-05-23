@@ -1,6 +1,7 @@
 import { useRecoilValue } from 'recoil';
 import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import { useTextToSpeechMutation } from '~/data-provider';
+import useLocalize from '~/hooks/useLocalize';
 import { useToastContext } from '~/Providers';
 import store from '~/store';
 
@@ -12,6 +13,7 @@ const createFormData = (text: string, voice: string) => {
 };
 
 function useTextToSpeechExternal(isLast: boolean, index = 0) {
+  const localize = useLocalize();
   const { showToast } = useToastContext();
   const voice = useRecoilValue(store.voice);
   const cacheTTS = useRecoilValue(store.cacheTTS);
@@ -47,7 +49,7 @@ function useTextToSpeechExternal(isLast: boolean, index = 0) {
         return playPromise().catch(console.error);
       }
       console.error(error);
-      showToast({ message: `Error playing audio: ${error.message}`, status: 'error' });
+      showToast({ message: localize('com_nav_audio_play_error', error.message), status: 'error' });
     });
 
     newAudio.onended = () => {
@@ -68,6 +70,15 @@ function useTextToSpeechExternal(isLast: boolean, index = 0) {
   };
 
   const { mutate: processAudio, isLoading: isProcessing } = useTextToSpeechMutation({
+    onMutate: (variables) => {
+      const inputText = (variables.get('input') ?? '') as string;
+      if (inputText.length >= 4096) {
+        showToast({
+          message: localize('com_nav_long_audio_warning'),
+          status: 'warning',
+        });
+      }
+    },
     onSuccess: async (data: ArrayBuffer, variables) => {
       try {
         const inputText = (variables.get('input') ?? '') as string;
@@ -93,7 +104,10 @@ function useTextToSpeechExternal(isLast: boolean, index = 0) {
       }
     },
     onError: (error: unknown) => {
-      showToast({ message: `Error: ${(error as Error).message}`, status: 'error' });
+      showToast({
+        message: localize('com_nav_audio_process_error', (error as Error).message),
+        status: 'error',
+      });
     },
   });
 

@@ -1,6 +1,6 @@
 const axios = require('axios');
 const getCustomConfig = require('~/server/services/Config/getCustomConfig');
-const { getRandomVoiceId, createChunkProcessor } = require('./streamAudio');
+const { getRandomVoiceId, createChunkProcessor, splitTextIntoChunks } = require('./streamAudio');
 const { extractEnvVariable } = require('librechat-data-provider');
 const { logger } = require('~/config');
 
@@ -271,8 +271,45 @@ async function textToSpeech(req, res) {
     res.setHeader('Content-Type', 'audio/mpeg');
     const [provider, ttsSchema] = await getProviderSchema(customConfig);
     const voice = await getVoice(ttsSchema, req.body.voice);
-    const response = await ttsRequest(provider, ttsSchema, { input, voice });
-    response.data.pipe(res);
+    if (input.length < 4096) {
+      const response = await ttsRequest(provider, ttsSchema, { input, voice });
+      response.data.pipe(res);
+      return;
+    }
+
+    const textChunks = splitTextIntoChunks(input, 1000);
+
+    for (const chunk of textChunks) {
+      try {
+        const response = await ttsRequest(provider, ttsSchema, {
+          voice,
+          input: chunk.text,
+          stream: true,
+        });
+
+        logger.debug(`[textToSpeech] user: ${req?.user?.id} | writing audio stream`);
+        await new Promise((resolve) => {
+          response.data.pipe(res, { end: chunk.isFinished });
+          response.data.on('end', () => {
+            resolve();
+          });
+        });
+
+        if (chunk.isFinished) {
+          break;
+        }
+      } catch (innerError) {
+        logger.error('Error processing update:', chunk, innerError);
+        if (!res.headersSent) {
+          res.status(500).end();
+        }
+        return;
+      }
+    }
+
+    if (!res.headersSent) {
+      res.end();
+    }
   } catch (error) {
     logger.error('An error occurred while creating the audio stream:', error);
     res.status(500).send('An error occurred');
