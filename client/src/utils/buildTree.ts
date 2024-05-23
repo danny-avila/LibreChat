@@ -31,7 +31,7 @@ export default function buildTree({
 
       if (message.files && fileMap) {
         messageMap[message.messageId].files = message.files.map(
-          (file) => fileMap[file.file_id] ?? file,
+          (file) => fileMap[file.file_id ?? ''] ?? file,
         );
       }
 

@@ -137,6 +137,17 @@ export default {
   com_ui_assistants_output: 'Salida de Asistentes',
   com_ui_delete: 'Eliminar',
   com_ui_create: 'Crear',
+  com_ui_share: 'Share',
+  com_ui_share_link_to_chat: 'Share link to chat',
+  com_ui_share_error: 'There was an error sharing the chat link',
+  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share_created_message:
+    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  com_ui_share_update_message:
+    'Your name, custom instructions, and any messages you add after sharing stay private.',
+  com_ui_share_updated_message:
+    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete_conversation: '¿Eliminar Chat?',
   com_ui_delete_conversation_confirm: 'Esto eliminará',
   com_ui_delete_assistant_confirm:
@@ -423,6 +434,12 @@ export default {
   com_nav_export_recursive_or_sequential: '¿Recursivo o secuencial?',
   com_nav_export_recursive: 'Recursivo',
   com_nav_export_conversation: 'Exportar conversación',
+  com_nav_export: 'Exportar',
+  com_nav_shared_links: 'Links Compartidos',
+  com_nav_shared_links_manage: 'Gerenciar',
+  com_nav_shared_links_empty: 'Você não tem nenhum link compartilhado.',
+  com_nav_shared_links_name: 'Nome',
+  com_nav_shared_links_date_shared: 'Data compartilhada',
   com_nav_my_files: 'Mis archivos',
   com_nav_theme: 'Tema',
   com_nav_theme_system: 'Sistema',
@@ -458,6 +475,23 @@ export default {
   com_nav_lang_auto: 'Detección automática',
   com_nav_lang_spanish: 'Español',
   /* The following are AI Translated */
+  com_assistants_file_search: 'Búsqueda de Archivos',
+  com_assistants_file_search_info:
+    'Adjuntar almacenes vectoriales para la Búsqueda de Archivos aún no está soportado. Puede adjuntarlos desde el Área de Pruebas del Proveedor o adjuntar archivos a los mensajes para la búsqueda de archivos en una conversación específica.',
+  com_assistants_non_retrieval_model:
+    'La búsqueda de archivos no está habilitada en este modelo. Por favor, seleccione otro modelo.',
+  com_ui_attach_error_openai:
+    'No se pueden adjuntar archivos del Asistente a otros puntos de conexión',
+  com_ui_attach_warn_endpoint:
+    'Es posible que los archivos no compatibles con la herramienta sean ignorados',
+  com_ui_assistant_deleted: 'Asistente eliminado con éxito',
+  com_ui_assistant_delete_error: 'Hubo un error al eliminar el asistente',
+  com_ui_copied: '¡Copiado!',
+  com_ui_copy_code: 'Copiar código',
+  com_ui_copy_link: 'Copiar enlace',
+  com_ui_update_link: 'Actualizar enlace',
+  com_ui_create_link: 'Crear enlace',
+  com_nav_source_chat: 'Ver chat de origen',
   com_ui_date_today: 'Hoy',
   com_ui_date_yesterday: 'Ayer',
   com_ui_date_previous_7_days: 'Últimos 7 días',
@@ -1072,6 +1106,43 @@ export const comparisons = {
   com_ui_create: {
     english: 'Create',
     translated: 'Crear',
+  },
+  com_ui_share: {
+    english: 'Share',
+    translated: 'Share',
+  },
+  com_ui_share_link_to_chat: {
+    english: 'Share link to chat',
+    translated: 'Share link to chat',
+  },
+  com_ui_share_error: {
+    english: 'There was an error sharing the chat link',
+    translated: 'There was an error sharing the chat link',
+  },
+  com_ui_share_create_message: {
+    english: 'Your name and any messages you add after sharing stay private.',
+    translated: 'Your name and any messages you add after sharing stay private.',
+  },
+  com_ui_share_created_message: {
+    english:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_share_update_message: {
+    english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated:
+      'Your name, custom instructions, and any messages you add after sharing stay private.',
+  },
+  com_ui_share_updated_message: {
+    english:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_shared_link_not_found: {
+    english: 'Shared link not found',
+    translated: 'Shared link not found',
   },
   com_ui_delete_conversation: {
     english: 'Delete chat?',
@@ -2069,6 +2140,30 @@ export const comparisons = {
     english: 'Export conversation',
     translated: 'Exportar conversación',
   },
+  com_nav_export: {
+    english: 'Export',
+    translated: 'Exportar',
+  },
+  com_nav_shared_links: {
+    english: 'Shared links',
+    translated: 'Links Compartidos',
+  },
+  com_nav_shared_links_manage: {
+    english: 'Manage',
+    translated: 'Gerenciar',
+  },
+  com_nav_shared_links_empty: {
+    english: 'You have no shared links.',
+    translated: 'Você não tem nenhum link compartilhado.',
+  },
+  com_nav_shared_links_name: {
+    english: 'Name',
+    translated: 'Nome',
+  },
+  com_nav_shared_links_date_shared: {
+    english: 'Date shared',
+    translated: 'Data compartilhada',
+  },
   com_nav_my_files: {
     english: 'My Files',
     translated: 'Mis archivos',
@@ -2201,6 +2296,61 @@ export const comparisons = {
   com_nav_lang_spanish: {
     english: 'Español',
     translated: 'Español',
+  },
+  com_assistants_file_search: {
+    english: 'File Search',
+    translated: 'Búsqueda de Archivos',
+  },
+  com_assistants_file_search_info: {
+    english:
+      'Attaching vector stores for File Search is not yet supported. You can attach them from the Provider Playground or attach files to messages for file search on a thread basis.',
+    translated:
+      'Adjuntar almacenes vectoriales para la Búsqueda de Archivos aún no está soportado. Puede adjuntarlos desde el Área de Pruebas del Proveedor o adjuntar archivos a los mensajes para la búsqueda de archivos en una conversación específica.',
+  },
+  com_assistants_non_retrieval_model: {
+    english: 'File search is not enabled on this model. Please select another model.',
+    translated:
+      'La búsqueda de archivos no está habilitada en este modelo. Por favor, seleccione otro modelo.',
+  },
+  com_ui_attach_error_openai: {
+    english: 'Cannot attach Assistant files to other endpoints',
+    translated: 'No se pueden adjuntar archivos del Asistente a otros puntos de conexión',
+  },
+  com_ui_attach_warn_endpoint: {
+    english: 'Non-Assistant files may be ignored without a compatible tool',
+    translated: 'Es posible que los archivos no compatibles con la herramienta sean ignorados',
+  },
+  com_ui_assistant_deleted: {
+    english: 'Successfully deleted assistant',
+    translated: 'Asistente eliminado con éxito',
+  },
+  com_ui_assistant_delete_error: {
+    english: 'There was an error deleting the assistant',
+    translated: 'Hubo un error al eliminar el asistente',
+  },
+  com_ui_copied: {
+    english: 'Copied!',
+    translated: '¡Copiado!',
+  },
+  com_ui_copy_code: {
+    english: 'Copy code',
+    translated: 'Copiar código',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: 'Copiar enlace',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: 'Actualizar enlace',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: 'Crear enlace',
+  },
+  com_nav_source_chat: {
+    english: 'View source chat',
+    translated: 'Ver chat de origen',
   },
   com_ui_date_today: {
     english: 'Today',

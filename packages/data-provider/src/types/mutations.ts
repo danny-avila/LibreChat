@@ -45,6 +45,8 @@ export type AssistantAvatarVariables = {
   model: string;
   formData: FormData;
   postCreation?: boolean;
+  endpoint: types.AssistantsEndpoint;
+  version: number | string;
 };
 
 export type UpdateActionVariables = {
@@ -53,6 +55,8 @@ export type UpdateActionVariables = {
   metadata: ActionMetadata;
   action_id?: string;
   model: string;
+  endpoint: types.AssistantsEndpoint;
+  version: number | string;
 };
 
 export type UploadAssistantAvatarOptions = MutationOptions<Assistant, AssistantAvatarVariables>;
@@ -66,7 +70,11 @@ export type UpdateAssistantVariables = {
 
 export type UpdateAssistantMutationOptions = MutationOptions<Assistant, UpdateAssistantVariables>;
 
-export type DeleteAssistantBody = { assistant_id: string; model: string };
+export type DeleteAssistantBody = {
+  assistant_id: string;
+  model: string;
+  endpoint: types.AssistantsEndpoint;
+};
 
 export type DeleteAssistantMutationOptions = MutationOptions<
   void,
@@ -77,6 +85,7 @@ export type UpdateActionResponse = [AssistantDocument, Assistant, Action];
 export type UpdateActionOptions = MutationOptions<UpdateActionResponse, UpdateActionVariables>;
 
 export type DeleteActionVariables = {
+  endpoint: types.AssistantsEndpoint;
   assistant_id: string;
   action_id: string;
   model: string;
@@ -90,3 +99,13 @@ export type DeleteConversationOptions = MutationOptions<
 >;
 
 export type ForkConvoOptions = MutationOptions<types.TForkConvoResponse, types.TForkConvoRequest>;
+
+export type CreateSharedLinkOptions = MutationOptions<
+  types.TSharedLink,
+  Partial<types.TSharedLink>
+>;
+export type UpdateSharedLinkOptions = MutationOptions<
+  types.TSharedLink,
+  Partial<types.TSharedLink>
+>;
+export type DeleteSharedLinkOptions = MutationOptions<types.TSharedLink, { shareId: string }>;

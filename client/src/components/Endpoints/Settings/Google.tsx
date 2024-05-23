@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import { EModelEndpoint, endpointSettings } from 'librechat-data-provider';
 import type { TModelSelectProps, OnInputNumberChange } from '~/common';
@@ -30,25 +29,6 @@ export default function Settings({ conversation, setOption, models, readonly }: 
     maxContextTokens,
     maxOutputTokens,
   } = conversation ?? {};
-
-  const isGemini = model?.toLowerCase()?.includes('gemini');
-
-  const maxOutputTokensMax = isGemini
-    ? google.maxOutputTokens.maxGemini
-    : google.maxOutputTokens.max;
-  const maxOutputTokensDefault = isGemini
-    ? google.maxOutputTokens.defaultGemini
-    : google.maxOutputTokens.default;
-
-  useEffect(
-    () => {
-      if (model) {
-        setOption('maxOutputTokens')(Math.min(Number(maxOutputTokens) ?? 0, maxOutputTokensMax));
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [model],
-  );
 
   const [setMaxContextTokens, maxContextTokensValue] = useDebouncedInput<number | null | undefined>(
     {
@@ -281,15 +261,15 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               <Label htmlFor="max-tokens-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_max_output_tokens')}{' '}
                 <small className="opacity-40">
-                  ({localize('com_endpoint_default_with_num', maxOutputTokensDefault + '')})
+                  ({localize('com_endpoint_default_with_num', google.maxOutputTokens.default + '')})
                 </small>
               </Label>
               <InputNumber
                 id="max-tokens-int"
                 disabled={readonly}
                 value={maxOutputTokens}
-                onChange={(value) => setMaxOutputTokens(value ?? maxOutputTokensDefault)}
-                max={maxOutputTokensMax}
+                onChange={(value) => setMaxOutputTokens(Number(value))}
+                max={google.maxOutputTokens.max}
                 min={google.maxOutputTokens.min}
                 step={google.maxOutputTokens.step}
                 controls={false}
@@ -304,10 +284,10 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             </div>
             <Slider
               disabled={readonly}
-              value={[maxOutputTokens ?? maxOutputTokensDefault]}
+              value={[maxOutputTokens ?? google.maxOutputTokens.default]}
               onValueChange={(value) => setMaxOutputTokens(value[0])}
-              doubleClickHandler={() => setMaxOutputTokens(maxOutputTokensDefault)}
-              max={maxOutputTokensMax}
+              doubleClickHandler={() => setMaxOutputTokens(google.maxOutputTokens.default)}
+              max={google.maxOutputTokens.max}
               min={google.maxOutputTokens.min}
               step={google.maxOutputTokens.step}
               className="flex h-4 w-full"

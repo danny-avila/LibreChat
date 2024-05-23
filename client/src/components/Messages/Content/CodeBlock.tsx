@@ -3,6 +3,7 @@ import { InfoIcon } from 'lucide-react';
 import React, { useRef, useState, RefObject } from 'react';
 import Clipboard from '~/components/svg/Clipboard';
 import CheckMark from '~/components/svg/CheckMark';
+import useLocalize from '~/hooks/useLocalize';
 import cn from '~/utils/cn';
 
 type CodeBarProps = {
@@ -18,6 +19,7 @@ type CodeBlockProps = Pick<CodeBarProps, 'lang' | 'plugin' | 'error'> & {
 };
 
 const CodeBar: React.FC<CodeBarProps> = React.memo(({ lang, codeRef, error, plugin = null }) => {
+  const localize = useLocalize();
   const [isCopied, setIsCopied] = useState(false);
   return (
     <div className="relative flex items-center rounded-tl-md rounded-tr-md bg-gray-700 px-4 py-2 font-sans text-xs text-gray-200 dark:bg-gray-700">
@@ -41,13 +43,13 @@ const CodeBar: React.FC<CodeBarProps> = React.memo(({ lang, codeRef, error, plug
         >
           {isCopied ? (
             <>
-              <CheckMark />
-              {error ? '' : 'Copied!'}
+              <CheckMark className="h-[18px] w-[18px]" />
+              {error ? '' : localize('com_ui_copied')}
             </>
           ) : (
             <>
               <Clipboard />
-              {error ? '' : 'Copy code'}
+              {error ? '' : localize('com_ui_copy_code')}
             </>
           )}
         </button>

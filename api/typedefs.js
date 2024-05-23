@@ -350,6 +350,12 @@
  */
 
 /**
+ * @exports TProviderSchema
+ * @typedef {import('librechat-data-provider').TProviderSchema} TProviderSchema
+ * @memberof typedefs
+ */
+
+/**
  * @exports TEndpoint
  * @typedef {import('librechat-data-provider').TEndpoint} TEndpoint
  * @memberof typedefs
@@ -654,6 +660,12 @@
 /**
  * @exports RunManager
  * @typedef {import('./server/services/Runs/RunManager.js').RunManager} RunManager
+ * @memberof typedefs
+ */
+
+/**
+ * @exports OpenAISpecClient
+ * @typedef {import('./app/clients/OpenAIClient')} OpenAISpecClient
  * @memberof typedefs
  */
 

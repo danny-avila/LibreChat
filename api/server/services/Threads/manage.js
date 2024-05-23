@@ -3,7 +3,6 @@ const { v4 } = require('uuid');
 const {
   Constants,
   ContentTypes,
-  EModelEndpoint,
   AnnotationTypes,
   defaultOrderQuery,
 } = require('librechat-data-provider');
@@ -50,6 +49,7 @@ async function initThread({ openai, body, thread_id: _thread_id }) {
  * @param {string} params.assistant_id - The current assistant Id.
  * @param {string} params.thread_id - The thread Id.
  * @param {string} params.conversationId - The message's conversationId
+ * @param {string} params.endpoint - The conversation endpoint
  * @param {string} [params.parentMessageId] - Optional if initial message.
  * Defaults to Constants.NO_PARENT.
  * @param {string} [params.instructions] - Optional: from preset for `instructions` field.
@@ -82,7 +82,7 @@ async function saveUserMessage(params) {
 
   const userMessage = {
     user: params.user,
-    endpoint: EModelEndpoint.assistants,
+    endpoint: params.endpoint,
     messageId: params.messageId,
     conversationId: params.conversationId,
     parentMessageId: params.parentMessageId ?? Constants.NO_PARENT,
@@ -96,7 +96,7 @@ async function saveUserMessage(params) {
   };
 
   const convo = {
-    endpoint: EModelEndpoint.assistants,
+    endpoint: params.endpoint,
     conversationId: params.conversationId,
     promptPrefix: params.promptPrefix,
     instructions: params.instructions,
@@ -121,11 +121,13 @@ async function saveUserMessage(params) {
  * @param {Object} params - The parameters of the Assistant message
  * @param {string} params.user - The user's ID.
  * @param {string} params.messageId - The message Id.
+ * @param {string} params.text - The concatenated text of the message.
  * @param {string} params.assistant_id - The assistant Id.
  * @param {string} params.thread_id - The thread Id.
  * @param {string} params.model - The model used by the assistant.
  * @param {ContentPart[]} params.content - The message content parts.
  * @param {string} params.conversationId - The message's conversationId
+ * @param {string} params.endpoint - The conversation endpoint
  * @param {string} params.parentMessageId - The latest user message that triggered this response.
  * @param {string} [params.instructions] - Optional: from preset for `instructions` field.
  * Overrides the instructions of the assistant.
@@ -133,19 +135,11 @@ async function saveUserMessage(params) {
  * @return {Promise<Run>} A promise that resolves to the created run object.
  */
 async function saveAssistantMessage(params) {
-  const text = params.content.reduce((acc, part) => {
-    if (!part.value) {
-      return acc;
-    }
-
-    return acc + ' ' + part.value;
-  }, '');
-
   // const tokenCount = // TODO: need to count each content part
 
   const message = await recordMessage({
     user: params.user,
-    endpoint: EModelEndpoint.assistants,
+    endpoint: params.endpoint,
     messageId: params.messageId,
     conversationId: params.conversationId,
     parentMessageId: params.parentMessageId,
@@ -155,12 +149,13 @@ async function saveAssistantMessage(params) {
     content: params.content,
     sender: 'Assistant',
     isCreatedByUser: false,
-    text: text.trim(),
+    text: params.text,
+    unfinished: false,
     // tokenCount,
   });
 
   await saveConvo(params.user, {
-    endpoint: EModelEndpoint.assistants,
+    endpoint: params.endpoint,
     conversationId: params.conversationId,
     promptPrefix: params.promptPrefix,
     instructions: params.instructions,
@@ -205,20 +200,22 @@ async function addThreadMetadata({ openai, thread_id, messageId, messages }) {
  *
  * @param {Object} params - The parameters for synchronizing messages.
  * @param {OpenAIClient} params.openai - The OpenAI client instance.
+ * @param {string} params.endpoint - The current endpoint.
+ * @param {string} params.thread_id - The current thread ID.
  * @param {TMessage[]} params.dbMessages - The LibreChat DB messages.
  * @param {ThreadMessage[]} params.apiMessages - The thread messages from the API.
- * @param {string} params.conversationId - The current conversation ID.
- * @param {string} params.thread_id - The current thread ID.
  * @param {string} [params.assistant_id] - The current assistant ID.
+ * @param {string} params.conversationId - The current conversation ID.
  * @return {Promise<TMessage[]>} A promise that resolves to the updated messages
  */
 async function syncMessages({
   openai,
-  apiMessages,
-  dbMessages,
-  conversationId,
+  endpoint,
   thread_id,
+  dbMessages,
+  apiMessages,
   assistant_id,
+  conversationId,
 }) {
   let result = [];
   let dbMessageMap = new Map(dbMessages.map((msg) => [msg.messageId, msg]));
@@ -290,7 +287,7 @@ async function syncMessages({
         thread_id,
         conversationId,
         messageId: v4(),
-        endpoint: EModelEndpoint.assistants,
+        endpoint,
         parentMessageId: lastMessage ? lastMessage.messageId : Constants.NO_PARENT,
         role: apiMessage.role,
         isCreatedByUser: apiMessage.role === 'user',
@@ -299,6 +296,7 @@ async function syncMessages({
         aggregateMessages: [{ id: apiMessage.id }],
         model: apiMessage.role === 'user' ? null : apiMessage.assistant_id,
         user: openai.req.user.id,
+        unfinished: false,
       };
 
       if (apiMessage.file_ids?.length) {
@@ -382,13 +380,21 @@ function mapMessagesToSteps(steps, messages) {
  *
  * @param {Object} params - The parameters for initializing a thread.
  * @param {OpenAIClient} params.openai - The OpenAI client instance.
+ * @param {string} params.endpoint - The current endpoint.
  * @param {string} [params.latestMessageId] - Optional: The latest message ID from LibreChat.
  * @param {string} params.thread_id - Response thread ID.
  * @param {string} params.run_id - Response Run ID.
  * @param {string} params.conversationId - LibreChat conversation ID.
  * @return {Promise<TMessage[]>} A promise that resolves to the updated messages
  */
-async function checkMessageGaps({ openai, latestMessageId, thread_id, run_id, conversationId }) {
+async function checkMessageGaps({
+  openai,
+  endpoint,
+  latestMessageId,
+  thread_id,
+  run_id,
+  conversationId,
+}) {
   const promises = [];
   promises.push(openai.beta.threads.messages.list(thread_id, defaultOrderQuery));
   promises.push(openai.beta.threads.runs.steps.list(thread_id, run_id));
@@ -406,6 +412,7 @@ async function checkMessageGaps({ openai, latestMessageId, thread_id, run_id, co
     role: 'assistant',
     run_id,
     thread_id,
+    endpoint,
     metadata: {
       messageId: latestMessageId,
     },
@@ -452,11 +459,12 @@ async function checkMessageGaps({ openai, latestMessageId, thread_id, run_id, co
 
   const syncedMessages = await syncMessages({
     openai,
+    endpoint,
+    thread_id,
     dbMessages,
     apiMessages,
-    thread_id,
-    conversationId,
     assistant_id,
+    conversationId,
   });
 
   return Object.values(
@@ -498,41 +506,62 @@ const recordUsage = async ({
 };
 
 /**
- * Safely replaces the annotated text within the specified range denoted by start_index and end_index,
- * after verifying that the text within that range matches the given annotation text.
- * Proceeds with the replacement even if a mismatch is found, but logs a warning.
+ * Creates a replaceAnnotation function with internal state for tracking the index offset.
  *
- * @param {string} originalText The original text content.
- * @param {number} start_index The starting index where replacement should begin.
- * @param {number} end_index The ending index where replacement should end.
- * @param {string} expectedText The text expected to be found in the specified range.
- * @param {string} replacementText The text to insert in place of the existing content.
- * @returns {string} The text with the replacement applied, regardless of text match.
+ * @returns {function} The replaceAnnotation function with closure for index offset.
  */
-function replaceAnnotation(originalText, start_index, end_index, expectedText, replacementText) {
-  if (start_index < 0 || end_index > originalText.length || start_index > end_index) {
-    logger.warn(`Invalid range specified for annotation replacement.
-    Attempting replacement with \`replace\` method instead...
-    length: ${originalText.length}
-    start_index: ${start_index}
-    end_index: ${end_index}`);
-    return originalText.replace(originalText, replacementText);
+function createReplaceAnnotation() {
+  let indexOffset = 0;
+
+  /**
+   * Safely replaces the annotated text within the specified range denoted by start_index and end_index,
+   * after verifying that the text within that range matches the given annotation text.
+   * Proceeds with the replacement even if a mismatch is found, but logs a warning.
+   *
+   * @param {object} params The original text content.
+   * @param {string} params.currentText The current text content, with/without replacements.
+   * @param {number} params.start_index The starting index where replacement should begin.
+   * @param {number} params.end_index The ending index where replacement should end.
+   * @param {string} params.expectedText The text expected to be found in the specified range.
+   * @param {string} params.replacementText The text to insert in place of the existing content.
+   * @returns {string} The text with the replacement applied, regardless of text match.
+   */
+  function replaceAnnotation({
+    currentText,
+    start_index,
+    end_index,
+    expectedText,
+    replacementText,
+  }) {
+    const adjustedStartIndex = start_index + indexOffset;
+    const adjustedEndIndex = end_index + indexOffset;
+
+    if (
+      adjustedStartIndex < 0 ||
+      adjustedEndIndex > currentText.length ||
+      adjustedStartIndex > adjustedEndIndex
+    ) {
+      logger.warn(`Invalid range specified for annotation replacement.
+      Attempting replacement with \`replace\` method instead...
+      length: ${currentText.length}
+      start_index: ${adjustedStartIndex}
+      end_index: ${adjustedEndIndex}`);
+      return currentText.replace(expectedText, replacementText);
+    }
+
+    if (currentText.substring(adjustedStartIndex, adjustedEndIndex) !== expectedText) {
+      return currentText.replace(expectedText, replacementText);
+    }
+
+    indexOffset += replacementText.length - (adjustedEndIndex - adjustedStartIndex);
+    return (
+      currentText.slice(0, adjustedStartIndex) +
+      replacementText +
+      currentText.slice(adjustedEndIndex)
+    );
   }
 
-  const actualTextInRange = originalText.substring(start_index, end_index);
-
-  if (actualTextInRange !== expectedText) {
-    logger.warn(`The text within the specified range does not match the expected annotation text.
-    Attempting replacement with \`replace\` method instead...
-    Expected: ${expectedText}
-    Actual: ${actualTextInRange}`);
-
-    return originalText.replace(originalText, replacementText);
-  }
-
-  const beforeText = originalText.substring(0, start_index);
-  const afterText = originalText.substring(end_index);
-  return beforeText + replacementText + afterText;
+  return replaceAnnotation;
 }
 
 /**
@@ -581,6 +610,11 @@ async function processMessages({ openai, client, messages = [] }) {
         continue;
       }
 
+      const originalText = currentText;
+      text += originalText;
+
+      const replaceAnnotation = createReplaceAnnotation();
+
       logger.debug('[processMessages] Processing annotations:', annotations);
       for (const annotation of annotations) {
         let file;
@@ -589,14 +623,16 @@ async function processMessages({ openai, client, messages = [] }) {
         const file_id = annotationType?.file_id;
         const alreadyProcessed = client.processedFileIds.has(file_id);
 
-        const replaceCurrentAnnotation = (replacement = '') => {
-          currentText = replaceAnnotation(
+        const replaceCurrentAnnotation = (replacementText = '') => {
+          const { start_index, end_index, text: expectedText } = annotation;
+          currentText = replaceAnnotation({
+            originalText,
             currentText,
-            annotation.start_index,
-            annotation.end_index,
-            annotation.text,
-            replacement,
-          );
+            start_index,
+            end_index,
+            expectedText,
+            replacementText,
+          });
           edited = true;
         };
 
@@ -623,7 +659,7 @@ async function processMessages({ openai, client, messages = [] }) {
           replaceCurrentAnnotation(`^${sources.length}^`);
         }
 
-        text += currentText + ' ';
+        text = currentText;
 
         if (!file) {
           continue;

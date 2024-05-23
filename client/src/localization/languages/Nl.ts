@@ -54,6 +54,17 @@ export default {
     'Er is een fout opgetreden bij het importeren van je gesprekken',
   com_ui_confirm_action: 'Bevestig actie',
   com_ui_chats: 'chats',
+  com_ui_share: 'Share',
+  com_ui_share_link_to_chat: 'Share link to chat',
+  com_ui_share_error: 'There was an error sharing the chat link',
+  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share_created_message:
+    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  com_ui_share_update_message:
+    'Your name, custom instructions, and any messages you add after sharing stay private.',
+  com_ui_share_updated_message:
+    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete: 'Verwijderen',
   com_ui_delete_conversation: 'Chat verwijderen?',
   com_ui_delete_conversation_confirm: 'Hiermee wordt',
@@ -261,6 +272,12 @@ export default {
   com_nav_export_recursive_or_sequential: 'Recursief of sequentieel?',
   com_nav_export_recursive: 'Recursief',
   com_nav_export_conversation: 'Conversatie exporteren',
+  com_nav_export: 'Exporteren',
+  com_nav_shared_links: 'Gedeelde links',
+  com_nav_shared_links_manage: 'Beheren',
+  com_nav_shared_links_empty: 'U hebt geen gedeeld links.',
+  com_nav_shared_links_name: 'Naam',
+  com_nav_shared_links_date_shared: 'Datum gedeeld',
   com_nav_theme: 'Thema',
   com_nav_theme_system: 'Systeem',
   com_nav_theme_dark: 'Donker',
@@ -493,6 +510,43 @@ export const comparisons = {
   com_ui_chats: {
     english: 'chats',
     translated: 'chats',
+  },
+  com_ui_share: {
+    english: 'Share',
+    translated: 'Share',
+  },
+  com_ui_share_link_to_chat: {
+    english: 'Share link to chat',
+    translated: 'Share link to chat',
+  },
+  com_ui_share_error: {
+    english: 'There was an error sharing the chat link',
+    translated: 'There was an error sharing the chat link',
+  },
+  com_ui_share_create_message: {
+    english: 'Your name and any messages you add after sharing stay private.',
+    translated: 'Your name and any messages you add after sharing stay private.',
+  },
+  com_ui_share_created_message: {
+    english:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_share_update_message: {
+    english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated:
+      'Your name, custom instructions, and any messages you add after sharing stay private.',
+  },
+  com_ui_share_updated_message: {
+    english:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_shared_link_not_found: {
+    english: 'Shared link not found',
+    translated: 'Shared link not found',
   },
   com_ui_delete: {
     english: 'Delete',
@@ -1219,6 +1273,30 @@ export const comparisons = {
   com_nav_export_conversation: {
     english: 'Export conversation',
     translated: 'Conversatie exporteren',
+  },
+  com_nav_export: {
+    english: 'Export',
+    translated: 'Exporteren',
+  },
+  com_nav_shared_links: {
+    english: 'Shared links',
+    translated: 'Gedeelde links',
+  },
+  com_nav_shared_links_manage: {
+    english: 'Manage',
+    translated: 'Beheren',
+  },
+  com_nav_shared_links_empty: {
+    english: 'You have no shared links.',
+    translated: 'U hebt geen gedeeld links.',
+  },
+  com_nav_shared_links_name: {
+    english: 'Name',
+    translated: 'Naam',
+  },
+  com_nav_shared_links_date_shared: {
+    english: 'Date shared',
+    translated: 'Datum gedeeld',
   },
   com_nav_theme: {
     english: 'Theme',

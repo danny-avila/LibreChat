@@ -22,8 +22,18 @@ export enum EModelEndpoint {
   gptPlugins = 'gptPlugins',
   anthropic = 'anthropic',
   assistants = 'assistants',
+  azureAssistants = 'azureAssistants',
   custom = 'custom',
 }
+
+export type AssistantsEndpoint = EModelEndpoint.assistants | EModelEndpoint.azureAssistants;
+
+export const isAssistantsEndpoint = (endpoint?: AssistantsEndpoint | null | string): boolean => {
+  if (!endpoint) {
+    return false;
+  }
+  return endpoint.toLowerCase().endsWith(EModelEndpoint.assistants);
+};
 
 export enum ImageDetail {
   low = 'low',
@@ -118,27 +128,25 @@ export const openAISettings = {
 
 export const googleSettings = {
   model: {
-    default: 'chat-bison',
+    default: 'gemini-1.5-flash-latest',
   },
   maxOutputTokens: {
     min: 1,
-    max: 2048,
+    max: 8192,
     step: 1,
-    default: 1024,
-    maxGemini: 8192,
-    defaultGemini: 8192,
+    default: 8192,
   },
   temperature: {
     min: 0,
-    max: 1,
+    max: 2,
     step: 0.01,
-    default: 0.2,
+    default: 1,
   },
   topP: {
     min: 0,
     max: 1,
     step: 0.01,
-    default: 0.8,
+    default: 0.95,
   },
   topK: {
     min: 1,
@@ -298,9 +306,9 @@ export const tConversationSchema = z.object({
   tools: z.union([z.array(tPluginSchema), z.array(z.string())]).optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
-  systemMessage: z.string().nullable().optional(),
   modelLabel: z.string().nullable().optional(),
   examples: z.array(tExampleSchema).optional(),
+  /* Prefer modelLabel over chatGptLabel */
   chatGptLabel: z.string().nullable().optional(),
   userLabel: z.string().optional(),
   model: z.string().nullable().optional(),
@@ -312,20 +320,12 @@ export const tConversationSchema = z.object({
   top_p: z.number().optional(),
   frequency_penalty: z.number().optional(),
   presence_penalty: z.number().optional(),
-  jailbreak: z.boolean().optional(),
-  jailbreakConversationId: z.string().nullable().optional(),
-  conversationSignature: z.string().nullable().optional(),
   parentMessageId: z.string().optional(),
-  clientId: z.string().nullable().optional(),
-  invocationId: z.number().nullable().optional(),
-  toneStyle: z.string().nullable().optional(),
   maxOutputTokens: z.number().optional(),
   agentOptions: tAgentOptionsSchema.nullable().optional(),
   file_ids: z.array(z.string()).optional(),
   maxContextTokens: coerceNumber.optional(),
   max_tokens: coerceNumber.optional(),
-  /** @deprecated */
-  resendImages: z.boolean().optional(),
   /* vision */
   resendFiles: z.boolean().optional(),
   imageDetail: eImageDetailSchema.optional(),
@@ -339,6 +339,25 @@ export const tConversationSchema = z.object({
   iconURL: z.string().optional(),
   greeting: z.string().optional(),
   spec: z.string().optional(),
+  /*
+  Deprecated fields
+  */
+  /** @deprecated */
+  systemMessage: z.string().nullable().optional(),
+  /** @deprecated */
+  jailbreak: z.boolean().optional(),
+  /** @deprecated */
+  jailbreakConversationId: z.string().nullable().optional(),
+  /** @deprecated */
+  conversationSignature: z.string().nullable().optional(),
+  /** @deprecated */
+  clientId: z.string().nullable().optional(),
+  /** @deprecated */
+  invocationId: z.number().nullable().optional(),
+  /** @deprecated */
+  toneStyle: z.string().nullable().optional(),
+  /** @deprecated */
+  resendImages: z.boolean().optional(),
 });
 
 export const tPresetSchema = tConversationSchema
@@ -380,6 +399,19 @@ export type TSetOption = (
 export type TConversation = z.infer<typeof tConversationSchema> & {
   presetOverride?: Partial<TPreset>;
 };
+
+export const tSharedLinkSchema = z.object({
+  conversationId: z.string(),
+  shareId: z.string(),
+  messages: z.array(z.string()),
+  isAnonymous: z.boolean(),
+  isPublic: z.boolean(),
+  isVisible: z.boolean(),
+  title: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type TSharedLink = z.infer<typeof tSharedLinkSchema>;
 
 export const openAISchema = tConversationSchema
   .pick({
@@ -461,18 +493,6 @@ export const googleSchema = tConversationSchema
     maxContextTokens: true,
   })
   .transform((obj) => {
-    const isGemini = obj?.model?.toLowerCase()?.includes('gemini');
-
-    const maxOutputTokensMax = isGemini
-      ? google.maxOutputTokens.maxGemini
-      : google.maxOutputTokens.max;
-    const maxOutputTokensDefault = isGemini
-      ? google.maxOutputTokens.defaultGemini
-      : google.maxOutputTokens.default;
-
-    let maxOutputTokens = obj.maxOutputTokens ?? maxOutputTokensDefault;
-    maxOutputTokens = Math.min(maxOutputTokens, maxOutputTokensMax);
-
     return {
       ...obj,
       model: obj.model ?? google.model.default,
@@ -480,7 +500,7 @@ export const googleSchema = tConversationSchema
       promptPrefix: obj.promptPrefix ?? null,
       examples: obj.examples ?? [{ input: { content: '' }, output: { content: '' } }],
       temperature: obj.temperature ?? google.temperature.default,
-      maxOutputTokens,
+      maxOutputTokens: obj.maxOutputTokens ?? google.maxOutputTokens.default,
       topP: obj.topP ?? google.topP.default,
       topK: obj.topK ?? google.topK.default,
       iconURL: obj.iconURL ?? undefined,

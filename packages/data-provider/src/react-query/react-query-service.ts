@@ -1,13 +1,11 @@
-import {
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import type {
   UseQueryOptions,
-  useQuery,
-  useMutation,
-  useQueryClient,
   UseMutationResult,
   QueryObserverResult,
 } from '@tanstack/react-query';
-import { defaultOrderQuery } from '../types/assistants';
 import { initialModelsConfig, LocalStorageKeys } from '../config';
+import { defaultOrderQuery } from '../types/assistants';
 import * as dataService from '../data-service';
 import * as m from '../types/mutations';
 import { QueryKeys } from '../keys';
@@ -51,6 +49,22 @@ export const useGetMessagesByConvoId = <TData = s.TMessage[]>(
   return useQuery<s.TMessage[], unknown, TData>(
     [QueryKeys.messages, id],
     () => dataService.getMessagesByConvoId(id),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      ...config,
+    },
+  );
+};
+
+export const useGetSharedMessages = (
+  shareId: string,
+  config?: UseQueryOptions<t.TSharedMessagesResponse>,
+): QueryObserverResult<t.TSharedMessagesResponse> => {
+  return useQuery<t.TSharedMessagesResponse>(
+    [QueryKeys.sharedMessages, shareId],
+    () => dataService.getSharedMessages(shareId),
     {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
@@ -138,8 +152,8 @@ export const useRevokeUserKeyMutation = (name: string): UseMutationResult<unknow
   return useMutation(() => dataService.revokeUserKey(name), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.name, name]);
-      if (name === s.EModelEndpoint.assistants) {
-        queryClient.invalidateQueries([QueryKeys.assistants, defaultOrderQuery]);
+      if (s.isAssistantsEndpoint(name)) {
+        queryClient.invalidateQueries([QueryKeys.assistants, name, defaultOrderQuery]);
         queryClient.invalidateQueries([QueryKeys.assistantDocs]);
         queryClient.invalidateQueries([QueryKeys.assistants]);
         queryClient.invalidateQueries([QueryKeys.assistant]);
@@ -155,7 +169,16 @@ export const useRevokeAllUserKeysMutation = (): UseMutationResult<unknown> => {
   return useMutation(() => dataService.revokeAllUserKeys(), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.name]);
-      queryClient.invalidateQueries([QueryKeys.assistants, defaultOrderQuery]);
+      queryClient.invalidateQueries([
+        QueryKeys.assistants,
+        s.EModelEndpoint.assistants,
+        defaultOrderQuery,
+      ]);
+      queryClient.invalidateQueries([
+        QueryKeys.assistants,
+        s.EModelEndpoint.azureAssistants,
+        defaultOrderQuery,
+      ]);
       queryClient.invalidateQueries([QueryKeys.assistantDocs]);
       queryClient.invalidateQueries([QueryKeys.assistants]);
       queryClient.invalidateQueries([QueryKeys.assistant]);
@@ -398,7 +421,9 @@ export const useUpdateUserPluginsMutation = (): UseMutationResult<
   });
 };
 
-export const useGetStartupConfig = (): QueryObserverResult<t.TStartupConfig> => {
+export const useGetStartupConfig = (
+  config?: UseQueryOptions<t.TStartupConfig>,
+): QueryObserverResult<t.TStartupConfig> => {
   return useQuery<t.TStartupConfig>(
     [QueryKeys.startupConfig],
     () => dataService.getStartupConfig(),
@@ -406,6 +431,7 @@ export const useGetStartupConfig = (): QueryObserverResult<t.TStartupConfig> => 
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
+      ...config,
     },
   );
 };
