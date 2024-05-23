@@ -339,6 +339,7 @@ async function streamAudio(req, res) {
         try {
           const response = await ttsRequest(customConfig, {
             input: update.text,
+            voice: req.body.voice,
             stream: true,
           });
 
@@ -348,7 +349,7 @@ async function streamAudio(req, res) {
 
           logger.debug(`[streamAudio] user: ${req?.user?.id} | writing audio stream`);
           await new Promise((resolve) => {
-            response.data.pipe(res, { end: false });
+            response.data.pipe(res, { end: update.isFinished });
             response.data.on('end', () => {
               resolve();
             });
