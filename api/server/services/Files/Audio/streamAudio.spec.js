@@ -13,7 +13,7 @@ describe('processChunks', () => {
   let processChunks;
 
   beforeEach(() => {
-    processChunks = createChunkProcessor();
+    processChunks = createChunkProcessor('message-id');
     Message.findOne.mockClear();
     Message.findOne().lean.mockClear();
   });
@@ -21,20 +21,17 @@ describe('processChunks', () => {
   it('should return an empty array when the message is not found', async () => {
     Message.findOne().lean.mockResolvedValueOnce(null);
 
-    const result = await processChunks('non-existent-id');
+    const result = await processChunks();
 
     expect(result).toEqual([]);
-    expect(Message.findOne).toHaveBeenCalledWith(
-      { messageId: 'non-existent-id' },
-      'text unfinished',
-    );
+    expect(Message.findOne).toHaveBeenCalledWith({ messageId: 'message-id' }, 'text unfinished');
     expect(Message.findOne().lean).toHaveBeenCalled();
   });
 
   it('should return an empty array when the message does not have a text property', async () => {
     Message.findOne().lean.mockResolvedValueOnce({ unfinished: true });
 
-    const result = await processChunks('message-id');
+    const result = await processChunks();
 
     expect(result).toEqual([]);
     expect(Message.findOne).toHaveBeenCalledWith({ messageId: 'message-id' }, 'text unfinished');
@@ -45,7 +42,7 @@ describe('processChunks', () => {
     const messageText = 'This is a long message. It should be split into chunks. Lol hi mom';
     Message.findOne().lean.mockResolvedValueOnce({ text: messageText, unfinished: true });
 
-    const result = await processChunks('message-id');
+    const result = await processChunks();
 
     expect(result).toEqual([
       { text: 'This is a long message. It should be split into chunks.', isFinished: false },
@@ -58,7 +55,7 @@ describe('processChunks', () => {
     const messageText = 'This is a long message without separators hello there my friend';
     Message.findOne().lean.mockResolvedValueOnce({ text: messageText, unfinished: true });
 
-    const result = await processChunks('message-id');
+    const result = await processChunks();
 
     expect(result).toEqual([{ text: messageText, isFinished: false }]);
     expect(Message.findOne).toHaveBeenCalledWith({ messageId: 'message-id' }, 'text unfinished');
@@ -69,7 +66,7 @@ describe('processChunks', () => {
     const messageText = 'This is a finished message.';
     Message.findOne().lean.mockResolvedValueOnce({ text: messageText, unfinished: false });
 
-    const result = await processChunks('message-id');
+    const result = await processChunks();
 
     expect(result).toEqual([{ text: messageText, isFinished: true }]);
     expect(Message.findOne).toHaveBeenCalledWith({ messageId: 'message-id' }, 'text unfinished');
@@ -80,9 +77,9 @@ describe('processChunks', () => {
     const messageText = 'This is a finished message.';
     Message.findOne().lean.mockResolvedValueOnce({ text: messageText, unfinished: false });
 
-    await processChunks('message-id');
+    await processChunks();
     Message.findOne().lean.mockResolvedValueOnce({ text: messageText, unfinished: false });
-    const result = await processChunks('message-id');
+    const result = await processChunks();
 
     expect(result).toEqual([]);
     expect(Message.findOne).toHaveBeenCalledWith({ messageId: 'message-id' }, 'text unfinished');
