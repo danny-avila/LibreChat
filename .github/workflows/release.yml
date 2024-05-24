@@ -41,7 +41,7 @@ jobs:
         run: |
           cp .env.example .env
           echo "version=${{ env.TAG_NAME }}" > client/public/assets/version.txt
-          docker-compose build
+          docker build . -t librechat:latest --target node
       
       # Tag it properly before push to github
       - name: tag image and push
