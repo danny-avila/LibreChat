@@ -194,7 +194,13 @@ export default function StreamAudio({ index = 0 }) {
       ref={audioRef}
       controls
       controlsList="nodownload nofullscreen noremoteplayback"
-      className="absolute h-0 w-0 overflow-hidden"
+      style={{
+        position: 'absolute',
+        overflow: 'hidden',
+        display: 'none',
+        height: '0px',
+        width: '0px',
+      }}
       src={globalAudioURL || undefined}
       id={globalAudioId}
       autoPlay
