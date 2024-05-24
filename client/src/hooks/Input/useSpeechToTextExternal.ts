@@ -3,10 +3,11 @@ import { useRecoilState } from 'recoil';
 import { useSpeechToTextMutation } from '~/data-provider';
 import { useToastContext } from '~/Providers';
 import store from '~/store';
+import useGetAudioSettings from './useGetAudioSettings';
 
 const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void) => {
   const { showToast } = useToastContext();
-  const [endpointSTT] = useRecoilState<string>(store.endpointSTT);
+  const { useExternalSpeechToText } = useGetAudioSettings();
   const [speechToText] = useRecoilState<boolean>(store.SpeechToText);
   const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
   const [autoSendText] = useRecoilState<boolean>(store.autoSendText);
@@ -196,7 +197,7 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
   };
 
   const handleKeyDown = async (e: KeyboardEvent) => {
-    if (e.shiftKey && e.altKey && e.code === 'KeyL' && endpointSTT !== 'browser') {
+    if (e.shiftKey && e.altKey && e.code === 'KeyL' && !useExternalSpeechToText) {
       if (!window.MediaRecorder) {
         showToast({ message: 'MediaRecorder is not supported in this browser', status: 'error' });
         return;

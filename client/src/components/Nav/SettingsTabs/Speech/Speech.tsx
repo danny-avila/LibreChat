@@ -2,7 +2,7 @@ import * as Tabs from '@radix-ui/react-tabs';
 import { SettingsTabValues } from 'librechat-data-provider';
 import React, { useState, useRef } from 'react';
 import { useRecoilState } from 'recoil';
-import { useOnClickOutside, useGetExternalSpeechToText, useGetExternalTextToSpeech } from '~/hooks';
+import { useOnClickOutside, useGetAudioSettings } from '~/hooks';
 import store from '~/store';
 import ConversationModeSwitch from './ConversationModeSwitch';
 import {
@@ -16,6 +16,7 @@ import {
 import {
   DecibelSelector,
   EngineSTTDropdown,
+  LanguageSTTDropdown,
   SpeechToTextSwitch,
   AutoSendTextSwitch,
   AutoTranscribeAudioSwitch,
@@ -32,8 +33,7 @@ function Speech() {
   const [advancedMode] = useRecoilState(store.advancedMode);
   const [autoTranscribeAudio] = useRecoilState(store.autoTranscribeAudio);
 
-  const { useExternalSpeechToText } = useGetExternalSpeechToText();
-  const { useExternalTextToSpeech } = useGetExternalTextToSpeech();
+  const { useExternalSpeechToText, useExternalTextToSpeech } = useGetAudioSettings();
 
   const contentRef = useRef(null);
   useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);
@@ -63,10 +63,15 @@ function Speech() {
         <BorderDivComponent condition={true}>
           <EngineSTTDropdown />
         </BorderDivComponent>
-        <BorderDivComponent condition={advancedMode && useExternalSpeechToText}>
+        <BorderDivComponent condition={!useExternalSpeechToText}>
+          <LanguageSTTDropdown />
+        </BorderDivComponent>
+        <BorderDivComponent condition={advancedMode}>
           <AutoTranscribeAudioSwitch />
         </BorderDivComponent>
-        <BorderDivComponent condition={autoTranscribeAudio}>
+        <BorderDivComponent
+          condition={autoTranscribeAudio && useExternalSpeechToText && advancedMode}
+        >
           <DecibelSelector />
         </BorderDivComponent>
         <BorderDivComponent condition={advancedMode && useExternalSpeechToText}>

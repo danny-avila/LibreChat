@@ -4,25 +4,8 @@ import type { TMessage } from 'librechat-data-provider';
 import useTextToSpeechExternal from './useTextToSpeechExternal';
 import useTextToSpeechBrowser from './useTextToSpeechBrowser';
 import { usePauseGlobalAudio } from '../Audio';
-import { useRecoilState } from 'recoil';
-import store from '~/store';
-
-export enum AudioEndpoints {
-  browser = 'browser',
-  external = 'external',
-}
-
-export const useGetExternalTextToSpeech = () => {
-  const [endpointTTS] = useRecoilState<string>(store.endpointTTS);
-
-  const useExternalTextToSpeech = endpointTTS === AudioEndpoints.external;
-
-  return { useExternalTextToSpeech };
-};
 
 const useTextToSpeech = (message: TMessage, isLast: boolean, index = 0) => {
-  const { useExternalTextToSpeech } = useGetExternalTextToSpeech();
-
   const {
     generateSpeechLocal: generateSpeechLocal,
     cancelSpeechLocal: cancelSpeechLocal,

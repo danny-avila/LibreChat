@@ -3,10 +3,13 @@ import { useRecoilState } from 'recoil';
 import { useToastContext } from '~/Providers';
 import store from '~/store';
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
+import useGetAudioSettings from './useGetAudioSettings';
 
 const useSpeechToTextBrowser = () => {
   const { showToast } = useToastContext();
-  const [endpointSTT] = useRecoilState<string>(store.endpointSTT);
+  const [languageSTT] = useRecoilState<string>(store.languageSTT);
+  const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
+  const { useExternalSpeechToText } = useGetAudioSettings();
 
   const { transcript, listening, resetTranscript, browserSupportsSpeechRecognition } =
     useSpeechRecognition();
@@ -16,7 +19,10 @@ const useSpeechToTextBrowser = () => {
       if (listening) {
         SpeechRecognition.stopListening();
       } else {
-        SpeechRecognition.startListening();
+        SpeechRecognition.startListening({
+          language: languageSTT,
+          continuous: autoTranscribeAudio,
+        });
       }
     } else {
       showToast({
@@ -28,7 +34,7 @@ const useSpeechToTextBrowser = () => {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.shiftKey && e.altKey && e.code === 'KeyL' && endpointSTT === 'browser') {
+      if (e.shiftKey && e.altKey && e.code === 'KeyL' && !useExternalSpeechToText) {
         toggleListening();
       }
     };
