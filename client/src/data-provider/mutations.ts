@@ -17,6 +17,8 @@ import {
 import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
 import { useSetRecoilState } from 'recoil';
 import store from '~/store';
+import { normalizeData } from '~/utils/collection';
+import { useConversationsInfiniteQuery, useSharedLinksInfiniteQuery } from './queries';
 
 /** Conversations */
 export const useGenTitleMutation = (): UseMutationResult<
@@ -85,6 +87,11 @@ export const useArchiveConversationMutation = (
   unknown
 > => {
   const queryClient = useQueryClient();
+  const { refetch } = useConversationsInfiniteQuery();
+  const { refetch: archiveRefetch } = useConversationsInfiniteQuery({
+    pageNumber: '1', // dummy value not used to refetch
+    isArchived: true,
+  });
   return useMutation(
     (payload: t.TArchiveConversationRequest) => dataService.archiveConversation(payload),
     {
@@ -99,25 +106,47 @@ export const useArchiveConversationMutation = (
           if (!convoData) {
             return convoData;
           }
-          if (vars.isArchived) {
-            return deleteConversation(convoData, id as string);
-          } else {
-            return addConversation(convoData, _data);
-          }
+          const pageSize = convoData.pages[0].pageSize as number;
+
+          return normalizeData(
+            vars.isArchived ? deleteConversation(convoData, id) : addConversation(convoData, _data),
+            'conversations',
+            pageSize,
+          );
         });
+
+        if (vars.isArchived) {
+          const current = queryClient.getQueryData<t.ConversationData>([
+            QueryKeys.allConversations,
+          ]);
+          refetch({ refetchPage: (page, index) => index === (current?.pages.length || 1) - 1 });
+        }
+
         queryClient.setQueryData<t.ConversationData>(
           [QueryKeys.archivedConversations],
           (convoData) => {
             if (!convoData) {
               return convoData;
             }
-            if (vars.isArchived) {
-              return addConversation(convoData, _data);
-            } else {
-              return deleteConversation(convoData, id as string);
-            }
+            const pageSize = convoData.pages[0].pageSize as number;
+            return normalizeData(
+              vars.isArchived
+                ? addConversation(convoData, _data)
+                : deleteConversation(convoData, id),
+              'conversations',
+              pageSize,
+            );
           },
         );
+
+        if (!vars.isArchived) {
+          const currentArchive = queryClient.getQueryData<t.ConversationData>([
+            QueryKeys.archivedConversations,
+          ]);
+          archiveRefetch({
+            refetchPage: (page, index) => index === (currentArchive?.pages.length || 1) - 1,
+          });
+        }
       },
     },
   );
@@ -127,6 +156,7 @@ export const useCreateSharedLinkMutation = (
   options?: t.CreateSharedLinkOptions,
 ): UseMutationResult<t.TSharedLinkResponse, unknown, t.TSharedLinkRequest, unknown> => {
   const queryClient = useQueryClient();
+  const { refetch } = useSharedLinksInfiniteQuery();
   const { onSuccess, ..._options } = options || {};
   return useMutation((payload: t.TSharedLinkRequest) => dataService.createSharedLink(payload), {
     onSuccess: (_data, vars, context) => {
@@ -138,17 +168,24 @@ export const useCreateSharedLinkMutation = (
         if (!sharedLink) {
           return sharedLink;
         }
-
-        // If the shared link is public, add it to the shared links cache list
-        if (vars.isPublic) {
-          return addSharedLink(sharedLink, _data);
-        } else {
-          return deleteSharedLink(sharedLink, _data.shareId);
-        }
+        const pageSize = sharedLink.pages[0].pageSize as number;
+        return normalizeData(
+          // If the shared link is public, add it to the shared links cache list
+          vars.isPublic
+            ? addSharedLink(sharedLink, _data)
+            : deleteSharedLink(sharedLink, _data.shareId),
+          'sharedLinks',
+          pageSize,
+        );
       });
 
       queryClient.setQueryData([QueryKeys.sharedLinks, _data.shareId], _data);
-
+      if (!vars.isPublic) {
+        const current = queryClient.getQueryData<t.ConversationData>([QueryKeys.sharedLinks]);
+        refetch({
+          refetchPage: (page, index) => index === (current?.pages.length || 1) - 1,
+        });
+      }
       onSuccess?.(_data, vars, context);
     },
     ...(_options || {}),
@@ -159,6 +196,7 @@ export const useUpdateSharedLinkMutation = (
   options?: t.UpdateSharedLinkOptions,
 ): UseMutationResult<t.TSharedLinkResponse, unknown, t.TSharedLinkRequest, unknown> => {
   const queryClient = useQueryClient();
+  const { refetch } = useSharedLinksInfiniteQuery();
   const { onSuccess, ..._options } = options || {};
   return useMutation((payload: t.TSharedLinkRequest) => dataService.updateSharedLink(payload), {
     onSuccess: (_data, vars, context) => {
@@ -171,17 +209,25 @@ export const useUpdateSharedLinkMutation = (
           return sharedLink;
         }
 
-        // If the shared link is public, add it to the shared links cache list.
-        if (vars.isPublic) {
-          // Even if the SharedLink data exists in the database, it is not registered in the cache when isPublic is false.
+        return normalizeData(
+          // If the shared link is public, add it to the shared links cache list.
+          vars.isPublic
+            ? // Even if the SharedLink data exists in the database, it is not registered in the cache when isPublic is false.
           // Therefore, when isPublic is true, use addSharedLink instead of updateSharedLink.
-          return addSharedLink(sharedLink, _data);
-        } else {
-          return deleteSharedLink(sharedLink, _data.shareId);
-        }
+            addSharedLink(sharedLink, _data)
+            : deleteSharedLink(sharedLink, _data.shareId),
+          'sharedLinks',
+          sharedLink.pages[0].pageSize as number,
+        );
       });
 
       queryClient.setQueryData([QueryKeys.sharedLinks, _data.shareId], _data);
+      if (!vars.isPublic) {
+        const current = queryClient.getQueryData<t.ConversationData>([QueryKeys.sharedLinks]);
+        refetch({
+          refetchPage: (page, index) => index === (current?.pages.length || 1) - 1,
+        });
+      }
 
       onSuccess?.(_data, vars, context);
     },
@@ -193,6 +239,7 @@ export const useDeleteSharedLinkMutation = (
   options?: t.DeleteSharedLinkOptions,
 ): UseMutationResult<t.TDeleteSharedLinkResponse, unknown, { shareId: string }, unknown> => {
   const queryClient = useQueryClient();
+  const { refetch } = useSharedLinksInfiniteQuery();
   const { onSuccess, ..._options } = options || {};
   return useMutation(({ shareId }) => dataService.deleteSharedLink(shareId), {
     onSuccess: (_data, vars, context) => {
@@ -205,7 +252,15 @@ export const useDeleteSharedLinkMutation = (
         if (!data) {
           return data;
         }
-        return deleteSharedLink(data, vars.shareId);
+        return normalizeData(
+          deleteSharedLink(data, vars.shareId),
+          'sharedLinks',
+          data.pages[0].pageSize as number,
+        );
+      });
+      const current = queryClient.getQueryData<t.ConversationData>([QueryKeys.sharedLinks]);
+      refetch({
+        refetchPage: (page, index) => index === (current?.pages.length || 1) - 1,
       });
       onSuccess?.(_data, vars, context);
     },
@@ -222,6 +277,7 @@ export const useDeleteConversationMutation = (
   unknown
 > => {
   const queryClient = useQueryClient();
+  const { refetch } = useConversationsInfiniteQuery();
   const { onSuccess, ..._options } = options || {};
   return useMutation(
     (payload: t.TDeleteConversationRequest) => dataService.deleteConversation(payload),
@@ -235,7 +291,11 @@ export const useDeleteConversationMutation = (
           if (!convoData) {
             return convoData;
           }
-          return deleteConversation(convoData, vars.conversationId as string);
+          return normalizeData(
+            deleteConversation(convoData, vars.conversationId as string),
+            'conversations',
+            convoData.pages[0].pageSize,
+          );
         };
 
         queryClient.setQueryData([QueryKeys.conversation, vars.conversationId], null);
@@ -244,6 +304,8 @@ export const useDeleteConversationMutation = (
           [QueryKeys.archivedConversations],
           handleDelete,
         );
+        const current = queryClient.getQueryData<t.ConversationData>([QueryKeys.allConversations]);
+        refetch({ refetchPage: (page, index) => index === (current?.pages.length || 1) - 1 });
         onSuccess?.(_data, vars, context);
       },
       ...(_options || {}),
