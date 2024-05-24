@@ -16,7 +16,8 @@ const { logger } = require('~/config');
 function getProvider(ttsSchema) {
   if (!ttsSchema) {
     throw new Error(`No TTS schema is set. Did you configure TTS in the custom config (librechat.yaml)?
-# Example TTS configuration`);
+    
+    https://www.librechat.ai/docs/configuration/stt_tts#tts`);
   }
   const providers = Object.entries(ttsSchema).filter(([, value]) => Object.keys(value).length > 0);
 

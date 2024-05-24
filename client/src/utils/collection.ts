@@ -65,6 +65,40 @@ export const deleteData = <TCollection, TData>(
     // Delete the data from its current page
     newData.pages[pageIndex][collectionName].splice(index, 1);
   }
-
   return newData;
+};
+
+/**
+ * Normalize the data so that the number of data on each page is within pageSize
+ */
+export const normalizeData = <TCollection, TData>(
+  data: InfiniteData<TCollection>,
+  collectionName: string,
+  pageSize: number,
+): InfiniteData<TCollection> => {
+  const infiniteData = JSON.parse(JSON.stringify(data)) as InfiniteData<TCollection>;
+  const pageCount = infiniteData.pages.length;
+  if (pageCount === 0) {
+    return infiniteData;
+  }
+
+  const pageParams = infiniteData.pageParams;
+
+  // Combine all conversations of all pages into one array
+  const collection = infiniteData.pages.flatMap((page) => page[collectionName]);
+
+  if (collection.length === 0) {
+    return infiniteData;
+  }
+
+  // Create the restructured pages
+  const restructuredPages = Array.from({ length: pageCount }, (_, i) => ({
+    ...infiniteData.pages[i],
+    [collectionName]: collection.slice(i * pageSize, (i + 1) * pageSize),
+  })).filter((page) => page[collectionName].length > 0); // Remove empty pages
+
+  return {
+    pageParams: pageParams.slice(0, restructuredPages.length),
+    pages: restructuredPages,
+  };
 };
