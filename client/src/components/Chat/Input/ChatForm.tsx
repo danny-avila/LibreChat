@@ -1,6 +1,6 @@
 import { useForm } from 'react-hook-form';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import { memo, useCallback, useRef, useMemo, useEffect } from 'react';
+import { memo, useCallback, useRef, useMemo } from 'react';
 import {
   supportsFiles,
   mergeFileConfig,
@@ -8,7 +8,7 @@ import {
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
-import { useRequiresKey, useTextarea, useSpeechToText } from '~/hooks';
+import { useRequiresKey, useTextarea } from '~/hooks';
 import { TextareaAutosize } from '~/components/ui';
 import { useGetFileConfig } from '~/data-provider';
 import { cn, removeFocusOutlines } from '~/utils';
@@ -71,24 +71,6 @@ const ChatForm = ({ index = 0 }) => {
 
   const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };
   const endpoint = endpointType ?? _endpoint;
-
-  const handleTranscriptionComplete = (text: string) => {
-    if (text) {
-      ask({ text });
-      methods.reset({ text: '' });
-      clearText();
-    }
-  };
-
-  const { isListening, isLoading, startRecording, stopRecording, speechText, clearText } =
-    useSpeechToText(handleTranscriptionComplete);
-
-  useEffect(() => {
-    if (textAreaRef.current) {
-      textAreaRef.current.value = speechText;
-      methods.setValue('text', speechText, { shouldValidate: true });
-    }
-  }, [speechText, methods]);
 
   const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
@@ -183,11 +165,10 @@ const ChatForm = ({ index = 0 }) => {
             )}
             {SpeechToText && (
               <AudioRecorder
-                isListening={isListening}
-                isLoading={isLoading}
-                startRecording={startRecording}
-                stopRecording={stopRecording}
                 disabled={!!disableInputs}
+                textAreaRef={textAreaRef}
+                ask={submitMessage}
+                methods={methods}
               />
             )}
             {TextToSpeech && automaticPlayback && <StreamAudio index={index} />}
