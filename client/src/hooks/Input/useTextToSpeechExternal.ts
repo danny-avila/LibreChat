@@ -1,6 +1,7 @@
 import { useRecoilValue } from 'recoil';
-import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { useTextToSpeechMutation } from '~/data-provider';
+import useAudioRef from '~/hooks/Audio/useAudioRef';
 import useLocalize from '~/hooks/useLocalize';
 import { useToastContext } from '~/Providers';
 import store from '~/store';
@@ -12,23 +13,28 @@ const createFormData = (text: string, voice: string) => {
   return formData;
 };
 
-function useTextToSpeechExternal(isLast: boolean, index = 0) {
+function useTextToSpeechExternal(messageId: string, isLast: boolean, index = 0) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const voice = useRecoilValue(store.voice);
   const cacheTTS = useRecoilValue(store.cacheTTS);
   const playbackRate = useRecoilValue(store.playbackRate);
 
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
   const [downloadFile, setDownloadFile] = useState(false);
   const [isLocalSpeaking, setIsSpeaking] = useState(false);
+  const { audioRef } = useAudioRef({ setIsPlaying: setIsSpeaking });
+  const promiseAudioRef = useRef<HTMLAudioElement | null>(null);
 
   /* Global Audio Variables */
   const globalIsFetching = useRecoilValue(store.globalAudioFetchingFamily(index));
   const globalIsPlaying = useRecoilValue(store.globalAudioPlayingFamily(index));
 
-  const playAudio = (blobUrl: string) => {
+  const autoPlayAudio = (blobUrl: string) => {
+    const newAudio = new Audio(blobUrl);
+    audioRef.current = newAudio;
+  };
+
+  const playAudioPromise = (blobUrl: string) => {
     const newAudio = new Audio(blobUrl);
     const initializeAudio = () => {
       if (playbackRate && playbackRate !== 1) {
@@ -53,12 +59,12 @@ function useTextToSpeechExternal(isLast: boolean, index = 0) {
     });
 
     newAudio.onended = () => {
-      console.log('Target message audio ended');
+      console.log('Cached message audio ended');
       URL.revokeObjectURL(blobUrl);
       setIsSpeaking(false);
     };
 
-    audioRef.current = newAudio;
+    promiseAudioRef.current = newAudio;
   };
 
   const downloadAudio = (blobUrl: string) => {
@@ -95,7 +101,7 @@ function useTextToSpeechExternal(isLast: boolean, index = 0) {
         if (downloadFile) {
           downloadAudio(blobUrl);
         }
-        playAudio(blobUrl);
+        autoPlayAudio(blobUrl);
       } catch (error) {
         showToast({
           message: `Error processing audio: ${(error as Error).message}`,
@@ -111,38 +117,58 @@ function useTextToSpeechExternal(isLast: boolean, index = 0) {
     },
   });
 
-  const generateSpeechExternal = async (text: string, download: boolean) => {
-    const cachedResponse = await caches.match(text);
+  const startMutation = (text: string, download: boolean) => {
+    const formData = createFormData(text, voice);
+    setDownloadFile(download);
+    processAudio(formData);
+  };
 
-    if (cachedResponse && cacheTTS) {
-      handleCachedResponse(cachedResponse, download);
+  const generateSpeechExternal = (text: string, download: boolean) => {
+    if (cacheTTS) {
+      handleCachedResponse(text, download);
     } else {
-      const formData = createFormData(text, voice);
-      setDownloadFile(download);
-      processAudio(formData);
+      startMutation(text, download);
     }
   };
 
-  const handleCachedResponse = async (cachedResponse: Response, download: boolean) => {
+  const handleCachedResponse = async (text: string, download: boolean) => {
+    const cachedResponse = await caches.match(text);
+    if (!cachedResponse) {
+      return startMutation(text, download);
+    }
     const audioBlob = await cachedResponse.blob();
     const blobUrl = URL.createObjectURL(audioBlob);
     if (download) {
       downloadAudio(blobUrl);
     } else {
-      playAudio(blobUrl);
+      playAudioPromise(blobUrl);
     }
   };
 
-  const cancelSpeech = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src && URL.revokeObjectURL(audioRef.current.src);
-      audioRef.current = null;
+  const cancelSpeech = () => {
+    const messageAudio = document.getElementById(`audio-${messageId}`) as HTMLAudioElement | null;
+    const pauseAudio = (currentElement: HTMLAudioElement | null) => {
+      if (currentElement) {
+        currentElement.pause();
+        currentElement.src && URL.revokeObjectURL(currentElement.src);
+        audioRef.current = null;
+      }
+    };
+    pauseAudio(messageAudio);
+    pauseAudio(promiseAudioRef.current);
+    setIsSpeaking(false);
+  };
+
+  const cancelPromiseSpeech = useCallback(() => {
+    if (promiseAudioRef.current) {
+      promiseAudioRef.current.pause();
+      promiseAudioRef.current.src && URL.revokeObjectURL(promiseAudioRef.current.src);
+      promiseAudioRef.current = null;
       setIsSpeaking(false);
     }
   }, []);
 
-  useEffect(() => cancelSpeech, [cancelSpeech]);
+  useEffect(() => cancelPromiseSpeech, [cancelPromiseSpeech]);
 
   const isLoading = useMemo(() => {
     return isProcessing || (isLast && globalIsFetching && !globalIsPlaying);
@@ -152,7 +178,7 @@ function useTextToSpeechExternal(isLast: boolean, index = 0) {
     return isLocalSpeaking || (isLast && globalIsPlaying);
   }, [isLocalSpeaking, globalIsPlaying, isLast]);
 
-  return { generateSpeechExternal, cancelSpeech, isLoading, isSpeaking };
+  return { generateSpeechExternal, cancelSpeech, isLoading, isSpeaking, audioRef };
 }
 
 export default useTextToSpeechExternal;
