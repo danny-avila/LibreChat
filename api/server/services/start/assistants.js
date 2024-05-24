@@ -1,6 +1,5 @@
 const {
   Capabilities,
-  EModelEndpoint,
   assistantEndpointSchema,
   defaultAssistantsVersion,
 } = require('librechat-data-provider');
