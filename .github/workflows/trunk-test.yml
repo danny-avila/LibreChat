@@ -31,7 +31,8 @@ jobs:
         run: |
           cp .env.example .env
           echo "version=$(date +'%Y-%m-%d')-${{ github.sha }}" > client/public/assets/version.txt
-          docker-compose build
+          # docker-compose build # This no longer works after docker-compose.yaml is updated
+          docker build . -t librechat:latest --target node # build the container image directly
 
       # Tag it properly before push to github
       - name: tag image and push
