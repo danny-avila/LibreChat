@@ -8,7 +8,7 @@ import ConversationModeSwitch from './ConversationModeSwitch';
 import {
   TextToSpeechSwitch,
   EngineTTSDropdown,
-  AutomaticPlayback,
+  AutomaticPlaybackSwitch,
   CacheTTSSwitch,
   VoiceDropdown,
   PlaybackRate,
@@ -88,7 +88,7 @@ function Speech() {
           <VoiceDropdown />
         </BorderDivComponent>
         <BorderDivComponent condition={useExternalTextToSpeech}>
-          <AutomaticPlayback />
+          <AutomaticPlaybackSwitch />
         </BorderDivComponent>
         <BorderDivComponent condition={advancedMode && useExternalTextToSpeech}>
           <PlaybackRate />
