@@ -2,7 +2,7 @@ import * as Tabs from '@radix-ui/react-tabs';
 import { SettingsTabValues } from 'librechat-data-provider';
 import React, { useState, useRef } from 'react';
 import { useRecoilState } from 'recoil';
-import { useOnClickOutside } from '~/hooks';
+import { useOnClickOutside, useGetExternalSpeechToText, useGetExternalTextToSpeech } from '~/hooks';
 import store from '~/store';
 import ConversationModeSwitch from './ConversationModeSwitch';
 import {
@@ -21,13 +21,29 @@ import {
   AutoTranscribeAudioSwitch,
 } from './STT';
 
+const BorderDiv = ({ children }) => (
+  <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">{children}</div>
+);
+
+const Divider = () => <div className="h-px bg-black/20 bg-white/20" role="none" />;
+
 function Speech() {
   const [confirmClear, setConfirmClear] = useState(false);
-  const [advancedMode] = useRecoilState<boolean>(store.advancedMode);
-  const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
+  const [advancedMode] = useRecoilState(store.advancedMode);
+  const [autoTranscribeAudio] = useRecoilState(store.autoTranscribeAudio);
+
+  const { useExternalSpeechToText } = useGetExternalSpeechToText();
+  const { useExternalTextToSpeech } = useGetExternalTextToSpeech();
 
   const contentRef = useRef(null);
   useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);
+
+  const BorderDivComponent = ({ condition, children }) => {
+    if (!condition) {
+      return null;
+    }
+    return <BorderDiv>{children}</BorderDiv>;
+  };
 
   return (
     <Tabs.Content
@@ -37,54 +53,44 @@ function Speech() {
       ref={contentRef}
     >
       <div className="flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-50">
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+        <BorderDivComponent condition={true}>
           <ConversationModeSwitch />
-        </div>
-        <div className="h-px bg-black/20 bg-white/20" role="none" />
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+        </BorderDivComponent>
+        <Divider />
+        <BorderDivComponent condition={true}>
           <SpeechToTextSwitch />
-        </div>
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+        </BorderDivComponent>
+        <BorderDivComponent condition={true}>
           <EngineSTTDropdown />
-        </div>
-        {advancedMode && (
-          <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-            <AutoTranscribeAudioSwitch />
-          </div>
-        )}
-        {autoTranscribeAudio && advancedMode && (
-          <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-            <DecibelSelector />
-          </div>
-        )}
-        {advancedMode && (
-          <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-            <AutoSendTextSwitch />
-          </div>
-        )}
-        <div className="h-px bg-black/20 bg-white/20" role="none" />
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+        </BorderDivComponent>
+        <BorderDivComponent condition={advancedMode && useExternalSpeechToText}>
+          <AutoTranscribeAudioSwitch />
+        </BorderDivComponent>
+        <BorderDivComponent condition={autoTranscribeAudio}>
+          <DecibelSelector />
+        </BorderDivComponent>
+        <BorderDivComponent condition={advancedMode && useExternalSpeechToText}>
+          <AutoSendTextSwitch />
+        </BorderDivComponent>
+        <Divider />
+        <BorderDivComponent condition={true}>
           <TextToSpeechSwitch />
-        </div>
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-          <AutomaticPlayback />
-        </div>
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+        </BorderDivComponent>
+        <BorderDivComponent condition={true}>
           <EngineTTSDropdown />
-        </div>
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+        </BorderDivComponent>
+        <BorderDivComponent condition={true}>
           <VoiceDropdown />
-        </div>
-        {advancedMode && (
-          <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-            <PlaybackRate />
-          </div>
-        )}
-        {advancedMode && (
-          <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-            <CacheTTSSwitch />
-          </div>
-        )}
+        </BorderDivComponent>
+        <BorderDivComponent condition={useExternalTextToSpeech}>
+          <AutomaticPlayback />
+        </BorderDivComponent>
+        <BorderDivComponent condition={advancedMode && useExternalTextToSpeech}>
+          <PlaybackRate />
+        </BorderDivComponent>
+        <BorderDivComponent condition={advancedMode && useExternalTextToSpeech}>
+          <CacheTTSSwitch />
+        </BorderDivComponent>
       </div>
     </Tabs.Content>
   );

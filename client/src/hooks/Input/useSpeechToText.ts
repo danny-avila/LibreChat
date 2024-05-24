@@ -4,9 +4,21 @@ import useSpeechToTextExternal from './useSpeechToTextExternal';
 import { useRecoilState } from 'recoil';
 import store from '~/store';
 
-const useSpeechToText = (handleTranscriptionComplete: (text: string) => void) => {
+export enum AudioEndpoints {
+  browser = 'browser',
+  external = 'external',
+}
+
+export const useGetExternalSpeechToText = () => {
   const [endpointSTT] = useRecoilState<string>(store.endpointSTT);
-  const useExternalSpeechToText = endpointSTT === 'external';
+
+  const useExternalSpeechToText = endpointSTT === AudioEndpoints.external;
+
+  return { useExternalSpeechToText };
+};
+
+const useSpeechToText = (handleTranscriptionComplete: (text: string) => void) => {
+  const { useExternalSpeechToText } = useGetExternalSpeechToText();
   const [animatedText, setAnimatedText] = useState('');
 
   const {
