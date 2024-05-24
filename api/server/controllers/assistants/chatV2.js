@@ -520,6 +520,7 @@ const chatV2 = async (req, res) => {
         handlers,
         thread_id,
         attachedFileIds,
+        parentMessageId,
         responseMessage: openai.responseMessage,
         // streamOptions: {
 
@@ -532,6 +533,7 @@ const chatV2 = async (req, res) => {
       });
 
       response = streamRunManager;
+      response.text = streamRunManager.intermediateText;
     };
 
     await processRun();
@@ -554,6 +556,7 @@ const chatV2 = async (req, res) => {
     /** @type {ResponseMessage} */
     const responseMessage = {
       ...(response.responseMessage ?? response.finalMessage),
+      text: response.text,
       parentMessageId: userMessageId,
       conversationId,
       user: req.user.id,

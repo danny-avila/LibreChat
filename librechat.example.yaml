@@ -25,6 +25,25 @@ registration:
   # allowedDomains:
   # - "gmail.com"
 
+# tts:
+#   url: ''
+#   apiKey: '${TTS_API_KEY}'
+#   model: ''
+#   backend: ''
+#   voice: ''
+#   compatibility: ''
+#   voice_settings:
+#     similarity_boost: ''
+#     stability: ''
+#     style: ''
+#     use_speaker_boost:
+#   pronunciation_dictionary_locators: ['']
+#  
+# stt:
+#   url: ''
+#   apiKey: '${STT_API_KEY}'
+#   model: ''
+
 # rateLimits:
 #   fileUploads:
 #     ipMax: 100

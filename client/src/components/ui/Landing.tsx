@@ -30,7 +30,7 @@ export default function Landing() {
         <h1
           id="landing-title"
           data-testid="landing-title"
-          className="mb-10 ml-auto mr-auto mt-6 flex items-center justify-center gap-2 dark:text-gray-600 text-center text-4xl font-semibold sm:mb-16 md:mt-[10vh]"
+          className="mb-10 ml-auto mr-auto mt-6 flex items-center justify-center gap-2 text-center text-4xl font-semibold dark:text-gray-600 sm:mb-16 md:mt-[10vh]"
         >
           {config?.appTitle || 'LibreChat'}
         </h1>
