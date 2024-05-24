@@ -3,10 +3,11 @@ import { useGetEndpointsQuery, useGetStartupConfig } from 'librechat-data-provid
 import type { ReactNode } from 'react';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
-import ConvoIcon from '~/components/Endpoints/ConvoIcon';
+// import ConvoIcon from '~/components/Endpoints/ConvoIcon';
 import { BirthdayIcon } from '~/components/svg';
 import { getIconEndpoint, cn } from '~/utils';
 import { useLocalize } from '~/hooks';
+// import NewLogo from '/assets/logo-zaheen.png'; // Update with the correct path
 
 export default function Landing({ Header }: { Header?: ReactNode }) {
   const { conversation } = useChatContext();
@@ -46,7 +47,9 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
           <div className="absolute left-0 right-0">{Header && Header}</div>
           <div className="flex h-full flex-col items-center justify-center">
             <div className={cn('relative h-12 w-12', assistantName && avatar ? 'mb-0' : 'mb-3')}>
-              <ConvoIcon
+              {/* Replace ConvoIcon with your new logo */}
+              {/* <img src={NewLogo} alt="New Logo" className="h-2/3 w-2/3" /> */}
+              {/* <ConvoIcon
                 conversation={conversation}
                 assistantMap={assistantMap}
                 endpointsConfig={endpointsConfig}
@@ -54,7 +57,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
                 context="landing"
                 className="h-2/3 w-2/3"
                 size={41}
-              />
+              /> */}
               <TooltipTrigger>
                 {(startupConfig?.showBirthdayIcon ?? false) && (
                   <BirthdayIcon className="absolute bottom-12 right-5" />
