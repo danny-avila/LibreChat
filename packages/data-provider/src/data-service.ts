@@ -340,6 +340,18 @@ export const deleteFiles = async (
     data: { files, assistant_id, tool_resource },
   });
 
+export const speechToText = (data: FormData): Promise<f.SpeechToTextResponse> => {
+  return request.postMultiPart(endpoints.speechToText(), data);
+};
+
+export const textToSpeech = (data: FormData): Promise<ArrayBuffer> => {
+  return request.postTTS(endpoints.textToSpeechManual(), data);
+};
+
+export const getVoices = (): Promise<f.VoiceResponse> => {
+  return request.get(endpoints.textToSpeechVoices());
+};
+
 /* actions */
 
 export const updateAction = (data: m.UpdateActionVariables): Promise<m.UpdateActionResponse> => {

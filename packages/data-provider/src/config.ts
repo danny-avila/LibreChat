@@ -223,6 +223,53 @@ export const azureEndpointSchema = z
 export type TAzureConfig = Omit<z.infer<typeof azureEndpointSchema>, 'groups'> &
   TAzureConfigValidationResult;
 
+const ttsOpenaiSchema = z.object({
+  url: z.string().optional(),
+  apiKey: z.string(),
+  model: z.string(),
+  voices: z.array(z.string()),
+});
+
+const ttsElevenLabsSchema = z.object({
+  url: z.string().optional(),
+  websocketUrl: z.string().optional(),
+  apiKey: z.string(),
+  model: z.string(),
+  voices: z.array(z.string()),
+  voice_settings: z
+    .object({
+      similarity_boost: z.number().optional(),
+      stability: z.number().optional(),
+      style: z.number().optional(),
+      use_speaker_boost: z.boolean().optional(),
+    })
+    .optional(),
+  pronunciation_dictionary_locators: z.array(z.string()).optional(),
+});
+
+const ttsLocalaiSchema = z.object({
+  url: z.string(),
+  apiKey: z.string().optional(),
+  voices: z.array(z.string()),
+  backend: z.string(),
+});
+
+const ttsSchema = z.object({
+  openai: ttsOpenaiSchema.optional(),
+  elevenLabs: ttsElevenLabsSchema.optional(),
+  localai: ttsLocalaiSchema.optional(),
+});
+
+const sttSchema = z.object({
+  openai: z
+    .object({
+      url: z.string().optional(),
+      apiKey: z.string().optional(),
+      model: z.string().optional(),
+    })
+    .optional(),
+});
+
 export const rateLimitSchema = z.object({
   fileUploads: z
     .object({
@@ -289,6 +336,8 @@ export const configSchema = z.object({
       allowedDomains: z.array(z.string()).optional(),
     })
     .default({ socialLogins: defaultSocialLogins }),
+  tts: ttsSchema.optional(),
+  stt: sttSchema.optional(),
   rateLimits: rateLimitSchema.optional(),
   fileConfig: fileConfigSchema.optional(),
   modelSpecs: specsConfigSchema.optional(),
@@ -309,6 +358,12 @@ export const configSchema = z.object({
 export const getConfigDefaults = () => getSchemaDefaults(configSchema);
 
 export type TCustomConfig = z.infer<typeof configSchema>;
+
+export type TProviderSchema =
+  | z.infer<typeof ttsOpenaiSchema>
+  | z.infer<typeof ttsElevenLabsSchema>
+  | z.infer<typeof ttsLocalaiSchema>
+  | undefined;
 
 export enum KnownEndpoints {
   anyscale = 'anyscale',
@@ -562,6 +617,10 @@ export enum CacheKeys {
    * Used by Azure OpenAI Assistants.
    */
   ENCODED_DOMAINS = 'encoded_domains',
+  /**
+   * Key for the cached audio run Ids.
+   */
+  AUDIO_RUNS = 'audioRuns',
 }
 
 /**
@@ -665,6 +724,10 @@ export enum SettingsTabValues {
    */
   MESSAGES = 'messages',
   /**
+   * Tab for Speech Settings
+   */
+  SPEECH = 'speech',
+  /**
    * Tab for Beta Features
    */
   BETA = 'beta',
@@ -683,7 +746,7 @@ export enum Constants {
   /** Key for the app's version. */
   VERSION = 'v0.7.2',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.1.1',
+  CONFIG_VERSION = '1.1.2',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Fixed, encoded domain length for Azure OpenAI Assistants Function name parsing. */

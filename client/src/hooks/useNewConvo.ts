@@ -31,7 +31,7 @@ import {
 } from '~/utils';
 import useAssistantListMap from './Assistants/useAssistantListMap';
 import { useDeleteFilesMutation } from '~/data-provider';
-
+import { usePauseGlobalAudio } from './Audio';
 import { mainTextareaId } from '~/common';
 import store from '~/store';
 
@@ -47,6 +47,7 @@ const useNewConvo = (index = 0) => {
   const modelsQuery = useGetModelsQuery();
   const timeoutIdRef = useRef<NodeJS.Timeout>();
   const assistantsListMap = useAssistantListMap();
+  const { pauseGlobalAudio } = usePauseGlobalAudio(index);
 
   const { mutateAsync } = useDeleteFilesMutation({
     onSuccess: () => {
@@ -176,6 +177,8 @@ const useNewConvo = (index = 0) => {
       buildDefault?: boolean;
       keepLatestMessage?: boolean;
     } = {}) => {
+      pauseGlobalAudio();
+
       const conversation = {
         conversationId: 'new',
         title: 'New Chat',
@@ -215,7 +218,7 @@ const useNewConvo = (index = 0) => {
 
       switchToConversation(conversation, preset, modelsData, buildDefault, keepLatestMessage);
     },
-    [switchToConversation, files, mutateAsync, setFiles, startupConfig],
+    [pauseGlobalAudio, switchToConversation, mutateAsync, setFiles, files, startupConfig],
   );
 
   return {

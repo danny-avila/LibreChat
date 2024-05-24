@@ -105,11 +105,12 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       getReqData,
       onStart,
       abortController,
-      onProgress: progressCallback.call(null, {
+      progressCallback,
+      progressOptions: {
         res,
         text,
-        parentMessageId: overrideParentMessageId || userMessageId,
-      }),
+        // parentMessageId: overrideParentMessageId || userMessageId,
+      },
     };
 
     let response = await client.sendMessage(text, messageOptions);
