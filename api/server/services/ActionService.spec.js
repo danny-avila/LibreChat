@@ -73,12 +73,12 @@ describe('domainParser', () => {
   const TLD = '.com';
 
   // Non-azure request
-  it('returns domain as is if not azure', async () => {
+  it('does not return domain as is if not azure', async () => {
     const domain = `example.com${actionDomainSeparator}test${actionDomainSeparator}`;
     const result1 = await domainParser(reqNoAzure, domain, false);
     const result2 = await domainParser(reqNoAzure, domain, true);
-    expect(result1).toEqual(domain);
-    expect(result2).toEqual(domain);
+    expect(result1).not.toEqual(domain);
+    expect(result2).not.toEqual(domain);
   });
 
   // Test for Empty or Null Inputs

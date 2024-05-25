@@ -1,6 +1,6 @@
 {
   "name": "@librechat/backend",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "",
   "scripts": {
     "start": "echo 'please run this from the root directory'",
@@ -75,7 +75,8 @@
     "multer": "^1.4.5-lts.1",
     "nodejs-gpt": "^1.37.4",
     "nodemailer": "^6.9.4",
-    "openai": "4.36.0",
+    "ollama": "^0.5.0",
+    "openai": "^4.47.1",
     "openai-chat-tokens": "^0.2.8",
     "openid-client": "^5.4.2",
     "passport": "^0.6.0",
@@ -88,11 +89,12 @@
     "passport-local": "^1.0.0",
     "pino": "^8.12.1",
     "sharp": "^0.32.6",
-    "tiktoken": "^1.0.10",
+    "tiktoken": "^1.0.15",
     "traverse": "^0.6.7",
     "ua-parser-js": "^1.0.36",
     "winston": "^3.11.0",
     "winston-daily-rotate-file": "^4.7.1",
+    "ws": "^8.17.0",
     "zod": "^3.22.4"
   },
   "devDependencies": {

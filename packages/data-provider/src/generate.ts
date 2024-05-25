@@ -72,6 +72,8 @@ export type DynamicSettingProps = Partial<SettingDefinition> & {
   setOption: TSetOption;
   conversation: TConversation | TPreset | null;
   defaultValue?: number | boolean | string | string[];
+  className?: string;
+  inputClassName?: string;
 };
 
 const requiredSettingFields = ['key', 'type', 'component'];
@@ -508,6 +510,7 @@ export const generateOpenAISchema = (customOpenAI: OpenAISettings) => {
       frequency_penalty: true,
       resendFiles: true,
       imageDetail: true,
+      maxContextTokens: true,
     })
     .transform((obj) => ({
       ...obj,
@@ -521,6 +524,7 @@ export const generateOpenAISchema = (customOpenAI: OpenAISettings) => {
       resendFiles:
         typeof obj.resendFiles === 'boolean' ? obj.resendFiles : defaults.resendFiles.default,
       imageDetail: obj.imageDetail ?? defaults.imageDetail.default,
+      maxContextTokens: obj.maxContextTokens ?? undefined,
     }))
     .catch(() => ({
       model: defaults.model.default,
@@ -532,6 +536,7 @@ export const generateOpenAISchema = (customOpenAI: OpenAISettings) => {
       frequency_penalty: defaults.frequency_penalty.default,
       resendFiles: defaults.resendFiles.default,
       imageDetail: defaults.imageDetail.default,
+      maxContextTokens: undefined,
     }));
 };
 
@@ -547,20 +552,9 @@ export const generateGoogleSchema = (customGoogle: GoogleSettings) => {
       maxOutputTokens: true,
       topP: true,
       topK: true,
+      maxContextTokens: true,
     })
     .transform((obj) => {
-      const isGemini = obj?.model?.toLowerCase()?.includes('gemini');
-
-      const maxOutputTokensMax = isGemini
-        ? defaults.maxOutputTokens.maxGemini
-        : defaults.maxOutputTokens.max;
-      const maxOutputTokensDefault = isGemini
-        ? defaults.maxOutputTokens.defaultGemini
-        : defaults.maxOutputTokens.default;
-
-      let maxOutputTokens = obj.maxOutputTokens ?? maxOutputTokensDefault;
-      maxOutputTokens = Math.min(maxOutputTokens, maxOutputTokensMax);
-
       return {
         ...obj,
         model: obj.model ?? defaults.model.default,
@@ -568,9 +562,10 @@ export const generateGoogleSchema = (customGoogle: GoogleSettings) => {
         promptPrefix: obj.promptPrefix ?? null,
         examples: obj.examples ?? [{ input: { content: '' }, output: { content: '' } }],
         temperature: obj.temperature ?? defaults.temperature.default,
-        maxOutputTokens,
+        maxOutputTokens: obj.maxOutputTokens ?? defaults.maxOutputTokens.default,
         topP: obj.topP ?? defaults.topP.default,
         topK: obj.topK ?? defaults.topK.default,
+        maxContextTokens: obj.maxContextTokens ?? undefined,
       };
     })
     .catch(() => ({
@@ -582,5 +577,6 @@ export const generateGoogleSchema = (customGoogle: GoogleSettings) => {
       maxOutputTokens: defaults.maxOutputTokens.default,
       topP: defaults.topP.default,
       topK: defaults.topK.default,
+      maxContextTokens: undefined,
     }));
 };

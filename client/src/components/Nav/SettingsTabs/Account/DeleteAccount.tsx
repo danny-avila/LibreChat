@@ -71,9 +71,9 @@ const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolea
           </DialogHeader>
           <div className="mb-20 text-sm text-black dark:text-white">
             <ul>
-              <li>{localize('com_dialog_delete_warning')}</li>
-              <li>{localize('com_dialog_delete_data_info')}</li>
-              <li>{localize('com_dialog_delete_help_center')}</li>
+              <li>{localize('com_nav_delete_warning')}</li>
+              <li>{localize('com_nav_delete_data_info')}</li>
+              <li>{localize('com_nav_delete_help_center')}</li>
             </ul>
           </div>
           <div className="flex-col items-center justify-center">

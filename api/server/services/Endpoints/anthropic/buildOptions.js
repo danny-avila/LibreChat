@@ -1,5 +1,14 @@
 const buildOptions = (endpoint, parsedBody) => {
-  const { modelLabel, promptPrefix, resendFiles, iconURL, greeting, spec, ...rest } = parsedBody;
+  const {
+    modelLabel,
+    promptPrefix,
+    maxContextTokens,
+    resendFiles,
+    iconURL,
+    greeting,
+    spec,
+    ...rest
+  } = parsedBody;
   const endpointOption = {
     endpoint,
     modelLabel,
@@ -8,6 +17,7 @@ const buildOptions = (endpoint, parsedBody) => {
     iconURL,
     greeting,
     spec,
+    maxContextTokens,
     modelOptions: {
       ...rest,
     },

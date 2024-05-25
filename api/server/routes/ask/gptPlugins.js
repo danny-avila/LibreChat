@@ -174,12 +174,13 @@ router.post(
         onStart,
         getPartialText,
         ...endpointOption,
-        onProgress: progressCallback.call(null, {
+        progressCallback,
+        progressOptions: {
           res,
           text,
-          parentMessageId: overrideParentMessageId || userMessageId,
+          // parentMessageId: overrideParentMessageId || userMessageId,
           plugins,
-        }),
+        },
         abortController,
       });
 

@@ -1,6 +1,8 @@
 import type { ZodIssue } from 'zod';
-import type { TConversation, TPreset } from './schemas';
-import type { TConfig, TEndpointOption, TEndpointsConfig } from './types';
+import type * as a from './types/assistants';
+import type * as s from './schemas';
+import type * as t from './types';
+import { ContentTypes } from './types/assistants';
 import {
   EModelEndpoint,
   openAISchema,
@@ -38,6 +40,7 @@ const endpointSchemas: Record<EModelEndpoint, EndpointSchema> = {
   [EModelEndpoint.chatGPTBrowser]: chatGPTBrowserSchema,
   [EModelEndpoint.gptPlugins]: gptPluginsSchema,
   [EModelEndpoint.assistants]: assistantSchema,
+  [EModelEndpoint.azureAssistants]: assistantSchema,
 };
 
 // const schemaCreators: Record<EModelEndpoint, (customSchema: DefaultSchemaValues) => EndpointSchema> = {
@@ -49,6 +52,7 @@ export function getEnabledEndpoints() {
   const defaultEndpoints: string[] = [
     EModelEndpoint.openAI,
     EModelEndpoint.assistants,
+    EModelEndpoint.azureAssistants,
     EModelEndpoint.azureOpenAI,
     EModelEndpoint.google,
     EModelEndpoint.bingAI,
@@ -69,7 +73,7 @@ export function getEnabledEndpoints() {
 }
 
 /** Orders an existing EndpointsConfig object based on enabled endpoint/custom ordering */
-export function orderEndpointsConfig(endpointsConfig: TEndpointsConfig) {
+export function orderEndpointsConfig(endpointsConfig: t.TEndpointsConfig) {
   if (!endpointsConfig) {
     return {};
   }
@@ -77,7 +81,7 @@ export function orderEndpointsConfig(endpointsConfig: TEndpointsConfig) {
   const endpointKeys = Object.keys(endpointsConfig);
   const defaultCustomIndex = enabledEndpoints.indexOf(EModelEndpoint.custom);
   return endpointKeys.reduce(
-    (accumulatedConfig: Record<string, TConfig | null | undefined>, currentEndpointKey) => {
+    (accumulatedConfig: Record<string, t.TConfig | null | undefined>, currentEndpointKey) => {
       const isCustom = !(currentEndpointKey in EModelEndpoint);
       const isEnabled = enabledEndpoints.includes(currentEndpointKey);
       if (!isEnabled && !isCustom) {
@@ -89,7 +93,7 @@ export function orderEndpointsConfig(endpointsConfig: TEndpointsConfig) {
       if (isCustom) {
         accumulatedConfig[currentEndpointKey] = {
           order: defaultCustomIndex >= 0 ? defaultCustomIndex : 9999,
-          ...(endpointsConfig[currentEndpointKey] as Omit<TConfig, 'order'> & { order?: number }),
+          ...(endpointsConfig[currentEndpointKey] as Omit<t.TConfig, 'order'> & { order?: number }),
         };
       } else if (endpointsConfig[currentEndpointKey]) {
         accumulatedConfig[currentEndpointKey] = {
@@ -163,7 +167,7 @@ export const parseConvo = ({
 }: {
   endpoint: EModelEndpoint;
   endpointType?: EModelEndpoint;
-  conversation: Partial<TConversation | TPreset>;
+  conversation: Partial<s.TConversation | s.TPreset>;
   possibleValues?: TPossibleValues;
   // TODO: POC for default schema
   // defaultSchema?: Partial<EndpointSchema>,
@@ -180,7 +184,7 @@ export const parseConvo = ({
   //   schema = schemaCreators[endpoint](defaultSchema);
   // }
 
-  const convo = schema.parse(conversation) as TConversation;
+  const convo = schema.parse(conversation) as s.TConversation;
   const { models, secondaryModels } = possibleValues ?? {};
 
   if (models && convo) {
@@ -194,7 +198,7 @@ export const parseConvo = ({
   return convo;
 };
 
-export const getResponseSender = (endpointOption: TEndpointOption): string => {
+export const getResponseSender = (endpointOption: t.TEndpointOption): string => {
   const { model, endpoint, endpointType, modelDisplayLabel, chatGptLabel, modelLabel, jailbreak } =
     endpointOption;
 
@@ -273,6 +277,7 @@ const compactEndpointSchemas: Record<string, CompactEndpointSchema> = {
   [EModelEndpoint.azureOpenAI]: compactOpenAISchema,
   [EModelEndpoint.custom]: compactOpenAISchema,
   [EModelEndpoint.assistants]: compactAssistantSchema,
+  [EModelEndpoint.azureAssistants]: compactAssistantSchema,
   [EModelEndpoint.google]: compactGoogleSchema,
   /* BingAI needs all fields */
   [EModelEndpoint.bingAI]: bingAISchema,
@@ -289,7 +294,7 @@ export const parseCompactConvo = ({
 }: {
   endpoint?: EModelEndpoint;
   endpointType?: EModelEndpoint;
-  conversation: Partial<TConversation | TPreset>;
+  conversation: Partial<s.TConversation | s.TPreset>;
   possibleValues?: TPossibleValues;
   // TODO: POC for default schema
   // defaultSchema?: Partial<EndpointSchema>,
@@ -306,7 +311,7 @@ export const parseCompactConvo = ({
     schema = compactEndpointSchemas[endpointType];
   }
 
-  const convo = schema.parse(conversation) as TConversation;
+  const convo = schema.parse(conversation) as s.TConversation;
   // const { models, secondaryModels } = possibleValues ?? {};
   const { models } = possibleValues ?? {};
 
@@ -320,3 +325,25 @@ export const parseCompactConvo = ({
 
   return convo;
 };
+
+export function parseTextParts(contentParts: a.TMessageContentParts[]): string {
+  let result = '';
+
+  for (const part of contentParts) {
+    if (part.type === ContentTypes.TEXT) {
+      const textValue = part.text.value;
+
+      if (
+        result.length > 0 &&
+        textValue.length > 0 &&
+        result[result.length - 1] !== ' ' &&
+        textValue[0] !== ' '
+      ) {
+        result += ' ';
+      }
+      result += textValue;
+    }
+  }
+
+  return result;
+}
