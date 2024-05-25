@@ -4,8 +4,11 @@ import type { TMessage } from 'librechat-data-provider';
 import useTextToSpeechExternal from './useTextToSpeechExternal';
 import useTextToSpeechBrowser from './useTextToSpeechBrowser';
 import { usePauseGlobalAudio } from '../Audio';
+import useGetAudioSettings from './useGetAudioSettings';
 
 const useTextToSpeech = (message: TMessage, isLast: boolean, index = 0) => {
+  const { useExternalTextToSpeech } = useGetAudioSettings();
+
   const {
     generateSpeechLocal: generateSpeechLocal,
     cancelSpeechLocal: cancelSpeechLocal,

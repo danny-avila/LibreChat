@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRecoilState } from 'recoil';
 import { useToastContext } from '~/Providers';
 import store from '~/store';
@@ -10,18 +10,36 @@ const useSpeechToTextBrowser = () => {
   const [languageSTT] = useRecoilState<string>(store.languageSTT);
   const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
   const { useExternalSpeechToText } = useGetAudioSettings();
+  const [isListening, setIsListening] = useState(false);
+  const [text, setText] = useState('');
 
-  const { transcript, listening, resetTranscript, browserSupportsSpeechRecognition } =
-    useSpeechRecognition();
+  const {
+    interimTranscript,
+    finalTranscript,
+    resetTranscript,
+    listening,
+    browserSupportsSpeechRecognition,
+    isMicrophoneAvailable,
+  } = useSpeechRecognition();
 
   const toggleListening = () => {
     if (browserSupportsSpeechRecognition) {
+      if (!isMicrophoneAvailable) {
+        showToast({
+          message: 'Microphone is not available',
+          status: 'error',
+        });
+        return;
+      }
+
       if (listening) {
+        setIsListening(false);
         SpeechRecognition.stopListening();
       } else {
+        setIsListening(true);
         SpeechRecognition.startListening({
           language: languageSTT,
-          continuous: autoTranscribeAudio,
+          continuous: false,
         });
       }
     } else {
@@ -43,15 +61,24 @@ const useSpeechToTextBrowser = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  useEffect(() => {
+    if (listening) {
+      setText(interimTranscript);
+      console.log('interimTranscript', interimTranscript);
+    } else {
+      setIsListening(false);
+      setText(finalTranscript);
+      console.log('finalTranscript', finalTranscript);
+    }
+  }, [listening, interimTranscript]);
+
   return {
-    isListening: listening,
+    isListening: isListening,
     isLoading: false,
-    text: transcript,
+    interimTranscript,
+    text: finalTranscript,
     startRecording: toggleListening,
-    stopRecording: () => {
-      SpeechRecognition.stopListening();
-      resetTranscript();
-    },
+    stopRecording: toggleListening,
   };
 };
 

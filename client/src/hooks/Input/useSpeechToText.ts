@@ -10,6 +10,7 @@ const useSpeechToText = (handleTranscriptionComplete: (text: string) => void) =>
   const {
     isListening: speechIsListeningBrowser,
     isLoading: speechIsLoadingBrowser,
+    interimTranscript: interimTranscriptBrowser,
     text: speechTextBrowser,
     startRecording: startSpeechRecordingBrowser,
     stopRecording: stopSpeechRecordingBrowser,
@@ -39,6 +40,8 @@ const useSpeechToText = (handleTranscriptionComplete: (text: string) => void) =>
     isListening || (speechTextExternal && speechTextExternal.length > 0)
       ? speechTextExternal
       : speechTextForm || '';
+  // for a future real-time STT external
+  const interimTranscript = useExternalSpeechToText ? '' : interimTranscriptBrowser;
 
   const animateTextTyping = (text: string) => {
     const totalDuration = 2000;
@@ -63,17 +66,18 @@ const useSpeechToText = (handleTranscriptionComplete: (text: string) => void) =>
   };
 
   useEffect(() => {
-    if (speechText) {
+    if (speechText && useExternalSpeechToText) {
       animateTextTyping(speechText);
     }
-  }, [speechText]);
+  }, [speechText, useExternalSpeechToText]);
 
   return {
     isListening,
     isLoading,
     startRecording,
     stopRecording,
-    speechText: animatedText,
+    interimTranscript,
+    speechText: useExternalSpeechToText ? animatedText : speechText,
     clearText,
   };
 };
