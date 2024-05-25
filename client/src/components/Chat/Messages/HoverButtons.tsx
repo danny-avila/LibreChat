@@ -1,18 +1,10 @@
 import React, { useState } from 'react';
 import { useRecoilState } from 'recoil';
 import type { TConversation, TMessage } from 'librechat-data-provider';
-import {
-  Clipboard,
-  CheckMark,
-  EditIcon,
-  RegenerateIcon,
-  ContinueIcon,
-  VolumeIcon,
-  VolumeMuteIcon,
-  Spinner,
-} from '~/components/svg';
-import { useGenerationsByLatest, useLocalize, useTextToSpeech } from '~/hooks';
+import { EditIcon, Clipboard, CheckMark, ContinueIcon, RegenerateIcon } from '~/components/svg';
+import { useGenerationsByLatest, useLocalize } from '~/hooks';
 import { Fork } from '~/components/Conversations';
+import MessageAudio from './MessageAudio';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -49,12 +41,6 @@ export default function HoverButtons({
   const [isCopied, setIsCopied] = useState(false);
   const [TextToSpeech] = useRecoilState<boolean>(store.TextToSpeech);
 
-  const { handleMouseDown, handleMouseUp, toggleSpeech, isSpeaking, isLoading } = useTextToSpeech(
-    message?.content ?? message?.text ?? '',
-    isLast,
-    index,
-  );
-
   const {
     hideEditButton,
     regenerateEnabled,
@@ -81,32 +67,9 @@ export default function HoverButtons({
     enterEdit();
   };
 
-  const renderIcon = (size: string) => {
-    if (isLoading) {
-      return <Spinner size={size} />;
-    }
-
-    if (isSpeaking) {
-      return <VolumeMuteIcon size={size} />;
-    }
-
-    return <VolumeIcon size={size} />;
-  };
-
   return (
     <div className="visible mt-0 flex justify-center gap-1 self-end text-gray-400 lg:justify-start">
-      {TextToSpeech && (
-        <button
-          className="hover-button rounded-md p-1 pl-0 text-gray-400 hover:text-gray-950 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible"
-          onMouseDown={handleMouseDown}
-          onMouseUp={handleMouseUp}
-          onClick={toggleSpeech}
-          type="button"
-          title={isSpeaking ? localize('com_ui_stop') : localize('com_ui_read_aloud')}
-        >
-          {renderIcon('19')}
-        </button>
-      )}
+      {TextToSpeech && <MessageAudio index={index} message={message} isLast={isLast} />}
       {isEditableEndpoint && (
         <button
           className={cn(

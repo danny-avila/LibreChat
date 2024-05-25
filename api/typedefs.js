@@ -350,6 +350,12 @@
  */
 
 /**
+ * @exports TProviderSchema
+ * @typedef {import('librechat-data-provider').TProviderSchema} TProviderSchema
+ * @memberof typedefs
+ */
+
+/**
  * @exports TEndpoint
  * @typedef {import('librechat-data-provider').TEndpoint} TEndpoint
  * @memberof typedefs
