@@ -339,6 +339,11 @@ export const tConversationSchema = z.object({
   iconURL: z.string().optional(),
   greeting: z.string().optional(),
   spec: z.string().optional(),
+   // Add checkboxes for toxicity, consistency, and factuality
+   toxicityCheckbox: z.boolean().optional(),
+   consistencyCheckbox: z.boolean().optional(),
+   factualityCheckbox: z.boolean().optional(),
+   factualityText: z.string().nullable().optional(),
   /*
   Deprecated fields
   */
@@ -431,6 +436,11 @@ export const openAISchema = tConversationSchema
     spec: true,
     maxContextTokens: true,
     max_tokens: true,
+    // Add checkboxes for toxicity, consistency, and factuality
+    consistencyCheckbox: true,
+    factualityCheckbox: true,
+    toxicityCheckbox: true,
+    factualityText: true,
   })
   .transform((obj) => {
     const result = {
@@ -451,6 +461,11 @@ export const openAISchema = tConversationSchema
       spec: obj.spec ?? undefined,
       maxContextTokens: obj.maxContextTokens ?? undefined,
       max_tokens: obj.max_tokens ?? undefined,
+// Add default values for the PG checkboxes
+    consistencyCheckbox: obj.consistencyCheckbox ?? false,
+    factualityCheckbox: obj.factualityCheckbox ?? false,
+    toxicityCheckbox: obj.toxicityCheckbox ?? false,
+    factualityText: obj.factualityText ?? null,
     };
 
     if (obj.modelLabel) {
@@ -475,6 +490,11 @@ export const openAISchema = tConversationSchema
     spec: undefined,
     maxContextTokens: undefined,
     max_tokens: undefined,
+    // Add default values for the pg checkboxes
+    consistencyCheckbox: false,
+    factualityCheckbox: false,
+    toxicityCheckbox: false,
+    factualityText: null,
   }));
 
 export const googleSchema = tConversationSchema
@@ -756,6 +776,10 @@ export const compactOpenAISchema = tConversationSchema
     spec: true,
     maxContextTokens: true,
     max_tokens: true,
+    toxicityCheckbox: true,
+    consistencyCheckbox: true,
+    factualityCheckbox: true,
+    factualityText: true,
   })
   .transform((obj: Partial<TConversation>) => {
     const newObj: Partial<TConversation> = { ...obj };

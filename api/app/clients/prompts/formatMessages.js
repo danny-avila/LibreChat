@@ -8,6 +8,9 @@ const { HumanMessage, AIMessage, SystemMessage } = require('langchain/schema');
  * @param {Object} params.message - The message object to format.
  * @param {string} [params.message.role] - The role of the message sender (must be 'user').
  * @param {string} [params.message.content] - The text content of the message.
+ * @param {number} [params.message.toxicity] - The PredictionGuard toxicity score of the message.
+ * @param {number} [params.message.consistency] - The PredictionGuard consistency score of the message.
+ * @param {number} [params.message.factuality] - The PredictionGuard factuality score of the message.
  * @param {EModelEndpoint} [params.endpoint] - Identifier for specific endpoint handling
  * @param {Array<string>} [params.image_urls] - The image_urls to attach to the message.
  * @returns {(Object)} - The formatted message.

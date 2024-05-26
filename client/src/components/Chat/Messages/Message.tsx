@@ -34,6 +34,28 @@ export default function Message(props: TMessageProps) {
 
   const { message, siblingIdx, siblingCount, setSiblingIdx, currentEditId, setCurrentEditId } =
     props;
+    {
+      /* Start PredictionGuard - values for checks */
+    }
+    let toxicityPlaceholder = message.toxicity;
+    let consistencyPlaceholder = message.consistency;
+    let factualityPlaceholder = message.factuality;
+  
+    if (toxicityPlaceholder) {
+      toxicityPlaceholder = Math.round(toxicityPlaceholder * 100) / 100; // Apply rounding
+      toxicityPlaceholder = 'toxicity score: ' + toxicityPlaceholder; // Convert to string with prefix
+    }
+    if (consistencyPlaceholder) {
+      consistencyPlaceholder = Math.round(consistencyPlaceholder * 100) / 100; // Apply rounding
+      consistencyPlaceholder = 'consistency score: ' + consistencyPlaceholder; // Convert to string with prefix
+    }
+    if (factualityPlaceholder) {
+      factualityPlaceholder = Math.round(factualityPlaceholder * 100) / 100; // Apply rounding
+      factualityPlaceholder = 'factuality score: ' + factualityPlaceholder; // Convert to string with prefix
+    }
+    {
+      /* End PredictionGuard - values for checks */
+    }
 
   if (!message) {
     return null;
@@ -95,6 +117,30 @@ export default function Message(props: TMessageProps) {
                   />
                 </div>
               </div>
+                             {/* Start PredictionGuard - Display Checks */}
+                             {(toxicityPlaceholder || factualityPlaceholder || consistencyPlaceholder) && (
+                  <div
+                    className="select-none font-semibold"
+                    style={{
+                      opacity: 0.6,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '20px',
+                      marginTop: '20px',
+                    }}
+                  >
+                    {toxicityPlaceholder && (
+                      <span style={{ paddingRight: '5px' }}>{toxicityPlaceholder}</span>
+                    )}
+                    {factualityPlaceholder && (
+                      <span style={{ paddingRight: '5px' }}>{factualityPlaceholder}</span>
+                    )}
+                    {consistencyPlaceholder && (
+                      <span style={{ paddingRight: '5px' }}>{consistencyPlaceholder}</span>
+                    )}
+                  </div>
+                )}
+                {/* End PredictionGuard - Display Checks */}
               {isLast && isSubmitting ? null : (
                 <SubRow classes="text-xs">
                   <SiblingSwitch

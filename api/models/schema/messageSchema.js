@@ -76,6 +76,18 @@ const messageSchema = mongoose.Schema(
     finish_reason: {
       type: String,
     },
+    toxicity: {
+      type: Number,
+      default: null, // Adjust default as necessary
+    },
+    consistency: {
+      type: Number,
+      default: null, // Adjust default as necessary
+    },
+    factuality: {
+      type: Number,
+      default: null, // Adjust default as necessary
+    },
     _meiliIndex: {
       type: Boolean,
       required: false,
