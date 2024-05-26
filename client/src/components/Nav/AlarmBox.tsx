@@ -174,6 +174,11 @@ export default function AlarmBox({
                       >
                         <TrashIcon />
                       </button>
+                      <button
+                        onClick={() => handleDelete(tip)}
+                        className="w-8 rounded-md bg-red-600 p-2 text-white"
+                      >
+                      </button>
                       {/* <button onClick={() => setIsDetailView(!isDetailView)} ref={dropdownRef}>
                         {' '}
                         <DotsIcon />
