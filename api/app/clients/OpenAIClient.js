@@ -421,6 +421,10 @@ class OpenAIClient extends BaseClient {
       imageDetail: this.options.imageDetail,
       iconURL: this.options.iconURL,
       greeting: this.options.greeting,
+      toxicityCheckbox: this.options.toxicityCheckbox,
+      consistencyCheckbox: this.options.consistencyCheckbox,
+      factualityCheckbox: this.options.factualityCheckbox,
+      factualityText: this.options.factualityText,
       spec: this.options.spec,
       ...this.modelOptions,
     };
@@ -678,6 +682,10 @@ class OpenAIClient extends BaseClient {
     tokenBuffer,
     initialMessageCount,
     conversationId,
+    toxicityCheckbox,
+    consistencyCheckbox,
+    factualityCheckbox,
+    factualityText,
   }) {
     const modelOptions = {
       modelName: modelName ?? model,
@@ -685,6 +693,10 @@ class OpenAIClient extends BaseClient {
       presence_penalty,
       frequency_penalty,
       user: this.user,
+      toxicityCheckbox,
+      consistencyCheckbox,
+      factualityCheckbox,
+      factualityText,
     };
 
     if (max_tokens) {

@@ -27,6 +27,9 @@ module.exports = {
     plugin,
     plugins,
     model,
+    toxicity,
+    consistency,
+    factuality,
   }) {
     try {
       const validConvoId = idSchema.safeParse(conversationId);
@@ -52,6 +55,9 @@ module.exports = {
         plugin,
         plugins,
         model,
+        factuality,
+        toxicity,
+        consistency,
       };
 
       if (files) {

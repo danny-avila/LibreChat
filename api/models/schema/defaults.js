@@ -110,6 +110,19 @@ const conversationPreset = {
   max_tokens: {
     type: Number,
   },
+  /* PG CUSTOM */
+  toxicityCheckbox: {
+    type: Boolean,
+  },
+  consistencyCheckbox: {
+    type: Boolean,
+  },
+  factualityCheckbox: {
+    type: Boolean,
+  },
+  factualityText: {
+    type: String,
+  },
 };
 
 const agentOptions = {
@@ -163,6 +176,22 @@ const agentOptions = {
     type: String,
   },
   systemMessage: {
+    type: String,
+  },
+  max_tokens: {
+    type: Number,
+  },
+  /* PG CUSTOM */
+  toxicityCheckbox: {
+    type: Boolean,
+  },
+  consistencyCheckbox: {
+    type: Boolean,
+  },
+  factualityCheckbox: {
+    type: Boolean,
+  },
+  factualityText: {
     type: String,
   },
 };

@@ -41,6 +41,10 @@ export default function Settings({ conversation, setOption, models, readonly }: 
     imageDetail,
     maxContextTokens,
     max_tokens,
+    toxicityCheckbox,
+    consistencyCheckbox,
+    factualityCheckbox,
+    factualityText,
   } = conversation ?? {};
 
   const [setChatGptLabel, chatGptLabelValue] = useDebouncedInput<string | null | undefined>({
@@ -80,6 +84,10 @@ export default function Settings({ conversation, setOption, models, readonly }: 
       initialValue: maxContextTokens,
     },
   );
+  const setToxicity = setOption('toxicityCheckbox');
+  const setConsistency = setOption('consistencyCheckbox');
+  const setFactuality = setOption('factualityCheckbox');
+  const setFactualityText = setOption('factualityText');
   const [setMaxOutputTokens, maxOutputTokensValue] = useDebouncedInput<number | null | undefined>({
     setOption,
     optionKey: 'max_tokens',
@@ -116,7 +124,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
         <div className="grid w-full items-center gap-2">
           <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
             {localize('com_endpoint_custom_name')}{' '}
-            <small className="opacity-40">({localize('com_endpoint_default_blank')})</small>
+            <small className="opacity-40">({localize('com_endpoint_default_blank')}) TESTING</small>
           </Label>
           <Input
             id="chatGptLabel"
@@ -148,6 +156,24 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             )}
           />
         </div>
+        <div className="grid w-full items-center gap-2">
+            <Label htmlFor="factualityText" className="text-left text-sm font-medium">
+              Factuality Context{' '}
+              <small className="opacity-40">({localize('com_endpoint_default_blank')})</small>
+            </Label>
+            <TextareaAutosize
+              id="factualityText"
+              disabled={readonly}
+              value={factualityText || ''}
+              onChange={(e) => setFactualityText(e.target.value ?? null)}
+              placeholder="Please provide Factuality Context"
+              className={cn(
+                defaultTextProps,
+                'dark:bg-gray-700 dark:hover:bg-gray-700/60 dark:focus:bg-gray-700',
+                'flex max-h-[138px] min-h-[100px] w-full resize-none px-3 py-2 ',
+              )}
+            />
+          </div>
         <div className="grid w-full items-start gap-2">
           <DynamicTags
             settingKey="stop"
@@ -446,7 +472,66 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                 />
                 <OptionHover endpoint={optionEndpoint ?? ''} type="detail" side={ESide.Bottom} />
               </HoverCardTrigger>
+              
             </HoverCard>
+            <div className="grid w-full items-center gap-2">
+            {/* Toxicity Switch */}
+            <HoverCard openDelay={500}>
+              <HoverCardTrigger asChild>
+                <div className="flex w-full justify-between gap-2">
+                  <label htmlFor="toxicity-Checkbox" className="text-left text-sm font-medium">
+                    <small>Toxicity</small>
+                  </label>
+                  <Switch
+                    id="toxicity-Checkbox"
+                    checked={toxicityCheckbox ?? false}
+                    onCheckedChange={(checked: boolean) => setToxicity(checked)}
+                    disabled={readonly}
+                    className="flex"
+                  />
+                </div>
+              </HoverCardTrigger>
+              <OptionHover endpoint={optionEndpoint ?? ''} type="toxicity" side={ESide.Bottom} />
+            </HoverCard>
+
+            {/* Consistency Switch
+            <HoverCard openDelay={500}>
+              <HoverCardTrigger asChild>
+                <div className="flex w-full justify-between gap-2">
+                  <label htmlFor="consistency-Checkbox" className="text-left text-sm font-medium">
+                    <small>Consistency</small>
+                  </label>
+                  <Switch
+                    id="consistency-Checkbox"
+                    checked={consistencyCheckbox ?? false}
+                    onCheckedChange={(checked: boolean) => setConsistency(checked)}
+                    disabled={readonly}
+                    className="flex"
+                  />
+                </div>
+              </HoverCardTrigger>
+              <OptionHover endpoint={optionEndpoint ?? ''} type="consistency" side={ESide.Bottom} />
+            </HoverCard> */}
+
+            {/* Factuality Switch */}
+            <HoverCard openDelay={500}>
+              <HoverCardTrigger asChild>
+                <div className="flex w-full justify-between gap-2">
+                  <label htmlFor="factuality-checkbox" className="text-left text-sm font-medium">
+                    <small>Factuality</small>
+                  </label>
+                  <Switch
+                    id="factuality-checkbox"
+                    checked={factualityCheckbox ?? false}
+                    onCheckedChange={(checked: boolean) => setFactuality(checked)}
+                    disabled={readonly}
+                    className="flex"
+                  />
+                </div>
+              </HoverCardTrigger>
+              <OptionHover endpoint={optionEndpoint ?? ''} type="factuality" side={ESide.Bottom} />
+            </HoverCard>
+          </div>
           </div>
         </div>
       </div>

@@ -451,8 +451,60 @@ class BaseClient {
       });
     }
 
+    let toxicity = null;
+    let consistency = null;
+    let factuality = null;
+
     const completion = await this.sendCompletion(payload, opts);
     this.abortController.requestCompleted = true;
+
+        //Prediction Guard Toxicity Call
+        if (
+          completion &&
+          this.options.toxicityCheckbox &&
+          this.options.endpoint === 'PredictionGuard'
+        ) {
+          try {
+            const toxicityResponse = await fetch('https://api.predictionguard.com/toxicity', {
+              method: 'POST',
+              headers: {
+                'x-api-key': this.apiKey, // Use your actual API key
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ text: completion }),
+            });
+            const toxicityData = await toxicityResponse.json();
+            // Ensure the API response structure is as expected and adjust as necessary
+            toxicity = toxicityData.checks[0].score;
+          } catch (error) {
+            console.error('Error fetching toxicity score:', error);
+            toxicity = null; // Or handle the error as appropriate
+          }
+        }
+        //Prediction Guard Factuality Call
+        if (
+          completion &&
+          this.options.factualityCheckbox &&
+          this.options.factualityText &&
+          this.options.endpoint === 'PredictionGuard'
+        ) {
+          try {
+            const factualityResponse = await fetch('https://api.predictionguard.com/factuality', {
+              method: 'POST',
+              headers: {
+                'x-api-key': this.apiKey, // Use your actual API key
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ text: completion, reference: this.options.factualityText }),
+            });
+            const factualityData = await factualityResponse.json();
+            // Ensure the API response structure is as expected and adjust as necessary
+            factuality = factualityData.checks[0].score;
+          } catch (error) {
+            console.error('Error fetching factuality score:', error);
+            factuality = null; // Or handle the error as appropriate
+          }
+        }
 
     const responseMessage = {
       messageId: responseMessageId,
@@ -464,6 +516,9 @@ class BaseClient {
       sender: this.sender,
       text: addSpaceIfNeeded(generation) + completion,
       promptTokens,
+      toxicity,
+      consistency,
+      factuality,
       iconURL: this.options.iconURL,
       endpoint: this.options.endpoint,
       ...(this.metadata ?? {}),

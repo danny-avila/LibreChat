@@ -35,6 +35,11 @@ export type TEndpointOption = {
   key?: string | null;
   /* assistant */
   thread_id?: string;
+  toxicityCheckbox?: boolean; // Checkbox for toxicity
+  consistencyCheckbox?: boolean; // Checkbox for consistency
+  factualityCheckbox?: boolean; // Checkbox for factuality
+  factualityText?: string; // Checkbox for factuality
+  max_tokens?: number; // max_tokens override for PG
 };
 
 export type TSubmission = {

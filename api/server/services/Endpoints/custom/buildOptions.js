@@ -8,6 +8,11 @@ const buildOptions = (endpoint, parsedBody, endpointType) => {
     iconURL,
     greeting,
     spec,
+    consistencyCheckbox,
+    factualityCheckbox,
+    toxicityCheckbox,
+    factualityText,
+    max_tokens,
     ...rest
   } = parsedBody;
   const endpointOption = {
@@ -21,6 +26,11 @@ const buildOptions = (endpoint, parsedBody, endpointType) => {
     greeting,
     spec,
     maxContextTokens,
+    consistencyCheckbox,
+    factualityCheckbox,
+    toxicityCheckbox,
+    factualityText,
+    max_tokens,
     modelOptions: {
       ...rest,
     },
