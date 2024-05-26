@@ -21,6 +21,7 @@ import {
   AutoSendTextSwitch,
   AutoTranscribeAudioSwitch,
 } from './STT';
+import { useCustomConfigSpeechQuery } from '~/data-provider';
 
 const BorderDiv = ({ children }) => (
   <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">{children}</div>
@@ -32,6 +33,9 @@ function Speech() {
   const [confirmClear, setConfirmClear] = useState(false);
   const [advancedMode] = useRecoilState(store.advancedMode);
   const [autoTranscribeAudio] = useRecoilState(store.autoTranscribeAudio);
+  const { data } = useCustomConfigSpeechQuery();
+
+  console.log(data);
 
   const { useExternalSpeechToText, useExternalTextToSpeech } = useGetAudioSettings();
 

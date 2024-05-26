@@ -6,6 +6,7 @@ import { fileConfigSchema } from './file-config';
 import { specsConfigSchema } from './models';
 import { FileSources } from './types/files';
 import { TModelsConfig } from './types';
+import { speech } from './api-endpoints';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord'];
 
@@ -273,6 +274,30 @@ const sttSchema = z.object({
     .optional(),
 });
 
+const speechTab = z.object({
+  advancedMode: z.boolean().optional(),
+  speechToText: z
+    .object({
+      enable: z.boolean().optional(),
+      engine: z.string().optional(),
+      language: z.string().optional(),
+      autoTranscribeAudio: z.boolean().optional(),
+      decibelLevel: z.number().optional(),
+      autoSendText: z.boolean().optional(),
+    })
+    .optional(),
+  textToSpeech: z
+    .object({
+      enable: z.boolean().optional(),
+      engine: z.string().optional(),
+      voice: z.string().optional(),
+      automaticPlayback: z.boolean().optional(),
+      playbackRate: z.number().optional(),
+      cacheTTS: z.boolean().optional(),
+    })
+    .optional(),
+});
+
 export enum RateLimitPrefix {
   FILE_UPLOAD = 'FILE_UPLOAD',
   IMPORT = 'IMPORT',
@@ -362,8 +387,11 @@ export const configSchema = z.object({
       allowedDomains: z.array(z.string()).optional(),
     })
     .default({ socialLogins: defaultSocialLogins }),
-  tts: ttsSchema.optional(),
-  stt: sttSchema.optional(),
+  speech: z.object({
+    tts: ttsSchema.optional(),
+    stt: sttSchema.optional(),
+    speechTab: speechTab.optional(),
+  }),
   rateLimits: rateLimitSchema.optional(),
   fileConfig: fileConfigSchema.optional(),
   modelSpecs: specsConfigSchema.optional(),

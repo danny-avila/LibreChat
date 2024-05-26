@@ -11,12 +11,10 @@ const useSpeechToTextBrowser = () => {
   const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
   const { useExternalSpeechToText } = useGetAudioSettings();
   const [isListening, setIsListening] = useState(false);
-  const [text, setText] = useState('');
 
   const {
     interimTranscript,
     finalTranscript,
-    resetTranscript,
     listening,
     browserSupportsSpeechRecognition,
     isMicrophoneAvailable,
@@ -39,7 +37,7 @@ const useSpeechToTextBrowser = () => {
         setIsListening(true);
         SpeechRecognition.startListening({
           language: languageSTT,
-          continuous: false,
+          continuous: autoTranscribeAudio,
         });
       }
     } else {
@@ -62,15 +60,10 @@ const useSpeechToTextBrowser = () => {
   }, []);
 
   useEffect(() => {
-    if (listening) {
-      setText(interimTranscript);
-      console.log('interimTranscript', interimTranscript);
-    } else {
+    if (!listening) {
       setIsListening(false);
-      setText(finalTranscript);
-      console.log('finalTranscript', finalTranscript);
     }
-  }, [listening, interimTranscript]);
+  }, [listening]);
 
   return {
     isListening: isListening,

@@ -422,3 +422,8 @@ export const useFileDownload = (userId?: string, file_id?: string): QueryObserve
 export const useVoicesQuery = (): UseQueryResult<t.VoiceResponse> => {
   return useQuery([QueryKeys.voices], () => dataService.getVoices());
 };
+
+/* Custom config speech */
+export const useCustomConfigSpeechQuery = (): UseQueryResult<t.getCustomConfigSpeechResponse> => {
+  return useQuery([QueryKeys.customConfigSpeech], () => dataService.getCustomConfigSpeech());
+};

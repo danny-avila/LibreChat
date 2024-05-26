@@ -27,6 +27,7 @@ export enum QueryKeys {
   assistantDocs = 'assistantDocs',
   fileDownload = 'fileDownload',
   voices = 'voices',
+  customConfigSpeech = 'customConfigSpeech',
 }
 
 export enum MutationKeys {

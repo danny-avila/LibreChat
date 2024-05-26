@@ -16,11 +16,11 @@ async function getVoices(req, res) {
   try {
     const customConfig = await getCustomConfig();
 
-    if (!customConfig || !customConfig?.tts) {
+    if (!customConfig || !customConfig?.speech?.tts) {
       throw new Error('Configuration or TTS schema is missing');
     }
 
-    const ttsSchema = customConfig?.tts;
+    const ttsSchema = customConfig?.speech?.tts;
     const provider = getProvider(ttsSchema);
     let voices;
 
