@@ -1,8 +1,8 @@
 const { FileContext } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { deleteAssistantActions } = require('~/server/services/ActionService');
+const { updateAssistantDoc, getAssistants } = require('~/models/Assistant');
 const { uploadImageBuffer } = require('~/server/services/Files/process');
-const { updateAssistant, getAssistants } = require('~/models/Assistant');
 const { getOpenAIClient, fetchAssistants } = require('./helpers');
 const { deleteFileByFilter } = require('~/models/File');
 const { logger } = require('~/config');
@@ -40,9 +40,11 @@ const createAssistant = async (req, res) => {
     };
 
     const assistant = await openai.beta.assistants.create(assistantData);
+    const promise = updateAssistantDoc({ assistant_id: assistant.id }, { user: req.user.id });
     if (azureModelIdentifier) {
       assistant.model = azureModelIdentifier;
     }
+    await promise;
     logger.debug('/assistants/', assistant);
     res.status(201).json(assistant);
   } catch (error) {
@@ -216,7 +218,7 @@ const uploadAssistantAvatar = async (req, res) => {
 
     const promises = [];
     promises.push(
-      updateAssistant(
+      updateAssistantDoc(
         { assistant_id },
         {
           avatar: {
