@@ -194,6 +194,7 @@ const Registration: React.FC = () => {
               value: 80,
               message: localize('com_auth_username_max_length'),
             },
+            required: 'Username is required',
           })}
           {renderInput('email', 'com_auth_email', 'email', {
             required: localize('com_auth_email_required'),

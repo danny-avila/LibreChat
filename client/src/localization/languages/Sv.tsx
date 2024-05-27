@@ -82,7 +82,7 @@ export default {
   com_auth_name_required: 'Namn krävs', // Name is required
   com_auth_name_min_length: 'Namnet måste vara minst 3 tecken', // Name must be at least 3 characters
   com_auth_name_max_length: 'Namnet får inte vara längre än 80 tecken', // Name must be less than 80 characters
-  com_auth_username: 'Användarnamn (valfritt)', // Username (optional)
+  com_auth_username: 'Användarnamn', // Username (optional)
   com_auth_username_required: 'Användarnamn krävs', // Username is required
   com_auth_username_min_length: 'Användarnamnet måste vara minst 2 tecken', // Username must be at least 2 characters
   com_auth_username_max_length: 'Användarnamnet får inte vara längre än 20 tecken', // Username must be less than 20 characters
