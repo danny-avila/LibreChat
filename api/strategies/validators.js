@@ -44,9 +44,7 @@ const registerSchema = z
     name: z.string().min(3).max(80),
     username: z
       .union([z.literal(''), usernameSchema])
-      .transform((value) => (value === '' ? null : value))
-      .optional()
-      .nullable(),
+      .transform((value) => (value === '' ? null : value)),
     email: z.string().email(),
     password: z
       .string()

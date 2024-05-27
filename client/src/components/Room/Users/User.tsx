@@ -32,14 +32,14 @@ export default function User({
 
   return (
     <a data-testid="convo-item" {...aProps}>
-      <div className="flex gap-3">
+      <TipModal user={user} isKarmaOnly={true} OpenButton={<div className="flex gap-3">
         <img
           src={user && user.avatar ? user.avatar : avatarSrc}
           alt={user.name}
           className="h-6 w-6 flex-shrink-0 rounded-full"
         />
         {!isCollapsed && user.name}
-      </div>
+      </div>} />
       {!isCollapsed && you?.id === conversation?.user._id && you.id !== user._id && (
         <UserKickButton user={user} />
       )}

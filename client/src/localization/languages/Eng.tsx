@@ -138,7 +138,7 @@ export default {
   com_auth_name_required: 'Name is required',
   com_auth_name_min_length: 'Name must be at least 3 characters',
   com_auth_name_max_length: 'Name must be less than 80 characters',
-  com_auth_username: 'Username (optional)',
+  com_auth_username: 'Username',
   com_auth_username_required: 'Username is required',
   com_auth_username_min_length: 'Username must be at least 2 characters',
   com_auth_username_max_length: 'Username must be less than 20 characters',
@@ -405,5 +405,5 @@ export default {
 
   com_subscription_popup_title: 'Subscribe to ChatG',
   com_subscription_plan_desc:
-    'Subscribe to get 2000 monthly ChatG credits, accept crypto tips and access premium AI Chat models such as GPT-4, Claud-3-Opus and more.',
+    'Subscribe to receive 2000 Credits and 100 Karma Points monthly. Unlock additional benefits like accepting crypto tips and accessing premium AI Chat models such as GPT-4, Claud-3-Opus, and more.',
 };

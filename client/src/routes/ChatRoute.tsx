@@ -1,6 +1,6 @@
 import { useRecoilState, useRecoilValue } from 'recoil';
 import { useEffect, useRef } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   useGetModelsQuery,
   useGetStartupConfig,
@@ -9,7 +9,7 @@ import {
 import { defaultOrderQuery } from 'librechat-data-provider';
 import type { TPreset } from 'librechat-data-provider';
 import { ConvoType, useGetConvoIdQuery, useListAssistantsQuery } from '~/data-provider';
-import { useNewConvo, useConfigOverride } from '~/hooks';
+import { useNewConvo, useConfigOverride, useAuthContext } from '~/hooks';
 import ChatView from '~/components/Chat/ChatView';
 import useAuthRedirect from './useAuthRedirect';
 import { Spinner } from '~/components/svg';
@@ -22,6 +22,11 @@ export default function ChatRoute({ convo = 'c' }: { convo: ConvoType }) {
   const { conversationId } = useParams();
   const { data: startupConfig } = useGetStartupConfig();
   const [convoType, setConvoType] = useRecoilState(store.convoType);
+  const navigate = useNavigate();
+  const { user } = useAuthContext();
+  if ((convo === 'c' || conversationId === 'new') && user?.username === 'guest-user') {
+    navigate('/login');
+  }
 
   const { conversation } = store.useCreateConversationAtom(index);
   const modelsQueryEnabled = useRecoilValue(store.modelsQueryEnabled);

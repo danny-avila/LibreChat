@@ -63,7 +63,7 @@ const addConnection = (socket, userId, roomId) => {
 const sendMessage = async (socket, msg, roomId, isBot = false) => {
   try {
     let message = msg;
-    if (!isBot) {
+    if (!isBot || message.sender === 'Karma Bot') {
       message = await getMessageById(message.messageId);
     }
 
@@ -78,22 +78,39 @@ const sendMessage = async (socket, msg, roomId, isBot = false) => {
     }
 
     if (message) {
-      clients
-        .filter((c) => c.roomId === roomId && socket.id !== c.socket.id)
-        .forEach((client) => {
-          if (aiMessages.length !== 0) {
-            console.log('--- array message ---', aiMessages);
-            client.socket.emit('ai response message', {
-              roomId,
-              messages: aiMessages,
-            });
-          } else {
-            client.socket.emit('new message', {
-              roomId,
-              message,
-            });
-          }
-        });
+      if (message.sender === 'Karma Bot') {
+        clients
+          .filter((c) => c.roomId === message.conversationId && socket.id !== c.socket.id)
+          .forEach((client) => {
+            if (aiMessages.length !== 0) {
+              client.socket.emit('ai response message', {
+                roomId,
+                messages: aiMessages,
+              });
+            } else {
+              client.socket.emit('new message', {
+                roomId: message.conversationId ? message.conversationId : roomId,
+                message,
+              });
+            }
+          });
+      } else {
+        clients
+          .filter((c) => c.roomId === roomId && socket.id !== c.socket.id)
+          .forEach((client) => {
+            if (aiMessages.length !== 0) {
+              client.socket.emit('ai response message', {
+                roomId,
+                messages: aiMessages,
+              });
+            } else {
+              client.socket.emit('new message', {
+                roomId,
+                message,
+              });
+            }
+          });
+      }
     }
   } catch (error) {
     console.error(error);
@@ -115,7 +132,6 @@ const updateMessage = async (socket, msg, roomId) => {
         .filter((c) => c.roomId === roomId && socket.id !== c.socket.id)
         .forEach((client) => {
           if (Array.isArray(message)) {
-            console.log('--- array message ---', message);
             message.forEach((m, i) => {
               client.socket.emit('update message', {
                 roomId,
@@ -139,7 +155,6 @@ const updateMessage = async (socket, msg, roomId) => {
 const disconnectClient = (socket) => {
   const clientIndex = clients.map((c) => c.socket.id).indexOf(socket.id);
   if (clientIndex > -1) {
-    console.log('=== Removed disconnected socket client ===', clients[clientIndex].socket.id);
     clients.splice(clientIndex, 1);
   }
 };
@@ -153,7 +168,6 @@ const moveRoom = (socketId, roomId) => {
 
     // clients.filter(client => client.roomId === lastRoom).forEach(client => client.socket.emit('user left the room', ))
 
-    console.log(`=== User moved the room to ${clients[clientIndex].roomId} ===`);
   } catch (error) {
     throw new Error(`[moveRoom] Error in moverRoom ${error}`);
   }
@@ -165,7 +179,6 @@ const moveRoom = (socketId, roomId) => {
  * @param {*} roomId
  */
 const joinRoom = (socket, user, roomId) => {
-  console.log('--- join room event ---', user, roomId);
   try {
     clients
       .filter((c) => c.roomId === roomId && socket.id !== c.socket.id)

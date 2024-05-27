@@ -47,7 +47,7 @@ export default function MobileNav({
       </button>
       <h1 className="flex-1 text-center text-base font-normal">
         {title && title.length > 30 ? (
-          <Marquee speed={30}>{title}</Marquee>
+          <Marquee speed={30}>{title}&nbsp; &nbsp; &nbsp; </Marquee>
         ) : (
           title || localize('com_ui_new_chat')
         )}

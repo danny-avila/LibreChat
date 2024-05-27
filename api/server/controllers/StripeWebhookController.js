@@ -32,7 +32,7 @@ const stripeWebhookController = async (req, res) => {
                 renewalDate,
                 subType: checkoutSession.plan,
               },
-              $inc: { credits: 2000 },
+              $inc: { credits: 2000, karma: 100 },
             },
             { new: true },
           );

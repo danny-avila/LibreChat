@@ -17,7 +17,7 @@ function Login() {
   const { theme } = useContext(ThemeContext);
   useEffect(() => {
     if (isAuthenticated && user?.username !== 'guest-user') {
-      navigate('/c/new', { replace: true });
+      navigate('/r/new', { replace: true });
     }
   }, [isAuthenticated, navigate, user?.username]);
 

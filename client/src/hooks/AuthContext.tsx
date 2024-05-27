@@ -48,10 +48,12 @@ const AuthContextProvider = ({
       setTokenHeader(token);
       setIsAuthenticated(isAuthenticated);
       if (redirect && user?.username !== 'guest-user') {
-        navigate(redirect, { replace: true });
+        console.log(redirect);
+        // navigate(redirect, { replace: true });
+        location.href = redirect;
       }
     },
-    [navigate, setUser],
+    [setUser],
   );
   const doSetError = useTimeout({ callback: (error) => setError(error as string | undefined) });
 
@@ -89,9 +91,8 @@ const AuthContextProvider = ({
           token,
           isAuthenticated: true,
           user,
-          redirect: prevUrl ? prevUrl : '/c/new',
+          redirect: prevUrl ? prevUrl : '/r/new',
         });
-        localStorage.removeItem('prevUrl');
       },
       onError: (error: TResError | unknown) => {
         const resError = error as TResError;

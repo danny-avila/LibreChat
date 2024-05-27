@@ -14,11 +14,11 @@ export const useChatCall = (socket?: Socket) => {
   const sendMessage = useCallback(
     async (message: TMessage | TMessage[], bot = false) => {
       setIsSubmitting(true);
-      if (!socket || convoType !== 'r') {
+      if (!socket) {
         return null;
       }
 
-      if (!bot) {
+      if (!bot || message.sender === 'Karma Bot') {
         await request.post(`/api/rooms/${conversationId}`, message);
       }
 
@@ -30,7 +30,7 @@ export const useChatCall = (socket?: Socket) => {
       });
       setIsSubmitting(false);
     },
-    [socket, user, conversationId, convoType, setIsSubmitting],
+    [socket, user, conversationId, setIsSubmitting],
   );
 
   const updateMessage = useCallback(
@@ -74,6 +74,7 @@ export const useChatCall = (socket?: Socket) => {
         userId: user?.id,
         roomId: conversationId,
         message: message,
+        botType,
       });
     },
     [socket, user, conversationId, convoType],

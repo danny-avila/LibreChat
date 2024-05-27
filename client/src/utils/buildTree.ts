@@ -42,8 +42,7 @@ export default function buildTree({
         if (message.parentMessageId === '00000000-0000-0000-0000-000000000000') {
           rootMessages.push(messageMap[message.messageId]);
         } else {
-          parentMessage = { ...messages[i - 1], children: [] };
-          parentMessage.children.push(messageMap[message.messageId]);
+          parentMessage = { ...messages[i - 1], children: [messageMap[message.messageId]] };
         }
       }
     });
@@ -78,6 +77,56 @@ export default function buildTree({
   //   }
   // });
 
-  // // return Object.values(rootMessages);
-  // return rootMessages;
+// // return Object.values(rootMessages);
+// return rootMessages;
 }
+
+// export default function buildTree({
+//   messages,
+//   fileMap,
+//   groupAll = false,
+// }: {
+//   messages: TMessage[] | null;
+//   fileMap?: Record<string, TFile>;
+//   groupAll?: boolean;
+// }) {
+//   if (messages === null) {
+//     return null;
+//   }
+
+//   const messageMap: Record<string, TMessage & { children: TMessage[] }> = {};
+//   const rootMessages: TMessage[] = [];
+
+//   if (groupAll) {
+//     return messages.map((m, idx) => ({ ...m, bg: idx % 2 === 0 ? even : odd }));
+//   }
+
+//   // Traverse the messages array and store each element in messageMap.
+//   messages.forEach((message, i) => {
+//     messageMap[message.messageId] = { ...message, children: [] };
+
+//     if (message.files && fileMap) {
+//       messageMap[message.messageId].files = message.files.map(
+//         (file) => fileMap[file.file_id] ?? file,
+//       );
+//     }
+
+//     const parentMessageId = message.parentMessageId ?? '';
+//     const parentMessage = messageMap[parentMessageId];
+
+//     if (parentMessage) {
+//       parentMessage.children.push(messageMap[message.messageId]);
+//     } else if (parentMessageId === '00000000-0000-0000-0000-000000000000' || !parentMessageId) {
+//       rootMessages.push(messageMap[message.messageId]);
+//     } else {
+//       // Parent message is not present in the messages array
+//       // Add the current message as a root message
+//       const lastMessage = { ...rootMessages[rootMessages.length - 1], children: [] };
+//       if (lastMessage) {
+//         lastMessage.children.push(messageMap[message.messageId]);
+//       }
+//     }
+//   });
+
+//   return rootMessages;
+// }

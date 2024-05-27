@@ -25,10 +25,7 @@ export default function SubDetailsExplain() {
                 capacity to produce 2000 images using Stable Diffusion
               </li>
               <li>Benefit from faster responses with popular bots</li>
-              {/* <li>
-                Get early access to new features, including experimental bots like ChatGPT-16k, and
-                GPT-4-32k
-              </li> */}
+              <li>100 Karma Points to share with fellow ChatG members, spreading appreciation.</li>
             </ul>
           </div>
         </div>

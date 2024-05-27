@@ -10,6 +10,11 @@ import copy from 'copy-to-clipboard';
 import store from '~/store';
 import { useRecoilState } from 'recoil';
 import { useParams } from 'react-router-dom';
+import { useInitSocket } from '~/hooks/useChatSocket';
+import { useChatCall } from '~/hooks/useChatCall';
+import { v4 } from 'uuid';
+// eslint-disable-next-line import/no-cycle
+import { TipTrack } from '~/components/Nav/AlarmBox';
 
 const AddressPicker = ({
   item,
@@ -30,13 +35,13 @@ const AddressPicker = ({
   };
 
   return (
-    <div className="flex items-center justify-start gap-3 p-1">
+    <div className="flex items-center justify-start gap-3 p-1" onClick={() => copyToClipboard()}>
       {blockchainNetworks.filter((i) => i.id === item.id)[0].icon}
       <div>
         <p className="mb-0 font-bold">{blockchainNetworks.filter((i) => i.id === item.id)[0].id}</p>
         <p>{prettyEthAddress(item.address.toLowerCase())}</p>
       </div>
-      <button onClick={() => copyToClipboard()} type="button">
+      <button type="button">
         {isCopied ? <CheckMark /> : <CopyIcon className="text-gray-500 dark:text-white" />}
       </button>
     </div>
@@ -76,21 +81,34 @@ export const TipCopiedContent = ({
   );
 };
 
-export default function TipModal({ user, OpenButton }: { user: TUser; OpenButton?: ReactNode }) {
+export default function TipModal({
+  user,
+  OpenButton,
+  tip,
+  isKarmaOnly = false,
+}: {
+  user: TUser;
+  OpenButton?: ReactNode;
+  tip?: TipTrack;
+  isKarmaOnly?: boolean;
+}) {
+  const socket = useInitSocket();
+  const { sendMessage } = useChatCall(socket);
+
   const [you, setYou] = useRecoilState(store.user);
   const params = useParams();
-  const [open, setOpen] = useState<boolean>(true);
+  const [open, setOpen] = useState<boolean>(false);
   const [selectedNetwork, setSelectedNetwork] = useState<BlockchainNetwork | null>(null);
   const [karma, setKarma] = useState<number>(1);
   const { showToast } = useToastContext();
 
   const { ask } = useChatContext();
 
-  const confirmTip = (v: boolean) => {
+  const sendTipMessage = (v: boolean) => {
     if (v) {
       request
         .post('/api/user/tip', {
-          recipient: user.id,
+          recipient: user._id ?? user.id,
           network: selectedNetwork?.id,
           convoId: params.conversationId,
         })
@@ -98,11 +116,11 @@ export default function TipModal({ user, OpenButton }: { user: TUser; OpenButton
           if (ask) {
             ask(
               {
-                text: `@${you?.username} has copied @${user.username} ${
+                text: `@${you?.username} has copied @${user.username} **${
                   selectedNetwork?.label
-                } Address: ${
+                }** Wallet Address: ${
                   user.cryptocurrency.filter((i) => selectedNetwork?.id === i.id)[0].address
-                } - awaiting confirmation`,
+                }`,
               },
               { isBot: 'Tip Bot' },
             );
@@ -119,33 +137,57 @@ export default function TipModal({ user, OpenButton }: { user: TUser; OpenButton
       if (you.karma < karma) {
         showToast({ message: 'You dont have enough karma points', status: 'error' });
       }
-
       request
         .post('/api/user/sendkarma', { karma, userId: user.id, convoId: params.conversationId })
         .then(() => {
           setYou({ ...you, karma: you.karma - karma });
-          console.log(ask);
           if (ask) {
             ask(
               {
-                text: `@${you?.username} sent ${karma} to @${user.username} `,
+                text: `@${you?.username} sent ${karma} Karma Point${karma > 1 ? 's' : ''} to @${user.username}`,
               },
               { isBot: 'Karma Bot' },
             );
+          } else {
+            sendMessage({
+              text: `@${you?.username} has sent ${karma} Karma Point${karma > 1 ? 's' : ''} to @${user.username}`,
+              sender: 'Karma Bot',
+              isCreatedByUser: true,
+              parentMessageId: v4(),
+              conversationId: isKarmaOnly ? params.conversationId ?? '' : tip ? tip.convoId : '',
+              messageId: v4(),
+              thread_id: '',
+              error: false,
+            }, true);
           }
           showToast({ message: `You sent ${karma} karma points successfully`, status: 'success' });
+          setOpen(false);
+        }).catch(err => {
+          if (err.response.status === 403) {
+            showToast({ message: err.response.data.message, status: 'error' });
+          }
         });
     }
   };
 
   useEffect(() => {
+    if (you?.id === user._id) {
+      setOpen(false);
+      return;
+    }
     if (!open) {
       setSelectedNetwork(null);
     }
   }, [open]);
 
   return (
-    <Dialog>
+    <Dialog onOpenChange={(e) => {
+      if (you?.id === user._id) {
+        setOpen(false);
+        return;
+      }
+      setOpen(e);
+    }} open={open}>
       <DialogTrigger asChild>
         {OpenButton ? (
           OpenButton
@@ -157,79 +199,80 @@ export default function TipModal({ user, OpenButton }: { user: TUser; OpenButton
       </DialogTrigger>
       <DialogTemplate
         showCloseButton={false}
-        title={`Tip @${user.username}`}
+        title={(tip || isKarmaOnly) ? `Send Karma to @${user.username}` : `Tip @${user.username}`}
         className="max-w-[450px]"
         main={
           <>
             <div className="flex w-full flex-col items-center gap-2">
-              <div className="flex w-full flex-col items-center justify-around gap-1">
-                <p className="text-black dark:text-white">Send Karma Points to @{user.username}</p>
-                <p className="text-xs text-gray-700 dark:text-gray-50">
-                  Your Karma Points Balance: {you?.karma}
-                </p>
-                <div className="flex gap-1">
+              {(tip || isKarmaOnly) ?
+                <div className="flex w-full flex-col items-center justify-around gap-1">
+                  <p className="text-black dark:text-white">Send Karma Points to @{user.username}</p>
+                  <p className="text-xs text-gray-700 dark:text-gray-50 mb-1">
+                    Your Karma Points Balance: {you?.karma}
+                  </p>
+                  <div className="flex gap-1">
+                    <button
+                      className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
+                        karma === 1 ? 'bg-green-500' : ''
+                      }`}
+                      onClick={() => setKarma(1)}
+                    >
+                  1
+                    </button>
+                    <button
+                      className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
+                        karma === 2 ? 'bg-green-500' : ''
+                      }`}
+                      onClick={() => setKarma(2)}
+                    >
+                  2
+                    </button>
+                    <button
+                      className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
+                        karma === 3 ? 'bg-green-500' : ''
+                      }`}
+                      onClick={() => setKarma(3)}
+                    >
+                  3
+                    </button>
+                    <button
+                      className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
+                        karma === 4 ? 'bg-green-500' : ''
+                      }`}
+                      onClick={() => setKarma(4)}
+                    >
+                  4
+                    </button>
+                    <button
+                      className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
+                        karma === 5 ? 'bg-green-500' : ''
+                      }`}
+                      onClick={() => setKarma(5)}
+                    >
+                  5
+                    </button>
+                  </div>
                   <button
-                    className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
-                      karma === 1 ? 'bg-green-500' : ''
-                    }`}
-                    onClick={() => setKarma(1)}
+                    className="rounded-full bg-green-500 px-5 py-1 text-white transition hover:bg-green-550 mt-3"
+                    onClick={sendKarma}
                   >
-                    1
+                    Send {karma} Karma point{karma > 1 ? 's' : ''}
                   </button>
-                  <button
-                    className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
-                      karma === 2 ? 'bg-green-500' : ''
-                    }`}
-                    onClick={() => setKarma(2)}
-                  >
-                    2
-                  </button>
-                  <button
-                    className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
-                      karma === 3 ? 'bg-green-500' : ''
-                    }`}
-                    onClick={() => setKarma(3)}
-                  >
-                    3
-                  </button>
-                  <button
-                    className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
-                      karma === 4 ? 'bg-green-500' : ''
-                    }`}
-                    onClick={() => setKarma(4)}
-                  >
-                    4
-                  </button>
-                  <button
-                    className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
-                      karma === 5 ? 'bg-green-500' : ''
-                    }`}
-                    onClick={() => setKarma(5)}
-                  >
-                    5
-                  </button>
-                </div>
-                <button
-                  className="rounded-full bg-green-500 px-5 py-1 text-white transition hover:bg-green-550"
-                  onClick={sendKarma}
-                >
-                  Send {karma} Karma points
-                </button>
-              </div>
-              <div className="grid w-full items-center justify-center gap-2 text-gray-850 dark:text-white">
-                {selectedNetwork === null ? (
-                  user.cryptocurrency &&
+                </div> : <div className="grid w-full items-center justify-center gap-2 text-gray-850 dark:text-white">
+                  {selectedNetwork === null ? (
+                    user.cryptocurrency &&
                   user.cryptocurrency.map((i) => (
                     <AddressPicker key={i.id} item={i} setSelectedNetwork={setSelectedNetwork} />
                   ))
-                ) : (
-                  <TipCopiedContent
-                    username={user.username}
-                    network={selectedNetwork}
-                    confirmTip={confirmTip}
-                  />
-                )}
-              </div>
+                  ) : (
+                    <TipCopiedContent
+                      username={user.username}
+                      network={selectedNetwork}
+                      confirmTip={sendTipMessage}
+                    />
+                  )}
+                </div>
+              }
             </div>
           </>
         }
@@ -246,7 +289,7 @@ export default function TipModal({ user, OpenButton }: { user: TUser; OpenButton
               <>
                 <Button
                   className="rounded-2xl border border-gray-20 bg-transparent text-gray-400 hover:bg-gray-50"
-                  onClick={() => confirmTip(false)}
+                  onClick={() => sendTipMessage(false)}
                 >
                   Tip Anonymously
                 </Button>

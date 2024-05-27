@@ -10,8 +10,8 @@ async function register(page: Page, user: User) {
   await page.getByRole('link', { name: 'Sign up' }).click();
   await page.getByLabel('Full name').click();
   await page.getByLabel('Full name').fill('test');
-  await page.getByText('Username (optional)').click();
-  await page.getByLabel('Username (optional)').fill('test');
+  await page.getByText('Username').click();
+  await page.getByLabel('Username').fill('test');
   await page.getByLabel('Email').click();
   await page.getByLabel('Email').fill(user.email);
   await page.getByLabel('Email').press('Tab');

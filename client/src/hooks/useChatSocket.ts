@@ -41,13 +41,14 @@ export const useChatSocket = (socket?: Socket) => {
 
   useEffect(() => {
     socket?.on('new message', (data) => {
-      console.log('--- new message ---', data);
+      console.log(data);
       if (conversationId === data.roomId) {
         const currentMessages: TMessage[] | null = getMessages() ?? [];
         if (data.replace) {
           currentMessages.pop();
         }
-        setMessages([...currentMessages, data.message]);
+        console.log(currentMessages);
+        setMessages([...currentMessages, { _id: '111111', ...data.message }]);
         // setLatestMessage(data.message);
       }
     });

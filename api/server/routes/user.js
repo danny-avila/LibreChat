@@ -9,6 +9,7 @@ const {
   getTipTrack,
   copyCryptoAddress,
   deleteTip,
+  muteUser,
 } = require('../controllers/UserController');
 
 const router = express.Router();
@@ -21,5 +22,6 @@ router.post('/tip', requireJwtAuth, copyCryptoAddress);
 router.get('/tip', requireJwtAuth, getTipTrack);
 router.delete('/tip/:id', requireJwtAuth, deleteTip);
 router.post('/confirmtip', requireJwtAuth, confirmCryptoTip);
+router.post('/mute/:userId', requireJwtAuth, muteUser);
 
 module.exports = router;
