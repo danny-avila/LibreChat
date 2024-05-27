@@ -5,28 +5,54 @@ import { TStartupConfig } from 'librechat-data-provider';
 import SocialLoginRender from './SocialLoginRender';
 import Footer from './Footer';
 
+const ErrorRender = ({ children }: { children: React.ReactNode }) => (
+  <div className="mt-16 flex justify-center">
+    <div
+      className="rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200"
+      role="alert"
+    >
+      {children}
+    </div>
+  </div>
+);
+
 function AuthLayout({
   children,
   header,
   isFetching,
   startupConfig,
   startupConfigError,
+  pathname,
+  error,
 }: {
   children: React.ReactNode;
   header: React.ReactNode;
   isFetching: boolean;
   startupConfig: TStartupConfig | null | undefined;
   startupConfigError: unknown | null | undefined;
+  pathname: string;
+  error: string | null;
 }) {
   const localize = useLocalize();
-  const errorRender = (errorMessage: string) => (
-    <div
-      className="rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200"
-      role="alert"
-    >
-      {errorMessage}
-    </div>
-  );
+
+  const DisplayError = () => {
+    if (startupConfigError !== null && startupConfigError !== undefined) {
+      return <ErrorRender>{localize('com_auth_error_login_server')}</ErrorRender>;
+    } else if (error === 'com_auth_error_invalid_reset_token') {
+      return (
+        <ErrorRender>
+          {localize('com_auth_error_invalid_reset_token')}{' '}
+          <a className="font-semibold text-green-600 hover:underline" href="/forgot-password">
+            {localize('com_auth_click_here')}
+          </a>{' '}
+          {localize('com_auth_to_try_again')}
+        </ErrorRender>
+      );
+    } else if (error) {
+      return <ErrorRender>{localize(error)}</ErrorRender>;
+    }
+    return null;
+  };
 
   return (
     <div className="relative flex min-h-screen flex-col bg-white dark:bg-gray-900">
@@ -35,11 +61,7 @@ function AuthLayout({
           <img src="/assets/logo.svg" className="h-full w-full object-contain" alt="Logo" />
         </div>
       </BlinkAnimation>
-      {startupConfigError !== null && startupConfigError !== undefined && (
-        <div className="mt-16 flex justify-center">
-          {errorRender(localize('com_auth_error_login_server'))}
-        </div>
-      )}
+      <DisplayError />
       <div className="absolute bottom-0 left-0 md:m-4">
         <ThemeSelector />
       </div>
@@ -55,7 +77,9 @@ function AuthLayout({
             </h1>
           )}
           {children}
-          <SocialLoginRender startupConfig={startupConfig} />
+          {(pathname.includes('login') || pathname.includes('register')) && (
+            <SocialLoginRender startupConfig={startupConfig} />
+          )}
         </div>
       </div>
       <Footer startupConfig={startupConfig} />

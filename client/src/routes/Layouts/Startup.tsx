@@ -6,13 +6,15 @@ import AuthLayout from '~/components/Auth/AuthLayout';
 import { useLocalize } from '~/hooks';
 
 const headerMap = {
-  '/login': 'com_auth_login',
+  '/login': 'com_auth_welcome_back',
   '/register': 'com_auth_create_account',
-  '/forgot-password': 'com_auth_forgot_password',
+  '/forgot-password': 'com_auth_reset_password',
   '/reset-password': 'com_auth_reset_password',
 };
 
 export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: boolean }) {
+  const [error, setError] = useState<string | null>(null);
+  const [headerText, setHeaderText] = useState<string | null>(null);
   const [startupConfig, setStartupConfig] = useState<TStartupConfig | null>(null);
   const {
     data,
@@ -38,18 +40,29 @@ export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: b
     document.title = startupConfig?.appTitle || 'LibreChat';
   }, [startupConfig?.appTitle]);
 
+  useEffect(() => {
+    setError(null);
+    setHeaderText(null);
+  }, [location.pathname]);
+
   const contextValue = {
-    startupConfig,
+    error,
+    setError,
+    headerText,
+    setHeaderText,
     startupConfigError,
+    startupConfig,
     isFetching,
   };
 
   return (
     <AuthLayout
-      header={localize(headerMap[location.pathname])}
+      header={headerText ? localize(headerText) : localize(headerMap[location.pathname])}
       isFetching={isFetching}
       startupConfig={startupConfig}
       startupConfigError={startupConfigError}
+      pathname={location.pathname}
+      error={error}
     >
       <Outlet context={contextValue} />
     </AuthLayout>
