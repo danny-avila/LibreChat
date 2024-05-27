@@ -31,15 +31,14 @@ const { getModelMaxTokens } = require('~/utils');
 const { getOpenAIClient } = require('./helpers');
 const { logger } = require('~/config');
 
-const { handleAbortError } = require('~/server/middleware');
-
 const ten_minutes = 1000 * 60 * 10;
 
 /**
  * @route POST /
  * @desc Chat with an assistant
  * @access Public
- * @param {Express.Request} req - The request object, containing the request data.
+ * @param {object} req - The request object, containing the request data.
+ * @param {TPayload} req.body - The request payload.
  * @param {Express.Response} res - The response object, used to send back a response.
  * @returns {void}
  */
@@ -59,30 +58,6 @@ const chatV1 = async (req, res) => {
     conversationId: convoId,
     parentMessageId: _parentId = Constants.NO_PARENT,
   } = req.body;
-
-  /** @type {Partial<TAssistantEndpoint>} */
-  const assistantsConfig = req.app.locals?.[endpoint];
-
-  if (assistantsConfig) {
-    const { supportedIds, excludedIds } = assistantsConfig;
-    const error = { message: 'Assistant not supported' };
-    if (supportedIds?.length && !supportedIds.includes(assistant_id)) {
-      return await handleAbortError(res, req, error, {
-        sender: 'System',
-        conversationId: convoId,
-        messageId: v4(),
-        parentMessageId: _messageId,
-        error,
-      });
-    } else if (excludedIds?.length && excludedIds.includes(assistant_id)) {
-      return await handleAbortError(res, req, error, {
-        sender: 'System',
-        conversationId: convoId,
-        messageId: v4(),
-        parentMessageId: _messageId,
-      });
-    }
-  }
 
   /** @type {OpenAIClient} */
   let openai;
