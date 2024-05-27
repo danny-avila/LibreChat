@@ -47,11 +47,14 @@ const AuthContextProvider = ({
       //@ts-ignore - ok for token to be undefined initially
       setTokenHeader(token);
       setIsAuthenticated(isAuthenticated);
+      console.log(user, redirect);
       if (redirect && user?.username !== 'guest-user') {
-        navigate(redirect, { replace: true });
+        console.log(redirect);
+        // navigate(redirect, { replace: true });
+        location.href = redirect;
       }
     },
-    [navigate, setUser],
+    [setUser],
   );
   const doSetError = useTimeout({ callback: (error) => setError(error as string | undefined) });
 
@@ -91,7 +94,6 @@ const AuthContextProvider = ({
           user,
           redirect: prevUrl ? prevUrl : '/c/new',
         });
-        localStorage.removeItem('prevUrl');
       },
       onError: (error: TResError | unknown) => {
         const resError = error as TResError;

@@ -10,6 +10,10 @@ import copy from 'copy-to-clipboard';
 import store from '~/store';
 import { useRecoilState } from 'recoil';
 import { useParams } from 'react-router-dom';
+import { useInitSocket } from '~/hooks/useChatSocket';
+import { useChatCall } from '~/hooks/useChatCall';
+import { v4 } from 'uuid';
+import { TipTrack } from '~/components/Nav/AlarmBox';
 
 const AddressPicker = ({
   item,
@@ -76,7 +80,10 @@ export const TipCopiedContent = ({
   );
 };
 
-export default function TipModal({ user, OpenButton }: { user: TUser; OpenButton?: ReactNode }) {
+export default function TipModal({ user, OpenButton, tip }: { user: TUser; OpenButton?: ReactNode; tip?: TipTrack }) {
+  const socket = useInitSocket();
+  const { sendBotMessage, sendMessage } = useChatCall(socket);
+
   const [you, setYou] = useRecoilState(store.user);
   const params = useParams();
   const [open, setOpen] = useState<boolean>(true);
@@ -86,11 +93,11 @@ export default function TipModal({ user, OpenButton }: { user: TUser; OpenButton
 
   const { ask } = useChatContext();
 
-  const confirmTip = (v: boolean) => {
+  const sendTipMessage = (v: boolean) => {
     if (v) {
       request
         .post('/api/user/tip', {
-          recipient: user.id,
+          recipient: user._id ?? user.id,
           network: selectedNetwork?.id,
           convoId: params.conversationId,
         })
@@ -119,12 +126,20 @@ export default function TipModal({ user, OpenButton }: { user: TUser; OpenButton
       if (you.karma < karma) {
         showToast({ message: 'You dont have enough karma points', status: 'error' });
       }
-
       request
         .post('/api/user/sendkarma', { karma, userId: user.id, convoId: params.conversationId })
         .then(() => {
           setYou({ ...you, karma: you.karma - karma });
-          console.log(ask);
+          sendMessage({
+            text: `@justin has sent @dajour ${karma} Karma Points`,
+            sender: 'Karma Bot',
+            isCreatedByUser: true,
+            parentMessageId: v4(),
+            conversationId: tip ? tip.convoId : '',
+            messageId: v4(),
+            thread_id: '',
+            error: false,
+          }, true);
           if (ask) {
             ask(
               {
@@ -162,10 +177,11 @@ export default function TipModal({ user, OpenButton }: { user: TUser; OpenButton
         main={
           <>
             <div className="flex w-full flex-col items-center gap-2">
+              {tip &&
               <div className="flex w-full flex-col items-center justify-around gap-1">
                 <p className="text-black dark:text-white">Send Karma Points to @{user.username}</p>
                 <p className="text-xs text-gray-700 dark:text-gray-50">
-                  Your Karma Points Balance: {you?.karma}
+                Your Karma Points Balance: {you?.karma}
                 </p>
                 <div className="flex gap-1">
                   <button
@@ -174,7 +190,7 @@ export default function TipModal({ user, OpenButton }: { user: TUser; OpenButton
                     }`}
                     onClick={() => setKarma(1)}
                   >
-                    1
+                  1
                   </button>
                   <button
                     className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
@@ -182,7 +198,7 @@ export default function TipModal({ user, OpenButton }: { user: TUser; OpenButton
                     }`}
                     onClick={() => setKarma(2)}
                   >
-                    2
+                  2
                   </button>
                   <button
                     className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
@@ -190,7 +206,7 @@ export default function TipModal({ user, OpenButton }: { user: TUser; OpenButton
                     }`}
                     onClick={() => setKarma(3)}
                   >
-                    3
+                  3
                   </button>
                   <button
                     className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
@@ -198,7 +214,7 @@ export default function TipModal({ user, OpenButton }: { user: TUser; OpenButton
                     }`}
                     onClick={() => setKarma(4)}
                   >
-                    4
+                  4
                   </button>
                   <button
                     className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
@@ -206,16 +222,18 @@ export default function TipModal({ user, OpenButton }: { user: TUser; OpenButton
                     }`}
                     onClick={() => setKarma(5)}
                   >
-                    5
+                  5
                   </button>
                 </div>
                 <button
                   className="rounded-full bg-green-500 px-5 py-1 text-white transition hover:bg-green-550"
                   onClick={sendKarma}
                 >
-                  Send {karma} Karma points
+                Send {karma} Karma points
                 </button>
               </div>
+              }
+
               <div className="grid w-full items-center justify-center gap-2 text-gray-850 dark:text-white">
                 {selectedNetwork === null ? (
                   user.cryptocurrency &&
@@ -226,7 +244,7 @@ export default function TipModal({ user, OpenButton }: { user: TUser; OpenButton
                   <TipCopiedContent
                     username={user.username}
                     network={selectedNetwork}
-                    confirmTip={confirmTip}
+                    confirmTip={sendTipMessage}
                   />
                 )}
               </div>
@@ -246,7 +264,7 @@ export default function TipModal({ user, OpenButton }: { user: TUser; OpenButton
               <>
                 <Button
                   className="rounded-2xl border border-gray-20 bg-transparent text-gray-400 hover:bg-gray-50"
-                  onClick={() => confirmTip(false)}
+                  onClick={() => sendTipMessage(false)}
                 >
                   Tip Anonymously
                 </Button>

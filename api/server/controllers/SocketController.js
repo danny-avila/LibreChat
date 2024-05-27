@@ -1,4 +1,4 @@
-const { getMessageById } = require('~/models');
+const { getMessageById, saveMessage } = require('~/models');
 const { Server } = require('socket.io');
 const clients = [];
 
@@ -63,7 +63,7 @@ const addConnection = (socket, userId, roomId) => {
 const sendMessage = async (socket, msg, roomId, isBot = false) => {
   try {
     let message = msg;
-    if (!isBot) {
+    if (!isBot || message.sender === 'Karma Bot') {
       message = await getMessageById(message.messageId);
     }
 
@@ -78,22 +78,41 @@ const sendMessage = async (socket, msg, roomId, isBot = false) => {
     }
 
     if (message) {
-      clients
-        .filter((c) => c.roomId === roomId && socket.id !== c.socket.id)
-        .forEach((client) => {
-          if (aiMessages.length !== 0) {
-            console.log('--- array message ---', aiMessages);
-            client.socket.emit('ai response message', {
-              roomId,
-              messages: aiMessages,
-            });
-          } else {
-            client.socket.emit('new message', {
-              roomId,
-              message,
-            });
-          }
-        });
+      if (message.sender === 'Karma Bot') {
+        clients
+          .filter((c) => c.roomId === message.conversationId && socket.id !== c.socket.id)
+          .forEach((client) => {
+            if (aiMessages.length !== 0) {
+              console.log('--- array message ---', aiMessages);
+              client.socket.emit('ai response message', {
+                roomId,
+                messages: aiMessages,
+              });
+            } else {
+              client.socket.emit('new message', {
+                roomId: message.conversationId ? message.conversationId : roomId,
+                message,
+              });
+            }
+          });
+      } else {
+        clients
+          .filter((c) => c.roomId === roomId && socket.id !== c.socket.id)
+          .forEach((client) => {
+            if (aiMessages.length !== 0) {
+              console.log('--- array message ---', aiMessages);
+              client.socket.emit('ai response message', {
+                roomId,
+                messages: aiMessages,
+              });
+            } else {
+              client.socket.emit('new message', {
+                roomId,
+                message,
+              });
+            }
+          });
+      }
     }
   } catch (error) {
     console.error(error);

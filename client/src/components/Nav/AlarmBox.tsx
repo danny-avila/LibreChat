@@ -1,11 +1,12 @@
 import { CryptoId, TUser, request } from 'librechat-data-provider';
-import React, { Dispatch, SetStateAction, useContext, useEffect, useRef } from 'react';
-import { BellIcon, TrashIcon } from '~/components/svg';
+import React, { Dispatch, FC, HTMLAttributes, SetStateAction, useContext, useEffect, useRef, useState } from 'react';
+import { BellIcon, DotsIcon, TrashIcon } from '~/components/svg';
 import { Dialog, DialogTrigger } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { blockchainNetworks } from './Crypto/Blockchain';
 import TipModal from '../Room/Users/TipModal';
-import { ThemeContext } from '~/hooks';
+import { ThemeContext, useToast } from '~/hooks';
+import MuteIcon from '../svg/MuteIcon';
 
 function formatDate(date: Date) {
   const currentDate = new Date();
@@ -45,45 +46,114 @@ export interface TipTrack {
   sendType?: string;
   status: 'Pending' | 'Confirmed';
   karma: number;
+  convoId: string;
 }
 
-// interface DetailsDropDownPropsTyp extends HTMLAttributes<HTMLUListElement> {
-//   name: string;
-//   tip: TipTrack;
-//   setTips: Dispatch<SetStateAction<TipTrack[]>>;
-// }
+interface DetailsDropDownPropsTyp extends HTMLAttributes<HTMLUListElement> {
+  name: string;
+  tip: TipTrack;
+  isDetailView: boolean;
+  setTips: Dispatch<SetStateAction<TipTrack[]>>;
+  setOpen: Dispatch<SetStateAction<boolean>>;
+}
 
-// const DetailsDropDown = React.forwardRef<HTMLUListElement, DetailsDropDownPropsTyp>(
-//   ({ name, tip, setTips, ...props }, ref) => {
-//     const confirmTip = () => {
-//       request.post('/api/confirmtip', { trxId: tip._id });
-//     };
+const DetailsDropDown = React.forwardRef<HTMLUListElement, DetailsDropDownPropsTyp>(
+  ({ name, tip, isDetailView, setTips, setOpen, ...props }, ref) => {
+    const { showToast } = useToast();
 
-//     const handleDelete = () => {
-//       // request.delete(`/api/tip/${tip._id}`).then((res) => {
-//       //   setTips((prevTips) => prevTips.filter((i) => i._id === ((res._id as string) || '')));
-//       // });
-//     };
+    const handleDelete = (tip: TipTrack) => {
+      console.log(tip);
+      setOpen(false);
+      request.delete(`/api/user/tip/${tip._id}`).then((res) => {
+        setTips((prevTips) => prevTips.filter((i) => i._id === res));
+      });
+    };
 
-//     return (
-//       <ul className="absolute left-0 top-14 cursor-pointer text-nowrap rounded-md bg-white">
-//         <li
-//           className="h-full w-full rounded-t-md px-4 py-3 hover:bg-slate-200"
-//           onClick={handleDelete}
-//         >
-//           Delete Notification
-//         </li>
-//         {/* <li className="h-full w-full px-4 py-3 hover:bg-slate-200">Check Latest Transactions</li> */}
-//         <li className="h-full w-full px-4 py-3 hover:bg-slate-200" onClick={confirmTip}>
-//           Confirm Tip Received
-//         </li>
-//         {/* <li className="h-full w-full rounded-b-md px-4 py-3 hover:bg-slate-200">
-//           Turn off notifications
-//         </li> */}
-//       </ul>
-//     );
-//   },
-// );
+    const handleMute = (tip: TipTrack) => {
+      setOpen(false);
+      request.post(`/api/user/mute/${tip.sender.id}`).then((res) => {
+        console.log(res);
+        showToast({ status: 'success', message: `Muted @${tip.sender.username}'s notification` });
+      });
+    };
+
+    return (
+      <ul className={`${isDetailView ? 'block': 'hidden'} absolute left-0 top-14 cursor-pointer text-nowrap rounded-md bg-white border border-gray-400 z-10`}>
+        <li
+          className="h-full w-full rounded-t-md px-4 py-3 hover:bg-slate-200"
+          onClick={() => handleDelete(tip)}
+        >
+            Delete Notification
+        </li>
+        <li className="h-full w-full rounded-b-md px-4 py-3 hover:bg-slate-200" onClick={() => handleMute(tip)}>
+          Mute User
+        </li>
+      </ul>
+    );
+  },
+);
+
+const MessageComponent: FC<{ tip: TipTrack; setTips: any }> = ({ tip, setTips }) => {
+  const [isDetailView, setIsDetailView] = useState<boolean>(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const outSideClickHandler = (e) => {
+    if (dropdownRef.current && !dropdownRef.current?.contains(e.target)) {
+      setIsDetailView(false);
+    }
+  };
+
+  useEffect(() => {
+    document.addEventListener('mousedown', outSideClickHandler);
+    return () => document.removeEventListener('mousedown', outSideClickHandler);
+  }, []);
+
+  return (
+    <div className={'flex w-full items-center justify-between gap-2'}>
+      {tip.sendType && tip.sendType === 'karma' ? (
+        <div className="flex gap-1">
+          <img src="/assets/karmabot.png" className="h-10 w-10 rounded-full" />
+          <p className="text-black dark:text-white">
+                          @{tip.sender.username} sent {tip.karma} karma points{' '}
+          </p>
+        </div>
+      ) : (
+        <div className="flex gap-1">
+          <img src="/assets/tipbot.png" className="h-10 w-10 rounded-full" />
+          <p className="text-black dark:text-white">
+                          please click{' '}
+            <a
+              href={blockchainNetworks.filter((p) => tip.network === p.id)[0].scanUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="text-blue-500 underline"
+            >
+                            here
+            </a>{' '}
+                          to confirm if you received a{' '}
+            {blockchainNetworks.filter((p) => tip.network === p.id)[0].label} tip from{' '}
+            <TipModal
+              user={tip.sender}
+              tip={tip}
+              OpenButton={<b className="cursor-pointer">@{tip.sender.username}</b>}
+            />
+          </p>
+        </div>
+      )}
+      <div className="relative flex flex-col items-end" ref={dropdownRef}>
+        <span className="text-xs text-black dark:text-gray-100">
+          {formatDate(tip.createdAt)}
+        </span>
+        <button onClick={() => setIsDetailView(!isDetailView)}>
+          {' '}
+          <DotsIcon />
+        </button>
+        {
+          <DetailsDropDown name="Melody" tip={tip} setTips={setTips} setOpen={setIsDetailView} isDetailView={isDetailView} />
+        }
+      </div>
+    </div>
+  );
+};
 
 export default function AlarmBox({
   tips,
@@ -94,24 +164,17 @@ export default function AlarmBox({
 }) {
   const { theme } = useContext(ThemeContext);
   // const [isDetailView, setIsDetailView] = useState<boolean>(false);
-  const dropdownRef = useRef<HTMLButtonElement>(null);
-  const outSideClickHandler = (e) => {
-    if (dropdownRef.current && !dropdownRef.current?.contains(e.target)) {
-      // setIsDetailView(false);
-    }
-  };
+  // const dropdownRef = useRef<HTMLDivElement>(null);
+  // const outSideClickHandler = (e) => {
+  //   if (dropdownRef.current && !dropdownRef.current?.contains(e.target)) {
+  //     setIsDetailView(false);
+  //   }
+  // };
 
-  useEffect(() => {
-    console.log('rendered');
-    document.addEventListener('mousedown', outSideClickHandler);
-    return () => document.removeEventListener('mousedown', outSideClickHandler);
-  }, []);
-
-  const handleDelete = (tip: TipTrack) => {
-    request.delete(`/api/user/tip/${tip._id}`).then((res) => {
-      setTips((prevTips) => prevTips.filter((i) => i._id === res));
-    });
-  };
+  // useEffect(() => {
+  //   document.addEventListener('mousedown', outSideClickHandler);
+  //   return () => document.removeEventListener('mousedown', outSideClickHandler);
+  // }, []);
 
   return (
     <Dialog
@@ -134,60 +197,7 @@ export default function AlarmBox({
             <div className="flex w-full flex-col items-center gap-2">
               <div className="flex w-full flex-col items-start justify-around gap-1">
                 {tips.map((tip) => (
-                  <div key={tip._id} className="flex w-full items-center justify-between gap-2">
-                    {tip.sendType && tip.sendType === 'karma' ? (
-                      <div className="flex gap-1">
-                        <img src="/assets/karmabot.png" className="h-10 w-10 rounded-full" />
-                        <p className="text-black dark:text-white">
-                          @{tip.sender.username} sent {tip.karma} karma points{' '}
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="flex gap-1">
-                        <img src="/assets/tipbot.png" className="h-10 w-10 rounded-full" />
-                        <p className="text-black dark:text-white">
-                          please click{' '}
-                          <a
-                            href={blockchainNetworks.filter((p) => tip.network === p.id)[0].scanUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-blue-500 underline"
-                          >
-                            here
-                          </a>{' '}
-                          to confirm if you received a{' '}
-                          {blockchainNetworks.filter((p) => tip.network === p.id)[0].label} tip from{' '}
-                          <TipModal
-                            user={tip.sender}
-                            OpenButton={<b className="cursor-pointer">@{tip.sender.username}</b>}
-                          />
-                        </p>
-                      </div>
-                    )}
-                    <div className="relative flex flex-col items-end">
-                      <span className="text-xs text-black dark:text-gray-100">
-                        {formatDate(tip.createdAt)}
-                      </span>
-                      <button
-                        onClick={() => handleDelete(tip)}
-                        className="w-8 rounded-md bg-red-600 p-2 text-white"
-                      >
-                        <TrashIcon />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(tip)}
-                        className="w-8 rounded-md bg-red-600 p-2 text-white"
-                      >
-                      </button>
-                      {/* <button onClick={() => setIsDetailView(!isDetailView)} ref={dropdownRef}>
-                        {' '}
-                        <DotsIcon />
-                      </button> */}
-                      {/* {isDetailView && (
-                        <DetailsDropDown name="Melody" tip={tip} setTips={setTips} />
-                      )} */}
-                    </div>
-                  </div>
+                  <MessageComponent key={tip._id} setTips={setTips} tip={tip} />
                 ))}
 
                 <p className="text-xs text-gray-700 dark:text-gray-50"></p>

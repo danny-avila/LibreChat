@@ -140,6 +140,7 @@ export type TUser = {
   };
   credits: number;
   active: boolean;
+  mutes: string[];
   cryptocurrency: CryptoAddress[];
   karma: number;
 };

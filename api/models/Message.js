@@ -38,6 +38,14 @@ module.exports = {
         return;
       }
 
+      if (sender === 'Karma Bot') {
+        console.log('----- 1', conversationId);
+        const messages = await Message.find({ conversationId });
+        const message = messages[messages.length - 1];
+        parentMessageId = message.messageId;
+        console.log('----- 2', parentMessageId);
+      }
+
       const update = {
         user,
         endpoint,
@@ -60,6 +68,7 @@ module.exports = {
       if (files) {
         update.files = files;
       }
+
       // may also need to update the conversation here
       await Message.findOneAndUpdate({ messageId }, update, { upsert: true, new: true });
 

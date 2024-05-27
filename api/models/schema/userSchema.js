@@ -114,6 +114,10 @@ const userSchema = mongoose.Schema(
       type: Number,
       default: 0,
     },
+    mutes: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    }],
     cryptocurrency: [
       {
         id: {

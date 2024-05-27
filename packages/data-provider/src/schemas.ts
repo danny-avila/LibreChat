@@ -227,6 +227,7 @@ export const tUserSchema = z.object({
     .optional(),
   credits: z.number().optional(),
   active: z.boolean().optional(),
+  mutes: z.array(z.string()).optional(),
   cryptocurrency: z
     .array(
       z.object({

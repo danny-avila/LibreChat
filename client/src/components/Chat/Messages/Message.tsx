@@ -12,6 +12,7 @@ import { cn } from '~/utils';
 import store from '~/store';
 import { isPremiumUser } from '~/utils/checkUserValid';
 import { TUser } from 'librechat-data-provider';
+import { useEffect } from 'react';
 
 export default function Message(props: TMessageProps) {
   const UsernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
@@ -36,6 +37,12 @@ export default function Message(props: TMessageProps) {
     downloadImage,
     copyDisabled,
   } = useMessageHelpers(props);
+
+  // useEffect(() => {
+  //   if (user && user.username !== 'guest-user') {
+  //     localStorage.removeItem('prevUrl');
+  //   }
+  // }, [user]);
 
   const { message, siblingIdx, siblingCount, setSiblingIdx, currentEditId, setCurrentEditId } =
     props;
