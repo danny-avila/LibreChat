@@ -3,7 +3,7 @@ const { getMessagesCount } = require('../../models');
 const getUserMessageQuotaUsagePastDays = async (user, days = 30) => {
   let currentTime = new Date();
   let quota = 0;
-  if ('proMemberExpiredAt' in user && user.proMemberExpiredAt > currentTime) {
+  if (user && 'proMemberExpiredAt' in user && user.proMemberExpiredAt > currentTime) {
     // If not proMember, check quota
     quota = JSON.parse(process.env['CHAT_QUOTA_PER_MONTH_PRO_MEMBER']);
   } else {

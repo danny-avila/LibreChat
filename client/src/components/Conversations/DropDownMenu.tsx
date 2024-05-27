@@ -45,7 +45,7 @@ const DropDownMenu: FC<DropDownMenuProps> = ({
                 </button>
               </TooltipTrigger>
               <TooltipContent side="top" sideOffset={0}>
-                {tooltip}
+                {localize('com_ui_more_options')}
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
