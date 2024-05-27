@@ -140,7 +140,7 @@ const deleteAssistant = async (req, res) => {
  */
 const listAssistants = async (req, res) => {
   try {
-    const body = await fetchAssistants(req, res);
+    const body = await fetchAssistants({ req, res });
     res.json(body);
   } catch (error) {
     logger.error('[/assistants] Error listing assistants', error);

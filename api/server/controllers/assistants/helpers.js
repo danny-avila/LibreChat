@@ -1,4 +1,9 @@
-const { EModelEndpoint, CacheKeys, defaultAssistantsVersion } = require('librechat-data-provider');
+const {
+  EModelEndpoint,
+  CacheKeys,
+  defaultAssistantsVersion,
+  defaultOrderQuery,
+} = require('librechat-data-provider');
 const {
   initializeClient: initAzureClient,
 } = require('~/server/services/Endpoints/azureAssistants');
@@ -133,8 +138,27 @@ async function getOpenAIClient({ req, res, endpointOption, initAppClient, overri
   return result;
 }
 
-const fetchAssistants = async (req, res) => {
-  const { limit = 100, order = 'desc', after, before, endpoint } = req.query;
+/**
+ * Returns a list of assistants.
+ * @param {object} params
+ * @param {object} params.req - Express Request
+ * @param {AssistantListParams} [params.req.query] - The assistant list parameters for pagination and sorting.
+ * @param {object} params.res - Express Response
+ * @param {string} [params.overrideEndpoint] - The endpoint to override the request endpoint.
+ * @returns {Promise<AssistantListResponse>} 200 - success response - application/json
+ */
+const fetchAssistants = async ({ req, res, overrideEndpoint }) => {
+  const {
+    limit = 100,
+    order = 'desc',
+    after,
+    before,
+    endpoint,
+  } = req.query ?? {
+    endpoint: overrideEndpoint,
+    ...defaultOrderQuery,
+  };
+
   const version = await getCurrentVersion(req, endpoint);
   const query = { limit, order, after, before };
 
