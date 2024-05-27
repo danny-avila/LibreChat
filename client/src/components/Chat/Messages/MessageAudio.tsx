@@ -36,7 +36,12 @@ export default function MessageAudio({ index, message, isLast }: THoverButtons) 
     if (!messageAudio) {
       return;
     }
-    if (playbackRate && messageAudio && messageAudio.playbackRate !== playbackRate) {
+    if (
+      playbackRate &&
+      playbackRate > 0 &&
+      messageAudio &&
+      messageAudio.playbackRate !== playbackRate
+    ) {
       messageAudio.playbackRate = playbackRate;
     }
   }, [audioRef, isSpeaking, playbackRate, message.messageId]);
