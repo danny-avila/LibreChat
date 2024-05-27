@@ -270,7 +270,7 @@ function ProfileContent() {
 
   useEffect(() => {
     if (userId === user?.id) {
-      setTabValue('likes');
+      setTabValue('followers');
     } else {
       setTabValue('conversations');
     }
@@ -625,11 +625,11 @@ function ProfileContent() {
             className={defaultClasses}
           >
             <TabsList className="rounded-lg bg-blue-500 dark:bg-blue-500">
-              {userId === user?.id && (
+              {/* {userId === user?.id && (
                 <TabsTrigger value="likes" className="px-4 py-2 text-white dark:text-white">
                   {localize('com_ui_my_likes')}
                 </TabsTrigger>
-              )}
+              )} */}
               {userId != user?.id && (
                 <TabsTrigger value="conversations" className="px-4 py-2 text-white dark:text-white">
                   {localize('com_ui_conversations')}
