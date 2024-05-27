@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-api
+  labels:
+    app: rag-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rag-api
+  template:
+    metadata:
+      labels:
+        app: rag-api
+    spec:
+      containers:
+        - name: rag-api
+          image: "{{ .Values.rag_api.image.repository }}:{{ .Values.rag_api.image.tag }}"
+          ports:
+            - containerPort: {{ .Values.rag_api.service.port }}
+          env:
+            - name: DB_HOST
+              value: "vectordb"
+            - name: RAG_PORT
+              value: "{{ .Values.rag_api.service.port }}"
+            - name: OPENAI_API_KEY
+              value: "{{ .Values.openai_api_key }}"
+          volumeMounts:
+            - name: env-file
+              mountPath: /app/.env
+      volumes:
+        - name: env-file
+          configMap:
+            name: env-config

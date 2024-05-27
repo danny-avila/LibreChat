@@ -1,0 +1,171 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  labels:
+    app: api
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      containers:
+        - name: api
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          ports:
+            - containerPort: {{ .Values.api.service.port }}
+          env:
+            - name: HOST
+              value: "{{ .Values.host }}"
+            - name: NODE_ENV
+              value: "production"
+            - name: MONGO_URI
+              value: "{{ .Values.mongo_uri }}"
+            - name: MEILI_HOST
+              value: "{{ .Values.meili_host }}"
+            - name: RAG_PORT
+              value: "{{ .Values.rag_api.service.port }}"
+            - name: RAG_API_URL
+              value: "http://rag-api:{{ .Values.rag_api.service.port }}"
+            - name: UID
+              value: "{{ .Values.uid }}"
+            - name: GID
+              value: "{{ .Values.gid }}"
+            - name: CREDS_KEY
+              value: "{{ .Values.creds_key }}"
+            - name: CREDS_IV
+              value: "{{ .Values.creds_iv }}"
+            - name: DOMAIN_CLIENT
+              value: "{{ .Values.domain_client }}"
+            - name: DOMAIN_SERVER
+              value: "{{ .Values.domain_server }}"
+            - name: NO_INDEX
+              value: "{{ .Values.no_index }}"
+            - name: CONSOLE_JSON
+              value: "{{ .Values.console_json }}"
+            - name: DEBUG_LOGGING
+              value: "{{ .Values.debug_logging }}"
+            - name: DEBUG_CONSOLE
+              value: "{{ .Values.debug_console }}"
+            - name: SEARCH
+              value: "{{ .Values.search }}"
+            - name: MEILI_NO_ANALYTICS
+              value: "{{ .Values.meili_no_analytics }}"
+            - name: MEILI_MASTER_KEY
+              value: "{{ .Values.meili_master_key }}"
+            - name: STT_API_KEY
+              value: "{{ .Values.stt_api_key }}"
+            - name: TTS_API_KEY
+              value: "{{ .Values.tts_api_key }}"
+            - name: OPENAI_MODERATION
+              value: "{{ .Values.openai_moderation }}"
+            - name: OPENAI_MODERATION_API_KEY
+              value: "{{ .Values.openai_moderation_api_key }}"
+            - name: BAN_VIOLATIONS
+              value: "{{ .Values.ban_violations }}"
+            - name: BAN_DURATION
+              value: "{{ .Values.ban_duration }}"
+            - name: BAN_INTERVAL
+              value: "{{ .Values.ban_interval }}"
+            - name: LOGIN_VIOLATION_SCORE
+              value: "{{ .Values.login_violation_score }}"
+            - name: REGISTRATION_VIOLATION_SCORE
+              value: "{{ .Values.registration_violation_score }}"
+            - name: CONCURRENT_VIOLATION_SCORE
+              value: "{{ .Values.concurrent_violation_score }}"
+            - name: MESSAGE_VIOLATION_SCORE
+              value: "{{ .Values.message_violation_score }}"
+            - name: NON_BROWSER_VIOLATION_SCORE
+              value: "{{ .Values.non_browser_violation_score }}"
+            - name: LOGIN_MAX
+              value: "{{ .Values.login_max }}"
+            - name: LOGIN_WINDOW
+              value: "{{ .Values.login_window }}"
+            - name: REGISTER_MAX
+              value: "{{ .Values.register_max }}"
+            - name: REGISTER_WINDOW
+              value: "{{ .Values.register_window }}"
+            - name: LIMIT_CONCURRENT_MESSAGES
+              value: "{{ .Values.limit_concurrent_messages }}"
+            - name: CONCURRENT_MESSAGE_MAX
+              value: "{{ .Values.concurrent_message_max }}"
+            - name: LIMIT_MESSAGE_IP
+              value: "{{ .Values.limit_message_ip }}"
+            - name: MESSAGE_IP_MAX
+              value: "{{ .Values.message_ip_max }}"
+            - name: MESSAGE_IP_WINDOW
+              value: "{{ .Values.message_ip_window }}"
+            - name: LIMIT_MESSAGE_USER
+              value: "{{ .Values.limit_message_user }}"
+            - name: MESSAGE_USER_MAX
+              value: "{{ .Values.message_user_max }}"
+            - name: MESSAGE_USER_WINDOW
+              value: "{{ .Values.message_user_window }}"
+            - name: ILLEGAL_MODEL_REQ_SCORE
+              value: "{{ .Values.illegal_model_req_score }}"
+            - name: CHECK_BALANCE
+              value: "{{ .Values.check_balance }}"
+            - name: ALLOW_EMAIL_LOGIN
+              value: "{{ .Values.allow_email_login }}"
+            - name: ALLOW_REGISTRATION
+              value: "{{ .Values.allow_registration }}"
+            - name: ALLOW_SOCIAL_LOGIN
+              value: "{{ .Values.allow_social_login }}"
+            - name: ALLOW_SOCIAL_REGISTRATION
+              value: "{{ .Values.allow_social_registration }}"
+            - name: SESSION_EXPIRY
+              value: "{{ .Values.session_expiry }}"
+            - name: REFRESH_TOKEN_EXPIRY
+              value: "{{ .Values.refresh_token_expiry }}"
+            - name: JWT_SECRET
+              value: "{{ .Values.jwt_secret }}"
+            - name: JWT_REFRESH_SECRET
+              value: "{{ .Values.jwt_refresh_secret }}"
+            - name: APP_TITLE
+              value: "{{ .Values.app_title }}"
+            - name: HELP_AND_FAQ_URL
+              value: "{{ .Values.help_and_faq_url }}"
+            - name: REDIS_URL
+              value: "{{ .Values.redis_uri }}"
+            - name: USE_REDIS
+              value: "{{ .Values.use_redis }}"
+            - name: OPENAI_API_KEY
+              value: "{{ .Values.openai_api_key }}"
+            - name: ASSISTANTS_API_KEY
+              value: "{{ .Values.assistants_api_key }}"              
+            - name: PROXY
+              value: "{{ .Values.proxy }}"
+            - name: HTTP_PROXY
+              value: "{{ .Values.proxy }}"
+            - name: HTTPS_PROXY
+              value: "{{ .Values.proxy }}"
+            - name: NO_PROXY
+              value: "localhost,127.0.0.1,.yourdomain.com,10.0.0.0/8,192.168.0.0/16,172.16.0.0/12"
+          volumeMounts:
+            - name: env-file
+              mountPath: /app/.env
+            - name: images
+              mountPath: /app/client/public/images
+            - name: logs
+              mountPath: /app/api/logs
+            - name: librechat-config
+              mountPath: /app/librechat.yaml
+              subPath: librechat.yaml
+      volumes:
+        - name: env-file
+          configMap:
+            name: env-config
+        - name: images
+          persistentVolumeClaim:
+            claimName: pvc-images
+        - name: logs
+          persistentVolumeClaim:
+            claimName: pvc-logs
+        - name: librechat-config
+          configMap:
+            name: librechat-config

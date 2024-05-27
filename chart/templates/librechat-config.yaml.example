@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: librechat-config
+data:
+  librechat.yaml: |
+    version: "1.0"
+    endpoints:
+      custom:
+        - name: "Ollama"
+          apiKey: "ollama"
+          baseURL: "your_ollama_url/v1/chat/completions"
+          models:
+            default: [
+              "Meta-Llama-3-8B-Instruct-GGUF"
+            ]
+            fetch: true
+          titleConvo: true
+          titleModel: "current_model"
+          summarize: false
+          summaryModel: "current_model"
+          forcePrompt: false
+          modelDisplayLabel: "Ollama"

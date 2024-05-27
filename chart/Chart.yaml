@@ -1,0 +1,5 @@
+apiVersion: v2
+name: librechat
+description: A Helm chart for LibreChat application
+version: 0.3.7
+appVersion: "latest"

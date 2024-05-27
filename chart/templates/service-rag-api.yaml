@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-api
+  labels:
+    app: rag-api
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.rag_api.service.port }}
+      targetPort: {{ .Values.rag_api.service.port }}
+      protocol: TCP
+      name: rag-api
+  selector:
+    app: rag-api

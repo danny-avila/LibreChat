@@ -1,0 +1,108 @@
+replicaCount: 1
+
+api:
+  image:
+    repository: ghcr.io/danny-avila/librechat-dev-api
+    tag: latest
+  service:
+    port: 3080
+    nodePort: 30080
+
+mongodb:
+  image:
+    repository: bitnami/mongodb
+    tag: latest
+  service:
+    port: 27017
+
+meilisearch:
+  image:
+    repository: getmeili/meilisearch
+    tag: v1.7.3
+  service:
+    port: 7700
+
+vectordb:
+  image:
+    repository: ankane/pgvector
+    tag: latest
+  service:
+    port: 5432
+
+rag_api:
+  image:
+    repository: ghcr.io/danny-avila/librechat-rag-api-dev-lite
+    tag: latest
+  service:
+    port: 8000
+
+redis:
+  replicaCount: 1
+  image:
+    repository: bitnami/redis
+    tag: latest
+  service:
+    port: 6379
+  persistentVolumeClaim: redis-pvc
+
+uid: "1000"
+gid: "1000"
+
+openai_api_key: "your_openai_api_key_here"
+assistants_api_key: "your_openai_api_key_here"
+
+creds_key: "your_creds_key_here"
+creds_iv: "your_creds_iv_here"
+
+host: "0.0.0.0"
+port: 3080
+mongo_uri: "mongodb://mongodb:27017/LibreChat"
+domain_client: "http://api:3080"
+domain_server: "http://api:3080"
+no_index: "true"
+console_json: "false"
+debug_logging: "true"
+debug_console: "false"
+search: "true"
+meili_no_analytics: "true"
+meili_host: "http://meilisearch:7700"
+meili_master_key: "your_meili_master_key_here"
+stt_api_key: ""
+tts_api_key: ""
+openai_moderation: "false"
+openai_moderation_api_key: ""
+ban_violations: "true"
+ban_duration: 7200000
+ban_interval: 20
+login_violation_score: 1
+registration_violation_score: 1
+concurrent_violation_score: 1
+message_violation_score: 1
+non_browser_violation_score: 20
+login_max: 7
+login_window: 5
+register_max: 5
+register_window: 60
+limit_concurrent_messages: "true"
+concurrent_message_max: 2
+limit_message_ip: "true"
+message_ip_max: 40
+message_ip_window: 1
+limit_message_user: "false"
+message_user_max: 40
+message_user_window: 1
+illegal_model_req_score: 5
+check_balance: "false"
+allow_email_login: "true"
+allow_registration: "true"
+allow_social_login: "false"
+allow_social_registration: "false"
+session_expiry: 900000
+refresh_token_expiry: 604800000
+jwt_secret: "your_jwt_secret_here"
+jwt_refresh_secret: "your_jwt_refresh_secret_here"
+app_title: "LibreChat"
+help_and_faq_url: "https://librechat.ai"
+redis_uri: "redis://your_redis_password:redis:6379"
+use_redis: "true"
+proxy: "your_proxy_here"

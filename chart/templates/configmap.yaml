@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: env-config
+data:
+  .env: |
+    UID={{ .Values.uid }}
+    GID={{ .Values.gid }}
+    RAG_PORT={{ .Values.rag_api.service.port }}
+    OPENAI_API_KEY={{ .Values.openai_api_key }}
+    CREDS_KEY={{ .Values.creds_key }}
+    CREDS_IV={{ .Values.creds_iv }}
+    HOST={{ .Values.host }}
+    PORT={{ .Values.port }}
+    MONGO_URI={{ .Values.mongo_uri }}
+    DOMAIN_CLIENT={{ .Values.domain_client }}
+    DOMAIN_SERVER={{ .Values.domain_server }}
+    NO_INDEX={{ .Values.no_index }}
+    CONSOLE_JSON={{ .Values.console_json }}
+    DEBUG_LOGGING={{ .Values.debug_logging }}
+    DEBUG_CONSOLE={{ .Values.debug_console }}
+    PROXY={{ .Values.proxy }}
+    SEARCH={{ .Values.search }}
+    MEILI_NO_ANALYTICS={{ .Values.meili_no_analytics }}
+    MEILI_HOST={{ .Values.meili_host }}
+    MEILI_MASTER_KEY={{ .Values.meili_master_key }}
+    STT_API_KEY={{ .Values.stt_api_key }}
+    TTS_API_KEY={{ .Values.tts_api_key }}
+    OPENAI_MODERATION={{ .Values.openai_moderation }}
+    OPENAI_MODERATION_API_KEY={{ .Values.openai_moderation_api_key }}
+    BAN_VIOLATIONS={{ .Values.ban_violations }}
+    BAN_DURATION={{ .Values.ban_duration }}
+    BAN_INTERVAL={{ .Values.ban_interval }}
+    LOGIN_VIOLATION_SCORE={{ .Values.login_violation_score }}
+    REGISTRATION_VIOLATION_SCORE={{ .Values.registration_violation_score }}
+    CONCURRENT_VIOLATION_SCORE={{ .Values.concurrent_violation_score }}
+    MESSAGE_VIOLATION_SCORE={{ .Values.message_violation_score }}
+    NON_BROWSER_VIOLATION_SCORE={{ .Values.non_browser_violation_score }}
+    LOGIN_MAX={{ .Values.login_max }}
+    LOGIN_WINDOW={{ .Values.login_window }}
+    REGISTER_MAX={{ .Values.register_max }}
+    REGISTER_WINDOW={{ .Values.register_window }}
+    LIMIT_CONCURRENT_MESSAGES={{ .Values.limit_concurrent_messages }}
+    CONCURRENT_MESSAGE_MAX={{ .Values.concurrent_message_max }}
+    LIMIT_MESSAGE_IP={{ .Values.limit_message_ip }}
+    MESSAGE_IP_MAX={{ .Values.message_ip_max }}
+    MESSAGE_IP_WINDOW={{ .Values.message_ip_window }}
+    LIMIT_MESSAGE_USER={{ .Values.limit_message_user }}
+    MESSAGE_USER_MAX={{ .Values.message_user_max }}
+    MESSAGE_USER_WINDOW={{ .Values.message_user_window }}
+    ILLEGAL_MODEL_REQ_SCORE={{ .Values.illegal_model_req_score }}
+    CHECK_BALANCE={{ .Values.check_balance }}
+    ALLOW_EMAIL_LOGIN={{ .Values.allow_email_login }}
+    ALLOW_REGISTRATION={{ .Values.allow_registration }}
+    ALLOW_SOCIAL_LOGIN={{ .Values.allow_social_login }}
+    ALLOW_SOCIAL_REGISTRATION={{ .Values.allow_social_registration }}
+    SESSION_EXPIRY={{ .Values.session_expiry }}
+    REFRESH_TOKEN_EXPIRY={{ .Values.refresh_token_expiry }}
+    JWT_SECRET={{ .Values.jwt_secret }}
+    JWT_REFRESH_SECRET={{ .Values.jwt_refresh_secret }}
+    APP_TITLE={{ .Values.app_title }}
+    HELP_AND_FAQ_URL={{ .Values.help_and_faq_url }}
