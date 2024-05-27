@@ -40,6 +40,7 @@ const getCurrentVersion = async (req, endpoint) => {
  * Initializes the client with the current request and response objects and lists assistants
  * according to the query parameters. This function abstracts the logic for non-Azure paths.
  *
+ * @deprecated
  * @async
  * @param {object} params - The parameters object.
  * @param {object} params.req - The request object, used for initializing the client.
@@ -48,9 +49,63 @@ const getCurrentVersion = async (req, endpoint) => {
  * @param {object} params.query - The query parameters to list assistants (e.g., limit, order).
  * @returns {Promise<object>} A promise that resolves to the response from the `openai.beta.assistants.list` method call.
  */
-const listAssistants = async ({ req, res, version, query }) => {
+const _listAssistants = async ({ req, res, version, query }) => {
   const { openai } = await getOpenAIClient({ req, res, version });
   return openai.beta.assistants.list(query);
+};
+
+/**
+ * Fetches all assistants based on provided query params, until `has_more` is `false`.
+ *
+ * @async
+ * @param {object} params - The parameters object.
+ * @param {object} params.req - The request object, used for initializing the client.
+ * @param {object} params.res - The response object, used for initializing the client.
+ * @param {string} params.version - The API version to use.
+ * @param {Omit<AssistantListParams, 'endpoint'>} params.query - The query parameters to list assistants (e.g., limit, order).
+ * @returns {Promise<object>} A promise that resolves to the response from the `openai.beta.assistants.list` method call.
+ */
+const listAllAssistants = async ({ req, res, version, query }) => {
+  /** @type {{ openai: OpenAIClient }} */
+  const { openai } = await getOpenAIClient({ req, res, version });
+  const allAssistants = [];
+
+  let first_id;
+  let last_id;
+  let afterToken = query.after;
+  let hasMore = true;
+
+  while (hasMore) {
+    const response = await openai.beta.assistants.list({
+      ...query,
+      after: afterToken,
+    });
+
+    const { body } = response;
+
+    allAssistants.push(...body.data);
+    hasMore = body.has_more;
+
+    if (!first_id) {
+      first_id = body.first_id;
+    }
+
+    if (hasMore) {
+      afterToken = body.last_id;
+    } else {
+      last_id = body.last_id;
+    }
+  }
+
+  return {
+    data: allAssistants,
+    body: {
+      data: allAssistants,
+      has_more: false,
+      first_id,
+      last_id,
+    },
+  };
 };
 
 /**
@@ -87,7 +142,7 @@ const listAssistantsForAzure = async ({ req, res, version, azureConfig = {}, que
     /* The specified model is only necessary to
     fetch assistants for the shared instance */
     req.body.model = currentModelTuples[0][0];
-    promises.push(listAssistants({ req, res, version, query }));
+    promises.push(listAllAssistants({ req, res, version, query }));
   }
 
   const resolvedQueries = await Promise.all(promises);
@@ -166,7 +221,7 @@ const fetchAssistants = async ({ req, res, overrideEndpoint }) => {
   let body;
 
   if (endpoint === EModelEndpoint.assistants) {
-    ({ body } = await listAssistants({ req, res, version, query }));
+    ({ body } = await listAllAssistants({ req, res, version, query }));
   } else if (endpoint === EModelEndpoint.azureAssistants) {
     const azureConfig = req.app.locals[EModelEndpoint.azureOpenAI];
     body = await listAssistantsForAzure({ req, res, version, azureConfig, query });
