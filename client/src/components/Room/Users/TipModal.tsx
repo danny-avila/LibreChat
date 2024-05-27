@@ -206,7 +206,7 @@ export default function TipModal({
             <div className="flex w-full flex-col items-center gap-2">
               {(tip || isKarmaOnly) ?
                 <div className="flex w-full flex-col items-center justify-around gap-1">
-                  <p className="text-black dark:text-white">Send Karma Points to @{user.username}</p>
+                  <p className="text-black dark:text-white">Send Karma Point{karma > 1 ? 's' : ''} to @{user.username}</p>
                   <p className="text-xs text-gray-700 dark:text-gray-50 mb-1">
                     Your Karma Points Balance: {you?.karma}
                   </p>
