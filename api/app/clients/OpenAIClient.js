@@ -1,4 +1,5 @@
 const OpenAI = require('openai');
+const nodeFetch = require('node-fetch');
 const { OllamaClient } = require('./OllamaClient');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const {
@@ -589,7 +590,7 @@ class OpenAIClient extends BaseClient {
     let streamResult = null;
     this.modelOptions.user = this.user;
     const invalidBaseUrl = this.completionsUrl && extractBaseURL(this.completionsUrl) === null;
-    const useOldMethod = !!(invalidBaseUrl || !this.isChatCompletion || typeof Bun !== 'undefined');
+    const useOldMethod = !!(invalidBaseUrl || !this.isChatCompletion);
     if (typeof opts.onProgress === 'function' && useOldMethod) {
       const completionResult = await this.getCompletion(
         payload,
@@ -1134,6 +1135,7 @@ ${convo}
       let chatCompletion;
       /** @type {OpenAI} */
       const openai = new OpenAI({
+        fetch: nodeFetch,
         apiKey: this.apiKey,
         ...opts,
       });
