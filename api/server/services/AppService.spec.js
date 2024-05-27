@@ -505,7 +505,7 @@ describe('AppService updating app.locals and issuing warnings', () => {
 
     const { logger } = require('~/config');
     expect(logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining('Both `supportedIds` and `excludedIds` are defined'),
+      expect.stringContaining('endpoint has both \'supportedIds\' and \'excludedIds\' defined'),
     );
   });
 

@@ -148,8 +148,35 @@ const fetchAssistants = async (req, res) => {
     body = await listAssistantsForAzure({ req, res, version, azureConfig, query });
   }
 
+  const assistants = body.data;
+  const userId = req.user.id.toString();
+  const assistantsConfig = req.app.locals[endpoint];
+  body.data = filterAssistants(assistants, userId, assistantsConfig);
   return body;
 };
+
+/**
+ * Filter assistants based on configuration.
+ *
+ * @param {Assistant[]} assistants - The list of assistants to filter.
+ * @param {string} params.userId -  The user ID to filter private assistants.
+ * @param {Partial<TAssistantEndpoint>} params.assistantsConfig -  The assistant configuration.
+ * @returns {Assistant[]} - The filtered list of assistants.
+ */
+function filterAssistants(assistants, userId, assistantsConfig) {
+  const { supportedIds, excludedIds, privateAssistants } = assistantsConfig;
+  if (privateAssistants) {
+    return assistants.filter(
+      (assistant) =>
+        userId === assistant.metadata?.author || assistant.metadata?.author === undefined,
+    );
+  } else if (supportedIds?.length) {
+    return assistants.filter((assistant) => supportedIds.includes(assistant.id));
+  } else if (excludedIds?.length) {
+    return assistants.filter((assistant) => !excludedIds.includes(assistant.id));
+  }
+  return assistants;
+}
 
 module.exports = {
   getOpenAIClient,

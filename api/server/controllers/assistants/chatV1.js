@@ -28,9 +28,8 @@ const checkBalance = require('~/models/checkBalance');
 const { getConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
 const { getModelMaxTokens } = require('~/utils');
-const { getOpenAIClient } = require('./helpers');
+const { getOpenAIClient, fetchAssistants } = require('./helpers');
 const { logger } = require('~/config');
-
 const { handleAbortError } = require('~/server/middleware');
 
 const ten_minutes = 1000 * 60 * 10;
@@ -60,28 +59,18 @@ const chatV1 = async (req, res) => {
     parentMessageId: _parentId = Constants.NO_PARENT,
   } = req.body;
 
-  /** @type {Partial<TAssistantEndpoint>} */
-  const assistantsConfig = req.app.locals?.[endpoint];
-
-  if (assistantsConfig) {
-    const { supportedIds, excludedIds } = assistantsConfig;
+  req.query.endpoint = endpoint;
+  const body = await fetchAssistants(req, res);
+  const assistantSupported = body.data.some((assistant) => assistant.id === assistant_id);
+  if (!assistantSupported) {
     const error = { message: 'Assistant not supported' };
-    if (supportedIds?.length && !supportedIds.includes(assistant_id)) {
-      return await handleAbortError(res, req, error, {
-        sender: 'System',
-        conversationId: convoId,
-        messageId: v4(),
-        parentMessageId: _messageId,
-        error,
-      });
-    } else if (excludedIds?.length && excludedIds.includes(assistant_id)) {
-      return await handleAbortError(res, req, error, {
-        sender: 'System',
-        conversationId: convoId,
-        messageId: v4(),
-        parentMessageId: _messageId,
-      });
-    }
+    return await handleAbortError(res, req, error, {
+      sender: 'System',
+      conversationId: convoId,
+      messageId: v4(),
+      parentMessageId: _messageId,
+      error,
+    });
   }
 
   /** @type {OpenAIClient} */
