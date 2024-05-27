@@ -193,6 +193,7 @@ export default function StreamAudio({ index = 0 }) {
     if (
       playbackRate &&
       globalAudioURL &&
+      playbackRate > 0 &&
       audioRef.current &&
       audioRef.current.playbackRate !== playbackRate
     ) {
