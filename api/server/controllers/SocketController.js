@@ -1,4 +1,4 @@
-const { getMessageById, saveMessage } = require('~/models');
+const { getMessageById } = require('~/models');
 const { Server } = require('socket.io');
 const clients = [];
 
@@ -83,7 +83,6 @@ const sendMessage = async (socket, msg, roomId, isBot = false) => {
           .filter((c) => c.roomId === message.conversationId && socket.id !== c.socket.id)
           .forEach((client) => {
             if (aiMessages.length !== 0) {
-              console.log('--- array message ---', aiMessages);
               client.socket.emit('ai response message', {
                 roomId,
                 messages: aiMessages,
@@ -100,7 +99,6 @@ const sendMessage = async (socket, msg, roomId, isBot = false) => {
           .filter((c) => c.roomId === roomId && socket.id !== c.socket.id)
           .forEach((client) => {
             if (aiMessages.length !== 0) {
-              console.log('--- array message ---', aiMessages);
               client.socket.emit('ai response message', {
                 roomId,
                 messages: aiMessages,
@@ -134,7 +132,6 @@ const updateMessage = async (socket, msg, roomId) => {
         .filter((c) => c.roomId === roomId && socket.id !== c.socket.id)
         .forEach((client) => {
           if (Array.isArray(message)) {
-            console.log('--- array message ---', message);
             message.forEach((m, i) => {
               client.socket.emit('update message', {
                 roomId,
@@ -158,7 +155,6 @@ const updateMessage = async (socket, msg, roomId) => {
 const disconnectClient = (socket) => {
   const clientIndex = clients.map((c) => c.socket.id).indexOf(socket.id);
   if (clientIndex > -1) {
-    console.log('=== Removed disconnected socket client ===', clients[clientIndex].socket.id);
     clients.splice(clientIndex, 1);
   }
 };
@@ -172,7 +168,6 @@ const moveRoom = (socketId, roomId) => {
 
     // clients.filter(client => client.roomId === lastRoom).forEach(client => client.socket.emit('user left the room', ))
 
-    console.log(`=== User moved the room to ${clients[clientIndex].roomId} ===`);
   } catch (error) {
     throw new Error(`[moveRoom] Error in moverRoom ${error}`);
   }
@@ -184,7 +179,6 @@ const moveRoom = (socketId, roomId) => {
  * @param {*} roomId
  */
 const joinRoom = (socket, user, roomId) => {
-  console.log('--- join room event ---', user, roomId);
   try {
     clients
       .filter((c) => c.roomId === roomId && socket.id !== c.socket.id)

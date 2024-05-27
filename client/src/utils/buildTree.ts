@@ -25,7 +25,6 @@ export default function buildTree({
     return messages.map((m, idx) => ({ ...m, bg: idx % 2 === 0 ? even : odd }));
   }
   if (!groupAll) {
-    console.log(messages);
     // Traverse the messages array and store each element in messageMap.
     messages.forEach((message, i) => {
       messageMap[message.messageId] = { ...message, children: [] };

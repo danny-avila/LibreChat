@@ -47,7 +47,6 @@ const AuthContextProvider = ({
       //@ts-ignore - ok for token to be undefined initially
       setTokenHeader(token);
       setIsAuthenticated(isAuthenticated);
-      console.log(user, redirect);
       if (redirect && user?.username !== 'guest-user') {
         console.log(redirect);
         // navigate(redirect, { replace: true });

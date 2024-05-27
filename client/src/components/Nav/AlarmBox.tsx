@@ -1,12 +1,12 @@
 import { CryptoId, TUser, request } from 'librechat-data-provider';
 import React, { Dispatch, FC, HTMLAttributes, SetStateAction, useContext, useEffect, useRef, useState } from 'react';
-import { BellIcon, DotsIcon, TrashIcon } from '~/components/svg';
+import { BellIcon, DotsIcon } from '~/components/svg';
 import { Dialog, DialogTrigger } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { blockchainNetworks } from './Crypto/Blockchain';
+// eslint-disable-next-line import/no-cycle
 import TipModal from '../Room/Users/TipModal';
-import { ThemeContext, useToast } from '~/hooks';
-import MuteIcon from '../svg/MuteIcon';
+import { ThemeContext, useAuthContext, useToast } from '~/hooks';
 
 function formatDate(date: Date) {
   const currentDate = new Date();
@@ -58,7 +58,7 @@ interface DetailsDropDownPropsTyp extends HTMLAttributes<HTMLUListElement> {
 }
 
 const DetailsDropDown = React.forwardRef<HTMLUListElement, DetailsDropDownPropsTyp>(
-  ({ name, tip, isDetailView, setTips, setOpen, ...props }, ref) => {
+  ({ tip, isDetailView, setTips, setOpen }) => {
     const { showToast } = useToast();
 
     const handleDelete = (tip: TipTrack) => {
@@ -78,7 +78,7 @@ const DetailsDropDown = React.forwardRef<HTMLUListElement, DetailsDropDownPropsT
     };
 
     return (
-      <ul className={`${isDetailView ? 'block': 'hidden'} absolute left-0 top-14 cursor-pointer text-nowrap rounded-md bg-white border border-gray-400 z-10`}>
+      <ul className={`${isDetailView ? 'block': 'hidden'} absolute -left-16 md:left-0 top-14 cursor-pointer text-nowrap rounded-md bg-white dark:bg-gray-800 z-10 shadow-md`}>
         <li
           className="h-full w-full rounded-t-md px-4 py-3 hover:bg-slate-200"
           onClick={() => handleDelete(tip)}
@@ -93,8 +93,11 @@ const DetailsDropDown = React.forwardRef<HTMLUListElement, DetailsDropDownPropsT
   },
 );
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const MessageComponent: FC<{ tip: TipTrack; setTips: any }> = ({ tip, setTips }) => {
   const [isDetailView, setIsDetailView] = useState<boolean>(false);
+  const { user } = useAuthContext();
+
   const dropdownRef = useRef<HTMLDivElement>(null);
   const outSideClickHandler = (e) => {
     if (dropdownRef.current && !dropdownRef.current?.contains(e.target)) {
@@ -122,12 +125,12 @@ const MessageComponent: FC<{ tip: TipTrack; setTips: any }> = ({ tip, setTips })
           <p className="text-black dark:text-white">
                           please click{' '}
             <a
-              href={blockchainNetworks.filter((p) => tip.network === p.id)[0].scanUrl}
+              href={blockchainNetworks.filter((p) => tip.network === p.id)[0].scanUrl.replace('(walletaddress)', user?.cryptocurrency.filter(i => i.id === tip.network)[0].address ?? '')}
               target="_blank"
               rel="noreferrer"
               className="text-blue-500 underline"
             >
-                            here
+              here
             </a>{' '}
                           to confirm if you received a{' '}
             {blockchainNetworks.filter((p) => tip.network === p.id)[0].label} tip from{' '}
@@ -163,18 +166,6 @@ export default function AlarmBox({
   setTips: Dispatch<SetStateAction<TipTrack[]>>;
 }) {
   const { theme } = useContext(ThemeContext);
-  // const [isDetailView, setIsDetailView] = useState<boolean>(false);
-  // const dropdownRef = useRef<HTMLDivElement>(null);
-  // const outSideClickHandler = (e) => {
-  //   if (dropdownRef.current && !dropdownRef.current?.contains(e.target)) {
-  //     setIsDetailView(false);
-  //   }
-  // };
-
-  // useEffect(() => {
-  //   document.addEventListener('mousedown', outSideClickHandler);
-  //   return () => document.removeEventListener('mousedown', outSideClickHandler);
-  // }, []);
 
   return (
     <Dialog
@@ -184,13 +175,15 @@ export default function AlarmBox({
         <button className="relative">
           <BellIcon color={theme === 'light' ? '#000000' : '#ffffff'} />
           {tips.length !== 0 && (
-            <span className="absolute right-0 top-0 h-2 w-2 rounded-full bg-red-500"></span>
+            <span className="absolute -right-3 -top-3 py-0 px-[5px] rounded-md text-[10px] bg-red-500 text-white">
+              {tips.length}
+            </span>
           )}
         </button>
       </DialogTrigger>
       <DialogTemplate
         showCloseButton={false}
-        title={'System Message Box'}
+        title={'Bot Notifications'}
         className="max-w-[450px]"
         main={
           <>

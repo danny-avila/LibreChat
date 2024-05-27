@@ -13,6 +13,7 @@ import { useParams } from 'react-router-dom';
 import { useInitSocket } from '~/hooks/useChatSocket';
 import { useChatCall } from '~/hooks/useChatCall';
 import { v4 } from 'uuid';
+// eslint-disable-next-line import/no-cycle
 import { TipTrack } from '~/components/Nav/AlarmBox';
 
 const AddressPicker = ({
@@ -80,13 +81,23 @@ export const TipCopiedContent = ({
   );
 };
 
-export default function TipModal({ user, OpenButton, tip }: { user: TUser; OpenButton?: ReactNode; tip?: TipTrack }) {
+export default function TipModal({
+  user,
+  OpenButton,
+  tip,
+  isKarmaOnly = false,
+}: {
+  user: TUser;
+  OpenButton?: ReactNode;
+  tip?: TipTrack;
+  isKarmaOnly?: boolean;
+}) {
   const socket = useInitSocket();
-  const { sendBotMessage, sendMessage } = useChatCall(socket);
+  const { sendMessage } = useChatCall(socket);
 
   const [you, setYou] = useRecoilState(store.user);
   const params = useParams();
-  const [open, setOpen] = useState<boolean>(true);
+  const [open, setOpen] = useState<boolean>(false);
   const [selectedNetwork, setSelectedNetwork] = useState<BlockchainNetwork | null>(null);
   const [karma, setKarma] = useState<number>(1);
   const { showToast } = useToastContext();
@@ -105,11 +116,11 @@ export default function TipModal({ user, OpenButton, tip }: { user: TUser; OpenB
           if (ask) {
             ask(
               {
-                text: `@${you?.username} has copied @${user.username} ${
+                text: `@${you?.username} has copied @${user.username} **${
                   selectedNetwork?.label
-                } Address: ${
+                }** Wallet Address: ${
                   user.cryptocurrency.filter((i) => selectedNetwork?.id === i.id)[0].address
-                } - awaiting confirmation`,
+                }`,
               },
               { isBot: 'Tip Bot' },
             );
@@ -135,7 +146,7 @@ export default function TipModal({ user, OpenButton, tip }: { user: TUser; OpenB
             sender: 'Karma Bot',
             isCreatedByUser: true,
             parentMessageId: v4(),
-            conversationId: tip ? tip.convoId : '',
+            conversationId: isKarmaOnly ? params.conversationId ?? '' : tip ? tip.convoId : '',
             messageId: v4(),
             thread_id: '',
             error: false,
@@ -149,6 +160,11 @@ export default function TipModal({ user, OpenButton, tip }: { user: TUser; OpenB
             );
           }
           showToast({ message: `You sent ${karma} karma points successfully`, status: 'success' });
+          setOpen(false);
+        }).catch(err => {
+          if (err.response.status === 403) {
+            showToast({ message: err.response.data.message, status: 'error' });
+          }
         });
     }
   };
@@ -160,7 +176,7 @@ export default function TipModal({ user, OpenButton, tip }: { user: TUser; OpenB
   }, [open]);
 
   return (
-    <Dialog>
+    <Dialog  onOpenChange={(e) => setOpen(e)} open={open}>
       <DialogTrigger asChild>
         {OpenButton ? (
           OpenButton
@@ -172,82 +188,80 @@ export default function TipModal({ user, OpenButton, tip }: { user: TUser; OpenB
       </DialogTrigger>
       <DialogTemplate
         showCloseButton={false}
-        title={`Tip @${user.username}`}
+        title={(tip || isKarmaOnly) ? `Send Karma to @${user.username}` : `Tip @${user.username}`}
         className="max-w-[450px]"
         main={
           <>
             <div className="flex w-full flex-col items-center gap-2">
-              {tip &&
-              <div className="flex w-full flex-col items-center justify-around gap-1">
-                <p className="text-black dark:text-white">Send Karma Points to @{user.username}</p>
-                <p className="text-xs text-gray-700 dark:text-gray-50">
-                Your Karma Points Balance: {you?.karma}
-                </p>
-                <div className="flex gap-1">
-                  <button
-                    className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
-                      karma === 1 ? 'bg-green-500' : ''
-                    }`}
-                    onClick={() => setKarma(1)}
-                  >
+              {(tip || isKarmaOnly) ?
+                <div className="flex w-full flex-col items-center justify-around gap-1">
+                  <p className="text-black dark:text-white">Send Karma Points to @{user.username}</p>
+                  <p className="text-xs text-gray-700 dark:text-gray-50 mb-1">
+                    Your Karma Points Balance: {you?.karma}
+                  </p>
+                  <div className="flex gap-1">
+                    <button
+                      className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
+                        karma === 1 ? 'bg-green-500' : ''
+                      }`}
+                      onClick={() => setKarma(1)}
+                    >
                   1
-                  </button>
-                  <button
-                    className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
-                      karma === 2 ? 'bg-green-500' : ''
-                    }`}
-                    onClick={() => setKarma(2)}
-                  >
+                    </button>
+                    <button
+                      className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
+                        karma === 2 ? 'bg-green-500' : ''
+                      }`}
+                      onClick={() => setKarma(2)}
+                    >
                   2
-                  </button>
-                  <button
-                    className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
-                      karma === 3 ? 'bg-green-500' : ''
-                    }`}
-                    onClick={() => setKarma(3)}
-                  >
+                    </button>
+                    <button
+                      className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
+                        karma === 3 ? 'bg-green-500' : ''
+                      }`}
+                      onClick={() => setKarma(3)}
+                    >
                   3
-                  </button>
-                  <button
-                    className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
-                      karma === 4 ? 'bg-green-500' : ''
-                    }`}
-                    onClick={() => setKarma(4)}
-                  >
+                    </button>
+                    <button
+                      className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
+                        karma === 4 ? 'bg-green-500' : ''
+                      }`}
+                      onClick={() => setKarma(4)}
+                    >
                   4
-                  </button>
-                  <button
-                    className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
-                      karma === 5 ? 'bg-green-500' : ''
-                    }`}
-                    onClick={() => setKarma(5)}
-                  >
+                    </button>
+                    <button
+                      className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
+                        karma === 5 ? 'bg-green-500' : ''
+                      }`}
+                      onClick={() => setKarma(5)}
+                    >
                   5
-                  </button>
-                </div>
-                <button
-                  className="rounded-full bg-green-500 px-5 py-1 text-white transition hover:bg-green-550"
-                  onClick={sendKarma}
-                >
+                    </button>
+                  </div>
+                  <button
+                    className="rounded-full bg-green-500 px-5 py-1 text-white transition hover:bg-green-550 mt-3"
+                    onClick={sendKarma}
+                  >
                 Send {karma} Karma points
-                </button>
-              </div>
-              }
-
-              <div className="grid w-full items-center justify-center gap-2 text-gray-850 dark:text-white">
-                {selectedNetwork === null ? (
-                  user.cryptocurrency &&
+                  </button>
+                </div> : <div className="grid w-full items-center justify-center gap-2 text-gray-850 dark:text-white">
+                  {selectedNetwork === null ? (
+                    user.cryptocurrency &&
                   user.cryptocurrency.map((i) => (
                     <AddressPicker key={i.id} item={i} setSelectedNetwork={setSelectedNetwork} />
                   ))
-                ) : (
-                  <TipCopiedContent
-                    username={user.username}
-                    network={selectedNetwork}
-                    confirmTip={sendTipMessage}
-                  />
-                )}
-              </div>
+                  ) : (
+                    <TipCopiedContent
+                      username={user.username}
+                      network={selectedNetwork}
+                      confirmTip={sendTipMessage}
+                    />
+                  )}
+                </div>
+              }
             </div>
           </>
         }

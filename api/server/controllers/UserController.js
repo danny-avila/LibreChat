@@ -72,6 +72,10 @@ const saveCryptoAdresses = async (req, res) => {
 const sendKarma = async (req, res) => {
   const { karma, userId } = req.body;
   try {
+    const user = await UserModel.findById(req.user._id);
+    if (user.karma <= karma) {
+      return res.status(403).json({ success: false, message: 'You have 0 Karma Points available. Subscribe now to get 100 Karma Points to share with other ChatG members.' });
+    }
     await UserModel.findByIdAndUpdate(userId, { $inc: { karma } }, { new: true });
     await UserModel.findByIdAndUpdate(req.user._id, { $inc: { karma: -karma } }, { new: true });
     await new TipTrackModel({
