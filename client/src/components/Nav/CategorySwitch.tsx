@@ -7,8 +7,8 @@ export type Category = 'Conversations' | 'Rooms';
 export default function CategorySwitch({ convoType, setConvoType }) {
   return (
     <Tab.Group
-      onChange={(i) => setConvoType(i === 1 ? 'r' : 'c')}
-      selectedIndex={convoType === 'c' ? 0 : 1}
+      onChange={(i) => setConvoType(i === 1 ? 'c' : 'r')}
+      selectedIndex={convoType === 'r' ? 0 : 1}
     >
       <Tab.List className="mt-5 flex space-x-1 rounded-xl bg-gray-200 p-1 outline-none dark:bg-gray-750">
         <Tab
