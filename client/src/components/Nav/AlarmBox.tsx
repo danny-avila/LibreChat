@@ -78,14 +78,14 @@ const DetailsDropDown = React.forwardRef<HTMLUListElement, DetailsDropDownPropsT
     };
 
     return (
-      <ul className={`${isDetailView ? 'block': 'hidden'} absolute -left-16 md:left-0 top-14 cursor-pointer text-nowrap rounded-md bg-white dark:bg-gray-800 dark:text-white z-10 shadow-md`}>
+      <ul className={`${isDetailView ? 'block': 'hidden'} absolute -left-24 sm:-left-12 md:left-0 top-14 cursor-pointer text-nowrap rounded-md bg-white dark:bg-gray-800 dark:text-white z-10 shadow-md`}>
         <li
-          className="h-full w-full rounded-t-md px-4 py-3 hover:bg-slate-200"
+          className="h-full w-full rounded-t-md px-4 py-3 hover:dark:bg-slate-800 hover:bg-slate-200"
           onClick={() => handleDelete(tip)}
         >
             Delete Notification
         </li>
-        <li className="h-full w-full rounded-b-md px-4 py-3 hover:bg-slate-200" onClick={() => handleMute(tip)}>
+        <li className="h-full w-full rounded-b-md px-4 py-3 hover:dark:bg-slate-800 hover:bg-slate-200" onClick={() => handleMute(tip)}>
           Mute User
         </li>
       </ul>
