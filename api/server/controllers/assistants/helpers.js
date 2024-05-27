@@ -172,14 +172,16 @@ const fetchAssistants = async ({ req, res, overrideEndpoint }) => {
     body = await listAssistantsForAzure({ req, res, version, azureConfig, query });
   }
 
-  const assistantsConfig = req.app.locals[endpoint];
-  if (!assistantsConfig) {
+  if (req.user.role === 'ADMIN') {
+    return body;
+  } else if (!req.app.locals[endpoint]) {
     return body;
   }
+
   body.data = filterAssistants({
-    userId: req.user.id.toString(),
+    userId: req.user.id,
     assistants: body.data,
-    assistantsConfig,
+    assistantsConfig: req.app.locals[endpoint],
   });
   return body;
 };
@@ -196,10 +198,7 @@ const fetchAssistants = async ({ req, res, overrideEndpoint }) => {
 function filterAssistants({ assistants, userId, assistantsConfig }) {
   const { supportedIds, excludedIds, privateAssistants } = assistantsConfig;
   if (privateAssistants) {
-    return assistants.filter(
-      (assistant) =>
-        userId === assistant.metadata?.author || assistant.metadata?.author === undefined,
-    );
+    return assistants.filter((assistant) => userId === assistant.metadata?.author);
   } else if (supportedIds?.length) {
     return assistants.filter((assistant) => supportedIds.includes(assistant.id));
   } else if (excludedIds?.length) {

@@ -23,10 +23,7 @@ const validateAuthor = async ({ req, openai }) => {
   }
 
   const assistant = await openai.beta.assistants.retrieve(assistant_id);
-  const isValid =
-    req.user.id === assistant.metadata?.author || assistant.metadata?.author === undefined;
-
-  if (!isValid) {
+  if (req.user.id !== assistant?.metadata?.author) {
     throw new Error(`Assistant ${assistant_id} is not authored by the user.`);
   }
 };
