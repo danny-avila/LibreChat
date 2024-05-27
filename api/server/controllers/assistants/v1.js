@@ -1,4 +1,5 @@
 const { FileContext } = require('librechat-data-provider');
+const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { deleteAssistantActions } = require('~/server/services/ActionService');
 const { updateAssistantDoc, getAssistants } = require('~/models/Assistant');
@@ -84,6 +85,7 @@ const retrieveAssistant = async (req, res) => {
 const patchAssistant = async (req, res) => {
   try {
     const { openai } = await getOpenAIClient({ req, res });
+    await validateAuthor({ req, openai });
 
     const assistant_id = req.params.id;
     const { endpoint: _e, ...updateData } = req.body;
@@ -120,6 +122,7 @@ const patchAssistant = async (req, res) => {
 const deleteAssistant = async (req, res) => {
   try {
     const { openai } = await getOpenAIClient({ req, res });
+    await validateAuthor({ req, openai });
 
     const assistant_id = req.params.id;
     const deletionStatus = await openai.beta.assistants.del(assistant_id);
@@ -184,6 +187,7 @@ const uploadAssistantAvatar = async (req, res) => {
 
     let { metadata: _metadata = '{}' } = req.body;
     const { openai } = await getOpenAIClient({ req, res });
+    await validateAuthor({ req, openai });
 
     const image = await uploadImageBuffer({
       req,

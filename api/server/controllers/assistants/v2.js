@@ -1,4 +1,5 @@
 const { ToolCallTypes } = require('librechat-data-provider');
+const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { validateAndUpdateTool } = require('~/server/services/ActionService');
 const { updateAssistantDoc } = require('~/models/Assistant');
 const { getOpenAIClient } = require('./helpers');
@@ -61,6 +62,7 @@ const createAssistant = async (req, res) => {
  * @returns {Promise<Assistant>} The updated assistant.
  */
 const updateAssistant = async ({ req, openai, assistant_id, updateData }) => {
+  await validateAuthor({ req, openai });
   const tools = [];
 
   let hasFileSearch = false;
