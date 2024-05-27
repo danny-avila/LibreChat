@@ -65,7 +65,7 @@ const DetailsDropDown = React.forwardRef<HTMLUListElement, DetailsDropDownPropsT
       console.log(tip);
       setOpen(false);
       request.delete(`/api/user/tip/${tip._id}`).then((res) => {
-        setTips((prevTips) => prevTips.filter((i) => i._id === res));
+        setTips((prevTips) => prevTips.filter((i) => i._id !== res._id));
       });
     };
 
@@ -116,7 +116,7 @@ const MessageComponent: FC<{ tip: TipTrack; setTips: any }> = ({ tip, setTips })
         <div className="flex gap-1">
           <img src="/assets/karmabot.png" className="h-10 w-10 rounded-full" />
           <p className="text-black dark:text-white">
-            @{tip.sender.username} sent {tip.karma} karma point${tip.karma > 1 ? 's' : ''} to you.
+            @{tip.sender.username} sent {tip.karma} karma point{tip.karma > 1 ? 's' : ''} to you.
           </p>
         </div>
       ) : (
