@@ -206,7 +206,7 @@ export default function TipModal({
             <div className="flex w-full flex-col items-center gap-2">
               {(tip || isKarmaOnly) ?
                 <div className="flex w-full flex-col items-center justify-around gap-1">
-                  <p className="text-black dark:text-white">Send Karma Point{karma > 1 ? 's' : ''} to @{user.username}</p>
+                  <p className="text-black dark:text-white">Send Karma Points to @{user.username}</p>
                   <p className="text-xs text-gray-700 dark:text-gray-50 mb-1">
                     Your Karma Points Balance: {you?.karma}
                   </p>
@@ -256,7 +256,7 @@ export default function TipModal({
                     className="rounded-full bg-green-500 px-5 py-1 text-white transition hover:bg-green-550 mt-3"
                     onClick={sendKarma}
                   >
-                Send {karma} Karma points
+                    Send {karma} Karma point{karma > 1 ? 's' : ''}
                   </button>
                 </div> : <div className="grid w-full items-center justify-center gap-2 text-gray-850 dark:text-white">
                   {selectedNetwork === null ? (
