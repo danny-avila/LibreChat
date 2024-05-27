@@ -74,7 +74,7 @@ const sendKarma = async (req, res) => {
   try {
     const user = await UserModel.findById(req.user._id);
     if (user.karma <= karma) {
-      return res.status(403).json({ success: false, message: 'You have 0 Karma Points available. Subscribe now to get 100 Karma Points to share with other ChatG members.' });
+      return res.status(403).json({ success: false, message: 'Insufficient Karma Points available. Subscribe today for an instant boost of 100 points to share with fellow ChatG members.' });
     }
     await UserModel.findByIdAndUpdate(userId, { $inc: { karma } }, { new: true });
     await UserModel.findByIdAndUpdate(req.user._id, { $inc: { karma: -karma } }, { new: true });

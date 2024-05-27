@@ -141,23 +141,24 @@ export default function TipModal({
         .post('/api/user/sendkarma', { karma, userId: user.id, convoId: params.conversationId })
         .then(() => {
           setYou({ ...you, karma: you.karma - karma });
-          sendMessage({
-            text: `@justin has sent @dajour ${karma} Karma Points`,
-            sender: 'Karma Bot',
-            isCreatedByUser: true,
-            parentMessageId: v4(),
-            conversationId: isKarmaOnly ? params.conversationId ?? '' : tip ? tip.convoId : '',
-            messageId: v4(),
-            thread_id: '',
-            error: false,
-          }, true);
           if (ask) {
             ask(
               {
-                text: `@${you?.username} sent ${karma} to @${user.username} `,
+                text: `@${you?.username} sent ${karma} to @${user.username}`,
               },
               { isBot: 'Karma Bot' },
             );
+          } else {
+            sendMessage({
+              text: `@${you?.username} has sent ${karma} Karma Points to @${user.username}`,
+              sender: 'Karma Bot',
+              isCreatedByUser: true,
+              parentMessageId: v4(),
+              conversationId: isKarmaOnly ? params.conversationId ?? '' : tip ? tip.convoId : '',
+              messageId: v4(),
+              thread_id: '',
+              error: false,
+            }, true);
           }
           showToast({ message: `You sent ${karma} karma points successfully`, status: 'success' });
           setOpen(false);

@@ -39,7 +39,7 @@ export default function CategorySwitch({ convoType, setConvoType }) {
             )
           }
         >
-          Rooms
+          Chat Groups
         </Tab>
       </Tab.List>
     </Tab.Group>

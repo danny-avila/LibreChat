@@ -116,7 +116,7 @@ const MessageComponent: FC<{ tip: TipTrack; setTips: any }> = ({ tip, setTips })
         <div className="flex gap-1">
           <img src="/assets/karmabot.png" className="h-10 w-10 rounded-full" />
           <p className="text-black dark:text-white">
-                          @{tip.sender.username} sent {tip.karma} karma points{' '}
+            @{tip.sender.username} sent {tip.karma} karma points{' '}
           </p>
         </div>
       ) : (

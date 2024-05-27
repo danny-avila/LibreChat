@@ -405,5 +405,5 @@ export default {
 
   com_subscription_popup_title: 'Subscribe to ChatG',
   com_subscription_plan_desc:
-    'Subscribe to get 2000 monthly ChatG credits, accept crypto tips and access premium AI Chat models such as GPT-4, Claud-3-Opus and more.',
+    'Subscribe to receive 2000 Credits and 100 Karma Points monthly. Unlock additional benefits like accepting crypto tips and accessing premium AI Chat models such as GPT-4, Claud-3-Opus, and more.',
 };
