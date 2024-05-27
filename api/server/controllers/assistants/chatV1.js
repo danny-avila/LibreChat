@@ -20,6 +20,7 @@ const {
 } = require('~/server/services/Threads');
 const { sendResponse, sendMessage, sleep, isEnabled, countTokens } = require('~/server/utils');
 const { runAssistant, createOnTextProgress } = require('~/server/services/AssistantService');
+const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { formatMessage, createVisionPrompt } = require('~/app/clients/prompts');
 const { createRun, StreamRunManager } = require('~/server/services/Runs');
 const { addTitle } = require('~/server/services/Endpoints/assistants');
@@ -38,7 +39,7 @@ const ten_minutes = 1000 * 60 * 10;
  * @desc Chat with an assistant
  * @access Public
  * @param {object} req - The request object, containing the request data.
- * @param {TPayload} req.body - The request payload.
+ * @param {object} req.body - The request payload.
  * @param {Express.Response} res - The response object, used to send back a response.
  * @returns {void}
  */
@@ -286,6 +287,7 @@ const chatV1 = async (req, res) => {
     });
 
     openai = _openai;
+    await validateAuthor({ req, openai });
 
     if (previousMessages.length) {
       parentMessageId = previousMessages[previousMessages.length - 1].messageId;

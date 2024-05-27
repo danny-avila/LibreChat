@@ -4,7 +4,7 @@ const { handleAbortError } = require('~/server/middleware/abortMiddleware');
 /**
  * Checks if the assistant is supported or excluded
  * @param {object} req - Express Request
- * @param {TPayload} req.body - The request payload.
+ * @param {object} req.body - The request payload.
  * @param {object} res - Express Response
  * @param {function} next - Express next middleware function.
  * @returns {Promise<void>}

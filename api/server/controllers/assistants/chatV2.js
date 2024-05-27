@@ -20,6 +20,7 @@ const {
 } = require('~/server/services/Threads');
 const { sendResponse, sendMessage, sleep, isEnabled, countTokens } = require('~/server/utils');
 const { runAssistant, createOnTextProgress } = require('~/server/services/AssistantService');
+const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { createRun, StreamRunManager } = require('~/server/services/Runs');
 const { addTitle } = require('~/server/services/Endpoints/assistants');
 const { getTransactions } = require('~/models/Transaction');
@@ -283,6 +284,7 @@ const chatV2 = async (req, res) => {
     });
 
     openai = _openai;
+    await validateAuthor({ req, openai });
 
     if (previousMessages.length) {
       parentMessageId = previousMessages[previousMessages.length - 1].messageId;
