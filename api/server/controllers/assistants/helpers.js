@@ -148,22 +148,28 @@ const fetchAssistants = async (req, res) => {
     body = await listAssistantsForAzure({ req, res, version, azureConfig, query });
   }
 
-  const assistants = body.data;
-  const userId = req.user.id.toString();
   const assistantsConfig = req.app.locals[endpoint];
-  body.data = filterAssistants(assistants, userId, assistantsConfig);
+  if (!assistantsConfig) {
+    return body;
+  }
+  body.data = filterAssistants({
+    userId: req.user.id.toString(),
+    assistants: body.data,
+    assistantsConfig,
+  });
   return body;
 };
 
 /**
  * Filter assistants based on configuration.
  *
- * @param {Assistant[]} assistants - The list of assistants to filter.
+ * @param {object} params - The parameters object.
  * @param {string} params.userId -  The user ID to filter private assistants.
+ * @param {Assistant[]} params.assistants - The list of assistants to filter.
  * @param {Partial<TAssistantEndpoint>} params.assistantsConfig -  The assistant configuration.
  * @returns {Assistant[]} - The filtered list of assistants.
  */
-function filterAssistants(assistants, userId, assistantsConfig) {
+function filterAssistants({ assistants, userId, assistantsConfig }) {
   const { supportedIds, excludedIds, privateAssistants } = assistantsConfig;
   if (privateAssistants) {
     return assistants.filter(
