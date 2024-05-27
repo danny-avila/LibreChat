@@ -73,7 +73,7 @@ const sendKarma = async (req, res) => {
   const { karma, userId } = req.body;
   try {
     const user = await UserModel.findById(req.user._id);
-    if (user.karma <= karma) {
+    if (user.karma < karma) {
       return res.status(403).json({ success: false, message: 'Insufficient Karma Points available. Subscribe today for an instant boost of 100 points to share with fellow ChatG members.' });
     }
     await UserModel.findByIdAndUpdate(userId, { $inc: { karma } }, { new: true });

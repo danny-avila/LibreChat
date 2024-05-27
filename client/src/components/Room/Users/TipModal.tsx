@@ -35,13 +35,13 @@ const AddressPicker = ({
   };
 
   return (
-    <div className="flex items-center justify-start gap-3 p-1">
+    <div className="flex items-center justify-start gap-3 p-1" onClick={() => copyToClipboard()}>
       {blockchainNetworks.filter((i) => i.id === item.id)[0].icon}
       <div>
         <p className="mb-0 font-bold">{blockchainNetworks.filter((i) => i.id === item.id)[0].id}</p>
         <p>{prettyEthAddress(item.address.toLowerCase())}</p>
       </div>
-      <button onClick={() => copyToClipboard()} type="button">
+      <button type="button">
         {isCopied ? <CheckMark /> : <CopyIcon className="text-gray-500 dark:text-white" />}
       </button>
     </div>
