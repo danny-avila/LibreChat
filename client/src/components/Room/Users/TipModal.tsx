@@ -144,13 +144,13 @@ export default function TipModal({
           if (ask) {
             ask(
               {
-                text: `@${you?.username} sent ${karma} to @${user.username}`,
+                text: `@${you?.username} sent ${karma} Karma Point${karma > 1 ? 's' : ''} to @${user.username}`,
               },
               { isBot: 'Karma Bot' },
             );
           } else {
             sendMessage({
-              text: `@${you?.username} has sent ${karma} Karma Points to @${user.username}`,
+              text: `@${you?.username} has sent ${karma} Karma Point${karma > 1 ? 's' : ''} to @${user.username}`,
               sender: 'Karma Bot',
               isCreatedByUser: true,
               parentMessageId: v4(),
@@ -171,13 +171,23 @@ export default function TipModal({
   };
 
   useEffect(() => {
+    if (you?.id === user._id) {
+      setOpen(false);
+      return;
+    }
     if (!open) {
       setSelectedNetwork(null);
     }
   }, [open]);
 
   return (
-    <Dialog  onOpenChange={(e) => setOpen(e)} open={open}>
+    <Dialog onOpenChange={(e) => {
+      if (you?.id === user._id) {
+        setOpen(false);
+        return;
+      }
+      setOpen(e);
+    }} open={open}>
       <DialogTrigger asChild>
         {OpenButton ? (
           OpenButton

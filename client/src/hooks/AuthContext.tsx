@@ -91,7 +91,7 @@ const AuthContextProvider = ({
           token,
           isAuthenticated: true,
           user,
-          redirect: prevUrl ? prevUrl : '/c/new',
+          redirect: prevUrl ? prevUrl : '/r/new',
         });
       },
       onError: (error: TResError | unknown) => {
