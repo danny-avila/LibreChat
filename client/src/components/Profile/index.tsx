@@ -270,7 +270,7 @@ function ProfileContent() {
 
   useEffect(() => {
     if (userId === user?.id) {
-      setTabValue('likes');
+      setTabValue('followers');
     } else {
       setTabValue('conversations');
     }
