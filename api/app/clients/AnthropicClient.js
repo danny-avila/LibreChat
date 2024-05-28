@@ -1,4 +1,6 @@
+const nodeFetch = require('node-fetch');
 const Anthropic = require('@anthropic-ai/sdk');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const {
   getResponseSender,
@@ -123,8 +125,13 @@ class AnthropicClient extends BaseClient {
   getClient() {
     /** @type {Anthropic.default.RequestOptions} */
     const options = {
+      fetch: nodeFetch,
       apiKey: this.apiKey,
     };
+
+    if (this.options.proxy) {
+      options.httpAgent = new HttpsProxyAgent(this.options.proxy);
+    }
 
     if (this.options.reverseProxyUrl) {
       options.baseURL = this.options.reverseProxyUrl;
