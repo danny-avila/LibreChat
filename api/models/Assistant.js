@@ -14,7 +14,7 @@ const Assistant = mongoose.model('assistant', assistantSchema);
  * @param {mongoose.ClientSession} [session] - The transaction session to use (optional).
  * @returns {Promise<Object>} The updated or newly created assistant document as a plain object.
  */
-const updateAssistant = async (searchParams, updateData, session = null) => {
+const updateAssistantDoc = async (searchParams, updateData, session = null) => {
   const options = { new: true, upsert: true, session };
   return await Assistant.findOneAndUpdate(searchParams, updateData, options).lean();
 };
@@ -52,7 +52,7 @@ const deleteAssistant = async (searchParams) => {
 };
 
 module.exports = {
-  updateAssistant,
+  updateAssistantDoc,
   deleteAssistant,
   getAssistants,
   getAssistant,

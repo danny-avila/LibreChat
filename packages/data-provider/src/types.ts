@@ -42,6 +42,13 @@ export type TEndpointOption = {
   max_tokens?: number; // max_tokens override for PG
 };
 
+export type TPayload = Partial<TMessage> &
+  Partial<TEndpointOption> & {
+    isContinued: boolean;
+    conversationId: string | null;
+    messages?: TMessages;
+  };
+
 export type TSubmission = {
   plugin?: TResPlugin;
   plugins?: TResPlugin[];
