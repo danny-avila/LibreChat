@@ -9,9 +9,9 @@ const {
 } = require('librechat-data-provider');
 const { retrieveAndProcessFile } = require('~/server/services/Files/process');
 const { processRequiredActions } = require('~/server/services/ToolService');
+const { saveMessage, updateMessageText } = require('~/models/Message');
 const { createOnProgress, sendMessage } = require('~/server/utils');
 const { processMessages } = require('~/server/services/Threads');
-const { saveMessage } = require('~/models');
 const { logger } = require('~/config');
 
 /**
@@ -68,6 +68,8 @@ class StreamRunManager {
     this.attachedFileIds = fields.attachedFileIds;
     /** @type {undefined | Promise<ChatCompletion>} */
     this.visionPromise = fields.visionPromise;
+    /** @type {boolean} */
+    this.savedInitialMessage = false;
 
     /**
      * @type {Object.<AssistantStreamEvents, (event: AssistantStreamEvent) => Promise<void>>}
@@ -127,6 +129,33 @@ class StreamRunManager {
     };
 
     sendMessage(this.res, contentData);
+  }
+
+  /* <------------------ Misc. Helpers ------------------> */
+  /** Returns the latest intermediate text
+   * @returns {string}
+   */
+  getText() {
+    return this.intermediateText;
+  }
+
+  /** Saves the initial intermediate message
+   * @returns {Promise<void>}
+   */
+  async saveInitialMessage() {
+    return saveMessage({
+      conversationId: this.finalMessage.conversationId,
+      messageId: this.finalMessage.messageId,
+      parentMessageId: this.parentMessageId,
+      model: this.req.body.assistant_id,
+      endpoint: this.req.body.endpoint,
+      isCreatedByUser: false,
+      user: this.req.user.id,
+      text: this.getText(),
+      sender: 'Assistant',
+      unfinished: true,
+      error: false,
+    });
   }
 
   /* <------------------ Main Event Handlers ------------------> */
@@ -530,23 +559,20 @@ class StreamRunManager {
       const stepKey = message_creation.message_id;
       const index = this.getStepIndex(stepKey);
       this.orderedRunSteps.set(index, message_creation);
-      const getText = () => this.intermediateText;
+
       // Create the Factory Function to stream the message
       const { onProgress: progressCallback } = createOnProgress({
         onProgress: throttle(
           () => {
-            const text = getText();
-            saveMessage({
-              messageId: this.finalMessage.messageId,
-              conversationId: this.finalMessage.conversationId,
-              parentMessageId: this.parentMessageId,
-              model: this.req.body.model,
-              user: this.req.user.id,
-              sender: 'Assistant',
-              unfinished: true,
-              error: false,
-              text,
-            });
+            if (!this.savedInitialMessage) {
+              this.saveInitialMessage();
+              this.savedInitialMessage = true;
+            } else {
+              updateMessageText({
+                messageId: this.finalMessage.messageId,
+                text: this.getText(),
+              });
+            }
           },
           2000,
           { trailing: false },
