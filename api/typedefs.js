@@ -273,6 +273,12 @@
  */
 
 /**
+ * @exports TPayload
+ * @typedef {import('librechat-data-provider').TPayload} TPayload
+ * @memberof typedefs
+ */
+
+/**
  * @exports TAzureModelConfig
  * @typedef {import('librechat-data-provider').TAzureModelConfig} TAzureModelConfig
  * @memberof typedefs
