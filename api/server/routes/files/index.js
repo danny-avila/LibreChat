@@ -14,6 +14,10 @@ const initialize = async () => {
   router.use(checkBan);
   router.use(uaParser);
 
+  /* Important: stt/tts routes must be added before the upload limiters */
+  router.use('/stt', stt);
+  router.use('/tts', tts);
+
   const upload = await createMulterInstance();
   const { fileUploadIpLimiter, fileUploadUserLimiter } = createFileLimiters();
   router.post('*', fileUploadIpLimiter, fileUploadUserLimiter);

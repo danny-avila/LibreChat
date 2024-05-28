@@ -112,6 +112,8 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     modelDisplayLabel: endpointConfig.modelDisplayLabel,
     titleMethod: endpointConfig.titleMethod ?? 'completion',
     contextStrategy: endpointConfig.summarize ? 'summarize' : null,
+    directEndpoint: endpointConfig.directEndpoint,
+    titleMessageRole: endpointConfig.titleMessageRole,
     endpointTokenConfig,
   };
 

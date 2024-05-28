@@ -268,7 +268,7 @@ class PluginsClient extends OpenAIClient {
     if (opts.progressCallback) {
       opts.onProgress = opts.progressCallback.call(null, {
         ...(opts.progressOptions ?? {}),
-        parentMessageId: opts.progressOptions?.parentMessageId ?? userMessage.messageId,
+        parentMessageId: userMessage.messageId,
         messageId: responseMessageId,
       });
     }
