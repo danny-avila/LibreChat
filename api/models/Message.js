@@ -129,6 +129,14 @@ module.exports = {
       throw new Error('Failed to save message.');
     }
   },
+  async updateMessageText({ messageId, text }) {
+    try {
+      await Message.updateOne({ messageId }, { text });
+    } catch (err) {
+      logger.error('Error updating message text:', err);
+      throw new Error('Failed to update message text.');
+    }
+  },
   async updateMessage(message) {
     try {
       const { messageId, ...update } = message;
