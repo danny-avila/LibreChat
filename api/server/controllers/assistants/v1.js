@@ -1,8 +1,9 @@
 const { FileContext } = require('librechat-data-provider');
+const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { deleteAssistantActions } = require('~/server/services/ActionService');
+const { updateAssistantDoc, getAssistants } = require('~/models/Assistant');
 const { uploadImageBuffer } = require('~/server/services/Files/process');
-const { updateAssistant, getAssistants } = require('~/models/Assistant');
 const { getOpenAIClient, fetchAssistants } = require('./helpers');
 const { deleteFileByFilter } = require('~/models/File');
 const { logger } = require('~/config');
@@ -40,9 +41,11 @@ const createAssistant = async (req, res) => {
     };
 
     const assistant = await openai.beta.assistants.create(assistantData);
+    const promise = updateAssistantDoc({ assistant_id: assistant.id }, { user: req.user.id });
     if (azureModelIdentifier) {
       assistant.model = azureModelIdentifier;
     }
+    await promise;
     logger.debug('/assistants/', assistant);
     res.status(201).json(assistant);
   } catch (error) {
@@ -61,7 +64,6 @@ const retrieveAssistant = async (req, res) => {
   try {
     /* NOTE: not actually being used right now */
     const { openai } = await getOpenAIClient({ req, res });
-
     const assistant_id = req.params.id;
     const assistant = await openai.beta.assistants.retrieve(assistant_id);
     res.json(assistant);
@@ -83,6 +85,7 @@ const retrieveAssistant = async (req, res) => {
 const patchAssistant = async (req, res) => {
   try {
     const { openai } = await getOpenAIClient({ req, res });
+    await validateAuthor({ req, openai });
 
     const assistant_id = req.params.id;
     const { endpoint: _e, ...updateData } = req.body;
@@ -119,6 +122,7 @@ const patchAssistant = async (req, res) => {
 const deleteAssistant = async (req, res) => {
   try {
     const { openai } = await getOpenAIClient({ req, res });
+    await validateAuthor({ req, openai });
 
     const assistant_id = req.params.id;
     const deletionStatus = await openai.beta.assistants.del(assistant_id);
@@ -141,19 +145,7 @@ const deleteAssistant = async (req, res) => {
  */
 const listAssistants = async (req, res) => {
   try {
-    const body = await fetchAssistants(req, res);
-
-    if (req.app.locals?.[req.query.endpoint]) {
-      /** @type {Partial<TAssistantEndpoint>} */
-      const assistantsConfig = req.app.locals[req.query.endpoint];
-      const { supportedIds, excludedIds } = assistantsConfig;
-      if (supportedIds?.length) {
-        body.data = body.data.filter((assistant) => supportedIds.includes(assistant.id));
-      } else if (excludedIds?.length) {
-        body.data = body.data.filter((assistant) => !excludedIds.includes(assistant.id));
-      }
-    }
-
+    const body = await fetchAssistants({ req, res });
     res.json(body);
   } catch (error) {
     logger.error('[/assistants] Error listing assistants', error);
@@ -195,6 +187,7 @@ const uploadAssistantAvatar = async (req, res) => {
 
     let { metadata: _metadata = '{}' } = req.body;
     const { openai } = await getOpenAIClient({ req, res });
+    await validateAuthor({ req, openai });
 
     const image = await uploadImageBuffer({
       req,
@@ -229,7 +222,7 @@ const uploadAssistantAvatar = async (req, res) => {
 
     const promises = [];
     promises.push(
-      updateAssistant(
+      updateAssistantDoc(
         { assistant_id },
         {
           avatar: {
