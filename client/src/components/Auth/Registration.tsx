@@ -178,9 +178,9 @@ const Registration: React.FC = () => {
 
   return (
     <div className="relative flex min-h-screen flex-col bg-white dark:bg-gray-900">
-      <div className="mt-12 h-24 w-full bg-cover">
+      {/* <div className="mt-12 h-24 w-full bg-cover">
         <img src="/assets/logo.svg" className="h-full w-full object-contain" alt="Logo" />
-      </div>
+      </div> */}
       <div className="absolute bottom-0 left-0 md:m-4">
         <ThemeSelector />
       </div>

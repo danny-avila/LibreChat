@@ -189,7 +189,7 @@ router.post('/clear', async (req, res) => {
 
 router.post('/update', async (req, res) => {
   const update = req.body.arg;
-  console.log('in update', update);
+  // console.log('in update', update);
   try {
     const dbResponse = await saveConvo(req.user.id, update);
     res.status(201).json(dbResponse);
@@ -238,7 +238,7 @@ router.post('/like', async (req, res) => {
 
 router.post('/:conversationId/viewcount/increment', async (req, res) => {
   const { conversationId } = req.params;
-  console.log(`routes: hit viewcount increment router for conversationId ${conversationId}`);
+  // console.log(`routes: hit viewcount increment router for conversationId ${conversationId}`);
   try {
     const dbResponse = await increaseConvoViewCount(conversationId);
     // console.log(
