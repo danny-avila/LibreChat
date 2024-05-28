@@ -9,6 +9,8 @@ import { ScreenshotProvider, ThemeProvider, useApiErrorBoundary } from './hooks'
 import { ToastProvider } from './Providers';
 import Toast from './components/ui/Toast';
 import { router } from './routes';
+import { Helmet } from 'react-helmet';
+
 const App = () => {
   const { setError } = useApiErrorBoundary();
 
@@ -44,6 +46,21 @@ const App = () => {
 
 export default () => (
   <ScreenshotProvider>
+    <Helmet>
+      <meta property="og:title" content="ChatG App" />
+      <meta
+        property="og:description"
+        content="Free ChatGPT Alternative - Easily ask questions and receive instant answers. Utilize Google Gemini, Bing Copilot, GPT-4, GPT-3.5-turbo and Claude by Anthropic"
+      />
+      <meta property="og:image" content="/assets/logo.png" />
+      <meta property="og:url" content="https://app.chatg.com" />
+      <title>ChatG App</title>
+      <meta
+        name="description"
+        content="Free ChatGPT Alternative - Easily ask questions and receive instant answers. Utilize Google Gemini, Bing Copilot, GPT-4, GPT-3.5-turbo and Claude by Anthropic"
+      />
+      <meta name="keywords" content="ChatG, ChatGPT Alternative" />
+    </Helmet>
     <App />
   </ScreenshotProvider>
 );
