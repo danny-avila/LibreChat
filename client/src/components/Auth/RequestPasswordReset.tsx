@@ -40,6 +40,9 @@ function RequestPasswordReset() {
   };
 
   useEffect(() => {
+    if (bodyText) {
+      return;
+    }
     if (requestPasswordReset.isSuccess) {
       if (config.data?.emailEnabled) {
         setHeaderText(localize('com_auth_reset_password_link_sent'));
@@ -60,7 +63,7 @@ function RequestPasswordReset() {
       setHeaderText(localize('com_auth_reset_password'));
       setBodyText(undefined);
     }
-  }, [requestPasswordReset.isSuccess, config.data?.emailEnabled, resetLink, localize]);
+  }, [requestPasswordReset.isSuccess, config.data?.emailEnabled, resetLink, localize, bodyText]);
 
   const renderFormContent = () => {
     if (bodyText) {
