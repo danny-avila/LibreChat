@@ -6,16 +6,24 @@ import type { TOptionSettings } from '~/common';
 function atomWithLocalStorage<T>(key: string, defaultValue: T) {
   return atom<T>({
     key,
-    default: defaultValue, // Set the default value directly
+    default: defaultValue,
     effects_UNSTABLE: [
       ({ setSelf, onSet }) => {
-        // Load the initial value from localStorage if it exists
         const savedValue = localStorage.getItem(key);
         if (savedValue !== null) {
-          setSelf(JSON.parse(savedValue));
+          try {
+            const parsedValue = JSON.parse(savedValue);
+            setSelf(parsedValue);
+          } catch (e) {
+            console.error(
+              `Error parsing localStorage key "${key}", \`savedValue\`: defaultValue, error:`,
+              e,
+            );
+            localStorage.setItem(key, JSON.stringify(defaultValue));
+            setSelf(defaultValue);
+          }
         }
 
-        // Update localStorage whenever the atom's value changes
         onSet((newValue: T) => {
           localStorage.setItem(key, JSON.stringify(newValue));
         });
