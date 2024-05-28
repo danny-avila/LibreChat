@@ -36,6 +36,9 @@ function RequestPasswordReset() {
   };
 
   useEffect(() => {
+    if (bodyText) {
+      return;
+    }
     if (!requestPasswordReset.isSuccess) {
       setHeaderText('com_auth_reset_password');
       setBodyText(undefined);
@@ -64,6 +67,7 @@ function RequestPasswordReset() {
     resetLink,
     localize,
     setHeaderText,
+    bodyText,
   ]);
 
   if (bodyText) {
