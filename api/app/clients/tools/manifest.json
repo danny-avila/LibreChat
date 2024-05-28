@@ -197,5 +197,12 @@
     "description": "Use 'CodeBrew' to virtually interpret Python, Node, C, C++, Java, C#, PHP, MySQL, Rust or Go code.",
     "icon": "https://imgur.com/iLE5ceA.png",
     "authConfig": []
+  },
+  {
+    "name": "Drupal Forma Aquae",
+    "pluginKey": "drupal_fa_api",
+    "description": "Drupal Forma Aquae is a robust search API tailored for LLM Agents. Get an API key here: https://formaaquae.cleversoft.it",
+    "icon": "https://formaaquae.cleversoft.it/images/664fd1c29b4857248e5e91c1/formaaquae-favicon-black-192x192.png",
+    "authConfig": []
   }
 ]
