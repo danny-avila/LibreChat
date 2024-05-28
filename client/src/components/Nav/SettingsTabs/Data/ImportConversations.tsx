@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Import } from 'lucide-react';
+import type { TError } from 'librechat-data-provider';
 import { useUploadConversationsMutation } from '~/data-provider';
 import { useLocalize, useConversations } from '~/hooks';
 import { useToastContext } from '~/Providers';
@@ -25,8 +26,7 @@ function ImportConversations() {
       console.error('Error: ', error);
       setAllowImport(true);
       setError(
-        (error as { response: { data: { message?: string } } })?.response?.data?.message ??
-          'An error occurred while uploading the file.',
+        (error as TError)?.response?.data?.message ?? 'An error occurred while uploading the file.',
       );
       if (error?.toString().includes('Unsupported import type')) {
         showToast({

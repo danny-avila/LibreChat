@@ -22,7 +22,7 @@ export default function DecibelSelector() {
           value={[playbackRate ?? 1]}
           onValueChange={(value) => setPlaybackRate(value[0])}
           doubleClickHandler={() => setPlaybackRate(null)}
-          min={-0.1}
+          min={0.1}
           max={2}
           step={0.1}
           className="ml-4 flex h-4 w-24"
@@ -33,7 +33,7 @@ export default function DecibelSelector() {
           value={playbackRate ?? 1}
           disabled={!textToSpeech}
           onChange={(value) => setPlaybackRate(value ? value[0] : 0)}
-          min={-0.1}
+          min={0.1}
           max={2}
           className={cn(
             defaultTextProps,

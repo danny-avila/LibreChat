@@ -16,7 +16,8 @@ const { logger } = require('~/config');
 function getProvider(ttsSchema) {
   if (!ttsSchema) {
     throw new Error(`No TTS schema is set. Did you configure TTS in the custom config (librechat.yaml)?
-# Example TTS configuration`);
+    
+    https://www.librechat.ai/docs/configuration/stt_tts#tts`);
   }
   const providers = Object.entries(ttsSchema).filter(([, value]) => Object.keys(value).length > 0);
 
@@ -299,7 +300,7 @@ async function textToSpeech(req, res) {
           break;
         }
       } catch (innerError) {
-        logger.error('Error processing update:', chunk, innerError);
+        logger.error('Error processing manual update:', chunk, innerError);
         if (!res.headersSent) {
           res.status(500).end();
         }
@@ -311,7 +312,10 @@ async function textToSpeech(req, res) {
       res.end();
     }
   } catch (error) {
-    logger.error('An error occurred while creating the audio stream:', error);
+    logger.error(
+      'Error creating the audio stream. Suggestion: check your provider quota. Error:',
+      error,
+    );
     res.status(500).send('An error occurred');
   }
 }

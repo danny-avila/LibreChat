@@ -1,4 +1,9 @@
-const { EModelEndpoint, CacheKeys, defaultAssistantsVersion } = require('librechat-data-provider');
+const {
+  EModelEndpoint,
+  CacheKeys,
+  defaultAssistantsVersion,
+  defaultOrderQuery,
+} = require('librechat-data-provider');
 const {
   initializeClient: initAzureClient,
 } = require('~/server/services/Endpoints/azureAssistants');
@@ -35,6 +40,7 @@ const getCurrentVersion = async (req, endpoint) => {
  * Initializes the client with the current request and response objects and lists assistants
  * according to the query parameters. This function abstracts the logic for non-Azure paths.
  *
+ * @deprecated
  * @async
  * @param {object} params - The parameters object.
  * @param {object} params.req - The request object, used for initializing the client.
@@ -43,9 +49,63 @@ const getCurrentVersion = async (req, endpoint) => {
  * @param {object} params.query - The query parameters to list assistants (e.g., limit, order).
  * @returns {Promise<object>} A promise that resolves to the response from the `openai.beta.assistants.list` method call.
  */
-const listAssistants = async ({ req, res, version, query }) => {
+const _listAssistants = async ({ req, res, version, query }) => {
   const { openai } = await getOpenAIClient({ req, res, version });
   return openai.beta.assistants.list(query);
+};
+
+/**
+ * Fetches all assistants based on provided query params, until `has_more` is `false`.
+ *
+ * @async
+ * @param {object} params - The parameters object.
+ * @param {object} params.req - The request object, used for initializing the client.
+ * @param {object} params.res - The response object, used for initializing the client.
+ * @param {string} params.version - The API version to use.
+ * @param {Omit<AssistantListParams, 'endpoint'>} params.query - The query parameters to list assistants (e.g., limit, order).
+ * @returns {Promise<object>} A promise that resolves to the response from the `openai.beta.assistants.list` method call.
+ */
+const listAllAssistants = async ({ req, res, version, query }) => {
+  /** @type {{ openai: OpenAIClient }} */
+  const { openai } = await getOpenAIClient({ req, res, version });
+  const allAssistants = [];
+
+  let first_id;
+  let last_id;
+  let afterToken = query.after;
+  let hasMore = true;
+
+  while (hasMore) {
+    const response = await openai.beta.assistants.list({
+      ...query,
+      after: afterToken,
+    });
+
+    const { body } = response;
+
+    allAssistants.push(...body.data);
+    hasMore = body.has_more;
+
+    if (!first_id) {
+      first_id = body.first_id;
+    }
+
+    if (hasMore) {
+      afterToken = body.last_id;
+    } else {
+      last_id = body.last_id;
+    }
+  }
+
+  return {
+    data: allAssistants,
+    body: {
+      data: allAssistants,
+      has_more: false,
+      first_id,
+      last_id,
+    },
+  };
 };
 
 /**
@@ -82,7 +142,7 @@ const listAssistantsForAzure = async ({ req, res, version, azureConfig = {}, que
     /* The specified model is only necessary to
     fetch assistants for the shared instance */
     req.body.model = currentModelTuples[0][0];
-    promises.push(listAssistants({ req, res, version, query }));
+    promises.push(listAllAssistants({ req, res, version, query }));
   }
 
   const resolvedQueries = await Promise.all(promises);
@@ -133,8 +193,27 @@ async function getOpenAIClient({ req, res, endpointOption, initAppClient, overri
   return result;
 }
 
-const fetchAssistants = async (req, res) => {
-  const { limit = 100, order = 'desc', after, before, endpoint } = req.query;
+/**
+ * Returns a list of assistants.
+ * @param {object} params
+ * @param {object} params.req - Express Request
+ * @param {AssistantListParams} [params.req.query] - The assistant list parameters for pagination and sorting.
+ * @param {object} params.res - Express Response
+ * @param {string} [params.overrideEndpoint] - The endpoint to override the request endpoint.
+ * @returns {Promise<AssistantListResponse>} 200 - success response - application/json
+ */
+const fetchAssistants = async ({ req, res, overrideEndpoint }) => {
+  const {
+    limit = 100,
+    order = 'desc',
+    after,
+    before,
+    endpoint,
+  } = req.query ?? {
+    endpoint: overrideEndpoint,
+    ...defaultOrderQuery,
+  };
+
   const version = await getCurrentVersion(req, endpoint);
   const query = { limit, order, after, before };
 
@@ -142,14 +221,46 @@ const fetchAssistants = async (req, res) => {
   let body;
 
   if (endpoint === EModelEndpoint.assistants) {
-    ({ body } = await listAssistants({ req, res, version, query }));
+    ({ body } = await listAllAssistants({ req, res, version, query }));
   } else if (endpoint === EModelEndpoint.azureAssistants) {
     const azureConfig = req.app.locals[EModelEndpoint.azureOpenAI];
     body = await listAssistantsForAzure({ req, res, version, azureConfig, query });
   }
 
+  if (req.user.role === 'ADMIN') {
+    return body;
+  } else if (!req.app.locals[endpoint]) {
+    return body;
+  }
+
+  body.data = filterAssistants({
+    userId: req.user.id,
+    assistants: body.data,
+    assistantsConfig: req.app.locals[endpoint],
+  });
   return body;
 };
+
+/**
+ * Filter assistants based on configuration.
+ *
+ * @param {object} params - The parameters object.
+ * @param {string} params.userId -  The user ID to filter private assistants.
+ * @param {Assistant[]} params.assistants - The list of assistants to filter.
+ * @param {Partial<TAssistantEndpoint>} params.assistantsConfig -  The assistant configuration.
+ * @returns {Assistant[]} - The filtered list of assistants.
+ */
+function filterAssistants({ assistants, userId, assistantsConfig }) {
+  const { supportedIds, excludedIds, privateAssistants } = assistantsConfig;
+  if (privateAssistants) {
+    return assistants.filter((assistant) => userId === assistant.metadata?.author);
+  } else if (supportedIds?.length) {
+    return assistants.filter((assistant) => supportedIds.includes(assistant.id));
+  } else if (excludedIds?.length) {
+    return assistants.filter((assistant) => !excludedIds.includes(assistant.id));
+  }
+  return assistants;
+}
 
 module.exports = {
   getOpenAIClient,
