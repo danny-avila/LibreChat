@@ -1,31 +1,24 @@
-import type { TSubmission, TMessage, TEndpointOption } from './types';
-import { tConvoUpdateSchema, EModelEndpoint, isAssistantsEndpoint } from './schemas';
+import type * as t from './types';
 import { EndpointURLs } from './config';
+import * as s from './schemas';
 
-export default function createPayload(submission: TSubmission) {
-  const { conversation, userMessage, messages, endpointOption, isEdited, isContinued } = submission;
-  const { conversationId } = tConvoUpdateSchema.parse(conversation);
+export default function createPayload(submission: t.TSubmission) {
+  const { conversation, userMessage, endpointOption, isEdited, isContinued } = submission;
+  const { conversationId } = s.tConvoUpdateSchema.parse(conversation);
   const { endpoint, endpointType } = endpointOption as {
-    endpoint: EModelEndpoint;
-    endpointType?: EModelEndpoint;
+    endpoint: s.EModelEndpoint;
+    endpointType?: s.EModelEndpoint;
   };
 
   let server = EndpointURLs[endpointType ?? endpoint];
 
-  if (isEdited && isAssistantsEndpoint(endpoint)) {
+  if (isEdited && s.isAssistantsEndpoint(endpoint)) {
     server += '/modify';
   } else if (isEdited) {
     server = server.replace('/ask/', '/edit/');
   }
 
-  type Payload = Partial<TMessage> &
-    Partial<TEndpointOption> & {
-      isContinued: boolean;
-      conversationId: string | null;
-      messages?: typeof messages;
-    };
-
-  const payload: Payload = {
+  const payload: t.TPayload = {
     ...userMessage,
     ...endpointOption,
     isContinued: !!(isEdited && isContinued),
