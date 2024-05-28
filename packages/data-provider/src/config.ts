@@ -144,6 +144,7 @@ export const assistantEndpointSchema = z.object({
   version: z.union([z.string(), z.number()]).default(2),
   supportedIds: z.array(z.string()).min(1).optional(),
   excludedIds: z.array(z.string()).min(1).optional(),
+  privateAssistants: z.boolean().optional(),
   retrievalModels: z.array(z.string()).min(1).optional().default(defaultRetrievalModels),
   capabilities: z
     .array(z.nativeEnum(Capabilities))

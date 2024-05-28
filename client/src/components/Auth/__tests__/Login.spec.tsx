@@ -1,9 +1,32 @@
-import { render, waitFor } from 'test/layout-test-utils';
+import reactRouter from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
-import Login from '../Login';
+import { render, waitFor } from 'test/layout-test-utils';
 import * as mockDataProvider from 'librechat-data-provider/react-query';
+import type { TStartupConfig } from 'librechat-data-provider';
+import AuthLayout from '~/components/Auth/AuthLayout';
+import Login from '~/components/Auth/Login';
 
 jest.mock('librechat-data-provider/react-query');
+
+const mockStartupConfig = {
+  isFetching: false,
+  isLoading: false,
+  isError: false,
+  data: {
+    socialLogins: ['google', 'facebook', 'openid', 'github', 'discord'],
+    discordLoginEnabled: true,
+    facebookLoginEnabled: true,
+    githubLoginEnabled: true,
+    googleLoginEnabled: true,
+    openidLoginEnabled: true,
+    openidLabel: 'Test OpenID',
+    openidImageUrl: 'http://test-server.com',
+    registrationEnabled: true,
+    emailLoginEnabled: true,
+    socialLoginEnabled: true,
+    serverDomain: 'mock-server',
+  },
+};
 
 const setup = ({
   useGetUserQueryReturnValue = {
@@ -27,24 +50,7 @@ const setup = ({
       user: {},
     },
   },
-  useGetStartupCongfigReturnValue = {
-    isLoading: false,
-    isError: false,
-    data: {
-      socialLogins: ['google', 'facebook', 'openid', 'github', 'discord'],
-      discordLoginEnabled: true,
-      facebookLoginEnabled: true,
-      githubLoginEnabled: true,
-      googleLoginEnabled: true,
-      openidLoginEnabled: true,
-      openidLabel: 'Test OpenID',
-      openidImageUrl: 'http://test-server.com',
-      registrationEnabled: true,
-      emailLoginEnabled: true,
-      socialLoginEnabled: true,
-      serverDomain: 'mock-server',
-    },
-  },
+  useGetStartupCongfigReturnValue = mockStartupConfig,
 } = {}) => {
   const mockUseLoginUser = jest
     .spyOn(mockDataProvider, 'useLoginUserMutation')
@@ -62,15 +68,37 @@ const setup = ({
     .spyOn(mockDataProvider, 'useRefreshTokenMutation')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useRefreshTokenMutationReturnValue);
-  const renderResult = render(<Login />);
+  const mockUseOutletContext = jest.spyOn(reactRouter, 'useOutletContext').mockReturnValue({
+    startupConfig: useGetStartupCongfigReturnValue.data,
+  });
+  const renderResult = render(
+    <AuthLayout
+      startupConfig={useGetStartupCongfigReturnValue.data as TStartupConfig}
+      isFetching={useGetStartupCongfigReturnValue.isFetching}
+      error={null}
+      startupConfigError={null}
+      header={'Welcome back'}
+      pathname="login"
+    >
+      <Login />
+    </AuthLayout>,
+  );
   return {
     ...renderResult,
     mockUseLoginUser,
     mockUseGetUserQuery,
+    mockUseOutletContext,
     mockUseGetStartupConfig,
     mockUseRefreshTokenMutation,
   };
 };
+
+jest.mock('react-router-dom', () => ({
+  ...jest.requireActual('react-router-dom'),
+  useOutletContext: () => ({
+    startupConfig: mockStartupConfig,
+  }),
+}));
 
 test('renders login form', () => {
   const { getByLabelText, getByRole } = setup();
@@ -131,6 +159,14 @@ test('Navigates to / on successful login', async () => {
       mutate: jest.fn(),
       isError: false,
       isSuccess: true,
+    },
+    useGetStartupCongfigReturnValue: {
+      ...mockStartupConfig,
+      data: {
+        ...mockStartupConfig.data,
+        emailLoginEnabled: true,
+        registrationEnabled: true,
+      },
     },
   });
 
