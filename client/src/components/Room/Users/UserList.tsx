@@ -140,8 +140,8 @@ function UserList({
             )}
           >
             <Users isCollapsed={isCollapsed} />
-            <div className='bottom-5 absolute flex flex-col w-full z-50'>
-              <button className='flex gap-3 w-full cursor-pointer hover:bg-gray-50 py-3 px-3 rounded-md hover:dark:bg-gray-700' onClick={handleShare}>
+            <div className='bottom-0 absolute flex flex-col w-full z-50 bg-white dark:bg-gray-850 rounded-md pb-3'>
+              <button className='flex gap-3 w-full cursor-pointer hover:bg-gray-50 py-3 px-3 rounded-md hover:dark:bg-gray-700 dark:text-gray-200' onClick={handleShare}>
                 <ShareIcon />
                 <p>Share Room</p>
               </button>

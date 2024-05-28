@@ -42,7 +42,7 @@ export default function RoomReport({ conversationId }: { conversationId: string 
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <button className='flex gap-3 w-full cursor-pointer hover:bg-gray-50 py-3 px-3 rounded-md hover:dark:bg-gray-700'>
+        <button className='flex gap-3 w-full cursor-pointer hover:bg-gray-50 py-3 px-3 rounded-md hover:dark:bg-gray-700 dark:text-gray-200'>
           <ReportIcon />
           <p>Report Room</p>
         </button>
