@@ -68,11 +68,11 @@ async function abortRun(req, res) {
 
   runMessages = await checkMessageGaps({
     openai,
+    run_id,
     endpoint,
     thread_id,
-    run_id,
-    latestMessageId,
     conversationId,
+    latestMessageId,
   });
 
   const finalEvent = {
