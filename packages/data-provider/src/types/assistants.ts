@@ -6,6 +6,9 @@ export type Schema = OpenAPIV3.SchemaObject & { description?: string };
 export type Reference = OpenAPIV3.ReferenceObject & { description?: string };
 
 export type Metadata = {
+  avatar?: string;
+  author?: string;
+} & {
   [key: string]: unknown;
 };
 
