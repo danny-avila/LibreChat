@@ -1,5 +1,4 @@
 const OpenAI = require('openai');
-const nodeFetch = require('node-fetch');
 const { OllamaClient } = require('./OllamaClient');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const {
@@ -1135,7 +1134,7 @@ ${convo}
       let chatCompletion;
       /** @type {OpenAI} */
       const openai = new OpenAI({
-        fetch: nodeFetch,
+        fetch: this.fetch,
         apiKey: this.apiKey,
         ...opts,
       });
