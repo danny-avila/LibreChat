@@ -198,6 +198,8 @@ export const endpointSchema = z.object({
   addParams: z.record(z.any()).optional(),
   dropParams: z.array(z.string()).optional(),
   customOrder: z.number().optional(),
+  directEndpoint: z.boolean().optional(),
+  titleMessageRole: z.string().optional(),
 });
 
 export type TEndpoint = z.infer<typeof endpointSchema>;
@@ -747,7 +749,7 @@ export enum Constants {
   /** Key for the app's version. */
   VERSION = 'v0.7.2',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.1.2',
+  CONFIG_VERSION = '1.1.3',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Fixed, encoded domain length for Azure OpenAI Assistants Function name parsing. */

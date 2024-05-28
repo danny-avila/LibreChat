@@ -829,7 +829,7 @@ class OpenAIClient extends BaseClient {
 
       const instructionsPayload = [
         {
-          role: 'system',
+          role: this.options.titleMessageRole ?? 'system',
           content: `Please generate ${titleInstruction}
 
 ${convo}
