@@ -1108,7 +1108,12 @@ ${convo}
       }
 
       if (this.azure || this.options.azure) {
-        // Azure does not accept `model` in the body, so we need to remove it.
+        /* Azure Bug, extremely short default `max_tokens` response */
+        if (!modelOptions.max_tokens && modelOptions.model === 'gpt-4-vision-preview') {
+          modelOptions.max_tokens = 4000;
+        }
+
+        /* Azure does not accept `model` in the body, so we need to remove it. */
         delete modelOptions.model;
 
         opts.baseURL = this.langchainProxy
