@@ -24,7 +24,7 @@ function getImporter(jsonData) {
   }
 
   // For LibreChat
-  if (jsonData.conversationId && jsonData.messagesTree) {
+  if (jsonData.conversationId && (jsonData.messagesTree || jsonData.messages)) {
     logger.info('Importing LibreChat conversation');
     return importLibreChatConvo;
   }
@@ -88,6 +88,7 @@ async function importLibreChatConvo(
     importBatchBuilder.startConversation(EModelEndpoint.openAI);
 
     let firstMessageDate = null;
+    const options = jsonData.options || {};
 
     const traverseMessages = (messages, parentMessageId = null) => {
       for (const message of messages) {
@@ -108,7 +109,7 @@ async function importLibreChatConvo(
             text: message.text,
             sender: message.sender,
             isCreatedByUser: false,
-            model: jsonData.options.model,
+            model: options.model,
             parentMessageId: parentMessageId,
           });
         }
@@ -123,7 +124,7 @@ async function importLibreChatConvo(
       }
     };
 
-    traverseMessages(jsonData.messagesTree);
+    traverseMessages(jsonData.messagesTree || jsonData.messages);
 
     importBatchBuilder.finishConversation(jsonData.title, firstMessageDate);
     await importBatchBuilder.saveBatch();
