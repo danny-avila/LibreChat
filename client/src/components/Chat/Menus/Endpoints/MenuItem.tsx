@@ -87,10 +87,19 @@ const MenuItem: FC<MenuItemProps> = ({
     <>
       <div
         role="menuitem"
-        className="group m-1.5 flex max-h-[40px] cursor-pointer gap-2 rounded px-5 py-2.5 !pr-3 text-sm !opacity-100 hover:bg-black/5 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-600"
-        tabIndex={-1}
+        className={cn(
+          'group m-1.5 flex max-h-[40px] cursor-pointer gap-2 rounded px-5 py-2.5 !pr-3 text-sm !opacity-100 hover:bg-black/5 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-600',
+          'focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 dark:focus:ring-gray-400 dark:focus:ring-offset-gray-900',
+        )}
+        tabIndex={1}
         {...rest}
         onClick={() => onSelectEndpoint(endpoint)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            onSelectEndpoint(endpoint);
+          }
+        }}
       >
         <div className="flex grow items-center justify-between gap-2">
           <div>
@@ -120,6 +129,7 @@ const MenuItem: FC<MenuItemProps> = ({
                     expiryTime
                       ? 'w-full rounded-lg p-2 hover:text-gray-400 dark:hover:text-gray-400'
                       : '',
+                    'focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 dark:focus:ring-gray-400 dark:focus:ring-offset-gray-900',
                   )}
                   onClick={(e) => {
                     e.preventDefault();
