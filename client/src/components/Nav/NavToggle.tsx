@@ -43,7 +43,7 @@ export default function NavToggle({
               <div className="flex h-6 w-6 flex-col items-center">
                 {/* Top bar */}
                 <div
-                  className="h-3 w-1 rounded-full bg-black dark:bg-white"
+                  className="h-3 w-1 rounded-full bg-black dark:bg-green-400"
                   style={{
                     ...transition,
                     transform: `translateY(0.15rem) rotate(${topBarRotation}) translateZ(0px)`,
@@ -51,7 +51,7 @@ export default function NavToggle({
                 />
                 {/* Bottom bar */}
                 <div
-                  className="h-3 w-1 rounded-full bg-black dark:bg-white"
+                  className="h-3 w-1 rounded-full bg-black dark:bg-green-400"
                   style={{
                     ...transition,
                     transform: `translateY(-0.15rem) rotate(${bottomBarRotation}) translateZ(0px)`,

@@ -4,10 +4,14 @@ import { useState, useRef, useCallback } from 'react';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { ResizableHandleAlt, ResizablePanel, ResizablePanelGroup } from '~/components/ui/Resizable';
 import { TooltipProvider, Tooltip } from '~/components/ui/Tooltip';
-import { useLocalStorage } from '~/hooks';
+import { useLocalStorage, useToast } from '~/hooks';
 import NavToggle from '~/components/Nav/NavToggle';
 import { cn } from '~/utils';
 import Users from './Users';
+import ShareIcon from '~/components/svg/ShareIcon';
+import RoomReport from '~/components/Chat/RoomReport';
+import { useParams } from 'react-router-dom';
+import copy from 'copy-to-clipboard';
 
 interface UserListProps {
   defaultLayout?: number[] | undefined;
@@ -30,6 +34,8 @@ function UserList({
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
   const [collapsedSize, setCollapsedSize] = useState(navCollapsedSize);
+  const params = useParams();
+  const { showToast } = useToast();
 
   const panelRef = useRef<ImperativePanelHandle>(null);
 
@@ -63,6 +69,11 @@ function UserList({
     } else {
       panelRef.current?.expand();
     }
+  };
+
+  const handleShare = () => {
+    copy(window.location.href);
+    showToast({ message: 'Copied the room link.', status: 'success' });
   };
 
   return (
@@ -123,12 +134,19 @@ function UserList({
               localStorage.setItem('react-resizable-panels:collapsed', 'true');
             }}
             className={cn(
-              'sidenav hide-scrollbar border-l border-gray-200 bg-white p-1 dark:border-gray-800/50 dark:bg-gray-900',
+              'sidenav hide-scrollbar border-l relative border-gray-200 bg-white p-1 dark:border-gray-800/50 dark:bg-gray-900',
               isCollapsed ? 'min-w-[50px]' : 'min-w-[250px] sm:min-w-[250px]',
               minSize === 0 ? 'min-w-0' : '',
             )}
           >
             <Users isCollapsed={isCollapsed} />
+            <div className='bottom-0 absolute flex flex-col w-full z-50 bg-white dark:bg-gray-850 rounded-md pb-3'>
+              <button className='flex gap-3 w-full cursor-pointer hover:bg-gray-50 py-3 px-3 rounded-md hover:dark:bg-gray-700 dark:text-gray-200' onClick={handleShare}>
+                <ShareIcon />
+                <p>Share Room</p>
+              </button>
+              <RoomReport conversationId={params.conversationId ?? ''} />
+            </div>
           </ResizablePanel>
         </ResizablePanelGroup>
       </TooltipProvider>

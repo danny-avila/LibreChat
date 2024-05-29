@@ -28,7 +28,7 @@ const Registration: React.FC = () => {
   const onRegisterUserFormSubmit = async (data: TRegisterUser) => {
     try {
       await registerUser.mutateAsync(data);
-      navigate('/c/new');
+      navigate('/r/new');
     } catch (error) {
       setError(true);
       //@ts-ignore - error is of type unknown

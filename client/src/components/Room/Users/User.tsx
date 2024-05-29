@@ -32,21 +32,21 @@ export default function User({
 
   return (
     <a data-testid="convo-item" {...aProps}>
+      <img
+        src={user && user.avatar ? user.avatar : avatarSrc}
+        alt={user.name}
+        className="h-6 w-6 flex-shrink-0 rounded-full"
+      />
+      {user.cryptocurrency &&
+        user.cryptocurrency.length !== 0 &&
+        !isCollapsed &&
+        you?.id !== user?._id && <TipModal user={user} />}
       <TipModal user={user} isKarmaOnly={true} OpenButton={<div className="flex gap-3">
-        <img
-          src={user && user.avatar ? user.avatar : avatarSrc}
-          alt={user.name}
-          className="h-6 w-6 flex-shrink-0 rounded-full"
-        />
         {!isCollapsed && user.name}
       </div>} />
       {!isCollapsed && you?.id === conversation?.user._id && you.id !== user._id && (
         <UserKickButton user={user} />
       )}
-      {user.cryptocurrency &&
-        user.cryptocurrency.length !== 0 &&
-        !isCollapsed &&
-        you?.id !== user?._id && <TipModal user={user} />}
     </a>
   );
 }

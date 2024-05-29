@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Button, Textarea } from '../ui';
+import { Textarea } from '../ui';
 import { Dialog, DialogTrigger } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { request } from 'librechat-data-provider';
 import { useToastContext } from '~/Providers';
+import ReportIcon from '../svg/ReportIcon';
 
 export default function RoomReport({ conversationId }: { conversationId: string }) {
   const [reportReason, setReportReason] = useState<string>('');
@@ -41,7 +42,10 @@ export default function RoomReport({ conversationId }: { conversationId: string 
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Button className="bg-red-500 hover:bg-red-800">Report</Button>
+        <button className='flex gap-3 w-full cursor-pointer hover:bg-gray-50 py-3 px-3 rounded-md hover:dark:bg-gray-700 dark:text-gray-200'>
+          <ReportIcon />
+          <p>Report Room</p>
+        </button>
       </DialogTrigger>
       <DialogTemplate
         showCloseButton={false}

@@ -1,6 +1,7 @@
 import { useRecoilState, useRecoilValue } from 'recoil';
 import { useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { Helmet } from 'react-helmet';
 import {
   useGetModelsQuery,
   useGetStartupConfig,
@@ -110,5 +111,24 @@ export default function ChatRoute({ convo = 'c' }: { convo: ConvoType }) {
     return null;
   }
 
-  return <ChatView index={index} />;
+  return (
+    <>
+      {convoType === 'r' && (
+        <Helmet>
+          <title>{conversation?.title ?? 'ChatG chat group'}</title>
+          <meta property="og:title" content={conversation?.title ?? 'ChatG chat group'} />
+          <meta
+            property="og:description"
+            content="Join this AI chat group to start chatting now. Accept crypto tips for your chat contributions."
+          />
+          <meta property="og:image" content="https://chatg.com/chatglogo.svg" />
+          <meta property="og:image:width" content="1024" />
+          <meta property="og:image:height" content="1024" />
+          <meta property="og:url" content={`https://app.chatg.com/r/${conversationId}`} />
+          <meta property="og:type" content="website" />
+        </Helmet>
+      )}
+      <ChatView index={index} />
+    </>
+  );
 }

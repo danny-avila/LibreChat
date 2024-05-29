@@ -9,7 +9,7 @@ export default function Users({ isCollapsed = false }: { isCollapsed?: boolean }
 
   return (
     <>
-      <p className="w-full pt-3 text-center font-bold">
+      <p className="w-full pt-3 text-center font-bold text-gray-800 dark:text-gray-100">
         {conversation?.users
           ? conversation.users.length > 0
             ? `${conversation.users.length + 1} ${isCollapsed ? '' : 'Participants'}`
