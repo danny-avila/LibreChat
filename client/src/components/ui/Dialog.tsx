@@ -9,12 +9,10 @@ const Dialog = DialogPrimitive.Root;
 
 const DialogTrigger = DialogPrimitive.Trigger;
 
-const DialogPortal = ({
-  className = '',
-  children,
-  ...props
-}: DialogPrimitive.DialogPortalProps) => (
-  <DialogPrimitive.Portal className={cn(className)} {...props}>
+type DialogPortalProps = DialogPrimitive.DialogPortalProps & { className?: string };
+
+const DialogPortal = ({ className = '', children, ...props }: DialogPortalProps) => (
+  <DialogPrimitive.Portal className={cn(className)} {...(props as DialogPortalProps)}>
     <div className="fixed inset-0 z-[999] flex items-start justify-center sm:items-center">
       {children}
     </div>
@@ -122,6 +120,8 @@ const DialogClose = React.forwardRef<
     className={cn(
       'mt-2 inline-flex h-10 items-center justify-center rounded-lg border border-gray-200 bg-transparent px-4 py-2 text-sm font-semibold text-gray-900 transition-colors hover:bg-gray-100 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800 sm:mt-0',
       className ?? '',
+      /* Important: for accessibility */
+      'focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 dark:focus:ring-gray-400 dark:focus:ring-offset-gray-900',
     )}
     {...props}
   />
@@ -138,6 +138,8 @@ const DialogButton = React.forwardRef<
     className={cn(
       'mt-2 inline-flex h-10 items-center justify-center rounded-lg border border-gray-200 bg-transparent px-4 py-2 text-sm font-semibold text-gray-900 transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800 dark:focus:ring-gray-400 dark:focus:ring-offset-gray-900 sm:mt-0',
       className ?? '',
+      /* Important: for accessibility */
+      'focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 dark:focus:ring-gray-400 dark:focus:ring-offset-gray-900',
     )}
     {...props}
   />
