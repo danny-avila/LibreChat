@@ -49,8 +49,7 @@ const startServer = async () => {
       res.send(`<!DOCTYPE html>
         <html>
           <head>
-            <title>${room.title ? room.title : 'ChatG chat group'}</title>
-            <meta property="og:title" content={ogTags.title ? ogTags.title : 'ChatG chat group'} />
+            <meta property="og:title" content=${room.title ? room.title : 'ChatG chat group'} />
             <meta
               property="og:description"
               content="Join this AI chat group to start chatting now. Accept crypto tips for your chat contributions."

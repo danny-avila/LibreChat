@@ -48,7 +48,6 @@ const addConnection = (socket, userId, roomId) => {
 
   if (!flag) {
     clients.push({ socket, userId, roomId });
-    console.log('=== Added new socket client ===', socket.id);
   } else if (userId && flag) {
     clients[userIndex].roomId = roomId;
     clients[userIndex].socket = socket;
