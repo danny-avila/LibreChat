@@ -59,6 +59,9 @@ export default () => (
         name="description"
         content="Free ChatGPT Alternative - Easily ask questions and receive instant answers. Utilize Google Gemini, Bing Copilot, GPT-4, GPT-3.5-turbo and Claude by Anthropic"
       />
+      <meta property="og:image:width" content="1024" />
+      <meta property="og:image:height" content="1024" />
+      <meta property="og:type" content="website" />
       <meta name="keywords" content="ChatG, ChatGPT Alternative" />
     </Helmet>
     <App />

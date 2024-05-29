@@ -32,8 +32,8 @@ export const router = createBrowserRouter([
     element: <ResetPassword />,
   },
   // {
-  //   path: 'r/:conversationId?',
-  //   element: <ChatRoute convo="r" />,
+  //   path: '/og',
+  //   element: <OgImage />,
   // },
   {
     element: <AuthLayout />,

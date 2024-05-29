@@ -59,7 +59,7 @@ const createNewRoom = async (req, res) => {
 const getRoomById = async (req, res) => {
   const { roomId } = req.params;
   try {
-    const room = await getRoom(req.user._id, roomId);
+    const room = await getRoom(roomId);
     return res.json(room);
   } catch (error) {
     return res.status(500).json(error);
