@@ -128,7 +128,7 @@ describe('importLibreChatConvo', () => {
     expect(importBatchBuilder.saveBatch).toHaveBeenCalled();
   });
 
-  it('should import linear thread correctly with an available endpoint', async () => {
+  it('should import linear, non-recursive thread correctly with correct endpoint', async () => {
     mockedCacheGet.mockResolvedValue({
       [EModelEndpoint.azureOpenAI]: {},
     });
@@ -163,7 +163,6 @@ describe('importLibreChatConvo', () => {
   });
 
   it('should maintain correct message hierarchy (tree parent/children relationship)', async () => {
-    // Load test data
     const jsonData = JSON.parse(
       fs.readFileSync(path.join(__dirname, '__data__', 'librechat-tree.json'), 'utf8'),
     );
@@ -183,7 +182,6 @@ describe('importLibreChatConvo', () => {
       idToUUIDMap.set(message.originalMessageId, message.messageId);
     });
 
-    // Function to recursively check children
     const checkChildren = (children, parentId) => {
       children.forEach((child) => {
         const childUUID = idToUUIDMap.get(child.messageId);
@@ -202,7 +200,51 @@ describe('importLibreChatConvo', () => {
     };
 
     // Start hierarchy validation from root messages
-    checkChildren(jsonData.messages, null); // Assuming root messages have no parent
+    checkChildren(jsonData.messages, null);
+
+    expect(importBatchBuilder.saveBatch).toHaveBeenCalled();
+  });
+
+  it('should maintain correct message hierarchy (non-recursive)', async () => {
+    const jsonData = JSON.parse(
+      fs.readFileSync(
+        path.join(__dirname, '__data__', 'librechat-opts-nonr-branches.json'),
+        'utf8',
+      ),
+    );
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+    jest.spyOn(importBatchBuilder, 'saveBatch');
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    const textToMessageMap = new Map();
+    importBatchBuilder.saveMessage.mock.calls.forEach((call) => {
+      const message = call[0];
+      textToMessageMap.set(message.text, message);
+    });
+
+    const relationships = {
+      'tell me a long story': [
+        'Of course! Settle in for a tale of adventure across time and space.\n\n---\n\nOnce upon a time in the small, sleepy village of Eldoria, there was a young woman named Elara who longed for adventure. Eldoria was a place of routine and simplicity, nestled between rolling hills and dense forests, but Elara always felt that there was more to the world than the boundaries',
+        'Sure, I can craft a long story for you. Here it goes:\n\n### The Chronicles of Elenor: The Luminary of Anduril\n\nIn an age long forgotten by men, in a world kissed by the glow of dual suns, the Kingdom of Anduril flourished. Verdant valleys graced its land, majestic mountains shielded',
+      ],
+      'tell me a long long story': [
+        'Of course! Here’s a detailed and engaging story:\n\n---\n\n### The Legend of Eldoria\n\nNestled between towering mountains and dense, ancient forests was the enigmatic kingdom of Eldoria. This realm, clo aked in perpetual twilight, was the stuff of legends. It was said that the land was blessed by the gods and guarded by mythical creatures. Eldoria was a place where magic and realism intertwined seamlessly, creating a land of beauty, wonder, and peril.\n\nIn the heart of this kingdom lay the grand city of Lumina, known',
+      ],
+    };
+
+    Object.keys(relationships).forEach((parentText) => {
+      const parentMessage = textToMessageMap.get(parentText);
+      const childrenTexts = relationships[parentText];
+
+      childrenTexts.forEach((childText) => {
+        const childMessage = textToMessageMap.get(childText);
+        expect(childMessage.parentMessageId).toBe(parentMessage.messageId);
+      });
+    });
 
     expect(importBatchBuilder.saveBatch).toHaveBeenCalled();
   });

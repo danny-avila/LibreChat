@@ -159,7 +159,7 @@ async function importLibreChatConvo(
           messageId: newMessageId,
           parentMessageId:
             message.parentMessageId && message.parentMessageId !== Constants.NO_PARENT
-              ? idMapping.get(message.parentMessageId)
+              ? idMapping.get(message.parentMessageId) || Constants.NO_PARENT
               : Constants.NO_PARENT,
         };
 
