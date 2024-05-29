@@ -179,8 +179,18 @@ module.exports = {
     }
   },
 
-  async getMessages(filter) {
+  /**
+   * Retrieves messages from the database.
+   * @param {Record<string, unknown>} filter
+   * @param {string | undefined} [select]
+   * @returns
+   */
+  async getMessages(filter, select) {
     try {
+      if (select) {
+        return await Message.find(filter).select(select).sort({ createdAt: 1 }).lean();
+      }
+
       return await Message.find(filter).sort({ createdAt: 1 }).lean();
     } catch (err) {
       logger.error('Error getting messages:', err);
