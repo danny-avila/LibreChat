@@ -13,6 +13,8 @@ router.get('/', async function (req, res) {
     return today.getMonth() === 1 && today.getDate() === 11;
   };
 
+  const ldapLoginEnabled =
+    !!process.env.LDAP_URL && !!process.env.LDAP_BIND_DN && !!process.env.LDAP_USER_SEARCH_BASE;
   try {
     /** @type {TStartupConfig} */
     const payload = {
@@ -30,9 +32,10 @@ router.get('/', async function (req, res) {
         !!process.env.OPENID_SESSION_SECRET,
       openidLabel: process.env.OPENID_BUTTON_LABEL || 'Continue with OpenID',
       openidImageUrl: process.env.OPENID_IMAGE_URL,
+      ldapLoginEnabled,
       serverDomain: process.env.DOMAIN_SERVER || 'http://localhost:3080',
       emailLoginEnabled,
-      registrationEnabled: isEnabled(process.env.ALLOW_REGISTRATION),
+      registrationEnabled: !ldapLoginEnabled && isEnabled(process.env.ALLOW_REGISTRATION),
       socialLoginEnabled: isEnabled(process.env.ALLOW_SOCIAL_LOGIN),
       emailEnabled:
         (!!process.env.EMAIL_SERVICE || !!process.env.EMAIL_HOST) &&

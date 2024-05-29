@@ -86,6 +86,7 @@
     "passport-github2": "^0.1.12",
     "passport-google-oauth20": "^2.0.0",
     "passport-jwt": "^4.0.1",
+    "passport-ldapauth": "^3.0.1",
     "passport-local": "^1.0.0",
     "pino": "^8.12.1",
     "sharp": "^0.32.6",
