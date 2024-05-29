@@ -1,8 +1,8 @@
 const fs = require('fs');
 const path = require('path');
-const { EModelEndpoint, Constants } = require('librechat-data-provider');
+const { EModelEndpoint, Constants, openAISettings } = require('librechat-data-provider');
+const { bulkSaveConvos: _bulkSaveConvos } = require('~/models/Conversation');
 const { ImportBatchBuilder } = require('./importBatchBuilder');
-const { bulkSaveConvos: _bC } = require('~/models/Conversation');
 const { bulkSaveMessages } = require('~/models/Message');
 const getLogStores = require('~/cache/getLogStores');
 const { getImporter } = require('./importers');
@@ -102,6 +102,10 @@ describe('importChatGptConvo', () => {
 });
 
 describe('importLibreChatConvo', () => {
+  const jsonDataNonRecursiveBranches = JSON.parse(
+    fs.readFileSync(path.join(__dirname, '__data__', 'librechat-opts-nonr-branches.json'), 'utf8'),
+  );
+
   it('should import conversation correctly', async () => {
     mockedCacheGet.mockResolvedValue({
       [EModelEndpoint.openAI]: {},
@@ -206,12 +210,7 @@ describe('importLibreChatConvo', () => {
   });
 
   it('should maintain correct message hierarchy (non-recursive)', async () => {
-    const jsonData = JSON.parse(
-      fs.readFileSync(
-        path.join(__dirname, '__data__', 'librechat-opts-nonr-branches.json'),
-        'utf8',
-      ),
-    );
+    const jsonData = jsonDataNonRecursiveBranches;
     const requestUserId = 'user-123';
     const importBatchBuilder = new ImportBatchBuilder(requestUserId);
     jest.spyOn(importBatchBuilder, 'saveMessage');
@@ -247,6 +246,97 @@ describe('importLibreChatConvo', () => {
     });
 
     expect(importBatchBuilder.saveBatch).toHaveBeenCalled();
+  });
+
+  it('should retain properties from the original conversation as well as new settings', async () => {
+    mockedCacheGet.mockResolvedValue({
+      [EModelEndpoint.azureOpenAI]: {},
+    });
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'finishConversation');
+
+    const importer = getImporter(jsonDataNonRecursiveBranches);
+    await importer(jsonDataNonRecursiveBranches, requestUserId, () => importBatchBuilder);
+
+    expect(importBatchBuilder.finishConversation).toHaveBeenCalledTimes(1);
+
+    const [_title, createdAt, originalConvo] = importBatchBuilder.finishConversation.mock.calls[0];
+    const convo = importBatchBuilder.conversations[0];
+
+    expect(convo).toEqual({
+      ...jsonDataNonRecursiveBranches.options,
+      user: requestUserId,
+      conversationId: importBatchBuilder.conversationId,
+      title: originalConvo.title || 'Imported Chat',
+      createdAt: createdAt,
+      updatedAt: createdAt,
+      overrideTimestamp: true,
+      endpoint: importBatchBuilder.endpoint,
+      model: originalConvo.model || openAISettings.model.default,
+    });
+
+    expect(convo.title).toBe('Original');
+    expect(convo.createdAt).toBeInstanceOf(Date);
+    expect(convo.endpoint).toBe(EModelEndpoint.azureOpenAI);
+    expect(convo.model).toBe('gpt-4o');
+  });
+
+  describe('finishConversation', () => {
+    it('should retain properties from the original conversation as well as update with new settings', () => {
+      const requestUserId = 'user-123';
+      const builder = new ImportBatchBuilder(requestUserId);
+      builder.conversationId = 'conv-id-123';
+      builder.messages = [{ text: 'Hello, world!' }];
+
+      const originalConvo = {
+        _id: 'old-convo-id',
+        model: 'custom-model',
+      };
+
+      builder.endpoint = 'test-endpoint';
+
+      const title = 'New Chat Title';
+      const createdAt = new Date('2023-10-01T00:00:00Z');
+
+      const result = builder.finishConversation(title, createdAt, originalConvo);
+
+      expect(result).toEqual({
+        conversation: {
+          user: requestUserId,
+          conversationId: builder.conversationId,
+          title: 'New Chat Title',
+          createdAt: createdAt,
+          updatedAt: createdAt,
+          overrideTimestamp: true,
+          endpoint: 'test-endpoint',
+          model: 'custom-model',
+        },
+        messages: builder.messages,
+      });
+
+      expect(builder.conversations).toContainEqual({
+        user: requestUserId,
+        conversationId: builder.conversationId,
+        title: 'New Chat Title',
+        createdAt: createdAt,
+        updatedAt: createdAt,
+        overrideTimestamp: true,
+        endpoint: 'test-endpoint',
+        model: 'custom-model',
+      });
+    });
+
+    it('should use default values if not provided in the original conversation or as parameters', () => {
+      const requestUserId = 'user-123';
+      const builder = new ImportBatchBuilder(requestUserId);
+      builder.conversationId = 'conv-id-123';
+      builder.messages = [{ text: 'Hello, world!' }];
+      builder.endpoint = 'test-endpoint';
+      const result = builder.finishConversation();
+      expect(result.conversation.title).toBe('Imported Chat');
+      expect(result.conversation.model).toBe(openAISettings.model.default);
+    });
   });
 });
 

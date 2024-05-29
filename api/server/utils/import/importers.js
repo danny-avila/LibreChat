@@ -169,7 +169,7 @@ async function importLibreChatConvo(
       throw new Error('Invalid LibreChat file format');
     }
 
-    importBatchBuilder.finishConversation(jsonData.title, firstMessageDate ?? new Date());
+    importBatchBuilder.finishConversation(jsonData.title, firstMessageDate ?? new Date(), options);
     await importBatchBuilder.saveBatch();
     logger.debug(`user: ${requestUserId} | Conversation "${jsonData.title}" imported`);
   } catch (error) {
