@@ -10,6 +10,7 @@ import {
   ApiErrorWatcher,
 } from '~/components/Auth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
+import OgImage from '~/components/OgImage';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -32,8 +33,8 @@ export const router = createBrowserRouter([
     element: <ResetPassword />,
   },
   // {
-  //   path: 'r/:conversationId?',
-  //   element: <ChatRoute convo="r" />,
+  //   path: '/og',
+  //   element: <OgImage />,
   // },
   {
     element: <AuthLayout />,
