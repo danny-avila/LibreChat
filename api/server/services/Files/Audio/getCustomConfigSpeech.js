@@ -22,22 +22,22 @@ async function getCustomConfigSpeech(req, res) {
     }
 
     const ttsSchema = customConfig.speech?.speechTab;
-    const settings = [];
+    let settings = {};
 
     if (ttsSchema.advancedMode !== undefined) {
-      settings.push({ advancedMode: ttsSchema.advancedMode });
+      settings.advancedMode = ttsSchema.advancedMode;
     }
     if (ttsSchema.speechToText) {
       for (const key in ttsSchema.speechToText) {
         if (ttsSchema.speechToText[key] !== undefined) {
-          settings.push({ [key]: ttsSchema.speechToText[key] });
+          settings[key] = ttsSchema.speechToText[key];
         }
       }
     }
     if (ttsSchema.textToSpeech) {
       for (const key in ttsSchema.textToSpeech) {
         if (ttsSchema.textToSpeech[key] !== undefined) {
-          settings.push({ [key]: ttsSchema.textToSpeech[key] });
+          settings[key] = ttsSchema.textToSpeech[key];
         }
       }
     }

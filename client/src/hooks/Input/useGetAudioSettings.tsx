@@ -7,11 +7,11 @@ export enum AudioEndpoints {
 }
 
 const useGetAudioSettings = () => {
-  const [endpointSTT] = useRecoilState<string>(store.endpointSTT);
-  const [endpointTTS] = useRecoilState<string>(store.endpointTTS);
+  const [engineSTT] = useRecoilState<string>(store.engineSTT);
+  const [engineTTS] = useRecoilState<string>(store.engineTTS);
 
-  const useExternalSpeechToText = endpointSTT === AudioEndpoints.external;
-  const useExternalTextToSpeech = endpointTTS === AudioEndpoints.external;
+  const useExternalSpeechToText = engineSTT === AudioEndpoints.external;
+  const useExternalTextToSpeech = engineTTS === AudioEndpoints.external;
 
   return { useExternalSpeechToText, useExternalTextToSpeech };
 };

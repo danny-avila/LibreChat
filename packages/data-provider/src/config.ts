@@ -275,26 +275,34 @@ const sttSchema = z.object({
 });
 
 const speechTab = z.object({
+  conversationMode: z.boolean().optional(),
   advancedMode: z.boolean().optional(),
   speechToText: z
-    .object({
-      enable: z.boolean().optional(),
-      engine: z.string().optional(),
-      language: z.string().optional(),
-      autoTranscribeAudio: z.boolean().optional(),
-      decibelLevel: z.number().optional(),
-      autoSendText: z.boolean().optional(),
-    })
+    .boolean()
+    .optional()
+    .or(
+      z.object({
+        engineSTT: z.string().optional(),
+        languageSTT: z.string().optional(),
+        autoTranscribeAudio: z.boolean().optional(),
+        decibelLevel: z.number().optional(),
+        autoSendText: z.boolean().optional(),
+      }),
+    )
     .optional(),
   textToSpeech: z
-    .object({
-      enable: z.boolean().optional(),
-      engine: z.string().optional(),
-      voice: z.string().optional(),
-      automaticPlayback: z.boolean().optional(),
-      playbackRate: z.number().optional(),
-      cacheTTS: z.boolean().optional(),
-    })
+    .boolean()
+    .optional()
+    .or(
+      z.object({
+        engineTTS: z.string().optional(),
+        voice: z.string().optional(),
+        languageTTS: z.string().optional(),
+        automaticPlayback: z.boolean().optional(),
+        playbackRate: z.number().optional(),
+        cacheTTS: z.boolean().optional(),
+      }),
+    )
     .optional(),
 });
 

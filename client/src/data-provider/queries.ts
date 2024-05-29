@@ -425,5 +425,23 @@ export const useVoicesQuery = (): UseQueryResult<t.VoiceResponse> => {
 
 /* Custom config speech */
 export const useCustomConfigSpeechQuery = (): UseQueryResult<t.getCustomConfigSpeechResponse> => {
-  return useQuery([QueryKeys.customConfigSpeech], () => dataService.getCustomConfigSpeech());
+  const result = useQuery([QueryKeys.customConfigSpeech], () =>
+    dataService.getCustomConfigSpeech(),
+  );
+
+  if (result.data) {
+    console.log('result.data:', result.data); // Log the entire data object
+    Object.entries(result.data).forEach(([key, value]) => {
+      console.log('key:', key, 'value:', value); // Log each key-value pair
+      if (typeof value === 'object' && value !== null) {
+        Object.entries(value).forEach(([subKey, subValue]) => {
+          console.log('subKey:', subKey, 'subValue:', subValue); // Log each subKey-subValue pair
+          localStorage.setItem(`${key}.${subKey}`, JSON.stringify(subValue));
+        });
+      } else {
+        localStorage.setItem(key, JSON.stringify(value));
+      }
+    });
+  }
+  return result;
 };

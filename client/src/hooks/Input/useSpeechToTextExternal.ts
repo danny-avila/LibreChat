@@ -8,7 +8,7 @@ import useGetAudioSettings from './useGetAudioSettings';
 const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void) => {
   const { showToast } = useToastContext();
   const { useExternalSpeechToText } = useGetAudioSettings();
-  const [speechToText] = useRecoilState<boolean>(store.SpeechToText);
+  const [speechToText] = useRecoilState<boolean>(store.speechToText);
   const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
   const [autoSendText] = useRecoilState<boolean>(store.autoSendText);
   const [text, setText] = useState<string>('');

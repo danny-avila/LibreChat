@@ -83,7 +83,7 @@ export type SpeechToTextResponse = {
 
 export type VoiceResponse = string[];
 
-export type getCustomConfigSpeechResponse = string[];
+export type getCustomConfigSpeechResponse = { [key: string]: string };
 
 export type UploadMutationOptions = {
   onSuccess?: (data: TFileUpload, variables: FormData, context?: unknown) => void;

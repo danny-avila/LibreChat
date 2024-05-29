@@ -39,7 +39,7 @@ export default function HoverButtons({
   const { endpoint: _endpoint, endpointType } = conversation ?? {};
   const endpoint = endpointType ?? _endpoint;
   const [isCopied, setIsCopied] = useState(false);
-  const [TextToSpeech] = useRecoilState<boolean>(store.TextToSpeech);
+  const [TextToSpeech] = useRecoilState<boolean>(store.textToSpeech);
 
   const {
     hideEditButton,

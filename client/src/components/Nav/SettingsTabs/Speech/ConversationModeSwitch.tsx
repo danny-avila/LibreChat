@@ -12,8 +12,8 @@ export default function ConversationModeSwitch({
   const localize = useLocalize();
   const [conversationMode, setConversationMode] = useRecoilState<boolean>(store.conversationMode);
   const [advancedMode, setAdvancedMode] = useRecoilState<boolean>(store.advancedMode);
-  const [textToSpeech] = useRecoilState<boolean>(store.TextToSpeech);
-  const [speechToText] = useRecoilState<boolean>(store.SpeechToText);
+  const [textToSpeech] = useRecoilState<boolean>(store.textToSpeech);
+  const [speechToText] = useRecoilState<boolean>(store.speechToText);
   const [, setAutoSendText] = useRecoilState<boolean>(store.autoSendText);
   const [, setDecibelValue] = useRecoilState(store.decibelValue);
   const [, setAutoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
