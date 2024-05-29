@@ -103,6 +103,8 @@ async function importLibreChatConvo(
 
     let firstMessageDate = null;
 
+    const messagesToImport = jsonData.messagesTree || jsonData.messages;
+
     if (jsonData.recursive) {
       /**
        * Recursively traverse the messages tree and save each message to the database.
@@ -143,11 +145,11 @@ async function importLibreChatConvo(
         }
       };
 
-      await traverseMessages(jsonData.messagesTree || jsonData.messages);
-    } else if (jsonData.messages) {
+      await traverseMessages(messagesToImport);
+    } else if (messagesToImport) {
       const idMapping = new Map();
 
-      for (const message of jsonData.messages) {
+      for (const message of messagesToImport) {
         if (!firstMessageDate) {
           firstMessageDate = new Date(message.createdAt);
         }
