@@ -14,7 +14,7 @@ router.use(requireJwtAuth);
 
 router.get('/:conversationId', validateMessageReq, async (req, res) => {
   const { conversationId } = req.params;
-  res.status(200).send(await getMessages({ conversationId }));
+  res.status(200).send(await getMessages({ conversationId }, '-_id -__v -user'));
 });
 
 // CREATE
@@ -28,7 +28,7 @@ router.post('/:conversationId', validateMessageReq, async (req, res) => {
 // READ
 router.get('/:conversationId/:messageId', validateMessageReq, async (req, res) => {
   const { conversationId, messageId } = req.params;
-  res.status(200).send(await getMessages({ conversationId, messageId }));
+  res.status(200).send(await getMessages({ conversationId, messageId }, '-_id -__v -user'));
 });
 
 // UPDATE
