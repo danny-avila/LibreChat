@@ -21,7 +21,7 @@ module.exports = {
   Conversation,
   saveConvo: async (user, { conversationId, newConversationId, ...convo }) => {
     try {
-      const messages = await getMessages({ conversationId });
+      const messages = await getMessages({ conversationId }, '_id');
       const update = { ...convo, messages, user };
       if (newConversationId) {
         update.conversationId = newConversationId;
