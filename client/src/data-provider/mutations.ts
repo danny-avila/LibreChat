@@ -466,21 +466,25 @@ export const useExportConversationsMutation = (
     }, 500); // Poll every 0,5 seconds. Adjust time as necessary.
   };
 
-  return useMutation<t.ImportStartResponse, unknown, FormData>({
+  return useMutation<t.TImportStartResponse, unknown, FormData>({
     mutationFn: (formData: FormData) => dataService.exportAllConversationsToJson(formData),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries(QueryKeys.allConversations);
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries([QueryKeys.allConversations]);
       const jobId = data.jobId;
       if (jobId) {
         console.log('Job ID:', jobId);
         pollJobStatus(
           jobId,
           async () => {
-            queryClient.invalidateQueries(QueryKeys.allConversations);
-            onSuccess?.(await dataService.exportConversationsFile(jobId));
+            queryClient.invalidateQueries([QueryKeys.allConversations]);
+            onSuccess?.(
+              (await dataService.exportConversationsFile(jobId)).data,
+              variables,
+              context,
+            );
           },
           (error) => {
-            onError?.(error, { jobId }, { context: 'ExportJobFailed' });
+            onError?.(error, variables, { context: 'ExportJobFailed' });
           },
         );
       }

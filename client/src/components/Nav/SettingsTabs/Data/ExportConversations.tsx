@@ -7,16 +7,13 @@ import { useToastContext } from '~/Providers';
 function ExportConversations() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const [errors, setErrors] = useState<string[]>([]);
+  const [, setErrors] = useState<string[]>([]);
   const setError = (error: string) => setErrors((prevErrors) => [...prevErrors, error]);
 
   const exportFile = useExportConversationsMutation({
     onSuccess: (data) => {
       console.log('Exporting started', data);
-
       showToast({ message: localize('com_ui_export_conversation_success') });
-
-      // Directly initiate download here if `data` contains downloadable content or URL
       downloadConversationsJsonFile(data);
     },
     onError: (error) => {
@@ -35,7 +32,6 @@ function ExportConversations() {
   };
 
   const downloadConversationsJsonFile = (data) => {
-    // Assuming `data` is the downloadable content; adjust as necessary for your use case
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
 

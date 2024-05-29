@@ -211,7 +211,6 @@ router.get('/export/jobs/:jobId', jobStatusHandler);
 router.get('/export/jobs/:jobId/conversations.json', async (req, res) => {
   logger.info('Downloading JSON file');
   try {
-    //put this in a function
     const { jobId } = req.params;
     const tempDir = os.tmpdir();
     const filePath = path.join(tempDir, `export-${jobId}`);
