@@ -2,69 +2,67 @@ const fs = require('fs');
 const path = require('path');
 const { EModelEndpoint, Constants } = require('librechat-data-provider');
 const { ImportBatchBuilder } = require('./importBatchBuilder');
+const { bulkSaveConvos: _bC } = require('~/models/Conversation');
+const { bulkSaveMessages } = require('~/models/Message');
+const getLogStores = require('~/cache/getLogStores');
 const { getImporter } = require('./importers');
 
-// Mocking the ImportBatchBuilder class and its methods
-jest.mock('./importBatchBuilder', () => {
-  return {
-    ImportBatchBuilder: jest.fn().mockImplementation(() => {
-      return {
-        startConversation: jest.fn().mockResolvedValue(undefined),
-        addUserMessage: jest.fn().mockResolvedValue(undefined),
-        addGptMessage: jest.fn().mockResolvedValue(undefined),
-        saveMessage: jest.fn().mockResolvedValue(undefined),
-        finishConversation: jest.fn().mockResolvedValue(undefined),
-        saveBatch: jest.fn().mockResolvedValue(undefined),
-      };
-    }),
-  };
+jest.mock('~/cache/getLogStores');
+const mockedCacheGet = jest.fn();
+getLogStores.mockImplementation(() => ({
+  get: mockedCacheGet,
+}));
+
+// Mock the database methods
+jest.mock('~/models/Conversation', () => ({
+  bulkSaveConvos: jest.fn(),
+}));
+jest.mock('~/models/Message', () => ({
+  bulkSaveMessages: jest.fn(),
+}));
+
+afterEach(() => {
+  jest.clearAllMocks();
 });
 
 describe('importChatGptConvo', () => {
   it('should import conversation correctly', async () => {
     const expectedNumberOfMessages = 19;
-    const expectedNumberOfConversations = 2;
-    // Given
     const jsonData = JSON.parse(
       fs.readFileSync(path.join(__dirname, '__data__', 'chatgpt-export.json'), 'utf8'),
     );
     const requestUserId = 'user-123';
-    const mockedBuilderFactory = jest.fn().mockReturnValue(new ImportBatchBuilder(requestUserId));
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
 
-    // When
+    // Spy on instance methods
+    jest.spyOn(importBatchBuilder, 'startConversation');
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+    jest.spyOn(importBatchBuilder, 'finishConversation');
+    jest.spyOn(importBatchBuilder, 'saveBatch');
+
     const importer = getImporter(jsonData);
-    await importer(jsonData, requestUserId, mockedBuilderFactory);
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
 
-    // Then
-    expect(mockedBuilderFactory).toHaveBeenCalledWith(requestUserId);
-    const mockImportBatchBuilder = mockedBuilderFactory.mock.results[0].value;
-
-    expect(mockImportBatchBuilder.startConversation).toHaveBeenCalledWith(EModelEndpoint.openAI);
-    expect(mockImportBatchBuilder.saveMessage).toHaveBeenCalledTimes(expectedNumberOfMessages); // Adjust expected number
-    expect(mockImportBatchBuilder.finishConversation).toHaveBeenCalledTimes(
-      expectedNumberOfConversations,
-    ); // Adjust expected number
-    expect(mockImportBatchBuilder.saveBatch).toHaveBeenCalled();
+    expect(importBatchBuilder.startConversation).toHaveBeenCalledWith(EModelEndpoint.openAI);
+    expect(importBatchBuilder.saveMessage).toHaveBeenCalledTimes(expectedNumberOfMessages);
+    expect(importBatchBuilder.finishConversation).toHaveBeenCalledTimes(jsonData.length);
+    expect(importBatchBuilder.saveBatch).toHaveBeenCalled();
   });
+
   it('should maintain correct message hierarchy (tree parent/children relationship)', async () => {
-    // Prepare test data with known hierarchy
     const jsonData = JSON.parse(
       fs.readFileSync(path.join(__dirname, '__data__', 'chatgpt-tree.json'), 'utf8'),
     );
-
     const requestUserId = 'user-123';
-    const mockedBuilderFactory = jest.fn().mockReturnValue(new ImportBatchBuilder(requestUserId));
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
 
-    // When
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+    jest.spyOn(importBatchBuilder, 'saveBatch');
+
     const importer = getImporter(jsonData);
-    await importer(jsonData, requestUserId, mockedBuilderFactory);
-
-    // Then
-    expect(mockedBuilderFactory).toHaveBeenCalledWith(requestUserId);
-    const mockImportBatchBuilder = mockedBuilderFactory.mock.results[0].value;
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
 
     const entries = Object.keys(jsonData[0].mapping);
-    // Filter entries that should be processed (not system and have content)
     const messageEntries = entries.filter(
       (id) =>
         jsonData[0].mapping[id].message &&
@@ -72,20 +70,16 @@ describe('importChatGptConvo', () => {
         jsonData[0].mapping[id].message.content,
     );
 
-    // Expect the saveMessage to be called for each valid entry
-    expect(mockImportBatchBuilder.saveMessage).toHaveBeenCalledTimes(messageEntries.length);
+    expect(importBatchBuilder.saveMessage).toHaveBeenCalledTimes(messageEntries.length);
 
     const idToUUIDMap = new Map();
-    // Map original IDs to dynamically generated UUIDs
-    mockImportBatchBuilder.saveMessage.mock.calls.forEach((call, index) => {
+    importBatchBuilder.saveMessage.mock.calls.forEach((call, index) => {
       const originalId = messageEntries[index];
       idToUUIDMap.set(originalId, call[0].messageId);
     });
 
-    // Validate the UUID map contains all expected entries
     expect(idToUUIDMap.size).toBe(messageEntries.length);
 
-    // Validate correct parent-child relationships
     messageEntries.forEach((id) => {
       const { parent } = jsonData[0].mapping[id];
 
@@ -93,62 +87,100 @@ describe('importChatGptConvo', () => {
         ? idToUUIDMap.get(parent) ?? Constants.NO_PARENT
         : Constants.NO_PARENT;
 
-      const actualParentId = idToUUIDMap.get(id)
-        ? mockImportBatchBuilder.saveMessage.mock.calls.find(
-          (call) => call[0].messageId === idToUUIDMap.get(id),
+      const actualMessageId = idToUUIDMap.get(id);
+      const actualParentId = actualMessageId
+        ? importBatchBuilder.saveMessage.mock.calls.find(
+          (call) => call[0].messageId === actualMessageId,
         )[0].parentMessageId
         : Constants.NO_PARENT;
 
       expect(actualParentId).toBe(expectedParentId);
     });
 
-    expect(mockImportBatchBuilder.saveBatch).toHaveBeenCalled();
+    expect(importBatchBuilder.saveBatch).toHaveBeenCalled();
   });
 });
 
 describe('importLibreChatConvo', () => {
   it('should import conversation correctly', async () => {
+    mockedCacheGet.mockResolvedValue({
+      [EModelEndpoint.openAI]: {},
+    });
     const expectedNumberOfMessages = 6;
-    const expectedNumberOfConversations = 1;
-
-    // Given
     const jsonData = JSON.parse(
       fs.readFileSync(path.join(__dirname, '__data__', 'librechat-export.json'), 'utf8'),
     );
     const requestUserId = 'user-123';
-    const mockedBuilderFactory = jest.fn().mockReturnValue(new ImportBatchBuilder(requestUserId));
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
 
-    // When
+    // Spy on instance methods
+    jest.spyOn(importBatchBuilder, 'startConversation');
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+    jest.spyOn(importBatchBuilder, 'finishConversation');
+    jest.spyOn(importBatchBuilder, 'saveBatch');
+
     const importer = getImporter(jsonData);
-    await importer(jsonData, requestUserId, mockedBuilderFactory);
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
 
-    // Then
-    const mockImportBatchBuilder = mockedBuilderFactory.mock.results[0].value;
-    expect(mockImportBatchBuilder.startConversation).toHaveBeenCalledWith(EModelEndpoint.openAI);
-    expect(mockImportBatchBuilder.saveMessage).toHaveBeenCalledTimes(expectedNumberOfMessages); // Adjust expected number
-    expect(mockImportBatchBuilder.finishConversation).toHaveBeenCalledTimes(
-      expectedNumberOfConversations,
-    ); // Adjust expected number
-    expect(mockImportBatchBuilder.saveBatch).toHaveBeenCalled();
+    expect(importBatchBuilder.startConversation).toHaveBeenCalledWith(EModelEndpoint.openAI);
+    expect(importBatchBuilder.saveMessage).toHaveBeenCalledTimes(expectedNumberOfMessages);
+    expect(importBatchBuilder.finishConversation).toHaveBeenCalledTimes(1);
+    expect(importBatchBuilder.saveBatch).toHaveBeenCalled();
   });
+
+  it('should import linear thread correctly with an available endpoint', async () => {
+    mockedCacheGet.mockResolvedValue({
+      [EModelEndpoint.azureOpenAI]: {},
+    });
+
+    const jsonData = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '__data__', 'librechat-linear.json'), 'utf8'),
+    );
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+
+    jest.spyOn(importBatchBuilder, 'startConversation');
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+    jest.spyOn(importBatchBuilder, 'finishConversation');
+    jest.spyOn(importBatchBuilder, 'saveBatch');
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    expect(bulkSaveMessages).toHaveBeenCalledTimes(1);
+
+    const messages = bulkSaveMessages.mock.calls[0][0];
+    let lastMessageId = null;
+    for (const message of messages) {
+      if (!lastMessageId) {
+        lastMessageId = message.messageId;
+      }
+      expect(message.parentMessageId).toBe(lastMessageId);
+    }
+
+    expect(importBatchBuilder.startConversation).toHaveBeenCalledWith(EModelEndpoint.azureOpenAI);
+    expect(importBatchBuilder.saveMessage).toHaveBeenCalledTimes(jsonData.messages.length);
+    expect(importBatchBuilder.finishConversation).toHaveBeenCalled();
+    expect(importBatchBuilder.saveBatch).toHaveBeenCalled();
+  });
+
   it('should maintain correct message hierarchy (tree parent/children relationship)', async () => {
     // Load test data
     const jsonData = JSON.parse(
       fs.readFileSync(path.join(__dirname, '__data__', 'librechat-tree.json'), 'utf8'),
     );
     const requestUserId = 'user-123';
-    const mockedBuilderFactory = jest.fn().mockReturnValue(new ImportBatchBuilder(requestUserId));
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+    jest.spyOn(importBatchBuilder, 'saveBatch');
 
     // When
     const importer = getImporter(jsonData);
-    await importer(jsonData, requestUserId, mockedBuilderFactory);
-
-    // Then
-    const mockImportBatchBuilder = mockedBuilderFactory.mock.results[0].value;
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
 
     // Create a map to track original message IDs to new UUIDs
     const idToUUIDMap = new Map();
-    mockImportBatchBuilder.saveMessage.mock.calls.forEach((call) => {
+    importBatchBuilder.saveMessage.mock.calls.forEach((call) => {
       const message = call[0];
       idToUUIDMap.set(message.originalMessageId, message.messageId);
     });
@@ -158,7 +190,7 @@ describe('importLibreChatConvo', () => {
       children.forEach((child) => {
         const childUUID = idToUUIDMap.get(child.messageId);
         const expectedParentId = idToUUIDMap.get(parentId) ?? null;
-        const messageCall = mockImportBatchBuilder.saveMessage.mock.calls.find(
+        const messageCall = importBatchBuilder.saveMessage.mock.calls.find(
           (call) => call[0].messageId === childUUID,
         );
 
@@ -172,75 +204,73 @@ describe('importLibreChatConvo', () => {
     };
 
     // Start hierarchy validation from root messages
-    checkChildren(jsonData.messagesTree, null); // Assuming root messages have no parent
+    checkChildren(jsonData.messages, null); // Assuming root messages have no parent
 
-    expect(mockImportBatchBuilder.saveBatch).toHaveBeenCalled();
+    expect(importBatchBuilder.saveBatch).toHaveBeenCalled();
   });
 });
 
 describe('importChatBotUiConvo', () => {
   it('should import custom conversation correctly', async () => {
-    // Given
     const jsonData = JSON.parse(
       fs.readFileSync(path.join(__dirname, '__data__', 'chatbotui-export.json'), 'utf8'),
     );
     const requestUserId = 'custom-user-456';
-    const mockedBuilderFactory = jest.fn().mockReturnValue(new ImportBatchBuilder(requestUserId));
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
 
-    // When
+    // Spy on instance methods
+    jest.spyOn(importBatchBuilder, 'startConversation');
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+    jest.spyOn(importBatchBuilder, 'addUserMessage');
+    jest.spyOn(importBatchBuilder, 'addGptMessage');
+    jest.spyOn(importBatchBuilder, 'finishConversation');
+    jest.spyOn(importBatchBuilder, 'saveBatch');
+
     const importer = getImporter(jsonData);
-    await importer(jsonData, requestUserId, mockedBuilderFactory);
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
 
-    // Then
-    const mockImportBatchBuilder = mockedBuilderFactory.mock.results[0].value;
-    expect(mockImportBatchBuilder.startConversation).toHaveBeenCalledWith('openAI');
-
-    // User messages
-    expect(mockImportBatchBuilder.addUserMessage).toHaveBeenCalledTimes(3);
-    expect(mockImportBatchBuilder.addUserMessage).toHaveBeenNthCalledWith(
+    expect(importBatchBuilder.startConversation).toHaveBeenCalledWith(EModelEndpoint.openAI);
+    expect(importBatchBuilder.addUserMessage).toHaveBeenCalledTimes(3);
+    expect(importBatchBuilder.addUserMessage).toHaveBeenNthCalledWith(
       1,
       'Hello what are you able to do?',
     );
-    expect(mockImportBatchBuilder.addUserMessage).toHaveBeenNthCalledWith(
+    expect(importBatchBuilder.addUserMessage).toHaveBeenNthCalledWith(
       3,
       'Give me the code that inverts binary tree in COBOL',
     );
 
-    // GPT messages
-    expect(mockImportBatchBuilder.addGptMessage).toHaveBeenCalledTimes(3);
-    expect(mockImportBatchBuilder.addGptMessage).toHaveBeenNthCalledWith(
+    expect(importBatchBuilder.addGptMessage).toHaveBeenCalledTimes(3);
+    expect(importBatchBuilder.addGptMessage).toHaveBeenNthCalledWith(
       1,
       expect.stringMatching(/^Hello! As an AI developed by OpenAI/),
       'gpt-4-1106-preview',
     );
-    expect(mockImportBatchBuilder.addGptMessage).toHaveBeenNthCalledWith(
+    expect(importBatchBuilder.addGptMessage).toHaveBeenNthCalledWith(
       3,
       expect.stringContaining('```cobol'),
       'gpt-3.5-turbo',
     );
 
-    expect(mockImportBatchBuilder.finishConversation).toHaveBeenCalledTimes(2);
-    expect(mockImportBatchBuilder.finishConversation).toHaveBeenNthCalledWith(
+    expect(importBatchBuilder.finishConversation).toHaveBeenCalledTimes(2);
+    expect(importBatchBuilder.finishConversation).toHaveBeenNthCalledWith(
       1,
       'Hello what are you able to do?',
       expect.any(Date),
     );
-    expect(mockImportBatchBuilder.finishConversation).toHaveBeenNthCalledWith(
+    expect(importBatchBuilder.finishConversation).toHaveBeenNthCalledWith(
       2,
       'Give me the code that inverts ...',
       expect.any(Date),
     );
 
-    expect(mockImportBatchBuilder.saveBatch).toHaveBeenCalled();
+    expect(importBatchBuilder.saveBatch).toHaveBeenCalled();
   });
 });
 
 describe('getImporter', () => {
   it('should throw an error if the import type is not supported', () => {
-    // Given
     const jsonData = { unsupported: 'data' };
-
-    // When
     expect(() => getImporter(jsonData)).toThrow('Unsupported import type');
   });
 });

@@ -1,6 +1,7 @@
 const { v4: uuidv4 } = require('uuid');
-const { EModelEndpoint, Constants, openAISettings } = require('librechat-data-provider');
+const { EModelEndpoint, Constants, openAISettings, CacheKeys } = require('librechat-data-provider');
 const { createImportBatchBuilder } = require('./importBatchBuilder');
+const getLogStores = require('~/cache/getLogStores');
 const logger = require('~/config/winston');
 
 /**
@@ -85,27 +86,39 @@ async function importLibreChatConvo(
   try {
     /** @type {ImportBatchBuilder} */
     const importBatchBuilder = builderFactory(requestUserId);
-    importBatchBuilder.startConversation(EModelEndpoint.openAI);
-
-    let firstMessageDate = null;
     const options = jsonData.options || {};
 
-    const traverseMessages = (messages, parentMessageId = null) => {
+    /* Endpoint configuration */
+    let endpoint = jsonData.endpoint ?? options.endpoint ?? EModelEndpoint.openAI;
+    const cache = getLogStores(CacheKeys.CONFIG_STORE);
+    const endpointsConfig = await cache.get(CacheKeys.ENDPOINT_CONFIG);
+    const endpointConfig = endpointsConfig?.[endpoint];
+    if (!endpointConfig && endpointsConfig) {
+      endpoint = Object.keys(endpointsConfig)[0];
+    } else if (!endpointConfig) {
+      endpoint = EModelEndpoint.openAI;
+    }
+
+    importBatchBuilder.startConversation(endpoint);
+
+    let firstMessageDate = null;
+
+    const traverseMessages = async (messages, parentMessageId = null) => {
       for (const message of messages) {
         if (!message.text) {
           continue;
         }
 
         let savedMessage;
-        if (message.sender?.toLowerCase() === 'user') {
-          savedMessage = importBatchBuilder.saveMessage({
+        if (message.sender?.toLowerCase() === 'user' || message.isCreatedByUser) {
+          savedMessage = await importBatchBuilder.saveMessage({
             text: message.text,
             sender: 'user',
             isCreatedByUser: true,
             parentMessageId: parentMessageId,
           });
         } else {
-          savedMessage = importBatchBuilder.saveMessage({
+          savedMessage = await importBatchBuilder.saveMessage({
             text: message.text,
             sender: message.sender,
             isCreatedByUser: false,
@@ -118,13 +131,13 @@ async function importLibreChatConvo(
           firstMessageDate = new Date(message.createdAt);
         }
 
-        if (message.children) {
-          traverseMessages(message.children, savedMessage.messageId);
+        if (message.children && message.children.length > 0) {
+          await traverseMessages(message.children, savedMessage.messageId);
         }
       }
     };
 
-    traverseMessages(jsonData.messagesTree || jsonData.messages);
+    await traverseMessages(jsonData.messagesTree || jsonData.messages);
 
     importBatchBuilder.finishConversation(jsonData.title, firstMessageDate);
     await importBatchBuilder.saveBatch();
