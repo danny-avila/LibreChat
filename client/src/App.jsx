@@ -10,26 +10,9 @@ import { ToastProvider } from './Providers';
 import Toast from './components/ui/Toast';
 import { router } from './routes';
 import { Helmet } from 'react-helmet';
-import { useEffect, useState } from 'react';
-import { request } from 'librechat-data-provider';
 
 const App = () => {
   const { setError } = useApiErrorBoundary();
-  const url = window.location.href;
-  const urlParts = url.split('/');
-  const roomId = urlParts[urlParts.indexOf('r') + 1];
-  const [ogTags, setOgTags] = useState(null);
-
-  useEffect(() => {
-    if (!roomId.includes('http') && !urlParts[urlParts.indexOf('r') + 1].includes('new')) {
-      request.get(`/api/rooms/${roomId}`).then(room => {
-        setOgTags({
-          title: room.title,
-          url: url,
-        });
-      });
-    }
-  }, [roomId, urlParts, url]);
 
   const queryClient = new QueryClient({
     queryCache: new QueryCache({
@@ -43,18 +26,6 @@ const App = () => {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {ogTags &&
-        <Helmet>
-          <title>{ogTags.title ? ogTags.title : 'ChatG chat group'}</title>
-          <meta property="og:title" content={ogTags.title ? ogTags.title : 'ChatG chat group'} />
-          <meta
-            property="og:description"
-            content="Join this AI chat group to start chatting now. Accept crypto tips for your chat contributions."
-          />
-          <meta property="og:image" content="https://chatg.com/chatglogo.svg" />
-          <meta property="og:url" content={ogTags.url} />
-        </Helmet>
-      }
       <RecoilRoot>
         <ThemeProvider>
           <RadixToast.Provider>

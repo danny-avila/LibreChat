@@ -10,7 +10,6 @@ import {
   ApiErrorWatcher,
 } from '~/components/Auth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
-import OgImage from '~/components/OgImage';
 
 const AuthLayout = () => (
   <AuthContextProvider>

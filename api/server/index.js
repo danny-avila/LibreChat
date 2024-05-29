@@ -18,6 +18,8 @@ const { logger } = require('~/config');
 
 const routes = require('./routes');
 const { setupWebSocket } = require('./controllers/SocketController');
+const { isbot } = require('isbot');
+const { getRoom } = require('~/models');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN } = process.env ?? {};
 
@@ -38,6 +40,30 @@ const startServer = async () => {
   await AppService(app);
 
   app.get('/health', (_req, res) => res.status(200).send('OK'));
+
+  app.use(async (req, res, next) => {
+    const userAgent = req.headers['user-agent'];
+    if (isbot(userAgent) && req.url.startsWith('/r/')) {
+      const roomId = req.url.substring(3, 40);
+      const room = await getRoom(roomId);
+      res.send(`<!DOCTYPE html>
+        <html>
+          <head>
+            <title>${room.title ? room.title : 'ChatG chat group'}</title>
+            <meta property="og:title" content={ogTags.title ? ogTags.title : 'ChatG chat group'} />
+            <meta
+              property="og:description"
+              content="Join this AI chat group to start chatting now. Accept crypto tips for your chat contributions."
+            />
+            <meta property="og:image" content="https://chatg.com/chatglogo.svg" />
+            <meta property="og:url" content=${process.env.DOMAIN_SERVER ? process.env.DOMAIN_SERVER + '/r/' + roomId : 'https://app.chatg.com'} />
+            </head>
+        </html>
+      `);
+    } else {
+      next();
+    }
+  });
 
   // Middleware
   app.use(noIndex);

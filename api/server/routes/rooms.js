@@ -22,7 +22,7 @@ router.post('/join/:roomId', requireJwtAuth, joinRoom);
 router.post('/leave/:roomId', requireJwtAuth, leaveRoom);
 router.post('/kick/:roomId', requireJwtAuth, kickUser);
 router.get('/', requireJwtAuth, getRoomByUser);
-router.get('/:roomId', requireJwtAuth, getRoomById);
+router.get('/:roomId', getRoomById);
 router.get('/:roomId/users', requireJwtAuth, getRoomById);
 router.post('/:roomId', requireJwtAuth, createNewMessage);
 

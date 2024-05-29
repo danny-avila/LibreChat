@@ -48,9 +48,9 @@ const getRoomsByUser = async (userId) => {
  * @param {string} conversationId
  * @returns Room
  */
-const getRoom = async (user, conversationId) => {
+const getRoom = async (conversationId) => {
   try {
-    return await Conversation.findOne({ user, conversationId, isRoom: true })
+    return await Conversation.findOne({ conversationId, isRoom: true })
       .populate('user')
       .populate('users')
       .lean();
