@@ -103,43 +103,73 @@ async function importLibreChatConvo(
 
     let firstMessageDate = null;
 
-    const traverseMessages = async (messages, parentMessageId = null) => {
-      for (const message of messages) {
-        if (!message.text) {
-          continue;
-        }
+    if (jsonData.recursive) {
+      /**
+       * Recursively traverse the messages tree and save each message to the database.
+       * @param {TMessage[]} messages
+       * @param {string} parentMessageId
+       */
+      const traverseMessages = async (messages, parentMessageId = null) => {
+        for (const message of messages) {
+          if (!message.text) {
+            continue;
+          }
 
-        let savedMessage;
-        if (message.sender?.toLowerCase() === 'user' || message.isCreatedByUser) {
-          savedMessage = await importBatchBuilder.saveMessage({
-            text: message.text,
-            sender: 'user',
-            isCreatedByUser: true,
-            parentMessageId: parentMessageId,
-          });
-        } else {
-          savedMessage = await importBatchBuilder.saveMessage({
-            text: message.text,
-            sender: message.sender,
-            isCreatedByUser: false,
-            model: options.model,
-            parentMessageId: parentMessageId,
-          });
-        }
+          let savedMessage;
+          if (message.sender?.toLowerCase() === 'user' || message.isCreatedByUser) {
+            savedMessage = await importBatchBuilder.saveMessage({
+              text: message.text,
+              sender: 'user',
+              isCreatedByUser: true,
+              parentMessageId: parentMessageId,
+            });
+          } else {
+            savedMessage = await importBatchBuilder.saveMessage({
+              text: message.text,
+              sender: message.sender,
+              isCreatedByUser: false,
+              model: options.model,
+              parentMessageId: parentMessageId,
+            });
+          }
 
+          if (!firstMessageDate) {
+            firstMessageDate = new Date(message.createdAt);
+          }
+
+          if (message.children && message.children.length > 0) {
+            await traverseMessages(message.children, savedMessage.messageId);
+          }
+        }
+      };
+
+      await traverseMessages(jsonData.messagesTree || jsonData.messages);
+    } else if (jsonData.messages) {
+      const idMapping = new Map();
+
+      for (const message of jsonData.messages) {
         if (!firstMessageDate) {
           firstMessageDate = new Date(message.createdAt);
         }
+        const newMessageId = uuidv4();
+        idMapping.set(message.messageId, newMessageId);
 
-        if (message.children && message.children.length > 0) {
-          await traverseMessages(message.children, savedMessage.messageId);
-        }
+        const clonedMessage = {
+          ...message,
+          messageId: newMessageId,
+          parentMessageId:
+            message.parentMessageId && message.parentMessageId !== Constants.NO_PARENT
+              ? idMapping.get(message.parentMessageId)
+              : Constants.NO_PARENT,
+        };
+
+        importBatchBuilder.saveMessage(clonedMessage);
       }
-    };
+    } else {
+      throw new Error('Invalid LibreChat file format');
+    }
 
-    await traverseMessages(jsonData.messagesTree || jsonData.messages);
-
-    importBatchBuilder.finishConversation(jsonData.title, firstMessageDate);
+    importBatchBuilder.finishConversation(jsonData.title, firstMessageDate ?? new Date());
     await importBatchBuilder.saveBatch();
     logger.debug(`user: ${requestUserId} | Conversation "${jsonData.title}" imported`);
   } catch (error) {

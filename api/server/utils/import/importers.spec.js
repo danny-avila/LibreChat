@@ -150,12 +150,10 @@ describe('importLibreChatConvo', () => {
     expect(bulkSaveMessages).toHaveBeenCalledTimes(1);
 
     const messages = bulkSaveMessages.mock.calls[0][0];
-    let lastMessageId = null;
+    let lastMessageId = Constants.NO_PARENT;
     for (const message of messages) {
-      if (!lastMessageId) {
-        lastMessageId = message.messageId;
-      }
       expect(message.parentMessageId).toBe(lastMessageId);
+      lastMessageId = message.messageId;
     }
 
     expect(importBatchBuilder.startConversation).toHaveBeenCalledWith(EModelEndpoint.azureOpenAI);
