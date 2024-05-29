@@ -25,6 +25,11 @@ afterEach(() => {
   delete process.env.DOMAIN_SERVER;
   delete process.env.ALLOW_REGISTRATION;
   delete process.env.ALLOW_SOCIAL_LOGIN;
+  delete process.env.LDAP_URL;
+  delete process.env.LDAP_BIND_DN;
+  delete process.env.LDAP_BIND_CREDENTIALS;
+  delete process.env.LDAP_USER_SEARCH_BASE;
+  delete process.env.LDAP_SEARCH_FILTER;
 });
 
 //TODO: This works/passes locally but http request tests fail with 404 in CI. Need to figure out why.
@@ -50,6 +55,11 @@ describe.skip('GET /', () => {
     process.env.DOMAIN_SERVER = 'http://test-server.com';
     process.env.ALLOW_REGISTRATION = 'true';
     process.env.ALLOW_SOCIAL_LOGIN = 'true';
+    process.env.LDAP_URL = 'Test LDAP URL';
+    process.env.LDAP_BIND_DN = 'Test LDAP Bind DN';
+    process.env.LDAP_BIND_CREDENTIALS = 'Test LDAP Bind Credentials';
+    process.env.LDAP_USER_SEARCH_BASE = 'Test LDAP User Search Base';
+    process.env.LDAP_SEARCH_FILTER = 'Test LDAP Search Filter';
 
     const response = await request(app).get('/');
 
@@ -64,6 +74,7 @@ describe.skip('GET /', () => {
       openidLoginEnabled: true,
       openidLabel: 'Test OpenID',
       openidImageUrl: 'http://test-server.com',
+      ldapLoginEnabled: true,
       serverDomain: 'http://test-server.com',
       emailLoginEnabled: 'true',
       registrationEnabled: 'true',
