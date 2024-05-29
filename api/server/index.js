@@ -49,12 +49,12 @@ const startServer = async () => {
       res.send(`<!DOCTYPE html>
         <html>
           <head>
-            <meta property="og:title" content=${room.title ? room.title : 'ChatG chat group'} />
+            <meta property="og:title" content="${room.title ? room.title : 'ChatG chat group'}" />
             <meta
               property="og:description"
               content="Join this AI chat group to start chatting now. Accept crypto tips for your chat contributions."
             />
-            <meta property="og:image" content="https://chatg.com/chatglogo.svg" />
+            <meta property="og:image" content="${process.env.ADMIN_URI ? process.env.ADMIN_URI + 'api/og?title=' + room.title : 'https://app.chatg.com/logo.png'}" />
             <meta property="og:url" content=${process.env.DOMAIN_SERVER ? process.env.DOMAIN_SERVER + '/r/' + roomId : 'https://app.chatg.com'} />
             </head>
         </html>
