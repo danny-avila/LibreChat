@@ -1,6 +1,7 @@
 const { v4: uuidv4 } = require('uuid');
-const { EModelEndpoint, Constants, openAISettings } = require('librechat-data-provider');
+const { EModelEndpoint, Constants, openAISettings, CacheKeys } = require('librechat-data-provider');
 const { createImportBatchBuilder } = require('./importBatchBuilder');
+const getLogStores = require('~/cache/getLogStores');
 const logger = require('~/config/winston');
 
 /**
@@ -24,7 +25,7 @@ function getImporter(jsonData) {
   }
 
   // For LibreChat
-  if (jsonData.conversationId && jsonData.messagesTree) {
+  if (jsonData.conversationId && (jsonData.messagesTree || jsonData.messages)) {
     logger.info('Importing LibreChat conversation');
     return importLibreChatConvo;
   }
@@ -85,47 +86,92 @@ async function importLibreChatConvo(
   try {
     /** @type {ImportBatchBuilder} */
     const importBatchBuilder = builderFactory(requestUserId);
-    importBatchBuilder.startConversation(EModelEndpoint.openAI);
+    const options = jsonData.options || {};
+
+    /* Endpoint configuration */
+    let endpoint = jsonData.endpoint ?? options.endpoint ?? EModelEndpoint.openAI;
+    const cache = getLogStores(CacheKeys.CONFIG_STORE);
+    const endpointsConfig = await cache.get(CacheKeys.ENDPOINT_CONFIG);
+    const endpointConfig = endpointsConfig?.[endpoint];
+    if (!endpointConfig && endpointsConfig) {
+      endpoint = Object.keys(endpointsConfig)[0];
+    } else if (!endpointConfig) {
+      endpoint = EModelEndpoint.openAI;
+    }
+
+    importBatchBuilder.startConversation(endpoint);
 
     let firstMessageDate = null;
 
-    const traverseMessages = (messages, parentMessageId = null) => {
-      for (const message of messages) {
-        if (!message.text) {
-          continue;
-        }
+    const messagesToImport = jsonData.messagesTree || jsonData.messages;
 
-        let savedMessage;
-        if (message.sender?.toLowerCase() === 'user') {
-          savedMessage = importBatchBuilder.saveMessage({
-            text: message.text,
-            sender: 'user',
-            isCreatedByUser: true,
-            parentMessageId: parentMessageId,
-          });
-        } else {
-          savedMessage = importBatchBuilder.saveMessage({
-            text: message.text,
-            sender: message.sender,
-            isCreatedByUser: false,
-            model: jsonData.options.model,
-            parentMessageId: parentMessageId,
-          });
-        }
+    if (jsonData.recursive) {
+      /**
+       * Recursively traverse the messages tree and save each message to the database.
+       * @param {TMessage[]} messages
+       * @param {string} parentMessageId
+       */
+      const traverseMessages = async (messages, parentMessageId = null) => {
+        for (const message of messages) {
+          if (!message.text) {
+            continue;
+          }
 
+          let savedMessage;
+          if (message.sender?.toLowerCase() === 'user' || message.isCreatedByUser) {
+            savedMessage = await importBatchBuilder.saveMessage({
+              text: message.text,
+              sender: 'user',
+              isCreatedByUser: true,
+              parentMessageId: parentMessageId,
+            });
+          } else {
+            savedMessage = await importBatchBuilder.saveMessage({
+              text: message.text,
+              sender: message.sender,
+              isCreatedByUser: false,
+              model: options.model,
+              parentMessageId: parentMessageId,
+            });
+          }
+
+          if (!firstMessageDate) {
+            firstMessageDate = new Date(message.createdAt);
+          }
+
+          if (message.children && message.children.length > 0) {
+            await traverseMessages(message.children, savedMessage.messageId);
+          }
+        }
+      };
+
+      await traverseMessages(messagesToImport);
+    } else if (messagesToImport) {
+      const idMapping = new Map();
+
+      for (const message of messagesToImport) {
         if (!firstMessageDate) {
           firstMessageDate = new Date(message.createdAt);
         }
+        const newMessageId = uuidv4();
+        idMapping.set(message.messageId, newMessageId);
 
-        if (message.children) {
-          traverseMessages(message.children, savedMessage.messageId);
-        }
+        const clonedMessage = {
+          ...message,
+          messageId: newMessageId,
+          parentMessageId:
+            message.parentMessageId && message.parentMessageId !== Constants.NO_PARENT
+              ? idMapping.get(message.parentMessageId) || Constants.NO_PARENT
+              : Constants.NO_PARENT,
+        };
+
+        importBatchBuilder.saveMessage(clonedMessage);
       }
-    };
+    } else {
+      throw new Error('Invalid LibreChat file format');
+    }
 
-    traverseMessages(jsonData.messagesTree);
-
-    importBatchBuilder.finishConversation(jsonData.title, firstMessageDate);
+    importBatchBuilder.finishConversation(jsonData.title, firstMessageDate ?? new Date(), options);
     await importBatchBuilder.saveBatch();
     logger.debug(`user: ${requestUserId} | Conversation "${jsonData.title}" imported`);
   } catch (error) {

@@ -589,7 +589,7 @@ class OpenAIClient extends BaseClient {
     let streamResult = null;
     this.modelOptions.user = this.user;
     const invalidBaseUrl = this.completionsUrl && extractBaseURL(this.completionsUrl) === null;
-    const useOldMethod = !!(invalidBaseUrl || !this.isChatCompletion || typeof Bun !== 'undefined');
+    const useOldMethod = !!(invalidBaseUrl || !this.isChatCompletion);
     if (typeof opts.onProgress === 'function' && useOldMethod) {
       const completionResult = await this.getCompletion(
         payload,
@@ -829,7 +829,7 @@ class OpenAIClient extends BaseClient {
 
       const instructionsPayload = [
         {
-          role: 'system',
+          role: this.options.titleMessageRole ?? 'system',
           content: `Please generate ${titleInstruction}
 
 ${convo}
@@ -1108,7 +1108,12 @@ ${convo}
       }
 
       if (this.azure || this.options.azure) {
-        // Azure does not accept `model` in the body, so we need to remove it.
+        /* Azure Bug, extremely short default `max_tokens` response */
+        if (!modelOptions.max_tokens && modelOptions.model === 'gpt-4-vision-preview') {
+          modelOptions.max_tokens = 4000;
+        }
+
+        /* Azure does not accept `model` in the body, so we need to remove it. */
         delete modelOptions.model;
 
         opts.baseURL = this.langchainProxy
@@ -1129,6 +1134,7 @@ ${convo}
       let chatCompletion;
       /** @type {OpenAI} */
       const openai = new OpenAI({
+        fetch: this.fetch,
         apiKey: this.apiKey,
         ...opts,
       });

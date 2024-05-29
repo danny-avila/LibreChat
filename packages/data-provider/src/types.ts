@@ -37,6 +37,13 @@ export type TEndpointOption = {
   thread_id?: string;
 };
 
+export type TPayload = Partial<TMessage> &
+  Partial<TEndpointOption> & {
+    isContinued: boolean;
+    conversationId: string | null;
+    messages?: TMessages;
+  };
+
 export type TSubmission = {
   plugin?: TResPlugin;
   plugins?: TResPlugin[];
