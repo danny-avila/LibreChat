@@ -39,7 +39,7 @@ function redactMessage(str, trimLength) {
 
   const patterns = getMatchingSensitivePatterns(str);
   patterns.forEach((pattern) => {
-    str = str.replace(pattern, '[REDACTED]');
+    str = str.replace(pattern, '$1[REDACTED]');
   });
 
   if (trimLength !== undefined && str.length > trimLength) {
