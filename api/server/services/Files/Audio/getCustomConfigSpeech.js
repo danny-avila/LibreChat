@@ -42,8 +42,6 @@ async function getCustomConfigSpeech(req, res) {
       }
     }
 
-    console.log(settings);
-
     res.json(settings);
   } catch (error) {
     logger.error(`Failed to get speechTab settings: ${error.message}`);

@@ -33,9 +33,8 @@ function Speech() {
   const [confirmClear, setConfirmClear] = useState(false);
   const [advancedMode] = useRecoilState(store.advancedMode);
   const [autoTranscribeAudio] = useRecoilState(store.autoTranscribeAudio);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { data } = useCustomConfigSpeechQuery();
-
-  console.log(data);
 
   const { useExternalSpeechToText, useExternalTextToSpeech } = useGetAudioSettings();
 
