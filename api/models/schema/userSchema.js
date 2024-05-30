@@ -64,6 +64,11 @@ const userSchema = mongoose.Schema(
       unique: true,
       sparse: true,
     },
+    ldapId: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
     githubId: {
       type: String,
       unique: true,

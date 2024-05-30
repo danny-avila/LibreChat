@@ -496,7 +496,7 @@ const chatV2 = async (req, res) => {
         handlers,
         thread_id,
         attachedFileIds,
-        parentMessageId,
+        parentMessageId: userMessageId,
         responseMessage: openai.responseMessage,
         // streamOptions: {
 

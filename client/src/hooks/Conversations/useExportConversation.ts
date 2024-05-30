@@ -1,7 +1,9 @@
 import download from 'downloadjs';
+import { useCallback } from 'react';
 import exportFromJSON from 'export-from-json';
-import { useGetMessagesByConvoId } from 'librechat-data-provider/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import {
+  QueryKeys,
   ContentTypes,
   ToolCallTypes,
   imageGenTools,
@@ -16,6 +18,7 @@ import type {
 import useBuildMessageTree from '~/hooks/Messages/useBuildMessageTree';
 import { useScreenshot } from '~/hooks/ScreenshotContext';
 import { cleanupPreset, buildTree } from '~/utils';
+import { useParams } from 'react-router-dom';
 
 export default function useExportConversation({
   conversation,
@@ -32,24 +35,25 @@ export default function useExportConversation({
   exportBranches: boolean | 'indeterminate';
   recursive: boolean | 'indeterminate';
 }) {
+  const queryClient = useQueryClient();
   const { captureScreenshot } = useScreenshot();
   const buildMessageTree = useBuildMessageTree();
-  const { data: messagesTree = null } = useGetMessagesByConvoId(
-    conversation?.conversationId ?? '',
-    {
-      select: (data) => {
-        const dataTree = buildTree({ messages: data });
-        return dataTree?.length === 0 ? null : dataTree ?? null;
-      },
-    },
-  );
+
+  const { conversationId: paramId } = useParams();
+
+  const getMessageTree = useCallback(() => {
+    const queryParam = paramId === 'new' ? paramId : conversation?.conversationId ?? paramId ?? '';
+    const messages = queryClient.getQueryData<TMessage[]>([QueryKeys.messages, queryParam]) ?? [];
+    const dataTree = buildTree({ messages });
+    return dataTree?.length === 0 ? null : dataTree ?? null;
+  }, [paramId, conversation?.conversationId, queryClient]);
 
   const getMessageText = (message: TMessage, format = 'text') => {
     if (!message) {
       return '';
     }
 
-    const formatText = (sender, text) => {
+    const formatText = (sender: string, text: string) => {
       if (format === 'text') {
         return `>> ${sender}:\n${text}`;
       }
@@ -149,7 +153,7 @@ export default function useExportConversation({
     const messages = await buildMessageTree({
       messageId: conversation?.conversationId,
       message: null,
-      messages: messagesTree,
+      messages: getMessageTree(),
       branches: !!exportBranches,
       recursive: false,
     });
@@ -224,7 +228,7 @@ export default function useExportConversation({
     const messages = await buildMessageTree({
       messageId: conversation?.conversationId,
       message: null,
-      messages: messagesTree,
+      messages: getMessageTree(),
       branches: false,
       recursive: false,
     });
@@ -280,7 +284,7 @@ export default function useExportConversation({
     const messages = await buildMessageTree({
       messageId: conversation?.conversationId,
       message: null,
-      messages: messagesTree,
+      messages: getMessageTree(),
       branches: false,
       recursive: false,
     });
@@ -332,7 +336,7 @@ export default function useExportConversation({
     const messages = await buildMessageTree({
       messageId: conversation?.conversationId,
       message: null,
-      messages: messagesTree,
+      messages: getMessageTree(),
       branches: !!exportBranches,
       recursive: !!recursive,
     });

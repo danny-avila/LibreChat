@@ -47,7 +47,8 @@ export const languages = [
   'pascal',
 ];
 
-export const removeFocusOutlines =
+export const removeFocusOutlines = '';
+export const removeFocusRings =
   'focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0';
 
 export const cardStyle =

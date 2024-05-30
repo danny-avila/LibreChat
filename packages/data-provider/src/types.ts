@@ -276,6 +276,7 @@ export type TStartupConfig = {
   openidLoginEnabled: boolean;
   openidLabel: string;
   openidImageUrl: string;
+  ldapLoginEnabled: boolean;
   serverDomain: string;
   emailLoginEnabled: boolean;
   registrationEnabled: boolean;
