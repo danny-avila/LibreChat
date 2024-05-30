@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import { useUpdateTokenCountMutation } from 'librechat-data-provider/react-query';
 import type { TUpdateTokenCountResponse } from 'librechat-data-provider';
-import { cn, defaultTextProps, removeFocusOutlines } from '~/utils/';
 import { Label, Checkbox, SelectDropDown } from '~/components/ui';
+import { cn, defaultTextProps, removeFocusRings } from '~/utils';
 import { useLocalize, useDebounce } from '~/hooks';
 import type { TSettingsProps } from '~/common';
 
@@ -60,7 +60,7 @@ export default function Settings({ conversation, setOption, readonly }: TSetting
             setValue={setToneStyle}
             availableValues={['Creative', 'Fast', 'Balanced', 'Precise']}
             disabled={readonly}
-            className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusOutlines)}
+            className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusRings)}
             containerClassName="flex w-full resize-none"
           />
         </div>
