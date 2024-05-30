@@ -24,9 +24,6 @@ const initialize = async () => {
   router.post('/', upload.single('file'));
   router.post('/images', upload.single('file'));
 
-  router.use('/stt', stt);
-  router.use('/tts', tts);
-
   router.use('/', files);
   router.use('/images', images);
   router.use('/images/avatar', avatar);
