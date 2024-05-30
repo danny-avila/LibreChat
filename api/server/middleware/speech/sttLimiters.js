@@ -7,12 +7,7 @@ const getEnvironmentVariables = () => {
   const STT_IP_WINDOW = parseInt(process.env.STT_IP_WINDOW) || 1;
   const STT_USER_MAX = parseInt(process.env.STT_USER_MAX) || 50;
   const STT_USER_WINDOW = parseInt(process.env.STT_USER_WINDOW) || 1;
-  console.log({
-    STT_IP_MAX,
-    STT_IP_WINDOW,
-    STT_USER_MAX,
-    STT_USER_WINDOW,
-  });
+
   const sttIpWindowMs = STT_IP_WINDOW * 60 * 1000;
   const sttIpMax = STT_IP_MAX;
   const sttIpWindowInMinutes = sttIpWindowMs / 60000;

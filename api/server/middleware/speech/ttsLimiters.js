@@ -7,12 +7,6 @@ const getEnvironmentVariables = () => {
   const TTS_IP_WINDOW = parseInt(process.env.TTS_IP_WINDOW) || 1;
   const TTS_USER_MAX = parseInt(process.env.TTS_USER_MAX) || 50;
   const TTS_USER_WINDOW = parseInt(process.env.TTS_USER_WINDOW) || 1;
-  console.log({
-    TTS_IP_MAX,
-    TTS_IP_WINDOW,
-    TTS_USER_MAX,
-    TTS_USER_WINDOW,
-  });
 
   const ttsIpWindowMs = TTS_IP_WINDOW * 60 * 1000;
   const ttsIpMax = TTS_IP_MAX;
