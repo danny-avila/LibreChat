@@ -7,6 +7,7 @@ import type { TMessage } from 'librechat-data-provider';
 import { useCustomAudioRef, MediaSourceAppender, usePauseGlobalAudio } from '~/hooks/Audio';
 import { useAuthContext } from '~/hooks';
 import { globalAudioId } from '~/common';
+import { getLatestText } from '~/utils';
 import store from '~/store';
 
 function timeoutPromise(ms: number, message?: string) {
@@ -47,13 +48,14 @@ export default function StreamAudio({ index = 0 }) {
   );
 
   useEffect(() => {
+    const latestText = getLatestText(latestMessage);
     const shouldFetch =
       token &&
       automaticPlayback &&
       isSubmitting &&
       latestMessage &&
       !latestMessage.isCreatedByUser &&
-      (latestMessage.text || latestMessage.content) &&
+      latestText &&
       latestMessage.messageId &&
       !latestMessage.messageId.includes('_') &&
       !isFetching &&
