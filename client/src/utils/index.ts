@@ -5,6 +5,7 @@ export * from './latex';
 export * from './convos';
 export * from './presets';
 export * from './textarea';
+export * from './messages';
 export * from './languages';
 export * from './endpoints';
 export * from './sharedLink';

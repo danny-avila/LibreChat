@@ -273,6 +273,13 @@ const sttSchema = z.object({
     .optional(),
 });
 
+export enum RateLimitPrefix {
+  FILE_UPLOAD = 'FILE_UPLOAD',
+  IMPORT = 'IMPORT',
+  TTS = 'TTS',
+  STT = 'STT',
+}
+
 export const rateLimitSchema = z.object({
   fileUploads: z
     .object({
@@ -283,6 +290,22 @@ export const rateLimitSchema = z.object({
     })
     .optional(),
   conversationsImport: z
+    .object({
+      ipMax: z.number().optional(),
+      ipWindowInMinutes: z.number().optional(),
+      userMax: z.number().optional(),
+      userWindowInMinutes: z.number().optional(),
+    })
+    .optional(),
+  tts: z
+    .object({
+      ipMax: z.number().optional(),
+      ipWindowInMinutes: z.number().optional(),
+      userMax: z.number().optional(),
+      userWindowInMinutes: z.number().optional(),
+    })
+    .optional(),
+  stt: z
     .object({
       ipMax: z.number().optional(),
       ipWindowInMinutes: z.number().optional(),
@@ -646,6 +669,14 @@ export enum ViolationTypes {
    * An issued ban.
    */
   BAN = 'ban',
+  /**
+   * TTS Request Limit Violation.
+   */
+  TTS_LIMIT = 'tts_limit',
+  /**
+   * STT Request Limit Violation.
+   */
+  STT_LIMIT = 'stt_limit',
 }
 
 /**
@@ -749,7 +780,7 @@ export enum Constants {
   /** Key for the app's version. */
   VERSION = 'v0.7.2',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.1.3',
+  CONFIG_VERSION = '1.1.4',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Fixed, encoded domain length for Azure OpenAI Assistants Function name parsing. */
