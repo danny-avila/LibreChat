@@ -2,7 +2,6 @@ import { useRecoilState } from 'recoil';
 import { Switch } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
-import user from '~/store/user';
 
 export default function ConversationModeSwitch({
   onCheckedChange,

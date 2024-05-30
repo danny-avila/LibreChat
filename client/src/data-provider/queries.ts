@@ -430,12 +430,9 @@ export const useCustomConfigSpeechQuery = (): UseQueryResult<t.getCustomConfigSp
   );
 
   if (result.data) {
-    console.log('result.data:', result.data); // Log the entire data object
     Object.entries(result.data).forEach(([key, value]) => {
-      console.log('key:', key, 'value:', value); // Log each key-value pair
       if (typeof value === 'object' && value !== null) {
         Object.entries(value).forEach(([subKey, subValue]) => {
-          console.log('subKey:', subKey, 'subValue:', subValue); // Log each subKey-subValue pair
           localStorage.setItem(`${key}.${subKey}`, JSON.stringify(subValue));
         });
       } else {
