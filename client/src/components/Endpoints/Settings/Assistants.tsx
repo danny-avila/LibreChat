@@ -3,7 +3,7 @@ import TextareaAutosize from 'react-textarea-autosize';
 import type { Assistant, TPreset } from 'librechat-data-provider';
 import type { TModelSelectProps, Option } from '~/common';
 import { Label, HoverCard, SelectDropDown, HoverCardTrigger } from '~/components/ui';
-import { cn, defaultTextProps, removeFocusOutlines, mapAssistants } from '~/utils';
+import { cn, defaultTextProps, removeFocusRings, mapAssistants } from '~/utils';
 import { useLocalize, useDebouncedInput, useAssistantListMap } from '~/hooks';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
@@ -116,7 +116,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             setValue={setModel}
             availableValues={modelOptions}
             disabled={readonly}
-            className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusOutlines)}
+            className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusRings)}
             containerClassName="flex w-full resize-none"
           />
         </div>
@@ -131,7 +131,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                 setValue={setAssistant}
                 availableValues={assistants as Option[]}
                 disabled={readonly}
-                className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusOutlines)}
+                className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusRings)}
                 containerClassName="flex w-full resize-none"
               />
             </div>

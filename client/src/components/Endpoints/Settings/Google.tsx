@@ -10,7 +10,7 @@ import {
   SelectDropDown,
   HoverCardTrigger,
 } from '~/components/ui';
-import { cn, defaultTextProps, optionText, removeFocusOutlines } from '~/utils';
+import { cn, defaultTextProps, optionText, removeFocusOutlines, removeFocusRings } from '~/utils';
 import OptionHoverAlt from '~/components/SidePanel/Parameters/OptionHover';
 import { useLocalize, useDebouncedInput } from '~/hooks';
 import OptionHover from './OptionHover';
@@ -59,7 +59,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             setValue={setModel}
             availableValues={models}
             disabled={readonly}
-            className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusOutlines)}
+            className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusRings)}
             containerClassName="flex w-full resize-none"
           />
         </div>
