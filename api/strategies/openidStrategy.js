@@ -85,10 +85,21 @@ async function setupOpenId() {
       },
       async (tokenset, userinfo, done) => {
         try {
+          logger.info(`[openidStrategy] verify login openidId: ${userinfo.sub}`);
+          logger.debug('[openidStrategy] very login tokenset and userinfo', { tokenset, userinfo });
+
           let user = await User.findOne({ openidId: userinfo.sub });
+          logger.info(
+            `[openidStrategy] user ${user ? 'found' : 'not found'} with openidId: ${userinfo.sub}`,
+          );
 
           if (!user) {
             user = await User.findOne({ email: userinfo.email });
+            logger.info(
+              `[openidStrategy] user ${user ? 'found' : 'not found'} with email: ${
+                userinfo.email
+              } for openidId: ${userinfo.sub}`,
+            );
           }
 
           let fullName = '';
@@ -120,8 +131,8 @@ async function setupOpenId() {
             }, decodedToken);
 
             if (!found) {
-              console.error(
-                `Key '${requiredRoleParameterPath}' not found in ${requiredRoleTokenKind} token!`,
+              logger.error(
+                `[openidStrategy] Key '${requiredRoleParameterPath}' not found in ${requiredRoleTokenKind} token!`,
               );
             }
 
@@ -183,8 +194,21 @@ async function setupOpenId() {
 
           await user.save();
 
+          logger.info(
+            `[openidStrategy] login success openidId: ${user.openidId} username: ${user.username} email: ${user.email}`,
+            {
+              user: {
+                openidId: user.openidId,
+                username: user.username,
+                email: user.email,
+                name: user.name,
+              },
+            },
+          );
+
           done(null, user);
         } catch (err) {
+          logger.error('[openidStrategy] login failed', err);
           done(err);
         }
       },
