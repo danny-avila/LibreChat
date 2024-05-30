@@ -48,6 +48,8 @@ export const languages = [
 ];
 
 export const removeFocusOutlines = '';
+export const removeFocusRings =
+  'focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0';
 
 export const cardStyle =
   'transition-colors rounded-md min-w-[75px] border font-normal bg-white hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-700 dark:bg-gray-800 text-black dark:text-gray-600 focus:outline-none data-[state=open]:bg-gray-50 dark:data-[state=open]:bg-gray-700';
