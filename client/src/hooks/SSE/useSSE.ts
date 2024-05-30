@@ -367,7 +367,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       if (!data) {
         const convoId = conversationId ?? v4();
         const errorResponse = parseErrorResponse({
-          text: 'Error connecting to server',
+          text: 'Error connecting to server, try refreshing the page.',
           ...submission,
           conversationId: convoId,
         });
