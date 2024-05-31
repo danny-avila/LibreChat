@@ -86,14 +86,14 @@ const AttachFile = ({
           >
             <div className="attach-file-options">
               <FileUpload handleFileChange={handleFileUpload}>
-                <div className="menu-item dark:hover:bg-token-main-surface-secondary dark:focus-visible:bg-token-main-surface-secondary dark:radix-state-open:bg-token-main-surface-secondary group relative flex cursor-pointer items-center rounded-md text-sm hover:bg-[#f5f5f5] focus-visible:bg-[#f5f5f5] focus-visible:outline-0 radix-disabled:pointer-events-none  radix-disabled:opacity-50 radix-state-open:bg-[#f5f5f5] ">
+                <div className="menu-item dark:focus-visible:bg-token-main-surface-secondary dark:radix-state-open:bg-token-main-surface-secondary group relative flex cursor-pointer items-center rounded-md text-sm !opacity-100 hover:bg-black/5 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-600">
                   <UploadFile />
                   <span>{localize('com_ui_upload_file')}</span>
                 </div>
               </FileUpload>
               {endpoint !== 'assistants' && (
                 <div
-                  className="menu-item dark:hover:bg-token-main-surface-secondary dark:focus-visible:bg-token-main-surface-secondary dark:radix-state-open:bg-token-main-surface-secondary group relative flex cursor-pointer items-center rounded-md text-sm hover:bg-[#f5f5f5] focus-visible:bg-[#f5f5f5] focus-visible:outline-0 radix-disabled:pointer-events-none  radix-disabled:opacity-50 radix-state-open:bg-[#f5f5f5]"
+                  className="menu-item ddark:focus-visible:bg-token-main-surface-secondary dark:radix-state-open:bg-token-main-surface-secondary group relative flex cursor-pointer items-center rounded-md text-sm !opacity-100 hover:bg-black/5 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-600"
                   onClick={() => {
                     setShowUrlModal(true);
                     setShowMenu(false); // Fecha o menu ao abrir o modal
