@@ -11,6 +11,7 @@ const FileContainer = ({
   file: ExtendedFile | TFile;
   onDelete?: () => void;
 }) => {
+  console.log(file.type);
   const fileType = getFileType(file.type);
 
   return (
