@@ -285,7 +285,7 @@ const speechTab = z.object({
         engineSTT: z.string().optional(),
         languageSTT: z.string().optional(),
         autoTranscribeAudio: z.boolean().optional(),
-        decibelLevel: z.number().optional(),
+        decibelValue: z.number().optional(),
         autoSendText: z.boolean().optional(),
       }),
     )
