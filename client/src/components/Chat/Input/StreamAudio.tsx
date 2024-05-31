@@ -49,7 +49,8 @@ export default function StreamAudio({ index = 0 }) {
 
   useEffect(() => {
     const latestText = getLatestText(latestMessage);
-    const shouldFetch =
+
+    const shouldFetch = !!(
       token &&
       automaticPlayback &&
       isSubmitting &&
@@ -60,7 +61,8 @@ export default function StreamAudio({ index = 0 }) {
       !latestMessage.messageId.includes('_') &&
       !isFetching &&
       activeRunId &&
-      activeRunId !== audioRunId;
+      activeRunId !== audioRunId
+    );
 
     if (!shouldFetch) {
       return;
@@ -80,12 +82,12 @@ export default function StreamAudio({ index = 0 }) {
         const cache = await caches.open('tts-responses');
         const cachedResponse = await cache.match(cacheKey);
 
+        setAudioRunId(activeRunId);
         if (cachedResponse) {
           console.log('Audio found in cache');
           const audioBlob = await cachedResponse.blob();
           const blobUrl = URL.createObjectURL(audioBlob);
           setGlobalAudioURL(blobUrl);
-          setAudioRunId(activeRunId);
           setIsFetching(false);
           return;
         }
@@ -113,7 +115,6 @@ export default function StreamAudio({ index = 0 }) {
           mediaSource = new MediaSourceAppender(type);
           setGlobalAudioURL(mediaSource.mediaSourceUrl);
         }
-        setAudioRunId(activeRunId);
 
         let done = false;
         const chunks: Uint8Array[] = [];
