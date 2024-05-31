@@ -1,0 +1,60 @@
+# For more information, see the Configuration Guide:
+# https://docs.librechat.ai/install/configuration/custom_config.html
+
+# Configuration version (required)
+version: 1.0.5
+
+# Cache settings: Set to true to enable caching
+cache: true
+
+# Custom nterface configuration
+interface:
+  # Privacy policy settings
+  privacyPolicy:
+    externalUrl: 'https://librechat.ai/privacy-policy'
+    openNewTab: true
+
+  # Terms of service
+  termsOfService:
+    externalUrl: 'https://librechat.ai/tos'
+    openNewTab: true
+
+# Example Registration Object Structure (optional)
+registration:
+  socialLogins: ['github', 'google', 'discord', 'openid', 'facebook']
+  # allowedDomains:
+  # - "gmail.com"
+
+fileConfig:
+  endpoints:
+    azureOpenAI:
+      fileLimit: 10
+      # Maximum size for an individual file in MB
+      fileSizeLimit: 50
+      # Maximum total size for all files in a single request in MB
+      totalSizeLimit: 100
+      # In case you wish to limit certain filetypes
+      # supportedMimeTypes:
+      #   - "image/.*"
+      #   - "application/pdf"
+  # Limit for user avatar image size in MB, default: 2 MB
+  avatarSizeLimit: 4
+
+# Definition of custom endpoints
+endpoints:
+  azureOpenAI:
+    # Endpoint-level configuration
+    titleModel: "gpt-4-turbo-2024-04-09" # Assuming you want to use this model for titles
+    plugins: true # Since PLUGINS_USE_AZURE is set to "true"
+    # assistants: true # Assuming you want to enable assistants
+    groups:
+      # Group-level configuration
+      - group: "qimagpt-eastus2"
+        apiKey: "apiKey"  # Your Azure OpenAI API Key
+        instanceName: "qimagpt-eastus2" # Your Azure OpenAI instance name
+        version: "2024-02-01" # Your Azure OpenAI API version
+        # Model-level configuration
+        models:
+          gpt-4-turbo-2024-04-09:
+            deploymentName: "qimagpt-turbo-2024-04-09-PROD" # Your Azure OpenAI deployment name
+            version: "2024-02-01" # Your Azure OpenAI API version
