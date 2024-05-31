@@ -29,7 +29,7 @@ const codeFile = {
 
 const urlFile = {
   paths: UrlPaths,
-  fill: '#FF6E3C',
+  fill: '#3cb4c9',
   title: 'URL',
 };
 
