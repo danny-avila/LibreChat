@@ -2156,10 +2156,10 @@ ol ol):not(:where([class~=not-prose] *)) {
 
 .attach-file-options {
   border-radius: 8px;
-  padding: 16px;
+  padding: 5px;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-  display: flex;
-  flex-direction: column;
+  
+  
 }
 
 .menu-item {

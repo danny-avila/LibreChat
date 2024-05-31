@@ -11,7 +11,7 @@ import { useFileHandling } from '~/hooks';
 import { Content, Portal, Root } from '@radix-ui/react-popover';
 import { UploadFile, UrlIcon } from '~/components/svg';
 import { FileUpload } from '~/components/ui';
-import UrlModal from './UrlModal';  // Certifique-se de ajustar o caminho conforme necessário
+import UrlModal from './UrlModal'; // Certifique-se de ajustar o caminho conforme necessário
 import { Trigger } from '@radix-ui/react-popover';
 import { useLocalize } from '~/hooks';
 
@@ -58,8 +58,6 @@ const AttachFile = ({
     setShowMenu(false);
   };
 
-
-
   if (!supportsFiles[endpointType ?? endpoint ?? ''] || endpointFileConfig?.disabled) {
     return null;
   }
@@ -67,42 +65,43 @@ const AttachFile = ({
   return (
     <div className="absolute bottom-2 left-2 md:bottom-2 md:left-4">
       <Root open={showMenu} onOpenChange={setShowMenu}>
-        <Trigger >
+        <Trigger>
           <button
-              disabled={!!disabled}
-              type="button"
-              className="btn relative p-0 text-black dark:text-white"
-              aria-label="Attach files"
-              style={{ padding: 0 }}
-            >
-              <div className="flex w-full items-center justify-center gap-2">
-                <AttachmentIcon />
-              </div>
-            </button>
+            disabled={!!disabled}
+            type="button"
+            className="btn relative p-0 text-black dark:text-white"
+            aria-label="Attach files"
+            style={{ padding: 0 }}
+          >
+            <div className="flex w-full items-center justify-center gap-2">
+              <AttachmentIcon />
+            </div>
+          </button>
         </Trigger>
         <Portal>
           <Content
             side="bottom"
             align="start"
-            className="mt-2 max-h-[65vh] min-w-[340px] overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-700 dark:text-white lg:max-h-[75vh]"
+            className="mt-2 max-h-[65vh] min-w-[220px] overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-700 dark:text-white lg:max-h-[75vh]"
           >
             <div className="attach-file-options">
-            <div className="menu-item hover:bg-black/5 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-600">
-                <FileUpload handleFileChange={handleFileUpload} className="flex">
-                <UploadFile  />
-                <div className="mr-2"></div>
-                <span>{localize('com_ui_upload_file')}</span>
-                  
-                </FileUpload>
-              </div>
+              <FileUpload handleFileChange={handleFileUpload}>
+                <div className="menu-item dark:hover:bg-token-main-surface-secondary dark:focus-visible:bg-token-main-surface-secondary dark:radix-state-open:bg-token-main-surface-secondary group relative flex cursor-pointer items-center rounded-md text-sm hover:bg-[#f5f5f5] focus-visible:bg-[#f5f5f5] focus-visible:outline-0 radix-disabled:pointer-events-none  radix-disabled:opacity-50 radix-state-open:bg-[#f5f5f5] ">
+                  <UploadFile />
+                  <span>{localize('com_ui_upload_file')}</span>
+                </div>
+              </FileUpload>
               {endpoint !== 'assistants' && (
-                  <div className="menu-item hover:bg-black/5 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-600" onClick={() => {
+                <div
+                  className="menu-item dark:hover:bg-token-main-surface-secondary dark:focus-visible:bg-token-main-surface-secondary dark:radix-state-open:bg-token-main-surface-secondary group relative flex cursor-pointer items-center rounded-md text-sm hover:bg-[#f5f5f5] focus-visible:bg-[#f5f5f5] focus-visible:outline-0 radix-disabled:pointer-events-none  radix-disabled:opacity-50 radix-state-open:bg-[#f5f5f5]"
+                  onClick={() => {
                     setShowUrlModal(true);
-                    setShowMenu(false);  // Fecha o menu ao abrir o modal
-                  }}>
-                    <UrlIcon />
-                    <span>{localize('com_ui_submit_url')}</span>
-                  </div>
+                    setShowMenu(false); // Fecha o menu ao abrir o modal
+                  }}
+                >
+                  <UrlIcon />
+                  <span>{localize('com_ui_submit_url')}</span>
+                </div>
               )}
             </div>
           </Content>
@@ -121,4 +120,3 @@ const AttachFile = ({
 };
 
 export default React.memo(AttachFile);
-
