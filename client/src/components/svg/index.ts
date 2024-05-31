@@ -53,3 +53,5 @@ export { default as BirthdayIcon } from './BirthdayIcon';
 export { default as AssistantIcon } from './AssistantIcon';
 export { default as Sparkles } from './Sparkles';
 export { default as SpeechIcon } from './SpeechIcon';
+export { default as UploadFile } from './UploadFile';
+export { default as UrlIcon } from './UrlIcon';
