@@ -1,10 +1,14 @@
+import { useEffect } from 'react';
 import { useRecoilState } from 'recoil';
+import { useQueryClient } from '@tanstack/react-query';
+import { QueryKeys } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
+import type { TModelsConfig } from 'librechat-data-provider';
+import { Input, Label, Dropdown, Dialog, DialogClose, DialogButton } from '~/components';
 import { cn, defaultTextProps, removeFocusOutlines, mapEndpoints } from '~/utils';
-import { Input, Label, Dropdown, Dialog, DialogClose, DialogButton } from '~/components/';
+import { useSetIndexOptions, useLocalize, useDebouncedInput } from '~/hooks';
 import PopoverButtons from '~/components/Chat/Input/PopoverButtons';
 import DialogTemplate from '~/components/ui/DialogTemplate';
-import { useSetIndexOptions, useLocalize, useDebouncedInput } from '~/hooks';
 import { EndpointSettings } from '~/components/Endpoints';
 import { useChatContext } from '~/Providers';
 import store from '~/store';
@@ -17,8 +21,9 @@ const EditPresetDialog = ({
   submitPreset: () => void;
 }) => {
   const localize = useLocalize();
+  const queryClient = useQueryClient();
   const { preset, setPreset } = useChatContext();
-  const { setOption } = useSetIndexOptions(preset);
+  const { setOption, setAgentOption } = useSetIndexOptions(preset);
   const [onTitleChange, title] = useDebouncedInput({
     setOption,
     optionKey: 'title',
@@ -29,6 +34,33 @@ const EditPresetDialog = ({
   const { data: availableEndpoints = [] } = useGetEndpointsQuery({
     select: mapEndpoints,
   });
+
+  useEffect(() => {
+    if (!preset) {
+      return;
+    }
+    if (!preset.endpoint) {
+      return;
+    }
+
+    const modelsConfig = queryClient.getQueryData<TModelsConfig>([QueryKeys.models]);
+    if (!modelsConfig) {
+      return;
+    }
+
+    const models = modelsConfig[preset.endpoint];
+    if (!models.length) {
+      return;
+    }
+
+    if (!models.includes(preset.model ?? '')) {
+      setOption('model')(models[0]);
+    }
+
+    if (preset.agentOptions?.model && !models.includes(preset.agentOptions.model)) {
+      setAgentOption('model')(models[0]);
+    }
+  }, [preset, queryClient, setOption, setAgentOption]);
 
   const { endpoint, endpointType, model } = preset || {};
   if (!endpoint) {
