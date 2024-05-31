@@ -2153,3 +2153,22 @@ ol ol):not(:where([class~=not-prose] *)) {
   animation: moveUp 4s ease-in-out infinite;
   
 }
+
+.attach-file-options {
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  padding: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+  /* margin-bottom: 8px; */
+  gap: 8px; /* Adiciona espaçamento entre o ícone e o texto */
+}
