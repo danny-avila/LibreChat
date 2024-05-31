@@ -82,10 +82,10 @@ const useFileHandling = (params?: UseFileHandling) => {
 
   const uploadFile = useUploadFileMutation({
     onSuccess: (data) => {
-      clearUploadTimer(data.temp_file_id);
+      clearUploadTimer(data.temp_file_id || data.file_id);
       console.log('upload success', data);
       updateFileById(
-        data.temp_file_id,
+        data.temp_file_id || data.file_id,
         {
           progress: 0.9,
           filepath: data.filepath,
@@ -95,7 +95,7 @@ const useFileHandling = (params?: UseFileHandling) => {
 
       setTimeout(() => {
         updateFileById(
-          data.temp_file_id,
+          data.temp_file_id || data.file_id,
           {
             progress: 1,
             file_id: data.file_id,
@@ -114,7 +114,7 @@ const useFileHandling = (params?: UseFileHandling) => {
     },
     onError: (error, body) => {
       console.log('upload error', error);
-      const file_id = body.get('file_id');
+      const file_id = body.get('file_id') || body.get('temp_file_id');
       clearUploadTimer(file_id as string);
       deleteFileById(file_id as string);
       setError(
@@ -261,7 +261,31 @@ const useFileHandling = (params?: UseFileHandling) => {
     img.src = preview;
   };
 
-  const handleFiles = async (_files: FileList | File[]) => {
+  const handleFiles = async (_files: FileList | File[] | string) => {
+    if (typeof _files === 'string') {
+      // URL handling logic
+      const url = _files;
+      const file_id = v4();
+      const extendedFile: ExtendedFile = {
+        file_id,
+        type: 'url',
+        preview: '',
+        progress: 0.2,
+        size: 0,
+        filepath: url,
+      };
+
+      addFile(extendedFile);
+
+      const formData = new FormData();
+      formData.append('file_url', url);
+      formData.append('file_id', file_id);
+      formData.append('endpoint', endpoint);
+
+      uploadFile.mutate(formData);
+      return;
+    }
+
     const fileList = Array.from(_files);
     /* Validate files */
     let filesAreValid: boolean;
@@ -307,8 +331,13 @@ const useFileHandling = (params?: UseFileHandling) => {
     }
   };
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    event.stopPropagation();
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement> | string) => {
+    if (typeof event === 'string') {
+      // event is a URL
+      setFilesLoading(true);
+      handleFiles(event);
+      return;
+    }
     if (event.target.files) {
       setFilesLoading(true);
       handleFiles(event.target.files);
