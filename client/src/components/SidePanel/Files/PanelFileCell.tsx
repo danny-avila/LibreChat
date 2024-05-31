@@ -49,7 +49,7 @@ export default function PanelFileCell({ row }: { row: Row<TFile> }) {
         status: 'warning',
       });
     }
-
+    console.log('fileconfig', fileConfig.endpoints[endpoint]);
     const { fileSizeLimit, supportedMimeTypes } =
       fileConfig.endpoints[endpoint] ?? fileConfig.endpoints.default;
 
@@ -63,7 +63,9 @@ export default function PanelFileCell({ row }: { row: Row<TFile> }) {
     }
 
     const isSupportedMimeType = defaultFileConfig.checkType(file.type, supportedMimeTypes);
-
+    console.log('Passando para verificar arquivos');
+    console.log('file.type', file.type);
+    console.log('isSupportedMimeType', isSupportedMimeType);
     if (!isSupportedMimeType) {
       return showToast({
         message: `${localize('com_ui_attach_error_type')} ${file.type} (${endpoint})`,
