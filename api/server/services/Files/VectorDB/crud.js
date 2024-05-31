@@ -95,8 +95,56 @@ async function uploadVectors({ req, file, file_id }) {
     throw new Error(error.message || 'An error occurred during file upload.');
   }
 }
+async function saveURLToVectorDB({ req, url, file_id }) {
+  console.log('saveURLToVectorDB', url, file_id);
+  if (!process.env.RAG_API_URL) {
+    throw new Error('RAG_API_URL not defined');
+  }
+
+  try {
+    const jwtToken = req.headers.authorization.split(' ')[1];
+    const formData = new FormData();
+    formData.append('url', url);
+    formData.append('file_id', file_id);
+    const formHeaders = formData.getHeaders(); // Automatically sets the correct Content-Type
+
+    const response = await axios.post(`${process.env.RAG_API_URL}/embed`, formData, {
+      headers: {
+        Authorization: `Bearer ${jwtToken}`,
+        accept: 'application/json',
+        ...formHeaders,
+      },
+    });
+
+    const responseData = response.data;
+    logger.debug('Response from embedding URL', responseData);
+
+    if (responseData.known_type === false) {
+      throw new Error('URL embedding failed. The URL type is not supported');
+    }
+
+    if (!responseData.status) {
+      throw new Error('URL embedding failed.');
+    }
+
+    return {
+      id: file_id,
+      bytes: 0, // URLs não têm tamanho físico
+      filename: url.split('/').pop(),
+      filepath: url,
+      embedded: Boolean(responseData.known_type),
+      height: null,
+      width: null,
+      type: 'url', // Adicione o tipo como 'url'
+    };
+  } catch (error) {
+    logger.error('Error embedding URL', error);
+    throw new Error(error.message || 'An error occurred during URL embedding.');
+  }
+}
 
 module.exports = {
   deleteVectors,
   uploadVectors,
+  saveURLToVectorDB,
 };
