@@ -61,7 +61,7 @@ export default {
   com_assistants_create_error: 'There was an error creating your assistant.',
   com_ui_upload_file: 'Upload a File',
   com_ui_enter_url: 'Enter URL',
-  com_ui_submit_url: 'Submit URL',
+  com_ui_submit_url: 'Submit a URL',
   com_ui_date_today: 'Today',
   com_ui_date_yesterday: 'Yesterday',
   com_ui_date_previous_7_days: 'Previous 7 days',
