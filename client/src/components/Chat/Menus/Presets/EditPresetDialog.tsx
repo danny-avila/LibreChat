@@ -49,6 +49,9 @@ const EditPresetDialog = ({
     }
 
     const models = modelsConfig[preset.endpoint];
+    if (!models) {
+      return;
+    }
     if (!models.length) {
       return;
     }
