@@ -20,7 +20,7 @@ const {
   getLocalFileStream,
 } = require('./Local');
 const { uploadOpenAIFile, deleteOpenAIFile, getOpenAIFileStream } = require('./OpenAI');
-const { uploadVectors, deleteVectors } = require('./VectorDB');
+const { uploadVectors, deleteVectors, saveURLToVectorDB } = require('./VectorDB'); // Adicione saveURLToVectorDB
 
 /**
  * Firebase Storage Strategy Functions
@@ -63,7 +63,7 @@ const localStrategy = () => ({
  * */
 const vectorStrategy = () => ({
   /** @type {typeof saveFileFromURL | null} */
-  saveURL: null,
+  saveURL: saveURLToVectorDB, // Adicione saveURLToVectorDB
   /** @type {typeof getLocalFileURL | null} */
   getFileURL: null,
   /** @type {typeof saveLocalBuffer | null} */
