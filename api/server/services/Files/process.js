@@ -17,7 +17,7 @@ const {
 const { addResourceFileId, deleteResourceFileId } = require('~/server/controllers/assistants/v2');
 const { convertImage, resizeAndConvert } = require('~/server/services/Files/images');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
-const { createFile, updateFileUsage, deleteFiles } = require('~/models/File');
+const { createFile, updateFileUsage, deleteFiles, deleteFileById } = require('~/models/File');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
@@ -144,6 +144,13 @@ const processDeleteRequest = async ({ req, files }) => {
       promises.push(openai.beta.assistants.files.del(req.body.assistant_id, file.file_id));
     }
 
+    if (source === 'url') {
+      // Deletar URL do banco de dados
+      promises.push(deleteFileById(file.file_id));
+      resolvedFileIds.push(file.file_id);
+      continue;
+    }
+
     if (deletionMethods[source]) {
       enqueueDeleteOperation({
         req,
@@ -168,6 +175,8 @@ const processDeleteRequest = async ({ req, files }) => {
   await Promise.allSettled(promises);
   await deleteFiles(resolvedFileIds);
 };
+
+module.exports = processDeleteRequest;
 
 /**
  * Processes a file URL using a specified file handling strategy. This function accepts a strategy name,
@@ -324,11 +333,13 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
  * @returns {Promise<void>}
  */
 const processFileUpload = async ({ req, res, file, metadata }) => {
+  const { file_url } = req.body;
+
   const isAssistantUpload = isAssistantsEndpoint(metadata.endpoint);
   const assistantSource =
     metadata.endpoint === EModelEndpoint.azureAssistants ? FileSources.azure : FileSources.openai;
   const source = isAssistantUpload ? assistantSource : FileSources.vectordb;
-  const { handleFileUpload } = getStrategyFunctions(source);
+  const { handleFileUpload, saveURL } = getStrategyFunctions(source);
   const { file_id, temp_file_id } = metadata;
 
   /** @type {OpenAI | undefined} */
@@ -337,20 +348,32 @@ const processFileUpload = async ({ req, res, file, metadata }) => {
     ({ openai } = await getOpenAIClient({ req }));
   }
 
-  const {
-    id,
-    bytes,
-    filename,
-    filepath: _filepath,
-    embedded,
-    height,
-    width,
-  } = await handleFileUpload({
-    req,
-    file,
-    file_id,
-    openai,
-  });
+  let uploadResult;
+  if (file_url && saveURL) {
+    // Processar URL
+    uploadResult = await saveURL({
+      req,
+      url: file_url,
+      file_id,
+      openai,
+    });
+  } else if (file && handleFileUpload) {
+    // Processar arquivo
+    uploadResult = await handleFileUpload({
+      req,
+      file,
+      file_id,
+      openai,
+    });
+  } else {
+    throw new Error('Invalid file upload strategy');
+  }
+
+  if (!uploadResult) {
+    throw new Error('Upload result is empty');
+  }
+
+  const { id, bytes, filename, filepath: _filepath, height, width } = uploadResult;
 
   if (isAssistantUpload && !metadata.message_file && !metadata.tool_resource) {
     await openai.beta.assistants.files.create(metadata.assistant_id, {
@@ -367,7 +390,7 @@ const processFileUpload = async ({ req, res, file, metadata }) => {
   }
 
   let filepath = isAssistantUpload ? `${openai.baseURL}/files/${id}` : _filepath;
-  if (isAssistantUpload && file.mimetype.startsWith('image')) {
+  if (isAssistantUpload && file?.mimetype?.startsWith('image')) {
     const result = await processImageFile({
       req,
       file,
@@ -384,19 +407,27 @@ const processFileUpload = async ({ req, res, file, metadata }) => {
       temp_file_id,
       bytes,
       filepath,
-      filename: filename ?? file.originalname,
+      filename: filename ?? file?.originalname ?? 'URL', // Adiciona um valor padrão para filename
       context: isAssistantUpload ? FileContext.assistants : FileContext.message_attachment,
       model: isAssistantUpload ? req.body.model : undefined,
-      type: file.mimetype,
-      embedded,
+      type: file?.mimetype ?? 'url',
+      embedded: true,
       source,
       height,
       width,
     },
     true,
   );
+
+  // Chamar processFile no manipulador de contexto
+  if (this.contextHandlers) {
+    this.contextHandlers.processFile(result);
+  }
+
   res.status(200).json({ message: 'File uploaded and processed successfully', ...result });
 };
+
+module.exports = processFileUpload;
 
 /**
  * @param {object} params - The params object.

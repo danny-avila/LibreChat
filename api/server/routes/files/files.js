@@ -8,7 +8,7 @@ const {
 } = require('~/server/services/Files/process');
 const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { getFiles } = require('~/models/File');
+const { getFiles } = require('~/models/File'); // Certifique-se de importar deleteFile
 const { logger } = require('~/config');
 
 const router = express.Router();
@@ -131,17 +131,26 @@ router.get('/download/:userId/:file_id', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const file = req.file;
+  const { file_url, file_id } = req.body;
   const metadata = req.body;
   let cleanup = true;
-
   try {
-    filterFile({ req, file });
+    if (file_url) {
+      // Lidar com URLs
+      metadata.temp_file_id = file_id;
+      metadata.file_id = file_id;
+      metadata.filepath = file_url;
+      await processFileUpload({ req, res, file: null, metadata });
+    } else {
+      // Lidar com arquivos
+      const file = req.file;
+      filterFile({ req, file });
 
-    metadata.temp_file_id = metadata.file_id;
-    metadata.file_id = req.file_id;
+      metadata.temp_file_id = metadata.file_id;
+      metadata.file_id = req.file_id;
 
-    await processFileUpload({ req, res, file, metadata });
+      await processFileUpload({ req, res, file, metadata });
+    }
   } catch (error) {
     let message = 'Error processing file';
     logger.error('[/files] Error processing file:', error);
@@ -153,16 +162,18 @@ router.post('/', async (req, res) => {
 
     // TODO: delete remote file if it exists
     try {
-      await fs.unlink(file.path);
+      if (req.file) {
+        await fs.unlink(req.file.path);
+      }
     } catch (error) {
       logger.error('[/files] Error deleting file:', error);
     }
     res.status(500).json({ message });
   }
 
-  if (cleanup) {
+  if (cleanup && req.file) {
     try {
-      await fs.unlink(file.path);
+      await fs.unlink(req.file.path);
     } catch (error) {
       logger.error('[/files/images] Error deleting file after file processing:', error);
     }
