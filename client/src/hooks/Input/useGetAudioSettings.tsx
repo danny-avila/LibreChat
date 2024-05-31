@@ -10,10 +10,10 @@ const useGetAudioSettings = () => {
   const [engineSTT] = useRecoilState<string>(store.engineSTT);
   const [engineTTS] = useRecoilState<string>(store.engineTTS);
 
-  const useExternalSpeechToText = engineSTT === AudioEndpoints.external;
-  const useExternalTextToSpeech = engineTTS === AudioEndpoints.external;
+  const externalSpeechToText = engineSTT === AudioEndpoints.external;
+  const externalTextToSpeech = engineTTS === AudioEndpoints.external;
 
-  return { useExternalSpeechToText, useExternalTextToSpeech };
+  return { externalSpeechToText, externalTextToSpeech };
 };
 
 export default useGetAudioSettings;

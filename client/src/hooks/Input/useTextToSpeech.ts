@@ -7,7 +7,7 @@ import { usePauseGlobalAudio } from '../Audio';
 import useGetAudioSettings from './useGetAudioSettings';
 
 const useTextToSpeech = (message: TMessage, isLast: boolean, index = 0) => {
-  const { useExternalTextToSpeech } = useGetAudioSettings();
+  const { externalTextToSpeech } = useGetAudioSettings();
 
   const {
     generateSpeechLocal: generateSpeechLocal,
@@ -24,9 +24,9 @@ const useTextToSpeech = (message: TMessage, isLast: boolean, index = 0) => {
   } = useTextToSpeechExternal(message.messageId, isLast, index);
   const { pauseGlobalAudio } = usePauseGlobalAudio(index);
 
-  const generateSpeech = useExternalTextToSpeech ? generateSpeechExternal : generateSpeechLocal;
-  const cancelSpeech = useExternalTextToSpeech ? cancelSpeechExternal : cancelSpeechLocal;
-  const isSpeaking = useExternalTextToSpeech ? isSpeakingExternal : isSpeakingLocal;
+  const generateSpeech = externalTextToSpeech ? generateSpeechExternal : generateSpeechLocal;
+  const cancelSpeech = externalTextToSpeech ? cancelSpeechExternal : cancelSpeechLocal;
+  const isSpeaking = externalTextToSpeech ? isSpeakingExternal : isSpeakingLocal;
 
   const isMouseDownRef = useRef(false);
   const timerRef = useRef<number | undefined>(undefined);

@@ -36,7 +36,7 @@ function Speech() {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { data } = useCustomConfigSpeechQuery();
 
-  const { useExternalSpeechToText, useExternalTextToSpeech } = useGetAudioSettings();
+  const { externalSpeechToText, externalTextToSpeech } = useGetAudioSettings();
 
   const contentRef = useRef(null);
   useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);
@@ -66,18 +66,16 @@ function Speech() {
         <BorderDivComponent condition={true}>
           <EngineSTTDropdown />
         </BorderDivComponent>
-        <BorderDivComponent condition={!useExternalSpeechToText}>
+        <BorderDivComponent condition={!externalSpeechToText}>
           <LanguageSTTDropdown />
         </BorderDivComponent>
         <BorderDivComponent condition={advancedMode}>
           <AutoTranscribeAudioSwitch />
         </BorderDivComponent>
-        <BorderDivComponent
-          condition={autoTranscribeAudio && useExternalSpeechToText && advancedMode}
-        >
+        <BorderDivComponent condition={autoTranscribeAudio && externalSpeechToText && advancedMode}>
           <DecibelSelector />
         </BorderDivComponent>
-        <BorderDivComponent condition={advancedMode && useExternalSpeechToText}>
+        <BorderDivComponent condition={advancedMode && externalSpeechToText}>
           <AutoSendTextSwitch />
         </BorderDivComponent>
         <Divider />
@@ -90,13 +88,13 @@ function Speech() {
         <BorderDivComponent condition={true}>
           <VoiceDropdown />
         </BorderDivComponent>
-        <BorderDivComponent condition={useExternalTextToSpeech}>
+        <BorderDivComponent condition={externalTextToSpeech}>
           <AutomaticPlaybackSwitch />
         </BorderDivComponent>
-        <BorderDivComponent condition={advancedMode && useExternalTextToSpeech}>
+        <BorderDivComponent condition={advancedMode && externalTextToSpeech}>
           <PlaybackRate />
         </BorderDivComponent>
-        <BorderDivComponent condition={advancedMode && useExternalTextToSpeech}>
+        <BorderDivComponent condition={advancedMode && externalTextToSpeech}>
           <CacheTTSSwitch />
         </BorderDivComponent>
       </div>

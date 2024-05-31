@@ -9,7 +9,7 @@ const useSpeechToTextBrowser = () => {
   const { showToast } = useToastContext();
   const [languageSTT] = useRecoilState<string>(store.languageSTT);
   const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
-  const { useExternalSpeechToText } = useGetAudioSettings();
+  const { externalSpeechToText } = useGetAudioSettings();
   const [isListening, setIsListening] = useState(false);
 
   const {
@@ -21,36 +21,37 @@ const useSpeechToTextBrowser = () => {
   } = useSpeechRecognition();
 
   const toggleListening = () => {
-    if (browserSupportsSpeechRecognition) {
-      if (!isMicrophoneAvailable) {
-        showToast({
-          message: 'Microphone is not available',
-          status: 'error',
-        });
-        return;
-      }
-
-      if (listening) {
-        setIsListening(false);
-        SpeechRecognition.stopListening();
-      } else {
-        setIsListening(true);
-        SpeechRecognition.startListening({
-          language: languageSTT,
-          continuous: autoTranscribeAudio,
-        });
-      }
-    } else {
+    if (!browserSupportsSpeechRecognition) {
       showToast({
         message: 'Browser does not support SpeechRecognition',
         status: 'error',
+      });
+      return;
+    }
+
+    if (!isMicrophoneAvailable) {
+      showToast({
+        message: 'Microphone is not available',
+        status: 'error',
+      });
+      return;
+    }
+
+    if (listening) {
+      setIsListening(false);
+      SpeechRecognition.stopListening();
+    } else {
+      setIsListening(true);
+      SpeechRecognition.startListening({
+        language: languageSTT,
+        continuous: autoTranscribeAudio,
       });
     }
   };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.shiftKey && e.altKey && e.code === 'KeyL' && !useExternalSpeechToText) {
+      if (e.shiftKey && e.altKey && e.code === 'KeyL' && !externalSpeechToText) {
         toggleListening();
       }
     };
@@ -66,7 +67,7 @@ const useSpeechToTextBrowser = () => {
   }, [listening]);
 
   return {
-    isListening: isListening,
+    isListening,
     isLoading: false,
     interimTranscript,
     text: finalTranscript,

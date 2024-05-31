@@ -4,7 +4,7 @@ import useSpeechToTextExternal from './useSpeechToTextExternal';
 import useGetAudioSettings from './useGetAudioSettings';
 
 const useSpeechToText = (handleTranscriptionComplete: (text: string) => void) => {
-  const { useExternalSpeechToText } = useGetAudioSettings();
+  const { externalSpeechToText } = useGetAudioSettings();
   const [animatedText, setAnimatedText] = useState('');
 
   const {
@@ -25,15 +25,13 @@ const useSpeechToText = (handleTranscriptionComplete: (text: string) => void) =>
     clearText,
   } = useSpeechToTextExternal(handleTranscriptionComplete);
 
-  const isListening = useExternalSpeechToText
-    ? speechIsListeningExternal
-    : speechIsListeningBrowser;
-  const isLoading = useExternalSpeechToText ? speechIsLoadingExternal : speechIsLoadingBrowser;
-  const speechTextForm = useExternalSpeechToText ? speechTextExternal : speechTextBrowser;
-  const startRecording = useExternalSpeechToText
+  const isListening = externalSpeechToText ? speechIsListeningExternal : speechIsListeningBrowser;
+  const isLoading = externalSpeechToText ? speechIsLoadingExternal : speechIsLoadingBrowser;
+  const speechTextForm = externalSpeechToText ? speechTextExternal : speechTextBrowser;
+  const startRecording = externalSpeechToText
     ? startSpeechRecordingExternal
     : startSpeechRecordingBrowser;
-  const stopRecording = useExternalSpeechToText
+  const stopRecording = externalSpeechToText
     ? stopSpeechRecordingExternal
     : stopSpeechRecordingBrowser;
   const speechText =
@@ -41,7 +39,7 @@ const useSpeechToText = (handleTranscriptionComplete: (text: string) => void) =>
       ? speechTextExternal
       : speechTextForm || '';
   // for a future real-time STT external
-  const interimTranscript = useExternalSpeechToText ? '' : interimTranscriptBrowser;
+  const interimTranscript = externalSpeechToText ? '' : interimTranscriptBrowser;
 
   const animateTextTyping = (text: string) => {
     const totalDuration = 2000;
@@ -66,10 +64,10 @@ const useSpeechToText = (handleTranscriptionComplete: (text: string) => void) =>
   };
 
   useEffect(() => {
-    if (speechText && useExternalSpeechToText) {
+    if (speechText && externalSpeechToText) {
       animateTextTyping(speechText);
     }
-  }, [speechText, useExternalSpeechToText]);
+  }, [speechText, externalSpeechToText]);
 
   return {
     isListening,
@@ -77,7 +75,7 @@ const useSpeechToText = (handleTranscriptionComplete: (text: string) => void) =>
     startRecording,
     stopRecording,
     interimTranscript,
-    speechText: useExternalSpeechToText ? animatedText : speechText,
+    speechText: externalSpeechToText ? animatedText : speechText,
     clearText,
   };
 };
