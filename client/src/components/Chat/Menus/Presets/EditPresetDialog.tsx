@@ -1,11 +1,17 @@
-import { useEffect } from 'react';
 import { useRecoilState } from 'recoil';
+import { useCallback, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
-import type { TModelsConfig } from 'librechat-data-provider';
+import type { TModelsConfig, TEndpointsConfig } from 'librechat-data-provider';
+import {
+  cn,
+  defaultTextProps,
+  removeFocusOutlines,
+  mapEndpoints,
+  getConvoSwitchLogic,
+} from '~/utils';
 import { Input, Label, Dropdown, Dialog, DialogClose, DialogButton } from '~/components';
-import { cn, defaultTextProps, removeFocusOutlines, mapEndpoints } from '~/utils';
 import { useSetIndexOptions, useLocalize, useDebouncedInput } from '~/hooks';
 import PopoverButtons from '~/components/Chat/Input/PopoverButtons';
 import DialogTemplate from '~/components/ui/DialogTemplate';
@@ -23,7 +29,7 @@ const EditPresetDialog = ({
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const { preset, setPreset } = useChatContext();
-  const { setOption, setAgentOption } = useSetIndexOptions(preset);
+  const { setOption, setOptions, setAgentOption } = useSetIndexOptions(preset);
   const [onTitleChange, title] = useDebouncedInput({
     setOption,
     optionKey: 'title',
@@ -56,14 +62,45 @@ const EditPresetDialog = ({
       return;
     }
 
+    if (preset.model === models[0]) {
+      return;
+    }
+
     if (!models.includes(preset.model ?? '')) {
+      console.log('setting model', models[0]);
       setOption('model')(models[0]);
     }
 
+    if (preset.agentOptions?.model === models[0]) {
+      return;
+    }
+
     if (preset.agentOptions?.model && !models.includes(preset.agentOptions.model)) {
+      console.log('setting agent model', models[0]);
       setAgentOption('model')(models[0]);
     }
   }, [preset, queryClient, setOption, setAgentOption]);
+
+  const switchEndpoint = useCallback(
+    (newEndpoint: string) => {
+      if (!setOptions) {
+        return console.warn('setOptions is not defined');
+      }
+
+      const { newEndpointType } = getConvoSwitchLogic({
+        newEndpoint,
+        modularChat: true,
+        conversation: null,
+        endpointsConfig: queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]) ?? {},
+      });
+
+      setOptions({
+        endpoint: newEndpoint,
+        endpointType: newEndpointType,
+      });
+    },
+    [queryClient, setOptions],
+  );
 
   const { endpoint, endpointType, model } = preset || {};
   if (!endpoint) {
@@ -111,7 +148,7 @@ const EditPresetDialog = ({
                   </Label>
                   <Dropdown
                     value={endpoint || ''}
-                    onChange={(value) => setOption('endpoint')(value)}
+                    onChange={switchEndpoint}
                     options={availableEndpoints}
                   />
                 </div>
