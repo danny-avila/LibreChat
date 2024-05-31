@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import { Upload } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
-import { useLocation } from 'react-router-dom';
-import type { TConversation } from 'librechat-data-provider';
 import DropDownMenu from '~/components/Conversations/DropDownMenu';
 import ShareButton from '~/components/Conversations/ShareButton';
 import HoverToggle from '~/components/Conversations/HoverToggle';
@@ -10,19 +8,11 @@ import useLocalize from '~/hooks/useLocalize';
 import ExportButton from './ExportButton';
 import store from '~/store';
 
-export default function ExportAndShareMenu() {
+export default function ExportAndShareMenu({ className = '' }: { className?: string }) {
   const localize = useLocalize();
-  const location = useLocation();
 
-  const activeConvo = useRecoilValue(store.conversationByIndex(0));
-  const globalConvo = useRecoilValue(store.conversation) ?? ({} as TConversation);
+  const conversation = useRecoilValue(store.conversationByIndex(0));
   const [isPopoverActive, setIsPopoverActive] = useState(false);
-  let conversation: TConversation | null | undefined;
-  if (location.state?.from?.pathname.includes('/chat')) {
-    conversation = globalConvo;
-  } else {
-    conversation = activeConvo;
-  }
 
   const exportable =
     conversation &&
@@ -31,7 +21,7 @@ export default function ExportAndShareMenu() {
     conversation.conversationId !== 'search';
 
   if (!exportable) {
-    return <></>;
+    return null;
   }
 
   const isActiveConvo = exportable;
@@ -41,6 +31,7 @@ export default function ExportAndShareMenu() {
       isActiveConvo={!!isActiveConvo}
       isPopoverActive={isPopoverActive}
       setIsPopoverActive={setIsPopoverActive}
+      className={className}
     >
       <DropDownMenu
         icon={<Upload />}
