@@ -1,5 +1,6 @@
 const express = require('express');
 const { uaParser, checkBan, requireJwtAuth, createFileLimiters } = require('~/server/middleware');
+const { createTTSLimiters, createSTTLimiters } = require('~/server/middleware/speech');
 const { createMulterInstance } = require('./multer');
 
 const files = require('./files');
@@ -15,17 +16,16 @@ const initialize = async () => {
   router.use(uaParser);
 
   /* Important: stt/tts routes must be added before the upload limiters */
-  router.use('/stt', stt);
-  router.use('/tts', tts);
+  const { sttIpLimiter, sttUserLimiter } = createSTTLimiters();
+  const { ttsIpLimiter, ttsUserLimiter } = createTTSLimiters();
+  router.use('/stt', sttIpLimiter, sttUserLimiter, stt);
+  router.use('/tts', ttsIpLimiter, ttsUserLimiter, tts);
 
   const upload = await createMulterInstance();
   const { fileUploadIpLimiter, fileUploadUserLimiter } = createFileLimiters();
   router.post('*', fileUploadIpLimiter, fileUploadUserLimiter);
   router.post('/', upload.single('file'));
   router.post('/images', upload.single('file'));
-
-  router.use('/stt', stt);
-  router.use('/tts', tts);
 
   router.use('/', files);
   router.use('/images', images);

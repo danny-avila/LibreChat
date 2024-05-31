@@ -7,6 +7,7 @@ import type { TMessage } from 'librechat-data-provider';
 import { useCustomAudioRef, MediaSourceAppender, usePauseGlobalAudio } from '~/hooks/Audio';
 import { useAuthContext } from '~/hooks';
 import { globalAudioId } from '~/common';
+import { getLatestText } from '~/utils';
 import store from '~/store';
 
 function timeoutPromise(ms: number, message?: string) {
@@ -47,18 +48,21 @@ export default function StreamAudio({ index = 0 }) {
   );
 
   useEffect(() => {
-    const shouldFetch =
+    const latestText = getLatestText(latestMessage);
+
+    const shouldFetch = !!(
       token &&
       automaticPlayback &&
       isSubmitting &&
       latestMessage &&
       !latestMessage.isCreatedByUser &&
-      (latestMessage.text || latestMessage.content) &&
+      latestText &&
       latestMessage.messageId &&
       !latestMessage.messageId.includes('_') &&
       !isFetching &&
       activeRunId &&
-      activeRunId !== audioRunId;
+      activeRunId !== audioRunId
+    );
 
     if (!shouldFetch) {
       return;
@@ -78,12 +82,12 @@ export default function StreamAudio({ index = 0 }) {
         const cache = await caches.open('tts-responses');
         const cachedResponse = await cache.match(cacheKey);
 
+        setAudioRunId(activeRunId);
         if (cachedResponse) {
           console.log('Audio found in cache');
           const audioBlob = await cachedResponse.blob();
           const blobUrl = URL.createObjectURL(audioBlob);
           setGlobalAudioURL(blobUrl);
-          setAudioRunId(activeRunId);
           setIsFetching(false);
           return;
         }
@@ -111,7 +115,6 @@ export default function StreamAudio({ index = 0 }) {
           mediaSource = new MediaSourceAppender(type);
           setGlobalAudioURL(mediaSource.mediaSourceUrl);
         }
-        setAudioRunId(activeRunId);
 
         let done = false;
         const chunks: Uint8Array[] = [];
