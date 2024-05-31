@@ -425,20 +425,5 @@ export const useVoicesQuery = (): UseQueryResult<t.VoiceResponse> => {
 
 /* Custom config speech */
 export const useCustomConfigSpeechQuery = (): UseQueryResult<t.getCustomConfigSpeechResponse> => {
-  const result = useQuery([QueryKeys.customConfigSpeech], () =>
-    dataService.getCustomConfigSpeech(),
-  );
-
-  if (result.data) {
-    Object.entries(result.data).forEach(([key, value]) => {
-      if (typeof value === 'object' && value !== null) {
-        Object.entries(value).forEach(([subKey, subValue]) => {
-          localStorage.setItem(`${key}.${subKey}`, JSON.stringify(subValue));
-        });
-      } else {
-        localStorage.setItem(key, JSON.stringify(value));
-      }
-    });
-  }
-  return result;
+  return useQuery([QueryKeys.customConfigSpeech], () => dataService.getCustomConfigSpeech());
 };
