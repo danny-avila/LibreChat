@@ -44,6 +44,7 @@
     "agenda": "^5.0.0",
     "axios": "^1.3.4",
     "bcryptjs": "^2.4.3",
+    "bottleneck": "^2.19.5",
     "cheerio": "^1.0.0-rc.12",
     "cohere-ai": "^7.9.1",
     "connect-redis": "^7.1.0",
