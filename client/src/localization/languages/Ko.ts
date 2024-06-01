@@ -538,6 +538,7 @@ export default {
   com_nav_my_files: '내 파일',
   com_nav_enter_to_send: '엔터키를 눌러 메시지 보내기',
   com_nav_user_name_display: '메시지에서 사용자 이름 표시',
+  com_nav_save_drafts: '초안을 로컬에 저장',
   com_nav_show_code: '코드 인터프리터 사용 시 항상 코드 표시',
   com_nav_setting_beta: '베타 기능',
   com_nav_setting_account: '계정',
@@ -2554,6 +2555,10 @@ export const comparisons = {
   com_nav_user_name_display: {
     english: 'Display username in messages',
     translated: '메시지에서 사용자 이름 표시',
+  },
+  com_nav_save_drafts: {
+    english: 'Save drafts locally',
+    translated: '초안을 로컬에 저장',
   },
   com_nav_show_code: {
     english: 'Always show code when using code interpreter',

@@ -447,6 +447,7 @@ export default {
   com_nav_theme_light: 'ライト',
   com_nav_enter_to_send: 'Enterキーでメッセージを送信する',
   com_nav_user_name_display: 'メッセージにユーザー名を表示する',
+  com_nav_save_drafts: 'ローカルにドラフトを保存する',
   com_nav_show_code: 'Code Interpreter を使用する際は常にコードを表示する',
   com_nav_clear_all_chats: 'すべてのチャットを削除する',
   com_nav_confirm_clear: '削除を確定',
@@ -2209,6 +2210,10 @@ export const comparisons = {
   com_nav_user_name_display: {
     english: 'Display username in messages',
     translated: 'メッセージにユーザー名を表示する',
+  },
+  com_nav_save_drafts: {
+    english: 'Save drafts locally',
+    translated: 'ローカルにドラフトを保存する',
   },
   com_nav_show_code: {
     english: 'Always show code when using code interpreter',

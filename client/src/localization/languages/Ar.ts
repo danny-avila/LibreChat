@@ -544,6 +544,7 @@ export default {
   com_nav_my_files: 'ملفاتي',
   com_nav_enter_to_send: 'اضغط على مفتاح الإدخال لإرسال الرسائل',
   com_nav_user_name_display: 'عرض اسم المستخدم في الرسائل',
+  com_nav_save_drafts: 'حفظ المستخدمين',
   com_nav_show_code: 'إظهار الشفرة دائمًا عند استخدام مفسر الشفرة',
   com_nav_send_message: 'إرسال رسالة',
   com_nav_setting_beta: 'ميزات تجريبية',
@@ -2558,6 +2559,10 @@ export const comparisons = {
   com_nav_user_name_display: {
     english: 'Display username in messages',
     translated: 'عرض اسم المستخدم في الرسائل',
+  },
+  com_nav_save_drafts: {
+    english: 'Save drafts locally',
+    translated: 'حفظ المستخدمين محليًا',
   },
   com_nav_show_code: {
     english: 'Always show code when using code interpreter',
