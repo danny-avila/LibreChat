@@ -424,6 +424,7 @@ export default {
   com_endpoint_agent: 'Agent',
   com_endpoint_show_what_settings: 'Show {0} Settings',
   com_endpoint_export: 'Export',
+  com_endpoint_export_share: 'Export/Share',
   com_endpoint_assistant: 'Assistant',
   com_endpoint_use_active_assistant: 'Use Active Assistant',
   com_endpoint_assistant_model: 'Assistant Model',
