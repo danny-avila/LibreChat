@@ -1,14 +1,15 @@
 const FacebookStrategy = require('passport-facebook').Strategy;
 const { createNewUser, handleExistingUser } = require('./process');
 const { logger } = require('~/config');
-const User = require('~/models/User');
+const { findUserByEmail } = require('~/server/services/userService');
 const { isEnabled } = require('~/server/utils');
 
 const facebookLogin = async (accessToken, refreshToken, profile, cb) => {
   try {
     const email = profile.emails[0]?.value;
     const facebookId = profile.id;
-    const oldUser = await User.findOne({ email });
+
+    const oldUser = await findUserByEmail(email);
     const ALLOW_SOCIAL_REGISTRATION = isEnabled(process.env.ALLOW_SOCIAL_REGISTRATION);
     const avatarUrl = profile.photos[0]?.value;
 

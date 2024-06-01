@@ -1,14 +1,15 @@
 const { Strategy: GoogleStrategy } = require('passport-google-oauth20');
 const { createNewUser, handleExistingUser } = require('./process');
 const { logger } = require('~/config');
-const User = require('~/models/User');
+const { findUserByEmail } = require('~/server/services/userService');
 const { isEnabled } = require('~/server/utils');
 
 const googleLogin = async (accessToken, refreshToken, profile, cb) => {
   try {
     const email = profile.emails[0].value;
     const googleId = profile.id;
-    const oldUser = await User.findOne({ email });
+
+    const oldUser = await findUserByEmail(email);
     const ALLOW_SOCIAL_REGISTRATION = isEnabled(process.env.ALLOW_SOCIAL_REGISTRATION);
     const avatarUrl = profile.photos[0].value;
 

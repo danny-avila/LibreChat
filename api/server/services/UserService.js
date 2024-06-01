@@ -166,6 +166,23 @@ const checkUserKeyExpiry = (expiresAt, endpoint) => {
   }
 };
 
+/**
+ * Retrieves a user document from the database based on the provided email.
+ * @async
+ * @param {string} email - The email of the user to find.
+ * @returns {Promise<Object|null>} The user document if found, otherwise null.
+ * @throws {Error} Throws an error if there is a problem during user retrieval.
+ */
+const findUserByEmail = async (email) => {
+  try {
+    const user = await User.findOne({ email });
+    return user;
+  } catch (error) {
+    logger.error(`[findUserByEmail] Error occurred while finding user by email: ${email}`, error);
+    throw error;
+  }
+};
+
 module.exports = {
   updateUserPluginsService,
   getUserKey,
@@ -174,4 +191,5 @@ module.exports = {
   updateUserKey,
   deleteUserKey,
   checkUserKeyExpiry,
+  findUserByEmail,
 };
