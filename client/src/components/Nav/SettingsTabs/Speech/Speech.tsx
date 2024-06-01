@@ -50,33 +50,68 @@ function Speech() {
   const [automaticPlayback, setAutomaticPlayback] = useRecoilState(store.automaticPlayback);
   const [playbackRate, setPlaybackRate] = useRecoilState(store.playbackRate);
 
-  const settings = {
-    conversationMode: { value: conversationMode, setFunc: setConversationMode },
-    advancedMode: { value: advancedMode, setFunc: setAdvancedMode },
-    speechToText: { value: speechToText, setFunc: setSpeechToText },
-    textToSpeech: { value: textToSpeech, setFunc: setTextToSpeech },
-    cacheTTS: { value: cacheTTS, setFunc: setCacheTTS },
-    engineSTT: { value: engineSTT, setFunc: setEngineSTT },
-    languageSTT: { value: languageSTT, setFunc: setLanguageSTT },
-    autoTranscribeAudio: { value: autoTranscribeAudio, setFunc: setAutoTranscribeAudio },
-    decibelValue: { value: decibelValue, setFunc: setDecibelValue },
-    autoSendText: { value: autoSendText, setFunc: setAutoSendText },
-    engineTTS: { value: engineTTS, setFunc: setEngineTTS },
-    voice: { value: voice, setFunc: setVoice },
-    languageTTS: { value: languageTTS, setFunc: setLanguageTTS },
-    automaticPlayback: { value: automaticPlayback, setFunc: setAutomaticPlayback },
-    playbackRate: { value: playbackRate, setFunc: setPlaybackRate },
-  };
-
   const updateSetting = useCallback(
     (key, newValue) => {
+      const settings = {
+        conversationMode: { value: conversationMode, setFunc: setConversationMode },
+        advancedMode: { value: advancedMode, setFunc: setAdvancedMode },
+        speechToText: { value: speechToText, setFunc: setSpeechToText },
+        textToSpeech: { value: textToSpeech, setFunc: setTextToSpeech },
+        cacheTTS: { value: cacheTTS, setFunc: setCacheTTS },
+        engineSTT: { value: engineSTT, setFunc: setEngineSTT },
+        languageSTT: { value: languageSTT, setFunc: setLanguageSTT },
+        autoTranscribeAudio: { value: autoTranscribeAudio, setFunc: setAutoTranscribeAudio },
+        decibelValue: { value: decibelValue, setFunc: setDecibelValue },
+        autoSendText: { value: autoSendText, setFunc: setAutoSendText },
+        engineTTS: { value: engineTTS, setFunc: setEngineTTS },
+        voice: { value: voice, setFunc: setVoice },
+        languageTTS: { value: languageTTS, setFunc: setLanguageTTS },
+        automaticPlayback: { value: automaticPlayback, setFunc: setAutomaticPlayback },
+        playbackRate: { value: playbackRate, setFunc: setPlaybackRate },
+      };
+
       const setting = settings[key];
       setting.setFunc(newValue);
     },
-    [settings],
+    [
+      conversationMode,
+      advancedMode,
+      speechToText,
+      textToSpeech,
+      cacheTTS,
+      engineSTT,
+      languageSTT,
+      autoTranscribeAudio,
+      decibelValue,
+      autoSendText,
+      engineTTS,
+      voice,
+      languageTTS,
+      automaticPlayback,
+      playbackRate,
+      setConversationMode,
+      setAdvancedMode,
+      setSpeechToText,
+      setTextToSpeech,
+      setCacheTTS,
+      setEngineSTT,
+      setLanguageSTT,
+      setAutoTranscribeAudio,
+      setDecibelValue,
+      setAutoSendText,
+      setEngineTTS,
+      setVoice,
+      setLanguageTTS,
+      setAutomaticPlayback,
+      setPlaybackRate,
+    ],
   );
 
   useEffect(() => {
+    if (!data) {
+      return;
+    }
+
     for (const key in data) {
       if (Object.prototype.hasOwnProperty.call(data, key)) {
         updateSetting(key, data[key]);
