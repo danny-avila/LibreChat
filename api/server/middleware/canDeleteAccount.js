@@ -15,7 +15,7 @@ const { isEnabled } = require('~/server/utils');
 
 const canDeleteAccount = async (req, res, next = () => {}) => {
   const { user } = req;
-  if (user?.role === 'admin' || !isEnabled(process.env.DISABLE_ACCOUNT_DELETION)) {
+  if (user?.role === 'admin' || isEnabled(process.env.ALLOW_ACCOUNT_DELETION)) {
     return next();
   } else {
     logger.error(`[User] [Delete Account] [User cannot delete account] [User: ${user?.id}]`);
