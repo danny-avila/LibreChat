@@ -1,41 +1,16 @@
 const { Strategy: GoogleStrategy } = require('passport-google-oauth20');
-const { createNewUser, handleExistingUser } = require('./process');
-const { logger } = require('~/config');
-const { findUserByEmail } = require('~/server/services/userService');
-const { isEnabled } = require('~/server/utils');
+const socialLogin = require('./socialLogin');
 
-const googleLogin = async (accessToken, refreshToken, profile, cb) => {
-  try {
-    const email = profile.emails[0].value;
-    const googleId = profile.id;
+const getProfileDetails = (profile) => ({
+  email: profile.emails[0].value,
+  id: profile.id,
+  avatarUrl: profile.photos[0].value,
+  username: profile.name.givenName,
+  name: `${profile.name.givenName} ${profile.name.familyName}`,
+  emailVerified: profile.emails[0].verified,
+});
 
-    const oldUser = await findUserByEmail(email);
-    const ALLOW_SOCIAL_REGISTRATION = isEnabled(process.env.ALLOW_SOCIAL_REGISTRATION);
-    const avatarUrl = profile.photos[0].value;
-
-    if (oldUser) {
-      await handleExistingUser(oldUser, avatarUrl);
-      return cb(null, oldUser);
-    }
-
-    if (ALLOW_SOCIAL_REGISTRATION) {
-      const newUser = await createNewUser({
-        email,
-        avatarUrl,
-        provider: 'google',
-        providerKey: 'googleId',
-        providerId: googleId,
-        username: profile.name.givenName,
-        name: `${profile.name.givenName} ${profile.name.familyName}`,
-        emailVerified: profile.emails[0].verified,
-      });
-      return cb(null, newUser);
-    }
-  } catch (err) {
-    logger.error('[googleLogin]', err);
-    return cb(err);
-  }
-};
+const googleLogin = socialLogin('google', getProfileDetails);
 
 module.exports = () =>
   new GoogleStrategy(

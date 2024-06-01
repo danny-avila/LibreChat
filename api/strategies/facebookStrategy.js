@@ -1,40 +1,15 @@
 const FacebookStrategy = require('passport-facebook').Strategy;
-const { createNewUser, handleExistingUser } = require('./process');
-const { logger } = require('~/config');
-const { findUserByEmail } = require('~/server/services/userService');
-const { isEnabled } = require('~/server/utils');
+const socialLogin = require('./socialLogin');
 
-const facebookLogin = async (accessToken, refreshToken, profile, cb) => {
-  try {
-    const email = profile.emails[0]?.value;
-    const facebookId = profile.id;
+const getProfileDetails = (profile) => ({
+  email: profile.emails[0]?.value,
+  id: profile.id,
+  avatarUrl: profile.photos[0]?.value,
+  username: profile.displayName,
+  name: profile.name?.givenName + ' ' + profile.name?.familyName,
+});
 
-    const oldUser = await findUserByEmail(email);
-    const ALLOW_SOCIAL_REGISTRATION = isEnabled(process.env.ALLOW_SOCIAL_REGISTRATION);
-    const avatarUrl = profile.photos[0]?.value;
-
-    if (oldUser) {
-      await handleExistingUser(oldUser, avatarUrl);
-      return cb(null, oldUser);
-    }
-
-    if (ALLOW_SOCIAL_REGISTRATION) {
-      const newUser = await createNewUser({
-        email,
-        avatarUrl,
-        provider: 'facebook',
-        providerKey: 'facebookId',
-        providerId: facebookId,
-        username: profile.displayName,
-        name: profile.name?.givenName + ' ' + profile.name?.familyName,
-      });
-      return cb(null, newUser);
-    }
-  } catch (err) {
-    logger.error('[facebookLogin]', err);
-    return cb(err);
-  }
-};
+const facebookLogin = socialLogin('facebook', getProfileDetails);
 
 module.exports = () =>
   new FacebookStrategy(
