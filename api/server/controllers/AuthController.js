@@ -135,9 +135,6 @@ module.exports = {
   refreshController,
   registrationController,
   resetPasswordController,
-<<<<<<< HEAD
   resetPasswordRequestController,
-=======
   verifyEmailController,
->>>>>>> ff99c713 (feat: verification email)
 };
