@@ -3,6 +3,7 @@ const { Strategy: PassportLocalStrategy } = require('passport-local');
 const { loginSchema } = require('./validators');
 const logger = require('~/utils/logger');
 const User = require('~/models/User');
+const { isEnabled } = require('~/server/utils');
 
 async function validateLoginRequest(req) {
   const { error } = loginSchema.safeParse(req.body);
@@ -47,7 +48,7 @@ async function passportLogin(req, email, password, done) {
       return done(null, false, { message: 'Incorrect password.' });
     }
 
-    if (!user.emailVerified && JSON.parse(process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN) === false) {
+    if (!user.emailVerified && !isEnabled(process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN)) {
       logError('Passport Local Strategy - Email not verified', { email });
       logger.error(`[Login] [Login failed] [Username: ${email}] [Request-IP: ${req.ip}]`);
       return done(null, user, { message: 'Email not verified.' });

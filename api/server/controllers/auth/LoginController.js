@@ -1,6 +1,7 @@
 const User = require('~/models/User');
 const { setAuthTokens } = require('~/server/services/AuthService');
 const { logger } = require('~/config');
+const { isEnabled } = require('~/server/utils');
 
 const loginController = async (req, res) => {
   try {
@@ -12,7 +13,7 @@ const loginController = async (req, res) => {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
-    if (!user.emailVerified && JSON.parse(process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN) === false) {
+    if (!user.emailVerified && !isEnabled(process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN)) {
       return res.status(422).json({ message: 'Email not verified' });
     }
 
