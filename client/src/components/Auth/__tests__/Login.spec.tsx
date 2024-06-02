@@ -51,29 +51,7 @@ const setup = ({
       user: {},
     },
   },
-<<<<<<< HEAD
-  useGetStartupCongfigReturnValue = mockStartupConfig,
-=======
-  useGetStartupConfigReturnValue = {
-    isLoading: false,
-    isError: false,
-    data: {
-      socialLogins: ['google', 'facebook', 'openid', 'github', 'discord'],
-      discordLoginEnabled: true,
-      facebookLoginEnabled: true,
-      githubLoginEnabled: true,
-      googleLoginEnabled: true,
-      openidLoginEnabled: true,
-      openidLabel: 'Test OpenID',
-      openidImageUrl: 'http://test-server.com',
-      registrationEnabled: true,
-      emailLoginEnabled: true,
-      socialLoginEnabled: true,
-      passwordResetEnabled: true,
-      serverDomain: 'mock-server',
-    },
-  },
->>>>>>> 34bac7ac (test: fixed LoginForm test)
+  useGetStartupConfigReturnValue = mockStartupConfig,
 } = {}) => {
   const mockUseLoginUser = jest
     .spyOn(mockDataProvider, 'useLoginUserMutation')
@@ -92,12 +70,12 @@ const setup = ({
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useRefreshTokenMutationReturnValue);
   const mockUseOutletContext = jest.spyOn(reactRouter, 'useOutletContext').mockReturnValue({
-    startupConfig: useGetStartupCongfigReturnValue.data,
+    startupConfig: useGetStartupConfigReturnValue.data,
   });
   const renderResult = render(
     <AuthLayout
-      startupConfig={useGetStartupCongfigReturnValue.data as TStartupConfig}
-      isFetching={useGetStartupCongfigReturnValue.isFetching}
+      startupConfig={useGetStartupConfigReturnValue.data as TStartupConfig}
+      isFetching={useGetStartupConfigReturnValue.isFetching}
       error={null}
       startupConfigError={null}
       header={'Welcome back'}
@@ -183,7 +161,7 @@ test('Navigates to / on successful login', async () => {
       isError: false,
       isSuccess: true,
     },
-    useGetStartupCongfigReturnValue: {
+    useGetStartupConfigReturnValue: {
       ...mockStartupConfig,
       data: {
         ...mockStartupConfig.data,
