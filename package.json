@@ -102,6 +102,7 @@
     ]
   },
   "dependencies": {
-    "ollama": "^0.5.1"
+    "ollama": "^0.5.1",
+    "passport-ldapauth": "^3.0.1"
   }
 }

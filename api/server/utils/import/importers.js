@@ -24,10 +24,24 @@ function getImporter(jsonData) {
     return importChatBotUiConvo;
   }
 
-  // For LibreChat
-  if (jsonData.conversationId && (jsonData.messagesTree || jsonData.messages)) {
+  // For LibreChat single conversation
+  if (
+    jsonData.conversationId &&
+    (jsonData.messagesTree || jsonData.messages || jsonData.conversations)
+  ) {
     logger.info('Importing LibreChat conversation');
     return importLibreChatConvo;
+  }
+
+  // For LibreChat multiple conversations
+  let firstConvo = jsonData.conversations && jsonData.conversations[0];
+  if (
+    Array.isArray(jsonData.conversations) &&
+    firstConvo?.conversationId &&
+    (firstConvo?.messagesTree || firstConvo?.messages || firstConvo?.conversations)
+  ) {
+    logger.info('Importing multiple LibreChat conversations');
+    return importLibreChatMultiConvo;
   }
 
   throw new Error('Unsupported import type');
@@ -78,11 +92,7 @@ async function importChatBotUiConvo(
  * @param {Function} [builderFactory=createImportBatchBuilder] - The factory function to create an import batch builder.
  * @returns {Promise<void>} - A promise that resolves when the import is complete.
  */
-async function importLibreChatConvo(
-  jsonData,
-  requestUserId,
-  builderFactory = createImportBatchBuilder,
-) {
+async function importLibreChat(jsonData, requestUserId, builderFactory = createImportBatchBuilder) {
   try {
     /** @type {ImportBatchBuilder} */
     const importBatchBuilder = builderFactory(requestUserId);
@@ -176,6 +186,24 @@ async function importLibreChatConvo(
     logger.debug(`user: ${requestUserId} | Conversation "${jsonData.title}" imported`);
   } catch (error) {
     logger.error(`user: ${requestUserId} | Error creating conversation from LibreChat file`, error);
+  }
+}
+
+async function importLibreChatConvo(
+  jsonData,
+  requestUserId,
+  builderFactory = createImportBatchBuilder,
+) {
+  return importLibreChat(jsonData, requestUserId, builderFactory);
+}
+
+async function importLibreChatMultiConvo(
+  jsonData,
+  requestUserId,
+  builderFactory = createImportBatchBuilder,
+) {
+  for (const convo of jsonData.conversations) {
+    await importLibreChat(convo, requestUserId, builderFactory);
   }
 }
 
