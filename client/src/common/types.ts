@@ -12,6 +12,7 @@ import type {
   TLoginUser,
   AuthTypeEnum,
   TConversation,
+  TStartupConfig,
   EModelEndpoint,
   AssistantsEndpoint,
   AuthorizationTypeEnum,
@@ -195,6 +196,7 @@ export type TEditPresetProps = {
   title?: string;
 };
 
+export type TSetOptions = (options: Record<string, unknown>) => void;
 export type TSetOptionsPayload = {
   setOption: TSetOption;
   setExample: TSetExample;
@@ -204,6 +206,7 @@ export type TSetOptionsPayload = {
   // getConversation: () => TConversation | TPreset | null;
   checkPluginSelection: (value: string) => boolean;
   setTools: (newValue: string, remove?: boolean) => void;
+  setOptions?: TSetOptions;
 };
 
 export type TPresetItemProps = {
@@ -390,3 +393,13 @@ export interface SwitcherProps {
   endpointKeyProvided: boolean;
   isCollapsed: boolean;
 }
+
+export type TLoginLayoutContext = {
+  startupConfig: TStartupConfig | null;
+  startupConfigError: unknown;
+  isFetching: boolean;
+  error: string | null;
+  setError: React.Dispatch<React.SetStateAction<string | null>>;
+  headerText: string;
+  setHeaderText: React.Dispatch<React.SetStateAction<string>>;
+};

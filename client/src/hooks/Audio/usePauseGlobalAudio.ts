@@ -6,9 +6,9 @@ import store from '~/store';
 function usePauseGlobalAudio(index = 0) {
   /* Global Audio Variables */
   const setAudioRunId = useSetRecoilState(store.audioRunFamily(index));
+  const setGlobalIsPlaying = useSetRecoilState(store.globalAudioPlayingFamily(index));
   const setIsGlobalAudioFetching = useSetRecoilState(store.globalAudioFetchingFamily(index));
   const [globalAudioURL, setGlobalAudioURL] = useRecoilState(store.globalAudioURLFamily(index));
-  const setGlobalIsPlaying = useSetRecoilState(store.globalAudioPlayingFamily(index));
 
   const pauseGlobalAudio = useCallback(() => {
     if (globalAudioURL) {

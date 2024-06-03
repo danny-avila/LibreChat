@@ -1,6 +1,6 @@
 import { useForm } from 'react-hook-form';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import { memo, useCallback, useRef, useMemo, useEffect } from 'react';
+import { memo, useCallback, useRef, useMemo } from 'react';
 import {
   supportsFiles,
   mergeFileConfig,
@@ -8,10 +8,10 @@ import {
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
-import { useRequiresKey, useTextarea, useSpeechToText } from '~/hooks';
+import { useRequiresKey, useTextarea } from '~/hooks';
 import { TextareaAutosize } from '~/components/ui';
 import { useGetFileConfig } from '~/data-provider';
-import { cn, removeFocusOutlines } from '~/utils';
+import { cn, removeFocusRings } from '~/utils';
 import AttachFile from './Files/AttachFile';
 import AudioRecorder from './AudioRecorder';
 import { mainTextareaId } from '~/common';
@@ -71,24 +71,6 @@ const ChatForm = ({ index = 0 }) => {
 
   const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };
   const endpoint = endpointType ?? _endpoint;
-
-  const handleTranscriptionComplete = (text: string) => {
-    if (text) {
-      ask({ text });
-      methods.reset({ text: '' });
-      clearText();
-    }
-  };
-
-  const { isListening, isLoading, startRecording, stopRecording, speechText, clearText } =
-    useSpeechToText(handleTranscriptionComplete);
-
-  useEffect(() => {
-    if (textAreaRef.current) {
-      textAreaRef.current.value = speechText;
-      methods.setValue('text', speechText, { shouldValidate: true });
-    }
-  }, [speechText, methods]);
 
   const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
@@ -160,8 +142,8 @@ const ChatForm = ({ index = 0 }) => {
                     : 'pl-3 md:pl-4',
                   'm-0 w-full resize-none border-0 bg-transparent py-[10px] placeholder-black/50 focus:ring-0 focus-visible:ring-0 dark:bg-transparent dark:placeholder-white/50 md:py-3.5  ',
                   SpeechToText ? 'pr-20 md:pr-[85px]' : 'pr-10 md:pr-12',
-                  removeFocusOutlines,
                   'max-h-[65vh] md:max-h-[75vh]',
+                  removeFocusRings,
                 )}
               />
             )}
@@ -183,11 +165,10 @@ const ChatForm = ({ index = 0 }) => {
             )}
             {SpeechToText && (
               <AudioRecorder
-                isListening={isListening}
-                isLoading={isLoading}
-                startRecording={startRecording}
-                stopRecording={stopRecording}
                 disabled={!!disableInputs}
+                textAreaRef={textAreaRef}
+                ask={submitMessage}
+                methods={methods}
               />
             )}
             {TextToSpeech && automaticPlayback && <StreamAudio index={index} />}

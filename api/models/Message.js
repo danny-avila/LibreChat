@@ -129,6 +129,14 @@ module.exports = {
       throw new Error('Failed to save message.');
     }
   },
+  async updateMessageText({ messageId, text }) {
+    try {
+      await Message.updateOne({ messageId }, { text });
+    } catch (err) {
+      logger.error('Error updating message text:', err);
+      throw new Error('Failed to update message text.');
+    }
+  },
   async updateMessage(message) {
     try {
       const { messageId, ...update } = message;
@@ -171,8 +179,18 @@ module.exports = {
     }
   },
 
-  async getMessages(filter) {
+  /**
+   * Retrieves messages from the database.
+   * @param {Record<string, unknown>} filter
+   * @param {string | undefined} [select]
+   * @returns
+   */
+  async getMessages(filter, select) {
     try {
+      if (select) {
+        return await Message.find(filter).select(select).sort({ createdAt: 1 }).lean();
+      }
+
       return await Message.find(filter).sort({ createdAt: 1 }).lean();
     } catch (err) {
       logger.error('Error getting messages:', err);

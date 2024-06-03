@@ -59,6 +59,8 @@ const openAIModels = {
   'gpt-3.5-turbo-1106': 16375, // -10 from max
   'gpt-3.5-turbo-0125': 16375, // -10 from max
   'mistral-': 31990, // -10 from max
+  llama3: 8187, // -5 from max
+  'llama-3': 8187, // -5 from max
 };
 
 const cohereModels = {

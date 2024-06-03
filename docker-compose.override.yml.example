@@ -120,9 +120,13 @@ version: '3.4'
 #    image: ghcr.io/berriai/litellm:main-latest
 #    volumes:
 #      - ./litellm/litellm-config.yaml:/app/config.yaml
+#      - ./litellm/application_default_credentials.json:/app/application_default_credentials.json # only if using Google Vertex
+#    ports:
+#      - "4000:8000"
 #    command: [ "--config", "/app/config.yaml", "--port", "8000", "--num_workers", "8" ]
 #    environment:
 #      OPENAI_API_KEY: none ## needs to be set if ollama's openai api compatibility is used
+#      GOOGLE_APPLICATION_CREDENTIALS: /app/application_default_credentials.json ## only if using Google Vertex
 #      REDIS_HOST: redis
 #      REDIS_PORT: 6379
 #      REDIS_PASSWORD: RedisChangeMe
