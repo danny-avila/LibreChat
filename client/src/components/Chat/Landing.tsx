@@ -55,7 +55,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
                 className="h-2/3 w-2/3"
                 size={41}
               />
-              {(startupConfig?.showBirthdayIcon ?? false) && (
+              {!!startupConfig?.showBirthdayIcon && (
                 <div>
                   <TooltipTrigger>
                     <BirthdayIcon className="absolute bottom-8 right-2.5" />
