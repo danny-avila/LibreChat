@@ -2151,5 +2151,7 @@ ol ol):not(:where([class~=not-prose] *)) {
 
 .move-up {
   animation: moveUp 4s ease-in-out infinite;
-  
+}
+.override-button {
+  background-color: #1fdf67!important;
 }

@@ -132,7 +132,7 @@ const SidePanel = ({
         <ResizablePanelGroup
           direction="horizontal"
           onLayout={(sizes: number[]) => throttledSaveLayout(sizes)}
-          className="transition-width relative h-full w-full flex-1 overflow-auto bg-white dark:bg-gray-800"
+          className="transition-width relative h-full w-full flex-1 overflow-auto bg-white dark:bg-black"
         >
           <ResizablePanel defaultSize={defaultLayout[0]} minSize={30}>
             {children}
@@ -184,7 +184,7 @@ const SidePanel = ({
               localStorage.setItem('react-resizable-panels:collapsed', 'true');
             }}
             className={cn(
-              'sidenav hide-scrollbar border-l border-gray-200 bg-white transition-opacity dark:border-gray-800/50 dark:bg-gray-850',
+              'sidenav hide-scrollbar border-l border-gray-200 bg-white transition-opacity dark:border-gray-800/50 dark:bg-black',
               isCollapsed ? 'min-w-[50px]' : 'min-w-[340px] sm:min-w-[352px]',
               (isSmallScreen && isCollapsed && (minSize === 0 || collapsedSize === 0)) ||
                 fullCollapse
@@ -195,7 +195,7 @@ const SidePanel = ({
             {interfaceConfig.modelSelect && (
               <div
                 className={cn(
-                  'sticky left-0 right-0 top-0 z-[100] flex h-[52px] flex-wrap items-center justify-center bg-white dark:bg-gray-850',
+                  'sticky left-0 right-0 top-0 z-[100] flex h-[52px] flex-wrap items-center justify-center bg-white dark:bg-black',
                   isCollapsed ? 'h-[52px]' : 'px-2',
                 )}
               >

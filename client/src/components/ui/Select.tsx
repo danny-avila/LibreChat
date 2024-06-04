@@ -20,7 +20,7 @@ const SelectTrigger = React.forwardRef<
     ref={ref}
     className={cn(
       'border-input ring-offset-background placeholder:text-muted-foreground flex h-9 w-full items-center justify-between whitespace-nowrap rounded-md border border-gray-200 bg-transparent px-3 py-2 text-sm shadow-sm focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 [&>span]:line-clamp-1',
-      'rounded-lg hover:bg-gray-100/50 dark:hover:bg-gray-700',
+      'rounded-lg hover:bg-gray-100/50 dark:hover:bg-gray-700 override-button',
       className,
     )}
     {...props}

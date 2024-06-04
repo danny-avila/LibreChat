@@ -108,6 +108,178 @@ export default function Settings({ conversation, setOption, models, readonly }: 
   const setResendFiles = setOption('resendFiles');
   const setImageDetail = setOption('imageDetail');
 
+  if (endpoint === 'PredictionGuard') {
+    return (
+      <div className="grid grid-cols-5 gap-6">
+        <div className="col-span-5 sm:col-span-3 flex flex-col items-center justify-start gap-6">
+          <div className="grid w-full items-center gap-2">
+            <SelectDropDown
+              value={model ?? ''}
+              setValue={setModel}
+              availableValues={models}
+              disabled={readonly}
+              className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusRings)}
+              containerClassName="flex w-full resize-none"
+            />
+          </div>
+          <div className="grid w-full items-center gap-2">
+            <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
+              {localize('com_endpoint_custom_name')}{' '}
+              <small className="opacity-40">({localize('com_endpoint_default_blank')})</small>
+            </Label>
+            <Input
+              id="chatGptLabel"
+              disabled={readonly}
+              value={(chatGptLabelValue as string) || ''}
+              onChange={setChatGptLabel}
+              placeholder={localize('com_endpoint_openai_custom_name_placeholder')}
+              className={cn(
+                defaultTextProps,
+                'flex h-10 max-h-10 w-full resize-none px-3 py-2',
+                removeFocusOutlines,
+              )}
+            />
+          </div>
+          <div className="grid w-full items-center gap-2">
+            <Label htmlFor="promptPrefix" className="text-left text-sm font-medium">
+              {localize('com_endpoint_prompt_prefix')}{' '}
+              <small className="opacity-40">({localize('com_endpoint_default_blank')})</small>
+            </Label>
+            <TextareaAutosize
+              id="promptPrefix"
+              disabled={readonly}
+              value={(promptPrefixValue as string) || ''}
+              onChange={setPromptPrefix}
+              placeholder={localize('com_endpoint_openai_prompt_prefix_placeholder')}
+              className={cn(
+                defaultTextProps,
+                'flex max-h-[138px] min-h-[100px] w-full resize-none px-3 py-2 ',
+              )}
+            />
+          </div>
+          <div className="grid w-full items-center gap-2">
+            <Label htmlFor="factualityText" className="text-left text-sm font-medium">
+              Factuality Context{' '}
+              <small className="opacity-40">({localize('com_endpoint_default_blank')})</small>
+            </Label>
+            <TextareaAutosize
+              id="factualityText"
+              disabled={readonly}
+              value={factualityText || ''}
+              onChange={(e) => setFactualityText(e.target.value ?? null)}
+              placeholder="Please provide Factuality Context"
+              className={cn(
+                defaultTextProps,
+                'dark:bg-gray-700 dark:hover:bg-gray-700/60 dark:focus:bg-gray-700',
+                'flex max-h-[138px] min-h-[100px] w-full resize-none px-3 py-2 ',
+              )}
+            />
+          </div>
+        </div>
+        <div className="col-span-5 sm:col-span-2 flex flex-col items-center justify-start gap-6">
+          <div className="grid w-full items-center gap-2">
+            <Label htmlFor="max-output-tokens" className="text-left text-sm font-medium">
+              {localize('com_endpoint_max_output_tokens')}{' '}
+            </Label>
+            <InputNumber
+              id="max-output-tokens"
+              stringMode={false}
+              disabled={readonly}
+              value={maxOutputTokensValue as number}
+              onChange={setMaxOutputTokens as OnInputNumberChange}
+              placeholder={localize('com_nav_theme_system')}
+              min={10}
+              max={2000000}
+              step={1000}
+              controls={false}
+              className={cn(
+                defaultTextProps,
+                cn(
+                  optionText,
+                  'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                  'w-1/3',
+                ),
+              )}
+            />
+          </div>
+          <div className="grid w-full items-center gap-2">
+            <Label htmlFor="temp-int" className="text-left text-sm font-medium">
+              {localize('com_endpoint_temperature')}{' '}
+              <small className="opacity-40">
+                ({localize('com_endpoint_default_with_num', '1')})
+              </small>
+            </Label>
+            <InputNumber
+              id="temp-int"
+              stringMode={false}
+              disabled={readonly}
+              value={temperatureValue as number}
+              onChange={setTemperature as OnInputNumberChange}
+              max={2}
+              min={0}
+              step={0.01}
+              controls={false}
+              className={cn(
+                defaultTextProps,
+                cn(
+                  optionText,
+                  'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                ),
+              )}
+            />
+            <Slider
+              disabled={readonly}
+              value={[(temperatureValue as number) ?? 1]}
+              onValueChange={(value) => setTemperature(value[0])}
+              doubleClickHandler={() => setTemperature(1)}
+              max={2}
+              min={0}
+              step={0.01}
+              className="flex h-4 w-full"
+            />
+          </div>
+          <div className="grid w-full items-center gap-2">
+            <Label htmlFor="resend-files" className="text-left text-sm font-medium">
+              <small>{localize('com_endpoint_plug_resend_files')}</small>
+            </Label>
+            <Switch
+              id="resend-files"
+              checked={resendFiles ?? true}
+              onCheckedChange={(checked: boolean) => setResendFiles(checked)}
+              disabled={readonly}
+              className="flex"
+            />
+          </div>
+          <div className="grid w-full items-center gap-2">
+            <Label htmlFor="toxicity-checkbox" className="text-left text-sm font-medium">
+              <small>Toxicity</small>
+            </Label>
+            <Switch
+              id="toxicity-checkbox"
+              checked={toxicityCheckbox ?? false}
+              onCheckedChange={(checked: boolean) => setToxicity(checked)}
+              disabled={readonly}
+              className="flex"
+            />
+          </div>
+          <div className="grid w-full items-center gap-2">
+            <Label htmlFor="factuality-checkbox" className="text-left text-sm font-medium">
+              <small>Factuality</small>
+            </Label>
+            <Switch
+              id="factuality-checkbox"
+              checked={factualityCheckbox ?? false}
+              onCheckedChange={(checked: boolean) => setFactuality(checked)}
+              disabled={readonly}
+              className="flex"
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  else {
   return (
     <div className="grid grid-cols-5 gap-6">
       <div className="col-span-5 flex flex-col items-center justify-start gap-6 sm:col-span-3">
@@ -537,4 +709,5 @@ export default function Settings({ conversation, setOption, models, readonly }: 
       </div>
     </div>
   );
+}
 }

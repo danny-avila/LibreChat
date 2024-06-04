@@ -15,7 +15,7 @@ export default function ScrollToBottom({ scrollHandler }: Props) {
         height="24"
         viewBox="0 0 24 24"
         fill="none"
-        className="m-1 text-black dark:text-white"
+        className="m-1 text-black dark:text-black"
       >
         <path
           d="M17 13L12 18L7 13M12 6L12 17"

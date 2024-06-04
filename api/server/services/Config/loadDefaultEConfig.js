@@ -12,7 +12,9 @@ async function loadDefaultEndpointsConfig(req) {
   const { openAI, assistants, azureAssistants, bingAI, anthropic, azureOpenAI, chatGPTBrowser } =
     config;
 
-  const enabledEndpoints = getEnabledEndpoints();
+    let enabledEndpoints = [
+    
+  ];
 
   const endpointConfig = {
     [EModelEndpoint.openAI]: openAI,

@@ -30,7 +30,7 @@ export default function Search() {
   return (
     <MinimalMessagesWrapper ref={containerRef} className="pt-4">
       {(messages && messages?.length == 0) || messages === null ? (
-        <div className="my-auto flex h-full w-full items-center justify-center gap-1 bg-white p-3 text-lg text-gray-500 dark:border-gray-800/50 dark:bg-gray-800 dark:text-gray-300">
+        <div className="my-auto flex h-full w-full items-center justify-center gap-1 bg-white p-3 text-lg text-gray-500 dark:border-gray-800/50 dark:bg-black dark:text-gray-300">
           {localize('com_ui_nothing_found')}
         </div>
       ) : (

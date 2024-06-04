@@ -697,6 +697,7 @@ class OpenAIClient extends BaseClient {
       consistencyCheckbox,
       factualityCheckbox,
       factualityText,
+      max_tokens
     };
 
     if (max_tokens) {
@@ -1207,6 +1208,11 @@ ${convo}
 
       let UnexpectedRoleError = false;
       if (modelOptions.stream) {
+        if (this.options.max_tokens) {
+          modelOptions.max_tokens = this.options.max_tokens;
+        } else {
+          modelOptions.max_tokens = 1000
+        }
         const stream = await openai.beta.chat.completions
           .stream({
             ...modelOptions,

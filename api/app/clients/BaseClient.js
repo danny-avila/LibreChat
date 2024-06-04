@@ -541,6 +541,7 @@ class BaseClient {
       endpoint: this.options.endpoint,
       ...(this.metadata ?? {}),
     };
+    
 
     if (
       tokenCountMap &&
