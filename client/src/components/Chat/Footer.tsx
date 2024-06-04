@@ -37,7 +37,18 @@ export default function Footer({ className }: { className?: string }) {
     <span>
       <ReactMarkdown
         components={{
-          a: ({ ...props }) => <a style={{ textDecoration: 'underline' }} {...props} />,
+          a: (props) => {
+            const { ['node']: _, href, ...otherProps } = props;
+            return (
+              <a
+                className=" text-gray-600 underline dark:text-gray-300"
+                href={href}
+                target="_blank"
+                rel="noreferrer"
+                {...otherProps}
+              />
+            );
+          },
         }}
       >
         {typeof config?.customFooter === 'string'
