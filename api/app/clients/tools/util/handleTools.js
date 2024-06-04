@@ -242,6 +242,7 @@ const loadTools = async ({
     processFileURL: options.processFileURL,
     returnMetadata: options.returnMetadata,
     uploadImageBuffer: options.uploadImageBuffer,
+    spec: options.spec,
   };
 
   const toolOptions = {
