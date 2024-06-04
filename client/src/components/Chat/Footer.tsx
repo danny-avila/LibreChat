@@ -2,6 +2,7 @@ import React from 'react';
 import { Constants } from 'librechat-data-provider';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { useLocalize } from '~/hooks';
+import ReactMarkdown from 'react-markdown';
 
 export default function Footer({ className }: { className?: string }) {
   const { data: config } = useGetStartupConfig();
@@ -34,16 +35,17 @@ export default function Footer({ className }: { className?: string }) {
 
   const mainContentRender = (
     <span>
-      {typeof config?.customFooter === 'string' ? (
-        config.customFooter
-      ) : (
-        <>
-          <a href="https://librechat.ai" target="_blank" rel="noreferrer" className="underline">
-            {config?.appTitle || 'LibreChat'} {Constants.VERSION}
-          </a>
-          {' - '} {localize('com_ui_new_footer')}
-        </>
-      )}
+      <ReactMarkdown
+        components={{
+          a: ({ ...props }) => <a style={{ textDecoration: 'underline' }} {...props} />,
+        }}
+      >
+        {typeof config?.customFooter === 'string'
+          ? config.customFooter
+          : `[<${config?.appTitle || 'LibreChat'} ${
+            Constants.VERSION
+          }>](https://librechat.ai) - ${localize('com_ui_pay_per_call')}`}
+      </ReactMarkdown>
     </span>
   );
 
