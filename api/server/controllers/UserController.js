@@ -77,7 +77,7 @@ const deleteUserController = async (req, res) => {
     await deleteUserPluginAuth(user.id, null, true); // delete user plugin auth
     await User.deleteOne({ _id: user.id }); // delete user
     await deleteFiles(null, user.id); // delete user files
-    logger.info(`User deleted account. Email: ${user.email} ID: ${user.id}]`);
+    logger.info(`User deleted account. Email: ${user.email} ID: ${user.id}`);
     res.status(200).send({ message: 'User deleted' });
   } catch (err) {
     logger.error('[deleteUserController]', err);
