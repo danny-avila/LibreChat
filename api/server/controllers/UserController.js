@@ -1,16 +1,16 @@
-const { updateUserPluginsService, deleteUserKey } = require('~/server/services/UserService');
-const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
-const { logger } = require('~/config');
 const {
-  deleteConvos,
-  deleteMessages,
-  deletePresets,
   User,
   Session,
   Balance,
   Transaction,
   deleteFiles,
+  deleteConvos,
+  deletePresets,
+  deleteMessages,
 } = require('~/models');
+const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
+const { updateUserPluginsService, deleteUserKey } = require('~/server/services/UserService');
+const { logger } = require('~/config');
 
 const getUserController = async (req, res) => {
   res.status(200).send(req.user);

@@ -2,11 +2,11 @@ import React from 'react';
 import { useRecoilState } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
 import { SettingsTabValues } from 'librechat-data-provider';
+import DeleteAccount from './DeleteAccount';
 import { Switch } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import Avatar from './Avatar';
 import store from '~/store';
-import DeleteAccount from './DeleteAccount';
 
 function Account({ onCheckedChange }: { onCheckedChange?: (value: boolean) => void }) {
   const [UsernameDisplay, setUsernameDisplay] = useRecoilState<boolean>(store.UsernameDisplay);

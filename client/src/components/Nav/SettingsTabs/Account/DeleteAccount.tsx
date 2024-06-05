@@ -8,10 +8,10 @@ import {
   Input,
 } from '~/components/ui';
 import { useDeleteUserMutation } from 'librechat-data-provider/react-query';
-import { useLocalize } from '~/hooks';
 import { cn, defaultTextProps, removeFocusOutlines } from '~/utils';
 import { Spinner, LockIcon } from '~/components/svg';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { useLocalize } from '~/hooks';
 
 const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolean }) => {
   const localize = useLocalize();
