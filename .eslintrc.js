@@ -95,7 +95,7 @@ module.exports = {
             position: 'before',
           },
         ],
-        pathGroupsExcludedImportTypes: ['builtin'], // Exclude these types from the path group rule
+        pathGroupsExcludedImportTypes: ['builtin', 'type'], // Exclude these types from the path group rule
         warnOnUnassignedImports: true, // Warn for unassigned imports
         // alphabetize: { order: 'asc', caseInsensitive: true }, // Alphabetize imports within each group
       },
