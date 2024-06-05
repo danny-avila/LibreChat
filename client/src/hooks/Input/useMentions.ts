@@ -121,10 +121,10 @@ export default function useMentions({ assistantMap }: { assistantMap: TAssistant
         }),
       })),
       ...(endpointsConfig?.[EModelEndpoint.assistants]
-        ? assistantListMap[EModelEndpoint.assistants]
+        ? assistantListMap[EModelEndpoint.assistants] || []
         : []),
       ...(endpointsConfig?.[EModelEndpoint.azureAssistants]
-        ? assistantListMap[EModelEndpoint.azureAssistants]
+        ? assistantListMap[EModelEndpoint.azureAssistants] || []
         : []),
       ...((interfaceConfig.presets ? presets : [])?.map((preset, index) => ({
         value: preset.presetId ?? `preset-${index}`,
