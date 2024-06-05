@@ -2,7 +2,6 @@ const {
   User,
   Session,
   Balance,
-  Transaction,
   deleteFiles,
   deleteConvos,
   deletePresets,
@@ -10,6 +9,7 @@ const {
 } = require('~/models');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
 const { updateUserPluginsService, deleteUserKey } = require('~/server/services/UserService');
+const { Transaction } = require('~/models/Transaction');
 const { logger } = require('~/config');
 
 const getUserController = async (req, res) => {
