@@ -324,7 +324,7 @@ export enum EImageOutputType {
 export const sdSchema = z.object({
   name: z.string(),
   webUI: z.string().optional(),
-  spec: z.string().optional(),
+  specs: z.array(z.string()).optional(),
   parameters: z.record(z.any()).optional(),
 });
 
