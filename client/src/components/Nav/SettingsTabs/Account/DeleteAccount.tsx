@@ -7,20 +7,22 @@ import {
   DialogButton,
   Input,
 } from '~/components/ui';
-import { useDeleteUserMutation } from 'librechat-data-provider/react-query';
 import { cn, defaultTextProps, removeFocusOutlines } from '~/utils';
+import { useDeleteUserMutation } from '~/data-provider';
 import { Spinner, LockIcon } from '~/components/svg';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
 
 const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolean }) => {
   const localize = useLocalize();
-  const { user } = useAuthContext();
-  const userEmail = user?.email;
+  const { user, logout } = useAuthContext();
+  const { mutate: deleteUser, isLoading: isDeleting } = useDeleteUserMutation({
+    onSuccess: () => logout(),
+  });
+
   const [isDialogOpen, setDialogOpen] = useState<boolean>(false);
-  const { mutate: deleteUser, isLoading: isDeleting } = useDeleteUserMutation();
-  const [emailInput, setEmailInput] = useState('');
   const [deleteInput, setDeleteInput] = useState('');
+  const [emailInput, setEmailInput] = useState('');
   const [isLocked, setIsLocked] = useState(true);
 
   const onClick = useCallback(() => {
@@ -29,17 +31,18 @@ const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolea
 
   const handleDeleteUser = () => {
     if (!isLocked) {
-      deleteUser({});
+      deleteUser(undefined);
     }
   };
 
   const handleInputChange = useCallback(
     (newEmailInput: string, newDeleteInput: string) => {
-      const isEmailCorrect = newEmailInput.trim().toLowerCase() === userEmail?.trim().toLowerCase();
+      const isEmailCorrect =
+        newEmailInput.trim().toLowerCase() === user?.email?.trim().toLowerCase();
       const isDeleteInputCorrect = newDeleteInput === 'DELETE';
       setIsLocked(!(isEmailCorrect && isDeleteInputCorrect));
     },
-    [userEmail],
+    [user?.email],
   );
 
   return (
@@ -81,7 +84,7 @@ const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolea
               {renderInput(
                 localize('com_nav_delete_account_email_placeholder'),
                 'email-confirm-input',
-                userEmail || '',
+                user?.email || '',
                 (e) => {
                   setEmailInput(e.target.value);
                   handleInputChange(e.target.value, deleteInput);
