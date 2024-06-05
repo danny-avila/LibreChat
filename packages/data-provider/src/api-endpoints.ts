@@ -6,6 +6,8 @@ export const balance = () => '/api/balance';
 
 export const userPlugins = () => '/api/user/plugins';
 
+export const deleteUser = () => '/api/user/delete';
+
 export const messages = (conversationId: string, messageId?: string) =>
   `/api/messages/${conversationId}${messageId ? `/${messageId}` : ''}`;
 
