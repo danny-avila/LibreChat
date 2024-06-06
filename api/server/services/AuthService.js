@@ -1,10 +1,10 @@
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { errorsToString } = require('librechat-data-provider');
+const { sendEmail, checkEmailConfig } = require('~/server/utils');
 const { registerSchema } = require('~/strategies/validators');
 const isDomainAllowed = require('./isDomainAllowed');
 const Token = require('~/models/schema/tokenSchema');
-const { sendEmail } = require('~/server/utils');
 const Session = require('~/models/Session');
 const { logger } = require('~/config');
 const User = require('~/models/User');
@@ -15,19 +15,6 @@ const domains = {
 };
 
 const isProduction = process.env.NODE_ENV === 'production';
-
-/**
- * Check if email configuration is set
- * @returns {Boolean}
- */
-function checkEmailConfig() {
-  return (
-    (!!process.env.EMAIL_SERVICE || !!process.env.EMAIL_HOST) &&
-    !!process.env.EMAIL_USERNAME &&
-    !!process.env.EMAIL_PASSWORD &&
-    !!process.env.EMAIL_FROM
-  );
-}
 
 /**
  * Logout user
@@ -174,11 +161,7 @@ const registerUser = async (user) => {
 
     console.log('userId', newUser._id);
 
-    const emailEnabled =
-      (!!process.env.EMAIL_SERVICE || !!process.env.EMAIL_HOST) &&
-      !!process.env.EMAIL_USERNAME &&
-      !!process.env.EMAIL_PASSWORD &&
-      !!process.env.EMAIL_FROM;
+    const emailEnabled = checkEmailConfig();
 
     if (emailEnabled) {
       await sendVerificationEmail(newUser);
