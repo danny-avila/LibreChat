@@ -4,14 +4,16 @@ import type { TMessage } from 'librechat-data-provider';
 import { VolumeIcon, VolumeMuteIcon, Spinner } from '~/components/svg';
 import { useLocalize, useTextToSpeech } from '~/hooks';
 import store from '~/store';
+import { cn } from '~/utils';
 
 type THoverButtons = {
   message: TMessage;
   isLast: boolean;
   index: number;
+  className?: string;
 };
 
-export default function MessageAudio({ index, message, isLast }: THoverButtons) {
+export default function MessageAudio({ index, message, isLast, className }: THoverButtons) {
   const localize = useLocalize();
   const playbackRate = useRecoilValue(store.playbackRate);
 
@@ -49,7 +51,10 @@ export default function MessageAudio({ index, message, isLast }: THoverButtons) 
   return (
     <>
       <button
-        className="hover-button rounded-md p-1 pl-0 text-gray-400 hover:text-gray-950 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible"
+        className={cn(
+          'flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-gray-200 hover:text-gray-700 dark:text-gray-100/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400',
+          className,
+        )}
         // onMouseDownCapture={() => {
         //   if (audioRef.current) {
         //     audioRef.current.muted = false;

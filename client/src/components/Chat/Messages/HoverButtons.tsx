@@ -73,7 +73,14 @@ export default function HoverButtons({
 
   return (
     <div className="visible mt-0 flex justify-center gap-1 self-end text-gray-400 lg:justify-start">
-      {TextToSpeech && <MessageAudio index={index} message={message} isLast={isLast} />}
+      {TextToSpeech && (
+        <MessageAudio
+          index={index}
+          message={message}
+          isLast={isLast}
+          className={flat || !isCreatedByUser ? 'active h-7 w-7 rounded-md' : ''}
+        />
+      )}
       {isEditableEndpoint && (
         <button
           className={cn(
