@@ -6,8 +6,7 @@ const { logger } = require('~/config');
 const router = express.Router();
 const emailLoginEnabled =
   process.env.ALLOW_EMAIL_LOGIN === undefined || isEnabled(process.env.ALLOW_EMAIL_LOGIN);
-const passwordResetEnabled =
-  process.env.ALLOW_PASSWORD_RESET === undefined || isEnabled(process.env.ALLOW_PASSWORD_RESET);
+const passwordResetEnabled = isEnabled(process.env.ALLOW_PASSWORD_RESET);
 
 router.get('/', async function (req, res) {
   const isBirthday = () => {
