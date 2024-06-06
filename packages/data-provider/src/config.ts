@@ -233,6 +233,15 @@ const ttsOpenaiSchema = z.object({
   voices: z.array(z.string()),
 });
 
+const ttsAzureOpenAISchema = z.object({
+  instanceName: z.string(),
+  apiKey: z.string(),
+  deploymentName: z.string(),
+  apiVersion: z.string(),
+  model: z.string(),
+  voices: z.array(z.string()),
+});
+
 const ttsElevenLabsSchema = z.object({
   url: z.string().optional(),
   websocketUrl: z.string().optional(),
@@ -259,6 +268,7 @@ const ttsLocalaiSchema = z.object({
 
 const ttsSchema = z.object({
   openai: ttsOpenaiSchema.optional(),
+  azureOpenAI: ttsAzureOpenAISchema.optional(),
   elevenLabs: ttsElevenLabsSchema.optional(),
   localai: ttsLocalaiSchema.optional(),
 });

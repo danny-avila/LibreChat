@@ -116,7 +116,7 @@ function openAIProvider(sttSchema, audioReadStream) {
  * @returns {Array} An array containing the URL for the API request, the data to be sent, and the headers for the request.
  * If an error occurs, it logs the error with logger and returns an array with three null values.
  */
-function azureProvider(sttSchema, audioBuffer, audioFile) {
+function azureOpenAIProvider(sttSchema, audioBuffer, audioFile) {
   try {
     const instanceName = sttSchema?.instanceName;
     const deploymentName = sttSchema?.deploymentName;
@@ -199,7 +199,7 @@ async function speechToText(req, res) {
       [url, data, headers] = openAIProvider(sttSchema, audioReadStream);
       break;
     case 'azureOpenAI':
-      [url, data, headers] = azureProvider(sttSchema, audioBuffer, req.file);
+      [url, data, headers] = azureOpenAIProvider(sttSchema, audioBuffer, req.file);
       break;
     default:
       throw new Error('Invalid provider');

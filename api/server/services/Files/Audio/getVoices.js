@@ -28,6 +28,9 @@ async function getVoices(req, res) {
       case 'openai':
         voices = ttsSchema.openai?.voices;
         break;
+      case 'azureOpenAI':
+        voices = ttsSchema.azureOpenAI?.voices;
+        break;
       case 'elevenlabs':
         voices = ttsSchema.elevenlabs?.voices;
         break;
