@@ -121,11 +121,17 @@ function checkPasswordReset() {
 
   if (!emailEnabled && passwordResetAllowed) {
     logger.warn(
-      `Password reset is enabled but email service is not configured. This setup is insecure as password reset links will be issued with a recognized email.
+      `❗❗❗
+
+      Password reset is enabled with \`ALLOW_PASSWORD_RESET\` but email service is not configured.
+      
+      This setup is insecure as password reset links will be issued with a recognized email.
       
       Please configure email service for secure password reset functionality.
       
-      https://www.librechat.ai/docs/configuration/authentication/password_reset`,
+      https://www.librechat.ai/docs/configuration/authentication/password_reset
+
+      ❗❗❗`,
     );
   }
 }
