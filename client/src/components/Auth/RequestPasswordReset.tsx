@@ -3,8 +3,34 @@ import { useState, ReactNode } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useRequestPasswordResetMutation } from 'librechat-data-provider/react-query';
 import type { TRequestPasswordReset, TRequestPasswordResetResponse } from 'librechat-data-provider';
+import type { FC } from 'react';
 import type { TLoginLayoutContext } from '~/common';
 import { useLocalize } from '~/hooks';
+
+const BodyTextWrapper: FC<{ children: ReactNode }> = ({ children }) => {
+  return (
+    <div
+      className="relative mt-4 rounded border border-green-400 bg-green-100 px-4 py-3 text-green-700 dark:bg-green-900 dark:text-white"
+      role="alert"
+    >
+      {children}
+    </div>
+  );
+};
+
+const ResetPasswordBodyText = () => {
+  const localize = useLocalize();
+  return (
+    <div className="flex flex-col">
+      {localize('com_auth_reset_password_if_email_exists')}
+      <span>
+        <a className="text-sm text-green-500 hover:underline" href="/login">
+          {localize('com_auth_back_to_login')}
+        </a>
+      </span>
+    </div>
+  );
+};
 
 function RequestPasswordReset() {
   const localize = useLocalize();
@@ -34,43 +60,18 @@ function RequestPasswordReset() {
           );
         } else {
           setHeaderText('com_auth_reset_password_link_sent');
-          setBodyText(
-            <div className="flex flex-col">
-              {localize('com_auth_reset_password_if_email_exists')}
-              <span>
-                <a className="text-sm text-green-500 hover:underline" href="/login">
-                  {localize('com_auth_back_to_login')}
-                </a>
-              </span>
-            </div>,
-          );
+          setBodyText(<ResetPasswordBodyText />);
         }
       },
       onError: () => {
         setHeaderText('com_auth_reset_password_link_sent');
-        setBodyText(
-          <div className="flex flex-col">
-            {localize('com_auth_reset_password_if_email_exists')}
-            <span>
-              <a className="text-sm text-green-500 hover:underline" href="/login">
-                {localize('com_auth_back_to_login')}
-              </a>
-            </span>
-          </div>,
-        );
+        setBodyText(<ResetPasswordBodyText />);
       },
     });
   };
 
   if (bodyText) {
-    return (
-      <div
-        className="relative mt-4 rounded border border-green-400 bg-green-100 px-4 py-3 text-green-700 dark:bg-green-900 dark:text-white"
-        role="alert"
-      >
-        {bodyText}
-      </div>
-    );
+    return <BodyTextWrapper>{bodyText}</BodyTextWrapper>;
   }
 
   return (
