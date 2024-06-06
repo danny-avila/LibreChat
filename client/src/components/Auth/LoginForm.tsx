@@ -1,19 +1,23 @@
 import React from 'react';
 import { useForm } from 'react-hook-form';
+import type { TLoginUser, TStartupConfig } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
-import { TLoginUser } from 'librechat-data-provider';
 
 type TLoginFormProps = {
   onSubmit: (data: TLoginUser) => void;
+  startupConfig: TStartupConfig;
 };
 
-const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit }) => {
+const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig }) => {
   const localize = useLocalize();
   const {
     register,
     handleSubmit,
     formState: { errors },
   } = useForm<TLoginUser>();
+  if (!startupConfig) {
+    return null;
+  }
 
   const renderError = (fieldName: string) => {
     const errorMessage = errors[fieldName]?.message;
@@ -81,9 +85,11 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit }) => {
         </div>
         {renderError('password')}
       </div>
-      <a href="/forgot-password" className="text-sm text-green-500">
-        {localize('com_auth_password_forgot')}
-      </a>
+      {startupConfig.passwordResetEnabled && (
+        <a href="/forgot-password" className="text-sm text-green-500">
+          {localize('com_auth_password_forgot')}
+        </a>
+      )}
       <div className="mt-6">
         <button
           aria-label="Sign in"

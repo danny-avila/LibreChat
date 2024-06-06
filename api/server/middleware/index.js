@@ -17,6 +17,7 @@ const validateMessageReq = require('./validateMessageReq');
 const buildEndpointOption = require('./buildEndpointOption');
 const validateRegistration = require('./validateRegistration');
 const validateImageRequest = require('./validateImageRequest');
+const validatePasswordReset = require('./validatePasswordReset');
 const moderateText = require('./moderateText');
 const noIndex = require('./noIndex');
 const importLimiters = require('./importLimiters');
@@ -40,6 +41,7 @@ module.exports = {
   buildEndpointOption,
   validateRegistration,
   validateImageRequest,
+  validatePasswordReset,
   validateModel,
   moderateText,
   noIndex,
