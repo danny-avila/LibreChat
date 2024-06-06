@@ -6,6 +6,8 @@ export const balance = () => '/api/balance';
 
 export const userPlugins = () => '/api/user/plugins';
 
+export const deleteUser = () => '/api/user/delete';
+
 export const messages = (conversationId: string, messageId?: string) =>
   `/api/messages/${conversationId}${messageId ? `/${messageId}` : ''}`;
 
@@ -122,3 +124,11 @@ export const files = () => '/api/files';
 export const images = () => `${files()}/images`;
 
 export const avatar = () => `${images()}/avatar`;
+
+export const speechToText = () => `${files()}/stt`;
+
+export const textToSpeech = () => `${files()}/tts`;
+
+export const textToSpeechManual = () => `${textToSpeech()}/manual`;
+
+export const textToSpeechVoices = () => `${textToSpeech()}/voices`;

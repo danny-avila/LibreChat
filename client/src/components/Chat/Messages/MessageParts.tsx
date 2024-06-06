@@ -1,13 +1,13 @@
 import type { TMessageProps } from '~/common';
 import Icon from '~/components/Chat/Messages/MessageIcon';
+import { useMessageHelpers } from '~/hooks';
+import { cn } from '~/utils';
 import ContentParts from './Content/ContentParts';
 import SiblingSwitch from './SiblingSwitch';
-import { useMessageHelpers } from '~/hooks';
 // eslint-disable-next-line import/no-cycle
 import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
 import SubRow from './SubRow';
-import { cn } from '~/utils';
 
 export default function Message(props: TMessageProps) {
   const { message, siblingIdx, siblingCount, setSiblingIdx, currentEditId, setCurrentEditId } =
@@ -16,6 +16,7 @@ export default function Message(props: TMessageProps) {
   const {
     ask,
     edit,
+    index,
     isLast,
     enterEdit,
     assistant,
@@ -90,6 +91,7 @@ export default function Message(props: TMessageProps) {
                     setSiblingIdx={setSiblingIdx}
                   />
                   <HoverButtons
+                    index={index}
                     isEditing={edit}
                     message={message}
                     enterEdit={enterEdit}

@@ -1,4 +1,5 @@
 const { FileSources, EModelEndpoint, getConfigDefaults } = require('librechat-data-provider');
+const paths = require('~/config/paths');
 const { checkVariables, checkHealth, checkConfig, checkAzureVariables } = require('./start/checks');
 const { azureAssistantsDefaults, assistantsConfigSetup } = require('./start/assistants');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
@@ -7,7 +8,6 @@ const handleRateLimits = require('./Config/handleRateLimits');
 const { loadDefaultInterface } = require('./start/interface');
 const { azureConfigSetup } = require('./start/azureOpenAI');
 const { loadAndFormatTools } = require('./ToolService');
-const paths = require('~/config/paths');
 
 /**
  *
@@ -78,6 +78,7 @@ const AppService = async (app) => {
   if (config?.endpoints?.[EModelEndpoint.azureAssistants]) {
     endpointLocals[EModelEndpoint.azureAssistants] = assistantsConfigSetup(
       config,
+      EModelEndpoint.azureAssistants,
       endpointLocals[EModelEndpoint.azureAssistants],
     );
   }
@@ -85,6 +86,7 @@ const AppService = async (app) => {
   if (config?.endpoints?.[EModelEndpoint.assistants]) {
     endpointLocals[EModelEndpoint.assistants] = assistantsConfigSetup(
       config,
+      EModelEndpoint.assistants,
       endpointLocals[EModelEndpoint.assistants],
     );
   }

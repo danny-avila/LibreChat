@@ -9,6 +9,7 @@ import type {
   UseInfiniteQueryOptions,
   QueryObserverResult,
   UseQueryOptions,
+  UseQueryResult,
 } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
 import type {
@@ -413,4 +414,11 @@ export const useFileDownload = (userId?: string, file_id?: string): QueryObserve
       retry: false,
     },
   );
+};
+
+/** STT/TTS */
+
+/* Text to speech voices */
+export const useVoicesQuery = (): UseQueryResult<t.VoiceResponse> => {
+  return useQuery([QueryKeys.voices], () => dataService.getVoices());
 };

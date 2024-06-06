@@ -6,9 +6,11 @@ import {
   parseISO,
   startOfDay,
   startOfYear,
+  startOfToday,
   isWithinInterval,
 } from 'date-fns';
 import { EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
+import { InfiniteData } from '@tanstack/react-query';
 import type {
   TConversation,
   ConversationData,
@@ -18,7 +20,6 @@ import type {
 } from 'librechat-data-provider';
 
 import { addData, deleteData, updateData, findPage } from './collection';
-import { InfiniteData } from '@tanstack/react-query';
 
 export const dateKeys = {
   today: 'com_ui_date_today',
@@ -76,7 +77,7 @@ export const groupConversationsByDate = (conversations: TConversation[]): Groupe
     }
     seenConversationIds.add(conversation.conversationId);
 
-    const date = parseISO(conversation.updatedAt);
+    const date = conversation.updatedAt ? parseISO(conversation.updatedAt) : startOfToday();
     const groupName = getGroupName(date);
     if (!acc[groupName]) {
       acc[groupName] = [];

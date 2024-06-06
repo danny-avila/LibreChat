@@ -1,9 +1,9 @@
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { TPreset, TPlugin, TConversation, tConvoUpdateSchema } from 'librechat-data-provider';
 import type { TSetExample, TSetOption, TSetOptionsPayload } from '~/common';
-import usePresetIndexOptions from './usePresetIndexOptions';
 import { useChatContext } from '~/Providers/ChatContext';
 import store from '~/store';
+import usePresetIndexOptions from './usePresetIndexOptions';
 
 type TUseSetOptions = (preset?: TPreset | boolean | null) => TSetOptionsPayload;
 
@@ -157,13 +157,13 @@ const useSetIndexOptions: TUseSetOptions = (preset = false) => {
   };
 
   return {
+    setTools,
     setOption,
     setExample,
     addExample,
     removeExample,
     setAgentOption,
     checkPluginSelection,
-    setTools,
   };
 };
 

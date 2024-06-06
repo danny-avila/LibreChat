@@ -1,17 +1,17 @@
+import { useState } from 'react';
 import { useRecoilValue } from 'recoil';
-import { useAuthContext, useMessageHelpers, useLocalize } from '~/hooks';
 import type { TMessageProps } from '~/common';
+import { useAuthContext, useMessageHelpers, useLocalize } from '~/hooks';
 import Icon from '~/components/Chat/Messages/MessageIcon';
 import { Plugin } from '~/components/Messages/Content';
+import { cn } from '~/utils';
+import store from '~/store';
 import MessageContent from '../Content/MessageContent';
 import SiblingSwitch from '../SiblingSwitch';
 // eslint-disable-next-line import/no-cycle
 import MultiMessage from '../MultiMessage';
 import HoverButtons from '../HoverButtons';
 import SubRow from '../SubRow';
-import { cn } from '~/utils';
-import store from '~/store';
-import { useState } from 'react';
 
 export default function MessageOld(props: TMessageProps) {
   const UsernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
@@ -21,6 +21,7 @@ export default function MessageOld(props: TMessageProps) {
   const {
     ask,
     edit,
+    index,
     isLast,
     enterEdit,
     handleScroll,
@@ -114,6 +115,7 @@ export default function MessageOld(props: TMessageProps) {
                       setIsForking={setIsForking}
                       message={message}
                       enterEdit={enterEdit}
+                      index={index}
                       isSubmitting={isSubmitting}
                       conversation={conversation ?? null}
                       regenerate={() => regenerateMessage()}

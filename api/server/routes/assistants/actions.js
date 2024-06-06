@@ -1,10 +1,10 @@
 const { v4 } = require('uuid');
 const express = require('express');
-const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
 const { actionDelimiter, EModelEndpoint } = require('librechat-data-provider');
+const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
-const { updateAssistant, getAssistant } = require('~/models/Assistant');
+const { updateAssistantDoc, getAssistant } = require('~/models/Assistant');
 const { logger } = require('~/config');
 
 const router = express.Router();
@@ -109,7 +109,7 @@ router.post('/:assistant_id', async (req, res) => {
     let updatedAssistant = await openai.beta.assistants.update(assistant_id, { tools });
     const promises = [];
     promises.push(
-      updateAssistant(
+      updateAssistantDoc(
         { assistant_id },
         {
           actions,
@@ -186,7 +186,7 @@ router.delete('/:assistant_id/:action_id/:model', async (req, res) => {
 
     const promises = [];
     promises.push(
-      updateAssistant(
+      updateAssistantDoc(
         { assistant_id },
         {
           actions: updatedActions,

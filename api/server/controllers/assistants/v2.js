@@ -1,7 +1,9 @@
 const { ToolCallTypes } = require('librechat-data-provider');
+const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { validateAndUpdateTool } = require('~/server/services/ActionService');
-const { getOpenAIClient } = require('./helpers');
+const { updateAssistantDoc } = require('~/models/Assistant');
 const { logger } = require('~/config');
+const { getOpenAIClient } = require('./helpers');
 
 /**
  * Create an assistant.
@@ -37,9 +39,11 @@ const createAssistant = async (req, res) => {
     };
 
     const assistant = await openai.beta.assistants.create(assistantData);
+    const promise = updateAssistantDoc({ assistant_id: assistant.id }, { user: req.user.id });
     if (azureModelIdentifier) {
       assistant.model = azureModelIdentifier;
     }
+    await promise;
     logger.debug('/assistants/', assistant);
     res.status(201).json(assistant);
   } catch (error) {
@@ -58,6 +62,7 @@ const createAssistant = async (req, res) => {
  * @returns {Promise<Assistant>} The updated assistant.
  */
 const updateAssistant = async ({ req, openai, assistant_id, updateData }) => {
+  await validateAuthor({ req, openai });
   const tools = [];
 
   let hasFileSearch = false;

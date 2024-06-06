@@ -1,6 +1,5 @@
 const {
   Capabilities,
-  EModelEndpoint,
   assistantEndpointSchema,
   defaultAssistantsVersion,
 } = require('librechat-data-provider');
@@ -20,16 +19,25 @@ function azureAssistantsDefaults() {
 /**
  * Sets up the Assistants configuration from the config (`librechat.yaml`) file.
  * @param {TCustomConfig} config - The loaded custom configuration.
- * @param {Partial<TAssistantEndpoint>} [prevConfig]
+ * @param {EModelEndpoint.assistants|EModelEndpoint.azureAssistants} assistantsEndpoint - The Assistants endpoint name.
  * - The previously loaded assistants configuration from Azure OpenAI Assistants option.
+ * @param {Partial<TAssistantEndpoint>} [prevConfig]
  * @returns {Partial<TAssistantEndpoint>} The Assistants endpoint configuration.
  */
-function assistantsConfigSetup(config, prevConfig = {}) {
-  const assistantsConfig = config.endpoints[EModelEndpoint.assistants];
+function assistantsConfigSetup(config, assistantsEndpoint, prevConfig = {}) {
+  const assistantsConfig = config.endpoints[assistantsEndpoint];
   const parsedConfig = assistantEndpointSchema.parse(assistantsConfig);
   if (assistantsConfig.supportedIds?.length && assistantsConfig.excludedIds?.length) {
     logger.warn(
-      `Both \`supportedIds\` and \`excludedIds\` are defined for the ${EModelEndpoint.assistants} endpoint; \`excludedIds\` field will be ignored.`,
+      `Configuration conflict: The '${assistantsEndpoint}' endpoint has both 'supportedIds' and 'excludedIds' defined. The 'excludedIds' will be ignored.`,
+    );
+  }
+  if (
+    assistantsConfig.privateAssistants &&
+    (assistantsConfig.supportedIds?.length || assistantsConfig.excludedIds?.length)
+  ) {
+    logger.warn(
+      `Configuration conflict: The '${assistantsEndpoint}' endpoint has both 'privateAssistants' and 'supportedIds' or 'excludedIds' defined. The 'supportedIds' and 'excludedIds' will be ignored.`,
     );
   }
 
@@ -41,6 +49,7 @@ function assistantsConfigSetup(config, prevConfig = {}) {
     supportedIds: parsedConfig.supportedIds,
     capabilities: parsedConfig.capabilities,
     excludedIds: parsedConfig.excludedIds,
+    privateAssistants: parsedConfig.privateAssistants,
     timeoutMs: parsedConfig.timeoutMs,
   };
 }

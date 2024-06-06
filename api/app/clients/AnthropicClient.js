@@ -1,4 +1,5 @@
 const Anthropic = require('@anthropic-ai/sdk');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const {
   getResponseSender,
@@ -6,6 +7,10 @@ const {
   validateVisionModel,
 } = require('librechat-data-provider');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const spendTokens = require('~/models/spendTokens');
+const { getModelMaxTokens } = require('~/utils');
+const { logger } = require('~/config');
+const BaseClient = require('./BaseClient');
 const {
   truncateText,
   formatMessage,
@@ -13,10 +18,6 @@ const {
   parseParamFromPrompt,
   createContextHandlers,
 } = require('./prompts');
-const spendTokens = require('~/models/spendTokens');
-const { getModelMaxTokens } = require('~/utils');
-const BaseClient = require('./BaseClient');
-const { logger } = require('~/config');
 
 const HUMAN_PROMPT = '\n\nHuman:';
 const AI_PROMPT = '\n\nAssistant:';
@@ -123,8 +124,13 @@ class AnthropicClient extends BaseClient {
   getClient() {
     /** @type {Anthropic.default.RequestOptions} */
     const options = {
+      fetch: this.fetch,
       apiKey: this.apiKey,
     };
+
+    if (this.options.proxy) {
+      options.httpAgent = new HttpsProxyAgent(this.options.proxy);
+    }
 
     if (this.options.reverseProxyUrl) {
       options.baseURL = this.options.reverseProxyUrl;

@@ -15,18 +15,19 @@ import {
   MultiSelectDropDown,
 } from '~/components/ui';
 import {
-  cn,
-  defaultTextProps,
-  optionText,
   removeFocusOutlines,
+  defaultTextProps,
+  removeFocusRings,
   processPlugins,
   selectPlugins,
+  optionText,
+  cn,
 } from '~/utils';
 import OptionHoverAlt from '~/components/SidePanel/Parameters/OptionHover';
 import { useLocalize, useDebouncedInput } from '~/hooks';
-import OptionHover from './OptionHover';
 import { ESide } from '~/common';
 import store from '~/store';
+import OptionHover from './OptionHover';
 
 export default function Settings({
   conversation,
@@ -126,7 +127,7 @@ export default function Settings({
             setValue={setModel}
             availableValues={models}
             disabled={readonly}
-            className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusOutlines)}
+            className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusRings)}
             containerClassName="flex w-full resize-none"
           />
         </div>

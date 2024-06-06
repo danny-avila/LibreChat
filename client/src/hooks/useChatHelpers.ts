@@ -1,5 +1,5 @@
-import { v4 } from 'uuid';
 import { useCallback, useState } from 'react';
+import { v4 } from 'uuid';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   Constants,
@@ -17,13 +17,13 @@ import type {
   TEndpointsConfig,
 } from 'librechat-data-provider';
 import type { TAskFunction } from '~/common';
+import { getEndpointField } from '~/utils';
+import store from '~/store';
 import useSetFilesToDelete from './Files/useSetFilesToDelete';
 import useGetSender from './Conversations/useGetSender';
 import { useAuthContext } from './AuthContext';
 import useUserKey from './Input/useUserKey';
-import { getEndpointField } from '~/utils';
 import useNewConvo from './useNewConvo';
-import store from '~/store';
 
 // this to be set somewhere else
 export default function useChatHelpers(index = 0, paramId: string | undefined) {
@@ -240,7 +240,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
         conversationId,
       },
       endpointOption,
-      message: {
+      userMessage: {
         ...currentMsg,
         generation,
         responseMessageId,

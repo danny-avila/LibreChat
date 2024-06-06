@@ -1,5 +1,5 @@
-const Keyv = require('keyv');
 const crypto = require('crypto');
+const Keyv = require('keyv');
 const {
   EModelEndpoint,
   resolveHeaders,
@@ -9,11 +9,11 @@ const {
 const { CohereClient } = require('cohere-ai');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const { fetchEventSource } = require('@waylaidwanderer/fetch-event-source');
-const { createCoherePayload } = require('./llm');
 const { Agent, ProxyAgent } = require('undici');
-const BaseClient = require('./BaseClient');
 const { logger } = require('~/config');
 const { extractBaseURL, constructAzureURL, genAzureChatCompletion } = require('~/utils');
+const BaseClient = require('./BaseClient');
+const { createCoherePayload } = require('./llm');
 
 const CHATGPT_MODEL = 'gpt-3.5-turbo';
 const tokenizersCache = {};
@@ -438,9 +438,17 @@ class ChatGPTClient extends BaseClient {
 
       if (message.eventType === 'text-generation' && message.text) {
         onTokenProgress(message.text);
-      } else if (message.eventType === 'stream-end' && message.response) {
+        reply += message.text;
+      }
+      /*
+      Cohere API Chinese Unicode character replacement hotfix.
+      Should be un-commented when the following issue is resolved:
+      https://github.com/cohere-ai/cohere-typescript/issues/151
+
+      else if (message.eventType === 'stream-end' && message.response) {
         reply = message.response.text;
       }
+      */
     }
 
     return reply;

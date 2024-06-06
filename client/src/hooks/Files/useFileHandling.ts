@@ -1,7 +1,7 @@
+import { useState, useEffect, useCallback } from 'react';
 import { v4 } from 'uuid';
 import debounce from 'lodash/debounce';
 import { useQueryClient } from '@tanstack/react-query';
-import { useState, useEffect, useCallback } from 'react';
 import {
   megabyte,
   QueryKeys,
@@ -12,12 +12,12 @@ import {
   defaultAssistantsVersion,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
-import type { TEndpointsConfig } from 'librechat-data-provider';
+import type { TEndpointsConfig, TError } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import { useUploadFileMutation, useGetFileConfig } from '~/data-provider';
-import { useDelayedUploadToast } from './useDelayedUploadToast';
 import { useToastContext } from '~/Providers/ToastContext';
 import { useChatContext } from '~/Providers/ChatContext';
+import { useDelayedUploadToast } from './useDelayedUploadToast';
 import useUpdateFiles from './useUpdateFiles';
 
 const { checkType } = defaultFileConfig;
@@ -118,8 +118,7 @@ const useFileHandling = (params?: UseFileHandling) => {
       clearUploadTimer(file_id as string);
       deleteFileById(file_id as string);
       setError(
-        (error as { response: { data: { message?: string } } })?.response?.data?.message ??
-          'An error occurred while uploading the file.',
+        (error as TError)?.response?.data?.message ?? 'An error occurred while uploading the file.',
       );
     },
   });

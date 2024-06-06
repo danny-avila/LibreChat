@@ -1,5 +1,5 @@
-import debounce from 'lodash/debounce';
 import { useEffect, useRef, useCallback } from 'react';
+import debounce from 'lodash/debounce';
 import { isAssistantsEndpoint } from 'librechat-data-provider';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import type { TEndpointOption } from 'librechat-data-provider';
@@ -10,6 +10,7 @@ import useGetSender from '~/hooks/Conversations/useGetSender';
 import useFileHandling from '~/hooks/Files/useFileHandling';
 import { useChatContext } from '~/Providers/ChatContext';
 import useLocalize from '~/hooks/useLocalize';
+import { globalAudioId } from '~/common';
 import store from '~/store';
 
 type KeyEvent = KeyboardEvent<HTMLTextAreaElement>;
@@ -178,6 +179,11 @@ export default function useTextarea({
       }
 
       if (isNonShiftEnter && !isComposing?.current) {
+        const globalAudio = document.getElementById(globalAudioId) as HTMLAudioElement;
+        if (globalAudio) {
+          console.log('Unmuting global audio');
+          globalAudio.muted = false;
+        }
         submitButtonRef.current?.click();
       }
     },

@@ -10,9 +10,9 @@ import {
   ComboboxCancel,
 } from '@ariakit/react';
 import type { OptionWithIcon } from '~/common';
-import { SelectTrigger, SelectValue, SelectScrollDownButton } from './Select';
 import useCombobox from '~/hooks/Input/useCombobox';
 import { cn } from '~/utils';
+import { SelectTrigger, SelectValue, SelectScrollDownButton } from './Select';
 
 export default function ComboboxComponent({
   selectedValue,
@@ -35,19 +35,12 @@ export default function ComboboxComponent({
   isCollapsed: boolean;
   SelectIcon?: React.ReactNode;
 }) {
-  const options: OptionWithIcon[] = useMemo(() => {
-    if (!items) {
-      return [];
+  const options: OptionWithIcon[] = (items ?? []).map((option: string | OptionWithIcon) => {
+    if (typeof option === 'string') {
+      return { label: option, value: option };
     }
-
-    return items.map((option: string | OptionWithIcon) => {
-      if (typeof option === 'string') {
-        return { label: option, value: option };
-      }
-
-      return option;
-    });
-  }, [items]);
+    return option;
+  });
 
   const { open, setOpen, setSearchValue, matches } = useCombobox({
     value: selectedValue,

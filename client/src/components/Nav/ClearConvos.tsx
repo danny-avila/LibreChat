@@ -1,9 +1,9 @@
 import { useState } from 'react';
+import { useClearConversationsMutation } from 'librechat-data-provider/react-query';
 import { Dialog } from '~/components/ui/';
 import DialogTemplate from '~/components/ui/DialogTemplate';
-import { ClearChatsButton } from './SettingsTabs/';
-import { useClearConversationsMutation } from 'librechat-data-provider/react-query';
 import { useLocalize, useConversation, useConversations } from '~/hooks';
+import { ClearChatsButton } from './SettingsTabs/';
 
 const ClearConvos = ({ open, onOpenChange }) => {
   const { newConversation } = useConversation();
@@ -15,7 +15,6 @@ const ClearConvos = ({ open, onOpenChange }) => {
   // Clear all conversations
   const clearConvos = () => {
     if (confirmClear) {
-      console.log('Clearing conversations...');
       clearConvosMutation.mutate(
         {},
         {

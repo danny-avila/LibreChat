@@ -1,3 +1,4 @@
+const throttle = require('lodash/throttle');
 const {
   StepTypes,
   ContentTypes,
@@ -8,6 +9,7 @@ const {
 } = require('librechat-data-provider');
 const { retrieveAndProcessFile } = require('~/server/services/Files/process');
 const { processRequiredActions } = require('~/server/services/ToolService');
+const { saveMessage, updateMessageText } = require('~/models/Message');
 const { createOnProgress, sendMessage } = require('~/server/utils');
 const { processMessages } = require('~/server/services/Threads');
 const { logger } = require('~/config');
@@ -43,6 +45,8 @@ class StreamRunManager {
     /** @type {string} */
     this.apiKey = this.openai.apiKey;
     /** @type {string} */
+    this.parentMessageId = fields.parentMessageId;
+    /** @type {string} */
     this.thread_id = fields.thread_id;
     /** @type {RunCreateAndStreamParams} */
     this.initialRunBody = fields.runBody;
@@ -58,10 +62,14 @@ class StreamRunManager {
     this.messages = [];
     /** @type {string} */
     this.text = '';
+    /** @type {string} */
+    this.intermediateText = '';
     /** @type {Set<string>} */
     this.attachedFileIds = fields.attachedFileIds;
     /** @type {undefined | Promise<ChatCompletion>} */
     this.visionPromise = fields.visionPromise;
+    /** @type {boolean} */
+    this.savedInitialMessage = false;
 
     /**
      * @type {Object.<AssistantStreamEvents, (event: AssistantStreamEvent) => Promise<void>>}
@@ -121,6 +129,33 @@ class StreamRunManager {
     };
 
     sendMessage(this.res, contentData);
+  }
+
+  /* <------------------ Misc. Helpers ------------------> */
+  /** Returns the latest intermediate text
+   * @returns {string}
+   */
+  getText() {
+    return this.intermediateText;
+  }
+
+  /** Saves the initial intermediate message
+   * @returns {Promise<void>}
+   */
+  async saveInitialMessage() {
+    return saveMessage({
+      conversationId: this.finalMessage.conversationId,
+      messageId: this.finalMessage.messageId,
+      parentMessageId: this.parentMessageId,
+      model: this.req.body.assistant_id,
+      endpoint: this.req.body.endpoint,
+      isCreatedByUser: false,
+      user: this.req.user.id,
+      text: this.getText(),
+      sender: 'Assistant',
+      unfinished: true,
+      error: false,
+    });
   }
 
   /* <------------------ Main Event Handlers ------------------> */
@@ -407,6 +442,7 @@ class StreamRunManager {
     const content = message.delta.content?.[0];
 
     if (content && content.type === MessageContentTypes.TEXT) {
+      this.intermediateText += content.text.value;
       onProgress(content.text.value);
     }
   }
@@ -523,10 +559,24 @@ class StreamRunManager {
       const stepKey = message_creation.message_id;
       const index = this.getStepIndex(stepKey);
       this.orderedRunSteps.set(index, message_creation);
+
       // Create the Factory Function to stream the message
       const { onProgress: progressCallback } = createOnProgress({
-        // todo: add option to save partialText to db
-        // onProgress: () => {},
+        onProgress: throttle(
+          () => {
+            if (!this.savedInitialMessage) {
+              this.saveInitialMessage();
+              this.savedInitialMessage = true;
+            } else {
+              updateMessageText({
+                messageId: this.finalMessage.messageId,
+                text: this.getText(),
+              });
+            }
+          },
+          2000,
+          { trailing: false },
+        ),
       });
 
       // This creates a function that attaches all of the parameters
