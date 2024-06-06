@@ -185,8 +185,6 @@ async function setupOpenId() {
                 buffer: imageBuffer,
               });
               user.avatar = imagePath ?? '';
-            } else {
-              user.avatar = '';
             }
           }
 
