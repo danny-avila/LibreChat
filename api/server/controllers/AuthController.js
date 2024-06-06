@@ -39,7 +39,7 @@ const getUserController = async (req, res) => {
 
 const resetPasswordRequestController = async (req, res) => {
   try {
-    const resetService = await requestPasswordReset(req.body.email);
+    const resetService = await requestPasswordReset(req);
     if (resetService instanceof Error) {
       return res.status(400).json(resetService);
     } else {

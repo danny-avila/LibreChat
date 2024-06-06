@@ -238,6 +238,7 @@ export default {
   com_ui_preview: 'Preview',
   com_ui_upload: 'Upload',
   com_ui_connect: 'Connect',
+  com_ui_locked: 'Locked',
   com_ui_upload_delay:
     'Uploading "{0}" is taking more time than anticipated. Please wait while the file finishes indexing for retrieval.',
   com_ui_privacy_policy: 'Privacy policy',
@@ -292,10 +293,10 @@ export default {
   com_auth_here: 'HERE',
   com_auth_to_reset_your_password: 'to reset your password.',
   com_auth_reset_password_link_sent: 'Email Sent',
+  com_auth_reset_password_if_email_exists:
+    'If an account with that email exists, an email with password reset instructions has been sent. Please make sure to check your spam folder.',
   com_auth_reset_password_email_sent:
-    'An email has been sent to you with further instructions to reset your password.',
-  com_auth_error_reset_password:
-    'There was a problem resetting your password. There was no user found with the email address provided. Please try again.',
+    'If the user is registered, an email will be sent to the inbox.',
   com_auth_reset_password_success: 'Password Reset Success',
   com_auth_login_with_new_password: 'You may now login with your new password.',
   com_auth_error_invalid_reset_token: 'This password reset token is no longer valid.',
@@ -546,6 +547,14 @@ export default {
   com_nav_help_faq: 'Help & FAQ',
   com_nav_settings: 'Settings',
   com_nav_search_placeholder: 'Search messages',
+  com_nav_delete_account: 'Delete account',
+  com_nav_delete_account_confirm: 'Delete account - are you sure?',
+  com_nav_delete_account_button: 'Permanently delete my account',
+  com_nav_delete_account_email_placeholder: 'Please enter your account email',
+  com_nav_delete_account_confirm_placeholder: 'To proceed, type "DELETE" in the input field below',
+  com_nav_delete_warning: 'WARNING: This will permanently delete your account.',
+  com_nav_delete_data_info: 'All your data will be deleted.',
+  com_nav_delete_help_center: 'For more information, please visit our Help Center.',
   com_nav_conversation_mode: 'Conversation Mode',
   com_nav_auto_send_text: 'Auto send text (after 3 sec)',
   com_nav_auto_transcribe_audio: 'Auto transcribe audio',
