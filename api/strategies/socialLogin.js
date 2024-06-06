@@ -1,7 +1,7 @@
-const { createNewUser, handleExistingUser } = require('./process');
-const { logger } = require('~/config');
 const { findUserByEmail } = require('~/server/services/UserService');
+const { createSocialUser, handleExistingUser } = require('./process');
 const { isEnabled } = require('~/server/utils');
+const { logger } = require('~/config');
 
 const socialLogin =
   (provider, getProfileDetails) => async (accessToken, refreshToken, profile, cb) => {
@@ -17,7 +17,7 @@ const socialLogin =
       }
 
       if (ALLOW_SOCIAL_REGISTRATION) {
-        const newUser = await createNewUser({
+        const newUser = await createSocialUser({
           email,
           avatarUrl,
           provider,

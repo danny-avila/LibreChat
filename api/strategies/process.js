@@ -55,7 +55,7 @@ const handleExistingUser = async (oldUser, avatarUrl) => {
  *
  * @throws {Error} Throws an error if there's an issue creating or saving the new user object.
  */
-const createNewUser = async ({
+const createSocialUser = async ({
   email,
   avatarUrl,
   provider,
@@ -97,5 +97,5 @@ const createNewUser = async ({
 
 module.exports = {
   handleExistingUser,
-  createNewUser,
+  createSocialUser,
 };
