@@ -292,7 +292,9 @@ export default {
   com_auth_click: 'Click',
   com_auth_here: 'HERE',
   com_auth_to_reset_your_password: 'to reset your password.',
-  com_auth_reset_password_link_sent: 'Password Reset',
+  com_auth_reset_password_link_sent: 'Email Sent',
+  com_auth_reset_password_if_email_exists:
+    'If an account with that email exists, an email with password reset instructions has been sent. Please make sure to check your spam folder.',
   com_auth_reset_password_email_sent:
     'If the user is registered, an email will be sent to the inbox.',
   com_auth_reset_password_success: 'Password Reset Success',
