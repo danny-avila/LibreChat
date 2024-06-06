@@ -21,6 +21,7 @@ const validatePasswordReset = require('./validatePasswordReset');
 const moderateText = require('./moderateText');
 const noIndex = require('./noIndex');
 const importLimiters = require('./importLimiters');
+const canDeleteAccount = require('./canDeleteAccount');
 
 module.exports = {
   ...uploadLimiters,
@@ -46,4 +47,5 @@ module.exports = {
   noIndex,
   ...importLimiters,
   checkDomainAllowed,
+  canDeleteAccount,
 };

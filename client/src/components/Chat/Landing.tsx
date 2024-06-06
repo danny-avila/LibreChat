@@ -55,14 +55,16 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
                 className="h-2/3 w-2/3"
                 size={41}
               />
-              <TooltipTrigger>
-                {(startupConfig?.showBirthdayIcon ?? false) && (
-                  <BirthdayIcon className="absolute bottom-12 right-5" />
-                )}
-              </TooltipTrigger>
-              <TooltipContent side="top" sideOffset={115} className="left-[20%]">
-                {localize('com_ui_happy_birthday')}
-              </TooltipContent>
+              {!!startupConfig?.showBirthdayIcon && (
+                <div>
+                  <TooltipTrigger>
+                    <BirthdayIcon className="absolute bottom-8 right-2.5" />
+                  </TooltipTrigger>
+                  <TooltipContent side="top" sideOffset={110} className="">
+                    {localize('com_ui_happy_birthday')}
+                  </TooltipContent>
+                </div>
+              )}
             </div>
             {assistantName ? (
               <div className="flex flex-col items-center gap-0 p-2">
