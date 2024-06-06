@@ -13,9 +13,8 @@ function RequestPasswordReset() {
     handleSubmit,
     formState: { errors },
   } = useForm<TRequestPasswordReset>();
-  const [resetLink, setResetLink] = useState<string | undefined>(undefined);
   const [bodyText, setBodyText] = useState<ReactNode | undefined>(undefined);
-  const { startupConfig, setError, setHeaderText } = useOutletContext<TLoginLayoutContext>();
+  const { startupConfig, setHeaderText } = useOutletContext<TLoginLayoutContext>();
 
   const requestPasswordReset = useRequestPasswordResetMutation();
 
@@ -23,12 +22,11 @@ function RequestPasswordReset() {
     requestPasswordReset.mutate(data, {
       onSuccess: (data: TRequestPasswordResetResponse) => {
         if (data.link && !startupConfig?.emailEnabled) {
-          setResetLink(data.link);
           setHeaderText('com_auth_reset_password');
           setBodyText(
             <span>
               {localize('com_auth_click')}{' '}
-              <a className="text-green-500 hover:underline" href={resetLink}>
+              <a className="text-green-500 hover:underline" href={data.link}>
                 {localize('com_auth_here')}
               </a>{' '}
               {localize('com_auth_to_reset_your_password')}
@@ -36,14 +34,30 @@ function RequestPasswordReset() {
           );
         } else {
           setHeaderText('com_auth_reset_password_link_sent');
-          setBodyText(localize('com_auth_reset_password_if_email_exists'));
+          setBodyText(
+            <div className="flex flex-col">
+              {localize('com_auth_reset_password_if_email_exists')}
+              <span>
+                <a className="text-sm text-green-500 hover:underline" href="/login">
+                  {localize('com_auth_back_to_login')}
+                </a>
+              </span>
+            </div>,
+          );
         }
       },
       onError: () => {
-        setError('com_auth_reset_password_if_email_exists');
-        setTimeout(() => {
-          setError(null);
-        }, 5000);
+        setHeaderText('com_auth_reset_password_link_sent');
+        setBodyText(
+          <div className="flex flex-col">
+            {localize('com_auth_reset_password_if_email_exists')}
+            <span>
+              <a className="text-sm text-green-500 hover:underline" href="/login">
+                {localize('com_auth_back_to_login')}
+              </a>
+            </span>
+          </div>,
+        );
       },
     });
   };
