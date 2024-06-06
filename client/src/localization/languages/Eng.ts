@@ -295,7 +295,6 @@ export default {
   com_auth_reset_password_link_sent: 'Password Reset',
   com_auth_reset_password_email_sent:
     'If the user is registered, an email will be sent to the inbox.',
-  com_auth_error_reset_password: 'Something went wrong',
   com_auth_reset_password_success: 'Password Reset Success',
   com_auth_login_with_new_password: 'You may now login with your new password.',
   com_auth_error_invalid_reset_token: 'This password reset token is no longer valid.',
