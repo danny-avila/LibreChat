@@ -3,6 +3,7 @@ const {
   deprecatedAzureVariables,
   conflictingAzureVariables,
 } = require('librechat-data-provider');
+const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
 
 const secretDefaults = {
@@ -49,6 +50,8 @@ function checkVariables() {
       Please use the config (\`librechat.yaml\`) file for setting up OpenRouter, and use \`OPENROUTER_KEY\` or another environment variable instead.`,
     );
   }
+
+  checkPasswordReset();
 }
 
 /**
@@ -103,6 +106,32 @@ Latest version: ${Constants.CONFIG_VERSION}
       Check out the Config changelogs for the latest options and features added.
 
       https://www.librechat.ai/changelog\n\n`,
+    );
+  }
+}
+
+function checkPasswordReset() {
+  const emailEnabled =
+    (!!process.env.EMAIL_SERVICE || !!process.env.EMAIL_HOST) &&
+    !!process.env.EMAIL_USERNAME &&
+    !!process.env.EMAIL_PASSWORD &&
+    !!process.env.EMAIL_FROM;
+
+  const passwordResetAllowed = isEnabled(process.env.ALLOW_PASSWORD_RESET);
+
+  if (!emailEnabled && passwordResetAllowed) {
+    logger.warn(
+      `❗❗❗
+
+      Password reset is enabled with \`ALLOW_PASSWORD_RESET\` but email service is not configured.
+      
+      This setup is insecure as password reset links will be issued with a recognized email.
+      
+      Please configure email service for secure password reset functionality.
+      
+      https://www.librechat.ai/docs/configuration/authentication/password_reset
+
+      ❗❗❗`,
     );
   }
 }

@@ -293,10 +293,10 @@ export default {
   com_auth_here: 'HERE',
   com_auth_to_reset_your_password: 'to reset your password.',
   com_auth_reset_password_link_sent: 'Email Sent',
+  com_auth_reset_password_if_email_exists:
+    'If an account with that email exists, an email with password reset instructions has been sent. Please make sure to check your spam folder.',
   com_auth_reset_password_email_sent:
-    'An email has been sent to you with further instructions to reset your password.',
-  com_auth_error_reset_password:
-    'There was a problem resetting your password. There was no user found with the email address provided. Please try again.',
+    'If the user is registered, an email will be sent to the inbox.',
   com_auth_reset_password_success: 'Password Reset Success',
   com_auth_login_with_new_password: 'You may now login with your new password.',
   com_auth_error_invalid_reset_token: 'This password reset token is no longer valid.',
