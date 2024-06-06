@@ -1,21 +1,20 @@
 import React from 'react';
 import { useForm } from 'react-hook-form';
+import type { TLoginUser, TStartupConfig } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
-import { TLoginUser } from 'librechat-data-provider';
-import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 
 type TLoginFormProps = {
   onSubmit: (data: TLoginUser) => void;
+  startupConfig: TStartupConfig;
 };
 
-const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit }) => {
+const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig }) => {
   const localize = useLocalize();
   const {
     register,
     handleSubmit,
     formState: { errors },
   } = useForm<TLoginUser>();
-  const { data: startupConfig } = useGetStartupConfig();
   if (!startupConfig) {
     return null;
   }
