@@ -163,7 +163,7 @@ async function setupOpenId() {
             user.name = fullName;
           }
 
-          if (userinfo.picture) {
+          if (userinfo.picture && !user.avatar.includes('manual=true')) {
             /** @type {string | undefined} */
             const imageUrl = userinfo.picture;
 
@@ -188,8 +188,6 @@ async function setupOpenId() {
             } else {
               user.avatar = '';
             }
-          } else {
-            user.avatar = '';
           }
 
           await user.save();
