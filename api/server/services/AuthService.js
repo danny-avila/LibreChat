@@ -72,12 +72,11 @@ const sendVerificationEmail = async (user) => {
 
 /**
  * Verify Email
- *
- * @param {*} userId
- * @param {String} token
+ * @param {Express.Request} req
  * @returns
  */
-const verifyEmail = async (userId, token) => {
+const verifyEmail = async (req) => {
+  const { userId, token } = req.body;
   let emailVerificationToken = await Token.findOne({ userId });
 
   if (!emailVerificationToken) {

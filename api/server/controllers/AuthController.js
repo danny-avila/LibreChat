@@ -3,9 +3,9 @@ const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
 const { Session, User } = require('~/models');
 const {
+  verifyEmail,
   registerUser,
   resetPassword,
-  verifyEmail,
   setAuthTokens,
   requestPasswordReset,
 } = require('~/server/services/AuthService');
@@ -21,7 +21,7 @@ const registrationController = async (req, res) => {
         newUser = new User(user);
         await newUser.save();
       }
-      // Do not set the authorization header or send the user object in the response
+
       res.status(status).send({
         message: 'Registration successful. Please check your email to verify your email address.',
       });
@@ -73,7 +73,7 @@ const resetPasswordController = async (req, res) => {
 
 const verifyEmailController = async (req, res) => {
   try {
-    const verifyEmailService = await verifyEmail(req.body.userId, req.body.token);
+    const verifyEmailService = await verifyEmail(req);
     if (verifyEmailService instanceof Error) {
       return res.status(400).json(verifyEmailService);
     } else {
