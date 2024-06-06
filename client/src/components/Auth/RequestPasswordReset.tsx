@@ -1,5 +1,5 @@
 import { useForm } from 'react-hook-form';
-import { useState, useEffect, ReactNode } from 'react';
+import { useState, ReactNode } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useRequestPasswordResetMutation } from 'librechat-data-provider/react-query';
 import type { TRequestPasswordReset, TRequestPasswordResetResponse } from 'librechat-data-provider';
@@ -22,65 +22,31 @@ function RequestPasswordReset() {
   const onSubmit = (data: TRequestPasswordReset) => {
     requestPasswordReset.mutate(data, {
       onSuccess: (data: TRequestPasswordResetResponse) => {
-        if (data.link === 'User not found') {
-          setResetLink('User not found');
-          return;
-        }
-
-        if (!startupConfig?.emailEnabled) {
+        if (data.link && !startupConfig?.emailEnabled) {
           setResetLink(data.link);
+          setHeaderText('com_auth_reset_password');
+          setBodyText(
+            <span>
+              {localize('com_auth_click')}{' '}
+              <a className="text-green-500 hover:underline" href={resetLink}>
+                {localize('com_auth_here')}
+              </a>{' '}
+              {localize('com_auth_to_reset_your_password')}
+            </span>,
+          );
+        } else {
+          setHeaderText('com_auth_reset_password_link_sent');
+          setBodyText(localize('com_auth_reset_password_if_email_exists'));
         }
       },
       onError: () => {
-        setError('com_auth_error_reset_password');
+        setError('com_auth_reset_password_if_email_exists');
         setTimeout(() => {
           setError(null);
         }, 5000);
       },
     });
   };
-
-  useEffect(() => {
-    if (bodyText) {
-      return;
-    }
-
-    if (!requestPasswordReset.isSuccess) {
-      setHeaderText('com_auth_reset_password');
-      setBodyText(undefined);
-      return;
-    }
-
-    if (startupConfig?.emailEnabled) {
-      setHeaderText('com_auth_reset_password_link_sent');
-      setBodyText(localize('com_auth_reset_password_email_sent'));
-      return;
-    }
-
-    if (resetLink === 'User not found') {
-      setError('com_auth_error_reset_password');
-      return;
-    }
-
-    setHeaderText('com_auth_reset_password');
-    setBodyText(
-      <span>
-        {localize('com_auth_click')}{' '}
-        <a className="text-green-500 hover:underline" href={resetLink}>
-          {localize('com_auth_here')}
-        </a>{' '}
-        {localize('com_auth_to_reset_your_password')}
-      </span>,
-    );
-  }, [
-    requestPasswordReset.isSuccess,
-    startupConfig?.emailEnabled,
-    resetLink,
-    localize,
-    setHeaderText,
-    bodyText,
-    setError,
-  ]);
 
   if (bodyText) {
     return (

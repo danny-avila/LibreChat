@@ -127,13 +127,12 @@ const requestPasswordReset = async (email) => {
     !!process.env.EMAIL_PASSWORD &&
     !!process.env.EMAIL_FROM;
 
-  if (!user && emailEnabled) {
-    logger.error(`[requestPasswordReset] [Email not found] [Email: ${email}]`);
-    return { link: '' };
-  }
+  logger.warn(`[requestPasswordReset] [Password reset request initiated] [Email: ${email}]`);
 
   if (!user) {
-    return new Error('User not found');
+    return {
+      message: 'If an account with that email exists, a password reset link has been sent to it.',
+    };
   }
 
   let token = await Token.findOne({ userId: user._id });
@@ -164,10 +163,14 @@ const requestPasswordReset = async (email) => {
       },
       'requestPasswordReset.handlebars',
     );
-    return { link: '' };
   } else {
+    logger.info(`[requestPasswordReset] Link issued. [Email: ${email}] [ID: ${user._id}]`);
     return { link };
   }
+
+  return {
+    message: 'If an account with that email exists, a password reset link has been sent to it.',
+  };
 };
 
 /**
