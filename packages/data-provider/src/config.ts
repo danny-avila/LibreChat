@@ -263,14 +263,22 @@ const ttsSchema = z.object({
   localai: ttsLocalaiSchema.optional(),
 });
 
+const sttOpenaiSchema = z.object({
+  url: z.string().optional(),
+  apiKey: z.string(),
+  model: z.string(),
+});
+
+const sttAzureOpenAISchema = z.object({
+  instanceName: z.string(),
+  apiKey: z.string(),
+  deploymentName: z.string(),
+  apiVersion: z.string(),
+});
+
 const sttSchema = z.object({
-  openai: z
-    .object({
-      url: z.string().optional(),
-      apiKey: z.string().optional(),
-      model: z.string().optional(),
-    })
-    .optional(),
+  openai: sttOpenaiSchema.optional(),
+  azureOpenAI: sttAzureOpenAISchema.optional(),
 });
 
 export enum RateLimitPrefix {
