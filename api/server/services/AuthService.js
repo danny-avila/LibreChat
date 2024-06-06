@@ -73,7 +73,6 @@ const sendVerificationEmail = async (user) => {
 /**
  * Verify Email
  * @param {Express.Request} req
- * @returns
  */
 const verifyEmail = async (req) => {
   const { userId, token } = req.body;
