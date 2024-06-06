@@ -157,8 +157,6 @@ const registerUser = async (user) => {
     newUser.password = hash;
     await newUser.save();
 
-    console.log('userId', newUser._id);
-
     const emailEnabled = checkEmailConfig();
 
     if (emailEnabled) {
