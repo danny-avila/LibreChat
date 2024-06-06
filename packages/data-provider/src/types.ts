@@ -283,6 +283,8 @@ export type TStartupConfig = {
   helpAndFaqURL: string;
   customFooter?: string;
   modelSpecs?: TSpecsConfig;
+  sharedLinksEnabled: boolean;
+  publicSharedLinksEnabled: boolean;
 };
 
 export type TRefreshTokenResponse = {
