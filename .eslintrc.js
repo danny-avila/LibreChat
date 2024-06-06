@@ -67,39 +67,6 @@ module.exports = {
     'react/display-name': ['off'],
     'no-unused-vars': ['error', { varsIgnorePattern: '^_' }],
     quotes: ['error', 'single'],
-    'import/order': [
-      'warn',
-      {
-        groups: [
-          ['builtin'], // Node.js standard libraries, react
-          ['external'], // npm packages
-          ['type'], // Type imports (TypeScript)
-          [
-            'internal', // Internal alias imports eg.(~/Component)
-            'parent', // Parent directory imports eg.(../ParentComponent)
-            'sibling', // Sibling imports eg.(./components/MyComponent)
-            'index',
-            'object',
-          ],
-        ],
-        // 'newlines-between': 'always', // Enforce new lines between groups
-        pathGroups: [
-          {
-            pattern: '{react,react-dom/**}',
-            group: 'builtin',
-            position: 'before',
-          },
-          {
-            pattern: '~/**',
-            group: 'internal',
-            position: 'before',
-          },
-        ],
-        pathGroupsExcludedImportTypes: ['builtin', 'type'], // Exclude these types from the path group rule
-        warnOnUnassignedImports: true, // Warn for unassigned imports
-        // alphabetize: { order: 'asc', caseInsensitive: true }, // Alphabetize imports within each group
-      },
-    ],
   },
   overrides: [
     {

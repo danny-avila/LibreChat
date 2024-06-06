@@ -276,6 +276,7 @@ export type TStartupConfig = {
   emailLoginEnabled: boolean;
   registrationEnabled: boolean;
   socialLoginEnabled: boolean;
+  passwordResetEnabled: boolean;
   emailEnabled: boolean;
   checkBalance: boolean;
   showBirthdayIcon: boolean;

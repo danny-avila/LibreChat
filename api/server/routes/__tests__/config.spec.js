@@ -25,6 +25,7 @@ afterEach(() => {
   delete process.env.DOMAIN_SERVER;
   delete process.env.ALLOW_REGISTRATION;
   delete process.env.ALLOW_SOCIAL_LOGIN;
+  delete process.env.ALLOW_PASSWORD_RESET;
   delete process.env.LDAP_URL;
   delete process.env.LDAP_BIND_DN;
   delete process.env.LDAP_BIND_CREDENTIALS;
@@ -55,6 +56,7 @@ describe.skip('GET /', () => {
     process.env.DOMAIN_SERVER = 'http://test-server.com';
     process.env.ALLOW_REGISTRATION = 'true';
     process.env.ALLOW_SOCIAL_LOGIN = 'true';
+    process.env.ALLOW_PASSWORD_RESET = 'true';
     process.env.LDAP_URL = 'Test LDAP URL';
     process.env.LDAP_BIND_DN = 'Test LDAP Bind DN';
     process.env.LDAP_BIND_CREDENTIALS = 'Test LDAP Bind Credentials';
@@ -78,6 +80,7 @@ describe.skip('GET /', () => {
       serverDomain: 'http://test-server.com',
       emailLoginEnabled: 'true',
       registrationEnabled: 'true',
+      passwordResetEnabled: 'true',
       socialLoginEnabled: 'true',
     });
   });

@@ -17,6 +17,19 @@ const domains = {
 const isProduction = process.env.NODE_ENV === 'production';
 
 /**
+ * Check if email configuration is set
+ * @returns {Boolean}
+ */
+function checkEmailConfig() {
+  return (
+    (!!process.env.EMAIL_SERVICE || !!process.env.EMAIL_HOST) &&
+    !!process.env.EMAIL_USERNAME &&
+    !!process.env.EMAIL_PASSWORD &&
+    !!process.env.EMAIL_FROM
+  );
+}
+
+/**
  * Logout user
  *
  * @param {String} userId
@@ -114,14 +127,20 @@ const registerUser = async (user) => {
 
 /**
  * Request password reset
- *
- * @param {String} email
- * @returns
+ * @param {Express.Request} req
  */
-const requestPasswordReset = async (email) => {
+const requestPasswordReset = async (req) => {
+  const { email } = req.body;
   const user = await User.findOne({ email }).lean();
+  const emailEnabled = checkEmailConfig();
+
+  logger.warn(`[requestPasswordReset] [Password reset request initiated] [Email: ${email}]`);
+
   if (!user) {
-    return new Error('Email does not exist');
+    logger.warn(`[requestPasswordReset] [No user found] [Email: ${email}] [IP: ${req.ip}]`);
+    return {
+      message: 'If an account with that email exists, a password reset link has been sent to it.',
+    };
   }
 
   let token = await Token.findOne({ userId: user._id });
@@ -140,12 +159,6 @@ const requestPasswordReset = async (email) => {
 
   const link = `${domains.client}/reset-password?token=${resetToken}&userId=${user._id}`;
 
-  const emailEnabled =
-    (!!process.env.EMAIL_SERVICE || !!process.env.EMAIL_HOST) &&
-    !!process.env.EMAIL_USERNAME &&
-    !!process.env.EMAIL_PASSWORD &&
-    !!process.env.EMAIL_FROM;
-
   if (emailEnabled) {
     sendEmail(
       user.email,
@@ -158,10 +171,19 @@ const requestPasswordReset = async (email) => {
       },
       'requestPasswordReset.handlebars',
     );
-    return { link: '' };
+    logger.info(
+      `[requestPasswordReset] Link emailed. [Email: ${email}] [ID: ${user._id}] [IP: ${req.ip}]`,
+    );
   } else {
+    logger.info(
+      `[requestPasswordReset] Link issued. [Email: ${email}] [ID: ${user._id}] [IP: ${req.ip}]`,
+    );
     return { link };
   }
+
+  return {
+    message: 'If an account with that email exists, a password reset link has been sent to it.',
+  };
 };
 
 /**
@@ -190,20 +212,23 @@ const resetPassword = async (userId, token, password) => {
   await User.updateOne({ _id: userId }, { $set: { password: hash } }, { new: true });
 
   const user = await User.findById({ _id: userId });
+  const emailEnabled = checkEmailConfig();
 
-  sendEmail(
-    user.email,
-    'Password Reset Successfully',
-    {
-      appName: process.env.APP_TITLE || 'LibreChat',
-      name: user.name,
-      year: new Date().getFullYear(),
-    },
-    'passwordReset.handlebars',
-  );
+  if (emailEnabled) {
+    sendEmail(
+      user.email,
+      'Password Reset Successfully',
+      {
+        appName: process.env.APP_TITLE || 'LibreChat',
+        name: user.name,
+        year: new Date().getFullYear(),
+      },
+      'passwordReset.handlebars',
+    );
+  }
 
   await passwordResetToken.deleteOne();
-
+  logger.info(`[resetPassword] Password reset successful. [Email: ${user.email}]`);
   return { message: 'Password reset was successful' };
 };
 
