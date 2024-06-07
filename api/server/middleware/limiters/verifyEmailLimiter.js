@@ -5,7 +5,7 @@ const { logViolation } = require('~/cache');
 
 const {
   VERIFY_EMAIL_WINDOW = 2,
-  VERIFY_EMAIL_MAX = 1,
+  VERIFY_EMAIL_MAX = 2,
   VERIFY_EMAIL_VIOLATION_SCORE: score,
 } = process.env;
 const windowMs = VERIFY_EMAIL_WINDOW * 60 * 1000;
@@ -25,11 +25,11 @@ const handler = async (req, res) => {
   return res.status(429).json({ message });
 };
 
-const registerLimiter = rateLimit({
+const verifyEmailLimiter = rateLimit({
   windowMs,
   max,
   handler,
   keyGenerator: removePorts,
 });
 
-module.exports = registerLimiter;
+module.exports = verifyEmailLimiter;

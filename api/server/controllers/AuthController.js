@@ -22,10 +22,6 @@ const registrationController = async (req, res) => {
   }
 };
 
-const getUserController = async (req, res) => {
-  return res.status(200).send(req.user);
-};
-
 const resetPasswordRequestController = async (req, res) => {
   try {
     const resetService = await requestPasswordReset(req);
@@ -116,7 +112,6 @@ const refreshController = async (req, res) => {
 };
 
 module.exports = {
-  getUserController,
   refreshController,
   registrationController,
   resetPasswordController,

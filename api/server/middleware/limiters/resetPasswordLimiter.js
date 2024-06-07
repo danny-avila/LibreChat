@@ -5,7 +5,7 @@ const { logViolation } = require('~/cache');
 
 const {
   RESET_PASSWORD_WINDOW = 2,
-  RESET_PASSWORD_MAX = 1,
+  RESET_PASSWORD_MAX = 2,
   RESET_PASSWORD_VIOLATION_SCORE: score,
 } = process.env;
 const windowMs = RESET_PASSWORD_WINDOW * 60 * 1000;
@@ -25,11 +25,11 @@ const handler = async (req, res) => {
   return res.status(429).json({ message });
 };
 
-const registerLimiter = rateLimit({
+const resetPasswordLimiter = rateLimit({
   windowMs,
   max,
   handler,
   keyGenerator: removePorts,
 });
 
-module.exports = registerLimiter;
+module.exports = resetPasswordLimiter;
