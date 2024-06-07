@@ -5,19 +5,19 @@ const {
   verifyEmailController,
   refreshController,
   registrationController,
-} = require('../controllers/AuthController');
-const { loginController } = require('../controllers/auth/LoginController');
-const { logoutController } = require('../controllers/auth/LogoutController');
+} = require('~/server/controllers/AuthController');
+const { loginController } = require('~/server/controllers/auth/LoginController');
+const { logoutController } = require('~/server/controllers/auth/LogoutController');
 const {
   checkBan,
   loginLimiter,
-  registerLimiter,
   requireJwtAuth,
+  registerLimiter,
   requireLdapAuth,
   requireLocalAuth,
   validateRegistration,
   validatePasswordReset,
-} = require('../middleware');
+} = require('~/server/middleware');
 
 const router = express.Router();
 
