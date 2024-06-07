@@ -10,6 +10,7 @@ const {
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
 const { updateUserPluginsService, deleteUserKey } = require('~/server/services/UserService');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
+const { deleteAllSharedLinks } = require('~/models/Share');
 const { Transaction } = require('~/models/Transaction');
 const { logger } = require('~/config');
 
@@ -78,6 +79,8 @@ const deleteUserController = async (req, res) => {
     await deleteUserPluginAuth(user.id, null, true); // delete user plugin auth
     await deleteUserById(user.id); // delete user
     await deleteFiles(null, user.id); // delete user files
+    await deleteAllSharedLinks(user.id); // delete user shared links
+    /* TODO: queue job for cleaning actions and assistants of non-existant users */
     logger.info(`User deleted account. Email: ${user.email} ID: ${user.id}`);
     res.status(200).send({ message: 'User deleted' });
   } catch (err) {
