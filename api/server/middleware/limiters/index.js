@@ -6,6 +6,8 @@ const importLimiters = require('./importLimiters');
 const uploadLimiters = require('./uploadLimiters');
 const registerLimiter = require('./registerLimiter');
 const messageLimiters = require('./messageLimiters');
+const verifyEmailLimiter = require('./verifyEmailLimiter');
+const resetPasswordLimiter = require('./resetPasswordLimiter');
 
 module.exports = {
   ...uploadLimiters,
@@ -15,4 +17,6 @@ module.exports = {
   registerLimiter,
   createTTSLimiters,
   createSTTLimiters,
+  verifyEmailLimiter,
+  resetPasswordLimiter,
 };

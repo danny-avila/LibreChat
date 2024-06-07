@@ -15,6 +15,8 @@ const {
   registerLimiter,
   requireLdapAuth,
   requireLocalAuth,
+  verifyEmailLimiter,
+  resetPasswordLimiter,
   validateRegistration,
   validatePasswordReset,
 } = require('~/server/middleware');
@@ -36,11 +38,12 @@ router.post('/refresh', refreshController);
 router.post('/register', registerLimiter, checkBan, validateRegistration, registrationController);
 router.post(
   '/requestPasswordReset',
+  resetPasswordLimiter,
   checkBan,
   validatePasswordReset,
   resetPasswordRequestController,
 );
 router.post('/resetPassword', checkBan, validatePasswordReset, resetPasswordController);
-router.post('/verify', verifyEmailController);
+router.post('/verify', verifyEmailLimiter, verifyEmailController);
 
 module.exports = router;
