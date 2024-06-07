@@ -1,6 +1,6 @@
 const { ErrorTypes } = require('librechat-data-provider');
 const { encrypt, decrypt } = require('~/server/utils');
-const { User, Key } = require('~/models');
+const { updateUser, Key } = require('~/models');
 const { logger } = require('~/config');
 
 /**
@@ -16,16 +16,13 @@ const { logger } = require('~/config');
  */
 const updateUserPluginsService = async (user, pluginKey, action) => {
   try {
+    const userPlugins = user.plugins || [];
     if (action === 'install') {
-      return await User.updateOne(
-        { _id: user._id },
-        { $set: { plugins: [...user.plugins, pluginKey] } },
-      );
+      return await updateUser(user._id, { plugins: [...userPlugins, pluginKey] });
     } else if (action === 'uninstall') {
-      return await User.updateOne(
-        { _id: user._id },
-        { $set: { plugins: user.plugins.filter((plugin) => plugin !== pluginKey) } },
-      );
+      return await updateUser(user._id, {
+        plugins: userPlugins.filter((plugin) => plugin !== pluginKey),
+      });
     }
   } catch (err) {
     logger.error('[updateUserPluginsService]', err);
@@ -166,30 +163,12 @@ const checkUserKeyExpiry = (expiresAt, endpoint) => {
   }
 };
 
-/**
- * Retrieves a user document from the database based on the provided email.
- * @async
- * @param {string} email - The email of the user to find.
- * @returns {Promise<Object|null>} The user document if found, otherwise null.
- * @throws {Error} Throws an error if there is a problem during user retrieval.
- */
-const findUserByEmail = async (email) => {
-  try {
-    const user = await User.findOne({ email });
-    return user;
-  } catch (error) {
-    logger.error(`[findUserByEmail] Error occurred while finding user by email: ${email}`, error);
-    throw error;
-  }
-};
-
 module.exports = {
-  updateUserPluginsService,
   getUserKey,
-  getUserKeyValues,
-  getUserKeyExpiry,
   updateUserKey,
   deleteUserKey,
+  getUserKeyValues,
+  getUserKeyExpiry,
   checkUserKeyExpiry,
-  findUserByEmail,
+  updateUserPluginsService,
 };
