@@ -7,6 +7,7 @@ const getProfileDetails = (profile) => ({
   avatarUrl: profile.photos[0]?.value,
   username: profile.displayName,
   name: profile.name?.givenName + ' ' + profile.name?.familyName,
+  emailVerified: true,
 });
 
 const facebookLogin = socialLogin('facebook', getProfileDetails);
