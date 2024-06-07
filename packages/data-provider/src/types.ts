@@ -258,6 +258,7 @@ export type TInterfaceConfig = {
   parameters: boolean;
   sidePanel: boolean;
   presets: boolean;
+  showSideHidePanelOption: boolean;
 };
 
 export type TStartupConfig = {

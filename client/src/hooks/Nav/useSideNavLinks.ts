@@ -66,6 +66,11 @@ export default function useSideNavLinks({
       onClick: hidePanel,
       id: 'hide-panel',
     });
+    // Add logic to remove hide panel button as to simplify side nav
+    if (interfaceConfig.showSideHidePanelOption == false) {
+      const index = links.findIndex((ele) => ele.id == 'hide-panel');
+      delete links[index];
+    }
 
     return links;
   }, [assistants, keyProvided, hidePanel, endpoint, interfaceConfig.parameters]);
