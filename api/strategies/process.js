@@ -1,7 +1,7 @@
 const { FileSources } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
-const User = require('~/models/User');
+const { createUser, updateUser } = require('~/models/userMethods');
 
 /**
  * Updates the avatar URL of an existing user. If the user's avatar URL does not include the query parameter
@@ -75,9 +75,7 @@ const createSocialUser = async ({
     emailVerified,
   };
 
-  // TODO: remove direct access of User model
-  const newUser = await new User(update).save();
-
+  const newUser = await createUser(update);
   const fileStrategy = process.env.CDN_PROVIDER;
   const isLocal = fileStrategy === FileSources.local;
 
@@ -88,8 +86,8 @@ const createSocialUser = async ({
       input: avatarUrl,
     });
     const { processAvatar } = getStrategyFunctions(fileStrategy);
-    newUser.avatar = await processAvatar({ buffer: resizedBuffer, userId });
-    await newUser.save();
+    const avatar = await processAvatar({ buffer: resizedBuffer, userId });
+    await updateUser(newUser._id, { avatar });
   }
 
   return newUser;

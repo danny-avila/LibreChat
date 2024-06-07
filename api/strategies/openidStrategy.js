@@ -3,8 +3,8 @@ const passport = require('passport');
 const jwtDecode = require('jsonwebtoken/decode');
 const { Issuer, Strategy: OpenIDStrategy } = require('openid-client');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { getUser, createUser, updateUser } = require('~/models/userMethods');
 const { logger } = require('~/config');
-const User = require('~/models/User');
 
 let crypto;
 try {
@@ -88,13 +88,13 @@ async function setupOpenId() {
           logger.info(`[openidStrategy] verify login openidId: ${userinfo.sub}`);
           logger.debug('[openidStrategy] very login tokenset and userinfo', { tokenset, userinfo });
 
-          let user = await User.findOne({ openidId: userinfo.sub });
+          let user = await getUser({ openidId: userinfo.sub });
           logger.info(
             `[openidStrategy] user ${user ? 'found' : 'not found'} with openidId: ${userinfo.sub}`,
           );
 
           if (!user) {
-            user = await User.findOne({ email: userinfo.email });
+            user = await getUser({ email: userinfo.email });
             logger.info(
               `[openidStrategy] user ${user ? 'found' : 'not found'} with email: ${
                 userinfo.email
@@ -148,7 +148,7 @@ async function setupOpenId() {
           );
 
           if (!user) {
-            user = new User({
+            user = await createUser({
               provider: 'openid',
               openidId: userinfo.sub,
               username,
@@ -163,7 +163,7 @@ async function setupOpenId() {
             user.name = fullName;
           }
 
-          if (userinfo.picture) {
+          if (userinfo.picture && !user.avatar.includes('manual=true')) {
             /** @type {string | undefined} */
             const imageUrl = userinfo.picture;
 
@@ -185,14 +185,10 @@ async function setupOpenId() {
                 buffer: imageBuffer,
               });
               user.avatar = imagePath ?? '';
-            } else {
-              user.avatar = '';
             }
-          } else {
-            user.avatar = '';
           }
 
-          await user.save();
+          user = await updateUser(user._id, user);
 
           logger.info(
             `[openidStrategy] login success openidId: ${user.openidId} username: ${user.username} email: ${user.email}`,

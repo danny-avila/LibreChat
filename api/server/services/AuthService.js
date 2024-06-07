@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { errorsToString } = require('librechat-data-provider');
+const { countUsers, createUser, getUser, updateUser } = require('~/models/userMethods');
 const { sendEmail, checkEmailConfig } = require('~/server/utils');
 const { registerSchema } = require('~/strategies/validators');
 const isDomainAllowed = require('./isDomainAllowed');
@@ -88,8 +89,7 @@ const verifyEmail = async (req) => {
     return new Error('Invalid or expired email verification token');
   }
 
-  await User.updateOne({ _id: userId }, { $set: { emailVerified: true } });
-
+  await updateUser(userId, { emailVerified: true });
   await emailVerificationToken.deleteOne();
 
   return { message: 'Email verification was successful' };
@@ -117,7 +117,7 @@ const registerUser = async (user) => {
   const { email, password, name, username } = user;
 
   try {
-    const existingUser = await User.findOne({ email }).lean();
+    const existingUser = await getUser({ email }, 'email _id');
 
     if (existingUser) {
       logger.info(
@@ -140,32 +140,25 @@ const registerUser = async (user) => {
     }
 
     //determine if this is the first registered user (not counting anonymous_user)
-    const isFirstRegisteredUser = (await User.countDocuments({})) === 0;
+    const isFirstRegisteredUser = (await countUsers()) === 0;
 
-    const newUser = await new User({
+    const salt = bcrypt.genSaltSync(10);
+    const newUserData = {
       provider: 'local',
       email,
-      password,
       username,
       name,
       avatar: null,
       role: isFirstRegisteredUser ? 'ADMIN' : 'USER',
-    });
-
-    const salt = bcrypt.genSaltSync(10);
-    const hash = bcrypt.hashSync(newUser.password, salt);
-    newUser.password = hash;
-    await newUser.save();
+      password: bcrypt.hashSync(password, salt),
+    };
 
     const emailEnabled = checkEmailConfig();
-
+    const newUser = await createUser(newUserData, emailEnabled === false);
     if (emailEnabled) {
       await sendVerificationEmail(newUser);
-    }
-
-    if (!emailEnabled) {
-      newUser.emailVerified = true;
-      await newUser.save();
+    } else {
+      await updateUser(newUser._id, { emailVerified: true });
     }
 
     return { status: 200, user: newUser };
@@ -180,7 +173,7 @@ const registerUser = async (user) => {
  */
 const requestPasswordReset = async (req) => {
   const { email } = req.body;
-  const user = await User.findOne({ email }).lean();
+  const user = await getUser({ email }, 'email _id');
   const emailEnabled = checkEmailConfig();
 
   logger.warn(`[requestPasswordReset] [Password reset request initiated] [Email: ${email}]`);
@@ -257,13 +250,9 @@ const resetPassword = async (userId, token, password) => {
   }
 
   const hash = bcrypt.hashSync(password, 10);
+  const user = await updateUser(userId, { password: hash });
 
-  await User.updateOne({ _id: userId }, { $set: { password: hash } }, { new: true });
-
-  const user = await User.findById({ _id: userId });
-  const emailEnabled = checkEmailConfig();
-
-  if (emailEnabled) {
+  if (checkEmailConfig()) {
     sendEmail(
       user.email,
       'Password Reset Successfully',

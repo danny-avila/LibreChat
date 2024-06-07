@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
-const { Session, User } = require('~/models');
+const { Session, getUser, createUser } = require('~/models');
 const {
   verifyEmail,
   registerUser,
@@ -16,10 +16,9 @@ const registrationController = async (req, res) => {
     const response = await registerUser(req.body);
     if (response.status === 200) {
       const { status, user } = response;
-      let newUser = await User.findOne({ _id: user._id });
+      let newUser = await getUser(user._id, 'email');
       if (!newUser) {
-        newUser = new User(user);
-        await newUser.save();
+        newUser = await createUser(user);
       }
 
       res.status(status).send({
@@ -93,7 +92,7 @@ const refreshController = async (req, res) => {
 
   try {
     const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
-    const user = await User.findOne({ _id: payload.id });
+    const user = await getUser(payload.id, '-password -__v');
     if (!user) {
       return res.status(401).redirect('/login');
     }
@@ -102,8 +101,7 @@ const refreshController = async (req, res) => {
 
     if (process.env.NODE_ENV === 'CI') {
       const token = await setAuthTokens(userId, res);
-      const userObj = user.toJSON();
-      return res.status(200).send({ token, user: userObj });
+      return res.status(200).send({ token, user });
     }
 
     // Hash the refresh token
@@ -114,8 +112,7 @@ const refreshController = async (req, res) => {
     const session = await Session.findOne({ user: userId, refreshTokenHash: hashedToken });
     if (session && session.expiration > new Date()) {
       const token = await setAuthTokens(userId, res, session._id);
-      const userObj = user.toJSON();
-      res.status(200).send({ token, user: userObj });
+      res.status(200).send({ token, user });
     } else if (req?.query?.retry) {
       // Retrying from a refresh token request that failed (401)
       res.status(403).send('No session found');
