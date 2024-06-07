@@ -100,7 +100,7 @@ export default function SharedLinkButton({
       onClick={() => {
         handlers.handler();
       }}
-      className="min-w-32 whitespace-nowrap bg-green-500 text-white hover:bg-green-600 dark:bg-green-600 dark:text-white dark:hover:bg-green-800"
+      className="min-w-32 whitespace-nowrap bg-black text-white hover:bg-black/70 dark:text-white dark:hover:bg-black/30"
     >
       {isCopying && (
         <>
