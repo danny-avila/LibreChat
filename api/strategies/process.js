@@ -8,7 +8,7 @@ const { resizeAvatar } = require('~/server/services/Files/images/avatar');
  * '?manual=true', it updates the user's avatar with the provided URL. For local file storage, it directly updates
  * the avatar URL, while for other storage types, it processes the avatar URL using the specified file strategy.
  *
- * @param {User} oldUser - The existing user object that needs to be updated.
+ * @param {MongoUser} oldUser - The existing user object that needs to be updated.
  * @param {string} avatarUrl - The new avatar URL to be set for the user.
  *
  * @returns {Promise<void>}
@@ -20,9 +20,9 @@ const handleExistingUser = async (oldUser, avatarUrl) => {
   const fileStrategy = process.env.CDN_PROVIDER;
   const isLocal = fileStrategy === FileSources.local;
 
+  let updatedAvatar = false;
   if (isLocal && (oldUser.avatar === null || !oldUser.avatar.includes('?manual=true'))) {
-    oldUser.avatar = avatarUrl;
-    await oldUser.save();
+    updatedAvatar = avatarUrl;
   } else if (!isLocal && (oldUser.avatar === null || !oldUser.avatar.includes('?manual=true'))) {
     const userId = oldUser._id;
     const resizedBuffer = await resizeAvatar({
@@ -30,8 +30,11 @@ const handleExistingUser = async (oldUser, avatarUrl) => {
       input: avatarUrl,
     });
     const { processAvatar } = getStrategyFunctions(fileStrategy);
-    oldUser.avatar = await processAvatar({ buffer: resizedBuffer, userId });
-    await oldUser.save();
+    updatedAvatar = await processAvatar({ buffer: resizedBuffer, userId });
+  }
+
+  if (updatedAvatar) {
+    await updateUser(oldUser._id, { avatar: updatedAvatar });
   }
 };
 
