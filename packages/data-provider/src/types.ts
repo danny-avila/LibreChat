@@ -244,8 +244,10 @@ export type TResetPassword = {
   confirm_password?: string;
 };
 
+export type VerifyEmailResponse = { message: string };
+
 export type TVerifyEmail = {
-  userId: string;
+  email: string;
   token: string;
 };
 

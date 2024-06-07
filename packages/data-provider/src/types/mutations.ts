@@ -109,3 +109,5 @@ export type UpdateSharedLinkOptions = MutationOptions<
   Partial<types.TSharedLink>
 >;
 export type DeleteSharedLinkOptions = MutationOptions<types.TSharedLink, { shareId: string }>;
+
+export type VerifyEmailOptions = MutationOptions<types.VerifyEmailResponse, types.TVerifyEmail>;

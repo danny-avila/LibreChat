@@ -51,11 +51,12 @@ const sendVerificationEmail = async (user) => {
 
   await new Token({
     userId: user._id,
+    email: user.email,
     token: hash,
     createdAt: Date.now(),
   }).save();
 
-  const verificationLink = `${domains.client}/verify?token=${verifyToken}&userId=${user._id}`;
+  const verificationLink = `${domains.client}/verify?token=${verifyToken}&email=${user.email}`;
 
   sendEmail(
     user.email,
@@ -76,22 +77,25 @@ const sendVerificationEmail = async (user) => {
  * @param {Express.Request} req
  */
 const verifyEmail = async (req) => {
-  const { userId, token } = req.body;
-  let emailVerificationToken = await Token.findOne({ userId });
+  const { email, token } = req.body;
+  let emailVerificationData = await Token.findOne({ email });
 
-  if (!emailVerificationToken) {
+  if (!emailVerificationData) {
     return new Error('Invalid or expired password reset token');
   }
 
-  const isValid = bcrypt.compareSync(token, emailVerificationToken.token);
+  const isValid = bcrypt.compareSync(token, emailVerificationData.token);
 
   if (!isValid) {
     return new Error('Invalid or expired email verification token');
   }
 
-  await updateUser(userId, { emailVerified: true });
-  await emailVerificationToken.deleteOne();
+  const updatedUser = await updateUser(emailVerificationData.userId, { emailVerified: true });
+  if (!updatedUser) {
+    return new Error('User not found');
+  }
 
+  await emailVerificationData.deleteOne();
   return { message: 'Email verification was successful' };
 };
 

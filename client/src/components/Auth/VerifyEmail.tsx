@@ -1,58 +1,57 @@
-import { useState, useEffect } from 'react';
-import { useVerifyEmailMutation } from 'librechat-data-provider/react-query';
-import type { TVerifyEmail } from 'librechat-data-provider';
-import { ThemeSelector } from '~/components/ui';
-import { useLocalize } from '~/hooks';
-import { Spinner } from '~/components/svg';
+import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useVerifyEmailMutation } from '~/data-provider';
+import { ThemeSelector } from '~/components/ui';
+import { Spinner } from '~/components/svg';
+import { useLocalize } from '~/hooks';
 
 function RequestPasswordReset() {
-  const localize = useLocalize();
-  const verifyEmail = useVerifyEmailMutation();
-  const [params] = useSearchParams();
-  const [verificationStatus, setVerificationStatus] = useState<boolean>(false);
-  const [verificationInProgress, setVerificationInProgress] = useState<boolean>(false);
-  const [headerText, setHeaderText] = useState<string>('');
-  const [countdown, setCountdown] = useState<number>(5);
   const navigate = useNavigate();
-  const data: TVerifyEmail = {
-    token: params.get('token') || '',
-    userId: params.get('userId') || '',
-  };
+  const localize = useLocalize();
+  const [params] = useSearchParams();
 
-  const onSubmit = (data: TVerifyEmail) => {
-    verifyEmail.mutate(data, {
-      onSuccess: () => {
-        setHeaderText(localize('com_auth_email_verification_success') + ' 🎉');
-        setVerificationStatus(true);
-        const timer = setInterval(() => {
-          setCountdown((prevCountdown) => prevCountdown - 1);
-        }, 1000);
-        setTimeout(() => {
-          clearInterval(timer);
-          navigate('/c/new', { replace: true });
-        }, 5000);
-      },
-      onError: () => {
-        setVerificationStatus(true);
-        setHeaderText(localize('com_auth_email_verification_failed') + ' 😢');
-      },
-    });
-  };
+  const [countdown, setCountdown] = useState<number>(5);
+  const [headerText, setHeaderText] = useState<string>('');
+  const [verificationStatus, setVerificationStatus] = useState<boolean>(false);
+
+  const token = useMemo(() => params.get('token') || '', [params]);
+  const email = useMemo(() => params.get('email') || '', [params]);
+
+  const verifyEmailMutation = useVerifyEmailMutation({
+    onSuccess: () => {
+      setHeaderText(localize('com_auth_email_verification_success') + ' 🎉');
+      setVerificationStatus(true);
+      const timer = setInterval(() => {
+        setCountdown((prevCountdown) => prevCountdown - 1);
+      }, 1000);
+      setTimeout(() => {
+        clearInterval(timer);
+        navigate('/c/new', { replace: true });
+      }, 5000);
+    },
+    onError: () => {
+      setVerificationStatus(true);
+      setHeaderText(localize('com_auth_email_verification_failed') + ' 😢');
+      setCountdown(0);
+    },
+  });
 
   useEffect(() => {
-    if (verificationInProgress === true) {
+    if (verifyEmailMutation.isLoading) {
       return;
     }
 
-    if (data.token && data.userId) {
-      onSubmit(data);
-      setVerificationInProgress(true);
+    if (token && email) {
+      verifyEmailMutation.mutate({
+        email,
+        token,
+      });
     } else {
       setHeaderText(localize('com_auth_email_verification_invalid') + ' 🤨');
       setVerificationStatus(true);
+      setCountdown(0);
     }
-  }, []);
+  }, [localize, token, email, verifyEmailMutation]);
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 dark:bg-gray-900 sm:pt-0">
