@@ -255,6 +255,8 @@ export type TVerifyEmail = {
   token: string;
 };
 
+export type TResendVerificationEmail = Omit<TVerifyEmail, 'token'>;
+
 export type TInterfaceConfig = {
   privacyPolicy?: {
     externalUrl?: string;

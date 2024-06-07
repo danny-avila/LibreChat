@@ -1,10 +1,9 @@
 const express = require('express');
 const {
-  resetPasswordRequestController,
-  resetPasswordController,
-  verifyEmailController,
   refreshController,
   registrationController,
+  resetPasswordController,
+  resetPasswordRequestController,
 } = require('~/server/controllers/AuthController');
 const { loginController } = require('~/server/controllers/auth/LoginController');
 const { logoutController } = require('~/server/controllers/auth/LogoutController');
@@ -15,7 +14,6 @@ const {
   registerLimiter,
   requireLdapAuth,
   requireLocalAuth,
-  verifyEmailLimiter,
   resetPasswordLimiter,
   validateRegistration,
   validatePasswordReset,
@@ -44,6 +42,5 @@ router.post(
   resetPasswordRequestController,
 );
 router.post('/resetPassword', checkBan, validatePasswordReset, resetPasswordController);
-router.post('/verify', verifyEmailLimiter, verifyEmailController);
 
 module.exports = router;

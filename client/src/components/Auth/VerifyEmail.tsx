@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { useVerifyEmailMutation } from '~/data-provider';
+import { useVerifyEmailMutation, useResendVerificationEmail } from '~/data-provider';
 import { ThemeSelector } from '~/components/ui';
 import { Spinner } from '~/components/svg';
 import { useLocalize } from '~/hooks';
@@ -36,6 +36,19 @@ function RequestPasswordReset() {
     },
   });
 
+  const resendEmailMutation = useResendVerificationEmail({
+    onSuccess: () => {
+      setHeaderText(localize('com_auth_email_resent_success') + ' 📧');
+    },
+    onError: () => {
+      setHeaderText(localize('com_auth_email_resent_failed') + ' 😢');
+    },
+  });
+
+  const handleResendEmail = () => {
+    resendEmailMutation.mutate({ email });
+  };
+
   useEffect(() => {
     if (verifyEmailMutation.isLoading || verificationStatus) {
       return;
@@ -46,39 +59,59 @@ function RequestPasswordReset() {
         email,
         token,
       });
+      return;
+    } else if (email) {
+      setHeaderText(localize('com_auth_email_verification_failed_token_missing') + ' 😢');
     } else {
       setHeaderText(localize('com_auth_email_verification_invalid') + ' 🤨');
-      setVerificationStatus(true);
-      setCountdown(0);
     }
+
+    setVerificationStatus(true);
+    setCountdown(0);
   }, [localize, token, email, verificationStatus, verifyEmailMutation]);
+
+  const VerificationSuccess = () => (
+    <div className="flex flex-col items-center justify-center">
+      <h1 className="mb-4 text-center text-3xl font-semibold text-black dark:text-white">
+        {headerText}
+      </h1>
+      {countdown > 0 && (
+        <p className="text-center text-lg text-gray-600 dark:text-gray-400">
+          {localize('com_auth_email_verification_redirecting', countdown.toString())}
+        </p>
+      )}
+      {countdown === 0 && (
+        <p className="text-center text-lg text-gray-600 dark:text-gray-400">
+          {localize('com_auth_email_verification_resend_prompt')}
+          <button
+            className="ml-2 text-blue-600 hover:underline"
+            onClick={handleResendEmail}
+            disabled={resendEmailMutation.isLoading}
+          >
+            {localize('com_auth_email_resend_link')}
+          </button>
+        </p>
+      )}
+    </div>
+  );
+
+  const VerificationInProgress = () => (
+    <div className="flex flex-col items-center justify-center">
+      <h1 className="mb-4 text-center text-3xl font-semibold text-black dark:text-white">
+        {localize('com_auth_email_verification_in_progress')}
+      </h1>
+      <div className="mt-4 flex justify-center">
+        <Spinner className="h-8 w-8 text-green-500" />
+      </div>
+    </div>
+  );
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 dark:bg-gray-900 sm:pt-0">
       <div className="absolute bottom-0 left-0 m-4">
         <ThemeSelector />
       </div>
-      {verificationStatus ? (
-        <div className="flex flex-col items-center justify-center">
-          <h1 className="mb-4 text-center text-3xl font-semibold text-black dark:text-white">
-            {headerText}
-          </h1>
-          {countdown > 0 && (
-            <p className="text-center text-lg text-gray-600 dark:text-gray-400">
-              {localize('com_auth_email_verification_redirecting', countdown.toString())}
-            </p>
-          )}
-        </div>
-      ) : (
-        <div className="flex flex-col items-center justify-center">
-          <h1 className="mb-4 text-center text-3xl font-semibold text-black dark:text-white">
-            {localize('com_auth_email_verification_in_progress')}
-          </h1>
-          <div className="mt-4 flex justify-center">
-            <Spinner className="h-8 w-8 text-green-500" />
-          </div>
-        </div>
-      )}
+      {verificationStatus ? <VerificationSuccess /> : <VerificationInProgress />}
     </div>
   );
 }

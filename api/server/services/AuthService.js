@@ -16,6 +16,7 @@ const domains = {
 };
 
 const isProduction = process.env.NODE_ENV === 'production';
+const genericVerificationMessage = 'Please check your email to verify your email address.';
 
 /**
  * Logout user
@@ -128,7 +129,6 @@ const registerUser = async (user) => {
   }
 
   const { email, password, name, username } = user;
-  const genericMessage = 'Please check your email to verify your email address.';
 
   try {
     const existingUser = await findUser({ email }, 'email _id');
@@ -142,7 +142,7 @@ const registerUser = async (user) => {
 
       // Sleep for 1 second
       await new Promise((resolve) => setTimeout(resolve, 1000));
-      return { status: 200, message: genericMessage };
+      return { status: 200, message: genericVerificationMessage };
     }
 
     if (!(await isDomainAllowed(email))) {
@@ -178,7 +178,7 @@ const registerUser = async (user) => {
       await updateUser(newUserId, { emailVerified: true });
     }
 
-    return { status: 200, message: genericMessage };
+    return { status: 200, message: genericVerificationMessage };
   } catch (err) {
     logger.error('[registerUser] Error in registering user:', err);
     return { status: 500, message: 'Something went wrong' };
@@ -329,12 +329,69 @@ const setAuthTokens = async (userId, res, sessionId = null) => {
   }
 };
 
+/**
+ * Resend Verification Email
+ * @param {Object} req
+ * @param {Object} req.body
+ * @param {String} req.body.email
+ * @returns {Promise<{status: number, message: string}>}
+ */
+const resendVerificationEmail = async (req) => {
+  try {
+    const { email } = req.body;
+    await Token.deleteMany({ email });
+    const user = await findUser({ email }, 'email _id name');
+
+    if (!user) {
+      logger.warn(`[resendVerificationEmail] [No user found] [Email: ${email}]`);
+      return { status: 200, message: genericVerificationMessage };
+    }
+
+    let verifyToken = crypto.randomBytes(32).toString('hex');
+    const hash = bcrypt.hashSync(verifyToken, 10);
+
+    await new Token({
+      userId: user._id,
+      email: user.email,
+      token: hash,
+      createdAt: Date.now(),
+    }).save();
+
+    const verificationLink = `${domains.client}/verify?token=${verifyToken}&email=${user.email}`;
+    logger.info(`[resendVerificationEmail] Verification link issued. [Email: ${user.email}]`);
+
+    sendEmail(
+      user.email,
+      'Verify your email',
+      {
+        appName: process.env.APP_TITLE || 'LibreChat',
+        name: user.name,
+        verificationLink: verificationLink,
+        year: new Date().getFullYear(),
+      },
+      'verifyEmail.handlebars',
+    );
+
+    return {
+      status: 200,
+      message: genericVerificationMessage,
+    };
+  } catch (error) {
+    logger.error(`[resendVerificationEmail] Error resending verification email: ${error.message}`);
+    return {
+      status: 500,
+      message: 'Something went wrong.',
+    };
+  }
+};
+
 module.exports = {
-  registerUser,
   logoutUser,
   verifyEmail,
+  registerUser,
+  setAuthTokens,
+  resetPassword,
   isDomainAllowed,
   requestPasswordReset,
-  resetPassword,
-  setAuthTokens,
+  resendVerificationEmail,
 };

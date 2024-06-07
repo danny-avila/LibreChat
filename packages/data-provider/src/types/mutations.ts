@@ -112,6 +112,10 @@ export type DeleteSharedLinkOptions = MutationOptions<types.TSharedLink, { share
 
 /* Auth mutations */
 export type VerifyEmailOptions = MutationOptions<types.VerifyEmailResponse, types.TVerifyEmail>;
+export type ResendVerifcationOptions = MutationOptions<
+  types.VerifyEmailResponse,
+  types.TResendVerificationEmail
+>;
 export type RegistrationOptions = MutationOptions<
   types.TRegisterUserResponse,
   types.TRegisterUser,

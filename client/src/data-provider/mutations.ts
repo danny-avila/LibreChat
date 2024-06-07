@@ -954,3 +954,16 @@ export const useVerifyEmailMutation = (
     ...(options || {}),
   });
 };
+
+/**
+ * Hook for resending verficiation email
+ */
+export const useResendVerificationEmail = (
+  options?: t.ResendVerifcationOptions,
+): UseMutationResult<t.VerifyEmailResponse, unknown, t.TResendVerificationEmail, unknown> => {
+  return useMutation({
+    mutationFn: (variables: t.TResendVerificationEmail) =>
+      dataService.resendVerificationEmail(variables),
+    ...(options || {}),
+  });
+};

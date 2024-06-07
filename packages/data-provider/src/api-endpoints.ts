@@ -83,7 +83,9 @@ export const requestPasswordReset = () => '/api/auth/requestPasswordReset';
 
 export const resetPassword = () => '/api/auth/resetPassword';
 
-export const verifyEmail = () => '/api/auth/verify';
+export const verifyEmail = () => '/api/user/verify';
+
+export const resendVerificationEmail = () => '/api/user/verify/resend';
 
 export const plugins = () => '/api/plugins';
 

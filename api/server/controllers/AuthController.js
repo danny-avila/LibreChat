@@ -2,7 +2,6 @@ const crypto = require('crypto');
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
 const {
-  verifyEmail,
   registerUser,
   resetPassword,
   setAuthTokens,
@@ -50,20 +49,6 @@ const resetPasswordController = async (req, res) => {
     }
   } catch (e) {
     logger.error('[resetPasswordController]', e);
-    return res.status(400).json({ message: e.message });
-  }
-};
-
-const verifyEmailController = async (req, res) => {
-  try {
-    const verifyEmailService = await verifyEmail(req);
-    if (verifyEmailService instanceof Error) {
-      return res.status(400).json(verifyEmailService);
-    } else {
-      return res.status(200).json(verifyEmailService);
-    }
-  } catch (e) {
-    logger.error('[verifyEmailController]', e);
     return res.status(400).json({ message: e.message });
   }
 };
@@ -116,5 +101,4 @@ module.exports = {
   registrationController,
   resetPasswordController,
   resetPasswordRequestController,
-  verifyEmailController,
 };

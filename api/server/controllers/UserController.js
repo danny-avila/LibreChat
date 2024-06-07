@@ -9,6 +9,7 @@ const {
 } = require('~/models');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
 const { updateUserPluginsService, deleteUserKey } = require('~/server/services/UserService');
+const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
 const { Transaction } = require('~/models/Transaction');
 const { logger } = require('~/config');
 
@@ -59,7 +60,7 @@ const updateUserPluginsController = async (req, res) => {
     res.status(200).send();
   } catch (err) {
     logger.error('[updateUserPluginsController]', err);
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: 'Something went wrong.' });
   }
 };
 
@@ -81,12 +82,42 @@ const deleteUserController = async (req, res) => {
     res.status(200).send({ message: 'User deleted' });
   } catch (err) {
     logger.error('[deleteUserController]', err);
-    res.status(500).send({ message: err.message });
+    return res.status(500).json({ message: 'Something went wrong.' });
+  }
+};
+
+const verifyEmailController = async (req, res) => {
+  try {
+    const verifyEmailService = await verifyEmail(req);
+    if (verifyEmailService instanceof Error) {
+      return res.status(400).json(verifyEmailService);
+    } else {
+      return res.status(200).json(verifyEmailService);
+    }
+  } catch (e) {
+    logger.error('[verifyEmailController]', e);
+    return res.status(500).json({ message: 'Something went wrong.' });
+  }
+};
+
+const resendVerificationController = async (req, res) => {
+  try {
+    const result = await resendVerificationEmail(req);
+    if (result instanceof Error) {
+      return res.status(400).json(result);
+    } else {
+      return res.status(200).json(result);
+    }
+  } catch (e) {
+    logger.error('[verifyEmailController]', e);
+    return res.status(500).json({ message: 'Something went wrong.' });
   }
 };
 
 module.exports = {
   getUserController,
-  updateUserPluginsController,
   deleteUserController,
+  verifyEmailController,
+  updateUserPluginsController,
+  resendVerificationController,
 };

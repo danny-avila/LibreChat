@@ -146,6 +146,12 @@ export const verifyEmail = (payload: t.TVerifyEmail): Promise<t.VerifyEmailRespo
   return request.post(endpoints.verifyEmail(), payload);
 };
 
+export const resendVerificationEmail = (
+  payload: t.TResendVerificationEmail,
+): Promise<t.VerifyEmailResponse> => {
+  return request.post(endpoints.resendVerificationEmail(), payload);
+};
+
 export const getAvailablePlugins = (): Promise<s.TPlugin[]> => {
   return request.get(endpoints.plugins());
 };
