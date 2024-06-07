@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useVerifyEmailMutation, useResendVerificationEmail } from '~/data-provider';
 import { ThemeSelector } from '~/components/ui';
 import { Spinner } from '~/components/svg';
@@ -10,26 +10,37 @@ function RequestPasswordReset() {
   const localize = useLocalize();
   const [params] = useSearchParams();
 
-  const [countdown, setCountdown] = useState<number>(5);
+  const [countdown, setCountdown] = useState<number>(3);
   const [headerText, setHeaderText] = useState<string>('');
+  const [showResendLink, setShowResendLink] = useState<boolean>(false);
   const [verificationStatus, setVerificationStatus] = useState<boolean>(false);
 
   const token = useMemo(() => params.get('token') || '', [params]);
   const email = useMemo(() => params.get('email') || '', [params]);
 
+  const countdownRedirect = useCallback(() => {
+    setCountdown(3);
+    const timer = setInterval(() => {
+      setCountdown((prevCountdown) => {
+        if (prevCountdown <= 1) {
+          clearInterval(timer);
+          navigate('/c/new', { replace: true });
+          return 0;
+        } else {
+          return prevCountdown - 1;
+        }
+      });
+    }, 1000);
+  }, [navigate]);
+
   const verifyEmailMutation = useVerifyEmailMutation({
     onSuccess: () => {
       setHeaderText(localize('com_auth_email_verification_success') + ' 🎉');
       setVerificationStatus(true);
-      const timer = setInterval(() => {
-        setCountdown((prevCountdown) => prevCountdown - 1);
-      }, 1000);
-      setTimeout(() => {
-        clearInterval(timer);
-        navigate('/c/new', { replace: true });
-      }, 5000);
+      countdownRedirect();
     },
     onError: () => {
+      setShowResendLink(true);
       setVerificationStatus(true);
       setHeaderText(localize('com_auth_email_verification_failed') + ' 😢');
       setCountdown(0);
@@ -39,10 +50,13 @@ function RequestPasswordReset() {
   const resendEmailMutation = useResendVerificationEmail({
     onSuccess: () => {
       setHeaderText(localize('com_auth_email_resent_success') + ' 📧');
+      countdownRedirect();
     },
     onError: () => {
       setHeaderText(localize('com_auth_email_resent_failed') + ' 😢');
+      countdownRedirect();
     },
+    onMutate: () => setShowResendLink(false),
   });
 
   const handleResendEmail = () => {
@@ -66,6 +80,7 @@ function RequestPasswordReset() {
       setHeaderText(localize('com_auth_email_verification_invalid') + ' 🤨');
     }
 
+    setShowResendLink(true);
     setVerificationStatus(true);
     setCountdown(0);
   }, [localize, token, email, verificationStatus, verifyEmailMutation]);
@@ -80,7 +95,7 @@ function RequestPasswordReset() {
           {localize('com_auth_email_verification_redirecting', countdown.toString())}
         </p>
       )}
-      {countdown === 0 && (
+      {showResendLink && countdown === 0 && (
         <p className="text-center text-lg text-gray-600 dark:text-gray-400">
           {localize('com_auth_email_verification_resend_prompt')}
           <button
