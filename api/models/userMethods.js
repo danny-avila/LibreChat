@@ -22,9 +22,24 @@ const hashPassword = async (password) => {
  * @param {string|string[]} [fieldsToSelect] - The fields to include or exclude in the returned document.
  * @returns {Promise<MongoUser>} A plain object representing the user document, or `null` if no user is found.
  */
-const getUser = async function (userId, fieldsToSelect = null) {
+const getUserById = async function (userId, fieldsToSelect = null) {
   const query = User.findById(userId);
 
+  if (fieldsToSelect) {
+    query.select(fieldsToSelect);
+  }
+
+  return await query.lean();
+};
+
+/**
+ * Search for a single user based on partial data and return matching user document as plain object.
+ * @param {Partial<MongoUser>} searchCriteria - The partial data to use for searching the user.
+ * @param {string|string[]} [fieldsToSelect] - The fields to include or exclude in the returned document.
+ * @returns {Promise<MongoUser>} A plain object representing the user document, or `null` if no user is found.
+ */
+const findUser = async function (searchCriteria, fieldsToSelect = null) {
+  const query = User.findOne(searchCriteria);
   if (fieldsToSelect) {
     query.select(fieldsToSelect);
   }
@@ -88,8 +103,9 @@ const countUsers = async function (filter = {}) {
 
 module.exports = {
   hashPassword,
+  getUserById,
   countUsers,
   createUser,
   updateUser,
-  getUser,
+  findUser,
 };

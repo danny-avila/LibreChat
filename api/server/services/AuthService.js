@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { errorsToString } = require('librechat-data-provider');
-const { countUsers, createUser, getUser, updateUser } = require('~/models/userMethods');
+const { countUsers, createUser, findUser, updateUser } = require('~/models/userMethods');
 const { sendEmail, checkEmailConfig } = require('~/server/utils');
 const { registerSchema } = require('~/strategies/validators');
 const isDomainAllowed = require('./isDomainAllowed');
@@ -57,6 +57,7 @@ const sendVerificationEmail = async (user) => {
   }).save();
 
   const verificationLink = `${domains.client}/verify?token=${verifyToken}&email=${user.email}`;
+  logger.info(`[sendVerificationEmail] Verification link issued. [Email: ${user.email}]`);
 
   sendEmail(
     user.email,
@@ -81,21 +82,25 @@ const verifyEmail = async (req) => {
   let emailVerificationData = await Token.findOne({ email });
 
   if (!emailVerificationData) {
+    logger.warn(`[verifyEmail] [No email verification data found] [Email: ${email}]`);
     return new Error('Invalid or expired password reset token');
   }
 
   const isValid = bcrypt.compareSync(token, emailVerificationData.token);
 
   if (!isValid) {
+    logger.warn(`[verifyEmail] [Invalid or expired email verification token] [Email: ${email}]`);
     return new Error('Invalid or expired email verification token');
   }
 
   const updatedUser = await updateUser(emailVerificationData.userId, { emailVerified: true });
   if (!updatedUser) {
+    logger.warn(`[verifyEmail] [User not found] [Email: ${email}]`);
     return new Error('User not found');
   }
 
   await emailVerificationData.deleteOne();
+  logger.info(`[verifyEmail] Email verification successful. [Email: ${email}]`);
   return { message: 'Email verification was successful' };
 };
 
@@ -121,7 +126,7 @@ const registerUser = async (user) => {
   const genericMessage = 'Please check your email to verify your email address.';
 
   try {
-    const existingUser = await getUser({ email }, 'email _id');
+    const existingUser = await findUser({ email }, 'email _id');
 
     if (existingUser) {
       logger.info(
@@ -177,7 +182,7 @@ const registerUser = async (user) => {
  */
 const requestPasswordReset = async (req) => {
   const { email } = req.body;
-  const user = await getUser({ email }, 'email _id');
+  const user = await findUser({ email }, 'email _id');
   const emailEnabled = checkEmailConfig();
 
   logger.warn(`[requestPasswordReset] [Password reset request initiated] [Email: ${email}]`);

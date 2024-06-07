@@ -6,7 +6,14 @@ const {
   deleteMessagesSince,
   deleteMessages,
 } = require('./Message');
-const { hashPassword, getUser, updateUser, createUser, countUsers } = require('./userMethods');
+const {
+  hashPassword,
+  getUserById,
+  findUser,
+  updateUser,
+  createUser,
+  countUsers,
+} = require('./userMethods');
 const { getConvoTitle, getConvo, saveConvo, deleteConvos } = require('./Conversation');
 const { getPreset, getPresets, savePreset, deletePresets } = require('./Preset');
 const {
@@ -30,10 +37,11 @@ module.exports = {
   Balance,
 
   hashPassword,
+  getUserById,
   countUsers,
   createUser,
   updateUser,
-  getUser,
+  findUser,
 
   getMessages,
   saveMessage,

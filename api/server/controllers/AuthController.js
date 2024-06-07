@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
-const { Session, getUser, createUser } = require('~/models');
+const { Session, getUserById, createUser } = require('~/models');
 const {
   verifyEmail,
   registerUser,
@@ -16,7 +16,7 @@ const registrationController = async (req, res) => {
     const response = await registerUser(req.body);
     if (response.status === 200) {
       const { status, user } = response;
-      let newUser = await getUser(user._id, 'email');
+      let newUser = await getUserById(user._id, 'email');
       if (!newUser) {
         newUser = await createUser(user);
       }
@@ -92,7 +92,7 @@ const refreshController = async (req, res) => {
 
   try {
     const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
-    const user = await getUser(payload.id, '-password -__v');
+    const user = await getUserById(payload.id, '-password -__v');
     if (!user) {
       return res.status(401).redirect('/login');
     }

@@ -3,7 +3,7 @@ const passport = require('passport');
 const jwtDecode = require('jsonwebtoken/decode');
 const { Issuer, Strategy: OpenIDStrategy } = require('openid-client');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { getUser, createUser, updateUser } = require('~/models/userMethods');
+const { findUser, createUser, updateUser } = require('~/models/userMethods');
 const { logger } = require('~/config');
 
 let crypto;
@@ -88,13 +88,13 @@ async function setupOpenId() {
           logger.info(`[openidStrategy] verify login openidId: ${userinfo.sub}`);
           logger.debug('[openidStrategy] very login tokenset and userinfo', { tokenset, userinfo });
 
-          let user = await getUser({ openidId: userinfo.sub });
+          let user = await findUser({ openidId: userinfo.sub });
           logger.info(
             `[openidStrategy] user ${user ? 'found' : 'not found'} with openidId: ${userinfo.sub}`,
           );
 
           if (!user) {
-            user = await getUser({ email: userinfo.email });
+            user = await findUser({ email: userinfo.email });
             logger.info(
               `[openidStrategy] user ${user ? 'found' : 'not found'} with email: ${
                 userinfo.email

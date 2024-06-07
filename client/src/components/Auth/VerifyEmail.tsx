@@ -37,7 +37,7 @@ function RequestPasswordReset() {
   });
 
   useEffect(() => {
-    if (verifyEmailMutation.isLoading) {
+    if (verifyEmailMutation.isLoading || verificationStatus) {
       return;
     }
 
@@ -51,7 +51,7 @@ function RequestPasswordReset() {
       setVerificationStatus(true);
       setCountdown(0);
     }
-  }, [localize, token, email, verifyEmailMutation]);
+  }, [localize, token, email, verificationStatus, verifyEmailMutation]);
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 dark:bg-gray-900 sm:pt-0">
