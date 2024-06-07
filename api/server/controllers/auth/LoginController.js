@@ -1,15 +1,19 @@
-const User = require('~/models/User');
 const { setAuthTokens } = require('~/server/services/AuthService');
+const { getUserById } = require('~/models/userMethods');
+const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
 
 const loginController = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id);
+    const user = await getUserById(req.user._id, '-password -__v');
 
     // If user doesn't exist, return error
     if (!user) {
-      // typeof user !== User) { // this doesn't seem to resolve the User type ??
       return res.status(400).json({ message: 'Invalid credentials' });
+    }
+
+    if (!user.emailVerified && !isEnabled(process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN)) {
+      return res.status(422).json({ message: 'Email not verified' });
     }
 
     const token = await setAuthTokens(user._id, res);

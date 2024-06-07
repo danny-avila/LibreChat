@@ -17,6 +17,7 @@ const getProfileDetails = (profile) => {
     avatarUrl,
     username: profile.username,
     name: profile.global_name,
+    emailVerified: true,
   };
 };
 
