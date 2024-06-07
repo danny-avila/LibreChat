@@ -1,7 +1,10 @@
 const { setAuthTokens } = require('~/server/services/AuthService');
-const { getUserById } = require('~/models/userMethods');
-const { isEnabled } = require('~/server/utils');
+const { getUserById, updateUser } = require('~/models/userMethods');
+const { isEnabled, checkEmailConfig } = require('~/server/utils');
 const { logger } = require('~/config');
+
+// Unix timestamp for 2024-06-07 15:20:18 Eastern Time
+const verificationEnabledTimestamp = 1717788018;
 
 const loginController = async (req, res) => {
   try {
@@ -10,6 +13,18 @@ const loginController = async (req, res) => {
     // If user doesn't exist, return error
     if (!user) {
       return res.status(400).json({ message: 'Invalid credentials' });
+    }
+
+    const emailEnabled = checkEmailConfig();
+    const userCreatedAtTimestamp = Math.floor(new Date(user.createdAt).getTime() / 1000);
+
+    if (
+      !emailEnabled &&
+      !user.emailVerified &&
+      userCreatedAtTimestamp < verificationEnabledTimestamp
+    ) {
+      await updateUser(user._id, { emailVerified: true });
+      user.emailVerified = true;
     }
 
     if (!user.emailVerified && !isEnabled(process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN)) {
@@ -21,10 +36,9 @@ const loginController = async (req, res) => {
     return res.status(200).send({ token, user });
   } catch (err) {
     logger.error('[loginController]', err);
-  }
 
-  // Generic error messages are safer
-  return res.status(500).json({ message: 'Something went wrong' });
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
 };
 
 module.exports = {
