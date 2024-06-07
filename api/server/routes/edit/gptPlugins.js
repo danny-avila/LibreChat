@@ -110,7 +110,11 @@ router.post(
       if (!start) {
         saveMessage({ ...userMessage, user });
       }
-      sendIntermediateMessage(res, { plugin });
+      sendIntermediateMessage(res, {
+        plugin,
+        parentMessageId: userMessage.messageId,
+        messageId: responseMessageId,
+      });
       // logger.debug('PLUGIN ACTION', formattedAction);
     };
 
@@ -119,7 +123,11 @@ router.post(
       plugin.outputs = steps && steps[0].action ? formatSteps(steps) : 'An error occurred.';
       plugin.loading = false;
       saveMessage({ ...userMessage, user });
-      sendIntermediateMessage(res, { plugin });
+      sendIntermediateMessage(res, {
+        plugin,
+        parentMessageId: userMessage.messageId,
+        messageId: responseMessageId,
+      });
       // logger.debug('CHAIN END', plugin.outputs);
     };
 
@@ -153,12 +161,13 @@ router.post(
         onChainEnd,
         onStart,
         ...endpointOption,
-        onProgress: progressCallback.call(null, {
+        progressCallback,
+        progressOptions: {
           res,
           text,
           plugin,
-          parentMessageId: overrideParentMessageId || userMessageId,
-        }),
+          // parentMessageId: overrideParentMessageId || userMessageId,
+        },
         abortController,
       });
 

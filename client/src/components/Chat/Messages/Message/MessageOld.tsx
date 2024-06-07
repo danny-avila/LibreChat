@@ -21,6 +21,7 @@ export default function MessageOld(props: TMessageProps) {
   const {
     ask,
     edit,
+    index,
     isLast,
     enterEdit,
     handleScroll,
@@ -114,6 +115,7 @@ export default function MessageOld(props: TMessageProps) {
                       setIsForking={setIsForking}
                       message={message}
                       enterEdit={enterEdit}
+                      index={index}
                       isSubmitting={isSubmitting}
                       conversation={conversation ?? null}
                       regenerate={() => regenerateMessage()}

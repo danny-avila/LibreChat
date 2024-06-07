@@ -1,9 +1,12 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
+import { useRecoilState } from 'recoil';
 import type { TConversation, TMessage } from 'librechat-data-provider';
-import { Clipboard, CheckMark, EditIcon, RegenerateIcon, ContinueIcon } from '~/components/svg';
+import { EditIcon, Clipboard, CheckMark, ContinueIcon, RegenerateIcon } from '~/components/svg';
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
 import { Fork } from '~/components/Conversations';
+import MessageAudio from './MessageAudio';
 import { cn } from '~/utils';
+import store from '~/store';
 
 type THoverButtons = {
   isEditing: boolean;
@@ -18,9 +21,11 @@ type THoverButtons = {
   isLast: boolean;
   setIsForking: (isForking: boolean) => void;
   flat?: boolean;
+  index: number;
 };
 
 export default function HoverButtons({
+  index,
   isEditing,
   enterEdit,
   copyToClipboard,
@@ -38,6 +43,8 @@ export default function HoverButtons({
   const { endpoint: _endpoint, endpointType } = conversation ?? {};
   const endpoint = endpointType ?? _endpoint;
   const [isCopied, setIsCopied] = useState(false);
+  const [TextToSpeech] = useRecoilState<boolean>(store.TextToSpeech);
+
   const {
     hideEditButton,
     regenerateEnabled,
@@ -66,6 +73,14 @@ export default function HoverButtons({
 
   return (
     <div className="visible mt-0 flex justify-center gap-1 self-end text-gray-400 lg:justify-start">
+      {TextToSpeech && (
+        <MessageAudio
+          index={index}
+          message={message}
+          isLast={isLast}
+          className={flat || !isCreatedByUser ? 'active h-7 w-7 rounded-md' : ''}
+        />
+      )}
       {isEditableEndpoint && (
         <button
           className={cn(
@@ -79,7 +94,7 @@ export default function HoverButtons({
           title={localize('com_ui_edit')}
           disabled={hideEditButton}
         >
-          <EditIcon />
+          <EditIcon size="19" />
         </button>
       )}
       <button
@@ -97,7 +112,7 @@ export default function HoverButtons({
           isCopied ? localize('com_ui_copied_to_clipboard') : localize('com_ui_copy_to_clipboard')
         }
       >
-        {isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard />}
+        {isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard size="19" />}
       </button>
       {regenerateEnabled ? (
         <button
@@ -110,7 +125,10 @@ export default function HoverButtons({
           type="button"
           title={localize('com_ui_regenerate')}
         >
-          <RegenerateIcon className="hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
+          <RegenerateIcon
+            className="hover:text-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400"
+            size="19"
+          />
         </button>
       ) : null}
       <Fork
@@ -132,7 +150,7 @@ export default function HoverButtons({
           type="button"
           title={localize('com_ui_continue')}
         >
-          <ContinueIcon className="h-4 w-4 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
+          <ContinueIcon className="h-4 w-4 hover:text-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
         </button>
       ) : null}
     </div>

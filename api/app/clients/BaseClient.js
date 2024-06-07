@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const fetch = require('node-fetch');
 const { supportsBalanceCheck, Constants } = require('librechat-data-provider');
 const { getConvo, getMessages, saveMessage, updateMessage, saveConvo } = require('~/models');
 const { addSpaceIfNeeded, isEnabled } = require('~/server/utils');
@@ -17,6 +18,7 @@ class BaseClient {
       month: 'long',
       day: 'numeric',
     });
+    this.fetch = this.fetch.bind(this);
   }
 
   setOptions() {
@@ -52,6 +54,22 @@ class BaseClient {
       promptTokens,
       completionTokens,
     });
+  }
+
+  /**
+   * Makes an HTTP request and logs the process.
+   *
+   * @param {RequestInfo} url - The URL to make the request to. Can be a string or a Request object.
+   * @param {RequestInit} [init] - Optional init options for the request.
+   * @returns {Promise<Response>} - A promise that resolves to the response of the fetch request.
+   */
+  async fetch(_url, init) {
+    let url = _url;
+    if (this.options.directEndpoint) {
+      url = this.options.reverseProxyUrl;
+    }
+    logger.debug(`Making request to ${url}`);
+    return await fetch(url, init);
   }
 
   getBuildMessagesOptions() {
@@ -372,6 +390,14 @@ class BaseClient {
   async sendMessage(message, opts = {}) {
     const { user, head, isEdited, conversationId, responseMessageId, saveOptions, userMessage } =
       await this.handleStartMethods(message, opts);
+
+    if (opts.progressCallback) {
+      opts.onProgress = opts.progressCallback.call(null, {
+        ...(opts.progressOptions ?? {}),
+        parentMessageId: userMessage.messageId,
+        messageId: responseMessageId,
+      });
+    }
 
     const { generation = '' } = opts;
 

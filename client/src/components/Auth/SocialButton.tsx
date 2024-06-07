@@ -15,7 +15,9 @@ const SocialButton = ({ id, enabled, serverDomain, oauthPath, Icon, label }) => 
 
   const handleMouseLeave = () => {
     setIsHovered(false);
-    if (isPressed) {setIsPressed(false);}
+    if (isPressed) {
+      setIsPressed(false);
+    }
   };
 
   const handleMouseDown = () => {

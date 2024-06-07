@@ -106,7 +106,11 @@ router.post(
     const pluginMap = new Map();
     const onAgentAction = async (action, runId) => {
       pluginMap.set(runId, action.tool);
-      sendIntermediateMessage(res, { plugins });
+      sendIntermediateMessage(res, {
+        plugins,
+        parentMessageId: userMessage.messageId,
+        messageId: responseMessageId,
+      });
     };
 
     const onToolStart = async (tool, input, runId, parentRunId) => {
@@ -124,7 +128,11 @@ router.post(
       }
       const extraTokens = ':::plugin:::\n';
       plugins.push(latestPlugin);
-      sendIntermediateMessage(res, { plugins }, extraTokens);
+      sendIntermediateMessage(
+        res,
+        { plugins, parentMessageId: userMessage.messageId, messageId: responseMessageId },
+        extraTokens,
+      );
     };
 
     const onToolEnd = async (output, runId) => {
@@ -142,7 +150,11 @@ router.post(
 
     const onChainEnd = () => {
       saveMessage({ ...userMessage, user });
-      sendIntermediateMessage(res, { plugins });
+      sendIntermediateMessage(res, {
+        plugins,
+        parentMessageId: userMessage.messageId,
+        messageId: responseMessageId,
+      });
     };
 
     const getAbortData = () => ({
@@ -174,12 +186,13 @@ router.post(
         onStart,
         getPartialText,
         ...endpointOption,
-        onProgress: progressCallback.call(null, {
+        progressCallback,
+        progressOptions: {
           res,
           text,
-          parentMessageId: overrideParentMessageId || userMessageId,
+          // parentMessageId: overrideParentMessageId || userMessageId,
           plugins,
-        }),
+        },
         abortController,
       });
 

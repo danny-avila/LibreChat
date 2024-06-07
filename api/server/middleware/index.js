@@ -6,6 +6,7 @@ const setHeaders = require('./setHeaders');
 const loginLimiter = require('./loginLimiter');
 const validateModel = require('./validateModel');
 const requireJwtAuth = require('./requireJwtAuth');
+const requireLdapAuth = require('./requireLdapAuth');
 const uploadLimiters = require('./uploadLimiters');
 const registerLimiter = require('./registerLimiter');
 const messageLimiters = require('./messageLimiters');
@@ -16,9 +17,11 @@ const validateMessageReq = require('./validateMessageReq');
 const buildEndpointOption = require('./buildEndpointOption');
 const validateRegistration = require('./validateRegistration');
 const validateImageRequest = require('./validateImageRequest');
+const validatePasswordReset = require('./validatePasswordReset');
 const moderateText = require('./moderateText');
 const noIndex = require('./noIndex');
 const importLimiters = require('./importLimiters');
+const canDeleteAccount = require('./canDeleteAccount');
 
 module.exports = {
   ...uploadLimiters,
@@ -29,6 +32,7 @@ module.exports = {
   setHeaders,
   loginLimiter,
   requireJwtAuth,
+  requireLdapAuth,
   registerLimiter,
   requireLocalAuth,
   validateEndpoint,
@@ -37,9 +41,11 @@ module.exports = {
   buildEndpointOption,
   validateRegistration,
   validateImageRequest,
+  validatePasswordReset,
   validateModel,
   moderateText,
   noIndex,
   ...importLimiters,
   checkDomainAllowed,
+  canDeleteAccount,
 };

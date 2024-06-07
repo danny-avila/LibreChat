@@ -23,3 +23,5 @@ export { default as useLocalStorage } from './useLocalStorage';
 export { default as useDelayedRender } from './useDelayedRender';
 export { default as useOnClickOutside } from './useOnClickOutside';
 export { default as useGenerationsByLatest } from './useGenerationsByLatest';
+export { default as useSpeechToText } from './Input/useSpeechToText';
+export { default as useTextToSpeech } from './Input/useTextToSpeech';

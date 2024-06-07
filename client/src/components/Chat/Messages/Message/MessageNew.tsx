@@ -21,6 +21,7 @@ export default function MessageNew(props: TMessageProps) {
   const {
     ask,
     edit,
+    index,
     isLast,
     enterEdit,
     handleScroll,
@@ -124,6 +125,7 @@ export default function MessageNew(props: TMessageProps) {
                                       isEditing={edit}
                                       message={message}
                                       enterEdit={enterEdit}
+                                      index={index}
                                       isSubmitting={isSubmitting}
                                       conversation={conversation ?? null}
                                       regenerate={() => regenerateMessage()}
@@ -155,6 +157,7 @@ export default function MessageNew(props: TMessageProps) {
                                 isEditing={edit}
                                 message={message}
                                 enterEdit={enterEdit}
+                                index={index}
                                 isSubmitting={isSubmitting}
                                 conversation={conversation ?? null}
                                 regenerate={() => regenerateMessage()}
@@ -239,6 +242,7 @@ export default function MessageNew(props: TMessageProps) {
                                 isEditing={edit}
                                 message={message}
                                 enterEdit={enterEdit}
+                                index={index}
                                 isSubmitting={isSubmitting}
                                 conversation={conversation ?? null}
                                 regenerate={() => regenerateMessage()}

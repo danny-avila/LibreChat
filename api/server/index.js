@@ -6,16 +6,16 @@ const axios = require('axios');
 const express = require('express');
 const passport = require('passport');
 const mongoSanitize = require('express-mongo-sanitize');
+const { jwtLogin, passportLogin } = require('~/strategies');
+const { connectDb, indexSync } = require('~/lib/db');
+const { isEnabled } = require('~/server/utils');
+const { ldapLogin } = require('~/strategies');
+const { logger } = require('~/config');
 const validateImageRequest = require('./middleware/validateImageRequest');
 const errorController = require('./controllers/ErrorController');
-const { jwtLogin, passportLogin } = require('~/strategies');
 const configureSocialLogins = require('./socialLogins');
-const { connectDb, indexSync } = require('~/lib/db');
 const AppService = require('./services/AppService');
 const noIndex = require('./middleware/noIndex');
-const { isEnabled } = require('~/server/utils');
-const { logger } = require('~/config');
-
 const routes = require('./routes');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN } = process.env ?? {};
@@ -59,6 +59,11 @@ const startServer = async () => {
   app.use(passport.initialize());
   passport.use(await jwtLogin());
   passport.use(passportLogin());
+
+  // LDAP Auth
+  if (process.env.LDAP_URL && process.env.LDAP_BIND_DN && process.env.LDAP_USER_SEARCH_BASE) {
+    passport.use(ldapLogin);
+  }
 
   if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
     configureSocialLogins(app);

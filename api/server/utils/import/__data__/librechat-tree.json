@@ -19,7 +19,7 @@
     "endpoint": "openAI",
     "title": "Troubleshooting Python Virtual Environment Activation Issue"
   },
-  "messagesTree": [
+  "messages": [
     {
       "_id": "66326f3f04bed94b7f5be68d",
       "messageId": "9501f99d-9bbb-40cb-bbb2-16d79aeceb72",

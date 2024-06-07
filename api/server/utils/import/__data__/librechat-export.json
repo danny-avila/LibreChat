@@ -19,7 +19,7 @@
     "endpoint": "openAI",
     "title": "VW Transporter 2014 Fuel Consumption. Web Search"
   },
-  "messagesTree": [
+  "messages": [
     {
       "_id": "6615516574dc2ddcdebe40b6",
       "messageId": "b123942f-ca1a-4b16-9e1f-ea4af5171168",
