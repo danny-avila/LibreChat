@@ -1,5 +1,5 @@
-import debounce from 'lodash/debounce';
 import { useState, useEffect } from 'react';
+import debounce from 'lodash/debounce';
 import { useFormContext } from 'react-hook-form';
 import {
   validateAndParseOpenAPISpec,
@@ -16,11 +16,11 @@ import type {
 import type { ActionAuthForm } from '~/common';
 import type { Spec } from './ActionsTable';
 import { useAssistantsMapContext, useToastContext } from '~/Providers';
-import { ActionsTable, columns } from './ActionsTable';
 import { useUpdateAction } from '~/data-provider';
 import { cn, removeFocusOutlines } from '~/utils';
 import useLocalize from '~/hooks/useLocalize';
 import { Spinner } from '~/components/svg';
+import { ActionsTable, columns } from './ActionsTable';
 
 const debouncedValidation = debounce(
   (input: string, callback: (result: ValidationResult) => void) => {

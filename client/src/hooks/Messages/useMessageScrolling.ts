@@ -1,9 +1,9 @@
-import { useRecoilValue } from 'recoil';
 import { useLayoutEffect, useState, useRef, useCallback, useEffect } from 'react';
+import { useRecoilValue } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
-import useScrollToRef from '../useScrollToRef';
 import { useChatContext } from '~/Providers';
 import store from '~/store';
+import useScrollToRef from '../useScrollToRef';
 
 export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
   const autoScroll = useRecoilValue(store.autoScroll);

@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useRecoilValue } from 'recoil';
+import { useProgress } from '~/hooks';
+import store from '~/store';
 import ProgressCircle from './ProgressCircle';
 import CancelledIcon from './CancelledIcon';
 import ProgressText from './ProgressText';
 import FinishedIcon from './FinishedIcon';
 import MarkdownLite from './MarkdownLite';
-import { useProgress } from '~/hooks';
-import store from '~/store';
 
 export default function CodeAnalyze({
   initialProgress = 0.1,

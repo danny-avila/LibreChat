@@ -1,10 +1,10 @@
-import type { FC } from 'react';
 import { BookCopy } from 'lucide-react';
 import { Content, Portal, Root, Trigger } from '@radix-ui/react-popover';
-import { EditPresetDialog, PresetItems } from './Presets';
+import type { FC } from 'react';
 import { useLocalize, usePresets } from '~/hooks';
 import { useChatContext } from '~/Providers';
 import { cn } from '~/utils';
+import { EditPresetDialog, PresetItems } from './Presets';
 
 const PresetsMenu: FC = () => {
   const localize = useLocalize();

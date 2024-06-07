@@ -1,7 +1,7 @@
 const { ConversationSummaryBufferMemory, ChatMessageHistory } = require('langchain/memory');
+const { logger } = require('~/config');
 const { formatLangChainMessages, SUMMARY_PROMPT } = require('../prompts');
 const { predictNewSummary } = require('../chains');
-const { logger } = require('~/config');
 
 const createSummaryBufferMemory = ({ llm, prompt, messages, ...rest }) => {
   const chatHistory = new ChatMessageHistory(messages);

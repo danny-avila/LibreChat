@@ -5,9 +5,9 @@ import SearchContent from '~/components/Chat/Messages/Content/SearchContent';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import { Plugin } from '~/components/Messages/Content';
 import SubRow from '~/components/Chat/Messages/SubRow';
+import { cn } from '~/utils';
 // eslint-disable-next-line import/no-cycle
 import MultiMessage from './MultiMessage';
-import { cn } from '~/utils';
 
 import Icon from './MessageIcon';
 export default function Message(props: TMessageProps) {

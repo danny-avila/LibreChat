@@ -5,8 +5,8 @@ import { useLocalize, useDebouncedInput, useParameterEffects } from '~/hooks';
 import { Label, Input, HoverCard, HoverCardTrigger } from '~/components/ui';
 import { cn, defaultTextProps } from '~/utils';
 import { useChatContext } from '~/Providers';
-import OptionHover from './OptionHover';
 import { ESide } from '~/common';
+import OptionHover from './OptionHover';
 
 function DynamicInput({
   label,

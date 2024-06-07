@@ -3,9 +3,9 @@ import { useParams } from 'react-router-dom';
 import { useGetSharedMessages } from 'librechat-data-provider/react-query';
 import { ShareContext } from '~/Providers';
 import { Spinner } from '~/components/svg';
-import MessagesView from './MessagesView';
 import { useLocalize } from '~/hooks';
 import { buildTree } from '~/utils';
+import MessagesView from './MessagesView';
 import Footer from '../Chat/Footer';
 
 function SharedView() {

@@ -3,9 +3,9 @@ import { alternateName, isAssistantsEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { FC } from 'react';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
+import { mapEndpoints } from '~/utils';
 import EndpointItems from './Endpoints/MenuItems';
 import TitleButton from './UI/TitleButton';
-import { mapEndpoints } from '~/utils';
 
 const EndpointsMenu: FC = () => {
   const { data: endpoints = [] } = useGetEndpointsQuery({

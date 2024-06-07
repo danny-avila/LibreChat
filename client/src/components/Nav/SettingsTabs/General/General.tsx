@@ -1,15 +1,15 @@
+import React, { useContext, useCallback, useRef } from 'react';
 import { useRecoilState } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
 import { SettingsTabValues } from 'librechat-data-provider';
-import React, { useContext, useCallback, useRef } from 'react';
 import type { TDangerButtonProps } from '~/common';
 import { ThemeContext, useLocalize, useLocalStorage } from '~/hooks';
+import { Dropdown } from '~/components/ui';
+import store from '~/store';
 import HideSidePanelSwitch from './HideSidePanelSwitch';
 import AutoScrollSwitch from './AutoScrollSwitch';
 import MessagesUISwitch from './MessagesUISwitch';
-import { Dropdown } from '~/components/ui';
 import DangerButton from '../DangerButton';
-import store from '~/store';
 import ArchivedChats from './ArchivedChats';
 
 export const ThemeSelector = ({

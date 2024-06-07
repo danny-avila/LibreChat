@@ -1,8 +1,8 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { LazyLoadImage } from 'react-lazy-load-image-component';
 import * as Dialog from '@radix-ui/react-dialog';
-import DialogImage from './DialogImage';
 import { cn } from '~/utils';
+import DialogImage from './DialogImage';
 
 const scaleImage = ({
   originalWidth,

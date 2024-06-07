@@ -1,5 +1,5 @@
-import { render, screen } from 'test/layout-test-utils';
 import userEvent from '@testing-library/user-event';
+import { render, screen } from 'test/layout-test-utils';
 import PluginAuthForm from '../PluginAuthForm';
 
 describe('PluginAuthForm', () => {

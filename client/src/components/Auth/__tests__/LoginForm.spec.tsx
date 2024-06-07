@@ -1,5 +1,5 @@
-import { render } from 'test/layout-test-utils';
 import userEvent from '@testing-library/user-event';
+import { render } from 'test/layout-test-utils';
 import Login from '../LoginForm';
 
 const mockLogin = jest.fn();

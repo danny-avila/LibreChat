@@ -1,7 +1,7 @@
 const FacebookStrategy = require('passport-facebook').Strategy;
-const { createNewUser, handleExistingUser } = require('./process');
 const { logger } = require('~/config');
 const User = require('~/models/User');
+const { createNewUser, handleExistingUser } = require('./process');
 
 const facebookLogin = async (accessToken, refreshToken, profile, cb) => {
   try {

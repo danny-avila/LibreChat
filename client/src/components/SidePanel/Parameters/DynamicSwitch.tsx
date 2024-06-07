@@ -4,8 +4,8 @@ import type { DynamicSettingProps } from 'librechat-data-provider';
 import { Label, Switch, HoverCard, HoverCardTrigger } from '~/components/ui';
 import { useLocalize, useParameterEffects } from '~/hooks';
 import { useChatContext } from '~/Providers';
-import OptionHover from './OptionHover';
 import { ESide } from '~/common';
+import OptionHover from './OptionHover';
 
 function DynamicSwitch({
   label,

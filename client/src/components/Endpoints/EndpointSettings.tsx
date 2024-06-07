@@ -2,9 +2,9 @@ import { useRecoilValue } from 'recoil';
 import { SettingsViews } from 'librechat-data-provider';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import type { TSettingsProps } from '~/common';
-import { getSettings } from './Settings';
 import { cn } from '~/utils';
 import store from '~/store';
+import { getSettings } from './Settings';
 
 export default function Settings({
   conversation,

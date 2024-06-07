@@ -1,7 +1,7 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets
 const { getUserKey } = require('~/server/services/UserService');
-const initializeClient = require('./initializeClient');
 const { GoogleClient } = require('~/app');
+const initializeClient = require('./initializeClient');
 
 jest.mock('~/server/services/UserService', () => ({
   checkUserKeyExpiry: jest.requireActual('~/server/services/UserService').checkUserKeyExpiry,

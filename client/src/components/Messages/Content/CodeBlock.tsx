@@ -1,6 +1,6 @@
+import React, { useRef, useState, RefObject } from 'react';
 import copy from 'copy-to-clipboard';
 import { InfoIcon } from 'lucide-react';
-import React, { useRef, useState, RefObject } from 'react';
 import Clipboard from '~/components/svg/Clipboard';
 import CheckMark from '~/components/svg/CheckMark';
 import useLocalize from '~/hooks/useLocalize';

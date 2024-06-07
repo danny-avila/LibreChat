@@ -1,7 +1,7 @@
 // Generates image using stable diffusion webui's api (automatic1111)
 const fs = require('fs');
-const { z } = require('zod');
 const path = require('path');
+const { z } = require('zod');
 const axios = require('axios');
 const sharp = require('sharp');
 const { v4: uuidv4 } = require('uuid');

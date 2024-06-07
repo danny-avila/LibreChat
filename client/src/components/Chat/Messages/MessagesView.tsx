@@ -1,9 +1,9 @@
 import { useState } from 'react';
+import { CSSTransition } from 'react-transition-group';
 import type { ReactNode } from 'react';
 import type { TMessage } from 'librechat-data-provider';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
 import { useScreenshot, useMessageScrolling } from '~/hooks';
-import { CSSTransition } from 'react-transition-group';
 import MultiMessage from './MultiMessage';
 
 export default function MessagesView({

@@ -4,6 +4,7 @@ const { WebBrowser } = require('langchain/tools/webbrowser');
 const { SerpAPI, ZapierNLAWrapper } = require('langchain/tools');
 const { OpenAIEmbeddings } = require('langchain/embeddings/openai');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
+const { logger } = require('~/config');
 const {
   availableTools,
   // Basic Tools
@@ -26,7 +27,6 @@ const {
 } = require('../');
 const { loadToolSuite } = require('./loadToolSuite');
 const { loadSpecs } = require('./loadSpecs');
-const { logger } = require('~/config');
 
 const getOpenAIKey = async (options, user) => {
   let openAIApiKey = options.openAIApiKey ?? process.env.OPENAI_API_KEY;

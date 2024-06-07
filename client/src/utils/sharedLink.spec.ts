@@ -1,7 +1,6 @@
+import type { TSharedLink, SharedLinkListData } from 'librechat-data-provider';
 import { sharedLinkData } from './sharedLink.fakeData';
 import { addSharedLink, updateSharedLink, deleteSharedLink } from './sharedLink';
-
-import type { TSharedLink, SharedLinkListData } from 'librechat-data-provider';
 
 describe('Shared Link Utilities', () => {
   describe('addSharedLink', () => {

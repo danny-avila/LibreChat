@@ -19,9 +19,9 @@ const { convertImage, resizeAndConvert } = require('~/server/services/Files/imag
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { createFile, updateFileUsage, deleteFiles } = require('~/models/File');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
-const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
 const { logger } = require('~/config');
+const { getStrategyFunctions } = require('./strategies');
 
 const processFiles = async (files) => {
   const promises = [];

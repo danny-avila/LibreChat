@@ -1,7 +1,7 @@
 import type { TGenButtonProps } from '~/common';
 import { ContinueIcon } from '~/components/svg';
-import Button from './Button';
 import { useLocalize } from '~/hooks';
+import Button from './Button';
 
 export default function Continue({ onClick }: TGenButtonProps) {
   const localize = useLocalize();

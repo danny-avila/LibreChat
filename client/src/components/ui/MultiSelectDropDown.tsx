@@ -1,11 +1,11 @@
 import React, { useState, useRef } from 'react';
 import { Listbox, Transition } from '@headlessui/react';
 import { Wrench, ArrowRight } from 'lucide-react';
+import type { TPlugin } from 'librechat-data-provider';
 import { CheckMark } from '~/components/svg';
 import useOnClickOutside from '~/hooks/useOnClickOutside';
-import { useMultiSearch } from './MultiSearch';
 import { cn } from '~/utils/';
-import type { TPlugin } from 'librechat-data-provider';
+import { useMultiSearch } from './MultiSearch';
 
 export type TMultiSelectDropDownProps = {
   title?: string;

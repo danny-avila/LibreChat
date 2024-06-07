@@ -1,5 +1,5 @@
-const Preset = require('./schema/presetSchema');
 const { logger } = require('~/config');
+const Preset = require('./schema/presetSchema');
 
 const getPreset = async (user, presetId) => {
   try {

@@ -1,5 +1,5 @@
-import ChatIcon from '../svg/ChatIcon';
 import { useLocalize } from '~/hooks';
+import ChatIcon from '../svg/ChatIcon';
 
 export default function Templates({ showTemplates }: { showTemplates: () => void }) {
   const localize = useLocalize();

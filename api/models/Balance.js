@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
+const { logger } = require('~/config');
 const balanceSchema = require('./schema/balance');
 const { getMultiplier } = require('./tx');
-const { logger } = require('~/config');
 
 balanceSchema.statics.check = async function ({
   user,

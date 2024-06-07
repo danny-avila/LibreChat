@@ -1,6 +1,6 @@
 import { Page, FullConfig, chromium } from '@playwright/test';
-import cleanupUser from './cleanupUser';
 import dotenv from 'dotenv';
+import cleanupUser from './cleanupUser';
 dotenv.config();
 
 type User = { email: string; name: string; password: string };

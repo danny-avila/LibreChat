@@ -1,6 +1,6 @@
-import axios from 'axios';
 import { URL } from 'url';
 import crypto from 'crypto';
+import axios from 'axios';
 import { load } from 'js-yaml';
 import type { FunctionTool, Schema, Reference, ActionMetadata } from './types/assistants';
 import type { OpenAPIV3 } from 'openapi-types';

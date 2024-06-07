@@ -13,8 +13,8 @@ import {
 } from '~/components/ui';
 import { cn, defaultTextProps, optionText, removeFocusOutlines } from '~/utils/';
 import { useLocalize, useDebouncedInput } from '~/hooks';
-import OptionHover from './OptionHover';
 import { ESide } from '~/common';
+import OptionHover from './OptionHover';
 
 export default function Settings({
   conversation,

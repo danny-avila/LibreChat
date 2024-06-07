@@ -1,6 +1,6 @@
 const Agenda = require('agenda');
-const { logger } = require('~/config');
 const mongodb = require('mongodb');
+const { logger } = require('~/config');
 
 /**
  * Class for scheduling and running jobs.

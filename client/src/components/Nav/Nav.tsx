@@ -1,6 +1,7 @@
+import { useCallback, useEffect, useState, useMemo, memo } from 'react';
 import { useParams } from 'react-router-dom';
 import { useRecoilValue } from 'recoil';
-import { useCallback, useEffect, useState, useMemo, memo } from 'react';
+import { ConversationListResponse } from 'librechat-data-provider';
 import {
   useMediaQuery,
   useAuthContext,
@@ -14,13 +15,12 @@ import { TooltipProvider, Tooltip } from '~/components/ui';
 import { Conversations } from '~/components/Conversations';
 import { useSearchContext } from '~/Providers';
 import { Spinner } from '~/components/svg';
+import { cn } from '~/utils';
+import store from '~/store';
 import SearchBar from './SearchBar';
 import NavToggle from './NavToggle';
 import NavLinks from './NavLinks';
 import NewChat from './NewChat';
-import { cn } from '~/utils';
-import { ConversationListResponse } from 'librechat-data-provider';
-import store from '~/store';
 
 const Nav = ({ navVisible, setNavVisible }) => {
   const { conversationId } = useParams();

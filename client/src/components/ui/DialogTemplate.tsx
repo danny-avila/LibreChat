@@ -1,4 +1,6 @@
 import { forwardRef, ReactNode, Ref } from 'react';
+import { cn } from '~/utils/';
+import { useLocalize } from '~/hooks';
 import {
   DialogClose,
   DialogContent,
@@ -7,8 +9,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from './';
-import { cn } from '~/utils/';
-import { useLocalize } from '~/hooks';
 
 type SelectionProps = {
   selectHandler?: () => void;

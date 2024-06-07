@@ -4,8 +4,8 @@ import { AuthKeys } from 'librechat-data-provider';
 import type { TConfigProps } from '~/common';
 import FileUpload from '~/components/Chat/Input/Files/FileUpload';
 import { useLocalize, useMultipleKeys } from '~/hooks';
-import InputWithLabel from './InputWithLabel';
 import { Label } from '~/components/ui';
+import InputWithLabel from './InputWithLabel';
 
 const CredentialsSchema = object({
   client_email: string().email().min(3),

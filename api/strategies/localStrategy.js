@@ -1,8 +1,8 @@
 const { errorsToString } = require('librechat-data-provider');
 const { Strategy: PassportLocalStrategy } = require('passport-local');
-const { loginSchema } = require('./validators');
 const logger = require('~/utils/logger');
 const User = require('~/models/User');
+const { loginSchema } = require('./validators');
 
 async function validateLoginRequest(req) {
   const { error } = loginSchema.safeParse(req.body);

@@ -2,8 +2,8 @@
  * Upgrade script
  */
 const fs = require('fs');
-const dotenv = require('dotenv');
 const { exit } = require('process');
+const dotenv = require('dotenv');
 
 // Suppress default warnings
 const originalConsoleWarn = console.warn;

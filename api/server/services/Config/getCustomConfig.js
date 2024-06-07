@@ -1,6 +1,6 @@
 const { CacheKeys } = require('librechat-data-provider');
-const loadCustomConfig = require('./loadCustomConfig');
 const getLogStores = require('~/cache/getLogStores');
+const loadCustomConfig = require('./loadCustomConfig');
 
 /**
  * Retrieves the configuration object

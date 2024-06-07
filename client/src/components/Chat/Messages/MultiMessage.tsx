@@ -1,11 +1,11 @@
 import { useEffect } from 'react';
 import { useRecoilState } from 'recoil';
 import type { TMessageProps } from '~/common';
+import store from '~/store';
 // eslint-disable-next-line import/no-cycle
 import Message from './Message';
 // eslint-disable-next-line import/no-cycle
 import MessageParts from './MessageParts';
-import store from '~/store';
 
 export default function MultiMessage({
   // messageId is used recursively here

@@ -1,13 +1,13 @@
-import { useRecoilValue } from 'recoil';
 import { useEffect, useMemo } from 'react';
+import { useRecoilValue } from 'recoil';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { FileSources, LocalStorageKeys, getConfigDefaults } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { useDragHelpers, useSetFilesToDelete } from '~/hooks';
-import DragDropOverlay from './Input/Files/DragDropOverlay';
 import { useDeleteFilesMutation } from '~/data-provider';
 import { SidePanel } from '~/components/SidePanel';
 import store from '~/store';
+import DragDropOverlay from './Input/Files/DragDropOverlay';
 
 const defaultInterface = getConfigDefaults().interface;
 

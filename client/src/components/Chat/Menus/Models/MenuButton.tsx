@@ -1,8 +1,8 @@
 import { Trigger } from '@radix-ui/react-popover';
 import type { TModelSpec, TEndpointsConfig } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
-import SpecIcon from './SpecIcon';
 import { cn } from '~/utils';
+import SpecIcon from './SpecIcon';
 
 export default function MenuButton({
   selected,

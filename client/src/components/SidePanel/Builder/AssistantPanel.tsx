@@ -16,17 +16,17 @@ import { useCreateAssistantMutation, useUpdateAssistantMutation } from '~/data-p
 import { useAssistantsMapContext, useToastContext } from '~/Providers';
 import { useSelectAssistant, useLocalize } from '~/hooks';
 import { ToolSelectDialog } from '~/components/Tools';
-import CapabilitiesForm from './CapabilitiesForm';
 import { SelectDropDown } from '~/components/ui';
+import { Spinner } from '~/components/svg';
+import { cn, cardStyle } from '~/utils/';
+import { Panel } from '~/common';
+import CapabilitiesForm from './CapabilitiesForm';
 import AssistantAvatar from './AssistantAvatar';
 import AssistantSelect from './AssistantSelect';
 import AssistantAction from './AssistantAction';
 import ContextButton from './ContextButton';
 import AssistantTool from './AssistantTool';
-import { Spinner } from '~/components/svg';
-import { cn, cardStyle } from '~/utils/';
 import Knowledge from './Knowledge';
-import { Panel } from '~/common';
 
 const labelClass = 'mb-2 block text-xs font-bold text-gray-700 dark:text-gray-400';
 const inputClass =

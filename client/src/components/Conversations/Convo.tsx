@@ -1,6 +1,6 @@
+import { useState, useRef, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
-import { useState, useRef, useMemo } from 'react';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
 import { useUpdateConversationMutation } from '~/data-provider';
@@ -9,13 +9,13 @@ import { useConversations, useNavigateToConvo } from '~/hooks';
 import { NotificationSeverity } from '~/common';
 import { ArchiveIcon } from '~/components/svg';
 import { useToastContext } from '~/Providers';
+import { cn } from '~/utils';
+import store from '~/store';
 import DropDownMenu from './DropDownMenu';
 import ArchiveButton from './ArchiveButton';
 import DeleteButton from './DeleteButton';
 import RenameButton from './RenameButton';
 import HoverToggle from './HoverToggle';
-import { cn } from '~/utils';
-import store from '~/store';
 import ShareButton from './ShareButton';
 
 type KeyEvent = KeyboardEvent<HTMLInputElement>;

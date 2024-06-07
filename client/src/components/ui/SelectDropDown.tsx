@@ -1,9 +1,9 @@
 import React from 'react';
 import { Listbox, Transition } from '@headlessui/react';
 import type { Option } from '~/common';
-import CheckMark from '../svg/CheckMark';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils/';
+import CheckMark from '../svg/CheckMark';
 import { useMultiSearch } from './MultiSearch';
 
 type SelectDropDownProps = {

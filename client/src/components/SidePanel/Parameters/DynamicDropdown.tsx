@@ -4,9 +4,9 @@ import type { DynamicSettingProps } from 'librechat-data-provider';
 import { Label, HoverCard, HoverCardTrigger, SelectDropDown } from '~/components/ui';
 import { useLocalize, useParameterEffects } from '~/hooks';
 import { useChatContext } from '~/Providers';
-import OptionHover from './OptionHover';
 import { ESide } from '~/common';
 import { cn } from '~/utils';
+import OptionHover from './OptionHover';
 
 function DynamicDropdown({
   label,

@@ -4,8 +4,8 @@ const axios = require('axios');
 const fetch = require('node-fetch');
 const { ref, uploadBytes, getDownloadURL, getStream, deleteObject } = require('firebase/storage');
 const { getBufferMetadata } = require('~/server/utils');
-const { getFirebaseStorage } = require('./initialize');
 const { logger } = require('~/config');
+const { getFirebaseStorage } = require('./initialize');
 
 /**
  * Deletes a file from Firebase Storage.

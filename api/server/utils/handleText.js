@@ -5,8 +5,8 @@ const {
   defaultRetrievalModels,
   defaultAssistantsVersion,
 } = require('librechat-data-provider');
-const { getCitations, citeText } = require('./citations');
 const partialRight = require('lodash/partialRight');
+const { getCitations, citeText } = require('./citations');
 const { sendMessage } = require('./streamResponse');
 const citationRegex = /\[\^\d+?\^]/g;
 

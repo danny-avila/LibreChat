@@ -1,6 +1,6 @@
+import { useState, useEffect } from 'react';
 import { FileImage } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
-import { useState, useEffect } from 'react';
 import { fileConfig as defaultFileConfig, mergeFileConfig } from 'librechat-data-provider';
 import type { TUser } from 'librechat-data-provider';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui';

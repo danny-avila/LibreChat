@@ -1,14 +1,14 @@
+import { useState, useRef, useEffect, useCallback } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import { EModelEndpoint } from 'librechat-data-provider';
-import { useState, useRef, useEffect, useCallback } from 'react';
 import { useUpdateMessageMutation } from 'librechat-data-provider/react-query';
+import { useRecoilState } from 'recoil';
 import type { TEditProps } from '~/common';
 import { cn, removeFocusOutlines } from '~/utils';
 import { useChatContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
-import Container from './Container';
-import { useRecoilState } from 'recoil';
 import store from '~/store';
+import Container from './Container';
 
 const EditMessage = ({
   text,

@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useSetRecoilState } from 'recoil';
 import { LucideArrowUpLeft } from 'lucide-react';
-import { useLocalize } from '~/hooks';
 import {
   flexRender,
   getCoreRowModel,
@@ -17,6 +16,7 @@ import type {
   ColumnFiltersState,
 } from '@tanstack/react-table';
 import type { AugmentedColumnDef } from '~/common';
+import { useLocalize } from '~/hooks';
 import {
   Button,
   Input,

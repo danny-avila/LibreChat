@@ -1,7 +1,7 @@
 import { FileSources } from 'librechat-data-provider';
+import { cn } from '~/utils';
 import ProgressCircle from './ProgressCircle';
 import SourceIcon from './SourceIcon';
-import { cn } from '~/utils';
 
 type styleProps = {
   backgroundImage?: string;

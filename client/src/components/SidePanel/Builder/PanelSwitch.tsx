@@ -3,10 +3,10 @@ import { defaultAssistantsVersion } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { Action, AssistantsEndpoint, TEndpointsConfig } from 'librechat-data-provider';
 import { useGetActionsQuery } from '~/data-provider';
-import AssistantPanel from './AssistantPanel';
 import { useChatContext } from '~/Providers';
-import ActionsPanel from './ActionsPanel';
 import { Panel } from '~/common';
+import AssistantPanel from './AssistantPanel';
+import ActionsPanel from './ActionsPanel';
 
 export default function PanelSwitch() {
   const { conversation, index } = useChatContext();

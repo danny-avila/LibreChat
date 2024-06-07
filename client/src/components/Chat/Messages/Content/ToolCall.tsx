@@ -2,6 +2,7 @@
 import { actionDelimiter, actionDomainSeparator, Constants } from 'librechat-data-provider';
 import * as Popover from '@radix-ui/react-popover';
 import useLocalize from '~/hooks/useLocalize';
+import { useProgress } from '~/hooks';
 import ProgressCircle from './ProgressCircle';
 import InProgressCall from './InProgressCall';
 import CancelledIcon from './CancelledIcon';
@@ -10,7 +11,6 @@ import FinishedIcon from './FinishedIcon';
 import ToolPopover from './ToolPopover';
 // import ActionIcon from './ActionIcon';
 import WrenchIcon from './WrenchIcon';
-import { useProgress } from '~/hooks';
 
 export default function ToolCall({
   initialProgress = 0.1,

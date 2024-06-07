@@ -11,9 +11,9 @@ import { Dialog, DialogTrigger } from '~/components/ui';
 import { useDeleteAction } from '~/data-provider';
 import { NewTrashIcon } from '~/components/svg';
 import useLocalize from '~/hooks/useLocalize';
+import { Panel } from '~/common';
 import ActionsInput from './ActionsInput';
 import ActionsAuth from './ActionsAuth';
-import { Panel } from '~/common';
 
 export default function ActionsPanel({
   // activePanel,

@@ -1,7 +1,7 @@
 const crypto = require('crypto');
+const logger = require('~/config/winston');
 const { getMessages } = require('./Message');
 const SharedLink = require('./schema/shareSchema');
-const logger = require('~/config/winston');
 
 module.exports = {
   SharedLink,

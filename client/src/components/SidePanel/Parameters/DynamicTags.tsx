@@ -6,8 +6,8 @@ import { Label, Input, HoverCard, HoverCardTrigger, Tag } from '~/components/ui'
 import { useChatContext, useToastContext } from '~/Providers';
 import { useLocalize, useParameterEffects } from '~/hooks';
 import { cn, defaultTextProps } from '~/utils';
-import OptionHover from './OptionHover';
 import { ESide } from '~/common';
+import OptionHover from './OptionHover';
 
 function DynamicTags({
   label,

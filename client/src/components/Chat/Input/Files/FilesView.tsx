@@ -2,9 +2,9 @@ import { FileSources, FileContext } from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui';
 import { useGetFiles } from '~/data-provider';
-import { DataTable, columns } from './Table';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils/';
+import { DataTable, columns } from './Table';
 
 export default function Files({ open, onOpenChange }) {
   const localize = useLocalize();

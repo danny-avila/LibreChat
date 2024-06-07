@@ -1,10 +1,10 @@
 import type { TFile } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import FileIcon from '~/components/svg/Files/FileIcon';
-import ProgressCircle from './ProgressCircle';
-import SourceIcon from './SourceIcon';
 import { useProgress } from '~/hooks';
 import { cn } from '~/utils';
+import ProgressCircle from './ProgressCircle';
+import SourceIcon from './SourceIcon';
 
 const FilePreview = ({
   file,

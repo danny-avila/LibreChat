@@ -1,9 +1,9 @@
 import { useRecoilValue } from 'recoil';
 import { SettingsViews } from 'librechat-data-provider';
 import type { TSettingsProps } from '~/common';
-import { Advanced } from './Settings';
 import { cn } from '~/utils';
 import store from '~/store';
+import { Advanced } from './Settings';
 
 export default function AlternativeSettings({
   conversation,

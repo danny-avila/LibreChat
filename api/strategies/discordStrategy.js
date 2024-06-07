@@ -1,7 +1,7 @@
 const { Strategy: DiscordStrategy } = require('passport-discord');
-const { createNewUser, handleExistingUser } = require('./process');
 const { logger } = require('~/config');
 const User = require('~/models/User');
+const { createNewUser, handleExistingUser } = require('./process');
 
 const discordLogin = async (accessToken, refreshToken, profile, cb) => {
   try {

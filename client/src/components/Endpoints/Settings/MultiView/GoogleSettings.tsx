@@ -1,7 +1,7 @@
-import Settings from '../Google';
-import Examples from '../Examples';
 import { useSetIndexOptions } from '~/hooks';
 import { useChatContext } from '~/Providers';
+import Settings from '../Google';
+import Examples from '../Examples';
 
 export default function GoogleView({ conversation, models, isPreset = false }) {
   const { optionSettings } = useChatContext();

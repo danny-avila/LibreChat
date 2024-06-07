@@ -1,8 +1,8 @@
 const fs = require('fs').promises;
 const jobScheduler = require('~/server/utils/jobScheduler');
-const { getImporter } = require('./importers');
 const { indexSync } = require('~/lib/db');
 const { logger } = require('~/config');
+const { getImporter } = require('./importers');
 
 const IMPORT_CONVERSATION_JOB_NAME = 'import conversation';
 

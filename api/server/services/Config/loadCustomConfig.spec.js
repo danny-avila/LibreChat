@@ -3,10 +3,10 @@ jest.mock('~/cache/getLogStores');
 jest.mock('~/utils/loadYaml');
 
 const axios = require('axios');
-const loadCustomConfig = require('./loadCustomConfig');
 const getLogStores = require('~/cache/getLogStores');
 const loadYaml = require('~/utils/loadYaml');
 const { logger } = require('~/config');
+const loadCustomConfig = require('./loadCustomConfig');
 
 describe('loadCustomConfig', () => {
   const mockSet = jest.fn();

@@ -1,8 +1,8 @@
 import type { TFile } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
+import { getFileType } from '~/utils';
 import FilePreview from './FilePreview';
 import RemoveFile from './RemoveFile';
-import { getFileType } from '~/utils';
 
 const FileContainer = ({
   file,

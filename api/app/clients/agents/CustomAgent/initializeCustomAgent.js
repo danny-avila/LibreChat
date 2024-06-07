@@ -1,5 +1,3 @@
-const CustomAgent = require('./CustomAgent');
-const { CustomOutputParser } = require('./outputParser');
 const { AgentExecutor } = require('langchain/agents');
 const { LLMChain } = require('langchain/chains');
 const { BufferMemory, ChatMessageHistory } = require('langchain/memory');
@@ -8,6 +6,8 @@ const {
   SystemMessagePromptTemplate,
   HumanMessagePromptTemplate,
 } = require('langchain/prompts');
+const { CustomOutputParser } = require('./outputParser');
+const CustomAgent = require('./CustomAgent');
 
 const initializeCustomAgent = async ({
   tools,

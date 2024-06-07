@@ -4,10 +4,10 @@ import type { TMessageContentProps, TDisplayProps } from '~/common';
 import Plugin from '~/components/Messages/Content/Plugin';
 import Error from '~/components/Messages/Content/Error';
 import { DelayedRender } from '~/components/ui';
+import { cn } from '~/utils';
 import EditMessage from './EditMessage';
 import Container from './Container';
 import Markdown from './Markdown';
-import { cn } from '~/utils';
 
 export const ErrorMessage = ({
   text,

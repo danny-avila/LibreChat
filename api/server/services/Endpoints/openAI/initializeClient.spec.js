@@ -1,7 +1,7 @@
 const { EModelEndpoint, ErrorTypes, validateAzureGroups } = require('librechat-data-provider');
 const { getUserKey, getUserKeyValues } = require('~/server/services/UserService');
-const initializeClient = require('./initializeClient');
 const { OpenAIClient } = require('~/app');
+const initializeClient = require('./initializeClient');
 
 // Mock getUserKey since it's the only function we want to mock
 jest.mock('~/server/services/UserService', () => ({

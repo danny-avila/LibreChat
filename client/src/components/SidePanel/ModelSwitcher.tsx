@@ -1,8 +1,8 @@
 import { useMemo, useRef, useCallback } from 'react';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
+import type { SwitcherProps } from '~/common';
 import MinimalIcon from '~/components/Endpoints/MinimalIcon';
 import { useSetIndexOptions, useLocalize } from '~/hooks';
-import type { SwitcherProps } from '~/common';
 import { useChatContext } from '~/Providers';
 import { Combobox } from '~/components/ui';
 import { mainTextareaId } from '~/common';

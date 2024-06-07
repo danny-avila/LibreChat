@@ -11,9 +11,9 @@ import { useNewConvo, useAppStartup, useAssistantListMap } from '~/hooks';
 import { getDefaultModelSpec, getModelSpecIconURL } from '~/utils';
 import { useGetConvoIdQuery } from '~/data-provider';
 import ChatView from '~/components/Chat/ChatView';
-import useAuthRedirect from './useAuthRedirect';
 import { Spinner } from '~/components/svg';
 import store from '~/store';
+import useAuthRedirect from './useAuthRedirect';
 
 export default function ChatRoute() {
   const { data: startupConfig } = useGetStartupConfig();

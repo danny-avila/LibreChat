@@ -53,9 +53,10 @@ We would like to express our gratitude to the security researchers and community
 
 We currently do not have a bug bounty program in place. However, we welcome and appreciate any
 
- security-related contributions through pull requests (PRs) that address vulnerabilities in our codebase. We believe in the power of collaboration to improve the security of our project and invite you to join us in making it more robust.
+security-related contributions through pull requests (PRs) that address vulnerabilities in our codebase. We believe in the power of collaboration to improve the security of our project and invite you to join us in making it more robust.
 
 **Reference**
+
 - https://cheatsheetseries.owasp.org/cheatsheets/Vulnerability_Disclosure_Cheat_Sheet.html
 
 ---

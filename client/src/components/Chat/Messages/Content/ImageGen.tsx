@@ -1,7 +1,7 @@
 import { useState } from 'react';
+import { useProgress } from '~/hooks';
 import ProgressCircle from './ProgressCircle';
 import ProgressText from './ProgressText';
-import { useProgress } from '~/hooks';
 
 export default function ImageGen({
   initialProgress = 0.1,

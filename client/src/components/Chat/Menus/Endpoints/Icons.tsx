@@ -12,8 +12,8 @@ import {
   LightningIcon,
   Sparkles,
 } from '~/components/svg';
-import UnknownIcon from './UnknownIcon';
 import { cn } from '~/utils';
+import UnknownIcon from './UnknownIcon';
 
 const AssistantAvatar = ({ className = '', assistantName, avatar, size }: IconMapProps) => {
   if (assistantName && avatar) {

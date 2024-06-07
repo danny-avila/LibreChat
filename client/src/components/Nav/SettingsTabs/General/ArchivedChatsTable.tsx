@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
 import { MessageCircle, ArchiveRestore } from 'lucide-react';
+import { ConversationListResponse } from 'librechat-data-provider';
 import { useConversationsInfiniteQuery } from '~/data-provider';
 import { useAuthContext, useLocalize, useNavScrolling } from '~/hooks';
 import ArchiveButton from '~/components/Conversations/ArchiveButton';
 import DeleteButton from '~/components/Conversations/DeleteButton';
 import { Spinner } from '~/components/svg';
 import { cn } from '~/utils';
-import { ConversationListResponse } from 'librechat-data-provider';
 
 export default function ArchivedChatsTable({ className }: { className?: string }) {
   const localize = useLocalize();

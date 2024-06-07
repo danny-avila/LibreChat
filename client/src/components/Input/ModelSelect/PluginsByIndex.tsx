@@ -1,6 +1,6 @@
+import { useState, useEffect, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { ChevronDownIcon } from 'lucide-react';
-import { useState, useEffect, useMemo } from 'react';
 import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
 import type { TPlugin } from 'librechat-data-provider';
 import type { TModelSelectProps } from '~/common';

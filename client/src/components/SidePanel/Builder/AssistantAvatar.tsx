@@ -1,5 +1,5 @@
-import * as Popover from '@radix-ui/react-popover';
 import { useState, useEffect, useRef, useMemo } from 'react';
+import * as Popover from '@radix-ui/react-popover';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   fileConfig as defaultFileConfig,
@@ -16,10 +16,10 @@ import type {
   AssistantListResponse,
 } from 'librechat-data-provider';
 import { useUploadAssistantAvatarMutation, useGetFileConfig } from '~/data-provider';
-import { AssistantAvatar, NoImage, AvatarMenu } from './Images';
 import { useToastContext, useAssistantsMapContext } from '~/Providers';
 // import { Spinner } from '~/components/svg';
 import { useLocalize } from '~/hooks';
+import { AssistantAvatar, NoImage, AvatarMenu } from './Images';
 // import { cn } from '~/utils/';
 
 function Avatar({

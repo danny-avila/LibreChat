@@ -1,6 +1,6 @@
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
-const { availableTools } = require('../');
 const { logger } = require('~/config');
+const { availableTools } = require('../');
 
 /**
  * Loads a suite of tools with authentication values for a given user, supporting alternate authentication fields.

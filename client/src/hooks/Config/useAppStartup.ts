@@ -5,8 +5,8 @@ import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
 import type { TStartupConfig, TPlugin, TUser } from 'librechat-data-provider';
 import { data as modelSpecs } from '~/components/Chat/Menus/Models/fakeData';
 import { mapPlugins, selectPlugins, processPlugins } from '~/utils';
-import useConfigOverride from './useConfigOverride';
 import store from '~/store';
+import useConfigOverride from './useConfigOverride';
 
 const pluginStore: TPlugin = {
   name: 'Plugin store',

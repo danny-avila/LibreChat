@@ -3,8 +3,8 @@ const axios = require('axios');
 const { StructuredTool } = require('langchain/tools');
 const { PromptTemplate } = require('langchain/prompts');
 // const { ChatOpenAI } = require('langchain/chat_models/openai');
-const { createExtractionChainFromZod } = require('./extractionChain');
 const { logger } = require('~/config');
+const { createExtractionChainFromZod } = require('./extractionChain');
 
 const envs = ['Nodejs', 'Go', 'Bash', 'Rust', 'Python3', 'PHP', 'Java', 'Perl', 'DotNET'];
 const env = z.enum(envs);

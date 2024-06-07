@@ -2,8 +2,8 @@ import 'test/matchMedia.mock';
 import React from 'react';
 import { render, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/extend-expect';
-import { ThemeSelector } from './General';
 import { RecoilRoot } from 'recoil';
+import { ThemeSelector } from './General';
 
 describe('ThemeSelector', () => {
   let mockOnChange;

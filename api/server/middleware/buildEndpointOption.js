@@ -8,8 +8,8 @@ const anthropic = require('~/server/services/Endpoints/anthropic');
 const openAI = require('~/server/services/Endpoints/openAI');
 const custom = require('~/server/services/Endpoints/custom');
 const google = require('~/server/services/Endpoints/google');
-const enforceModelSpec = require('./enforceModelSpec');
 const { handleError } = require('~/server/utils');
+const enforceModelSpec = require('./enforceModelSpec');
 
 const buildFunction = {
   [EModelEndpoint.openAI]: openAI.buildOptions,

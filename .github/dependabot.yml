@@ -5,43 +5,42 @@
 
 version: 2
 updates:
-  - package-ecosystem: "npm" # See documentation for possible values
-    directory: "/api" # Location of package manifests
-    target-branch: "dev"
+  - package-ecosystem: 'npm' # See documentation for possible values
+    directory: '/api' # Location of package manifests
+    target-branch: 'dev'
     versioning-strategy: increase-if-necessary
     schedule:
-      interval: "weekly"
+      interval: 'weekly'
     allow:
       # Allow both direct and indirect updates for all packages
-      - dependency-type: "all"
+      - dependency-type: 'all'
     commit-message:
-      prefix: "npm api prod"
-      prefix-development: "npm api dev"
-      include: "scope"
-  - package-ecosystem: "npm" # See documentation for possible values
-    directory: "/client" # Location of package manifests
-    target-branch: "dev"
+      prefix: 'npm api prod'
+      prefix-development: 'npm api dev'
+      include: 'scope'
+  - package-ecosystem: 'npm' # See documentation for possible values
+    directory: '/client' # Location of package manifests
+    target-branch: 'dev'
     versioning-strategy: increase-if-necessary
     schedule:
-      interval: "weekly"
+      interval: 'weekly'
     allow:
       # Allow both direct and indirect updates for all packages
-      - dependency-type: "all"
+      - dependency-type: 'all'
     commit-message:
-      prefix: "npm client prod"
-      prefix-development: "npm client dev"
-      include: "scope"
-  - package-ecosystem: "npm" # See documentation for possible values
-    directory: "/" # Location of package manifests
-    target-branch: "dev"
+      prefix: 'npm client prod'
+      prefix-development: 'npm client dev'
+      include: 'scope'
+  - package-ecosystem: 'npm' # See documentation for possible values
+    directory: '/' # Location of package manifests
+    target-branch: 'dev'
     versioning-strategy: increase-if-necessary
     schedule:
-      interval: "weekly"
+      interval: 'weekly'
     allow:
       # Allow both direct and indirect updates for all packages
-      - dependency-type: "all"
+      - dependency-type: 'all'
     commit-message:
-      prefix: "npm all prod"
-      prefix-development: "npm all dev"
-      include: "scope" 
-     
+      prefix: 'npm all prod'
+      prefix-development: 'npm all dev'
+      include: 'scope'

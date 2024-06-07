@@ -1,5 +1,5 @@
-import { useRecoilState } from 'recoil';
 import { useRef, useEffect } from 'react';
+import { useRecoilState } from 'recoil';
 import type { TShowToast } from '~/common';
 import { NotificationSeverity } from '~/common';
 import store from '~/store';

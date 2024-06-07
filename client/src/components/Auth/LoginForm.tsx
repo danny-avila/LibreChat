@@ -1,7 +1,7 @@
 import React from 'react';
 import { useForm } from 'react-hook-form';
-import { useLocalize } from '~/hooks';
 import { TLoginUser } from 'librechat-data-provider';
+import { useLocalize } from '~/hooks';
 
 type TLoginFormProps = {
   onSubmit: (data: TLoginUser) => void;

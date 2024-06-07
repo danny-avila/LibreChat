@@ -1,19 +1,19 @@
-import { useRecoilState } from 'recoil';
-import { Settings2 } from 'lucide-react';
-import { Root, Anchor } from '@radix-ui/react-popover';
 import { useState, useEffect, useMemo } from 'react';
+import { Root, Anchor } from '@radix-ui/react-popover';
+import { Settings2 } from 'lucide-react';
+import { useRecoilState } from 'recoil';
 import { tPresetUpdateSchema, EModelEndpoint } from 'librechat-data-provider';
 import type { TPreset, TInterfaceConfig } from 'librechat-data-provider';
 import { EndpointSettings, SaveAsPresetDialog, AlternativeSettings } from '~/components/Endpoints';
 import { ModelSelect } from '~/components/Input/ModelSelect';
 import { PluginStoreDialog } from '~/components';
-import OptionsPopover from './OptionsPopover';
-import PopoverButtons from './PopoverButtons';
 import { useSetIndexOptions } from '~/hooks';
 import { useChatContext } from '~/Providers';
 import { Button } from '~/components/ui';
 import { cn, cardStyle } from '~/utils/';
 import store from '~/store';
+import PopoverButtons from './PopoverButtons';
+import OptionsPopover from './OptionsPopover';
 
 export default function HeaderOptions({
   interfaceConfig,

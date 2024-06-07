@@ -7,9 +7,9 @@ import type { TModelSpec, TConversation, TEndpointsConfig } from 'librechat-data
 import { getConvoSwitchLogic, getModelSpecIconURL } from '~/utils';
 import { useDefaultConvo, useNewConvo } from '~/hooks';
 import { useChatContext } from '~/Providers';
+import store from '~/store';
 import MenuButton from './MenuButton';
 import ModelSpecs from './ModelSpecs';
-import store from '~/store';
 
 export default function ModelSpecsMenu({ modelSpecs }: { modelSpecs: TModelSpec[] }) {
   const { conversation } = useChatContext();

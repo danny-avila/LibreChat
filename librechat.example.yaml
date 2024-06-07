@@ -38,7 +38,7 @@ registration:
 #     style: ''
 #     use_speaker_boost:
 #   pronunciation_dictionary_locators: ['']
-#  
+#
 # stt:
 #   url: ''
 #   apiKey: '${STT_API_KEY}'

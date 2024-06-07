@@ -1,6 +1,6 @@
 import { TMessage } from 'librechat-data-provider';
-import Files from './Files';
 import { cn } from '~/utils';
+import Files from './Files';
 
 const Container = ({
   children,

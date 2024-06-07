@@ -1,9 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
-const { resizeImageBuffer } = require('../images/resize');
 const { updateUser } = require('~/models/userMethods');
 const { updateFile } = require('~/models/File');
+const { resizeImageBuffer } = require('../images/resize');
 
 /**
  * Converts an image file to the target format. The function first resizes the image based on the specified

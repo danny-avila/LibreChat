@@ -5,8 +5,8 @@ import { Label, TextareaAutosize, HoverCard, HoverCardTrigger } from '~/componen
 import { useLocalize, useDebouncedInput, useParameterEffects } from '~/hooks';
 import { cn, defaultTextProps } from '~/utils';
 import { useChatContext } from '~/Providers';
-import OptionHover from './OptionHover';
 import { ESide } from '~/common';
+import OptionHover from './OptionHover';
 
 function DynamicTextarea({
   label,

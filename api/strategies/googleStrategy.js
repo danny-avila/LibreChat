@@ -1,7 +1,7 @@
 const { Strategy: GoogleStrategy } = require('passport-google-oauth20');
-const { createNewUser, handleExistingUser } = require('./process');
 const { logger } = require('~/config');
 const User = require('~/models/User');
+const { createNewUser, handleExistingUser } = require('./process');
 
 const googleLogin = async (accessToken, refreshToken, profile, cb) => {
   try {

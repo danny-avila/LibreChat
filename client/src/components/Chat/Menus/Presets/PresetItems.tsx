@@ -9,11 +9,11 @@ import FileUpload from '~/components/Chat/Input/Files/FileUpload';
 import { PinIcon, EditIcon, TrashIcon } from '~/components/svg';
 import { Dialog, DialogTrigger, Label } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
-import { MenuSeparator, MenuItem } from '../UI';
-import { icons } from '../Endpoints/Icons';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
+import { icons } from '../Endpoints/Icons';
+import { MenuSeparator, MenuItem } from '../UI';
 
 const PresetItems: FC<{
   presets: TPreset[];

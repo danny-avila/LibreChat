@@ -2,12 +2,12 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { errorsToString } = require('librechat-data-provider');
 const { registerSchema } = require('~/strategies/validators');
-const isDomainAllowed = require('./isDomainAllowed');
 const Token = require('~/models/schema/tokenSchema');
 const { sendEmail } = require('~/server/utils');
 const Session = require('~/models/Session');
 const { logger } = require('~/config');
 const User = require('~/models/User');
+const isDomainAllowed = require('./isDomainAllowed');
 
 const domains = {
   client: process.env.DOMAIN_CLIENT,

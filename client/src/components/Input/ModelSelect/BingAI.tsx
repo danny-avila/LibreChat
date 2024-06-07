@@ -1,7 +1,7 @@
 import { useRecoilValue } from 'recoil';
+import type { TModelSelectProps } from '~/common';
 import { SelectDropDown, SelectDropDownPop, Tabs, TabsList, TabsTrigger } from '~/components/ui';
 import { cn, cardStyle } from '~/utils/';
-import type { TModelSelectProps } from '~/common';
 import store from '~/store';
 
 export default function BingAI({

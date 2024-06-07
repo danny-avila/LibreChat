@@ -1,8 +1,8 @@
 import { useEffect, useMemo } from 'react';
-import { Combobox } from '~/components/ui';
 import { isAssistantsEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import type { AssistantsEndpoint } from 'librechat-data-provider';
 import type { SwitcherProps, AssistantListItem } from '~/common';
+import { Combobox } from '~/components/ui';
 import { useSetIndexOptions, useSelectAssistant, useLocalize, useAssistantListMap } from '~/hooks';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
 import Icon from '~/components/Endpoints/Icon';

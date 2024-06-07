@@ -1,5 +1,7 @@
 import axios from 'axios';
 import { OpenAPIV3 } from 'openapi-types';
+import type { FlowchartSchema } from './openapiSpecs';
+import type { ParametersSchema } from '../src/actions';
 import {
   resolveRef,
   ActionRequest,
@@ -9,8 +11,6 @@ import {
 } from '../src/actions';
 import { getWeatherOpenapiSpec, whimsicalOpenapiSpec, scholarAIOpenapiSpec } from './openapiSpecs';
 import { AuthorizationTypeEnum, AuthTypeEnum } from '../src/types/assistants';
-import type { FlowchartSchema } from './openapiSpecs';
-import type { ParametersSchema } from '../src/actions';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;

@@ -1,9 +1,9 @@
 import { Suspense } from 'react';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
-import { UnfinishedMessage } from './MessageContent';
 import { DelayedRender } from '~/components/ui';
-import MarkdownLite from './MarkdownLite';
 import { cn } from '~/utils';
+import { UnfinishedMessage } from './MessageContent';
+import MarkdownLite from './MarkdownLite';
 import Part from './Part';
 
 const SearchContent = ({ message }: { message: TMessage }) => {

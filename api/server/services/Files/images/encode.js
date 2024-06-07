@@ -1,7 +1,7 @@
 const axios = require('axios');
 const { EModelEndpoint, FileSources, VisionModes } = require('librechat-data-provider');
-const { getStrategyFunctions } = require('../strategies');
 const { logger } = require('~/config');
+const { getStrategyFunctions } = require('../strategies');
 
 /**
  * Fetches an image from a URL and returns its base64 representation.

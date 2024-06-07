@@ -3,16 +3,16 @@ import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { useGetMessagesByConvoId } from 'librechat-data-provider/react-query';
 import { ChatContext, useFileMapContext } from '~/Providers';
-import MessagesView from './Messages/MessagesView';
 import { useChatHelpers, useSSE } from '~/hooks';
 import { Spinner } from '~/components/svg';
+import { buildTree } from '~/utils';
+import store from '~/store';
+import MessagesView from './Messages/MessagesView';
 import Presentation from './Presentation';
 import ChatForm from './Input/ChatForm';
-import { buildTree } from '~/utils';
 import Landing from './Landing';
 import Header from './Header';
 import Footer from './Footer';
-import store from '~/store';
 
 function ChatView({ index = 0 }: { index?: number }) {
   const { conversationId } = useParams();

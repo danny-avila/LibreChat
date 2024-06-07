@@ -1,8 +1,8 @@
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
-const { silentExit } = require('./helpers');
 const Balance = require('~/models/Balance');
 const User = require('~/models/User');
+const { silentExit } = require('./helpers');
 const connect = require('./connect');
 
 (async () => {

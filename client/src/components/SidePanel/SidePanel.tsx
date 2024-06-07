@@ -1,6 +1,6 @@
+import { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react';
 import throttle from 'lodash/throttle';
 import { getConfigDefaults } from 'librechat-data-provider';
-import { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react';
 import {
   useGetEndpointsQuery,
   useGetStartupConfig,
@@ -14,8 +14,8 @@ import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
 import { useMediaQuery, useLocalStorage } from '~/hooks';
 import NavToggle from '~/components/Nav/NavToggle';
 import { useChatContext } from '~/Providers';
-import Switcher from './Switcher';
 import { cn } from '~/utils';
+import Switcher from './Switcher';
 import Nav from './Nav';
 
 interface SidePanelProps {

@@ -1,13 +1,13 @@
 import { useRecoilValue } from 'recoil';
-import { useAuthContext, useLocalize } from '~/hooks';
 import type { TMessageProps } from '~/common';
+import { useAuthContext, useLocalize } from '~/hooks';
 import MinimalHoverButtons from '~/components/Chat/Messages/MinimalHoverButtons';
 import Icon from '~/components/Chat/Messages/MessageIcon';
+import { cn } from '~/utils';
+import store from '~/store';
 import SearchContent from './Content/SearchContent';
 import SearchButtons from './SearchButtons';
 import SubRow from './SubRow';
-import { cn } from '~/utils';
-import store from '~/store';
 
 export default function Message({ message }: Pick<TMessageProps, 'message'>) {
   const UsernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);

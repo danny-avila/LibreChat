@@ -5,12 +5,12 @@ import type { ColumnDef } from '@tanstack/react-table';
 import type { TFile } from 'librechat-data-provider';
 import ImagePreview from '~/components/Chat/Input/Files/ImagePreview';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
-import { SortFilterHeader } from './SortFilterHeader';
 import { OpenAIMinimalIcon } from '~/components/svg';
 import { AzureMinimalIcon } from '~/components/svg';
 import { Button, Checkbox } from '~/components/ui';
 import { formatDate, getFileType } from '~/utils';
 import useLocalize from '~/hooks/useLocalize';
+import { SortFilterHeader } from './SortFilterHeader';
 
 const contextMap = {
   [FileContext.avatar]: 'com_ui_avatar',
