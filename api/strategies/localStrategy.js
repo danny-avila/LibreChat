@@ -1,24 +1,13 @@
 const { errorsToString } = require('librechat-data-provider');
 const { Strategy: PassportLocalStrategy } = require('passport-local');
+const { findUser, comparePassword } = require('~/models');
 const { loginSchema } = require('./validators');
 const { isEnabled } = require('~/server/utils');
-const { findUser } = require('~/models');
 const logger = require('~/utils/logger');
 
 async function validateLoginRequest(req) {
   const { error } = loginSchema.safeParse(req.body);
   return error ? errorsToString(error.errors) : null;
-}
-
-async function comparePassword(user, password) {
-  return new Promise((resolve, reject) => {
-    user.comparePassword(password, function (err, isMatch) {
-      if (err) {
-        return reject(err);
-      }
-      resolve(isMatch);
-    });
-  });
 }
 
 async function passportLogin(req, email, password, done) {

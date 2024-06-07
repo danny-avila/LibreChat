@@ -1,14 +1,20 @@
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { errorsToString } = require('librechat-data-provider');
-const { countUsers, createUser, findUser, updateUser } = require('~/models/userMethods');
+const {
+  countUsers,
+  createUser,
+  findUser,
+  updateUser,
+  generateToken,
+  getUserById,
+} = require('~/models/userMethods');
 const { sendEmail, checkEmailConfig } = require('~/server/utils');
 const { registerSchema } = require('~/strategies/validators');
 const isDomainAllowed = require('./isDomainAllowed');
 const Token = require('~/models/schema/tokenSchema');
 const Session = require('~/models/Session');
 const { logger } = require('~/config');
-const User = require('~/models/User');
 
 const domains = {
   client: process.env.DOMAIN_CLIENT,
@@ -298,9 +304,8 @@ const resetPassword = async (userId, token, password) => {
  */
 const setAuthTokens = async (userId, res, sessionId = null) => {
   try {
-    // TODO: replace direct model access with a service
-    const user = await User.findOne({ _id: userId });
-    const token = await user.generateToken();
+    const user = await getUserById(userId);
+    const token = await generateToken(user);
 
     let session;
     let refreshTokenExpires;

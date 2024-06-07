@@ -7,8 +7,9 @@ const {
   deleteMessages,
 } = require('./Message');
 const {
+  comparePassword,
   deleteUserById,
-  hashPassword,
+  generateToken,
   getUserById,
   updateUser,
   createUser,
@@ -37,8 +38,9 @@ module.exports = {
   Session,
   Balance,
 
+  comparePassword,
   deleteUserById,
-  hashPassword,
+  generateToken,
   getUserById,
   countUsers,
   createUser,

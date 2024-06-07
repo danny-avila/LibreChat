@@ -1,19 +1,6 @@
 const bcrypt = require('bcryptjs');
+const signPayload = require('~/server/services/signPayload');
 const User = require('./User');
-
-const hashPassword = async (password) => {
-  const hashedPassword = await new Promise((resolve, reject) => {
-    bcrypt.hash(password, 10, function (err, hash) {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(hash);
-      }
-    });
-  });
-
-  return hashedPassword;
-};
 
 /**
  * Retrieve a user by ID and convert the found user document to a plain object.
@@ -123,9 +110,58 @@ const deleteUserById = async function (userId) {
   }
 };
 
+const { SESSION_EXPIRY } = process.env ?? {};
+const expires = eval(SESSION_EXPIRY) ?? 1000 * 60 * 15;
+
+/**
+ * Generates a JWT token for a given user.
+ *
+ * @param {MongoUser} user - ID of the user for whom the token is being generated.
+ * @returns {Promise<string>} A promise that resolves to a JWT token.
+ */
+const generateToken = async (user) => {
+  if (!user) {
+    throw new Error('No user provided');
+  }
+
+  return await signPayload({
+    payload: {
+      id: user._id,
+      username: user.username,
+      provider: user.provider,
+      email: user.email,
+    },
+    secret: process.env.JWT_SECRET,
+    expirationTime: expires / 1000,
+  });
+};
+
+/**
+ * Compares the provided password with the user's password.
+ *
+ * @param {MongoUser} user - the user to compare password for.
+ * @param {string} candidatePassword - The password to test against the user's password.
+ * @returns {Promise<boolean>} A promise that resolves to a boolean indicating if the password matches.
+ */
+const comparePassword = async (user, candidatePassword) => {
+  if (!user) {
+    throw new Error('No user provided');
+  }
+
+  return new Promise((resolve, reject) => {
+    bcrypt.compare(candidatePassword, user.password, (err, isMatch) => {
+      if (err) {
+        reject(err);
+      }
+      resolve(isMatch);
+    });
+  });
+};
+
 module.exports = {
+  comparePassword,
   deleteUserById,
-  hashPassword,
+  generateToken,
   getUserById,
   countUsers,
   createUser,
