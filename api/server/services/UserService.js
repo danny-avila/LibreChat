@@ -16,11 +16,12 @@ const { logger } = require('~/config');
  */
 const updateUserPluginsService = async (user, pluginKey, action) => {
   try {
+    const userPlugins = user.plugins || [];
     if (action === 'install') {
-      return await updateUser(user._id, { plugins: [...user.plugins, pluginKey] });
+      return await updateUser(user._id, { plugins: [...userPlugins, pluginKey] });
     } else if (action === 'uninstall') {
       return await updateUser(user._id, {
-        plugins: user.plugins.filter((plugin) => plugin !== pluginKey),
+        plugins: userPlugins.filter((plugin) => plugin !== pluginKey),
       });
     }
   } catch (err) {
