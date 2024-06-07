@@ -1,7 +1,6 @@
 const crypto = require('crypto');
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
-const { Session, getUserById, createUser } = require('~/models');
 const {
   verifyEmail,
   registerUser,
@@ -9,25 +8,14 @@ const {
   setAuthTokens,
   requestPasswordReset,
 } = require('~/server/services/AuthService');
+const { Session, getUserById } = require('~/models');
 const { logger } = require('~/config');
 
 const registrationController = async (req, res) => {
   try {
     const response = await registerUser(req.body);
-    if (response.status === 200) {
-      const { status, user } = response;
-      let newUser = await getUserById(user._id, 'email');
-      if (!newUser) {
-        newUser = await createUser(user);
-      }
-
-      res.status(status).send({
-        message: 'Registration successful. Please check your email to verify your email address.',
-      });
-    } else {
-      const { status, message } = response;
-      res.status(status).send({ message });
-    }
+    const { status, message } = response;
+    res.status(status).send({ message });
   } catch (err) {
     logger.error('[registrationController]', err);
     return res.status(500).json({ message: err.message });

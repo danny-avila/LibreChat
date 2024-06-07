@@ -148,14 +148,16 @@ async function setupOpenId() {
           );
 
           if (!user) {
-            user = await createUser({
+            user = {
               provider: 'openid',
               openidId: userinfo.sub,
               username,
               email: userinfo.email || '',
               emailVerified: userinfo.email_verified || false,
               name: fullName,
-            });
+            };
+            const userId = await createUser();
+            user._id = userId;
           } else {
             user.provider = 'openid';
             user.openidId = userinfo.sub;

@@ -45,6 +45,11 @@ const logoutUser = async (userId, refreshToken) => {
   }
 };
 
+/**
+ * Send Verification Email
+ * @param {Partial<MongoUser> & { _id: ObjectId, email: string, name: string}} user
+ * @returns {Promise<void>}
+ */
 const sendVerificationEmail = async (user) => {
   let verifyToken = crypto.randomBytes(32).toString('hex');
   const hash = bcrypt.hashSync(verifyToken, 10);
@@ -162,11 +167,15 @@ const registerUser = async (user) => {
     };
 
     const emailEnabled = checkEmailConfig();
-    const newUser = await createUser(newUserData, emailEnabled === false);
+    const newUserId = await createUser(newUserData, false);
     if (emailEnabled) {
-      await sendVerificationEmail(newUser);
+      await sendVerificationEmail({
+        _id: newUserId,
+        email,
+        name,
+      });
     } else {
-      await updateUser(newUser._id, { emailVerified: true });
+      await updateUser(newUserId, { emailVerified: true });
     }
 
     return { status: 200, message: genericMessage };

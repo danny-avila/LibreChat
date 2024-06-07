@@ -55,7 +55,11 @@ const findUser = async function (searchCriteria, fieldsToSelect = null) {
  * @returns {Promise<MongoUser>} The updated user document as a plain object, or `null` if no user is found.
  */
 const updateUser = async function (userId, updateData) {
-  return await User.findByIdAndUpdate(userId, updateData, {
+  const updateOperation = {
+    $set: updateData,
+    $unset: { expiresAt: '' }, // Remove the expiresAt field to prevent TTL
+  };
+  return await User.findByIdAndUpdate(userId, updateOperation, {
     new: true,
     runValidators: true,
   }).lean();
@@ -65,7 +69,7 @@ const updateUser = async function (userId, updateData) {
  * Creates a new user, optionally with a TTL of 1 week.
  * @param {MongoUser} data - The user data to be created, must contain user_id.
  * @param {boolean} [disableTTL=true] - Whether to disable the TTL. Defaults to `true`.
- * @returns {Promise<MongoUser>} A promise that resolves to the created user document.
+ * @returns {Promise<string>} A promise that resolves to the created user document ID.
  * @throws {Error} If a user with the same user_id already exists.
  */
 const createUser = async (data, disableTTL = true) => {
@@ -80,7 +84,7 @@ const createUser = async (data, disableTTL = true) => {
 
   try {
     const result = await User.collection.insertOne(userData);
-    return result.ops[0];
+    return result.insertedId;
   } catch (error) {
     if (error.code === 11000) {
       // Duplicate key error code
