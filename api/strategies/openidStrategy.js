@@ -165,7 +165,7 @@ async function setupOpenId() {
             user.name = fullName;
           }
 
-          if (userinfo.picture && !user.avatar.includes('manual=true')) {
+          if (userinfo.picture && !user.avatar?.includes('manual=true')) {
             /** @type {string | undefined} */
             const imageUrl = userinfo.picture;
 
@@ -179,8 +179,8 @@ async function setupOpenId() {
             }
 
             const imageBuffer = await downloadImage(imageUrl, tokenset.access_token);
-            const { saveBuffer } = getStrategyFunctions(process.env.CDN_PROVIDER);
             if (imageBuffer) {
+              const { saveBuffer } = getStrategyFunctions(process.env.CDN_PROVIDER);
               const imagePath = await saveBuffer({
                 fileName,
                 userId: user._id.toString(),
