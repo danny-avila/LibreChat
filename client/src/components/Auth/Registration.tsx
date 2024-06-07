@@ -21,17 +21,22 @@ const Registration: React.FC = () => {
   const password = watch('password');
 
   const [errorMessage, setErrorMessage] = useState<string>('');
-  const [countdown, setCountdown] = useState<number>(5);
+  const [countdown, setCountdown] = useState<number>(3);
 
   const registerUser = useRegisterUserMutation({
     onSuccess: () => {
+      setCountdown(3);
       const timer = setInterval(() => {
-        setCountdown((prevCountdown) => prevCountdown - 1);
+        setCountdown((prevCountdown) => {
+          if (prevCountdown <= 1) {
+            clearInterval(timer);
+            navigate('/c/new', { replace: true });
+            return 0;
+          } else {
+            return prevCountdown - 1;
+          }
+        });
       }, 1000);
-      setTimeout(() => {
-        clearInterval(timer);
-        navigate('/login', { replace: true });
-      }, 5000);
     },
     onError: (error: unknown) => {
       if ((error as TError).response?.data?.message) {
