@@ -17,7 +17,7 @@ const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolea
   const localize = useLocalize();
   const { user, logout } = useAuthContext();
   const { mutate: deleteUser, isLoading: isDeleting } = useDeleteUserMutation({
-    onSuccess: () => logout(),
+    onMutate: () => logout(),
   });
 
   const [isDialogOpen, setDialogOpen] = useState<boolean>(false);
@@ -76,7 +76,6 @@ const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolea
             <ul>
               <li>{localize('com_nav_delete_warning')}</li>
               <li>{localize('com_nav_delete_data_info')}</li>
-              <li>{localize('com_nav_delete_help_center')}</li>
             </ul>
           </div>
           <div className="flex-col items-center justify-center">
