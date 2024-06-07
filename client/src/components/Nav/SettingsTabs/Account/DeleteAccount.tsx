@@ -17,7 +17,7 @@ const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolea
   const localize = useLocalize();
   const { user, logout } = useAuthContext();
   const { mutate: deleteUser, isLoading: isDeleting } = useDeleteUserMutation({
-    onSuccess: () => logout(),
+    onMutate: () => logout(),
   });
 
   const [isDialogOpen, setDialogOpen] = useState<boolean>(false);
