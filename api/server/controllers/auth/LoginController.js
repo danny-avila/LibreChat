@@ -5,7 +5,7 @@ const { logger } = require('~/config');
 
 const loginController = async (req, res) => {
   try {
-    const user = await getUserById(req.user._id);
+    const user = await getUserById(req.user._id, '-password -__v');
 
     // If user doesn't exist, return error
     if (!user) {
