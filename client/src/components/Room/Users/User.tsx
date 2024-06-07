@@ -40,7 +40,9 @@ export default function User({
       {user.cryptocurrency &&
         user.cryptocurrency.length !== 0 &&
         !isCollapsed &&
+        you?.username !== 'guest-user' &&
         you?.id !== user?._id && <TipModal user={user} />}
+
       <TipModal user={user} isKarmaOnly={true} OpenButton={<div className="flex gap-3">
         {!isCollapsed && user.name}
       </div>} />

@@ -48,7 +48,7 @@ const createNewRoom = async (req, res) => {
       createdAt,
     });
 
-    const result = await getRoom(req.user._id, newConvo.conversationId);
+    const result = await getRoom(newConvo.conversationId);
 
     return res.json(result);
   } catch (error) {

@@ -182,7 +182,7 @@ export default function TipModal({
 
   return (
     <Dialog onOpenChange={(e) => {
-      if (you?.id === user._id) {
+      if (you?.id === user._id || you?.username === 'guest-user') {
         setOpen(false);
         return;
       }
