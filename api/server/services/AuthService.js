@@ -297,7 +297,7 @@ const resetPassword = async (userId, token, password) => {
 /**
  * Set Auth Tokens
  *
- * @param {String} userId
+ * @param {String | ObjectId} userId
  * @param {Object} res
  * @param {String} sessionId
  * @returns
