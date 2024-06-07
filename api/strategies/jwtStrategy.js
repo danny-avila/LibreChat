@@ -11,7 +11,7 @@ const jwtLogin = async () =>
     },
     async (payload, done) => {
       try {
-        const user = await getUserById(payload?.id);
+        const user = await getUserById(payload?.id, '-password -__v');
         user.id = user._id.toString();
         if (user) {
           done(null, user);

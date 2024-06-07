@@ -1,9 +1,12 @@
 const { errorsToString } = require('librechat-data-provider');
 const { Strategy: PassportLocalStrategy } = require('passport-local');
-const { findUser, comparePassword } = require('~/models');
+const { findUser, comparePassword, updateUser } = require('~/models');
+const { isEnabled, checkEmailConfig } = require('~/server/utils');
 const { loginSchema } = require('./validators');
-const { isEnabled } = require('~/server/utils');
 const logger = require('~/utils/logger');
+
+// Unix timestamp for 2024-06-07 15:20:18 Eastern Time
+const verificationEnabledTimestamp = 1717788018;
 
 async function validateLoginRequest(req) {
   const { error } = loginSchema.safeParse(req.body);
@@ -31,6 +34,18 @@ async function passportLogin(req, email, password, done) {
       logError('Passport Local Strategy - Password does not match', { isMatch });
       logger.error(`[Login] [Login failed] [Username: ${email}] [Request-IP: ${req.ip}]`);
       return done(null, false, { message: 'Incorrect password.' });
+    }
+
+    const emailEnabled = checkEmailConfig();
+    const userCreatedAtTimestamp = Math.floor(new Date(user.createdAt).getTime() / 1000);
+
+    if (
+      !emailEnabled &&
+      !user.emailVerified &&
+      userCreatedAtTimestamp < verificationEnabledTimestamp
+    ) {
+      await updateUser(user._id, { emailVerified: true });
+      user.emailVerified = true;
     }
 
     if (!user.emailVerified && !isEnabled(process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN)) {
