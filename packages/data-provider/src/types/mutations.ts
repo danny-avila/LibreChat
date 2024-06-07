@@ -110,4 +110,11 @@ export type UpdateSharedLinkOptions = MutationOptions<
 >;
 export type DeleteSharedLinkOptions = MutationOptions<types.TSharedLink, { shareId: string }>;
 
+/* Auth mutations */
 export type VerifyEmailOptions = MutationOptions<types.VerifyEmailResponse, types.TVerifyEmail>;
+export type RegistrationOptions = MutationOptions<
+  types.TRegisterUserResponse,
+  types.TRegisterUser,
+  unknown,
+  types.TError
+>;

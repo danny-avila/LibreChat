@@ -11,44 +11,34 @@ const Registration: React.FC = () => {
   const navigate = useNavigate();
   const localize = useLocalize();
   const { startupConfig, startupConfigError, isFetching } = useOutletContext<TLoginLayoutContext>();
-  const [registrationSuccess, setRegistrationSuccess] = useState<boolean>(false);
 
   const {
-    register,
     watch,
+    register,
     handleSubmit,
     formState: { errors },
   } = useForm<TRegisterUser>({ mode: 'onChange' });
-
-  const [error, setError] = useState<boolean>(false);
-  const [errorMessage, setErrorMessage] = useState<string>('');
-  const [countdown, setCountdown] = useState<number>(5);
-  const registerUser = useRegisterUserMutation();
   const password = watch('password');
 
-  const onRegisterUserFormSubmit = async (data: TRegisterUser) => {
-    try {
-      await registerUser.mutateAsync(data);
-      if (startupConfig?.emailEnabled) {
-        setRegistrationSuccess(true);
+  const [errorMessage, setErrorMessage] = useState<string>('');
+  const [countdown, setCountdown] = useState<number>(5);
 
-        const timer = setInterval(() => {
-          setCountdown((prevCountdown) => prevCountdown - 1);
-        }, 1000);
-        setTimeout(() => {
-          clearInterval(timer);
-          navigate('/login', { replace: true });
-        }, 5000);
-      } else {
-        navigate('/c/new');
-      }
-    } catch (error) {
-      setError(true);
+  const registerUser = useRegisterUserMutation({
+    onSuccess: () => {
+      const timer = setInterval(() => {
+        setCountdown((prevCountdown) => prevCountdown - 1);
+      }, 1000);
+      setTimeout(() => {
+        clearInterval(timer);
+        navigate('/login', { replace: true });
+      }, 5000);
+    },
+    onError: (error: unknown) => {
       if ((error as TError).response?.data?.message) {
         setErrorMessage((error as TError).response?.data?.message ?? '');
       }
-    }
-  };
+    },
+  });
 
   useEffect(() => {
     if (startupConfig?.registrationEnabled === false) {
@@ -90,17 +80,21 @@ const Registration: React.FC = () => {
 
   return (
     <>
-      {error && (
+      {errorMessage && (
         <ErrorMessage>
           {localize('com_auth_error_create')} {errorMessage}
         </ErrorMessage>
       )}
-      {registrationSuccess && countdown > 0 && (
+      {countdown > 0 && (
         <div
           className="rounded-md border border-green-500 bg-green-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200"
           role="alert"
         >
-          {localize('com_auth_registration_success') +
+          {localize(
+            startupConfig?.emailEnabled
+              ? 'com_auth_registration_success_generic'
+              : 'com_auth_registration_success_insecure',
+          ) +
             ' ' +
             localize('com_auth_email_verification_redirecting', countdown.toString())}
         </div>
@@ -111,7 +105,7 @@ const Registration: React.FC = () => {
             className="mt-6"
             aria-label="Registration form"
             method="POST"
-            onSubmit={handleSubmit(onRegisterUserFormSubmit)}
+            onSubmit={handleSubmit((data: TRegisterUser) => registerUser.mutate(data))}
           >
             {renderInput('name', 'com_auth_full_name', 'text', {
               required: localize('com_auth_name_required'),

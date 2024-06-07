@@ -290,8 +290,8 @@ export default {
   com_auth_username_max_length: 'Username must be less than 20 characters',
   com_auth_already_have_account: 'Already have an account?',
   com_auth_login: 'Login',
-  com_auth_registration_success:
-    'Registration successful. Please check your email to verify your email address.',
+  com_auth_registration_success_insecure: 'Registration successful.',
+  com_auth_registration_success_generic: 'Please check your email to verify your email address.',
   com_auth_reset_password: 'Reset your password',
   com_auth_click: 'Click',
   com_auth_here: 'HERE',

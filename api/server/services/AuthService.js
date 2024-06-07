@@ -100,10 +100,9 @@ const verifyEmail = async (req) => {
 };
 
 /**
- * Register a new user
- *
+ * Register a new user.
  * @param {MongoUser} user <email, password, name, username>
- * @returns
+ * @returns {Promise<{status: number, message: string, user?: MongoUser}>}
  */
 const registerUser = async (user) => {
   const { error } = registerSchema.safeParse(user);
@@ -119,6 +118,7 @@ const registerUser = async (user) => {
   }
 
   const { email, password, name, username } = user;
+  const genericMessage = 'Please check your email to verify your email address.';
 
   try {
     const existingUser = await getUser({ email }, 'email _id');
@@ -132,13 +132,12 @@ const registerUser = async (user) => {
 
       // Sleep for 1 second
       await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      // TODO: We should change the process to always email and be generic is signup works or fails (user enum)
-      return { status: 500, message: 'Something went wrong' };
+      return { status: 200, message: genericMessage };
     }
 
     if (!(await isDomainAllowed(email))) {
-      const errorMessage = 'Registration from this domain is not allowed.';
+      const errorMessage =
+        'The email address provided cannot be used. Please use a different email address.';
       logger.error(`[registerUser] [Registration not allowed] [Email: ${user.email}]`);
       return { status: 403, message: errorMessage };
     }
@@ -165,9 +164,10 @@ const registerUser = async (user) => {
       await updateUser(newUser._id, { emailVerified: true });
     }
 
-    return { status: 200, user: newUser };
+    return { status: 200, message: genericMessage };
   } catch (err) {
-    return { status: 500, message: err?.message || 'Something went wrong' };
+    logger.error('[registerUser] Error in registering user:', err);
+    return { status: 500, message: 'Something went wrong' };
   }
 };
 

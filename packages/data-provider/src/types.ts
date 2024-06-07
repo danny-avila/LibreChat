@@ -215,6 +215,10 @@ export type TSearchMessage = object;
 
 export type TSearchMessageTreeNode = object;
 
+export type TRegisterUserResponse = {
+  message: string;
+};
+
 export type TRegisterUser = {
   name: string;
   email: string;
