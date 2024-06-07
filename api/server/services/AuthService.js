@@ -102,7 +102,7 @@ const verifyEmail = async (req) => {
 /**
  * Register a new user
  *
- * @param {Object} user <email, password, name, username>
+ * @param {MongoUser} user <email, password, name, username>
  * @returns
  */
 const registerUser = async (user) => {

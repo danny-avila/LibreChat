@@ -20,7 +20,7 @@ const hashPassword = async (password) => {
  *
  * @param {string} userId - The ID of the user to find and return as a plain object.
  * @param {string|string[]} [fieldsToSelect] - The fields to include or exclude in the returned document.
- * @returns {Promise<Object>} A plain object representing the user document, or `null` if no user is found.
+ * @returns {Promise<MongoUser>} A plain object representing the user document, or `null` if no user is found.
  */
 const getUser = async function (userId, fieldsToSelect = null) {
   const query = User.findById(userId);
