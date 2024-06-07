@@ -563,7 +563,6 @@ export default {
   com_nav_delete_account_confirm_placeholder: 'To proceed, type "DELETE" in the input field below',
   com_nav_delete_warning: 'WARNING: This will permanently delete your account.',
   com_nav_delete_data_info: 'All your data will be deleted.',
-  com_nav_delete_help_center: 'For more information, please visit our Help Center.',
   com_nav_conversation_mode: 'Conversation Mode',
   com_nav_auto_send_text: 'Auto send text (after 3 sec)',
   com_nav_auto_transcribe_audio: 'Auto transcribe audio',
