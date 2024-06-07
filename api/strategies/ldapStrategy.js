@@ -1,5 +1,5 @@
 const LdapStrategy = require('passport-ldapauth');
-const { findUser, createUser } = require('~/models/userMethods');
+const { findUser, createUser, updateUser } = require('~/models/userMethods');
 const fs = require('fs');
 
 const ldapOptions = {
@@ -49,6 +49,8 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
         emailVerified: true,
         name: fullName,
       };
+      const userId = await createUser(user);
+      user._id = userId;
     } else {
       user.provider = 'ldap';
       user.ldapId = userinfo.uid;
@@ -56,7 +58,7 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
       user.name = fullName;
     }
 
-    await createUser(user);
+    user = await updateUser(user._id, user);
 
     done(null, user);
   } catch (err) {
