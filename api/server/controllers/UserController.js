@@ -1,11 +1,11 @@
 const {
-  User,
   Session,
   Balance,
   deleteFiles,
   deleteConvos,
   deletePresets,
   deleteMessages,
+  deleteUserById,
 } = require('~/models');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
 const { updateUserPluginsService, deleteUserKey } = require('~/server/services/UserService');
@@ -76,7 +76,7 @@ const deleteUserController = async (req, res) => {
     await deletePresets(user.id); // delete user presets
     await deleteConvos(user.id); // delete user convos
     await deleteUserPluginAuth(user.id, null, true); // delete user plugin auth
-    await User.deleteOne({ _id: user.id }); // delete user
+    await deleteUserById(user.id); // delete user
     await deleteFiles(null, user.id); // delete user files
     logger.info(`User deleted account. Email: ${user.email} ID: ${user.id}`);
     res.status(200).send({ message: 'User deleted' });

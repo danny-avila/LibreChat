@@ -298,6 +298,7 @@ const resetPassword = async (userId, token, password) => {
  */
 const setAuthTokens = async (userId, res, sessionId = null) => {
   try {
+    // TODO: replace direct model access with a service
     const user = await User.findOne({ _id: userId });
     const token = await user.generateToken();
 

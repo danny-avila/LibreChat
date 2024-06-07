@@ -1,17 +1,13 @@
 const { errorsToString } = require('librechat-data-provider');
 const { Strategy: PassportLocalStrategy } = require('passport-local');
 const { loginSchema } = require('./validators');
-const logger = require('~/utils/logger');
-const User = require('~/models/User');
 const { isEnabled } = require('~/server/utils');
+const { findUser } = require('~/models');
+const logger = require('~/utils/logger');
 
 async function validateLoginRequest(req) {
   const { error } = loginSchema.safeParse(req.body);
   return error ? errorsToString(error.errors) : null;
-}
-
-async function findUserByEmail(email) {
-  return User.findOne({ email: email.trim() });
 }
 
 async function comparePassword(user, password) {
@@ -34,7 +30,7 @@ async function passportLogin(req, email, password, done) {
       return done(null, false, { message: validationError });
     }
 
-    const user = await findUserByEmail(email);
+    const user = await findUser({ email: email.trim() });
     if (!user) {
       logError('Passport Local Strategy - User Not Found', { email });
       logger.error(`[Login] [Login failed] [Username: ${email}] [Request-IP: ${req.ip}]`);

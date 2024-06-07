@@ -105,7 +105,26 @@ const countUsers = async function (filter = {}) {
   return await User.countDocuments(filter);
 };
 
+/**
+ * Delete a user by their unique ID.
+ *
+ * @param {string} userId - The ID of the user to delete.
+ * @returns {Promise<{ deletedCount: number }>} An object indicating the number of deleted documents.
+ */
+const deleteUserById = async function (userId) {
+  try {
+    const result = await User.deleteOne({ _id: userId });
+    if (result.deletedCount === 0) {
+      return { deletedCount: 0, message: 'No user found with that ID.' };
+    }
+    return { deletedCount: result.deletedCount, message: 'User was deleted successfully.' };
+  } catch (error) {
+    throw new Error('Error deleting user: ' + error.message);
+  }
+};
+
 module.exports = {
+  deleteUserById,
   hashPassword,
   getUserById,
   countUsers,
