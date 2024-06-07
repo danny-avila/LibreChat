@@ -12,6 +12,7 @@ const jwtLogin = async () =>
     async (payload, done) => {
       try {
         const user = await getUserById(payload?.id);
+        user.id = user._id.toString();
         if (user) {
           done(null, user);
         } else {
