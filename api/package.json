@@ -12,6 +12,7 @@
     "list-balances": "node ./list-balances.js",
     "user-stats": "node ./user-stats.js",
     "create-user": "node ./create-user.js",
+    "invite-user": "node ./invite-user.js",
     "ban-user": "node ./ban-user.js",
     "delete-user": "node ./delete-user.js"
   },
