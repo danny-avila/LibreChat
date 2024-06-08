@@ -1,13 +1,17 @@
 const { getInvite } = require('~/models/inviteUser');
 
 function checkInviteUser(req, res, next) {
-  const token = req.query.token;
-  if (!token) {
+  const token = req.body.token;
+
+  if (!token || token === 'undefined') {
+    console.log('No token provided');
     next();
+    return;
   }
 
   getInvite(token)
     .then((invite) => {
+      console.log('Invite:', invite);
       if (invite) {
         req.invite = invite;
         next();

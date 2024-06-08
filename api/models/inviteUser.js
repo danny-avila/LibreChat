@@ -25,8 +25,10 @@ module.exports = {
     try {
       let token = crypto.randomBytes(32).toString('hex');
       const hash = bcrypt.hashSync(token, 10);
+      const encodedToken = encodeURIComponent(token);
       const invite = new InviteUser({ email, token: hash, createdAt: Date.now() });
-      return await invite.save();
+      await invite.save();
+      return encodedToken;
     } catch (error) {
       logger.error('[createInvite] Error creating invite', error);
       return { message: 'Error creating invite' };
@@ -40,10 +42,12 @@ module.exports = {
    * @returns {Promise<Object>} A promise that resolves to the retrieved invite document
    * @throws {Error} If there is an error retrieving the invite or if the invite does not exist
    */
-  getInvite: async (token) => {
+  getInvite: async (encodedToken) => {
     try {
-      const invite = await InviteUser.findOne().lean().exec();
-      if (!invite || !bcrypt.compareSync(token, invite.token)) {
+      const token = decodeURIComponent(encodedToken);
+      const hash = bcrypt.hashSync(token, 10);
+      const invite = await InviteUser.findOne({ token: hash }).lean().exec();
+      if (!invite) {
         throw new Error('Invite not found');
       }
       return invite;

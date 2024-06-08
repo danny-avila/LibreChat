@@ -1,6 +1,6 @@
 import { useForm } from 'react-hook-form';
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useOutletContext } from 'react-router-dom';
+import React, { useState } from 'react';
+import { useNavigate, useOutletContext, useLocation } from 'react-router-dom';
 import { useRegisterUserMutation } from 'librechat-data-provider/react-query';
 import type { TRegisterUser, TError } from 'librechat-data-provider';
 import type { TLoginLayoutContext } from '~/common';
@@ -22,6 +22,10 @@ const Registration: React.FC = () => {
 
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [countdown, setCountdown] = useState<number>(3);
+
+  const location = useLocation();
+  const queryParams = new URLSearchParams(location.search);
+  const token = queryParams.get('token');
 
   const registerUser = useRegisterUserMutation({
     onSuccess: () => {
@@ -104,7 +108,9 @@ const Registration: React.FC = () => {
             className="mt-6"
             aria-label="Registration form"
             method="POST"
-            onSubmit={handleSubmit((data: TRegisterUser) => registerUser.mutate(data))}
+            onSubmit={handleSubmit((data: TRegisterUser) =>
+              registerUser.mutate({ ...data, token }),
+            )}
           >
             {renderInput('name', 'com_auth_full_name', 'text', {
               required: localize('com_auth_name_required'),

@@ -36,8 +36,8 @@ const { createInvite } = require('~/models/inviteUser');
     silentExit(1);
   }
 
-  const invite = await createInvite(email);
-  const inviteLink = `${process.env.DOMAIN_CLIENT}/register?token=${invite.token}`;
+  const token = await createInvite(email);
+  const inviteLink = `${process.env.DOMAIN_CLIENT}/register?token=${token}`;
 
   // Send the invitation email
   let result;
@@ -50,20 +50,22 @@ const { createInvite } = require('~/models/inviteUser');
   }
 
   try {
-    result = await sendEmail(
-      email,
-      `Invite to join ${appName}!`,
-      {
+    result = await sendEmail({
+      email: email,
+      subject: `Invite to join ${appName}!`,
+      payload: {
         appName: appName,
         inviteLink: inviteLink,
         year: new Date().getFullYear(),
       },
-      'inviteUser.handlebars',
-    );
+      template: 'inviteUser.handlebars',
+    });
   } catch (error) {
     console.error('Error: ' + error.message);
     silentExit(1);
   }
+
+  console.log('Email sent:', result);
 
   // Check the result
   if (!result || result.status !== 200) {
