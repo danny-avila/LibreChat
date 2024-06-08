@@ -56,7 +56,7 @@ const updateUser = async function (userId, updateData) {
  * Creates a new user, optionally with a TTL of 1 week.
  * @param {MongoUser} data - The user data to be created, must contain user_id.
  * @param {boolean} [disableTTL=true] - Whether to disable the TTL. Defaults to `true`.
- * @returns {Promise<string>} A promise that resolves to the created user document ID.
+ * @returns {Promise<ObjectId>} A promise that resolves to the created user document ID.
  * @throws {Error} If a user with the same user_id already exists.
  */
 const createUser = async (data, disableTTL = true) => {
