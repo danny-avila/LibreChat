@@ -1,6 +1,10 @@
 const { isEnabled } = require('~/server/utils');
 
 function validateRegistration(req, res, next) {
+  if (req.invite) {
+    return next();
+  }
+
   if (isEnabled(process.env.ALLOW_REGISTRATION)) {
     next();
   } else {

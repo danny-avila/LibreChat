@@ -1,16 +1,16 @@
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
-const { registerUser } = require('~/server/services/AuthService');
 const { askQuestion, silentExit } = require('./helpers');
 const User = require('~/models/User');
 const connect = require('./connect');
 const { sendEmail, checkEmailConfig } = require('~/server/utils');
+const { createInvite } = require('~/models/inviteUser');
 
 (async () => {
   await connect();
 
   // Check if email service is enabled
-  if (!checkEmailConfig.isEnabled()) {
+  if (!checkEmailConfig()) {
     console.red('Error: Email service is not enabled!');
     silentExit(1);
   }
@@ -36,20 +36,38 @@ const { sendEmail, checkEmailConfig } = require('~/server/utils');
     silentExit(1);
   }
 
-  // Create an invitation and send an email
-  const invitation = { email };
+  const invite = await createInvite(email);
+  const inviteLink = `${process.env.DOMAIN_CLIENT}/register?token=${invite.token}`;
+
+  // Send the invitation email
   let result;
+
+  const appName = process.env.APP_TITLE || 'LibreChat';
+
+  if (!checkEmailConfig()) {
+    console.green('Send this link to the user:', inviteLink);
+    silentExit(0);
+  }
+
   try {
-    result = await registerUser(invitation);
-    await sendEmail(email, 'You are invited!', 'Please click the link to join us.');
+    result = await sendEmail(
+      email,
+      `Invite to join ${appName}!`,
+      {
+        appName: appName,
+        inviteLink: inviteLink,
+        year: new Date().getFullYear(),
+      },
+      'inviteUser.handlebars',
+    );
   } catch (error) {
-    console.red('Error: ' + error.message);
+    console.error('Error: ' + error.message);
     silentExit(1);
   }
 
   // Check the result
-  if (result.status !== 200) {
-    console.red('Error: ' + result.message);
+  if (!result || result.status !== 200) {
+    console.error('Error: ' + (result ? result.message : 'No result returned from sendEmail'));
     silentExit(1);
   }
 

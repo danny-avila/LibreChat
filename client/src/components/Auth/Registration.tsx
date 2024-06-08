@@ -45,12 +45,6 @@ const Registration: React.FC = () => {
     },
   });
 
-  useEffect(() => {
-    if (startupConfig?.registrationEnabled === false) {
-      navigate('/login');
-    }
-  }, [startupConfig, navigate]);
-
   const renderInput = (id: string, label: string, type: string, validation: object) => (
     <div className="mb-2">
       <div className="relative">
