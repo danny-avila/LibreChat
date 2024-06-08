@@ -215,6 +215,10 @@ export type TSearchMessage = object;
 
 export type TSearchMessageTreeNode = object;
 
+export type TRegisterUserResponse = {
+  message: string;
+};
+
 export type TRegisterUser = {
   name: string;
   email: string;
@@ -243,6 +247,15 @@ export type TResetPassword = {
   password: string;
   confirm_password?: string;
 };
+
+export type VerifyEmailResponse = { message: string };
+
+export type TVerifyEmail = {
+  email: string;
+  token: string;
+};
+
+export type TResendVerificationEmail = Omit<TVerifyEmail, 'token'>;
 
 export type TInterfaceConfig = {
   privacyPolicy?: {

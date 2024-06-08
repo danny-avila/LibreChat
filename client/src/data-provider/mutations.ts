@@ -942,3 +942,28 @@ export const useDeleteAction = (
     },
   });
 };
+
+/**
+ * Hook for verifying email address
+ */
+export const useVerifyEmailMutation = (
+  options?: t.VerifyEmailOptions,
+): UseMutationResult<t.VerifyEmailResponse, unknown, t.TVerifyEmail, unknown> => {
+  return useMutation({
+    mutationFn: (variables: t.TVerifyEmail) => dataService.verifyEmail(variables),
+    ...(options || {}),
+  });
+};
+
+/**
+ * Hook for resending verficiation email
+ */
+export const useResendVerificationEmail = (
+  options?: t.ResendVerifcationOptions,
+): UseMutationResult<t.VerifyEmailResponse, unknown, t.TResendVerificationEmail, unknown> => {
+  return useMutation({
+    mutationFn: (variables: t.TResendVerificationEmail) =>
+      dataService.resendVerificationEmail(variables),
+    ...(options || {}),
+  });
+};
