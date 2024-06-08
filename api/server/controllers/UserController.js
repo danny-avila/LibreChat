@@ -2,6 +2,7 @@ const {
   Session,
   Balance,
   getFiles,
+  deleteFiles,
   deleteConvos,
   deletePresets,
   deleteMessages,
@@ -94,6 +95,7 @@ const deleteUserController = async (req, res) => {
     await deleteUserById(user.id); // delete user
     await deleteAllSharedLinks(user.id); // delete user shared links
     await deleteUserFiles(req); // delete user files
+    await deleteFiles(null, user.id); // delete database files in case of orphaned files from previous steps
     /* TODO: queue job for cleaning actions and assistants of non-existant users */
     logger.info(`User deleted account. Email: ${user.email} ID: ${user.id}`);
     res.status(200).send({ message: 'User deleted' });
