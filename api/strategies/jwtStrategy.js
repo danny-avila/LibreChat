@@ -12,8 +12,8 @@ const jwtLogin = async () =>
     async (payload, done) => {
       try {
         const user = await getUserById(payload?.id, '-password -__v');
-        user.id = user._id.toString();
         if (user) {
+          user.id = user._id.toString();
           done(null, user);
         } else {
           logger.warn('[jwtLogin] JwtStrategy => no user found: ' + payload?.id);
