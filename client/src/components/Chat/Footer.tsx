@@ -1,9 +1,10 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
+import TagManager from 'react-gtm-module';
 import { Constants } from 'librechat-data-provider';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { useLocalize } from '~/hooks';
-import TagManager from 'react-gtm-module';
+
 
 export default function Footer({ className }: { className?: string }) {
   const { data: config } = useGetStartupConfig();
@@ -40,7 +41,7 @@ export default function Footer({ className }: { className?: string }) {
     };
     TagManager.initialize(tagManagerArgs);
   }
-  
+
   const mainContentParts = (
     typeof config?.customFooter === 'string'
       ? config.customFooter
