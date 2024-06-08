@@ -677,6 +677,14 @@ export enum ViolationTypes {
    * STT Request Limit Violation.
    */
   STT_LIMIT = 'stt_limit',
+  /**
+   * Reset Password Limit Violation.
+   */
+  RESET_PASSWORD_LIMIT = 'reset_password_limit',
+  /**
+   * Verify Email Limit Violation.
+   */
+  VERIFY_EMAIL_LIMIT = 'verify_email_limit',
 }
 
 /**

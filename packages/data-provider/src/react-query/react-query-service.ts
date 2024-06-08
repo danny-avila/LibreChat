@@ -322,16 +322,17 @@ export const useLoginUserMutation = (): UseMutationResult<
   });
 };
 
-export const useRegisterUserMutation = (): UseMutationResult<
-  unknown,
-  unknown,
-  t.TRegisterUser,
-  unknown
-> => {
+export const useRegisterUserMutation = (
+  options?: m.RegistrationOptions,
+): UseMutationResult<t.TError, unknown, t.TRegisterUser, unknown> => {
   const queryClient = useQueryClient();
   return useMutation((payload: t.TRegisterUser) => dataService.register(payload), {
-    onSuccess: () => {
+    ...options,
+    onSuccess: (...args) => {
       queryClient.invalidateQueries([QueryKeys.user]);
+      if (options?.onSuccess) {
+        options.onSuccess(...args);
+      }
     },
   });
 };
