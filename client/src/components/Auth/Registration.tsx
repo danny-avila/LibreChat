@@ -5,6 +5,7 @@ import { useRegisterUserMutation } from 'librechat-data-provider/react-query';
 import type { TRegisterUser, TError } from 'librechat-data-provider';
 import type { TLoginLayoutContext } from '~/common';
 import { ErrorMessage } from './ErrorMessage';
+import { Spinner } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 
 const Registration: React.FC = () => {
@@ -21,6 +22,7 @@ const Registration: React.FC = () => {
   const password = watch('password');
 
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState(true);
   const [countdown, setCountdown] = useState<number>(3);
 
   const location = useLocation();
@@ -28,7 +30,11 @@ const Registration: React.FC = () => {
   const token = queryParams.get('token');
 
   const registerUser = useRegisterUserMutation({
+    onMutate: () => {
+      setIsSubmitting(true);
+    },
     onSuccess: () => {
+      setIsSubmitting(false);
       setCountdown(3);
       const timer = setInterval(() => {
         setCountdown((prevCountdown) => {
@@ -43,6 +49,7 @@ const Registration: React.FC = () => {
       }, 1000);
     },
     onError: (error: unknown) => {
+      setIsSubmitting(false);
       if ((error as TError).response?.data?.message) {
         setErrorMessage((error as TError).response?.data?.message ?? '');
       }
@@ -170,7 +177,7 @@ const Registration: React.FC = () => {
                 aria-label="Submit registration"
                 className="w-full transform rounded-md bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-550 focus:bg-green-550 focus:outline-none disabled:cursor-not-allowed disabled:hover:bg-green-500"
               >
-                {localize('com_auth_continue')}
+                {isSubmitting ? <Spinner /> : localize('com_auth_continue')}
               </button>
             </div>
           </form>
