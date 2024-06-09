@@ -50,7 +50,7 @@ const staticAtoms = {
 // Atoms with localStorage
 const localStorageAtoms = {
   autoScroll: atomWithLocalStorage('autoScroll', false),
-  messagesUI: atomWithLocalStorage('messagesUI', true),
+  messagesUI: atomWithLocalStorage('messagesUI', false),
   showCode: atomWithLocalStorage('showCode', false),
   hideSidePanel: atomWithLocalStorage('hideSidePanel', false),
   modularChat: atomWithLocalStorage('modularChat', true),
