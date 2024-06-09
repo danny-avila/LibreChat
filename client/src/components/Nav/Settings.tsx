@@ -7,6 +7,7 @@ import { GearIcon, DataIcon, SpeechIcon, UserIcon, ExperimentIcon } from '~/comp
 import { General, Appearance, Messages, Speech, Beta, Data, Account } from './SettingsTabs';
 import { useMediaQuery, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+import AppearanceIcon from '../svg/AppearanceIcon';
 
 export default function Settings({ open, onOpenChange }: TDialogProps) {
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
@@ -66,7 +67,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                 value={SettingsTabValues.APPEARANCE}
                 style={{ userSelect: 'none' }}
               >
-                <GearIcon />
+                <AppearanceIcon className="icon-sm" />
                 {localize('com_nav_setting_appearance')}
               </Tabs.Trigger>
               <Tabs.Trigger
