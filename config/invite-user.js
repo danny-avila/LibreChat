@@ -9,6 +9,16 @@ const connect = require('./connect');
 (async () => {
   await connect();
 
+  console.purple('--------------------------');
+  console.purple('Invite a new user account!');
+  console.purple('--------------------------');
+
+  if (process.argv.length < 5) {
+    console.orange('Usage: npm run invite-user <email>');
+    console.orange('Note: if you do not pass in the arguments, you will be prompted for them.');
+    console.purple('--------------------------');
+  }
+
   // Check if email service is enabled
   if (!checkEmailConfig()) {
     console.red('Error: Email service is not enabled!');
@@ -39,9 +49,6 @@ const connect = require('./connect');
   const token = await createInvite(email);
   const inviteLink = `${process.env.DOMAIN_CLIENT}/register?token=${token}`;
 
-  // Send the invitation email
-  let result;
-
   const appName = process.env.APP_TITLE || 'LibreChat';
 
   if (!checkEmailConfig()) {
@@ -50,7 +57,7 @@ const connect = require('./connect');
   }
 
   try {
-    result = await sendEmail({
+    await sendEmail({
       email: email,
       subject: `Invite to join ${appName}!`,
       payload: {
@@ -65,19 +72,20 @@ const connect = require('./connect');
     silentExit(1);
   }
 
-  // Check the result
-  if (!result || result.status !== 200) {
-    console.error('Error: ' + (result ? result.message : 'No result returned from sendEmail'));
-    silentExit(1);
-  }
-
-  // Done! (I hope)
+  // Done!
   console.green('Invitation sent successfully!');
   silentExit(0);
 })();
 
 process.on('uncaughtException', (err) => {
-  console.error('There was an uncaught error:');
-  console.error(err);
-  process.exit(1);
+  if (!err.message.includes('fetch failed')) {
+    console.error('There was an uncaught error:');
+    console.error(err);
+  }
+
+  if (err.message.includes('fetch failed')) {
+    return;
+  } else {
+    process.exit(1);
+  }
 });
