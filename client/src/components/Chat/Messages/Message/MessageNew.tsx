@@ -34,6 +34,7 @@ export default function MessageNew(props: TMessageProps) {
   } = useMessageHelpers(props);
 
   const [isForking, setIsForking] = useState<boolean>(false);
+  const [isHovering, setIsHovering] = useState<boolean>(false);
 
   const { message, siblingIdx, siblingCount, setSiblingIdx, currentEditId, setCurrentEditId } =
     props;
@@ -57,6 +58,12 @@ export default function MessageNew(props: TMessageProps) {
         className="text-token-text-primary group w-full"
         onWheel={handleScroll}
         onTouchMove={handleScroll}
+        onMouseEnter={() => {
+          setIsHovering(true);
+        }}
+        onMouseLeave={() => {
+          setIsHovering(false);
+        }}
       >
         <div className="m-auto px-3 py-2 text-base md:px-4 md:px-5 lg:px-1 xl:px-5">
           <div className="mx-auto flex flex-1 gap-3 gap-4 text-base md:max-w-3xl md:gap-6 lg:max-w-[40rem] xl:max-w-[48rem]">
@@ -114,7 +121,7 @@ export default function MessageNew(props: TMessageProps) {
                                 className={cn(
                                   'absolute bottom-0 right-full top-0 -mr-3.5 hidden pr-5 pt-1 md:group-hover/text-message:block',
                                   {
-                                    'md:block': edit || isForking,
+                                    'md:block': edit || isForking || isHovering,
                                   },
                                 )}
                               >
@@ -188,7 +195,7 @@ export default function MessageNew(props: TMessageProps) {
                     </div>
                   </div>
                 </div>
-                <div className="agent-turn relative flex w-full min-w-0 flex-col">
+                <div className="group/conversation-turn agent-turn relative flex w-full min-w-0 flex-col">
                   <div className="flex-col gap-1 md:gap-3">
                     <div className="flex max-w-full flex-grow flex-col">
                       <div
@@ -226,7 +233,7 @@ export default function MessageNew(props: TMessageProps) {
                           'flex items-center justify-start rounded-xl p-1': isLast,
                           'bg-token-main-surface-primary -mt-1 items-center justify-start rounded-xl p-1 md:absolute md:hidden md:border md:group-hover:block md:dark:border-gray-600':
                             !isLast,
-                          'md:block': edit || isForking,
+                          'md:block': edit || isForking || isHovering,
                         })}
                       >
                         <div className="flex items-center">
