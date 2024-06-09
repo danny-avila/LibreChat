@@ -10,8 +10,8 @@ const {
   generateToken,
   deleteUserById,
 } = require('~/models/userMethods');
-const { sendEmail, checkEmailConfig } = require('~/server/utils');
 const { createToken, findToken, deleteTokens, Session } = require('~/models');
+const { sendEmail, checkEmailConfig } = require('~/server/utils');
 const { registerSchema } = require('~/strategies/validators');
 const isDomainAllowed = require('./isDomainAllowed');
 const { logger } = require('~/config');
