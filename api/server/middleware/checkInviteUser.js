@@ -1,27 +1,27 @@
 const { getInvite } = require('~/models/inviteUser');
+const { deleteTokens } = require('~/models/Token');
 
-function checkInviteUser(req, res, next) {
+async function checkInviteUser(req, res, next) {
   const token = req.body.token;
 
   if (!token || token === 'undefined') {
-    console.log('No token provided');
     next();
     return;
   }
 
-  getInvite(token)
-    .then((invite) => {
-      console.log('Invite:', invite);
-      if (invite) {
-        req.invite = invite;
-        next();
-      } else {
-        res.status(400).json({ message: 'Invalid invite' });
-      }
-    })
-    .catch((error) => {
-      return res.status(400).json({ message: error.message });
-    });
+  try {
+    const invite = await getInvite(token, req.body.email);
+
+    if (!invite) {
+      return res.status(400).json({ message: 'Invalid invite token' });
+    }
+
+    await deleteTokens({ token: invite.token });
+    req.invite = invite;
+    next();
+  } catch (error) {
+    return res.status(400).json({ message: error.message });
+  }
 }
 
 module.exports = checkInviteUser;

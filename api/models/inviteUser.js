@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
-const InviteUser = require('./schema/inviteUserSchema');
+const mongoose = require('mongoose');
+const { createToken, findToken } = require('./Token');
 const logger = require('~/config/winston');
 
 /**
@@ -9,11 +10,6 @@ const logger = require('~/config/winston');
  */
 
 module.exports = {
-  /**
-   * @type {InviteUser}
-   */
-  InviteUser,
-
   /**
    * @function createInvite
    * @description This function creates a new user invite
@@ -26,8 +22,17 @@ module.exports = {
       let token = crypto.randomBytes(32).toString('hex');
       const hash = bcrypt.hashSync(token, 10);
       const encodedToken = encodeURIComponent(token);
-      const invite = new InviteUser({ email, token: hash, createdAt: Date.now() });
-      await invite.save();
+
+      const fakeUserId = new mongoose.Types.ObjectId();
+
+      await createToken({
+        userId: fakeUserId,
+        email,
+        token: hash,
+        createdAt: Date.now(),
+        expiresIn: 604800,
+      });
+
       return encodedToken;
     } catch (error) {
       logger.error('[createInvite] Error creating invite', error);
@@ -38,18 +43,21 @@ module.exports = {
   /**
    * @function getInvite
    * @description This function retrieves a user invite
-   * @param {string} token - The token of the invite to retrieve
+   * @param {string} encodedToken - The token of the invite to retrieve
+   * @param {string} email - The email of the user to validate
    * @returns {Promise<Object>} A promise that resolves to the retrieved invite document
-   * @throws {Error} If there is an error retrieving the invite or if the invite does not exist
+   * @throws {Error} If there is an error retrieving the invite, if the invite does not exist, or if the email does not match
    */
-  getInvite: async (encodedToken) => {
+  getInvite: async (encodedToken, email) => {
     try {
       const token = decodeURIComponent(encodedToken);
       const hash = bcrypt.hashSync(token, 10);
-      const invite = await InviteUser.findOne({ token: hash }).lean().exec();
+      const invite = await findToken({ token: hash, email });
+
       if (!invite) {
-        throw new Error('Invite not found');
+        throw new Error('Invite not found or email does not match');
       }
+
       return invite;
     } catch (error) {
       logger.error('[getInvite] Error getting invite', error);

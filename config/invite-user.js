@@ -1,10 +1,10 @@
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
+const { sendEmail, checkEmailConfig } = require('~/server/utils');
 const { askQuestion, silentExit } = require('./helpers');
+const { createInvite } = require('~/models/inviteUser');
 const User = require('~/models/User');
 const connect = require('./connect');
-const { sendEmail, checkEmailConfig } = require('~/server/utils');
-const { createInvite } = require('~/models/inviteUser');
 
 (async () => {
   await connect();
@@ -64,8 +64,6 @@ const { createInvite } = require('~/models/inviteUser');
     console.error('Error: ' + error.message);
     silentExit(1);
   }
-
-  console.log('Email sent:', result);
 
   // Check the result
   if (!result || result.status !== 200) {
