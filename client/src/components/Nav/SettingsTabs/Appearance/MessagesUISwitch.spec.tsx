@@ -33,6 +33,6 @@ describe('MessagesUISwitch', () => {
     const switchElement = getByTestId('messagesUI');
     fireEvent.click(switchElement);
 
-    expect(mockSetMessagesUI).toHaveBeenCalledWith(false);
+    expect(mockSetMessagesUI).toHaveBeenCalledWith(true);
   });
 });
