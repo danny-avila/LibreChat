@@ -65,7 +65,7 @@ export default function MessageNew(props: TMessageProps) {
           setIsHovering(false);
         }}
       >
-        <div className="m-auto px-3 py-2 text-base md:px-4 md:px-5 lg:px-1 xl:px-5">
+        <div className="m-auto px-3 py-[18px] text-base md:px-4 md:px-5 lg:px-1 xl:px-5">
           <div className="mx-auto flex flex-1 gap-3 gap-4 text-base md:max-w-3xl md:gap-6 lg:max-w-[40rem] xl:max-w-[48rem]">
             {isCreatedByUser ? (
               <div className="mx-auto flex flex-1 gap-3 gap-4 text-base md:max-w-3xl md:gap-6 lg:max-w-[40rem] xl:max-w-[48rem]">
