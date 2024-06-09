@@ -6,7 +6,6 @@ import type { TDangerButtonProps } from '~/common';
 import { ThemeContext, useLocalize, useLocalStorage } from '~/hooks';
 import HideSidePanelSwitch from './HideSidePanelSwitch';
 import AutoScrollSwitch from './AutoScrollSwitch';
-import MessagesUISwitch from './MessagesUISwitch';
 import { Dropdown } from '~/components/ui';
 import DangerButton from '../DangerButton';
 import store from '~/store';
@@ -163,9 +162,6 @@ function General() {
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <AutoScrollSwitch />
-        </div>
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
-          <MessagesUISwitch />
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <HideSidePanelSwitch />
