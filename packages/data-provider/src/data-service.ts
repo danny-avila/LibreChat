@@ -305,20 +305,8 @@ export const uploadFile = (data: FormData): Promise<f.TFileUpload> => {
  * @param data - The FormData containing the file to import.
  * @returns A Promise that resolves to the import start response.
  */
-export const importConversationsFile = (data: FormData): Promise<t.TImportStartResponse> => {
+export const importConversationsFile = (data: FormData): Promise<t.TImportResponse> => {
   return request.postMultiPart(endpoints.importConversation(), data);
-};
-
-/**
- * Retrieves the status of an import conversation job.
- *
- * @param jobId - The ID of the import conversation job.
- * @returns A promise that resolves to the import job status.
- */
-export const queryImportConversationJobStatus = async (
-  jobId: string,
-): Promise<t.TImportJobStatus> => {
-  return request.get(endpoints.importConversationJobStatus(jobId));
 };
 
 export const uploadAvatar = (data: FormData): Promise<f.AvatarUploadResponse> => {
