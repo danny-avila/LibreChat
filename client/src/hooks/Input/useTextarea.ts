@@ -212,11 +212,17 @@ export default function useTextarea({
       let richText = '';
       let includedText = '';
       const { types } = e.clipboardData;
+      const richTextFound = types.indexOf('text/rtf') !== -1;
 
-      if (types.indexOf('text/rtf') !== -1 || types.indexOf('Files') !== -1) {
+      if (richTextFound || types.indexOf('Files') !== -1) {
         e.preventDefault();
         includedText = e.clipboardData.getData('text/plain');
         richText = e.clipboardData.getData('text/rtf');
+      }
+
+      /* Edge case: Sometimes the rich text is not available in the DataTransfer */
+      if (!richText && includedText && richTextFound) {
+        richText = 'RICH TEXT FOUND';
       }
 
       if (includedText && (e.clipboardData.files.length > 0 || richText)) {
