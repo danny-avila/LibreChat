@@ -282,6 +282,12 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       setShowStopButton(false);
       setCompleted((prev) => new Set(prev.add(submission?.initialResponse?.messageId)));
 
+      const currentMessages = getMessages();
+      // Early return if messages are empty; i.e., the user navigated away
+      if (!currentMessages?.length) {
+        return setIsSubmitting(false);
+      }
+
       // update the messages; if assistants endpoint, client doesn't receive responseMessage
       if (runMessages) {
         setMessages([...runMessages]);
@@ -323,7 +329,15 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
       setIsSubmitting(false);
     },
-    [genTitle, queryClient, setMessages, setConversation, setIsSubmitting, setShowStopButton],
+    [
+      genTitle,
+      queryClient,
+      getMessages,
+      setMessages,
+      setConversation,
+      setIsSubmitting,
+      setShowStopButton,
+    ],
   );
 
   const errorHandler = useCallback(
@@ -353,7 +367,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       if (!data) {
         const convoId = conversationId ?? v4();
         const errorResponse = parseErrorResponse({
-          text: 'Error connecting to server',
+          text: 'Error connecting to server, try refreshing the page.',
           ...submission,
           conversationId: convoId,
         });

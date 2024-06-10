@@ -24,6 +24,10 @@ export function revokeAllUserKeys(): Promise<unknown> {
   return request.delete(endpoints.revokeAllUserKeys());
 }
 
+export function deleteUser(): Promise<s.TPreset> {
+  return request.delete(endpoints.deleteUser());
+}
+
 export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage[]> {
   if (conversationId === 'new') {
     return Promise.resolve([]);
@@ -136,6 +140,16 @@ export const requestPasswordReset = (
 
 export const resetPassword = (payload: t.TResetPassword) => {
   return request.post(endpoints.resetPassword(), payload);
+};
+
+export const verifyEmail = (payload: t.TVerifyEmail): Promise<t.VerifyEmailResponse> => {
+  return request.post(endpoints.verifyEmail(), payload);
+};
+
+export const resendVerificationEmail = (
+  payload: t.TResendVerificationEmail,
+): Promise<t.VerifyEmailResponse> => {
+  return request.post(endpoints.resendVerificationEmail(), payload);
 };
 
 export const getAvailablePlugins = (): Promise<s.TPlugin[]> => {

@@ -196,6 +196,7 @@ export type TEditPresetProps = {
   title?: string;
 };
 
+export type TSetOptions = (options: Record<string, unknown>) => void;
 export type TSetOptionsPayload = {
   setOption: TSetOption;
   setExample: TSetExample;
@@ -205,6 +206,7 @@ export type TSetOptionsPayload = {
   // getConversation: () => TConversation | TPreset | null;
   checkPluginSelection: (value: string) => boolean;
   setTools: (newValue: string, remove?: boolean) => void;
+  setOptions?: TSetOptions;
 };
 
 export type TPresetItemProps = {
@@ -322,6 +324,7 @@ export type TAuthContext = {
   error: string | undefined;
   login: (data: TLoginUser) => void;
   logout: () => void;
+  setError: React.Dispatch<React.SetStateAction<string | undefined>>;
 };
 
 export type TUserContext = {

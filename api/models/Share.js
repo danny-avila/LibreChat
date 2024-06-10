@@ -86,4 +86,21 @@ module.exports = {
     }
     return await SharedLink.findOneAndDelete({ shareId, user });
   },
+  /**
+   * Deletes all shared links for a specific user.
+   * @param {string} user - The user ID.
+   * @returns {Promise<{ message: string, deletedCount?: number }>} A result object indicating success or error message.
+   */
+  deleteAllSharedLinks: async (user) => {
+    try {
+      const result = await SharedLink.deleteMany({ user });
+      return {
+        message: 'All shared links have been deleted successfully',
+        deletedCount: result.deletedCount,
+      };
+    } catch (error) {
+      logger.error('[deleteAllSharedLinks] Error deleting shared links', error);
+      return { message: 'Error deleting shared links' };
+    }
+  },
 };

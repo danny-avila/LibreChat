@@ -8,7 +8,7 @@ import {
   useContext,
 } from 'react';
 import { useRecoilState } from 'recoil';
-import { TUser, TLoginResponse, setTokenHeader, TLoginUser } from 'librechat-data-provider';
+import { TLoginResponse, setTokenHeader, TLoginUser } from 'librechat-data-provider';
 import {
   useGetUserQuery,
   useLoginUserMutation,
@@ -169,10 +169,11 @@ const AuthContextProvider = ({
     () => ({
       user,
       token,
-      isAuthenticated,
       error,
       login,
       logout,
+      setError,
+      isAuthenticated,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [user, error, isAuthenticated, token],

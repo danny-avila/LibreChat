@@ -52,7 +52,7 @@ const localStorageAtoms = {
   autoScroll: atomWithLocalStorage('autoScroll', false),
   showCode: atomWithLocalStorage('showCode', false),
   hideSidePanel: atomWithLocalStorage('hideSidePanel', false),
-  modularChat: atomWithLocalStorage('modularChat', false),
+  modularChat: atomWithLocalStorage('modularChat', true),
   LaTeXParsing: atomWithLocalStorage('LaTeXParsing', true),
   UsernameDisplay: atomWithLocalStorage('UsernameDisplay', true),
   TextToSpeech: atomWithLocalStorage('textToSpeech', true),
