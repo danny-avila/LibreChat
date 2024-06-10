@@ -2,6 +2,37 @@ import { useCallback, useMemo } from 'react';
 import { useSetRecoilState } from 'recoil';
 import store from '~/store';
 
+/**
+ * Utility function to determine if a command should trigger.
+ */
+const shouldTriggerCommand = (
+  textAreaRef: React.RefObject<HTMLTextAreaElement>,
+  commandChar: string,
+) => {
+  const text = textAreaRef.current?.value;
+  if (!(text && text[text.length - 1] === commandChar)) {
+    return false;
+  }
+
+  const startPos = textAreaRef.current?.selectionStart;
+  if (!startPos) {
+    return false;
+  }
+
+  const isAtStart = startPos === 1;
+  const isPrecededBySpace = textAreaRef.current?.value.charAt(startPos - 2) === ' ';
+
+  const shouldTrigger = isAtStart || isPrecededBySpace;
+  if (shouldTrigger) {
+    // Blurring helps prevent the command from firing twice.
+    textAreaRef.current.blur();
+  }
+  return shouldTrigger;
+};
+
+/**
+ * Custom hook for handling key up events with command triggers.
+ */
 const useHandleKeyUp = ({
   index,
   textAreaRef,
@@ -12,42 +43,49 @@ const useHandleKeyUp = ({
   const setShowMentionPopover = useSetRecoilState(store.showMentionPopoverFamily(index));
 
   const handleAtCommand = useCallback(() => {
-    const text = textAreaRef.current?.value;
-    if (!(text && text[text.length - 1] === '@')) {
-      return;
+    if (shouldTriggerCommand(textAreaRef, '@')) {
+      console.log('@ command triggered');
+      setShowMentionPopover(true);
     }
-
-    const startPos = textAreaRef.current?.selectionStart;
-    if (!startPos) {
-      return;
-    }
-
-    const isAtStart = startPos === 1;
-    const isPrecededBySpace = textAreaRef.current?.value.charAt(startPos - 2) === ' ';
-
-    setShowMentionPopover(isAtStart || isPrecededBySpace);
   }, [textAreaRef, setShowMentionPopover]);
+
+  const handlePlusCommand = useCallback(() => {
+    if (shouldTriggerCommand(textAreaRef, '+')) {
+      console.log('+ command triggered');
+    }
+  }, [textAreaRef]);
 
   const commandHandlers = useMemo(
     () => ({
       '@': handleAtCommand,
+      '+': handlePlusCommand,
     }),
-    [handleAtCommand],
+    [handleAtCommand, handlePlusCommand],
   );
 
-  const handleKeyUp = useCallback(() => {
-    const text = textAreaRef.current?.value;
-    if (!text) {
-      return;
-    }
+  /**
+   * Main key up handler.
+   */
+  const handleKeyUp = useCallback(
+    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      const text = textAreaRef.current?.value;
+      if (!text) {
+        return;
+      }
 
-    const lastChar = text[text.length - 1];
-    const handler = commandHandlers[lastChar];
+      if (event.key === 'Escape') {
+        return;
+      }
 
-    if (handler) {
-      handler();
-    }
-  }, [textAreaRef, commandHandlers]);
+      const lastChar = text[text.length - 1];
+      const handler = commandHandlers[lastChar];
+
+      if (handler) {
+        handler();
+      }
+    },
+    [textAreaRef, commandHandlers],
+  );
 
   return handleKeyUp;
 };
