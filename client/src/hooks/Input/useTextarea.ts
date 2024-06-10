@@ -209,27 +209,6 @@ export default function useTextarea({
         return;
       }
 
-      let richText = '';
-      let includedText = '';
-      const { types } = e.clipboardData;
-      const richTextFound = types.indexOf('text/rtf') !== -1;
-
-      if (richTextFound || types.indexOf('Files') !== -1) {
-        e.preventDefault();
-        includedText = e.clipboardData.getData('text/plain');
-        richText = e.clipboardData.getData('text/rtf');
-      }
-
-      /* Edge case: Sometimes the rich text is not available in the DataTransfer */
-      if (!richText && includedText && richTextFound) {
-        richText = 'RICH TEXT FOUND';
-      }
-
-      if (includedText && (e.clipboardData.files.length > 0 || richText)) {
-        insertTextAtCursor(textAreaRef.current, includedText);
-        forceResize(textAreaRef);
-      }
-
       if (e.clipboardData.files.length > 0) {
         setFilesLoading(true);
         const timestampedFiles: File[] = [];
