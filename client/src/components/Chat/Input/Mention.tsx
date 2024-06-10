@@ -87,6 +87,14 @@ export default function Mention({
   }, [open, options]);
 
   useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     const currentActiveItem = document.getElementById(`mention-item-${activeIndex}`);
     currentActiveItem?.scrollIntoView({ behavior: 'instant', block: 'nearest' });
   }, [activeIndex]);
