@@ -9,6 +9,7 @@ import store from '~/store';
 const useNavigateToConvo = (index = 0) => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const clearAllConversations = store.useClearConvoState();
   const { setConversation } = store.useCreateConversationAtom(index);
   const setSubmission = useSetRecoilState(store.submissionByIndex(index));
   const resetLatestMessage = useResetRecoilState(store.latestMessageFamily(index));
@@ -47,6 +48,7 @@ const useNavigateToConvo = (index = 0) => {
         models,
       });
     }
+    clearAllConversations(true);
     setConversation(convo);
     navigate(`/c/${convo.conversationId ?? 'new'}`);
   };

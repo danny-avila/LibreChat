@@ -1,6 +1,12 @@
 import { useCallback, useMemo } from 'react';
-import { useSetRecoilState } from 'recoil';
-import store from '~/store';
+import type { SetterOrUpdater } from 'recoil';
+
+/** Event Keys that shouldn't trigger a command */
+const invalidKeys = {
+  Escape: true,
+  Backspace: true,
+  Enter: true,
+};
 
 /**
  * Utility function to determine if a command should trigger.
@@ -23,10 +29,6 @@ const shouldTriggerCommand = (
   const isPrecededBySpace = textAreaRef.current?.value.charAt(startPos - 2) === ' ';
 
   const shouldTrigger = isAtStart || isPrecededBySpace;
-  if (shouldTrigger) {
-    // Blurring helps prevent the command from firing twice.
-    textAreaRef.current.blur();
-  }
   return shouldTrigger;
 };
 
@@ -34,14 +36,14 @@ const shouldTriggerCommand = (
  * Custom hook for handling key up events with command triggers.
  */
 const useHandleKeyUp = ({
-  index,
   textAreaRef,
+  setShowPlusPopover,
+  setShowMentionPopover,
 }: {
-  index: number;
   textAreaRef: React.RefObject<HTMLTextAreaElement>;
+  setShowPlusPopover: SetterOrUpdater<boolean>;
+  setShowMentionPopover: SetterOrUpdater<boolean>;
 }) => {
-  const setShowMentionPopover = useSetRecoilState(store.showMentionPopoverFamily(index));
-
   const handleAtCommand = useCallback(() => {
     if (shouldTriggerCommand(textAreaRef, '@')) {
       setShowMentionPopover(true);
@@ -50,9 +52,9 @@ const useHandleKeyUp = ({
 
   const handlePlusCommand = useCallback(() => {
     if (shouldTriggerCommand(textAreaRef, '+')) {
-      console.log('+ command triggered');
+      setShowPlusPopover(true);
     }
-  }, [textAreaRef]);
+  }, [textAreaRef, setShowPlusPopover]);
 
   const commandHandlers = useMemo(
     () => ({
@@ -72,7 +74,7 @@ const useHandleKeyUp = ({
         return;
       }
 
-      if (event.key === 'Escape') {
+      if (invalidKeys[event.key]) {
         return;
       }
 

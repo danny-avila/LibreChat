@@ -38,12 +38,14 @@ import store from '~/store';
 const useNewConvo = (index = 0) => {
   const navigate = useNavigate();
   const { data: startupConfig } = useGetStartupConfig();
+  const clearAllConversations = store.useClearConvoState();
   const defaultPreset = useRecoilValue(store.defaultPreset);
   const { setConversation } = store.useCreateConversationAtom(index);
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
   const setSubmission = useSetRecoilState<TSubmission | null>(store.submissionByIndex(index));
   const resetLatestMessage = useResetRecoilState(store.latestMessageFamily(index));
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
+
   const modelsQuery = useGetModelsQuery();
   const timeoutIdRef = useRef<NodeJS.Timeout>();
   const assistantsListMap = useAssistantListMap();
@@ -139,6 +141,7 @@ const useNewConvo = (index = 0) => {
           });
         }
 
+        clearAllConversations(true);
         setConversation(conversation);
         setSubmission({} as TSubmission);
         if (!keepLatestMessage) {

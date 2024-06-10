@@ -8,25 +8,26 @@ import type {
   TAssistantsMap,
   TEndpointsConfig,
 } from 'librechat-data-provider';
-import type { MentionOption } from '~/common';
+import type { MentionOption, ConvoGenerator } from '~/common';
 import { getConvoSwitchLogic, getModelSpecIconURL, removeUnavailableTools } from '~/utils';
-import { useDefaultConvo, useNewConvo } from '~/hooks';
 import { useChatContext } from '~/Providers';
+import { useDefaultConvo } from '~/hooks';
 import store from '~/store';
 
 export default function useSelectMention({
   presets,
   modelSpecs,
-  endpointsConfig,
   assistantMap,
+  endpointsConfig,
+  newConversation,
 }: {
   presets?: TPreset[];
   modelSpecs: TModelSpec[];
-  endpointsConfig: TEndpointsConfig;
   assistantMap: TAssistantsMap;
+  endpointsConfig: TEndpointsConfig;
+  newConversation: ConvoGenerator;
 }) {
   const { conversation } = useChatContext();
-  const { newConversation } = useNewConvo();
   const getDefaultConversation = useDefaultConvo();
   const modularChat = useRecoilValue(store.modularChat);
   const availableTools = useRecoilValue(store.availableTools);
