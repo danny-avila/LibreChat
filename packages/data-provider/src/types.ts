@@ -315,39 +315,9 @@ export type TRequestPasswordResetResponse = {
 /**
  * Represents the response from the import endpoint.
  */
-export type TImportStartResponse = {
+export type TImportResponse = {
   /**
    * The message associated with the response.
    */
   message: string;
-
-  /**
-   * The ID of the job associated with the import.
-   */
-  jobId: string;
-};
-
-/**
- * Represents the status of an import job.
- */
-export type TImportJobStatus = {
-  /**
-   * The name of the job.
-   */
-  name: string;
-
-  /**
-   * The ID of the job.
-   */
-  id: string;
-
-  /**
-   * The status of the job.
-   */
-  status: 'scheduled' | 'running' | 'completed' | 'failed';
-
-  /**
-   * The reason the job failed, if applicable.
-   */
-  failReason?: string;
 };

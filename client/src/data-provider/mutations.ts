@@ -344,81 +344,18 @@ export const useForkConvoMutation = (
 };
 
 export const useUploadConversationsMutation = (
-  _options?: t.MutationOptions<t.TImportJobStatus, FormData>,
+  _options?: t.MutationOptions<t.TImportResponse, FormData>,
 ) => {
   const queryClient = useQueryClient();
   const { onSuccess, onError, onMutate } = _options || {};
 
-  // returns the job status or reason of failure
-  const checkJobStatus = async (jobId) => {
-    try {
-      const response = await dataService.queryImportConversationJobStatus(jobId);
-      return response;
-    } catch (error) {
-      throw new Error('Failed to check job status');
-    }
-  };
-
-  // Polls the job status until it is completed, failed, or timed out
-  const pollJobStatus = (jobId, onSuccess, onError) => {
-    let timeElapsed = 0;
-    const timeout = 60000; // Timeout after a minute
-    const pollInterval = 500; // Poll every 500ms
-    const intervalId = setInterval(async () => {
-      try {
-        const statusResponse = await checkJobStatus(jobId);
-        console.log('Polling job status', statusResponse);
-        if (statusResponse.status === 'completed' || statusResponse.status === 'failed') {
-          clearInterval(intervalId);
-          if (statusResponse.status === 'completed') {
-            onSuccess && onSuccess(statusResponse);
-          } else {
-            onError &&
-              onError(
-                new Error(
-                  statusResponse.failReason
-                    ? statusResponse.failReason
-                    : 'Failed to import conversations',
-                ),
-              );
-          }
-        }
-        timeElapsed += pollInterval; // Increment time elapsed by polling interval
-        if (timeElapsed >= timeout) {
-          clearInterval(intervalId);
-          onError && onError(new Error('Polling timed out'));
-        }
-      } catch (error) {
-        clearInterval(intervalId);
-        onError && onError(error);
-      }
-    }, pollInterval);
-  };
-
-  return useMutation<t.TImportStartResponse, unknown, FormData>({
+  return useMutation<t.TImportResponse, unknown, FormData>({
     mutationFn: (formData: FormData) => dataService.importConversationsFile(formData),
     onSuccess: (data, variables, context) => {
+      /* TODO: optimize to return imported conversations and add manually */
       queryClient.invalidateQueries([QueryKeys.allConversations]);
-      // Assuming the job ID is in the response data
-      const jobId = data.jobId;
-      if (jobId) {
-        // Start polling for job status
-        pollJobStatus(
-          jobId,
-          (statusResponse) => {
-            // This is the final success callback when the job is completed
-            queryClient.invalidateQueries([QueryKeys.allConversations]); // Optionally refresh conversations query
-            if (onSuccess) {
-              onSuccess(statusResponse, variables, context);
-            }
-          },
-          (error) => {
-            // This is the error callback for job failure or polling errors
-            if (onError) {
-              onError(error, variables, context);
-            }
-          },
-        );
+      if (onSuccess) {
+        onSuccess(data, variables, context);
       }
     },
     onError: (err, variables, context) => {
