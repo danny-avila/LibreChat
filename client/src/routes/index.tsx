@@ -4,6 +4,7 @@ import {
   Registration,
   RequestPasswordReset,
   ResetPassword,
+  VerifyEmail,
   ApiErrorWatcher,
 } from '~/components/Auth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
@@ -43,6 +44,10 @@ export const router = createBrowserRouter([
         element: <ResetPassword />,
       },
     ],
+  },
+  {
+    path: 'verify',
+    element: <VerifyEmail />,
   },
   {
     element: <AuthLayout />,

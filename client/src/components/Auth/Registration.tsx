@@ -13,28 +13,37 @@ const Registration: React.FC = () => {
   const { startupConfig, startupConfigError, isFetching } = useOutletContext<TLoginLayoutContext>();
 
   const {
-    register,
     watch,
+    register,
     handleSubmit,
     formState: { errors },
   } = useForm<TRegisterUser>({ mode: 'onChange' });
-
-  const [error, setError] = useState<boolean>(false);
-  const [errorMessage, setErrorMessage] = useState<string>('');
-  const registerUser = useRegisterUserMutation();
   const password = watch('password');
 
-  const onRegisterUserFormSubmit = async (data: TRegisterUser) => {
-    try {
-      await registerUser.mutateAsync(data);
-      navigate('/c/new');
-    } catch (error) {
-      setError(true);
+  const [errorMessage, setErrorMessage] = useState<string>('');
+  const [countdown, setCountdown] = useState<number>(3);
+
+  const registerUser = useRegisterUserMutation({
+    onSuccess: () => {
+      setCountdown(3);
+      const timer = setInterval(() => {
+        setCountdown((prevCountdown) => {
+          if (prevCountdown <= 1) {
+            clearInterval(timer);
+            navigate('/c/new', { replace: true });
+            return 0;
+          } else {
+            return prevCountdown - 1;
+          }
+        });
+      }, 1000);
+    },
+    onError: (error: unknown) => {
       if ((error as TError).response?.data?.message) {
         setErrorMessage((error as TError).response?.data?.message ?? '');
       }
-    }
-  };
+    },
+  });
 
   useEffect(() => {
     if (startupConfig?.registrationEnabled === false) {
@@ -76,19 +85,32 @@ const Registration: React.FC = () => {
 
   return (
     <>
-      {error && (
+      {errorMessage && (
         <ErrorMessage>
           {localize('com_auth_error_create')} {errorMessage}
         </ErrorMessage>
       )}
-
+      {registerUser.isSuccess && countdown > 0 && (
+        <div
+          className="rounded-md border border-green-500 bg-green-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200"
+          role="alert"
+        >
+          {localize(
+            startupConfig?.emailEnabled
+              ? 'com_auth_registration_success_generic'
+              : 'com_auth_registration_success_insecure',
+          ) +
+            ' ' +
+            localize('com_auth_email_verification_redirecting', countdown.toString())}
+        </div>
+      )}
       {!startupConfigError && !isFetching && (
         <>
           <form
             className="mt-6"
             aria-label="Registration form"
             method="POST"
-            onSubmit={handleSubmit(onRegisterUserFormSubmit)}
+            onSubmit={handleSubmit((data: TRegisterUser) => registerUser.mutate(data))}
           >
             {renderInput('name', 'com_auth_full_name', 'text', {
               required: localize('com_auth_name_required'),

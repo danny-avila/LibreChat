@@ -126,6 +126,18 @@ Apply the following naming conventions to branches, labels, and other Git-relate
       
    - **Current Stance**: At present, this backend transition is of lower priority and might not be pursued.
 
+## 7. Module Import Conventions
+
+- `npm` packages first, 
+     - from shortest line (top) to longest (bottom)
+
+- Followed by typescript types (pertains to data-provider and client workspaces)
+     - longest line (top) to shortest (bottom)
+     - types from package come first
+
+- Lastly, local imports
+     - longest line (top) to shortest (bottom)
+     - imports with alias `~` treated the same as relative import with respect to line length
 
 ---
 

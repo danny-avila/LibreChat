@@ -6,6 +6,7 @@ const { logger } = require('~/config');
 const router = express.Router();
 const emailLoginEnabled =
   process.env.ALLOW_EMAIL_LOGIN === undefined || isEnabled(process.env.ALLOW_EMAIL_LOGIN);
+const passwordResetEnabled = isEnabled(process.env.ALLOW_PASSWORD_RESET);
 
 router.get('/', async function (req, res) {
   const isBirthday = () => {
@@ -42,6 +43,7 @@ router.get('/', async function (req, res) {
         !!process.env.EMAIL_USERNAME &&
         !!process.env.EMAIL_PASSWORD &&
         !!process.env.EMAIL_FROM,
+      passwordResetEnabled,
       checkBalance: isEnabled(process.env.CHECK_BALANCE),
       showBirthdayIcon:
         isBirthday() ||
