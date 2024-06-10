@@ -209,21 +209,6 @@ export default function useTextarea({
         return;
       }
 
-      let richText = '';
-      let includedText = '';
-      const { types } = e.clipboardData;
-
-      if (types.indexOf('text/rtf') !== -1 || types.indexOf('Files') !== -1) {
-        e.preventDefault();
-        includedText = e.clipboardData.getData('text/plain');
-        richText = e.clipboardData.getData('text/rtf');
-      }
-
-      if (includedText && (e.clipboardData.files.length > 0 || richText)) {
-        insertTextAtCursor(textAreaRef.current, includedText);
-        forceResize(textAreaRef);
-      }
-
       if (e.clipboardData.files.length > 0) {
         setFilesLoading(true);
         const timestampedFiles: File[] = [];
