@@ -44,7 +44,6 @@ const useHandleKeyUp = ({
 
   const handleAtCommand = useCallback(() => {
     if (shouldTriggerCommand(textAreaRef, '@')) {
-      console.log('@ command triggered');
       setShowMentionPopover(true);
     }
   }, [textAreaRef, setShowMentionPopover]);
