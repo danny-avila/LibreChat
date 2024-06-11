@@ -20,8 +20,8 @@ function loadDefaultInterface(config, configDefaults) {
     sidePanel: interfaceConfig?.sidePanel ?? defaults.sidePanel,
     privacyPolicy: interfaceConfig?.privacyPolicy ?? defaults.privacyPolicy,
     termsOfService: interfaceConfig?.termsOfService ?? defaults.termsOfService,
-    showSideHidePanelOption:
-      interfaceConfig?.showSideHidePanelOption ?? defaults.showSideHidePanelOption,
+    showSideHidePanelButton:
+      interfaceConfig?.showSideHidePanelButton ?? defaults.showSideHidePanelButton,
   };
 
   let i = 0;

@@ -96,6 +96,7 @@ describe('AppService', () => {
       interfaceConfig: expect.objectContaining({
         privacyPolicy: undefined,
         termsOfService: undefined,
+        showSideHidePanelOption: undefined,
         endpointsMenu: true,
         modelSelect: true,
         parameters: true,
