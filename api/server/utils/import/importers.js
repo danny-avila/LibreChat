@@ -135,7 +135,7 @@ async function importLibreChatConvo(
             });
           }
 
-          if (!firstMessageDate) {
+          if (!firstMessageDate && message.createdAt) {
             firstMessageDate = new Date(message.createdAt);
           }
 
@@ -150,7 +150,7 @@ async function importLibreChatConvo(
       const idMapping = new Map();
 
       for (const message of messagesToImport) {
-        if (!firstMessageDate) {
+        if (!firstMessageDate && message.createdAt) {
           firstMessageDate = new Date(message.createdAt);
         }
         const newMessageId = uuidv4();
@@ -169,6 +169,10 @@ async function importLibreChatConvo(
       }
     } else {
       throw new Error('Invalid LibreChat file format');
+    }
+
+    if (firstMessageDate === 'Invalid Date') {
+      firstMessageDate = null;
     }
 
     importBatchBuilder.finishConversation(jsonData.title, firstMessageDate ?? new Date(), options);

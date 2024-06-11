@@ -1,47 +1,43 @@
-const abortMiddleware = require('./abortMiddleware');
-const checkBan = require('./checkBan');
-const checkDomainAllowed = require('./checkDomainAllowed');
-const uaParser = require('./uaParser');
-const setHeaders = require('./setHeaders');
-const loginLimiter = require('./loginLimiter');
-const validateModel = require('./validateModel');
-const requireJwtAuth = require('./requireJwtAuth');
-const requireLdapAuth = require('./requireLdapAuth');
-const uploadLimiters = require('./uploadLimiters');
-const registerLimiter = require('./registerLimiter');
-const messageLimiters = require('./messageLimiters');
-const requireLocalAuth = require('./requireLocalAuth');
-const validateEndpoint = require('./validateEndpoint');
-const concurrentLimiter = require('./concurrentLimiter');
-const validateMessageReq = require('./validateMessageReq');
-const buildEndpointOption = require('./buildEndpointOption');
+const validatePasswordReset = require('./validatePasswordReset');
 const validateRegistration = require('./validateRegistration');
 const validateImageRequest = require('./validateImageRequest');
+const buildEndpointOption = require('./buildEndpointOption');
+const validateMessageReq = require('./validateMessageReq');
+const checkDomainAllowed = require('./checkDomainAllowed');
+const concurrentLimiter = require('./concurrentLimiter');
+const validateEndpoint = require('./validateEndpoint');
+const requireLocalAuth = require('./requireLocalAuth');
+const canDeleteAccount = require('./canDeleteAccount');
+const requireLdapAuth = require('./requireLdapAuth');
+const abortMiddleware = require('./abortMiddleware');
+const requireJwtAuth = require('./requireJwtAuth');
+const validateModel = require('./validateModel');
 const moderateText = require('./moderateText');
+const setHeaders = require('./setHeaders');
+const limiters = require('./limiters');
+const uaParser = require('./uaParser');
+const checkBan = require('./checkBan');
 const noIndex = require('./noIndex');
-const importLimiters = require('./importLimiters');
 
 module.exports = {
-  ...uploadLimiters,
   ...abortMiddleware,
-  ...messageLimiters,
+  ...limiters,
+  noIndex,
   checkBan,
   uaParser,
   setHeaders,
-  loginLimiter,
+  moderateText,
+  validateModel,
   requireJwtAuth,
   requireLdapAuth,
-  registerLimiter,
   requireLocalAuth,
+  canDeleteAccount,
   validateEndpoint,
   concurrentLimiter,
+  checkDomainAllowed,
   validateMessageReq,
   buildEndpointOption,
   validateRegistration,
   validateImageRequest,
-  validateModel,
-  moderateText,
-  noIndex,
-  ...importLimiters,
-  checkDomainAllowed,
+  validatePasswordReset,
 };

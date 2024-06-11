@@ -3,22 +3,22 @@ import {
   LocalStorageKeys,
   defaultAssistantsVersion,
 } from 'librechat-data-provider';
+import { useSetRecoilState } from 'recoil';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
 import {
+  addSharedLink,
   addConversation,
+  deleteSharedLink,
+  updateConvoFields,
   updateConversation,
   deleteConversation,
-  updateConvoFields,
-  deleteSharedLink,
-  addSharedLink,
 } from '~/utils';
-import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
-import { useSetRecoilState } from 'recoil';
-import store from '~/store';
-import { normalizeData } from '~/utils/collection';
 import { useConversationsInfiniteQuery, useSharedLinksInfiniteQuery } from './queries';
+import { normalizeData } from '~/utils/collection';
+import store from '~/store';
 
 /** Conversations */
 export const useGenTitleMutation = (): UseMutationResult<
@@ -344,81 +344,18 @@ export const useForkConvoMutation = (
 };
 
 export const useUploadConversationsMutation = (
-  _options?: t.MutationOptions<t.TImportJobStatus, FormData>,
+  _options?: t.MutationOptions<t.TImportResponse, FormData>,
 ) => {
   const queryClient = useQueryClient();
   const { onSuccess, onError, onMutate } = _options || {};
 
-  // returns the job status or reason of failure
-  const checkJobStatus = async (jobId) => {
-    try {
-      const response = await dataService.queryImportConversationJobStatus(jobId);
-      return response;
-    } catch (error) {
-      throw new Error('Failed to check job status');
-    }
-  };
-
-  // Polls the job status until it is completed, failed, or timed out
-  const pollJobStatus = (jobId, onSuccess, onError) => {
-    let timeElapsed = 0;
-    const timeout = 60000; // Timeout after a minute
-    const pollInterval = 500; // Poll every 500ms
-    const intervalId = setInterval(async () => {
-      try {
-        const statusResponse = await checkJobStatus(jobId);
-        console.log('Polling job status', statusResponse);
-        if (statusResponse.status === 'completed' || statusResponse.status === 'failed') {
-          clearInterval(intervalId);
-          if (statusResponse.status === 'completed') {
-            onSuccess && onSuccess(statusResponse);
-          } else {
-            onError &&
-              onError(
-                new Error(
-                  statusResponse.failReason
-                    ? statusResponse.failReason
-                    : 'Failed to import conversations',
-                ),
-              );
-          }
-        }
-        timeElapsed += pollInterval; // Increment time elapsed by polling interval
-        if (timeElapsed >= timeout) {
-          clearInterval(intervalId);
-          onError && onError(new Error('Polling timed out'));
-        }
-      } catch (error) {
-        clearInterval(intervalId);
-        onError && onError(error);
-      }
-    }, pollInterval);
-  };
-
-  return useMutation<t.TImportStartResponse, unknown, FormData>({
+  return useMutation<t.TImportResponse, unknown, FormData>({
     mutationFn: (formData: FormData) => dataService.importConversationsFile(formData),
     onSuccess: (data, variables, context) => {
+      /* TODO: optimize to return imported conversations and add manually */
       queryClient.invalidateQueries([QueryKeys.allConversations]);
-      // Assuming the job ID is in the response data
-      const jobId = data.jobId;
-      if (jobId) {
-        // Start polling for job status
-        pollJobStatus(
-          jobId,
-          (statusResponse) => {
-            // This is the final success callback when the job is completed
-            queryClient.invalidateQueries([QueryKeys.allConversations]); // Optionally refresh conversations query
-            if (onSuccess) {
-              onSuccess(statusResponse, variables, context);
-            }
-          },
-          (error) => {
-            // This is the error callback for job failure or polling errors
-            if (onError) {
-              onError(error, variables, context);
-            }
-          },
-        );
+      if (onSuccess) {
+        onSuccess(data, variables, context);
       }
     },
     onError: (err, variables, context) => {
@@ -606,6 +543,30 @@ export const useUploadAvatarMutation = (
   return useMutation([MutationKeys.avatarUpload], {
     mutationFn: (variables: FormData) => dataService.uploadAvatar(variables),
     ...(options || {}),
+  });
+};
+
+export const useDeleteUserMutation = (
+  options?: t.MutationOptions<unknown, undefined>,
+): UseMutationResult<unknown, unknown, undefined, unknown> => {
+  const queryClient = useQueryClient();
+  const setDefaultPreset = useSetRecoilState(store.defaultPreset);
+  return useMutation([MutationKeys.deleteUser], {
+    mutationFn: () => dataService.deleteUser(),
+
+    ...(options || {}),
+    onSuccess: (...args) => {
+      options?.onSuccess?.(...args);
+    },
+    onMutate: (...args) => {
+      setDefaultPreset(null);
+      queryClient.removeQueries();
+      localStorage.removeItem(LocalStorageKeys.LAST_CONVO_SETUP);
+      localStorage.removeItem(LocalStorageKeys.LAST_MODEL);
+      localStorage.removeItem(LocalStorageKeys.LAST_TOOLS);
+      localStorage.removeItem(LocalStorageKeys.FILES_TO_DELETE);
+      options?.onMutate?.(...args);
+    },
   });
 };
 
@@ -916,5 +877,30 @@ export const useDeleteAction = (
 
       return options?.onSuccess?.(_data, variables, context);
     },
+  });
+};
+
+/**
+ * Hook for verifying email address
+ */
+export const useVerifyEmailMutation = (
+  options?: t.VerifyEmailOptions,
+): UseMutationResult<t.VerifyEmailResponse, unknown, t.TVerifyEmail, unknown> => {
+  return useMutation({
+    mutationFn: (variables: t.TVerifyEmail) => dataService.verifyEmail(variables),
+    ...(options || {}),
+  });
+};
+
+/**
+ * Hook for resending verficiation email
+ */
+export const useResendVerificationEmail = (
+  options?: t.ResendVerifcationOptions,
+): UseMutationResult<t.VerifyEmailResponse, unknown, t.TResendVerificationEmail, unknown> => {
+  return useMutation({
+    mutationFn: (variables: t.TResendVerificationEmail) =>
+      dataService.resendVerificationEmail(variables),
+    ...(options || {}),
   });
 };
