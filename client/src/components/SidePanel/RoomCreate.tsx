@@ -50,6 +50,7 @@ export default function RoomCreate() {
         placeholder="Room Title"
         name="name"
         value={room.title}
+        required
         onChange={(e) => setRoom({ ...room, title: e.currentTarget.value })}
       />
       <div className="flex items-center gap-1">

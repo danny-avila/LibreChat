@@ -2,9 +2,21 @@ const Conversation = require('./schema/convoSchema');
 const { getMessages, deleteMessages } = require('./Message');
 const logger = require('~/config/winston');
 
-const getConvosByQuery = async (title) => {
+const getConvosByQuery = async (title, endpoint, sort = 'participants', order = 'asc') => {
   try {
-    return await Conversation.find({ isRoom: true, active: true, title: new RegExp(title, 'i') });
+    const sortOrder = order === 'asc' ? 1 : -1;
+    const sortQuery = {};
+    if (sort === 'participants') {
+      sortQuery['users'] = sortOrder;
+    } else if (sort === 'date') {
+      sortQuery['createdAt'] = sortOrder;
+    }
+    return await Conversation.find({
+      isRoom: true,
+      active: true,
+      title: new RegExp(title, 'i'),
+      endpoint: new RegExp(endpoint, 'i'),
+    }).sort(sortQuery).lean();
   } catch (error) {
     logger.error('[getConvo] Error getting single conversation', error);
     return { message: 'Error getting single conversation' };

@@ -14,7 +14,7 @@ const ReportModel = require('~/models/Report');
 
 const getRoomsByQuery = async (req, res) => {
   try {
-    const rooms = await getConvosByQuery(req.query.title ?? '');
+    const rooms = await getConvosByQuery(req.query.title ?? '', req.query.endpoint ?? '', req.query.sort ?? 'participants', req.query.order ?? 'asc');
     res.json(rooms);
   } catch (error) {
     return res.status(500).json(error);

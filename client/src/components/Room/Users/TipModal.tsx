@@ -279,12 +279,16 @@ export default function TipModal({
         footer={
           <div className="flex w-full justify-end">
             {selectedNetwork === null ? (
-              <Button
-                className="border border-gray-20 bg-transparent text-black hover:bg-gray-50"
-                onClick={() => setOpen(false)}
-              >
-                Cancel
-              </Button>
+              <div className='flex w-full flex-col items-center'>
+                <div>
+                </div>
+                <Button
+                  className="border border-gray-20 bg-transparent text-black hover:bg-gray-50"
+                  onClick={() => setOpen(false)}
+                >
+                  Cancel
+                </Button>
+              </div>
             ) : (
               <>
                 <Button
