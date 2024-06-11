@@ -40,7 +40,7 @@ const spendTokens = async (txData, tokenUsage) => {
       });
     }
 
-    if (!completionTokens) {
+    if (!completionTokens && isNaN(completionTokens)) {
       logger.debug('[spendTokens] !completionTokens', { prompt, completion });
       return;
     }
@@ -54,7 +54,7 @@ const spendTokens = async (txData, tokenUsage) => {
     prompt &&
       completion &&
       logger.debug('[spendTokens] Transaction data record against balance:', {
-        user: prompt.user,
+        user: txData.user,
         prompt: prompt.prompt,
         promptRate: prompt.rate,
         completion: completion.completion,

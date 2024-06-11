@@ -1,7 +1,10 @@
 # Pull Request Template
 
+⚠️ Before Submitting a PR, Please Review:
+- Please ensure that you have thoroughly read and understood the [Contributing Docs](https://github.com/danny-avila/LibreChat/blob/main/.github/CONTRIBUTING.md) before submitting your Pull Request.
 
-### ⚠️ Before Submitting a PR, read the [Contributing Docs](https://github.com/danny-avila/LibreChat/blob/main/.github/CONTRIBUTING.md) in full!
+⚠️ Documentation Updates Notice:
+- Kindly note that documentation updates are managed in this repository: [librechat.ai](https://github.com/LibreChat-AI/librechat.ai)
 
 ## Summary
 
@@ -16,8 +19,6 @@ Please delete any irrelevant options.
 - [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
 - [ ] This change requires a documentation update
 - [ ] Translation update
-- [ ] Documentation update
-
 
 ## Testing
 
@@ -37,4 +38,4 @@ Please delete any irrelevant options.
 - [ ] I have written tests demonstrating that my changes are effective or that my feature works
 - [ ] Local unit tests pass with my changes
 - [ ] Any changes dependent on mine have been merged and published in downstream modules.
-- [ ] New documents have been locally validated with mkdocs
+- [ ] A pull request for updating the documentation has been submitted.

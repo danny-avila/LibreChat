@@ -1,12 +1,14 @@
 // const OpenAI = require('openai');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { getUserKey, getUserKeyExpiry } = require('~/server/services/UserService');
+const { ErrorTypes } = require('librechat-data-provider');
+const { getUserKey, getUserKeyExpiry, getUserKeyValues } = require('~/server/services/UserService');
 const initializeClient = require('./initializeClient');
 // const { OpenAIClient } = require('~/app');
 
 jest.mock('~/server/services/UserService', () => ({
   getUserKey: jest.fn(),
   getUserKeyExpiry: jest.fn(),
+  getUserKeyValues: jest.fn(),
   checkUserKeyExpiry: jest.requireActual('~/server/services/UserService').checkUserKeyExpiry,
 }));
 
@@ -52,9 +54,7 @@ describe('initializeClient', () => {
     process.env.ASSISTANTS_API_KEY = 'user_provided';
     process.env.ASSISTANTS_BASE_URL = 'user_provided';
 
-    getUserKey.mockResolvedValue(
-      JSON.stringify({ apiKey: 'user-api-key', baseURL: 'https://user.api.url' }),
-    );
+    getUserKeyValues.mockResolvedValue({ apiKey: 'user-api-key', baseURL: 'https://user.api.url' });
     getUserKeyExpiry.mockResolvedValue(isoString);
 
     const req = { user: { id: 'user123' }, app };
@@ -70,11 +70,24 @@ describe('initializeClient', () => {
     process.env.ASSISTANTS_API_KEY = 'user_provided';
     getUserKey.mockResolvedValue('invalid-json');
     getUserKeyExpiry.mockResolvedValue(isoString);
+    getUserKeyValues.mockImplementation(() => {
+      let userValues = getUserKey();
+      try {
+        userValues = JSON.parse(userValues);
+      } catch (e) {
+        throw new Error(
+          JSON.stringify({
+            type: ErrorTypes.INVALID_USER_KEY,
+          }),
+        );
+      }
+      return userValues;
+    });
 
     const req = { user: { id: 'user123' } };
     const res = {};
 
-    await expect(initializeClient({ req, res })).rejects.toThrow(/Invalid JSON/);
+    await expect(initializeClient({ req, res })).rejects.toThrow(/invalid_user_key/);
   });
 
   test('throws error if API key is not provided', async () => {

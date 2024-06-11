@@ -10,6 +10,8 @@ const initializeFunctionsAgent = async ({
   tools,
   model,
   pastMessages,
+  customName,
+  customInstructions,
   currentDateString,
   ...rest
 }) => {
@@ -24,7 +26,13 @@ const initializeFunctionsAgent = async ({
     returnMessages: true,
   });
 
-  const prefix = addToolDescriptions(`Current Date: ${currentDateString}\n${PREFIX}`, tools);
+  let prefix = addToolDescriptions(`Current Date: ${currentDateString}\n${PREFIX}`, tools);
+  if (customName) {
+    prefix = `You are "${customName}".\n${prefix}`;
+  }
+  if (customInstructions) {
+    prefix = `${prefix}\n${customInstructions}`;
+  }
 
   return await initializeAgentExecutorWithOptions(tools, model, {
     agentType: 'openai-functions',

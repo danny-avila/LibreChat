@@ -1,27 +1,59 @@
 import { FileSources } from 'librechat-data-provider';
+import type * as InputNumberPrimitive from 'rc-input-number';
 import type { ColumnDef } from '@tanstack/react-table';
 import type { SetterOrUpdater } from 'recoil';
 import type {
-  TSetOption as SetOption,
-  TConversation,
-  TMessage,
-  TPreset,
-  TLoginUser,
   TUser,
-  EModelEndpoint,
   Action,
+  TPreset,
+  TPlugin,
+  TMessage,
+  Assistant,
+  TLoginUser,
   AuthTypeEnum,
+  TConversation,
+  TStartupConfig,
+  EModelEndpoint,
+  AssistantsEndpoint,
   AuthorizationTypeEnum,
+  TSetOption as SetOption,
   TokenExchangeMethodEnum,
 } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type { LucideIcon } from 'lucide-react';
 
+export type AudioChunk = {
+  audio: string;
+  isFinal: boolean;
+  alignment: {
+    char_start_times_ms: number[];
+    chars_durations_ms: number[];
+    chars: string[];
+  };
+  normalizedAlignment: {
+    char_start_times_ms: number[];
+    chars_durations_ms: number[];
+    chars: string[];
+  };
+};
+
+export type AssistantListItem = {
+  id: string;
+  name: string;
+  metadata: Assistant['metadata'];
+  model: string;
+};
+
+export type TPluginMap = Record<string, TPlugin>;
+
 export type GenericSetter<T> = (value: T | ((currentValue: T) => T)) => void;
 
 export type LastSelectedModels = Record<EModelEndpoint, string>;
 
+export type LocalizeFunction = (phraseKey: string, ...values: string[]) => string;
+
 export const mainTextareaId = 'prompt-textarea';
+export const globalAudioId = 'global-audio';
 
 export enum IconContext {
   landing = 'landing',
@@ -29,6 +61,16 @@ export enum IconContext {
   nav = 'nav',
   message = 'message',
 }
+
+export type IconMapProps = {
+  className?: string;
+  iconURL?: string;
+  context?: 'landing' | 'menu-item' | 'nav' | 'message';
+  endpoint?: string | null;
+  assistantName?: string;
+  avatar?: string;
+  size?: number;
+};
 
 export type NavLink = {
   title: string;
@@ -85,6 +127,8 @@ export type AssistantPanelProps = {
   actions?: Action[];
   assistant_id?: string;
   activePanel?: string;
+  endpoint: AssistantsEndpoint;
+  version: number | string;
   setAction: React.Dispatch<React.SetStateAction<Action | undefined>>;
   setCurrentAssistantId: React.Dispatch<React.SetStateAction<string | undefined>>;
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
@@ -99,6 +143,8 @@ export type TSetExample = (
   type: string,
   newValue: number | string | boolean | null,
 ) => void;
+
+export type OnInputNumberChange = InputNumberPrimitive.InputNumberProps['onChange'];
 
 export const defaultDebouncedDelay = 450;
 
@@ -150,6 +196,7 @@ export type TEditPresetProps = {
   title?: string;
 };
 
+export type TSetOptions = (options: Record<string, unknown>) => void;
 export type TSetOptionsPayload = {
   setOption: TSetOption;
   setExample: TSetExample;
@@ -159,6 +206,7 @@ export type TSetOptionsPayload = {
   // getConversation: () => TConversation | TPreset | null;
   checkPluginSelection: (value: string) => boolean;
   setTools: (newValue: string, remove?: boolean) => void;
+  setOptions?: TSetOptions;
 };
 
 export type TPresetItemProps = {
@@ -276,6 +324,7 @@ export type TAuthContext = {
   error: string | undefined;
   login: (data: TLoginUser) => void;
   logout: () => void;
+  setError: React.Dispatch<React.SetStateAction<string | undefined>>;
 };
 
 export type TUserContext = {
@@ -297,6 +346,7 @@ export type IconProps = Pick<TMessage, 'isCreatedByUser' | 'model'> &
     iconURL?: string;
     message?: boolean;
     className?: string;
+    iconClassName?: string;
     endpoint?: EModelEndpoint | string | null;
     endpointType?: EModelEndpoint | null;
     assistantName?: string;
@@ -309,6 +359,11 @@ export type Option = Record<string, unknown> & {
 };
 
 export type OptionWithIcon = Option & { icon?: React.ReactNode };
+export type MentionOption = OptionWithIcon & {
+  type: string;
+  value: string;
+  description?: string;
+};
 
 export type TOptionSettings = {
   showExamples?: boolean;
@@ -339,3 +394,13 @@ export interface SwitcherProps {
   endpointKeyProvided: boolean;
   isCollapsed: boolean;
 }
+
+export type TLoginLayoutContext = {
+  startupConfig: TStartupConfig | null;
+  startupConfigError: unknown;
+  isFetching: boolean;
+  error: string | null;
+  setError: React.Dispatch<React.SetStateAction<string | null>>;
+  headerText: string;
+  setHeaderText: React.Dispatch<React.SetStateAction<string>>;
+};

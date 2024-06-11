@@ -1,5 +1,5 @@
 const throttle = require('lodash/throttle');
-const { getResponseSender } = require('librechat-data-provider');
+const { getResponseSender, EModelEndpoint } = require('librechat-data-provider');
 const { createAbortController, handleAbortError } = require('~/server/middleware');
 const { sendMessage, createOnProgress } = require('~/server/utils');
 const { saveMessage, getConvo } = require('~/models');
@@ -48,6 +48,7 @@ const EditController = async (req, res, next, initializeClient) => {
     }
   };
 
+  const unfinished = endpointOption.endpoint === EModelEndpoint.google ? false : true;
   const { onProgress: progressCallback, getPartialText } = createOnProgress({
     generation,
     onProgress: throttle(
@@ -59,7 +60,7 @@ const EditController = async (req, res, next, initializeClient) => {
           parentMessageId: overrideParentMessageId ?? userMessageId,
           text: partialText,
           model: endpointOption.modelOptions.model,
-          unfinished: true,
+          unfinished,
           isEdited: true,
           error: false,
           user,
@@ -111,11 +112,12 @@ const EditController = async (req, res, next, initializeClient) => {
       getReqData,
       onStart,
       abortController,
-      onProgress: progressCallback.call(null, {
+      progressCallback,
+      progressOptions: {
         res,
         text,
-        parentMessageId: overrideParentMessageId || userMessageId,
-      }),
+        // parentMessageId: overrideParentMessageId || userMessageId,
+      },
     });
 
     const conversation = await getConvo(user, conversationId);

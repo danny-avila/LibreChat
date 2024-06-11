@@ -12,22 +12,17 @@ export default function Files({ open, onOpenChange }) {
   const { data: files = [] } = useGetFiles<TFile[]>({
     select: (files) =>
       files.map((file) => {
-        if (file.source === FileSources.local || file.source === FileSources.openai) {
-          file.context = file.context ?? FileContext.unknown;
-          return file;
-        } else {
-          return {
-            ...file,
-            context: file.context ?? FileContext.unknown,
-            source: FileSources.local,
-          };
-        }
+        file.context = file.context ?? FileContext.unknown;
+        file.filterSource = file.source === FileSources.firebase ? FileSources.local : file.source;
+        return file;
       }),
   });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={cn('overflow-x-auto shadow-2xl dark:bg-gray-700 dark:text-white')}>
+      <DialogContent
+        className={cn('w-11/12 overflow-x-auto shadow-2xl dark:bg-gray-700 dark:text-white')}
+      >
         <DialogHeader>
           <DialogTitle className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
             {localize('com_nav_my_files')}

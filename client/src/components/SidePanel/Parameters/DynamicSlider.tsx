@@ -23,9 +23,10 @@ function DynamicSlider({
   includeInput = true,
   labelCode,
   descriptionCode,
+  conversation,
 }: DynamicSettingProps) {
   const localize = useLocalize();
-  const { conversation = { conversationId: null }, preset } = useChatContext();
+  const { preset } = useChatContext();
   const isEnum = useMemo(() => !range && options && options.length > 0, [options, range]);
 
   const [setInputValue, inputValue] = useDebouncedInput<string | number>({

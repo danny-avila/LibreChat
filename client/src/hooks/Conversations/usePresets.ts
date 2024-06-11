@@ -3,7 +3,7 @@ import exportFromJSON from 'export-from-json';
 import { useCallback, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilState, useSetRecoilState, useRecoilValue } from 'recoil';
-import { QueryKeys, modularEndpoints, EModelEndpoint } from 'librechat-data-provider';
+import { QueryKeys, modularEndpoints, isAssistantsEndpoint } from 'librechat-data-provider';
 import { useCreatePresetMutation, useGetModelsQuery } from 'librechat-data-provider/react-query';
 import type { TPreset, TEndpointsConfig } from 'librechat-data-provider';
 import {
@@ -11,9 +11,9 @@ import {
   useDeletePresetMutation,
   useGetPresetsQuery,
 } from '~/data-provider';
+import { cleanupPreset, getEndpointField, removeUnavailableTools } from '~/utils';
+import useDefaultConvo from '~/hooks/Conversations/useDefaultConvo';
 import { useChatContext, useToastContext } from '~/Providers';
-import { cleanupPreset, getEndpointField } from '~/utils';
-import useDefaultConvo from '~/hooks/useDefaultConvo';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { NotificationSeverity } from '~/common';
 import useLocalize from '~/hooks/useLocalize';
@@ -28,6 +28,7 @@ export default function usePresets() {
   const { user, isAuthenticated } = useAuthContext();
 
   const modularChat = useRecoilValue(store.modularChat);
+  const availableTools = useRecoilValue(store.availableTools);
   const setPresetModalVisible = useSetRecoilState(store.presetModalVisible);
   const [_defaultPreset, setDefaultPreset] = useRecoilState(store.defaultPreset);
   const presetsQuery = useGetPresetsQuery({ enabled: !!user && isAuthenticated });
@@ -151,10 +152,12 @@ export default function usePresets() {
     importPreset(jsonPreset);
   };
 
-  const onSelectPreset = (newPreset: TPreset) => {
-    if (!newPreset) {
+  const onSelectPreset = (_newPreset: TPreset) => {
+    if (!_newPreset) {
       return;
     }
+
+    const newPreset = removeUnavailableTools(_newPreset, availableTools);
 
     const toastTitle = newPreset.title
       ? `"${newPreset.title}"`
@@ -171,8 +174,8 @@ export default function usePresets() {
     const currentEndpointType = getEndpointField(endpointsConfig, endpoint, 'type');
     const endpointType = getEndpointField(endpointsConfig, newPreset.endpoint, 'type');
     const isAssistantSwitch =
-      newPreset.endpoint === EModelEndpoint.assistants &&
-      conversation?.endpoint === EModelEndpoint.assistants &&
+      isAssistantsEndpoint(newPreset.endpoint) &&
+      isAssistantsEndpoint(conversation?.endpoint) &&
       conversation?.endpoint === newPreset.endpoint;
 
     if (

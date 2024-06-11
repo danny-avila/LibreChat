@@ -1,11 +1,34 @@
-import { nodePolyfills } from 'vite-plugin-node-polyfills';
-import { defineConfig, loadEnv } from 'vite';
-import react from '@vitejs/plugin-react';
 import path, { resolve } from 'path';
+import react from '@vitejs/plugin-react';
+import { VitePWA } from 'vite-plugin-pwa';
+import { defineConfig, createLogger } from 'vite';
+import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import type { Plugin } from 'vite';
+
+const logger = createLogger();
+const originalWarning = logger.warn;
+logger.warn = (msg, options) => {
+  /* Suppresses:
+   [vite:css] Complex selectors in '.group:focus-within .dark\:group-focus-within\:text-gray-300:is(.dark *)' can not be transformed to an equivalent selector without ':is()'.
+   */
+  if (msg.includes('vite:css') && msg.includes('^^^^^^^')) {
+    return;
+  }
+  /* Suppresses:
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+   */
+  if (msg.includes('Use build.rollupOptions.output.manualChunks')) {
+    return;
+  }
+  originalWarning(msg, options);
+};
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  customLogger: logger,
   server: {
     fs: {
       cachedChecks: false,
@@ -27,7 +50,53 @@ export default defineConfig({
   // All other env variables are filtered out
   envDir: '../',
   envPrefix: ['VITE_', 'SCRIPT_', 'DOMAIN_', 'ALLOW_'],
-  plugins: [react(), nodePolyfills(), sourcemapExclude({ excludeNodeModules: true })],
+  plugins: [
+    react(),
+    nodePolyfills(),
+    VitePWA({
+      injectRegister: 'auto', // 'auto' | 'manual' | 'disabled'
+      registerType: 'prompt', // 'prompt' | 'auto' | 'disabled'
+      devOptions: {
+        enabled: false, // enable/disable registering SW in development mode
+      },
+      workbox: {
+        globPatterns: ['assets/**/*.{png,jpg,svg,ico}', '**/*.{js,css,html,ico,woff2}'],
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
+      },
+      manifest: {
+        name: 'LibreChat',
+        short_name: 'LibreChat',
+        start_url: '/',
+        display: 'standalone',
+        background_color: '#000000',
+        theme_color: '#009688',
+        icons: [
+          {
+            src: '/assets/favicon-32x32.png',
+            sizes: '32x32',
+            type: 'image/png',
+          },
+          {
+            src: '/assets/favicon-16x16.png',
+            sizes: '16x16',
+            type: 'image/png',
+          },
+          {
+            src: '/assets/apple-touch-icon-180x180.png',
+            sizes: '180x180',
+            type: 'image/png',
+          },
+          {
+            src: '/assets/maskable-icon.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+        ],
+      },
+    }),
+    sourcemapExclude({ excludeNodeModules: true }),
+  ],
   publicDir: './public',
   build: {
     sourcemap: process.env.NODE_ENV === 'development',
@@ -36,6 +105,15 @@ export default defineConfig({
       // external: ['uuid'],
       output: {
         manualChunks: (id) => {
+          if (id.includes('node_modules/highlight.js')) {
+            return 'markdown_highlight';
+          }
+          if (id.includes('node_modules/hast-util-raw')) {
+            return 'markdown_large';
+          }
+          if (id.includes('node_modules/katex')) {
+            return 'markdown_large';
+          }
           if (id.includes('node_modules')) {
             return 'vendor';
           }
@@ -78,17 +156,6 @@ export function sourcemapExclude(opts?: SourcemapExclude): Plugin {
           map: { mappings: '' },
         };
       }
-    },
-  };
-}
-
-function htmlPlugin(env: ReturnType<typeof loadEnv>) {
-  return {
-    name: 'html-transform',
-    transformIndexHtml: {
-      enforce: 'pre' as const,
-      transform: (html: string): string =>
-        html.replace(/%(.*?)%/g, (match, p1) => env[p1] ?? match),
     },
   };
 }

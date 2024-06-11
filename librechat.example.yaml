@@ -1,13 +1,13 @@
 # For more information, see the Configuration Guide:
-# https://docs.librechat.ai/install/configuration/custom_config.html
+# https://www.librechat.ai/docs/configuration/librechat_yaml
 
 # Configuration version (required)
-version: 1.0.5
+version: 1.0.9
 
 # Cache settings: Set to true to enable caching
 cache: true
 
-# Custom nterface configuration
+# Custom interface configuration
 interface:
   # Privacy policy settings
   privacyPolicy:
@@ -24,22 +24,49 @@ registration:
   socialLogins: ['github', 'google', 'discord', 'openid', 'facebook']
   # allowedDomains:
   # - "gmail.com"
+
+# tts:
+#   url: ''
+#   apiKey: '${TTS_API_KEY}'
+#   model: ''
+#   backend: ''
+#   voice: ''
+#   compatibility: ''
+#   voice_settings:
+#     similarity_boost: ''
+#     stability: ''
+#     style: ''
+#     use_speaker_boost:
+#   pronunciation_dictionary_locators: ['']
+#  
+# stt:
+#   url: ''
+#   apiKey: '${STT_API_KEY}'
+#   model: ''
+
 # rateLimits:
 #   fileUploads:
 #     ipMax: 100
 #     ipWindowInMinutes: 60  # Rate limit window for file uploads per IP
 #     userMax: 50
 #     userWindowInMinutes: 60  # Rate limit window for file uploads per user
+#   conversationsImport:
+#     ipMax: 100
+#     ipWindowInMinutes: 60  # Rate limit window for conversation imports per IP
+#     userMax: 50
+#     userWindowInMinutes: 60  # Rate limit window for conversation imports per user
 
 # Definition of custom endpoints
 endpoints:
   # assistants:
   #   disableBuilder: false # Disable Assistants Builder Interface by setting to `true`
-  #   pollIntervalMs: 750  # Polling interval for checking assistant updates
+  #   pollIntervalMs: 3000  # Polling interval for checking assistant updates
   #   timeoutMs: 180000  # Timeout for assistant operations
   #   # Should only be one or the other, either `supportedIds` or `excludedIds`
   #   supportedIds: ["asst_supportedAssistantId1", "asst_supportedAssistantId2"]
   #   # excludedIds: ["asst_excludedAssistantId"]
+  #   Only show assistants that the user created or that were created externally (e.g. in Assistants playground).
+  #   # privateAssistants: false # Does not work with `supportedIds` or `excludedIds`
   #   # (optional) Models that support retrieval, will default to latest known OpenAI models that support the feature
   #   retrievalModels: ["gpt-4-turbo-preview"]
   #   # (optional) Assistant Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
@@ -50,7 +77,14 @@ endpoints:
       apiKey: '${GROQ_API_KEY}'
       baseURL: 'https://api.groq.com/openai/v1/'
       models:
-        default: ['llama2-70b-4096', 'mixtral-8x7b-32768', 'gemma-7b-it']
+        default:
+          [
+            'llama3-70b-8192',
+            'llama3-8b-8192',
+            'llama2-70b-4096',
+            'mixtral-8x7b-32768',
+            'gemma-7b-it',
+          ]
         fetch: false
       titleConvo: true
       titleModel: 'mixtral-8x7b-32768'
@@ -109,10 +143,10 @@ endpoints:
       apiKey: '${OPENROUTER_KEY}'
       baseURL: 'https://openrouter.ai/api/v1'
       models:
-        default: ['gpt-3.5-turbo']
+        default: ['meta-llama/llama-3-70b-instruct']
         fetch: true
       titleConvo: true
-      titleModel: 'gpt-3.5-turbo'
+      titleModel: 'meta-llama/llama-3-70b-instruct'
       # Recommended: Drop the stop parameter from the request as Openrouter models use a variety of stop tokens.
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
@@ -134,5 +168,5 @@ endpoints:
 #       fileSizeLimit: 5
 #   serverFileSizeLimit: 100  # Global server file size limit in MB
 #   avatarSizeLimit: 2  # Limit for user avatar image size in MB
-# See the Custom Configuration Guide for more information:
-# https://docs.librechat.ai/install/configuration/custom_config.html
+# See the Custom Configuration Guide for more information on Assistants Config:
+# https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/assistants_endpoint

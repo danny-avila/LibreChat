@@ -1,11 +1,10 @@
-const fs = require('fs');
-const path = require('path');
-const axios = require('axios');
+const fetch = require('node-fetch');
 const passport = require('passport');
 const jwtDecode = require('jsonwebtoken/decode');
 const { Issuer, Strategy: OpenIDStrategy } = require('openid-client');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { findUser, createUser, updateUser } = require('~/models/userMethods');
 const { logger } = require('~/config');
-const User = require('~/models/User');
 
 let crypto;
 try {
@@ -13,22 +12,31 @@ try {
 } catch (err) {
   logger.error('[openidStrategy] crypto support is disabled!', err);
 }
+/**
+ * Downloads an image from a URL using an access token.
+ * @param {string} url
+ * @param {string} accessToken
+ * @returns {Promise<Buffer>}
+ */
+const downloadImage = async (url, accessToken) => {
+  if (!url) {
+    return '';
+  }
 
-const downloadImage = async (url, imagePath, accessToken) => {
   try {
-    const response = await axios.get(url, {
+    const response = await fetch(url, {
+      method: 'GET',
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },
-      responseType: 'arraybuffer',
     });
 
-    fs.mkdirSync(path.dirname(imagePath), { recursive: true });
-    fs.writeFileSync(imagePath, response.data);
-
-    const fileName = path.basename(imagePath);
-
-    return `/images/openid/${fileName}`;
+    if (response.ok) {
+      const buffer = await response.buffer();
+      return buffer;
+    } else {
+      throw new Error(`${response.statusText} (HTTP ${response.status})`);
+    }
   } catch (error) {
     logger.error(
       `[openidStrategy] downloadImage: Error downloading image at URL "${url}": ${error}`,
@@ -36,6 +44,26 @@ const downloadImage = async (url, imagePath, accessToken) => {
     return '';
   }
 };
+
+/**
+ * Converts an input into a string suitable for a username.
+ * If the input is a string, it will be returned as is.
+ * If the input is an array, elements will be joined with underscores.
+ * In case of undefined or other falsy values, a default value will be returned.
+ *
+ * @param {string | string[] | undefined} input - The input value to be converted into a username.
+ * @param {string} [defaultValue=''] - The default value to return if the input is falsy.
+ * @returns {string} The processed input as a string suitable for a username.
+ */
+function convertToUsername(input, defaultValue = '') {
+  if (typeof input === 'string') {
+    return input;
+  } else if (Array.isArray(input)) {
+    return input.join('_');
+  }
+
+  return defaultValue;
+}
 
 async function setupOpenId() {
   try {
@@ -57,10 +85,21 @@ async function setupOpenId() {
       },
       async (tokenset, userinfo, done) => {
         try {
-          let user = await User.findOne({ openidId: userinfo.sub });
+          logger.info(`[openidStrategy] verify login openidId: ${userinfo.sub}`);
+          logger.debug('[openidStrategy] very login tokenset and userinfo', { tokenset, userinfo });
+
+          let user = await findUser({ openidId: userinfo.sub });
+          logger.info(
+            `[openidStrategy] user ${user ? 'found' : 'not found'} with openidId: ${userinfo.sub}`,
+          );
 
           if (!user) {
-            user = await User.findOne({ email: userinfo.email });
+            user = await findUser({ email: userinfo.email });
+            logger.info(
+              `[openidStrategy] user ${user ? 'found' : 'not found'} with email: ${
+                userinfo.email
+              } for openidId: ${userinfo.sub}`,
+            );
           }
 
           let fullName = '';
@@ -92,8 +131,8 @@ async function setupOpenId() {
             }, decodedToken);
 
             if (!found) {
-              console.error(
-                `Key '${requiredRoleParameterPath}' not found in ${requiredRoleTokenKind} token!`,
+              logger.error(
+                `[openidStrategy] Key '${requiredRoleParameterPath}' not found in ${requiredRoleTokenKind} token!`,
               );
             }
 
@@ -104,23 +143,30 @@ async function setupOpenId() {
             }
           }
 
+          const username = convertToUsername(
+            userinfo.username || userinfo.given_name || userinfo.email,
+          );
+
           if (!user) {
-            user = new User({
+            user = {
               provider: 'openid',
               openidId: userinfo.sub,
-              username: userinfo.username || userinfo.given_name || '',
+              username,
               email: userinfo.email || '',
               emailVerified: userinfo.email_verified || false,
               name: fullName,
-            });
+            };
+            const userId = await createUser();
+            user._id = userId;
           } else {
             user.provider = 'openid';
             user.openidId = userinfo.sub;
-            user.username = userinfo.username || userinfo.given_name || '';
+            user.username = username;
             user.name = fullName;
           }
 
-          if (userinfo.picture) {
+          if (userinfo.picture && !user.avatar?.includes('manual=true')) {
+            /** @type {string | undefined} */
             const imageUrl = userinfo.picture;
 
             let fileName;
@@ -132,32 +178,35 @@ async function setupOpenId() {
               fileName = userinfo.sub + '.png';
             }
 
-            const imagePath = path.join(
-              __dirname,
-              '..',
-              '..',
-              'client',
-              'public',
-              'images',
-              'openid',
-              fileName,
-            );
-
-            const imagePathOrEmpty = await downloadImage(
-              imageUrl,
-              imagePath,
-              tokenset.access_token,
-            );
-
-            user.avatar = imagePathOrEmpty;
-          } else {
-            user.avatar = '';
+            const imageBuffer = await downloadImage(imageUrl, tokenset.access_token);
+            if (imageBuffer) {
+              const { saveBuffer } = getStrategyFunctions(process.env.CDN_PROVIDER);
+              const imagePath = await saveBuffer({
+                fileName,
+                userId: user._id.toString(),
+                buffer: imageBuffer,
+              });
+              user.avatar = imagePath ?? '';
+            }
           }
 
-          await user.save();
+          user = await updateUser(user._id, user);
+
+          logger.info(
+            `[openidStrategy] login success openidId: ${user.openidId} | email: ${user.email} | username: ${user.username} `,
+            {
+              user: {
+                openidId: user.openidId,
+                username: user.username,
+                email: user.email,
+                name: user.name,
+              },
+            },
+          );
 
           done(null, user);
         } catch (err) {
+          logger.error('[openidStrategy] login failed', err);
           done(err);
         }
       },

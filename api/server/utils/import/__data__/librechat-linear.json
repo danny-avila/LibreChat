@@ -1,0 +1,40 @@
+{
+  "conversationId": "4c9e1402-f746-479d-8a18-2dfab1bf750f",
+  "endpoint": "azureOpenAI",
+  "title": "Adventure Across Time and Space",
+  "exportAt": "20:33:31 GMT-0400 (Eastern Daylight Time)",
+  "branches": false,
+  "recursive": false,
+  "messages": [
+    {
+      "messageId": "ed3fdaaa-e174-4d70-89a9-b06e70939723",
+      "conversationId": "4c9e1402-f746-479d-8a18-2dfab1bf750f",
+      "createdAt": "2024-05-29T00:33:03.661Z",
+      "endpoint": "azureOpenAI",
+      "error": false,
+      "isCreatedByUser": true,
+      "isEdited": false,
+      "model": null,
+      "parentMessageId": null,
+      "sender": "user",
+      "text": "tell me a long story",
+      "unfinished": false,
+      "updatedAt": "2024-05-29T00:33:03.661Z"
+    },
+    {
+      "messageId": "113b8336-4b19-4f91-8eed-741b3dc2940e",
+      "conversationId": "4c9e1402-f746-479d-8a18-2dfab1bf750f",
+      "createdAt": "2024-05-29T00:33:03.661Z",
+      "endpoint": "azureOpenAI",
+      "error": false,
+      "isCreatedByUser": false,
+      "isEdited": false,
+      "model": "gpt-4o",
+      "parentMessageId": "ed3fdaaa-e174-4d70-89a9-b06e70939723",
+      "sender": "GPT-4",
+      "text": "Of course! Here’s a detailed and engaging story:\n\n---\n\n### The Legend of Eldoria\n\nNestled between towering mountains and dense, ancient forests was the enigmatic kingdom of Eldoria. This realm, clo aked in perpetual twilight, was the stuff of legends. It was said that the land was blessed by the gods and guarded by mythical creatures. Eldoria was a place where magic and realism intertwined seamlessly, creating a land of beauty, wonder, and peril.\n\nIn the heart of this kingdom lay the grand city of Lumina, known",
+      "unfinished": false,
+      "updatedAt": "2024-05-29T00:33:03.661Z"
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 import { Fragment } from 'react';
+import { ViolationTypes } from 'librechat-data-provider';
 import type { TResPlugin } from 'librechat-data-provider';
 import type { TMessageContentProps, TText, TDisplayProps } from '~/common';
 import { useAuthContext } from '~/hooks';
@@ -12,7 +13,7 @@ import Error from './Error';
 const ErrorMessage = ({ text }: TText) => {
   const { logout } = useAuthContext();
 
-  if (text.includes('ban')) {
+  if (text.includes(ViolationTypes.BAN)) {
     logout();
     return null;
   }

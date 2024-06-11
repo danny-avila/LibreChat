@@ -2,15 +2,15 @@ import type { TModelSelectProps } from '~/common';
 import { ESide } from '~/common';
 import {
   Switch,
-  SelectDropDown,
   Label,
   Slider,
-  InputNumber,
   HoverCard,
+  InputNumber,
+  SelectDropDown,
   HoverCardTrigger,
 } from '~/components';
 import OptionHover from './OptionHover';
-import { cn, optionText, defaultTextProps, removeFocusOutlines } from '~/utils/';
+import { cn, optionText, defaultTextProps, removeFocusRings } from '~/utils';
 import { useLocalize } from '~/hooks';
 
 export default function Settings({ conversation, setOption, models, readonly }: TModelSelectProps) {
@@ -42,7 +42,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             setValue={setModel}
             availableValues={models}
             disabled={readonly}
-            className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusOutlines)}
+            className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusRings)}
             containerClassName="flex w-full resize-none"
           />
         </div>

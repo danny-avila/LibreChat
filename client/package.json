@@ -1,10 +1,11 @@
 {
   "name": "@librechat/frontend",
-  "version": "0.7.0",
+  "version": "0.7.2",
   "description": "",
   "type": "module",
   "scripts": {
     "data-provider": "cd .. && npm run build:data-provider",
+    "build:file": "cross-env NODE_ENV=production vite build --debug > vite-output.log 2>&1",
     "build": "cross-env NODE_ENV=production vite build",
     "build:ci": "cross-env NODE_ENV=development vite build --mode ci",
     "dev": "cross-env NODE_ENV=development vite",
@@ -78,9 +79,11 @@
     "react-markdown": "^8.0.6",
     "react-resizable-panels": "^1.0.9",
     "react-router-dom": "^6.11.2",
+    "react-speech-recognition": "^3.10.0",
     "react-textarea-autosize": "^8.4.0",
     "react-transition-group": "^4.4.5",
     "recoil": "^0.7.7",
+    "regenerator-runtime": "^0.14.1",
     "rehype-highlight": "^6.0.0",
     "rehype-katex": "^6.0.2",
     "rehype-raw": "^6.1.1",
@@ -127,7 +130,7 @@
     "ts-jest": "^29.1.0",
     "typescript": "^5.0.4",
     "vite": "^5.1.1",
-    "vite-plugin-html": "^3.2.0",
-    "vite-plugin-node-polyfills": "^0.17.0"
+    "vite-plugin-node-polyfills": "^0.17.0",
+    "vite-plugin-pwa": "^0.19.8"
   }
 }

@@ -13,7 +13,7 @@ module.exports = {
   ...handleInputs,
   ...instructions,
   ...titlePrompts,
-  truncateText,
+  ...truncateText,
   createVisionPrompt,
   createContextHandlers,
 };

@@ -1,5 +1,12 @@
+import { useMemo } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
-import { ImageDetail, imageDetailNumeric, imageDetailValue } from 'librechat-data-provider';
+import {
+  EModelEndpoint,
+  ImageDetail,
+  imageDetailNumeric,
+  imageDetailValue,
+} from 'librechat-data-provider';
+import type { TModelSelectProps, OnInputNumberChange } from '~/common';
 import {
   Input,
   Label,
@@ -10,9 +17,10 @@ import {
   SelectDropDown,
   HoverCardTrigger,
 } from '~/components/ui';
-import { cn, defaultTextProps, optionText, removeFocusOutlines } from '~/utils/';
+import { cn, defaultTextProps, optionText, removeFocusOutlines, removeFocusRings } from '~/utils';
+import OptionHoverAlt from '~/components/SidePanel/Parameters/OptionHover';
+import { DynamicTags } from '~/components/SidePanel/Parameters';
 import { useLocalize, useDebouncedInput } from '~/hooks';
-import type { TModelSelectProps } from '~/common';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
 
@@ -22,6 +30,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
     endpoint,
     endpointType,
     model,
+    modelLabel,
     chatGptLabel,
     promptPrefix,
     temperature,
@@ -30,37 +39,58 @@ export default function Settings({ conversation, setOption, models, readonly }: 
     presence_penalty: presP,
     resendFiles,
     imageDetail,
+    maxContextTokens,
+    max_tokens,
   } = conversation ?? {};
-  const [setChatGptLabel, chatGptLabelValue] = useDebouncedInput({
+
+  const [setChatGptLabel, chatGptLabelValue] = useDebouncedInput<string | null | undefined>({
     setOption,
     optionKey: 'chatGptLabel',
-    initialValue: chatGptLabel,
+    initialValue: modelLabel ?? chatGptLabel,
   });
-  const [setPromptPrefix, promptPrefixValue] = useDebouncedInput({
+  const [setPromptPrefix, promptPrefixValue] = useDebouncedInput<string | null | undefined>({
     setOption,
     optionKey: 'promptPrefix',
     initialValue: promptPrefix,
   });
-  const [setTemperature, temperatureValue] = useDebouncedInput({
+  const [setTemperature, temperatureValue] = useDebouncedInput<number | null | undefined>({
     setOption,
     optionKey: 'temperature',
     initialValue: temperature,
   });
-  const [setTopP, topPValue] = useDebouncedInput({
+  const [setTopP, topPValue] = useDebouncedInput<number | null | undefined>({
     setOption,
     optionKey: 'top_p',
     initialValue: topP,
   });
-  const [setFreqP, freqPValue] = useDebouncedInput({
+  const [setFreqP, freqPValue] = useDebouncedInput<number | null | undefined>({
     setOption,
     optionKey: 'frequency_penalty',
     initialValue: freqP,
   });
-  const [setPresP, presPValue] = useDebouncedInput({
+  const [setPresP, presPValue] = useDebouncedInput<number | null | undefined>({
     setOption,
     optionKey: 'presence_penalty',
     initialValue: presP,
   });
+  const [setMaxContextTokens, maxContextTokensValue] = useDebouncedInput<number | null | undefined>(
+    {
+      setOption,
+      optionKey: 'maxContextTokens',
+      initialValue: maxContextTokens,
+    },
+  );
+  const [setMaxOutputTokens, maxOutputTokensValue] = useDebouncedInput<number | null | undefined>({
+    setOption,
+    optionKey: 'max_tokens',
+    initialValue: max_tokens,
+  });
+
+  const optionEndpoint = useMemo(() => endpointType ?? endpoint, [endpoint, endpointType]);
+  const isOpenAI = useMemo(
+    () => optionEndpoint === EModelEndpoint.openAI || optionEndpoint === EModelEndpoint.azureOpenAI,
+    [optionEndpoint],
+  );
 
   if (!conversation) {
     return null;
@@ -69,8 +99,6 @@ export default function Settings({ conversation, setOption, models, readonly }: 
   const setModel = setOption('model');
   const setResendFiles = setOption('resendFiles');
   const setImageDetail = setOption('imageDetail');
-
-  const optionEndpoint = endpointType ?? endpoint;
 
   return (
     <div className="grid grid-cols-5 gap-6">
@@ -81,7 +109,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             setValue={setModel}
             availableValues={models}
             disabled={readonly}
-            className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusOutlines)}
+            className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusRings)}
             containerClassName="flex w-full resize-none"
           />
         </div>
@@ -120,8 +148,92 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             )}
           />
         </div>
+        <div className="grid w-full items-start gap-2">
+          <DynamicTags
+            settingKey="stop"
+            setOption={setOption}
+            label="com_endpoint_stop"
+            labelCode={true}
+            description="com_endpoint_openai_stop"
+            descriptionCode={true}
+            placeholder="com_endpoint_stop_placeholder"
+            placeholderCode={true}
+            descriptionSide="right"
+            maxTags={isOpenAI ? 4 : undefined}
+            conversation={conversation}
+            readonly={readonly}
+          />
+        </div>
       </div>
       <div className="col-span-5 flex flex-col items-center justify-start gap-6 px-3 sm:col-span-2">
+        <HoverCard openDelay={300}>
+          <HoverCardTrigger className="grid w-full items-center gap-2">
+            <div className="mt-1 flex w-full justify-between">
+              <Label htmlFor="max-context-tokens" className="text-left text-sm font-medium">
+                {localize('com_endpoint_context_tokens')}{' '}
+              </Label>
+              <InputNumber
+                id="max-context-tokens"
+                stringMode={false}
+                disabled={readonly}
+                value={maxContextTokensValue as number}
+                onChange={setMaxContextTokens as OnInputNumberChange}
+                placeholder={localize('com_nav_theme_system')}
+                min={10}
+                max={2000000}
+                step={1000}
+                controls={false}
+                className={cn(
+                  defaultTextProps,
+                  cn(
+                    optionText,
+                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                    'w-1/3',
+                  ),
+                )}
+              />
+            </div>
+          </HoverCardTrigger>
+          <OptionHoverAlt
+            description="com_endpoint_context_info"
+            langCode={true}
+            side={ESide.Left}
+          />
+        </HoverCard>
+        <HoverCard openDelay={300}>
+          <HoverCardTrigger className="grid w-full items-center gap-2">
+            <div className="mt-1 flex w-full justify-between">
+              <Label htmlFor="max-output-tokens" className="text-left text-sm font-medium">
+                {localize('com_endpoint_max_output_tokens')}{' '}
+              </Label>
+              <InputNumber
+                id="max-output-tokens"
+                stringMode={false}
+                disabled={readonly}
+                value={maxOutputTokensValue as number}
+                onChange={setMaxOutputTokens as OnInputNumberChange}
+                placeholder={localize('com_nav_theme_system')}
+                min={10}
+                max={2000000}
+                step={1000}
+                controls={false}
+                className={cn(
+                  defaultTextProps,
+                  cn(
+                    optionText,
+                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                    'w-1/3',
+                  ),
+                )}
+              />
+            </div>
+          </HoverCardTrigger>
+          <OptionHoverAlt
+            description="com_endpoint_openai_max_tokens"
+            langCode={true}
+            side={ESide.Left}
+          />
+        </HoverCard>
         <HoverCard openDelay={300}>
           <HoverCardTrigger className="grid w-full items-center gap-2">
             <div className="flex justify-between">
@@ -133,9 +245,10 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               </Label>
               <InputNumber
                 id="temp-int"
+                stringMode={false}
                 disabled={readonly}
                 value={temperatureValue as number}
-                onChange={setTemperature}
+                onChange={setTemperature as OnInputNumberChange}
                 max={2}
                 min={0}
                 step={0.01}

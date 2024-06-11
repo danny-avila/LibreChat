@@ -3,7 +3,7 @@ const {
   mapModelToAzureConfig,
   resolveHeaders,
 } = require('librechat-data-provider');
-const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
+const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/UserService');
 const { isEnabled, isUserProvided } = require('~/server/utils');
 const { getAzureCredentials } = require('~/utils');
 const { PluginsClient } = require('~/app');
@@ -49,18 +49,8 @@ const initializeClient = async ({ req, res, endpointOption }) => {
 
   let userValues = null;
   if (expiresAt && (userProvidesKey || userProvidesURL)) {
-    checkUserKeyExpiry(
-      expiresAt,
-      'Your OpenAI API values have expired. Please provide them again.',
-    );
-    userValues = await getUserKey({ userId: req.user.id, name: endpoint });
-    try {
-      userValues = JSON.parse(userValues);
-    } catch (e) {
-      throw new Error(
-        `Invalid JSON provided for ${endpoint} user values. Please provide them again.`,
-      );
-    }
+    checkUserKeyExpiry(expiresAt, endpoint);
+    userValues = await getUserKeyValues({ userId: req.user.id, name: endpoint });
   }
 
   let apiKey = userProvidesKey ? userValues?.apiKey : credentials[endpoint];

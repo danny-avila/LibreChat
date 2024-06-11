@@ -1,33 +1,99 @@
-const { AuthTypeEnum, EModelEndpoint, actionDomainSeparator } = require('librechat-data-provider');
+const {
+  CacheKeys,
+  Constants,
+  AuthTypeEnum,
+  actionDelimiter,
+  isImageVisionTool,
+  actionDomainSeparator,
+} = require('librechat-data-provider');
 const { encryptV2, decryptV2 } = require('~/server/utils/crypto');
-const { getActions } = require('~/models/Action');
+const { getActions, deleteActions } = require('~/models/Action');
+const { deleteAssistant } = require('~/models/Assistant');
+const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
 
+const toolNameRegex = /^[a-zA-Z0-9_-]+$/;
+
 /**
- * Parses the domain for an action.
- *
- * Azure OpenAI Assistants API doesn't support periods in function
- * names due to `[a-zA-Z0-9_-]*` Regex Validation.
- *
- * @param {Express.Request} req - Express Request object
- * @param {string} domain - The domain for the actoin
- * @param {boolean} inverse - If true, replaces periods with `actionDomainSeparator`
- * @returns {string} The parsed domain
+ * Validates tool name against regex pattern and updates if necessary.
+ * @param {object} params - The parameters for the function.
+ * @param {object} params.req - Express Request.
+ * @param {FunctionTool} params.tool - The tool object.
+ * @param {string} params.assistant_id - The assistant ID
+ * @returns {object|null} - Updated tool object or null if invalid and not an action.
  */
-function domainParser(req, domain, inverse = false) {
+const validateAndUpdateTool = async ({ req, tool, assistant_id }) => {
+  let actions;
+  if (isImageVisionTool(tool)) {
+    return null;
+  }
+  if (!toolNameRegex.test(tool.function.name)) {
+    const [functionName, domain] = tool.function.name.split(actionDelimiter);
+    actions = await getActions({ assistant_id, user: req.user.id }, true);
+    const matchingActions = actions.filter((action) => {
+      const metadata = action.metadata;
+      return metadata && metadata.domain === domain;
+    });
+    const action = matchingActions[0];
+    if (!action) {
+      return null;
+    }
+
+    const parsedDomain = await domainParser(req, domain, true);
+
+    if (!parsedDomain) {
+      return null;
+    }
+
+    tool.function.name = `${functionName}${actionDelimiter}${parsedDomain}`;
+  }
+  return tool;
+};
+
+/**
+ * Encodes or decodes a domain name to/from base64, or replacing periods with a custom separator.
+ *
+ * Necessary due to `[a-zA-Z0-9_-]*` Regex Validation, limited to a 64-character maximum.
+ *
+ * @param {Express.Request} req - The Express Request object.
+ * @param {string} domain - The domain name to encode/decode.
+ * @param {boolean} inverse - False to decode from base64, true to encode to base64.
+ * @returns {Promise<string>} Encoded or decoded domain string.
+ */
+async function domainParser(req, domain, inverse = false) {
   if (!domain) {
     return;
   }
 
-  if (!req.app.locals[EModelEndpoint.azureOpenAI]?.assistants) {
+  const domainsCache = getLogStores(CacheKeys.ENCODED_DOMAINS);
+  const cachedDomain = await domainsCache.get(domain);
+  if (inverse && cachedDomain) {
     return domain;
   }
 
-  if (inverse) {
+  if (inverse && domain.length <= Constants.ENCODED_DOMAIN_LENGTH) {
     return domain.replace(/\./g, actionDomainSeparator);
   }
 
-  return domain.replace(actionDomainSeparator, '.');
+  if (inverse) {
+    const modifiedDomain = Buffer.from(domain).toString('base64');
+    const key = modifiedDomain.substring(0, Constants.ENCODED_DOMAIN_LENGTH);
+    await domainsCache.set(key, modifiedDomain);
+    return key;
+  }
+
+  const replaceSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
+
+  if (!cachedDomain) {
+    return domain.replace(replaceSeparatorRegex, '.');
+  }
+
+  try {
+    return Buffer.from(cachedDomain, 'base64').toString('utf-8');
+  } catch (error) {
+    logger.error(`Failed to parse domain (possibly not base64): ${domain}`, error);
+    return domain;
+  }
 }
 
 /**
@@ -139,10 +205,29 @@ function decryptMetadata(metadata) {
   return decryptedMetadata;
 }
 
+/**
+ * Deletes an action and its corresponding assistant.
+ * @param {Object} params - The parameters for the function.
+ * @param {OpenAIClient} params.req - The Express Request object.
+ * @param {string} params.assistant_id - The ID of the assistant.
+ */
+const deleteAssistantActions = async ({ req, assistant_id }) => {
+  try {
+    await deleteActions({ assistant_id, user: req.user.id });
+    await deleteAssistant({ assistant_id, user: req.user.id });
+  } catch (error) {
+    const message = 'Trouble deleting Assistant Actions for Assistant ID: ' + assistant_id;
+    logger.error(message, error);
+    throw new Error(message);
+  }
+};
+
 module.exports = {
-  loadActionSets,
+  deleteAssistantActions,
+  validateAndUpdateTool,
   createActionTool,
   encryptMetadata,
   decryptMetadata,
+  loadActionSets,
   domainParser,
 };

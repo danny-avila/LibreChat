@@ -1,0 +1,143 @@
+{
+  "conversationId": "af1ea676-f525-444f-a9ed-7c8dbf062733",
+  "endpoint": "openAI",
+  "title": "Conversation 1. Web Search",
+  "exportAt": "16:33:32 GMT+0200 (Central European Summer Time)",
+  "branches": true,
+  "recursive": true,
+  "options": {
+    "presetId": null,
+    "model": "gpt-3.5-turbo",
+    "chatGptLabel": null,
+    "promptPrefix": null,
+    "temperature": 1,
+    "top_p": 1,
+    "presence_penalty": 0,
+    "frequency_penalty": 0,
+    "resendFiles": true,
+    "imageDetail": "auto",
+    "endpoint": "openAI",
+    "title": "VW Transporter 2014 Fuel Consumption. Web Search"
+  },
+  "messages": [
+    {
+      "_id": "6615516574dc2ddcdebe40b6",
+      "messageId": "b123942f-ca1a-4b16-9e1f-ea4af5171168",
+      "__v": 0,
+      "conversationId": "af1ea676-f525-444f-a9ed-7c8dbf062733",
+      "createdAt": "2024-04-09T14:32:05.230Z",
+      "endpoint": "openAI",
+      "error": false,
+      "isCreatedByUser": true,
+      "isEdited": false,
+      "model": null,
+      "parentMessageId": "00000000-0000-0000-0000-000000000000",
+      "sender": "user",
+      "text": "What is the fuel consumption of vw  transporter with 8 people in l/km",
+      "unfinished": false,
+      "updatedAt": "2024-04-09T14:32:05.230Z",
+      "user": "65f1ad8c90523874d2d409f8",
+      "children": [
+        {
+          "_id": "6615516574dc2ddcdebe40b8",
+          "messageId": "549a4f45-cf93-4e3b-ae62-1abf02afbfc8",
+          "__v": 0,
+          "conversationId": "af1ea676-f525-444f-a9ed-7c8dbf062733",
+          "createdAt": "2024-04-09T14:32:05.242Z",
+          "endpoint": "openAI",
+          "error": false,
+          "isCreatedByUser": false,
+          "isEdited": false,
+          "model": null,
+          "parentMessageId": "b123942f-ca1a-4b16-9e1f-ea4af5171168",
+          "sender": "GPT-3.5",
+          "text": "The fuel consumption of a Volkswagen Transporter can vary based on the specific model and driving conditions. For example, the 2021 Volkswagen Transporter T6.1 L2H1 2.0 TDI 110HP, which is one of the recent models, doesn't have its fuel consumption data explicitly mentioned in the sources I found. However, a review of a Volkswagen Transporter model, which is equipped with a 2.0-litre four-cylinder turbo diesel engine and a seven-speed dual-clutch automatic transmission, mentions a combined cycle fuel consumption figure of 8.2 litres per 100km. It's important to note that this figure might vary, especially when the vehicle is carrying eight people, as more weight can lead to increased fuel consumption.\n\nFor more detailed information, you might need to refer to the specific model's manual or contact a Volkswagen dealer. Also, keep in mind that real-world fuel consumption can be influenced by factors such as driving style, road conditions, and maintenance of the vehicle ([2021 Volkswagen Transporter T6.1 L2H1 2.0 TDI 110HP specs, dimensions](https://www.ultimatespecs.com/car-specs/Volkswagen/118424/2021-Volkswagen-Transporter-T61-L2H1-20-TDI-110HP.html)) ([Volkswagen Transporter Review - Drive](https://www.drive.com.au/reviews/volkswagen-transporter-review/)).",
+          "unfinished": false,
+          "updatedAt": "2024-04-09T14:32:05.242Z",
+          "user": "65f1ad8c90523874d2d409f8",
+          "children": [
+            {
+              "_id": "6615516574dc2ddcdebe40ba",
+              "messageId": "880e5357-3e0c-4218-b351-fd3fc184adef",
+              "__v": 0,
+              "conversationId": "af1ea676-f525-444f-a9ed-7c8dbf062733",
+              "createdAt": "2024-04-09T14:32:05.247Z",
+              "endpoint": "openAI",
+              "error": false,
+              "isCreatedByUser": true,
+              "isEdited": false,
+              "model": null,
+              "parentMessageId": "549a4f45-cf93-4e3b-ae62-1abf02afbfc8",
+              "sender": "user",
+              "text": "What about 10 year old model",
+              "unfinished": false,
+              "updatedAt": "2024-04-09T14:32:05.247Z",
+              "user": "65f1ad8c90523874d2d409f8",
+              "children": [
+                {
+                  "_id": "6615516574dc2ddcdebe40bc",
+                  "messageId": "e9796d11-3bdf-4e25-9f0e-4802bbbb8c6d",
+                  "__v": 0,
+                  "conversationId": "af1ea676-f525-444f-a9ed-7c8dbf062733",
+                  "createdAt": "2024-04-09T14:32:05.256Z",
+                  "endpoint": "openAI",
+                  "error": false,
+                  "isCreatedByUser": false,
+                  "isEdited": false,
+                  "model": null,
+                  "parentMessageId": "880e5357-3e0c-4218-b351-fd3fc184adef",
+                  "sender": "GPT-3.5",
+                  "text": "The fuel consumption of a 2014 Volkswagen Transporter, specifically the TDI340 model with a 2.0 L engine, is reported as follows:\n- Combined: 8.2 L/100km\n- Highway: 6.9 L/100km\n- City: 10.2 L/100km\n\nThese figures can vary based on driving conditions and the vehicle's load. The actual consumption might be higher when carrying eight people due to the additional weight ([Volkswagen Transporter TDI340 2014 - Pricing & Specifications | carsales.com.au](https://www.carsales.com.au/volkswagen/transporter/price/2014/tdi340-381631/)).",
+                  "unfinished": false,
+                  "updatedAt": "2024-04-09T14:32:05.256Z",
+                  "user": "65f1ad8c90523874d2d409f8",
+                  "children": [
+                    {
+                      "_id": "6615516574dc2ddcdebe40be",
+                      "messageId": "04408c06-62dc-4961-8ef5-4336b68e7a0a",
+                      "__v": 0,
+                      "conversationId": "af1ea676-f525-444f-a9ed-7c8dbf062733",
+                      "createdAt": "2024-04-09T14:32:05.261Z",
+                      "endpoint": "openAI",
+                      "error": false,
+                      "isCreatedByUser": true,
+                      "isEdited": false,
+                      "model": null,
+                      "parentMessageId": "e9796d11-3bdf-4e25-9f0e-4802bbbb8c6d",
+                      "sender": "user",
+                      "text": "Is it for fully loaded    car?",
+                      "unfinished": false,
+                      "updatedAt": "2024-04-09T14:32:05.261Z",
+                      "user": "65f1ad8c90523874d2d409f8",
+                      "children": [
+                        {
+                          "_id": "6615516574dc2ddcdebe40c0",
+                          "messageId": "645b925b-ef14-451f-9be3-814de55a5ae4",
+                          "__v": 0,
+                          "conversationId": "af1ea676-f525-444f-a9ed-7c8dbf062733",
+                          "createdAt": "2024-04-09T14:32:05.266Z",
+                          "endpoint": "openAI",
+                          "error": false,
+                          "isCreatedByUser": false,
+                          "isEdited": false,
+                          "model": null,
+                          "parentMessageId": "04408c06-62dc-4961-8ef5-4336b68e7a0a",
+                          "sender": "GPT-3.5",
+                          "text": "The fuel consumption figures for the 2014 Volkswagen Transporter TDI340, such as the combined 8.2 L/100km, are typically based on standardized tests. These tests don't necessarily reflect a fully loaded vehicle. The actual fuel consumption can vary and is likely to be higher when the vehicle is fully loaded with passengers or cargo, due to the increased weight and potential changes in driving conditions such as more frequent acceleration and deceleration ([Volkswagen Transporter TDI340 2014 - Pricing & Specifications | carsales.com.au](https://www.carsales.com.au/volkswagen/transporter/price/2014/tdi340-381631/)).",
+                          "unfinished": false,
+                          "updatedAt": "2024-04-09T14:32:05.266Z",
+                          "user": "65f1ad8c90523874d2d409f8",
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

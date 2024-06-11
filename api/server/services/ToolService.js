@@ -20,6 +20,14 @@ const { redactMessage } = require('~/config/parsers');
 const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
 
+const filteredTools = new Set([
+  'ChatTool.js',
+  'CodeSherpa.js',
+  'CodeSherpaTools.js',
+  'E2BTools.js',
+  'extractionChain.js',
+]);
+
 /**
  * Loads and formats tools from the specified tool directory.
  *
@@ -30,57 +38,66 @@ const { logger } = require('~/config');
  *
  * @param {object} params - The parameters for the function.
  * @param {string} params.directory - The directory path where the tools are located.
- * @param {Set<string>} [params.filter=new Set()] - A set of filenames to exclude from loading.
+ * @param {Array<string>} [params.adminFilter=[]] - Array of admin-defined tool keys to exclude from loading.
+ * @param {Array<string>} [params.adminIncluded=[]] - Array of admin-defined tool keys to include from loading.
  * @returns {Record<string, FunctionTool>} An object mapping each tool's plugin key to its instance.
  */
-function loadAndFormatTools({ directory, filter = new Set() }) {
+function loadAndFormatTools({ directory, adminFilter = [], adminIncluded = [] }) {
+  const filter = new Set([...adminFilter, ...filteredTools]);
+  const included = new Set(adminIncluded);
   const tools = [];
   /* Structured Tools Directory */
   const files = fs.readdirSync(directory);
 
-  for (const file of files) {
-    if (file.endsWith('.js') && !filter.has(file)) {
-      const filePath = path.join(directory, file);
-      let ToolClass = null;
-      try {
-        ToolClass = require(filePath);
-      } catch (error) {
-        logger.error(`[loadAndFormatTools] Error loading tool from ${filePath}:`, error);
-        continue;
-      }
-
-      if (!ToolClass) {
-        continue;
-      }
-
-      if (ToolClass.prototype instanceof StructuredTool) {
-        /** @type {StructuredTool | null} */
-        let toolInstance = null;
-        try {
-          toolInstance = new ToolClass({ override: true });
-        } catch (error) {
-          logger.error(
-            `[loadAndFormatTools] Error initializing \`${file}\` tool; if it requires authentication, is the \`override\` field configured?`,
-            error,
-          );
-          continue;
-        }
-
-        if (!toolInstance) {
-          continue;
-        }
-
-        const formattedTool = formatToOpenAIAssistantTool(toolInstance);
-        tools.push(formattedTool);
-      }
-    }
+  if (included.size > 0 && adminFilter.length > 0) {
+    logger.warn(
+      'Both `includedTools` and `filteredTools` are defined; `filteredTools` will be ignored.',
+    );
   }
 
-  /**
-   * Basic Tools; schema: { input: string }
-   */
-  const basicToolInstances = [new Calculator()];
+  for (const file of files) {
+    const filePath = path.join(directory, file);
+    if (!file.endsWith('.js') || (filter.has(file) && included.size === 0)) {
+      continue;
+    }
 
+    let ToolClass = null;
+    try {
+      ToolClass = require(filePath);
+    } catch (error) {
+      logger.error(`[loadAndFormatTools] Error loading tool from ${filePath}:`, error);
+      continue;
+    }
+
+    if (!ToolClass || !(ToolClass.prototype instanceof StructuredTool)) {
+      continue;
+    }
+
+    if (included.size > 0 && !included.has(file)) {
+      continue;
+    }
+
+    let toolInstance = null;
+    try {
+      toolInstance = new ToolClass({ override: true });
+    } catch (error) {
+      logger.error(
+        `[loadAndFormatTools] Error initializing \`${file}\` tool; if it requires authentication, is the \`override\` field configured?`,
+        error,
+      );
+      continue;
+    }
+
+    if (!toolInstance) {
+      continue;
+    }
+
+    const formattedTool = formatToOpenAIAssistantTool(toolInstance);
+    tools.push(formattedTool);
+  }
+
+  /** Basic Tools; schema: { input: string } */
+  const basicToolInstances = [new Calculator()];
   for (const toolInstance of basicToolInstances) {
     const formattedTool = formatToOpenAIAssistantTool(toolInstance);
     tools.push(formattedTool);
@@ -274,9 +291,16 @@ async function processRequiredActions(client, requiredActions) {
           })) ?? [];
       }
 
-      const actionSet = actionSets.find((action) =>
-        currentAction.tool.includes(domainParser(client.req, action.metadata.domain, true)),
-      );
+      let actionSet = null;
+      let currentDomain = '';
+      for (let action of actionSets) {
+        const domain = await domainParser(client.req, action.metadata.domain, true);
+        if (currentAction.tool.includes(domain)) {
+          currentDomain = domain;
+          actionSet = action;
+          break;
+        }
+      }
 
       if (!actionSet) {
         // TODO: try `function` if no action set is found
@@ -298,10 +322,8 @@ async function processRequiredActions(client, requiredActions) {
         builders = requestBuilders;
       }
 
-      const functionName = currentAction.tool.replace(
-        `${actionDelimiter}${domainParser(client.req, actionSet.metadata.domain, true)}`,
-        '',
-      );
+      const functionName = currentAction.tool.replace(`${actionDelimiter}${currentDomain}`, '');
+
       const requestBuilder = builders[functionName];
 
       if (!requestBuilder) {
@@ -318,29 +340,26 @@ async function processRequiredActions(client, requiredActions) {
       currentAction.toolInput = currentAction.toolInput.input;
     }
 
-    try {
-      const promise = tool
-        ._call(currentAction.toolInput)
-        .then(handleToolOutput)
-        .catch((error) => {
-          logger.error(`Error processing tool ${currentAction.tool}`, error);
-          return {
-            tool_call_id: currentAction.toolCallId,
-            output: `Error processing tool ${currentAction.tool}: ${redactMessage(error.message)}`,
-          };
-        });
-      promises.push(promise);
-    } catch (error) {
+    const handleToolError = (error) => {
       logger.error(
         `tool_call_id: ${currentAction.toolCallId} | Error processing tool ${currentAction.tool}`,
         error,
       );
-      promises.push(
-        Promise.resolve({
-          tool_call_id: currentAction.toolCallId,
-          error: error.message,
-        }),
-      );
+      return {
+        tool_call_id: currentAction.toolCallId,
+        output: `Error processing tool ${currentAction.tool}: ${redactMessage(error.message, 256)}`,
+      };
+    };
+
+    try {
+      const promise = tool
+        ._call(currentAction.toolInput)
+        .then(handleToolOutput)
+        .catch(handleToolError);
+      promises.push(promise);
+    } catch (error) {
+      const toolOutputError = handleToolError(error);
+      promises.push(Promise.resolve(toolOutputError));
     }
   }
 

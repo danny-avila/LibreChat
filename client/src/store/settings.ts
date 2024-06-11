@@ -2,173 +2,76 @@ import { atom } from 'recoil';
 import { SettingsViews } from 'librechat-data-provider';
 import type { TOptionSettings } from '~/common';
 
-const abortScroll = atom<boolean>({
-  key: 'abortScroll',
-  default: false,
-});
-
-const showFiles = atom<boolean>({
-  key: 'showFiles',
-  default: false,
-});
-
-const optionSettings = atom<TOptionSettings>({
-  key: 'optionSettings',
-  default: {},
-});
-
-const showPluginStoreDialog = atom<boolean>({
-  key: 'showPluginStoreDialog',
-  default: false,
-});
-
-const showAgentSettings = atom<boolean>({
-  key: 'showAgentSettings',
-  default: false,
-});
-
-const currentSettingsView = atom<SettingsViews>({
-  key: 'currentSettingsView',
-  default: SettingsViews.default,
-});
-
-const showBingToneSetting = atom<boolean>({
-  key: 'showBingToneSetting',
-  default: false,
-});
-
-const showPopover = atom<boolean>({
-  key: 'showPopover',
-  default: false,
-});
-
-const autoScroll = atom<boolean>({
-  key: 'autoScroll',
-  default: localStorage.getItem('autoScroll') === 'true',
-  effects: [
-    ({ setSelf, onSet }) => {
-      const savedValue = localStorage.getItem('autoScroll');
-      if (savedValue != null) {
-        setSelf(savedValue === 'true');
-      }
-
-      onSet((newValue: unknown) => {
-        if (typeof newValue === 'boolean') {
-          localStorage.setItem('autoScroll', newValue.toString());
+// Improved helper function to create atoms with localStorage
+function atomWithLocalStorage<T>(key: string, defaultValue: T) {
+  return atom<T>({
+    key,
+    default: defaultValue,
+    effects_UNSTABLE: [
+      ({ setSelf, onSet }) => {
+        const savedValue = localStorage.getItem(key);
+        if (savedValue !== null) {
+          try {
+            const parsedValue = JSON.parse(savedValue);
+            setSelf(parsedValue);
+          } catch (e) {
+            console.error(
+              `Error parsing localStorage key "${key}", \`savedValue\`: defaultValue, error:`,
+              e,
+            );
+            localStorage.setItem(key, JSON.stringify(defaultValue));
+            setSelf(defaultValue);
+          }
         }
-      });
-    },
-  ] as const,
-});
 
-const showCode = atom<boolean>({
-  key: 'showCode',
-  default: localStorage.getItem('showCode') === 'true',
-  effects: [
-    ({ setSelf, onSet }) => {
-      const savedValue = localStorage.getItem('showCode');
-      if (savedValue != null) {
-        setSelf(savedValue === 'true');
-      }
+        onSet((newValue: T) => {
+          localStorage.setItem(key, JSON.stringify(newValue));
+        });
+      },
+    ],
+  });
+}
 
-      onSet((newValue: unknown) => {
-        if (typeof newValue === 'boolean') {
-          localStorage.setItem('showCode', newValue.toString());
-        }
-      });
-    },
-  ] as const,
-});
-
-const hideSidePanel = atom<boolean>({
-  key: 'hideSidePanel',
-  default: localStorage.getItem('hideSidePanel') === 'true',
-  effects: [
-    ({ setSelf, onSet }) => {
-      const savedValue = localStorage.getItem('hideSidePanel');
-      if (savedValue != null) {
-        setSelf(savedValue === 'true');
-      }
-
-      onSet((newValue: unknown) => {
-        if (typeof newValue === 'boolean') {
-          localStorage.setItem('hideSidePanel', newValue.toString());
-        }
-      });
-    },
-  ] as const,
-});
-
-const modularChat = atom<boolean>({
-  key: 'modularChat',
-  default: localStorage.getItem('modularChat') === 'true',
-  effects: [
-    ({ setSelf, onSet }) => {
-      const savedValue = localStorage.getItem('modularChat');
-      if (savedValue != null) {
-        setSelf(savedValue === 'true');
-      }
-
-      onSet((newValue: unknown) => {
-        if (typeof newValue === 'boolean') {
-          localStorage.setItem('modularChat', newValue.toString());
-        }
-      });
-    },
-  ] as const,
-});
-
-const LaTeXParsing = atom<boolean>({
-  key: 'LaTeXParsing',
-  default: true,
-  effects: [
-    ({ setSelf, onSet }) => {
-      const savedValue = localStorage.getItem('LaTeXParsing');
-      if (savedValue != null) {
-        setSelf(savedValue === 'true');
-      }
-
-      onSet((newValue: unknown) => {
-        if (typeof newValue === 'boolean') {
-          localStorage.setItem('LaTeXParsing', newValue.toString());
-        }
-      });
-    },
-  ] as const,
-});
-
-const UsernameDisplay = atom<boolean>({
-  key: 'UsernameDisplay',
-  default: localStorage.getItem('UsernameDisplay') === 'true',
-  effects: [
-    ({ setSelf, onSet }) => {
-      const savedValue = localStorage.getItem('UsernameDisplay');
-      if (savedValue != null) {
-        setSelf(savedValue === 'true');
-      }
-
-      onSet((newValue: unknown) => {
-        if (typeof newValue === 'boolean') {
-          localStorage.setItem('UsernameDisplay', newValue.toString());
-        }
-      });
-    },
-  ] as const,
-});
-
-export default {
-  abortScroll,
-  showFiles,
-  optionSettings,
-  showPluginStoreDialog,
-  showAgentSettings,
-  currentSettingsView,
-  showBingToneSetting,
-  showPopover,
-  autoScroll,
-  showCode,
-  hideSidePanel,
-  modularChat,
-  LaTeXParsing,
-  UsernameDisplay,
+// Static atoms without localStorage
+const staticAtoms = {
+  abortScroll: atom<boolean>({ key: 'abortScroll', default: false }),
+  showFiles: atom<boolean>({ key: 'showFiles', default: false }),
+  optionSettings: atom<TOptionSettings>({ key: 'optionSettings', default: {} }),
+  showPluginStoreDialog: atom<boolean>({ key: 'showPluginStoreDialog', default: false }),
+  showAgentSettings: atom<boolean>({ key: 'showAgentSettings', default: false }),
+  currentSettingsView: atom<SettingsViews>({
+    key: 'currentSettingsView',
+    default: SettingsViews.default,
+  }),
+  showBingToneSetting: atom<boolean>({ key: 'showBingToneSetting', default: false }),
+  showPopover: atom<boolean>({ key: 'showPopover', default: false }),
 };
+
+// Atoms with localStorage
+const localStorageAtoms = {
+  autoScroll: atomWithLocalStorage('autoScroll', false),
+  showCode: atomWithLocalStorage('showCode', false),
+  hideSidePanel: atomWithLocalStorage('hideSidePanel', false),
+  modularChat: atomWithLocalStorage('modularChat', true),
+  LaTeXParsing: atomWithLocalStorage('LaTeXParsing', true),
+  UsernameDisplay: atomWithLocalStorage('UsernameDisplay', true),
+  TextToSpeech: atomWithLocalStorage('textToSpeech', true),
+  automaticPlayback: atomWithLocalStorage('automaticPlayback', false),
+  enterToSend: atomWithLocalStorage('enterToSend', true),
+  SpeechToText: atomWithLocalStorage('speechToText', true),
+  conversationMode: atomWithLocalStorage('conversationMode', false),
+  advancedMode: atomWithLocalStorage('advancedMode', false),
+  autoSendText: atomWithLocalStorage('autoSendText', false),
+  autoTranscribeAudio: atomWithLocalStorage('autoTranscribeAudio', false),
+  decibelValue: atomWithLocalStorage('decibelValue', -45),
+  endpointSTT: atomWithLocalStorage('endpointSTT', 'browser'),
+  endpointTTS: atomWithLocalStorage('endpointTTS', 'browser'),
+  cacheTTS: atomWithLocalStorage('cacheTTS', true),
+  voice: atomWithLocalStorage('voice', ''),
+  forkSetting: atomWithLocalStorage('forkSetting', ''),
+  splitAtTarget: atomWithLocalStorage('splitAtTarget', false),
+  rememberForkOption: atomWithLocalStorage('rememberForkOption', true),
+  playbackRate: atomWithLocalStorage<number | null>('playbackRate', null),
+};
+
+export default { ...staticAtoms, ...localStorageAtoms };

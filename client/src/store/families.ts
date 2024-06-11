@@ -5,9 +5,12 @@ import {
   useRecoilState,
   useRecoilValue,
   useSetRecoilState,
+  useRecoilCallback,
 } from 'recoil';
+import { LocalStorageKeys } from 'librechat-data-provider';
 import type { TMessage, TPreset, TConversation, TSubmission } from 'librechat-data-provider';
 import type { TOptionSettings, ExtendedFile } from '~/common';
+import { storeEndpointSettings } from '~/utils';
 import { useEffect } from 'react';
 
 const conversationByIndex = atomFamily<TConversation | null, string | number>({
@@ -15,11 +18,30 @@ const conversationByIndex = atomFamily<TConversation | null, string | number>({
   default: null,
   effects: [
     ({ onSet, node }) => {
-      onSet(async (newValue: TConversation | null) => {
+      onSet(async (newValue) => {
         const index = Number(node.key.split('__')[1]);
         if (newValue?.assistant_id) {
-          localStorage.setItem(`assistant_id__${index}`, newValue.assistant_id);
+          localStorage.setItem(
+            `${LocalStorageKeys.ASST_ID_PREFIX}${index}${newValue?.endpoint}`,
+            newValue.assistant_id,
+          );
         }
+        if (newValue?.spec) {
+          localStorage.setItem(LocalStorageKeys.LAST_SPEC, newValue.spec);
+        }
+        if (newValue?.tools && Array.isArray(newValue.tools)) {
+          localStorage.setItem(
+            LocalStorageKeys.LAST_TOOLS,
+            JSON.stringify(newValue.tools.filter((el) => !!el)),
+          );
+        }
+
+        if (!newValue) {
+          return;
+        }
+
+        storeEndpointSettings(newValue);
+        localStorage.setItem(LocalStorageKeys.LAST_CONVO_SETUP, JSON.stringify(newValue));
       });
     },
   ] as const,
@@ -93,6 +115,36 @@ const showPopoverFamily = atomFamily({
   default: false,
 });
 
+const showMentionPopoverFamily = atomFamily<boolean, string | number | null>({
+  key: 'showMentionPopoverByIndex',
+  default: false,
+});
+
+const globalAudioURLFamily = atomFamily<string | null, string | number | null>({
+  key: 'globalAudioURLByIndex',
+  default: null,
+});
+
+const globalAudioFetchingFamily = atomFamily<boolean, string | number | null>({
+  key: 'globalAudioisFetchingByIndex',
+  default: false,
+});
+
+const globalAudioPlayingFamily = atomFamily<boolean, string | number | null>({
+  key: 'globalAudioisPlayingByIndex',
+  default: false,
+});
+
+const activeRunFamily = atomFamily<string | null, string | number | null>({
+  key: 'activeRunByIndex',
+  default: null,
+});
+
+const audioRunFamily = atomFamily<string | null, string | number | null>({
+  key: 'audioRunByIndex',
+  default: null,
+});
+
 const latestMessageFamily = atomFamily<TMessage | null, string | number | null>({
   key: 'latestMessageByIndex',
   default: null,
@@ -112,6 +164,29 @@ function useCreateConversationAtom(key: string | number) {
   return { conversation, setConversation };
 }
 
+function useClearConvoState() {
+  const clearAllConversations = useRecoilCallback(
+    ({ reset, snapshot }) =>
+      async () => {
+        const conversationKeys = await snapshot.getPromise(conversationKeysAtom);
+
+        for (const conversationKey of conversationKeys) {
+          reset(conversationByIndex(conversationKey));
+
+          const conversation = await snapshot.getPromise(conversationByIndex(conversationKey));
+          if (conversation) {
+            reset(latestMessageFamily(conversationKey));
+          }
+        }
+
+        reset(conversationKeysAtom);
+      },
+    [],
+  );
+
+  return clearAllConversations;
+}
+
 export default {
   conversationByIndex,
   filesByIndex,
@@ -127,5 +202,12 @@ export default {
   showPopoverFamily,
   latestMessageFamily,
   allConversationsSelector,
+  useClearConvoState,
   useCreateConversationAtom,
+  showMentionPopoverFamily,
+  globalAudioURLFamily,
+  activeRunFamily,
+  audioRunFamily,
+  globalAudioPlayingFamily,
+  globalAudioFetchingFamily,
 };

@@ -1,12 +1,18 @@
 import { v4 } from 'uuid';
 import debounce from 'lodash/debounce';
+import { useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useCallback } from 'react';
 import {
   megabyte,
+  QueryKeys,
   EModelEndpoint,
+  codeTypeMapping,
   mergeFileConfig,
+  isAssistantsEndpoint,
+  defaultAssistantsVersion,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
+import type { TEndpointsConfig, TError } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import { useUploadFileMutation, useGetFileConfig } from '~/data-provider';
 import { useDelayedUploadToast } from './useDelayedUploadToast';
@@ -19,10 +25,12 @@ const { checkType } = defaultFileConfig;
 type UseFileHandling = {
   overrideEndpoint?: EModelEndpoint;
   fileSetter?: FileSetter;
-  additionalMetadata?: Record<string, string>;
+  fileFilter?: (file: File) => boolean;
+  additionalMetadata?: Record<string, string | undefined>;
 };
 
 const useFileHandling = (params?: UseFileHandling) => {
+  const queryClient = useQueryClient();
   const { showToast } = useToastContext();
   const [errors, setErrors] = useState<string[]>([]);
   const { startUploadTimer, clearUploadTimer } = useDelayedUploadToast();
@@ -110,8 +118,7 @@ const useFileHandling = (params?: UseFileHandling) => {
       clearUploadTimer(file_id as string);
       deleteFileById(file_id as string);
       setError(
-        (error as { response: { data: { message?: string } } })?.response?.data?.message ??
-          'An error occurred while uploading the file.',
+        (error as TError)?.response?.data?.message ?? 'An error occurred while uploading the file.',
       );
     },
   });
@@ -122,7 +129,7 @@ const useFileHandling = (params?: UseFileHandling) => {
       return;
     }
 
-    startUploadTimer(extendedFile.file_id, extendedFile.file?.name || 'File');
+    startUploadTimer(extendedFile.file_id, extendedFile.file?.name || 'File', extendedFile.size);
 
     const formData = new FormData();
     formData.append(
@@ -140,15 +147,20 @@ const useFileHandling = (params?: UseFileHandling) => {
 
     if (params?.additionalMetadata) {
       for (const [key, value] of Object.entries(params.additionalMetadata)) {
-        formData.append(key, value);
+        if (value) {
+          formData.append(key, value);
+        }
       }
     }
 
     if (
-      endpoint === EModelEndpoint.assistants &&
+      isAssistantsEndpoint(endpoint) &&
       !formData.get('assistant_id') &&
       conversation?.assistant_id
     ) {
+      const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
+      const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
+      formData.append('version', version);
       formData.append('assistant_id', conversation.assistant_id);
       formData.append('model', conversation?.model ?? '');
       formData.append('message_file', 'true');
@@ -162,6 +174,10 @@ const useFileHandling = (params?: UseFileHandling) => {
   const validateFiles = (fileList: File[]) => {
     const existingFiles = Array.from(files.values());
     const incomingTotalSize = fileList.reduce((total, file) => total + file.size, 0);
+    if (incomingTotalSize === 0) {
+      setError('Empty files are not allowed.');
+      return false;
+    }
     const currentTotalSize = existingFiles.reduce((total, file) => total + file.size, 0);
 
     if (fileList.length + files.size > fileLimit) {
@@ -172,10 +188,12 @@ const useFileHandling = (params?: UseFileHandling) => {
     for (let i = 0; i < fileList.length; i++) {
       let originalFile = fileList[i];
       let fileType = originalFile.type;
+      const extension = originalFile.name.split('.').pop() ?? '';
+      const knownCodeType = codeTypeMapping[extension];
 
-      // Infer MIME type for Markdown files when the type is empty
-      if (!fileType && originalFile.name.endsWith('.md')) {
-        fileType = 'text/markdown';
+      // Infer MIME type for Known Code files when the type is empty or a mismatch
+      if (knownCodeType && (!fileType || fileType !== knownCodeType)) {
+        fileType = knownCodeType;
       }
 
       // Check if the file type is still empty after the extension check

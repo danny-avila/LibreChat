@@ -12,6 +12,7 @@ const tokenValues = {
   '4k': { prompt: 1.5, completion: 2 },
   '16k': { prompt: 3, completion: 4 },
   'gpt-3.5-turbo-1106': { prompt: 1, completion: 2 },
+  'gpt-4o': { prompt: 5, completion: 15 },
   'gpt-4-1106': { prompt: 10, completion: 30 },
   'gpt-3.5-turbo-0125': { prompt: 0.5, completion: 1.5 },
   'claude-3-opus': { prompt: 15, completion: 75 },
@@ -25,6 +26,10 @@ const tokenValues = {
   /* cohere doesn't have rates for the older command models,
   so this was from https://artificialanalysis.ai/models/command-light/providers */
   command: { prompt: 0.38, completion: 0.38 },
+  // 'gemini-1.5': { prompt: 7, completion: 21 }, // May 2nd, 2024 pricing
+  // 'gemini': { prompt: 0.5, completion: 1.5 }, // May 2nd, 2024 pricing
+  'gemini-1.5': { prompt: 0, completion: 0 }, // currently free
+  gemini: { prompt: 0, completion: 0 }, // currently free
 };
 
 /**
@@ -48,6 +53,10 @@ const getValueKey = (model, endpoint) => {
     return 'gpt-3.5-turbo-1106';
   } else if (modelName.includes('gpt-3.5')) {
     return '4k';
+  } else if (modelName.includes('gpt-4o')) {
+    return 'gpt-4o';
+  } else if (modelName.includes('gpt-4-vision')) {
+    return 'gpt-4-1106';
   } else if (modelName.includes('gpt-4-1106')) {
     return 'gpt-4-1106';
   } else if (modelName.includes('gpt-4-0125')) {
