@@ -497,6 +497,34 @@ class StreamRunManager {
     return `${stepId}_tool_call_${toolCall.index}_${toolCall.type}`;
   }
 
+  /**
+   * Check Missing Outputs
+   * @param {ToolOutput[]} tool_outputs - The tool outputs.
+   * @param {RequiredAction[]} actions - The required actions.
+   * @returns {ToolOutput[]} completeOutputs - The complete outputs.
+   */
+  checkMissingOutputs(tool_outputs, actions) {
+    const missingOutputs = [];
+
+    for (const item of actions) {
+      const { tool, toolCallId, run_id, thread_id } = item;
+      const outputExists = tool_outputs.some((output) => output.tool_call_id === toolCallId);
+
+      if (!outputExists) {
+        logger.warn(
+          `The "${tool}" tool (ID: ${toolCallId}) failed to produce an output. run_id: ${run_id} thread_id: ${thread_id}`,
+        );
+        missingOutputs.push({
+          tool_call_id: toolCallId,
+          output:
+            'The tool failed to produce an output. The tool may not be currently available or experienced an unhandled error.',
+        });
+      }
+    }
+
+    return [...tool_outputs, ...missingOutputs];
+  }
+
   /* <------------------ Run Event handlers ------------------> */
 
   /**
@@ -519,7 +547,8 @@ class StreamRunManager {
       };
     });
 
-    const { tool_outputs } = await processRequiredActions(this, actions);
+    const { tool_outputs: preliminaryOutputs } = await processRequiredActions(this, actions);
+    const tool_outputs = this.checkMissingOutputs(preliminaryOutputs, actions);
     /** @type {AssistantStream | undefined} */
     let toolRun;
     try {
