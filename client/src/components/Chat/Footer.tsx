@@ -1,8 +1,8 @@
 import React from 'react';
+import ReactMarkdown from 'react-markdown';
 import { Constants } from 'librechat-data-provider';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { useLocalize } from '~/hooks';
-import ReactMarkdown from 'react-markdown';
 
 export default function Footer({ className }: { className?: string }) {
   const { data: config } = useGetStartupConfig();
@@ -33,8 +33,17 @@ export default function Footer({ className }: { className?: string }) {
     </a>
   );
 
-  const mainContentRender = (
-    <span>
+  const mainContentParts = (
+    typeof config?.customFooter === 'string'
+      ? config.customFooter
+      : '[<LibreChat ' +
+        Constants.VERSION +
+        '>](https://librechat.ai) - ' +
+        localize('com_ui_pay_per_call')
+  ).split('|');
+
+  const mainContentRender = mainContentParts.map((text, index) => (
+    <React.Fragment key={`main-content-part-${index}`}>
       <ReactMarkdown
         components={{
           a: (props) => {
@@ -49,18 +58,15 @@ export default function Footer({ className }: { className?: string }) {
               />
             );
           },
+          p: ({ node, ...props }) => <span {...props} />,
         }}
       >
-        {typeof config?.customFooter === 'string'
-          ? config.customFooter
-          : `[<${config?.appTitle || 'LibreChat'} ${
-            Constants.VERSION
-          }>](https://librechat.ai) - ${localize('com_ui_pay_per_call')}`}
+        {text.trim()}
       </ReactMarkdown>
-    </span>
-  );
+    </React.Fragment>
+  ));
 
-  const footerElements = [mainContentRender, privacyPolicyRender, termsOfServiceRender].filter(
+  const footerElements = [...mainContentRender, privacyPolicyRender, termsOfServiceRender].filter(
     Boolean,
   );
 
@@ -68,7 +74,7 @@ export default function Footer({ className }: { className?: string }) {
     <div
       className={
         className ||
-        'relative flex items-center justify-center gap-2 px-2 py-2 text-xs text-gray-600 dark:text-gray-300 md:px-[60px]'
+        'relative flex items-center justify-center gap-2 px-2 py-2 text-center text-xs text-gray-600 dark:text-gray-300 md:px-[60px]'
       }
     >
       {footerElements.map((contentRender, index) => {
