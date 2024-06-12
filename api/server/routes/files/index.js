@@ -1,13 +1,5 @@
 const express = require('express');
 const { uaParser, checkBan, requireJwtAuth, createFileLimiters } = require('~/server/middleware');
-const {
-  uaParser,
-  checkBan,
-  requireJwtAuth,
-  createFileLimiters,
-  createTTSLimiters,
-  createSTTLimiters,
-} = require('~/server/middleware');
 const { createMulterInstance } = require('./multer');
 
 const files = require('./files');

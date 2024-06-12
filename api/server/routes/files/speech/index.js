@@ -1,5 +1,5 @@
 const express = require('express');
-const { createTTSLimiters, createSTTLimiters } = require('~/server/middleware/speech');
+const { createTTSLimiters, createSTTLimiters } = require('~/server/middleware');
 
 const stt = require('./stt');
 const tts = require('./tts');
