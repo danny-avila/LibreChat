@@ -21,7 +21,8 @@ jobs:
             - name: Create Config File
               run: |
                 touch librechat.yaml && chmod 755 librechat.yaml |
-                cat librechat.n2a.yaml >> librechat.yaml
+                cat librechat.n2a.yaml >> librechat.yaml |
+                sed -i '/librechat\*/d' .dockerignore
 
             - name: log in to ACR
               uses: azure/docker-login@v1
@@ -32,7 +33,7 @@ jobs:
 
             - name: build and push docker container
               run: |
-                docker build --no-ignore . -t ${{ env.ACR_HOST }}/paychex/librechat:n2a.${{ github.sha }}
+                docker build . -t ${{ env.ACR_HOST }}/paychex/librechat:n2a.${{ github.sha }}
                 docker push ${{ env.ACR_HOST }}/paychex/librechat:n2a.${{ github.sha }}
 
                 docker build --no-ignore . -t ${{ env.ACR_HOST }}/paychex/librechat:n2a.latest
