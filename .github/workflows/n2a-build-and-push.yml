@@ -18,6 +18,10 @@ jobs:
         steps:
             - uses: actions/checkout@v3
 
+            - name: Create Config File
+              run: |
+                touch librechat.yaml && chmod 755 librechat.yaml && cat librechat.n2a.yaml >> librechat.yaml
+
             - name: log in to ACR
               uses: azure/docker-login@v1
               with:
