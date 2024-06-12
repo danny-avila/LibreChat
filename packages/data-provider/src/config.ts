@@ -274,37 +274,39 @@ const sttSchema = z.object({
     .optional(),
 });
 
-const speechTab = z.object({
-  conversationMode: z.boolean().optional(),
-  advancedMode: z.boolean().optional(),
-  speechToText: z
-    .boolean()
-    .optional()
-    .or(
-      z.object({
-        engineSTT: z.string().optional(),
-        languageSTT: z.string().optional(),
-        autoTranscribeAudio: z.boolean().optional(),
-        decibelValue: z.number().optional(),
-        autoSendText: z.boolean().optional(),
-      }),
-    )
-    .optional(),
-  textToSpeech: z
-    .boolean()
-    .optional()
-    .or(
-      z.object({
-        engineTTS: z.string().optional(),
-        voice: z.string().optional(),
-        languageTTS: z.string().optional(),
-        automaticPlayback: z.boolean().optional(),
-        playbackRate: z.number().optional(),
-        cacheTTS: z.boolean().optional(),
-      }),
-    )
-    .optional(),
-});
+const speechTab = z
+  .object({
+    conversationMode: z.boolean().optional(),
+    advancedMode: z.boolean().optional(),
+    speechToText: z
+      .boolean()
+      .optional()
+      .or(
+        z.object({
+          engineSTT: z.string().optional(),
+          languageSTT: z.string().optional(),
+          autoTranscribeAudio: z.boolean().optional(),
+          decibelValue: z.number().optional(),
+          autoSendText: z.boolean().optional(),
+        }),
+      )
+      .optional(),
+    textToSpeech: z
+      .boolean()
+      .optional()
+      .or(
+        z.object({
+          engineTTS: z.string().optional(),
+          voice: z.string().optional(),
+          languageTTS: z.string().optional(),
+          automaticPlayback: z.boolean().optional(),
+          playbackRate: z.number().optional(),
+          cacheTTS: z.boolean().optional(),
+        }),
+      )
+      .optional(),
+  })
+  .optional();
 
 export enum RateLimitPrefix {
   FILE_UPLOAD = 'FILE_UPLOAD',
@@ -395,11 +397,13 @@ export const configSchema = z.object({
       allowedDomains: z.array(z.string()).optional(),
     })
     .default({ socialLogins: defaultSocialLogins }),
-  speech: z.object({
-    tts: ttsSchema.optional(),
-    stt: sttSchema.optional(),
-    speechTab: speechTab.optional(),
-  }),
+  speech: z
+    .object({
+      tts: ttsSchema.optional(),
+      stt: sttSchema.optional(),
+      speechTab: speechTab.optional(),
+    })
+    .optional(),
   rateLimits: rateLimitSchema.optional(),
   fileConfig: fileConfigSchema.optional(),
   modelSpecs: specsConfigSchema.optional(),
