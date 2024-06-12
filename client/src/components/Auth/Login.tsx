@@ -8,13 +8,20 @@ import LoginForm from './LoginForm';
 
 function Login() {
   const localize = useLocalize();
-  const { error, login } = useAuthContext();
+  const { error, setError, login } = useAuthContext();
   const { startupConfig } = useOutletContext<TLoginLayoutContext>();
 
   return (
     <>
       {error && <ErrorMessage>{localize(getLoginError(error))}</ErrorMessage>}
-      {startupConfig?.emailLoginEnabled && <LoginForm onSubmit={login} />}
+      {startupConfig?.emailLoginEnabled && (
+        <LoginForm
+          onSubmit={login}
+          startupConfig={startupConfig}
+          error={error}
+          setError={setError}
+        />
+      )}
       {startupConfig?.registrationEnabled && (
         <p className="my-4 text-center text-sm font-light text-gray-700 dark:text-white">
           {' '}

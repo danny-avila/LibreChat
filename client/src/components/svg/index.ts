@@ -46,6 +46,7 @@ export { default as VolumeIcon } from './VolumeIcon';
 export { default as VolumeMuteIcon } from './VolumeMuteIcon';
 export { default as SendMessageIcon } from './SendMessageIcon';
 export { default as UserIcon } from './UserIcon';
+export { default as LockIcon } from './LockIcon';
 export { default as NewChatIcon } from './NewChatIcon';
 export { default as ExperimentIcon } from './ExperimentIcon';
 export { default as GoogleIconChat } from './GoogleIconChat';

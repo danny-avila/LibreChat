@@ -24,6 +24,10 @@ export function revokeAllUserKeys(): Promise<unknown> {
   return request.delete(endpoints.revokeAllUserKeys());
 }
 
+export function deleteUser(): Promise<s.TPreset> {
+  return request.delete(endpoints.deleteUser());
+}
+
 export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage[]> {
   if (conversationId === 'new') {
     return Promise.resolve([]);
@@ -136,6 +140,16 @@ export const requestPasswordReset = (
 
 export const resetPassword = (payload: t.TResetPassword) => {
   return request.post(endpoints.resetPassword(), payload);
+};
+
+export const verifyEmail = (payload: t.TVerifyEmail): Promise<t.VerifyEmailResponse> => {
+  return request.post(endpoints.verifyEmail(), payload);
+};
+
+export const resendVerificationEmail = (
+  payload: t.TResendVerificationEmail,
+): Promise<t.VerifyEmailResponse> => {
+  return request.post(endpoints.resendVerificationEmail(), payload);
 };
 
 export const getAvailablePlugins = (): Promise<s.TPlugin[]> => {
@@ -291,20 +305,8 @@ export const uploadFile = (data: FormData): Promise<f.TFileUpload> => {
  * @param data - The FormData containing the file to import.
  * @returns A Promise that resolves to the import start response.
  */
-export const importConversationsFile = (data: FormData): Promise<t.TImportStartResponse> => {
+export const importConversationsFile = (data: FormData): Promise<t.TImportResponse> => {
   return request.postMultiPart(endpoints.importConversation(), data);
-};
-
-/**
- * Retrieves the status of an import conversation job.
- *
- * @param jobId - The ID of the import conversation job.
- * @returns A promise that resolves to the import job status.
- */
-export const queryImportConversationJobStatus = async (
-  jobId: string,
-): Promise<t.TImportJobStatus> => {
-  return request.get(endpoints.importConversationJobStatus(jobId));
 };
 
 export const uploadAvatar = (data: FormData): Promise<f.AvatarUploadResponse> => {
