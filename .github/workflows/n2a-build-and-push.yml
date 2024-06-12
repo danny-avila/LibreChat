@@ -22,7 +22,8 @@ jobs:
               run: |
                 touch librechat.yaml && chmod 755 librechat.yaml |
                 cat librechat.n2a.yaml >> librechat.yaml |
-                sed -i '/librechat\*/d' .dockerignore
+                sed -i '/librechat\*/d' .dockerignore |
+                cat .dockerignore
 
             - name: log in to ACR
               uses: azure/docker-login@v1
