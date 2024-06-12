@@ -215,6 +215,10 @@ export type TSearchMessage = object;
 
 export type TSearchMessageTreeNode = object;
 
+export type TRegisterUserResponse = {
+  message: string;
+};
+
 export type TRegisterUser = {
   name: string;
   email: string;
@@ -243,6 +247,15 @@ export type TResetPassword = {
   password: string;
   confirm_password?: string;
 };
+
+export type VerifyEmailResponse = { message: string };
+
+export type TVerifyEmail = {
+  email: string;
+  token: string;
+};
+
+export type TResendVerificationEmail = Omit<TVerifyEmail, 'token'>;
 
 export type TInterfaceConfig = {
   privacyPolicy?: {
@@ -302,39 +315,9 @@ export type TRequestPasswordResetResponse = {
 /**
  * Represents the response from the import endpoint.
  */
-export type TImportStartResponse = {
+export type TImportResponse = {
   /**
    * The message associated with the response.
    */
   message: string;
-
-  /**
-   * The ID of the job associated with the import.
-   */
-  jobId: string;
-};
-
-/**
- * Represents the status of an import job.
- */
-export type TImportJobStatus = {
-  /**
-   * The name of the job.
-   */
-  name: string;
-
-  /**
-   * The ID of the job.
-   */
-  id: string;
-
-  /**
-   * The status of the job.
-   */
-  status: 'scheduled' | 'running' | 'completed' | 'failed';
-
-  /**
-   * The reason the job failed, if applicable.
-   */
-  failReason?: string;
 };

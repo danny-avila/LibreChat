@@ -1,6 +1,6 @@
 const rateLimit = require('express-rate-limit');
-const { logViolation } = require('../../cache');
-const { removePorts } = require('../utils');
+const { removePorts } = require('~/server/utils');
+const { logViolation } = require('~/cache');
 
 const { REGISTER_WINDOW = 60, REGISTER_MAX = 5, REGISTRATION_VIOLATION_SCORE: score } = process.env;
 const windowMs = REGISTER_WINDOW * 60 * 1000;
