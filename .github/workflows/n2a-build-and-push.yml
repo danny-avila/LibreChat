@@ -22,7 +22,9 @@ jobs:
               run: |
                 touch librechat.yaml && chmod 755 librechat.yaml |
                 cat librechat.n2a.yaml >> librechat.yaml |
-                sed -i '/librechat\*/d' .dockerignore |
+                rm -rf .dockerignore |
+                touch .dockerignore && chmod 755 .dockerignore |
+                cat .paychex.dockerignore >> .dockerignore |
                 cat .dockerignore
 
             - name: log in to ACR
