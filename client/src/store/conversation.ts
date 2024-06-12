@@ -37,6 +37,11 @@ const convoType = atom<'c' | 'r'>({
   default: 'c',
 });
 
+const roomSearchIndex = atom<'user' | 'all'>({
+  key: 'roomSearchIndex',
+  default: 'user',
+});
+
 const messagesSiblingIdxFamily = atomFamily<number, string | null | undefined>({
   key: 'messagesSiblingIdx',
   default: 0,
@@ -50,4 +55,5 @@ export default {
   messagesSiblingIdxFamily,
   convoType,
   rooms,
+  roomSearchIndex,
 };

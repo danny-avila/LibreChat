@@ -12,6 +12,7 @@ export default function Search() {
   const { searchPlaceholderConversation } = useConversation();
   const { query } = useParams();
   const navigate = useNavigate();
+  const [roomSearchIndex] = useRecoilState(store.roomSearchIndex);
 
   // when conversation changed or conversationId (in url) changed
   useEffect(() => {
@@ -20,13 +21,16 @@ export default function Search() {
       if (query) {
         // create new
         searchPlaceholderConversation();
-        setSearchQuery(query);
+        setSearchQuery({
+          text: query,
+          category: roomSearchIndex,
+        });
       } else {
         navigate('/c/new');
       }
     } else if (conversation?.conversationId === 'search') {
       // jump to search page
-      if (searchQuery !== query) {
+      if (searchQuery.text !== query) {
         navigate(`/search/${searchQuery}`);
       }
     } else {
@@ -34,14 +38,14 @@ export default function Search() {
       navigate(`/chat/${conversation?.conversationId}`);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversation, query, searchQuery]);
+  }, [conversation, query, searchQuery, roomSearchIndex]);
 
   // if not a search
   if (conversation?.conversationId !== 'search') {
     return null;
   }
   // if query not match
-  if (searchQuery !== query) {
+  if (searchQuery.text !== query) {
     return null;
   }
   // if query is null

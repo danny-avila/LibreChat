@@ -14,8 +14,9 @@ export default function Rooms({
 }) {
   const [rooms, setRooms] = useRecoilState(store.rooms);
   const searchQuery = useRecoilValue(store.searchQuery);
+  const roomSearchIndex = useRecoilValue(store.roomSearchIndex);
   const searchQueryRes = useSearchInfiniteQuery(
-    { pageNumber: '1', searchQuery: searchQuery },
+    { pageNumber: '1', searchQuery: searchQuery.text, roomIndex: roomSearchIndex },
     { enabled: true },
   );
 

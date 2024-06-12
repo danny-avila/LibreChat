@@ -7,9 +7,12 @@ const isSearchEnabled = atom<boolean | null>({
   default: null,
 });
 
-const searchQuery = atom({
+const searchQuery = atom<{ text: string; category: 'user' | 'all'}>({
   key: 'searchQuery',
-  default: '',
+  default: {
+    text: '',
+    category: 'user',
+  },
 });
 
 const searchResultMessages = atom<TMessage[] | null>({

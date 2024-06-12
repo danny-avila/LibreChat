@@ -8,11 +8,25 @@ const uuid = require('uuid');
  * @param {string} name
  * @returns [Room]
  */
-const getRooms = async (name = '') => {
+const getRooms = async (name = '', roomIndex = 'user') => {
   try {
-    const rooms = await Conversation.find({ title: RegExp(name, 'i'), isRoom: true })
-      .populate('user')
-      .populate('users');
+    let rooms;
+    if (roomIndex === 'all') {
+      rooms = await Conversation.find({ title: RegExp(name, 'i'), isRoom: true })
+        .populate('user')
+        .populate('users');
+    } else {
+      rooms = await Conversation.find({
+        $or: [
+          { user: roomIndex },
+          { users: { $in: [roomIndex] } },
+        ],
+        title: RegExp(name, 'i'),
+        isRoom: true,
+      })
+        .populate('user')
+        .populate('users');
+    }
     return rooms.reverse();
   } catch (error) {
     logger.error('[getRooms] Error getting entire rooms', error);

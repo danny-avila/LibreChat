@@ -33,8 +33,8 @@ export const updateConversation = () => '/api/convos/update';
 
 export const deleteConversation = () => '/api/convos/clear';
 
-export const search = (q: string, pageNumber: string, searchType = 'r') =>
-  `/api/search?q=${q}&pageNumber=${pageNumber}&searchType=${searchType}`;
+export const search = (q: string, pageNumber: string, searchType = 'r', room = 'user') =>
+  `/api/search?q=${q}&pageNumber=${pageNumber}&searchType=${searchType}&room=${room}`;
 
 export const searchEnabled = () => '/api/search/enable';
 

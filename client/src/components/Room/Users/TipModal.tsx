@@ -15,6 +15,7 @@ import { useChatCall } from '~/hooks/useChatCall';
 import { v4 } from 'uuid';
 // eslint-disable-next-line import/no-cycle
 import { TipTrack } from '~/components/Nav/AlarmBox';
+import UserKickButton from './UserKickButton';
 
 const AddressPicker = ({
   item,
@@ -92,7 +93,9 @@ export default function TipModal({
   tip?: TipTrack;
   isKarmaOnly?: boolean;
 }) {
+  const [isTip, setIsTip] = useState<boolean>(false);
   const socket = useInitSocket();
+  const { conversation } = useChatContext();
   const { sendMessage } = useChatCall(socket);
 
   const [you, setYou] = useRecoilState(store.user);
@@ -103,6 +106,12 @@ export default function TipModal({
   const { showToast } = useToastContext();
 
   const { ask } = useChatContext();
+
+  useEffect(() => {
+    if (tip || isKarmaOnly) {
+      setIsTip(true);
+    }
+  }, [tip, isKarmaOnly]);
 
   const sendTipMessage = (v: boolean) => {
     if (v) {
@@ -199,58 +208,28 @@ export default function TipModal({
       </DialogTrigger>
       <DialogTemplate
         showCloseButton={false}
-        title={(tip || isKarmaOnly) ? `Send Karma to @${user.username}` : `Tip @${user.username}`}
+        title={isTip ? `Send Karma to @${user.username}` : `Tip @${user.username}`}
         className="max-w-[450px]"
         main={
           <>
             <div className="flex w-full flex-col items-center gap-2">
-              {(tip || isKarmaOnly) ?
+              {isTip ?
                 <div className="flex w-full flex-col items-center justify-around gap-1">
                   <p className="text-black dark:text-white">Send Karma Points to @{user.username}</p>
                   <p className="text-xs text-gray-700 dark:text-gray-50 mb-1">
                     Your Karma Points Balance: {you?.karma}
                   </p>
                   <div className="flex gap-1">
-                    <button
+                    {[1,2,3,4,5].map(i => <button
+                      key={`karma-send-${i}`}
                       className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
-                        karma === 1 ? 'bg-green-500' : ''
+                        karma === i ? 'bg-green-500' : ''
                       }`}
-                      onClick={() => setKarma(1)}
+                      onClick={() => setKarma(i)}
                     >
-                  1
-                    </button>
-                    <button
-                      className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
-                        karma === 2 ? 'bg-green-500' : ''
-                      }`}
-                      onClick={() => setKarma(2)}
-                    >
-                  2
-                    </button>
-                    <button
-                      className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
-                        karma === 3 ? 'bg-green-500' : ''
-                      }`}
-                      onClick={() => setKarma(3)}
-                    >
-                  3
-                    </button>
-                    <button
-                      className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
-                        karma === 4 ? 'bg-green-500' : ''
-                      }`}
-                      onClick={() => setKarma(4)}
-                    >
-                  4
-                    </button>
-                    <button
-                      className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
-                        karma === 5 ? 'bg-green-500' : ''
-                      }`}
-                      onClick={() => setKarma(5)}
-                    >
-                  5
-                    </button>
+                      {i}
+                    </button>)}
+
                   </div>
                   <button
                     className="rounded-full bg-green-500 px-5 py-1 text-white transition hover:bg-green-550 mt-3"
@@ -279,8 +258,19 @@ export default function TipModal({
         footer={
           <div className="flex w-full justify-end">
             {selectedNetwork === null ? (
-              <div className='flex w-full flex-col items-center'>
-                <div>
+              <div className='flex w-full items-center justify-between'>
+                <div className='flex gap-1'>
+                  <button
+                    className='p-2 border-gray-600 rounded border-2 bg-gray-100 dark:bg-gray-800'
+                    onClick={() => setIsTip(!isTip)}
+                  >
+                    <CoinIcon size={18} />
+                  </button>
+                  {you?.id === conversation?.user?._id && you.id !== user._id && (
+                    <div className='border-gray-600 rounded border-2 bg-gray-100 flex justify-center dark:bg-gray-800'>
+                      <UserKickButton user={user} />
+                    </div>
+                  )}
                 </div>
                 <Button
                   className="border border-gray-20 bg-transparent text-black hover:bg-gray-50"

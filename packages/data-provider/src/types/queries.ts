@@ -16,6 +16,7 @@ export type ConversationListParams = {
   order?: 'asc' | 'desc';
   pageNumber: string; // Add this line
   conversationId?: string;
+  roomIndex?: 'user' | 'all'
 };
 
 // Type for the response from the conversation list API

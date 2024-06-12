@@ -116,7 +116,7 @@ export const useSearchInfiniteQuery = (
   return useInfiniteQuery<ConversationListResponse, unknown>(
     [QueryKeys.searchConversations, params], // Include the searchQuery in the query key
     ({ pageParam = '1' }) =>
-      dataService.listConversationsByQuery({ ...params, pageNumber: pageParam }),
+      dataService.listConversationsByQuery({ ...params, pageNumber: pageParam, roomIndex: params?.roomIndex }),
     {
       getNextPageParam: (lastPage) => {
         const currentPageNumber = Number(lastPage.pageNumber);
