@@ -454,6 +454,7 @@ export default {
   com_nav_theme_dark: 'Dunkel',
   com_nav_theme_light: 'Hell',
   com_nav_user_name_display: 'Benutzernamen in Nachrichten anzeigen',
+  com_nav_save_drafts: 'Entwurf lokal speichern',
   com_nav_show_code: 'Code immer anzeigen, wenn Code-Interpreter verwendet wird',
   com_nav_clear_all_chats: 'Alle Chats löschen',
   com_nav_confirm_clear: 'Bestätige Löschen',
@@ -2214,6 +2215,10 @@ export const comparisons = {
   com_nav_user_name_display: {
     english: 'Display username in messages',
     translated: 'Benutzernamen in Nachrichten anzeigen',
+  },
+  com_nav_save_drafts: {
+    english: 'Save drafts locally',
+    translated: 'Entwurf lokal speichern',
   },
   com_nav_show_code: {
     english: 'Always show code when using code interpreter',
