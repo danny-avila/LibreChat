@@ -1,5 +1,6 @@
 const crypto = require('crypto');
-const fetch = require('node-fetch');
+const { fetch } = require('undici');
+const nodeFetch = require('node-fetch');
 const { supportsBalanceCheck, Constants } = require('librechat-data-provider');
 const { getConvo, getMessages, saveMessage, updateMessage, saveConvo } = require('~/models');
 const { addSpaceIfNeeded, isEnabled } = require('~/server/utils');
@@ -69,6 +70,9 @@ class BaseClient {
       url = this.options.reverseProxyUrl;
     }
     logger.debug(`Making request to ${url}`);
+    if (typeof Bun !== 'undefined') {
+      return await nodeFetch(url, init);
+    }
     return await fetch(url, init);
   }
 
