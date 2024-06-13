@@ -8,7 +8,7 @@ const SortSelect = (
   { searchOptions, setSearchOptions }:
   { searchOptions: SearchOptions; setSearchOptions: Dispatch<SetStateAction<SearchOptions>> }) => (
   <select
-    className='rounded p-1 border-none w-40 outline-none'
+    className='rounded p-1 border-none w-40 outline-none dark:bg-black dark:text-white'
     value={searchOptions.sort}
     onChange={e => setSearchOptions({ ...searchOptions, sort: e.currentTarget.value as SortKeyTypes })}
     defaultValue={'none'}
@@ -23,7 +23,7 @@ const SortSelect = (
 
 const endpointSorts: Array<{id: EndpointKeyTypes; icon: ReactNode}> = [
   {
-    id: 'openai',
+    id: 'openAI',
     icon: <OpenAIMinimalIcon className='dark:text-gray-50' />,
   },
   {
@@ -35,7 +35,7 @@ const endpointSorts: Array<{id: EndpointKeyTypes; icon: ReactNode}> = [
     icon: <AnthropicIcon className='dark:text-gray-50' />,
   },
   {
-    id: 'sdimage',
+    id: 'sdImage',
     icon: <SdImageIcon />,
   },
 ];
@@ -54,14 +54,14 @@ export default function EndpointSelect() {
             }
             setSearchOptions({ ...searchOptions, endpoint: endpoint.id });
           }}
-          className={`border-2 rounded-md border-gray-500 p-1 w-10 h-10 flex justify-center items-center transition ${searchOptions.endpoint === endpoint.id ? 'bg-gray-300' : ''}`}
+          className={`border-2 rounded-md border-gray-500 p-1 w-10 h-10 flex justify-center items-center transition ${searchOptions.endpoint === endpoint.id ? 'bg-gray-300 dark:bg-gray-600' : ''}`}
           key={endpoint.id}
         >
           {endpoint.icon}
         </button>)}
       </div>
       <div className='w-full flex gap-1 flex-start mt-3 items-center'>
-        Sort By: <SortSelect searchOptions={searchOptions} setSearchOptions={setSearchOptions} />
+        <i className='text-black dark:text-white not-italic'>Sort By:</i> <SortSelect searchOptions={searchOptions} setSearchOptions={setSearchOptions} />
       </div>
     </div>
   );

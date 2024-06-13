@@ -7,7 +7,7 @@ const getConvosByQuery = async (title, endpoint, sort = 'participants', order = 
     const sortOrder = order === 'asc' ? 1 : -1;
     const sortQuery = {};
     if (sort === 'participants') {
-      sortQuery['users'] = sortOrder;
+      sortQuery['users.length'] = sortOrder;
     } else if (sort === 'date') {
       sortQuery['createdAt'] = sortOrder;
     }

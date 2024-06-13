@@ -12,55 +12,47 @@ const getRooms = async (name = '', roomIndex = 'user', sort, endpoint) => {
   try {
     let rooms;
     const sortQuery = {};
-    if (sort === 'participants-asc') {
-      sortQuery['users'] = 1;
-    } else if (sort === 'participants-desc') {
-      sortQuery['users'] = -1;
-    } else if (sort === 'date-asc') {
+    // if (sort === 'participants-asc') {
+    //   sortQuery['users.length'] = -1;
+    // } else if (sort === 'participants-desc') {
+    //   sortQuery['users.length'] = 1;
+    // } else
+    if (sort === 'date-asc') {
       sortQuery['createdAt'] = 1;
     } else if (sort === 'date-desc') {
       sortQuery['createdAt'] = -1;
     }
 
-    if (endpoint === 'null') {
-      if (roomIndex === 'all') {
-        rooms = await Conversation.find({ title: RegExp(name, 'i'), isRoom: true  })
-          .sort(sortQuery)
-          .populate('user')
-          .populate('users');
-      } else {
-        rooms = await Conversation.find({
-          $or: [
-            { user: roomIndex },
-            { users: { $in: [roomIndex] } },
-          ],
-          title: RegExp(name, 'i'),
-          isRoom: true,
-        })
-          .sort(sortQuery)
-          .populate('user')
-          .populate('users');
-      }
-    } else {
-      if (roomIndex === 'all') {
-        rooms = await Conversation.find({ title: RegExp(name, 'i'), isRoom: true, endpoint })
-          .sort(sortQuery)
-          .populate('user')
-          .populate('users');
-      } else {
-        rooms = await Conversation.find({
-          $or: [
-            { user: roomIndex },
-            { users: { $in: [roomIndex] } },
-          ],
-          title: RegExp(name, 'i'),
-          isRoom: true,
-        })
-          .sort(sortQuery)
-          .populate('user')
-          .populate('users');
-      }
+    let findQuery = {
+      title: RegExp(name, 'i'),
+      isRoom: true,
+    };
+
+    if (endpoint !== 'null') {
+      findQuery.endpoint = endpoint;
     }
+    console.log('--- sortQuery ---', sortQuery);
+    console.log('--- findQuery ---', findQuery, endpoint);
+
+    if (roomIndex === 'all') {
+      rooms = await Conversation.find(findQuery)
+        .sort(sortQuery)
+        .populate('user')
+        .populate('users');
+    } else {
+      rooms = await Conversation.find({
+        ...findQuery,
+        $or: [
+          { user: roomIndex },
+          { users: { $in: [roomIndex] } },
+        ],
+      })
+        .sort(sortQuery)
+        .populate('user')
+        .populate('users');
+    }
+
+    console.log(rooms.map(i => ({ title: i.title, createdAt: i.createdAt, users: i.users.length })));
 
     return rooms.reverse();
   } catch (error) {

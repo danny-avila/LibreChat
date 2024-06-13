@@ -42,7 +42,7 @@ const roomSearchIndex = atom<'user' | 'all'>({
   default: 'user',
 });
 
-export type EndpointKeyTypes = 'google' | 'openai' | 'anthropic' | 'sdimage' | null;
+export type EndpointKeyTypes = 'google' | 'openAI' | 'anthropic' | 'sdImage' | null;
 export type SortKeyTypes = 'participants-asc' | 'participants-desc' | 'date-asc' | 'date-desc' | 'none';
 export interface SearchOptions {
   endpoint: EndpointKeyTypes;

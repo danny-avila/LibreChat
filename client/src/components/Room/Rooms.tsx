@@ -32,11 +32,22 @@ export default function Rooms({
   }, [setRooms]);
 
   useEffect(() => {
-    setSearchResult(
-      searchQueryRes.data?.pages[0].conversations
-        .map((obj) => (!obj.users ? { ...obj, users: [] } : obj))
-        .sort((a, b) => (b.users?.length ?? 0) - (a.users?.length ?? 0)) ?? [],
-    );
+    if (searchOptions.sort === 'participants-asc') {
+      setSearchResult(
+        searchQueryRes.data?.pages[0].conversations
+          .map((obj) => (!obj.users ? { ...obj, users: [] } : obj))
+          .sort((a, b) => (a.users?.length ?? 0) - (b.users?.length ?? 0)) ?? [],
+      );
+    } else if (searchOptions.sort === 'participants-desc') {
+      setSearchResult(
+        searchQueryRes.data?.pages[0].conversations
+          .map((obj) => (!obj.users ? { ...obj, users: [] } : obj))
+          .sort((a, b) => (b.users?.length ?? 0) - (a.users?.length ?? 0)) ?? [],
+      );
+    } else {
+      setSearchResult(
+        searchQueryRes.data?.pages[0].conversations ?? []);
+    }
   }, [searchQueryRes.data?.pages, setSearchResult]);
 
   return (
