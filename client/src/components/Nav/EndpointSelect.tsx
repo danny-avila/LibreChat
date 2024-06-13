@@ -16,8 +16,8 @@ const SortSelect = (
     <option value={'none'}>All</option>
     <option value={'participants-asc'}>Most Participants</option>
     <option value={'participants-desc'}>Least Participants</option>
-    <option value={'date-asc'}>Most Newest</option>
-    <option value={'date-desc'}>Most Oldest</option>
+    <option value={'date-asc'}>Newest Rooms</option>
+    <option value={'date-desc'}>Oldest Rooms</option>
   </select>
 );
 
