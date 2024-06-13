@@ -52,8 +52,6 @@ const getRooms = async (name = '', roomIndex = 'user', sort, endpoint) => {
         .populate('users');
     }
 
-    console.log(rooms.map(i => ({ title: i.title, createdAt: i.createdAt, users: i.users.length })));
-
     return rooms.reverse();
   } catch (error) {
     logger.error('[getRooms] Error getting entire rooms', error);
