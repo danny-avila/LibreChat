@@ -13,7 +13,7 @@ const SortSelect = (
     onChange={e => setSearchOptions({ ...searchOptions, sort: e.currentTarget.value as SortKeyTypes })}
     defaultValue={'none'}
   >
-    <option value={'none'}>None</option>
+    <option value={'none'}>All</option>
     <option value={'participants-asc'}>Most Participants</option>
     <option value={'participants-desc'}>Least Participants</option>
     <option value={'date-asc'}>Most Newest</option>

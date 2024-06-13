@@ -31,8 +31,6 @@ const getRooms = async (name = '', roomIndex = 'user', sort, endpoint) => {
     if (endpoint !== 'null') {
       findQuery.endpoint = endpoint;
     }
-    console.log('--- sortQuery ---', sortQuery);
-    console.log('--- findQuery ---', findQuery, endpoint);
 
     if (roomIndex === 'all') {
       rooms = await Conversation.find(findQuery)
