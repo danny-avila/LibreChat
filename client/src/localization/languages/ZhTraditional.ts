@@ -519,6 +519,7 @@ export default {
   com_nav_my_files: '我的檔案',
   com_nav_enter_to_send: '按 Enter 鍵傳送訊息',
   com_nav_user_name_display: '在訊息中顯示使用者名稱',
+  com_nav_save_drafts: '保存草稿本地',
   com_nav_show_code: '一律顯示使用程式碼解譯器時的程式碼',
   com_nav_setting_beta: '測試功能',
   com_nav_setting_account: '帳號',
@@ -2527,6 +2528,10 @@ export const comparisons = {
   com_nav_user_name_display: {
     english: 'Display username in messages',
     translated: '在訊息中顯示使用者名稱',
+  },
+  com_nav_save_drafts: {
+    english: 'Save drafts locally',
+    translated: '保存草稿本地',
   },
   com_nav_show_code: {
     english: 'Always show code when using code interpreter',

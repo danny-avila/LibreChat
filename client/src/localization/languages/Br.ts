@@ -440,6 +440,7 @@ export default {
   com_nav_theme_dark: 'Escuro',
   com_nav_theme_light: 'Claro',
   com_nav_user_name_display: 'Exibir nome de usuário nas mensagens',
+  com_nav_save_drafts: 'Salvar rascunhos localmente',
   com_nav_show_code: 'Sempre mostrar código ao usar o interpretador de código',
   com_nav_clear_all_chats: 'Limpar todas as conversas',
   com_nav_confirm_clear: 'Confirmar Limpeza',
@@ -2052,6 +2053,10 @@ export const comparisons = {
   com_nav_user_name_display: {
     english: 'Display username in messages',
     translated: 'Exibir nome de usuário nas mensagens',
+  },
+  com_nav_save_drafts: {
+    english: 'Save drafts locally',
+    translated: 'Salvar rascunhos localmente',
   },
   com_nav_show_code: {
     english: 'Always show code when using code interpreter',

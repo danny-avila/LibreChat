@@ -409,6 +409,7 @@ export default {
   com_nav_theme_dark: '暗色主题',
   com_nav_theme_light: '亮色主题',
   com_nav_user_name_display: '在消息中显示用户名',
+  com_nav_save_drafts: '保存草稿本地',
   com_nav_show_code: '使用代码解释器时始终显示代码',
   com_nav_clear_all_chats: '清空所有对话',
   com_nav_confirm_clear: '确认清空',
@@ -2109,6 +2110,10 @@ export const comparisons = {
   com_nav_user_name_display: {
     english: 'Display username in messages',
     translated: '在消息中显示用户名',
+  },
+  com_nav_save_drafts: {
+    english: 'Save drafts locally',
+    translated: '保存草稿本地',
   },
   com_nav_show_code: {
     english: 'Always show code when using code interpreter',
