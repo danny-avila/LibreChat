@@ -340,6 +340,7 @@ export default {
   com_nav_theme_dark: 'Sombre',
   com_nav_theme_light: 'Clair',
   com_nav_user_name_display: 'Afficher le nom d\'utilisateur dans les messages',
+  com_nav_save_drafts: 'Enregistrer les brouillons localement',
   com_nav_clear_all_chats: 'Effacer toutes les conversations',
   com_nav_confirm_clear: 'Confirmer l\'effacement',
   com_nav_close_sidebar: 'Fermer la barre latérale',
@@ -1783,6 +1784,10 @@ export const comparisons = {
   com_nav_user_name_display: {
     english: 'Display username in messages',
     translated: 'Afficher le nom d\'utilisateur dans les messages',
+  },
+  com_nav_save_drafts: {
+    english: 'Save drafts locally',
+    translated: 'Enregistrer les brouillons localement',
   },
   com_nav_clear_all_chats: {
     english: 'Clear all chats',

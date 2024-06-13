@@ -820,6 +820,10 @@ export enum LocalStorageKeys {
   REMEMBER_FORK_OPTION = 'rememberForkOption',
   /** Key for remembering the split at target fork option modifier */
   FORK_SPLIT_AT_TARGET = 'splitAtTarget',
+  /** Key for saving text drafts */
+  TEXT_DRAFT = 'textDraft_',
+  /** Key for saving file drafts */
+  FILES_DRAFT = 'filesDraft_',
 }
 
 export enum ForkOptions {

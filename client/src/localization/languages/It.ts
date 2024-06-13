@@ -500,6 +500,7 @@ export default {
   com_nav_theme_light: 'Chiaro',
   com_nav_enter_to_send: 'Premi Invio per inviare messaggi',
   com_nav_user_name_display: 'Mostra nome utente nei messaggi',
+  com_nav_save_drafts: 'Salva bozze localmente',
   com_nav_show_code: 'Mostra sempre il codice quando si usa l\'interprete di codice',
   com_nav_clear_all_chats: 'Cancella tutte le chat',
   com_nav_confirm_clear: 'Conferma cancellazione',
@@ -2366,6 +2367,10 @@ export const comparisons = {
   com_nav_user_name_display: {
     english: 'Display username in messages',
     translated: 'Mostra nome utente nei messaggi',
+  },
+  com_nav_save_drafts: {
+    english: 'Save drafts locally',
+    translated: 'Salva bozze localmente',
   },
   com_nav_show_code: {
     english: 'Always show code when using code interpreter',
