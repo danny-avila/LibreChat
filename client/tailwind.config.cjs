@@ -39,29 +39,30 @@ module.exports = {
         gray: {
           20: '#ececf1',
           50: '#f7f7f8',
-          70: '#d1d5db',
-          100: '#1FDF67',
-          200: '#d9d9e3', // Replacing .bg-gray-200
-          300: '#c5c5d2',
-          400: '#acacb1',
-          500: '#8e8ea0',
-          600: '#565869',
-          700: '#40414f', // Replacing .dark .dark:bg-gray-700 and .dark .dark:hover:bg-gray-700:hover
-          800: '#000000', // Replacing .dark .dark:bg-gray-800, .bg-gray-800, and .dark .dark:hover:bg-gray-800\/90
-          900: '#202123', // Replacing .dark .dark:bg-gray-900, .bg-gray-900, and .dark .dark:hover:bg-gray-900:hover
-          1000: '#444654',
+          100: '#ececec',
+          200: '#e3e3e3',
+          300: '#cdcdcd',
+          400: '#999696',
+          500: '#595959',
+          600: '#424242',
+          700: '#2f2f2f', // Replacing .dark .dark:bg-gray-700 and .dark .dark:hover:bg-gray-700:hover
+          750: '#171717',
+          800: '#212121', // Replacing .dark .dark:bg-gray-800, .bg-gray-800, and .dark .dark:hover:bg-gray-800\/90
+          850: '#171717',
+          900: '#0d0d0d', // Replacing .dark .dark:bg-gray-900, .bg-gray-900, and .dark .dark:hover:bg-gray-900:hover
         },
         green: {
-          50: '#1FDF67',
-          100: '#1FDF67',
-          200: '#1FDF67',
-          300: '#1FDF67',
-          400: '#1FDF67',
-          500: '#1FDF67',
-          600: '#1FDF67',
-          700: '#1FDF67',
-          800: '#1FDF67',
-          900: '#1FDF67',
+          50: '#f1f9f7',
+          100: '#def2ed',
+          200: '#a6e5d6',
+          300: '#6dc8b9',
+          400: '#41a79d',
+          500: '#10a37f',
+          550: '#349072',
+          600: '#126e6b',
+          700: '#0a4f53',
+          800: '#06373e',
+          900: '#031f29',
         },
         'brand-purple': '#ab68ff',
         'text-primary': 'var(--gray-800)',
