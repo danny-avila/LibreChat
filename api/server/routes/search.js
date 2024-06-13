@@ -40,7 +40,7 @@ router.get('/', async function (req, res) {
 
     // Searching room Feature
     // if (searchType == 'r') {
-    const rooms = await getRooms(q, roomIndex);
+    const rooms = await getRooms(q, roomIndex, req.query.sort, req.query.endpoint);
     return res.status(200).send({ conversations: rooms });
     // }
 

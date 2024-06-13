@@ -46,7 +46,7 @@ export default function User({
       <TipModal user={user} isKarmaOnly={true} OpenButton={<div className="flex gap-3">
         {!isCollapsed && user.name}
       </div>} />
-      {!isCollapsed && you?.id === conversation?.user._id && you.id !== user._id && (
+      {!isCollapsed && you?.id === conversation?.user.id && you.id !== user.id && (
         <UserKickButton user={user} />
       )}
     </a>

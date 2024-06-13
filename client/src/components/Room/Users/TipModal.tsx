@@ -16,6 +16,7 @@ import { v4 } from 'uuid';
 // eslint-disable-next-line import/no-cycle
 import { TipTrack } from '~/components/Nav/AlarmBox';
 import UserKickButton from './UserKickButton';
+import HeartIcon from '~/components/svg/HeartIcon';
 
 const AddressPicker = ({
   item,
@@ -260,12 +261,14 @@ export default function TipModal({
             {selectedNetwork === null ? (
               <div className='flex w-full items-center justify-between'>
                 <div className='flex gap-1'>
-                  <button
-                    className='p-2 border-gray-600 rounded border-2 bg-gray-100 dark:bg-gray-800'
-                    onClick={() => setIsTip(!isTip)}
-                  >
-                    <CoinIcon size={18} />
-                  </button>
+                  {user.cryptocurrency.length > 0 &&
+                    <button
+                      className='p-2 border-gray-600 rounded border-2 bg-gray-100 dark:bg-gray-800'
+                      onClick={() => setIsTip(!isTip)}
+                    >
+                      {isTip ? <CoinIcon size={18} /> : <img src='/assets/love-icon.png' width={20} height={20} />}
+                    </button>
+                  }
                   {you?.id === conversation?.user?._id && you.id !== user._id && (
                     <div className='border-gray-600 rounded border-2 bg-gray-100 flex justify-center dark:bg-gray-800'>
                       <UserKickButton user={user} />

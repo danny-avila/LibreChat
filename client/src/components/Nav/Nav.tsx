@@ -25,6 +25,7 @@ import NewRoom from './NewRoom';
 import CategorySwitch from './CategorySwitch';
 import Rooms from '../Room/Rooms';
 import RoomsSwitch from './RoomsSwitch';
+import EndpointSelect from './EndpointSelect';
 
 const Nav = ({ navVisible, setNavVisible }) => {
   const { conversationId } = useParams();
@@ -67,7 +68,10 @@ const Nav = ({ navVisible, setNavVisible }) => {
   );
 
   const searchQueryRes = useSearchInfiniteQuery(
-    { pageNumber: pageNumber.toString(), searchQuery: searchQuery.text, roomIndex: roomSearchIndex },
+    {
+      pageNumber: pageNumber.toString(),
+      searchQuery: searchQuery.text, roomIndex: roomSearchIndex, searchOptions: searchQuery.searchOptions,
+    },
     { enabled: isAuthenticated && !!searchQuery.text.length },
   );
 
@@ -176,11 +180,11 @@ const Nav = ({ navVisible, setNavVisible }) => {
                         </>
                       ) : (
                         <>
-                          {/* {isPremiumUser(user as TUser) && <NewRoom toggleNav={itemToggleNav} />} */}
                           <NewRoom
                             toggleNav={itemToggleNav}
                             subHeaders={<SearchBar clearSearch={clearSearch} />}
                           />
+                          <EndpointSelect />
                           <Rooms toggleNav={itemToggleNav} moveToTop={moveToTop} />
                         </>
                       )}

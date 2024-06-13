@@ -12,7 +12,8 @@ export default function Search() {
   const { searchPlaceholderConversation } = useConversation();
   const { query } = useParams();
   const navigate = useNavigate();
-  const [roomSearchIndex] = useRecoilState(store.roomSearchIndex);
+  const roomSearchIndex = useRecoilValue(store.roomSearchIndex);
+  const searchOptions = useRecoilValue(store.searchOptions);
 
   // when conversation changed or conversationId (in url) changed
   useEffect(() => {
@@ -24,6 +25,7 @@ export default function Search() {
         setSearchQuery({
           text: query,
           category: roomSearchIndex,
+          searchOptions,
         });
       } else {
         navigate('/c/new');
@@ -38,7 +40,7 @@ export default function Search() {
       navigate(`/chat/${conversation?.conversationId}`);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversation, query, searchQuery, roomSearchIndex]);
+  }, [conversation, query, searchQuery, roomSearchIndex, searchOptions]);
 
   // if not a search
   if (conversation?.conversationId !== 'search') {

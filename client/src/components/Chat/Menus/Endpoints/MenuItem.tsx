@@ -3,7 +3,7 @@ import { Settings } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { EModelEndpoint, modularEndpoints } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
-import type { TPreset, TConversation, TUser } from 'librechat-data-provider';
+import type { TPreset, TConversation } from 'librechat-data-provider';
 import type { FC } from 'react';
 import { useLocalize, useUserKey, useDefaultConvo } from '~/hooks';
 import { SetKeyDialog } from '~/components/Input/SetKeyDialog';
@@ -11,8 +11,6 @@ import { cn, getEndpointField } from '~/utils';
 import { useChatContext } from '~/Providers';
 import { icons } from './Icons';
 import store from '~/store';
-import { useToastContext } from '~/Providers';
-import { isPremiumUser } from '~/utils/checkUserValid';
 
 type MenuItemProps = {
   title: string;
@@ -33,9 +31,7 @@ const MenuItem: FC<MenuItemProps> = ({
   ...rest
 }) => {
   const modularChat = useRecoilValue(store.modularChat);
-  const user = useRecoilValue(store.user);
 
-  const { showToast } = useToastContext();
   const [isDialogOpen, setDialogOpen] = useState(false);
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { conversation, newConversation } = useChatContext();
@@ -110,19 +106,6 @@ const MenuItem: FC<MenuItemProps> = ({
         tabIndex={-1}
         {...rest}
         onClick={() => {
-          // if (
-          //   // (
-          //   // endpoint === EModelEndpoint.google ||
-          //   // endpoint === EModelEndpoint.assistants ||
-          //   // endpoint === EModelEndpoint.sdImage) &&
-          //   !isPremiumUser(user as TUser)
-          // ) {
-          //   showToast({
-          //     message: 'This is premium AI provider ' + localize('com_premium_warning'),
-          //     status: 'info',
-          //   });
-          //   return;
-          // }
           onSelectEndpoint(endpoint);
         }}
       >
@@ -141,9 +124,6 @@ const MenuItem: FC<MenuItemProps> = ({
               <div className="flex items-center gap-3">
                 {title}
                 {
-                  // (endpoint === EModelEndpoint.google ||
-                  //   endpoint === EModelEndpoint.assistants ||
-                  //   endpoint === EModelEndpoint.sdImage) &&
                   <img src="/assets/premium.png" alt="premium" className="h-4 w-4" />
                 }
                 <div className="text-token-text-tertiary">{description}</div>

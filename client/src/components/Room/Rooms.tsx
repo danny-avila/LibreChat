@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { TConversation, request } from 'librechat-data-provider';
+import { SearchOptions, TConversation, request } from 'librechat-data-provider';
 import Room from './Room';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import { useSearchInfiniteQuery } from '~/data-provider';
@@ -15,8 +15,10 @@ export default function Rooms({
   const [rooms, setRooms] = useRecoilState(store.rooms);
   const searchQuery = useRecoilValue(store.searchQuery);
   const roomSearchIndex = useRecoilValue(store.roomSearchIndex);
+  const [searchOptions ] = useRecoilState<SearchOptions>(store.searchOptions);
+
   const searchQueryRes = useSearchInfiniteQuery(
-    { pageNumber: '1', searchQuery: searchQuery.text, roomIndex: roomSearchIndex },
+    { pageNumber: '1', searchQuery: searchQuery.text, roomIndex: roomSearchIndex, searchOptions: searchOptions },
     { enabled: true },
   );
 

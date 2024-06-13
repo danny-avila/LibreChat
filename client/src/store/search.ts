@@ -1,17 +1,22 @@
 import { TMessage } from 'librechat-data-provider';
 import { atom, selector } from 'recoil';
 import { buildTree } from '~/utils';
+import { SearchOptions } from './conversation';
 
 const isSearchEnabled = atom<boolean | null>({
   key: 'isSearchEnabled',
   default: null,
 });
 
-const searchQuery = atom<{ text: string; category: 'user' | 'all'}>({
+const searchQuery = atom<{ text: string; category: 'user' | 'all'; searchOptions: SearchOptions}>({
   key: 'searchQuery',
   default: {
     text: '',
     category: 'user',
+    searchOptions: {
+      endpoint: null,
+      sort: 'participants-asc',
+    },
   },
 });
 

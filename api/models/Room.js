@@ -8,25 +8,60 @@ const uuid = require('uuid');
  * @param {string} name
  * @returns [Room]
  */
-const getRooms = async (name = '', roomIndex = 'user') => {
+const getRooms = async (name = '', roomIndex = 'user', sort, endpoint) => {
   try {
     let rooms;
-    if (roomIndex === 'all') {
-      rooms = await Conversation.find({ title: RegExp(name, 'i'), isRoom: true })
-        .populate('user')
-        .populate('users');
-    } else {
-      rooms = await Conversation.find({
-        $or: [
-          { user: roomIndex },
-          { users: { $in: [roomIndex] } },
-        ],
-        title: RegExp(name, 'i'),
-        isRoom: true,
-      })
-        .populate('user')
-        .populate('users');
+    const sortQuery = {};
+    if (sort === 'participants-asc') {
+      sortQuery['users'] = 1;
+    } else if (sort === 'participants-desc') {
+      sortQuery['users'] = -1;
+    } else if (sort === 'date-asc') {
+      sortQuery['createdAt'] = 1;
+    } else if (sort === 'date-desc') {
+      sortQuery['createdAt'] = -1;
     }
+
+    if (endpoint === 'null') {
+      if (roomIndex === 'all') {
+        rooms = await Conversation.find({ title: RegExp(name, 'i'), isRoom: true  })
+          .sort(sortQuery)
+          .populate('user')
+          .populate('users');
+      } else {
+        rooms = await Conversation.find({
+          $or: [
+            { user: roomIndex },
+            { users: { $in: [roomIndex] } },
+          ],
+          title: RegExp(name, 'i'),
+          isRoom: true,
+        })
+          .sort(sortQuery)
+          .populate('user')
+          .populate('users');
+      }
+    } else {
+      if (roomIndex === 'all') {
+        rooms = await Conversation.find({ title: RegExp(name, 'i'), isRoom: true, endpoint })
+          .sort(sortQuery)
+          .populate('user')
+          .populate('users');
+      } else {
+        rooms = await Conversation.find({
+          $or: [
+            { user: roomIndex },
+            { users: { $in: [roomIndex] } },
+          ],
+          title: RegExp(name, 'i'),
+          isRoom: true,
+        })
+          .sort(sortQuery)
+          .populate('user')
+          .populate('users');
+      }
+    }
+
     return rooms.reverse();
   } catch (error) {
     logger.error('[getRooms] Error getting entire rooms', error);
