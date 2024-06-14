@@ -56,11 +56,11 @@ function AuthLayout({
 
   return (
     <div className="relative flex min-h-screen flex-col bg-white dark:bg-gray-900">
-      <BlinkAnimation active={isFetching}>
+      {/* <BlinkAnimation active={isFetching}>
         <div className="mt-12 h-24 w-full bg-cover">
           <img src="/assets/logo.svg" className="h-full w-full object-contain" alt="Logo" />
         </div>
-      </BlinkAnimation>
+      </BlinkAnimation> */}
       <DisplayError />
       <div className="absolute bottom-0 left-0 md:m-4">
         <ThemeSelector />

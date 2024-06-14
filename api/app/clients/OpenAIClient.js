@@ -875,10 +875,30 @@ ${convo}
       }
     };
 
+    function formatText(text) {
+      // Remove non-word characters
+      text = text.replace(/[^\w\s]/g, '');
+
+      // Check if text has more than 5 words
+      if (text.split(' ').length > 5) {
+        // If so, truncate to the first 5 words
+        text = text.split(' ').splice(0, 5).join(' ');
+      }
+
+      // Capitalize the first letter of each word
+      text = text
+        .toLowerCase()
+        .split(' ')
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+
+      return text;
+    }
+
     if (this.options.titleMethod === 'completion') {
       await titleChatCompletion();
       logger.debug('[OpenAIClient] Convo Title: ' + title);
-      return title;
+      return formatText(title);
     }
 
     try {

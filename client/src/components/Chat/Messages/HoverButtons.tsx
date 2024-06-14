@@ -117,13 +117,13 @@ export default function HoverButtons({
           />
         </button>
       ) : null}
-      <Fork
+      {/* <Fork
         isLast={isLast}
         messageId={message.messageId}
         conversationId={conversation.conversationId}
         forkingSupported={forkingSupported}
         latestMessage={latestMessage}
-      />
+      /> */}
       {continueSupported ? (
         <button
           className={cn(
