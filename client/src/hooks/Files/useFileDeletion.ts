@@ -1,5 +1,5 @@
 import debounce from 'lodash/debounce';
-import { FileSources } from 'librechat-data-provider';
+import { FileSources, EToolResources } from 'librechat-data-provider';
 import { useCallback, useState, useEffect } from 'react';
 import type {
   BatchFile,
@@ -16,18 +16,20 @@ type FileMapSetter = GenericSetter<Map<string, ExtendedFile>>;
 const useFileDeletion = ({
   mutateAsync,
   assistant_id,
+  tool_resource,
 }: {
   mutateAsync: UseMutateAsyncFunction<DeleteFilesResponse, unknown, DeleteFilesBody, unknown>;
   assistant_id?: string;
+  tool_resource?: EToolResources;
 }) => {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_batch, setFileDeleteBatch] = useState<BatchFile[]>([]);
   const setFilesToDelete = useSetFilesToDelete();
 
   const executeBatchDelete = useCallback(
-    (filesToDelete: BatchFile[], assistant_id?: string) => {
-      console.log('Deleting files:', filesToDelete, assistant_id);
-      mutateAsync({ files: filesToDelete, assistant_id });
+    (filesToDelete: BatchFile[], assistant_id?: string, tool_resource?: EToolResources) => {
+      console.log('Deleting files:', filesToDelete, assistant_id, tool_resource);
+      mutateAsync({ files: filesToDelete, assistant_id, tool_resource });
       setFileDeleteBatch([]);
     },
     [mutateAsync],
@@ -48,6 +50,7 @@ const useFileDeletion = ({
         temp_file_id = '',
         filepath = '',
         source = FileSources.local,
+        embedded,
         attached,
       } = _file as TFile & { attached?: boolean };
 
@@ -58,6 +61,7 @@ const useFileDeletion = ({
       }
       const file: BatchFile = {
         file_id,
+        embedded,
         filepath,
         source,
       };
@@ -79,22 +83,23 @@ const useFileDeletion = ({
 
       setFileDeleteBatch((prevBatch) => {
         const newBatch = [...prevBatch, file];
-        debouncedDelete(newBatch, assistant_id);
+        debouncedDelete(newBatch, assistant_id, tool_resource);
         return newBatch;
       });
     },
-    [debouncedDelete, setFilesToDelete, assistant_id],
+    [debouncedDelete, setFilesToDelete, assistant_id, tool_resource],
   );
 
   const deleteFiles = useCallback(
     ({ files, setFiles }: { files: ExtendedFile[] | TFile[]; setFiles?: FileMapSetter }) => {
       const batchFiles = files.map((_file) => {
-        const { file_id, filepath = '', source = FileSources.local } = _file;
+        const { file_id, embedded, filepath = '', source = FileSources.local } = _file;
 
         return {
+          source,
           file_id,
           filepath,
-          source,
+          embedded,
         };
       });
 

@@ -35,6 +35,24 @@ jobs:
 
       - name: Install Data Provider
         run: npm run build:data-provider
+      
+      - name: Create empty auth.json file
+        run: |
+          mkdir -p api/data
+          echo '{}' > api/data/auth.json
+
+      - name: Check for Circular dependency in rollup
+        working-directory: ./packages/data-provider
+        run: |
+          output=$(npm run rollup:api)
+          echo "$output"
+          if echo "$output" | grep -q "Circular dependency"; then
+            echo "Error: Circular dependency detected!"
+            exit 1
+          fi
+
+      - name: Prepare .env.test file
+        run: cp api/test/.env.test.example api/test/.env.test
 
       - name: Run unit tests
         run: cd api && npm run test:ci

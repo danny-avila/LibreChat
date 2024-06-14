@@ -3,10 +3,13 @@ const crypto = require('crypto');
 const {
   EModelEndpoint,
   resolveHeaders,
+  CohereConstants,
   mapModelToAzureConfig,
 } = require('librechat-data-provider');
+const { CohereClient } = require('cohere-ai');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const { fetchEventSource } = require('@waylaidwanderer/fetch-event-source');
+const { createCoherePayload } = require('./llm');
 const { Agent, ProxyAgent } = require('undici');
 const BaseClient = require('./BaseClient');
 const { logger } = require('~/config');
@@ -147,7 +150,8 @@ class ChatGPTClient extends BaseClient {
     return tokenizer;
   }
 
-  async getCompletion(input, onProgress, abortController = null) {
+  /** @type {getCompletion} */
+  async getCompletion(input, onProgress, onTokenProgress, abortController = null) {
     if (!abortController) {
       abortController = new AbortController();
     }
@@ -234,9 +238,9 @@ class ChatGPTClient extends BaseClient {
       baseURL = this.langchainProxy
         ? constructAzureURL({
           baseURL: this.langchainProxy,
-          azure: this.azure,
+          azureOptions: this.azure,
         })
-        : this.azureEndpoint.split(/\/(chat|completion)/)[0];
+        : this.azureEndpoint.split(/(?<!\/)\/(chat|completion)\//)[0];
 
       if (this.options.forcePrompt) {
         baseURL += '/completions';
@@ -303,6 +307,11 @@ class ChatGPTClient extends BaseClient {
         dropParams: this.options.dropParams,
         modelOptions,
       });
+    }
+
+    if (baseURL.startsWith(CohereConstants.API_URL)) {
+      const payload = createCoherePayload({ modelOptions });
+      return await this.cohereChatCompletion({ payload, onTokenProgress });
     }
 
     if (baseURL.includes('v1') && !baseURL.includes('/completions') && !this.isChatCompletion) {
@@ -406,6 +415,43 @@ class ChatGPTClient extends BaseClient {
       throw error;
     }
     return response.json();
+  }
+
+  /** @type {cohereChatCompletion} */
+  async cohereChatCompletion({ payload, onTokenProgress }) {
+    const cohere = new CohereClient({
+      token: this.apiKey,
+      environment: this.completionsUrl,
+    });
+
+    if (!payload.stream) {
+      const chatResponse = await cohere.chat(payload);
+      return chatResponse.text;
+    }
+
+    const chatStream = await cohere.chatStream(payload);
+    let reply = '';
+    for await (const message of chatStream) {
+      if (!message) {
+        continue;
+      }
+
+      if (message.eventType === 'text-generation' && message.text) {
+        onTokenProgress(message.text);
+        reply += message.text;
+      }
+      /*
+      Cohere API Chinese Unicode character replacement hotfix.
+      Should be un-commented when the following issue is resolved:
+      https://github.com/cohere-ai/cohere-typescript/issues/151
+
+      else if (message.eventType === 'stream-end' && message.response) {
+        reply = message.response.text;
+      }
+      */
+    }
+
+    return reply;
   }
 
   async generateTitle(userMessage, botMessage) {

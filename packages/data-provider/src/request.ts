@@ -8,6 +8,10 @@ async function _get<T>(url: string, options?: AxiosRequestConfig): Promise<T> {
   return response.data;
 }
 
+async function _getResponse<T>(url: string, options?: AxiosRequestConfig): Promise<T> {
+  return await axios.get(url, { ...options });
+}
+
 async function _post(url: string, data?: any) {
   const response = await axios.post(url, JSON.stringify(data), {
     headers: { 'Content-Type': 'application/json' },
@@ -19,6 +23,15 @@ async function _postMultiPart(url: string, formData: FormData, options?: AxiosRe
   const response = await axios.post(url, formData, {
     ...options,
     headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+}
+
+async function _postTTS(url: string, formData: FormData, options?: AxiosRequestConfig) {
+  const response = await axios.post(url, formData, {
+    ...options,
+    headers: { 'Content-Type': 'multipart/form-data' },
+    responseType: 'arraybuffer',
   });
   return response.data;
 }
@@ -114,8 +127,10 @@ axios.interceptors.response.use(
 
 export default {
   get: _get,
+  getResponse: _getResponse,
   post: _post,
   postMultiPart: _postMultiPart,
+  postTTS: _postTTS,
   put: _put,
   delete: _delete,
   deleteWithOptions: _deleteWithOptions,

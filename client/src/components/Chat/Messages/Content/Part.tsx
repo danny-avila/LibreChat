@@ -1,6 +1,12 @@
-import { ToolCallTypes, ContentTypes, imageGenTools } from 'librechat-data-provider';
+import {
+  ToolCallTypes,
+  ContentTypes,
+  imageGenTools,
+  isImageVisionTool,
+} from 'librechat-data-provider';
 import type { TMessageContentParts, TMessage } from 'librechat-data-provider';
 import type { TDisplayProps } from '~/common';
+import { ErrorMessage } from './MessageContent';
 import RetrievalCall from './RetrievalCall';
 import CodeAnalyze from './CodeAnalyze';
 import Container from './Container';
@@ -17,6 +23,7 @@ const DisplayMessage = ({ text, isCreatedByUser = false, message, showCursor }: 
   return (
     <div
       className={cn(
+        showCursor && !!text?.length ? 'result-streaming' : '',
         'markdown prose dark:prose-invert light w-full break-words',
         isCreatedByUser ? 'whitespace-pre-wrap dark:text-gray-20' : 'dark:text-gray-70',
       )}
@@ -44,10 +51,13 @@ export default function Part({
   if (!part) {
     return null;
   }
-  if (part.type === ContentTypes.TEXT) {
+
+  if (part.type === ContentTypes.ERROR) {
+    return <ErrorMessage message={message} text={part[ContentTypes.TEXT].value} className="my-2" />;
+  } else if (part.type === ContentTypes.TEXT) {
     // Access the value property
     return (
-      <Container>
+      <Container message={message}>
         <div className="markdown prose dark:prose-invert light dark:text-gray-70 my-1 w-full break-words">
           <DisplayMessage
             text={part[ContentTypes.TEXT].value}
@@ -69,11 +79,13 @@ export default function Part({
         initialProgress={toolCall.progress ?? 0.1}
         code={code_interpreter.input}
         outputs={code_interpreter.outputs ?? []}
+        isSubmitting={isSubmitting}
       />
     );
   } else if (
     part.type === ContentTypes.TOOL_CALL &&
-    part[ContentTypes.TOOL_CALL].type === ToolCallTypes.RETRIEVAL
+    (part[ContentTypes.TOOL_CALL].type === ToolCallTypes.RETRIEVAL ||
+      part[ContentTypes.TOOL_CALL].type === ToolCallTypes.FILE_SEARCH)
   ) {
     const toolCall = part[ContentTypes.TOOL_CALL];
     return <RetrievalCall initialProgress={toolCall.progress ?? 0.1} isSubmitting={isSubmitting} />;
@@ -91,6 +103,25 @@ export default function Part({
     part[ContentTypes.TOOL_CALL].type === ToolCallTypes.FUNCTION
   ) {
     const toolCall = part[ContentTypes.TOOL_CALL];
+    if (isImageVisionTool(toolCall)) {
+      if (isSubmitting && showCursor) {
+        return (
+          <Container message={message}>
+            <div className="markdown prose dark:prose-invert light dark:text-gray-70 my-1 w-full break-words">
+              <DisplayMessage
+                text={''}
+                isCreatedByUser={message.isCreatedByUser}
+                message={message}
+                showCursor={showCursor}
+              />
+            </div>
+          </Container>
+        );
+      }
+
+      return null;
+    }
+
     return (
       <ToolCall
         initialProgress={toolCall.progress ?? 0.1}

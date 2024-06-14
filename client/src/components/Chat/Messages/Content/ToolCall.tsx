@@ -1,6 +1,7 @@
 // import { useState, useEffect } from 'react';
-import { actionDelimiter } from 'librechat-data-provider';
+import { actionDelimiter, actionDomainSeparator, Constants } from 'librechat-data-provider';
 import * as Popover from '@radix-ui/react-popover';
+import useLocalize from '~/hooks/useLocalize';
 import ProgressCircle from './ProgressCircle';
 import InProgressCall from './InProgressCall';
 import CancelledIcon from './CancelledIcon';
@@ -24,12 +25,14 @@ export default function ToolCall({
   args: string;
   output?: string | null;
 }) {
+  const localize = useLocalize();
   const progress = useProgress(initialProgress);
   const radius = 56.08695652173913;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - progress * circumference;
 
-  const [function_name, domain] = name.split(actionDelimiter);
+  const [function_name, _domain] = name.split(actionDelimiter);
+  const domain = _domain?.replaceAll(actionDomainSeparator, '.') ?? null;
   const error = output?.toLowerCase()?.includes('error processing tool');
 
   return (
@@ -58,8 +61,12 @@ export default function ToolCall({
         <ProgressText
           progress={progress}
           onClick={() => ({})}
-          inProgressText={'Running action'}
-          finishedText={domain ? `Talked to ${domain}` : `Ran ${function_name}`}
+          inProgressText={localize('com_assistants_running_action')}
+          finishedText={
+            domain && domain.length !== Constants.ENCODED_DOMAIN_LENGTH
+              ? localize('com_assistants_completed_action', domain)
+              : localize('com_assistants_completed_function', function_name)
+          }
           hasInput={!!args?.length}
           popover={true}
         />

@@ -1,56 +1,56 @@
 import debounce from 'lodash/debounce';
-import React, { useEffect, useRef, useCallback } from 'react';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { useEffect, useRef, useCallback } from 'react';
+import { isAssistantsEndpoint } from 'librechat-data-provider';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import type { TEndpointOption } from 'librechat-data-provider';
-import type { SetterOrUpdater } from 'recoil';
 import type { KeyboardEvent } from 'react';
+import { forceResize, insertTextAtCursor, getAssistantName } from '~/utils';
 import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import useFileHandling from '~/hooks/Files/useFileHandling';
 import { useChatContext } from '~/Providers/ChatContext';
 import useLocalize from '~/hooks/useLocalize';
+import { globalAudioId } from '~/common';
+import store from '~/store';
 
 type KeyEvent = KeyboardEvent<HTMLTextAreaElement>;
 
-const getAssistantName = ({
-  name,
-  localize,
-}: {
-  name?: string;
-  localize: (phraseKey: string, ...values: string[]) => string;
-}) => {
-  if (name && name.length > 0) {
-    return name;
-  } else {
-    return localize('com_ui_assistant');
-  }
-};
-
 export default function useTextarea({
-  setText,
-  submitMessage,
+  textAreaRef,
+  submitButtonRef,
   disabled = false,
 }: {
-  setText: SetterOrUpdater<string>;
-  submitMessage: () => void;
+  textAreaRef: React.RefObject<HTMLTextAreaElement>;
+  submitButtonRef: React.RefObject<HTMLButtonElement>;
   disabled?: boolean;
 }) {
-  const assistantMap = useAssistantsMapContext();
-  const { conversation, isSubmitting, latestMessage, setShowBingToneSetting, setFilesLoading } =
-    useChatContext();
-  const isComposing = useRef(false);
-  const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
-  const { handleFiles } = useFileHandling();
-  const getSender = useGetSender();
   const localize = useLocalize();
+  const getSender = useGetSender();
+  const isComposing = useRef(false);
+  const { handleFiles } = useFileHandling();
+  const assistantMap = useAssistantsMapContext();
+  const enterToSend = useRecoilValue(store.enterToSend);
+
+  const {
+    index,
+    conversation,
+    isSubmitting,
+    filesLoading,
+    latestMessage,
+    setFilesLoading,
+    setShowBingToneSetting,
+  } = useChatContext();
+
+  const setShowMentionPopover = useSetRecoilState(store.showMentionPopoverFamily(index));
 
   const { conversationId, jailbreak, endpoint = '', assistant_id } = conversation || {};
   const isNotAppendable =
     ((latestMessage?.unfinished && !isSubmitting) || latestMessage?.error) &&
-    endpoint !== EModelEndpoint.assistants;
+    !isAssistantsEndpoint(endpoint);
   // && (conversationId?.length ?? 0) > 6; // also ensures that we don't show the wrong placeholder
 
-  const assistant = endpoint === EModelEndpoint.assistants && assistantMap?.[assistant_id ?? ''];
+  const assistant =
+    isAssistantsEndpoint(endpoint) && assistantMap?.[endpoint ?? '']?.[assistant_id ?? ''];
   const assistantName = (assistant && assistant?.name) || '';
 
   // auto focus to input, when enter a conversation.
@@ -77,7 +77,7 @@ export default function useTextarea({
     }, 100);
 
     return () => clearTimeout(timeoutId);
-  }, [isSubmitting]);
+  }, [isSubmitting, textAreaRef]);
 
   useEffect(() => {
     if (textAreaRef.current?.value) {
@@ -88,14 +88,22 @@ export default function useTextarea({
       if (disabled) {
         return localize('com_endpoint_config_placeholder');
       }
+      const currentEndpoint = conversation?.endpoint ?? '';
+      const currentAssistantId = conversation?.assistant_id ?? '';
+      if (
+        isAssistantsEndpoint(currentEndpoint) &&
+        (!currentAssistantId || !assistantMap?.[currentEndpoint]?.[currentAssistantId ?? ''])
+      ) {
+        return localize('com_endpoint_assistant_placeholder');
+      }
+
       if (isNotAppendable) {
         return localize('com_endpoint_message_not_appendable');
       }
 
-      const sender =
-        conversation?.endpoint === EModelEndpoint.assistants
-          ? getAssistantName({ name: assistantName, localize })
-          : getSender(conversation as TEndpointOption);
+      const sender = isAssistantsEndpoint(currentEndpoint)
+        ? getAssistantName({ name: assistantName, localize })
+        : getSender(conversation as TEndpointOption);
 
       return `${localize('com_endpoint_message')} ${sender ? sender : 'ChatGPT'}…`;
     };
@@ -111,6 +119,7 @@ export default function useTextarea({
 
       if (textAreaRef.current?.getAttribute('placeholder') !== placeholder) {
         textAreaRef.current?.setAttribute('placeholder', placeholder);
+        forceResize(textAreaRef);
       }
     };
 
@@ -118,37 +127,68 @@ export default function useTextarea({
     debouncedSetPlaceholder();
 
     return () => debouncedSetPlaceholder.cancel();
-  }, [conversation, disabled, latestMessage, isNotAppendable, localize, getSender, assistantName]);
+  }, [
+    conversation,
+    disabled,
+    latestMessage,
+    isNotAppendable,
+    localize,
+    getSender,
+    assistantName,
+    textAreaRef,
+    assistantMap,
+  ]);
 
-  const handleKeyDown = (e: KeyEvent) => {
-    if (e.key === 'Enter' && isSubmitting) {
+  const handleKeyUp = useCallback(() => {
+    const text = textAreaRef.current?.value;
+    if (!(text && text[text.length - 1] === '@')) {
       return;
     }
 
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-    }
-
-    if (e.key === 'Enter' && !e.shiftKey && !isComposing?.current) {
-      submitMessage();
-    }
-  };
-
-  const handleKeyUp = (e: KeyEvent) => {
-    const target = e.target as HTMLTextAreaElement;
-
-    if (e.keyCode === 8 && target.value.trim() === '') {
-      setText(target.value);
-    }
-
-    if (e.key === 'Enter' && e.shiftKey) {
-      return console.log('Enter + Shift');
-    }
-
-    if (isSubmitting) {
+    const startPos = textAreaRef.current?.selectionStart;
+    if (!startPos) {
       return;
     }
-  };
+
+    const isAtStart = startPos === 1;
+    const isPrecededBySpace = textAreaRef.current?.value.charAt(startPos - 2) === ' ';
+
+    setShowMentionPopover(isAtStart || isPrecededBySpace);
+  }, [textAreaRef, setShowMentionPopover]);
+
+  const handleKeyDown = useCallback(
+    (e: KeyEvent) => {
+      if (e.key === 'Enter' && isSubmitting) {
+        return;
+      }
+
+      const isNonShiftEnter = e.key === 'Enter' && !e.shiftKey;
+
+      if (isNonShiftEnter && filesLoading) {
+        e.preventDefault();
+      }
+
+      if (isNonShiftEnter) {
+        e.preventDefault();
+      }
+
+      if (e.key === 'Enter' && !enterToSend && textAreaRef.current) {
+        insertTextAtCursor(textAreaRef.current, '\n');
+        forceResize(textAreaRef);
+        return;
+      }
+
+      if (isNonShiftEnter && !isComposing?.current) {
+        const globalAudio = document.getElementById(globalAudioId) as HTMLAudioElement;
+        if (globalAudio) {
+          console.log('Unmuting global audio');
+          globalAudio.muted = false;
+        }
+        submitButtonRef.current?.click();
+      }
+    },
+    [isSubmitting, filesLoading, enterToSend, textAreaRef, submitButtonRef],
+  );
 
   const handleCompositionStart = () => {
     isComposing.current = true;
@@ -160,24 +200,16 @@ export default function useTextarea({
 
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-      e.preventDefault();
-
-      const pastedData = e.clipboardData.getData('text/plain');
       const textArea = textAreaRef.current;
-
       if (!textArea) {
         return;
       }
 
-      const start = textArea.selectionStart;
-      const end = textArea.selectionEnd;
+      if (!e.clipboardData) {
+        return;
+      }
 
-      const newValue =
-        textArea.value.substring(0, start) + pastedData + textArea.value.substring(end);
-      setText(newValue);
-
-      if (e.clipboardData && e.clipboardData.files.length > 0) {
-        e.preventDefault();
+      if (e.clipboardData.files.length > 0) {
         setFilesLoading(true);
         const timestampedFiles: File[] = [];
         for (const file of e.clipboardData.files) {
@@ -189,14 +221,14 @@ export default function useTextarea({
         handleFiles(timestampedFiles);
       }
     },
-    [handleFiles, setFilesLoading, setText],
+    [handleFiles, setFilesLoading, textAreaRef],
   );
 
   return {
     textAreaRef,
-    handleKeyDown,
-    handleKeyUp,
     handlePaste,
+    handleKeyUp,
+    handleKeyDown,
     handleCompositionStart,
     handleCompositionEnd,
   };

@@ -2,9 +2,37 @@ const fs = require('fs');
 const path = require('path');
 const nodemailer = require('nodemailer');
 const handlebars = require('handlebars');
+const { isEnabled } = require('~/server/utils/handleText');
 const logger = require('~/config/winston');
 
-const sendEmail = async (email, subject, payload, template) => {
+/**
+ * Sends an email using the specified template, subject, and payload.
+ *
+ * @async
+ * @function sendEmail
+ * @param {Object} params - The parameters for sending the email.
+ * @param {string} params.email - The recipient's email address.
+ * @param {string} params.subject - The subject of the email.
+ * @param {Record<string, string>} params.payload - The data to be used in the email template.
+ * @param {string} params.template - The filename of the email template.
+ * @param {boolean} [throwError=true] - Whether to throw an error if the email sending process fails.
+ * @returns {Promise<Object>} - A promise that resolves to the info object of the sent email or the error if sending the email fails.
+ *
+ * @example
+ * const emailData = {
+ *   email: 'recipient@example.com',
+ *   subject: 'Welcome!',
+ *   payload: { name: 'Recipient' },
+ *   template: 'welcome.html'
+ * };
+ *
+ * sendEmail(emailData)
+ *   .then(info => console.log('Email sent:', info))
+ *   .catch(error => console.error('Error sending email:', error));
+ *
+ * @throws Will throw an error if the email sending process fails and throwError is `true`.
+ */
+const sendEmail = async ({ email, subject, payload, template, throwError = true }) => {
   try {
     const transporterOptions = {
       // Use STARTTLS by default instead of obligatory TLS
@@ -13,7 +41,7 @@ const sendEmail = async (email, subject, payload, template) => {
       requireTls: process.env.EMAIL_ENCRYPTION === 'starttls',
       tls: {
         // Whether to accept unsigned certificates
-        rejectUnauthorized: process.env.EMAIL_ALLOW_SELFSIGNED === 'true',
+        rejectUnauthorized: !isEnabled(process.env.EMAIL_ALLOW_SELFSIGNED),
       },
       auth: {
         user: process.env.EMAIL_USERNAME,
@@ -57,16 +85,11 @@ const sendEmail = async (email, subject, payload, template) => {
     };
 
     // Send email
-    transporter.sendMail(options(), (error, info) => {
-      if (error) {
-        logger.error('[sendEmail]', error);
-        return error;
-      } else {
-        logger.debug('[sendEmail]', info);
-        return info;
-      }
-    });
+    return await transporter.sendMail(options());
   } catch (error) {
+    if (throwError) {
+      throw error;
+    }
     logger.error('[sendEmail]', error);
     return error;
   }

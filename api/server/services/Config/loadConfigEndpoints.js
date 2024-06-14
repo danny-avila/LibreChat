@@ -51,6 +51,13 @@ async function loadConfigEndpoints(req) {
     };
   }
 
+  if (req.app.locals[EModelEndpoint.azureOpenAI]?.assistants) {
+    /** @type {Omit<TConfig, 'order'>} */
+    endpointsConfig[EModelEndpoint.azureAssistants] = {
+      userProvide: false,
+    };
+  }
+
   return endpointsConfig;
 }
 

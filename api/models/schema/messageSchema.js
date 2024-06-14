@@ -11,6 +11,7 @@ const messageSchema = mongoose.Schema(
     },
     conversationId: {
       type: String,
+      index: true,
       required: true,
       meiliIndex: true,
     },
@@ -108,6 +109,10 @@ const messageSchema = mongoose.Schema(
       meiliIndex: true,
     },
     thread_id: {
+      type: String,
+    },
+    /* frontend components */
+    iconURL: {
       type: String,
     },
   },

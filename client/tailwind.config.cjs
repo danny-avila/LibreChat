@@ -43,11 +43,12 @@ module.exports = {
           200: '#e3e3e3',
           300: '#cdcdcd',
           400: '#999696',
-          500: '#686262',
-          600: '#3d3d3f',
-          700: '#262626', // Replacing .dark .dark:bg-gray-700 and .dark .dark:hover:bg-gray-700:hover
-          750: '#333333',
+          500: '#595959',
+          600: '#424242',
+          700: '#2f2f2f', // Replacing .dark .dark:bg-gray-700 and .dark .dark:hover:bg-gray-700:hover
+          750: '#171717',
           800: '#212121', // Replacing .dark .dark:bg-gray-800, .bg-gray-800, and .dark .dark:hover:bg-gray-800\/90
+          850: '#171717',
           900: '#0d0d0d', // Replacing .dark .dark:bg-gray-900, .bg-gray-900, and .dark .dark:hover:bg-gray-900:hover
         },
         green: {

@@ -25,7 +25,9 @@ type DialogTemplateProps = {
   selection?: SelectionProps;
   className?: string;
   headerClassName?: string;
+  footerClassName?: string;
   showCloseButton?: boolean;
+  showCancelButton?: boolean;
 };
 
 const DialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivElement>) => {
@@ -39,7 +41,9 @@ const DialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivE
     selection,
     className,
     headerClassName,
+    footerClassName,
     showCloseButton,
+    showCancelButton = true,
   } = props;
   const { selectHandler, selectClasses, selectText } = selection || {};
   const Cancel = localize('com_ui_cancel');
@@ -50,10 +54,10 @@ const DialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivE
     <DialogContent
       showCloseButton={showCloseButton}
       ref={ref}
-      className={cn('shadow-2xl dark:bg-gray-800', className || '')}
+      className={cn('shadow-2xl dark:bg-gray-700', className || '')}
       onClick={(e) => e.stopPropagation()}
     >
-      <DialogHeader className={cn('sm:pb-7', headerClassName ?? '')}>
+      <DialogHeader className={cn(headerClassName ?? '')}>
         <DialogTitle className="text-lg font-medium leading-6 text-gray-800 dark:text-gray-200">
           {title}
         </DialogTitle>
@@ -64,12 +68,14 @@ const DialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivE
         )}
       </DialogHeader>
       <div className="px-6">{main ? main : null}</div>
-      <DialogFooter>
+      <DialogFooter className={footerClassName}>
         <div>{leftButtons ? leftButtons : null}</div>
         <div className="flex h-auto gap-3">
-          <DialogClose className="border-gray-100 hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-700">
-            {Cancel}
-          </DialogClose>
+          {showCancelButton && (
+            <DialogClose className="border-gray-100 hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-gray-600">
+              {Cancel}
+            </DialogClose>
+          )}
           {buttons ? buttons : null}
           {selection ? (
             <DialogClose

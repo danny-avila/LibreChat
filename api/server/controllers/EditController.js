@@ -1,4 +1,5 @@
-const { getResponseSender } = require('librechat-data-provider');
+const throttle = require('lodash/throttle');
+const { getResponseSender, EModelEndpoint } = require('librechat-data-provider');
 const { createAbortController, handleAbortError } = require('~/server/middleware');
 const { sendMessage, createOnProgress } = require('~/server/utils');
 const { saveMessage, getConvo } = require('~/models');
@@ -25,11 +26,8 @@ const EditController = async (req, res, next, initializeClient) => {
     ...endpointOption,
   });
 
-  let metadata;
   let userMessage;
   let promptTokens;
-  let lastSavedTimestamp = 0;
-  let saveDelay = 100;
   const sender = getResponseSender({
     ...endpointOption,
     model: endpointOption.modelOptions.model,
@@ -38,7 +36,6 @@ const EditController = async (req, res, next, initializeClient) => {
   const userMessageId = parentMessageId;
   const user = req.user.id;
 
-  const addMetadata = (data) => (metadata = data);
   const getReqData = (data = {}) => {
     for (let key in data) {
       if (key === 'userMessage') {
@@ -51,13 +48,11 @@ const EditController = async (req, res, next, initializeClient) => {
     }
   };
 
+  const unfinished = endpointOption.endpoint === EModelEndpoint.google ? false : true;
   const { onProgress: progressCallback, getPartialText } = createOnProgress({
     generation,
-    onProgress: ({ text: partialText }) => {
-      const currentTimestamp = Date.now();
-
-      if (currentTimestamp - lastSavedTimestamp > saveDelay) {
-        lastSavedTimestamp = currentTimestamp;
+    onProgress: throttle(
+      ({ text: partialText }) => {
         saveMessage({
           messageId: responseMessageId,
           sender,
@@ -65,17 +60,15 @@ const EditController = async (req, res, next, initializeClient) => {
           parentMessageId: overrideParentMessageId ?? userMessageId,
           text: partialText,
           model: endpointOption.modelOptions.model,
-          unfinished: true,
+          unfinished,
           isEdited: true,
           error: false,
           user,
         });
-      }
-
-      if (saveDelay < 500) {
-        saveDelay = 500;
-      }
-    },
+      },
+      3000,
+      { trailing: false },
+    ),
   });
 
   const getAbortData = () => ({
@@ -118,18 +111,14 @@ const EditController = async (req, res, next, initializeClient) => {
       overrideParentMessageId,
       getReqData,
       onStart,
-      addMetadata,
       abortController,
-      onProgress: progressCallback.call(null, {
+      progressCallback,
+      progressOptions: {
         res,
         text,
-        parentMessageId: overrideParentMessageId || userMessageId,
-      }),
+        // parentMessageId: overrideParentMessageId || userMessageId,
+      },
     });
-
-    if (metadata) {
-      response = { ...response, ...metadata };
-    }
 
     const conversation = await getConvo(user, conversationId);
     conversation.title =

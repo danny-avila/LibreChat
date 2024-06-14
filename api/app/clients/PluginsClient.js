@@ -42,8 +42,12 @@ class PluginsClient extends OpenAIClient {
     return {
       chatGptLabel: this.options.chatGptLabel,
       promptPrefix: this.options.promptPrefix,
+      tools: this.options.tools,
       ...this.modelOptions,
       agentOptions: this.agentOptions,
+      iconURL: this.options.iconURL,
+      greeting: this.options.greeting,
+      spec: this.options.spec,
     };
   }
 
@@ -144,9 +148,11 @@ class PluginsClient extends OpenAIClient {
       signal,
       pastMessages,
       tools: this.tools,
-      currentDateString: this.currentDateString,
       verbose: this.options.debug,
       returnIntermediateSteps: true,
+      customName: this.options.chatGptLabel,
+      currentDateString: this.currentDateString,
+      customInstructions: this.options.promptPrefix,
       callbackManager: CallbackManager.fromHandlers({
         async handleAgentAction(action, runId) {
           handleAction(action, runId, onAgentAction);
@@ -244,7 +250,8 @@ class PluginsClient extends OpenAIClient {
       this.setOptions(opts);
       return super.sendMessage(message, opts);
     }
-    logger.debug('[PluginsClient] sendMessage', { message, opts });
+
+    logger.debug('[PluginsClient] sendMessage', { userMessageText: message, opts });
     const {
       user,
       isEdited,
@@ -257,6 +264,14 @@ class PluginsClient extends OpenAIClient {
       onToolStart,
       onToolEnd,
     } = await this.handleStartMethods(message, opts);
+
+    if (opts.progressCallback) {
+      opts.onProgress = opts.progressCallback.call(null, {
+        ...(opts.progressOptions ?? {}),
+        parentMessageId: userMessage.messageId,
+        messageId: responseMessageId,
+      });
+    }
 
     this.currentMessages.push(userMessage);
 
@@ -304,6 +319,8 @@ class PluginsClient extends OpenAIClient {
     }
 
     const responseMessage = {
+      endpoint: EModelEndpoint.gptPlugins,
+      iconURL: this.options.iconURL,
       messageId: responseMessageId,
       conversationId,
       parentMessageId: userMessage.messageId,

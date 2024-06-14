@@ -1,5 +1,12 @@
+import { useMemo } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
-import { ImageDetail, imageDetailNumeric, imageDetailValue } from 'librechat-data-provider';
+import {
+  EModelEndpoint,
+  ImageDetail,
+  imageDetailNumeric,
+  imageDetailValue,
+} from 'librechat-data-provider';
+import type { TModelSelectProps, OnInputNumberChange } from '~/common';
 import {
   Input,
   Label,
@@ -10,41 +17,88 @@ import {
   SelectDropDown,
   HoverCardTrigger,
 } from '~/components/ui';
-import { cn, defaultTextProps, optionText, removeFocusOutlines } from '~/utils/';
-import type { TModelSelectProps } from '~/common';
+import { cn, defaultTextProps, optionText, removeFocusOutlines, removeFocusRings } from '~/utils';
+import OptionHoverAlt from '~/components/SidePanel/Parameters/OptionHover';
+import { DynamicTags } from '~/components/SidePanel/Parameters';
+import { useLocalize, useDebouncedInput } from '~/hooks';
 import OptionHover from './OptionHover';
-import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
 
 export default function Settings({ conversation, setOption, models, readonly }: TModelSelectProps) {
   const localize = useLocalize();
-  if (!conversation) {
-    return null;
-  }
   const {
     endpoint,
     endpointType,
     model,
+    modelLabel,
     chatGptLabel,
     promptPrefix,
     temperature,
     top_p: topP,
     frequency_penalty: freqP,
     presence_penalty: presP,
-    resendImages,
+    resendFiles,
     imageDetail,
-  } = conversation;
-  const setModel = setOption('model');
-  const setChatGptLabel = setOption('chatGptLabel');
-  const setPromptPrefix = setOption('promptPrefix');
-  const setTemperature = setOption('temperature');
-  const setTopP = setOption('top_p');
-  const setFreqP = setOption('frequency_penalty');
-  const setPresP = setOption('presence_penalty');
-  const setResendImages = setOption('resendImages');
-  const setImageDetail = setOption('imageDetail');
+    maxContextTokens,
+    max_tokens,
+  } = conversation ?? {};
 
-  const optionEndpoint = endpointType ?? endpoint;
+  const [setChatGptLabel, chatGptLabelValue] = useDebouncedInput<string | null | undefined>({
+    setOption,
+    optionKey: 'chatGptLabel',
+    initialValue: modelLabel ?? chatGptLabel,
+  });
+  const [setPromptPrefix, promptPrefixValue] = useDebouncedInput<string | null | undefined>({
+    setOption,
+    optionKey: 'promptPrefix',
+    initialValue: promptPrefix,
+  });
+  const [setTemperature, temperatureValue] = useDebouncedInput<number | null | undefined>({
+    setOption,
+    optionKey: 'temperature',
+    initialValue: temperature,
+  });
+  const [setTopP, topPValue] = useDebouncedInput<number | null | undefined>({
+    setOption,
+    optionKey: 'top_p',
+    initialValue: topP,
+  });
+  const [setFreqP, freqPValue] = useDebouncedInput<number | null | undefined>({
+    setOption,
+    optionKey: 'frequency_penalty',
+    initialValue: freqP,
+  });
+  const [setPresP, presPValue] = useDebouncedInput<number | null | undefined>({
+    setOption,
+    optionKey: 'presence_penalty',
+    initialValue: presP,
+  });
+  const [setMaxContextTokens, maxContextTokensValue] = useDebouncedInput<number | null | undefined>(
+    {
+      setOption,
+      optionKey: 'maxContextTokens',
+      initialValue: maxContextTokens,
+    },
+  );
+  const [setMaxOutputTokens, maxOutputTokensValue] = useDebouncedInput<number | null | undefined>({
+    setOption,
+    optionKey: 'max_tokens',
+    initialValue: max_tokens,
+  });
+
+  const optionEndpoint = useMemo(() => endpointType ?? endpoint, [endpoint, endpointType]);
+  const isOpenAI = useMemo(
+    () => optionEndpoint === EModelEndpoint.openAI || optionEndpoint === EModelEndpoint.azureOpenAI,
+    [optionEndpoint],
+  );
+
+  if (!conversation) {
+    return null;
+  }
+
+  const setModel = setOption('model');
+  const setResendFiles = setOption('resendFiles');
+  const setImageDetail = setOption('imageDetail');
 
   return (
     <div className="grid grid-cols-5 gap-6">
@@ -55,7 +109,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             setValue={setModel}
             availableValues={models}
             disabled={readonly}
-            className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusOutlines)}
+            className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusRings)}
             containerClassName="flex w-full resize-none"
           />
         </div>
@@ -67,12 +121,11 @@ export default function Settings({ conversation, setOption, models, readonly }: 
           <Input
             id="chatGptLabel"
             disabled={readonly}
-            value={chatGptLabel || ''}
-            onChange={(e) => setChatGptLabel(e.target.value ?? null)}
+            value={(chatGptLabelValue as string) || ''}
+            onChange={setChatGptLabel}
             placeholder={localize('com_endpoint_openai_custom_name_placeholder')}
             className={cn(
               defaultTextProps,
-              'dark:bg-gray-700 dark:hover:bg-gray-700/60 dark:focus:bg-gray-700',
               'flex h-10 max-h-10 w-full resize-none px-3 py-2',
               removeFocusOutlines,
             )}
@@ -86,18 +139,101 @@ export default function Settings({ conversation, setOption, models, readonly }: 
           <TextareaAutosize
             id="promptPrefix"
             disabled={readonly}
-            value={promptPrefix || ''}
-            onChange={(e) => setPromptPrefix(e.target.value ?? null)}
+            value={(promptPrefixValue as string) || ''}
+            onChange={setPromptPrefix}
             placeholder={localize('com_endpoint_openai_prompt_prefix_placeholder')}
             className={cn(
               defaultTextProps,
-              'dark:bg-gray-700 dark:hover:bg-gray-700/60 dark:focus:bg-gray-700',
               'flex max-h-[138px] min-h-[100px] w-full resize-none px-3 py-2 ',
             )}
           />
         </div>
+        <div className="grid w-full items-start gap-2">
+          <DynamicTags
+            settingKey="stop"
+            setOption={setOption}
+            label="com_endpoint_stop"
+            labelCode={true}
+            description="com_endpoint_openai_stop"
+            descriptionCode={true}
+            placeholder="com_endpoint_stop_placeholder"
+            placeholderCode={true}
+            descriptionSide="right"
+            maxTags={isOpenAI ? 4 : undefined}
+            conversation={conversation}
+            readonly={readonly}
+          />
+        </div>
       </div>
       <div className="col-span-5 flex flex-col items-center justify-start gap-6 px-3 sm:col-span-2">
+        <HoverCard openDelay={300}>
+          <HoverCardTrigger className="grid w-full items-center gap-2">
+            <div className="mt-1 flex w-full justify-between">
+              <Label htmlFor="max-context-tokens" className="text-left text-sm font-medium">
+                {localize('com_endpoint_context_tokens')}{' '}
+              </Label>
+              <InputNumber
+                id="max-context-tokens"
+                stringMode={false}
+                disabled={readonly}
+                value={maxContextTokensValue as number}
+                onChange={setMaxContextTokens as OnInputNumberChange}
+                placeholder={localize('com_nav_theme_system')}
+                min={10}
+                max={2000000}
+                step={1000}
+                controls={false}
+                className={cn(
+                  defaultTextProps,
+                  cn(
+                    optionText,
+                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                    'w-1/3',
+                  ),
+                )}
+              />
+            </div>
+          </HoverCardTrigger>
+          <OptionHoverAlt
+            description="com_endpoint_context_info"
+            langCode={true}
+            side={ESide.Left}
+          />
+        </HoverCard>
+        <HoverCard openDelay={300}>
+          <HoverCardTrigger className="grid w-full items-center gap-2">
+            <div className="mt-1 flex w-full justify-between">
+              <Label htmlFor="max-output-tokens" className="text-left text-sm font-medium">
+                {localize('com_endpoint_max_output_tokens')}{' '}
+              </Label>
+              <InputNumber
+                id="max-output-tokens"
+                stringMode={false}
+                disabled={readonly}
+                value={maxOutputTokensValue as number}
+                onChange={setMaxOutputTokens as OnInputNumberChange}
+                placeholder={localize('com_nav_theme_system')}
+                min={10}
+                max={2000000}
+                step={1000}
+                controls={false}
+                className={cn(
+                  defaultTextProps,
+                  cn(
+                    optionText,
+                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                    'w-1/3',
+                  ),
+                )}
+              />
+            </div>
+          </HoverCardTrigger>
+          <OptionHoverAlt
+            description="com_endpoint_openai_max_tokens"
+            langCode={true}
+            side={ESide.Left}
+          />
+        </HoverCard>
         <HoverCard openDelay={300}>
           <HoverCardTrigger className="grid w-full items-center gap-2">
             <div className="flex justify-between">
@@ -109,9 +245,10 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               </Label>
               <InputNumber
                 id="temp-int"
+                stringMode={false}
                 disabled={readonly}
-                value={temperature}
-                onChange={(value) => setTemperature(Number(value))}
+                value={temperatureValue as number}
+                onChange={setTemperature as OnInputNumberChange}
                 max={2}
                 min={0}
                 step={0.01}
@@ -127,7 +264,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             </div>
             <Slider
               disabled={readonly}
-              value={[temperature ?? 1]}
+              value={[(temperatureValue as number) ?? 1]}
               onValueChange={(value) => setTemperature(value[0])}
               doubleClickHandler={() => setTemperature(1)}
               max={2}
@@ -148,7 +285,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               <InputNumber
                 id="top-p-int"
                 disabled={readonly}
-                value={topP}
+                value={topPValue as number}
                 onChange={(value) => setTopP(Number(value))}
                 max={1}
                 min={0}
@@ -165,7 +302,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             </div>
             <Slider
               disabled={readonly}
-              value={[topP ?? 1]}
+              value={[(topPValue as number) ?? 1]}
               onValueChange={(value) => setTopP(value[0])}
               doubleClickHandler={() => setTopP(1)}
               max={1}
@@ -187,7 +324,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               <InputNumber
                 id="freq-penalty-int"
                 disabled={readonly}
-                value={freqP}
+                value={freqPValue as number}
                 onChange={(value) => setFreqP(Number(value))}
                 max={2}
                 min={-2}
@@ -204,7 +341,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             </div>
             <Slider
               disabled={readonly}
-              value={[freqP ?? 0]}
+              value={[(freqPValue as number) ?? 0]}
               onValueChange={(value) => setFreqP(value[0])}
               doubleClickHandler={() => setFreqP(0)}
               max={2}
@@ -226,7 +363,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               <InputNumber
                 id="pres-penalty-int"
                 disabled={readonly}
-                value={presP}
+                value={presPValue as number}
                 onChange={(value) => setPresP(Number(value))}
                 max={2}
                 min={-2}
@@ -243,7 +380,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             </div>
             <Slider
               disabled={readonly}
-              value={[presP ?? 0]}
+              value={[(presPValue as number) ?? 0]}
               onValueChange={(value) => setPresP(value[0])}
               doubleClickHandler={() => setPresP(0)}
               max={2}
@@ -257,10 +394,10 @@ export default function Settings({ conversation, setOption, models, readonly }: 
         <div className="w-full">
           <div className="mb-2 flex w-full justify-between gap-2">
             <label
-              htmlFor="resend-images"
+              htmlFor="resend-files"
               className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
             >
-              <small>{localize('com_endpoint_plug_resend_images')}</small>
+              <small>{localize('com_endpoint_plug_resend_files')}</small>
             </label>
             <label
               htmlFor="image-detail-value"
@@ -275,7 +412,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               className={cn(
                 defaultTextProps,
                 optionText,
-                'flex rounded-md bg-transparent py-2 text-xs focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 dark:border-slate-700',
+                'flex rounded-md bg-transparent py-2 text-xs focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 dark:border-gray-700',
                 'pointer-events-none max-h-5 w-12 border-0 group-hover/temp:border-gray-200',
               )}
             />
@@ -284,9 +421,9 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             <HoverCard openDelay={500}>
               <HoverCardTrigger>
                 <Switch
-                  id="resend-images"
-                  checked={resendImages ?? false}
-                  onCheckedChange={(checked: boolean) => setResendImages(checked)}
+                  id="resend-files"
+                  checked={resendFiles ?? true}
+                  onCheckedChange={(checked: boolean) => setResendFiles(checked)}
                   disabled={readonly}
                   className="flex"
                 />

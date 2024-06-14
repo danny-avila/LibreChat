@@ -1,7 +1,9 @@
 const { google } = require('googleapis');
 const { Agent, ProxyAgent } = require('undici');
-const { GoogleVertexAI } = require('langchain/llms/googlevertexai');
+const { ChatVertexAI } = require('@langchain/google-vertexai');
 const { ChatGoogleGenerativeAI } = require('@langchain/google-genai');
+const { GoogleGenerativeAI: GenAI } = require('@google/generative-ai');
+const { GoogleVertexAI } = require('@langchain/community/llms/googlevertexai');
 const { ChatGoogleVertexAI } = require('langchain/chat_models/googlevertexai');
 const { AIMessage, HumanMessage, SystemMessage } = require('langchain/schema');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
@@ -10,11 +12,12 @@ const {
   getResponseSender,
   endpointSettings,
   EModelEndpoint,
+  VisionModes,
   AuthKeys,
 } = require('librechat-data-provider');
 const { encodeAndFormat } = require('~/server/services/Files/images');
+const { formatMessage, createContextHandlers } = require('./prompts');
 const { getModelMaxTokens } = require('~/utils');
-const { formatMessage } = require('./prompts');
 const BaseClient = require('./BaseClient');
 const { logger } = require('~/config');
 
@@ -124,26 +127,9 @@ class GoogleClient extends BaseClient {
       // stop: modelOptions.stop // no stop method for now
     };
 
-    /* Validation vision request */
-    this.defaultVisionModel = this.options.visionModel ?? 'gemini-pro-vision';
-    const availableModels = this.options.modelsConfig?.[EModelEndpoint.google];
-    this.isVisionModel = validateVisionModel({ model: this.modelOptions.model, availableModels });
+    this.options.attachments?.then((attachments) => this.checkVisionRequest(attachments));
 
-    if (
-      this.options.attachments &&
-      availableModels?.includes(this.defaultVisionModel) &&
-      !this.isVisionModel
-    ) {
-      this.modelOptions.model = this.defaultVisionModel;
-      this.isVisionModel = true;
-    }
-
-    if (this.isVisionModel && !this.options.attachments) {
-      this.modelOptions.model = 'gemini-pro';
-      this.isVisionModel = false;
-    }
-
-    // TODO: as of 12/14/23, only gemini models are "Generative AI" models provided by Google
+    /** @type {boolean} Whether using a "GenerativeAI" Model */
     this.isGenerativeModel = this.modelOptions.model.includes('gemini');
     const { isGenerativeModel } = this;
     this.isChatModel = !isGenerativeModel && this.modelOptions.model.includes('chat');
@@ -152,7 +138,10 @@ class GoogleClient extends BaseClient {
       !isGenerativeModel && !isChatModel && /code|text/.test(this.modelOptions.model);
     const { isTextModel } = this;
 
-    this.maxContextTokens = getModelMaxTokens(this.modelOptions.model, EModelEndpoint.google);
+    this.maxContextTokens =
+      this.options.maxContextTokens ??
+      getModelMaxTokens(this.modelOptions.model, EModelEndpoint.google);
+
     // The max prompt tokens is determined by the max context tokens minus the max response tokens.
     // Earlier messages will be dropped until the prompt is within the limit.
     this.maxResponseTokens = this.modelOptions.maxOutputTokens || settings.maxOutputTokens.default;
@@ -230,6 +219,33 @@ class GoogleClient extends BaseClient {
     return this;
   }
 
+  /**
+   *
+   * Checks if the model is a vision model based on request attachments and sets the appropriate options:
+   * @param {MongoFile[]} attachments
+   */
+  checkVisionRequest(attachments) {
+    /* Validation vision request */
+    this.defaultVisionModel = this.options.visionModel ?? 'gemini-pro-vision';
+    const availableModels = this.options.modelsConfig?.[EModelEndpoint.google];
+    this.isVisionModel = validateVisionModel({ model: this.modelOptions.model, availableModels });
+
+    if (
+      attachments &&
+      attachments.some((file) => file?.type && file?.type?.includes('image')) &&
+      availableModels?.includes(this.defaultVisionModel) &&
+      !this.isVisionModel
+    ) {
+      this.modelOptions.model = this.defaultVisionModel;
+      this.isVisionModel = true;
+    }
+
+    if (this.isVisionModel && !attachments && this.modelOptions.model.includes('gemini-pro')) {
+      this.modelOptions.model = 'gemini-pro';
+      this.isVisionModel = false;
+    }
+  }
+
   formatMessages() {
     return ((message) => ({
       author: message?.author ?? (message.isCreatedByUser ? this.userLabel : this.modelLabel),
@@ -237,18 +253,91 @@ class GoogleClient extends BaseClient {
     })).bind(this);
   }
 
-  async buildVisionMessages(messages = [], parentMessageId) {
-    const { prompt } = await this.buildMessagesPrompt(messages, parentMessageId);
+  /**
+   * Formats messages for generative AI
+   * @param {TMessage[]} messages
+   * @returns
+   */
+  async formatGenerativeMessages(messages) {
+    const formattedMessages = [];
     const attachments = await this.options.attachments;
+    const latestMessage = { ...messages[messages.length - 1] };
+    const files = await this.addImageURLs(latestMessage, attachments, VisionModes.generative);
+    this.options.attachments = files;
+    messages[messages.length - 1] = latestMessage;
+
+    for (const _message of messages) {
+      const role = _message.isCreatedByUser ? this.userLabel : this.modelLabel;
+      const parts = [];
+      parts.push({ text: _message.text });
+      if (!_message.image_urls?.length) {
+        formattedMessages.push({ role, parts });
+        continue;
+      }
+
+      for (const images of _message.image_urls) {
+        if (images.inlineData) {
+          parts.push({ inlineData: images.inlineData });
+        }
+      }
+
+      formattedMessages.push({ role, parts });
+    }
+
+    return formattedMessages;
+  }
+
+  /**
+   *
+   * Adds image URLs to the message object and returns the files
+   *
+   * @param {TMessage[]} messages
+   * @param {MongoFile[]} files
+   * @returns {Promise<MongoFile[]>}
+   */
+  async addImageURLs(message, attachments, mode = '') {
     const { files, image_urls } = await encodeAndFormat(
       this.options.req,
-      attachments.filter((file) => file.type.includes('image')),
+      attachments,
       EModelEndpoint.google,
+      mode,
     );
+    message.image_urls = image_urls.length ? image_urls : undefined;
+    return files;
+  }
 
+  /**
+   * Builds the augmented prompt for attachments
+   * TODO: Add File API Support
+   * @param {TMessage[]} messages
+   */
+  async buildAugmentedPrompt(messages = []) {
+    const attachments = await this.options.attachments;
     const latestMessage = { ...messages[messages.length - 1] };
+    this.contextHandlers = createContextHandlers(this.options.req, latestMessage.text);
 
-    latestMessage.image_urls = image_urls;
+    if (this.contextHandlers) {
+      for (const file of attachments) {
+        if (file.embedded) {
+          this.contextHandlers?.processFile(file);
+          continue;
+        }
+      }
+
+      this.augmentedPrompt = await this.contextHandlers.createContext();
+      this.options.promptPrefix = this.augmentedPrompt + this.options.promptPrefix;
+    }
+  }
+
+  async buildVisionMessages(messages = [], parentMessageId) {
+    const attachments = await this.options.attachments;
+    const latestMessage = { ...messages[messages.length - 1] };
+    await this.buildAugmentedPrompt(messages);
+
+    const { prompt } = await this.buildMessagesPrompt(messages, parentMessageId);
+
+    const files = await this.addImageURLs(latestMessage, attachments);
+
     this.options.attachments = files;
 
     latestMessage.text = prompt;
@@ -264,18 +353,29 @@ class GoogleClient extends BaseClient {
     return { prompt: payload };
   }
 
+  /** @param {TMessage[]} [messages=[]]  */
+  async buildGenerativeMessages(messages = []) {
+    this.userLabel = 'user';
+    this.modelLabel = 'model';
+    const promises = [];
+    promises.push(await this.formatGenerativeMessages(messages));
+    promises.push(this.buildAugmentedPrompt(messages));
+    const [formattedMessages] = await Promise.all(promises);
+    return { prompt: formattedMessages };
+  }
+
   async buildMessages(messages = [], parentMessageId) {
     if (!this.isGenerativeModel && !this.project_id) {
       throw new Error(
         '[GoogleClient] a Service Account JSON Key is required for PaLM 2 and Codey models (Vertex AI)',
       );
-    } else if (this.isGenerativeModel && (!this.apiKey || this.apiKey === 'user_provided')) {
-      throw new Error(
-        '[GoogleClient] an API Key is required for Gemini models (Generative Language API)',
-      );
     }
 
-    if (this.options.attachments) {
+    if (!this.project_id && this.modelOptions.model.includes('1.5')) {
+      return await this.buildGenerativeMessages(messages);
+    }
+
+    if (this.options.attachments && this.isGenerativeModel) {
       return this.buildVisionMessages(messages, parentMessageId);
     }
 
@@ -489,13 +589,24 @@ class GoogleClient extends BaseClient {
   }
 
   createLLM(clientOptions) {
-    if (this.isGenerativeModel) {
-      return new ChatGoogleGenerativeAI({ ...clientOptions, apiKey: this.apiKey });
+    const model = clientOptions.modelName ?? clientOptions.model;
+    if (this.project_id && this.isTextModel) {
+      return new GoogleVertexAI(clientOptions);
+    } else if (this.project_id && this.isChatModel) {
+      return new ChatGoogleVertexAI(clientOptions);
+    } else if (this.project_id) {
+      return new ChatVertexAI(clientOptions);
+    } else if (model.includes('1.5')) {
+      return new GenAI(this.apiKey).getGenerativeModel(
+        {
+          ...clientOptions,
+          model,
+        },
+        { apiVersion: 'v1beta' },
+      );
     }
 
-    return this.isTextModel
-      ? new GoogleVertexAI(clientOptions)
-      : new ChatGoogleVertexAI(clientOptions);
+    return new ChatGoogleGenerativeAI({ ...clientOptions, apiKey: this.apiKey });
   }
 
   async getCompletion(_payload, options = {}) {
@@ -507,7 +618,7 @@ class GoogleClient extends BaseClient {
 
     let clientOptions = { ...parameters, maxRetries: 2 };
 
-    if (!this.isGenerativeModel) {
+    if (this.project_id) {
       clientOptions['authOptions'] = {
         credentials: {
           ...this.serviceKey,
@@ -520,7 +631,7 @@ class GoogleClient extends BaseClient {
       clientOptions = { ...clientOptions, ...this.modelOptions };
     }
 
-    if (this.isGenerativeModel) {
+    if (this.isGenerativeModel && !this.project_id) {
       clientOptions.modelName = clientOptions.model;
       delete clientOptions.model;
     }
@@ -551,16 +662,56 @@ class GoogleClient extends BaseClient {
       messages.unshift(new SystemMessage(context));
     }
 
+    const modelName = clientOptions.modelName ?? clientOptions.model ?? '';
+    if (modelName?.includes('1.5') && !this.project_id) {
+      /** @type {GenerativeModel} */
+      const client = model;
+      const requestOptions = {
+        contents: _payload,
+      };
+
+      if (this.options?.promptPrefix?.length) {
+        requestOptions.systemInstruction = {
+          parts: [
+            {
+              text: this.options.promptPrefix,
+            },
+          ],
+        };
+      }
+
+      const safetySettings = _payload.safetySettings;
+      requestOptions.safetySettings = safetySettings;
+
+      const delay = modelName.includes('flash') ? 8 : 14;
+      const result = await client.generateContentStream(requestOptions);
+      for await (const chunk of result.stream) {
+        const chunkText = chunk.text();
+        await this.generateTextStream(chunkText, onProgress, {
+          delay,
+        });
+        reply += chunkText;
+      }
+      return reply;
+    }
+
+    const safetySettings = _payload.safetySettings;
     const stream = await model.stream(messages, {
       signal: abortController.signal,
       timeout: 7000,
+      safetySettings: safetySettings,
     });
 
+    let delay = this.isGenerativeModel ? 12 : 8;
+    if (modelName.includes('flash')) {
+      delay = 5;
+    }
     for await (const chunk of stream) {
-      await this.generateTextStream(chunk?.content ?? chunk, onProgress, {
-        delay: this.isGenerativeModel ? 12 : 8,
+      const chunkText = chunk?.content ?? chunk;
+      await this.generateTextStream(chunkText, onProgress, {
+        delay,
       });
-      reply += chunk?.content ?? chunk;
+      reply += chunkText;
     }
 
     return reply;
@@ -570,6 +721,9 @@ class GoogleClient extends BaseClient {
     return {
       promptPrefix: this.options.promptPrefix,
       modelLabel: this.options.modelLabel,
+      iconURL: this.options.iconURL,
+      greeting: this.options.greeting,
+      spec: this.options.spec,
       ...this.modelOptions,
     };
   }
@@ -579,6 +733,33 @@ class GoogleClient extends BaseClient {
   }
 
   async sendCompletion(payload, opts = {}) {
+    const modelName = payload.parameters?.model;
+
+    if (modelName && modelName.toLowerCase().includes('gemini')) {
+      const safetySettings = [
+        {
+          category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+          threshold:
+            process.env.GOOGLE_SAFETY_SEXUALLY_EXPLICIT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+        },
+        {
+          category: 'HARM_CATEGORY_HATE_SPEECH',
+          threshold: process.env.GOOGLE_SAFETY_HATE_SPEECH || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+        },
+        {
+          category: 'HARM_CATEGORY_HARASSMENT',
+          threshold: process.env.GOOGLE_SAFETY_HARASSMENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+        },
+        {
+          category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
+          threshold:
+            process.env.GOOGLE_SAFETY_DANGEROUS_CONTENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+        },
+      ];
+
+      payload.safetySettings = safetySettings;
+    }
+
     let reply = '';
     reply = await this.getCompletion(payload, opts);
     return reply.trim();

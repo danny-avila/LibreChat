@@ -6,7 +6,7 @@ const { isEnabled } = require('~/server/utils');
  * @returns {string} The sanitized model name.
  */
 const sanitizeModelName = (modelName) => {
-  // Replace periods with empty strings and other disallowed characters as needed
+  // Replace periods with empty strings and other disallowed characters as needed.
   return modelName.replace(/\./g, '');
 };
 
@@ -78,16 +78,19 @@ const getAzureCredentials = () => {
  *
  * @param {Object} params - The parameters object.
  * @param {string} params.baseURL - The baseURL to inspect for replacement placeholders.
- * @param {AzureOptions} params.azure - The baseURL to inspect for replacement placeholders.
+ * @param {AzureOptions} params.azureOptions - The azure options object containing the instance and deployment names.
  * @returns {string} The complete baseURL with credentials injected for the Azure OpenAI API.
  */
-function constructAzureURL({ baseURL, azure }) {
+function constructAzureURL({ baseURL, azureOptions }) {
   let finalURL = baseURL;
 
   // Replace INSTANCE_NAME and DEPLOYMENT_NAME placeholders with actual values if available
-  if (azure) {
-    finalURL = finalURL.replace('${INSTANCE_NAME}', azure.azureOpenAIApiInstanceName ?? '');
-    finalURL = finalURL.replace('${DEPLOYMENT_NAME}', azure.azureOpenAIApiDeploymentName ?? '');
+  if (azureOptions) {
+    finalURL = finalURL.replace('${INSTANCE_NAME}', azureOptions.azureOpenAIApiInstanceName ?? '');
+    finalURL = finalURL.replace(
+      '${DEPLOYMENT_NAME}',
+      azureOptions.azureOpenAIApiDeploymentName ?? '',
+    );
   }
 
   return finalURL;

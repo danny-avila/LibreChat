@@ -69,7 +69,7 @@ const updateFileUsage = async (data) => {
   const { file_id, inc = 1 } = data;
   const updateOperation = {
     $inc: { usage: inc },
-    $unset: { expiresAt: '' },
+    $unset: { expiresAt: '', temp_file_id: '' },
   };
   return await File.findOneAndUpdate({ file_id }, updateOperation, { new: true }).lean();
 };
@@ -97,8 +97,12 @@ const deleteFileByFilter = async (filter) => {
  * @param {Array<string>} file_ids - The unique identifiers of the files to delete.
  * @returns {Promise<Object>} A promise that resolves to the result of the deletion operation.
  */
-const deleteFiles = async (file_ids) => {
-  return await File.deleteMany({ file_id: { $in: file_ids } });
+const deleteFiles = async (file_ids, user) => {
+  let deleteQuery = { file_id: { $in: file_ids } };
+  if (user) {
+    deleteQuery = { user: user };
+  }
+  return await File.deleteMany(deleteQuery);
 };
 
 module.exports = {

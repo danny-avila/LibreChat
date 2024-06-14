@@ -155,7 +155,7 @@ const createMeiliMongooseModel = function ({ index, attributesToIndex }) {
             function (results, value, key) {
               return { ...results, [key]: 1 };
             },
-            { _id: 1 },
+            { _id: 1, __v: 1 },
           ),
         ).lean();
 
@@ -348,7 +348,7 @@ module.exports = function mongoMeili(schema, options) {
       try {
         meiliDoc = await client.index('convos').getDocument(doc.conversationId);
       } catch (error) {
-        logger.error(
+        logger.debug(
           '[MeiliMongooseModel.findOneAndUpdate] Convo not found in MeiliSearch and will index ' +
             doc.conversationId,
           error,

@@ -1,11 +1,9 @@
 const axios = require('axios');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { EModelEndpoint, defaultModels, CacheKeys } = require('librechat-data-provider');
-const { extractBaseURL, inputSchema, processModelData } = require('~/utils');
+const { extractBaseURL, inputSchema, processModelData, logAxiosError } = require('~/utils');
+const { OllamaClient } = require('~/app/clients/OllamaClient');
 const getLogStores = require('~/cache/getLogStores');
-const { logger } = require('~/config');
-
-// const { getAzureCredentials, genAzureChatCompletion } = require('~/utils/');
 
 const { openAIApiKey, userProvidedOpenAI } = require('./Config/EndpointService').config;
 
@@ -44,6 +42,10 @@ const fetchModels = async ({
     return models;
   }
 
+  if (name && name.toLowerCase().startsWith('ollama')) {
+    return await OllamaClient.fetchModels(baseURL);
+  }
+
   try {
     const options = {
       headers: {
@@ -77,29 +79,7 @@ const fetchModels = async ({
     models = input.data.map((item) => item.id);
   } catch (error) {
     const logMessage = `Failed to fetch models from ${azure ? 'Azure ' : ''}${name} API`;
-    if (error.response) {
-      logger.error(
-        `${logMessage} The request was made and the server responded with a status code that falls out of the range of 2xx: ${
-          error.message ? error.message : ''
-        }`,
-        {
-          headers: error.response.headers,
-          status: error.response.status,
-          data: error.response.data,
-        },
-      );
-    } else if (error.request) {
-      logger.error(
-        `${logMessage} The request was made but no response was received: ${
-          error.message ? error.message : ''
-        }`,
-        {
-          request: error.request,
-        },
-      );
-    } else {
-      logger.error(`${logMessage} Something happened in setting up the request`, error);
-    }
+    logAxiosError({ message: logMessage, error });
   }
 
   return models;
@@ -112,6 +92,7 @@ const fetchModels = async ({
  * @param {object} opts - The options for fetching the models.
  * @param {string} opts.user - The user ID to send to the API.
  * @param {boolean} [opts.azure=false] - Whether to fetch models from Azure.
+ * @param {boolean} [opts.assistants=false] - Whether to fetch models from Azure.
  * @param {boolean} [opts.plugins=false] - Whether to fetch models from the plugins.
  * @param {string[]} [_models=[]] - The models to use as a fallback.
  */
@@ -121,7 +102,10 @@ const fetchOpenAIModels = async (opts, _models = []) => {
   const openaiBaseURL = 'https://api.openai.com/v1';
   let baseURL = openaiBaseURL;
   let reverseProxyUrl = process.env.OPENAI_REVERSE_PROXY;
-  if (opts.azure) {
+
+  if (opts.assistants && process.env.ASSISTANTS_BASE_URL) {
+    reverseProxyUrl = process.env.ASSISTANTS_BASE_URL;
+  } else if (opts.azure) {
     return models;
     // const azure = getAzureCredentials();
     // baseURL = (genAzureChatCompletion(azure))
@@ -183,6 +167,8 @@ const getOpenAIModels = async (opts) => {
 
   if (opts.assistants) {
     models = defaultModels[EModelEndpoint.assistants];
+  } else if (opts.azure) {
+    models = defaultModels[EModelEndpoint.azureAssistants];
   }
 
   if (opts.plugins) {
@@ -213,10 +199,6 @@ const getOpenAIModels = async (opts) => {
   }
 
   if (userProvidedOpenAI && !process.env.OPENROUTER_API_KEY) {
-    return models;
-  }
-
-  if (opts.assistants) {
     return models;
   }
 
