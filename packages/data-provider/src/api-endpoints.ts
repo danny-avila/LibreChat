@@ -1,3 +1,5 @@
+import { SearchOptions } from './types/queries';
+
 export const user = () => '/api/user';
 
 export const balance = () => '/api/balance';
@@ -33,8 +35,8 @@ export const updateConversation = () => '/api/convos/update';
 
 export const deleteConversation = () => '/api/convos/clear';
 
-export const search = (q: string, pageNumber: string, searchType = 'r') =>
-  `/api/search?q=${q}&pageNumber=${pageNumber}&searchType=${searchType}`;
+export const search = (q: string, pageNumber: string, searchType = 'r', room = 'user', searchOptions: SearchOptions = { sort: 'none', endpoint: null }) =>
+  `/api/search?q=${q}&pageNumber=${pageNumber}&searchType=${searchType}&room=${room}&sort=${searchOptions.sort}&endpoint=${searchOptions.endpoint}`;
 
 export const searchEnabled = () => '/api/search/enable';
 

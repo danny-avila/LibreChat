@@ -1,5 +1,5 @@
 import { useParams } from 'react-router-dom';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import { useCallback, useEffect, useState, useMemo, memo } from 'react';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import {
@@ -24,12 +24,15 @@ import SubscriptionBtn from '../SidePanel/Subscription/SubscriptionBtn';
 import NewRoom from './NewRoom';
 import CategorySwitch from './CategorySwitch';
 import Rooms from '../Room/Rooms';
+import RoomsSwitch from './RoomsSwitch';
+import EndpointSelect from './EndpointSelect';
 
 const Nav = ({ navVisible, setNavVisible }) => {
   const { conversationId } = useParams();
   const { isAuthenticated } = useAuthContext();
   const [convoType, setConvoType] = useState('c');
   const convo = useRecoilValue(store.convoType);
+  const [roomSearchIndex, setRoomSearchIndex] = useRecoilState(store.roomSearchIndex);
 
   useEffect(() => {
     setConvoType(convo);
@@ -65,8 +68,11 @@ const Nav = ({ navVisible, setNavVisible }) => {
   );
 
   const searchQueryRes = useSearchInfiniteQuery(
-    { pageNumber: pageNumber.toString(), searchQuery: searchQuery },
-    { enabled: isAuthenticated && !!searchQuery.length },
+    {
+      pageNumber: pageNumber.toString(),
+      searchQuery: searchQuery.text, roomIndex: roomSearchIndex, searchOptions: searchQuery.searchOptions,
+    },
+    { enabled: isAuthenticated && !!searchQuery.text.length },
   );
 
   const { containerRef, moveToTop } = useNavScrolling({
@@ -159,6 +165,7 @@ const Nav = ({ navVisible, setNavVisible }) => {
                       ref={containerRef}
                     >
                       <CategorySwitch convoType={convoType} setConvoType={setConvoType} />
+                      {convoType === 'r' &&  <RoomsSwitch roomSearchIndex={roomSearchIndex} setRoomSearchIndex={setRoomSearchIndex} />}
                       {convoType === 'c' ? (
                         <>
                           <NewChat
@@ -173,11 +180,11 @@ const Nav = ({ navVisible, setNavVisible }) => {
                         </>
                       ) : (
                         <>
-                          {/* {isPremiumUser(user as TUser) && <NewRoom toggleNav={itemToggleNav} />} */}
                           <NewRoom
                             toggleNav={itemToggleNav}
                             subHeaders={<SearchBar clearSearch={clearSearch} />}
                           />
+                          <EndpointSelect />
                           <Rooms toggleNav={itemToggleNav} moveToTop={moveToTop} />
                         </>
                       )}

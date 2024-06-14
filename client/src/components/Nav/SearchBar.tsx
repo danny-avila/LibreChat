@@ -5,6 +5,7 @@ import debounce from 'lodash/debounce';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
+import { SearchOptions } from '~/store/conversation';
 
 type SearchBarProps = {
   clearSearch: () => void;
@@ -12,6 +13,8 @@ type SearchBarProps = {
 
 const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) => {
   const convoType = useRecoilValue(store.convoType);
+  const roomSearchIndex = useRecoilValue<'user' | 'all'>(store.roomSearchIndex);
+  const searchOptions = useRecoilValue<SearchOptions>(store.searchOptions);
   const { clearSearch } = props;
   const setSearchQuery = useSetRecoilState(store.searchQuery);
   const [showClearIcon, setShowClearIcon] = useState(false);
@@ -20,10 +23,14 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
 
   const clearText = useCallback(() => {
     setShowClearIcon(false);
-    setSearchQuery('');
+    setSearchQuery({
+      text: '',
+      category: roomSearchIndex as 'user' | 'all',
+      searchOptions,
+    });
     clearSearch();
     setText('');
-  }, [setSearchQuery, clearSearch]);
+  }, [setSearchQuery, clearSearch, roomSearchIndex, searchOptions]);
 
   const handleKeyUp = (e: React.KeyboardEvent<HTMLInputElement>) => {
     const { value } = e.target as HTMLInputElement;
@@ -32,7 +39,12 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
     }
   };
 
-  const sendRequest = useCallback((value: string) => setSearchQuery(value), [setSearchQuery]);
+  const sendRequest = useCallback((value: string) => setSearchQuery({
+    text: value,
+    category: roomSearchIndex as 'user' | 'all',
+    searchOptions,
+  }), [setSearchQuery, roomSearchIndex, searchOptions]);
+
   const debouncedSendRequest = useMemo(() => debounce(sendRequest, 350), [sendRequest]);
 
   const onChange = (e: React.FormEvent<HTMLInputElement>) => {

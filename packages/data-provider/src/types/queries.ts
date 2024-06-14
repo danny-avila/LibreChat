@@ -1,5 +1,12 @@
 import type { InfiniteData } from '@tanstack/react-query';
 import type { TMessage, TConversation } from '../schemas';
+export type EndpointKeyTypes = 'google' | 'openAI' | 'anthropic' | 'sdImage' | null;
+export type SortKeyTypes = 'participants-asc' | 'participants-desc' | 'date-asc' | 'date-desc' | 'none';
+export interface SearchOptions {
+  endpoint: EndpointKeyTypes;
+  sort: SortKeyTypes;
+}
+
 export type Conversation = {
   id: string;
   createdAt: number;
@@ -16,6 +23,8 @@ export type ConversationListParams = {
   order?: 'asc' | 'desc';
   pageNumber: string; // Add this line
   conversationId?: string;
+  roomIndex?: 'user' | 'all';
+  searchOptions: SearchOptions
 };
 
 // Type for the response from the conversation list API

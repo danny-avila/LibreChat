@@ -8,11 +8,48 @@ const uuid = require('uuid');
  * @param {string} name
  * @returns [Room]
  */
-const getRooms = async (name = '') => {
+const getRooms = async (name = '', roomIndex = 'user', sort, endpoint) => {
   try {
-    const rooms = await Conversation.find({ title: RegExp(name, 'i'), isRoom: true })
-      .populate('user')
-      .populate('users');
+    let rooms;
+    const sortQuery = {};
+    // if (sort === 'participants-asc') {
+    //   sortQuery['users.length'] = -1;
+    // } else if (sort === 'participants-desc') {
+    //   sortQuery['users.length'] = 1;
+    // } else
+    if (sort === 'date-asc') {
+      sortQuery['createdAt'] = 1;
+    } else if (sort === 'date-desc') {
+      sortQuery['createdAt'] = -1;
+    }
+
+    let findQuery = {
+      title: RegExp(name, 'i'),
+      isRoom: true,
+    };
+
+    if (endpoint !== 'null') {
+      findQuery.endpoint = endpoint;
+    }
+
+    if (roomIndex === 'all') {
+      rooms = await Conversation.find(findQuery)
+        .sort(sortQuery)
+        .populate('user')
+        .populate('users');
+    } else {
+      rooms = await Conversation.find({
+        ...findQuery,
+        $or: [
+          { user: roomIndex },
+          { users: { $in: [roomIndex] } },
+        ],
+      })
+        .sort(sortQuery)
+        .populate('user')
+        .populate('users');
+    }
+
     return rooms.reverse();
   } catch (error) {
     logger.error('[getRooms] Error getting entire rooms', error);

@@ -1,6 +1,10 @@
 import { Trigger } from '@radix-ui/react-popover';
+import { ArrowLeft } from 'lucide-react';
+import { useRecoilValue } from 'recoil';
+import store from '~/store';
 
 export default function TitleButton({ primaryText = '', secondaryText = '' }) {
+  const convoType = useRecoilValue(store.convoType);
   return (
     <Trigger asChild>
       <div
@@ -26,6 +30,7 @@ export default function TitleButton({ primaryText = '', secondaryText = '' }) {
             strokeLinejoin="round"
           />
         </svg>
+        {convoType === 'r' && <p className='flex gap-1 items-center ml-3 text-gray-600 dark:text-gray-300 text-[15px]'><ArrowLeft size={20} /> Change Model Set</p>}
       </div>
     </Trigger>
   );

@@ -37,6 +37,26 @@ const convoType = atom<'c' | 'r'>({
   default: 'c',
 });
 
+const roomSearchIndex = atom<'user' | 'all'>({
+  key: 'roomSearchIndex',
+  default: 'user',
+});
+
+export type EndpointKeyTypes = 'google' | 'openAI' | 'anthropic' | 'sdImage' | null;
+export type SortKeyTypes = 'participants-asc' | 'participants-desc' | 'date-asc' | 'date-desc' | 'none';
+export interface SearchOptions {
+  endpoint: EndpointKeyTypes;
+  sort: SortKeyTypes;
+}
+
+const searchOptions = atom<SearchOptions>({
+  key: 'searchOptions',
+  default: {
+    endpoint: null,
+    sort: 'none',
+  },
+});
+
 const messagesSiblingIdxFamily = atomFamily<number, string | null | undefined>({
   key: 'messagesSiblingIdx',
   default: 0,
@@ -50,4 +70,6 @@ export default {
   messagesSiblingIdxFamily,
   convoType,
   rooms,
+  roomSearchIndex,
+  searchOptions,
 };
