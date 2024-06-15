@@ -69,11 +69,11 @@ function convertToUsername(input, defaultValue = '') {
 async function setupOpenId() {
   try {
     if (process.env.PROXY) {
-        const proxyAgent = new HttpsProxyAgent(process.env.PROXY);
-        custom.setHttpOptionsDefaults({
-            agent: proxyAgent
-        });
-        logger.info(`[openidStrategy] proxy agent added: ${process.env.PROXY}`);
+      const proxyAgent = new HttpsProxyAgent(process.env.PROXY);
+      custom.setHttpOptionsDefaults({
+        agent: proxyAgent,
+      });
+      logger.info(`[openidStrategy] proxy agent added: ${process.env.PROXY}`);
     }
     const issuer = await Issuer.discover(process.env.OPENID_ISSUER);
     const client = new issuer.Client({
