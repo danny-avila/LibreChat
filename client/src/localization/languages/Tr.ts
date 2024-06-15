@@ -53,17 +53,20 @@ export default {
   com_ui_import_conversation_error: 'Sohbetlerinizi içe aktarırken bir hata oluştu',
   com_ui_confirm_action: 'İşlemi Onayla',
   com_ui_chats: 'sohbetler',
-  com_ui_share: 'Share',
-  com_ui_share_link_to_chat: 'Share link to chat',
-  com_ui_share_error: 'There was an error sharing the chat link',
-  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share: 'Paylaş',
+  com_ui_copy_link: 'Bağlantıyı kopyala',
+  com_ui_update_link: 'Bağlantıyı güncelle',
+  com_ui_create_link: 'Bağlantı oluştur',
+  com_ui_share_link_to_chat: 'Bağlantıyı sohbete paylaş',
+  com_ui_share_error: 'Sohbet bağlantısını paylaşırken bir hata oluştu',
+  com_ui_share_create_message: 'Adınız ve paylaşım sonrasında eklediğiniz herhangi bir mesaj özel kalır.',
   com_ui_share_created_message:
-    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    'Sohbetiniz için paylaşılan bir bağlantı oluşturuldu. Ayarlar aracılığıyla önceden paylaşılan sohbetleri istediğiniz zaman yönetin.',
   com_ui_share_update_message:
-    'Your name, custom instructions, and any messages you add after sharing stay private.',
+    'Adınız, özel talimatlarınız ve paylaşım sonrasında eklediğiniz herhangi bir mesaj özel kalır.',
   com_ui_share_updated_message:
-    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
-  com_ui_shared_link_not_found: 'Shared link not found',
+    'Sohbetiniz için paylaşılan bir bağlantı güncellendi. Ayarlar aracılığıyla önceden paylaşılan sohbetleri istediğiniz zaman yönetin.',
+  com_ui_shared_link_not_found: 'Paylaşılan bağlantı bulunamadı',
   com_ui_delete: 'Sil',
   com_ui_delete_conversation: 'Sohbet silinecek?',
   com_ui_delete_conversation_confirm: 'Bu silinecek',
@@ -529,40 +532,52 @@ export const comparisons = {
   },
   com_ui_share: {
     english: 'Share',
-    translated: 'Share',
+    translated: 'Paylaş',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: 'Bağlantıyı kopyala',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: 'Bağlantıyı güncelle',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: 'Bağlantı oluştur',
   },
   com_ui_share_link_to_chat: {
     english: 'Share link to chat',
-    translated: 'Share link to chat',
+    translated: 'Bağlantıyı sohbete paylaş',
   },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
-    translated: 'There was an error sharing the chat link',
+    translated: 'Sohbet bağlantısını paylaşırken bir hata oluştu',
   },
   com_ui_share_create_message: {
     english: 'Your name and any messages you add after sharing stay private.',
-    translated: 'Your name and any messages you add after sharing stay private.',
+    translated: 'Adınız ve paylaşım sonrasında eklediğiniz herhangi bir mesaj özel kalır.',
   },
   com_ui_share_created_message: {
     english:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
     translated:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'Sohbetiniz için paylaşılan bir bağlantı oluşturuldu. Ayarlar aracılığıyla önceden paylaşılan sohbetleri istediğiniz zaman yönetin.',
   },
   com_ui_share_update_message: {
     english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
     translated:
-      'Your name, custom instructions, and any messages you add after sharing stay private.',
+      'Adınız, özel talimatlarınız ve paylaşım sonrasında eklediğiniz herhangi bir mesaj özel kalır.',
   },
   com_ui_share_updated_message: {
     english:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
     translated:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'Sohbetiniz için paylaşılan bir bağlantı güncellendi. Ayarlar aracılığıyla önceden paylaşılan sohbetleri istediğiniz zaman yönetin.',
   },
   com_ui_shared_link_not_found: {
     english: 'Shared link not found',
-    translated: 'Shared link not found',
+    translated: 'Paylaşılan bağlantı bulunamadı',
   },
   com_ui_delete: {
     english: 'Delete',

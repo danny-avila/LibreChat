@@ -8,6 +8,14 @@ const emailLoginEnabled =
   process.env.ALLOW_EMAIL_LOGIN === undefined || isEnabled(process.env.ALLOW_EMAIL_LOGIN);
 const passwordResetEnabled = isEnabled(process.env.ALLOW_PASSWORD_RESET);
 
+const sharedLinksEnabled =
+  process.env.ALLOW_SHARED_LINKS === undefined || isEnabled(process.env.ALLOW_SHARED_LINKS);
+
+const publicSharedLinksEnabled =
+  sharedLinksEnabled &&
+  (process.env.ALLOW_SHARED_LINKS_PUBLIC === undefined ||
+    isEnabled(process.env.ALLOW_SHARED_LINKS_PUBLIC));
+
 router.get('/', async function (req, res) {
   const isBirthday = () => {
     const today = new Date();
@@ -52,6 +60,8 @@ router.get('/', async function (req, res) {
       helpAndFaqURL: process.env.HELP_AND_FAQ_URL || 'https://librechat.ai',
       interface: req.app.locals.interfaceConfig,
       modelSpecs: req.app.locals.modelSpecs,
+      sharedLinksEnabled,
+      publicSharedLinksEnabled,
       analyticsGtmId: process.env.ANALYTICS_GTM_ID,
     };
 
