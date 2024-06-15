@@ -58,9 +58,13 @@
 - 🌎 Multilingual UI:
   - English, 中文, Deutsch, Español, Français, Italiano, Polski, Português Brasileiro,
   - Русский, 日本語, Svenska, 한국어, Tiếng Việt, 繁體中文, العربية, Türkçe, Nederlands, עברית
-- 🎨 Customizable Dropdown & Interface: Adapts to both power users and newcomers.
+- 🎨 Customizable Dropdown & Interface: Adapts to both power users and newcomers
+- 📧 Verify your email to ensure secure access
+- 🗣️ Chat hands-free with Speech-to-Text and Text-to-Speech magic
+  - Automatically send and play Audio
+  - Supports OpenAI, Azure OpenAI, and Elevenlabs
 - 📥 Import Conversations from LibreChat, ChatGPT, Chatbot UI
-- 📤 Export conversations as screenshots, markdown, text, json.
+- 📤 Export conversations as screenshots, markdown, text, json
 - 🔍 Search all messages/conversations
 - 🔌 Plugins, including web access, image generation with DALL-E-3 and more
 - 👥 Multi-User, Secure Authentication with Moderation and Token spend tools
