@@ -44,9 +44,9 @@ export default function Footer({ className }: { className?: string }) {
   const mainContentParts = (
     typeof config?.customFooter === 'string'
       ? config.customFooter
-      : '[<LibreChat ' +
+      : '[LibreChat ' +
         Constants.VERSION +
-        '>](https://librechat.ai) - ' +
+        '](https://librechat.ai) - ' +
         localize('com_ui_pay_per_call')
   ).split('|');
 
