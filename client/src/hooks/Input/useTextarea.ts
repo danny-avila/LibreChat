@@ -163,6 +163,7 @@ export default function useTextarea({
       }
 
       const isNonShiftEnter = e.key === 'Enter' && !e.shiftKey;
+      const isCtrlEnter = e.key === 'Enter' && e.ctrlKey;
 
       if (isNonShiftEnter && filesLoading) {
         e.preventDefault();
@@ -172,13 +173,14 @@ export default function useTextarea({
         e.preventDefault();
       }
 
-      if (e.key === 'Enter' && !enterToSend && textAreaRef.current) {
+      if (e.key === 'Enter' && !enterToSend && !isCtrlEnter && textAreaRef.current) {
+        e.preventDefault();
         insertTextAtCursor(textAreaRef.current, '\n');
         forceResize(textAreaRef);
         return;
       }
 
-      if (isNonShiftEnter && !isComposing?.current) {
+      if ((isNonShiftEnter || isCtrlEnter) && !isComposing?.current) {
         const globalAudio = document.getElementById(globalAudioId) as HTMLAudioElement;
         if (globalAudio) {
           console.log('Unmuting global audio');
