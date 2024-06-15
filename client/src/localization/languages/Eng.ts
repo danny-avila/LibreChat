@@ -219,11 +219,11 @@ export default {
   com_ui_share_error: 'There was an error sharing the chat link',
   com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
   com_ui_share_created_message:
-    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
   com_ui_share_update_message:
     'Your name, custom instructions, and any messages you add after sharing stay private.',
   com_ui_share_updated_message:
-    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
   com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete_conversation: 'Delete chat?',
   com_ui_delete_conversation_confirm: 'This will delete',
@@ -370,7 +370,7 @@ export default {
   com_endpoint_stop: 'Stop Sequences',
   com_endpoint_stop_placeholder: 'Separate values by pressing `Enter`',
   com_endpoint_openai_max_tokens: `Optional \`max_tokens\` field, representing the maximum number of tokens that can be generated in the chat completion.
-    
+
     The total length of input tokens and generated tokens is limited by the models context length. You may experience errors if this number exceeds the max context tokens.`,
   com_endpoint_openai_temp:
     'Higher values = more random, while lower values = more focused and deterministic. We recommend altering this or Top P but not both.',

@@ -30,9 +30,16 @@ export default function Header() {
           {modelSpecs?.length > 0 && <ModelSpecsMenu modelSpecs={modelSpecs} />}
           {<HeaderOptions interfaceConfig={interfaceConfig} />}
           {interfaceConfig.presets && <PresetsMenu />}
-          {isSmallScreen && <ExportAndShareMenu className="pl-0" />}
+          {isSmallScreen && (
+            <ExportAndShareMenu
+              isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
+              className="pl-0"
+            />
+          )}
         </div>
-        {!isSmallScreen && <ExportAndShareMenu />}
+        {!isSmallScreen && (
+          <ExportAndShareMenu isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false} />
+        )}
       </div>
       {/* Empty div for spacing */}
       <div />
