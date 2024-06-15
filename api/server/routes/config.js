@@ -62,6 +62,7 @@ router.get('/', async function (req, res) {
       modelSpecs: req.app.locals.modelSpecs,
       sharedLinksEnabled,
       publicSharedLinksEnabled,
+      analyticsGtmId: process.env.ANALYTICS_GTM_ID,
     };
 
     if (typeof process.env.CUSTOM_FOOTER === 'string') {

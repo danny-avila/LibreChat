@@ -329,6 +329,7 @@ export default {
   com_nav_theme_dark: 'Gelap',
   com_nav_theme_light: 'Terang',
   com_nav_user_name_display: 'Tampilkan nama pengguna dalam pesan',
+  com_nav_save_drafts: 'Simpan draft',
   com_nav_clear_all_chats: 'Hapus semua obrolan',
   com_nav_confirm_clear: 'Konfirmasi Hapus',
   com_nav_close_sidebar: 'Tutup sidebar',
@@ -1566,6 +1567,10 @@ export const comparisons = {
   com_nav_user_name_display: {
     english: 'Display username in messages',
     translated: 'Tampilkan nama pengguna dalam pesan',
+  },
+  com_nav_save_drafts: {
+    english: 'Save drafts locally',
+    translated: 'Simpan draft',
   },
   com_nav_clear_all_chats: {
     english: 'Clear all chats',

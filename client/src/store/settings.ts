@@ -72,6 +72,7 @@ const localStorageAtoms = {
   splitAtTarget: atomWithLocalStorage('splitAtTarget', false),
   rememberForkOption: atomWithLocalStorage('rememberForkOption', true),
   playbackRate: atomWithLocalStorage<number | null>('playbackRate', null),
+  saveDrafts: atomWithLocalStorage('saveDrafts', false),
 };
 
 export default { ...staticAtoms, ...localStorageAtoms };
