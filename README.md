@@ -61,7 +61,8 @@
 - 🎨 Customizable Dropdown & Interface: Adapts to both power users and newcomers
 - 📧 Verify your email to ensure secure access
 - 🗣️ Chat hands-free with Speech-to-Text and Text-to-Speech magic
-  - Supports Conversation mode and works with OpenAI, Azure OpenAI, and Elevenlabs
+  - Automatically send and play Audio
+  - Supports OpenAI, Azure OpenAI, and Elevenlabs
 - 📥 Import Conversations from LibreChat, ChatGPT, Chatbot UI
 - 📤 Export conversations as screenshots, markdown, text, json
 - 🔍 Search all messages/conversations
