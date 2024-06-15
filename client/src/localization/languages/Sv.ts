@@ -51,17 +51,20 @@ export default {
   com_ui_import_conversation_error: 'Det uppstod ett fel vid import av dina konversationer',
   com_ui_confirm_action: 'Bekräfta åtgärd',
   com_ui_chats: 'chattar',
-  com_ui_share: 'Share',
-  com_ui_share_link_to_chat: 'Share link to chat',
-  com_ui_share_error: 'There was an error sharing the chat link',
-  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share: 'Dela',
+  com_ui_copy_link: 'Kopiera länk',
+  com_ui_update_link: 'Uppdatera länk',
+  com_ui_create_link: 'Skapa länk',
+  com_ui_share_link_to_chat: 'Dela länk till chatt',
+  com_ui_share_error: 'Ett fel uppstod vid delning av chattlänken',
+  com_ui_share_create_message: 'Ditt namn och alla meddelanden du lägger till efter delningen förblir privata.',
   com_ui_share_created_message:
-    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    'En delad länk till din chatt har skapats. Hantera tidigare delade chattar när som helst via Inställningar.',
   com_ui_share_update_message:
-    'Your name, custom instructions, and any messages you add after sharing stay private.',
+    'Ditt namn, anpassade instruktioner och alla meddelanden du lägger till efter delningen förblir privata.',
   com_ui_share_updated_message:
-    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
-  com_ui_shared_link_not_found: 'Shared link not found',
+    'En delad länk till din chatt har uppdaterats. Hantera tidigare delade chattar när som helst via Inställningar.',
+  com_ui_shared_link_not_found: 'Delad länk hittades inte',
   com_ui_delete: 'Radera',
   com_ui_delete_conversation: 'Radera chatt?',
   com_ui_delete_conversation_confirm: 'Detta kommer att radera',
@@ -493,40 +496,52 @@ export const comparisons = {
   },
   com_ui_share: {
     english: 'Share',
-    translated: 'Share',
+    translated: 'Dela',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: 'Kopiera länk',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: 'Uppdatera länk',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: 'Skapa länk',
   },
   com_ui_share_link_to_chat: {
     english: 'Share link to chat',
-    translated: 'Share link to chat',
+    translated: 'Dela länk till chatt',
   },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
-    translated: 'There was an error sharing the chat link',
+    translated: 'Ett fel uppstod vid delning av chattlänken',
   },
   com_ui_share_create_message: {
     english: 'Your name and any messages you add after sharing stay private.',
-    translated: 'Your name and any messages you add after sharing stay private.',
+    translated: 'Ditt namn och alla meddelanden du lägger till efter delningen förblir privata.',
   },
   com_ui_share_created_message: {
     english:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
     translated:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'En delad länk till din chatt har skapats. Hantera tidigare delade chattar när som helst via Inställningar.',
   },
   com_ui_share_update_message: {
     english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
     translated:
-      'Your name, custom instructions, and any messages you add after sharing stay private.',
+      'Ditt namn, anpassade instruktioner och alla meddelanden du lägger till efter delningen förblir privata.',
   },
   com_ui_share_updated_message: {
     english:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
     translated:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'En delad länk till din chatt har uppdaterats. Hantera tidigare delade chattar när som helst via Inställningar.',
   },
   com_ui_shared_link_not_found: {
     english: 'Shared link not found',
-    translated: 'Shared link not found',
+    translated: 'Delad länk hittades inte',
   },
   com_ui_delete: {
     english: 'Delete',

@@ -135,17 +135,20 @@ export default {
   com_ui_assistants_output: 'Saída dos Assistentes',
   com_ui_delete: 'Excluir',
   com_ui_create: 'Criar',
-  com_ui_share: 'Share',
-  com_ui_share_link_to_chat: 'Share link to chat',
-  com_ui_share_error: 'There was an error sharing the chat link',
-  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share: 'Compartilhar',
+  com_ui_copy_link: 'Copiar link',
+  com_ui_update_link: 'Atualizar link',
+  com_ui_create_link: 'Criar link',
+  com_ui_share_link_to_chat: 'Compartilhar link no chat',
+  com_ui_share_error: 'Ocorreu um erro ao compartilhar o link do chat',
+  com_ui_share_create_message: 'Seu nome e quaisquer mensagens que você adicionar após o compartilhamento permanecem privadas.',
   com_ui_share_created_message:
-    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    'Um link compartilhado para o seu chat foi criado. Gerencie conversas compartilhadas previamente a qualquer momento via Configurações.',
   com_ui_share_update_message:
-    'Your name, custom instructions, and any messages you add after sharing stay private.',
+    'Seu nome, instruções personalizadas e quaisquer mensagens que você adicionar após o compartilhamento permanecem privadas.',
   com_ui_share_updated_message:
-    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
-  com_ui_shared_link_not_found: 'Shared link not found',
+    'Um link compartilhado para o seu chat foi atualizado. Gerencie conversas compartilhadas previamente a qualquer momento via Configurações.',
+  com_ui_shared_link_not_found: 'Link compartilhado não encontrado',
   com_ui_delete_conversation: 'Excluir conversa?',
   com_ui_delete_conversation_confirm: 'Isso excluirá',
   com_ui_delete_assistant_confirm:
@@ -983,40 +986,52 @@ export const comparisons = {
   },
   com_ui_share: {
     english: 'Share',
-    translated: 'Share',
+    translated: 'Compartilhar',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: 'Copiar link',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: 'Atualizar link',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: 'Criar link',
   },
   com_ui_share_link_to_chat: {
     english: 'Share link to chat',
-    translated: 'Share link to chat',
+    translated: 'Compartilhar link no chat',
   },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
-    translated: 'There was an error sharing the chat link',
+    translated: 'Ocorreu um erro ao compartilhar o link do chat',
   },
   com_ui_share_create_message: {
     english: 'Your name and any messages you add after sharing stay private.',
-    translated: 'Your name and any messages you add after sharing stay private.',
+    translated: 'Seu nome e quaisquer mensagens que você adicionar após o compartilhamento permanecem privadas.',
   },
   com_ui_share_created_message: {
     english:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
     translated:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'Um link compartilhado para o seu chat foi criado. Gerencie conversas compartilhadas previamente a qualquer momento via Configurações.',
   },
   com_ui_share_update_message: {
     english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
     translated:
-      'Your name, custom instructions, and any messages you add after sharing stay private.',
+      'Seu nome, instruções personalizadas e quaisquer mensagens que você adicionar após o compartilhamento permanecem privadas.',
   },
   com_ui_share_updated_message: {
     english:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
     translated:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+       'Um link compartilhado para o seu chat foi atualizado. Gerencie conversas compartilhadas previamente a qualquer momento via Configurações.',
   },
   com_ui_shared_link_not_found: {
     english: 'Shared link not found',
-    translated: 'Shared link not found',
+    translated: 'Link compartilhado não encontrado',
   },
   com_ui_delete_conversation: {
     english: 'Delete chat?',
