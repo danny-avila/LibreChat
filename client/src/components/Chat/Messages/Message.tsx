@@ -22,6 +22,7 @@ export default function Message(props: TMessageProps) {
     edit,
     index,
     isLast,
+    assistant,
     enterEdit,
     handleScroll,
     conversation,
@@ -44,6 +45,8 @@ export default function Message(props: TMessageProps) {
   let messageLabel = '';
   if (isCreatedByUser) {
     messageLabel = UsernameDisplay ? user?.name || user?.username : localize('com_user_message');
+  } else if (assistant) {
+    messageLabel = assistant.name ?? 'Assistant';
   } else {
     messageLabel = message.sender;
   }
@@ -61,7 +64,7 @@ export default function Message(props: TMessageProps) {
               <div>
                 <div className="pt-0.5">
                   <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-                    <Icon message={message} conversation={conversation} />
+                    <Icon message={message} conversation={conversation} assistant={assistant} />
                   </div>
                 </div>
               </div>

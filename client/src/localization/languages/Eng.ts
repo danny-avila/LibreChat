@@ -117,6 +117,7 @@ export default {
   com_ui_instructions: 'Instructions',
   com_ui_description: 'Description',
   com_ui_error: 'Error',
+  com_ui_error_connection: 'Error connecting to server, try refreshing the page.',
   com_ui_select: 'Select',
   com_ui_input: 'Input',
   com_ui_close: 'Close',
