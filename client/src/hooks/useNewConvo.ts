@@ -48,6 +48,7 @@ const useNewConvo = (index = 0) => {
   const timeoutIdRef = useRef<NodeJS.Timeout>();
   const assistantsListMap = useAssistantListMap();
   const { pauseGlobalAudio } = usePauseGlobalAudio(index);
+  const saveDrafts = useRecoilValue<boolean>(store.saveDrafts);
 
   const { mutateAsync } = useDeleteFilesMutation({
     onSuccess: () => {
@@ -211,14 +212,22 @@ const useNewConvo = (index = 0) => {
         setFiles(new Map());
         localStorage.setItem(LocalStorageKeys.FILES_TO_DELETE, JSON.stringify({}));
 
-        if (filesToDelete.length > 0) {
+        if (!saveDrafts && filesToDelete.length > 0) {
           mutateAsync({ files: filesToDelete });
         }
       }
 
       switchToConversation(conversation, preset, modelsData, buildDefault, keepLatestMessage);
     },
-    [pauseGlobalAudio, switchToConversation, mutateAsync, setFiles, files, startupConfig],
+    [
+      pauseGlobalAudio,
+      startupConfig,
+      saveDrafts,
+      switchToConversation,
+      files,
+      setFiles,
+      mutateAsync,
+    ],
   );
 
   return {

@@ -3,7 +3,7 @@ const {
   deprecatedAzureVariables,
   conflictingAzureVariables,
 } = require('librechat-data-provider');
-const { isEnabled } = require('~/server/utils');
+const { isEnabled, checkEmailConfig } = require('~/server/utils');
 const { logger } = require('~/config');
 
 const secretDefaults = {
@@ -111,12 +111,7 @@ Latest version: ${Constants.CONFIG_VERSION}
 }
 
 function checkPasswordReset() {
-  const emailEnabled =
-    (!!process.env.EMAIL_SERVICE || !!process.env.EMAIL_HOST) &&
-    !!process.env.EMAIL_USERNAME &&
-    !!process.env.EMAIL_PASSWORD &&
-    !!process.env.EMAIL_FROM;
-
+  const emailEnabled = checkEmailConfig();
   const passwordResetAllowed = isEnabled(process.env.ALLOW_PASSWORD_RESET);
 
   if (!emailEnabled && passwordResetAllowed) {

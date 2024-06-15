@@ -219,11 +219,11 @@ export default {
   com_ui_share_error: 'There was an error sharing the chat link',
   com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
   com_ui_share_created_message:
-    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
   com_ui_share_update_message:
     'Your name, custom instructions, and any messages you add after sharing stay private.',
   com_ui_share_updated_message:
-    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
   com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete_conversation: 'Delete chat?',
   com_ui_delete_conversation_confirm: 'This will delete',
@@ -254,6 +254,8 @@ export default {
     'Your account has been temporarily banned due to violations of our service.',
   com_auth_error_login_server:
     'There was an internal server error. Please wait a few moments and try again.',
+  com_auth_error_login_unverified:
+    'Your account has not been verified. Please check your email for a verification link.',
   com_auth_no_account: 'Don\'t have an account?',
   com_auth_sign_up: 'Sign up',
   com_auth_sign_in: 'Sign in',
@@ -288,6 +290,8 @@ export default {
   com_auth_username_max_length: 'Username must be less than 20 characters',
   com_auth_already_have_account: 'Already have an account?',
   com_auth_login: 'Login',
+  com_auth_registration_success_insecure: 'Registration successful.',
+  com_auth_registration_success_generic: 'Please check your email to verify your email address.',
   com_auth_reset_password: 'Reset your password',
   com_auth_click: 'Click',
   com_auth_here: 'HERE',
@@ -305,6 +309,17 @@ export default {
   com_auth_submit_registration: 'Submit registration',
   com_auth_welcome_back: 'Welcome back',
   com_auth_back_to_login: 'Back to Login',
+  com_auth_email_verification_failed: 'Email verification failed',
+  com_auth_email_verification_rate_limited: 'Too many requests. Please try again later',
+  com_auth_email_verification_success: 'Email verified successfully',
+  com_auth_email_resent_success: 'Verification email resent successfully',
+  com_auth_email_resent_failed: 'Failed to resend verification email',
+  com_auth_email_verification_failed_token_missing: 'Verification failed, token missing',
+  com_auth_email_verification_invalid: 'Invalid email verification',
+  com_auth_email_verification_in_progress: 'Verifying your email, please wait',
+  com_auth_email_verification_resend_prompt: 'Didn\'t receive the email?',
+  com_auth_email_resend_link: 'Resend Email',
+  com_auth_email_verification_redirecting: 'Redirecting in {0} seconds...',
   com_endpoint_open_menu: 'Open Menu',
   com_endpoint_bing_enable_sydney: 'Enable Sydney',
   com_endpoint_bing_to_enable_sydney: 'To enable Sydney',
@@ -355,7 +370,7 @@ export default {
   com_endpoint_stop: 'Stop Sequences',
   com_endpoint_stop_placeholder: 'Separate values by pressing `Enter`',
   com_endpoint_openai_max_tokens: `Optional \`max_tokens\` field, representing the maximum number of tokens that can be generated in the chat completion.
-    
+
     The total length of input tokens and generated tokens is limited by the models context length. You may experience errors if this number exceeds the max context tokens.`,
   com_endpoint_openai_temp:
     'Higher values = more random, while lower values = more focused and deterministic. We recommend altering this or Top P but not both.',
@@ -526,6 +541,7 @@ export default {
   com_nav_theme_light: 'Light',
   com_nav_enter_to_send: 'Press Enter to send messages',
   com_nav_user_name_display: 'Display username in messages',
+  com_nav_save_drafts: 'Save drafts locally',
   com_nav_show_code: 'Always show code when using code interpreter',
   com_nav_clear_all_chats: 'Clear all chats',
   com_nav_confirm_clear: 'Confirm Clear',
@@ -554,7 +570,6 @@ export default {
   com_nav_delete_account_confirm_placeholder: 'To proceed, type "DELETE" in the input field below',
   com_nav_delete_warning: 'WARNING: This will permanently delete your account.',
   com_nav_delete_data_info: 'All your data will be deleted.',
-  com_nav_delete_help_center: 'For more information, please visit our Help Center.',
   com_nav_conversation_mode: 'Conversation Mode',
   com_nav_auto_send_text: 'Auto send text (after 3 sec)',
   com_nav_auto_transcribe_audio: 'Auto transcribe audio',

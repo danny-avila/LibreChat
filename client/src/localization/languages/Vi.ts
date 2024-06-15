@@ -53,17 +53,20 @@ export default {
   com_ui_import_conversation_error: 'Đã xảy ra lỗi khi nhập khẩu cuộc trò chuyện của bạn',
   com_ui_confirm_action: 'Xác nhận hành động',
   com_ui_chats: 'cuộc trò chuyện',
-  com_ui_share: 'Share',
-  com_ui_share_link_to_chat: 'Share link to chat',
-  com_ui_share_error: 'There was an error sharing the chat link',
-  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share: 'Chia sẻ',
+  com_ui_copy_link: 'Sao chép liên kết',
+  com_ui_update_link: 'Cập nhật liên kết',
+  com_ui_create_link: 'Tạo liên kết',
+  com_ui_share_link_to_chat: 'Chia sẻ liên kết đến cuộc trò chuyện',
+  com_ui_share_error: 'Có lỗi xảy ra khi chia sẻ liên kết trò chuyện',
+  com_ui_share_create_message: 'Tên của bạn và bất kỳ tin nhắn nào bạn thêm sau khi chia sẻ sẽ được giữ kín.',
   com_ui_share_created_message:
-    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    'Liên kết chia sẻ đến cuộc trò chuyện của bạn đã được tạo. Quản lý các cuộc trò chuyện đã chia sẻ trước đây bất cứ lúc nào thông qua Cài đặt.',
   com_ui_share_update_message:
-    'Your name, custom instructions, and any messages you add after sharing stay private.',
+    'Tên của bạn, hướng dẫn tùy chỉnh và bất kỳ tin nhắn nào bạn thêm sau khi chia sẻ sẽ được giữ kín.',
   com_ui_share_updated_message:
-    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
-  com_ui_shared_link_not_found: 'Shared link not found',
+    'Liên kết chia sẻ đến cuộc trò chuyện của bạn đã được cập nhật. Quản lý các cuộc trò chuyện đã chia sẻ trước đây bất cứ lúc nào thông qua Cài đặt.',
+  com_ui_shared_link_not_found: 'Không tìm thấy liên kết chia sẻ',
   com_ui_delete: 'Xóa',
   com_ui_delete_conversation: 'Xóa cuộc trò chuyện?',
   com_ui_delete_conversation_confirm: 'Điều này sẽ xóa',
@@ -492,40 +495,51 @@ export const comparisons = {
   },
   com_ui_share: {
     english: 'Share',
-    translated: 'Share',
+    translated: 'Chia sẻ',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: 'Sao chép liên kết',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: 'Cập nhật liên kết',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: 'Tạo liên kết',
   },
   com_ui_share_link_to_chat: {
     english: 'Share link to chat',
-    translated: 'Share link to chat',
+    translated: 'Chia sẻ liên kết đến cuộc trò chuyện',
   },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
-    translated: 'There was an error sharing the chat link',
+    translated: 'Có lỗi xảy ra khi chia sẻ liên kết trò chuyện',
   },
   com_ui_share_create_message: {
     english: 'Your name and any messages you add after sharing stay private.',
-    translated: 'Your name and any messages you add after sharing stay private.',
+    translated: 'Tên của bạn và bất kỳ tin nhắn nào bạn thêm sau khi chia sẻ sẽ được giữ kín.',
   },
   com_ui_share_created_message: {
     english:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
     translated:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'Liên kết chia sẻ đến cuộc trò chuyện của bạn đã được tạo. Quản lý các cuộc trò chuyện đã chia sẻ trước đây bất cứ lúc nào thông qua Cài đặt.',
   },
   com_ui_share_update_message: {
     english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
-    translated:
-      'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated: 'Tên của bạn, hướng dẫn tùy chỉnh và bất kỳ tin nhắn nào bạn thêm sau khi chia sẻ sẽ được giữ kín.',
   },
   com_ui_share_updated_message: {
     english:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
     translated:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'Liên kết chia sẻ đến cuộc trò chuyện của bạn đã được cập nhật. Quản lý các cuộc trò chuyện đã chia sẻ trước đây bất cứ lúc nào thông qua Cài đặt.',
   },
   com_ui_shared_link_not_found: {
     english: 'Shared link not found',
-    translated: 'Shared link not found',
+    translated: 'Không tìm thấy liên kết chia sẻ',
   },
   com_ui_delete: {
     english: 'Delete',

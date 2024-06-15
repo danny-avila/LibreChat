@@ -47,9 +47,6 @@ export const importConversation = () => `${conversationsRoot}/import`;
 
 export const forkConversation = () => `${conversationsRoot}/fork`;
 
-export const importConversationJobStatus = (jobId: string) =>
-  `${conversationsRoot}/import/jobs/${jobId}`;
-
 export const search = (q: string, pageNumber: string) =>
   `/api/search?q=${q}&pageNumber=${pageNumber}`;
 
@@ -82,6 +79,10 @@ export const refreshToken = (retry?: boolean) => `/api/auth/refresh${retry ? '?r
 export const requestPasswordReset = () => '/api/auth/requestPasswordReset';
 
 export const resetPassword = () => '/api/auth/resetPassword';
+
+export const verifyEmail = () => '/api/user/verify';
+
+export const resendVerificationEmail = () => '/api/user/verify/resend';
 
 export const plugins = () => '/api/plugins';
 

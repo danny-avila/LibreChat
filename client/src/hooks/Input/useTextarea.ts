@@ -163,6 +163,7 @@ export default function useTextarea({
       }
 
       const isNonShiftEnter = e.key === 'Enter' && !e.shiftKey;
+      const isCtrlEnter = e.key === 'Enter' && e.ctrlKey;
 
       if (isNonShiftEnter && filesLoading) {
         e.preventDefault();
@@ -172,13 +173,14 @@ export default function useTextarea({
         e.preventDefault();
       }
 
-      if (e.key === 'Enter' && !enterToSend && textAreaRef.current) {
+      if (e.key === 'Enter' && !enterToSend && !isCtrlEnter && textAreaRef.current) {
+        e.preventDefault();
         insertTextAtCursor(textAreaRef.current, '\n');
         forceResize(textAreaRef);
         return;
       }
 
-      if (isNonShiftEnter && !isComposing?.current) {
+      if ((isNonShiftEnter || isCtrlEnter) && !isComposing?.current) {
         const globalAudio = document.getElementById(globalAudioId) as HTMLAudioElement;
         if (globalAudio) {
           console.log('Unmuting global audio');
@@ -207,21 +209,6 @@ export default function useTextarea({
 
       if (!e.clipboardData) {
         return;
-      }
-
-      let richText = '';
-      let includedText = '';
-      const { types } = e.clipboardData;
-
-      if (types.indexOf('text/rtf') !== -1 || types.indexOf('Files') !== -1) {
-        e.preventDefault();
-        includedText = e.clipboardData.getData('text/plain');
-        richText = e.clipboardData.getData('text/rtf');
-      }
-
-      if (includedText && (e.clipboardData.files.length > 0 || richText)) {
-        insertTextAtCursor(textAreaRef.current, includedText);
-        forceResize(textAreaRef);
       }
 
       if (e.clipboardData.files.length > 0) {

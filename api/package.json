@@ -1,6 +1,6 @@
 {
   "name": "@librechat/backend",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "",
   "scripts": {
     "start": "echo 'please run this from the root directory'",
@@ -41,7 +41,6 @@
     "@langchain/community": "^0.0.46",
     "@langchain/google-genai": "^0.0.11",
     "@langchain/google-vertexai": "^0.0.17",
-    "agenda": "^5.0.0",
     "axios": "^1.3.4",
     "bcryptjs": "^2.4.3",
     "cheerio": "^1.0.0-rc.12",

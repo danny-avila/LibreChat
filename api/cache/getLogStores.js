@@ -63,6 +63,10 @@ const namespaces = {
   [ViolationTypes.TTS_LIMIT]: createViolationInstance(ViolationTypes.TTS_LIMIT),
   [ViolationTypes.STT_LIMIT]: createViolationInstance(ViolationTypes.STT_LIMIT),
   [ViolationTypes.FILE_UPLOAD_LIMIT]: createViolationInstance(ViolationTypes.FILE_UPLOAD_LIMIT),
+  [ViolationTypes.VERIFY_EMAIL_LIMIT]: createViolationInstance(ViolationTypes.VERIFY_EMAIL_LIMIT),
+  [ViolationTypes.RESET_PASSWORD_LIMIT]: createViolationInstance(
+    ViolationTypes.RESET_PASSWORD_LIMIT,
+  ),
   [ViolationTypes.ILLEGAL_MODEL_REQUEST]: createViolationInstance(
     ViolationTypes.ILLEGAL_MODEL_REQUEST,
   ),
