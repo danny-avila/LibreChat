@@ -33,7 +33,7 @@ export const ThemeSelector = ({
         value={theme}
         onChange={onChange}
         options={themeOptions}
-        width={220}
+        width={180}
         position={'left'}
         maxHeight="200px"
         testId="theme-selector"
@@ -153,7 +153,7 @@ function General() {
       className="w-full md:min-h-[271px]"
       ref={contentRef}
     >
-      <div className="flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-50">
+      <div className="flex flex-col gap-3 text-sm text-black dark:text-gray-50">
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <ThemeSelector theme={theme} onChange={changeTheme} />
         </div>

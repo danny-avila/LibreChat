@@ -80,11 +80,8 @@ function Avatar() {
     <>
       <div className="flex items-center justify-between">
         <span>{localize('com_nav_profile_picture')}</span>
-        <label
-          htmlFor={'file-upload-avatar'}
-          className="flex h-auto cursor-pointer items-center rounded bg-transparent px-2 py-1 text-xs font-normal transition-colors hover:bg-gray-100 hover:text-green-700 dark:bg-transparent dark:text-white dark:hover:bg-gray-600 dark:hover:text-green-500"
-        >
-          <FileImage className="mr-1 flex w-[22px] items-center stroke-1" />
+        <label htmlFor={'file-upload-avatar'} className="btn btn-neutral relative">
+          <FileImage className="mr-2 flex w-[22px] items-center stroke-1" />
           <span>{localize('com_nav_change_picture')}</span>
           <input
             id={'file-upload-avatar'}

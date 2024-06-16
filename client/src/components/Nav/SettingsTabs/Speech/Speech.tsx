@@ -51,36 +51,36 @@ function Speech() {
               className={cn(
                 'group m-1 flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm text-black transition-all duration-200 ease-in-out radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
                 isSmallScreen
-                  ? 'flex-row items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
-                  : 'bg-white radix-state-active:bg-gray-200 dark:bg-gray-700',
+                  ? 'flex-row items-center justify-center text-sm text-gray-700 radix-state-active:bg-gray-100 radix-state-active:text-black dark:text-gray-300 dark:radix-state-active:text-white'
+                  : 'bg-white radix-state-active:bg-gray-100 dark:bg-gray-700',
                 'w-full',
               )}
               value="simple"
               style={{ userSelect: 'none' }}
             >
               <Lightbulb />
-              SIMPLE
+              Simple
             </Tabs.Trigger>
             <Tabs.Trigger
               onClick={() => setAdvancedMode(true)}
               className={cn(
                 'group m-1 flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm text-black transition-all duration-200 ease-in-out radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
                 isSmallScreen
-                  ? 'flex-row items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
-                  : 'bg-white radix-state-active:bg-gray-200 dark:bg-gray-700',
+                  ? 'flex-row items-center justify-center text-sm text-gray-700 radix-state-active:bg-gray-100 radix-state-active:text-black dark:text-gray-300 dark:radix-state-active:text-white'
+                  : 'bg-white radix-state-active:bg-gray-100 dark:bg-gray-700',
                 'w-full',
               )}
               value="advanced"
               style={{ userSelect: 'none' }}
             >
               <Cog />
-              ADVANCED
+              Advanced
             </Tabs.Trigger>
           </Tabs.List>
         </div>
 
         <Tabs.Content value={'simple'}>
-          <div className="flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-50">
+          <div className="flex flex-col gap-3 text-sm text-black dark:text-gray-50">
             <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
               <ConversationModeSwitch />
             </div>
@@ -108,7 +108,7 @@ function Speech() {
         </Tabs.Content>
 
         <Tabs.Content value={'advanced'}>
-          <div className="flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-50">
+          <div className="flex flex-col gap-3 text-sm text-black dark:text-gray-50">
             <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
               <ConversationModeSwitch />
             </div>
