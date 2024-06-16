@@ -78,7 +78,7 @@ const Dropdown: FC<DropdownProps> = ({
           </Listbox.Button>
           <Listbox.Options
             className={cn(
-              `absolute z-50 mt-1 flex max-h-[40vh] flex-col items-start gap-1 overflow-auto rounded-lg border border-gray-300 bg-white p-1.5 text-gray-700 shadow-lg transition-opacity focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-white ${positionClasses[position]}`,
+              `absolute z-10 mt-1 flex max-h-[40vh] flex-col items-start gap-1 overflow-auto rounded-lg border border-gray-300 bg-white p-1.5 text-gray-700 shadow-lg transition-opacity focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-white ${positionClasses[position]}`,
               className,
             )}
             style={{ width: width ? `${width}px` : 'auto', maxHeight: maxHeight }}
