@@ -29,7 +29,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
         <div className="max-h-[373px] overflow-auto px-6 md:min-h-[373px] md:w-[680px]">
           <Tabs.Root
             defaultValue={SettingsTabValues.GENERAL}
-            className="flex flex-col gap-10 md:flex-row"
+            className="flex flex-col gap-3 md:flex-row"
             orientation="horizontal"
           >
             <Tabs.List
