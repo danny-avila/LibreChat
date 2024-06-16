@@ -1057,7 +1057,8 @@ button {
   font-weight:500;
   line-height:1.25rem;
   padding:.5rem .75rem;
-  pointer-events:auto
+  pointer-events:auto;
+  transition: all 0.1s ease-in-out;
 }
 .custom-btn {
   align-items: center;
@@ -1068,6 +1069,7 @@ button {
   font-size: 0.875rem;
   line-height: 1.25rem;
   padding: 0.5rem 0.75rem;
+  transition: all 0.1s ease-in-out;
 }
 .btn:focus {
   outline: 2px solid transparent;
