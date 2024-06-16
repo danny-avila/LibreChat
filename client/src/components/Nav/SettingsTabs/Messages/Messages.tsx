@@ -4,6 +4,7 @@ import { SettingsTabValues } from 'librechat-data-provider';
 import SendMessageKeyEnter from './EnterToSend';
 import ShowCodeSwitch from './ShowCodeSwitch';
 import { ForkSettings } from './ForkSettings';
+import SaveDraft from './SaveDraft';
 
 function Messages() {
   return (
@@ -14,6 +15,9 @@ function Messages() {
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <ShowCodeSwitch />
+        </div>
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
+          <SaveDraft />
         </div>
         <ForkSettings />
       </div>

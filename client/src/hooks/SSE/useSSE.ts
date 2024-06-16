@@ -604,7 +604,6 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
     events.onerror = function (e: MessageEvent) {
       console.log('error in server stream.');
       startupConfig?.checkBalance && balanceQuery.refetch();
-      events.close();
 
       let data: TResData | undefined = undefined;
       try {

@@ -62,7 +62,7 @@ const updateUser = async function (userId, updateData) {
 const createUser = async (data, disableTTL = true) => {
   const userData = {
     ...data,
-    expiresAt: new Date(Date.now() + 604800 * 1000), // 1 week in milliseconds
+    expiresAt: disableTTL ? null : new Date(Date.now() + 604800 * 1000), // 1 week in milliseconds
   };
 
   if (disableTTL) {
@@ -70,8 +70,8 @@ const createUser = async (data, disableTTL = true) => {
   }
 
   try {
-    const result = await User.collection.insertOne(userData);
-    return result.insertedId;
+    const user = await User.create(userData);
+    return user._id;
   } catch (error) {
     if (error.code === 11000) {
       // Duplicate key error code
