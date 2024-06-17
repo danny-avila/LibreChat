@@ -7,13 +7,15 @@ const getConvosByQuery = async (title, endpoint, sort = 'participants', order = 
     const sortOrder = order === 'asc' ? 1 : -1;
     const sortQuery = {};
     if (sort === 'participants') {
-      sortQuery['users.length'] = sortOrder;
+      sortQuery['users'] = sortOrder;
     } else if (sort === 'date') {
       sortQuery['createdAt'] = sortOrder;
     }
+
     return await Conversation.find({
       isRoom: true,
       active: true,
+      isPrivate: false,
       title: new RegExp(title, 'i'),
       endpoint: new RegExp(endpoint, 'i'),
     }).sort(sortQuery).lean();
