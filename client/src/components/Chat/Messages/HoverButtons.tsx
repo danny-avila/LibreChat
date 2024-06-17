@@ -128,18 +128,19 @@ export default function HoverButtons({
         forkingSupported={forkingSupported}
         latestMessage={latestMessage}
       />
-
-      <button
-        className={cn(
-          'hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-500 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible ',
-          !isLast ? 'md:opacity-0 md:group-hover:opacity-100' : '',
-        )}
-        onClick={handleContinue}
-        type="button"
-        title={localize('com_ui_continue')}
-      >
-        <ContinueIcon className="h-4 w-4 hover:text-gray-500 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
-      </button>
+      {continueSupported ? (
+        <button
+          className={cn(
+            'hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-500 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible ',
+            !isLast ? 'md:opacity-0 md:group-hover:opacity-100' : '',
+          )}
+          onClick={handleContinue}
+          type="button"
+          title={localize('com_ui_continue')}
+        >
+          <ContinueIcon className="h-4 w-4 hover:text-gray-500 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
+        </button>
+      ) : null}
     </div>
   );
 }
