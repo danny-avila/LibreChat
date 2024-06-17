@@ -69,6 +69,9 @@ class BaseClient {
       url = this.options.reverseProxyUrl;
     }
     logger.debug(`Making request to ${url}`);
+    if (typeof Bun !== 'undefined') {
+      return await fetch(url, init);
+    }
     return await fetch(url, init);
   }
 

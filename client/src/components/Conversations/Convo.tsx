@@ -1,7 +1,7 @@
 import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { useState, useRef, useMemo } from 'react';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
+import { useGetEndpointsQuery, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
 import { useUpdateConversationMutation } from '~/data-provider';
 import EndpointIcon from '~/components/Endpoints/EndpointIcon';
@@ -27,9 +27,9 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
   const activeConvos = useRecoilValue(store.allConversationsSelector);
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { navigateWithLastTools } = useNavigateToConvo();
+  const { data: startupConfig } = useGetStartupConfig();
   const { refreshConversations } = useConversations();
   const { showToast } = useToastContext();
-
   const { conversationId, title } = conversation;
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [titleInput, setTitleInput] = useState(title);
@@ -126,13 +126,15 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
           setIsPopoverActive={setIsPopoverActive}
         >
           <DropDownMenu>
-            <ShareButton
-              conversationId={conversationId}
-              title={title}
-              appendLabel={true}
-              className="mb-[3.5px]"
-              setPopoverActive={setIsPopoverActive}
-            />
+            {startupConfig && startupConfig.sharedLinksEnabled && (
+              <ShareButton
+                conversationId={conversationId}
+                title={title}
+                appendLabel={true}
+                className="mb-[3.5px]"
+                setPopoverActive={setIsPopoverActive}
+              />
+            )}
 
             <RenameButton
               renaming={renaming}

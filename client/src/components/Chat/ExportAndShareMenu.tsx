@@ -8,7 +8,13 @@ import useLocalize from '~/hooks/useLocalize';
 import ExportButton from './ExportButton';
 import store from '~/store';
 
-export default function ExportAndShareMenu({ className = '' }: { className?: string }) {
+export default function ExportAndShareMenu({
+  isSharedButtonEnabled,
+  className = '',
+}: {
+  isSharedButtonEnabled: boolean;
+  className?: string;
+}) {
   const localize = useLocalize();
 
   const conversation = useRecoilValue(store.conversationByIndex(0));
@@ -41,13 +47,15 @@ export default function ExportAndShareMenu({ className = '' }: { className?: str
         {conversation && conversation.conversationId && (
           <>
             <ExportButton conversation={conversation} setPopoverActive={setIsPopoverActive} />
-            <ShareButton
-              conversationId={conversation.conversationId}
-              title={conversation.title ?? ''}
-              appendLabel={true}
-              className="mb-[3.5px]"
-              setPopoverActive={setIsPopoverActive}
-            />
+            {isSharedButtonEnabled && (
+              <ShareButton
+                conversationId={conversation.conversationId}
+                title={conversation.title ?? ''}
+                appendLabel={true}
+                className="mb-[3.5px]"
+                setPopoverActive={setIsPopoverActive}
+              />
+            )}
           </>
         )}
       </DropDownMenu>

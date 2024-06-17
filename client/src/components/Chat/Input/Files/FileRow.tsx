@@ -83,7 +83,7 @@ export default function FileRow({
               return (
                 <Image
                   key={index}
-                  url={file.preview}
+                  url={file.preview || file.filepath}
                   onDelete={handleDelete}
                   progress={file.progress}
                   source={file.source}

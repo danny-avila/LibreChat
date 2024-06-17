@@ -55,8 +55,10 @@ const localStorageAtoms = {
   // Messages settings
   enterToSend: atomWithLocalStorage('enterToSend', true),
   showCode: atomWithLocalStorage('showCode', false),
+  saveDrafts: atomWithLocalStorage('saveDrafts', false),
   forkSetting: atomWithLocalStorage('forkSetting', ''),
   splitAtTarget: atomWithLocalStorage('splitAtTarget', false),
+  
   rememberForkOption: atomWithLocalStorage('rememberForkOption', true),
 
   // Beta features settings
