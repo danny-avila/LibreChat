@@ -2,6 +2,7 @@ import React from 'react';
 import { useRecoilState } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
 import { SettingsTabValues } from 'librechat-data-provider';
+import HoverCardSettings from '../HoverCardSettings';
 import DeleteAccount from './DeleteAccount';
 import { Switch } from '~/components/ui';
 import { useLocalize } from '~/hooks';
@@ -33,7 +34,10 @@ function Account({ onCheckedChange }: { onCheckedChange?: (value: boolean) => vo
           <DeleteAccount />
         </div>
         <div className="flex items-center justify-between">
-          <div> {localize('com_nav_user_name_display')} </div>
+          <div className="flex items-center space-x-2">
+            <div>{localize('com_nav_user_name_display')}</div>
+            <HoverCardSettings side="bottom" text="com_nav_info_user_name_display" />
+          </div>
           <Switch
             id="UsernameDisplay"
             checked={UsernameDisplay}

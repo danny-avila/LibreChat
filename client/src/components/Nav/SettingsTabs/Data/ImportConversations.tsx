@@ -68,7 +68,7 @@ function ImportConversations() {
 
   return (
     <div className="flex items-center justify-between">
-      <span>{localize('com_ui_import_conversation_info')}</span>
+      <div>{localize('com_ui_import_conversation_info')}</div>
       <label htmlFor={'import-conversations-file'} className="btn btn-neutral relative">
         {allowImport ? (
           <Import className="mr-1 flex h-4 w-4 items-center stroke-1" />
