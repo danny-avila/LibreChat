@@ -24,6 +24,10 @@ export function revokeAllUserKeys(): Promise<unknown> {
   return request.delete(endpoints.revokeAllUserKeys());
 }
 
+export function deleteUser(): Promise<s.TPreset> {
+  return request.delete(endpoints.deleteUser());
+}
+
 export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage[]> {
   if (conversationId === 'new') {
     return Promise.resolve([]);
@@ -138,6 +142,16 @@ export const resetPassword = (payload: t.TResetPassword) => {
   return request.post(endpoints.resetPassword(), payload);
 };
 
+export const verifyEmail = (payload: t.TVerifyEmail): Promise<t.VerifyEmailResponse> => {
+  return request.post(endpoints.verifyEmail(), payload);
+};
+
+export const resendVerificationEmail = (
+  payload: t.TResendVerificationEmail,
+): Promise<t.VerifyEmailResponse> => {
+  return request.post(endpoints.resendVerificationEmail(), payload);
+};
+
 export const getAvailablePlugins = (): Promise<s.TPlugin[]> => {
   return request.get(endpoints.plugins());
 };
@@ -166,39 +180,105 @@ export const getEndpointsConfigOverride = (): Promise<unknown | boolean> => {
 
 /* Assistants */
 
-export const createAssistant = (data: a.AssistantCreateParams): Promise<a.Assistant> => {
-  return request.post(endpoints.assistants(), data);
+export const createAssistant = ({
+  version,
+  ...data
+}: a.AssistantCreateParams): Promise<a.Assistant> => {
+  return request.post(endpoints.assistants({ version }), data);
 };
 
-export const getAssistantById = (assistant_id: string): Promise<a.Assistant> => {
-  return request.get(endpoints.assistants(assistant_id));
+export const getAssistantById = ({
+  endpoint,
+  assistant_id,
+  version,
+}: {
+  endpoint: s.AssistantsEndpoint;
+  assistant_id: string;
+  version: number | string | number;
+}): Promise<a.Assistant> => {
+  return request.get(
+    endpoints.assistants({
+      path: assistant_id,
+      endpoint,
+      version,
+    }),
+  );
 };
 
-export const updateAssistant = (
-  assistant_id: string,
-  data: a.AssistantUpdateParams,
-): Promise<a.Assistant> => {
-  return request.patch(endpoints.assistants(assistant_id), data);
+export const updateAssistant = ({
+  assistant_id,
+  data,
+  version,
+}: {
+  assistant_id: string;
+  data: a.AssistantUpdateParams;
+  version: number | string;
+}): Promise<a.Assistant> => {
+  return request.patch(
+    endpoints.assistants({
+      path: assistant_id,
+      version,
+    }),
+    data,
+  );
 };
 
-export const deleteAssistant = (assistant_id: string, model: string): Promise<void> => {
-  return request.delete(endpoints.assistants(assistant_id, { model }));
+export const deleteAssistant = ({
+  assistant_id,
+  model,
+  endpoint,
+  version,
+}: m.DeleteAssistantBody & { version: number | string }): Promise<void> => {
+  return request.delete(
+    endpoints.assistants({
+      path: assistant_id,
+      options: { model, endpoint },
+      version,
+    }),
+  );
 };
 
 export const listAssistants = (
-  params?: a.AssistantListParams,
+  params: a.AssistantListParams,
+  version: number | string,
 ): Promise<a.AssistantListResponse> => {
-  return request.get(endpoints.assistants(), { params });
+  return request.get(
+    endpoints.assistants({
+      version,
+      options: params,
+    }),
+  );
 };
 
-export function getAssistantDocs(): Promise<a.AssistantDocument[]> {
-  return request.get(endpoints.assistants('documents'));
+export function getAssistantDocs({
+  endpoint,
+  version,
+}: {
+  endpoint: s.AssistantsEndpoint;
+  version: number | string;
+}): Promise<a.AssistantDocument[]> {
+  return request.get(
+    endpoints.assistants({
+      path: 'documents',
+      version,
+      endpoint,
+    }),
+  );
 }
 
 /* Tools */
 
-export const getAvailableTools = (): Promise<s.TPlugin[]> => {
-  return request.get(`${endpoints.assistants()}/tools`);
+export const getAvailableTools = (
+  version: number | string,
+  endpoint: s.AssistantsEndpoint,
+): Promise<s.TPlugin[]> => {
+  return request.get(
+    endpoints.assistants({
+      path: 'tools',
+      endpoint,
+      version,
+    }),
+  );
 };
 
 /* Files */
@@ -225,20 +305,8 @@ export const uploadFile = (data: FormData): Promise<f.TFileUpload> => {
  * @param data - The FormData containing the file to import.
  * @returns A Promise that resolves to the import start response.
  */
-export const importConversationsFile = (data: FormData): Promise<t.TImportStartResponse> => {
+export const importConversationsFile = (data: FormData): Promise<t.TImportResponse> => {
   return request.postMultiPart(endpoints.importConversation(), data);
-};
-
-/**
- * Retrieves the status of an import conversation job.
- *
- * @param jobId - The ID of the import conversation job.
- * @returns A promise that resolves to the import job status.
- */
-export const queryImportConversationJobStatus = async (
-  jobId: string,
-): Promise<t.TImportJobStatus> => {
-  return request.get(endpoints.importConversationJobStatus(jobId));
 };
 
 export const uploadAvatar = (data: FormData): Promise<f.AvatarUploadResponse> => {
@@ -247,7 +315,11 @@ export const uploadAvatar = (data: FormData): Promise<f.AvatarUploadResponse> =>
 
 export const uploadAssistantAvatar = (data: m.AssistantAvatarVariables): Promise<a.Assistant> => {
   return request.postMultiPart(
-    endpoints.assistants(`avatar/${data.assistant_id}`, { model: data.model }),
+    endpoints.assistants({
+      path: `avatar/${data.assistant_id}`,
+      options: { model: data.model, endpoint: data.endpoint },
+      version: data.version,
+    }),
     data.formData,
   );
 };
@@ -264,28 +336,67 @@ export const getFileDownload = async (userId: string, file_id: string): Promise<
 export const deleteFiles = async (
   files: f.BatchFile[],
   assistant_id?: string,
+  tool_resource?: a.EToolResources,
 ): Promise<f.DeleteFilesResponse> =>
   request.deleteWithOptions(endpoints.files(), {
-    data: { files, assistant_id },
+    data: { files, assistant_id, tool_resource },
   });
+
+export const speechToText = (data: FormData): Promise<f.SpeechToTextResponse> => {
+  return request.postMultiPart(endpoints.speechToText(), data);
+};
+
+export const textToSpeech = (data: FormData): Promise<ArrayBuffer> => {
+  return request.postTTS(endpoints.textToSpeechManual(), data);
+};
+
+export const getVoices = (): Promise<f.VoiceResponse> => {
+  return request.get(endpoints.textToSpeechVoices());
+};
 
 /* actions */
 
 export const updateAction = (data: m.UpdateActionVariables): Promise<m.UpdateActionResponse> => {
-  const { assistant_id, ...body } = data;
-  return request.post(endpoints.assistants(`actions/${assistant_id}`), body);
+  const { assistant_id, version, ...body } = data;
+  return request.post(
+    endpoints.assistants({
+      path: `actions/${assistant_id}`,
+      version,
+    }),
+    body,
+  );
 };
 
-export function getActions(): Promise<a.Action[]> {
-  return request.get(endpoints.assistants('actions'));
+export function getActions({
+  endpoint,
+  version,
+}: {
+  endpoint: s.AssistantsEndpoint;
+  version: number | string;
+}): Promise<a.Action[]> {
+  return request.get(
+    endpoints.assistants({
+      path: 'actions',
+      version,
+      endpoint,
+    }),
+  );
 }
 
-export const deleteAction = async (
-  assistant_id: string,
-  action_id: string,
-  model: string,
-): Promise<void> =>
-  request.delete(endpoints.assistants(`actions/${assistant_id}/${action_id}/${model}`));
+export const deleteAction = async ({
+  assistant_id,
+  action_id,
+  model,
+  version,
+  endpoint,
+}: m.DeleteActionVariables & { version: number | string }): Promise<void> =>
+  request.delete(
+    endpoints.assistants({
+      path: `actions/${assistant_id}/${action_id}/${model}`,
+      version,
+      endpoint,
+    }),
+  );
 
 /* conversations */
 

@@ -1,4 +1,4 @@
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { ReactNode } from 'react';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
@@ -30,7 +30,8 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
   const iconURL = conversation?.iconURL;
   endpoint = getIconEndpoint({ endpointsConfig, iconURL, endpoint });
 
-  const assistant = endpoint === EModelEndpoint.assistants && assistantMap?.[assistant_id ?? ''];
+  const isAssistant = isAssistantsEndpoint(endpoint);
+  const assistant = isAssistant && assistantMap?.[endpoint]?.[assistant_id ?? ''];
   const assistantName = (assistant && assistant?.name) || '';
   const assistantDesc = (assistant && assistant?.description) || '';
   const avatar = (assistant && (assistant?.metadata?.avatar as string)) || '';
@@ -54,14 +55,16 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
                 className="h-2/3 w-2/3"
                 size={41}
               />
-              <TooltipTrigger>
-                {(startupConfig?.showBirthdayIcon ?? false) && (
-                  <BirthdayIcon className="absolute bottom-12 right-5" />
-                )}
-              </TooltipTrigger>
-              <TooltipContent side="top" sideOffset={115} className="left-[20%]">
-                {localize('com_ui_happy_birthday')}
-              </TooltipContent>
+              {!!startupConfig?.showBirthdayIcon && (
+                <div>
+                  <TooltipTrigger>
+                    <BirthdayIcon className="absolute bottom-8 right-2.5" />
+                  </TooltipTrigger>
+                  <TooltipContent side="top" sideOffset={110} className="">
+                    {localize('com_ui_happy_birthday')}
+                  </TooltipContent>
+                </div>
+              )}
             </div>
             {assistantName ? (
               <div className="flex flex-col items-center gap-0 p-2">
@@ -77,7 +80,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
               </div>
             ) : (
               <div className="mb-5 max-w-[75vh] px-12 text-center text-lg font-medium dark:text-white md:px-0 md:text-2xl">
-                {endpoint === EModelEndpoint.assistants
+                {isAssistant
                   ? conversation?.greeting ?? localize('com_nav_welcome_assistant')
                   : conversation?.greeting ?? localize('com_nav_welcome_message')}
               </div>

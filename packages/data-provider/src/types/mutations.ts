@@ -45,6 +45,8 @@ export type AssistantAvatarVariables = {
   model: string;
   formData: FormData;
   postCreation?: boolean;
+  endpoint: types.AssistantsEndpoint;
+  version: number | string;
 };
 
 export type UpdateActionVariables = {
@@ -53,6 +55,8 @@ export type UpdateActionVariables = {
   metadata: ActionMetadata;
   action_id?: string;
   model: string;
+  endpoint: types.AssistantsEndpoint;
+  version: number | string;
 };
 
 export type UploadAssistantAvatarOptions = MutationOptions<Assistant, AssistantAvatarVariables>;
@@ -66,7 +70,11 @@ export type UpdateAssistantVariables = {
 
 export type UpdateAssistantMutationOptions = MutationOptions<Assistant, UpdateAssistantVariables>;
 
-export type DeleteAssistantBody = { assistant_id: string; model: string };
+export type DeleteAssistantBody = {
+  assistant_id: string;
+  model: string;
+  endpoint: types.AssistantsEndpoint;
+};
 
 export type DeleteAssistantMutationOptions = MutationOptions<
   void,
@@ -77,6 +85,7 @@ export type UpdateActionResponse = [AssistantDocument, Assistant, Action];
 export type UpdateActionOptions = MutationOptions<UpdateActionResponse, UpdateActionVariables>;
 
 export type DeleteActionVariables = {
+  endpoint: types.AssistantsEndpoint;
   assistant_id: string;
   action_id: string;
   model: string;
@@ -100,3 +109,16 @@ export type UpdateSharedLinkOptions = MutationOptions<
   Partial<types.TSharedLink>
 >;
 export type DeleteSharedLinkOptions = MutationOptions<types.TSharedLink, { shareId: string }>;
+
+/* Auth mutations */
+export type VerifyEmailOptions = MutationOptions<types.VerifyEmailResponse, types.TVerifyEmail>;
+export type ResendVerifcationOptions = MutationOptions<
+  types.VerifyEmailResponse,
+  types.TResendVerificationEmail
+>;
+export type RegistrationOptions = MutationOptions<
+  types.TRegisterUserResponse,
+  types.TRegisterUser,
+  unknown,
+  types.TError
+>;

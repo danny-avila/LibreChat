@@ -273,6 +273,12 @@
  */
 
 /**
+ * @exports TPayload
+ * @typedef {import('librechat-data-provider').TPayload} TPayload
+ * @memberof typedefs
+ */
+
+/**
  * @exports TAzureModelConfig
  * @typedef {import('librechat-data-provider').TAzureModelConfig} TAzureModelConfig
  * @memberof typedefs
@@ -346,6 +352,12 @@
 /**
  * @exports TCustomConfig
  * @typedef {import('librechat-data-provider').TCustomConfig} TCustomConfig
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TProviderSchema
+ * @typedef {import('librechat-data-provider').TProviderSchema} TProviderSchema
  * @memberof typedefs
  */
 
@@ -465,8 +477,26 @@
  */
 
 /**
+ * @exports MongooseSchema
+ * @typedef {import('mongoose').Schema} MongooseSchema
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ObjectId
+ * @typedef {import('mongoose').Types.ObjectId} ObjectId
+ * @memberof typedefs
+ */
+
+/**
  * @exports MongoFile
  * @typedef {import('~/models/schema/fileSchema.js').MongoFile} MongoFile
+ * @memberof typedefs
+ */
+
+/**
+ * @exports MongoUser
+ * @typedef {import('~/models/schema/userSchema.js').MongoUser} MongoUser
  * @memberof typedefs
  */
 
@@ -654,6 +684,12 @@
 /**
  * @exports RunManager
  * @typedef {import('./server/services/Runs/RunManager.js').RunManager} RunManager
+ * @memberof typedefs
+ */
+
+/**
+ * @exports OpenAISpecClient
+ * @typedef {import('./app/clients/OpenAIClient')} OpenAISpecClient
  * @memberof typedefs
  */
 

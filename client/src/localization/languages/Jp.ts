@@ -148,16 +148,19 @@ export default {
   com_ui_delete: '削除',
   com_ui_create: '作成',
   com_ui_share: '共有',
+  com_ui_copy_link: 'リンクをコピー',
+  com_ui_update_link: 'リンクを更新する',
+  com_ui_create_link: 'リンクを作成する',
   com_ui_share_link_to_chat: 'チャットへの共有リンク',
   com_ui_share_error: 'チャットの共有リンクの共有中にエラーが発生しました',
   com_ui_share_create_message:
     'あなたの名前と共有リンクを作成した後のメッセージは、共有されません。',
   com_ui_share_created_message:
-    'チャットへの公開された共有リンクが作成されました。設定から以前共有したチャットを管理できます。',
+    'チャットの共有リンクが作成されました。設定から以前共有したチャットを管理できます。',
   com_ui_share_update_message:
     'あなたの名前、カスタム指示、共有リンクを作成した後のメッセージは、共有されません。',
   com_ui_share_updated_message:
-    'チャットへの公開された共有リンクが更新されました。設定から以前共有したチャットを管理できます。',
+    'チャットの共有リンクが更新されました。設定から以前共有したチャットを管理できます。',
   com_ui_shared_link_not_found: '共有リンクが見つかりません',
   com_ui_delete_conversation: 'チャットを削除しますか？',
   com_ui_delete_conversation_confirm: 'このチャットは削除されます。',
@@ -447,6 +450,7 @@ export default {
   com_nav_theme_light: 'ライト',
   com_nav_enter_to_send: 'Enterキーでメッセージを送信する',
   com_nav_user_name_display: 'メッセージにユーザー名を表示する',
+  com_nav_save_drafts: 'ローカルにドラフトを保存する',
   com_nav_show_code: 'Code Interpreter を使用する際は常にコードを表示する',
   com_nav_clear_all_chats: 'すべてのチャットを削除する',
   com_nav_confirm_clear: '削除を確定',
@@ -473,11 +477,18 @@ export default {
   com_nav_setting_data: 'データ管理',
   com_nav_setting_account: 'アカウント',
   /* The following are AI translated */
+  com_assistants_file_search: 'ファイル検索',
+  com_assistants_file_search_info:
+    'ファイル検索用のベクトル ストアを添付することはまだサポートされていません。Provider Playgroundからそれらを添付するか、スレッド単位でメッセージにファイルを添付してファイル検索を行うことができます。',
+  com_assistants_non_retrieval_model:
+    'このモデルではファイル検索機能は有効になっていません。別のモデルを選択してください。',
+  com_ui_attach_error_openai: '他のエンドポイントにAssistantファイルを添付することはできません',
+  com_ui_attach_warn_endpoint:
+    '互換性のあるツールがない場合、非アシスタントのファイルは無視される可能性があります',
+  com_ui_assistant_deleted: 'アシスタントが正常に削除されました',
+  com_ui_assistant_delete_error: 'アシスタントの削除中にエラーが発生しました。',
   com_ui_copied: 'コピーしました',
   com_ui_copy_code: 'コードをコピーする',
-  com_ui_copy_link: 'リンクをコピー',
-  com_ui_update_link: 'リンクを更新する',
-  com_ui_create_link: 'リンクを作成する',
   com_nav_source_chat: 'ソースチャットを表示する',
   com_ui_date_today: '今日',
   com_ui_date_yesterday: '昨日',
@@ -1140,7 +1151,7 @@ export const comparisons = {
   },
   com_ui_share_created_message: {
     english:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
     translated:
       'チャットへの公開された共有リンクが作成されました。設定から以前共有したチャットを管理できます。',
   },
@@ -1151,7 +1162,7 @@ export const comparisons = {
   },
   com_ui_share_updated_message: {
     english:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
     translated:
       'チャットへの公開された共有リンクが更新されました。設定から以前共有したチャットを管理できます。',
   },
@@ -2200,6 +2211,10 @@ export const comparisons = {
     english: 'Display username in messages',
     translated: 'メッセージにユーザー名を表示する',
   },
+  com_nav_save_drafts: {
+    english: 'Save drafts locally',
+    translated: 'ローカルにドラフトを保存する',
+  },
   com_nav_show_code: {
     english: 'Always show code when using code interpreter',
     translated: 'Code Interpreter を使用する際は常にコードを表示する',
@@ -2295,6 +2310,38 @@ export const comparisons = {
   com_nav_setting_account: {
     english: 'Account',
     translated: 'アカウント',
+  },
+  com_assistants_file_search: {
+    english: 'File Search',
+    translated: 'ファイル検索',
+  },
+  com_assistants_file_search_info: {
+    english:
+      'Attaching vector stores for File Search is not yet supported. You can attach them from the Provider Playground or attach files to messages for file search on a thread basis.',
+    translated:
+      'ファイル検索用のベクトル ストアを添付することはまだサポートされていません。Provider Playgroundからそれらを添付するか、スレッド単位でメッセージにファイルを添付してファイル検索を行うことができます。',
+  },
+  com_assistants_non_retrieval_model: {
+    english: 'File search is not enabled on this model. Please select another model.',
+    translated:
+      'このモデルではファイル検索機能は有効になっていません。別のモデルを選択してください。',
+  },
+  com_ui_attach_error_openai: {
+    english: 'Cannot attach Assistant files to other endpoints',
+    translated: '他のエンドポイントにAssistantファイルを添付することはできません',
+  },
+  com_ui_attach_warn_endpoint: {
+    english: 'Non-Assistant files may be ignored without a compatible tool',
+    translated:
+      '互換性のあるツールがない場合、非アシスタントのファイルは無視される可能性があります',
+  },
+  com_ui_assistant_deleted: {
+    english: 'Successfully deleted assistant',
+    translated: 'アシスタントが正常に削除されました',
+  },
+  com_ui_assistant_delete_error: {
+    english: 'There was an error deleting the assistant',
+    translated: 'アシスタントの削除中にエラーが発生しました。',
   },
   com_ui_copied: {
     english: 'Copied!',

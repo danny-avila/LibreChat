@@ -6,6 +6,7 @@ import {
   parseISO,
   startOfDay,
   startOfYear,
+  startOfToday,
   isWithinInterval,
 } from 'date-fns';
 import { EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
@@ -76,7 +77,7 @@ export const groupConversationsByDate = (conversations: TConversation[]): Groupe
     }
     seenConversationIds.add(conversation.conversationId);
 
-    const date = parseISO(conversation.updatedAt);
+    const date = conversation.updatedAt ? parseISO(conversation.updatedAt) : startOfToday();
     const groupName = getGroupName(date);
     if (!acc[groupName]) {
       acc[groupName] = [];

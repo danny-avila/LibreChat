@@ -25,6 +25,25 @@ registration:
   # allowedDomains:
   # - "gmail.com"
 
+# tts:
+#   url: ''
+#   apiKey: '${TTS_API_KEY}'
+#   model: ''
+#   backend: ''
+#   voice: ''
+#   compatibility: ''
+#   voice_settings:
+#     similarity_boost: ''
+#     stability: ''
+#     style: ''
+#     use_speaker_boost:
+#   pronunciation_dictionary_locators: ['']
+#  
+# stt:
+#   url: ''
+#   apiKey: '${STT_API_KEY}'
+#   model: ''
+
 # rateLimits:
 #   fileUploads:
 #     ipMax: 100
@@ -41,11 +60,13 @@ registration:
 endpoints:
   # assistants:
   #   disableBuilder: false # Disable Assistants Builder Interface by setting to `true`
-  #   pollIntervalMs: 750  # Polling interval for checking assistant updates
+  #   pollIntervalMs: 3000  # Polling interval for checking assistant updates
   #   timeoutMs: 180000  # Timeout for assistant operations
   #   # Should only be one or the other, either `supportedIds` or `excludedIds`
   #   supportedIds: ["asst_supportedAssistantId1", "asst_supportedAssistantId2"]
   #   # excludedIds: ["asst_excludedAssistantId"]
+  #   Only show assistants that the user created or that were created externally (e.g. in Assistants playground).
+  #   # privateAssistants: false # Does not work with `supportedIds` or `excludedIds`
   #   # (optional) Models that support retrieval, will default to latest known OpenAI models that support the feature
   #   retrievalModels: ["gpt-4-turbo-preview"]
   #   # (optional) Assistant Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
@@ -56,12 +77,13 @@ endpoints:
       apiKey: '${GROQ_API_KEY}'
       baseURL: 'https://api.groq.com/openai/v1/'
       models:
-        default: [
-          "llama3-70b-8192",
-          "llama3-8b-8192",
-          "llama2-70b-4096",
-          "mixtral-8x7b-32768",
-          "gemma-7b-it",
+        default:
+          [
+            'llama3-70b-8192',
+            'llama3-8b-8192',
+            'llama2-70b-4096',
+            'mixtral-8x7b-32768',
+            'gemma-7b-it',
           ]
         fetch: false
       titleConvo: true
@@ -128,7 +150,6 @@ endpoints:
       # Recommended: Drop the stop parameter from the request as Openrouter models use a variety of stop tokens.
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
-
 # fileConfig:
 #   endpoints:
 #     assistants:

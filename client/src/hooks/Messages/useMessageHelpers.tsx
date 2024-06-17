@@ -1,7 +1,8 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
+import { getLatestText, getLengthAndFirstFiveChars } from '~/utils';
 import useCopyToClipboard from './useCopyToClipboard';
 
 export default function useMessageHelpers(props: TMessageProps) {
@@ -10,6 +11,7 @@ export default function useMessageHelpers(props: TMessageProps) {
 
   const {
     ask,
+    index,
     regenerate,
     isSubmitting,
     conversation,
@@ -25,20 +27,25 @@ export default function useMessageHelpers(props: TMessageProps) {
   const isLast = !children?.length;
 
   useEffect(() => {
-    let contentChanged = message?.content
-      ? message?.content?.length !== latestText.current
-      : message?.text !== latestText.current;
-
-    if (!isLast) {
-      contentChanged = false;
+    if (conversation?.conversationId === 'new') {
+      return;
     }
-
     if (!message) {
       return;
-    } else if (isLast && conversation?.conversationId !== 'new' && contentChanged) {
-      setLatestMessage({ ...message });
-      latestText.current = message?.content ? message.content.length : message.text;
     }
+    if (!isLast) {
+      return;
+    }
+
+    const text = getLatestText(message);
+    const textKey = `${message?.messageId ?? ''}${getLengthAndFirstFiveChars(text)}`;
+
+    if (textKey === latestText.current) {
+      return;
+    }
+
+    latestText.current = textKey;
+    setLatestMessage({ ...message });
   }, [isLast, message, setLatestMessage, conversation?.conversationId]);
 
   const enterEdit = useCallback(
@@ -55,7 +62,8 @@ export default function useMessageHelpers(props: TMessageProps) {
   }, [isSubmitting, setAbortScroll]);
 
   const assistant =
-    conversation?.endpoint === EModelEndpoint.assistants && assistantMap?.[message?.model ?? ''];
+    isAssistantsEndpoint(conversation?.endpoint) &&
+    assistantMap?.[conversation?.endpoint ?? '']?.[message?.model ?? ''];
 
   const regenerateMessage = () => {
     if ((isSubmitting && isCreatedByUser) || !message) {
@@ -70,6 +78,7 @@ export default function useMessageHelpers(props: TMessageProps) {
   return {
     ask,
     edit,
+    index,
     isLast,
     assistant,
     enterEdit,

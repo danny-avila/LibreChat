@@ -38,16 +38,16 @@ const NewChatButtonIcon = ({ conversation }: { conversation: TConversation | nul
         <ConvoIconURL preset={conversation} endpointIconURL={iconURL} context="nav" />
       ) : (
         <div className="shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black dark:bg-white">
-          {endpoint &&
-            Icon &&
-            Icon({
-              size: 41,
-              context: 'nav',
-              className: 'h-2/3 w-2/3',
-              endpoint,
-              endpointType,
-              iconURL: endpointIconURL,
-            })}
+          {endpoint && Icon && (
+            <Icon
+              size={41}
+              context="nav"
+              className="h-2/3 w-2/3"
+              endpoint={endpoint}
+              endpointType={endpointType}
+              iconURL={endpointIconURL}
+            />
+          )}
         </div>
       )}
     </div>
@@ -71,7 +71,7 @@ export default function NewChat({
   const { conversation } = store.useCreateConversationAtom(index);
 
   const clickHandler = (event: React.MouseEvent<HTMLAnchorElement>) => {
-    if (event.button === 0 && !event.ctrlKey) {
+    if (event.button === 0 && !(event.ctrlKey || event.metaKey)) {
       event.preventDefault();
       newConvo();
       navigate('/c/new');

@@ -188,17 +188,20 @@ export default {
   com_ui_assistants_output: 'Output Assistenti',
   com_ui_delete: 'Elimina',
   com_ui_create: 'Crea',
-  com_ui_share: 'Share',
-  com_ui_share_link_to_chat: 'Share link to chat',
-  com_ui_share_error: 'There was an error sharing the chat link',
-  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share: 'Condividi',
+  com_ui_copy_link: 'Copia link',
+  com_ui_update_link: 'Aggiorna link',
+  com_ui_create_link: 'Crea link',
+  com_ui_share_link_to_chat: 'Condividi link a chat',
+  com_ui_share_error: 'Si è verificato un errore durante la condivisione del link della chat',
+  com_ui_share_create_message: 'Il tuo nome e qualsiasi messaggio aggiunto dopo la condivisione rimarranno privati.',
   com_ui_share_created_message:
-    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    'È stato creato un link condiviso per la tua chat. Gestisci le chat condivise in precedenza in qualsiasi momento tramite Impostazioni.',
   com_ui_share_update_message:
-    'Your name, custom instructions, and any messages you add after sharing stay private.',
+    'Il tuo nome, istruzioni personalizzate e qualsiasi messaggio aggiunto dopo la condivisione rimarranno privati.',
   com_ui_share_updated_message:
-    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
-  com_ui_shared_link_not_found: 'Shared link not found',
+    'Il link condiviso per la tua chat è stato aggiornato. Gestisci le chat condivise in precedenza in qualsiasi momento tramite Impostazioni.',
+  com_ui_shared_link_not_found: 'Link condiviso non trovato',
   com_ui_delete_conversation: 'Eliminare la chat?',
   com_ui_delete_conversation_confirm: 'Questo eliminerà',
   com_ui_rename: 'Rinominare',
@@ -212,6 +215,7 @@ export default {
   com_ui_preview: 'Anteprima',
   com_ui_upload: 'Carica',
   com_ui_connect: 'Connetti',
+  com_ui_locked: 'Bloccato',
   com_ui_upload_delay:
     'Il caricamento di "{0}" sta richiedendo più tempo del previsto. Attendi il completamento dell\'indicizzazione per il recupero.',
   com_ui_privacy_policy: 'Informativa sulla privacy',
@@ -499,6 +503,7 @@ export default {
   com_nav_theme_light: 'Chiaro',
   com_nav_enter_to_send: 'Premi Invio per inviare messaggi',
   com_nav_user_name_display: 'Mostra nome utente nei messaggi',
+  com_nav_save_drafts: 'Salva bozze localmente',
   com_nav_show_code: 'Mostra sempre il codice quando si usa l\'interprete di codice',
   com_nav_clear_all_chats: 'Cancella tutte le chat',
   com_nav_confirm_clear: 'Conferma cancellazione',
@@ -520,16 +525,33 @@ export default {
   com_nav_help_faq: 'Guida e FAQ',
   com_nav_settings: 'Impostazioni',
   com_nav_search_placeholder: 'Cerca messaggi',
-  com_nav_setting_general: 'Generali',
-  com_nav_setting_beta: 'Funzionalità beta',
+  com_nav_delete_account: 'Elimina account',
+  com_nav_delete_account_confirm: 'Sei sicuro di voler eliminare il tuo account?',
+  com_nav_delete_account_button: 'Elimina permanentemente il mio account',
+  com_nav_delete_account_email_placeholder: 'Inserisci la tua email',
+  com_nav_delete_account_confirm_placeholder:
+    'Per procedere, digita "DELETE" nel campo di input sottostante',
+  com_dialog_delete_warning: 'ATTENZIONE: Questo cancellerà permanentemente il tuo account.',
+  com_dialog_delete_data_info: 'Tutti i tuoi dati verranno eliminati.',
+  com_dialog_delete_help_center: 'Per più informazioni, visita il nostro centro assistenza.',
+  com_nav_setting_general: 'Generale',
+  com_nav_setting_beta: 'Funzioni Beta',
   com_nav_setting_data: 'Controlli dati',
+  com_nav_setting_speech: 'Voce',
   com_nav_setting_account: 'Account',
   /* The following are AI Translated */
+  com_assistants_file_search: 'Ricerca File',
+  com_assistants_file_search_info:
+    'L\'aggiunta di archivi vettoriali per la Ricerca File non è ancora supportata. Puoi aggiungerli dal Provider Playground o allegare file ai messaggi per la ricerca file su base di thread.',
+  com_assistants_non_retrieval_model:
+    'La ricerca di file non è abilitata su questo modello. Seleziona un altro modello.',
+  com_ui_attach_error_openai: 'Non è possibile allegare file dell\'Assistente ad altri endpoint',
+  com_ui_attach_warn_endpoint:
+    'Attenzione: i file non compatibili con lo strumento potrebbero essere ignorati',
+  com_ui_assistant_deleted: 'Assistente eliminato con successo',
+  com_ui_assistant_delete_error: 'Si è verificato un errore durante l\'eliminazione dell\'assistente',
   com_ui_copied: 'Copiato!',
   com_ui_copy_code: 'Copia codice',
-  com_ui_copy_link: 'Copia link',
-  com_ui_update_link: 'Aggiorna link',
-  com_ui_create_link: 'Crea link',
   com_nav_source_chat: 'Visualizza chat sorgente',
   com_ui_date_today: 'Oggi',
   com_ui_date_yesterday: 'Ieri',
@@ -1247,40 +1269,51 @@ export const comparisons = {
   },
   com_ui_share: {
     english: 'Share',
-    translated: 'Share',
+    translated: 'Condividi',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: 'Copia link',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: 'Aggiorna link',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: 'Crea link',
   },
   com_ui_share_link_to_chat: {
     english: 'Share link to chat',
-    translated: 'Share link to chat',
+    translated: 'Condividi link a chat',
   },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
-    translated: 'There was an error sharing the chat link',
+    translated: 'Si è verificato un errore durante la condivisione del link della chat',
   },
   com_ui_share_create_message: {
     english: 'Your name and any messages you add after sharing stay private.',
-    translated: 'Your name and any messages you add after sharing stay private.',
+    translated: 'Il tuo nome e qualsiasi messaggio aggiunto dopo la condivisione rimarranno privati.',
   },
   com_ui_share_created_message: {
     english:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
     translated:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'È stato creato un link condiviso per la tua chat. Gestisci le chat condivise in precedenza in qualsiasi momento tramite Impostazioni.',
   },
   com_ui_share_update_message: {
     english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
-    translated:
-      'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated: 'Il tuo nome, istruzioni personalizzate e qualsiasi messaggio aggiunto dopo la condivisione rimarranno privati.',
   },
   com_ui_share_updated_message: {
     english:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
     translated:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'Il link condiviso per la tua chat è stato aggiornato. Gestisci le chat condivise in precedenza in qualsiasi momento tramite Impostazioni.',
   },
   com_ui_shared_link_not_found: {
     english: 'Shared link not found',
-    translated: 'Shared link not found',
+    translated: 'Link condiviso non trovato',
   },
   com_ui_delete_conversation: {
     english: 'Delete chat?',
@@ -2346,6 +2379,10 @@ export const comparisons = {
     english: 'Display username in messages',
     translated: 'Mostra nome utente nei messaggi',
   },
+  com_nav_save_drafts: {
+    english: 'Save drafts locally',
+    translated: 'Salva bozze localmente',
+  },
   com_nav_show_code: {
     english: 'Always show code when using code interpreter',
     translated: 'Mostra sempre il codice quando si usa l\'interprete di codice',
@@ -2443,6 +2480,36 @@ export const comparisons = {
     english: 'Account',
     translated: 'Account',
   },
+  com_assistants_file_search: {
+    english: 'File Search',
+    translated: 'Ricerca File',
+  },
+  com_assistants_file_search_info: {
+    english:
+      'Attaching vector stores for File Search is not yet supported. You can attach them from the Provider Playground or attach files to messages for file search on a thread basis.',
+    translated:
+      'L\'aggiunta di archivi vettoriali per la Ricerca File non è ancora supportata. Puoi aggiungerli dal Provider Playground o allegare file ai messaggi per la ricerca file su base di thread.',
+  },
+  com_assistants_non_retrieval_model: {
+    english: 'File search is not enabled on this model. Please select another model.',
+    translated: 'La ricerca di file non è abilitata su questo modello. Seleziona un altro modello.',
+  },
+  com_ui_attach_error_openai: {
+    english: 'Cannot attach Assistant files to other endpoints',
+    translated: 'Non è possibile allegare file dell\'Assistente ad altri endpoint',
+  },
+  com_ui_attach_warn_endpoint: {
+    english: 'Non-Assistant files may be ignored without a compatible tool',
+    translated: 'Attenzione: i file non compatibili con lo strumento potrebbero essere ignorati',
+  },
+  com_ui_assistant_deleted: {
+    english: 'Successfully deleted assistant',
+    translated: 'Assistente eliminato con successo',
+  },
+  com_ui_assistant_delete_error: {
+    english: 'There was an error deleting the assistant',
+    translated: 'Si è verificato un errore durante l\'eliminazione dell\'assistente',
+  },
   com_ui_copied: {
     english: 'Copied!',
     translated: 'Copiato!',
@@ -2450,18 +2517,6 @@ export const comparisons = {
   com_ui_copy_code: {
     english: 'Copy code',
     translated: 'Copia codice',
-  },
-  com_ui_copy_link: {
-    english: 'Copy link',
-    translated: 'Copia link',
-  },
-  com_ui_update_link: {
-    english: 'Update link',
-    translated: 'Aggiorna link',
-  },
-  com_ui_create_link: {
-    english: 'Create link',
-    translated: 'Crea link',
   },
   com_nav_source_chat: {
     english: 'View source chat',

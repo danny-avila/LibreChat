@@ -1,8 +1,12 @@
+import type { AssistantsEndpoint } from './schemas';
+
 export const user = () => '/api/user';
 
 export const balance = () => '/api/balance';
 
 export const userPlugins = () => '/api/user/plugins';
+
+export const deleteUser = () => '/api/user/delete';
 
 export const messages = (conversationId: string, messageId?: string) =>
   `/api/messages/${conversationId}${messageId ? `/${messageId}` : ''}`;
@@ -43,9 +47,6 @@ export const importConversation = () => `${conversationsRoot}/import`;
 
 export const forkConversation = () => `${conversationsRoot}/fork`;
 
-export const importConversationJobStatus = (jobId: string) =>
-  `${conversationsRoot}/import/jobs/${jobId}`;
-
 export const search = (q: string, pageNumber: string) =>
   `/api/search?q=${q}&pageNumber=${pageNumber}`;
 
@@ -79,19 +80,40 @@ export const requestPasswordReset = () => '/api/auth/requestPasswordReset';
 
 export const resetPassword = () => '/api/auth/resetPassword';
 
+export const verifyEmail = () => '/api/user/verify';
+
+export const resendVerificationEmail = () => '/api/user/verify/resend';
+
 export const plugins = () => '/api/plugins';
 
 export const config = () => '/api/config';
 
-export const assistants = (id?: string, options?: Record<string, string>) => {
-  let url = '/api/assistants';
+export const assistants = ({
+  path,
+  options,
+  version,
+  endpoint,
+}: {
+  path?: string;
+  options?: object;
+  endpoint?: AssistantsEndpoint;
+  version: number | string;
+}) => {
+  let url = `/api/assistants/v${version}`;
 
-  if (id) {
-    url += `/${id}`;
+  if (path) {
+    url += `/${path}`;
+  }
+
+  if (endpoint) {
+    options = {
+      ...(options ?? {}),
+      endpoint,
+    };
   }
 
   if (options && Object.keys(options).length > 0) {
-    const queryParams = new URLSearchParams(options).toString();
+    const queryParams = new URLSearchParams(options as Record<string, string>).toString();
     url += `?${queryParams}`;
   }
 
@@ -103,3 +125,11 @@ export const files = () => '/api/files';
 export const images = () => `${files()}/images`;
 
 export const avatar = () => `${images()}/avatar`;
+
+export const speechToText = () => `${files()}/stt`;
+
+export const textToSpeech = () => `${files()}/tts`;
+
+export const textToSpeechManual = () => `${textToSpeech()}/manual`;
+
+export const textToSpeechVoices = () => `${textToSpeech()}/voices`;

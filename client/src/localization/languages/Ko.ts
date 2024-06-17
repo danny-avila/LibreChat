@@ -50,17 +50,20 @@ export default {
   com_ui_import_conversation_error: '대화를 가져오는 동안 오류가 발생했습니다',
   com_ui_confirm_action: '작업 확인',
   com_ui_chats: '채팅',
-  com_ui_share: 'Share',
-  com_ui_share_link_to_chat: 'Share link to chat',
-  com_ui_share_error: 'There was an error sharing the chat link',
-  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share: '공유하기',
+  com_ui_copy_link: '링크 복사',
+  com_ui_update_link: '링크 업데이트',
+  com_ui_create_link: '링크 만들기',
+  com_ui_share_link_to_chat: '채팅으로 링크 공유하기',
+  com_ui_share_error: '채팅 링크를 공유하는 동안 오류가 발생했습니다',
+  com_ui_share_create_message: '이름과 공유 후에 추가하는 메시지는 비공개로 유지됩니다.',
   com_ui_share_created_message:
-    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    '귀하의 채팅에 대한 공유 링크가 생성되었습니다. 설정을 통해 언제든지 이전에 공유한 채팅을 관리할 수 있습니다.',
   com_ui_share_update_message:
-    'Your name, custom instructions, and any messages you add after sharing stay private.',
+    '이름, 사용자 지정 지침 및 공유 후 추가하는 메시지는 비공개로 유지됩니다.',
   com_ui_share_updated_message:
-    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
-  com_ui_shared_link_not_found: 'Shared link not found',
+    '귀하의 채팅에 대한 공유 링크가 업데이트되었습니다. 설정을 통해 언제든지 이전에 공유한 채팅을 관리할 수 있습니다.',
+  com_ui_shared_link_not_found: '공유 링크를 찾을 수 없습니다',
   com_ui_delete: '삭제',
   com_ui_delete_conversation: '채팅을 삭제하시겠습니까?',
   com_ui_delete_conversation_confirm: '이 채팅이 삭제됩니다',
@@ -278,11 +281,17 @@ export default {
   com_nav_setting_general: '일반',
   com_nav_setting_data: '데이터 제어',
   /* The following are AI Translated */
+  com_assistants_file_search: '파일 검색',
+  com_assistants_file_search_info:
+    '파일 검색을 위한 벡터 저장소 연결은 아직 지원되지 않습니다. Provider Playground에서 연결하거나 스레드 기반으로 메시지에 파일을 첨부하여 파일 검색을 할 수 있습니다.',
+  com_assistants_non_retrieval_model:
+    '이 모델에서는 파일 검색 기능을 사용할 수 없습니다. 다른 모델을 선택하세요.',
+  com_ui_attach_error_openai: '어시스턴트 파일을 다른 엔드포인트에 첨부할 수 없습니다.',
+  com_ui_attach_warn_endpoint: '호환되는 도구가 없으면 비어시스턴트 파일이 무시될 수 있습니다.',
+  com_ui_assistant_deleted: '어시스턴트가 성공적으로 삭제되었습니다',
+  com_ui_assistant_delete_error: '어시스턴트 삭제 중 오류가 발생했습니다.',
   com_ui_copied: '복사됨',
   com_ui_copy_code: '코드 복사',
-  com_ui_copy_link: '링크 복사',
-  com_ui_update_link: '링크 업데이트',
-  com_ui_create_link: '링크 만들기',
   com_nav_source_chat: '소스 채팅 보기',
   com_ui_date_today: '오늘',
   com_ui_date_yesterday: '어제',
@@ -529,6 +538,7 @@ export default {
   com_nav_my_files: '내 파일',
   com_nav_enter_to_send: '엔터키를 눌러 메시지 보내기',
   com_nav_user_name_display: '메시지에서 사용자 이름 표시',
+  com_nav_save_drafts: '초안을 로컬에 저장',
   com_nav_show_code: '코드 인터프리터 사용 시 항상 코드 표시',
   com_nav_setting_beta: '베타 기능',
   com_nav_setting_account: '계정',
@@ -754,40 +764,50 @@ export const comparisons = {
   },
   com_ui_share: {
     english: 'Share',
-    translated: 'Share',
+    translated: '공유하기',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: '링크 복사',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: '링크 업데이트',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: '링크 만들기',
   },
   com_ui_share_link_to_chat: {
     english: 'Share link to chat',
-    translated: 'Share link to chat',
+    translated: '채팅으로 링크 공유하기',
   },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
-    translated: 'There was an error sharing the chat link',
+    translated: '채팅 링크를 공유하는 동안 오류가 발생했습니다',
   },
   com_ui_share_create_message: {
     english: 'Your name and any messages you add after sharing stay private.',
-    translated: 'Your name and any messages you add after sharing stay private.',
+    translated: '이름과 공유 후에 추가하는 메시지는 비공개로 유지됩니다.',
   },
   com_ui_share_created_message: {
     english:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
     translated:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      '귀하의 채팅에 대한 공유 링크가 생성되었습니다. 설정을 통해 언제든지 이전에 공유한 채팅을 관리할 수 있습니다.',
   },
   com_ui_share_update_message: {
     english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
-    translated:
-      'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated: '이름, 사용자 지정 지침 및 공유 후 추가하는 메시지는 비공개로 유지됩니다.',
   },
   com_ui_share_updated_message: {
     english:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
-    translated:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated: '귀하의 채팅에 대한 공유 링크가 업데이트되었습니다. 설정을 통해 언제든지 이전에 공유한 채팅을 관리할 수 있습니다.',
   },
   com_ui_shared_link_not_found: {
     english: 'Shared link not found',
-    translated: 'Shared link not found',
+    translated: '공유 링크를 찾을 수 없습니다',
   },
   com_ui_delete: {
     english: 'Delete',
@@ -1581,6 +1601,36 @@ export const comparisons = {
     english: 'Data controls',
     translated: '데이터 제어',
   },
+  com_assistants_file_search: {
+    english: 'File Search',
+    translated: '파일 검색',
+  },
+  com_assistants_file_search_info: {
+    english:
+      'Attaching vector stores for File Search is not yet supported. You can attach them from the Provider Playground or attach files to messages for file search on a thread basis.',
+    translated:
+      '파일 검색을 위한 벡터 저장소 연결은 아직 지원되지 않습니다. Provider Playground에서 연결하거나 스레드 기반으로 메시지에 파일을 첨부하여 파일 검색을 할 수 있습니다.',
+  },
+  com_assistants_non_retrieval_model: {
+    english: 'File search is not enabled on this model. Please select another model.',
+    translated: '이 모델에서는 파일 검색 기능을 사용할 수 없습니다. 다른 모델을 선택하세요.',
+  },
+  com_ui_attach_error_openai: {
+    english: 'Cannot attach Assistant files to other endpoints',
+    translated: '어시스턴트 파일을 다른 엔드포인트에 첨부할 수 없습니다.',
+  },
+  com_ui_attach_warn_endpoint: {
+    english: 'Non-Assistant files may be ignored without a compatible tool',
+    translated: '호환되는 도구가 없으면 비어시스턴트 파일이 무시될 수 있습니다.',
+  },
+  com_ui_assistant_deleted: {
+    english: 'Successfully deleted assistant',
+    translated: '어시스턴트가 성공적으로 삭제되었습니다',
+  },
+  com_ui_assistant_delete_error: {
+    english: 'There was an error deleting the assistant',
+    translated: '어시스턴트 삭제 중 오류가 발생했습니다.',
+  },
   com_ui_copied: {
     english: 'Copied!',
     translated: '복사됨',
@@ -1588,18 +1638,6 @@ export const comparisons = {
   com_ui_copy_code: {
     english: 'Copy code',
     translated: '코드 복사',
-  },
-  com_ui_copy_link: {
-    english: 'Copy link',
-    translated: '링크 복사',
-  },
-  com_ui_update_link: {
-    english: 'Update link',
-    translated: '링크 업데이트',
-  },
-  com_ui_create_link: {
-    english: 'Create link',
-    translated: '링크 만들기',
   },
   com_nav_source_chat: {
     english: 'View source chat',
@@ -2515,6 +2553,10 @@ export const comparisons = {
   com_nav_user_name_display: {
     english: 'Display username in messages',
     translated: '메시지에서 사용자 이름 표시',
+  },
+  com_nav_save_drafts: {
+    english: 'Save drafts locally',
+    translated: '초안을 로컬에 저장',
   },
   com_nav_show_code: {
     english: 'Always show code when using code interpreter',
