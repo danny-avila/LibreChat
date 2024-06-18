@@ -37,7 +37,7 @@
   "bugs": {
     "url": "https://github.com/danny-avila/LibreChat/issues"
   },
-  "homepage": "https://librechat.ai",
+  "homepage": "https://knowing.ai",
   "dependencies": {
     "@types/js-yaml": "^4.0.9",
     "axios": "^1.3.4",

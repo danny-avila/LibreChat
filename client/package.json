@@ -26,7 +26,7 @@
   "bugs": {
     "url": "https://github.com/danny-avila/LibreChat/issues"
   },
-  "homepage": "https://librechat.ai",
+  "homepage": "https://knowing.ai",
   "dependencies": {
     "@ariakit/react": "^0.4.5",
     "@dicebear/collection": "^7.0.4",

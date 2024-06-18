@@ -38,7 +38,7 @@ export default function Footer({ className }: { className?: string }) {
         config.customFooter
       ) : (
         <>
-          <a href="https://librechat.ai" target="_blank" rel="noreferrer" className="underline">
+          <a href="https://knowing.ai" target="_blank" rel="noreferrer" className="underline">
             {config?.appTitle || 'LibreChat'} {Constants.VERSION}
           </a>
           {' - '} {localize('com_ui_new_footer')}

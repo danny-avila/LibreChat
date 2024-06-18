@@ -31,7 +31,7 @@
   "bugs": {
     "url": "https://github.com/danny-avila/LibreChat/issues"
   },
-  "homepage": "https://librechat.ai",
+  "homepage": "https://knowing.ai",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.16.1",
     "@azure/search-documents": "^12.0.0",
