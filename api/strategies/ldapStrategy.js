@@ -1,6 +1,7 @@
+const fs = require('fs');
 const LdapStrategy = require('passport-ldapauth');
 const { findUser, createUser, updateUser } = require('~/models/userMethods');
-const fs = require('fs');
+const logger = require('~/utils/logger');
 
 const ldapOptions = {
   server: {
@@ -38,6 +39,7 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
     const username = userinfo.givenName || userinfo.mail;
     let user = await findUser({ email: userinfo.mail });
     if (user && user.provider !== 'ldap') {
+      logger.info('User is configured for a different authentication strategy.');
       return done(null, false, { message: 'Invalid credentials' });
     }
     if (!user) {
@@ -62,6 +64,7 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
 
     done(null, user);
   } catch (err) {
+    logger.error('[ldapStrategy]', err);
     done(err);
   }
 });
