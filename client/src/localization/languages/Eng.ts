@@ -247,6 +247,9 @@ export default {
   com_ui_use_micrphone: 'Use microphone',
   com_ui_min_tags: 'Cannot remove more values, a minimum of {0} are required.',
   com_ui_max_tags: 'Maximum number allowed is {0}, using latest values.',
+  com_ui_hold_mouse_download: 'Hold for {0} more seconds to download the audio',
+  com_ui_info_read_aloud: 'Hold click 3 seconds to download',
+  com_ui_downloading: 'Downloading...',
   com_auth_error_login:
     'Unable to login with the information provided. Please check your credentials and try again.',
   com_auth_error_login_rl:

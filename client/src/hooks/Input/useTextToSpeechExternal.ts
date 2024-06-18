@@ -59,7 +59,6 @@ function useTextToSpeechExternal(messageId: string, isLast: boolean, index = 0) 
     });
 
     newAudio.onended = () => {
-      console.log('Cached message audio ended');
       URL.revokeObjectURL(blobUrl);
       setIsSpeaking(false);
     };
@@ -100,7 +99,9 @@ function useTextToSpeechExternal(messageId: string, isLast: boolean, index = 0) 
         const blobUrl = URL.createObjectURL(audioBlob);
         if (downloadFile) {
           downloadAudio(blobUrl);
+          return;
         }
+
         autoPlayAudio(blobUrl);
       } catch (error) {
         showToast({
