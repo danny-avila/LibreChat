@@ -1,6 +1,6 @@
 import React from 'react';
 import { Listbox, Transition } from '@headlessui/react';
-import type { Option } from '~/common';
+import type { Option, OptionWithIcon } from '~/common';
 import CheckMark from '../svg/CheckMark';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils/';
@@ -9,10 +9,10 @@ import { useMultiSearch } from './MultiSearch';
 type SelectDropDownProps = {
   id?: string;
   title?: string;
-  value: string | null | Option;
+  value: string | null | Option | OptionWithIcon;
   disabled?: boolean;
   setValue: (value: string) => void;
-  availableValues: string[] | Option[];
+  availableValues: string[] | Option[] | OptionWithIcon[];
   emptyTitle?: boolean;
   showAbove?: boolean;
   showLabel?: boolean;
@@ -26,6 +26,7 @@ type SelectDropDownProps = {
   className?: string;
   searchClassName?: string;
   searchPlaceholder?: string;
+  showOptionIcon?: boolean;
 };
 
 function SelectDropDown({
@@ -47,6 +48,7 @@ function SelectDropDown({
   renderOption,
   searchClassName,
   searchPlaceholder,
+  showOptionIcon,
 }: SelectDropDownProps) {
   const localize = useLocalize();
   const transitionProps = { className: 'top-full mt-3' };
@@ -108,6 +110,11 @@ function SelectDropDown({
                     {!showLabel && !emptyTitle && (
                       <span className="text-xs text-gray-700 dark:text-gray-500">{title}:</span>
                     )}
+                    {showOptionIcon && value && (value as OptionWithIcon)?.icon && (
+                      <span className="icon-md flex items-center">
+                        {(value as OptionWithIcon).icon}
+                      </span>
+                    )}
                     {typeof value !== 'string' && value ? value?.label ?? '' : value ?? ''}
                   </span>
                 </span>
@@ -139,7 +146,7 @@ function SelectDropDown({
               >
                 <Listbox.Options
                   className={cn(
-                    'absolute z-10 mt-2 max-h-60 w-full overflow-auto rounded border bg-white text-base text-xs ring-black/10 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:ring-white/20 md:w-[100%]',
+                    'absolute z-10 mt-2 max-h-60 w-full overflow-auto rounded border bg-white text-xs ring-black/10 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:ring-white/20 md:w-[100%]',
                     optionsListClass ?? '',
                   )}
                 >
@@ -163,6 +170,8 @@ function SelectDropDown({
 
                     const currentLabel = typeof option === 'string' ? option : option?.label ?? '';
                     const currentValue = typeof option === 'string' ? option : option?.value ?? '';
+                    const currentIcon =
+                      typeof option === 'string' ? null : (option?.icon as React.ReactNode) ?? null;
                     let activeValue: string | number | null | Option = value;
                     if (typeof activeValue !== 'string') {
                       activeValue = activeValue?.value ?? '';
@@ -185,6 +194,7 @@ function SelectDropDown({
                               iconSide === 'left' ? 'ml-4' : '',
                             )}
                           >
+                            {currentIcon && <span className="mr-1">{currentIcon}</span>}
                             {currentLabel}
                           </span>
                           {currentValue === activeValue && (

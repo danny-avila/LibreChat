@@ -8,6 +8,12 @@
   }
 }
 
+.ellipsis {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 @font-face {
   font-display: swap;
   font-family: Inter;
@@ -303,6 +309,19 @@ select {
 p > small {
   opacity: 0;
   animation: fadein 3s forwards;
+}
+
+.fade-in {
+  animation: fadeInWithOutTranslate 0.3s ease-in-out;
+}
+
+@keyframes fadeInWithOutTranslate {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes fadein {
@@ -669,7 +688,7 @@ blockquote, dd, dl, fieldset, figure, h1, h2, h3, h4, h5, h6, hr, p, pre {
   margin-top:.75em
  }
  .prose :where(.prose>ul>li>:first-child):not(:where([class~=not-prose] *)) {
-  margin-top:1.25em
+  margin-top:0
  }
  .prose :where(.prose>ul>li>:last-child):not(:where([class~=not-prose] *)) {
   margin-bottom:1.25em
@@ -731,7 +750,7 @@ blockquote, dd, dl, fieldset, figure, h1, h2, h3, h4, h5, h6, hr, p, pre {
   margin-top:.75em
  }
  .prose-base :where(.prose>ul>li>:first-child):not(:where([class~=not-prose] *)) {
-  margin-top:1.25em
+  margin-top:0
  }
  .prose-base :where(.prose>ul>li>:last-child):not(:where([class~=not-prose] *)) {
   margin-bottom:1.25em
@@ -1833,7 +1852,7 @@ html {
 .prose :where(ol):not(:where([class~=not-prose] *)) {
   list-style-type:decimal;
   margin-bottom:1.25em;
-  margin-top:1.25em;
+  margin-top:0;
   padding-left:1.625em
 }
 .prose :where(ol[type=A]):not(:where([class~=not-prose] *)) {
@@ -1871,7 +1890,7 @@ html {
   padding-left:.375em
 }
 .prose :where(.prose>ol>li>:first-child):not(:where([class~=not-prose] *)) {
-  margin-top:1.25em
+  margin-top:0
 }
 .prose :where(.prose>ol>li>:last-child):not(:where([class~=not-prose] *)) {
   margin-bottom:1.25em
@@ -1890,7 +1909,7 @@ ol ol):not(:where([class~=not-prose] *)) {
   margin-bottom:1.1428571em
 }
 .prose-base :where(.prose>ol>li>:first-child):not(:where([class~=not-prose] *)) {
-  margin-top:1.25em
+  margin-top:0
 }
 .prose-base :where(.prose>ol>li>:last-child):not(:where([class~=not-prose] *)) {
   margin-bottom:1.25em

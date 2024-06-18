@@ -586,6 +586,20 @@ export function validateVisionModel({
 export const imageGenTools = new Set(['dalle', 'dall-e', 'stable-diffusion']);
 
 /**
+ * Enum for collections using infinite queries
+ */
+export enum InfiniteCollections {
+  /**
+   * Collection for Prompt Groups
+   */
+  PROMPT_GROUPS = 'promptGroups',
+  /**
+   * Collection for Shared Links
+   */
+  SHARED_LINKS = 'sharedLinks',
+}
+
+/**
  * Enum for cache keys.
  */
 export enum CacheKeys {
@@ -593,6 +607,10 @@ export enum CacheKeys {
    * Key for the config store namespace.
    */
   CONFIG_STORE = 'configStore',
+  /**
+   * Key for the config store namespace.
+   */
+  ROLES = 'roles',
   /**
    * Key for the plugins cache.
    */
@@ -614,6 +632,10 @@ export enum CacheKeys {
    * Key for the model queries cache.
    */
   MODEL_QUERIES = 'modelQueries',
+  /**
+   * Key for the default startup config cache.
+   */
+  STARTUP_CONFIG = 'startupConfig',
   /**
    * Key for the default endpoint config cache.
    */
@@ -824,6 +846,8 @@ export enum LocalStorageKeys {
   TEXT_DRAFT = 'textDraft_',
   /** Key for saving file drafts */
   FILES_DRAFT = 'filesDraft_',
+  /** Key for last Selected Prompt Category */
+  LAST_PROMPT_CATEGORY = 'lastPromptCategory',
 }
 
 export enum ForkOptions {
