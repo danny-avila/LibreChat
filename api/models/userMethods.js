@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const signPayload = require('~/server/services/signPayload');
+const logger = require('~/utils/logger');
 const User = require('./User');
 
 /**
@@ -77,6 +78,7 @@ const createUser = async (data, disableTTL = true, returnUser = false) => {
     }
     return user._id;
   } catch (error) {
+    logger.error('[createUser]', error);
     if (error.code === 11000) {
       // Duplicate key error code
       throw new Error(`User with \`_id\` ${data._id} already exists.`);
