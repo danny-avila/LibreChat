@@ -2,6 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Custom Variables */
 :root {
   --white:#fff;
   --black:#000;
@@ -156,8 +157,6 @@ html {
 .bg-token-surface-secondary {
   background-color: var(--surface-secondary);
 }
-
-/* Custom Variables */
 
 @media (max-width: 640px) {
   .no-gradient-sm {

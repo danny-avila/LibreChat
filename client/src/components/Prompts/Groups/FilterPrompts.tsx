@@ -24,7 +24,7 @@ export default function GroupSidePanel({
           setDisplayName(e.target.value);
           setName(e.target.value);
         }}
-        className="max-w-sm dark:border-gray-500"
+        className="max-w-sm border-border-light"
       />
     </div>
   );
