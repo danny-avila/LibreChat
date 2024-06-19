@@ -141,7 +141,10 @@ export default {
   com_ui_create_link: 'Criar link',
   com_ui_share_link_to_chat: 'Compartilhar link no chat',
   com_ui_share_error: 'Ocorreu um erro ao compartilhar o link do chat',
-  com_ui_share_create_message: 'Seu nome e quaisquer mensagens que você adicionar após o compartilhamento permanecem privadas.',
+  com_ui_share_retrieve_error: 'Ocorreu um erro ao excluir o link compartilhado.',
+  com_ui_share_delete_error: 'Ocorreu um erro ao excluir o link compartilhado.',
+  com_ui_share_create_message:
+    'Seu nome e quaisquer mensagens que você adicionar após o compartilhamento permanecem privadas.',
   com_ui_share_created_message:
     'Um link compartilhado para o seu chat foi criado. Gerencie conversas compartilhadas previamente a qualquer momento via Configurações.',
   com_ui_share_update_message:
@@ -1004,13 +1007,22 @@ export const comparisons = {
     english: 'Share link to chat',
     translated: 'Compartilhar link no chat',
   },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Ocorreu um erro ao excluir o link compartilhado.',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Ocorreu um erro ao excluir o link compartilhado.',
+  },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
     translated: 'Ocorreu um erro ao compartilhar o link do chat',
   },
   com_ui_share_create_message: {
     english: 'Your name and any messages you add after sharing stay private.',
-    translated: 'Seu nome e quaisquer mensagens que você adicionar após o compartilhamento permanecem privadas.',
+    translated:
+      'Seu nome e quaisquer mensagens que você adicionar após o compartilhamento permanecem privadas.',
   },
   com_ui_share_created_message: {
     english:
@@ -1027,7 +1039,7 @@ export const comparisons = {
     english:
       'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
     translated:
-       'Um link compartilhado para o seu chat foi atualizado. Gerencie conversas compartilhadas previamente a qualquer momento via Configurações.',
+      'Um link compartilhado para o seu chat foi atualizado. Gerencie conversas compartilhadas previamente a qualquer momento via Configurações.',
   },
   com_ui_shared_link_not_found: {
     english: 'Shared link not found',

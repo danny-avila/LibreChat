@@ -56,13 +56,12 @@ export default {
   com_ui_create_link: '創建連結',
   com_ui_share_link_to_chat: '分享鏈接到聊天',
   com_ui_share_error: '分享聊天鏈接時發生錯誤',
+  com_ui_share_retrieve_error: '刪除共享鏈接時出錯。',
+  com_ui_share_delete_error: '刪除共享鏈接時出錯。',
   com_ui_share_create_message: '您的姓名以及您在共享後添加的任何消息都會保密。',
-  com_ui_share_created_message:
-    '已創建到您的聊天的共享鏈接。可以隨時通過設置管理以前共享的聊天。',
-  com_ui_share_update_message:
-    '您的姓名、自定義指示以及您在共享後添加的任何消息都會保密。',
-  com_ui_share_updated_message:
-    '已更新到您的聊天的共享鏈接。可以隨時通過設置管理以前共享的聊天。',
+  com_ui_share_created_message: '已創建到您的聊天的共享鏈接。可以隨時通過設置管理以前共享的聊天。',
+  com_ui_share_update_message: '您的姓名、自定義指示以及您在共享後添加的任何消息都會保密。',
+  com_ui_share_updated_message: '已更新到您的聊天的共享鏈接。可以隨時通過設置管理以前共享的聊天。',
   com_ui_shared_link_not_found: '未找到共享鏈接',
   com_ui_delete: '刪除',
   com_ui_delete_conversation: '刪除對話？',
@@ -762,6 +761,14 @@ export const comparisons = {
   com_ui_share_link_to_chat: {
     english: 'Share link to chat',
     translated: '分享鏈接到聊天',
+  },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: '刪除共享鏈接時出錯。',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: '刪除共享鏈接時出錯。',
   },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',

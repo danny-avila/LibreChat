@@ -218,6 +218,8 @@ export default {
   com_ui_create_link: 'Create link',
   com_ui_share_link_to_chat: 'Share link to chat',
   com_ui_share_error: 'There was an error sharing the chat link',
+  com_ui_share_retrieve_error: 'There was an error retrieving the shared links',
+  com_ui_share_delete_error: 'There was an error deleting the shared link',
   com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
   com_ui_share_created_message:
     'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',

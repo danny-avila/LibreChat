@@ -59,7 +59,10 @@ export default {
   com_ui_create_link: 'Tạo liên kết',
   com_ui_share_link_to_chat: 'Chia sẻ liên kết đến cuộc trò chuyện',
   com_ui_share_error: 'Có lỗi xảy ra khi chia sẻ liên kết trò chuyện',
-  com_ui_share_create_message: 'Tên của bạn và bất kỳ tin nhắn nào bạn thêm sau khi chia sẻ sẽ được giữ kín.',
+  com_ui_share_retrieve_error: 'Đã xảy ra lỗi khi xóa liên kết được chia sẻ.',
+  com_ui_share_delete_error: 'Đã xảy ra lỗi khi xóa liên kết được chia sẻ.',
+  com_ui_share_create_message:
+    'Tên của bạn và bất kỳ tin nhắn nào bạn thêm sau khi chia sẻ sẽ được giữ kín.',
   com_ui_share_created_message:
     'Liên kết chia sẻ đến cuộc trò chuyện của bạn đã được tạo. Quản lý các cuộc trò chuyện đã chia sẻ trước đây bất cứ lúc nào thông qua Cài đặt.',
   com_ui_share_update_message:
@@ -513,6 +516,14 @@ export const comparisons = {
     english: 'Share link to chat',
     translated: 'Chia sẻ liên kết đến cuộc trò chuyện',
   },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Đã xảy ra lỗi khi xóa liên kết được chia sẻ.',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Đã xảy ra lỗi khi xóa liên kết được chia sẻ.',
+  },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
     translated: 'Có lỗi xảy ra khi chia sẻ liên kết trò chuyện',
@@ -529,7 +540,8 @@ export const comparisons = {
   },
   com_ui_share_update_message: {
     english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
-    translated: 'Tên của bạn, hướng dẫn tùy chỉnh và bất kỳ tin nhắn nào bạn thêm sau khi chia sẻ sẽ được giữ kín.',
+    translated:
+      'Tên của bạn, hướng dẫn tùy chỉnh và bất kỳ tin nhắn nào bạn thêm sau khi chia sẻ sẽ được giữ kín.',
   },
   com_ui_share_updated_message: {
     english:

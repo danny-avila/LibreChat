@@ -67,7 +67,10 @@ export default {
   com_ui_create_link: 'Buat tautan',
   com_ui_share_link_to_chat: 'Bagikan tautan ke chat',
   com_ui_share_error: 'Terjadi kesalahan saat membagikan tautan chat',
-  com_ui_share_create_message: 'Nama Anda dan pesan apa pun yang Anda tambahkan setelah berbagi tetap pribadi.',
+  com_ui_share_retrieve_error: 'Terjadi kesalahan saat menghapus tautan yang dibagikan.',
+  com_ui_share_delete_error: 'Terjadi kesalahan saat menghapus tautan yang dibagikan.',
+  com_ui_share_create_message:
+    'Nama Anda dan pesan apa pun yang Anda tambahkan setelah berbagi tetap pribadi.',
   com_ui_share_created_message:
     'Tautan berbagi ke chat Anda telah dibuat. Kelola chat yang pernah dibagikan kapan saja melalui Pengaturan.',
   com_ui_share_update_message:
@@ -617,6 +620,14 @@ export const comparisons = {
     english: 'Share link to chat',
     translated: 'Bagikan tautan ke chat',
   },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Terjadi kesalahan saat menghapus tautan yang dibagikan.',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Terjadi kesalahan saat menghapus tautan yang dibagikan.',
+  },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
     translated: 'Terjadi kesalahan saat membagikan tautan chat',
@@ -628,16 +639,19 @@ export const comparisons = {
   com_ui_share_created_message: {
     english:
       'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
-    translated: 'Tautan berbagi ke chat Anda telah dibuat. Kelola chat yang pernah dibagikan kapan saja melalui Pengaturan.',
+    translated:
+      'Tautan berbagi ke chat Anda telah dibuat. Kelola chat yang pernah dibagikan kapan saja melalui Pengaturan.',
   },
   com_ui_share_update_message: {
     english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
-    translated: 'Nama Anda, petunjuk khusus, dan pesan apa pun yang Anda tambahkan setelah berbagi tetap pribadi.',
+    translated:
+      'Nama Anda, petunjuk khusus, dan pesan apa pun yang Anda tambahkan setelah berbagi tetap pribadi.',
   },
   com_ui_share_updated_message: {
     english:
       'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
-    translated: 'Tautan berbagi ke chat Anda telah diperbarui. Kelola chat yang pernah dibagikan kapan saja melalui Pengaturan.',
+    translated:
+      'Tautan berbagi ke chat Anda telah diperbarui. Kelola chat yang pernah dibagikan kapan saja melalui Pengaturan.',
   },
   com_ui_shared_link_not_found: {
     english: 'Shared link not found',
