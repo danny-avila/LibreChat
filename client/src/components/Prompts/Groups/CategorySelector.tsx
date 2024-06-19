@@ -34,7 +34,7 @@ const CategorySelector = ({
     select: (data) =>
       data.map((category) => ({
         label: category.label
-          ? localize(`com_ui_${category.label}`)
+          ? localize(`com_ui_${category.label}`) || category.label
           : localize('com_ui_none_selected'),
         value: category.value,
         icon: <CategoryIcon category={category.value} />,
@@ -70,7 +70,7 @@ const CategorySelector = ({
           searchPlaceholder="Search categories..."
           className={cn('h-10 w-56 cursor-pointer', className)}
           currentValueClass="text-md gap-2"
-          optionsListClass="text-sm"
+          optionsListClass="text-sm max-h-96"
         />
       )}
     />
