@@ -68,7 +68,7 @@ module.exports = {
         'text-primary': 'var(--gray-800)',
         'text-secondary': 'var(--gray-600)',
         'text-tertiary': 'var(--gray-500)',
-        'surface-primary': 'var(--white)',
+        'surface-primary': 'var(--surface-primary)',
         'surface-secondary': 'var(--gray-50)',
         'surface-tertiary': 'var(--gray-100)',
         'border-light': 'var(--gray-100)',
