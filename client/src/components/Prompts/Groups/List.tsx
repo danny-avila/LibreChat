@@ -25,7 +25,6 @@ export default function List({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="my-2 flex w-full flex-row gap-x-2" />
       {hasCreateAccess && (
         <div className="flex w-full justify-end">
           <Button
@@ -37,7 +36,7 @@ export default function List({
           </Button>
         </div>
       )}
-      <div className="mt-3 flex-grow overflow-y-auto">
+      <div className="flex-grow overflow-y-auto">
         <div className="overflow-y-auto">
           {groups?.map((group) => {
             if (isChatRoute) {

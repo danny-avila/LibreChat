@@ -2,6 +2,7 @@ import { useMemo, useEffect } from 'react';
 import { Outlet, useParams, useNavigate } from 'react-router-dom';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import AutoSendPrompt from '~/components/Prompts/Groups/AutoSendPrompt';
+import FilterPrompts from '~/components/Prompts/Groups/FilterPrompts';
 import DashBreadcrumb from '~/routes/Layouts/DashBreadcrumb';
 import { usePromptGroupsNav, useHasAccess } from '~/hooks';
 import GroupSidePanel from './Groups/GroupSidePanel';
@@ -38,7 +39,10 @@ export default function PromptsView() {
       <DashBreadcrumb />
       <div className="flex w-full flex-grow flex-row divide-x overflow-hidden dark:divide-gray-600">
         <GroupSidePanel isDetailView={isDetailView} {...groupsNav}>
-          <AutoSendPrompt className="px-2 pt-2 dark:text-white" />
+          <div className="mx-2 flex flex-row items-center justify-between">
+            <FilterPrompts setName={groupsNav.setName} />
+            <AutoSendPrompt className="dark:text-white" />
+          </div>
         </GroupSidePanel>
         <div
           className={cn(

@@ -1,5 +1,6 @@
 import PromptSidePanel from '~/components/Prompts/Groups/GroupSidePanel';
 import AutoSendPrompt from '~/components/Prompts/Groups/AutoSendPrompt';
+import FilterPrompts from '~/components/Prompts/Groups/FilterPrompts';
 import ManagePrompts from '~/components/Prompts/ManagePrompts';
 import { usePromptGroupsNav } from '~/hooks';
 
@@ -12,6 +13,7 @@ export default function PromptsAccordion() {
           <ManagePrompts />
           <AutoSendPrompt className="dark:text-white" />
         </div>
+        <FilterPrompts setName={groupsNav.setName} className="mx-2" />
       </PromptSidePanel>
     </div>
   );
