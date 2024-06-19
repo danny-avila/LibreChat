@@ -786,7 +786,7 @@ export enum SettingsTabValues {
 /** Enum for app-wide constants */
 export enum Constants {
   /** Key for the app's version. */
-  VERSION = 'v0.7.2',
+  VERSION = 'v0.7.4-rc1',
   /** Key for the Custom Config's version (librechat.yaml). */
   CONFIG_VERSION = '1.1.4',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
@@ -820,6 +820,10 @@ export enum LocalStorageKeys {
   REMEMBER_FORK_OPTION = 'rememberForkOption',
   /** Key for remembering the split at target fork option modifier */
   FORK_SPLIT_AT_TARGET = 'splitAtTarget',
+  /** Key for saving text drafts */
+  TEXT_DRAFT = 'textDraft_',
+  /** Key for saving file drafts */
+  FILES_DRAFT = 'filesDraft_',
 }
 
 export enum ForkOptions {

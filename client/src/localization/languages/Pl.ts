@@ -30,17 +30,20 @@ export default {
   com_ui_entries: 'wpisów',
   com_ui_pay_per_call:
     'Wszystkie rozmowy z AI w jednym miejscu. Płatność za połączenie, a nie za miesiąc',
-  com_ui_share: 'Share',
-  com_ui_share_link_to_chat: 'Share link to chat',
-  com_ui_share_error: 'There was an error sharing the chat link',
-  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share: 'Udostępnij',
+  com_ui_copy_link: 'Skopiuj link',
+  com_ui_update_link: 'Zaktualizuj link',
+  com_ui_create_link: 'Utwórz link',
+  com_ui_share_link_to_chat: 'Udostępnij link w czacie',
+  com_ui_share_error: 'Wystąpił błąd podczas udostępniania linku do czatu',
+  com_ui_share_create_message: 'Twoje imię i jakiekolwiek wiadomości dodane po udostępnieniu pozostaną prywatne.',
   com_ui_share_created_message:
-    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'Utworzono link udostępniony do Twojego czatu. Zarządzaj wcześniej udostępnionymi czatami w dowolnym momencie za pomocą Ustawień.',
   com_ui_share_update_message:
-    'Your name, custom instructions, and any messages you add after sharing stay private.',
+      'Twoje imię, niestandardowe instrukcje i jakiekolwiek wiadomości dodane po udostępnieniu pozostaną prywatne.',
   com_ui_share_updated_message:
-    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
-  com_ui_shared_link_not_found: 'Shared link not found',
+      'Link udostępniony do Twojego czatu został zaktualizowany. Zarządzaj wcześniej udostępnionymi czatami w dowolnym momencie za pomocą Ustawień.',
+  com_ui_shared_link_not_found: 'Nie znaleziono linku udostępnionego',
   com_ui_rename: 'Zmień nazwę',
   com_ui_archive: 'Archiwum',
   com_ui_archive_error: 'Nie udało się archiwizować rozmowy',
@@ -339,40 +342,52 @@ export const comparisons = {
   },
   com_ui_share: {
     english: 'Share',
-    translated: 'Share',
+    translated: 'Udostępnij',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: 'Skopiuj link',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: 'Zaktualizuj link',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: 'Utwórz link',
   },
   com_ui_share_link_to_chat: {
     english: 'Share link to chat',
-    translated: 'Share link to chat',
+    translated: 'Udostępnij link w czacie',
   },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
-    translated: 'There was an error sharing the chat link',
+    translated: 'Wystąpił błąd podczas udostępniania linku do czatu',
   },
   com_ui_share_create_message: {
     english: 'Your name and any messages you add after sharing stay private.',
-    translated: 'Your name and any messages you add after sharing stay private.',
+    translated: 'Twoje imię i jakiekolwiek wiadomości dodane po udostępnieniu pozostaną prywatne.',
   },
   com_ui_share_created_message: {
     english:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+       'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
     translated:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'Utworzono link udostępniony do Twojego czatu. Zarządzaj wcześniej udostępnionymi czatami w dowolnym momencie za pomocą Ustawień.',
   },
   com_ui_share_update_message: {
     english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
     translated:
-      'Your name, custom instructions, and any messages you add after sharing stay private.',
+      'Twoje imię, niestandardowe instrukcje i jakiekolwiek wiadomości dodane po udostępnieniu pozostaną prywatne.',
   },
   com_ui_share_updated_message: {
     english:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
     translated:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+       'Link udostępniony do Twojego czatu został zaktualizowany. Zarządzaj wcześniej udostępnionymi czatami w dowolnym momencie za pomocą Ustawień.',
   },
   com_ui_shared_link_not_found: {
     english: 'Shared link not found',
-    translated: 'Shared link not found',
+    translated: 'Nie znaleziono linku udostępnionego',
   },
   com_ui_rename: {
     english: 'Rename',

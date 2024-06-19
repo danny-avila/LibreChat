@@ -70,11 +70,11 @@ export default {
   com_ui_share_error: 'There was an error sharing the chat link',
   com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
   com_ui_share_created_message:
-    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
   com_ui_share_update_message:
     'Your name, custom instructions, and any messages you add after sharing stay private.',
   com_ui_share_updated_message:
-    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
   com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete: 'Supprimer',
   com_ui_delete_conversation: 'Supprimer la discussions?',
@@ -340,6 +340,7 @@ export default {
   com_nav_theme_dark: 'Sombre',
   com_nav_theme_light: 'Clair',
   com_nav_user_name_display: 'Afficher le nom d\'utilisateur dans les messages',
+  com_nav_save_drafts: 'Enregistrer les brouillons localement',
   com_nav_clear_all_chats: 'Effacer toutes les conversations',
   com_nav_confirm_clear: 'Confirmer l\'effacement',
   com_nav_close_sidebar: 'Fermer la barre latérale',
@@ -839,20 +840,19 @@ export const comparisons = {
   },
   com_ui_share_created_message: {
     english:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+       'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
     translated:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
   },
   com_ui_share_update_message: {
     english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
-    translated:
-      'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated: 'Your name, custom instructions, and any messages you add after sharing stay private.',
   },
   com_ui_share_updated_message: {
     english:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+       'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
     translated:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+       'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
   },
   com_ui_shared_link_not_found: {
     english: 'Shared link not found',
@@ -1783,6 +1783,10 @@ export const comparisons = {
   com_nav_user_name_display: {
     english: 'Display username in messages',
     translated: 'Afficher le nom d\'utilisateur dans les messages',
+  },
+  com_nav_save_drafts: {
+    english: 'Save drafts locally',
+    translated: 'Enregistrer les brouillons localement',
   },
   com_nav_clear_all_chats: {
     english: 'Clear all chats',
