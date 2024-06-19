@@ -190,7 +190,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
             )}
           />
         ) : (
-          <div className="absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-gradient-to-l from-gray-50 from-0% to-transparent group-hover:from-gray-200 group-hover:from-60% dark:from-[#181818] dark:group-hover:from-gray-700" />
+          <div className="absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-gradient-to-l from-gray-50 from-0% to-transparent group-hover:from-gray-200 group-hover:from-60% dark:from-gray-750 dark:group-hover:from-gray-700" />
         )}
       </a>
     </div>
