@@ -6,13 +6,14 @@ import { useNavigate, useParams, useOutletContext } from 'react-router-dom';
 import { PermissionTypes, Permissions, SystemRoles } from 'librechat-data-provider';
 import type { TCreatePrompt } from 'librechat-data-provider';
 import {
+  useGetPrompts,
   useCreatePrompt,
   useDeletePrompt,
+  useGetPromptGroup,
   useUpdatePromptGroup,
   useMakePromptProduction,
-} from '~/data-provider/mutations';
+} from '~/data-provider';
 import { useAuthContext, usePromptGroupsNav, useHasAccess } from '~/hooks';
-import { useGetPromptGroup, useGetPrompts } from '~/data-provider';
 import CategorySelector from './Groups/CategorySelector';
 import NoPromptGroup from './Groups/NoPromptGroup';
 import { Button, Skeleton } from '~/components/ui';

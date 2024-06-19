@@ -5,7 +5,7 @@ import { Button } from '../ui';
 
 export default function Prompts() {
   const { prevPage, nextPage, hasNextPage, promptGroups, hasPreviousPage, setPageSize, pageSize } =
-    usePromptGroupsNav({ initialPageNumber: 1, initialPageSize: 4 });
+    usePromptGroupsNav();
 
   const renderPromptCards = (start = 0, count) => {
     return promptGroups

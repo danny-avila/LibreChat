@@ -427,13 +427,15 @@ export const usePromptGroupsInfiniteQuery = (
   params?: t.TPromptGroupsWithFilterRequest,
   config?: UseInfiniteQueryOptions<t.PromptGroupListResponse, unknown>,
 ) => {
+  const { name, pageSize, ...rest } = params || {};
   return useInfiniteQuery<t.PromptGroupListResponse, unknown>(
-    [QueryKeys.promptGroups],
+    [QueryKeys.promptGroups, name, pageSize],
     ({ pageParam = '1' }) =>
       dataService.getPromptGroups({
-        ...params,
+        ...rest,
+        name,
         pageNumber: pageParam?.toString(),
-        pageSize: (params?.pageSize || 10).toString(),
+        pageSize: (pageSize || 10).toString(),
       }),
     {
       getNextPageParam: (lastPage) => {

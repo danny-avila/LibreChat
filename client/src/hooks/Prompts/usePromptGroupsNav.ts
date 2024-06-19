@@ -1,10 +1,13 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useRecoilState } from 'recoil';
+import { useMemo, useRef, useEffect, useCallback } from 'react';
 import { usePromptGroupsInfiniteQuery } from '~/data-provider';
+import debounce from 'lodash/debounce';
+import store from '~/store';
 
-export default function usePromptGroupsNav({ initialPageSize = 10, initialPageNumber = 1 } = {}) {
-  const [name, setName] = useState('');
-  const [pageSize, setPageSize] = useState(initialPageSize);
-  const [pageNumber, setPageNumber] = useState(initialPageNumber);
+export default function usePromptGroupsNav() {
+  const [name, setName] = useRecoilState(store.promptsName);
+  const [pageSize, setPageSize] = useRecoilState(store.promptsPageSize);
+  const [pageNumber, setPageNumber] = useRecoilState(store.promptsPageNumber);
 
   const maxPageNumberReached = useRef(1);
 
@@ -20,14 +23,14 @@ export default function usePromptGroupsNav({ initialPageSize = 10, initialPageNu
     name,
   });
 
-  // useEffect(() => {
-  //   console.log('Current Page Size:', groupsQuery.data?.pages?.[0]?.pageSize);
-  // }, [groupsQuery.data?.pages]);
+  useEffect(() => {
+    console.log('Current name:', name);
+  }, [name]);
 
   useEffect(() => {
     maxPageNumberReached.current = 1;
     setPageNumber(1);
-  }, [pageSize]);
+  }, [pageSize, setPageNumber]);
 
   const promptGroups = useMemo(() => {
     return groupsQuery?.data?.pages?.[pageNumber - 1 + '']?.promptGroups || [];
@@ -47,9 +50,16 @@ export default function usePromptGroupsNav({ initialPageSize = 10, initialPageNu
   const hasNextPage = !!groupsQuery.hasNextPage || maxPageNumberReached.current > pageNumber;
   const hasPreviousPage = !!groupsQuery.hasPreviousPage || pageNumber > 1;
 
+  const debouncedSetName = useCallback(
+    debounce((nextValue: string) => {
+      setName(nextValue);
+    }, 850),
+    [setName],
+  );
+
   return {
     name,
-    setName,
+    setName: debouncedSetName,
     nextPage,
     prevPage,
     isFetching,
