@@ -106,7 +106,7 @@ export default function DataTableFile<TData, TValue>({
                 deleteFiles({ files: filesToDelete as TFile[] });
                 setRowSelection({});
               }}
-              className="ml-1 gap-2 dark:hover:bg-gray-750/25 sm:ml-0"
+              className="dark:hover:bg-gray-850/25 ml-1 gap-2 sm:ml-0"
               disabled={!table.getFilteredSelectedRowModel().rows.length || isDeleting}
             >
               {isDeleting ? (
@@ -127,7 +127,7 @@ export default function DataTableFile<TData, TValue>({
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 align="end"
-                className="z-[1001] dark:border-gray-700 dark:bg-gray-750"
+                className="z-[1001] dark:border-gray-700 dark:bg-gray-850"
               >
                 {table
                   .getAllColumns()

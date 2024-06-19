@@ -14,7 +14,6 @@
   --gray-500: #595959;
   --gray-600: #424242;
   --gray-700: #2f2f2f;
-  --gray-750: #171717;
   --gray-800: #212121;
   --gray-850: #171717;
   --gray-900: #0d0d0d;
@@ -41,7 +40,7 @@ html {
   --text-tertiary:var(--gray-500);
   --surface-primary:var(--gray-900);
   --surface-secondary:var(--gray-800);
-  --surface-primary-alt:var(--gray-750);
+  --surface-primary-alt:var(--gray-850);
   --surface-tertiary:var(--gray-700);
   --border-light:var(--gray-700);
   --border-medium:var(--gray-600);
