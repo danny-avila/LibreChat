@@ -4,7 +4,7 @@ import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 
-export default function AutoSendSwitch({
+export default function AutoSendPrompt({
   onCheckedChange,
   className = '',
 }: {
