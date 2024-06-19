@@ -15,8 +15,8 @@ const useHasAccess = ({
     ({ user, permissionType, permission }) => {
       if (isAuthenticated && user?.role === SystemRoles.ADMIN) {
         return true;
-      } else if (isAuthenticated && user?.role === SystemRoles.USER && roles) {
-        return roles[SystemRoles.USER]?.[permissionType]?.[permission] === true;
+      } else if (isAuthenticated && user?.role && roles && roles[user.role]) {
+        return roles[user.role]?.[permissionType]?.[permission] === true;
       }
       return false;
     },
