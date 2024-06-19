@@ -50,17 +50,20 @@ export default {
   com_ui_import_conversation_error: '導入對話時發生錯誤',
   com_ui_confirm_action: '確認操作',
   com_ui_chats: '對話',
-  com_ui_share: 'Share',
-  com_ui_share_link_to_chat: 'Share link to chat',
-  com_ui_share_error: 'There was an error sharing the chat link',
-  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share: '分享',
+  com_ui_copy_link: '複製連結',
+  com_ui_update_link: '更新連結',
+  com_ui_create_link: '創建連結',
+  com_ui_share_link_to_chat: '分享鏈接到聊天',
+  com_ui_share_error: '分享聊天鏈接時發生錯誤',
+  com_ui_share_create_message: '您的姓名以及您在共享後添加的任何消息都會保密。',
   com_ui_share_created_message:
-    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    '已創建到您的聊天的共享鏈接。可以隨時通過設置管理以前共享的聊天。',
   com_ui_share_update_message:
-    'Your name, custom instructions, and any messages you add after sharing stay private.',
+    '您的姓名、自定義指示以及您在共享後添加的任何消息都會保密。',
   com_ui_share_updated_message:
-    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
-  com_ui_shared_link_not_found: 'Shared link not found',
+    '已更新到您的聊天的共享鏈接。可以隨時通過設置管理以前共享的聊天。',
+  com_ui_shared_link_not_found: '未找到共享鏈接',
   com_ui_delete: '刪除',
   com_ui_delete_conversation: '刪除對話？',
   com_ui_delete_conversation_confirm: '這將刪除',
@@ -293,9 +296,6 @@ export default {
   com_ui_assistant_delete_error: '刪除助理時發生錯誤',
   com_ui_copied: '已複製！',
   com_ui_copy_code: '複製程式碼',
-  com_ui_copy_link: '複製連結',
-  com_ui_update_link: '更新連結',
-  com_ui_create_link: '創建連結',
   com_nav_source_chat: '檢視原始對話',
   com_ui_date_today: '今天',
   com_ui_date_yesterday: '昨天',
@@ -745,40 +745,49 @@ export const comparisons = {
   },
   com_ui_share: {
     english: 'Share',
-    translated: 'Share',
+    translated: '分享',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: '複製連結',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: '更新連結',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: '創建連結',
   },
   com_ui_share_link_to_chat: {
     english: 'Share link to chat',
-    translated: 'Share link to chat',
+    translated: '分享鏈接到聊天',
   },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
-    translated: 'There was an error sharing the chat link',
+    translated: '分享聊天鏈接時發生錯誤',
   },
   com_ui_share_create_message: {
     english: 'Your name and any messages you add after sharing stay private.',
-    translated: 'Your name and any messages you add after sharing stay private.',
+    translated: '您的姓名以及您在共享後添加的任何消息都會保密。',
   },
   com_ui_share_created_message: {
     english:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
-    translated:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated: '已創建到您的聊天的共享鏈接。可以隨時通過設置管理以前共享的聊天。',
   },
   com_ui_share_update_message: {
     english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
-    translated:
-      'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated: '您的姓名、自定義指示以及您在共享後添加的任何消息都會保密。',
   },
   com_ui_share_updated_message: {
     english:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
-    translated:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated: '已更新到您的聊天的共享鏈接。可以隨時通過設置管理以前共享的聊天。',
   },
   com_ui_shared_link_not_found: {
     english: 'Shared link not found',
-    translated: 'Shared link not found',
+    translated: '未找到共享鏈接',
   },
   com_ui_delete: {
     english: 'Delete',
@@ -1657,18 +1666,6 @@ export const comparisons = {
   com_ui_copy_code: {
     english: 'Copy code',
     translated: '複製程式碼',
-  },
-  com_ui_copy_link: {
-    english: 'Copy link',
-    translated: '複製連結',
-  },
-  com_ui_update_link: {
-    english: 'Update link',
-    translated: '更新連結',
-  },
-  com_ui_create_link: {
-    english: 'Create link',
-    translated: '創建連結',
   },
   com_nav_source_chat: {
     english: 'View source chat',

@@ -8,21 +8,33 @@ const {
   deleteSharedLink,
 } = require('~/models/Share');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
+const { isEnabled } = require('~/server/utils');
 const router = express.Router();
 
 /**
  * Shared messages
- * this route does not require authentication
  */
-router.get('/:shareId', async (req, res) => {
-  const share = await getSharedMessages(req.params.shareId);
+const allowSharedLinks =
+  process.env.ALLOW_SHARED_LINKS === undefined || isEnabled(process.env.ALLOW_SHARED_LINKS);
 
-  if (share) {
-    res.status(200).json(share);
-  } else {
-    res.status(404).end();
-  }
-});
+if (allowSharedLinks) {
+  const allowSharedLinksPublic =
+    process.env.ALLOW_SHARED_LINKS_PUBLIC === undefined ||
+    isEnabled(process.env.ALLOW_SHARED_LINKS_PUBLIC);
+  router.get(
+    '/:shareId',
+    allowSharedLinksPublic ? (req, res, next) => next() : requireJwtAuth,
+    async (req, res) => {
+      const share = await getSharedMessages(req.params.shareId);
+
+      if (share) {
+        res.status(200).json(share);
+      } else {
+        res.status(404).end();
+      }
+    },
+  );
+}
 
 /**
  * Shared links

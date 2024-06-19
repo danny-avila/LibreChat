@@ -61,17 +61,20 @@ export default {
   com_ui_import_conversation_error: 'Terjadi kesalahan saat mengimpor percakapan Anda',
   com_ui_confirm_action: 'Konfirmasi Aksi',
   com_ui_chats: 'chat',
-  com_ui_share: 'Share',
-  com_ui_share_link_to_chat: 'Share link to chat',
-  com_ui_share_error: 'There was an error sharing the chat link',
-  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share: 'Bagikan',
+  com_ui_copy_link: 'Salin tautan',
+  com_ui_update_link: 'Perbarui tautan',
+  com_ui_create_link: 'Buat tautan',
+  com_ui_share_link_to_chat: 'Bagikan tautan ke chat',
+  com_ui_share_error: 'Terjadi kesalahan saat membagikan tautan chat',
+  com_ui_share_create_message: 'Nama Anda dan pesan apa pun yang Anda tambahkan setelah berbagi tetap pribadi.',
   com_ui_share_created_message:
-    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    'Tautan berbagi ke chat Anda telah dibuat. Kelola chat yang pernah dibagikan kapan saja melalui Pengaturan.',
   com_ui_share_update_message:
-    'Your name, custom instructions, and any messages you add after sharing stay private.',
+    'Nama Anda, petunjuk khusus, dan pesan apa pun yang Anda tambahkan setelah berbagi tetap pribadi.',
   com_ui_share_updated_message:
-    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
-  com_ui_shared_link_not_found: 'Shared link not found',
+    'Tautan berbagi ke chat Anda telah diperbarui. Kelola chat yang pernah dibagikan kapan saja melalui Pengaturan.',
+  com_ui_shared_link_not_found: 'Tautan berbagi tidak ditemukan',
   com_ui_delete: 'Hapus',
   com_ui_delete_conversation: 'Hapus chat?',
   com_ui_delete_conversation_confirm: 'Ini akan menghapus',
@@ -596,40 +599,49 @@ export const comparisons = {
   },
   com_ui_share: {
     english: 'Share',
-    translated: 'Share',
+    translated: 'Bagikan',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: 'Salin tautan',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: 'Perbarui tautan',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: 'Buat tautan',
   },
   com_ui_share_link_to_chat: {
     english: 'Share link to chat',
-    translated: 'Share link to chat',
+    translated: 'Bagikan tautan ke chat',
   },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
-    translated: 'There was an error sharing the chat link',
+    translated: 'Terjadi kesalahan saat membagikan tautan chat',
   },
   com_ui_share_create_message: {
     english: 'Your name and any messages you add after sharing stay private.',
-    translated: 'Your name and any messages you add after sharing stay private.',
+    translated: 'Nama Anda dan pesan apa pun yang Anda tambahkan setelah berbagi tetap pribadi.',
   },
   com_ui_share_created_message: {
     english:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
-    translated:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated: 'Tautan berbagi ke chat Anda telah dibuat. Kelola chat yang pernah dibagikan kapan saja melalui Pengaturan.',
   },
   com_ui_share_update_message: {
     english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
-    translated:
-      'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated: 'Nama Anda, petunjuk khusus, dan pesan apa pun yang Anda tambahkan setelah berbagi tetap pribadi.',
   },
   com_ui_share_updated_message: {
     english:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
-    translated:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated: 'Tautan berbagi ke chat Anda telah diperbarui. Kelola chat yang pernah dibagikan kapan saja melalui Pengaturan.',
   },
   com_ui_shared_link_not_found: {
     english: 'Shared link not found',
-    translated: 'Shared link not found',
+    translated: 'Tautan berbagi tidak ditemukan',
   },
   com_ui_delete: {
     english: 'Delete',

@@ -1,6 +1,6 @@
 {
   "name": "@librechat/frontend",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "",
   "type": "module",
   "scripts": {
@@ -74,6 +74,7 @@
     "react-dnd-html5-backend": "^16.0.1",
     "react-dom": "^18.2.0",
     "react-flip-toolkit": "^7.1.0",
+    "react-gtm-module": "^2.0.11",
     "react-hook-form": "^7.43.9",
     "react-lazy-load-image-component": "^1.6.0",
     "react-markdown": "^8.0.6",

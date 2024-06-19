@@ -1,5 +1,6 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
+import TagManager from 'react-gtm-module';
 import { Constants } from 'librechat-data-provider';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { useLocalize } from '~/hooks';
@@ -33,12 +34,19 @@ export default function Footer({ className }: { className?: string }) {
     </a>
   );
 
+  if (config?.analyticsGtmId) {
+    const tagManagerArgs = {
+      gtmId: config?.analyticsGtmId,
+    };
+    TagManager.initialize(tagManagerArgs);
+  }
+
   const mainContentParts = (
     typeof config?.customFooter === 'string'
       ? config.customFooter
-      : '[<LibreChat ' +
+      : '[LibreChat ' +
         Constants.VERSION +
-        '>](https://librechat.ai) - ' +
+        '](https://librechat.ai) - ' +
         localize('com_ui_pay_per_call')
   ).split('|');
 
