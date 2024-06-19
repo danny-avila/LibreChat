@@ -2,7 +2,7 @@ const { logger } = require('~/config');
 // const { Categories } = require('./schema/categories');
 const options = [
   {
-    label: 'select_a_category',
+    label: '',
     value: '',
   },
   {

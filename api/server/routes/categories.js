@@ -1,10 +1,15 @@
 const express = require('express');
 const router = express.Router();
-const { getCategories } = require('../../models/Categories');
-const { requireJwtAuth } = require('../middleware');
+const { requireJwtAuth } = require('~/server/middleware');
+const { getCategories } = require('~/models/Categories');
 
 router.get('/', requireJwtAuth, async (req, res) => {
-  res.status(200).send(await getCategories());
+  try {
+    const categories = await getCategories();
+    res.status(200).send(categories);
+  } catch (error) {
+    res.status(500).send({ message: 'Failed to retrieve categories', error: error.message });
+  }
 });
 
 module.exports = router;

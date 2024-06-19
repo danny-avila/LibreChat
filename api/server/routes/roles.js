@@ -2,6 +2,7 @@ const express = require('express');
 const {
   promptPermissionsSchema,
   PermissionTypes,
+  roleDefaults,
   SystemRoles,
 } = require('librechat-data-provider');
 const { checkAdmin, requireJwtAuth } = require('~/server/middleware');
@@ -19,7 +20,7 @@ router.get('/:roleName', async (req, res) => {
   // TODO: TEMP, use a better parsing for roleName
   const roleName = _r.toUpperCase();
 
-  if (req.user.role !== SystemRoles.ADMIN && roleName !== SystemRoles.USER) {
+  if (req.user.role !== SystemRoles.ADMIN && !roleDefaults[roleName]) {
     return res.status(403).send({ message: 'Unauthorized' });
   }
 
