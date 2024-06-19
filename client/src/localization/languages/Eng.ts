@@ -531,6 +531,7 @@ export default {
   com_ui_code: 'Code',
   com_ui_travel: 'Travel',
   com_ui_teach_or_explain: 'Learning',
+  com_ui_select_a_category: 'No category selected',
   com_nav_tool_dialog_description: 'Assistant must be saved to persist tool selections.',
   com_show_agent_settings: 'Show Agent Settings',
   com_show_completion_settings: 'Show Completion Settings',

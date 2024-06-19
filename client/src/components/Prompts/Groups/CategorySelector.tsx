@@ -37,7 +37,7 @@ const CategorySelector = ({
           ? localize(`com_ui_${category.label}`) || category.label
           : localize('com_ui_none_selected'),
         value: category.value,
-        icon: <CategoryIcon category={category.value} />,
+        icon: category.value ? <CategoryIcon category={category.value} /> : null,
       })),
   });
 
@@ -70,7 +70,7 @@ const CategorySelector = ({
           searchPlaceholder="Search categories..."
           className={cn('h-10 w-56 cursor-pointer', className)}
           currentValueClass="text-md gap-2"
-          optionsListClass="text-sm max-h-96"
+          optionsListClass="text-sm max-h-72"
         />
       )}
     />
