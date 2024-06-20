@@ -65,7 +65,7 @@ export default {
   com_ui_shared_link_not_found: 'الرابط المشترك غير موجود',
   com_ui_delete: 'حذف',
   com_ui_delete_conversation: 'حذف الدردشة؟',
-  com_ui_delete_conversation_confirm: 'سيتم حذف هذا',
+  com_ui_delete_confirm: 'سيتم حذف هذا',
   com_ui_rename: 'إعادة تسمية',
   com_ui_archive: 'أرشفة',
   com_ui_archive_error: 'فشل في أرشفة المحادثة',
@@ -819,7 +819,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'حذف الدردشة؟',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'سيتم حذف هذا',
   },

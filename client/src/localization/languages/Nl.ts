@@ -70,7 +70,7 @@ export default {
   com_ui_shared_link_not_found: 'Gedeelde link niet gevonden',
   com_ui_delete: 'Verwijderen',
   com_ui_delete_conversation: 'Chat verwijderen?',
-  com_ui_delete_conversation_confirm: 'Hiermee wordt',
+  com_ui_delete_confirm: 'Hiermee wordt',
   com_ui_rename: 'Hernoemen',
   com_ui_archive: 'Archiveren',
   com_ui_archive_error: 'Kan conversatie niet archiveren',
@@ -571,7 +571,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'Chat verwijderen?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Hiermee wordt',
   },

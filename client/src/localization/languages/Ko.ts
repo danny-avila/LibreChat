@@ -65,7 +65,7 @@ export default {
   com_ui_shared_link_not_found: '공유 링크를 찾을 수 없습니다',
   com_ui_delete: '삭제',
   com_ui_delete_conversation: '채팅을 삭제하시겠습니까?',
-  com_ui_delete_conversation_confirm: '이 채팅이 삭제됩니다',
+  com_ui_delete_confirm: '이 채팅이 삭제됩니다',
   com_ui_rename: '이름 바꾸기',
   com_ui_archive: '아카이브',
   com_ui_archive_error: '대화 아카이브 실패',
@@ -817,7 +817,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: '채팅을 삭제하시겠습니까?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: '이 채팅이 삭제됩니다',
   },

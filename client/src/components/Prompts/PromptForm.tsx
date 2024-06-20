@@ -14,10 +14,11 @@ import {
   useUpdatePromptGroup,
   useMakePromptProduction,
 } from '~/data-provider';
-import { useAuthContext, usePromptGroupsNav, useHasAccess } from '~/hooks';
+import { useAuthContext, usePromptGroupsNav, useHasAccess, useLocalize } from '~/hooks';
 import CategorySelector from './Groups/CategorySelector';
 import NoPromptGroup from './Groups/NoPromptGroup';
-import { Button, Skeleton } from '~/components/ui';
+import { Button, Skeleton, Dialog, DialogTrigger, Label } from '~/components/ui';
+import DialogTemplate from '~/components/ui/DialogTemplate';
 import PromptVariables from './PromptVariables';
 import PromptVersions from './PromptVersions';
 import { TrashIcon } from '~/components/svg';
@@ -34,6 +35,7 @@ import AlwaysMakeProd from './Groups/AlwaysMakeProd';
 const { PromptsEditorMode, promptsEditorMode } = store;
 
 const PromptForm = () => {
+  const localize = useLocalize();
   const params = useParams();
   const navigate = useNavigate();
   const { user } = useAuthContext();
@@ -230,7 +232,7 @@ const PromptForm = () => {
               {editorMode === PromptsEditorMode.ADVANCED && (
                 <Button
                   size={'sm'}
-                  className="h-10 border border-transparent bg-green-400 transition-all hover:bg-green-500 dark:border-green-600 dark:bg-transparent dark:hover:bg-green-900"
+                  className="h-10 border border-transparent bg-green-500 transition-all hover:bg-green-600 dark:bg-green-500 dark:hover:bg-green-600"
                   variant={'default'}
                   onClick={() => {
                     const { _id: promptVersionId = '', prompt } = selectedPrompt;
@@ -256,22 +258,51 @@ const PromptForm = () => {
                     makeProductionMutation.isLoading
                   }
                 >
-                  <Rocket className="cursor-pointer dark:text-green-600" />
+                  <Rocket className="cursor-pointer text-white" />
                 </Button>
               )}
-              <Button
-                size={'sm'}
-                className="h-10 w-10 border border-transparent bg-red-100 text-red-500 transition-all hover:bg-red-500 hover:text-white dark:border-red-600 dark:bg-transparent dark:hover:bg-red-950"
-                disabled={isLoadingGroup}
-                onClick={() =>
-                  deletePromptMutation.mutate({
-                    _id: selectedPrompt?._id || '',
-                    groupId: group?._id || '',
-                  })
-                }
-              >
-                <TrashIcon className="icon-lg cursor-pointer dark:text-red-600" />
-              </Button>
+
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button
+                    size={'sm'}
+                    className="h-10 w-10 border border-transparent bg-red-600 text-red-500 transition-all hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-800"
+                    disabled={isLoadingGroup}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                    }}
+                  >
+                    <TrashIcon className="icon-lg cursor-pointer text-white dark:text-white" />
+                  </Button>
+                </DialogTrigger>
+                <DialogTemplate
+                  showCloseButton={false}
+                  title={localize('com_ui_delete_prompt')}
+                  className="max-w-[450px]"
+                  main={
+                    <>
+                      <div className="flex w-full flex-col items-center gap-2">
+                        <div className="grid w-full items-center gap-2">
+                          <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
+                            {localize('com_ui_delete_confirm')} <strong>{group.name}</strong>
+                          </Label>
+                        </div>
+                      </div>
+                    </>
+                  }
+                  selection={{
+                    selectHandler: () => {
+                      deletePromptMutation.mutate({
+                        _id: selectedPrompt?._id || '',
+                        groupId: group?._id || '',
+                      });
+                    },
+                    selectClasses:
+                      'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 text-white',
+                    selectText: localize('com_ui_delete'),
+                  }}
+                />
+              </Dialog>
             </div>
           </div>
           {editorMode === PromptsEditorMode.ADVANCED && (

@@ -76,7 +76,7 @@ export default {
   com_ui_shared_link_not_found: 'Tautan berbagi tidak ditemukan',
   com_ui_delete: 'Hapus',
   com_ui_delete_conversation: 'Hapus chat?',
-  com_ui_delete_conversation_confirm: 'Ini akan menghapus',
+  com_ui_delete_confirm: 'Ini akan menghapus',
   com_ui_rename: 'Renombrar',
   com_ui_archive: 'Arsip',
   com_ui_archive_error: 'Gagal mengarsipkan percakapan',
@@ -653,7 +653,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'Hapus chat?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Ini akan menghapus',
   },

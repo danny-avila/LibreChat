@@ -202,7 +202,7 @@ export default {
     'Il link condiviso per la tua chat è stato aggiornato. Gestisci le chat condivise in precedenza in qualsiasi momento tramite Impostazioni.',
   com_ui_shared_link_not_found: 'Link condiviso non trovato',
   com_ui_delete_conversation: 'Eliminare la chat?',
-  com_ui_delete_conversation_confirm: 'Questo eliminerà',
+  com_ui_delete_confirm: 'Questo eliminerà',
   com_ui_rename: 'Rinominare',
   com_ui_archive: 'Arsip',
   com_ui_archive_error: 'Errore durante l\'archiviazione della conversazione',
@@ -1320,7 +1320,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'Eliminare la chat?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Questo eliminerà',
   },

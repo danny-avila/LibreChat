@@ -69,7 +69,7 @@ export default {
   com_ui_shared_link_not_found: 'Không tìm thấy liên kết chia sẻ',
   com_ui_delete: 'Xóa',
   com_ui_delete_conversation: 'Xóa cuộc trò chuyện?',
-  com_ui_delete_conversation_confirm: 'Điều này sẽ xóa',
+  com_ui_delete_confirm: 'Điều này sẽ xóa',
   com_ui_rename: 'Đổi tên',
   com_ui_archive: 'Lưu trữ',
   com_ui_archive_error: 'Không thể lưu trữ cuộc trò chuyện',
@@ -550,7 +550,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'Xóa cuộc trò chuyện?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Điều này sẽ xóa',
   },

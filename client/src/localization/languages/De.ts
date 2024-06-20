@@ -162,7 +162,7 @@ export default {
     'Ein geteiltes Link zu Ihrem Chat wurde aktualisiert. Verwalten Sie zuvor geteilte Chats jederzeit über die Einstellungen.',
   com_ui_shared_link_not_found: 'Geteilter Link nicht gefunden',
   com_ui_delete_conversation: 'Chat löschen?',
-  com_ui_delete_conversation_confirm: 'Damit wird gelöscht',
+  com_ui_delete_confirm: 'Damit wird gelöscht',
   com_ui_delete_assistant_confirm:
     'Bist du sicher, dass du diesen Assistenten löschen willst? Dies kann nicht rückgängig gemacht werden.',
   com_ui_rename: 'Umbenennen',
@@ -1185,7 +1185,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'Chat löschen?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Damit wird gelöscht',
   },

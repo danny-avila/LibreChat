@@ -150,7 +150,7 @@ export default {
     'Um link compartilhado para o seu chat foi atualizado. Gerencie conversas compartilhadas previamente a qualquer momento via Configurações.',
   com_ui_shared_link_not_found: 'Link compartilhado não encontrado',
   com_ui_delete_conversation: 'Excluir conversa?',
-  com_ui_delete_conversation_confirm: 'Isso excluirá',
+  com_ui_delete_confirm: 'Isso excluirá',
   com_ui_delete_assistant_confirm:
     'Tem certeza de que deseja excluir este Assistente? Esta ação não pode ser desfeita.',
   com_ui_rename: 'Renomear',
@@ -1034,7 +1034,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'Excluir conversa?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Isso excluirá',
   },

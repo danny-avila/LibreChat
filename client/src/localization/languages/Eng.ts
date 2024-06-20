@@ -121,6 +121,7 @@ export default {
   com_ui_prompt: 'Prompt',
   com_ui_prompts: 'Prompts',
   com_ui_prompt_name: 'Prompt Name',
+  com_ui_delete_prompt: 'Delete Prompt?',
   com_ui_admin: 'Admin',
   com_ui_simple: 'Simple',
   com_ui_versions: 'Versions',
@@ -256,7 +257,7 @@ export default {
     'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
   com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete_conversation: 'Delete chat?',
-  com_ui_delete_conversation_confirm: 'This will delete',
+  com_ui_delete_confirm: 'This will delete',
   com_ui_delete_assistant_confirm:
     'Are you sure you want to delete this Assistant? This cannot be undone.',
   com_ui_rename: 'Rename',

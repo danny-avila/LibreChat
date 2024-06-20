@@ -76,7 +76,7 @@ export default {
   com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete: 'Supprimer',
   com_ui_delete_conversation: 'Supprimer la discussions?',
-  com_ui_delete_conversation_confirm: 'Cela supprimera',
+  com_ui_delete_confirm: 'Cela supprimera',
   com_ui_rename: 'Renombrar',
   com_ui_archive: 'Archiver',
   com_ui_archive_error: 'échec de l\'archivage de la conversation',
@@ -861,7 +861,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'Supprimer la discussions?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Cela supprimera',
   },
