@@ -133,7 +133,7 @@ export const useDeletePrompt = (
   const pageSize = useRecoilValue(store.promptsPageSize);
 
   return useMutation({
-    mutationFn: ({ _id }: t.TDeletePromptVariables) => dataService.deletePrompt(_id),
+    mutationFn: (payload: t.TDeletePromptVariables) => dataService.deletePrompt(payload),
     ...rest,
     onSuccess: (response, variables, context) => {
       if (response.promptGroup) {

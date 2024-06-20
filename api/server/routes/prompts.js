@@ -176,8 +176,9 @@ router.get('/', async (req, res) => {
 const deletePromptController = async (req, res) => {
   try {
     const { promptId } = req.params;
+    const { groupId } = req.query;
     const author = req.user.id;
-    const result = await deletePrompt({ promptId, author });
+    const result = await deletePrompt({ promptId, groupId, author, role: req.user.role });
     res.status(200).send(result);
   } catch (error) {
     console.error(error);
@@ -185,7 +186,7 @@ const deletePromptController = async (req, res) => {
   }
 };
 
-router.delete('/:promptId', deletePromptController);
+router.delete('/:promptId', checkPromptCreate, deletePromptController);
 
 router.delete('/groups/:groupId', checkPromptCreate, async (req, res) => {
   const { groupId } = req.params;

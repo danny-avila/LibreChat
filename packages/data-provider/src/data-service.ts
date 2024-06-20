@@ -495,8 +495,8 @@ export function updatePromptGroup(
   return request.patch(endpoints.updatePromptGroup(variables.id), variables.payload);
 }
 
-export function deletePrompt(id: string): Promise<t.TDeletePromptResponse> {
-  return request.delete(endpoints.deletePrompt(id));
+export function deletePrompt(payload: t.TDeletePromptVariables): Promise<t.TDeletePromptResponse> {
+  return request.delete(endpoints.deletePrompt(payload));
 }
 
 export function makePromptProduction(id: string): Promise<t.TMakePromptProductionResponse> {

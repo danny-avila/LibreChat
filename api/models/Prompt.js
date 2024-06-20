@@ -1,4 +1,5 @@
 const { ObjectId } = require('mongodb');
+const { SystemRoles } = require('librechat-data-provider');
 const {
   getProjectByName,
   addGroupIdsToProject,
@@ -265,44 +266,33 @@ module.exports = {
    * Deletes a prompt and its corresponding prompt group if it is the last prompt in the group.
    *
    * @param {Object} options - The options for deleting the prompt.
-   * @param {ObjectId} options.promptId - The ID of the prompt to delete.
-   * @param {ObjectId} options.author - The author of the prompt.
+   * @param {ObjectId|string} options.promptId - The ID of the prompt to delete.
+   * @param {ObjectId|string} options.groupId - The ID of the prompt's group.
+   * @param {ObjectId|string} options.author - The ID of the prompt's author.
+   * @param {string} options.role - The role of the prompt's author.
    * @return {Promise<TDeletePromptResponse>} An object containing the result of the deletion.
    * If the prompt was deleted successfully, the object will have a property 'prompt' with the value 'Prompt deleted successfully'.
    * If the prompt group was deleted successfully, the object will have a property 'promptGroup' with the message 'Prompt group deleted successfully' and id of the deleted group.
    * If there was an error deleting the prompt, the object will have a property 'message' with the value 'Error deleting prompt'.
    */
-  deletePrompt: async ({ promptId, author }) => {
-    try {
-      const prompt = await Prompt.findOne({ _id: promptId, author });
-      if (!prompt) {
-        throw new Error('Prompt not found');
-      }
+  deletePrompt: async ({ promptId, groupId, author, role }) => {
+    const query = { _id: promptId, groupId, author };
+    if (role === SystemRoles.ADMIN) {
+      delete query.author;
+    }
+    const { deletedCount } = await Prompt.deleteOne(query);
+    if (deletedCount === 0) {
+      throw new Error('Failed to delete the prompt');
+    }
 
-      await Prompt.deleteOne({ _id: promptId });
+    const remainingPrompts = await Prompt.find({ groupId })
+      .select('_id')
+      .sort({ createdAt: 1 })
+      .lean();
 
-      const promptGroup = await PromptGroup.findById(prompt.groupId);
-
-      const groupId = prompt.groupId;
-
-      const remainingPrompts = await Prompt.find({ groupId }).sort({ createdAt: 1 });
-
-      if (remainingPrompts.length === 0) {
-        await PromptGroup.deleteOne({ _id: groupId });
-      } else {
-        for (let i = 0; i < remainingPrompts.length; i++) {
-          remainingPrompts[i].version = i + 1;
-          await remainingPrompts[i].save();
-        }
-
-        if (promptGroup.productionId.toString() === prompt.id) {
-          promptGroup.productionId = remainingPrompts[remainingPrompts.length - 1]._id;
-        }
-
-        await promptGroup.save();
-
-        return { prompt: 'Prompt deleted successfully' };
-      }
+    if (remainingPrompts.length === 0) {
+      await PromptGroup.deleteOne({ _id: groupId });
+      await removeGroupFromAllProjects(groupId);
 
       return {
         prompt: 'Prompt deleted successfully',
@@ -311,9 +301,16 @@ module.exports = {
           id: groupId,
         },
       };
-    } catch (error) {
-      logger.error('Error deleting prompt', error);
-      return { message: 'Error deleting prompt' };
+    } else {
+      const promptGroup = await PromptGroup.findById(groupId).lean();
+      if (promptGroup.productionId.toString() === promptId.toString()) {
+        await PromptGroup.updateOne(
+          { _id: groupId },
+          { productionId: remainingPrompts[remainingPrompts.length - 1]._id },
+        );
+      }
+
+      return { prompt: 'Prompt deleted successfully' };
     }
   },
   /**
