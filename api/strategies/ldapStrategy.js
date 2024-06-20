@@ -13,7 +13,6 @@ const {
   LDAP_FULL_NAME,
   LDAP_ID,
   LDAP_USERNAME,
-  LDAP_STRICT_LOGIN,
 } = process.env;
 
 // Check required environment variables
@@ -42,8 +41,6 @@ if (LDAP_ID) {
 if (LDAP_USERNAME) {
   searchAttributes.push(LDAP_USERNAME);
 }
-
-const strictLogin = LDAP_STRICT_LOGIN === undefined || LDAP_STRICT_LOGIN.toLowerCase() === 'true';
 
 const ldapOptions = {
   server: {
@@ -85,12 +82,10 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
   }
 
   try {
-    let user = await findUser({ email: userinfo.mail });
+    const ldapId =
+      (LDAP_ID && userinfo[LDAP_ID]) || userinfo.uid || userinfo.sAMAccountName || userinfo.mail;
 
-    if (strictLogin && user && user.provider !== 'ldap') {
-      logger.info(`User is configured for a different authentication strategy: ${user.provider}`);
-      return done(null, false, { message: 'Invalid credentials' });
-    }
+    let user = await findUser({ ldapId });
 
     const fullNameAttributes = LDAP_FULL_NAME && LDAP_FULL_NAME.split(',');
     const fullName =
@@ -100,9 +95,6 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
 
     const username =
       (LDAP_USERNAME && userinfo[LDAP_USERNAME]) || userinfo.givenName || userinfo.mail;
-
-    const ldapId =
-      (LDAP_ID && userinfo[LDAP_ID]) || userinfo.uid || userinfo.sAMAccountName || userinfo.email;
 
     if (!user) {
       let ldapUser = await findUser({ ldapId });
@@ -126,6 +118,7 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
       // so update the user information with the values registered in LDAP
       user.provider = 'ldap';
       user.ldapId = ldapId;
+      user.email = userinfo.mail;
       user.username = username;
       user.name = fullName;
     }
