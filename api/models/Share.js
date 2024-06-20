@@ -21,7 +21,7 @@ module.exports = {
 
       return share;
     } catch (error) {
-      logger.error('[getShare] Error getting share link', JSON.stringify(error, null, 2));
+      logger.error('[getShare] Error getting share link', error);
       throw new Error('Error getting share link');
     }
   },
@@ -40,7 +40,7 @@ module.exports = {
 
       return { sharedLinks: shares, pages: totalPages, pageNumber, pageSize };
     } catch (error) {
-      logger.error('[getShareByPage] Error getting shares', JSON.stringify(error, null, 2));
+      logger.error('[getShareByPage] Error getting shares', error);
       throw new Error('Error getting shares');
     }
   },
@@ -60,7 +60,7 @@ module.exports = {
         upsert: true,
       });
     } catch (error) {
-      logger.error('[createSharedLink] Error creating shared link', JSON.stringify(error, null, 2));
+      logger.error('[createSharedLink] Error creating shared link', error);
       throw new Error('Error creating shared link');
     }
   },
@@ -80,7 +80,7 @@ module.exports = {
         upsert: false,
       });
     } catch (error) {
-      logger.error('[updateSharedLink] Error updating shared link', JSON.stringify(error, null, 2));
+      logger.error('[updateSharedLink] Error updating shared link', error);
       throw new Error('Error updating shared link');
     }
   },
@@ -93,7 +93,7 @@ module.exports = {
       }
       return await SharedLink.findOneAndDelete({ shareId, user });
     } catch (error) {
-      logger.error('[deleteSharedLink] Error deleting shared link', JSON.stringify(error, null, 2));
+      logger.error('[deleteSharedLink] Error deleting shared link', error);
       throw new Error('Error deleting shared link');
     }
   },
@@ -110,10 +110,7 @@ module.exports = {
         deletedCount: result.deletedCount,
       };
     } catch (error) {
-      logger.error(
-        '[deleteAllSharedLinks] Error deleting shared links',
-        JSON.stringify(error, null, 2),
-      );
+      logger.error('[deleteAllSharedLinks] Error deleting shared links', error);
       throw new Error('Error deleting shared links');
     }
   },
