@@ -7,8 +7,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/u
 import { useUploadAvatarMutation, useGetFileConfig } from '~/data-provider';
 import { useToastContext } from '~/Providers';
 import { Spinner } from '~/components/svg';
+import { cn, formatBytes } from '~/utils';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils/';
 import store from '~/store';
 
 function Avatar() {
@@ -55,8 +55,9 @@ function Avatar() {
       setinput(file);
       setDialogOpen(true);
     } else {
+      const megabytes = fileConfig.avatarSizeLimit ? formatBytes(fileConfig.avatarSizeLimit) : 2;
       showToast({
-        message: localize('com_ui_upload_invalid_var', fileConfig.avatarSizeLimit + ''),
+        message: localize('com_ui_upload_invalid_var', megabytes + ''),
         status: 'error',
       });
     }
