@@ -68,29 +68,40 @@ const PromptForm = () => {
   const promptText = watch('prompt');
 
   const createPromptMutation = useCreatePrompt({
+    onMutate: (variables) => {
+      reset(
+        {
+          prompt: variables.prompt.prompt,
+          category: variables.group?.category || '',
+        },
+        { keepDirtyValues: true },
+      );
+    },
     onSuccess(data) {
       if (alwaysMakeProd && data.prompt._id && data.prompt.groupId) {
-        makeProductionMutation.mutate({
-          id: data.prompt._id,
-          groupId: data.prompt.groupId,
-          productionPrompt: { prompt: data.prompt.prompt },
-        });
+        makeProductionMutation.mutate(
+          {
+            id: data.prompt._id,
+            groupId: data.prompt.groupId,
+            productionPrompt: { prompt: data.prompt.prompt },
+          },
+          {
+            onSuccess: () => setSelectionIndex(0),
+          },
+        );
       }
+
       reset({
         prompt: data.prompt.prompt,
         promptName: data.group?.name || '',
         category: data.group?.category || '',
       });
+
       setSelectionIndex(0);
     },
   });
   const updateGroupMutation = useUpdatePromptGroup();
-  const makeProductionMutation = useMakePromptProduction({
-    onSuccess(_data, variables) {
-      const productionIndex = prompts.findIndex((prompt) => variables.id === prompt._id);
-      setSelectionIndex(productionIndex);
-    },
-  });
+  const makeProductionMutation = useMakePromptProduction();
   const deletePromptMutation = useDeletePrompt({
     onSuccess: (response) => {
       if (response.promptGroup) {
@@ -142,9 +153,8 @@ const PromptForm = () => {
     if (editorMode === PromptsEditorMode.SIMPLE) {
       const productionIndex = prompts.findIndex((prompt) => prompt._id === group?.productionId);
       setSelectionIndex(productionIndex !== -1 ? productionIndex : 0);
-    } else {
-      setSelectionIndex(0);
     }
+
     handleLoadingComplete();
   }, [params.promptId, editorMode, group?.productionId, prompts, handleLoadingComplete]);
 
@@ -223,11 +233,21 @@ const PromptForm = () => {
                   variant={'default'}
                   onClick={() => {
                     const { _id: promptVersionId = '', prompt } = selectedPrompt;
-                    makeProductionMutation.mutate({
-                      id: promptVersionId || '',
-                      groupId: group?._id || '',
-                      productionPrompt: { prompt },
-                    });
+                    makeProductionMutation.mutate(
+                      {
+                        id: promptVersionId || '',
+                        groupId: group?._id || '',
+                        productionPrompt: { prompt },
+                      },
+                      {
+                        onSuccess: (_data, variables) => {
+                          const productionIndex = prompts.findIndex(
+                            (prompt) => variables.id === prompt._id,
+                          );
+                          setSelectionIndex(productionIndex);
+                        },
+                      },
+                    );
                   }}
                   disabled={
                     isLoadingGroup ||
@@ -260,13 +280,7 @@ const PromptForm = () => {
                 <Skeleton className="h-96" />
               ) : (
                 <>
-                  <PromptEditor
-                    name="prompt"
-                    isEditing={isEditing}
-                    setIsEditing={setIsEditing}
-                    type={selectedPrompt?.type || ''}
-                    prompt={selectedPrompt?.prompt || ''}
-                  />
+                  <PromptEditor name="prompt" isEditing={isEditing} setIsEditing={setIsEditing} />
                   <PromptVariables promptText={promptText} />
                   <Description
                     initialValue={group?.oneliner ?? ''}

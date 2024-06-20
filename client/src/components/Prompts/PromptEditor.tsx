@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, memo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { EditIcon } from 'lucide-react';
 import { Controller, useFormContext, useFormState } from 'react-hook-form';
@@ -12,9 +12,7 @@ import store from '~/store';
 const { PromptsEditorMode, promptsEditorMode } = store;
 
 type Props = {
-  type: string;
   name: string;
-  prompt: string;
   isEditing: boolean;
   setIsEditing: React.Dispatch<React.SetStateAction<boolean>>;
 };
@@ -79,4 +77,4 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
   );
 };
 
-export default PromptEditor;
+export default memo(PromptEditor);
