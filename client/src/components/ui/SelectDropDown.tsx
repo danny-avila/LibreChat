@@ -186,8 +186,8 @@ function SelectDropDown({
                         value={currentValue}
                         className={({ active }) =>
                           cn(
-                            active ? 'bg-surface-tertiary' : '',
                             'group relative flex h-[42px] cursor-pointer select-none items-center overflow-hidden border-b border-black/10 pl-3 pr-9 text-gray-800 last:border-0 hover:bg-gray-20 dark:border-white/20 dark:text-white dark:hover:bg-gray-700',
+                            active ? 'bg-surface-tertiary' : '',
                             optionsClass ?? '',
                           )
                         }
