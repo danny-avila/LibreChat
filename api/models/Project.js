@@ -71,9 +71,20 @@ const removeGroupIdsFromProject = async function (projectId, promptGroupIds) {
   );
 };
 
+/**
+ * Remove a prompt group ID from all projects.
+ *
+ * @param {string} promptGroupId - The ID of the prompt group to remove from projects.
+ * @returns {Promise<void>}
+ */
+const removeGroupFromAllProjects = async (promptGroupId) => {
+  await Project.updateMany({}, { $pull: { promptGroupIds: promptGroupId } });
+};
+
 module.exports = {
   getProjectById,
   getProjectByName,
   addGroupIdsToProject,
   removeGroupIdsFromProject,
+  removeGroupFromAllProjects,
 };

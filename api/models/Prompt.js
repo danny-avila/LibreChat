@@ -1,9 +1,107 @@
 const { ObjectId } = require('mongodb');
-const { getProjectByName, addGroupIdsToProject, removeGroupIdsFromProject } = require('./Project');
+const {
+  getProjectByName,
+  addGroupIdsToProject,
+  removeGroupIdsFromProject,
+  removeGroupFromAllProjects,
+} = require('./Project');
 const { Prompt, PromptGroup } = require('./schema/promptSchema');
 const { logger } = require('~/config');
 
+/**
+ * Create a pipeline for the aggregation to get prompt groups
+ * @param {Object} query
+ * @param {number} skip
+ * @param {number} limit
+ * @returns {[Object]} - The pipeline for the aggregation
+ */
+const createGroupPipeline = (query, skip, limit) => {
+  return [
+    { $match: query },
+    { $sort: { createdAt: -1 } },
+    { $skip: skip },
+    { $limit: limit },
+    {
+      $lookup: {
+        from: 'prompts',
+        localField: 'productionId',
+        foreignField: '_id',
+        as: 'productionPrompt',
+      },
+    },
+    { $unwind: { path: '$productionPrompt', preserveNullAndEmptyArrays: true } },
+    {
+      $project: {
+        name: 1,
+        numberOfGenerations: 1,
+        oneliner: 1,
+        category: 1,
+        projectIds: 1,
+        productionId: 1,
+        author: 1,
+        authorName: 1,
+        createdAt: 1,
+        updatedAt: 1,
+        'productionPrompt.prompt': 1,
+        // 'productionPrompt._id': 1,
+        // 'productionPrompt.type': 1,
+      },
+    },
+  ];
+};
+
+/**
+ * Get prompt groups with filters
+ * @param {Object} req
+ * @param {TPromptGroupsWithFilterRequest} filter
+ * @returns {Promise<PromptGroupListResponse>}
+ */
+const getPromptGroups = async (req, filter) => {
+  try {
+    const { pageNumber = 1, pageSize = 10, name, ...query } = filter;
+    if (name) {
+      query.name = new RegExp(name, 'i');
+    }
+
+    let combinedQuery = query;
+
+    // const projects = req.user.projects || []; // TODO: handle multiple projects
+    const project = await getProjectByName('instance', 'promptGroupIds');
+    if (project && project.promptGroupIds.length > 0) {
+      const { author: _a, ...restQuery } = query;
+      const projectQuery = { _id: { $in: project.promptGroupIds }, ...restQuery };
+      combinedQuery = { $or: [projectQuery, query] };
+    }
+
+    const skip = (parseInt(pageNumber, 10) - 1) * parseInt(pageSize, 10);
+    const limit = parseInt(pageSize, 10);
+
+    const promptGroupsPipeline = createGroupPipeline(combinedQuery, skip, limit);
+    const totalPromptGroupsPipeline = [{ $match: combinedQuery }, { $count: 'total' }];
+
+    const [promptGroupsResults, totalPromptGroupsResults] = await Promise.all([
+      PromptGroup.aggregate(promptGroupsPipeline).exec(),
+      PromptGroup.aggregate(totalPromptGroupsPipeline).exec(),
+    ]);
+
+    const promptGroups = promptGroupsResults;
+    const totalPromptGroups =
+      totalPromptGroupsResults.length > 0 ? totalPromptGroupsResults[0].total : 0;
+
+    return {
+      promptGroups,
+      pageNumber: pageNumber.toString(),
+      pageSize: pageSize.toString(),
+      pages: Math.ceil(totalPromptGroups / pageSize).toString(),
+    };
+  } catch (error) {
+    console.error('Error getting prompt groups', error);
+    return { message: 'Error getting prompt groups' };
+  }
+};
+
 module.exports = {
+  getPromptGroups,
   /**
    * Create a prompt and its respective group
    * @param {TCreatePromptRecord} saveData
@@ -164,154 +262,6 @@ module.exports = {
     }
   },
   /**
-   * Get prompt groups with filters
-   * @param {TPromptGroupsWithFilterRequest} filter
-   * @returns {Promise<PromptGroupListResponse>}
-   */
-  getPromptGroupsOld: async (filter) => {
-    try {
-      const { pageNumber = 1, pageSize = 10, name, ...query } = filter;
-      if (name) {
-        query.name = new RegExp(name, 'i');
-      }
-
-      const skip = (parseInt(pageNumber, 10) - 1) * parseInt(pageSize, 10);
-      const limit = parseInt(pageSize, 10);
-
-      const promptGroupsPipeline = [
-        { $match: query },
-        { $sort: { createdAt: -1 } },
-        { $skip: skip },
-        { $limit: limit },
-        {
-          $lookup: {
-            from: 'prompts',
-            localField: 'productionId',
-            foreignField: '_id',
-            as: 'productionPrompt',
-          },
-        },
-        { $unwind: { path: '$productionPrompt', preserveNullAndEmptyArrays: true } },
-        {
-          $project: {
-            name: 1,
-            numberOfGenerations: 1,
-            oneliner: 1,
-            category: 1,
-            projectId: 1,
-            productionId: 1,
-            author: 1,
-            authorName: 1,
-            createdAt: 1,
-            updatedAt: 1,
-            'productionPrompt.prompt': 1,
-            // 'productionPrompt._id': 1,
-            // 'productionPrompt.type': 1,
-          },
-        },
-      ];
-
-      const totalPromptGroupsPipeline = [{ $match: query }, { $count: 'total' }];
-
-      const [promptGroupsResults, totalPromptGroupsResults] = await Promise.all([
-        PromptGroup.aggregate(promptGroupsPipeline).exec(),
-        PromptGroup.aggregate(totalPromptGroupsPipeline).exec(),
-      ]);
-
-      const promptGroups = promptGroupsResults;
-      const totalPromptGroups =
-        totalPromptGroupsResults.length > 0 ? totalPromptGroupsResults[0].total : 0;
-
-      return {
-        promptGroups,
-        pageNumber: pageNumber.toString(),
-        pageSize: pageSize.toString(),
-        pages: Math.ceil(totalPromptGroups / pageSize).toString(),
-      };
-    } catch (error) {
-      logger.error('Error getting prompt groups', error);
-      return { message: 'Error getting prompt groups' };
-    }
-  },
-  /**
-   * Get prompt groups with filters
-   * @param {Object} req
-   * @param {TPromptGroupsWithFilterRequest} filter
-   * @returns {Promise<PromptGroupListResponse>}
-   */
-  getPromptGroups: async (req, filter) => {
-    try {
-      const { pageNumber = 1, pageSize = 10, name, ...query } = filter;
-      if (name) {
-        query.name = new RegExp(name, 'i');
-      }
-
-      // const projects = req.user.projects || [];
-      const skip = (parseInt(pageNumber, 10) - 1) * parseInt(pageSize, 10);
-      const limit = parseInt(pageSize, 10);
-
-      let projectQuery = [];
-      const project = await getProjectByName('instance', 'promptGroupIds');
-      if (project) {
-        projectQuery.push({ _id: { $in: project.promptGroupIds } });
-      }
-
-      const combinedQuery = { $or: [...projectQuery, query] };
-
-      const promptGroupsPipeline = [
-        { $match: combinedQuery },
-        { $sort: { createdAt: -1 } },
-        { $skip: skip },
-        { $limit: limit },
-        {
-          $lookup: {
-            from: 'prompts',
-            localField: 'productionId',
-            foreignField: '_id',
-            as: 'productionPrompt',
-          },
-        },
-        { $unwind: { path: '$productionPrompt', preserveNullAndEmptyArrays: true } },
-        {
-          $project: {
-            name: 1,
-            numberOfGenerations: 1,
-            oneliner: 1,
-            category: 1,
-            projectIds: 1,
-            productionId: 1,
-            author: 1,
-            authorName: 1,
-            createdAt: 1,
-            updatedAt: 1,
-            'productionPrompt.prompt': 1,
-          },
-        },
-      ];
-
-      const totalPromptGroupsPipeline = [{ $match: combinedQuery }, { $count: 'total' }];
-
-      const [promptGroupsResults, totalPromptGroupsResults] = await Promise.all([
-        PromptGroup.aggregate(promptGroupsPipeline).exec(),
-        PromptGroup.aggregate(totalPromptGroupsPipeline).exec(),
-      ]);
-
-      const promptGroups = promptGroupsResults;
-      const totalPromptGroups =
-        totalPromptGroupsResults.length > 0 ? totalPromptGroupsResults[0].total : 0;
-
-      return {
-        promptGroups,
-        pageNumber: pageNumber.toString(),
-        pageSize: pageSize.toString(),
-        pages: Math.ceil(totalPromptGroups / pageSize).toString(),
-      };
-    } catch (error) {
-      console.error('Error getting prompt groups', error);
-      return { message: 'Error getting prompt groups' };
-    }
-  },
-  /**
    * Deletes a prompt and its corresponding prompt group if it is the last prompt in the group.
    *
    * @param {Object} options - The options for deleting the prompt.
@@ -459,6 +409,7 @@ module.exports = {
       }
 
       await Prompt.deleteMany({ groupId: new ObjectId(_id) });
+      await removeGroupFromAllProjects(_id);
       return { promptGroup: 'Prompt group deleted successfully' };
     } catch (error) {
       logger.error('Error deleting prompt group', error);
