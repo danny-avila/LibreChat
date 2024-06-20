@@ -84,7 +84,7 @@ const PromptName: React.FC<Props> = ({ name, onSave }) => {
         </div>
       ) : (
         <div className="mb-1 flex items-center md:mb-0">
-          <span className="mr-2 border border-transparent p-2">{newName}</span>
+          <span className="border border-transparent p-2">{newName}</span>
           <button
             type="button"
             onClick={handleEditClick}
