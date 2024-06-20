@@ -57,11 +57,14 @@ export default function ChatGroupItem({
       >
         <div className="flex flex-row items-center gap-2">
           {groupIsGlobal && <EarthIcon className="icon-md text-green-400" />}
-          <DropdownMenu>
+          <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="outline"
-                className="h-7 w-7 p-0 transition-all duration-300 ease-in-out hover:border-white dark:bg-gray-800 dark:hover:border-gray-400 dark:focus:border-gray-500"
+                onClick={(e) => {
+                  e.stopPropagation();
+                }}
+                className="z-50 h-7 w-7 p-0 transition-all duration-300 ease-in-out hover:border-white dark:bg-gray-800 dark:hover:border-gray-400 dark:focus:border-gray-500"
               >
                 <MenuIcon className="icon-md dark:text-gray-300" />
               </Button>

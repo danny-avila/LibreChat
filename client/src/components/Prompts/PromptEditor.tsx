@@ -35,7 +35,9 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
       <h2 className="flex items-center justify-between rounded-t-lg border border-gray-300 py-2 pl-4 text-base font-semibold dark:border-gray-600 dark:text-gray-200">
         {localize('com_ui_text_prompt')}
         <div className="flex flex-row gap-6">
-          {editorMode === PromptsEditorMode.ADVANCED && <AlwaysMakeProd />}
+          {editorMode === PromptsEditorMode.ADVANCED && (
+            <AlwaysMakeProd className="hidden sm:flex" />
+          )}
           <button type="button" onClick={() => setIsEditing((prev) => !prev)} className="mr-2">
             <EditorIcon
               className={cn(

@@ -27,7 +27,7 @@ const PromptDetails = ({ group }: { group: TPromptGroup }) => {
         </div>
       </div>
       <div className="flex h-full w-full flex-col md:flex-row">
-        <div className="flex-1 overflow-y-auto border-gray-300 p-4 dark:border-gray-600 md:max-h-[calc(100vh-150px)]">
+        <div className="flex-1 overflow-y-auto border-gray-300 p-0 dark:border-gray-600 md:max-h-[calc(100vh-150px)] md:p-4">
           <div>
             <h2 className="flex items-center justify-between rounded-t-lg border border-gray-300 py-2 pl-4 text-base font-semibold dark:border-gray-600 dark:text-gray-200">
               {localize('com_ui_text_prompt')}

@@ -29,6 +29,7 @@ import Description from './Description';
 import SharePrompt from './SharePrompt';
 import PromptName from './PromptName';
 import store from '~/store';
+import AlwaysMakeProd from './Groups/AlwaysMakeProd';
 
 const { PromptsEditorMode, promptsEditorMode } = store;
 
@@ -273,6 +274,11 @@ const PromptForm = () => {
               </Button>
             </div>
           </div>
+          {editorMode === PromptsEditorMode.ADVANCED && (
+            <div className="mt-4 flex items-center justify-center text-text-primary sm:hidden">
+              <AlwaysMakeProd />
+            </div>
+          )}
           <div className="flex h-full w-full flex-col md:flex-row">
             {/* Left Section */}
             <div className="flex-1 overflow-y-auto border-r border-gray-300 p-4 dark:border-gray-600 md:max-h-[calc(100vh-150px)]">

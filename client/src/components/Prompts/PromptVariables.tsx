@@ -42,11 +42,15 @@ const PromptVariables = ({ promptText }: { promptText: string }) => {
           </div>
         ) : (
           <div className="flex h-7 items-center">
-            <span className="text-sm text-text-tertiary">{localize('com_ui_variables_info')}</span>
+            <span className="text-xs text-text-tertiary md:text-sm">
+              {localize('com_ui_variables_info')}
+            </span>
           </div>
         )}
         <Separator className="my-3 bg-border-medium" />
-        <span className="text-sm text-text-tertiary">{localize('com_ui_special_variables')}</span>
+        <span className="text-xs text-text-tertiary md:text-sm">
+          {localize('com_ui_special_variables')}
+        </span>
       </div>
     </>
   );
