@@ -81,10 +81,10 @@ const SharePrompt = ({ group, disabled }: { group?: TPromptGroup; disabled: bool
         <Button
           variant={'default'}
           size={'sm'}
-          className="h-10 w-10 border border-transparent bg-blue-500/90 transition-all hover:bg-blue-600 dark:border-blue-600 dark:bg-transparent dark:hover:bg-blue-950"
+          className="h-10 w-10 border border-transparent bg-blue-500/90 transition-all hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-800"
           disabled={disabled}
         >
-          <Share2Icon className="cursor-pointer dark:text-blue-600" />
+          <Share2Icon className="cursor-pointer text-white " />
         </Button>
       </OGDialogTrigger>
       <OGDialogContent className="bg-white dark:border-gray-700 dark:bg-gray-850 dark:text-gray-300">

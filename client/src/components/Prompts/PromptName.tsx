@@ -77,7 +77,7 @@ const PromptName: React.FC<Props> = ({ name, onSave }) => {
           <button
             type="button"
             onClick={handleSaveClick}
-            className="rounded p-2 hover:bg-gray-300/50"
+            className="rounded p-2 hover:bg-gray-300/50 dark:hover:bg-gray-700"
           >
             <SaveIcon className="icon-md" size="1.2em" />
           </button>
@@ -88,7 +88,7 @@ const PromptName: React.FC<Props> = ({ name, onSave }) => {
           <button
             type="button"
             onClick={handleEditClick}
-            className="rounded p-2 hover:bg-gray-300/50"
+            className="rounded p-2 hover:bg-gray-300/50 dark:hover:bg-gray-700"
           >
             <EditIcon className="icon-md" />
           </button>

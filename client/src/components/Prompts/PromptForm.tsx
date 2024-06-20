@@ -231,7 +231,7 @@ const PromptForm = () => {
               {editorMode === PromptsEditorMode.ADVANCED && (
                 <Button
                   size={'sm'}
-                  className="h-10 border border-transparent bg-green-400 transition-all hover:bg-green-500 dark:border-green-600 dark:bg-transparent dark:hover:bg-green-900"
+                  className="h-10 border border-transparent bg-green-500 transition-all hover:bg-green-600 dark:bg-green-500 dark:hover:bg-green-600"
                   variant={'default'}
                   onClick={() => {
                     const { _id: promptVersionId = '', prompt } = selectedPrompt;
@@ -257,7 +257,7 @@ const PromptForm = () => {
                     makeProductionMutation.isLoading
                   }
                 >
-                  <Rocket className="cursor-pointer dark:text-green-600" />
+                  <Rocket className="cursor-pointer text-white" />
                 </Button>
               )}
 
@@ -265,13 +265,13 @@ const PromptForm = () => {
                 <DialogTrigger asChild>
                   <Button
                     size={'sm'}
-                    className="h-10 w-10 border border-transparent bg-red-100 text-red-500 transition-all hover:bg-red-500 hover:text-white dark:border-red-600 dark:bg-transparent dark:hover:bg-red-950"
+                    className="h-10 w-10 border border-transparent bg-red-600 text-red-500 transition-all hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-800"
                     disabled={isLoadingGroup}
                     onClick={(e) => {
                       e.stopPropagation();
                     }}
                   >
-                    <TrashIcon className="icon-lg cursor-pointer dark:text-red-600" />
+                    <TrashIcon className="icon-lg cursor-pointer text-white dark:text-white" />
                   </Button>
                 </DialogTrigger>
                 <DialogTemplate

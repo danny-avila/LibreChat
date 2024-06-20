@@ -73,8 +73,8 @@ export default function DashGroupItem({
   return (
     <div
       className={cn(
-        'w-100 mx-2 my-3 flex cursor-pointer flex-row rounded-md border-0 bg-white p-4 transition-all duration-300 ease-in-out hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-800',
-        params.promptId === group._id && 'bg-gray-100/50 dark:bg-gray-600',
+        'w-100 mx-2 my-3 flex cursor-pointer flex-row rounded-md border-0 bg-white p-4 transition-all duration-300 ease-in-out hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600',
+        params.promptId === group._id && 'bg-gray-100/50 dark:bg-gray-600 ',
       )}
       onClick={() => {
         if (nameEditFlag) {
@@ -163,13 +163,13 @@ export default function DashGroupItem({
                           <Button
                             variant="outline"
                             className={cn(
-                              'h-7 w-7 p-0 hover:bg-gray-200 dark:bg-gray-800/50 dark:text-gray-400 dark:hover:border-gray-400 dark:focus:border-gray-500',
+                              'h-7 w-7 p-0 hover:bg-gray-200  dark:bg-gray-800/50 dark:text-gray-400 dark:hover:border-gray-400 dark:focus:border-gray-500',
                             )}
                             onClick={(e) => {
                               e.stopPropagation();
                             }}
                           >
-                            <NewTrashIcon />
+                            <NewTrashIcon className="icon-md text-gray-600 dark:text-gray-300" />
                           </Button>
                         </DialogTrigger>
                         <DialogTemplate
@@ -196,7 +196,7 @@ export default function DashGroupItem({
                               deletePromptGroupMutation.mutate({ id: group?._id || '' });
                             },
                             selectClasses:
-                              'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 text-white',
+                              'bg-red-600 dark:bg-red-600 hover:bg-red-700 dark:hover:bg-red-800 text-white',
                             selectText: localize('com_ui_delete'),
                           }}
                         />
