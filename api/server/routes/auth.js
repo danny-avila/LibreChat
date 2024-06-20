@@ -21,8 +21,7 @@ const {
 
 const router = express.Router();
 
-const ldapAuth =
-  !!process.env.LDAP_URL && !!process.env.LDAP_BIND_DN && !!process.env.LDAP_USER_SEARCH_BASE;
+const ldapAuth = !!process.env.LDAP_URL && !!process.env.LDAP_USER_SEARCH_BASE;
 //Local
 router.post('/logout', requireJwtAuth, logoutController);
 router.post(

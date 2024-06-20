@@ -61,7 +61,7 @@ const startServer = async () => {
   passport.use(passportLogin());
 
   // LDAP Auth
-  if (process.env.LDAP_URL && process.env.LDAP_BIND_DN && process.env.LDAP_USER_SEARCH_BASE) {
+  if (process.env.LDAP_URL && process.env.LDAP_USER_SEARCH_BASE) {
     passport.use(ldapLogin);
   }
 

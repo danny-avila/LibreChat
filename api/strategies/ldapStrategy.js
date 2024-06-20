@@ -17,7 +17,7 @@ const {
 } = process.env;
 
 // Check required environment variables
-if (!LDAP_URL || !LDAP_BIND_DN || !LDAP_USER_SEARCH_BASE) {
+if (!LDAP_URL || !LDAP_USER_SEARCH_BASE) {
   throw new Error('Missing required LDAP environment variables');
 }
 
