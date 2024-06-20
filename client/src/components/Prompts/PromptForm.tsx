@@ -144,10 +144,6 @@ const PromptForm = () => {
         return console.warn('Group not found');
       }
 
-      if (!oneliner) {
-        return;
-      }
-
       updateGroupMutation.mutate({ id: group._id || '', payload: { oneliner } });
     }, 1000),
     [updateGroupMutation],
