@@ -24,13 +24,9 @@ export default function usePromptGroupsNav() {
   });
 
   useEffect(() => {
-    console.log('Current name:', name);
-  }, [name]);
-
-  useEffect(() => {
     maxPageNumberReached.current = 1;
     setPageNumber(1);
-  }, [pageSize, setPageNumber]);
+  }, [pageSize, name, setPageNumber]);
 
   const promptGroups = useMemo(() => {
     return groupsQuery?.data?.pages?.[pageNumber - 1 + '']?.promptGroups || [];

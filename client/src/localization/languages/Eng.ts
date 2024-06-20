@@ -129,7 +129,9 @@ export default {
   com_ui_text_prompt: 'Text',
   com_ui_back_to_chat: 'Back to Chat',
   com_ui_back_to_var: 'Back to {0}',
+  com_ui_categories: 'Categories',
   com_ui_filter_prompts_name: 'Filter prompts by name',
+  com_ui_search_var: 'Search {0}',
   com_ui_manage: 'Manage',
   com_ui_variables: 'Variables',
   com_ui_variables_info:
@@ -192,6 +194,7 @@ export default {
   com_ui_loading: 'Loading...',
   com_ui_success: 'Success',
   com_ui_all: 'all',
+  com_ui_all_proper: 'All',
   com_ui_clear: 'Clear',
   com_ui_revoke: 'Revoke',
   com_ui_revoke_info: 'Revoke all user provided credentials',

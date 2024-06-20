@@ -5,6 +5,8 @@ import { atomWithLocalStorage } from '~/store/utils';
 const staticAtoms = {
   // `name` filter
   promptsName: atom<string>({ key: 'promptsName', default: '' }),
+  // `category` filter
+  promptsCategory: atom<string>({ key: 'promptsCategory', default: '' }),
   // `pageNumber` filter
   promptsPageNumber: atom<number>({ key: 'promptsPageNumber', default: 1 }),
   // `pageSize` filter

@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { useMemo, useCallback } from 'react';
+import { useSetRecoilState } from 'recoil';
 import { SystemRoles } from 'librechat-data-provider';
 import { ArrowLeft, MessageSquareQuote } from 'lucide-react';
 import {
@@ -16,6 +17,7 @@ import {
 import { useLocalize, useCustomLink, useAuthContext } from '~/hooks';
 import AdminSettings from '~/components/Prompts/AdminSettings';
 import { useDashboardContext } from '~/Providers';
+import store from '~/store';
 
 const getConversationId = (prevLocationPath: string) => {
   if (!prevLocationPath || prevLocationPath.includes('/d/')) {
@@ -30,7 +32,13 @@ export default function DashBreadcrumb() {
   const { user } = useAuthContext();
   const { prevLocationPath } = useDashboardContext();
   const lastConversationId = useMemo(() => getConversationId(prevLocationPath), [prevLocationPath]);
-  const chatLinkHandler = useCustomLink('/c/' + lastConversationId);
+  const setPromptsName = useSetRecoilState(store.promptsName);
+  const setPromptsCategory = useSetRecoilState(store.promptsCategory);
+  const clickCallback = useCallback(() => {
+    setPromptsName('');
+    setPromptsCategory('');
+  }, [setPromptsName, setPromptsCategory]);
+  const chatLinkHandler = useCustomLink('/c/' + lastConversationId, clickCallback);
   const promptsLinkHandler = useCustomLink('/d/prompts');
   return (
     <div className="mr-4 flex items-center justify-between">

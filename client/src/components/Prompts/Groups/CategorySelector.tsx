@@ -1,23 +1,9 @@
 import React, { useMemo } from 'react';
 import { useFormContext, Controller } from 'react-hook-form';
 import { LocalStorageKeys } from 'librechat-data-provider';
-import { useGetCategories } from '~/data-provider';
+import { useLocalize, useCategories } from '~/hooks';
 import { SelectDropDown } from '~/components/ui';
-import CategoryIcon from './CategoryIcon';
-import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
-
-const loadingCategories = [
-  {
-    label: 'Loading...',
-    value: '',
-  },
-];
-
-const emptyCategory = {
-  label: '-',
-  value: '',
-};
 
 const CategorySelector = ({
   currentCategory,
@@ -30,23 +16,14 @@ const CategorySelector = ({
 }) => {
   const localize = useLocalize();
   const { control, watch, setValue } = useFormContext();
-  const { data: categories = loadingCategories } = useGetCategories({
-    select: (data) =>
-      data.map((category) => ({
-        label: category.label
-          ? localize(`com_ui_${category.label}`) || category.label
-          : localize('com_ui_none_selected'),
-        value: category.value,
-        icon: category.value ? <CategoryIcon category={category.value} /> : null,
-      })),
-  });
+  const { categories, emptyCategory } = useCategories();
 
   const watchedCategory = watch('category');
   const categoryOption = useMemo(
     () =>
       categories.find((category) => category.value === (watchedCategory ?? currentCategory)) ??
       emptyCategory,
-    [watchedCategory, categories, currentCategory],
+    [watchedCategory, categories, currentCategory, emptyCategory],
   );
 
   return (
@@ -67,7 +44,7 @@ const CategorySelector = ({
           showLabel={false}
           emptyTitle={true}
           showOptionIcon={true}
-          searchPlaceholder="Search categories..."
+          searchPlaceholder={localize('com_ui_search_var', localize('com_ui_categories'))}
           className={cn('h-10 w-56 cursor-pointer', className)}
           currentValueClass="text-md gap-2"
           optionsListClass="text-sm max-h-72"
