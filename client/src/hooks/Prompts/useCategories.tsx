@@ -14,7 +14,7 @@ const emptyCategory = {
   value: '',
 };
 
-const useCategories = () => {
+const useCategories = (className = '') => {
   const localize = useLocalize();
   const { data: categories = loadingCategories } = useGetCategories({
     select: (data) =>
@@ -23,7 +23,9 @@ const useCategories = () => {
           ? localize(`com_ui_${category.label}`) || category.label
           : localize('com_ui_none_selected'),
         value: category.value,
-        icon: category.value ? <CategoryIcon category={category.value} /> : null,
+        icon: category.value ? (
+          <CategoryIcon category={category.value} className={className} />
+        ) : null,
       })),
   });
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ListFilter } from 'lucide-react';
+import { ListFilter, User } from 'lucide-react';
 import type { OptionWithIcon } from '~/common';
 import { usePromptGroupsNav, useLocalize, useCategories } from '~/hooks';
 import {
@@ -16,7 +16,7 @@ import { cn } from '~/utils';
 
 export function FilterItem({ label, icon }: { label: string; icon: React.ReactNode }) {
   return (
-    <DropdownMenuItem className="cursor-pointer gap-2 hover:bg-surface-tertiary focus:bg-surface-tertiary dark:focus:bg-surface-tertiary">
+    <DropdownMenuItem className="cursor-pointer gap-2 text-text-secondary hover:bg-surface-tertiary focus:bg-surface-tertiary dark:focus:bg-surface-tertiary">
       {icon}
       <span>{label}</span>
     </DropdownMenuItem>
@@ -25,13 +25,17 @@ export function FilterItem({ label, icon }: { label: string; icon: React.ReactNo
 
 export function FilterMenu() {
   const localize = useLocalize();
-  const { categories } = useCategories();
+  const { categories } = useCategories('h-4 w-4 mr-2');
   return (
-    <DropdownMenuContent className="max-h-96 min-w-40">
+    <DropdownMenuContent className="max-h-xl min-w-40 overflow-y-auto">
       <DropdownMenuGroup>
         <FilterItem
           label={localize('com_ui_all_proper')}
-          icon={<ListFilter className="mr-2 h-4 w-4" />}
+          icon={<ListFilter className="mr-2 h-4 w-4 text-text-primary" />}
+        />
+        <FilterItem
+          label={localize('com_ui_my_prompts')}
+          icon={<User className="mr-2 h-4 w-4 text-text-primary" />}
         />
       </DropdownMenuGroup>
       <DropdownMenuSeparator />
