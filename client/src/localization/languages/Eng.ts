@@ -136,6 +136,8 @@ export default {
   com_ui_variables: 'Variables',
   com_ui_variables_info:
     'Use double braces in your text to create variables, e.g. {{example variable}}, to later fill when using the prompt.',
+  com_ui_special_variables:
+    'Special variables(case-insensitive): Use {{current_date}} for the current date, and {{current_user}} for your given account name.',
   com_ui_showing: 'Showing',
   com_ui_of: 'of',
   com_ui_entries: 'Entries',
