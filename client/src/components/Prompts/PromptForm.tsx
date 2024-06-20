@@ -23,6 +23,7 @@ import { TrashIcon } from '~/components/svg';
 import PromptDetails from './PromptDetails';
 import { findPromptGroup } from '~/utils';
 import PromptEditor from './PromptEditor';
+import Description from './Description';
 import SharePrompt from './SharePrompt';
 import PromptName from './PromptName';
 import store from '~/store';
@@ -235,6 +236,7 @@ const PromptForm = () => {
                     prompt={selectedPrompt?.prompt || ''}
                   />
                   <PromptVariables promptText={promptText} />
+                  <Description />
                 </>
               )}
             </div>
