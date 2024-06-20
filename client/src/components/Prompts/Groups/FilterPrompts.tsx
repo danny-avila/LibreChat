@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ListFilter } from 'lucide-react';
+import { usePromptGroupsNav, useLocalize } from '~/hooks';
 import { Button, Input } from '~/components/ui';
-import { usePromptGroupsNav } from '~/hooks';
 import { cn } from '~/utils';
 
 export default function GroupSidePanel({
@@ -10,6 +10,7 @@ export default function GroupSidePanel({
 }: Pick<ReturnType<typeof usePromptGroupsNav>, 'setName'> & {
   className?: string;
 }) {
+  const localize = useLocalize();
   const [displayName, setDisplayName] = useState('');
 
   return (
@@ -18,7 +19,7 @@ export default function GroupSidePanel({
         <ListFilter className="icon-sm" />
       </Button>
       <Input
-        placeholder="Filter prompts..."
+        placeholder={localize('com_ui_filter_prompts_name')}
         value={displayName}
         onChange={(e) => {
           setDisplayName(e.target.value);

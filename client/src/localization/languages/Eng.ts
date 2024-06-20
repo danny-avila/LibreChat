@@ -129,6 +129,7 @@ export default {
   com_ui_text_prompt: 'Text',
   com_ui_back_to_chat: 'Back to Chat',
   com_ui_back_to_var: 'Back to {0}',
+  com_ui_filter_prompts_name: 'Filter prompts by name',
   com_ui_manage: 'Manage',
   com_ui_variables: 'Variables',
   com_ui_variables_info:
