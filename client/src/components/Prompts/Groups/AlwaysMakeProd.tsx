@@ -23,13 +23,13 @@ export default function AlwaysMakeProd({
 
   return (
     <div className={cn('flex select-none items-center justify-end gap-2 text-xs', className)}>
-      <div> {localize('com_nav_always_make_prod')} </div>
       <Switch
         id="alwaysMakeProd"
         checked={alwaysMakeProd}
         onCheckedChange={handleCheckedChange}
         data-testid="alwaysMakeProd"
       />
+      <div>{localize('com_nav_always_make_prod')} </div>
     </div>
   );
 }
