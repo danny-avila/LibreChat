@@ -2,13 +2,16 @@ import { format } from 'date-fns';
 import type { TUser } from 'librechat-data-provider';
 
 export function replaceSpecialVars({ text, user }: { text: string; user?: TUser }) {
-  if (!text || !user) {
+  if (!text) {
     return text;
   }
 
   const currentDate = format(new Date(), 'yyyy-MM-dd');
   text = text.replace(/{{current_date}}/gi, currentDate);
 
+  if (!user) {
+    return text;
+  }
   const currentUser = user.name;
   text = text.replace(/{{current_user}}/gi, currentUser);
 
