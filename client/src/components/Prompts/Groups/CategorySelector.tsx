@@ -9,10 +9,12 @@ const CategorySelector = ({
   currentCategory,
   onValueChange,
   className = '',
+  tabIndex,
 }: {
   currentCategory?: string;
   onValueChange?: (value: string) => void;
   className?: string;
+  tabIndex?: number;
 }) => {
   const localize = useLocalize();
   const { control, watch, setValue } = useFormContext();
@@ -33,6 +35,7 @@ const CategorySelector = ({
       render={() => (
         <SelectDropDown
           title="Category"
+          tabIndex={tabIndex}
           value={categoryOption || ''}
           setValue={(value) => {
             setValue('category', value, { shouldDirty: false });

@@ -8,10 +8,12 @@ const Description = ({
   initialValue,
   onValueChange,
   disabled,
+  tabIndex,
 }: {
   initialValue?: string;
   onValueChange?: (value: string) => void;
   disabled?: boolean;
+  tabIndex?: number;
 }) => {
   const localize = useLocalize();
   const [description, setDescription] = useState(initialValue || '');
@@ -43,6 +45,7 @@ const Description = ({
         <Info className="icon-sm" />
         <input
           type="text"
+          tabIndex={tabIndex}
           disabled={disabled}
           placeholder={localize('com_ui_description_placeholder')}
           value={description}
