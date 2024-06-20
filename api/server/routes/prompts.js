@@ -1,5 +1,5 @@
 const express = require('express');
-const { PermissionTypes, Permissions } = require('librechat-data-provider');
+const { PermissionTypes, Permissions, SystemRoles } = require('librechat-data-provider');
 const {
   getPrompt,
   getPrompts,
@@ -12,7 +12,6 @@ const {
   createPromptGroup,
   // updatePromptLabels,
   makePromptProduction,
-  getRandomPromptGroups,
 } = require('~/models/Prompt');
 const { requireJwtAuth, generateCheckAccess } = require('~/server/middleware');
 
@@ -108,7 +107,12 @@ router.post('/', createPrompt);
 const patchPromptGroup = async (req, res) => {
   try {
     const { groupId } = req.params;
-    const promptGroup = await updatePromptGroup({ _id: groupId }, req.body);
+    const author = req.user.id;
+    const filter = { _id: groupId, author };
+    if (req.user.role === SystemRoles.ADMIN) {
+      delete filter.author;
+    }
+    const promptGroup = await updatePromptGroup(filter, req.body);
     res.status(200).send(promptGroup);
   } catch (error) {
     console.error(error);
@@ -129,26 +133,14 @@ router.patch('/:promptId/tags/production', checkPromptCreate, async (req, res) =
   }
 });
 
-// router.patch('/:promptId/labels', async (req, res) => {
-//   const { promptId } = req.params;
-//   const { labels } = req.body;
-//   res.status(200).send(await updatePromptLabels(promptId, labels));
-// });
-
-router.get('/random', async (req, res) => {
-  try {
-    const { limit = 4, skip = 0 } = req.query;
-    res.status(200).send(await getRandomPromptGroups({ limit, skip }));
-  } catch (error) {
-    console.error(error);
-    res.status(500).send({ error: 'Error getting random prompt' });
-  }
-});
-
 router.get('/:promptId', async (req, res) => {
   const { promptId } = req.params;
   const author = req.user.id;
-  const prompt = await getPrompt({ _id: promptId, author });
+  const query = { _id: promptId, author };
+  if (req.user.role === SystemRoles.ADMIN) {
+    delete query.author;
+  }
+  const prompt = await getPrompt(query);
   res.status(200).send(prompt);
 });
 
@@ -156,7 +148,11 @@ router.get('/', async (req, res) => {
   try {
     const author = req.user.id;
     const { groupId } = req.query;
-    const prompts = await getPrompts({ groupId, author });
+    const query = { groupId, author };
+    if (req.user.role === SystemRoles.ADMIN) {
+      delete query.author;
+    }
+    const prompts = await getPrompts(query);
     res.status(200).send(prompts);
   } catch (error) {
     console.error(error);
@@ -178,7 +174,11 @@ const deletePromptController = async (req, res) => {
     const { promptId } = req.params;
     const { groupId } = req.query;
     const author = req.user.id;
-    const result = await deletePrompt({ promptId, groupId, author, role: req.user.role });
+    const query = { promptId, groupId, author, role: req.user.role };
+    if (req.user.role === SystemRoles.ADMIN) {
+      delete query.author;
+    }
+    const result = await deletePrompt(query);
     res.status(200).send(result);
   } catch (error) {
     console.error(error);

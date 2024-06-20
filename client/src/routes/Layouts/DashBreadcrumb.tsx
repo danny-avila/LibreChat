@@ -100,8 +100,10 @@ export default function DashBreadcrumb() {
           </BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
-      {user?.role === SystemRoles.ADMIN && <AdminSettings />}
-      {isPromptsPath && <AdvancedSwitch />}
+      <div className="flex">
+        {user?.role === SystemRoles.ADMIN && <AdminSettings />}
+        {isPromptsPath && <AdvancedSwitch />}
+      </div>
     </div>
   );
 }
