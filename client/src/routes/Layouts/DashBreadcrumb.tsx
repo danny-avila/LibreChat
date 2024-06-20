@@ -65,7 +65,8 @@ export default function DashBreadcrumb() {
               onClick={chatLinkHandler}
             >
               <ArrowLeft className="icon-xs" />
-              {localize('com_ui_back_to_chat')}
+              <span className="hidden md:flex">{localize('com_ui_back_to_chat')}</span>
+              <span className="flex md:hidden">{localize('com_ui_chat')}</span>
             </BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
@@ -101,8 +102,8 @@ export default function DashBreadcrumb() {
         </BreadcrumbList>
       </Breadcrumb>
       <div className="flex items-center justify-center">
-        {user?.role === SystemRoles.ADMIN && <AdminSettings />}
         {isPromptsPath && <AdvancedSwitch />}
+        {user?.role === SystemRoles.ADMIN && <AdminSettings />}
       </div>
     </div>
   );
