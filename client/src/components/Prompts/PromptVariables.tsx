@@ -1,8 +1,16 @@
 import { useMemo } from 'react';
 import { Variable } from 'lucide-react';
-import { extractUniqueVariables } from '~/utils';
-import { Separator } from '../ui';
+import { extractUniqueVariables, cn } from '~/utils';
+import { Separator } from '~/components/ui';
 import { useLocalize } from '~/hooks';
+
+const specialVariables = {
+  current_date: true,
+  current_user: true,
+};
+
+const specialVariableClasses =
+  'bg-yellow-500/25 text-yellow-600 dark:border-yellow-500/50 dark:bg-transparent dark:text-yellow-500/90';
 
 const PromptVariables = ({ promptText }: { promptText: string }) => {
   const localize = useLocalize();
@@ -22,10 +30,13 @@ const PromptVariables = ({ promptText }: { promptText: string }) => {
           <div className="flex h-7 items-center">
             {variables.map((variable, index) => (
               <label
-                className="mr-1 rounded-full border border-border-medium px-2 text-text-secondary"
+                className={cn(
+                  'mr-1 rounded-full border border-border-medium px-2 text-text-secondary',
+                  specialVariables[variable.toLowerCase()] ? specialVariableClasses : '',
+                )}
                 key={index}
               >
-                {variable}
+                {specialVariables[variable.toLowerCase()] ? variable.toLowerCase() : variable}
               </label>
             ))}
           </div>

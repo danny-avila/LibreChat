@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 import { useForm, useFieldArray, Controller, useWatch } from 'react-hook-form';
 import type { TPromptGroup } from 'librechat-data-provider';
-import { extractVariableInfo, wrapVariable } from '~/utils';
-import { useLocalize, useSubmitMessage } from '~/hooks';
+import { extractVariableInfo, wrapVariable, replaceSpecialVars } from '~/utils';
+import { useAuthContext, useLocalize, useSubmitMessage } from '~/hooks';
 import { Input } from '~/components/ui';
 
 type FormValues = {
@@ -17,8 +17,13 @@ export default function VariableForm({
   onClose: () => void;
 }) {
   const localize = useLocalize();
+  const { user } = useAuthContext();
 
-  const mainText = group.productionPrompt?.prompt ?? '';
+  const mainText = useMemo(() => {
+    const initialText = group.productionPrompt?.prompt ?? '';
+    return replaceSpecialVars({ text: initialText, user });
+  }, [group.productionPrompt?.prompt, user]);
+
   const { allVariables, uniqueVariables, variableIndexMap } = useMemo(
     () => extractVariableInfo(mainText),
     [mainText],

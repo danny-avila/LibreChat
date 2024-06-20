@@ -66,7 +66,7 @@ module.exports = {
         'brand-purple': '#ab68ff',
         'text-primary': 'var(--text-primary)',
         'text-secondary': 'var(--text-secondary)',
-        'text-tertiary': 'var(--gray-500)',
+        'text-tertiary': 'var(--text-tertiary)',
         'surface-primary': 'var(--surface-primary)',
         'surface-primary-alt': 'var(--surface-primary-alt)',
         'surface-secondary': 'var(--surface-secondary)',

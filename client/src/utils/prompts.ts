@@ -1,5 +1,25 @@
+import { format } from 'date-fns';
+import type { TUser } from 'librechat-data-provider';
+
+export function replaceSpecialVars({ text, user }: { text: string; user?: TUser }) {
+  if (!text || !user) {
+    return text;
+  }
+
+  const currentDate = format(new Date(), 'yyyy-MM-dd');
+  text = text.replace(/{{current_date}}/gi, currentDate);
+
+  const currentUser = user.name;
+  text = text.replace(/{{current_user}}/gi, currentUser);
+
+  return text;
+}
+
+/**
+ * Detects the presence of variables in the given text, excluding {{current_date}} and {{current_user}}.
+ */
 export const detectVariables = (text: string): boolean => {
-  const regex = /{{(.*?)}}/g;
+  const regex = /{{(?!current_date|current_user)[^{}]{1,}}}/gi;
   return regex.test(text);
 };
 
