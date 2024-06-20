@@ -283,7 +283,10 @@ const PromptForm = () => {
                     <>
                       <div className="flex w-full flex-col items-center gap-2">
                         <div className="grid w-full items-center gap-2">
-                          <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
+                          <Label
+                            htmlFor="dialog-delete-confirm-prompt"
+                            className="text-left text-sm font-medium"
+                          >
                             {localize('com_ui_delete_confirm')} <strong>{group.name}</strong>
                           </Label>
                         </div>
