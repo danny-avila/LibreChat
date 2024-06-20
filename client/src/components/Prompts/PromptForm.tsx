@@ -183,26 +183,28 @@ const PromptForm = () => {
                 }
               />
               {hasShareAccess && <SharePrompt group={group} disabled={isLoadingGroup} />}
-              <Button
-                size={'sm'}
-                className="h-10 border border-transparent bg-green-400 transition-all hover:bg-green-500 dark:border-green-600 dark:bg-transparent dark:hover:bg-green-900"
-                variant={'default'}
-                onClick={() => {
-                  const { _id: promptVersionId = '', prompt } = selectedPrompt;
-                  makeProductionMutation.mutate({
-                    id: promptVersionId || '',
-                    groupId: group?._id || '',
-                    productionPrompt: { prompt },
-                  });
-                }}
-                disabled={
-                  isLoadingGroup ||
-                  selectedPrompt?._id === group?.productionId ||
-                  makeProductionMutation.isLoading
-                }
-              >
-                <Rocket className="cursor-pointer dark:text-green-600" />
-              </Button>
+              {editorMode === PromptsEditorMode.ADVANCED && (
+                <Button
+                  size={'sm'}
+                  className="h-10 border border-transparent bg-green-400 transition-all hover:bg-green-500 dark:border-green-600 dark:bg-transparent dark:hover:bg-green-900"
+                  variant={'default'}
+                  onClick={() => {
+                    const { _id: promptVersionId = '', prompt } = selectedPrompt;
+                    makeProductionMutation.mutate({
+                      id: promptVersionId || '',
+                      groupId: group?._id || '',
+                      productionPrompt: { prompt },
+                    });
+                  }}
+                  disabled={
+                    isLoadingGroup ||
+                    selectedPrompt?._id === group?.productionId ||
+                    makeProductionMutation.isLoading
+                  }
+                >
+                  <Rocket className="cursor-pointer dark:text-green-600" />
+                </Button>
+              )}
               <Button
                 size={'sm'}
                 className="h-10 w-10 border border-transparent bg-red-100 text-red-500 transition-all hover:bg-red-500 hover:text-white dark:border-red-600 dark:bg-transparent dark:hover:bg-red-950"

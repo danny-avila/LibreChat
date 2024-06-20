@@ -2,6 +2,7 @@ import React from 'react';
 import { format } from 'date-fns';
 import { Layers3 } from 'lucide-react';
 import type { TPrompt, TPromptGroup } from 'librechat-data-provider';
+import { useLocalize } from '~/hooks';
 import { Tag } from '~/components/ui';
 import { cn } from '~/utils';
 
@@ -16,11 +17,12 @@ const PromptVersions = ({
   selectionIndex: React.SetStateAction<number>;
   setSelectionIndex: React.Dispatch<React.SetStateAction<number>>;
 }) => {
+  const localize = useLocalize();
   return (
     <>
       <h2 className="mb-4 flex gap-2 text-base font-semibold dark:text-gray-200">
         <Layers3 className="icon-lg text-green-500" />
-        Versions
+        {localize('com_ui_versions')}
       </h2>
       <ul className="flex flex-col gap-3">
         {prompts.map((prompt: TPrompt, index: number) => {
@@ -42,7 +44,9 @@ const PromptVersions = ({
               )}
               onClick={() => setSelectionIndex(index)}
             >
-              <p className="font-bold dark:text-gray-200">Version: {prompts.length - index}</p>
+              <p className="font-bold dark:text-gray-200">
+                {localize('com_ui_version_var', `${prompts.length - index}`)}
+              </p>
               <p className="absolute right-4 top-5 whitespace-nowrap text-xs text-gray-600 dark:text-gray-400">
                 {format(new Date(prompt.createdAt), 'yyyy-MM-dd HH:mm')}
               </p>
