@@ -107,6 +107,8 @@ const CreatePromptForm = ({
                     type="text"
                     className="mr-2 w-full border border-gray-300 p-2 text-2xl dark:border-gray-600"
                     placeholder={`${localize('com_ui_prompt_name')}*`}
+                    tabIndex={1}
+                    autoFocus={true}
                   />
                   <div
                     className={cn(
@@ -119,7 +121,7 @@ const CreatePromptForm = ({
                 </div>
               )}
             />
-            <CategorySelector />
+            <CategorySelector tabIndex={4} />
           </div>
         </div>
         <div className="w-full md:mt-[1.075rem]">
@@ -138,6 +140,7 @@ const CreatePromptForm = ({
                       {...field}
                       className="w-full rounded border border-gray-300 px-2 py-1 focus:outline-none dark:border-gray-600 dark:bg-transparent dark:text-gray-200"
                       minRows={6}
+                      tabIndex={2}
                     />
                     <div
                       className={`mt-1 text-sm text-red-500 ${
@@ -152,7 +155,10 @@ const CreatePromptForm = ({
             </div>
           </div>
           <PromptVariables promptText={promptText} />
-          <Description onValueChange={(value) => methods.setValue('oneliner', value)} />
+          <Description
+            onValueChange={(value) => methods.setValue('oneliner', value)}
+            tabIndex={3}
+          />
           <div className="flex justify-end">
             <Button type="submit" variant="default" disabled={!isDirty || isSubmitting || !isValid}>
               {localize('com_ui_create_var', localize('com_ui_prompt'))}
