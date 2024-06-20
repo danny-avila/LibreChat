@@ -1,5 +1,6 @@
-import { useMemo, useCallback } from 'react';
 import { useSetRecoilState } from 'recoil';
+import { useMemo, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import { SystemRoles } from 'librechat-data-provider';
 import { ArrowLeft, MessageSquareQuote } from 'lucide-react';
 import {
@@ -15,9 +16,12 @@ import {
   DropdownMenuTrigger,
 } from '~/components/ui';
 import { useLocalize, useCustomLink, useAuthContext } from '~/hooks';
+import AdvancedSwitch from '~/components/Prompts/AdvancedSwitch';
 import AdminSettings from '~/components/Prompts/AdminSettings';
 import { useDashboardContext } from '~/Providers';
 import store from '~/store';
+
+const promptsPathPattern = /prompts\/.*/;
 
 const getConversationId = (prevLocationPath: string) => {
   if (!prevLocationPath || prevLocationPath.includes('/d/')) {
@@ -28,18 +32,28 @@ const getConversationId = (prevLocationPath: string) => {
 };
 
 export default function DashBreadcrumb() {
+  const location = useLocation();
   const localize = useLocalize();
   const { user } = useAuthContext();
   const { prevLocationPath } = useDashboardContext();
   const lastConversationId = useMemo(() => getConversationId(prevLocationPath), [prevLocationPath]);
+
   const setPromptsName = useSetRecoilState(store.promptsName);
   const setPromptsCategory = useSetRecoilState(store.promptsCategory);
+
   const clickCallback = useCallback(() => {
     setPromptsName('');
     setPromptsCategory('');
   }, [setPromptsName, setPromptsCategory]);
+
   const chatLinkHandler = useCustomLink('/c/' + lastConversationId, clickCallback);
   const promptsLinkHandler = useCustomLink('/d/prompts');
+
+  const isPromptsPath = useMemo(
+    () => promptsPathPattern.test(location.pathname),
+    [location.pathname],
+  );
+
   return (
     <div className="mr-4 flex items-center justify-between">
       <Breadcrumb className="mt-1 px-2 dark:text-gray-200">
@@ -87,6 +101,7 @@ export default function DashBreadcrumb() {
         </BreadcrumbList>
       </Breadcrumb>
       {user?.role === SystemRoles.ADMIN && <AdminSettings />}
+      {isPromptsPath && <AdvancedSwitch />}
     </div>
   );
 }

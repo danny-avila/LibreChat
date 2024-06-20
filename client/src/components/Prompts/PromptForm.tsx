@@ -27,10 +27,13 @@ import SharePrompt from './SharePrompt';
 import PromptName from './PromptName';
 import store from '~/store';
 
+const { PromptsEditorMode, promptsEditorMode } = store;
+
 const PromptForm = () => {
   const params = useParams();
   const navigate = useNavigate();
   const { user } = useAuthContext();
+  const editorMode = useRecoilValue(promptsEditorMode);
   const alwaysMakeProd = useRecoilValue(store.alwaysMakeProd);
   const { data: group, isLoading: isLoadingGroup } = useGetPromptGroup(params.promptId || '');
   const { data: prompts = [], isLoading: isLoadingPrompts } = useGetPrompts(
@@ -234,20 +237,22 @@ const PromptForm = () => {
               )}
             </div>
             {/* Right Section */}
-            <div className="flex-1 overflow-y-auto p-4 md:max-h-[calc(100vh-150px)] md:w-1/4 md:max-w-[35%] lg:max-w-[30%] xl:max-w-[25%]">
-              {isLoadingPrompts ? (
-                <Skeleton className="h-96 w-full" />
-              ) : (
-                !!prompts.length && (
-                  <PromptVersions
-                    group={group}
-                    prompts={prompts}
-                    selectionIndex={selectionIndex}
-                    setSelectionIndex={setSelectionIndex}
-                  />
-                )
-              )}
-            </div>
+            {editorMode === PromptsEditorMode.ADVANCED && (
+              <div className="flex-1 overflow-y-auto p-4 md:max-h-[calc(100vh-150px)] md:w-1/4 md:max-w-[35%] lg:max-w-[30%] xl:max-w-[25%]">
+                {isLoadingPrompts ? (
+                  <Skeleton className="h-96 w-full" />
+                ) : (
+                  !!prompts.length && (
+                    <PromptVersions
+                      group={group}
+                      prompts={prompts}
+                      selectionIndex={selectionIndex}
+                      setSelectionIndex={setSelectionIndex}
+                    />
+                  )
+                )}
+              </div>
+            )}
           </div>
         </div>
       </form>

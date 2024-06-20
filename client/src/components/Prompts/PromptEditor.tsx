@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { useRecoilValue } from 'recoil';
 import { EditIcon } from 'lucide-react';
 import { Controller, useFormContext, useFormState } from 'react-hook-form';
 import AlwaysMakeProd from '~/components/Prompts/Groups/AlwaysMakeProd';
@@ -6,6 +7,9 @@ import { SaveIcon, CrossIcon } from '~/components/svg';
 import { TextareaAutosize } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+import store from '~/store';
+
+const { PromptsEditorMode, promptsEditorMode } = store;
 
 type Props = {
   type: string;
@@ -18,6 +22,7 @@ type Props = {
 const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
   const localize = useLocalize();
   const { control } = useFormContext();
+  const editorMode = useRecoilValue(promptsEditorMode);
   const { dirtyFields } = useFormState({ control: control });
 
   const EditorIcon = useMemo(() => {
@@ -32,7 +37,7 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
       <h2 className="flex items-center justify-between rounded-t-lg border border-gray-300 py-2 pl-4 text-base font-semibold dark:border-gray-600 dark:text-gray-200">
         {localize('com_ui_text_prompt')}
         <div className="flex flex-row gap-6">
-          <AlwaysMakeProd />
+          {editorMode === PromptsEditorMode.ADVANCED && <AlwaysMakeProd />}
           <button type="button" onClick={() => setIsEditing((prev) => !prev)} className="mr-2">
             <EditorIcon
               className={cn(
