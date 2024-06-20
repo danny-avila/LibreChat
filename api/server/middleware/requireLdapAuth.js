@@ -1,10 +1,9 @@
 const passport = require('passport');
-const logger = require('~/utils/logger');
 
 const requireLdapAuth = (req, res, next) => {
   passport.authenticate('ldapauth', (err, user, info) => {
     if (err) {
-      logger.info({
+      console.log({
         title: '(requireLdapAuth) Error at passport.authenticate',
         parameters: [{ name: 'error', value: err }],
       });
@@ -12,7 +11,7 @@ const requireLdapAuth = (req, res, next) => {
     }
 
     if (!user) {
-      logger.info({
+      console.log({
         title: '(requireLdapAuth) Error: No user',
       });
       return res.status(422).send(info);
