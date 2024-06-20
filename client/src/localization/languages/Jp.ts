@@ -116,7 +116,6 @@ export default {
   com_ui_submit: '送信する',
   com_ui_upload_success: 'アップロード成功',
   com_ui_upload_error: 'ファイルのアップロード中にエラーが発生しました。',
-  com_ui_upload_invalid: '不正なファイルです',
   com_ui_cancel: 'キャンセル',
   com_ui_save: '保存',
   com_ui_save_submit: '保存 & 送信',

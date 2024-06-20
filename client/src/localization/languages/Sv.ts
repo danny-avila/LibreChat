@@ -32,7 +32,6 @@ export default {
   com_ui_enter: 'Ange',
   com_ui_submit: 'Skicka',
   com_ui_upload_success: 'Uppladdningen av filen lyckades',
-  com_ui_upload_invalid: 'Ogiltig fil för uppladdning',
   com_ui_cancel: 'Avbryt',
   com_ui_save: 'Spara',
   com_ui_copy_to_clipboard: 'Kopiera till urklipp',
@@ -57,7 +56,8 @@ export default {
   com_ui_create_link: 'Skapa länk',
   com_ui_share_link_to_chat: 'Dela länk till chatt',
   com_ui_share_error: 'Ett fel uppstod vid delning av chattlänken',
-  com_ui_share_create_message: 'Ditt namn och alla meddelanden du lägger till efter delningen förblir privata.',
+  com_ui_share_create_message:
+    'Ditt namn och alla meddelanden du lägger till efter delningen förblir privata.',
   com_ui_share_created_message:
     'En delad länk till din chatt har skapats. Hantera tidigare delade chattar när som helst via Inställningar.',
   com_ui_share_update_message:

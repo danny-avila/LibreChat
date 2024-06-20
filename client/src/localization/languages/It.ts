@@ -124,8 +124,6 @@ export default {
   com_ui_none_selected: 'Nessuna selezionata',
   com_ui_upload_success: 'File caricato con successo',
   com_ui_upload_error: 'Si è verificato un errore durante il caricamento del file',
-  com_ui_upload_invalid:
-    'File non valido per il caricamento. Deve essere un\'immagine non superiore a 2 MB',
   com_ui_cancel: 'Annulla',
   com_ui_save: 'Salva',
   com_ui_save_submit: 'Salva e Invia',
@@ -194,7 +192,8 @@ export default {
   com_ui_create_link: 'Crea link',
   com_ui_share_link_to_chat: 'Condividi link a chat',
   com_ui_share_error: 'Si è verificato un errore durante la condivisione del link della chat',
-  com_ui_share_create_message: 'Il tuo nome e qualsiasi messaggio aggiunto dopo la condivisione rimarranno privati.',
+  com_ui_share_create_message:
+    'Il tuo nome e qualsiasi messaggio aggiunto dopo la condivisione rimarranno privati.',
   com_ui_share_created_message:
     'È stato creato un link condiviso per la tua chat. Gestisci le chat condivise in precedenza in qualsiasi momento tramite Impostazioni.',
   com_ui_share_update_message:
@@ -1293,7 +1292,8 @@ export const comparisons = {
   },
   com_ui_share_create_message: {
     english: 'Your name and any messages you add after sharing stay private.',
-    translated: 'Il tuo nome e qualsiasi messaggio aggiunto dopo la condivisione rimarranno privati.',
+    translated:
+      'Il tuo nome e qualsiasi messaggio aggiunto dopo la condivisione rimarranno privati.',
   },
   com_ui_share_created_message: {
     english:
@@ -1303,7 +1303,8 @@ export const comparisons = {
   },
   com_ui_share_update_message: {
     english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
-    translated: 'Il tuo nome, istruzioni personalizzate e qualsiasi messaggio aggiunto dopo la condivisione rimarranno privati.',
+    translated:
+      'Il tuo nome, istruzioni personalizzate e qualsiasi messaggio aggiunto dopo la condivisione rimarranno privati.',
   },
   com_ui_share_updated_message: {
     english:

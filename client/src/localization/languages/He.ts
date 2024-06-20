@@ -67,7 +67,6 @@ export default {
   com_ui_submit: 'שלח',
   com_ui_upload_success: 'קובץ שהועלה בהצלחה',
   com_ui_upload_error: 'אירעה שגיאה בהעלאת הקובץ שלך',
-  com_ui_upload_invalid: 'קובץ לא חוקי להעלאה. חייבת להיות תמונה שגודלה לא עולה על 2 MB',
   com_ui_cancel: 'בטל',
   com_ui_save: 'שמור',
   com_ui_save_submit: 'שמור ושלח',
@@ -648,10 +647,6 @@ export const comparisons = {
     english: 'There was an error uploading your file',
     translated: 'אירעה שגיאה בהעלאת הקובץ שלך',
   },
-  com_ui_upload_invalid: {
-    english: 'Invalid file for upload. Must be an image not exceeding 2 MB',
-    translated: 'קובץ לא חוקי להעלאה. חייבת להיות תמונה שגודלה לא עולה על 2 MB',
-  },
   com_ui_cancel: {
     english: 'Cancel',
     translated: 'בטל',
@@ -780,7 +775,8 @@ export const comparisons = {
   },
   com_ui_share_update_message: {
     english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
-    translated: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated:
+      'Your name, custom instructions, and any messages you add after sharing stay private.',
   },
   com_ui_share_updated_message: {
     english:

@@ -34,7 +34,6 @@ export default {
   com_ui_enter: 'Gir',
   com_ui_submit: 'Gönder',
   com_ui_upload_success: 'Dosya başarıyla yüklendi',
-  com_ui_upload_invalid: 'Geçersiz dosya yükleme',
   com_ui_cancel: 'İptal',
   com_ui_save: 'Kaydet',
   com_ui_copy_to_clipboard: 'Panoya kopyala',
@@ -59,7 +58,8 @@ export default {
   com_ui_create_link: 'Bağlantı oluştur',
   com_ui_share_link_to_chat: 'Bağlantıyı sohbete paylaş',
   com_ui_share_error: 'Sohbet bağlantısını paylaşırken bir hata oluştu',
-  com_ui_share_create_message: 'Adınız ve paylaşım sonrasında eklediğiniz herhangi bir mesaj özel kalır.',
+  com_ui_share_create_message:
+    'Adınız ve paylaşım sonrasında eklediğiniz herhangi bir mesaj özel kalır.',
   com_ui_share_created_message:
     'Sohbetiniz için paylaşılan bir bağlantı oluşturuldu. Ayarlar aracılığıyla önceden paylaşılan sohbetleri istediğiniz zaman yönetin.',
   com_ui_share_update_message:

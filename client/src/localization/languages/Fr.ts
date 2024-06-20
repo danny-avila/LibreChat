@@ -41,8 +41,6 @@ export default {
   com_ui_submit: 'Soumettre',
   com_ui_upload_success: 'Fichier téléversé avec succès',
   com_ui_upload_error: 'Une erreur s\'est produite lors du téléversement de votre fichier',
-  com_ui_upload_invalid:
-    'Fichier invalide pour le téléversement. Doit être une image ne dépassant pas 2 Mo',
   com_ui_cancel: 'Annuler',
   com_ui_save: 'Sauvegarder',
   com_ui_save_submit: 'Enregistrer et Soumettre',
@@ -738,10 +736,6 @@ export const comparisons = {
     english: 'There was an error uploading your file',
     translated: 'Une erreur s\'est produite lors du téléversement de votre fichier',
   },
-  com_ui_upload_invalid: {
-    english: 'Invalid file for upload. Must be an image not exceeding 2 MB',
-    translated: 'Fichier invalide pour le téléversement. Doit être une image ne dépassant pas 2 Mo',
-  },
   com_ui_cancel: {
     english: 'Cancel',
     translated: 'Annuler',
@@ -840,19 +834,20 @@ export const comparisons = {
   },
   com_ui_share_created_message: {
     english:
-       'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
     translated:
       'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
   },
   com_ui_share_update_message: {
     english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
-    translated: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated:
+      'Your name, custom instructions, and any messages you add after sharing stay private.',
   },
   com_ui_share_updated_message: {
     english:
-       'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
     translated:
-       'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
   },
   com_ui_shared_link_not_found: {
     english: 'Shared link not found',

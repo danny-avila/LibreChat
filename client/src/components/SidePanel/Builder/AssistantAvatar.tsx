@@ -208,7 +208,7 @@ function Avatar({
       });
     } else {
       showToast({
-        message: localize('com_ui_upload_invalid'),
+        message: localize('com_ui_upload_invalid_var', fileConfig.avatarSizeLimit + ''),
         status: 'error',
       });
     }
