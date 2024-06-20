@@ -1,10 +1,11 @@
-import { useRecoilState } from 'recoil';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import { useMemo, useRef, useEffect, useCallback } from 'react';
 import { usePromptGroupsInfiniteQuery } from '~/data-provider';
 import debounce from 'lodash/debounce';
 import store from '~/store';
 
 export default function usePromptGroupsNav() {
+  const category = useRecoilValue(store.promptsCategory);
   const [name, setName] = useRecoilState(store.promptsName);
   const [pageSize, setPageSize] = useRecoilState(store.promptsPageSize);
   const [pageNumber, setPageNumber] = useRecoilState(store.promptsPageNumber);
@@ -18,15 +19,16 @@ export default function usePromptGroupsNav() {
   }, [pageNumber]);
 
   const groupsQuery = usePromptGroupsInfiniteQuery({
-    pageSize,
-    pageNumber: pageNumber + '',
     name,
+    pageSize,
+    category,
+    pageNumber: pageNumber + '',
   });
 
   useEffect(() => {
     maxPageNumberReached.current = 1;
     setPageNumber(1);
-  }, [pageSize, name, setPageNumber]);
+  }, [pageSize, name, category, setPageNumber]);
 
   const promptGroups = useMemo(() => {
     return groupsQuery?.data?.pages?.[pageNumber - 1 + '']?.promptGroups || [];

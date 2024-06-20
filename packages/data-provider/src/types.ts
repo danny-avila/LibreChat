@@ -375,6 +375,7 @@ export type TPromptsWithFilterRequest = {
 };
 
 export type TPromptGroupsWithFilterRequest = {
+  category: string;
   pageNumber: string;
   pageSize: string | number;
   before?: string | null;

@@ -23,6 +23,7 @@ export const useUpdatePromptGroup = (
   const queryClient = useQueryClient();
   const name = useRecoilValue(store.promptsName);
   const pageSize = useRecoilValue(store.promptsPageSize);
+  const category = useRecoilValue(store.promptsCategory);
 
   return useMutation({
     mutationFn: (variables: t.TUpdatePromptGroupVariables) =>
@@ -36,6 +37,7 @@ export const useUpdatePromptGroup = (
       const groupData = queryClient.getQueryData<t.PromptGroupListData>([
         QueryKeys.promptGroups,
         name,
+        category,
         pageSize,
       ]);
       const previousListData = JSON.parse(JSON.stringify(groupData)) as t.PromptGroupListData;
@@ -56,7 +58,7 @@ export const useUpdatePromptGroup = (
           (group) => queryClient.setQueryData([QueryKeys.promptGroup, variables.id], group),
         );
         queryClient.setQueryData<t.PromptGroupListData>(
-          [QueryKeys.promptGroups, name, pageSize],
+          [QueryKeys.promptGroups, name, category, pageSize],
           newData,
         );
       }
@@ -73,7 +75,7 @@ export const useUpdatePromptGroup = (
       }
       if (context?.previousListData) {
         queryClient.setQueryData<t.PromptGroupListData>(
-          [QueryKeys.promptGroups, name, pageSize],
+          [QueryKeys.promptGroups, name, category, pageSize],
           context?.previousListData,
         );
       }
@@ -92,6 +94,7 @@ export const useCreatePrompt = (
   const { onSuccess, ...rest } = options || {};
   const name = useRecoilValue(store.promptsName);
   const pageSize = useRecoilValue(store.promptsPageSize);
+  const category = useRecoilValue(store.promptsCategory);
 
   return useMutation({
     mutationFn: (payload: t.TCreatePrompt) => dataService.createPrompt(payload),
@@ -107,7 +110,7 @@ export const useCreatePrompt = (
 
       if (group) {
         queryClient.setQueryData<t.PromptGroupListData>(
-          [QueryKeys.promptGroups, name, pageSize],
+          [QueryKeys.promptGroups, name, category, pageSize],
           (data) => {
             if (!data) {
               return data;
@@ -131,6 +134,7 @@ export const useDeletePrompt = (
   const { onSuccess, ...rest } = options || {};
   const name = useRecoilValue(store.promptsName);
   const pageSize = useRecoilValue(store.promptsPageSize);
+  const category = useRecoilValue(store.promptsCategory);
 
   return useMutation({
     mutationFn: (payload: t.TDeletePromptVariables) => dataService.deletePrompt(payload),
@@ -139,7 +143,7 @@ export const useDeletePrompt = (
       if (response.promptGroup) {
         const promptGroupId = response.promptGroup.id;
         queryClient.setQueryData<t.PromptGroupListData>(
-          [QueryKeys.promptGroups, name, pageSize],
+          [QueryKeys.promptGroups, name, category, pageSize],
           (data) => {
             if (!data) {
               return data;
@@ -187,6 +191,7 @@ export const useDeletePromptGroup = (
   const { onSuccess, ...rest } = options || {};
   const name = useRecoilValue(store.promptsName);
   const pageSize = useRecoilValue(store.promptsPageSize);
+  const category = useRecoilValue(store.promptsCategory);
 
   return useMutation({
     mutationFn: (variables: t.TDeletePromptGroupRequest) =>
@@ -194,7 +199,7 @@ export const useDeletePromptGroup = (
     ...rest,
     onSuccess: (response, variables, context) => {
       queryClient.setQueryData<t.PromptGroupListData>(
-        [QueryKeys.promptGroups, name, pageSize],
+        [QueryKeys.promptGroups, name, category, pageSize],
         (data) => {
           if (!data) {
             return data;
@@ -236,6 +241,7 @@ export const useMakePromptProduction = (options?: t.MakePromptProductionOptions)
   const { onSuccess, onError, onMutate } = options || {};
   const name = useRecoilValue(store.promptsName);
   const pageSize = useRecoilValue(store.promptsPageSize);
+  const category = useRecoilValue(store.promptsCategory);
 
   return useMutation({
     mutationFn: (variables: t.TMakePromptProductionRequest) =>
@@ -249,6 +255,7 @@ export const useMakePromptProduction = (options?: t.MakePromptProductionOptions)
       const groupData = queryClient.getQueryData<t.PromptGroupListData>([
         QueryKeys.promptGroups,
         name,
+        category,
         pageSize,
       ]);
       const previousListData = JSON.parse(JSON.stringify(groupData)) as t.PromptGroupListData;
@@ -267,7 +274,7 @@ export const useMakePromptProduction = (options?: t.MakePromptProductionOptions)
           (group) => queryClient.setQueryData([QueryKeys.promptGroup, variables.groupId], group),
         );
         queryClient.setQueryData<t.PromptGroupListData>(
-          [QueryKeys.promptGroups, name, pageSize],
+          [QueryKeys.promptGroups, name, category, pageSize],
           newData,
         );
       }
@@ -284,7 +291,7 @@ export const useMakePromptProduction = (options?: t.MakePromptProductionOptions)
       }
       if (context?.previousListData) {
         queryClient.setQueryData<t.PromptGroupListData>(
-          [QueryKeys.promptGroups, name, pageSize],
+          [QueryKeys.promptGroups, name, category, pageSize],
           context?.previousListData,
         );
       }

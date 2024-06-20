@@ -888,4 +888,6 @@ export enum CohereConstants {
 export enum SystemCategories {
   ALL = 'sys__all__sys',
   MY_PROMPTS = 'sys__my__prompts__sys',
+  NO_CATEGORY = 'sys__no__category__sys',
+  SHARED_PROMPTS = 'sys__shared__prompts__sys',
 }

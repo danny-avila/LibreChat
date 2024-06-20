@@ -1,5 +1,5 @@
 const { ObjectId } = require('mongodb');
-const { SystemRoles } = require('librechat-data-provider');
+const { SystemRoles, SystemCategories } = require('librechat-data-provider');
 const {
   getProjectByName,
   addGroupIdsToProject,
@@ -59,19 +59,34 @@ const createGroupPipeline = (query, skip, limit) => {
  */
 const getPromptGroups = async (req, filter) => {
   try {
+    let searchShared = true;
+    let searchSharedOnly = false;
     const { pageNumber = 1, pageSize = 10, name, ...query } = filter;
     if (name) {
       query.name = new RegExp(name, 'i');
     }
+    if (!query.category) {
+      delete query.category;
+    } else if (query.category === SystemCategories.MY_PROMPTS) {
+      searchShared = false;
+      delete query.category;
+    } else if (query.category === SystemCategories.NO_CATEGORY) {
+      query.category = '';
+    } else if (query.category === SystemCategories.SHARED_PROMPTS) {
+      searchSharedOnly = true;
+      delete query.category;
+    }
 
     let combinedQuery = query;
 
-    // const projects = req.user.projects || []; // TODO: handle multiple projects
-    const project = await getProjectByName('instance', 'promptGroupIds');
-    if (project && project.promptGroupIds.length > 0) {
-      const { author: _a, ...restQuery } = query;
-      const projectQuery = { _id: { $in: project.promptGroupIds }, ...restQuery };
-      combinedQuery = { $or: [projectQuery, query] };
+    if (searchShared) {
+      // const projects = req.user.projects || []; // TODO: handle multiple projects
+      const project = await getProjectByName('instance', 'promptGroupIds');
+      if (project && project.promptGroupIds.length > 0) {
+        const { author: _a, ...restQuery } = query;
+        const projectQuery = { _id: { $in: project.promptGroupIds }, ...restQuery };
+        combinedQuery = searchSharedOnly ? projectQuery : { $or: [projectQuery, query] };
+      }
     }
 
     const skip = (parseInt(pageNumber, 10) - 1) * parseInt(pageSize, 10);

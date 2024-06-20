@@ -1,5 +1,5 @@
-import { ListFilter, User, Dot } from 'lucide-react';
-import React, { useState, useCallback } from 'react';
+import { ListFilter, User, Share2, Dot } from 'lucide-react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { SystemCategories } from 'librechat-data-provider';
 import type { OptionWithIcon } from '~/common';
@@ -44,36 +44,58 @@ export function FilterItem({
   );
 }
 
-export function FilterMenu({ onSelect }: { onSelect: (category: string) => void }) {
+export function FilterMenu({
+  onSelect,
+}: {
+  onSelect: (category: string, icon?: React.ReactNode | null) => void;
+}) {
   const localize = useLocalize();
-  const { categories } = useCategories('h-4 w-4 mr-2');
+  const { categories } = useCategories('h-4 w-4');
+  const memoizedCategories = useMemo(() => {
+    const noCategory = {
+      label: localize('com_ui_no_category'),
+      value: SystemCategories.NO_CATEGORY,
+    };
+    if (!categories) {
+      return [noCategory];
+    }
+
+    return [noCategory, ...categories];
+  }, [categories, localize]);
+
   const categoryFilter = useRecoilValue(store.promptsCategory);
   return (
-    <DropdownMenuContent className="max-h-xl min-w-40 overflow-y-auto">
+    <DropdownMenuContent className="max-h-xl min-w-48 overflow-y-auto">
       <DropdownMenuGroup>
         <FilterItem
           label={localize('com_ui_all_proper')}
-          icon={<ListFilter className="mr-2 h-4 w-4 text-text-primary" />}
-          onClick={() => onSelect(SystemCategories.ALL)}
+          icon={<ListFilter className="h-4 w-4 text-text-primary" />}
+          onClick={() => onSelect(SystemCategories.ALL, <ListFilter className="icon-sm" />)}
           isActive={categoryFilter === ''}
         />
         <FilterItem
           label={localize('com_ui_my_prompts')}
-          icon={<User className="mr-2 h-4 w-4 text-text-primary" />}
-          onClick={() => onSelect(SystemCategories.MY_PROMPTS)}
+          icon={<User className="h-4 w-4 text-text-primary" />}
+          onClick={() => onSelect(SystemCategories.MY_PROMPTS, <User className="h-4 w-4" />)}
           isActive={categoryFilter === SystemCategories.MY_PROMPTS}
+        />
+        <FilterItem
+          label={localize('com_ui_shared_prompts')}
+          icon={<Share2 className="h-4 w-4 text-text-primary" />}
+          onClick={() => onSelect(SystemCategories.SHARED_PROMPTS, <Share2 className="h-4 w-4" />)}
+          isActive={categoryFilter === SystemCategories.SHARED_PROMPTS}
         />
       </DropdownMenuGroup>
       <DropdownMenuSeparator />
       <DropdownMenuGroup>
-        {categories
+        {memoizedCategories
           .filter((category) => category.value)
           .map((category, i) => (
             <FilterItem
               key={`${category.value}-${i}`}
               label={category.label}
               icon={(category as OptionWithIcon).icon}
-              onClick={() => onSelect(category.value)}
+              onClick={() => onSelect(category.value, (category as OptionWithIcon).icon)}
               isActive={category.value === categoryFilter}
             />
           ))}
@@ -91,23 +113,28 @@ export default function FilterPrompts({
   const localize = useLocalize();
   const [displayName, setDisplayName] = useState('');
   const setCategory = useSetRecoilState(store.promptsCategory);
+  const [selectedIcon, setSelectedIcon] = useState(<ListFilter className="icon-sm" />);
 
   const onSelect = useCallback(
-    (category: string) => {
+    (category: string, icon?: React.ReactNode | null) => {
       if (category === SystemCategories.ALL) {
-        setCategory('');
+        setSelectedIcon(<ListFilter className="icon-sm" />);
+        return setCategory('');
       }
       setCategory(category);
+      if (icon && React.isValidElement(icon)) {
+        setSelectedIcon(icon);
+      }
     },
     [setCategory],
   );
 
   return (
-    <div className={cn('flex gap-1', className)}>
+    <div className={cn('flex gap-2', className)}>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="sm" className="h-10 w-10">
-            <ListFilter className="icon-sm" />
+          <Button variant="ghost" size="sm" className="h-10 w-10 flex-shrink-0">
+            {selectedIcon}
           </Button>
         </DropdownMenuTrigger>
         <FilterMenu onSelect={onSelect} />
@@ -119,7 +146,7 @@ export default function FilterPrompts({
           setDisplayName(e.target.value);
           setName(e.target.value);
         }}
-        className="max-w-sm border-border-light focus:bg-surface-tertiary"
+        className="max-w-xs border-border-light focus:bg-surface-tertiary"
       />
     </div>
   );

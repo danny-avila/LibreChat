@@ -34,6 +34,7 @@ const promptGroupSchema = new Schema(
     category: {
       type: String,
       default: '',
+      index: true,
     },
     projectIds: {
       type: [Schema.Types.ObjectId],

@@ -229,6 +229,8 @@ export default {
   com_ui_create_link: 'Create link',
   com_ui_share_to_all_users: 'Share to all users',
   com_ui_my_prompts: 'My Prompts',
+  com_ui_no_category: 'No category',
+  com_ui_shared_prompts: 'Shared Prompts',
   com_ui_prompts_allow_use: 'Allow using Prompts',
   com_ui_prompts_allow_create: 'Allow creating Prompts',
   com_ui_prompts_allow_share_global: 'Allow sharing Prompts to all users',
