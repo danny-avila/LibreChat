@@ -24,6 +24,7 @@ import { TrashIcon } from '~/components/svg';
 import PromptDetails from './PromptDetails';
 import { findPromptGroup } from '~/utils';
 import PromptEditor from './PromptEditor';
+import SkeletonForm from './SkeletonForm';
 import Description from './Description';
 import SharePrompt from './SharePrompt';
 import PromptName from './PromptName';
@@ -45,6 +46,7 @@ const PromptForm = () => {
 
   const prevIsEditingRef = useRef(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [initialLoad, setInitialLoad] = useState(true);
   const [selectionIndex, setSelectionIndex] = useState<number>(0);
   const isOwner = useMemo(() => user?.id === group?.author, [user, group]);
   const selectedPrompt = useMemo(() => prompts[selectionIndex], [prompts, selectionIndex]);
@@ -122,6 +124,13 @@ const PromptForm = () => {
     [selectedPrompt, createPromptMutation],
   );
 
+  const handleLoadingComplete = useCallback(() => {
+    if (isLoadingGroup || isLoadingPrompts) {
+      return;
+    }
+    setInitialLoad(false);
+  }, [isLoadingGroup, isLoadingPrompts]);
+
   useEffect(() => {
     if (prevIsEditingRef.current && !isEditing) {
       handleSubmit((data) => onSave(data.prompt))();
@@ -130,8 +139,14 @@ const PromptForm = () => {
   }, [isEditing, onSave, handleSubmit]);
 
   useEffect(() => {
-    setSelectionIndex(0);
-  }, [params.promptId]);
+    if (editorMode === PromptsEditorMode.SIMPLE) {
+      const productionIndex = prompts.findIndex((prompt) => prompt._id === group?.productionId);
+      setSelectionIndex(productionIndex !== -1 ? productionIndex : 0);
+    } else {
+      setSelectionIndex(0);
+    }
+    handleLoadingComplete();
+  }, [params.promptId, editorMode, group?.productionId, prompts, handleLoadingComplete]);
 
   useEffect(() => {
     setValue('prompt', selectedPrompt?.prompt || '', { shouldDirty: false });
@@ -145,11 +160,16 @@ const PromptForm = () => {
       }
 
       updateGroupMutation.mutate({ id: group._id || '', payload: { oneliner } });
-    }, 1000),
-    [updateGroupMutation],
+    }, 950),
+    [updateGroupMutation, group],
   );
 
   const { groupsQuery } = useOutletContext<ReturnType<typeof usePromptGroupsNav>>();
+
+  if (initialLoad) {
+    return <SkeletonForm />;
+  }
+
   if (!isOwner && groupsQuery.data && user?.role !== SystemRoles.ADMIN) {
     const fetchedPrompt = findPromptGroup(
       groupsQuery.data,

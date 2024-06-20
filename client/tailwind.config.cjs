@@ -73,6 +73,7 @@ module.exports = {
         'surface-tertiary': 'var(--surface-tertiary)',
         'border-light': 'var(--border-light)',
         'border-medium': 'var(--border-medium)',
+        'border-medium-alt': 'var(--border-medium-alt)',
         'border-heavy': 'var(--gray-300)',
         'border-xheavy': 'var(--gray-400',
       },
