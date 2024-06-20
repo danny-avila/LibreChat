@@ -101,7 +101,7 @@ export default function DashBreadcrumb() {
           </BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
-      <div className="flex items-center justify-center">
+      <div className="flex items-center justify-center gap-2">
         {isPromptsPath && <AdvancedSwitch />}
         {user?.role === SystemRoles.ADMIN && <AdminSettings />}
       </div>

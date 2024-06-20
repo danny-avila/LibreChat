@@ -362,7 +362,7 @@ export type TPromptGroup = {
 
 export type TCreatePrompt = {
   prompt: Pick<TPrompt, 'prompt' | 'type'> & { groupId?: string };
-  group?: { name: string; category?: string };
+  group?: { name: string; category?: string; oneliner?: string };
 };
 
 export type TCreatePromptRecord = TCreatePrompt & Pick<TPromptGroup, 'author' | 'authorName'>;

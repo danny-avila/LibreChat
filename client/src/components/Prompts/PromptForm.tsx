@@ -1,4 +1,5 @@
 import { Rocket } from 'lucide-react';
+import debounce from 'lodash/debounce';
 import { useRecoilValue } from 'recoil';
 import { useForm, FormProvider } from 'react-hook-form';
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
@@ -137,6 +138,21 @@ const PromptForm = () => {
     setValue('category', group?.category || '', { shouldDirty: false });
   }, [selectedPrompt, group?.category, setValue]);
 
+  const debouncedUpdateOneliner = useCallback(
+    debounce((oneliner: string) => {
+      if (!group) {
+        return console.warn('Group not found');
+      }
+
+      if (!oneliner) {
+        return;
+      }
+
+      updateGroupMutation.mutate({ id: group._id || '', payload: { oneliner } });
+    }, 1000),
+    [updateGroupMutation],
+  );
+
   const { groupsQuery } = useOutletContext<ReturnType<typeof usePromptGroupsNav>>();
   if (!isOwner && groupsQuery.data && user?.role !== SystemRoles.ADMIN) {
     const fetchedPrompt = findPromptGroup(
@@ -236,7 +252,10 @@ const PromptForm = () => {
                     prompt={selectedPrompt?.prompt || ''}
                   />
                   <PromptVariables promptText={promptText} />
-                  <Description />
+                  <Description
+                    initialValue={group?.oneliner ?? ''}
+                    onValueChange={debouncedUpdateOneliner}
+                  />
                 </>
               )}
             </div>

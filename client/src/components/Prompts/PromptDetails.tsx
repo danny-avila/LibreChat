@@ -1,6 +1,7 @@
 import type { TPromptGroup } from 'librechat-data-provider';
 import CategoryIcon from './Groups/CategoryIcon';
 import PromptVariables from './PromptVariables';
+import Description from './Description';
 import { useLocalize } from '~/hooks';
 
 const PromptDetails = ({ group }: { group: TPromptGroup }) => {
@@ -36,6 +37,7 @@ const PromptDetails = ({ group }: { group: TPromptGroup }) => {
             </div>
           </div>
           <PromptVariables promptText={promptText} />
+          <Description initialValue={group.oneliner} disabled={true} />
         </div>
       </div>
     </div>

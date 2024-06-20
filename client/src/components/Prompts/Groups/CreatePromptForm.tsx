@@ -5,6 +5,7 @@ import { LocalStorageKeys, PermissionTypes, Permissions } from 'librechat-data-p
 import CategorySelector from '~/components/Prompts/Groups/CategorySelector';
 import PromptVariables from '~/components/Prompts/PromptVariables';
 import { Button, TextareaAutosize, Input } from '~/components/ui';
+import Description from '~/components/Prompts/Description';
 import { useCreatePrompt } from '~/data-provider';
 import { useLocalize, useHasAccess } from '~/hooks';
 import { cn } from '~/utils';
@@ -14,6 +15,7 @@ type CreateFormValues = {
   prompt: string;
   type: 'text' | 'chat';
   category: string;
+  oneliner?: string;
 };
 
 const defaultPrompt: CreateFormValues = {
@@ -21,6 +23,7 @@ const defaultPrompt: CreateFormValues = {
   prompt: '',
   type: 'text',
   category: '',
+  oneliner: undefined,
 };
 
 const CreatePromptForm = ({
@@ -70,10 +73,17 @@ const CreatePromptForm = ({
   const promptText = watch('prompt');
 
   const onSubmit = (data: CreateFormValues) => {
-    const { name, category, ...rest } = data;
+    const { name, category, oneliner, ...rest } = data;
+    const groupData = { name, category } as Pick<
+      CreateFormValues,
+      'name' | 'category' | 'oneliner'
+    >;
+    if ((oneliner?.length || 0) > 0) {
+      groupData.oneliner = oneliner;
+    }
     createPromptMutation.mutate({
       prompt: rest,
-      group: { name, category },
+      group: groupData,
     });
   };
 
@@ -142,6 +152,7 @@ const CreatePromptForm = ({
             </div>
           </div>
           <PromptVariables promptText={promptText} />
+          <Description onValueChange={(value) => methods.setValue('oneliner', value)} />
           <div className="flex justify-end">
             <Button type="submit" variant="default" disabled={!isDirty || isSubmitting || !isValid}>
               {localize('com_ui_create_var', localize('com_ui_prompt'))}
