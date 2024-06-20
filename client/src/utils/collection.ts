@@ -94,6 +94,7 @@ export const normalizeData = <TCollection, TData>(
   data: InfiniteData<TCollection>,
   collectionName: string,
   pageSize: number,
+  uniqueProperty?: keyof TData,
 ): InfiniteData<TCollection> => {
   const infiniteData = JSON.parse(JSON.stringify(data)) as InfiniteData<TCollection>;
   const pageCount = infiniteData.pages.length;
@@ -104,10 +105,22 @@ export const normalizeData = <TCollection, TData>(
   const pageParams = infiniteData.pageParams;
 
   // Combine all conversations of all pages into one array
-  const collection = infiniteData.pages.flatMap((page) => page[collectionName]);
+  let collection = infiniteData.pages.flatMap((page) => page[collectionName]);
 
   if (collection.length === 0) {
     return infiniteData;
+  }
+
+  if (uniqueProperty) {
+    const seen = new Set<TData>();
+    collection = collection.filter((item) => {
+      const value = item[uniqueProperty];
+      if (seen.has(value)) {
+        return false;
+      }
+      seen.add(value);
+      return true;
+    });
   }
 
   // Create the restructured pages
