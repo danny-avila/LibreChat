@@ -14,14 +14,14 @@ import {
   useUpdatePromptGroup,
   useMakePromptProduction,
 } from '~/data-provider';
-import { useAuthContext, usePromptGroupsNav, useHasAccess, useLocalize } from '~/hooks';
+import { useAuthContext, usePromptGroupsNav, useHasAccess } from '~/hooks';
 import CategorySelector from './Groups/CategorySelector';
+import AlwaysMakeProd from './Groups/AlwaysMakeProd';
 import NoPromptGroup from './Groups/NoPromptGroup';
-import { Button, Skeleton, Dialog, DialogTrigger, Label } from '~/components/ui';
-import DialogTemplate from '~/components/ui/DialogTemplate';
+import { Button, Skeleton } from '~/components/ui';
 import PromptVariables from './PromptVariables';
 import PromptVersions from './PromptVersions';
-import { TrashIcon } from '~/components/svg';
+import DeleteConfirm from './DeleteVersion';
 import PromptDetails from './PromptDetails';
 import { findPromptGroup } from '~/utils';
 import PromptEditor from './PromptEditor';
@@ -30,12 +30,10 @@ import Description from './Description';
 import SharePrompt from './SharePrompt';
 import PromptName from './PromptName';
 import store from '~/store';
-import AlwaysMakeProd from './Groups/AlwaysMakeProd';
 
 const { PromptsEditorMode, promptsEditorMode } = store;
 
 const PromptForm = () => {
-  const localize = useLocalize();
   const params = useParams();
   const navigate = useNavigate();
   const { user } = useAuthContext();
@@ -261,51 +259,16 @@ const PromptForm = () => {
                   <Rocket className="cursor-pointer text-white" />
                 </Button>
               )}
-
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button
-                    size={'sm'}
-                    className="h-10 w-10 border border-transparent bg-red-600 text-red-500 transition-all hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-800"
-                    disabled={isLoadingGroup}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                    }}
-                  >
-                    <TrashIcon className="icon-lg cursor-pointer text-white dark:text-white" />
-                  </Button>
-                </DialogTrigger>
-                <DialogTemplate
-                  showCloseButton={false}
-                  title={localize('com_ui_delete_prompt')}
-                  className="max-w-[450px]"
-                  main={
-                    <>
-                      <div className="flex w-full flex-col items-center gap-2">
-                        <div className="grid w-full items-center gap-2">
-                          <Label
-                            htmlFor="dialog-delete-confirm-prompt"
-                            className="text-left text-sm font-medium"
-                          >
-                            {localize('com_ui_delete_confirm')} <strong>{group.name}</strong>
-                          </Label>
-                        </div>
-                      </div>
-                    </>
-                  }
-                  selection={{
-                    selectHandler: () => {
-                      deletePromptMutation.mutate({
-                        _id: selectedPrompt?._id || '',
-                        groupId: group?._id || '',
-                      });
-                    },
-                    selectClasses:
-                      'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 text-white',
-                    selectText: localize('com_ui_delete'),
-                  }}
-                />
-              </Dialog>
+              <DeleteConfirm
+                name={group.name}
+                disabled={isLoadingGroup}
+                selectHandler={() => {
+                  deletePromptMutation.mutate({
+                    _id: selectedPrompt?._id || '',
+                    groupId: group?._id || '',
+                  });
+                }}
+              />
             </div>
           </div>
           {editorMode === PromptsEditorMode.ADVANCED && (
