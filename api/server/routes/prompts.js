@@ -14,6 +14,7 @@ const {
   makePromptProduction,
 } = require('~/models/Prompt');
 const { requireJwtAuth, generateCheckAccess } = require('~/server/middleware');
+const { logger } = require('~/config');
 
 const router = express.Router();
 
@@ -39,8 +40,29 @@ router.use(checkPromptAccess);
  */
 router.get('/groups/:groupId', async (req, res) => {
   let groupId = req.params.groupId;
-  const group = await getPromptGroup({ _id: groupId });
-  res.status(200).send(group);
+  const author = req.user.id;
+
+  const query = {
+    _id: groupId,
+    $or: [{ projectIds: { $exists: true, $ne: [], $not: { $size: 0 } } }, { author }],
+  };
+
+  if (req.user.role === SystemRoles.ADMIN) {
+    delete query.$or;
+  }
+
+  try {
+    const group = await getPromptGroup(query);
+
+    if (!group) {
+      return res.status(404).send({ message: 'Prompt group not found' });
+    }
+
+    res.status(200).send(group);
+  } catch (error) {
+    logger.error('Error getting prompt group', error);
+    res.status(500).send({ message: 'Error getting prompt group' });
+  }
 });
 
 /**
@@ -55,7 +77,7 @@ router.get('/groups', async (req, res) => {
     const groups = await getPromptGroups(req, filter);
     res.status(200).send(groups);
   } catch (error) {
-    console.error(error);
+    logger.error(error);
     res.status(500).send({ error: 'Error getting prompt groups' });
   }
 });
@@ -89,7 +111,7 @@ const createPrompt = async (req, res) => {
     }
     res.status(200).send(result);
   } catch (error) {
-    console.error(error);
+    logger.error(error);
     res.status(500).send({ error: 'Error saving prompt' });
   }
 };
@@ -115,7 +137,7 @@ const patchPromptGroup = async (req, res) => {
     const promptGroup = await updatePromptGroup(filter, req.body);
     res.status(200).send(promptGroup);
   } catch (error) {
-    console.error(error);
+    logger.error(error);
     res.status(500).send({ error: 'Error updating prompt group' });
   }
 };
@@ -128,7 +150,7 @@ router.patch('/:promptId/tags/production', checkPromptCreate, async (req, res) =
     const result = await makePromptProduction(promptId);
     res.status(200).send(result);
   } catch (error) {
-    console.error(error);
+    logger.error(error);
     res.status(500).send({ error: 'Error updating prompt production' });
   }
 });
@@ -155,7 +177,7 @@ router.get('/', async (req, res) => {
     const prompts = await getPrompts(query);
     res.status(200).send(prompts);
   } catch (error) {
-    console.error(error);
+    logger.error(error);
     res.status(500).send({ error: 'Error getting prompts' });
   }
 });
@@ -181,7 +203,7 @@ const deletePromptController = async (req, res) => {
     const result = await deletePrompt(query);
     res.status(200).send(result);
   } catch (error) {
-    console.error(error);
+    logger.error(error);
     res.status(500).send({ error: 'Error deleting prompt' });
   }
 };
