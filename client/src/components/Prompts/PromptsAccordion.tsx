@@ -13,7 +13,7 @@ export default function PromptsAccordion() {
           <ManagePrompts className="select-none" />
           <AutoSendPrompt className="dark:text-white" />
         </div>
-        <FilterPrompts setName={groupsNav.setName} className="mx-2 w-full" />
+        <FilterPrompts setName={groupsNav.setName} className="items-center justify-center px-2" />
       </PromptSidePanel>
     </div>
   );
