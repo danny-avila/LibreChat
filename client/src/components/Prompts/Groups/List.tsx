@@ -47,12 +47,12 @@ export default function List({
             <Skeleton className="w-100 mx-2 my-3 flex h-[72px] rounded-md border-0 p-4" />
           )}
           {!isLoading && groups.length === 0 && isChatRoute && (
-            <div className="my-2 flex h-[84px] w-full items-center justify-center rounded-2xl border border-border-light bg-transparent px-3 pb-4 pt-3">
+            <div className="my-2 flex h-[84px] w-full items-center justify-center rounded-2xl border border-border-light bg-transparent px-3 pb-4 pt-3 text-text-primary">
               {localize('com_ui_nothing_found')}
             </div>
           )}
           {!isLoading && groups.length === 0 && !isChatRoute && (
-            <div className="w-100 mx-2 my-3 flex h-[72px] items-center justify-center rounded-md border border-border-light bg-transparent p-4">
+            <div className="w-100 mx-2 my-3 flex h-[72px] items-center justify-center rounded-md border border-border-light bg-transparent p-4 text-text-primary">
               {localize('com_ui_nothing_found')}
             </div>
           )}

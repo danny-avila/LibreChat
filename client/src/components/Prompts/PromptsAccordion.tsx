@@ -11,7 +11,7 @@ export default function PromptsAccordion() {
       <PromptSidePanel className="lg:w-full xl:w-full" {...groupsNav}>
         <div className="flex w-full flex-row items-center justify-between px-2 pt-2">
           <ManagePrompts className="select-none" />
-          <AutoSendPrompt className="dark:text-white" />
+          <AutoSendPrompt className="text-xs dark:text-white" />
         </div>
         <FilterPrompts setName={groupsNav.setName} className="items-center justify-center px-2" />
       </PromptSidePanel>
