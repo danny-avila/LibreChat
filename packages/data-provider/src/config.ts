@@ -884,3 +884,8 @@ export enum CohereConstants {
    */
   TITLE_MESSAGE = 'TITLE:',
 }
+
+export enum SystemCategories {
+  ALL = 'sys__all__sys',
+  MY_PROMPTS = 'sys__my__prompts__sys',
+}
