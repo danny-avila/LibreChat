@@ -124,7 +124,7 @@ const AdminSettings = () => {
           className="h-10 w-fit gap-1 border transition-all dark:bg-transparent"
         >
           <ShieldEllipsis className="cursor-pointer" />
-          {localize('com_ui_admin')}
+          <span className="hidden sm:flex">{localize('com_ui_admin')}</span>
         </Button>
       </OGDialogTrigger>
       <OGDialogContent className="bg-white dark:border-gray-700 dark:bg-gray-850 dark:text-gray-300">
