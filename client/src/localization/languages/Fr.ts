@@ -78,7 +78,7 @@ export default {
   com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete: 'Supprimer',
   com_ui_delete_conversation: 'Supprimer la discussions?',
-  com_ui_delete_conversation_confirm: 'Cela supprimera',
+  com_ui_delete_confirm: 'Cela supprimera',
   com_ui_rename: 'Renombrar',
   com_ui_archive: 'Archiver',
   com_ui_archive_error: 'échec de l\'archivage de la conversation',
@@ -840,19 +840,20 @@ export const comparisons = {
   },
   com_ui_share_created_message: {
     english:
-       'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
     translated:
       'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
   },
   com_ui_share_update_message: {
     english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
-    translated: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated:
+      'Your name, custom instructions, and any messages you add after sharing stay private.',
   },
   com_ui_share_updated_message: {
     english:
-       'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
     translated:
-       'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
   },
   com_ui_shared_link_not_found: {
     english: 'Shared link not found',
@@ -866,7 +867,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'Supprimer la discussions?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Cela supprimera',
   },

@@ -139,15 +139,12 @@ export default {
   com_ui_share_link_to_chat: '分享链接到聊天',
   com_ui_share_error: '分享聊天链接时发生错误',
   com_ui_share_create_message: '您的名字及您在分享后添加的任何消息将保持私密。',
-  com_ui_share_created_message:
-    '已创建到您聊天的共享链接。可以通过设置随时管理以前共享的聊天。',
-  com_ui_share_update_message:
-    '您的名字、定制指令及您在分享后添加的任何消息将保持私密。',
-  com_ui_share_updated_message:
-    '已更新到您聊天的共享链接。可以通过设置随时管理以前共享的聊天。',
+  com_ui_share_created_message: '已创建到您聊天的共享链接。可以通过设置随时管理以前共享的聊天。',
+  com_ui_share_update_message: '您的名字、定制指令及您在分享后添加的任何消息将保持私密。',
+  com_ui_share_updated_message: '已更新到您聊天的共享链接。可以通过设置随时管理以前共享的聊天。',
   com_ui_shared_link_not_found: '未找到共享链接',
   com_ui_delete_conversation: '删除对话？',
-  com_ui_delete_conversation_confirm: '这将删除',
+  com_ui_delete_confirm: '这将删除',
   com_ui_delete_assistant_confirm: '确定要删除此助手吗？该操作无法撤销。',
   com_ui_rename: '重命名',
   com_ui_archive: '归档',
@@ -1107,7 +1104,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: '删除对话？',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: '这将删除',
   },

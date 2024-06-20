@@ -154,7 +154,8 @@ export default {
   com_ui_create_link: 'Link erstellen',
   com_ui_share_link_to_chat: 'Link zum Chat teilen',
   com_ui_share_error: 'Beim Teilen des Chat-Links ist ein Fehler aufgetreten',
-  com_ui_share_create_message: 'Ihr Name und alle Nachrichten, die Sie nach dem Teilen hinzufügen, bleiben privat.',
+  com_ui_share_create_message:
+    'Ihr Name und alle Nachrichten, die Sie nach dem Teilen hinzufügen, bleiben privat.',
   com_ui_share_created_message:
     'Ein geteiltes Link zu Ihrem Chat wurde erstellt. Verwalten Sie zuvor geteilte Chats jederzeit über die Einstellungen.',
   com_ui_share_update_message:
@@ -163,7 +164,7 @@ export default {
     'Ein geteiltes Link zu Ihrem Chat wurde aktualisiert. Verwalten Sie zuvor geteilte Chats jederzeit über die Einstellungen.',
   com_ui_shared_link_not_found: 'Geteilter Link nicht gefunden',
   com_ui_delete_conversation: 'Chat löschen?',
-  com_ui_delete_conversation_confirm: 'Damit wird gelöscht',
+  com_ui_delete_confirm: 'Damit wird gelöscht',
   com_ui_delete_assistant_confirm:
     'Bist du sicher, dass du diesen Assistenten löschen willst? Dies kann nicht rückgängig gemacht werden.',
   com_ui_rename: 'Umbenennen',
@@ -1162,7 +1163,8 @@ export const comparisons = {
   },
   com_ui_share_create_message: {
     english: 'Your name and any messages you add after sharing stay private.',
-    translated: 'Ihr Name und alle Nachrichten, die Sie nach dem Teilen hinzufügen, bleiben privat.',
+    translated:
+      'Ihr Name und alle Nachrichten, die Sie nach dem Teilen hinzufügen, bleiben privat.',
   },
   com_ui_share_created_message: {
     english:
@@ -1189,7 +1191,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'Chat löschen?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Damit wird gelöscht',
   },

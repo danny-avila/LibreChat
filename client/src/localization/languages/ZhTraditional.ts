@@ -57,16 +57,13 @@ export default {
   com_ui_share_link_to_chat: '分享鏈接到聊天',
   com_ui_share_error: '分享聊天鏈接時發生錯誤',
   com_ui_share_create_message: '您的姓名以及您在共享後添加的任何消息都會保密。',
-  com_ui_share_created_message:
-    '已創建到您的聊天的共享鏈接。可以隨時通過設置管理以前共享的聊天。',
-  com_ui_share_update_message:
-    '您的姓名、自定義指示以及您在共享後添加的任何消息都會保密。',
-  com_ui_share_updated_message:
-    '已更新到您的聊天的共享鏈接。可以隨時通過設置管理以前共享的聊天。',
+  com_ui_share_created_message: '已創建到您的聊天的共享鏈接。可以隨時通過設置管理以前共享的聊天。',
+  com_ui_share_update_message: '您的姓名、自定義指示以及您在共享後添加的任何消息都會保密。',
+  com_ui_share_updated_message: '已更新到您的聊天的共享鏈接。可以隨時通過設置管理以前共享的聊天。',
   com_ui_shared_link_not_found: '未找到共享鏈接',
   com_ui_delete: '刪除',
   com_ui_delete_conversation: '刪除對話？',
-  com_ui_delete_conversation_confirm: '這將刪除',
+  com_ui_delete_confirm: '這將刪除',
   com_ui_rename: '重新命名',
   com_ui_archive: '封存',
   com_ui_archive_error: '封存對話時發生錯誤',
@@ -797,7 +794,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: '刪除對話？',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: '這將刪除',
   },

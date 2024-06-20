@@ -72,7 +72,8 @@ export default {
   com_ui_create_link: 'Создать ссылку',
   com_ui_share_link_to_chat: 'Поделиться ссылкой в чате',
   com_ui_share_error: 'Произошла ошибка при попытке поделиться ссылкой на чат',
-  com_ui_share_create_message: 'Ваше имя и любые сообщения, которые вы добавите после обмена, останутся конфиденциальными.',
+  com_ui_share_create_message:
+    'Ваше имя и любые сообщения, которые вы добавите после обмена, останутся конфиденциальными.',
   com_ui_share_created_message:
     'Создана общая ссылка на ваш чат. Управляйте ранее общими чатами в любое время через Настройки.',
   com_ui_share_update_message:
@@ -81,7 +82,7 @@ export default {
     'Обновлена общая ссылка на ваш чат. Управляйте ранее общими чатами в любое время через Настройки.',
   com_ui_shared_link_not_found: 'Общая ссылка не найдена',
   com_ui_delete_conversation: 'Удалить чат?',
-  com_ui_delete_conversation_confirm: 'Будет удален следующий чат: ',
+  com_ui_delete_confirm: 'Будет удален следующий чат: ',
   com_ui_rename: 'Переименовать',
   com_ui_archive: 'Архивировать',
   com_ui_archive_error: 'Nie udało się archiwizować rozmowy',
@@ -860,7 +861,8 @@ export const comparisons = {
   },
   com_ui_share_create_message: {
     english: 'Your name and any messages you add after sharing stay private.',
-    translated: 'Ваше имя и любые сообщения, которые вы добавите после обмена, останутся конфиденциальными.',
+    translated:
+      'Ваше имя и любые сообщения, которые вы добавите после обмена, останутся конфиденциальными.',
   },
   com_ui_share_created_message: {
     english:
@@ -887,7 +889,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'Удалить чат?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Будет удален следующий чат: ',
   },

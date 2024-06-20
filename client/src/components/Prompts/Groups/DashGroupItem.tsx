@@ -5,17 +5,21 @@ import { SystemRoles, type TPromptGroup } from 'librechat-data-provider';
 import { useDeletePromptGroup, useUpdatePromptGroup } from '~/data-provider';
 import {
   Input,
+  Label,
   Button,
+  Dialog,
   DropdownMenu,
+  DialogTrigger,
   DropdownMenuGroup,
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '~/components/ui';
 import CategoryIcon from '~/components/Prompts/Groups/CategoryIcon';
+import DialogTemplate from '~/components/ui/DialogTemplate';
 import { RenameButton } from '~/components/Conversations';
 import { useLocalize, useAuthContext } from '~/hooks';
 import { NewTrashIcon } from '~/components/svg';
-import { cn } from '~/utils';
+import { cn } from '~/utils/';
 
 export default function DashGroupItem({
   group,
@@ -154,18 +158,49 @@ export default function DashGroupItem({
                           </DropdownMenuGroup>
                         </DropdownMenuContent>
                       </DropdownMenu>
-                      <Button
-                        variant="outline"
-                        className={cn(
-                          'h-7 w-7 p-0 hover:bg-gray-200 dark:bg-gray-800/50 dark:text-gray-400 dark:hover:border-gray-400 dark:focus:border-gray-500',
-                        )}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deletePromptGroupMutation.mutate({ id: group?._id || '' });
-                        }}
-                      >
-                        <NewTrashIcon />
-                      </Button>
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <Button
+                            variant="outline"
+                            className={cn(
+                              'h-7 w-7 p-0 hover:bg-gray-200 dark:bg-gray-800/50 dark:text-gray-400 dark:hover:border-gray-400 dark:focus:border-gray-500',
+                            )}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                            }}
+                          >
+                            <NewTrashIcon />
+                          </Button>
+                        </DialogTrigger>
+                        <DialogTemplate
+                          showCloseButton={false}
+                          title={localize('com_ui_delete_prompt')}
+                          className="max-w-[450px]"
+                          main={
+                            <>
+                              <div className="flex w-full flex-col items-center gap-2">
+                                <div className="grid w-full items-center gap-2">
+                                  <Label
+                                    htmlFor="chatGptLabel"
+                                    className="text-left text-sm font-medium"
+                                  >
+                                    {localize('com_ui_delete_confirm')}{' '}
+                                    <strong>{group.name}</strong>
+                                  </Label>
+                                </div>
+                              </div>
+                            </>
+                          }
+                          selection={{
+                            selectHandler: () => {
+                              deletePromptGroupMutation.mutate({ id: group?._id || '' });
+                            },
+                            selectClasses:
+                              'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 text-white',
+                            selectText: localize('com_ui_delete'),
+                          }}
+                        />
+                      </Dialog>
                     </>
                   )}
                 </div>
