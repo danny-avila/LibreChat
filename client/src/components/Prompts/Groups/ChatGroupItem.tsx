@@ -13,7 +13,7 @@ import { useLocalize, useSubmitMessage, useCustomLink, useAuthContext } from '~/
 import VariableDialog from '~/components/Prompts/Groups/VariableDialog';
 import PreviewPrompt from '~/components/Prompts/PreviewPrompt';
 import ListCard from '~/components/Prompts/Groups/ListCard';
-import { getSnippet, detectVariables } from '~/utils';
+import { detectVariables } from '~/utils';
 
 export default function ChatGroupItem({
   group,

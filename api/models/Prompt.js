@@ -59,9 +59,13 @@ const createGroupPipeline = (query, skip, limit) => {
  */
 const getPromptGroups = async (req, filter) => {
   try {
+    const { pageNumber = 1, pageSize = 10, name, ...query } = filter;
+    if (!query.author) {
+      throw new Error('Author is required');
+    }
+
     let searchShared = true;
     let searchSharedOnly = false;
-    const { pageNumber = 1, pageSize = 10, name, ...query } = filter;
     if (name) {
       query.name = new RegExp(name, 'i');
     }
@@ -83,8 +87,8 @@ const getPromptGroups = async (req, filter) => {
       // const projects = req.user.projects || []; // TODO: handle multiple projects
       const project = await getProjectByName('instance', 'promptGroupIds');
       if (project && project.promptGroupIds.length > 0) {
-        const { author: _a, ...restQuery } = query;
-        const projectQuery = { _id: { $in: project.promptGroupIds }, ...restQuery };
+        const projectQuery = { _id: { $in: project.promptGroupIds }, ...query };
+        delete projectQuery.author;
         combinedQuery = searchSharedOnly ? projectQuery : { $or: [projectQuery, query] };
       }
     }
