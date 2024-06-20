@@ -160,7 +160,12 @@ const CreatePromptForm = ({
             tabIndex={3}
           />
           <div className="flex justify-end">
-            <Button type="submit" variant="default" disabled={!isDirty || isSubmitting || !isValid}>
+            <Button
+              tabIndex={5}
+              type="submit"
+              variant="default"
+              disabled={!isDirty || isSubmitting || !isValid}
+            >
               {localize('com_ui_create_var', localize('com_ui_prompt'))}
             </Button>
           </div>
