@@ -182,7 +182,13 @@ export default function useTextarea({
         e.preventDefault();
       }
 
-      if (e.key === 'Enter' && !enterToSend && !isCtrlEnter && textAreaRef.current) {
+      if (
+        e.key === 'Enter' &&
+        !enterToSend &&
+        !isCtrlEnter &&
+        textAreaRef.current &&
+        !isComposing?.current
+      ) {
         e.preventDefault();
         insertTextAtCursor(textAreaRef.current, '\n');
         forceResize(textAreaRef.current);
