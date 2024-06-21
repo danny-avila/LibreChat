@@ -12,8 +12,13 @@ import {
   useAssistantsMapContext,
   useChatFormContext,
 } from '~/Providers';
-import { useRequiresKey, useTextarea, useSubmitMessage, useHandleKeyUp } from '~/hooks';
-import { useAutoSave } from '~/hooks/Input/useAutoSave';
+import {
+  useTextarea,
+  useAutoSave,
+  useRequiresKey,
+  useHandleKeyUp,
+  useSubmitMessage,
+} from '~/hooks';
 import { TextareaAutosize } from '~/components/ui';
 import { useGetFileConfig } from '~/data-provider';
 import { cn, removeFocusRings } from '~/utils';
