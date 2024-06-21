@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
-const { errorsToString } = require('librechat-data-provider');
+const { SystemRoles, errorsToString } = require('librechat-data-provider');
 const {
   findUser,
   countUsers,
@@ -169,7 +169,7 @@ const registerUser = async (user) => {
       username,
       name,
       avatar: null,
-      role: isFirstRegisteredUser ? 'ADMIN' : 'USER',
+      role: isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER,
       password: bcrypt.hashSync(password, salt),
     };
 

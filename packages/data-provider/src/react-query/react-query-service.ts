@@ -188,22 +188,6 @@ export const useRevokeAllUserKeysMutation = (): UseMutationResult<unknown> => {
   });
 };
 
-export const useGetConversationsQuery = (
-  pageNumber: string,
-  config?: UseQueryOptions<t.TGetConversationsResponse>,
-): QueryObserverResult<t.TGetConversationsResponse> => {
-  return useQuery<t.TGetConversationsResponse>(
-    [QueryKeys.allConversations],
-    () => dataService.getConversations(pageNumber),
-    {
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      retry: 1,
-      ...config,
-    },
-  );
-};
-
 export const useGetSearchEnabledQuery = (
   config?: UseQueryOptions<boolean>,
 ): QueryObserverResult<boolean> => {
