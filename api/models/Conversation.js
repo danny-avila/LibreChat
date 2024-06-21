@@ -4,7 +4,7 @@ const logger = require('~/config/winston');
 
 const getConvosByQuery = async (title, endpoint, sort = 'participants', order = 'asc') => {
   try {
-    const sortOrder = order === 'asc' ? -1 : 11;
+    const sortOrder = order === 'asc' ? -1 : 1;
     const sortQuery = {};
     if (sort === 'participants') {
       sortQuery['users'] = sortOrder;
