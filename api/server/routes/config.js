@@ -33,8 +33,7 @@ router.get('/', async function (req, res) {
 
   const instanceProject = await getProjectByName('instance', '_id');
 
-  const ldapLoginEnabled =
-    !!process.env.LDAP_URL && !!process.env.LDAP_BIND_DN && !!process.env.LDAP_USER_SEARCH_BASE;
+  const ldapLoginEnabled = !!process.env.LDAP_URL && !!process.env.LDAP_USER_SEARCH_BASE;
   try {
     /** @type {TStartupConfig} */
     const payload = {
