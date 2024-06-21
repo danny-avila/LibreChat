@@ -564,7 +564,7 @@ export default {
   com_nav_lang_polish: 'ポーランド語',
   com_nav_lang_brazilian_portuguese: 'ブラジルポルトガル語',
   com_nav_lang_russian: 'ロシア語',
-  com_nav_lang_japanese: 'ナビゲーションメニュー',
+  com_nav_lang_japanese: '日本語',
   com_nav_lang_swedish: 'スウェーデン語',
   com_nav_lang_korean: '韓国語',
   com_nav_lang_vietnamese: 'ベトナム語',
@@ -2646,7 +2646,7 @@ export const comparisons = {
   },
   com_nav_lang_japanese: {
     english: '日本語',
-    translated: 'ナビゲーションメニュー',
+    translated: '日本語',
   },
   com_nav_lang_swedish: {
     english: 'Svenska',
