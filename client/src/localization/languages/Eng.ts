@@ -626,9 +626,24 @@ export default {
   com_nav_engine: 'Engine',
   com_nav_browser: 'Browser',
   com_nav_external: 'External',
-  com_nav_delete_cache_storage: 'Delete cache storage',
+  com_nav_delete_cache_storage: 'Delete TTS cache storage',
   com_nav_enable_cache_tts: 'Enable cache TTS',
   com_nav_voice_select: 'Voice',
+  com_nav_info_enter_to_send:
+    'When enabled, pressing `ENTER` will send your message. When disabled, pressing Enter will add a new line, and you\'ll need to press `CTRL + ENTER` to send your message.',
+  com_nav_info_save_draft:
+    'When enabled, the text and attachments you enter in the chat form will be automatically saved locally as drafts. These drafts will be available even if you reload the page or switch to a different conversation. Drafts are stored locally on your device and are deleted once the message is sent.',
+  com_nav_info_fork_change_default:
+    '`Visible messages only` includes just the direct path to the selected message. `Include related branches` adds branches along the path. `Include all to/from here` includes all connected messages and branches.',
+  com_nav_info_fork_split_target_setting: 'idk what this does 🤷‍♂️',
+  com_nav_info_user_name_display:
+    'When enabled, the username of the sender will be shown above each message you send. When disabled, you will only see "You" above your messages.',
+  com_nav_info_latex_parsing:
+    'When enabled, LaTeX code in messages will be rendered as mathematical equations. Disabling this may improve performance if you don\'t need LaTeX rendering.',
+  com_nav_info_revoke:
+    'This action will revoke and remove all the API keys that you have provided. You will need to re-enter these credentials to continue using those endpoints.',
+  com_nav_info_delete_cache_storage:
+    'This action will delete all cached TTS (Text-to-Speech) audio files stored on your device. Cached audio files are used to speed up playback of previously generated TTS audio, but they can consume storage space on your device.',
   com_nav_setting_general: 'General',
   com_nav_setting_beta: 'Beta features',
   com_nav_setting_data: 'Data controls',
