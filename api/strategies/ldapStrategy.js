@@ -17,7 +17,7 @@ const {
 
 // Check required environment variables
 if (!LDAP_URL || !LDAP_USER_SEARCH_BASE) {
-  throw new Error('Missing required LDAP environment variables');
+  return null;
 }
 
 const searchAttributes = [
