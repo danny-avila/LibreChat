@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import type { MentionOption } from '~/common';
+import useSelectMention from '~/hooks/Input/useSelectMention';
 import { useAssistantsMapContext } from '~/Providers';
 import useMentions from '~/hooks/Input/useMentions';
 import { useLocalize, useCombobox } from '~/hooks';
@@ -17,8 +18,13 @@ export default function Mention({
 }) {
   const localize = useLocalize();
   const assistantMap = useAssistantsMapContext();
-  const { options, modelsConfig, assistantListMap, onSelectMention } = useMentions({
+  const { options, presets, modelSpecs, modelsConfig, endpointsConfig, assistantListMap } =
+    useMentions({ assistantMap });
+  const { onSelectMention } = useSelectMention({
+    presets,
+    modelSpecs,
     assistantMap,
+    endpointsConfig,
   });
 
   const [activeIndex, setActiveIndex] = useState(0);
@@ -79,6 +85,14 @@ export default function Mention({
       setActiveIndex(0);
     }
   }, [open, options]);
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const currentActiveItem = document.getElementById(`mention-item-${activeIndex}`);
