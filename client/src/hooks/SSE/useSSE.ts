@@ -1,7 +1,6 @@
 import { v4 } from 'uuid';
 import { useSetRecoilState } from 'recoil';
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
 import {
   /* @ts-ignore */
   SSE,
@@ -11,21 +10,34 @@ import {
 } from 'librechat-data-provider';
 import { useGetUserBalance, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { TSubmission } from 'librechat-data-provider';
+import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData } from '~/common';
-import useChatHelpers from '~/hooks/Chat/useChatHelpers';
 import { useGenTitleMutation } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
 import store from '~/store';
 
-export default function useSSE(submission: TSubmission | null, index = 0) {
-  const genTitle = useGenTitleMutation();
-  const setActiveRunId = useSetRecoilState(store.activeRunFamily(index));
+type ChatHelpers = Pick<
+  EventHandlerParams,
+  | 'setMessages'
+  | 'getMessages'
+  | 'setConversation'
+  | 'setIsSubmitting'
+  | 'newConversation'
+  | 'resetLatestMessage'
+>;
 
-  const { conversationId: paramId } = useParams();
+export default function useSSE(
+  submission: TSubmission | null,
+  chatHelpers: ChatHelpers,
+  runIndex = 0,
+) {
+  const genTitle = useGenTitleMutation();
+  const setActiveRunId = useSetRecoilState(store.activeRunFamily(runIndex));
+
   const { token, isAuthenticated } = useAuthContext();
   const [completed, setCompleted] = useState(new Set());
-  const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
+  const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(runIndex));
 
   const {
     setMessages,
@@ -34,7 +46,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
     setIsSubmitting,
     newConversation,
     resetLatestMessage,
-  } = useChatHelpers(index, paramId);
+  } = chatHelpers;
 
   const {
     syncHandler,

@@ -39,6 +39,18 @@ type TSyncData = {
   conversationId: string;
 };
 
+export type EventHandlerParams = {
+  genTitle?: TGenTitleMutation;
+  setCompleted: React.Dispatch<React.SetStateAction<Set<unknown>>>;
+  setMessages: (messages: TMessage[]) => void;
+  getMessages: () => TMessage[] | undefined;
+  setIsSubmitting: SetterOrUpdater<boolean>;
+  setConversation?: SetterOrUpdater<TConversation | null>;
+  newConversation?: ConvoGenerator;
+  setShowStopButton: SetterOrUpdater<boolean>;
+  resetLatestMessage?: Resetter;
+};
+
 export default function useEventHandlers({
   genTitle,
   setCompleted,
@@ -49,17 +61,7 @@ export default function useEventHandlers({
   newConversation,
   setShowStopButton,
   resetLatestMessage,
-}: {
-  genTitle?: TGenTitleMutation;
-  setCompleted: React.Dispatch<React.SetStateAction<Set<unknown>>>;
-  setMessages: (messages: TMessage[]) => void;
-  getMessages: () => TMessage[] | undefined;
-  setIsSubmitting: SetterOrUpdater<boolean>;
-  setConversation?: SetterOrUpdater<TConversation | null>;
-  newConversation?: ConvoGenerator;
-  setShowStopButton: SetterOrUpdater<boolean>;
-  resetLatestMessage?: Resetter;
-}) {
+}: EventHandlerParams) {
   const queryClient = useQueryClient();
 
   const { conversationId: paramId } = useParams();

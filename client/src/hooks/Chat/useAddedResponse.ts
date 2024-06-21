@@ -4,21 +4,33 @@ import useAddedHelpers from '~/hooks/Chat/useAddedHelpers';
 
 export default function useAddedResponse({ rootIndex }: { rootIndex: number }) {
   const currentIndex = useMemo(() => rootIndex + 1, [rootIndex]);
-  const { ask, regenerate, conversation, setConversation, setMessages } = useAddedHelpers({
+  const {
+    ask,
+    regenerate,
+    setMessages,
+    getMessages,
+    conversation,
+    setConversation,
+    setIsSubmitting,
+  } = useAddedHelpers({
     rootIndex,
     currentIndex,
   });
+
   const { generateConversation } = useGenerateConvo({
     index: currentIndex,
     rootIndex,
     setConversation,
   });
+
   return {
     ask,
     regenerate,
+    getMessages,
     setMessages,
     conversation,
     setConversation,
+    setIsSubmitting,
     generateConversation,
     addedIndex: currentIndex,
   };

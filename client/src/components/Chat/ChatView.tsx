@@ -18,8 +18,8 @@ import store from '~/store';
 
 function ChatView({ index = 0 }: { index?: number }) {
   const { conversationId } = useParams();
-  const submissionAtIndex = useRecoilValue(store.submissionByIndex(0));
-  useSSE(submissionAtIndex);
+  const rootSubmissioin = useRecoilValue(store.submissionByIndex(index));
+  const addedSubmission = useRecoilValue(store.submissionByIndex(index + 1));
 
   const fileMap = useFileMapContext();
 
@@ -32,20 +32,17 @@ function ChatView({ index = 0 }: { index?: number }) {
   });
 
   const chatHelpers = useChatHelpers(index, conversationId);
+  const addedChatHelpers = useAddedResponse({ rootIndex: index });
+
+  useSSE(rootSubmissioin, chatHelpers);
+  useSSE(addedSubmission, addedChatHelpers);
+
   const methods = useForm<ChatFormValues>({
     defaultValues: { text: '' },
   });
-  const addedChatHelpers = useAddedResponse({ rootIndex: index });
 
   return (
-    <ChatFormProvider
-      reset={methods.reset}
-      control={methods.control}
-      setValue={methods.setValue}
-      register={methods.register}
-      getValues={methods.getValues}
-      handleSubmit={methods.handleSubmit}
-    >
+    <ChatFormProvider {...methods}>
       <ChatContext.Provider value={chatHelpers}>
         <AddedChatContext.Provider value={addedChatHelpers}>
           <Presentation useSidePanel={true}>
