@@ -59,6 +59,9 @@ export default {
   com_ui_create_link: 'Link aanmaken',
   com_ui_share_link_to_chat: 'Deel link naar chat',
   com_ui_share_error: 'Er is een fout opgetreden bij het delen van de chatlink',
+  com_ui_share_retrieve_error:
+    'Er is een fout opgetreden bij het verwijderen van de gedeelde link.',
+  com_ui_share_delete_error: 'Er is een fout opgetreden bij het verwijderen van de gedeelde link.',
   com_ui_share_create_message:
     'Uw naam en alle berichten die u na het delen toevoegt, blijven privé.',
   com_ui_share_created_message:
@@ -533,6 +536,14 @@ export const comparisons = {
   com_ui_share_link_to_chat: {
     english: 'Share link to chat',
     translated: 'Deel link naar chat',
+  },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Er is een fout opgetreden bij het verwijderen van de gedeelde link.',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Er is een fout opgetreden bij het verwijderen van de gedeelde link.',
   },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',

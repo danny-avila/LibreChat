@@ -56,6 +56,8 @@ export default {
   com_ui_create_link: 'Skapa länk',
   com_ui_share_link_to_chat: 'Dela länk till chatt',
   com_ui_share_error: 'Ett fel uppstod vid delning av chattlänken',
+  com_ui_share_retrieve_error: 'Ett fel uppstod vid borttagningen av den delade länken.',
+  com_ui_share_delete_error: 'Ett fel uppstod vid borttagningen av den delade länken.',
   com_ui_share_create_message:
     'Ditt namn och alla meddelanden du lägger till efter delningen förblir privata.',
   com_ui_share_created_message:
@@ -513,6 +515,14 @@ export const comparisons = {
   com_ui_share_link_to_chat: {
     english: 'Share link to chat',
     translated: 'Dela länk till chatt',
+  },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Ett fel uppstod vid borttagningen av den delade länken.',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Ett fel uppstod vid borttagningen av den delade länken.',
   },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',

@@ -36,13 +36,16 @@ export default {
   com_ui_create_link: 'Utwórz link',
   com_ui_share_link_to_chat: 'Udostępnij link w czacie',
   com_ui_share_error: 'Wystąpił błąd podczas udostępniania linku do czatu',
-  com_ui_share_create_message: 'Twoje imię i jakiekolwiek wiadomości dodane po udostępnieniu pozostaną prywatne.',
+  com_ui_share_retrieve_error: 'Wystąpił błąd podczas usuwania udostępnionego linku.',
+  com_ui_share_delete_error: 'Wystąpił błąd podczas usuwania udostępnionego linku.',
+  com_ui_share_create_message:
+    'Twoje imię i jakiekolwiek wiadomości dodane po udostępnieniu pozostaną prywatne.',
   com_ui_share_created_message:
-      'Utworzono link udostępniony do Twojego czatu. Zarządzaj wcześniej udostępnionymi czatami w dowolnym momencie za pomocą Ustawień.',
+    'Utworzono link udostępniony do Twojego czatu. Zarządzaj wcześniej udostępnionymi czatami w dowolnym momencie za pomocą Ustawień.',
   com_ui_share_update_message:
-      'Twoje imię, niestandardowe instrukcje i jakiekolwiek wiadomości dodane po udostępnieniu pozostaną prywatne.',
+    'Twoje imię, niestandardowe instrukcje i jakiekolwiek wiadomości dodane po udostępnieniu pozostaną prywatne.',
   com_ui_share_updated_message:
-      'Link udostępniony do Twojego czatu został zaktualizowany. Zarządzaj wcześniej udostępnionymi czatami w dowolnym momencie za pomocą Ustawień.',
+    'Link udostępniony do Twojego czatu został zaktualizowany. Zarządzaj wcześniej udostępnionymi czatami w dowolnym momencie za pomocą Ustawień.',
   com_ui_shared_link_not_found: 'Nie znaleziono linku udostępnionego',
   com_ui_rename: 'Zmień nazwę',
   com_ui_archive: 'Archiwum',
@@ -360,6 +363,14 @@ export const comparisons = {
     english: 'Share link to chat',
     translated: 'Udostępnij link w czacie',
   },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Wystąpił błąd podczas usuwania udostępnionego linku.',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Wystąpił błąd podczas usuwania udostępnionego linku.',
+  },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
     translated: 'Wystąpił błąd podczas udostępniania linku do czatu',
@@ -370,7 +381,7 @@ export const comparisons = {
   },
   com_ui_share_created_message: {
     english:
-       'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
     translated:
       'Utworzono link udostępniony do Twojego czatu. Zarządzaj wcześniej udostępnionymi czatami w dowolnym momencie za pomocą Ustawień.',
   },
@@ -383,7 +394,7 @@ export const comparisons = {
     english:
       'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
     translated:
-       'Link udostępniony do Twojego czatu został zaktualizowany. Zarządzaj wcześniej udostępnionymi czatami w dowolnym momencie za pomocą Ustawień.',
+      'Link udostępniony do Twojego czatu został zaktualizowany. Zarządzaj wcześniej udostępnionymi czatami w dowolnym momencie za pomocą Ustawień.',
   },
   com_ui_shared_link_not_found: {
     english: 'Shared link not found',
