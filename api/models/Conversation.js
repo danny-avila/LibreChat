@@ -9,7 +9,7 @@ const getConvosByQuery = async (title, endpoint, sort = 'participants', order = 
     if (sort === 'participants') {
       sortQuery['users'] = sortOrder;
     } else if (sort === 'date') {
-      sortQuery['createdAt'] = sortOrder;
+      sortQuery['createdAt'] = sortOrder === 1 ? -1 : 1;
     }
 
     return await Conversation.find({
