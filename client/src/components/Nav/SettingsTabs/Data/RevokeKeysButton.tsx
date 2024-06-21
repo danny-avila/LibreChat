@@ -56,6 +56,7 @@ export const RevokeKeysButton = ({
       id={'revoke-all-user-keys'}
       actionTextCode={'com_ui_revoke'}
       infoTextCode={'com_ui_revoke_info'}
+      infoDescriptionCode={'com_nav_info_revoke'}
       dataTestIdInitial={'revoke-all-keys-initial'}
       dataTestIdConfirm={'revoke-all-keys-confirm'}
       mutation={all ? revokeKeysMutation : revokeKeyMutation}

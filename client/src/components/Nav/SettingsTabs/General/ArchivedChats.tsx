@@ -1,6 +1,6 @@
 import { useLocalize } from '~/hooks';
-import { Dialog, DialogTrigger } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
+import { Dialog, DialogTrigger } from '~/components/ui';
 
 import ArchivedChatsTable from './ArchivedChatsTable';
 
@@ -9,8 +9,7 @@ export default function ArchivedChats() {
 
   return (
     <div className="flex items-center justify-between">
-      <div> {localize('com_nav_archived_chats')} </div>
-
+      <div>{localize('com_nav_archived_chats')}</div>
       <Dialog>
         <DialogTrigger asChild>
           <button className="btn btn-neutral relative ">
