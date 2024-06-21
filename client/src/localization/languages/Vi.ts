@@ -34,7 +34,6 @@ export default {
   com_ui_enter: 'Nhập',
   com_ui_submit: 'Gửi',
   com_ui_upload_success: 'Tải tệp thành công',
-  com_ui_upload_invalid: 'Tệp không hợp lệ để tải lên',
   com_ui_cancel: 'Hủy',
   com_ui_save: 'Lưu',
   com_ui_copy_to_clipboard: 'Sao chép vào clipboard',
@@ -59,7 +58,8 @@ export default {
   com_ui_create_link: 'Tạo liên kết',
   com_ui_share_link_to_chat: 'Chia sẻ liên kết đến cuộc trò chuyện',
   com_ui_share_error: 'Có lỗi xảy ra khi chia sẻ liên kết trò chuyện',
-  com_ui_share_create_message: 'Tên của bạn và bất kỳ tin nhắn nào bạn thêm sau khi chia sẻ sẽ được giữ kín.',
+  com_ui_share_create_message:
+    'Tên của bạn và bất kỳ tin nhắn nào bạn thêm sau khi chia sẻ sẽ được giữ kín.',
   com_ui_share_created_message:
     'Liên kết chia sẻ đến cuộc trò chuyện của bạn đã được tạo. Quản lý các cuộc trò chuyện đã chia sẻ trước đây bất cứ lúc nào thông qua Cài đặt.',
   com_ui_share_update_message:
@@ -69,7 +69,7 @@ export default {
   com_ui_shared_link_not_found: 'Không tìm thấy liên kết chia sẻ',
   com_ui_delete: 'Xóa',
   com_ui_delete_conversation: 'Xóa cuộc trò chuyện?',
-  com_ui_delete_conversation_confirm: 'Điều này sẽ xóa',
+  com_ui_delete_confirm: 'Điều này sẽ xóa',
   com_ui_rename: 'Đổi tên',
   com_ui_archive: 'Lưu trữ',
   com_ui_archive_error: 'Không thể lưu trữ cuộc trò chuyện',
@@ -529,7 +529,8 @@ export const comparisons = {
   },
   com_ui_share_update_message: {
     english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
-    translated: 'Tên của bạn, hướng dẫn tùy chỉnh và bất kỳ tin nhắn nào bạn thêm sau khi chia sẻ sẽ được giữ kín.',
+    translated:
+      'Tên của bạn, hướng dẫn tùy chỉnh và bất kỳ tin nhắn nào bạn thêm sau khi chia sẻ sẽ được giữ kín.',
   },
   com_ui_share_updated_message: {
     english:
@@ -549,7 +550,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'Xóa cuộc trò chuyện?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Điều này sẽ xóa',
   },

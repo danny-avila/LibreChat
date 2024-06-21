@@ -106,7 +106,6 @@ export default {
   com_ui_submit: 'Enviar',
   com_ui_upload_success: 'Archivo subido con éxito',
   com_ui_upload_error: 'Hubo un error al subir su archivo',
-  com_ui_upload_invalid: 'Archivo inválido para subir. Debe ser una imagen que no exceda los 2 MB',
   com_ui_cancel: 'Cancelar',
   com_ui_save: 'Guardar',
   com_ui_save_submit: 'Guardar y Enviar',
@@ -143,7 +142,8 @@ export default {
   com_ui_create_link: 'Crear enlace',
   com_ui_share_link_to_chat: 'Compartir enlace en el chat',
   com_ui_share_error: 'Hubo un error al compartir el enlace del chat',
-  com_ui_share_create_message: 'Tu nombre y cualquier mensaje que agregues después de compartir se mantendrán privados.',
+  com_ui_share_create_message:
+    'Tu nombre y cualquier mensaje que agregues después de compartir se mantendrán privados.',
   com_ui_share_created_message:
     'Se ha creado un enlace compartido para tu chat. Gestiona los chats compartidos anteriormente en cualquier momento a través de Configuración.',
   com_ui_share_update_message:
@@ -152,7 +152,7 @@ export default {
     'Se ha actualizado un enlace compartido para tu chat. Gestiona los chats compartidos anteriormente en cualquier momento a través de Configuración.',
   com_ui_shared_link_not_found: 'Enlace compartido no encontrado',
   com_ui_delete_conversation: '¿Eliminar Chat?',
-  com_ui_delete_conversation_confirm: 'Esto eliminará',
+  com_ui_delete_confirm: 'Esto eliminará',
   com_ui_delete_assistant_confirm:
     '¿Está seguro de que desea eliminar este Asistente? Esta acción no se puede deshacer.',
   com_ui_rename: 'Renombrar',
@@ -984,10 +984,6 @@ export const comparisons = {
     english: 'There was an error uploading your file',
     translated: 'Hubo un error al subir su archivo',
   },
-  com_ui_upload_invalid: {
-    english: 'Invalid file for upload. Must be an image not exceeding 2 MB',
-    translated: 'Archivo inválido para subir. Debe ser una imagen que no exceda los 2 MB',
-  },
   com_ui_cancel: {
     english: 'Cancel',
     translated: 'Cancelar',
@@ -1134,13 +1130,14 @@ export const comparisons = {
   },
   com_ui_share_create_message: {
     english: 'Your name and any messages you add after sharing stay private.',
-    translated: 'Tu nombre y cualquier mensaje que agregues después de compartir se mantendrán privados.',
+    translated:
+      'Tu nombre y cualquier mensaje que agregues después de compartir se mantendrán privados.',
   },
   com_ui_share_created_message: {
     english:
-       'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
     translated:
-       'Se ha creado un enlace compartido para tu chat. Gestiona los chats compartidos anteriormente en cualquier momento a través de Configuración.',
+      'Se ha creado un enlace compartido para tu chat. Gestiona los chats compartidos anteriormente en cualquier momento a través de Configuración.',
   },
   com_ui_share_update_message: {
     english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
@@ -1149,9 +1146,9 @@ export const comparisons = {
   },
   com_ui_share_updated_message: {
     english:
-       'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
     translated:
-       'Se ha actualizado un enlace compartido para tu chat. Gestiona los chats compartidos anteriormente en cualquier momento a través de Configuración.',
+      'Se ha actualizado un enlace compartido para tu chat. Gestiona los chats compartidos anteriormente en cualquier momento a través de Configuración.',
   },
   com_ui_shared_link_not_found: {
     english: 'Shared link not found',
@@ -1161,7 +1158,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: '¿Eliminar Chat?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Esto eliminará',
   },
