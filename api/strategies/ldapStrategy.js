@@ -97,12 +97,6 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
       (LDAP_USERNAME && userinfo[LDAP_USERNAME]) || userinfo.givenName || userinfo.mail;
 
     if (!user) {
-      let ldapUser = await findUser({ ldapId });
-      if (ldapUser && ldapUser.email !== userinfo.mail) {
-        logger.info(`LDAP User ${ldapId} is already registered with email ${ldapUser.email}`);
-        return done(null, false, { message: 'Invalid credentials' });
-      }
-
       user = {
         provider: 'ldap',
         ldapId,
