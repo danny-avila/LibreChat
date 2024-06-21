@@ -28,7 +28,6 @@ export default function VoiceDropdown() {
         value={voice}
         onChange={(value: string) => setVoice(value)}
         options={voiceOptions}
-        width={220}
         position={'left'}
         testId="VoiceDropdown"
       />
