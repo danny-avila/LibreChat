@@ -7,7 +7,7 @@ import {
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
 import { useChatContext, useAssistantsMapContext, useChatFormContext } from '~/Providers';
-import { useRequiresKey, useTextarea, useSubmitMessage } from '~/hooks';
+import { useRequiresKey, useTextarea, useSubmitMessage, useHandleKeyUp } from '~/hooks';
 import { useAutoSave } from '~/hooks/Input/useAutoSave';
 import { TextareaAutosize } from '~/components/ui';
 import { useGetFileConfig } from '~/data-provider';
@@ -34,12 +34,12 @@ const ChatForm = ({ index = 0 }) => {
   );
   const { requiresKey } = useRequiresKey();
 
-  const { handlePaste, handleKeyDown, handleKeyUp, handleCompositionStart, handleCompositionEnd } =
-    useTextarea({
-      textAreaRef,
-      submitButtonRef,
-      disabled: !!requiresKey,
-    });
+  const handleKeyUp = useHandleKeyUp({ index, textAreaRef });
+  const { handlePaste, handleKeyDown, handleCompositionStart, handleCompositionEnd } = useTextarea({
+    textAreaRef,
+    submitButtonRef,
+    disabled: !!requiresKey,
+  });
 
   const {
     files,

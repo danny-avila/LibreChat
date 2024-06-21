@@ -11,7 +11,6 @@ import useAssistantListMap from '~/hooks/Assistants/useAssistantListMap';
 import { mapEndpoints, getPresetTitle } from '~/utils';
 import { EndpointIcon } from '~/components/Endpoints';
 import { useGetPresetsQuery } from '~/data-provider';
-import useSelectMention from './useSelectMention';
 
 const defaultInterface = getConfigDefaults().interface;
 
@@ -85,13 +84,6 @@ export default function useMentions({ assistantMap }: { assistantMap: TAssistant
     [startupConfig],
   );
 
-  const { onSelectMention } = useSelectMention({
-    modelSpecs,
-    endpointsConfig,
-    presets,
-    assistantMap,
-  });
-
   const options: MentionOption[] = useMemo(() => {
     const mentions = [
       ...(modelSpecs?.length > 0 ? modelSpecs : []).map((modelSpec) => ({
@@ -156,8 +148,10 @@ export default function useMentions({ assistantMap }: { assistantMap: TAssistant
 
   return {
     options,
+    presets,
+    modelSpecs,
     modelsConfig,
-    onSelectMention,
+    endpointsConfig,
     assistantListMap,
   };
 }
