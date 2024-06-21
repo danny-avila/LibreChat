@@ -60,6 +60,10 @@ const createGroupPipeline = (query, skip, limit) => {
 const getPromptGroups = async (req, filter) => {
   try {
     const { pageNumber = 1, pageSize = 10, name, ...query } = filter;
+
+    const validatedPageNumber = Math.max(parseInt(pageNumber, 10), 1);
+    const validatedPageSize = Math.max(parseInt(pageSize, 10), 1);
+
     if (!query.author) {
       throw new Error('Author is required');
     }
@@ -93,8 +97,8 @@ const getPromptGroups = async (req, filter) => {
       }
     }
 
-    const skip = (parseInt(pageNumber, 10) - 1) * parseInt(pageSize, 10);
-    const limit = parseInt(pageSize, 10);
+    const skip = (validatedPageNumber - 1) * validatedPageSize;
+    const limit = validatedPageSize;
 
     const promptGroupsPipeline = createGroupPipeline(combinedQuery, skip, limit);
     const totalPromptGroupsPipeline = [{ $match: combinedQuery }, { $count: 'total' }];
@@ -110,9 +114,9 @@ const getPromptGroups = async (req, filter) => {
 
     return {
       promptGroups,
-      pageNumber: pageNumber.toString(),
-      pageSize: pageSize.toString(),
-      pages: Math.ceil(totalPromptGroups / pageSize).toString(),
+      pageNumber: validatedPageNumber.toString(),
+      pageSize: validatedPageSize.toString(),
+      pages: Math.ceil(totalPromptGroups / validatedPageSize).toString(),
     };
   } catch (error) {
     console.error('Error getting prompt groups', error);
