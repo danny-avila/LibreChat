@@ -261,7 +261,7 @@ export default function TipModal({
             {selectedNetwork === null ? (
               <div className='flex w-full items-center justify-between'>
                 <div className='flex gap-1'>
-                  {user.cryptocurrency.length > 0 &&
+                  {user.cryptocurrency && user.cryptocurrency.length > 0 &&
                     <button
                       className='p-2 border-gray-600 rounded border-2 bg-gray-100 dark:bg-gray-800'
                       onClick={() => setIsTip(!isTip)}
