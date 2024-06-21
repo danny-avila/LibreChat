@@ -5,5 +5,7 @@ export * from './ShareContext';
 export * from './ToastContext';
 export * from './SearchContext';
 export * from './FileMapContext';
+export * from './ChatFormContext';
+export * from './DashboardContext';
 export * from './AssistantsContext';
 export * from './AssistantsMapContext';

@@ -1,8 +1,9 @@
 const {
-  EModelEndpoint,
   CacheKeys,
-  defaultAssistantsVersion,
+  SystemRoles,
+  EModelEndpoint,
   defaultOrderQuery,
+  defaultAssistantsVersion,
 } = require('librechat-data-provider');
 const {
   initializeClient: initAzureClient,
@@ -227,7 +228,7 @@ const fetchAssistants = async ({ req, res, overrideEndpoint }) => {
     body = await listAssistantsForAzure({ req, res, version, azureConfig, query });
   }
 
-  if (req.user.role === 'ADMIN') {
+  if (req.user.role === SystemRoles.ADMIN) {
     return body;
   } else if (!req.app.locals[endpoint]) {
     return body;

@@ -7,7 +7,7 @@ const sourceToEndpoint = {
   [FileSources.azure]: EModelEndpoint.azureOpenAI,
 };
 const sourceToClassname = {
-  [FileSources.openai]: 'bg-black/65',
+  [FileSources.openai]: 'bg-white/75 dark:bg-black/65',
   [FileSources.azure]: 'azure-bg-color opacity-85',
 };
 

@@ -124,12 +124,29 @@ describe('getModelMaxTokens', () => {
       'claude-1-100k',
       'claude-instant-1',
       'claude-instant-1-100k',
+      'claude-3-haiku',
+      'claude-3-sonnet',
+      'claude-3-opus',
+      'claude-3-5-sonnet',
     ];
 
-    const claudeMaxTokens = maxTokensMap[EModelEndpoint.anthropic]['claude-'];
-    const claude21MaxTokens = maxTokensMap[EModelEndpoint.anthropic]['claude-2.1'];
+    const maxTokens = {
+      'claude-': maxTokensMap[EModelEndpoint.anthropic]['claude-'],
+      'claude-2.1': maxTokensMap[EModelEndpoint.anthropic]['claude-2.1'],
+      'claude-3': maxTokensMap[EModelEndpoint.anthropic]['claude-3-sonnet'],
+    };
+
     models.forEach((model) => {
-      const expectedTokens = model === 'claude-2.1' ? claude21MaxTokens : claudeMaxTokens;
+      let expectedTokens;
+
+      if (model === 'claude-2.1') {
+        expectedTokens = maxTokens['claude-2.1'];
+      } else if (model.startsWith('claude-3')) {
+        expectedTokens = maxTokens['claude-3'];
+      } else {
+        expectedTokens = maxTokens['claude-'];
+      }
+
       expect(getModelMaxTokens(model, EModelEndpoint.anthropic)).toEqual(expectedTokens);
     });
   });
