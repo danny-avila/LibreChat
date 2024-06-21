@@ -34,7 +34,6 @@ export default {
   com_ui_enter: 'Invoeren',
   com_ui_submit: 'Indienen',
   com_ui_upload_success: 'Bestand succesvol geüpload',
-  com_ui_upload_invalid: 'Ongeldig bestand voor uploaden',
   com_ui_cancel: 'Annuleren',
   com_ui_save: 'Opslaan',
   com_ui_copy_to_clipboard: 'Kopiëren naar klembord',
@@ -60,7 +59,8 @@ export default {
   com_ui_create_link: 'Link aanmaken',
   com_ui_share_link_to_chat: 'Deel link naar chat',
   com_ui_share_error: 'Er is een fout opgetreden bij het delen van de chatlink',
-  com_ui_share_create_message: 'Uw naam en alle berichten die u na het delen toevoegt, blijven privé.',
+  com_ui_share_create_message:
+    'Uw naam en alle berichten die u na het delen toevoegt, blijven privé.',
   com_ui_share_created_message:
     'Een gedeelde link naar uw chat is aangemaakt. Beheer eerder gedeelde chats op elk moment via Instellingen.',
   com_ui_share_update_message:
@@ -70,7 +70,7 @@ export default {
   com_ui_shared_link_not_found: 'Gedeelde link niet gevonden',
   com_ui_delete: 'Verwijderen',
   com_ui_delete_conversation: 'Chat verwijderen?',
-  com_ui_delete_conversation_confirm: 'Hiermee wordt',
+  com_ui_delete_confirm: 'Hiermee wordt',
   com_ui_rename: 'Hernoemen',
   com_ui_archive: 'Archiveren',
   com_ui_archive_error: 'Kan conversatie niet archiveren',
@@ -546,11 +546,12 @@ export const comparisons = {
     english:
       'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
     translated:
-       'Een gedeelde link naar uw chat is aangemaakt. Beheer eerder gedeelde chats op elk moment via Instellingen.',
+      'Een gedeelde link naar uw chat is aangemaakt. Beheer eerder gedeelde chats op elk moment via Instellingen.',
   },
   com_ui_share_update_message: {
     english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
-    translated: 'Uw naam, aangepaste instructies en alle berichten die u na het delen toevoegt, blijven privé.',
+    translated:
+      'Uw naam, aangepaste instructies en alle berichten die u na het delen toevoegt, blijven privé.',
   },
   com_ui_share_updated_message: {
     english:
@@ -570,7 +571,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'Chat verwijderen?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Hiermee wordt',
   },

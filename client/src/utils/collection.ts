@@ -20,6 +20,25 @@ export const addData = <TCollection, TData>(
   return dataJson;
 };
 
+export const getRecordByProperty = <TCollection, TData>(
+  data: InfiniteData<TCollection>,
+  collectionName: string,
+  findProperty: (item: TData) => boolean,
+): TData | undefined => {
+  // Find the page and the index of the record in that page
+  const { pageIndex, index } = findPage<TCollection>(data, (page) =>
+    page[collectionName].findIndex(findProperty),
+  );
+
+  // If found, return the record
+  if (pageIndex !== -1 && index !== -1) {
+    return data.pages[pageIndex][collectionName][index];
+  }
+
+  // Return undefined if the record is not found
+  return undefined;
+};
+
 export function findPage<TData>(data: InfiniteData<TData>, findIndex: (page: TData) => number) {
   for (let pageIndex = 0; pageIndex < data.pages.length; pageIndex++) {
     const page = data.pages[pageIndex];
@@ -75,6 +94,7 @@ export const normalizeData = <TCollection, TData>(
   data: InfiniteData<TCollection>,
   collectionName: string,
   pageSize: number,
+  uniqueProperty?: keyof TData,
 ): InfiniteData<TCollection> => {
   const infiniteData = JSON.parse(JSON.stringify(data)) as InfiniteData<TCollection>;
   const pageCount = infiniteData.pages.length;
@@ -85,10 +105,22 @@ export const normalizeData = <TCollection, TData>(
   const pageParams = infiniteData.pageParams;
 
   // Combine all conversations of all pages into one array
-  const collection = infiniteData.pages.flatMap((page) => page[collectionName]);
+  let collection = infiniteData.pages.flatMap((page) => page[collectionName]);
 
   if (collection.length === 0) {
     return infiniteData;
+  }
+
+  if (uniqueProperty) {
+    const seen = new Set<TData>();
+    collection = collection.filter((item) => {
+      const value = item[uniqueProperty];
+      if (seen.has(value)) {
+        return false;
+      }
+      seen.add(value);
+      return true;
+    });
   }
 
   // Create the restructured pages
@@ -101,4 +133,35 @@ export const normalizeData = <TCollection, TData>(
     pageParams: pageParams.slice(0, restructuredPages.length),
     pages: restructuredPages,
   };
+};
+
+export const updateFields = <TCollection, TData>(
+  data: InfiniteData<TCollection>,
+  updatedItem: Partial<TData>,
+  collectionName: string,
+  identifierField: keyof TData,
+  callback?: (newItem: TData) => void,
+): InfiniteData<TCollection> => {
+  const newData = JSON.parse(JSON.stringify(data)) as InfiniteData<TCollection>;
+  const { pageIndex, index } = findPage<TCollection>(newData, (page) =>
+    page[collectionName].findIndex(
+      (item: TData) => item[identifierField] === updatedItem[identifierField],
+    ),
+  );
+
+  if (pageIndex !== -1 && index !== -1) {
+    const deleted = newData.pages[pageIndex][collectionName].splice(index, 1);
+    const oldItem = deleted[0];
+    const newItem = {
+      ...oldItem,
+      ...updatedItem,
+      updatedAt: new Date().toISOString(),
+    };
+    if (callback) {
+      callback(newItem);
+    }
+    newData.pages[0][collectionName].unshift(newItem);
+  }
+
+  return newData;
 };

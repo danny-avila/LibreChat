@@ -18,7 +18,7 @@ const Theme = ({ theme, onChange }: { theme: string; onChange: (value: string) =
   );
 };
 
-const ThemeSelector = () => {
+const ThemeSelector = ({ returnThemeOnly }: { returnThemeOnly?: boolean }) => {
   const { theme, setTheme } = useContext(ThemeContext);
   const changeTheme = useCallback(
     (value: string) => {
@@ -26,6 +26,10 @@ const ThemeSelector = () => {
     },
     [setTheme],
   );
+
+  if (returnThemeOnly) {
+    return <Theme theme={theme} onChange={changeTheme} />;
+  }
 
   return (
     <div className="flex flex-col items-center justify-center bg-white pt-6 dark:bg-gray-900 sm:pt-0">
