@@ -19,6 +19,8 @@ const assistants = require('./assistants');
 const files = require('./files');
 const staticRoute = require('./static');
 const share = require('./share');
+const categories = require('./categories');
+const roles = require('./roles');
 
 module.exports = {
   search,
@@ -42,4 +44,6 @@ module.exports = {
   files,
   staticRoute,
   share,
+  categories,
+  roles,
 };

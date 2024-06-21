@@ -1,15 +1,14 @@
-import { useForm } from 'react-hook-form';
+import { memo, useRef, useMemo } from 'react';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import { memo, useCallback, useRef, useMemo, useState, useEffect } from 'react';
 import {
   supportsFiles,
   mergeFileConfig,
   isAssistantsEndpoint,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
-import { useChatContext, useAssistantsMapContext } from '~/Providers';
+import { useChatContext, useAssistantsMapContext, useChatFormContext } from '~/Providers';
+import { useRequiresKey, useTextarea, useSubmitMessage } from '~/hooks';
 import { useAutoSave } from '~/hooks/Input/useAutoSave';
-import { useRequiresKey, useTextarea } from '~/hooks';
 import { TextareaAutosize } from '~/components/ui';
 import { useGetFileConfig } from '~/data-provider';
 import { cn, removeFocusRings } from '~/utils';
@@ -35,10 +34,6 @@ const ChatForm = ({ index = 0 }) => {
   );
   const { requiresKey } = useRequiresKey();
 
-  const methods = useForm<{ text: string }>({
-    defaultValues: { text: '' },
-  });
-
   const { handlePaste, handleKeyDown, handleKeyUp, handleCompositionStart, handleCompositionEnd } =
     useTextarea({
       textAreaRef,
@@ -47,7 +42,6 @@ const ChatForm = ({ index = 0 }) => {
     });
 
   const {
-    ask,
     files,
     setFiles,
     conversation,
@@ -56,28 +50,17 @@ const ChatForm = ({ index = 0 }) => {
     setFilesLoading,
     handleStopGenerating,
   } = useChatContext();
+  const methods = useChatFormContext();
 
   const { clearDraft } = useAutoSave({
     conversationId: useMemo(() => conversation?.conversationId, [conversation]),
     textAreaRef,
-    setValue: methods.setValue,
     files,
     setFiles,
   });
 
   const assistantMap = useAssistantsMapContext();
-
-  const submitMessage = useCallback(
-    (data?: { text: string }) => {
-      if (!data) {
-        return console.warn('No data provided to submitMessage');
-      }
-      ask({ text: data.text });
-      methods.reset();
-      clearDraft();
-    },
-    [ask, methods, clearDraft],
-  );
+  const { submitMessage } = useSubmitMessage({ clearDraft });
 
   const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };
   const endpoint = endpointType ?? _endpoint;

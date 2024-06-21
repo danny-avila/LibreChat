@@ -207,7 +207,7 @@ Write a prompt that is mindful of the nuances in the language with respect to it
   - **english**: Delete chat?
   - **translated**: 채팅을 삭제하시겠습니까?
 
-- **com_ui_delete_conversation_confirm**:
+- **com_ui_delete_confirm**:
   - **english**: This will delete
   - **translated**: 이 채팅이 삭제됩니다
 

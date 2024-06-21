@@ -78,7 +78,10 @@ const PresetItems: FC<{
                 <>
                   <div className="flex w-full flex-col items-center gap-2">
                     <div className="grid w-full items-center gap-2">
-                      <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
+                      <Label
+                        htmlFor="preset-item-clear-all"
+                        className="text-left text-sm font-medium"
+                      >
                         {localize('com_endpoint_presets_clear_warning')}
                       </Label>
                     </div>
