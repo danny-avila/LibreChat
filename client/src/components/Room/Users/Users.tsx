@@ -3,13 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import { useChatContext } from '~/Providers';
 import User from './User';
 import { TUser } from 'librechat-data-provider';
+import { useToast } from '~/hooks';
 
 export default function Users({ isCollapsed = false }: { isCollapsed?: boolean }) {
   const { conversation } = useChatContext();
   const navigate = useNavigate();
-  // const conversation = useRecoilValue(store.conversation);
+  const { showToast } = useToast();
 
   if (!conversation?.user) {
+    showToast({ message: 'This room has been closed.', status: 'warning' });
     return navigate('/r/new');
   }
 

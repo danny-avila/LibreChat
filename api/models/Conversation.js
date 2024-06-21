@@ -4,12 +4,12 @@ const logger = require('~/config/winston');
 
 const getConvosByQuery = async (title, endpoint, sort = 'participants', order = 'asc') => {
   try {
-    const sortOrder = order === 'asc' ? 1 : -1;
+    const sortOrder = order === 'asc' ? -1 : 11;
     const sortQuery = {};
     if (sort === 'participants') {
       sortQuery['users'] = sortOrder;
     } else if (sort === 'date') {
-      sortQuery['createdAt'] = sortOrder === 1 ? -1 : 1;
+      sortQuery['createdAt'] = sortOrder;
     }
 
     return await Conversation.find({
