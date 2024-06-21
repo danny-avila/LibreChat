@@ -31,7 +31,6 @@ export default {
   com_ui_enter: 'Enter',
   com_ui_submit: '제출',
   com_ui_upload_success: '파일 업로드 성공',
-  com_ui_upload_invalid: '잘못된 파일입니다',
   com_ui_cancel: '취소',
   com_ui_save: '저장',
   com_ui_copy_to_clipboard: '클립보드에 복사',
@@ -68,7 +67,7 @@ export default {
   com_ui_shared_link_not_found: '공유 링크를 찾을 수 없습니다',
   com_ui_delete: '삭제',
   com_ui_delete_conversation: '채팅을 삭제하시겠습니까?',
-  com_ui_delete_conversation_confirm: '이 채팅이 삭제됩니다',
+  com_ui_delete_confirm: '이 채팅이 삭제됩니다',
   com_ui_rename: '이름 바꾸기',
   com_ui_archive: '아카이브',
   com_ui_archive_error: '대화 아카이브 실패',
@@ -828,7 +827,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: '채팅을 삭제하시겠습니까?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: '이 채팅이 삭제됩니다',
   },

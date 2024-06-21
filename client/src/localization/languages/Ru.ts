@@ -42,7 +42,6 @@ export default {
   com_ui_enter: 'Ввести',
   com_ui_submit: 'Отправить',
   com_ui_upload_success: 'Файл успешно загружен',
-  com_ui_upload_invalid: 'Недопустимый файл для загрузки',
   com_ui_cancel: 'Отмена',
   com_ui_save: 'Сохранить',
   com_ui_save_submit: 'Сохранить и отправить',
@@ -84,7 +83,7 @@ export default {
     'Обновлена общая ссылка на ваш чат. Управляйте ранее общими чатами в любое время через Настройки.',
   com_ui_shared_link_not_found: 'Общая ссылка не найдена',
   com_ui_delete_conversation: 'Удалить чат?',
-  com_ui_delete_conversation_confirm: 'Будет удален следующий чат: ',
+  com_ui_delete_confirm: 'Будет удален следующий чат: ',
   com_ui_rename: 'Переименовать',
   com_ui_archive: 'Архивировать',
   com_ui_archive_error: 'Nie udało się archiwizować rozmowy',
@@ -899,7 +898,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'Удалить чат?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Будет удален следующий чат: ',
   },

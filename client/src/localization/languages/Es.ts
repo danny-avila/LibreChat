@@ -106,7 +106,6 @@ export default {
   com_ui_submit: 'Enviar',
   com_ui_upload_success: 'Archivo subido con éxito',
   com_ui_upload_error: 'Hubo un error al subir su archivo',
-  com_ui_upload_invalid: 'Archivo inválido para subir. Debe ser una imagen que no exceda los 2 MB',
   com_ui_cancel: 'Cancelar',
   com_ui_save: 'Guardar',
   com_ui_save_submit: 'Guardar y Enviar',
@@ -155,7 +154,7 @@ export default {
     'Se ha actualizado un enlace compartido para tu chat. Gestiona los chats compartidos anteriormente en cualquier momento a través de Configuración.',
   com_ui_shared_link_not_found: 'Enlace compartido no encontrado',
   com_ui_delete_conversation: '¿Eliminar Chat?',
-  com_ui_delete_conversation_confirm: 'Esto eliminará',
+  com_ui_delete_confirm: 'Esto eliminará',
   com_ui_delete_assistant_confirm:
     '¿Está seguro de que desea eliminar este Asistente? Esta acción no se puede deshacer.',
   com_ui_rename: 'Renombrar',
@@ -987,10 +986,6 @@ export const comparisons = {
     english: 'There was an error uploading your file',
     translated: 'Hubo un error al subir su archivo',
   },
-  com_ui_upload_invalid: {
-    english: 'Invalid file for upload. Must be an image not exceeding 2 MB',
-    translated: 'Archivo inválido para subir. Debe ser una imagen que no exceda los 2 MB',
-  },
   com_ui_cancel: {
     english: 'Cancel',
     translated: 'Cancelar',
@@ -1173,7 +1168,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: '¿Eliminar Chat?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Esto eliminará',
   },

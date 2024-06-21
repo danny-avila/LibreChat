@@ -41,8 +41,6 @@ export default {
   com_ui_submit: 'Soumettre',
   com_ui_upload_success: 'Fichier téléversé avec succès',
   com_ui_upload_error: 'Une erreur s\'est produite lors du téléversement de votre fichier',
-  com_ui_upload_invalid:
-    'Fichier invalide pour le téléversement. Doit être une image ne dépassant pas 2 Mo',
   com_ui_cancel: 'Annuler',
   com_ui_save: 'Sauvegarder',
   com_ui_save_submit: 'Enregistrer et Soumettre',
@@ -80,7 +78,7 @@ export default {
   com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete: 'Supprimer',
   com_ui_delete_conversation: 'Supprimer la discussions?',
-  com_ui_delete_conversation_confirm: 'Cela supprimera',
+  com_ui_delete_confirm: 'Cela supprimera',
   com_ui_rename: 'Renombrar',
   com_ui_archive: 'Archiver',
   com_ui_archive_error: 'échec de l\'archivage de la conversation',
@@ -740,10 +738,6 @@ export const comparisons = {
     english: 'There was an error uploading your file',
     translated: 'Une erreur s\'est produite lors du téléversement de votre fichier',
   },
-  com_ui_upload_invalid: {
-    english: 'Invalid file for upload. Must be an image not exceeding 2 MB',
-    translated: 'Fichier invalide pour le téléversement. Doit être une image ne dépassant pas 2 Mo',
-  },
   com_ui_cancel: {
     english: 'Cancel',
     translated: 'Annuler',
@@ -877,7 +871,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'Supprimer la discussions?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Cela supprimera',
   },

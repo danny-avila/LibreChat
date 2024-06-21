@@ -116,8 +116,6 @@ export default {
   com_ui_submit: 'Abschicken',
   com_ui_upload_success: 'Erfolgreich hochgeladene Datei',
   com_ui_upload_error: 'Beim Hochladen deiner Datei ist ein Fehler aufgetreten',
-  com_ui_upload_invalid:
-    'Ungültige Datei zum Hochladen. Muss ein Bild sein, das nicht größer als 2 MB ist',
   com_ui_cancel: 'Abbrechen',
   com_ui_save: 'Speichern',
   com_ui_save_submit: 'Speichern & Absenden',
@@ -166,7 +164,7 @@ export default {
     'Ein geteiltes Link zu Ihrem Chat wurde aktualisiert. Verwalten Sie zuvor geteilte Chats jederzeit über die Einstellungen.',
   com_ui_shared_link_not_found: 'Geteilter Link nicht gefunden',
   com_ui_delete_conversation: 'Chat löschen?',
-  com_ui_delete_conversation_confirm: 'Damit wird gelöscht',
+  com_ui_delete_confirm: 'Damit wird gelöscht',
   com_ui_delete_assistant_confirm:
     'Bist du sicher, dass du diesen Assistenten löschen willst? Dies kann nicht rückgängig gemacht werden.',
   com_ui_rename: 'Umbenennen',
@@ -1015,10 +1013,6 @@ export const comparisons = {
     english: 'There was an error uploading your file',
     translated: 'Beim Hochladen deiner Datei ist ein Fehler aufgetreten',
   },
-  com_ui_upload_invalid: {
-    english: 'Invalid file for upload. Must be an image not exceeding 2 MB',
-    translated: 'Ungültige Datei zum Hochladen. Muss ein Bild sein, das nicht größer als 2 MB ist',
-  },
   com_ui_cancel: {
     english: 'Cancel',
     translated: 'Abbrechen',
@@ -1201,7 +1195,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'Chat löschen?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Damit wird gelöscht',
   },

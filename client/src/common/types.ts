@@ -1,8 +1,10 @@
-import { FileSources } from 'librechat-data-provider';
+import React from 'react';
+import { FileSources, SystemRoles } from 'librechat-data-provider';
 import type * as InputNumberPrimitive from 'rc-input-number';
 import type { ColumnDef } from '@tanstack/react-table';
 import type { SetterOrUpdater } from 'recoil';
 import type {
+  TRole,
   TUser,
   Action,
   TPreset,
@@ -52,6 +54,8 @@ export type LastSelectedModels = Record<EModelEndpoint, string>;
 
 export type LocalizeFunction = (phraseKey: string, ...values: string[]) => string;
 
+export type ChatFormValues = { text: string };
+
 export const mainTextareaId = 'prompt-textarea';
 export const globalAudioId = 'global-audio';
 
@@ -75,7 +79,7 @@ export type IconMapProps = {
 export type NavLink = {
   title: string;
   label?: string;
-  icon: LucideIcon;
+  icon: LucideIcon | React.FC;
   Component?: React.ComponentType;
   onClick?: () => void;
   variant?: 'default' | 'ghost';
@@ -325,6 +329,7 @@ export type TAuthContext = {
   login: (data: TLoginUser) => void;
   logout: () => void;
   setError: React.Dispatch<React.SetStateAction<string | undefined>>;
+  roles?: Record<string, TRole | null | undefined>;
 };
 
 export type TUserContext = {
@@ -394,7 +399,6 @@ export interface SwitcherProps {
   endpointKeyProvided: boolean;
   isCollapsed: boolean;
 }
-
 export type TLoginLayoutContext = {
   startupConfig: TStartupConfig | null;
   startupConfigError: unknown;
@@ -404,3 +408,19 @@ export type TLoginLayoutContext = {
   headerText: string;
   setHeaderText: React.Dispatch<React.SetStateAction<string>>;
 };
+export type TVectorStore = {
+  _id: string;
+  object: 'vector_store';
+  created_at: string | Date;
+  name: string;
+  bytes?: number;
+  file_counts?: {
+    in_progress: number;
+    completed: number;
+    failed: number;
+    cancelled: number;
+    total: number;
+  };
+};
+
+export type TThread = { id: string; createdAt: string };

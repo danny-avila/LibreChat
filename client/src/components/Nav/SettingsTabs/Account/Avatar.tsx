@@ -7,8 +7,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/u
 import { useUploadAvatarMutation, useGetFileConfig } from '~/data-provider';
 import { useToastContext } from '~/Providers';
 import { Spinner } from '~/components/svg';
+import { cn, formatBytes } from '~/utils';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils/';
 import store from '~/store';
 
 function Avatar() {
@@ -55,8 +55,9 @@ function Avatar() {
       setinput(file);
       setDialogOpen(true);
     } else {
+      const megabytes = fileConfig.avatarSizeLimit ? formatBytes(fileConfig.avatarSizeLimit) : 2;
       showToast({
-        message: localize('com_ui_upload_invalid'),
+        message: localize('com_ui_upload_invalid_var', megabytes + ''),
         status: 'error',
       });
     }
@@ -81,7 +82,7 @@ function Avatar() {
         <span>{localize('com_nav_profile_picture')}</span>
         <label
           htmlFor={'file-upload-avatar'}
-          className="flex h-auto cursor-pointer items-center rounded bg-transparent px-2 py-1 text-xs font-medium font-normal transition-colors hover:bg-gray-100 hover:text-green-700 dark:bg-transparent dark:text-white dark:hover:bg-gray-600 dark:hover:text-green-500"
+          className="flex h-auto cursor-pointer items-center rounded bg-transparent px-2 py-1 text-xs font-normal transition-colors hover:bg-gray-100 hover:text-green-700 dark:bg-transparent dark:text-white dark:hover:bg-gray-600 dark:hover:text-green-500"
         >
           <FileImage className="mr-1 flex w-[22px] items-center stroke-1" />
           <span>{localize('com_nav_change_picture')}</span>

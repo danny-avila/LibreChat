@@ -34,7 +34,6 @@ export default {
   com_ui_enter: 'Gir',
   com_ui_submit: 'Gönder',
   com_ui_upload_success: 'Dosya başarıyla yüklendi',
-  com_ui_upload_invalid: 'Geçersiz dosya yükleme',
   com_ui_cancel: 'İptal',
   com_ui_save: 'Kaydet',
   com_ui_copy_to_clipboard: 'Panoya kopyala',
@@ -72,7 +71,7 @@ export default {
   com_ui_shared_link_not_found: 'Paylaşılan bağlantı bulunamadı',
   com_ui_delete: 'Sil',
   com_ui_delete_conversation: 'Sohbet silinecek?',
-  com_ui_delete_conversation_confirm: 'Bu silinecek',
+  com_ui_delete_confirm: 'Bu silinecek',
   com_ui_rename: 'Yeniden adlandır',
   com_ui_archive: 'Arşivle',
   com_ui_archive_error: 'Sohbet arşivlemeye çalışırken bir hata oluştu',
@@ -598,7 +597,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'Sohbet silinecek?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Bu silinecek',
   },

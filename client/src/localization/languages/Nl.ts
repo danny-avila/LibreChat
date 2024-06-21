@@ -34,7 +34,6 @@ export default {
   com_ui_enter: 'Invoeren',
   com_ui_submit: 'Indienen',
   com_ui_upload_success: 'Bestand succesvol geüpload',
-  com_ui_upload_invalid: 'Ongeldig bestand voor uploaden',
   com_ui_cancel: 'Annuleren',
   com_ui_save: 'Opslaan',
   com_ui_copy_to_clipboard: 'Kopiëren naar klembord',
@@ -74,7 +73,7 @@ export default {
   com_ui_shared_link_not_found: 'Gedeelde link niet gevonden',
   com_ui_delete: 'Verwijderen',
   com_ui_delete_conversation: 'Chat verwijderen?',
-  com_ui_delete_conversation_confirm: 'Hiermee wordt',
+  com_ui_delete_confirm: 'Hiermee wordt',
   com_ui_rename: 'Hernoemen',
   com_ui_archive: 'Archiveren',
   com_ui_archive_error: 'Kan conversatie niet archiveren',
@@ -583,7 +582,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'Chat verwijderen?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Hiermee wordt',
   },

@@ -32,7 +32,6 @@ export default {
   com_ui_enter: 'Ange',
   com_ui_submit: 'Skicka',
   com_ui_upload_success: 'Uppladdningen av filen lyckades',
-  com_ui_upload_invalid: 'Ogiltig fil för uppladdning',
   com_ui_cancel: 'Avbryt',
   com_ui_save: 'Spara',
   com_ui_copy_to_clipboard: 'Kopiera till urklipp',
@@ -70,7 +69,7 @@ export default {
   com_ui_shared_link_not_found: 'Delad länk hittades inte',
   com_ui_delete: 'Radera',
   com_ui_delete_conversation: 'Radera chatt?',
-  com_ui_delete_conversation_confirm: 'Detta kommer att radera',
+  com_ui_delete_confirm: 'Detta kommer att radera',
   com_ui_rename: 'byta namn på',
   com_ui_archive: 'Arkiv',
   com_ui_archive_error: 'Kunde inte arkivera chatt',
@@ -562,7 +561,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'Radera chatt?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Detta kommer att radera',
   },

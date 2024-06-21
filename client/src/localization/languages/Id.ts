@@ -39,8 +39,6 @@ export default {
   com_ui_submit: 'Kirim',
   com_ui_upload_success: 'Berhasil mengunggah file',
   com_ui_upload_error: 'Ada kesalahan saat mengunggah file Anda',
-  com_ui_upload_invalid:
-    'File tidak valid untuk diunggah. Harus berupa gambar yang tidak melebihi 2 MB',
   com_ui_cancel: 'Batal',
   com_ui_save: 'Simpan',
   com_ui_save_submit: 'Simpan & Kirim',
@@ -80,7 +78,7 @@ export default {
   com_ui_shared_link_not_found: 'Tautan berbagi tidak ditemukan',
   com_ui_delete: 'Hapus',
   com_ui_delete_conversation: 'Hapus chat?',
-  com_ui_delete_conversation_confirm: 'Ini akan menghapus',
+  com_ui_delete_confirm: 'Ini akan menghapus',
   com_ui_rename: 'Renombrar',
   com_ui_archive: 'Arsip',
   com_ui_archive_error: 'Gagal mengarsipkan percakapan',
@@ -665,7 +663,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'Hapus chat?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Ini akan menghapus',
   },
