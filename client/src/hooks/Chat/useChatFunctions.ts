@@ -229,7 +229,7 @@ export default function useChatFunctions({
       setLatestMessage(initialResponse);
     }
     setSubmission(submission);
-    console.log('[TESTING] Submission:', submission);
+    console.log('[TESTING] Submission:');
     console.dir(submission, { depth: null });
   };
 
