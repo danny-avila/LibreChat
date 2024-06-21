@@ -1,4 +1,5 @@
 import { useRecoilState } from 'recoil';
+import HoverCardSettings from '../HoverCardSettings';
 import { ForkOptions } from 'librechat-data-provider';
 import { Dropdown, Switch } from '~/components/ui';
 import { useLocalize } from '~/hooks';
@@ -20,12 +21,14 @@ export const ForkSettings = () => {
     <>
       <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
         <div className="flex items-center justify-between">
-          <div> {localize('com_ui_fork_change_default')} </div>
+          <div className="flex items-center space-x-2">
+            <div>{localize('com_ui_fork_change_default')}</div>
+            <HoverCardSettings side="bottom" text="com_nav_info_fork_change_default" />
+          </div>
           <Dropdown
             value={forkSetting}
             onChange={setForkSetting}
             options={forkOptions}
-            width={200}
             position={'left'}
             maxHeight="199px"
             testId="fork-setting-dropdown"
@@ -46,7 +49,10 @@ export const ForkSettings = () => {
       </div>
       <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
         <div className="flex items-center justify-between">
-          <div> {localize('com_ui_fork_split_target_setting')} </div>
+          <div className="flex items-center space-x-2">
+            <div>{localize('com_ui_fork_split_target_setting')}</div>
+            <HoverCardSettings side="bottom" text="com_nav_info_fork_split_target_setting" />
+          </div>
           <Switch
             id="splitAtTarget"
             checked={splitAtTarget}

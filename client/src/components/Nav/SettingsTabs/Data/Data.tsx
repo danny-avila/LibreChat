@@ -43,7 +43,7 @@ function Data() {
       className="w-full md:min-h-[271px]"
       ref={dataTabRef}
     >
-      <div className="flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-50">
+      <div className="flex flex-col gap-3 text-sm text-black dark:text-gray-50">
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <ImportConversations />
         </div>

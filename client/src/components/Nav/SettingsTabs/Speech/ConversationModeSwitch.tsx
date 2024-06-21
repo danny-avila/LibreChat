@@ -10,7 +10,7 @@ export default function ConversationModeSwitch({
 }) {
   const localize = useLocalize();
   const [conversationMode, setConversationMode] = useRecoilState<boolean>(store.conversationMode);
-  const [advancedMode, setAdvancedMode] = useRecoilState<boolean>(store.advancedMode);
+  const [advancedMode] = useRecoilState<boolean>(store.advancedMode);
   const [textToSpeech] = useRecoilState<boolean>(store.TextToSpeech);
   const [, setAutoSendText] = useRecoilState<boolean>(store.autoSendText);
   const [, setDecibelValue] = useRecoilState(store.decibelValue);
@@ -34,13 +34,6 @@ export default function ConversationModeSwitch({
         <strong>{localize('com_nav_conversation_mode')}</strong>
       </div>
       <div className="flex items-center justify-between">
-        <label
-          className="flex h-auto cursor-pointer items-center rounded border border-gray-500/70 bg-transparent px-2 py-1 text-xs font-medium font-normal transition-colors hover:border-gray-500/95 hover:bg-gray-100 hover:text-green-700 dark:bg-transparent dark:text-white dark:hover:bg-gray-600 dark:hover:text-green-500"
-          onClick={() => setAdvancedMode(!advancedMode)}
-        >
-          <span>{advancedMode ? 'Advanced Mode' : 'Simple Mode'}</span>
-        </label>
-        <div className="w-2" />
         <Switch
           id="ConversationMode"
           checked={conversationMode}
