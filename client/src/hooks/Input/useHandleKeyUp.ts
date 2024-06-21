@@ -48,19 +48,18 @@ const useHandleKeyUp = ({
     }
   }, [textAreaRef, setShowMentionPopover]);
 
-  // const handlePlusCommand = useCallback(() => {
-  //   if (shouldTriggerCommand(textAreaRef, '+')) {
-  //     console.log('+ command triggered');
-  //   }
-  // }, [textAreaRef]);
+  const handlePlusCommand = useCallback(() => {
+    if (shouldTriggerCommand(textAreaRef, '+')) {
+      console.log('+ command triggered');
+    }
+  }, [textAreaRef]);
 
   const commandHandlers = useMemo(
     () => ({
       '@': handleAtCommand,
-      // '+': handlePlusCommand,
+      '+': handlePlusCommand,
     }),
-    [handleAtCommand],
-    // [handleAtCommand, handlePlusCommand],
+    [handleAtCommand, handlePlusCommand],
   );
 
   /**
