@@ -115,6 +115,11 @@ const showPopoverFamily = atomFamily({
   default: false,
 });
 
+const activePromptByIndex = atomFamily<string | undefined, string | number | null>({
+  key: 'activePromptByIndex',
+  default: undefined,
+});
+
 const showMentionPopoverFamily = atomFamily<boolean, string | number | null>({
   key: 'showMentionPopoverByIndex',
   default: false,
@@ -210,4 +215,5 @@ export default {
   audioRunFamily,
   globalAudioPlayingFamily,
   globalAudioFetchingFamily,
+  activePromptByIndex,
 };
