@@ -65,6 +65,8 @@ export default {
   com_ui_create_link: 'Buat tautan',
   com_ui_share_link_to_chat: 'Bagikan tautan ke chat',
   com_ui_share_error: 'Terjadi kesalahan saat membagikan tautan chat',
+  com_ui_share_retrieve_error: 'Terjadi kesalahan saat menghapus tautan yang dibagikan.',
+  com_ui_share_delete_error: 'Terjadi kesalahan saat menghapus tautan yang dibagikan.',
   com_ui_share_create_message:
     'Nama Anda dan pesan apa pun yang Anda tambahkan setelah berbagi tetap pribadi.',
   com_ui_share_created_message:
@@ -615,6 +617,14 @@ export const comparisons = {
   com_ui_share_link_to_chat: {
     english: 'Share link to chat',
     translated: 'Bagikan tautan ke chat',
+  },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Terjadi kesalahan saat menghapus tautan yang dibagikan.',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Terjadi kesalahan saat menghapus tautan yang dibagikan.',
   },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',

@@ -71,6 +71,8 @@ export default {
   com_ui_create_link: 'Создать ссылку',
   com_ui_share_link_to_chat: 'Поделиться ссылкой в чате',
   com_ui_share_error: 'Произошла ошибка при попытке поделиться ссылкой на чат',
+  com_ui_share_retrieve_error: 'Произошла ошибка при удалении общей ссылки.',
+  com_ui_share_delete_error: 'Произошла ошибка при удалении общей ссылки.',
   com_ui_share_create_message:
     'Ваше имя и любые сообщения, которые вы добавите после обмена, останутся конфиденциальными.',
   com_ui_share_created_message:
@@ -853,6 +855,14 @@ export const comparisons = {
   com_ui_share_link_to_chat: {
     english: 'Share link to chat',
     translated: 'Поделиться ссылкой в чате',
+  },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Произошла ошибка при удалении общей ссылки.',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Произошла ошибка при удалении общей ссылки.',
   },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',

@@ -55,6 +55,8 @@ export default {
   com_ui_create_link: '링크 만들기',
   com_ui_share_link_to_chat: '채팅으로 링크 공유하기',
   com_ui_share_error: '채팅 링크를 공유하는 동안 오류가 발생했습니다',
+  com_ui_share_retrieve_error: '공유 링크를 삭제하는 중에 오류가 발생했습니다.',
+  com_ui_share_delete_error: '공유 링크를 삭제하는 중에 오류가 발생했습니다.',
   com_ui_share_create_message: '이름과 공유 후에 추가하는 메시지는 비공개로 유지됩니다.',
   com_ui_share_created_message:
     '귀하의 채팅에 대한 공유 링크가 생성되었습니다. 설정을 통해 언제든지 이전에 공유한 채팅을 관리할 수 있습니다.',
@@ -780,6 +782,14 @@ export const comparisons = {
   com_ui_share_link_to_chat: {
     english: 'Share link to chat',
     translated: '채팅으로 링크 공유하기',
+  },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: '공유 링크를 삭제하는 중에 오류가 발생했습니다.',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: '공유 링크를 삭제하는 중에 오류가 발생했습니다.',
   },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
