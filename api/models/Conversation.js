@@ -7,18 +7,40 @@ const getConvosByQuery = async (title, endpoint, sort = 'participants', order = 
     const sortOrder = order === 'asc' ? -1 : 1;
     const sortQuery = {};
     if (sort === 'participants') {
-      sortQuery['users'] = sortOrder;
+      sortQuery['userLength'] = sortOrder;
     } else if (sort === 'date') {
       sortQuery['createdAt'] = sortOrder;
     }
 
-    return await Conversation.find({
-      isRoom: true,
-      active: true,
-      isPrivate: false,
-      title: new RegExp(title, 'i'),
-      endpoint: new RegExp(endpoint, 'i'),
-    }).sort(sortQuery).lean();
+    const result =  await Conversation.aggregate([
+      {
+        $project: {
+          title: 1,
+          isRoom: 1,
+          user: 1,
+          endpoint: 1,
+          active: 1,
+          isPrivate: 1,
+          users: 1,
+          createdAt: 1,
+          userLength: { '$size': { '$ifNull': ['$users', []] } },
+        },
+      },
+      {
+        $match: {
+          $and: [
+            { isRoom: true },
+            { active: true },
+            { isPrivate: false },
+            { title: new RegExp(title, 'i') },
+            { endpoint: new RegExp(endpoint, 'i') },
+          ],
+        },
+      },
+      { $sort: sortQuery },
+    ]);
+
+    return result;
   } catch (error) {
     logger.error('[getConvo] Error getting single conversation', error);
     return { message: 'Error getting single conversation' };

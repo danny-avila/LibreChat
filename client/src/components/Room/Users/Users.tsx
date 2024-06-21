@@ -1,14 +1,13 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useChatContext } from '~/Providers';
+import { useChatContext, useToastContext } from '~/Providers';
 import User from './User';
 import { TUser } from 'librechat-data-provider';
-import { useToast } from '~/hooks';
 
 export default function Users({ isCollapsed = false }: { isCollapsed?: boolean }) {
   const { conversation } = useChatContext();
   const navigate = useNavigate();
-  const { showToast } = useToast();
+  const { showToast } = useToastContext();
 
   if (!conversation?.user) {
     showToast({ message: 'This room has been closed.', status: 'warning' });
