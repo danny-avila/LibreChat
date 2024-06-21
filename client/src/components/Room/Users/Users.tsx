@@ -1,11 +1,17 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useChatContext } from '~/Providers';
 import User from './User';
 import { TUser } from 'librechat-data-provider';
 
 export default function Users({ isCollapsed = false }: { isCollapsed?: boolean }) {
   const { conversation } = useChatContext();
+  const navigate = useNavigate();
   // const conversation = useRecoilValue(store.conversation);
+
+  if (!conversation?.user) {
+    return navigate('/r/new');
+  }
 
   return (
     <>

@@ -146,10 +146,10 @@ const MessageComponent: FC<{ tip: TipTrack; setTips: any }> = ({ tip, setTips })
         <span className="text-xs text-black dark:text-gray-100">
           {formatDate(tip.createdAt)}
         </span>
-        <button onClick={() => setIsDetailView(!isDetailView)}>
+        <div className='cursor-pointer' onClick={() => setIsDetailView(!isDetailView)}>
           {' '}
           <DotsIcon />
-        </button>
+        </div>
         {
           <DetailsDropDown name="Melody" tip={tip} setTips={setTips} setOpen={setIsDetailView} isDetailView={isDetailView} />
         }
@@ -172,14 +172,14 @@ export default function AlarmBox({
     //  onOpenChange={(e) => setOpen(e)} open={open}
     >
       <DialogTrigger asChild>
-        <button className="relative">
+        <div className="relative cursor-pointer">
           <BellIcon color={theme === 'light' ? '#000000' : '#ffffff'} />
           {tips.length !== 0 && (
             <span className="absolute -right-3 -top-3 py-0 px-[5px] rounded-md text-[10px] bg-red-500 text-white">
               {tips.length}
             </span>
           )}
-        </button>
+        </div>
       </DialogTrigger>
       <DialogTemplate
         showCloseButton={false}

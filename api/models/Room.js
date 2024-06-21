@@ -184,6 +184,10 @@ const removeUserFromRoom = async (conversationId, userId, isBanned = false) => {
     if (room.user.toString() === userId.toString()) {
       const poppedUser = room.users.shift();
 
+      if (!poppedUser) {
+        await Conversation.findOneAndDelete({ conversationId });
+      }
+
       room.user = poppedUser;
       await room.save();
     } else {
