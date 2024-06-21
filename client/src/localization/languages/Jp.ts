@@ -116,7 +116,6 @@ export default {
   com_ui_submit: '送信する',
   com_ui_upload_success: 'アップロード成功',
   com_ui_upload_error: 'ファイルのアップロード中にエラーが発生しました。',
-  com_ui_upload_invalid: '不正なファイルです',
   com_ui_cancel: 'キャンセル',
   com_ui_save: '保存',
   com_ui_save_submit: '保存 & 送信',
@@ -163,7 +162,7 @@ export default {
     'チャットの共有リンクが更新されました。設定から以前共有したチャットを管理できます。',
   com_ui_shared_link_not_found: '共有リンクが見つかりません',
   com_ui_delete_conversation: 'チャットを削除しますか？',
-  com_ui_delete_conversation_confirm: 'このチャットは削除されます。',
+  com_ui_delete_confirm: 'このチャットは削除されます。',
   com_ui_delete_assistant_confirm: 'このアシスタントを削除しますか？ この操作は元に戻せません。',
   com_ui_rename: 'タイトル変更',
   com_ui_archive: 'アーカイブ',
@@ -1174,7 +1173,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'チャットを削除しますか？',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'このチャットは削除されます。',
   },

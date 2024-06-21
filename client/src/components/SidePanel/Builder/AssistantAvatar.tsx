@@ -16,11 +16,11 @@ import type {
   AssistantListResponse,
 } from 'librechat-data-provider';
 import { useUploadAssistantAvatarMutation, useGetFileConfig } from '~/data-provider';
-import { AssistantAvatar, NoImage, AvatarMenu } from './Images';
 import { useToastContext, useAssistantsMapContext } from '~/Providers';
+import { AssistantAvatar, NoImage, AvatarMenu } from './Images';
 // import { Spinner } from '~/components/svg';
 import { useLocalize } from '~/hooks';
-// import { cn } from '~/utils/';
+import { formatBytes } from '~/utils';
 
 function Avatar({
   endpoint,
@@ -207,8 +207,9 @@ function Avatar({
         version,
       });
     } else {
+      const megabytes = fileConfig.avatarSizeLimit ? formatBytes(fileConfig.avatarSizeLimit) : 2;
       showToast({
-        message: localize('com_ui_upload_invalid'),
+        message: localize('com_ui_upload_invalid_var', megabytes + ''),
         status: 'error',
       });
     }
