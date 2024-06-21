@@ -31,13 +31,12 @@ export function insertTextAtCursor(element: HTMLTextAreaElement, textToInsert: s
 
  3) Reseting back to scrollHeight reads and applies the ideal height for the current content dynamically
  */
-export const forceResize = (textAreaRef: React.RefObject<HTMLTextAreaElement>) => {
-  if (!textAreaRef.current) {
+export const forceResize = (element: HTMLTextAreaElement | null) => {
+  if (!element) {
     return;
   }
-  textAreaRef.current.style.height = 'auto';
-  textAreaRef.current.offsetHeight;
-  textAreaRef.current.style.height = `${textAreaRef.current.scrollHeight}px`;
+  element.style.height = 'auto';
+  element.style.height = `${element.scrollHeight}px`;
 };
 
 /**

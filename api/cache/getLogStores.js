@@ -25,6 +25,10 @@ const config = isEnabled(USE_REDIS)
   ? new Keyv({ store: keyvRedis })
   : new Keyv({ namespace: CacheKeys.CONFIG_STORE });
 
+const roles = isEnabled(USE_REDIS)
+  ? new Keyv({ store: keyvRedis })
+  : new Keyv({ namespace: CacheKeys.ROLES });
+
 const audioRuns = isEnabled(USE_REDIS) // ttl: 30 minutes
   ? new Keyv({ store: keyvRedis, ttl: TEN_MINUTES })
   : new Keyv({ namespace: CacheKeys.AUDIO_RUNS, ttl: TEN_MINUTES });
@@ -46,6 +50,7 @@ const abortKeys = isEnabled(USE_REDIS)
   : new Keyv({ namespace: CacheKeys.ABORT_KEYS, ttl: 600000 });
 
 const namespaces = {
+  [CacheKeys.ROLES]: roles,
   [CacheKeys.CONFIG_STORE]: config,
   pending_req,
   [ViolationTypes.BAN]: new Keyv({ store: keyvMongo, namespace: CacheKeys.BANS, ttl: duration }),
