@@ -1,6 +1,6 @@
+import { useSetRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { useSetRecoilState, useResetRecoilState } from 'recoil';
 import { QueryKeys, EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import type { TConversation, TEndpointsConfig, TModelsConfig } from 'librechat-data-provider';
 import { buildDefaultConvo, getDefaultEndpoint, getEndpointField } from '~/utils';
@@ -10,9 +10,9 @@ const useNavigateToConvo = (index = 0) => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const clearAllConversations = store.useClearConvoState();
-  const { setConversation } = store.useCreateConversationAtom(index);
+  const clearAllLatestMessages = store.useClearLatestMessages();
   const setSubmission = useSetRecoilState(store.submissionByIndex(index));
-  const resetLatestMessage = useResetRecoilState(store.latestMessageFamily(index));
+  const { setConversation } = store.useCreateConversationAtom(index);
 
   const navigateToConvo = (conversation: TConversation, _resetLatestMessage = true) => {
     if (!conversation) {
@@ -21,7 +21,7 @@ const useNavigateToConvo = (index = 0) => {
     }
     setSubmission(null);
     if (_resetLatestMessage) {
-      resetLatestMessage();
+      clearAllLatestMessages();
     }
 
     let convo = { ...conversation };

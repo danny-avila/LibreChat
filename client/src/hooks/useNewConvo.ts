@@ -40,10 +40,10 @@ const useNewConvo = (index = 0) => {
   const { data: startupConfig } = useGetStartupConfig();
   const clearAllConversations = store.useClearConvoState();
   const defaultPreset = useRecoilValue(store.defaultPreset);
+  const clearAllLatestMessages = store.useClearLatestMessages();
   const { setConversation } = store.useCreateConversationAtom(index);
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
   const setSubmission = useSetRecoilState<TSubmission | null>(store.submissionByIndex(index));
-  const resetLatestMessage = useResetRecoilState(store.latestMessageFamily(index));
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
 
   const modelsQuery = useGetModelsQuery();
@@ -145,7 +145,7 @@ const useNewConvo = (index = 0) => {
         setConversation(conversation);
         setSubmission({} as TSubmission);
         if (!keepLatestMessage) {
-          resetLatestMessage();
+          clearAllLatestMessages();
         }
 
         if (conversation.conversationId === 'new' && !modelsData) {

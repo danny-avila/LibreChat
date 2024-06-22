@@ -14,6 +14,48 @@ import type { TOptionSettings, ExtendedFile } from '~/common';
 import { storeEndpointSettings } from '~/utils';
 import { useEffect } from 'react';
 
+const latestMessageKeysAtom = atom<(string | number)[]>({
+  key: 'latestMessageKeys',
+  default: [],
+});
+
+const submissionKeysAtom = atom<(string | number)[]>({
+  key: 'submissionKeys',
+  default: [],
+});
+
+const latestMessageFamily = atomFamily<TMessage | null, string | number | null>({
+  key: 'latestMessageByIndex',
+  default: null,
+});
+
+const submissionByIndex = atomFamily<TSubmission | null, string | number>({
+  key: 'submissionByIndex',
+  default: null,
+});
+
+const latestMessageKeysSelector = selector<(string | number)[]>({
+  key: 'latestMessageKeysSelector',
+  get: ({ get }) => {
+    const keys = get(conversationKeysAtom);
+    return keys.filter((key) => get(latestMessageFamily(key)) !== null);
+  },
+  set: ({ set }, newKeys) => {
+    set(latestMessageKeysAtom, newKeys);
+  },
+});
+
+const submissionKeysSelector = selector<(string | number)[]>({
+  key: 'submissionKeysSelector',
+  get: ({ get }) => {
+    const keys = get(conversationKeysAtom);
+    return keys.filter((key) => get(submissionByIndex(key)) !== null);
+  },
+  set: ({ set }, newKeys) => {
+    set(submissionKeysAtom, newKeys);
+  },
+});
+
 const conversationByIndex = atomFamily<TConversation | null, string | number>({
   key: 'conversationByIndex',
   default: null,
@@ -71,11 +113,6 @@ const allConversationsSelector = selector({
 
 const presetByIndex = atomFamily<TPreset | null, string | number>({
   key: 'presetByIndex',
-  default: null,
-});
-
-const submissionByIndex = atomFamily<TSubmission | null, string | number>({
-  key: 'submissionByIndex',
   default: null,
 });
 
@@ -159,11 +196,6 @@ const audioRunFamily = atomFamily<string | null, string | number | null>({
   default: null,
 });
 
-const latestMessageFamily = atomFamily<TMessage | null, string | number | null>({
-  key: 'latestMessageByIndex',
-  default: null,
-});
-
 function useCreateConversationAtom(key: string | number) {
   const [keys, setKeys] = useRecoilState(conversationKeysAtom);
   const setConversation = useSetRecoilState(conversationByIndex(key));
@@ -216,27 +248,52 @@ const conversationByKeySelector = selectorFamily({
       },
 });
 
-/** Uses Conversation keys to clear all submissions.
- * Note: Submissions must share keys with conversations! */
 function useClearSubmissionState() {
-  /** Clears all active submissions. Pass `true` to skip the first or root submission */
   const clearAllSubmissions = useRecoilCallback(
-    ({ reset, snapshot }) =>
+    ({ reset, set, snapshot }) =>
       async (skipFirst?: boolean) => {
-        const conversationKeys = await snapshot.getPromise(conversationKeysAtom);
+        const submissionKeys = await snapshot.getPromise(submissionKeysSelector);
+        console.log('submissionKeys', submissionKeys);
 
-        for (const conversationKey of conversationKeys) {
-          if (skipFirst && conversationKey == 0) {
+        for (const key of submissionKeys) {
+          if (skipFirst && key == 0) {
             continue;
           }
 
-          reset(submissionByIndex(conversationKey));
+          console.log('resetting submission', key);
+          reset(submissionByIndex(key));
         }
+
+        set(submissionKeysSelector, []);
       },
     [],
   );
 
   return clearAllSubmissions;
+}
+
+function useClearLatestMessages() {
+  const clearAllLatestMessages = useRecoilCallback(
+    ({ reset, set, snapshot }) =>
+      async (skipFirst?: boolean) => {
+        const latestMessageKeys = await snapshot.getPromise(latestMessageKeysSelector);
+        console.log('latestMessageKeys', latestMessageKeys);
+
+        for (const key of latestMessageKeys) {
+          if (skipFirst && key == 0) {
+            continue;
+          }
+
+          console.log('resetting latest message', key);
+          reset(latestMessageFamily(key));
+        }
+
+        set(latestMessageKeysSelector, []);
+      },
+    [],
+  );
+
+  return clearAllLatestMessages;
 }
 
 export default {
@@ -266,4 +323,5 @@ export default {
   showPlusPopoverFamily,
   activePromptByIndex,
   useClearSubmissionState,
+  useClearLatestMessages,
 };
