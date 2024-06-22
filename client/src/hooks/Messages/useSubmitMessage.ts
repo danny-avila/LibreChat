@@ -1,6 +1,5 @@
 import { useCallback } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
-import type { TMessage } from 'librechat-data-provider';
 import { useChatContext, useChatFormContext, useAddedChatContext } from '~/Providers';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { replaceSpecialVars } from '~/utils';
@@ -22,12 +21,13 @@ export default function useSubmitMessage(helpers?: { clearDraft?: () => void }) 
         return console.warn('No data provided to submitMessage');
       }
       const hasAdded = addedIndex && activeConvos[addedIndex] && addedConvo;
-      let rootMessages: TMessage[] | undefined;
-      if (hasAdded) {
-        rootMessages = getMessages();
-      }
       ask({ text: data.text });
-      hasAdded && askAdditional({ text: data.text }, { overrideMessages: rootMessages });
+      if (hasAdded) {
+        setTimeout(() => {
+          const rootMessages = getMessages();
+          askAdditional({ text: data.text }, { overrideMessages: rootMessages });
+        }, 15);
+      }
       methods.reset();
       helpers?.clearDraft && helpers.clearDraft();
     },
