@@ -7,7 +7,7 @@ import {
   parseCompactConvo,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import { useSetRecoilState } from 'recoil';
+import { useSetRecoilState, useResetRecoilState } from 'recoil';
 import type {
   TMessage,
   TSubmission,
@@ -47,6 +47,7 @@ export default function useChatFunctions({
   setSubmission: SetterOrUpdater<TSubmission | null>;
   setLatestMessage?: SetterOrUpdater<TMessage | null>;
 }) {
+  const resetLatestMultiMessage = useResetRecoilState(store.latestMessageFamily(index + 1));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const setFilesToDelete = useSetFilesToDelete();
   const getSender = useGetSender();
@@ -67,6 +68,7 @@ export default function useChatFunctions({
     } = {},
   ) => {
     setShowStopButton(false);
+    resetLatestMultiMessage();
     if (!!isSubmitting || text === '') {
       return;
     }

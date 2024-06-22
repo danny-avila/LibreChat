@@ -52,8 +52,8 @@ export default function useMessageActions(props: TMessageActions) {
   );
 
   const isSubmitting = useMemo(
-    () => isSubmittingRoot || isSubmittingAdditional,
-    [isSubmittingRoot, isSubmittingAdditional],
+    () => (isMultiMessage ? isSubmittingAdditional : isSubmittingRoot),
+    [isMultiMessage, isSubmittingAdditional, isSubmittingRoot],
   );
 
   const regenerateMessage = useCallback(() => {
