@@ -1,5 +1,5 @@
 import { useRecoilValue } from 'recoil';
-import { useMemo, useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuthContext, useMessageHelpers, useLocalize } from '~/hooks';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
@@ -13,6 +13,20 @@ import HoverButtons from './HoverButtons';
 import SubRow from './SubRow';
 import { cn } from '~/utils';
 import store from '~/store';
+
+const MessageContainer = React.memo(
+  ({ handleScroll, children }: { handleScroll: () => void; children: React.ReactNode }) => {
+    return (
+      <div
+        className="text-token-text-primary w-full border-0 bg-transparent dark:border-0 dark:bg-transparent"
+        onWheel={handleScroll}
+        onTouchMove={handleScroll}
+      >
+        {children}
+      </div>
+    );
+  },
+);
 
 export default function Message(props: TMessageProps) {
   const [siblingMessage, setSiblingMessage] = useState<TMessage | null>(null);
@@ -40,6 +54,9 @@ export default function Message(props: TMessageProps) {
   const { message, siblingIdx, siblingCount, setSiblingIdx, currentEditId, setCurrentEditId } =
     props;
 
+  const showSibling =
+    (isLast && latestMultiMessage && !latestMultiMessage?.children?.length) || siblingMessage;
+
   useEffect(() => {
     if (
       isLast &&
@@ -50,159 +67,105 @@ export default function Message(props: TMessageProps) {
     }
   }, [isLast, latestMultiMessage, message, setSiblingMessage]);
 
+  const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
+
   if (!message) {
     return null;
   }
 
-  if (isLast && isSubmitting) {
-    console.log('message', message);
-    console.log('latestMultiMessage', latestMultiMessage);
-    console.log('siblingMessage', siblingMessage);
-  }
+  const { children, messageId = null, isCreatedByUser, error, unfinished } = message ?? {};
 
-  const { text, children, messageId = null, isCreatedByUser, error, unfinished } = message ?? {};
+  const renderMessage = (msg: TMessage | null) => {
+    const getMessageLabel = () => {
+      if (msg?.isCreatedByUser) {
+        return UsernameDisplay ? user?.name || user?.username : localize('com_user_message');
+      } else if (assistant) {
+        return assistant.name ?? 'Assistant';
+      } else {
+        return msg?.sender;
+      }
+    };
 
-  let messageLabel = '';
-  if (isCreatedByUser) {
-    messageLabel = UsernameDisplay ? user?.name || user?.username : localize('com_user_message');
-  } else if (assistant) {
-    messageLabel = assistant.name ?? 'Assistant';
-  } else {
-    messageLabel = message.sender;
-  }
-
-  return (
-    <>
-      <div
-        className="text-token-text-primary w-full border-0 bg-transparent dark:border-0 dark:bg-transparent"
-        onWheel={handleScroll}
-        onTouchMove={handleScroll}
-      >
-        <div className="m-auto justify-center p-4 py-2 text-base md:gap-6 ">
-          <div className="final-completion group mx-auto flex flex-1 gap-3 text-base md:max-w-3xl md:px-5 lg:max-w-[40rem] lg:px-1 xl:max-w-[48rem] xl:px-5">
-            <div className="relative flex flex-shrink-0 flex-col items-end">
-              <div>
-                <div className="pt-0.5">
-                  <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-                    <Icon message={message} conversation={conversation} assistant={assistant} />
-                  </div>
-                </div>
+    if (!msg) {
+      return null;
+    }
+    return (
+      <div className="final-completion group mx-auto flex flex-1 gap-3 text-base">
+        <div className="relative flex flex-shrink-0 flex-col items-end">
+          <div>
+            <div className="pt-0.5">
+              <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
+                <Icon message={msg} conversation={conversation} assistant={assistant} />
               </div>
-            </div>
-            <div
-              className={cn('relative flex w-11/12 flex-col', isCreatedByUser ? '' : 'agent-turn')}
-            >
-              <div className="select-none font-semibold">{messageLabel}</div>
-              <div className="flex-col gap-1 md:gap-3">
-                {siblingMessage ? (
-                  <div className="flex flex-row gap-4">
-                    {' '}
-                    {/* Parent container */}
-                    {/* First component */}
-                    <div className="flex-1">
-                      <div className="flex max-w-full flex-grow flex-col gap-0">
-                        {/* Legacy Plugins */}
-                        {message?.plugin && <Plugin plugin={message?.plugin} />}
-                        <MessageContent
-                          ask={ask}
-                          edit={edit}
-                          isLast={isLast}
-                          text={text ?? ''}
-                          message={message}
-                          enterEdit={enterEdit}
-                          error={!!error}
-                          isSubmitting={isSubmitting}
-                          unfinished={unfinished ?? false}
-                          isCreatedByUser={isCreatedByUser ?? true}
-                          siblingIdx={siblingIdx ?? 0}
-                          setSiblingIdx={
-                            setSiblingIdx ??
-                            (() => {
-                              return;
-                            })
-                          }
-                        />
-                      </div>
-                    </div>
-                    {/* Second component */}
-                    <div className="flex-1">
-                      <div className="flex max-w-full flex-grow flex-col gap-0">
-                        {/* Legacy Plugins */}
-                        {siblingMessage?.plugin && <Plugin plugin={siblingMessage?.plugin} />}
-                        <MessageContent
-                          ask={ask}
-                          edit={edit}
-                          isLast={isLast}
-                          text={siblingMessage.text ?? ''}
-                          message={siblingMessage}
-                          enterEdit={enterEdit}
-                          error={!!error}
-                          isSubmitting={isSubmitting}
-                          unfinished={unfinished ?? false}
-                          isCreatedByUser={isCreatedByUser ?? true}
-                          siblingIdx={siblingIdx ?? 0}
-                          setSiblingIdx={
-                            setSiblingIdx ??
-                            (() => {
-                              return;
-                            })
-                          }
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex max-w-full flex-grow flex-col gap-0">
-                    {/* Legacy Plugins */}
-                    {message?.plugin && <Plugin plugin={message?.plugin} />}
-                    <MessageContent
-                      ask={ask}
-                      edit={edit}
-                      isLast={isLast}
-                      text={text ?? ''}
-                      message={message}
-                      enterEdit={enterEdit}
-                      error={!!error}
-                      isSubmitting={isSubmitting}
-                      unfinished={unfinished ?? false}
-                      isCreatedByUser={isCreatedByUser ?? true}
-                      siblingIdx={siblingIdx ?? 0}
-                      setSiblingIdx={
-                        setSiblingIdx ??
-                        (() => {
-                          return;
-                        })
-                      }
-                    />
-                  </div>
-                )}
-              </div>
-              {isLast && isSubmitting ? null : (
-                <SubRow classes="text-xs">
-                  <SiblingSwitch
-                    siblingIdx={siblingIdx}
-                    siblingCount={siblingCount}
-                    setSiblingIdx={setSiblingIdx}
-                  />
-                  <HoverButtons
-                    index={index}
-                    isEditing={edit}
-                    message={message}
-                    enterEdit={enterEdit}
-                    isSubmitting={isSubmitting}
-                    conversation={conversation ?? null}
-                    regenerate={() => regenerateMessage()}
-                    copyToClipboard={copyToClipboard}
-                    handleContinue={handleContinue}
-                    latestMessage={latestMessage}
-                    isLast={isLast}
-                  />
-                </SubRow>
-              )}
             </div>
           </div>
         </div>
+        <div className={cn('relative flex w-11/12 flex-col', isCreatedByUser ? '' : 'agent-turn')}>
+          <div className="select-none font-semibold">{getMessageLabel()}</div>
+          <div className="flex-col gap-1 md:gap-3">
+            <div className="flex max-w-full flex-grow flex-col gap-0">
+              {msg?.plugin && <Plugin plugin={msg?.plugin} />}
+              <MessageContent
+                ask={ask}
+                edit={edit}
+                isLast={isLast}
+                text={msg.text ?? ''}
+                message={msg}
+                enterEdit={enterEdit}
+                error={!!error}
+                isSubmitting={isSubmitting}
+                unfinished={unfinished ?? false}
+                isCreatedByUser={isCreatedByUser ?? true}
+                siblingIdx={siblingIdx ?? 0}
+                setSiblingIdx={setSiblingIdx ?? (() => ({}))}
+              />
+            </div>
+          </div>
+          {isLast && isSubmitting ? null : (
+            <SubRow classes="text-xs">
+              <SiblingSwitch
+                siblingIdx={siblingIdx}
+                siblingCount={siblingCount}
+                setSiblingIdx={setSiblingIdx}
+              />
+              <HoverButtons
+                index={index}
+                isEditing={edit}
+                message={msg}
+                enterEdit={enterEdit}
+                isSubmitting={isSubmitting}
+                conversation={conversation ?? null}
+                regenerate={handleRegenerateMessage}
+                copyToClipboard={copyToClipboard}
+                handleContinue={handleContinue}
+                latestMessage={latestMessage}
+                isLast={isLast}
+              />
+            </SubRow>
+          )}
+        </div>
       </div>
+    );
+  };
+
+  return (
+    <>
+      <MessageContainer handleScroll={handleScroll}>
+        {showSibling ? (
+          <div className="m-auto flex justify-center p-4 py-2 text-base md:gap-6">
+            <div className="flex w-full flex-row justify-between md:max-w-5xl lg:max-w-5xl xl:max-w-6xl">
+              {renderMessage(message)}
+              {renderMessage(siblingMessage ?? latestMultiMessage)}
+            </div>
+          </div>
+        ) : (
+          <div className="m-auto justify-center p-4 py-2 text-base md:gap-6 ">
+            <div className="final-completion group mx-auto flex flex-1 gap-3 text-base md:max-w-3xl md:px-5 lg:max-w-[40rem] lg:px-1 xl:max-w-[48rem] xl:px-5">
+              {renderMessage(message)}
+            </div>
+          </div>
+        )}
+      </MessageContainer>
       <MultiMessage
         key={messageId}
         messageId={messageId}
