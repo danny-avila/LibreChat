@@ -527,6 +527,8 @@ export const useLogoutUserMutation = (
       setDefaultPreset(null);
       queryClient.removeQueries();
       localStorage.removeItem(LocalStorageKeys.LAST_CONVO_SETUP);
+      localStorage.removeItem(`${LocalStorageKeys.LAST_CONVO_SETUP}_0`);
+      localStorage.removeItem(`${LocalStorageKeys.LAST_CONVO_SETUP}_1`);
       localStorage.removeItem(LocalStorageKeys.LAST_MODEL);
       localStorage.removeItem(LocalStorageKeys.LAST_TOOLS);
       localStorage.removeItem(LocalStorageKeys.FILES_TO_DELETE);
@@ -567,6 +569,8 @@ export const useDeleteUserMutation = (
       setDefaultPreset(null);
       queryClient.removeQueries();
       localStorage.removeItem(LocalStorageKeys.LAST_CONVO_SETUP);
+      localStorage.removeItem(`${LocalStorageKeys.LAST_CONVO_SETUP}_0`);
+      localStorage.removeItem(`${LocalStorageKeys.LAST_CONVO_SETUP}_1`);
       localStorage.removeItem(LocalStorageKeys.LAST_MODEL);
       localStorage.removeItem(LocalStorageKeys.LAST_TOOLS);
       localStorage.removeItem(LocalStorageKeys.FILES_TO_DELETE);
