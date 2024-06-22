@@ -66,7 +66,10 @@ export default function useMessageProcess({ message }: { message?: TMessage | nu
       latestMultiMessage &&
       latestMultiMessage.conversationId === message?.conversationId
     ) {
-      setSiblingMessage(latestMultiMessage);
+      const newSibling = Object.assign({}, latestMultiMessage, {
+        parentMessageId: message?.parentMessageId,
+      });
+      setSiblingMessage(newSibling);
     }
   }, [isLast, latestMultiMessage, message, setSiblingMessage, latestMessage]);
 
