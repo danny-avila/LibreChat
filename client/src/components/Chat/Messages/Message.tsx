@@ -1,5 +1,7 @@
 import { useRecoilValue } from 'recoil';
+import { useMemo, useState, useEffect } from 'react';
 import { useAuthContext, useMessageHelpers, useLocalize } from '~/hooks';
+import type { TMessage } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import Icon from '~/components/Chat/Messages/MessageIcon';
 import { Plugin } from '~/components/Messages/Content';
@@ -13,6 +15,7 @@ import { cn } from '~/utils';
 import store from '~/store';
 
 export default function Message(props: TMessageProps) {
+  const [siblingMessage, setSiblingMessage] = useState<TMessage | null>(null);
   const UsernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
   const { user } = useAuthContext();
   const localize = useLocalize();
@@ -33,11 +36,28 @@ export default function Message(props: TMessageProps) {
     regenerateMessage,
   } = useMessageHelpers(props);
 
+  const latestMultiMessage = useRecoilValue(store.latestMessageFamily(index + 1));
   const { message, siblingIdx, siblingCount, setSiblingIdx, currentEditId, setCurrentEditId } =
     props;
 
+  useEffect(() => {
+    if (
+      isLast &&
+      latestMultiMessage &&
+      latestMultiMessage.conversationId === message?.conversationId
+    ) {
+      setSiblingMessage(latestMultiMessage);
+    }
+  }, [isLast, latestMultiMessage, message, setSiblingMessage]);
+
   if (!message) {
     return null;
+  }
+
+  if (isLast && isSubmitting) {
+    console.log('message', message);
+    console.log('latestMultiMessage', latestMultiMessage);
+    console.log('siblingMessage', siblingMessage);
   }
 
   const { text, children, messageId = null, isCreatedByUser, error, unfinished } = message ?? {};
@@ -74,29 +94,88 @@ export default function Message(props: TMessageProps) {
             >
               <div className="select-none font-semibold">{messageLabel}</div>
               <div className="flex-col gap-1 md:gap-3">
-                <div className="flex max-w-full flex-grow flex-col gap-0">
-                  {/* Legacy Plugins */}
-                  {message?.plugin && <Plugin plugin={message?.plugin} />}
-                  <MessageContent
-                    ask={ask}
-                    edit={edit}
-                    isLast={isLast}
-                    text={text ?? ''}
-                    message={message}
-                    enterEdit={enterEdit}
-                    error={!!error}
-                    isSubmitting={isSubmitting}
-                    unfinished={unfinished ?? false}
-                    isCreatedByUser={isCreatedByUser ?? true}
-                    siblingIdx={siblingIdx ?? 0}
-                    setSiblingIdx={
-                      setSiblingIdx ??
-                      (() => {
-                        return;
-                      })
-                    }
-                  />
-                </div>
+                {siblingMessage ? (
+                  <div className="flex flex-row gap-4">
+                    {' '}
+                    {/* Parent container */}
+                    {/* First component */}
+                    <div className="flex-1">
+                      <div className="flex max-w-full flex-grow flex-col gap-0">
+                        {/* Legacy Plugins */}
+                        {message?.plugin && <Plugin plugin={message?.plugin} />}
+                        <MessageContent
+                          ask={ask}
+                          edit={edit}
+                          isLast={isLast}
+                          text={text ?? ''}
+                          message={message}
+                          enterEdit={enterEdit}
+                          error={!!error}
+                          isSubmitting={isSubmitting}
+                          unfinished={unfinished ?? false}
+                          isCreatedByUser={isCreatedByUser ?? true}
+                          siblingIdx={siblingIdx ?? 0}
+                          setSiblingIdx={
+                            setSiblingIdx ??
+                            (() => {
+                              return;
+                            })
+                          }
+                        />
+                      </div>
+                    </div>
+                    {/* Second component */}
+                    <div className="flex-1">
+                      <div className="flex max-w-full flex-grow flex-col gap-0">
+                        {/* Legacy Plugins */}
+                        {siblingMessage?.plugin && <Plugin plugin={siblingMessage?.plugin} />}
+                        <MessageContent
+                          ask={ask}
+                          edit={edit}
+                          isLast={isLast}
+                          text={siblingMessage.text ?? ''}
+                          message={siblingMessage}
+                          enterEdit={enterEdit}
+                          error={!!error}
+                          isSubmitting={isSubmitting}
+                          unfinished={unfinished ?? false}
+                          isCreatedByUser={isCreatedByUser ?? true}
+                          siblingIdx={siblingIdx ?? 0}
+                          setSiblingIdx={
+                            setSiblingIdx ??
+                            (() => {
+                              return;
+                            })
+                          }
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex max-w-full flex-grow flex-col gap-0">
+                    {/* Legacy Plugins */}
+                    {message?.plugin && <Plugin plugin={message?.plugin} />}
+                    <MessageContent
+                      ask={ask}
+                      edit={edit}
+                      isLast={isLast}
+                      text={text ?? ''}
+                      message={message}
+                      enterEdit={enterEdit}
+                      error={!!error}
+                      isSubmitting={isSubmitting}
+                      unfinished={unfinished ?? false}
+                      isCreatedByUser={isCreatedByUser ?? true}
+                      siblingIdx={siblingIdx ?? 0}
+                      setSiblingIdx={
+                        setSiblingIdx ??
+                        (() => {
+                          return;
+                        })
+                      }
+                    />
+                  </div>
+                )}
               </div>
               {isLast && isSubmitting ? null : (
                 <SubRow classes="text-xs">
