@@ -20,6 +20,7 @@ export default function useAddedHelpers({
 
   const [files, setFiles] = useRecoilState(store.filesByIndex(rootIndex));
   const latestMessage = useRecoilValue(store.latestMessageFamily(rootIndex));
+  const setLatestMultiMessage = useSetRecoilState(store.latestMessageFamily(currentIndex));
 
   const { useCreateConversationAtom } = store;
   const { conversation, setConversation } = useCreateConversationAtom(currentIndex);
@@ -37,8 +38,9 @@ export default function useAddedHelpers({
         [QueryKeys.messages, queryParam, currentIndex],
         messages,
       );
+      setLatestMultiMessage(messages[messages.length - 1]);
     },
-    [queryParam, queryClient, currentIndex],
+    [queryParam, queryClient, currentIndex, setLatestMultiMessage],
   );
 
   const getMessages = useCallback(() => {
