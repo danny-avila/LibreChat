@@ -1,22 +1,23 @@
 const express = require('express');
 const {
-  resetPasswordRequestController,
-  resetPasswordController,
   refreshController,
   registrationController,
-} = require('../controllers/AuthController');
-const { loginController } = require('../controllers/auth/LoginController');
-const { logoutController } = require('../controllers/auth/LogoutController');
+  resetPasswordController,
+  resetPasswordRequestController,
+} = require('~/server/controllers/AuthController');
+const { loginController } = require('~/server/controllers/auth/LoginController');
+const { logoutController } = require('~/server/controllers/auth/LogoutController');
 const {
   checkBan,
   loginLimiter,
-  registerLimiter,
   requireJwtAuth,
+  registerLimiter,
   requireLdapAuth,
   requireLocalAuth,
+  resetPasswordLimiter,
   validateRegistration,
   validatePasswordReset,
-} = require('../middleware');
+} = require('~/server/middleware');
 
 const router = express.Router();
 
@@ -35,6 +36,7 @@ router.post('/refresh', refreshController);
 router.post('/register', registerLimiter, checkBan, validateRegistration, registrationController);
 router.post(
   '/requestPasswordReset',
+  resetPasswordLimiter,
   checkBan,
   validatePasswordReset,
   resetPasswordRequestController,

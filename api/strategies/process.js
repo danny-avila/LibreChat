@@ -1,14 +1,14 @@
 const { FileSources } = require('librechat-data-provider');
+const { createUser, updateUser, getUserById } = require('~/models/userMethods');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
-const User = require('~/models/User');
 
 /**
  * Updates the avatar URL of an existing user. If the user's avatar URL does not include the query parameter
  * '?manual=true', it updates the user's avatar with the provided URL. For local file storage, it directly updates
  * the avatar URL, while for other storage types, it processes the avatar URL using the specified file strategy.
  *
- * @param {User} oldUser - The existing user object that needs to be updated.
+ * @param {MongoUser} oldUser - The existing user object that needs to be updated.
  * @param {string} avatarUrl - The new avatar URL to be set for the user.
  *
  * @returns {Promise<void>}
@@ -20,9 +20,9 @@ const handleExistingUser = async (oldUser, avatarUrl) => {
   const fileStrategy = process.env.CDN_PROVIDER;
   const isLocal = fileStrategy === FileSources.local;
 
+  let updatedAvatar = false;
   if (isLocal && (oldUser.avatar === null || !oldUser.avatar.includes('?manual=true'))) {
-    oldUser.avatar = avatarUrl;
-    await oldUser.save();
+    updatedAvatar = avatarUrl;
   } else if (!isLocal && (oldUser.avatar === null || !oldUser.avatar.includes('?manual=true'))) {
     const userId = oldUser._id;
     const resizedBuffer = await resizeAvatar({
@@ -30,8 +30,11 @@ const handleExistingUser = async (oldUser, avatarUrl) => {
       input: avatarUrl,
     });
     const { processAvatar } = getStrategyFunctions(fileStrategy);
-    oldUser.avatar = await processAvatar({ buffer: resizedBuffer, userId });
-    await oldUser.save();
+    updatedAvatar = await processAvatar({ buffer: resizedBuffer, userId });
+  }
+
+  if (updatedAvatar) {
+    await updateUser(oldUser._id, { avatar: updatedAvatar });
   }
 };
 
@@ -55,7 +58,7 @@ const handleExistingUser = async (oldUser, avatarUrl) => {
  *
  * @throws {Error} Throws an error if there's an issue creating or saving the new user object.
  */
-const createNewUser = async ({
+const createSocialUser = async ({
   email,
   avatarUrl,
   provider,
@@ -75,27 +78,24 @@ const createNewUser = async ({
     emailVerified,
   };
 
-  // TODO: remove direct access of User model
-  const newUser = await new User(update).save();
-
+  const newUserId = await createUser(update);
   const fileStrategy = process.env.CDN_PROVIDER;
   const isLocal = fileStrategy === FileSources.local;
 
   if (!isLocal) {
-    const userId = newUser._id;
     const resizedBuffer = await resizeAvatar({
-      userId,
+      userId: newUserId,
       input: avatarUrl,
     });
     const { processAvatar } = getStrategyFunctions(fileStrategy);
-    newUser.avatar = await processAvatar({ buffer: resizedBuffer, userId });
-    await newUser.save();
+    const avatar = await processAvatar({ buffer: resizedBuffer, userId: newUserId });
+    await updateUser(newUserId, { avatar });
   }
 
-  return newUser;
+  return await getUserById(newUserId);
 };
 
 module.exports = {
   handleExistingUser,
-  createNewUser,
+  createSocialUser,
 };

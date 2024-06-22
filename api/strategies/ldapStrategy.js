@@ -1,5 +1,5 @@
 const LdapStrategy = require('passport-ldapauth');
-const User = require('~/models/User');
+const { findUser, createUser } = require('~/models/userMethods');
 const fs = require('fs');
 
 const ldapOptions = {
@@ -36,19 +36,19 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
           userinfo.mail;
 
     const username = userinfo.givenName || userinfo.mail;
-    let user = await User.findOne({ email: userinfo.mail });
+    let user = await findUser({ email: userinfo.mail });
     if (user && user.provider !== 'ldap') {
       return done(null, false, { message: 'Invalid credentials' });
     }
     if (!user) {
-      user = new User({
+      user = {
         provider: 'ldap',
         ldapId: userinfo.uid,
         username,
         email: userinfo.mail || '',
         emailVerified: true,
         name: fullName,
-      });
+      };
     } else {
       user.provider = 'ldap';
       user.ldapId = userinfo.uid;
@@ -56,7 +56,7 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
       user.name = fullName;
     }
 
-    await user.save();
+    await createUser(user);
 
     done(null, user);
   } catch (err) {
