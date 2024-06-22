@@ -70,6 +70,7 @@ const ChatForm = ({ index = 0 }) => {
     generateConversation,
     conversation: addedConvo,
     setConversation: setAddedConvo,
+    isSubmitting: isSubmittingAdded,
   } = useAddedChatContext();
 
   const { clearDraft } = useAutoSave({
@@ -180,7 +181,7 @@ const ChatForm = ({ index = 0 }) => {
               endpointType={endpointType}
               disabled={disableInputs}
             />
-            {isSubmitting && showStopButton ? (
+            {(isSubmitting || isSubmittingAdded) && showStopButton ? (
               <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
             ) : (
               endpoint && (
