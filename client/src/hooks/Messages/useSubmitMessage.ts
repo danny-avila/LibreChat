@@ -13,6 +13,7 @@ export default function useSubmitMessage(helpers?: { clearDraft?: () => void }) 
   const autoSendPrompts = useRecoilValue(store.autoSendPrompts);
   const activeConvos = useRecoilValue(store.allConversationsSelector);
   const setActivePrompt = useSetRecoilState(store.activePromptByIndex(index));
+  const setLatestMultiMessage = useSetRecoilState(store.latestMessageFamily(index + 1));
 
   const { addedIndex, ask: askAdditional, conversation: addedConvo } = useAddedChatContext();
 
@@ -21,6 +22,7 @@ export default function useSubmitMessage(helpers?: { clearDraft?: () => void }) 
       if (!data) {
         return console.warn('No data provided to submitMessage');
       }
+      setLatestMultiMessage(null);
       const hasAdded = addedIndex && activeConvos[addedIndex] && addedConvo;
       let rootMessages: TMessage[] | undefined;
       if (hasAdded) {
@@ -31,7 +33,17 @@ export default function useSubmitMessage(helpers?: { clearDraft?: () => void }) 
       methods.reset();
       helpers?.clearDraft && helpers.clearDraft();
     },
-    [addedIndex, activeConvos, addedConvo, ask, askAdditional, methods, helpers, getMessages],
+    [
+      addedIndex,
+      activeConvos,
+      addedConvo,
+      ask,
+      askAdditional,
+      methods,
+      helpers,
+      getMessages,
+      setLatestMultiMessage,
+    ],
   );
 
   const submitPrompt = useCallback(

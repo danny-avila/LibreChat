@@ -65,7 +65,7 @@ export default function Message(props: TMessageProps) {
     ) {
       setSiblingMessage(latestMultiMessage);
     }
-  }, [isLast, latestMultiMessage, message, setSiblingMessage]);
+  }, [isLast, latestMultiMessage, message, setSiblingMessage, latestMessage]);
 
   const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
 
@@ -75,7 +75,7 @@ export default function Message(props: TMessageProps) {
 
   const { children, messageId = null, isCreatedByUser, error, unfinished } = message ?? {};
 
-  const renderMessage = (msg: TMessage | null) => {
+  const renderMessage = (msg: TMessage | null, isMultiMessage?: boolean) => {
     const getMessageLabel = () => {
       if (msg?.isCreatedByUser) {
         return UsernameDisplay ? user?.name || user?.username : localize('com_user_message');
@@ -90,7 +90,12 @@ export default function Message(props: TMessageProps) {
       return null;
     }
     return (
-      <div className="final-completion group mx-auto flex flex-1 gap-3 text-base">
+      <div
+        className={cn(
+          'final-completion group mx-auto flex flex-1 gap-3 text-base',
+          isMultiMessage ? 'rounded-lg border border-border-medium bg-surface-primary-alt p-4' : '',
+        )}
+      >
         <div className="relative flex flex-shrink-0 flex-col items-end">
           <div>
             <div className="pt-0.5">
@@ -152,10 +157,10 @@ export default function Message(props: TMessageProps) {
     <>
       <MessageContainer handleScroll={handleScroll}>
         {showSibling ? (
-          <div className="m-auto flex justify-center p-4 py-2 text-base md:gap-6">
-            <div className="flex w-full flex-row justify-between md:max-w-5xl lg:max-w-5xl xl:max-w-6xl">
-              {renderMessage(message)}
-              {renderMessage(siblingMessage ?? latestMultiMessage)}
+          <div className="m-auto my-2 flex justify-center p-4 py-2 text-base md:gap-6">
+            <div className="flex w-full flex-row justify-between gap-1 md:max-w-5xl lg:max-w-5xl xl:max-w-6xl">
+              {renderMessage(message, true)}
+              {renderMessage(siblingMessage ?? latestMultiMessage, true)}
             </div>
           </div>
         ) : (
