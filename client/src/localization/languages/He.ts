@@ -96,6 +96,8 @@ export default {
   com_ui_create_link: 'צור קישור',
   com_ui_share_link_to_chat: 'שתף קישור בצ\'אט',
   com_ui_share_error: 'אירעה שגיאה בעת שיתוף קישור הצ\'אט',
+  com_ui_share_retrieve_error: 'אירעה שגיאה בעת מחיקת הקישור המשותף.',
+  com_ui_share_delete_error: 'אירעה שגיאה בעת מחיקת הקישור המשותף.',
   com_ui_share_create_message: 'שמך וכל הודעה שתוסיף לאחר השיתוף יישארו פרטיים.',
   com_ui_share_created_message:
     'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
@@ -758,6 +760,14 @@ export const comparisons = {
   com_ui_share_link_to_chat: {
     english: 'Share link to chat',
     translated: 'שתף קישור בצ\'אט',
+  },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'אירעה שגיאה בעת מחיקת הקישור המשותף.',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'אירעה שגיאה בעת מחיקת הקישור המשותף.',
   },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',

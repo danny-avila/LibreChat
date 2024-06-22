@@ -152,6 +152,8 @@ export default {
   com_ui_create_link: 'リンクを作成する',
   com_ui_share_link_to_chat: 'チャットへの共有リンク',
   com_ui_share_error: 'チャットの共有リンクの共有中にエラーが発生しました',
+  com_ui_share_retrieve_error: '共有リンクの削除中にエラーが発生しました。',
+  com_ui_share_delete_error: '共有リンクの削除中にエラーが発生しました。',
   com_ui_share_create_message:
     'あなたの名前と共有リンクを作成した後のメッセージは、共有されません。',
   com_ui_share_created_message:
@@ -562,7 +564,7 @@ export default {
   com_nav_lang_polish: 'ポーランド語',
   com_nav_lang_brazilian_portuguese: 'ブラジルポルトガル語',
   com_nav_lang_russian: 'ロシア語',
-  com_nav_lang_japanese: 'ナビゲーションメニュー',
+  com_nav_lang_japanese: '日本語',
   com_nav_lang_swedish: 'スウェーデン語',
   com_nav_lang_korean: '韓国語',
   com_nav_lang_vietnamese: 'ベトナム語',
@@ -1139,6 +1141,14 @@ export const comparisons = {
   com_ui_share_link_to_chat: {
     english: 'Share link to chat',
     translated: 'チャットへの共有リンク',
+  },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: '共有リンクの削除中にエラーが発生しました。',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: '共有リンクの削除中にエラーが発生しました。',
   },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
@@ -2636,7 +2646,7 @@ export const comparisons = {
   },
   com_nav_lang_japanese: {
     english: '日本語',
-    translated: 'ナビゲーションメニュー',
+    translated: '日本語',
   },
   com_nav_lang_swedish: {
     english: 'Svenska',

@@ -142,6 +142,8 @@ export default {
   com_ui_create_link: 'Crear enlace',
   com_ui_share_link_to_chat: 'Compartir enlace en el chat',
   com_ui_share_error: 'Hubo un error al compartir el enlace del chat',
+  com_ui_share_retrieve_error: 'Hubo un error al eliminar el enlace compartido.',
+  com_ui_share_delete_error: 'Hubo un error al eliminar el enlace compartido.',
   com_ui_share_create_message:
     'Tu nombre y cualquier mensaje que agregues después de compartir se mantendrán privados.',
   com_ui_share_created_message:
@@ -1123,6 +1125,14 @@ export const comparisons = {
   com_ui_share_link_to_chat: {
     english: 'Share link to chat',
     translated: 'Compartir enlace en el chat',
+  },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Hubo un error al eliminar el enlace compartido.',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Hubo un error al eliminar el enlace compartido.',
   },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',

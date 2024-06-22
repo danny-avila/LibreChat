@@ -49,7 +49,7 @@ export default function MessageAudio({ index, message, isLast }: THoverButtons) 
   return (
     <>
       <button
-        className="hover-button rounded-md p-1 pl-0 text-gray-400 hover:text-gray-950 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible"
+        className="hover-button rounded-md p-1 pl-0 text-gray-400 hover:bg-gray-100 hover:text-gray-500 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible"
         // onMouseDownCapture={() => {
         //   if (audioRef.current) {
         //     audioRef.current.muted = false;
