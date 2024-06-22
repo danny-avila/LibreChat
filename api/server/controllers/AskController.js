@@ -81,7 +81,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       promptTokens,
     });
 
-    const { abortController, onStart } = createAbortController(req, res, getAbortData);
+    const { abortController, onStart } = createAbortController(req, res, getAbortData, getReqData);
 
     res.on('close', () => {
       logger.debug('[AskController] Request closed');

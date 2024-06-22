@@ -154,9 +154,12 @@ export default function useSSE(
       }
 
       setCompleted((prev) => new Set(prev.add(streamKey)));
+      const latestMessages = getMessages();
+      const conversationId = latestMessages?.[latestMessages?.length - 1]?.conversationId;
       return await abortConversation(
-        userMessage?.conversationId ?? submission?.conversationId,
+        conversationId ?? userMessage?.conversationId ?? submission?.conversationId,
         submission,
+        latestMessages,
       );
     };
 

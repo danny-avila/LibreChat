@@ -8,9 +8,7 @@ import {
   EndpointURLs,
   tPresetSchema,
   tMessageSchema,
-  LocalStorageKeys,
   tConvoUpdateSchema,
-  isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type {
   TMessage,
@@ -427,18 +425,9 @@ export default function useEventHandlers({
   );
 
   const abortConversation = useCallback(
-    async (conversationId = '', submission: TSubmission) => {
-      let runAbortKey = '';
-      try {
-        const conversation = (JSON.parse(
-          localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP) ?? '',
-        ) ?? {}) as TConversation;
-        const { conversationId, messages } = conversation;
-        runAbortKey = `${conversationId}:${messages?.[messages.length - 1]}`;
-      } catch (error) {
-        console.error('Error getting last conversation setup');
-        console.error(error);
-      }
+    async (conversationId = '', submission: TSubmission, messages?: TMessage[]) => {
+      const runAbortKey = `${conversationId}:${messages?.[messages.length - 1]?.messageId ?? ''}`;
+      console.log({ conversationId, submission, messages, runAbortKey });
       const { endpoint: _endpoint, endpointType } = submission?.conversation || {};
       const endpoint = endpointType ?? _endpoint;
       try {
@@ -449,7 +438,7 @@ export default function useEventHandlers({
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
-            abortKey: isAssistantsEndpoint(_endpoint) ? runAbortKey : conversationId,
+            abortKey: runAbortKey,
             endpoint,
           }),
         });
@@ -458,7 +447,7 @@ export default function useEventHandlers({
         const contentType = response.headers.get('content-type');
         if (contentType && contentType.includes('application/json')) {
           const data = await response.json();
-          console.log('aborted', data);
+          console.log(`[aborted] RESPONSE STATUS: ${response.status}`, data);
           if (response.status === 404) {
             setIsSubmitting(false);
             return;
@@ -478,7 +467,8 @@ export default function useEventHandlers({
             responseMessage: responseMessage,
             conversation: submission.conversation,
           };
-          console.log('aborted', data);
+          console.log(`[aborted] RESPONSE STATUS: ${response.status}`, data);
+          setIsSubmitting(false);
         } else {
           throw new Error(
             'Unexpected response from server; Status: ' +

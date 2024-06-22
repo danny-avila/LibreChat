@@ -216,6 +216,29 @@ const conversationByKeySelector = selectorFamily({
       },
 });
 
+/** Uses Conversation keys to clear all submissions.
+ * Note: Submissions must share keys with conversations! */
+function useClearSubmissionState() {
+  /** Clears all active submissions. Pass `true` to skip the first or root submission */
+  const clearAllSubmissions = useRecoilCallback(
+    ({ reset, snapshot }) =>
+      async (skipFirst?: boolean) => {
+        const conversationKeys = await snapshot.getPromise(conversationKeysAtom);
+
+        for (const conversationKey of conversationKeys) {
+          if (skipFirst && conversationKey == 0) {
+            continue;
+          }
+
+          reset(submissionByIndex(conversationKey));
+        }
+      },
+    [],
+  );
+
+  return clearAllSubmissions;
+}
+
 export default {
   conversationByIndex,
   filesByIndex,
@@ -242,4 +265,5 @@ export default {
   globalAudioFetchingFamily,
   showPlusPopoverFamily,
   activePromptByIndex,
+  useClearSubmissionState,
 };

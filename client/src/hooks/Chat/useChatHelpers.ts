@@ -11,6 +11,7 @@ import store from '~/store';
 
 // this to be set somewhere else
 export default function useChatHelpers(index = 0, paramId?: string) {
+  const clearAllSubmissions = store.useClearSubmissionState();
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
   const [filesLoading, setFilesLoading] = useState(false);
 
@@ -103,9 +104,7 @@ export default function useChatHelpers(index = 0, paramId?: string) {
     }
   };
 
-  const stopGenerating = () => {
-    setSubmission(null);
-  };
+  const stopGenerating = () => clearAllSubmissions();
 
   const handleStopGenerating = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();

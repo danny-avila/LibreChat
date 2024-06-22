@@ -18,6 +18,7 @@ export default function useAddedHelpers({
 }) {
   const queryClient = useQueryClient();
 
+  const clearAllSubmissions = store.useClearSubmissionState();
   const [files, setFiles] = useRecoilState(store.filesByIndex(rootIndex));
   const latestMessage = useRecoilValue(store.latestMessageFamily(rootIndex));
   const setLatestMultiMessage = useSetRecoilState(store.latestMessageFamily(currentIndex));
@@ -82,7 +83,7 @@ export default function useAddedHelpers({
     }
   };
 
-  const stopGenerating = () => setSubmission(null);
+  const stopGenerating = () => clearAllSubmissions();
 
   const handleStopGenerating = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();

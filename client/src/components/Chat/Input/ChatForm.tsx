@@ -181,7 +181,7 @@ const ChatForm = ({ index = 0 }) => {
               endpointType={endpointType}
               disabled={disableInputs}
             />
-            {(isSubmitting || isSubmittingAdded) && showStopButton ? (
+            {(isSubmitting && showStopButton) || isSubmittingAdded ? (
               <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
             ) : (
               endpoint && (

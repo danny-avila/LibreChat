@@ -160,7 +160,7 @@ class BaseClient {
     }
 
     if (typeof opts?.onStart === 'function') {
-      opts.onStart(userMessage);
+      opts.onStart(userMessage, responseMessageId);
     }
 
     return {

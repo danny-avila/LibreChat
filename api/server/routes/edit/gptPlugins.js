@@ -141,7 +141,7 @@ router.post(
       userMessage,
       promptTokens,
     });
-    const { abortController, onStart } = createAbortController(req, res, getAbortData);
+    const { abortController, onStart } = createAbortController(req, res, getAbortData, getReqData);
 
     try {
       endpointOption.tools = await validateTools(user, endpointOption.tools);
