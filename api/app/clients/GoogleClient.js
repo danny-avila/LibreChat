@@ -596,16 +596,16 @@ class GoogleClient extends BaseClient {
   createLLM(clientOptions) {
     const model = clientOptions.modelName ?? clientOptions.model;
     if (this.project_id && this.isTextModel) {
-      logger.info('Creating Google VertexAI client');
+      logger.debug('Creating Google VertexAI client');
       return new GoogleVertexAI(clientOptions);
     } else if (this.project_id && this.isChatModel) {
-      logger.info('Creating Chat Google VertexAI client');
+      logger.debug('Creating Chat Google VertexAI client');
       return new ChatGoogleVertexAI(clientOptions);
     } else if (this.project_id) {
-      logger.info('Creating VertexAI client');
+      logger.debug('Creating VertexAI client');
       return new ChatVertexAI(clientOptions);
     } else if (model.includes('1.5')) {
-      logger.info('Creating GenAI client');
+      logger.debug('Creating GenAI client');
       return new GenAI(this.apiKey).getGenerativeModel(
         {
           ...clientOptions,
@@ -615,7 +615,7 @@ class GoogleClient extends BaseClient {
       );
     }
 
-    logger.info('Creating Chat Google Generative AI client');
+    logger.debug('Creating Chat Google Generative AI client');
     return new ChatGoogleGenerativeAI({ ...clientOptions, apiKey: this.apiKey });
   }
 
