@@ -1,6 +1,5 @@
-import { useRecoilValue } from 'recoil';
-import React, { useState, useEffect, useCallback } from 'react';
-import { useAuthContext, useMessageHelpers, useLocalize } from '~/hooks';
+import React, { useCallback } from 'react';
+import { useMessageProcess, useMessageActions } from '~/hooks';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import Icon from '~/components/Chat/Messages/MessageIcon';
@@ -12,7 +11,6 @@ import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
 import SubRow from './SubRow';
 import { cn } from '~/utils';
-import store from '~/store';
 
 const MessageContainer = React.memo(
   ({ handleScroll, children }: { handleScroll: () => void; children: React.ReactNode }) => {
@@ -28,63 +26,47 @@ const MessageContainer = React.memo(
   },
 );
 
-export default function Message(props: TMessageProps) {
-  const [siblingMessage, setSiblingMessage] = useState<TMessage | null>(null);
-  const UsernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
-  const { user } = useAuthContext();
-  const localize = useLocalize();
+const MessageRender = React.memo(
+  ({
+    isCard,
+    siblingIdx,
+    siblingCount,
+    message: msg,
+    setSiblingIdx,
+    currentEditId,
+    isMultiMessage,
+    setCurrentEditId,
+  }: {
+    message?: TMessage;
+    isCard?: boolean;
+    isMultiMessage?: boolean;
+  } & Pick<
+    TMessageProps,
+    'currentEditId' | 'setCurrentEditId' | 'siblingIdx' | 'setSiblingIdx' | 'siblingCount'
+  >) => {
+    const {
+      ask,
+      edit,
+      index,
+      assistant,
+      enterEdit,
+      conversation,
+      messageLabel,
+      isSubmitting,
+      latestMessage,
+      handleContinue,
+      copyToClipboard,
+      regenerateMessage,
+    } = useMessageActions({
+      message: msg,
+      currentEditId,
+      isMultiMessage,
+      setCurrentEditId,
+    });
 
-  const {
-    ask,
-    edit,
-    index,
-    isLast,
-    assistant,
-    enterEdit,
-    handleScroll,
-    conversation,
-    isSubmitting,
-    latestMessage,
-    handleContinue,
-    copyToClipboard,
-    regenerateMessage,
-  } = useMessageHelpers(props);
-
-  const latestMultiMessage = useRecoilValue(store.latestMessageFamily(index + 1));
-  const { message, siblingIdx, siblingCount, setSiblingIdx, currentEditId, setCurrentEditId } =
-    props;
-
-  const showSibling =
-    (isLast && latestMultiMessage && !latestMultiMessage?.children?.length) || siblingMessage;
-
-  useEffect(() => {
-    if (
-      isLast &&
-      latestMultiMessage &&
-      latestMultiMessage.conversationId === message?.conversationId
-    ) {
-      setSiblingMessage(latestMultiMessage);
-    }
-  }, [isLast, latestMultiMessage, message, setSiblingMessage, latestMessage]);
-
-  const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
-
-  if (!message) {
-    return null;
-  }
-
-  const { children, messageId = null, isCreatedByUser, error, unfinished } = message ?? {};
-
-  const renderMessage = (msg: TMessage | null, isMultiMessage?: boolean) => {
-    const getMessageLabel = () => {
-      if (msg?.isCreatedByUser) {
-        return UsernameDisplay ? user?.name || user?.username : localize('com_user_message');
-      } else if (assistant) {
-        return assistant.name ?? 'Assistant';
-      } else {
-        return msg?.sender;
-      }
-    };
+    const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
+    const { children, isCreatedByUser, error, unfinished } = msg ?? {};
+    const isLast = !children?.length;
 
     if (!msg) {
       return null;
@@ -93,7 +75,7 @@ export default function Message(props: TMessageProps) {
       <div
         className={cn(
           'final-completion group mx-auto flex flex-1 gap-3 text-base',
-          isMultiMessage ? 'rounded-lg border border-border-medium bg-surface-primary-alt p-4' : '',
+          isCard ? 'rounded-lg border border-border-medium bg-surface-primary-alt p-4' : '',
         )}
       >
         <div className="relative flex flex-shrink-0 flex-col items-end">
@@ -105,8 +87,10 @@ export default function Message(props: TMessageProps) {
             </div>
           </div>
         </div>
-        <div className={cn('relative flex w-11/12 flex-col', isCreatedByUser ? '' : 'agent-turn')}>
-          <div className="select-none font-semibold">{getMessageLabel()}</div>
+        <div
+          className={cn('relative flex w-11/12 flex-col', msg?.isCreatedByUser ? '' : 'agent-turn')}
+        >
+          <div className="select-none font-semibold">{messageLabel}</div>
           <div className="flex-col gap-1 md:gap-3">
             <div className="flex max-w-full flex-grow flex-col gap-0">
               {msg?.plugin && <Plugin plugin={msg?.plugin} />}
@@ -151,7 +135,20 @@ export default function Message(props: TMessageProps) {
         </div>
       </div>
     );
-  };
+  },
+);
+
+export default function Message(props: TMessageProps) {
+  const { showSibling, conversation, handleScroll, siblingMessage, latestMultiMessage } =
+    useMessageProcess({ message: props.message });
+
+  const { message, currentEditId, setCurrentEditId } = props;
+
+  if (!message) {
+    return null;
+  }
+
+  const { children, messageId = null } = message ?? {};
 
   return (
     <>
@@ -159,14 +156,19 @@ export default function Message(props: TMessageProps) {
         {showSibling ? (
           <div className="m-auto my-2 flex justify-center p-4 py-2 text-base md:gap-6">
             <div className="flex w-full flex-row justify-between gap-1 md:max-w-5xl lg:max-w-5xl xl:max-w-6xl">
-              {renderMessage(message, true)}
-              {renderMessage(siblingMessage ?? latestMultiMessage, true)}
+              <MessageRender {...props} message={message} isCard />
+              <MessageRender
+                {...props}
+                isMultiMessage
+                isCard
+                message={siblingMessage ?? latestMultiMessage ?? undefined}
+              />
             </div>
           </div>
         ) : (
           <div className="m-auto justify-center p-4 py-2 text-base md:gap-6 ">
             <div className="final-completion group mx-auto flex flex-1 gap-3 text-base md:max-w-3xl md:px-5 lg:max-w-[40rem] lg:px-1 xl:max-w-[48rem] xl:px-5">
-              {renderMessage(message)}
+              <MessageRender {...props} />
             </div>
           </div>
         )}

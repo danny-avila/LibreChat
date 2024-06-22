@@ -10,6 +10,7 @@ export default function useAddedResponse({ rootIndex }: { rootIndex: number }) {
     setMessages,
     getMessages,
     conversation,
+    isSubmitting,
     setConversation,
     setIsSubmitting,
   } = useAddedHelpers({
@@ -29,6 +30,7 @@ export default function useAddedResponse({ rootIndex }: { rootIndex: number }) {
     getMessages,
     setMessages,
     conversation,
+    isSubmitting,
     setConversation,
     setIsSubmitting,
     generateConversation,
