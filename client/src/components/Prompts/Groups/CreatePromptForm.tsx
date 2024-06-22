@@ -159,7 +159,7 @@ const CreatePromptForm = ({
             onValueChange={(value) => methods.setValue('oneliner', value)}
             tabIndex={3}
           />
-          <div className="flex justify-end">
+          <div className="mt-4 flex justify-end">
             <Button
               tabIndex={5}
               type="submit"
