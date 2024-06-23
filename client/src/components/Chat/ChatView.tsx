@@ -34,8 +34,8 @@ function ChatView({ index = 0 }: { index?: number }) {
   const chatHelpers = useChatHelpers(index, conversationId);
   const addedChatHelpers = useAddedResponse({ rootIndex: index });
 
-  useSSE(rootSubmission, chatHelpers);
-  useSSE(addedSubmission, addedChatHelpers);
+  useSSE(rootSubmission, chatHelpers, false);
+  useSSE(addedSubmission, addedChatHelpers, true);
 
   const methods = useForm<ChatFormValues>({
     defaultValues: { text: '' },

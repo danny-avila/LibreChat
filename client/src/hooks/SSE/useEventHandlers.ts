@@ -38,6 +38,7 @@ type TSyncData = {
 };
 
 export type EventHandlerParams = {
+  isAddedRequest?: boolean;
   genTitle?: TGenTitleMutation;
   setCompleted: React.Dispatch<React.SetStateAction<Set<unknown>>>;
   setMessages: (messages: TMessage[]) => void;
@@ -51,9 +52,10 @@ export type EventHandlerParams = {
 
 export default function useEventHandlers({
   genTitle,
-  setCompleted,
   setMessages,
   getMessages,
+  setCompleted,
+  isAddedRequest,
   setConversation,
   setIsSubmitting,
   newConversation,
@@ -139,7 +141,7 @@ export default function useEventHandlers({
         }, 2500);
       }
 
-      if (setConversation) {
+      if (setConversation && !isAddedRequest) {
         setConversation((prevState) => {
           const update = {
             ...prevState,
@@ -152,7 +154,7 @@ export default function useEventHandlers({
 
       setIsSubmitting(false);
     },
-    [setMessages, setConversation, genTitle, queryClient, setIsSubmitting],
+    [setMessages, setConversation, genTitle, isAddedRequest, queryClient, setIsSubmitting],
   );
 
   const syncHandler = useCallback(
@@ -172,7 +174,7 @@ export default function useEventHandlers({
       ]);
 
       let update = {} as TConversation;
-      if (setConversation) {
+      if (setConversation && !isAddedRequest) {
         setConversation((prevState) => {
           let title = prevState?.title;
           const parentId = requestMessage.parentMessageId;
@@ -203,6 +205,16 @@ export default function useEventHandlers({
             return updateConversation(convoData, update);
           }
         });
+      } else if (setConversation) {
+        setConversation((prevState) => {
+          update = tConvoUpdateSchema.parse({
+            ...prevState,
+            conversationId,
+            thread_id,
+            messages: [requestMessage.messageId, responseMessage.messageId],
+          }) as TConversation;
+          return update;
+        });
       }
 
       setShowStopButton(true);
@@ -210,7 +222,14 @@ export default function useEventHandlers({
         resetLatestMessage();
       }
     },
-    [setMessages, setConversation, queryClient, setShowStopButton, resetLatestMessage],
+    [
+      setMessages,
+      setConversation,
+      queryClient,
+      isAddedRequest,
+      setShowStopButton,
+      resetLatestMessage,
+    ],
   );
 
   const createdHandler = useCallback(
@@ -230,7 +249,7 @@ export default function useEventHandlers({
       const { conversationId, parentMessageId } = userMessage;
 
       let update = {} as TConversation;
-      if (setConversation) {
+      if (setConversation && !isAddedRequest) {
         setConversation((prevState) => {
           let title = prevState?.title;
           const parentId = isRegenerate ? userMessage?.overrideParentMessageId : parentMessageId;
@@ -259,13 +278,21 @@ export default function useEventHandlers({
             return updateConversation(convoData, update);
           }
         });
+      } else if (setConversation) {
+        setConversation((prevState) => {
+          update = tConvoUpdateSchema.parse({
+            ...prevState,
+            conversationId,
+          }) as TConversation;
+          return update;
+        });
       }
 
       if (resetLatestMessage) {
         resetLatestMessage();
       }
     },
-    [setMessages, setConversation, queryClient, resetLatestMessage],
+    [setMessages, setConversation, queryClient, isAddedRequest, resetLatestMessage],
   );
 
   const finalHandler = useCallback(
@@ -313,7 +340,7 @@ export default function useEventHandlers({
         }, 2500);
       }
 
-      if (setConversation) {
+      if (setConversation && !isAddedRequest) {
         setConversation((prevState) => {
           const update = {
             ...prevState,
@@ -336,6 +363,7 @@ export default function useEventHandlers({
       getMessages,
       setMessages,
       setCompleted,
+      isAddedRequest,
       setConversation,
       setIsSubmitting,
       setShowStopButton,

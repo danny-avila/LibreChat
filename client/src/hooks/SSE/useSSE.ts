@@ -30,6 +30,7 @@ type ChatHelpers = Pick<
 export default function useSSE(
   submission: TSubmission | null,
   chatHelpers: ChatHelpers,
+  isAddedRequest = false,
   runIndex = 0,
 ) {
   const genTitle = useGenTitleMutation();
@@ -58,9 +59,10 @@ export default function useSSE(
     abortConversation,
   } = useEventHandlers({
     genTitle,
-    setCompleted,
     setMessages,
     getMessages,
+    setCompleted,
+    isAddedRequest,
     setConversation,
     setIsSubmitting,
     newConversation,
