@@ -9,15 +9,13 @@ const { abortRun } = require('./abortRun');
 const { logger } = require('~/config');
 
 async function abortMessage(req, res) {
-  let { abortKey, conversationId, endpoint } = req.body;
-
-  if (!abortKey && conversationId) {
-    abortKey = conversationId;
-  }
+  let { abortKey, endpoint } = req.body;
 
   if (isAssistantsEndpoint(endpoint)) {
     return await abortRun(req, res);
   }
+
+  const conversationId = abortKey?.split(':')?.[0] ?? req.user.id;
 
   if (!abortControllers.has(abortKey) && abortControllers.has(conversationId)) {
     abortKey = conversationId;
