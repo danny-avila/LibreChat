@@ -19,8 +19,8 @@ import type { SetterOrUpdater } from 'recoil';
 import type { TAskFunction, ExtendedFile } from '~/common';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
+import { getEndpointField, logger } from '~/utils';
 import useUserKey from '~/hooks/Input/useUserKey';
-import { getEndpointField } from '~/utils';
 import store from '~/store';
 
 export default function useChatFunctions({
@@ -56,7 +56,14 @@ export default function useChatFunctions({
   const { getExpiry } = useUserKey(conversation?.endpoint ?? '');
 
   const ask: TAskFunction = (
-    { text, overrideConvoId, parentMessageId = null, conversationId = null, messageId = null },
+    {
+      text,
+      overrideConvoId,
+      overrideUserMessageId,
+      parentMessageId = null,
+      conversationId = null,
+      messageId = null,
+    },
     {
       editedText = null,
       editedMessageId = null,
@@ -97,7 +104,7 @@ export default function useChatFunctions({
     // construct the query message
     // this is not a real messageId, it is used as placeholder before real messageId returned
     text = text.trim();
-    const fakeMessageId = v4();
+    const intermediateId = overrideUserMessageId ?? v4();
     parentMessageId = parentMessageId || latestMessage?.messageId || Constants.NO_PARENT;
 
     if (conversationId == 'new') {
@@ -134,6 +141,7 @@ export default function useChatFunctions({
       overrideConvoId,
       key: getExpiry(),
       modelDisplayLabel,
+      overrideUserMessageId,
     } as TEndpointOption;
     const responseSender = getSender({ model: conversation?.model, ...endpointOption });
 
@@ -143,7 +151,7 @@ export default function useChatFunctions({
       isCreatedByUser: true,
       parentMessageId,
       conversationId,
-      messageId: isContinued && messageId ? messageId : fakeMessageId,
+      messageId: isContinued && messageId ? messageId : intermediateId,
       thread_id,
       error: false,
     };
@@ -174,8 +182,8 @@ export default function useChatFunctions({
       sender: responseSender,
       text: responseText,
       endpoint: endpoint ?? '',
-      parentMessageId: isRegenerate ? messageId : fakeMessageId,
-      messageId: responseMessageId ?? `${isRegenerate ? messageId : fakeMessageId}_`,
+      parentMessageId: isRegenerate ? messageId : intermediateId,
+      messageId: responseMessageId ?? `${isRegenerate ? messageId : intermediateId}_`,
       thread_id,
       conversationId,
       unfinished: false,
@@ -232,8 +240,8 @@ export default function useChatFunctions({
       setLatestMessage(initialResponse);
     }
     setSubmission(submission);
-    console.log('[TESTING] Submission:');
-    console.dir(submission, { depth: null });
+    logger.log('Submission:');
+    logger.dir(submission, { depth: null });
   };
 
   const regenerate = ({ parentMessageId }) => {

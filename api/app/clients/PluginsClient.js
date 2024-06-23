@@ -301,7 +301,10 @@ class PluginsClient extends OpenAIClient {
     if (payload) {
       this.currentMessages = payload;
     }
-    await this.saveMessageToDatabase(userMessage, saveOptions, user);
+
+    if (!this.skipSaveUserMessage) {
+      await this.saveMessageToDatabase(userMessage, saveOptions, user);
+    }
 
     if (isEnabled(process.env.CHECK_BALANCE)) {
       await checkBalance({

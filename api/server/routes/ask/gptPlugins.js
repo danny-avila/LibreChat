@@ -148,15 +148,6 @@ router.post(
       }
     };
 
-    const onChainEnd = () => {
-      saveMessage({ ...userMessage, user });
-      sendIntermediateMessage(res, {
-        plugins,
-        parentMessageId: userMessage.messageId,
-        messageId: responseMessageId,
-      });
-    };
-
     const getAbortData = () => ({
       sender,
       conversationId,
@@ -172,6 +163,17 @@ router.post(
     try {
       endpointOption.tools = await validateTools(user, endpointOption.tools);
       const { client } = await initializeClient({ req, res, endpointOption });
+
+      const onChainEnd = () => {
+        if (!client.skipSaveUserMessage) {
+          saveMessage({ ...userMessage, user });
+        }
+        sendIntermediateMessage(res, {
+          plugins,
+          parentMessageId: userMessage.messageId,
+          messageId: responseMessageId,
+        });
+      };
 
       let response = await client.sendMessage(text, {
         user,

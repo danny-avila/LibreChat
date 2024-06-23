@@ -820,6 +820,8 @@ export enum Constants {
   ENCODED_DOMAIN_LENGTH = 10,
   /** Identifier for using current_model in multi-model requests. */
   CURRENT_MODEL = 'current_model',
+  /** Common divider for text values */
+  COMMON_DIVIDER = '__',
 }
 
 export enum LocalStorageKeys {

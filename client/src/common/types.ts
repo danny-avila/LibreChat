@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileSources, SystemRoles } from 'librechat-data-provider';
+import { FileSources } from 'librechat-data-provider';
 import type * as InputNumberPrimitive from 'rc-input-number';
 import type { ColumnDef } from '@tanstack/react-table';
 import type { SetterOrUpdater } from 'recoil';
@@ -232,6 +232,7 @@ export type TGenButtonProps = {
 export type TAskProps = {
   text: string;
   overrideConvoId?: string;
+  overrideUserMessageId?: string;
   parentMessageId?: string | null;
   conversationId?: string | null;
   messageId?: string | null;

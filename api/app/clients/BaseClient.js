@@ -19,6 +19,10 @@ class BaseClient {
       day: 'numeric',
     });
     this.fetch = this.fetch.bind(this);
+    /** @type {boolean} */
+    this.skipSaveConvo = false;
+    /** @type {boolean} */
+    this.skipSaveUserMessage = false;
   }
 
   setOptions() {
@@ -84,12 +88,36 @@ class BaseClient {
     await stream.processTextStream(onProgress);
   }
 
+  /**
+   * @returns {[string|undefined, string|undefined]}
+   */
+  processOverideIds() {
+    /** @type {Record<string, string | undefined>} */
+    let { overrideConvoId, overrideUserMessageId } = this.options.req.body ?? {};
+    if (overrideConvoId) {
+      const [conversationId, index] = overrideConvoId.split(Constants.COMMON_DIVIDER);
+      overrideConvoId = conversationId;
+      if (index !== '0') {
+        this.skipSaveConvo = true;
+      }
+    }
+    if (overrideUserMessageId) {
+      const [userMessageId, index] = overrideUserMessageId.split(Constants.COMMON_DIVIDER);
+      overrideUserMessageId = userMessageId;
+      if (index !== '0') {
+        this.skipSaveUserMessage = true;
+      }
+    }
+
+    return [overrideConvoId, overrideUserMessageId];
+  }
+
   async setMessageOptions(opts = {}) {
     if (opts && opts.replaceOptions) {
       this.setOptions(opts);
     }
 
-    const { overrideConvoId } = this.options.req.body ?? {};
+    const [overrideConvoId, overrideUserMessageId] = this.processOverideIds();
     const { isEdited, isContinued } = opts;
     const user = opts.user ?? null;
     this.user = user;
@@ -97,7 +125,8 @@ class BaseClient {
     this.abortController = opts.abortController ?? new AbortController();
     const conversationId = overrideConvoId ?? opts.conversationId ?? crypto.randomUUID();
     const parentMessageId = opts.parentMessageId ?? Constants.NO_PARENT;
-    const userMessageId = opts.overrideParentMessageId ?? crypto.randomUUID();
+    const userMessageId =
+      overrideUserMessageId ?? opts.overrideParentMessageId ?? crypto.randomUUID();
     let responseMessageId = opts.responseMessageId ?? crypto.randomUUID();
     let head = isEdited ? responseMessageId : parentMessageId;
     this.currentMessages = (await this.loadHistory(conversationId, head)) ?? [];
@@ -451,7 +480,7 @@ class BaseClient {
       this.handleTokenCountMap(tokenCountMap);
     }
 
-    if (!isEdited) {
+    if (!isEdited && !this.skipSaveUserMessage) {
       await this.saveMessageToDatabase(userMessage, saveOptions, user);
     }
 
@@ -570,6 +599,10 @@ class BaseClient {
       unfinished: false,
       user,
     });
+
+    if (this.skipSaveConvo) {
+      return;
+    }
     await saveConvo(user, {
       conversationId: message.conversationId,
       endpoint: this.options.endpoint,

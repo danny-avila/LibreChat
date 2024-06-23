@@ -27,6 +27,11 @@ const logger = {
       console.debug(...args);
     }
   },
+  dir: (...args: unknown[]) => {
+    if (isDevelopment || isLoggerEnabled) {
+      console.dir(...args);
+    }
+  },
 };
 
 export default logger;

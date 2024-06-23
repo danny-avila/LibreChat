@@ -7,6 +7,13 @@ import { useAuthContext } from '~/hooks/AuthContext';
 import { replaceSpecialVars } from '~/utils';
 import store from '~/store';
 
+const appendIndex = (index: number, value?: string) => {
+  if (!value) {
+    return value;
+  }
+  return `${value}${Constants.COMMON_DIVIDER}${index}`;
+};
+
 export default function useSubmitMessage(helpers?: { clearDraft?: () => void }) {
   const { user } = useAuthContext();
   const methods = useChatFormContext();
@@ -29,10 +36,22 @@ export default function useSubmitMessage(helpers?: { clearDraft?: () => void }) 
         activeConvos.every((convoId) => convoId === Constants.NEW_CONVO) &&
         !rootMessages?.length;
       const overrideConvoId = isNewMultiConvo ? v4() : undefined;
-
-      ask({ text: data.text, overrideConvoId });
+      const overrideUserMessageId = hasAdded ? v4() : undefined;
+      const rootIndex = addedIndex - 1;
+      ask({
+        text: data.text,
+        overrideConvoId: appendIndex(rootIndex, overrideConvoId),
+        overrideUserMessageId: appendIndex(rootIndex, overrideUserMessageId),
+      });
       if (hasAdded) {
-        askAdditional({ text: data.text, overrideConvoId }, { overrideMessages: rootMessages });
+        askAdditional(
+          {
+            text: data.text,
+            overrideConvoId: appendIndex(addedIndex, overrideConvoId),
+            overrideUserMessageId: appendIndex(addedIndex, overrideUserMessageId),
+          },
+          { overrideMessages: rootMessages },
+        );
       }
       methods.reset();
       helpers?.clearDraft && helpers.clearDraft();
