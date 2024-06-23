@@ -7,7 +7,7 @@ import store from '~/store';
 
 export default function useMessageProcess({ message }: { message?: TMessage | null }) {
   const latestText = useRef<string | number>('');
-  const isLast = useMemo(() => !message?.children?.length, [message]);
+  const hasNoChildren = useMemo(() => !message?.children?.length, [message]);
   const [siblingMessage, setSiblingMessage] = useState<TMessage | null>(null);
 
   const {
@@ -32,7 +32,7 @@ export default function useMessageProcess({ message }: { message?: TMessage | nu
     if (!message) {
       return;
     }
-    if (!isLast) {
+    if (!hasNoChildren) {
       return;
     }
 
@@ -45,7 +45,7 @@ export default function useMessageProcess({ message }: { message?: TMessage | nu
 
     latestText.current = textKey;
     setLatestMessage({ ...message });
-  }, [isLast, message, setLatestMessage, conversation?.conversationId]);
+  }, [hasNoChildren, message, setLatestMessage, conversation?.conversationId]);
 
   const handleScroll = useCallback(() => {
     if (isSubmitting) {
@@ -56,22 +56,25 @@ export default function useMessageProcess({ message }: { message?: TMessage | nu
   }, [isSubmitting, setAbortScroll]);
 
   const showSibling = useMemo(
-    () => (isLast && latestMultiMessage && !latestMultiMessage?.children?.length) || siblingMessage,
-    [isLast, latestMultiMessage, siblingMessage],
+    () =>
+      (hasNoChildren && latestMultiMessage && !latestMultiMessage?.children?.length) ||
+      siblingMessage,
+    [hasNoChildren, latestMultiMessage, siblingMessage],
   );
 
   useEffect(() => {
     if (
-      isLast &&
+      hasNoChildren &&
       latestMultiMessage &&
       latestMultiMessage.conversationId === message?.conversationId
     ) {
       const newSibling = Object.assign({}, latestMultiMessage, {
         parentMessageId: message?.parentMessageId,
+        depth: message?.depth,
       });
       setSiblingMessage(newSibling);
     }
-  }, [isLast, latestMultiMessage, message, setSiblingMessage, latestMessage]);
+  }, [hasNoChildren, latestMultiMessage, message, setSiblingMessage, latestMessage]);
 
   return {
     showSibling,

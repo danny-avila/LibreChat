@@ -32,9 +32,7 @@ export default function useSubmitMessage(helpers?: { clearDraft?: () => void }) 
 
       ask({ text: data.text, overrideConvoId });
       if (hasAdded) {
-        setTimeout(() => {
-          askAdditional({ text: data.text, overrideConvoId }, { overrideMessages: rootMessages });
-        }, 15);
+        askAdditional({ text: data.text, overrideConvoId }, { overrideMessages: rootMessages });
       }
       methods.reset();
       helpers?.clearDraft && helpers.clearDraft();

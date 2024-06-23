@@ -39,7 +39,10 @@ export default function useAddedHelpers({
         [QueryKeys.messages, queryParam, currentIndex],
         messages,
       );
-      setLatestMultiMessage(messages[messages.length - 1]);
+      const latestMultiMessage = messages[messages.length - 1];
+      if (latestMultiMessage) {
+        setLatestMultiMessage({ ...latestMultiMessage, depth: -1 });
+      }
     },
     [queryParam, queryClient, currentIndex, setLatestMultiMessage],
   );

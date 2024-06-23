@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { useMessageProcess, useMessageActions } from '~/hooks';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
@@ -65,8 +65,11 @@ const MessageRender = React.memo(
     });
 
     const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
-    const { children, isCreatedByUser, error, unfinished } = msg ?? {};
-    const isLast = !children?.length;
+    const { isCreatedByUser, error, unfinished } = msg ?? {};
+    const isLast = useMemo(
+      () => !msg?.children?.length && (msg?.depth === latestMessage?.depth || msg?.depth === -1),
+      [msg?.children, msg?.depth, latestMessage?.depth],
+    );
 
     if (!msg) {
       return null;

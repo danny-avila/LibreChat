@@ -1,6 +1,7 @@
 import { TFile, TMessage } from 'librechat-data-provider';
 
-export default function buildTree({
+type ParentMessage = TMessage & { children: TMessage[]; depth: number };
+export function buildTree({
   messages,
   fileMap,
 }: {
@@ -11,24 +12,33 @@ export default function buildTree({
     return null;
   }
 
-  const messageMap: Record<string, TMessage & { children: TMessage[] }> = {};
+  const messageMap: Record<string, ParentMessage> = {};
   const rootMessages: TMessage[] = [];
+  const childrenCount: Record<string, number> = {};
 
-  // Traverse the messages array and store each element in messageMap.
   messages.forEach((message) => {
-    messageMap[message.messageId] = { ...message, children: [] };
+    const parentId = message.parentMessageId ?? '';
+    childrenCount[parentId] = (childrenCount[parentId] || 0) + 1;
+
+    const extendedMessage: ParentMessage = {
+      ...message,
+      children: [],
+      depth: 0,
+      siblingIndex: childrenCount[parentId] - 1,
+    };
 
     if (message.files && fileMap) {
-      messageMap[message.messageId].files = message.files.map(
-        (file) => fileMap[file.file_id ?? ''] ?? file,
-      );
+      extendedMessage.files = message.files.map((file) => fileMap[file.file_id ?? ''] ?? file);
     }
 
-    const parentMessage = messageMap[message.parentMessageId ?? ''];
+    messageMap[message.messageId] = extendedMessage;
+
+    const parentMessage = messageMap[parentId];
     if (parentMessage) {
-      parentMessage.children.push(messageMap[message.messageId]);
+      parentMessage.children.push(extendedMessage);
+      extendedMessage.depth = parentMessage.depth + 1;
     } else {
-      rootMessages.push(messageMap[message.messageId]);
+      rootMessages.push(extendedMessage);
     }
   });
 
