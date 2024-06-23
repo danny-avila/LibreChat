@@ -9,11 +9,11 @@ export default function useSubmitMessage(helpers?: { clearDraft?: () => void }) 
   const { user } = useAuthContext();
   const methods = useChatFormContext();
   const { ask, index, getMessages } = useChatContext();
+  const { addedIndex, ask: askAdditional, conversation: addedConvo } = useAddedChatContext();
+
   const autoSendPrompts = useRecoilValue(store.autoSendPrompts);
   const activeConvos = useRecoilValue(store.allConversationsSelector);
   const setActivePrompt = useSetRecoilState(store.activePromptByIndex(index));
-
-  const { addedIndex, ask: askAdditional, conversation: addedConvo } = useAddedChatContext();
 
   const submitMessage = useCallback(
     (data?: { text: string }) => {
