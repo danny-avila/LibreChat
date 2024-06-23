@@ -26,6 +26,16 @@ const MessageContainer = React.memo(
   },
 );
 
+type MessageRenderProps = {
+  message?: TMessage;
+  isCard?: boolean;
+  isMultiMessage?: boolean;
+  isSubmittingFamily?: boolean;
+} & Pick<
+  TMessageProps,
+  'currentEditId' | 'setCurrentEditId' | 'siblingIdx' | 'setSiblingIdx' | 'siblingCount'
+>;
+
 const MessageRender = React.memo(
   ({
     isCard,
@@ -37,15 +47,7 @@ const MessageRender = React.memo(
     isMultiMessage,
     setCurrentEditId,
     isSubmittingFamily,
-  }: {
-    message?: TMessage;
-    isCard?: boolean;
-    isMultiMessage?: boolean;
-    isSubmittingFamily?: boolean;
-  } & Pick<
-    TMessageProps,
-    'currentEditId' | 'setCurrentEditId' | 'siblingIdx' | 'setSiblingIdx' | 'siblingCount'
-  >) => {
+  }: MessageRenderProps) => {
     const {
       ask,
       edit,
@@ -92,7 +94,9 @@ const MessageRender = React.memo(
             ? 'gap-1 rounded-lg border border-border-medium bg-surface-primary-alt p-2 md:gap-3 md:p-4'
             : '',
           isLatest ? 'bg-surface-secondary' : '',
-          isLast && !isSubmittingFamily ? 'cursor-pointer transition-colors duration-300' : '',
+          isLast && !isSubmittingFamily && isCard
+            ? 'cursor-pointer transition-colors duration-300'
+            : '',
         )}
         onClick={clickHandler}
       >
@@ -128,7 +132,7 @@ const MessageRender = React.memo(
               />
             </div>
           </div>
-          {isLast && (isSubmittingFamily || isSubmitting) ? (
+          {!msg?.children?.length && (isSubmittingFamily || isSubmitting) ? (
             <div className="mt-1 h-[27px] bg-transparent" />
           ) : (
             <SubRow classes="text-xs">
@@ -167,7 +171,6 @@ export default function Message(props: TMessageProps) {
     latestMultiMessage,
     isSubmittingFamily,
   } = useMessageProcess({ message: props.message });
-
   const { message, currentEditId, setCurrentEditId } = props;
 
   if (!message) {
