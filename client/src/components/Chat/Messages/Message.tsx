@@ -91,8 +91,8 @@ const MessageRender = React.memo(
           isCard
             ? 'gap-1 rounded-lg border border-border-medium bg-surface-primary-alt p-2 md:gap-3 md:p-4'
             : '',
-          isLast ? 'cursor-pointer transition-colors duration-300' : '',
           isLatest ? 'bg-surface-secondary' : '',
+          isLast && !isSubmittingFamily ? 'cursor-pointer transition-colors duration-300' : '',
         )}
         onClick={clickHandler}
       >
