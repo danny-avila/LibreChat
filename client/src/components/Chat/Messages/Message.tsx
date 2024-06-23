@@ -75,7 +75,7 @@ const MessageRender = React.memo(
       <div
         className={cn(
           'final-completion group mx-auto flex flex-1 gap-3 text-base',
-          isCard ? 'rounded-lg border border-border-medium bg-surface-primary-alt p-4' : '',
+          isCard ? 'rounded-lg border border-border-medium bg-surface-primary-alt p-2 md:p-4' : '',
         )}
       >
         <div className="relative flex flex-shrink-0 flex-col items-end">
