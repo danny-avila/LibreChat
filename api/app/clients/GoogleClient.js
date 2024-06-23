@@ -16,10 +16,15 @@ const {
   AuthKeys,
 } = require('librechat-data-provider');
 const { encodeAndFormat } = require('~/server/services/Files/images');
-const { formatMessage, createContextHandlers } = require('./prompts');
 const { getModelMaxTokens } = require('~/utils');
-const BaseClient = require('./BaseClient');
 const { logger } = require('~/config');
+const {
+  formatMessage,
+  createContextHandlers,
+  titleInstruction,
+  truncateText,
+} = require('./prompts');
+const BaseClient = require('./BaseClient');
 
 const loc = 'us-central1';
 const publisher = 'google';
@@ -591,12 +596,16 @@ class GoogleClient extends BaseClient {
   createLLM(clientOptions) {
     const model = clientOptions.modelName ?? clientOptions.model;
     if (this.project_id && this.isTextModel) {
+      logger.debug('Creating Google VertexAI client');
       return new GoogleVertexAI(clientOptions);
     } else if (this.project_id && this.isChatModel) {
+      logger.debug('Creating Chat Google VertexAI client');
       return new ChatGoogleVertexAI(clientOptions);
     } else if (this.project_id) {
+      logger.debug('Creating VertexAI client');
       return new ChatVertexAI(clientOptions);
     } else if (model.includes('1.5')) {
+      logger.debug('Creating GenAI client');
       return new GenAI(this.apiKey).getGenerativeModel(
         {
           ...clientOptions,
@@ -606,6 +615,7 @@ class GoogleClient extends BaseClient {
       );
     }
 
+    logger.debug('Creating Chat Google Generative AI client');
     return new ChatGoogleGenerativeAI({ ...clientOptions, apiKey: this.apiKey });
   }
 
@@ -715,6 +725,123 @@ class GoogleClient extends BaseClient {
     }
 
     return reply;
+  }
+
+  /**
+   * Stripped-down logic for generating a title. This uses the non-streaming APIs, since the user does not see titles streaming
+   */
+  async titleChatCompletion(_payload, options = {}) {
+    const { abortController } = options;
+    const { parameters, instances } = _payload;
+    const { messages: _messages, examples: _examples } = instances?.[0] ?? {};
+
+    let clientOptions = { ...parameters, maxRetries: 2 };
+
+    logger.info('Initialized title client options');
+
+    if (this.project_id) {
+      clientOptions['authOptions'] = {
+        credentials: {
+          ...this.serviceKey,
+        },
+        projectId: this.project_id,
+      };
+    }
+
+    if (!parameters) {
+      clientOptions = { ...clientOptions, ...this.modelOptions };
+    }
+
+    if (this.isGenerativeModel && !this.project_id) {
+      clientOptions.modelName = clientOptions.model;
+      delete clientOptions.model;
+    }
+
+    const model = this.createLLM(clientOptions);
+
+    let reply = '';
+    const messages = this.isTextModel ? _payload.trim() : _messages;
+
+    const modelName = clientOptions.modelName ?? clientOptions.model ?? '';
+    if (modelName?.includes('1.5') && !this.project_id) {
+      logger.info('Identified titling model as 1.5 version');
+      /** @type {GenerativeModel} */
+      const client = model;
+      const requestOptions = {
+        contents: _payload,
+      };
+
+      if (this.options?.promptPrefix?.length) {
+        requestOptions.systemInstruction = {
+          parts: [
+            {
+              text: this.options.promptPrefix,
+            },
+          ],
+        };
+      }
+
+      const safetySettings = _payload.safetySettings;
+      requestOptions.safetySettings = safetySettings;
+
+      const result = await client.generateContent(requestOptions);
+
+      reply = result.response?.text();
+
+      return reply;
+    } else {
+      logger.info('Beginning titling');
+      const safetySettings = _payload.safetySettings;
+
+      const titleResponse = await model.invoke(messages, {
+        signal: abortController.signal,
+        timeout: 7000,
+        safetySettings: safetySettings,
+      });
+
+      reply = titleResponse.content;
+
+      return reply;
+    }
+  }
+
+  async titleConvo({ text, responseText = '' }) {
+    let title = 'New Chat';
+    const convo = `||>User:
+"${truncateText(text)}"
+||>Response:
+"${JSON.stringify(truncateText(responseText))}"`;
+
+    let { prompt: payload } = await this.buildMessages([
+      {
+        text: `Please generate ${titleInstruction}
+
+    ${convo}
+    
+    ||>Title:`,
+        isCreatedByUser: true,
+        author: this.userLabel,
+      },
+    ]);
+
+    if (this.isVisionModel) {
+      logger.warn(
+        `Current vision model does not support titling without an attachment; falling back to default model ${settings.model.default}`,
+      );
+
+      payload.parameters = { ...payload.parameters, model: settings.model.default };
+    }
+
+    try {
+      title = await this.titleChatCompletion(payload, {
+        abortController: new AbortController(),
+        onProgress: () => {},
+      });
+    } catch (e) {
+      logger.error('[GoogleClient] There was an issue generating the title', e);
+    }
+    logger.info(`Title response: ${title}`);
+    return title;
   }
 
   getSaveOptions() {

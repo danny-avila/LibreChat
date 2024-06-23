@@ -1,6 +1,6 @@
 const express = require('express');
 const AskController = require('~/server/controllers/AskController');
-const { initializeClient } = require('~/server/services/Endpoints/google');
+const { initializeClient, addTitle } = require('~/server/services/Endpoints/google');
 const {
   setHeaders,
   handleAbort,
@@ -20,7 +20,7 @@ router.post(
   buildEndpointOption,
   setHeaders,
   async (req, res, next) => {
-    await AskController(req, res, next, initializeClient);
+    await AskController(req, res, next, initializeClient, addTitle);
   },
 );
 
