@@ -17,7 +17,7 @@ const appendIndex = (index: number, value?: string) => {
 export default function useSubmitMessage(helpers?: { clearDraft?: () => void }) {
   const { user } = useAuthContext();
   const methods = useChatFormContext();
-  const { ask, index, getMessages } = useChatContext();
+  const { ask, index, getMessages, setMessages, latestMessage } = useChatContext();
   const { addedIndex, ask: askAdditional, conversation: addedConvo } = useAddedChatContext();
 
   const autoSendPrompts = useRecoilValue(store.autoSendPrompts);
@@ -30,6 +30,13 @@ export default function useSubmitMessage(helpers?: { clearDraft?: () => void }) 
         return console.warn('No data provided to submitMessage');
       }
       const rootMessages = getMessages();
+      const isLatestInRootMessages = rootMessages?.some(
+        (message) => message?.messageId === latestMessage?.messageId,
+      );
+      if (!isLatestInRootMessages && latestMessage) {
+        setMessages([...(rootMessages || []), latestMessage]);
+      }
+
       const hasAdded = addedIndex && activeConvos[addedIndex] && addedConvo;
       const isNewMultiConvo =
         hasAdded &&
@@ -56,7 +63,18 @@ export default function useSubmitMessage(helpers?: { clearDraft?: () => void }) 
       methods.reset();
       helpers?.clearDraft && helpers.clearDraft();
     },
-    [addedIndex, activeConvos, addedConvo, ask, askAdditional, methods, helpers, getMessages],
+    [
+      ask,
+      methods,
+      helpers,
+      addedIndex,
+      addedConvo,
+      setMessages,
+      getMessages,
+      activeConvos,
+      askAdditional,
+      latestMessage,
+    ],
   );
 
   const submitPrompt = useCallback(

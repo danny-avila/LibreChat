@@ -36,10 +36,12 @@ const MessageRender = React.memo(
     currentEditId,
     isMultiMessage,
     setCurrentEditId,
+    isSubmittingFamily,
   }: {
     message?: TMessage;
     isCard?: boolean;
     isMultiMessage?: boolean;
+    isSubmittingFamily?: boolean;
   } & Pick<
     TMessageProps,
     'currentEditId' | 'setCurrentEditId' | 'siblingIdx' | 'setSiblingIdx' | 'siblingCount'
@@ -56,6 +58,7 @@ const MessageRender = React.memo(
       latestMessage,
       handleContinue,
       copyToClipboard,
+      setLatestMessage,
       regenerateMessage,
     } = useMessageActions({
       message: msg,
@@ -74,12 +77,24 @@ const MessageRender = React.memo(
     if (!msg) {
       return null;
     }
+
+    const isLatest = isCard && !isSubmittingFamily && msg.messageId === latestMessage?.messageId;
+    const clickHandler =
+      isLast && isCard && !isSubmittingFamily && msg.messageId !== latestMessage?.messageId
+        ? () => setLatestMessage(msg)
+        : undefined;
+
     return (
       <div
         className={cn(
           'final-completion group mx-auto flex flex-1 gap-3 text-base',
-          isCard ? 'rounded-lg border border-border-medium bg-surface-primary-alt p-2 md:p-4' : '',
+          isCard
+            ? 'gap-1 rounded-lg border border-border-medium bg-surface-primary-alt p-2 md:gap-3 md:p-4'
+            : '',
+          isLast ? 'cursor-pointer transition-colors duration-300' : '',
+          isLatest ? 'bg-surface-secondary' : '',
         )}
+        onClick={clickHandler}
       >
         <div className="relative flex flex-shrink-0 flex-col items-end">
           <div>
@@ -113,7 +128,7 @@ const MessageRender = React.memo(
               />
             </div>
           </div>
-          {isLast && isSubmitting ? (
+          {isLast && (isSubmittingFamily || isSubmitting) ? (
             <div className="mt-1 h-[27px] bg-transparent" />
           ) : (
             <SubRow classes="text-xs">
@@ -144,8 +159,14 @@ const MessageRender = React.memo(
 );
 
 export default function Message(props: TMessageProps) {
-  const { showSibling, conversation, handleScroll, siblingMessage, latestMultiMessage } =
-    useMessageProcess({ message: props.message });
+  const {
+    showSibling,
+    conversation,
+    handleScroll,
+    siblingMessage,
+    latestMultiMessage,
+    isSubmittingFamily,
+  } = useMessageProcess({ message: props.message });
 
   const { message, currentEditId, setCurrentEditId } = props;
 
@@ -160,13 +181,19 @@ export default function Message(props: TMessageProps) {
       <MessageContainer handleScroll={handleScroll}>
         {showSibling ? (
           <div className="m-auto my-2 flex justify-center p-4 py-2 text-base md:gap-6">
-            <div className="flex w-full flex-row justify-between gap-1 md:max-w-5xl lg:max-w-5xl xl:max-w-6xl">
-              <MessageRender {...props} message={message} isCard />
+            <div className="flex w-full flex-row flex-wrap justify-between gap-1 md:max-w-5xl md:gap-2 lg:max-w-5xl xl:max-w-6xl">
+              <MessageRender
+                {...props}
+                message={message}
+                isSubmittingFamily={isSubmittingFamily}
+                isCard
+              />
               <MessageRender
                 {...props}
                 isMultiMessage
                 isCard
                 message={siblingMessage ?? latestMultiMessage ?? undefined}
+                isSubmittingFamily={isSubmittingFamily}
               />
             </div>
           </div>

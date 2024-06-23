@@ -20,7 +20,7 @@ export default function useMessageProcess({ message }: { message?: TMessage | nu
   } = useChatContext();
   const { isSubmitting: isSubmittingAdditional } = useAddedChatContext();
   const latestMultiMessage = useRecoilValue(store.latestMessageFamily(index + 1));
-  const isSubmitting = useMemo(
+  const isSubmittingFamily = useMemo(
     () => isSubmittingRoot || isSubmittingAdditional,
     [isSubmittingRoot, isSubmittingAdditional],
   );
@@ -48,12 +48,12 @@ export default function useMessageProcess({ message }: { message?: TMessage | nu
   }, [hasNoChildren, message, setLatestMessage, conversation?.conversationId]);
 
   const handleScroll = useCallback(() => {
-    if (isSubmitting) {
+    if (isSubmittingFamily) {
       setAbortScroll(true);
     } else {
       setAbortScroll(false);
     }
-  }, [isSubmitting, setAbortScroll]);
+  }, [isSubmittingFamily, setAbortScroll]);
 
   const showSibling = useMemo(
     () =>
@@ -82,6 +82,7 @@ export default function useMessageProcess({ message }: { message?: TMessage | nu
     conversation,
     siblingMessage,
     setSiblingMessage,
+    isSubmittingFamily,
     latestMultiMessage,
   };
 }

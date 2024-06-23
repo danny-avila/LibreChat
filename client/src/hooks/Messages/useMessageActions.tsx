@@ -26,6 +26,7 @@ export default function useMessageActions(props: TMessageActions) {
     regenerate,
     latestMessage,
     handleContinue,
+    setLatestMessage,
     conversation: rootConvo,
     isSubmitting: isSubmittingRoot,
   } = useChatContext();
@@ -88,6 +89,7 @@ export default function useMessageActions(props: TMessageActions) {
     latestMessage,
     handleContinue,
     copyToClipboard,
+    setLatestMessage,
     regenerateMessage,
   };
 }
