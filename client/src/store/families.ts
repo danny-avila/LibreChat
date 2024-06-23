@@ -11,7 +11,7 @@ import {
 import { LocalStorageKeys } from 'librechat-data-provider';
 import type { TMessage, TPreset, TConversation, TSubmission } from 'librechat-data-provider';
 import type { TOptionSettings, ExtendedFile } from '~/common';
-import { storeEndpointSettings } from '~/utils';
+import { storeEndpointSettings, logger } from '~/utils';
 import { useEffect } from 'react';
 
 const latestMessageKeysAtom = atom<(string | number)[]>({
@@ -41,7 +41,7 @@ const latestMessageKeysSelector = selector<(string | number)[]>({
     return keys.filter((key) => get(latestMessageFamily(key)) !== null);
   },
   set: ({ set }, newKeys) => {
-    console.log('setting latestMessageKeys', newKeys);
+    logger.log('setting latestMessageKeys', newKeys);
     set(latestMessageKeysAtom, newKeys);
   },
 });
@@ -53,7 +53,7 @@ const submissionKeysSelector = selector<(string | number)[]>({
     return keys.filter((key) => get(submissionByIndex(key)) !== null);
   },
   set: ({ set }, newKeys) => {
-    console.log('setting submissionKeysAtom', newKeys);
+    logger.log('setting submissionKeysAtom', newKeys);
     set(submissionKeysAtom, newKeys);
   },
 });
@@ -255,14 +255,14 @@ function useClearSubmissionState() {
     ({ reset, set, snapshot }) =>
       async (skipFirst?: boolean) => {
         const submissionKeys = await snapshot.getPromise(submissionKeysSelector);
-        console.log('submissionKeys', submissionKeys);
+        logger.log('submissionKeys', submissionKeys);
 
         for (const key of submissionKeys) {
           if (skipFirst && key == 0) {
             continue;
           }
 
-          console.log('resetting submission', key);
+          logger.log('resetting submission', key);
           reset(submissionByIndex(key));
         }
 
@@ -279,14 +279,14 @@ function useClearLatestMessages() {
     ({ reset, set, snapshot }) =>
       async (skipFirst?: boolean) => {
         const latestMessageKeys = await snapshot.getPromise(latestMessageKeysSelector);
-        console.log('latestMessageKeys', latestMessageKeys);
+        logger.log('latestMessageKeys', latestMessageKeys);
 
         for (const key of latestMessageKeys) {
           if (skipFirst && key == 0) {
             continue;
           }
 
-          console.log('resetting latest message', key);
+          logger.log('resetting latest message', key);
           reset(latestMessageFamily(key));
         }
 
