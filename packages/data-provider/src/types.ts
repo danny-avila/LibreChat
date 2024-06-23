@@ -36,6 +36,8 @@ export type TEndpointOption = {
   key?: string | null;
   /* assistant */
   thread_id?: string;
+  /* multi-response stream */
+  overrideConvoId?: string;
 };
 
 export type TPayload = Partial<TMessage> &

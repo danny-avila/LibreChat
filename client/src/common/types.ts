@@ -231,6 +231,7 @@ export type TGenButtonProps = {
 
 export type TAskProps = {
   text: string;
+  overrideConvoId?: string;
   parentMessageId?: string | null;
   conversationId?: string | null;
   messageId?: string | null;

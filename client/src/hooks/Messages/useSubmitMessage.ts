@@ -1,4 +1,6 @@
+import { v4 } from 'uuid';
 import { useCallback } from 'react';
+import { Constants } from 'librechat-data-provider';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { useChatContext, useChatFormContext, useAddedChatContext } from '~/Providers';
 import { useAuthContext } from '~/hooks/AuthContext';
@@ -20,12 +22,18 @@ export default function useSubmitMessage(helpers?: { clearDraft?: () => void }) 
       if (!data) {
         return console.warn('No data provided to submitMessage');
       }
+      const rootMessages = getMessages();
       const hasAdded = addedIndex && activeConvos[addedIndex] && addedConvo;
-      ask({ text: data.text });
+      const isNewMultiConvo =
+        hasAdded &&
+        activeConvos.every((convoId) => convoId === Constants.NEW_CONVO) &&
+        !rootMessages?.length;
+      const overrideConvoId = isNewMultiConvo ? v4() : undefined;
+
+      ask({ text: data.text, overrideConvoId });
       if (hasAdded) {
         setTimeout(() => {
-          const rootMessages = getMessages();
-          askAdditional({ text: data.text }, { overrideMessages: rootMessages });
+          askAdditional({ text: data.text, overrideConvoId }, { overrideMessages: rootMessages });
         }, 15);
       }
       methods.reset();

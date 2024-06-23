@@ -41,6 +41,7 @@ const latestMessageKeysSelector = selector<(string | number)[]>({
     return keys.filter((key) => get(latestMessageFamily(key)) !== null);
   },
   set: ({ set }, newKeys) => {
+    console.log('setting latestMessageKeys', newKeys);
     set(latestMessageKeysAtom, newKeys);
   },
 });
@@ -52,6 +53,7 @@ const submissionKeysSelector = selector<(string | number)[]>({
     return keys.filter((key) => get(submissionByIndex(key)) !== null);
   },
   set: ({ set }, newKeys) => {
+    console.log('setting submissionKeysAtom', newKeys);
     set(submissionKeysAtom, newKeys);
   },
 });

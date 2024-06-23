@@ -89,12 +89,13 @@ class BaseClient {
       this.setOptions(opts);
     }
 
+    const { overrideConvoId } = this.options.req.body ?? {};
     const { isEdited, isContinued } = opts;
     const user = opts.user ?? null;
     this.user = user;
     const saveOptions = this.getSaveOptions();
     this.abortController = opts.abortController ?? new AbortController();
-    const conversationId = opts.conversationId ?? crypto.randomUUID();
+    const conversationId = overrideConvoId ?? opts.conversationId ?? crypto.randomUUID();
     const parentMessageId = opts.parentMessageId ?? Constants.NO_PARENT;
     const userMessageId = opts.overrideParentMessageId ?? crypto.randomUUID();
     let responseMessageId = opts.responseMessageId ?? crypto.randomUUID();

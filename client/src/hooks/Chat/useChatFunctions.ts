@@ -56,7 +56,7 @@ export default function useChatFunctions({
   const { getExpiry } = useUserKey(conversation?.endpoint ?? '');
 
   const ask: TAskFunction = (
-    { text, parentMessageId = null, conversationId = null, messageId = null },
+    { text, overrideConvoId, parentMessageId = null, conversationId = null, messageId = null },
     {
       editedText = null,
       editedMessageId = null,
@@ -129,10 +129,11 @@ export default function useChatFunctions({
     const endpointOption = {
       ...convo,
       endpoint,
-      endpointType,
-      modelDisplayLabel,
-      key: getExpiry(),
       thread_id,
+      endpointType,
+      overrideConvoId,
+      key: getExpiry(),
+      modelDisplayLabel,
     } as TEndpointOption;
     const responseSender = getSender({ model: conversation?.model, ...endpointOption });
 
