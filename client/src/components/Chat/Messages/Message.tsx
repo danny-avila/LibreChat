@@ -91,7 +91,7 @@ const MessageRender = React.memo(
         className={cn(
           'final-completion group mx-auto flex flex-1 gap-3 text-base',
           isCard
-            ? 'gap-1 rounded-lg border border-border-medium bg-surface-primary-alt p-2 md:gap-3 md:p-4'
+            ? 'w-full gap-1 rounded-lg border border-border-medium bg-surface-primary-alt p-2 md:w-1/2 md:gap-3 md:p-4'
             : '',
           isLatest ? 'bg-surface-secondary' : '',
           isLast && !isSubmittingFamily && isCard
@@ -184,7 +184,7 @@ export default function Message(props: TMessageProps) {
       <MessageContainer handleScroll={handleScroll}>
         {showSibling ? (
           <div className="m-auto my-2 flex justify-center p-4 py-2 text-base md:gap-6">
-            <div className="flex w-full flex-row flex-wrap justify-between gap-1 md:max-w-5xl md:gap-2 lg:max-w-5xl xl:max-w-6xl">
+            <div className="flex w-full flex-row flex-wrap justify-between gap-1 md:max-w-5xl md:flex-nowrap md:gap-2 lg:max-w-5xl xl:max-w-6xl">
               <MessageRender
                 {...props}
                 message={message}
