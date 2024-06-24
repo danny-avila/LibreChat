@@ -99,7 +99,7 @@ const CreatePromptForm = ({
             <Controller
               name="name"
               control={control}
-              rules={{ required: localize('com_ui_is_required', localize('com_ui_prompt_name')) }}
+              rules={{ required: localize('com_ui_prompt_name_required') }}
               render={({ field }) => (
                 <div className="mb-1 flex items-center md:mb-0">
                   <Input
@@ -127,13 +127,13 @@ const CreatePromptForm = ({
         <div className="w-full md:mt-[1.075rem]">
           <div>
             <h2 className="flex items-center justify-between rounded-t-lg border border-gray-300 py-2 pl-4 pr-1 text-base font-semibold dark:border-gray-600 dark:text-gray-200">
-              {localize('com_ui_text_prompt')}*
+              {localize('com_ui_prompt_text')}*
             </h2>
             <div className="mb-4 min-h-32 rounded-b-lg border border-gray-300 p-4 transition-all duration-150 dark:border-gray-600">
               <Controller
                 name="prompt"
                 control={control}
-                rules={{ required: localize('com_ui_is_required', localize('com_ui_text_prompt')) }}
+                rules={{ required: localize('com_ui_prompt_text_required') }}
                 render={({ field }) => (
                   <div>
                     <TextareaAutosize
@@ -159,14 +159,14 @@ const CreatePromptForm = ({
             onValueChange={(value) => methods.setValue('oneliner', value)}
             tabIndex={3}
           />
-          <div className="flex justify-end">
+          <div className="mt-4 flex justify-end">
             <Button
               tabIndex={5}
               type="submit"
               variant="default"
               disabled={!isDirty || isSubmitting || !isValid}
             >
-              {localize('com_ui_create_var', localize('com_ui_prompt'))}
+              {localize('com_ui_create_prompt')}
             </Button>
           </div>
         </div>
