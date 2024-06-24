@@ -421,6 +421,7 @@ export type NewConversationParams = {
   modelsData?: TModelsConfig;
   buildDefault?: boolean;
   keepLatestMessage?: boolean;
+  keepAddedConvos?: boolean;
 };
 
 export type ConvoGenerator = (params: NewConversationParams) => void | TConversation;

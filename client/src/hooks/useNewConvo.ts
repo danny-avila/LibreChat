@@ -6,13 +6,7 @@ import {
 } from 'librechat-data-provider/react-query';
 import { useNavigate } from 'react-router-dom';
 import { FileSources, LocalStorageKeys, isAssistantsEndpoint } from 'librechat-data-provider';
-import {
-  useRecoilState,
-  useRecoilValue,
-  useSetRecoilState,
-  useRecoilCallback,
-  useResetRecoilState,
-} from 'recoil';
+import { useRecoilState, useRecoilValue, useSetRecoilState, useRecoilCallback } from 'recoil';
 import type {
   TPreset,
   TSubmission,
@@ -69,6 +63,7 @@ const useNewConvo = (index = 0) => {
         modelsData?: TModelsConfig,
         buildDefault?: boolean,
         keepLatestMessage?: boolean,
+        keepAddedConvos?: boolean,
       ) => {
         const modelsConfig = modelsData ?? modelsQuery.data;
         const { endpoint = null } = conversation;
@@ -141,7 +136,9 @@ const useNewConvo = (index = 0) => {
           });
         }
 
-        clearAllConversations(true);
+        if (!keepAddedConvos) {
+          clearAllConversations(true);
+        }
         setConversation(conversation);
         setSubmission({} as TSubmission);
         if (!keepLatestMessage) {
@@ -174,12 +171,14 @@ const useNewConvo = (index = 0) => {
       modelsData,
       buildDefault = true,
       keepLatestMessage = false,
+      keepAddedConvos = false,
     }: {
       template?: Partial<TConversation>;
       preset?: Partial<TPreset>;
       modelsData?: TModelsConfig;
       buildDefault?: boolean;
       keepLatestMessage?: boolean;
+      keepAddedConvos?: boolean;
     } = {}) => {
       pauseGlobalAudio();
 
@@ -220,7 +219,14 @@ const useNewConvo = (index = 0) => {
         }
       }
 
-      switchToConversation(conversation, preset, modelsData, buildDefault, keepLatestMessage);
+      switchToConversation(
+        conversation,
+        preset,
+        modelsData,
+        buildDefault,
+        keepLatestMessage,
+        keepAddedConvos,
+      );
     },
     [
       pauseGlobalAudio,
