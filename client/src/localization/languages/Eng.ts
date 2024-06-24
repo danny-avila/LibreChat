@@ -7,9 +7,10 @@ export default {
     'It appears that the content submitted has been flagged by our moderation system for not aligning with our community guidelines. We\'re unable to proceed with this specific topic. If you have any other questions or topics you\'d like to explore, please edit your message, or create a new conversation.',
   com_error_no_user_key: 'No key found. Please provide a key and try again.',
   com_error_no_base_url: 'No base URL found. Please provide one and try again.',
-  com_error_invalid_user_key: 'Invalid key provided. Please provide a key and try again.',
+  com_error_invalid_user_key:
+    'Invalid key provided. Please provide a valid key and try again.',
   com_error_expired_user_key:
-    'Provided key for {0} expired at {1}. Please provide a key and try again.',
+    'Provided key for {0} expired at {1}. Please provide a new key and try again.',
   com_files_no_results: 'No results.',
   com_files_filter: 'Filter files...',
   com_files_number_selected: '{0} of {1} file(s) selected',
@@ -130,13 +131,14 @@ export default {
   com_ui_admin_settings: 'Admin Settings',
   com_ui_error_save_admin_settings: 'There was an error saving your admin settings.',
   com_ui_prompt_preview_not_shared: 'The author has not allowed collaboration for this prompt.',
-  com_ui_is_required: '{0} is required',
-  com_ui_text_prompt: 'Text',
+  com_ui_prompt_name_required: 'Prompt Name is required',
+  com_ui_prompt_text_required: 'Text is required',
+  com_ui_prompt_text: 'Text',
   com_ui_back_to_chat: 'Back to Chat',
-  com_ui_back_to_var: 'Back to {0}',
+  com_ui_back_to_prompts: 'Back to Prompts',
   com_ui_categories: 'Categories',
   com_ui_filter_prompts_name: 'Filter prompts by name',
-  com_ui_search_var: 'Search {0}',
+  com_ui_search_categories: 'Search Categories',
   com_ui_manage: 'Manage',
   com_ui_variables: 'Variables',
   com_ui_variables_info:
@@ -229,7 +231,7 @@ export default {
   com_ui_assistants_output: 'Assistants Output',
   com_ui_delete: 'Delete',
   com_ui_create: 'Create',
-  com_ui_create_var: 'Create {0}',
+  com_ui_create_prompt: 'Create Prompt',
   com_ui_share: 'Share',
   com_ui_share_var: 'Share {0}',
   com_ui_copy_link: 'Copy link',
@@ -603,7 +605,7 @@ export default {
   com_nav_archive_all_chats: 'Archive all chats',
   com_nav_archive_all: 'Archive all',
   com_nav_archive_name: 'Name',
-  com_nav_archive_created_at: 'DateCreated',
+  com_nav_archive_created_at: 'Date Archived',
   com_nav_clear_conversation: 'Clear conversations',
   com_nav_clear_conversation_confirm_message:
     'Are you sure you want to clear all conversations? This is irreversible.',
@@ -637,7 +639,7 @@ export default {
     'When enabled, the text and attachments you enter in the chat form will be automatically saved locally as drafts. These drafts will be available even if you reload the page or switch to a different conversation. Drafts are stored locally on your device and are deleted once the message is sent.',
   com_nav_info_fork_change_default:
     '`Visible messages only` includes just the direct path to the selected message. `Include related branches` adds branches along the path. `Include all to/from here` includes all connected messages and branches.',
-  com_nav_info_fork_split_target_setting: 'idk what this does 🤷‍♂️',
+  com_nav_info_fork_split_target_setting: 'When enabled, forking will commence from the target message to the latest message in the conversation, according to the behavior selected.',
   com_nav_info_user_name_display:
     'When enabled, the username of the sender will be shown above each message you send. When disabled, you will only see "You" above your messages.',
   com_nav_info_latex_parsing:
