@@ -67,11 +67,13 @@ const ChatForm = ({ index = 0 }) => {
   } = useChatContext();
   const methods = useChatFormContext();
   const {
+    addedIndex,
     generateConversation,
     conversation: addedConvo,
     setConversation: setAddedConvo,
     isSubmitting: isSubmittingAdded,
   } = useAddedChatContext();
+  const showStopAdded = useRecoilValue(store.showStopButtonByIndex(addedIndex));
 
   const { clearDraft } = useAutoSave({
     conversationId: useMemo(() => conversation?.conversationId, [conversation]),
@@ -181,7 +183,7 @@ const ChatForm = ({ index = 0 }) => {
               endpointType={endpointType}
               disabled={disableInputs}
             />
-            {(isSubmitting && showStopButton) || isSubmittingAdded ? (
+            {(isSubmitting || isSubmittingAdded) && (showStopButton || showStopAdded) ? (
               <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
             ) : (
               endpoint && (
