@@ -38,14 +38,11 @@ export default function ChatRoute() {
   const assistantListMap = useAssistantListMap();
 
   useEffect(() => {
-    if (
-      startupConfig &&
-      conversationId === 'new' &&
-      endpointsQuery.data &&
-      modelsQuery.data &&
-      !modelsQuery.data?.initial &&
-      !hasSetConversation.current
-    ) {
+    // Early exit if startupConfig is not loaded or conversation is already set or initial conversation is loaded
+    if (!startupConfig || hasSetConversation.current || modelsQuery.data?.initial) {
+      return;
+    }
+    if (conversationId === 'new' && endpointsQuery.data && modelsQuery.data) {
       const spec = getDefaultModelSpec(startupConfig.modelSpecs?.list);
 
       newConversation({
@@ -63,14 +60,7 @@ export default function ChatRoute() {
       });
 
       hasSetConversation.current = true;
-    } else if (
-      startupConfig &&
-      initialConvoQuery.data &&
-      endpointsQuery.data &&
-      modelsQuery.data &&
-      !modelsQuery.data?.initial &&
-      !hasSetConversation.current
-    ) {
+    } else if (initialConvoQuery.data && endpointsQuery.data && modelsQuery.data) {
       newConversation({
         template: initialConvoQuery.data,
         /* this is necessary to load all existing settings */
@@ -80,9 +70,6 @@ export default function ChatRoute() {
       });
       hasSetConversation.current = true;
     } else if (
-      startupConfig &&
-      !hasSetConversation.current &&
-      !modelsQuery.data?.initial &&
       conversationId === 'new' &&
       assistantListMap[EModelEndpoint.assistants] &&
       assistantListMap[EModelEndpoint.azureAssistants]
@@ -103,9 +90,6 @@ export default function ChatRoute() {
       });
       hasSetConversation.current = true;
     } else if (
-      startupConfig &&
-      !hasSetConversation.current &&
-      !modelsQuery.data?.initial &&
       assistantListMap[EModelEndpoint.assistants] &&
       assistantListMap[EModelEndpoint.azureAssistants]
     ) {
