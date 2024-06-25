@@ -28,6 +28,7 @@ html {
   --text-tertiary:var(--gray-500);
   --surface-primary:var(--white);
   --surface-primary-alt:var(--white);
+  --surface-primary-contrast:var(--gray-100);
   --surface-secondary:var(--gray-50);
   --surface-tertiary:var(--gray-100);
   --border-light:var(--gray-100);
@@ -41,8 +42,9 @@ html {
   --text-secondary:var(--gray-300);
   --text-tertiary:var(--gray-500);
   --surface-primary:var(--gray-900);
-  --surface-secondary:var(--gray-800);
   --surface-primary-alt:var(--gray-850);
+  --surface-primary-contrast:var(--gray-850);
+  --surface-secondary:var(--gray-800);
   --surface-tertiary:var(--gray-700);
   --border-light:var(--gray-700);
   --border-medium-alt:var(--gray-600);

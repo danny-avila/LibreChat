@@ -6,12 +6,23 @@ import {
   isAssistantsEndpoint,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
-import { useChatContext, useAssistantsMapContext, useChatFormContext } from '~/Providers';
-import { useRequiresKey, useTextarea, useSubmitMessage, useHandleKeyUp } from '~/hooks';
-import { useAutoSave } from '~/hooks/Input/useAutoSave';
+import {
+  useChatContext,
+  useAddedChatContext,
+  useAssistantsMapContext,
+  useChatFormContext,
+} from '~/Providers';
+import {
+  useTextarea,
+  useAutoSave,
+  useRequiresKey,
+  useHandleKeyUp,
+  useSubmitMessage,
+} from '~/hooks';
 import { TextareaAutosize } from '~/components/ui';
 import { useGetFileConfig } from '~/data-provider';
 import { cn, removeFocusRings } from '~/utils';
+import TextareaHeader from './TextareaHeader';
 import AttachFile from './Files/AttachFile';
 import AudioRecorder from './AudioRecorder';
 import { mainTextareaId } from '~/common';
@@ -25,16 +36,19 @@ import store from '~/store';
 const ChatForm = ({ index = 0 }) => {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
+
   const SpeechToText = useRecoilValue(store.SpeechToText);
   const TextToSpeech = useRecoilValue(store.TextToSpeech);
   const automaticPlayback = useRecoilValue(store.automaticPlayback);
+
   const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
+  const [showPlusPopover, setShowPlusPopover] = useRecoilState(store.showPlusPopoverFamily(index));
   const [showMentionPopover, setShowMentionPopover] = useRecoilState(
     store.showMentionPopoverFamily(index),
   );
-  const { requiresKey } = useRequiresKey();
 
-  const handleKeyUp = useHandleKeyUp({ index, textAreaRef });
+  const { requiresKey } = useRequiresKey();
+  const handleKeyUp = useHandleKeyUp({ textAreaRef, setShowPlusPopover, setShowMentionPopover });
   const { handlePaste, handleKeyDown, handleCompositionStart, handleCompositionEnd } = useTextarea({
     textAreaRef,
     submitButtonRef,
@@ -48,9 +62,18 @@ const ChatForm = ({ index = 0 }) => {
     isSubmitting,
     filesLoading,
     setFilesLoading,
+    newConversation,
     handleStopGenerating,
   } = useChatContext();
   const methods = useChatFormContext();
+  const {
+    addedIndex,
+    generateConversation,
+    conversation: addedConvo,
+    setConversation: setAddedConvo,
+    isSubmitting: isSubmittingAdded,
+  } = useAddedChatContext();
+  const showStopAdded = useRecoilValue(store.showStopButtonByIndex(addedIndex));
 
   const { clearDraft } = useAutoSave({
     conversationId: useMemo(() => conversation?.conversationId, [conversation]),
@@ -96,10 +119,25 @@ const ChatForm = ({ index = 0 }) => {
     >
       <div className="relative flex h-full flex-1 items-stretch md:flex-col">
         <div className="flex w-full items-center">
+          {showPlusPopover && !isAssistantsEndpoint(endpoint) && (
+            <Mention
+              setShowMentionPopover={setShowPlusPopover}
+              newConversation={generateConversation}
+              textAreaRef={textAreaRef}
+              commandChar="+"
+              placeholder="com_ui_add"
+              includeAssistants={false}
+            />
+          )}
           {showMentionPopover && (
-            <Mention setShowMentionPopover={setShowMentionPopover} textAreaRef={textAreaRef} />
+            <Mention
+              setShowMentionPopover={setShowMentionPopover}
+              newConversation={newConversation}
+              textAreaRef={textAreaRef}
+            />
           )}
           <div className="bg-token-main-surface-primary relative flex w-full flex-grow flex-col overflow-hidden rounded-2xl border dark:border-gray-600 dark:text-white [&:has(textarea:focus)]:border-gray-300 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)] dark:[&:has(textarea:focus)]:border-gray-500">
+            <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
             <FileRow
               files={files}
               setFiles={setFiles}
@@ -145,7 +183,7 @@ const ChatForm = ({ index = 0 }) => {
               endpointType={endpointType}
               disabled={disableInputs}
             />
-            {isSubmitting && showStopButton ? (
+            {(isSubmitting || isSubmittingAdded) && (showStopButton || showStopAdded) ? (
               <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
             ) : (
               endpoint && (
