@@ -25,6 +25,7 @@
 html {
   --text-primary:var(--gray-800);
   --text-secondary:var(--gray-600);
+  --text-secondary-alt:var(--gray-500);
   --text-tertiary:var(--gray-500);
   --surface-primary:var(--white);
   --surface-primary-alt:var(--white);
@@ -40,6 +41,7 @@ html {
 .dark {
   --text-primary:var(--gray-100);
   --text-secondary:var(--gray-300);
+  --text-secondary-alt:var(--gray-400);
   --text-tertiary:var(--gray-500);
   --surface-primary:var(--gray-900);
   --surface-primary-alt:var(--gray-850);
