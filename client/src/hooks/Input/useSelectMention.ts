@@ -8,25 +8,26 @@ import type {
   TAssistantsMap,
   TEndpointsConfig,
 } from 'librechat-data-provider';
-import type { MentionOption } from '~/common';
+import type { MentionOption, ConvoGenerator } from '~/common';
 import { getConvoSwitchLogic, getModelSpecIconURL, removeUnavailableTools } from '~/utils';
-import { useDefaultConvo, useNewConvo } from '~/hooks';
 import { useChatContext } from '~/Providers';
+import { useDefaultConvo } from '~/hooks';
 import store from '~/store';
 
 export default function useSelectMention({
   presets,
   modelSpecs,
-  endpointsConfig,
   assistantMap,
+  endpointsConfig,
+  newConversation,
 }: {
   presets?: TPreset[];
   modelSpecs: TModelSpec[];
-  endpointsConfig: TEndpointsConfig;
   assistantMap: TAssistantsMap;
+  newConversation: ConvoGenerator;
+  endpointsConfig: TEndpointsConfig;
 }) {
   const { conversation } = useChatContext();
-  const { newConversation } = useNewConvo();
   const getDefaultConversation = useDefaultConvo();
   const modularChat = useRecoilValue(store.modularChat);
   const availableTools = useRecoilValue(store.availableTools);
@@ -45,12 +46,12 @@ export default function useSelectMention({
       }
 
       const {
+        template,
         shouldSwitch,
         isNewModular,
+        newEndpointType,
         isCurrentModular,
         isExistingConversation,
-        newEndpointType,
-        template,
       } = getConvoSwitchLogic({
         newEndpoint,
         modularChat,
@@ -58,7 +59,8 @@ export default function useSelectMention({
         endpointsConfig,
       });
 
-      if (isExistingConversation && isCurrentModular && isNewModular && shouldSwitch) {
+      const isModular = isCurrentModular && isNewModular && shouldSwitch;
+      if (isExistingConversation && isModular) {
         template.endpointType = newEndpointType as EModelEndpoint | undefined;
 
         const currentConvo = getDefaultConversation({
@@ -68,11 +70,20 @@ export default function useSelectMention({
         });
 
         /* We don't reset the latest message, only when changing settings mid-converstion */
-        newConversation({ template: currentConvo, preset, keepLatestMessage: true });
+        newConversation({
+          template: currentConvo,
+          preset,
+          keepLatestMessage: true,
+          keepAddedConvos: true,
+        });
         return;
       }
 
-      newConversation({ template: { ...(template as Partial<TConversation>) }, preset });
+      newConversation({
+        template: { ...(template as Partial<TConversation>) },
+        preset,
+        keepAddedConvos: isModular,
+      });
     },
     [conversation, getDefaultConversation, modularChat, newConversation, endpointsConfig],
   );
@@ -142,12 +153,12 @@ export default function useSelectMention({
       const newEndpoint = newPreset.endpoint ?? '';
 
       const {
+        template,
         shouldSwitch,
         isNewModular,
+        newEndpointType,
         isCurrentModular,
         isExistingConversation,
-        newEndpointType,
-        template,
       } = getConvoSwitchLogic({
         newEndpoint,
         modularChat,
@@ -155,7 +166,8 @@ export default function useSelectMention({
         endpointsConfig,
       });
 
-      if (isExistingConversation && isCurrentModular && isNewModular && shouldSwitch) {
+      const isModular = isCurrentModular && isNewModular && shouldSwitch;
+      if (isExistingConversation && isModular) {
         template.endpointType = newEndpointType as EModelEndpoint | undefined;
 
         const currentConvo = getDefaultConversation({
@@ -165,19 +177,24 @@ export default function useSelectMention({
         });
 
         /* We don't reset the latest message, only when changing settings mid-converstion */
-        newConversation({ template: currentConvo, preset: newPreset, keepLatestMessage: true });
+        newConversation({
+          template: currentConvo,
+          preset: newPreset,
+          keepLatestMessage: true,
+          keepAddedConvos: true,
+        });
         return;
       }
 
-      newConversation({ preset: newPreset });
+      newConversation({ preset: newPreset, keepAddedConvos: true });
     },
     [
-      availableTools,
-      conversation,
-      getDefaultConversation,
       modularChat,
+      conversation,
+      availableTools,
       newConversation,
       endpointsConfig,
+      getDefaultConversation,
     ],
   );
 

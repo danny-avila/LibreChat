@@ -814,10 +814,14 @@ export enum Constants {
   CONFIG_VERSION = '1.1.4',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
+  /** Standard value for the initial conversationId before a request is sent */
+  NEW_CONVO = 'new',
   /** Fixed, encoded domain length for Azure OpenAI Assistants Function name parsing. */
   ENCODED_DOMAIN_LENGTH = 10,
   /** Identifier for using current_model in multi-model requests. */
   CURRENT_MODEL = 'current_model',
+  /** Common divider for text values */
+  COMMON_DIVIDER = '__',
 }
 
 export enum LocalStorageKeys {

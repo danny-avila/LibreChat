@@ -737,7 +737,7 @@ class GoogleClient extends BaseClient {
 
     let clientOptions = { ...parameters, maxRetries: 2 };
 
-    logger.info('Initialized title client options');
+    logger.debug('Initialized title client options');
 
     if (this.project_id) {
       clientOptions['authOptions'] = {
@@ -764,7 +764,7 @@ class GoogleClient extends BaseClient {
 
     const modelName = clientOptions.modelName ?? clientOptions.model ?? '';
     if (modelName?.includes('1.5') && !this.project_id) {
-      logger.info('Identified titling model as 1.5 version');
+      logger.debug('Identified titling model as 1.5 version');
       /** @type {GenerativeModel} */
       const client = model;
       const requestOptions = {
@@ -790,7 +790,7 @@ class GoogleClient extends BaseClient {
 
       return reply;
     } else {
-      logger.info('Beginning titling');
+      logger.debug('Beginning titling');
       const safetySettings = _payload.safetySettings;
 
       const titleResponse = await model.invoke(messages, {
@@ -840,7 +840,7 @@ class GoogleClient extends BaseClient {
     } catch (e) {
       logger.error('[GoogleClient] There was an issue generating the title', e);
     }
-    logger.info(`Title response: ${title}`);
+    logger.debug(`Title response: ${title}`);
     return title;
   }
 

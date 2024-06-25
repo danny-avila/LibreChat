@@ -23,13 +23,15 @@ import { useConversationsInfiniteQuery, useSharedLinksInfiniteQuery } from './qu
 import { normalizeData } from '~/utils/collection';
 import store from '~/store';
 
-/** Conversations */
-export const useGenTitleMutation = (): UseMutationResult<
+export type TGenTitleMutation = UseMutationResult<
   t.TGenTitleResponse,
   unknown,
   t.TGenTitleRequest,
   unknown
-> => {
+>;
+
+/** Conversations */
+export const useGenTitleMutation = (): TGenTitleMutation => {
   const queryClient = useQueryClient();
   return useMutation((payload: t.TGenTitleRequest) => dataService.genTitle(payload), {
     onSuccess: (response, vars) => {
@@ -525,6 +527,8 @@ export const useLogoutUserMutation = (
       setDefaultPreset(null);
       queryClient.removeQueries();
       localStorage.removeItem(LocalStorageKeys.LAST_CONVO_SETUP);
+      localStorage.removeItem(`${LocalStorageKeys.LAST_CONVO_SETUP}_0`);
+      localStorage.removeItem(`${LocalStorageKeys.LAST_CONVO_SETUP}_1`);
       localStorage.removeItem(LocalStorageKeys.LAST_MODEL);
       localStorage.removeItem(LocalStorageKeys.LAST_TOOLS);
       localStorage.removeItem(LocalStorageKeys.FILES_TO_DELETE);
@@ -565,6 +569,8 @@ export const useDeleteUserMutation = (
       setDefaultPreset(null);
       queryClient.removeQueries();
       localStorage.removeItem(LocalStorageKeys.LAST_CONVO_SETUP);
+      localStorage.removeItem(`${LocalStorageKeys.LAST_CONVO_SETUP}_0`);
+      localStorage.removeItem(`${LocalStorageKeys.LAST_CONVO_SETUP}_1`);
       localStorage.removeItem(LocalStorageKeys.LAST_MODEL);
       localStorage.removeItem(LocalStorageKeys.LAST_TOOLS);
       localStorage.removeItem(LocalStorageKeys.FILES_TO_DELETE);

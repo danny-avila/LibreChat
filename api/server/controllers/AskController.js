@@ -81,7 +81,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       promptTokens,
     });
 
-    const { abortController, onStart } = createAbortController(req, res, getAbortData);
+    const { abortController, onStart } = createAbortController(req, res, getAbortData, getReqData);
 
     res.on('close', () => {
       logger.debug('[AskController] Request closed');
@@ -144,7 +144,9 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       await saveMessage({ ...response, user });
     }
 
-    await saveMessage(userMessage);
+    if (!client.skipSaveUserMessage) {
+      await saveMessage(userMessage);
+    }
 
     if (addTitle && parentMessageId === Constants.NO_PARENT && newConvo) {
       addTitle(req, {

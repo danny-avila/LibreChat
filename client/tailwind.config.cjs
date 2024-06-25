@@ -69,6 +69,7 @@ module.exports = {
         'text-tertiary': 'var(--text-tertiary)',
         'surface-primary': 'var(--surface-primary)',
         'surface-primary-alt': 'var(--surface-primary-alt)',
+        'surface-primary-contrast': 'var(--surface-primary-contrast)',
         'surface-secondary': 'var(--surface-secondary)',
         'surface-tertiary': 'var(--surface-tertiary)',
         'border-light': 'var(--border-light)',

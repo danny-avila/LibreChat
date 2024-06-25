@@ -9,23 +9,28 @@ const { abortRun } = require('./abortRun');
 const { logger } = require('~/config');
 
 async function abortMessage(req, res) {
-  let { abortKey, conversationId, endpoint } = req.body;
-
-  if (!abortKey && conversationId) {
-    abortKey = conversationId;
-  }
+  let { abortKey, endpoint } = req.body;
 
   if (isAssistantsEndpoint(endpoint)) {
     return await abortRun(req, res);
+  }
+
+  const conversationId = abortKey?.split(':')?.[0] ?? req.user.id;
+
+  if (!abortControllers.has(abortKey) && abortControllers.has(conversationId)) {
+    abortKey = conversationId;
   }
 
   if (!abortControllers.has(abortKey) && !res.headersSent) {
     return res.status(204).send({ message: 'Request not found' });
   }
 
-  const { abortController } = abortControllers.get(abortKey);
+  const { abortController } = abortControllers.get(abortKey) ?? {};
+  if (!abortController) {
+    return res.status(204).send({ message: 'Request not found' });
+  }
   const finalEvent = await abortController.abortCompletion();
-  logger.debug('[abortMessage] Aborted request', { abortKey });
+  logger.info('[abortMessage] Aborted request', { abortKey });
   abortControllers.delete(abortKey);
 
   if (res.headersSent && finalEvent) {
@@ -50,12 +55,32 @@ const handleAbort = () => {
   };
 };
 
-const createAbortController = (req, res, getAbortData) => {
+const createAbortController = (req, res, getAbortData, getReqData) => {
   const abortController = new AbortController();
   const { endpointOption } = req.body;
-  const onStart = (userMessage) => {
+
+  abortController.getAbortData = function () {
+    return getAbortData();
+  };
+
+  /**
+   * @param {TMessage} userMessage
+   * @param {string} responseMessageId
+   */
+  const onStart = (userMessage, responseMessageId) => {
     sendMessage(res, { message: userMessage, created: true });
     const abortKey = userMessage?.conversationId ?? req.user.id;
+    const prevRequest = abortControllers.get(abortKey);
+    if (prevRequest && prevRequest?.abortController) {
+      const data = prevRequest.abortController.getAbortData();
+      getReqData({ userMessage: data?.userMessage });
+      const addedAbortKey = `${abortKey}:${responseMessageId}`;
+      abortControllers.set(addedAbortKey, { abortController, ...endpointOption });
+      res.on('finish', function () {
+        abortControllers.delete(addedAbortKey);
+      });
+      return;
+    }
     abortControllers.set(abortKey, { abortController, ...endpointOption });
 
     res.on('finish', function () {

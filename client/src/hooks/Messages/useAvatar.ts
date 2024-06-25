@@ -1,50 +1,45 @@
-import { useState, useEffect } from 'react';
+import { useMemo } from 'react';
 import { createAvatar } from '@dicebear/core';
 import { initials } from '@dicebear/collection';
 import type { TUser } from 'librechat-data-provider';
 
+const avatarCache: Record<string, string> = {};
+
 const useAvatar = (user: TUser | undefined) => {
-  const [avatarSrc, setAvatarSrc] = useState('');
-
-  useEffect(() => {
-    if (avatarSrc.length) {
-      return;
-    }
-
-    if (user?.avatar) {
-      return;
-    }
-
+  return useMemo(() => {
     if (!user?.username) {
-      return;
+      return '';
     }
 
-    const generateAvatar = async () => {
-      if (!user) {
-        return;
-      }
+    if (user.avatar) {
+      return user.avatar;
+    }
 
-      const { username } = user;
+    const { username } = user;
 
-      const avatar = createAvatar(initials, {
-        seed: username,
-        fontFamily: ['Verdana'],
-        fontSize: 36,
+    if (avatarCache[username]) {
+      return avatarCache[username];
+    }
+
+    const avatar = createAvatar(initials, {
+      seed: username,
+      fontFamily: ['Verdana'],
+      fontSize: 36,
+    });
+
+    let avatarDataUri = '';
+    avatar
+      .toDataUri()
+      .then((dataUri) => {
+        avatarDataUri = dataUri;
+        avatarCache[username] = dataUri; // Store in cache
+      })
+      .catch((error) => {
+        console.error('Failed to generate avatar:', error);
       });
 
-      try {
-        const avatarDataUri = await avatar.toDataUri();
-        setAvatarSrc(avatarDataUri);
-      } catch (error) {
-        console.error('Failed to generate avatar:', error);
-        setAvatarSrc('');
-      }
-    };
-
-    generateAvatar();
-  }, [user, avatarSrc.length]);
-
-  return avatarSrc;
+    return avatarDataUri;
+  }, [user]);
 };
 
 export default useAvatar;
