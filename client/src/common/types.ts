@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileSources, SystemRoles } from 'librechat-data-provider';
+import { FileSources } from 'librechat-data-provider';
 import type * as InputNumberPrimitive from 'rc-input-number';
 import type { ColumnDef } from '@tanstack/react-table';
 import type { SetterOrUpdater } from 'recoil';
@@ -11,8 +11,10 @@ import type {
   TPlugin,
   TMessage,
   Assistant,
+  TResPlugin,
   TLoginUser,
   AuthTypeEnum,
+  TModelsConfig,
   TConversation,
   TStartupConfig,
   EModelEndpoint,
@@ -229,6 +231,8 @@ export type TGenButtonProps = {
 
 export type TAskProps = {
   text: string;
+  overrideConvoId?: string;
+  overrideUserMessageId?: string;
   parentMessageId?: string | null;
   conversationId?: string | null;
   messageId?: string | null;
@@ -241,6 +245,7 @@ export type TOptions = {
   isRegenerate?: boolean;
   isContinued?: boolean;
   isEdited?: boolean;
+  overrideMessages?: TMessage[];
 };
 
 export type TAskFunction = (props: TAskProps, options?: TOptions) => void;
@@ -408,6 +413,29 @@ export type TLoginLayoutContext = {
   setError: React.Dispatch<React.SetStateAction<string | null>>;
   headerText: string;
   setHeaderText: React.Dispatch<React.SetStateAction<string>>;
+};
+
+export type NewConversationParams = {
+  template?: Partial<TConversation>;
+  preset?: Partial<TPreset>;
+  modelsData?: TModelsConfig;
+  buildDefault?: boolean;
+  keepLatestMessage?: boolean;
+  keepAddedConvos?: boolean;
+};
+
+export type ConvoGenerator = (params: NewConversationParams) => void | TConversation;
+
+export type TResData = {
+  plugin?: TResPlugin;
+  final?: boolean;
+  initial?: boolean;
+  previousMessages?: TMessage[];
+  requestMessage: TMessage;
+  responseMessage: TMessage;
+  conversation: TConversation;
+  conversationId?: string;
+  runMessages?: TMessage[];
 };
 export type TVectorStore = {
   _id: string;
