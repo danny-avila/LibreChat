@@ -42,6 +42,10 @@ const Nav = ({ navVisible, setNavVisible }) => {
 
   useEffect(() => {
     if (isSmallScreen) {
+      const savedNavVisible = localStorage.getItem('navVisible');
+      if (savedNavVisible === null) {
+        toggleNavVisible();
+      }
       setNavWidth('320px');
     } else {
       setNavWidth('260px');
