@@ -91,7 +91,7 @@ const MessageRender = React.memo(
         className={cn(
           'final-completion group mx-auto flex flex-1 gap-3 text-base',
           isCard
-            ? 'w-full gap-1 rounded-lg border border-border-medium bg-surface-primary-alt p-2 md:w-1/2 md:gap-3 md:p-4'
+            ? 'relative w-full gap-1 rounded-lg border border-border-medium bg-surface-primary-alt p-2 md:w-1/2 md:gap-3 md:p-4'
             : '',
           isLatest ? 'bg-surface-secondary' : '',
           isLast && !isSubmittingFamily && isCard
@@ -100,6 +100,9 @@ const MessageRender = React.memo(
         )}
         onClick={clickHandler}
       >
+        {isLatest && (
+          <div className="absolute right-0 top-0 m-2 h-3 w-3 rounded-full bg-text-primary"></div>
+        )}
         <div className="relative flex flex-shrink-0 flex-col items-end">
           <div>
             <div className="pt-0.5">
