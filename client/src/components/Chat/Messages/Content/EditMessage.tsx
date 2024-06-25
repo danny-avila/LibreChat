@@ -162,6 +162,7 @@ const EditMessage = ({
           contentEditable={true}
           value={editedText}
           suppressContentEditableWarning={true}
+          dir="auto"
         />
       </div>
       <div className="mt-2 flex w-full justify-center text-center">
