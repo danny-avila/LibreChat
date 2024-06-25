@@ -27,7 +27,10 @@ const MessageContainer = React.memo(
 );
 
 const PlaceholderRow = React.memo(({ isLast, isCard }: { isLast: boolean; isCard?: boolean }) => {
-  if (!isLast && !isCard) {
+  if (!isCard) {
+    return null;
+  }
+  if (!isLast) {
     return null;
   }
   return <div className="mt-1 h-[27px] bg-transparent" />;
@@ -99,7 +102,7 @@ const MessageRender = React.memo(
           'final-completion group mx-auto flex flex-1 gap-3 text-base',
           isCard
             ? 'relative w-full gap-1 rounded-lg border border-border-medium bg-surface-primary-alt p-2 md:w-1/2 md:gap-3 md:p-4'
-            : '',
+            : 'md:max-w-3xl lg:max-w-[40rem] xl:max-w-[48rem]',
           isLatest ? 'bg-surface-secondary' : '',
           isLast && !isSubmittingFamily && isCard
             ? 'cursor-pointer transition-colors duration-300'
@@ -212,9 +215,7 @@ export default function Message(props: TMessageProps) {
           </div>
         ) : (
           <div className="m-auto justify-center p-4 py-2 text-base md:gap-6 ">
-            <div className="final-completion group mx-auto flex flex-1 gap-3 text-base md:max-w-3xl md:px-5 lg:max-w-[40rem] lg:px-1 xl:max-w-[48rem] xl:px-5">
-              <MessageRender {...props} />
-            </div>
+            <MessageRender {...props} />
           </div>
         )}
       </MessageContainer>
