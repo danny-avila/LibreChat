@@ -278,7 +278,7 @@ const PromptForm = () => {
           )}
           <div className="flex h-full w-full flex-col md:flex-row">
             {/* Left Section */}
-            <div className="flex-1 overflow-y-auto border-r border-gray-300 p-4 dark:border-gray-600 md:max-h-[calc(100vh-150px)]">
+            <div className="flex-1 overflow-y-auto border-gray-300 p-4 dark:border-gray-600 md:max-h-[calc(100vh-150px)] md:border-r">
               {isLoadingPrompts ? (
                 <Skeleton className="h-96" />
               ) : (
