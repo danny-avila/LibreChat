@@ -93,7 +93,7 @@ class BaseClient {
    */
   processOverideIds() {
     /** @type {Record<string, string | undefined>} */
-    let { overrideConvoId, overrideUserMessageId } = this.options.req.body ?? {};
+    let { overrideConvoId, overrideUserMessageId } = this.options?.req?.body ?? {};
     if (overrideConvoId) {
       const [conversationId, index] = overrideConvoId.split(Constants.COMMON_DIVIDER);
       overrideConvoId = conversationId;
