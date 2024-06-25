@@ -26,6 +26,13 @@ const MessageContainer = React.memo(
   },
 );
 
+const PlaceholderRow = React.memo(({ isLast, isCard }: { isLast: boolean; isCard?: boolean }) => {
+  if (!isLast && !isCard) {
+    return null;
+  }
+  return <div className="mt-1 h-[27px] bg-transparent" />;
+});
+
 type MessageRenderProps = {
   message?: TMessage;
   isCard?: boolean;
@@ -136,7 +143,7 @@ const MessageRender = React.memo(
             </div>
           </div>
           {!msg?.children?.length && (isSubmittingFamily || isSubmitting) ? (
-            <div className="mt-1 h-[27px] bg-transparent" />
+            <PlaceholderRow isLast={isLast} isCard={isCard} />
           ) : (
             <SubRow classes="text-xs">
               <SiblingSwitch
