@@ -62,7 +62,9 @@ const sendVerificationEmail = async (user) => {
   let verifyToken = crypto.randomBytes(32).toString('hex');
   const hash = bcrypt.hashSync(verifyToken, 10);
 
-  const verificationLink = `${domains.client}/verify?token=${verifyToken}&email=${encodeURIComponent(user.email)}`;
+  const verificationLink = `${
+    domains.client
+  }/verify?token=${verifyToken}&email=${encodeURIComponent(user.email)}`;
   await sendEmail({
     email: user.email,
     subject: 'Verify your email',
@@ -119,9 +121,10 @@ const verifyEmail = async (req) => {
 /**
  * Register a new user.
  * @param {MongoUser} user <email, password, name, username>
+ * @param {Partial<MongoUser>} [additionalData={}]
  * @returns {Promise<{status: number, message: string, user?: MongoUser}>}
  */
-const registerUser = async (user) => {
+const registerUser = async (user, additionalData = {}) => {
   const { error } = registerSchema.safeParse(user);
   if (error) {
     const errorMessage = errorsToString(error.errors);
@@ -171,11 +174,13 @@ const registerUser = async (user) => {
       avatar: null,
       role: isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER,
       password: bcrypt.hashSync(password, salt),
+      ...additionalData,
     };
 
     const emailEnabled = checkEmailConfig();
-    newUserId = await createUser(newUserData, false);
-    if (emailEnabled) {
+    const newUser = await createUser(newUserData, false, true);
+    newUserId = newUser._id;
+    if (emailEnabled && !newUser.emailVerified) {
       await sendVerificationEmail({
         _id: newUserId,
         email,
@@ -363,7 +368,9 @@ const resendVerificationEmail = async (req) => {
     let verifyToken = crypto.randomBytes(32).toString('hex');
     const hash = bcrypt.hashSync(verifyToken, 10);
 
-    const verificationLink = `${domains.client}/verify?token=${verifyToken}&email=${encodeURIComponent(user.email)}`;
+    const verificationLink = `${
+      domains.client
+    }/verify?token=${verifyToken}&email=${encodeURIComponent(user.email)}`;
 
     await sendEmail({
       email: user.email,
