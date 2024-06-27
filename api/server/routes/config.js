@@ -34,6 +34,8 @@ router.get('/', async function (req, res) {
   const instanceProject = await getProjectByName('instance', '_id');
 
   const ldapLoginEnabled = !!process.env.LDAP_URL && !!process.env.LDAP_USER_SEARCH_BASE;
+  const ldapLoginUsesUsername =
+    (process.env.LDAP_LOGIN_USES_USERNAME ?? 'false').toLowerCase() === 'true';
   try {
     /** @type {TStartupConfig} */
     const payload = {
@@ -52,6 +54,7 @@ router.get('/', async function (req, res) {
       openidLabel: process.env.OPENID_BUTTON_LABEL || 'Continue with OpenID',
       openidImageUrl: process.env.OPENID_IMAGE_URL,
       ldapLoginEnabled,
+      ldapLoginUsesUsername,
       serverDomain: process.env.DOMAIN_SERVER || 'http://localhost:3080',
       emailLoginEnabled,
       registrationEnabled: !ldapLoginEnabled && isEnabled(process.env.ALLOW_REGISTRATION),
