@@ -14,12 +14,13 @@ import {
   useUpdatePromptGroup,
   useMakePromptProduction,
 } from '~/data-provider';
-import { useAuthContext, usePromptGroupsNav, useHasAccess } from '~/hooks';
+import { useAuthContext, usePromptGroupsNav, useHasAccess, useLocalize } from '~/hooks';
 import CategorySelector from './Groups/CategorySelector';
 import AlwaysMakeProd from './Groups/AlwaysMakeProd';
 import NoPromptGroup from './Groups/NoPromptGroup';
 import { Button, Skeleton } from '~/components/ui';
 import PromptVariables from './PromptVariables';
+import { useToastContext } from '~/Providers';
 import PromptVersions from './PromptVersions';
 import DeleteConfirm from './DeleteVersion';
 import PromptDetails from './PromptDetails';
@@ -37,7 +38,10 @@ const { PromptsEditorMode, promptsEditorMode } = store;
 const PromptForm = () => {
   const params = useParams();
   const navigate = useNavigate();
+  const localize = useLocalize();
+
   const { user } = useAuthContext();
+  const { showToast } = useToastContext();
   const editorMode = useRecoilValue(promptsEditorMode);
   const alwaysMakeProd = useRecoilValue(store.alwaysMakeProd);
   const { data: group, isLoading: isLoadingGroup } = useGetPromptGroup(params.promptId || '');
@@ -102,7 +106,14 @@ const PromptForm = () => {
       setSelectionIndex(0);
     },
   });
-  const updateGroupMutation = useUpdatePromptGroup();
+  const updateGroupMutation = useUpdatePromptGroup({
+    onError: () => {
+      showToast({
+        status: 'error',
+        message: localize('com_ui_prompt_update_error'),
+      });
+    },
+  });
   const makeProductionMutation = useMakePromptProduction();
   const deletePromptMutation = useDeletePrompt({
     onSuccess: (response) => {

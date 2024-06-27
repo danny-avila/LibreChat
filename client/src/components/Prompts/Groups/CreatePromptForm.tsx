@@ -76,13 +76,16 @@ const CreatePromptForm = ({
   const promptText = watch('prompt');
 
   const onSubmit = (data: CreateFormValues) => {
-    const { name, category, oneliner, ...rest } = data;
+    const { name, category, oneliner, command, ...rest } = data;
     const groupData = { name, category } as Pick<
       CreateFormValues,
-      'name' | 'category' | 'oneliner'
+      'name' | 'category' | 'oneliner' | 'command'
     >;
     if ((oneliner?.length || 0) > 0) {
       groupData.oneliner = oneliner;
+    }
+    if ((command?.length || 0) > 0) {
+      groupData.command = command;
     }
     createPromptMutation.mutate({
       prompt: rest,
@@ -162,7 +165,7 @@ const CreatePromptForm = ({
             onValueChange={(value) => methods.setValue('oneliner', value)}
             tabIndex={3}
           />
-          <Command onValueChange={(value) => methods.setValue('oneliner', value)} tabIndex={4} />
+          <Command onValueChange={(value) => methods.setValue('command', value)} tabIndex={4} />
           <div className="mt-4 flex justify-end">
             <Button
               tabIndex={6}

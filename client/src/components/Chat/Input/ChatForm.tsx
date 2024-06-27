@@ -41,7 +41,6 @@ const ChatForm = ({ index = 0 }) => {
   const SpeechToText = useRecoilValue(store.SpeechToText);
   const TextToSpeech = useRecoilValue(store.TextToSpeech);
   const automaticPlayback = useRecoilValue(store.automaticPlayback);
-  const showPromptsPopover = useRecoilValue(store.showPromptsPopoverFamily(index));
 
   const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
   const [showPlusPopover, setShowPlusPopover] = useRecoilState(store.showPlusPopoverFamily(index));
