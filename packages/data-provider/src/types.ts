@@ -351,6 +351,7 @@ export type TPrompt = {
 export type TPromptGroup = {
   name: string;
   numberOfGenerations?: number;
+  command?: string;
   oneliner?: string;
   category?: string;
   projectIds?: string[];
@@ -365,7 +366,7 @@ export type TPromptGroup = {
 
 export type TCreatePrompt = {
   prompt: Pick<TPrompt, 'prompt' | 'type'> & { groupId?: string };
-  group?: { name: string; category?: string; oneliner?: string };
+  group?: { name: string; category?: string; oneliner?: string; command?: string };
 };
 
 export type TCreatePromptRecord = TCreatePrompt & Pick<TPromptGroup, 'author' | 'authorName'>;
@@ -385,6 +386,7 @@ export type TPromptGroupsWithFilterRequest = {
   after?: string | null;
   order?: 'asc' | 'desc';
   name?: string;
+  author?: string;
 };
 
 export type PromptGroupListResponse = {

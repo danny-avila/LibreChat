@@ -8,50 +8,48 @@ const connect = require('./connect');
 (async () => {
   await connect();
 
-  /**
-   * Show the welcome / help menu
-   */
   console.purple('--------------------------');
   console.purple('Create a new user account!');
   console.purple('--------------------------');
-  // If we don't have enough arguments, show the help menu
+
   if (process.argv.length < 5) {
-    console.orange('Usage: npm run create-user <email> <name> <username>');
+    console.orange('Usage: npm run create-user <email> <name> <username> [--email-verified=false]');
     console.orange('Note: if you do not pass in the arguments, you will be prompted for them.');
     console.orange(
       'If you really need to pass in the password, you can do so as the 4th argument (not recommended for security).',
     );
+    console.orange('Use --email-verified=false to set emailVerified to false. Default is true.');
     console.purple('--------------------------');
   }
 
-  /**
-   * Set up the variables we need and get the arguments if they were passed in
-   */
   let email = '';
   let password = '';
   let name = '';
   let username = '';
-  // If we have the right number of arguments, lets use them
-  if (process.argv.length >= 4) {
-    email = process.argv[2];
-    name = process.argv[3];
+  let emailVerified = true;
 
-    if (process.argv.length >= 5) {
-      username = process.argv[4];
+  // Parse command line arguments
+  for (let i = 2; i < process.argv.length; i++) {
+    if (process.argv[i].startsWith('--email-verified=')) {
+      emailVerified = process.argv[i].split('=')[1].toLowerCase() !== 'false';
+      continue;
     }
-    if (process.argv.length >= 6) {
+
+    if (!email) {
+      email = process.argv[i];
+    } else if (!name) {
+      name = process.argv[i];
+    } else if (!username) {
+      username = process.argv[i];
+    } else if (!password) {
       console.red('Warning: password passed in as argument, this is not secure!');
-      password = process.argv[5];
+      password = process.argv[i];
     }
   }
 
-  /**
-   * If we don't have the right number of arguments, lets prompt the user for them
-   */
   if (!email) {
     email = await askQuestion('Email:');
   }
-  // Validate the email
   if (!email.includes('@')) {
     console.red('Error: Invalid email address!');
     silentExit(1);
@@ -73,41 +71,51 @@ const connect = require('./connect');
   if (!password) {
     password = await askQuestion('Password: (leave blank, to generate one)');
     if (!password) {
-      // Make it a random password, length 18
       password = Math.random().toString(36).slice(-18);
       console.orange('Your password is: ' + password);
     }
   }
 
-  // Validate the user doesn't already exist
+  // Only prompt for emailVerified if it wasn't set via CLI
+  if (!process.argv.some((arg) => arg.startsWith('--email-verified='))) {
+    const emailVerifiedInput = await askQuestion(`Email verified? (Y/n, default is Y):
+
+If \`y\`, the user's email will be considered verified.
+      
+If \`n\`, and email service is configured, the user will be sent a verification email.
+
+If \`n\`, and email service is not configured, you must have the \`ALLOW_UNVERIFIED_EMAIL_LOGIN\` .env variable set to true,
+or the user will need to attempt logging in to have a verification link sent to them.`);
+
+    if (emailVerifiedInput.toLowerCase() === 'n') {
+      emailVerified = false;
+    }
+  }
+
   const userExists = await User.findOne({ $or: [{ email }, { username }] });
   if (userExists) {
     console.red('Error: A user with that email or username already exists!');
     silentExit(1);
   }
 
-  /**
-   * Now that we have all the variables we need, lets create the user
-   */
   const user = { email, password, name, username, confirm_password: password };
   let result;
   try {
-    result = await registerUser(user);
+    result = await registerUser(user, { emailVerified });
   } catch (error) {
     console.red('Error: ' + error.message);
     silentExit(1);
   }
 
-  // Check the result
   if (result.status !== 200) {
     console.red('Error: ' + result.message);
     silentExit(1);
   }
 
-  // Done!
   const userCreated = await User.findOne({ $or: [{ email }, { username }] });
   if (userCreated) {
     console.green('User created successfully!');
+    console.green(`Email verified: ${userCreated.emailVerified}`);
     silentExit(0);
   }
 })();

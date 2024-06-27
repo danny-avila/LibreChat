@@ -50,7 +50,7 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
       </h2>
       <div
         className={cn(
-          'group relative mb-4 min-h-32 rounded-b-lg border border-gray-300 p-4 transition-all duration-150 hover:opacity-90 dark:border-gray-600',
+          'group relative min-h-32 rounded-b-lg border border-gray-300 p-4 transition-all duration-150 hover:opacity-90 dark:border-gray-600',
           { 'cursor-pointer hover:bg-gray-100/50 dark:hover:bg-gray-100/10': !isEditing },
         )}
         onClick={() => !isEditing && setIsEditing(true)}

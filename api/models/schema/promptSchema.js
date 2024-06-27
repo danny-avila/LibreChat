@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { Constants } = require('librechat-data-provider');
 const Schema = mongoose.Schema;
 
 /**
@@ -12,6 +13,7 @@ const Schema = mongoose.Schema;
  * @property {number} [numberOfGenerations=0] - Number of generations the prompt group has
  * @property {string} [oneliner=''] - Oneliner description of the prompt group
  * @property {string} [category=''] - Category of the prompt group
+ * @property {string} [command] - Command for the prompt group
  * @property {Date} [createdAt] - Date when the prompt group was created (added by timestamps)
  * @property {Date} [updatedAt] - Date when the prompt group was last updated (added by timestamps)
  */
@@ -56,6 +58,21 @@ const promptGroupSchema = new Schema(
     authorName: {
       type: String,
       required: true,
+    },
+    command: {
+      type: String,
+      index: true,
+      validate: {
+        validator: function (v) {
+          return v === undefined || v === null || v === '' || /^[a-z0-9-]+$/.test(v);
+        },
+        message: (props) =>
+          `${props.value} is not a valid command. Only lowercase alphanumeric characters and highfins (') are allowed.`,
+      },
+      maxlength: [
+        Constants.COMMANDS_MAX_LENGTH,
+        `Command cannot be longer than ${Constants.COMMANDS_MAX_LENGTH} characters`,
+      ],
     },
   },
   {
