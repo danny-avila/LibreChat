@@ -14,12 +14,13 @@ import {
   useUpdatePromptGroup,
   useMakePromptProduction,
 } from '~/data-provider';
-import { useAuthContext, usePromptGroupsNav, useHasAccess } from '~/hooks';
+import { useAuthContext, usePromptGroupsNav, useHasAccess, useLocalize } from '~/hooks';
 import CategorySelector from './Groups/CategorySelector';
 import AlwaysMakeProd from './Groups/AlwaysMakeProd';
 import NoPromptGroup from './Groups/NoPromptGroup';
 import { Button, Skeleton } from '~/components/ui';
 import PromptVariables from './PromptVariables';
+import { useToastContext } from '~/Providers';
 import PromptVersions from './PromptVersions';
 import DeleteConfirm from './DeleteVersion';
 import PromptDetails from './PromptDetails';
@@ -29,6 +30,7 @@ import SkeletonForm from './SkeletonForm';
 import Description from './Description';
 import SharePrompt from './SharePrompt';
 import PromptName from './PromptName';
+import Command from './Command';
 import store from '~/store';
 
 const { PromptsEditorMode, promptsEditorMode } = store;
@@ -36,7 +38,10 @@ const { PromptsEditorMode, promptsEditorMode } = store;
 const PromptForm = () => {
   const params = useParams();
   const navigate = useNavigate();
+  const localize = useLocalize();
+
   const { user } = useAuthContext();
+  const { showToast } = useToastContext();
   const editorMode = useRecoilValue(promptsEditorMode);
   const alwaysMakeProd = useRecoilValue(store.alwaysMakeProd);
   const { data: group, isLoading: isLoadingGroup } = useGetPromptGroup(params.promptId || '');
@@ -101,7 +106,14 @@ const PromptForm = () => {
       setSelectionIndex(0);
     },
   });
-  const updateGroupMutation = useUpdatePromptGroup();
+  const updateGroupMutation = useUpdatePromptGroup({
+    onError: () => {
+      showToast({
+        status: 'error',
+        message: localize('com_ui_prompt_update_error'),
+      });
+    },
+  });
   const makeProductionMutation = useMakePromptProduction();
   const deletePromptMutation = useDeletePrompt({
     onSuccess: (response) => {
@@ -171,6 +183,17 @@ const PromptForm = () => {
       }
 
       updateGroupMutation.mutate({ id: group._id || '', payload: { oneliner } });
+    }, 950),
+    [updateGroupMutation, group],
+  );
+
+  const debouncedUpdateCommand = useCallback(
+    debounce((command: string) => {
+      if (!group) {
+        return console.warn('Group not found');
+      }
+
+      updateGroupMutation.mutate({ id: group._id || '', payload: { command } });
     }, 950),
     [updateGroupMutation, group],
   );
@@ -282,14 +305,18 @@ const PromptForm = () => {
               {isLoadingPrompts ? (
                 <Skeleton className="h-96" />
               ) : (
-                <>
+                <div className="flex flex-col gap-4">
                   <PromptEditor name="prompt" isEditing={isEditing} setIsEditing={setIsEditing} />
                   <PromptVariables promptText={promptText} />
                   <Description
                     initialValue={group?.oneliner ?? ''}
                     onValueChange={debouncedUpdateOneliner}
                   />
-                </>
+                  <Command
+                    initialValue={group?.command ?? ''}
+                    onValueChange={debouncedUpdateCommand}
+                  />
+                </div>
               )}
             </div>
             {/* Right Section */}
