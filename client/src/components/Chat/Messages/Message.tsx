@@ -90,7 +90,8 @@ const MessageRender = React.memo(
       return null;
     }
 
-    const isLatest = isCard && !isSubmittingFamily && msg.messageId === latestMessage?.messageId;
+    const isLatestCard =
+      isCard && !isSubmittingFamily && msg.messageId === latestMessage?.messageId;
     const clickHandler =
       isLast && isCard && !isSubmittingFamily && msg.messageId !== latestMessage?.messageId
         ? () => setLatestMessage(msg)
@@ -102,15 +103,15 @@ const MessageRender = React.memo(
           'final-completion group mx-auto flex flex-1 gap-3 text-base',
           isCard
             ? 'relative w-full gap-1 rounded-lg border border-border-medium bg-surface-primary-alt p-2 md:w-1/2 md:gap-3 md:p-4'
-            : 'md:max-w-3xl lg:max-w-[40rem] xl:max-w-[48rem]',
-          isLatest ? 'bg-surface-secondary' : '',
+            : 'md:max-w-3xl md:px-5 lg:max-w-[40rem] lg:px-1 xl:max-w-[48rem] xl:px-5',
+          isLatestCard ? 'bg-surface-secondary' : '',
           isLast && !isSubmittingFamily && isCard
             ? 'cursor-pointer transition-colors duration-300'
             : '',
         )}
         onClick={clickHandler}
       >
-        {isLatest && (
+        {isLatestCard && (
           <div className="absolute right-0 top-0 m-2 h-3 w-3 rounded-full bg-text-primary"></div>
         )}
         <div className="relative flex flex-shrink-0 flex-col items-end">
