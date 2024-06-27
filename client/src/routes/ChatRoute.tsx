@@ -40,7 +40,7 @@ export default function ChatRoute() {
   useEffect(() => {
     const shouldSetConvo =
       startupConfig && !hasSetConversation.current && !modelsQuery.data?.initial;
-    /* Early exit if startupConfig is not loaded or conversation is already set or only initial models have loaded */
+    /* Early exit if startupConfig is not loaded and conversation is already set and only initial models have loaded */
     if (!shouldSetConvo) {
       return;
     }
