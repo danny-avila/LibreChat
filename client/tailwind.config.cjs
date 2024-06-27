@@ -73,6 +73,7 @@ module.exports = {
         'surface-primary-contrast': 'var(--surface-primary-contrast)',
         'surface-secondary': 'var(--surface-secondary)',
         'surface-tertiary': 'var(--surface-tertiary)',
+        'surface-tertiary-alt': 'var(--surface-tertiary-alt)',
         'border-light': 'var(--border-light)',
         'border-medium': 'var(--border-medium)',
         'border-medium-alt': 'var(--border-medium-alt)',

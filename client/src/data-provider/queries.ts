@@ -488,6 +488,23 @@ export const useGetPrompts = (
   );
 };
 
+export const useGetAllPromptGroups = <TData = t.AllPromptGroupsResponse>(
+  filter?: t.AllPromptGroupsFilterRequest,
+  config?: UseQueryOptions<t.AllPromptGroupsResponse, unknown, TData>,
+): QueryObserverResult<TData> => {
+  return useQuery<t.AllPromptGroupsResponse, unknown, TData>(
+    [QueryKeys.allPromptGroups],
+    () => dataService.getAllPromptGroups(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: false,
+      ...config,
+    },
+  );
+};
+
 export const useGetCategories = <TData = t.TGetCategoriesResponse>(
   config?: UseQueryOptions<t.TGetCategoriesResponse, unknown, TData>,
 ): QueryObserverResult<TData> => {

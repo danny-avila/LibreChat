@@ -32,6 +32,7 @@ html {
   --surface-primary-contrast:var(--gray-100);
   --surface-secondary:var(--gray-50);
   --surface-tertiary:var(--gray-100);
+  --surface-tertiary-alt:var(--white);
   --border-light:var(--gray-100);
   --border-medium-alt:var(--gray-300);
   --border-medium:var(--gray-200);
@@ -48,6 +49,7 @@ html {
   --surface-primary-contrast:var(--gray-850);
   --surface-secondary:var(--gray-800);
   --surface-tertiary:var(--gray-700);
+  --surface-tertiary-alt:var(--gray-700);
   --border-light:var(--gray-700);
   --border-medium-alt:var(--gray-600);
   --border-medium:var(--gray-600);

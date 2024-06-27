@@ -23,6 +23,7 @@ import { TextareaAutosize } from '~/components/ui';
 import { useGetFileConfig } from '~/data-provider';
 import { cn, removeFocusRings } from '~/utils';
 import TextareaHeader from './TextareaHeader';
+import PromptsCommand from './PromptsCommand';
 import AttachFile from './Files/AttachFile';
 import AudioRecorder from './AudioRecorder';
 import { mainTextareaId } from '~/common';
@@ -40,6 +41,7 @@ const ChatForm = ({ index = 0 }) => {
   const SpeechToText = useRecoilValue(store.SpeechToText);
   const TextToSpeech = useRecoilValue(store.TextToSpeech);
   const automaticPlayback = useRecoilValue(store.automaticPlayback);
+  const showPromptsPopover = useRecoilValue(store.showPromptsPopoverFamily(index));
 
   const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
   const [showPlusPopover, setShowPlusPopover] = useRecoilState(store.showPlusPopoverFamily(index));
@@ -48,7 +50,12 @@ const ChatForm = ({ index = 0 }) => {
   );
 
   const { requiresKey } = useRequiresKey();
-  const handleKeyUp = useHandleKeyUp({ textAreaRef, setShowPlusPopover, setShowMentionPopover });
+  const handleKeyUp = useHandleKeyUp({
+    index,
+    textAreaRef,
+    setShowPlusPopover,
+    setShowMentionPopover,
+  });
   const { handlePaste, handleKeyDown, handleCompositionStart, handleCompositionEnd } = useTextarea({
     textAreaRef,
     submitButtonRef,
@@ -83,7 +90,7 @@ const ChatForm = ({ index = 0 }) => {
   });
 
   const assistantMap = useAssistantsMapContext();
-  const { submitMessage } = useSubmitMessage({ clearDraft });
+  const { submitMessage, submitPrompt } = useSubmitMessage({ clearDraft });
 
   const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };
   const endpoint = endpointType ?? _endpoint;
@@ -136,6 +143,7 @@ const ChatForm = ({ index = 0 }) => {
               textAreaRef={textAreaRef}
             />
           )}
+          <PromptsCommand index={index} textAreaRef={textAreaRef} submitPrompt={submitPrompt} />
           <div className="bg-token-main-surface-primary relative flex w-full flex-grow flex-col overflow-hidden rounded-2xl border dark:border-gray-600 dark:text-white [&:has(textarea:focus)]:border-gray-300 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)] dark:[&:has(textarea:focus)]:border-gray-500">
             <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
             <FileRow

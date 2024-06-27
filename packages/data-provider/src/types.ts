@@ -386,6 +386,7 @@ export type TPromptGroupsWithFilterRequest = {
   after?: string | null;
   order?: 'asc' | 'desc';
   name?: string;
+  author?: string;
 };
 
 export type PromptGroupListResponse = {
