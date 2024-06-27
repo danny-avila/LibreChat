@@ -5,9 +5,12 @@ import type { UseMutationResult } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
 import {
   /* Prompts */
+  addGroupToAll,
   addPromptGroup,
+  updateGroupInAll,
   updateGroupFields,
   deletePromptGroup,
+  removeGroupFromAll,
 } from '~/utils';
 import store from '~/store';
 
@@ -83,7 +86,12 @@ export const useUpdatePromptGroup = (
         onError(err, variables, context);
       }
     },
-    onSuccess,
+    onSuccess: (response, variables, context) => {
+      updateGroupInAll(queryClient, { _id: variables.id, ...response });
+      if (onSuccess) {
+        onSuccess(response, variables, context);
+      }
+    },
   });
 };
 
@@ -118,6 +126,8 @@ export const useCreatePrompt = (
             return addPromptGroup(data, group);
           },
         );
+
+        addGroupToAll(queryClient, group);
       }
 
       if (onSuccess) {
@@ -151,6 +161,8 @@ export const useDeletePrompt = (
             return deletePromptGroup(data, promptGroupId);
           },
         );
+
+        removeGroupFromAll(queryClient, promptGroupId);
       } else {
         queryClient.setQueryData<t.TPrompt[]>(
           [QueryKeys.prompts, variables.groupId],
@@ -208,6 +220,8 @@ export const useDeletePromptGroup = (
           return deletePromptGroup(data, variables.id);
         },
       );
+
+      removeGroupFromAll(queryClient, variables.id);
       if (onSuccess) {
         onSuccess(response, variables, context);
       }
@@ -299,6 +313,15 @@ export const useMakePromptProduction = (options?: t.MakePromptProductionOptions)
         onError(err, variables, context);
       }
     },
-    onSuccess,
+    onSuccess: (response, variables, context) => {
+      updateGroupInAll(queryClient, {
+        _id: variables.groupId,
+        productionId: variables.id,
+        productionPrompt: variables.productionPrompt,
+      });
+      if (onSuccess) {
+        onSuccess(response, variables, context);
+      }
+    },
   });
 };
