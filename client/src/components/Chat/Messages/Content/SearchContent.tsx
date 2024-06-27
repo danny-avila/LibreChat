@@ -44,6 +44,7 @@ const SearchContent = ({ message }: { message: TMessage }) => {
         'markdown prose dark:prose-invert light w-full break-words',
         message.isCreatedByUser ? 'whitespace-pre-wrap dark:text-gray-20' : 'dark:text-gray-70',
       )}
+      dir="auto"
     >
       <MarkdownLite content={message.text ?? ''} />
     </div>

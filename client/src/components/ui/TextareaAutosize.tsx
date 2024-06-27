@@ -5,6 +5,6 @@ export const TextareaAutosize = forwardRef<HTMLTextAreaElement, TextareaAutosize
   (props, ref) => {
     const [, setIsRerendered] = useState(false);
     useLayoutEffect(() => setIsRerendered(true), []);
-    return <ReactTextareaAutosize {...props} ref={ref} />;
+    return <ReactTextareaAutosize dir="auto" {...props} ref={ref} />;
   },
 );
