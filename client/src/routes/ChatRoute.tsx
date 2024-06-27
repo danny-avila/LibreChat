@@ -38,10 +38,13 @@ export default function ChatRoute() {
   const assistantListMap = useAssistantListMap();
 
   useEffect(() => {
-    // Early exit if startupConfig is not loaded or conversation is already set or initial conversation is loaded
-    if (!startupConfig || hasSetConversation.current || modelsQuery.data?.initial) {
+    const shouldSetConvo =
+      startupConfig && !hasSetConversation.current && !modelsQuery.data?.initial;
+    /* Early exit if startupConfig is not loaded or conversation is already set or only initial models have loaded */
+    if (!shouldSetConvo) {
       return;
     }
+
     if (conversationId === 'new' && endpointsQuery.data && modelsQuery.data) {
       const spec = getDefaultModelSpec(startupConfig.modelSpecs?.list);
 
