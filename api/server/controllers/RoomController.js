@@ -15,7 +15,15 @@ const ReportModel = require('~/models/Report');
 const getRoomsByQuery = async (req, res) => {
   try {
     const rooms = await getConvosByQuery(req.query.title ?? '', req.query.endpoint ?? '', req.query.sort ?? 'participants', req.query.order ?? 'asc');
-    res.json(rooms.filter(i => i.user));
+    // return res.json(rooms.filter(i => i.user)).map(i => ({ ...i, userLength: i.uesrLength + 1 })); // Old version, Web crash on Reload
+    const list = []
+    for(let i in rooms) {
+  	  const v = rooms[i];
+	      list.push({
+          ...v , userLength: (v.userLength || 0 ) + 1
+	    })
+    }
+    return res.json(list);
   } catch (error) {
     return res.status(500).json(error);
   }
