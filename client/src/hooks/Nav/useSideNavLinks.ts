@@ -32,22 +32,13 @@ export default function useSideNavLinks({
   endpoint?: EModelEndpoint | null;
   interfaceConfig: Partial<TInterfaceConfig>;
 }) {
-  const hasAccess = useHasAccess({
+  const hasAccessToPrompts = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
     permission: Permissions.USE,
   });
 
   const Links = useMemo(() => {
     const links: NavLink[] = [];
-    if (hasAccess) {
-      links.push({
-        title: 'com_ui_prompts',
-        label: '',
-        icon: MessageSquareQuote,
-        id: 'prompts',
-        Component: PromptsAccordion,
-      });
-    }
     if (
       isAssistantsEndpoint(endpoint) &&
       assistants &&
@@ -61,6 +52,16 @@ export default function useSideNavLinks({
         icon: Blocks,
         id: 'assistants',
         Component: PanelSwitch,
+      });
+    }
+
+    if (hasAccessToPrompts) {
+      links.push({
+        title: 'com_ui_prompts',
+        label: '',
+        icon: MessageSquareQuote,
+        id: 'prompts',
+        Component: PromptsAccordion,
       });
     }
 
@@ -81,7 +82,14 @@ export default function useSideNavLinks({
     });
 
     return links;
-  }, [assistants, keyProvided, hidePanel, endpoint, interfaceConfig.parameters, hasAccess]);
+  }, [
+    assistants,
+    keyProvided,
+    hidePanel,
+    endpoint,
+    interfaceConfig.parameters,
+    hasAccessToPrompts,
+  ]);
 
   return Links;
 }
