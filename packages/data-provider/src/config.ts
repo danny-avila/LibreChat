@@ -822,6 +822,8 @@ export enum Constants {
   CURRENT_MODEL = 'current_model',
   /** Common divider for text values */
   COMMON_DIVIDER = '__',
+  /** Max length for commands */
+  COMMANDS_MAX_LENGTH = 56,
 }
 
 export enum LocalStorageKeys {

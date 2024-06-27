@@ -1,5 +1,9 @@
+import { useSetRecoilState } from 'recoil';
 import { useCallback, useMemo } from 'react';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
+import useHasAccess from '~/hooks/Roles/useHasAccess';
+import store from '~/store';
 
 /** Event Keys that shouldn't trigger a command */
 const invalidKeys = {
@@ -36,14 +40,21 @@ const shouldTriggerCommand = (
  * Custom hook for handling key up events with command triggers.
  */
 const useHandleKeyUp = ({
+  index,
   textAreaRef,
   setShowPlusPopover,
   setShowMentionPopover,
 }: {
+  index: number;
   textAreaRef: React.RefObject<HTMLTextAreaElement>;
   setShowPlusPopover: SetterOrUpdater<boolean>;
   setShowMentionPopover: SetterOrUpdater<boolean>;
 }) => {
+  const hasAccess = useHasAccess({
+    permissionType: PermissionTypes.PROMPTS,
+    permission: Permissions.USE,
+  });
+  const setShowPromptsPopover = useSetRecoilState(store.showPromptsPopoverFamily(index));
   const handleAtCommand = useCallback(() => {
     if (shouldTriggerCommand(textAreaRef, '@')) {
       setShowMentionPopover(true);
@@ -56,12 +67,22 @@ const useHandleKeyUp = ({
     }
   }, [textAreaRef, setShowPlusPopover]);
 
+  const handlePromptsCommand = useCallback(() => {
+    if (!hasAccess) {
+      return;
+    }
+    if (shouldTriggerCommand(textAreaRef, '/')) {
+      setShowPromptsPopover(true);
+    }
+  }, [textAreaRef, hasAccess, setShowPromptsPopover]);
+
   const commandHandlers = useMemo(
     () => ({
       '@': handleAtCommand,
       '+': handlePlusCommand,
+      '/': handlePromptsCommand,
     }),
-    [handleAtCommand, handlePlusCommand],
+    [handleAtCommand, handlePlusCommand, handlePromptsCommand],
   );
 
   /**

@@ -375,6 +375,9 @@ export type MentionOption = OptionWithIcon & {
   value: string;
   description?: string;
 };
+export type PromptOption = MentionOption & {
+  id: string;
+};
 
 export type TOptionSettings = {
   showExamples?: boolean;

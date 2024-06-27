@@ -7,8 +7,7 @@ export default {
     'It appears that the content submitted has been flagged by our moderation system for not aligning with our community guidelines. We\'re unable to proceed with this specific topic. If you have any other questions or topics you\'d like to explore, please edit your message, or create a new conversation.',
   com_error_no_user_key: 'No key found. Please provide a key and try again.',
   com_error_no_base_url: 'No base URL found. Please provide one and try again.',
-  com_error_invalid_user_key:
-    'Invalid key provided. Please provide a valid key and try again.',
+  com_error_invalid_user_key: 'Invalid key provided. Please provide a valid key and try again.',
   com_error_expired_user_key:
     'Provided key for {0} expired at {1}. Please provide a new key and try again.',
   com_files_no_results: 'No results.',
@@ -247,8 +246,11 @@ export default {
   com_ui_prompts_allow_create: 'Allow creating Prompts',
   com_ui_prompts_allow_share_global: 'Allow sharing Prompts to all users',
   com_ui_prompt_shared_to_all: 'This prompt is shared to all users',
+  com_ui_prompt_update_error: 'There was an error updating the prompt',
   com_ui_prompt_already_shared_to_all: 'This prompt is already shared to all users',
-  com_ui_description_placeholder: 'Optional: Enter a description to display in the prompt',
+  com_ui_description_placeholder: 'Optional: Enter a description to display for the prompt',
+  com_ui_command_placeholder: 'Optional: Enter a command for the prompt or name will be used.',
+  com_ui_command_usage_placeholder: 'Select a Prompt by command or name',
   com_ui_no_prompt_description: 'No description found.',
   com_ui_share_link_to_chat: 'Share link to chat',
   com_ui_share_error: 'There was an error sharing the chat link',
@@ -641,7 +643,8 @@ export default {
     'When enabled, the text and attachments you enter in the chat form will be automatically saved locally as drafts. These drafts will be available even if you reload the page or switch to a different conversation. Drafts are stored locally on your device and are deleted once the message is sent.',
   com_nav_info_fork_change_default:
     '`Visible messages only` includes just the direct path to the selected message. `Include related branches` adds branches along the path. `Include all to/from here` includes all connected messages and branches.',
-  com_nav_info_fork_split_target_setting: 'When enabled, forking will commence from the target message to the latest message in the conversation, according to the behavior selected.',
+  com_nav_info_fork_split_target_setting:
+    'When enabled, forking will commence from the target message to the latest message in the conversation, according to the behavior selected.',
   com_nav_info_user_name_display:
     'When enabled, the username of the sender will be shown above each message you send. When disabled, you will only see "You" above your messages.',
   com_nav_info_latex_parsing:
