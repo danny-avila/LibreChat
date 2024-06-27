@@ -29,6 +29,7 @@ import SkeletonForm from './SkeletonForm';
 import Description from './Description';
 import SharePrompt from './SharePrompt';
 import PromptName from './PromptName';
+import Command from './Command';
 import store from '~/store';
 
 const { PromptsEditorMode, promptsEditorMode } = store;
@@ -175,6 +176,17 @@ const PromptForm = () => {
     [updateGroupMutation, group],
   );
 
+  const debouncedUpdateCommand = useCallback(
+    debounce((command: string) => {
+      if (!group) {
+        return console.warn('Group not found');
+      }
+
+      updateGroupMutation.mutate({ id: group._id || '', payload: { command } });
+    }, 950),
+    [updateGroupMutation, group],
+  );
+
   const { groupsQuery } = useOutletContext<ReturnType<typeof usePromptGroupsNav>>();
 
   if (initialLoad) {
@@ -282,14 +294,18 @@ const PromptForm = () => {
               {isLoadingPrompts ? (
                 <Skeleton className="h-96" />
               ) : (
-                <>
+                <div className="flex flex-col gap-4">
                   <PromptEditor name="prompt" isEditing={isEditing} setIsEditing={setIsEditing} />
                   <PromptVariables promptText={promptText} />
                   <Description
                     initialValue={group?.oneliner ?? ''}
                     onValueChange={debouncedUpdateOneliner}
                   />
-                </>
+                  <Command
+                    initialValue={group?.command ?? ''}
+                    onValueChange={debouncedUpdateCommand}
+                  />
+                </div>
               )}
             </div>
             {/* Right Section */}

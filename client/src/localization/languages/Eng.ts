@@ -248,6 +248,7 @@ export default {
   com_ui_prompt_shared_to_all: 'This prompt is shared to all users',
   com_ui_prompt_already_shared_to_all: 'This prompt is already shared to all users',
   com_ui_description_placeholder: 'Optional: Enter a description to display for the prompt',
+  com_ui_command_placeholder: 'Optional: Enter a command for the prompt or name will be used.',
   com_ui_no_prompt_description: 'No description found.',
   com_ui_share_link_to_chat: 'Share link to chat',
   com_ui_share_error: 'There was an error sharing the chat link',

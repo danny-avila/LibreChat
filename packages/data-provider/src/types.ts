@@ -351,6 +351,7 @@ export type TPrompt = {
 export type TPromptGroup = {
   name: string;
   numberOfGenerations?: number;
+  command?: string;
   oneliner?: string;
   category?: string;
   projectIds?: string[];
