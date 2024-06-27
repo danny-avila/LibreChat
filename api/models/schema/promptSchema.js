@@ -64,7 +64,7 @@ const promptGroupSchema = new Schema(
       index: true,
       validate: {
         validator: function (v) {
-          return v === undefined || v === null || v === '' || /^[a-z0-9']+$/.test(v);
+          return v === undefined || v === null || v === '' || /^[a-z0-9-]+$/.test(v);
         },
         message: (props) =>
           `${props.value} is not a valid command. Only lowercase alphanumeric characters and highfins (') are allowed.`,

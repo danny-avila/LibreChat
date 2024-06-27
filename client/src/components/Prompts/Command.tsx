@@ -30,7 +30,7 @@ const Command = ({
   const handleInputChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
     let newValue = e.target.value.toLowerCase();
 
-    newValue = newValue.replace(/\s/g, '\'').replace(/[^a-z0-9']/g, '');
+    newValue = newValue.replace(/\s/g, '-').replace(/[^a-z0-9-]/g, '');
 
     if (newValue.length <= Constants.COMMANDS_MAX_LENGTH) {
       setCommand(newValue);
