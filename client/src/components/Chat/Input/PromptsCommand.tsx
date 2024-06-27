@@ -57,7 +57,9 @@ function PromptsCommand({
       const mappedArray = data.map((group) => ({
         id: group._id,
         value: group.command ?? group.name,
-        label: `${group.command ? `${group.command} - ` : ''}${group.name}`,
+        label: `${group.command ? `/${group.command} - ` : ''}${group.name}: ${
+          group.oneliner?.length ? group.oneliner : group.productionPrompt?.prompt ?? ''
+        }`,
         icon: <CategoryIcon category={group.category ?? ''} />,
       }));
 
