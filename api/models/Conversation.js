@@ -15,6 +15,7 @@ const getConvosByQuery = async (title, endpoint, sort = 'participants', order = 
     const result =  await Conversation.aggregate([
       {
         $project: {
+          conversationId: 1,
           title: 1,
           isRoom: 1,
           user: 1,
