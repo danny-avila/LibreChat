@@ -6,6 +6,7 @@ import { useChatContext } from '~/Providers';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
 import TipModal from './TipModal';
+import Marquee from 'react-fast-marquee';
 
 export default function User({
   user,
@@ -44,7 +45,10 @@ export default function User({
         you?.id !== user?._id && <TipModal user={user} />}
 
       <TipModal user={user} isKarmaOnly={true} OpenButton={<div className="flex gap-3">
-        {!isCollapsed && user.name}
+        {!isCollapsed && (user.name).length > 15 ? <Marquee speed={30} className="w-full">{user.name}&nbsp; &nbsp; &nbsp; </Marquee>
+         : 
+           user.name
+         }
       </div>} />
       {!isCollapsed && you?.id === conversation?.user.id && you.id !== user.id && (
         <UserKickButton user={user} />
