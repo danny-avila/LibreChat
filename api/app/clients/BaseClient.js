@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const fetch = require('node-fetch');
 const { supportsBalanceCheck, Constants } = require('librechat-data-provider');
-const { getConvo, getMessages, saveMessage, updateMessage, saveConvo } = require('~/models');
+const { getMessages, saveMessage, updateMessage, saveConvo } = require('~/models');
 const { addSpaceIfNeeded, isEnabled } = require('~/server/utils');
 const checkBalance = require('~/models/checkBalance');
 const { getFiles } = require('~/models/File');
@@ -23,6 +23,10 @@ class BaseClient {
     this.skipSaveConvo = false;
     /** @type {boolean} */
     this.skipSaveUserMessage = false;
+    /** @type {ClientDatabaseSavePromise} */
+    this.userMessagePromise;
+    /** @type {ClientDatabaseSavePromise} */
+    this.responsePromise;
   }
 
   setOptions() {
@@ -481,7 +485,12 @@ class BaseClient {
     }
 
     if (!isEdited && !this.skipSaveUserMessage) {
-      await this.saveMessageToDatabase(userMessage, saveOptions, user);
+      this.userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user);
+      if (typeof opts?.getReqData === 'function') {
+        opts.getReqData({
+          userMessagePromise: this.userMessagePromise,
+        });
+      }
     }
 
     if (
@@ -530,13 +539,9 @@ class BaseClient {
       const completionTokens = this.getTokenCount(completion);
       await this.recordTokenUsage({ promptTokens, completionTokens });
     }
-    await this.saveMessageToDatabase(responseMessage, saveOptions, user);
+    this.responsePromise = this.saveMessageToDatabase(responseMessage, saveOptions, user);
     delete responseMessage.tokenCount;
     return responseMessage;
-  }
-
-  async getConversation(conversationId, user = null) {
-    return await getConvo(user, conversationId);
   }
 
   async loadHistory(conversationId, parentMessageId = null) {
@@ -593,7 +598,7 @@ class BaseClient {
    * @param {string | null} user
    */
   async saveMessageToDatabase(message, endpointOptions, user = null) {
-    await saveMessage({
+    const savedMessage = await saveMessage({
       ...message,
       endpoint: this.options.endpoint,
       unfinished: false,
@@ -601,14 +606,16 @@ class BaseClient {
     });
 
     if (this.skipSaveConvo) {
-      return;
+      return { message: savedMessage };
     }
-    await saveConvo(user, {
+    const conversation = await saveConvo(user, {
       conversationId: message.conversationId,
       endpoint: this.options.endpoint,
       endpointType: this.options.endpointType,
       ...endpointOptions,
     });
+
+    return { message: savedMessage, conversation };
   }
 
   async updateMessageInDatabase(message) {

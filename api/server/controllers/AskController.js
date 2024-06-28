@@ -2,7 +2,7 @@ const throttle = require('lodash/throttle');
 const { getResponseSender, Constants, EModelEndpoint } = require('librechat-data-provider');
 const { createAbortController, handleAbortError } = require('~/server/middleware');
 const { sendMessage, createOnProgress } = require('~/server/utils');
-const { saveMessage, getConvo } = require('~/models');
+const { saveMessage } = require('~/models');
 const { logger } = require('~/config');
 
 const AskController = async (req, res, next, initializeClient, addTitle) => {
@@ -18,6 +18,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
   logger.debug('[AskController]', { text, conversationId, ...endpointOption });
 
   let userMessage;
+  let userMessagePromise;
   let promptTokens;
   let userMessageId;
   let responseMessageId;
@@ -34,6 +35,8 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       if (key === 'userMessage') {
         userMessage = data[key];
         userMessageId = data[key].messageId;
+      } else if (key === 'userMessagePromise') {
+        userMessagePromise = data[key];
       } else if (key === 'responseMessageId') {
         responseMessageId = data[key];
       } else if (key === 'promptTokens') {
@@ -74,6 +77,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
     const getAbortData = () => ({
       sender,
       conversationId,
+      userMessagePromise,
       messageId: responseMessageId,
       parentMessageId: overrideParentMessageId ?? userMessageId,
       text: getPartialText(),
@@ -121,7 +125,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
 
     response.endpoint = endpointOption.endpoint;
 
-    const conversation = await getConvo(user, conversationId);
+    const { conversation = {} } = await client.responsePromise;
     conversation.title =
       conversation && !conversation.title ? null : conversation?.title || 'New Chat';
 
