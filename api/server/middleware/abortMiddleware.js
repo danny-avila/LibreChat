@@ -122,7 +122,7 @@ const createAbortController = (req, res, getAbortData, getReqData) => {
     }
 
     if (!conversation) {
-      conversation = await getConvo(conversationId);
+      conversation = await getConvo(req.user.id, conversationId);
     }
 
     return {
