@@ -10,6 +10,7 @@ import { Dropdown } from '~/components/ui';
 import DangerButton from '../DangerButton';
 import store from '~/store';
 import ArchivedChats from './ArchivedChats';
+import FontSizeSelector from './FontSizeSelector';
 
 export const ThemeSelector = ({
   theme,
@@ -159,6 +160,9 @@ function General() {
       <div className="flex flex-col gap-3 text-sm text-black dark:text-gray-50">
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <ThemeSelector theme={theme} onChange={changeTheme} />
+        </div>
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
+          <FontSizeSelector />
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <LangSelector langcode={selectedLang} onChange={changeLang} />
