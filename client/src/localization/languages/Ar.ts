@@ -278,6 +278,7 @@ export default {
   com_nav_theme_system: 'النظام',
   com_nav_theme_dark: 'داكن',
   com_nav_theme_light: 'فاتح',
+  com_nav_font_size: 'حجم الخط',
   com_nav_clear_all_chats: 'مسح كل الدردشات',
   com_nav_confirm_clear: 'تأكيد المسح',
   com_nav_close_sidebar: 'إغلاق القائمة الجانبية',

@@ -303,6 +303,7 @@ export default {
   com_nav_theme_system: 'Sistem',
   com_nav_theme_dark: 'Koyu',
   com_nav_theme_light: 'Açık',
+  com_nav_font_size: 'Yazı Boyutu',
   com_nav_clear_all_chats: 'Tüm sohbetleri temizle',
   com_nav_confirm_clear: 'Temizlemeyi Onayla',
   com_nav_close_sidebar: 'Kenar çubuğunu kapat',

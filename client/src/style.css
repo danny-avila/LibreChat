@@ -21,7 +21,7 @@
   --gizmo-gray-500: #999;
   --gizmo-gray-600: #666;
   --gizmo-gray-950: #0f0f0f;
-  --base-font-size: 22px;
+  --base-font-size: 16px;
 }
 
 html {
@@ -2549,5 +2549,3 @@ button.scroll-convo {
 .move-up {
   animation: moveUp 4s ease-in-out infinite;
 }
-
-

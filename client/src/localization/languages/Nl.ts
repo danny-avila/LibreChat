@@ -288,6 +288,7 @@ export default {
   com_nav_theme_system: 'Systeem',
   com_nav_theme_dark: 'Donker',
   com_nav_theme_light: 'Licht',
+  com_nav_font_size: 'Lettertypegrootte',
   com_nav_clear_all_chats: 'Alle chats wissen',
   com_nav_confirm_clear: 'Wissen bevestigen',
   com_nav_close_sidebar: 'Zijbalk sluiten',

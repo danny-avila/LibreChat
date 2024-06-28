@@ -2383,6 +2383,10 @@ export const comparisons = {
     english: 'Light',
     translated: 'Chiaro',
   },
+  com_nav_font_size: {
+    english: 'Font Size',
+    translate: 'Dimensione del font',
+  },
   com_nav_enter_to_send: {
     english: 'Press Enter to send messages',
     translated: 'Premi Invio per inviare messaggi',
