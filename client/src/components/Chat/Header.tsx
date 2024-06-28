@@ -15,7 +15,7 @@ export default function Header() {
       <div className="hide-scrollbar flex items-center gap-2 overflow-x-auto">
         {!navVisible && <HeaderNewChat />}
         {convoType === 'r' && conversation?.conversationId !== 'new' ? (
-          <div className="p-3 text-lg">{conversation?.endpoint}</div>
+          <div className="p-3 text-lg">{conversation?.endpoint === 'sdImage' ? 'Images' : conversation?.endpoint}</div>
         ) : (
           <EndpointsMenu />
         )}
