@@ -427,7 +427,7 @@ class StreamRunManager {
 
       const toolCallDelta = toolCall[toolCall.type];
       const progressCallback = this.progressCallbacks.get(stepKey);
-      await progressCallback(toolCallDelta);
+      progressCallback(toolCallDelta);
     }
   }
 

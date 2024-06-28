@@ -30,7 +30,7 @@ module.exports = {
       return await Conversation.findOneAndUpdate({ conversationId: conversationId, user }, update, {
         new: true,
         upsert: true,
-      });
+      }).lean();
     } catch (error) {
       logger.error('[saveConvo] Error saving conversation', error);
       return { message: 'Error saving conversation' };
