@@ -49,7 +49,7 @@ const createOnProgress = ({ generation = '', onProgress: _onProgress }) => {
   };
 
   const getPartialText = () => {
-    return tokens;
+    return basePayload.text;
   };
 
   return { onProgress, getPartialText, sendIntermediateMessage };
