@@ -13,7 +13,7 @@ const {
 } = require('~/server/middleware');
 const { sendMessage, createOnProgress, formatSteps, formatAction } = require('~/server/utils');
 const { initializeClient } = require('~/server/services/Endpoints/gptPlugins');
-const { saveMessage, getConvoTitle, getConvo } = require('~/models');
+const { saveMessage } = require('~/models');
 const { validateTools } = require('~/app');
 const { logger } = require('~/config');
 
@@ -49,6 +49,7 @@ router.post(
     });
 
     let userMessage;
+    let userMessagePromise;
     let promptTokens;
     const sender = getResponseSender({
       ...endpointOption,
@@ -68,6 +69,8 @@ router.post(
       for (let key in data) {
         if (key === 'userMessage') {
           userMessage = data[key];
+        } else if (key === 'userMessagePromise') {
+          userMessagePromise = data[key];
         } else if (key === 'responseMessageId') {
           responseMessageId = data[key];
         } else if (key === 'promptTokens') {
@@ -119,6 +122,7 @@ router.post(
     const getAbortData = () => ({
       sender,
       conversationId,
+      userMessagePromise,
       messageId: responseMessageId,
       parentMessageId: overrideParentMessageId ?? userMessageId,
       text: getPartialText(),
@@ -179,10 +183,14 @@ router.post(
       response.plugin = { ...plugin, loading: false };
       await saveMessage({ ...response, user });
 
+      const { conversation = {} } = await client.responsePromise;
+      conversation.title =
+        conversation && !conversation.title ? null : conversation?.title || 'New Chat';
+
       sendMessage(res, {
-        title: await getConvoTitle(user, conversationId),
+        title: conversation.title,
         final: true,
-        conversation: await getConvo(user, conversationId),
+        conversation,
         requestMessage: userMessage,
         responseMessage: response,
       });

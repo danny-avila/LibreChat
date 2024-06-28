@@ -122,7 +122,7 @@ const MessageRender = React.memo(
             </div>
           </div>
           {!msg?.children?.length && (isSubmittingFamily || isSubmitting) ? (
-            <PlaceholderRow isLast={isLast} isCard={isCard} />
+            <PlaceholderRow isCard={isCard} />
           ) : (
             <SubRow classes="text-xs">
               <SiblingSwitch

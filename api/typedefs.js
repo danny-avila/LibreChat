@@ -1442,3 +1442,10 @@
  * @typedef {import('librechat-data-provider').TForkConvoRequest} TForkConvoRequest
  * @memberof typedefs
  */
+
+/** Clients */
+
+/**
+ * @typedef {Promise<{ message: TMessage, conversation: TConversation }> | undefined} ClientDatabaseSavePromise
+ * @memberof typedefs
+ */
