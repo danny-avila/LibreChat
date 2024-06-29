@@ -58,10 +58,12 @@ module.exports = {
         update.files = files;
       }
 
-      return await Message.findOneAndUpdate({ messageId }, update, {
+      const message = await Message.findOneAndUpdate({ messageId }, update, {
         upsert: true,
         new: true,
-      }).lean();
+      });
+
+      return message.toObject();
     } catch (err) {
       logger.error('Error saving message:', err);
       throw new Error('Failed to save message.');
