@@ -1,3 +1,4 @@
+const { TTSProviders } = require('librechat-data-provider');
 const { logger } = require('~/config');
 const getCustomConfig = require('~/server/services/Config/getCustomConfig');
 const { getProvider } = require('./textToSpeech');
@@ -25,16 +26,16 @@ async function getVoices(req, res) {
     let voices;
 
     switch (provider) {
-      case 'openai':
+      case TTSProviders.OPENAI:
         voices = ttsSchema.openai?.voices;
         break;
-      case 'azureOpenAI':
+      case TTSProviders.AZURE_OPENAI:
         voices = ttsSchema.azureOpenAI?.voices;
         break;
-      case 'elevenlabs':
+      case TTSProviders.ELEVENLABS:
         voices = ttsSchema.elevenlabs?.voices;
         break;
-      case 'localai':
+      case TTSProviders.LOCALAI:
         voices = ttsSchema.localai?.voices;
         break;
       default:

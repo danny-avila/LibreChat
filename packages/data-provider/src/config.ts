@@ -824,6 +824,36 @@ export enum SettingsTabValues {
   ACCOUNT = 'account',
 }
 
+export enum STTProviders {
+  /**
+   * Provider for OpenAI STT
+   */
+  OPENAI = 'openai',
+  /**
+   * Provider for Microsoft Azure STT
+   */
+  AZURE = 'azure',
+}
+
+export enum TTSProviders {
+  /**
+   * Provider for OpenAI TTS
+   */
+  OPENAI = 'openai',
+  /**
+   * Provider for Microsoft Azure OpenAI TTS
+   */
+  AZURE_OPENAI = 'azureOpenAI',
+  /**
+   * Provider for ElevenLabs TTS
+   */
+  ELEVENLABS = 'elevenlabs',
+  /**
+   * Provider for LocalAI TTS
+   */
+  LOCALAI = 'localai',
+}
+
 /** Enum for app-wide constants */
 export enum Constants {
   /** Key for the app's version. */

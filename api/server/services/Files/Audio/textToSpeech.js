@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { extractEnvVariable } = require('librechat-data-provider');
+const { extractEnvVariable, TTSProviders } = require('librechat-data-provider');
 const { logger } = require('~/config');
 const getCustomConfig = require('~/server/services/Config/getCustomConfig');
 const { genAzureEndpoint } = require('~/utils');
@@ -279,16 +279,16 @@ async function getVoice(providerSchema, requestVoice) {
 async function ttsRequest(provider, ttsSchema, { input, voice, stream = true } = { stream: true }) {
   let [url, data, headers] = [];
   switch (provider) {
-    case 'openai':
+    case TTSProviders.OPENAI:
       [url, data, headers] = openAIProvider(ttsSchema, input, voice);
       break;
-    case 'azureOpenAI':
+    case TTSProviders.AZURE_OPENAI:
       [url, data, headers] = azureOpenAIProvider(ttsSchema, input, voice);
       break;
-    case 'elevenlabs':
+    case TTSProviders.ELEVENLABS:
       [url, data, headers] = elevenLabsProvider(ttsSchema, input, voice, stream);
       break;
-    case 'localai':
+    case TTSProviders.LOCALAI:
       [url, data, headers] = localAIProvider(ttsSchema, input, voice);
       break;
     default:

@@ -1,6 +1,6 @@
 const { Readable } = require('stream');
 const axios = require('axios');
-const { extractEnvVariable } = require('librechat-data-provider');
+const { extractEnvVariable, STTProviders } = require('librechat-data-provider');
 const getCustomConfig = require('~/server/services/Config/getCustomConfig');
 const { genAzureEndpoint } = require('~/utils');
 const { logger } = require('~/config');
@@ -195,10 +195,10 @@ async function speechToText(req, res) {
   let [url, data, headers] = [];
 
   switch (provider) {
-    case 'openai':
+    case STTProviders.OPENAI:
       [url, data, headers] = openAIProvider(sttSchema, audioReadStream);
       break;
-    case 'azureOpenAI':
+    case STTProviders.AZURE_OPENAI:
       [url, data, headers] = azureOpenAIProvider(sttSchema, audioBuffer, req.file);
       break;
     default:
