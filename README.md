@@ -36,6 +36,9 @@
 <a href="https://template.cloud.sealos.io/deploy?templateName=librechat">
   <img src="https://raw.githubusercontent.com/labring-actions/templates/main/Deploy-on-Sealos.svg" alt="Deploy on Sealos" height="30">
 </a>
+<a href="https://repocloud.io/details/?app_id=264">
+  <img src="https://d16t0pc4846x52.cloudfront.net/deployrepocloud.svg" alt="Deploy on RepoCloud" height="30">
+</a>
 </p>
 
 # 📃 Features
