@@ -2,9 +2,11 @@ version: "3.8"
 
 services:
   app:
-    build:
+    build: 
       context: ..
       dockerfile: .devcontainer/Dockerfile
+      args:
+        - INSTALL_DOCKER=${INSTALL_DOCKER:-false}
     # restart: always
     links:
       - mongodb
@@ -37,7 +39,7 @@ services:
     user: vscode
 
     # Overrides default command so things don't shut down after the process ends.
-    command: /bin/sh -c "while sleep 1000; do :; done"  
+    command: /bin/sh -c "while sleep 1000; do :; done"
 
   mongodb:
     container_name: chat-mongodb

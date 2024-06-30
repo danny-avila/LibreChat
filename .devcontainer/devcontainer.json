@@ -5,17 +5,19 @@
   "workspaceFolder": "/workspaces",
   "customizations": {
     "vscode": {
-      "extensions": ["ms-azuretools.vscode-docker"],
-      "settings": {
-        "terminal.integrated.defaultProfile.linux": "bash"
-      }
+      "extensions": ["ms-azuretools.vscode-docker"]
     }
   },
-  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y docker.io docker-compose",
   "features": {
-    "ghcr.io/devcontainers/features/git:1": {},
-    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest",
+      "moby": true,
+      "dockerDashComposeVersion": "v2"
+    }
   },
   "remoteUser": "vscode",
-  "forwardPorts": [3080, 27017, 7700]
+  "postCreateCommand": "sudo chown -R vscode:vscode /workspaces && if [ \"$CODESPACES\" = \"true\" ]; then sudo apt-get update && sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin; fi",
+  "remoteEnv": {
+    "INSTALL_DOCKER": "${localEnv:INSTALL_DOCKER:false}"
+  }
 }
