@@ -27,7 +27,6 @@ import { useCustomConfigSpeechQuery } from '~/data-provider';
 
 function Speech() {
   const [confirmClear, setConfirmClear] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { data } = useCustomConfigSpeechQuery();
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
 
@@ -37,13 +36,13 @@ function Speech() {
   const [speechToText, setSpeechToText] = useRecoilState(store.speechToText);
   const [textToSpeech, setTextToSpeech] = useRecoilState(store.textToSpeech);
   const [cacheTTS, setCacheTTS] = useRecoilState(store.cacheTTS);
-  const [engineSTT, setEngineSTT] = useRecoilState(store.engineSTT);
-  const [languageSTT, setLanguageSTT] = useRecoilState(store.languageSTT);
+  const [engineSTT, setEngineSTT] = useRecoilState<string>(store.engineSTT);
+  const [languageSTT, setLanguageSTT] = useRecoilState<string>(store.languageSTT);
   const [decibelValue, setDecibelValue] = useRecoilState(store.decibelValue);
   const [autoSendText, setAutoSendText] = useRecoilState(store.autoSendText);
-  const [engineTTS, setEngineTTS] = useRecoilState(store.engineTTS);
-  const [voice, setVoice] = useRecoilState(store.voice);
-  const [languageTTS, setLanguageTTS] = useRecoilState(store.languageTTS);
+  const [engineTTS, setEngineTTS] = useRecoilState<string>(store.engineTTS);
+  const [voice, setVoice] = useRecoilState<string>(store.voice);
+  const [languageTTS, setLanguageTTS] = useRecoilState<string>(store.languageTTS);
   const [automaticPlayback, setAutomaticPlayback] = useRecoilState(store.automaticPlayback);
   const [playbackRate, setPlaybackRate] = useRecoilState(store.playbackRate);
 
@@ -67,8 +66,10 @@ function Speech() {
         playbackRate: { value: playbackRate, setFunc: setPlaybackRate },
       };
 
-      const setting = settings[key];
-      setting.setFunc(newValue);
+      if (settings[key]) {
+        const setting = settings[key];
+        setting.setFunc(newValue);
+      }
     },
     [
       conversationMode,
@@ -105,20 +106,12 @@ function Speech() {
   );
 
   useEffect(() => {
-    console.log('useEffect');
-
-    if (!data) {
-      console.log('no data');
-      return;
+    if (data) {
+      Object.entries(data).forEach(([key, value]) => {
+        updateSetting(key, value);
+      });
     }
-
-    for (const key in data) {
-      console.log('key', key);
-      if (Object.prototype.hasOwnProperty.call(data, key)) {
-        updateSetting(key, data[key]);
-      }
-    }
-  }, [data, updateSetting]);
+  }, []); // Empty dependency array ensures this runs only once on mount
 
   const contentRef = useRef(null);
   useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);
