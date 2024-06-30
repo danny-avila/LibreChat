@@ -235,6 +235,7 @@ export type TRegisterUser = {
   username: string;
   password: string;
   confirm_password?: string;
+  token?: string;
 };
 
 export type TLoginUser = {
