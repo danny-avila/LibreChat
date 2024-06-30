@@ -101,7 +101,6 @@ export default {
   com_ui_submit: '提交',
   com_ui_upload_success: '上传文件成功',
   com_ui_upload_error: '上传文件错误',
-  com_ui_upload_invalid: '无效的上传文件，请上传不超过2M大小的图片',
   com_ui_cancel: '取消',
   com_ui_save: '保存',
   com_ui_save_submit: '保存并提交',
@@ -132,19 +131,21 @@ export default {
   com_ui_assistants_output: '助手输出',
   com_ui_delete: '删除',
   com_ui_create: '创建',
-  com_ui_share: 'Share',
-  com_ui_share_link_to_chat: 'Share link to chat',
-  com_ui_share_error: 'There was an error sharing the chat link',
-  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
-  com_ui_share_created_message:
-    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
-  com_ui_share_update_message:
-    'Your name, custom instructions, and any messages you add after sharing stay private.',
-  com_ui_share_updated_message:
-    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
-  com_ui_shared_link_not_found: 'Shared link not found',
+  com_ui_share: '分享',
+  com_ui_copy_link: '复制链接',
+  com_ui_update_link: '更新链接',
+  com_ui_create_link: '创建链接',
+  com_ui_share_link_to_chat: '分享链接到聊天',
+  com_ui_share_error: '分享聊天链接时发生错误',
+  com_ui_share_retrieve_error: '删除共享链接时出错。',
+  com_ui_share_delete_error: '删除共享链接时出错。',
+  com_ui_share_create_message: '您的名字及您在分享后添加的任何消息将保持私密。',
+  com_ui_share_created_message: '已创建到您聊天的共享链接。可以通过设置随时管理以前共享的聊天。',
+  com_ui_share_update_message: '您的名字、定制指令及您在分享后添加的任何消息将保持私密。',
+  com_ui_share_updated_message: '已更新到您聊天的共享链接。可以通过设置随时管理以前共享的聊天。',
+  com_ui_shared_link_not_found: '未找到共享链接',
   com_ui_delete_conversation: '删除对话？',
-  com_ui_delete_conversation_confirm: '这将删除',
+  com_ui_delete_confirm: '这将删除',
   com_ui_delete_assistant_confirm: '确定要删除此助手吗？该操作无法撤销。',
   com_ui_rename: '重命名',
   com_ui_archive: '归档',
@@ -409,6 +410,7 @@ export default {
   com_nav_theme_dark: '暗色主题',
   com_nav_theme_light: '亮色主题',
   com_nav_user_name_display: '在消息中显示用户名',
+  com_nav_save_drafts: '保存草稿本地',
   com_nav_show_code: '使用代码解释器时始终显示代码',
   com_nav_clear_all_chats: '清空所有对话',
   com_nav_confirm_clear: '确认清空',
@@ -447,9 +449,6 @@ export default {
   com_ui_date_december: '十二月',
   com_ui_copied: '已复制！',
   com_ui_copy_code: '复制代码',
-  com_ui_copy_link: '复制链接',
-  com_ui_update_link: '更新链接',
-  com_ui_create_link: '创建链接',
   com_nav_source_chat: '查看源代码对话',
   com_ui_date_today: '今天',
   com_ui_date_yesterday: '昨天',
@@ -1058,46 +1057,63 @@ export const comparisons = {
   },
   com_ui_share: {
     english: 'Share',
-    translated: 'Share',
+    translated: '分享',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: '复制链接',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: '更新链接',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: '创建链接',
   },
   com_ui_share_link_to_chat: {
     english: 'Share link to chat',
-    translated: 'Share link to chat',
+    translated: '分享链接到聊天',
+  },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: '删除共享链接时出错。',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: '删除共享链接时出错。',
   },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
-    translated: 'There was an error sharing the chat link',
+    translated: '分享聊天链接时发生错误',
   },
   com_ui_share_create_message: {
     english: 'Your name and any messages you add after sharing stay private.',
-    translated: 'Your name and any messages you add after sharing stay private.',
+    translated: '您的名字及您在分享后添加的任何消息将保持私密。',
   },
   com_ui_share_created_message: {
     english:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
-    translated:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated: '已创建到您聊天的共享链接。可以通过设置随时管理以前共享的聊天。',
   },
   com_ui_share_update_message: {
     english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
-    translated:
-      'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated: '您的名字、定制指令及您在分享后添加的任何消息将保持私密。',
   },
   com_ui_share_updated_message: {
     english:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
-    translated:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated: '已更新到您聊天的共享链接。可以通过设置随时管理以前共享的聊天。',
   },
   com_ui_shared_link_not_found: {
     english: 'Shared link not found',
-    translated: 'Shared link not found',
+    translated: '未找到共享链接',
   },
   com_ui_delete_conversation: {
     english: 'Delete chat?',
     translated: '删除对话？',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: '这将删除',
   },
@@ -2110,6 +2126,10 @@ export const comparisons = {
     english: 'Display username in messages',
     translated: '在消息中显示用户名',
   },
+  com_nav_save_drafts: {
+    english: 'Save drafts locally',
+    translated: '保存草稿本地',
+  },
   com_nav_show_code: {
     english: 'Always show code when using code interpreter',
     translated: '使用代码解释器时始终显示代码',
@@ -2255,18 +2275,6 @@ export const comparisons = {
   com_ui_copy_code: {
     english: 'Copy code',
     translated: '复制代码',
-  },
-  com_ui_copy_link: {
-    english: 'Copy link',
-    translated: '复制链接',
-  },
-  com_ui_update_link: {
-    english: 'Update link',
-    translated: '更新链接',
-  },
-  com_ui_create_link: {
-    english: 'Create link',
-    translated: '创建链接',
   },
   com_nav_source_chat: {
     english: 'View source chat',

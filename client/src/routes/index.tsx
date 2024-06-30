@@ -4,11 +4,13 @@ import {
   Registration,
   RequestPasswordReset,
   ResetPassword,
+  VerifyEmail,
   ApiErrorWatcher,
 } from '~/components/Auth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
 import StartupLayout from './Layouts/Startup';
 import LoginLayout from './Layouts/Login';
+import dashboardRoutes from './Dashboard';
 import ShareRoute from './ShareRoute';
 import ChatRoute from './ChatRoute';
 import Search from './Search';
@@ -45,6 +47,10 @@ export const router = createBrowserRouter([
     ],
   },
   {
+    path: 'verify',
+    element: <VerifyEmail />,
+  },
+  {
     element: <AuthLayout />,
     children: [
       {
@@ -57,6 +63,7 @@ export const router = createBrowserRouter([
           },
         ],
       },
+      dashboardRoutes,
       {
         path: '/',
         element: <Root />,

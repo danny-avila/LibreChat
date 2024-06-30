@@ -39,8 +39,6 @@ export default {
   com_ui_submit: 'Kirim',
   com_ui_upload_success: 'Berhasil mengunggah file',
   com_ui_upload_error: 'Ada kesalahan saat mengunggah file Anda',
-  com_ui_upload_invalid:
-    'File tidak valid untuk diunggah. Harus berupa gambar yang tidak melebihi 2 MB',
   com_ui_cancel: 'Batal',
   com_ui_save: 'Simpan',
   com_ui_save_submit: 'Simpan & Kirim',
@@ -61,20 +59,26 @@ export default {
   com_ui_import_conversation_error: 'Terjadi kesalahan saat mengimpor percakapan Anda',
   com_ui_confirm_action: 'Konfirmasi Aksi',
   com_ui_chats: 'chat',
-  com_ui_share: 'Share',
-  com_ui_share_link_to_chat: 'Share link to chat',
-  com_ui_share_error: 'There was an error sharing the chat link',
-  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share: 'Bagikan',
+  com_ui_copy_link: 'Salin tautan',
+  com_ui_update_link: 'Perbarui tautan',
+  com_ui_create_link: 'Buat tautan',
+  com_ui_share_link_to_chat: 'Bagikan tautan ke chat',
+  com_ui_share_error: 'Terjadi kesalahan saat membagikan tautan chat',
+  com_ui_share_retrieve_error: 'Terjadi kesalahan saat menghapus tautan yang dibagikan.',
+  com_ui_share_delete_error: 'Terjadi kesalahan saat menghapus tautan yang dibagikan.',
+  com_ui_share_create_message:
+    'Nama Anda dan pesan apa pun yang Anda tambahkan setelah berbagi tetap pribadi.',
   com_ui_share_created_message:
-    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    'Tautan berbagi ke chat Anda telah dibuat. Kelola chat yang pernah dibagikan kapan saja melalui Pengaturan.',
   com_ui_share_update_message:
-    'Your name, custom instructions, and any messages you add after sharing stay private.',
+    'Nama Anda, petunjuk khusus, dan pesan apa pun yang Anda tambahkan setelah berbagi tetap pribadi.',
   com_ui_share_updated_message:
-    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
-  com_ui_shared_link_not_found: 'Shared link not found',
+    'Tautan berbagi ke chat Anda telah diperbarui. Kelola chat yang pernah dibagikan kapan saja melalui Pengaturan.',
+  com_ui_shared_link_not_found: 'Tautan berbagi tidak ditemukan',
   com_ui_delete: 'Hapus',
   com_ui_delete_conversation: 'Hapus chat?',
-  com_ui_delete_conversation_confirm: 'Ini akan menghapus',
+  com_ui_delete_confirm: 'Ini akan menghapus',
   com_ui_rename: 'Renombrar',
   com_ui_archive: 'Arsip',
   com_ui_archive_error: 'Gagal mengarsipkan percakapan',
@@ -326,6 +330,7 @@ export default {
   com_nav_theme_dark: 'Gelap',
   com_nav_theme_light: 'Terang',
   com_nav_user_name_display: 'Tampilkan nama pengguna dalam pesan',
+  com_nav_save_drafts: 'Simpan draft',
   com_nav_clear_all_chats: 'Hapus semua obrolan',
   com_nav_confirm_clear: 'Konfirmasi Hapus',
   com_nav_close_sidebar: 'Tutup sidebar',
@@ -595,40 +600,60 @@ export const comparisons = {
   },
   com_ui_share: {
     english: 'Share',
-    translated: 'Share',
+    translated: 'Bagikan',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: 'Salin tautan',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: 'Perbarui tautan',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: 'Buat tautan',
   },
   com_ui_share_link_to_chat: {
     english: 'Share link to chat',
-    translated: 'Share link to chat',
+    translated: 'Bagikan tautan ke chat',
+  },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Terjadi kesalahan saat menghapus tautan yang dibagikan.',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Terjadi kesalahan saat menghapus tautan yang dibagikan.',
   },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
-    translated: 'There was an error sharing the chat link',
+    translated: 'Terjadi kesalahan saat membagikan tautan chat',
   },
   com_ui_share_create_message: {
     english: 'Your name and any messages you add after sharing stay private.',
-    translated: 'Your name and any messages you add after sharing stay private.',
+    translated: 'Nama Anda dan pesan apa pun yang Anda tambahkan setelah berbagi tetap pribadi.',
   },
   com_ui_share_created_message: {
     english:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
     translated:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'Tautan berbagi ke chat Anda telah dibuat. Kelola chat yang pernah dibagikan kapan saja melalui Pengaturan.',
   },
   com_ui_share_update_message: {
     english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
     translated:
-      'Your name, custom instructions, and any messages you add after sharing stay private.',
+      'Nama Anda, petunjuk khusus, dan pesan apa pun yang Anda tambahkan setelah berbagi tetap pribadi.',
   },
   com_ui_share_updated_message: {
     english:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
     translated:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'Tautan berbagi ke chat Anda telah diperbarui. Kelola chat yang pernah dibagikan kapan saja melalui Pengaturan.',
   },
   com_ui_shared_link_not_found: {
     english: 'Shared link not found',
-    translated: 'Shared link not found',
+    translated: 'Tautan berbagi tidak ditemukan',
   },
   com_ui_delete: {
     english: 'Delete',
@@ -638,7 +663,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'Hapus chat?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Ini akan menghapus',
   },
@@ -1554,6 +1579,10 @@ export const comparisons = {
   com_nav_user_name_display: {
     english: 'Display username in messages',
     translated: 'Tampilkan nama pengguna dalam pesan',
+  },
+  com_nav_save_drafts: {
+    english: 'Save drafts locally',
+    translated: 'Simpan draft',
   },
   com_nav_clear_all_chats: {
     english: 'Clear all chats',

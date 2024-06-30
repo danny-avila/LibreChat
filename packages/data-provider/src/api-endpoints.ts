@@ -6,6 +6,8 @@ export const balance = () => '/api/balance';
 
 export const userPlugins = () => '/api/user/plugins';
 
+export const deleteUser = () => '/api/user/delete';
+
 export const messages = (conversationId: string, messageId?: string) =>
   `/api/messages/${conversationId}${messageId ? `/${messageId}` : ''}`;
 
@@ -45,9 +47,6 @@ export const importConversation = () => `${conversationsRoot}/import`;
 
 export const forkConversation = () => `${conversationsRoot}/fork`;
 
-export const importConversationJobStatus = (jobId: string) =>
-  `${conversationsRoot}/import/jobs/${jobId}`;
-
 export const search = (q: string, pageNumber: string) =>
   `/api/search?q=${q}&pageNumber=${pageNumber}`;
 
@@ -81,9 +80,15 @@ export const requestPasswordReset = () => '/api/auth/requestPasswordReset';
 
 export const resetPassword = () => '/api/auth/resetPassword';
 
+export const verifyEmail = () => '/api/user/verify';
+
+export const resendVerificationEmail = () => '/api/user/verify/resend';
+
 export const plugins = () => '/api/plugins';
 
 export const config = () => '/api/config';
+
+export const prompts = () => '/api/prompts';
 
 export const assistants = ({
   path,
@@ -130,3 +135,52 @@ export const textToSpeech = () => `${files()}/tts`;
 export const textToSpeechManual = () => `${textToSpeech()}/manual`;
 
 export const textToSpeechVoices = () => `${textToSpeech()}/voices`;
+
+export const getPromptGroup = (_id: string) => `${prompts()}/groups/${_id}`;
+
+export const getPromptGroupsWithFilters = (filter: object) => {
+  let url = `${prompts()}/groups`;
+  if (Object.keys(filter).length > 0) {
+    const queryParams = new URLSearchParams(filter as Record<string, string>).toString();
+    url += `?${queryParams}`;
+  }
+  return url;
+};
+
+export const getPromptsWithFilters = (filter: object) => {
+  let url = prompts();
+  if (Object.keys(filter).length > 0) {
+    const queryParams = new URLSearchParams(filter as Record<string, string>).toString();
+    url += `?${queryParams}`;
+  }
+  return url;
+};
+
+export const getPrompt = (_id: string) => `${prompts()}/${_id}`;
+
+export const getRandomPrompts = (limit: number, skip: number) =>
+  `${prompts()}/random?limit=${limit}&skip=${skip}`;
+
+export const postPrompt = prompts;
+
+export const updatePromptGroup = getPromptGroup;
+
+export const updatePromptLabels = (_id: string) => `${getPrompt(_id)}/labels`;
+
+export const updatePromptTag = (_id: string) => `${getPrompt(_id)}/tags/production`;
+
+export const deletePromptGroup = getPromptGroup;
+
+export const deletePrompt = ({ _id, groupId }: { _id: string; groupId: string }) => {
+  return `${prompts()}/${_id}?groupId=${groupId}`;
+};
+
+export const getCategories = () => '/api/categories';
+
+export const getAllPromptGroups = () => `${prompts()}/all`;
+
+/* Roles */
+export const roles = () => '/api/roles';
+export const getRole = (roleName: string) => `${roles()}/${roleName.toLowerCase()}`;
+export const updatePromptPermissions = (roleName: string) =>
+  `${roles()}/${roleName.toLowerCase()}/prompts`;

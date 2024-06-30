@@ -1,7 +1,6 @@
 import throttle from 'lodash/throttle';
 import React, { useCallback, useEffect, useRef } from 'react';
 import type { FetchNextPageOptions, InfiniteQueryObserverResult } from '@tanstack/react-query';
-import type { ConversationListResponse } from 'librechat-data-provider';
 
 export default function useNavScrolling<TData>({
   hasNextPage,

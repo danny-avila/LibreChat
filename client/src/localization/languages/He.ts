@@ -67,7 +67,6 @@ export default {
   com_ui_submit: 'שלח',
   com_ui_upload_success: 'קובץ שהועלה בהצלחה',
   com_ui_upload_error: 'אירעה שגיאה בהעלאת הקובץ שלך',
-  com_ui_upload_invalid: 'קובץ לא חוקי להעלאה. חייבת להיות תמונה שגודלה לא עולה על 2 MB',
   com_ui_cancel: 'בטל',
   com_ui_save: 'שמור',
   com_ui_save_submit: 'שמור ושלח',
@@ -91,19 +90,24 @@ export default {
   com_ui_assistant: 'סייען',
   com_ui_delete: 'מחק',
   com_ui_create: 'צור',
-  com_ui_share: 'Share',
-  com_ui_share_link_to_chat: 'Share link to chat',
-  com_ui_share_error: 'There was an error sharing the chat link',
-  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share: 'שתף',
+  com_ui_copy_link: 'העתק קישור',
+  com_ui_update_link: 'עדכן קישור',
+  com_ui_create_link: 'צור קישור',
+  com_ui_share_link_to_chat: 'שתף קישור בצ\'אט',
+  com_ui_share_error: 'אירעה שגיאה בעת שיתוף קישור הצ\'אט',
+  com_ui_share_retrieve_error: 'אירעה שגיאה בעת מחיקת הקישור המשותף.',
+  com_ui_share_delete_error: 'אירעה שגיאה בעת מחיקת הקישור המשותף.',
+  com_ui_share_create_message: 'שמך וכל הודעה שתוסיף לאחר השיתוף יישארו פרטיים.',
   com_ui_share_created_message:
-    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
   com_ui_share_update_message:
     'Your name, custom instructions, and any messages you add after sharing stay private.',
   com_ui_share_updated_message:
-    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
   com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete_conversation: 'למחוק את השיחה (צאט)?',
-  com_ui_delete_conversation_confirm: 'זה ימחק',
+  com_ui_delete_confirm: 'זה ימחק',
   com_ui_delete_assistant_confirm:
     'האם אתה בטוח שאתה רוצה למחוק את הסייען הזה? אי אפשר לבטל את זה.',
   com_ui_rename: 'שם מחדש',
@@ -367,6 +371,7 @@ export default {
   com_nav_theme_dark: 'כהה',
   com_nav_theme_light: 'אור',
   com_nav_user_name_display: 'הצג שם משתמש בהודעות',
+  com_nav_save_drafts: 'שמיר את האפצה באותו מחשב',
   com_nav_clear_all_chats: 'נקה את כל השיחות',
   com_nav_confirm_clear: 'אשר נקה',
   com_nav_close_sidebar: 'סגור סרגל צד',
@@ -644,10 +649,6 @@ export const comparisons = {
     english: 'There was an error uploading your file',
     translated: 'אירעה שגיאה בהעלאת הקובץ שלך',
   },
-  com_ui_upload_invalid: {
-    english: 'Invalid file for upload. Must be an image not exceeding 2 MB',
-    translated: 'קובץ לא חוקי להעלאה. חייבת להיות תמונה שגודלה לא עולה על 2 MB',
-  },
   com_ui_cancel: {
     english: 'Cancel',
     translated: 'בטל',
@@ -742,25 +743,45 @@ export const comparisons = {
   },
   com_ui_share: {
     english: 'Share',
-    translated: 'Share',
+    translated: 'שתף',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: 'העתק קישור',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: 'עדכן קישור',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: 'צור קישור',
   },
   com_ui_share_link_to_chat: {
     english: 'Share link to chat',
-    translated: 'Share link to chat',
+    translated: 'שתף קישור בצ\'אט',
+  },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'אירעה שגיאה בעת מחיקת הקישור המשותף.',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'אירעה שגיאה בעת מחיקת הקישור המשותף.',
   },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
-    translated: 'There was an error sharing the chat link',
+    translated: 'אירעה שגיאה בעת שיתוף קישור הצ\'אט',
   },
   com_ui_share_create_message: {
     english: 'Your name and any messages you add after sharing stay private.',
-    translated: 'Your name and any messages you add after sharing stay private.',
+    translated: 'שמך וכל הודעה שתוסיף לאחר השיתוף יישארו פרטיים.',
   },
   com_ui_share_created_message: {
     english:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
     translated:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
   },
   com_ui_share_update_message: {
     english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
@@ -769,9 +790,9 @@ export const comparisons = {
   },
   com_ui_share_updated_message: {
     english:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
     translated:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
   },
   com_ui_shared_link_not_found: {
     english: 'Shared link not found',
@@ -781,7 +802,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'למחוק את השיחה (צאט)?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'זה ימחק',
   },
@@ -1756,6 +1777,10 @@ export const comparisons = {
   com_nav_user_name_display: {
     english: 'Display username in messages',
     translated: 'הצג שם משתמש בהודעות',
+  },
+  com_nav_save_drafts: {
+    english: 'Save drafts locally',
+    translated: 'שמיר את האפצה באותו מחשב',
   },
   com_nav_clear_all_chats: {
     english: 'Clear all chats',

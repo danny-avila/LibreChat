@@ -42,7 +42,6 @@ export default {
   com_ui_enter: 'Ввести',
   com_ui_submit: 'Отправить',
   com_ui_upload_success: 'Файл успешно загружен',
-  com_ui_upload_invalid: 'Недопустимый файл для загрузки',
   com_ui_cancel: 'Отмена',
   com_ui_save: 'Сохранить',
   com_ui_save_submit: 'Сохранить и отправить',
@@ -66,19 +65,25 @@ export default {
   com_ui_preview: 'Предпросмотр',
   com_ui_upload: 'Загрузить',
   com_ui_connect: 'Подключить',
-  com_ui_share: 'Share',
-  com_ui_share_link_to_chat: 'Share link to chat',
-  com_ui_share_error: 'There was an error sharing the chat link',
-  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share: 'Поделиться',
+  com_ui_copy_link: 'Скопировать ссылку',
+  com_ui_update_link: 'Обновить ссылку',
+  com_ui_create_link: 'Создать ссылку',
+  com_ui_share_link_to_chat: 'Поделиться ссылкой в чате',
+  com_ui_share_error: 'Произошла ошибка при попытке поделиться ссылкой на чат',
+  com_ui_share_retrieve_error: 'Произошла ошибка при удалении общей ссылки.',
+  com_ui_share_delete_error: 'Произошла ошибка при удалении общей ссылки.',
+  com_ui_share_create_message:
+    'Ваше имя и любые сообщения, которые вы добавите после обмена, останутся конфиденциальными.',
   com_ui_share_created_message:
-    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    'Создана общая ссылка на ваш чат. Управляйте ранее общими чатами в любое время через Настройки.',
   com_ui_share_update_message:
-    'Your name, custom instructions, and any messages you add after sharing stay private.',
+    'Ваше имя, пользовательские инструкции и любые сообщения, которые вы добавите после обмена, останутся конфиденциальными.',
   com_ui_share_updated_message:
-    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
-  com_ui_shared_link_not_found: 'Shared link not found',
+    'Обновлена общая ссылка на ваш чат. Управляйте ранее общими чатами в любое время через Настройки.',
+  com_ui_shared_link_not_found: 'Общая ссылка не найдена',
   com_ui_delete_conversation: 'Удалить чат?',
-  com_ui_delete_conversation_confirm: 'Будет удален следующий чат: ',
+  com_ui_delete_confirm: 'Будет удален следующий чат: ',
   com_ui_rename: 'Переименовать',
   com_ui_archive: 'Архивировать',
   com_ui_archive_error: 'Nie udało się archiwizować rozmowy',
@@ -325,6 +330,7 @@ export default {
   com_nav_theme_dark: 'Темная',
   com_nav_theme_light: 'Светлая',
   com_nav_user_name_display: 'Отображать имя пользователя в сообщениях',
+  com_nav_save_drafts: 'Сохранить черновики локально',
   com_nav_language: 'Локализация',
   com_nav_setting_account: 'Аккаунт',
   com_nav_profile_picture: 'Изображение профиля',
@@ -393,9 +399,6 @@ export default {
   com_ui_assistant_delete_error: 'Произошла ошибка при удалении ассистента',
   com_ui_copied: 'Скопировано',
   com_ui_copy_code: 'Копировать код',
-  com_ui_copy_link: 'Копировать ссылку',
-  com_ui_update_link: 'Обновить ссылку',
-  com_ui_create_link: 'Создать ссылку',
   com_nav_source_chat: 'Просмотреть исходный чат',
   com_ui_date_today: 'Сегодня',
   com_ui_date_yesterday: 'Вчера',
@@ -835,46 +838,67 @@ export const comparisons = {
   },
   com_ui_share: {
     english: 'Share',
-    translated: 'Share',
+    translated: 'Поделиться',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: 'Скопировать ссылку',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: 'Обновить ссылку',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: 'Создать ссылку',
   },
   com_ui_share_link_to_chat: {
     english: 'Share link to chat',
-    translated: 'Share link to chat',
+    translated: 'Поделиться ссылкой в чате',
+  },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Произошла ошибка при удалении общей ссылки.',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Произошла ошибка при удалении общей ссылки.',
   },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
-    translated: 'There was an error sharing the chat link',
+    translated: 'Произошла ошибка при попытке поделиться ссылкой на чат',
   },
   com_ui_share_create_message: {
     english: 'Your name and any messages you add after sharing stay private.',
-    translated: 'Your name and any messages you add after sharing stay private.',
+    translated:
+      'Ваше имя и любые сообщения, которые вы добавите после обмена, останутся конфиденциальными.',
   },
   com_ui_share_created_message: {
     english:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
     translated:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'Создана общая ссылка на ваш чат. Управляйте ранее общими чатами в любое время через Настройки.',
   },
   com_ui_share_update_message: {
     english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
     translated:
-      'Your name, custom instructions, and any messages you add after sharing stay private.',
+      'Ваше имя, пользовательские инструкции и любые сообщения, которые вы добавите после обмена, останутся конфиденциальными.',
   },
   com_ui_share_updated_message: {
     english:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
     translated:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'Обновлена общая ссылка на ваш чат. Управляйте ранее общими чатами в любое время через Настройки.',
   },
   com_ui_shared_link_not_found: {
     english: 'Shared link not found',
-    translated: 'Shared link not found',
+    translated: 'Общая ссылка не найдена',
   },
   com_ui_delete_conversation: {
     english: 'Delete chat?',
     translated: 'Удалить чат?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Будет удален следующий чат: ',
   },
@@ -1753,6 +1777,10 @@ export const comparisons = {
     english: 'Display username in messages',
     translated: 'Отображать имя пользователя в сообщениях',
   },
+  com_nav_save_drafts: {
+    english: 'Save drafts locally',
+    translated: 'Сохранить черновики локально',
+  },
   com_nav_language: {
     english: 'Language',
     translated: 'Локализация',
@@ -1995,18 +2023,6 @@ export const comparisons = {
   com_ui_copy_code: {
     english: 'Copy code',
     translated: 'Копировать код',
-  },
-  com_ui_copy_link: {
-    english: 'Copy link',
-    translated: 'Копировать ссылку',
-  },
-  com_ui_update_link: {
-    english: 'Update link',
-    translated: 'Обновить ссылку',
-  },
-  com_ui_create_link: {
-    english: 'Create link',
-    translated: 'Создать ссылку',
   },
   com_nav_source_chat: {
     english: 'View source chat',

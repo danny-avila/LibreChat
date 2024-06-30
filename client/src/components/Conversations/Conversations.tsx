@@ -21,7 +21,8 @@ const Conversations = ({
   );
   const firstTodayConvoId = useMemo(
     () =>
-      conversations.find((convo) => convo && isToday(parseISO(convo.updatedAt)))?.conversationId,
+      conversations.find((convo) => convo && convo.updatedAt && isToday(parseISO(convo.updatedAt)))
+        ?.conversationId,
     [conversations],
   );
 

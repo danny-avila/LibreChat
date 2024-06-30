@@ -3,20 +3,21 @@ import {
   useState,
   useEffect,
   ReactNode,
+  useContext,
   useCallback,
   createContext,
-  useContext,
 } from 'react';
 import { useRecoilState } from 'recoil';
-import { TUser, TLoginResponse, setTokenHeader, TLoginUser } from 'librechat-data-provider';
+import { useNavigate } from 'react-router-dom';
+import { setTokenHeader, SystemRoles } from 'librechat-data-provider';
 import {
   useGetUserQuery,
   useLoginUserMutation,
   useRefreshTokenMutation,
 } from 'librechat-data-provider/react-query';
-import { useNavigate } from 'react-router-dom';
+import type { TLoginResponse, TLoginUser } from 'librechat-data-provider';
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
-import { useLogoutUserMutation } from '~/data-provider';
+import { useLogoutUserMutation, useGetRole } from '~/data-provider';
 import useTimeout from './useTimeout';
 import store from '~/store';
 
@@ -33,6 +34,9 @@ const AuthContextProvider = ({
   const [token, setToken] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const { data: userRole = null } = useGetRole(SystemRoles.USER, {
+    enabled: !!(isAuthenticated && user?.role),
+  });
 
   const navigate = useNavigate();
 
@@ -169,13 +173,17 @@ const AuthContextProvider = ({
     () => ({
       user,
       token,
-      isAuthenticated,
       error,
       login,
       logout,
+      setError,
+      roles: {
+        [SystemRoles.USER]: userRole,
+      },
+      isAuthenticated,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [user, error, isAuthenticated, token],
+    [user, error, isAuthenticated, token, userRole],
   );
 
   return <AuthContext.Provider value={memoedValue}>{children}</AuthContext.Provider>;

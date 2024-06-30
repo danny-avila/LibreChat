@@ -1,7 +1,7 @@
 import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { useState, useRef, useMemo } from 'react';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
+import { useGetEndpointsQuery, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
 import { useUpdateConversationMutation } from '~/data-provider';
 import EndpointIcon from '~/components/Endpoints/EndpointIcon';
@@ -27,9 +27,9 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
   const activeConvos = useRecoilValue(store.allConversationsSelector);
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { navigateWithLastTools } = useNavigateToConvo();
+  const { data: startupConfig } = useGetStartupConfig();
   const { refreshConversations } = useConversations();
   const { showToast } = useToastContext();
-
   const { conversationId, title } = conversation;
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [titleInput, setTitleInput] = useState(title);
@@ -126,13 +126,15 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
           setIsPopoverActive={setIsPopoverActive}
         >
           <DropDownMenu>
-            <ShareButton
-              conversationId={conversationId}
-              title={title}
-              appendLabel={true}
-              className="mb-[3.5px]"
-              setPopoverActive={setIsPopoverActive}
-            />
+            {startupConfig && startupConfig.sharedLinksEnabled && (
+              <ShareButton
+                conversationId={conversationId}
+                title={title}
+                appendLabel={true}
+                className="mb-[3.5px]"
+                setPopoverActive={setIsPopoverActive}
+              />
+            )}
 
             <RenameButton
               renaming={renaming}
@@ -166,7 +168,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
         className={cn(
           isActiveConvo || isPopoverActive
             ? 'group relative mt-2 flex cursor-pointer items-center gap-2 break-all rounded-lg bg-gray-200 px-2 py-2 active:opacity-50 dark:bg-gray-700'
-            : 'group relative mt-2 flex grow cursor-pointer items-center gap-2 overflow-hidden whitespace-nowrap break-all rounded-lg rounded-lg px-2 py-2 hover:bg-gray-200 active:opacity-50 dark:hover:bg-gray-700',
+            : 'group relative mt-2 flex grow cursor-pointer items-center gap-2 overflow-hidden whitespace-nowrap break-all rounded-lg px-2 py-2 hover:bg-gray-200 active:opacity-50 dark:hover:bg-gray-700',
           !isActiveConvo && !renaming ? 'peer-hover:bg-gray-200 dark:peer-hover:bg-gray-800' : '',
         )}
         title={title}
@@ -188,7 +190,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
             )}
           />
         ) : (
-          <div className="absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-gradient-to-l from-gray-50 from-0% to-transparent group-hover:from-gray-200 group-hover:from-60% dark:from-[#181818] dark:group-hover:from-gray-700" />
+          <div className="absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-gradient-to-l from-gray-50 from-0% to-transparent group-hover:from-gray-200 group-hover:from-60% dark:from-gray-850 dark:group-hover:from-gray-700" />
         )}
       </a>
     </div>

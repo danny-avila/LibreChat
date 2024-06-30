@@ -1,12 +1,13 @@
+import type { AxiosResponse } from 'axios';
 import * as f from './types/files';
 import * as q from './types/queries';
 import * as m from './types/mutations';
 import * as a from './types/assistants';
+import * as r from './roles';
 import * as t from './types';
 import * as s from './schemas';
 import request from './request';
 import * as endpoints from './api-endpoints';
-import type { AxiosResponse } from 'axios';
 
 export function abortRequestWithMessage(
   endpoint: string,
@@ -22,6 +23,10 @@ export function revokeUserKey(name: string): Promise<unknown> {
 
 export function revokeAllUserKeys(): Promise<unknown> {
   return request.delete(endpoints.revokeAllUserKeys());
+}
+
+export function deleteUser(): Promise<s.TPreset> {
+  return request.delete(endpoints.deleteUser());
 }
 
 export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage[]> {
@@ -136,6 +141,16 @@ export const requestPasswordReset = (
 
 export const resetPassword = (payload: t.TResetPassword) => {
   return request.post(endpoints.resetPassword(), payload);
+};
+
+export const verifyEmail = (payload: t.TVerifyEmail): Promise<t.VerifyEmailResponse> => {
+  return request.post(endpoints.verifyEmail(), payload);
+};
+
+export const resendVerificationEmail = (
+  payload: t.TResendVerificationEmail,
+): Promise<t.VerifyEmailResponse> => {
+  return request.post(endpoints.resendVerificationEmail(), payload);
 };
 
 export const getAvailablePlugins = (): Promise<s.TPlugin[]> => {
@@ -291,20 +306,8 @@ export const uploadFile = (data: FormData): Promise<f.TFileUpload> => {
  * @param data - The FormData containing the file to import.
  * @returns A Promise that resolves to the import start response.
  */
-export const importConversationsFile = (data: FormData): Promise<t.TImportStartResponse> => {
+export const importConversationsFile = (data: FormData): Promise<t.TImportResponse> => {
   return request.postMultiPart(endpoints.importConversation(), data);
-};
-
-/**
- * Retrieves the status of an import conversation job.
- *
- * @param jobId - The ID of the import conversation job.
- * @returns A promise that resolves to the import job status.
- */
-export const queryImportConversationJobStatus = async (
-  jobId: string,
-): Promise<t.TImportJobStatus> => {
-  return request.get(endpoints.importConversationJobStatus(jobId));
 };
 
 export const uploadAvatar = (data: FormData): Promise<f.AvatarUploadResponse> => {
@@ -462,4 +465,75 @@ export function archiveConversation(
 
 export function genTitle(payload: m.TGenTitleRequest): Promise<m.TGenTitleResponse> {
   return request.post(endpoints.genTitle(), payload);
+}
+
+export function getPrompt(id: string): Promise<{ prompt: t.TPrompt }> {
+  return request.get(endpoints.getPrompt(id));
+}
+
+export function getPrompts(filter: t.TPromptsWithFilterRequest): Promise<t.TPrompt[]> {
+  return request.get(endpoints.getPromptsWithFilters(filter));
+}
+
+export function getAllPromptGroups(): Promise<q.AllPromptGroupsResponse> {
+  return request.get(endpoints.getAllPromptGroups());
+}
+
+export function getPromptGroups(
+  filter: t.TPromptGroupsWithFilterRequest,
+): Promise<t.PromptGroupListResponse> {
+  return request.get(endpoints.getPromptGroupsWithFilters(filter));
+}
+
+export function getPromptGroup(id: string): Promise<t.TPromptGroup> {
+  return request.get(endpoints.getPromptGroup(id));
+}
+
+export function createPrompt(payload: t.TCreatePrompt): Promise<t.TCreatePromptResponse> {
+  return request.post(endpoints.postPrompt(), payload);
+}
+
+export function updatePromptGroup(
+  variables: t.TUpdatePromptGroupVariables,
+): Promise<t.TUpdatePromptGroupResponse> {
+  return request.patch(endpoints.updatePromptGroup(variables.id), variables.payload);
+}
+
+export function deletePrompt(payload: t.TDeletePromptVariables): Promise<t.TDeletePromptResponse> {
+  return request.delete(endpoints.deletePrompt(payload));
+}
+
+export function makePromptProduction(id: string): Promise<t.TMakePromptProductionResponse> {
+  return request.patch(endpoints.updatePromptTag(id));
+}
+
+export function updatePromptLabels(
+  variables: t.TUpdatePromptLabelsRequest,
+): Promise<t.TUpdatePromptLabelsResponse> {
+  return request.patch(endpoints.updatePromptLabels(variables.id), variables.payload);
+}
+
+export function deletePromptGroup(id: string): Promise<t.TDeletePromptGroupResponse> {
+  return request.delete(endpoints.deletePromptGroup(id));
+}
+
+export function getCategories(): Promise<t.TGetCategoriesResponse> {
+  return request.get(endpoints.getCategories());
+}
+
+export function getRandomPrompts(
+  variables: t.TGetRandomPromptsRequest,
+): Promise<t.TGetRandomPromptsResponse> {
+  return request.get(endpoints.getRandomPrompts(variables.limit, variables.skip));
+}
+
+/* Roles */
+export function getRole(roleName: string): Promise<r.TRole> {
+  return request.get(endpoints.getRole(roleName));
+}
+
+export function updatePromptPermissions(
+  variables: m.UpdatePromptPermVars,
+): Promise<m.UpdatePromptPermResponse> {
+  return request.put(endpoints.updatePromptPermissions(variables.roleName), variables.updates);
 }

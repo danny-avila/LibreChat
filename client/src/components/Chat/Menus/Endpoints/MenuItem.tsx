@@ -50,12 +50,12 @@ const MenuItem: FC<MenuItemProps> = ({
     }
 
     const {
+      template,
       shouldSwitch,
       isNewModular,
+      newEndpointType,
       isCurrentModular,
       isExistingConversation,
-      newEndpointType,
-      template,
     } = getConvoSwitchLogic({
       newEndpoint,
       modularChat,
@@ -63,7 +63,8 @@ const MenuItem: FC<MenuItemProps> = ({
       endpointsConfig,
     });
 
-    if (isExistingConversation && isCurrentModular && isNewModular && shouldSwitch) {
+    const isModular = isCurrentModular && isNewModular && shouldSwitch;
+    if (isExistingConversation && isModular) {
       template.endpointType = newEndpointType;
 
       const currentConvo = getDefaultConversation({
@@ -73,10 +74,18 @@ const MenuItem: FC<MenuItemProps> = ({
       });
 
       /* We don't reset the latest message, only when changing settings mid-converstion */
-      newConversation({ template: currentConvo, preset: currentConvo, keepLatestMessage: true });
+      newConversation({
+        template: currentConvo,
+        preset: currentConvo,
+        keepLatestMessage: true,
+        keepAddedConvos: true,
+      });
       return;
     }
-    newConversation({ template: { ...(template as Partial<TConversation>) } });
+    newConversation({
+      template: { ...(template as Partial<TConversation>) },
+      keepAddedConvos: isModular,
+    });
   };
 
   const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');

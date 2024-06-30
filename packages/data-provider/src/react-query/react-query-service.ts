@@ -188,22 +188,6 @@ export const useRevokeAllUserKeysMutation = (): UseMutationResult<unknown> => {
   });
 };
 
-export const useGetConversationsQuery = (
-  pageNumber: string,
-  config?: UseQueryOptions<t.TGetConversationsResponse>,
-): QueryObserverResult<t.TGetConversationsResponse> => {
-  return useQuery<t.TGetConversationsResponse>(
-    [QueryKeys.allConversations],
-    () => dataService.getConversations(pageNumber),
-    {
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      retry: 1,
-      ...config,
-    },
-  );
-};
-
 export const useGetSearchEnabledQuery = (
   config?: UseQueryOptions<boolean>,
 ): QueryObserverResult<boolean> => {
@@ -314,6 +298,8 @@ export const useLoginUserMutation = (): UseMutationResult<
     onMutate: () => {
       queryClient.removeQueries();
       localStorage.removeItem(LocalStorageKeys.LAST_CONVO_SETUP);
+      localStorage.removeItem(`${LocalStorageKeys.LAST_CONVO_SETUP}_0`);
+      localStorage.removeItem(`${LocalStorageKeys.LAST_CONVO_SETUP}_1`);
       localStorage.removeItem(LocalStorageKeys.LAST_MODEL);
       localStorage.removeItem(LocalStorageKeys.LAST_TOOLS);
       localStorage.removeItem(LocalStorageKeys.FILES_TO_DELETE);
@@ -322,16 +308,17 @@ export const useLoginUserMutation = (): UseMutationResult<
   });
 };
 
-export const useRegisterUserMutation = (): UseMutationResult<
-  unknown,
-  unknown,
-  t.TRegisterUser,
-  unknown
-> => {
+export const useRegisterUserMutation = (
+  options?: m.RegistrationOptions,
+): UseMutationResult<t.TError, unknown, t.TRegisterUser, unknown> => {
   const queryClient = useQueryClient();
   return useMutation((payload: t.TRegisterUser) => dataService.register(payload), {
-    onSuccess: () => {
+    ...options,
+    onSuccess: (...args) => {
       queryClient.invalidateQueries([QueryKeys.user]);
+      if (options?.onSuccess) {
+        options.onSuccess(...args);
+      }
     },
   });
 };
