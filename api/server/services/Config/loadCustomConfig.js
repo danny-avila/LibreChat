@@ -76,14 +76,28 @@ Please specify a correct \`imageOutputType\` value (case-sensitive).
     );
   }
   if (!result.success) {
-    i === 0 && logger.error(`Invalid custom config file at ${configPath}`, result.error);
+    let errorMessage = `Invalid custom config file at ${configPath}`;
+    // Check if the error is due to unrecognized keys
+    const unrecognizedKeysError = result.error.errors.find(
+      (err) => err.code === 'unrecognized_keys',
+    );
+    if (unrecognizedKeysError) {
+      // Log the initial part of the error message
+      logger.error(errorMessage);
+      // Log the note about the potential format change in separate calls to avoid truncation
+      logger.error('Note: The configuration format has recently changed.');
+      logger.error('If you\'re using an older format, please refer to the latest documentation at');
+      logger.error('https://www.librechat.ai/docs/configuration/librechat_yaml');
+      logger.error('to update your configuration file.');
+    } else {
+      errorMessage += `, ${JSON.stringify(result.error.errors)}`;
+      logger.error(errorMessage);
+    }
     i === 0 && i++;
     return null;
-  } else {
-    logger.info('Custom config file loaded:');
-    logger.info(JSON.stringify(customConfig, null, 2));
-    logger.debug('Custom config:', customConfig);
   }
+
+  logger.debug('Custom config:', customConfig);
 
   if (customConfig.cache) {
     const cache = getLogStores(CacheKeys.CONFIG_STORE);
