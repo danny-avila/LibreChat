@@ -97,6 +97,7 @@ Please specify a correct \`imageOutputType\` value (case-sensitive).
     return null;
   }
 
+  logger.info('Custom config file loaded');
   logger.debug('Custom config:', customConfig);
 
   if (customConfig.cache) {
