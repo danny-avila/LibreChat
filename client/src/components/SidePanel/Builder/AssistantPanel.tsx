@@ -27,6 +27,7 @@ import { Spinner } from '~/components/svg';
 import { cn, cardStyle } from '~/utils/';
 import Knowledge from './Knowledge';
 import { Panel } from '~/common';
+import { TooltipProvider, Tooltip, TooltipContent } from '~/components/ui/Tooltip';
 
 const labelClass = 'mb-2 block text-xs font-bold text-gray-700 dark:text-gray-400';
 const inputClass =
@@ -50,6 +51,7 @@ export default function AssistantPanel({
   const allTools = queryClient.getQueryData<TPlugin[]>([QueryKeys.tools]) ?? [];
   const { onSelect: onSelectAssistant } = useSelectAssistant(endpoint);
   const { showToast } = useToastContext();
+  const [disabledActionTip, setDisabledActionTip] = useState(false);
   const localize = useLocalize();
 
   const methods = useForm<AssistantForm>({
@@ -385,24 +387,44 @@ export default function AssistantPanel({
                 </button>
               )}
               {actionsEnabled && (
-                <button
-                  type="button"
-                  disabled={!assistant_id}
-                  onClick={() => {
-                    if (!assistant_id) {
-                      return showToast({
-                        message: localize('com_assistants_actions_disabled'),
-                        status: 'warning',
-                      });
-                    }
-                    setActivePanel(Panel.actions);
-                  }}
-                  className="btn border-token-border-light relative mt-2 h-8 rounded-lg bg-transparent font-medium hover:bg-gray-100 dark:hover:bg-gray-800"
-                >
-                  <div className="flex w-full items-center justify-center gap-2">
-                    {localize('com_assistants_add_actions')}
-                  </div>
-                </button>
+                <div className="relative mt-2 h-8 rounded-lg bg-transparent font-medium">
+                  <TooltipProvider delayDuration={0}>
+                    {' '}
+                    {/* TODO: refactor to use https://atomiks.github.io/tippyjs/ */}
+                    <Tooltip>
+                      <div
+                        onMouseEnter={() => !assistant_id && setDisabledActionTip(true)}
+                        onMouseLeave={() => !assistant_id && setDisabledActionTip(false)}
+                      >
+                        <button
+                          type="button"
+                          disabled={!assistant_id}
+                          onClick={() => {
+                            if (!assistant_id) {
+                              showToast({
+                                message: localize('com_assistants_actions_disabled'),
+                                status: 'warning',
+                              });
+                            } else {
+                              setActivePanel(Panel.actions);
+                            }
+                          }}
+                          className="btn border-token-border-light relative rounded-lg bg-transparent font-medium hover:bg-gray-100 dark:hover:bg-gray-800"
+                        >
+                          <div className="flex w-full items-center justify-center gap-2">
+                            {localize('com_assistants_add_actions')}
+                          </div>
+                        </button>
+                        {disabledActionTip && (
+                          <div className="absolute bottom-10 left-0 z-10 rounded bg-white p-2 shadow dark:bg-gray-800">
+                            {/* TODO: incorporate localize */}
+                            Must first create Assistant
+                          </div>
+                        )}
+                      </div>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
               )}
             </div>
           </div>
