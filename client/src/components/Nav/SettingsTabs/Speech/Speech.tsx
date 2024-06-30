@@ -111,7 +111,7 @@ function Speech() {
         updateSetting(key, value);
       });
     }
-  }, []); // Empty dependency array ensures this runs only once on mount
+  }, []);
 
   const contentRef = useRef(null);
   useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);
