@@ -286,6 +286,8 @@ export type TMessage = z.input<typeof tMessageSchema> & {
   plugins?: TResPlugin[];
   content?: TMessageContentParts[];
   files?: Partial<TFile>[];
+  depth?: number;
+  siblingIndex?: number;
 };
 
 export const coerceNumber = z.union([z.number(), z.string()]).transform((val) => {

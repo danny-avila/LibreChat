@@ -10,6 +10,7 @@ const {
   updatePromptGroup,
   deletePromptGroup,
   createPromptGroup,
+  getAllPromptGroups,
   // updatePromptLabels,
   makePromptProduction,
 } = require('~/models/Prompt');
@@ -62,6 +63,22 @@ router.get('/groups/:groupId', async (req, res) => {
   } catch (error) {
     logger.error('Error getting prompt group', error);
     res.status(500).send({ message: 'Error getting prompt group' });
+  }
+});
+
+/**
+ * Route to fetch all prompt groups
+ * GET /groups
+ */
+router.get('/all', async (req, res) => {
+  try {
+    const groups = await getAllPromptGroups(req, {
+      author: req.user._id,
+    });
+    res.status(200).send(groups);
+  } catch (error) {
+    logger.error(error);
+    res.status(500).send({ error: 'Error getting prompt groups' });
   }
 });
 

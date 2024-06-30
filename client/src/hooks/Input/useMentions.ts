@@ -4,7 +4,12 @@ import {
   useGetStartupConfig,
   useGetEndpointsQuery,
 } from 'librechat-data-provider/react-query';
-import { getConfigDefaults, EModelEndpoint, alternateName } from 'librechat-data-provider';
+import {
+  getConfigDefaults,
+  EModelEndpoint,
+  alternateName,
+  isAssistantsEndpoint,
+} from 'librechat-data-provider';
 import type { AssistantsEndpoint, TAssistantsMap, TEndpointsConfig } from 'librechat-data-provider';
 import type { MentionOption } from '~/common';
 import useAssistantListMap from '~/hooks/Assistants/useAssistantListMap';
@@ -39,7 +44,13 @@ const assistantMapFn =
       }),
     });
 
-export default function useMentions({ assistantMap }: { assistantMap: TAssistantsMap }) {
+export default function useMentions({
+  assistantMap,
+  includeAssistants,
+}: {
+  assistantMap: TAssistantsMap;
+  includeAssistants: boolean;
+}) {
   const { data: presets } = useGetPresetsQuery();
   const { data: modelsConfig } = useGetModelsQuery();
   const { data: startupConfig } = useGetStartupConfig();
@@ -85,6 +96,10 @@ export default function useMentions({ assistantMap }: { assistantMap: TAssistant
   );
 
   const options: MentionOption[] = useMemo(() => {
+    let validEndpoints = endpoints;
+    if (!includeAssistants) {
+      validEndpoints = endpoints.filter((endpoint) => !isAssistantsEndpoint(endpoint));
+    }
     const mentions = [
       ...(modelSpecs?.length > 0 ? modelSpecs : []).map((modelSpec) => ({
         value: modelSpec.name,
@@ -101,7 +116,7 @@ export default function useMentions({ assistantMap }: { assistantMap: TAssistant
         }),
         type: 'modelSpec' as const,
       })),
-      ...(interfaceConfig.endpointsMenu ? endpoints : []).map((endpoint) => ({
+      ...(interfaceConfig.endpointsMenu ? validEndpoints : []).map((endpoint) => ({
         value: endpoint,
         label: alternateName[endpoint] ?? endpoint ?? '',
         type: 'endpoint' as const,
@@ -112,10 +127,10 @@ export default function useMentions({ assistantMap }: { assistantMap: TAssistant
           size: 20,
         }),
       })),
-      ...(endpointsConfig?.[EModelEndpoint.assistants]
+      ...(endpointsConfig?.[EModelEndpoint.assistants] && includeAssistants
         ? assistantListMap[EModelEndpoint.assistants] || []
         : []),
-      ...(endpointsConfig?.[EModelEndpoint.azureAssistants]
+      ...(endpointsConfig?.[EModelEndpoint.azureAssistants] && includeAssistants
         ? assistantListMap[EModelEndpoint.azureAssistants] || []
         : []),
       ...((interfaceConfig.presets ? presets : [])?.map((preset, index) => ({
@@ -142,6 +157,7 @@ export default function useMentions({ assistantMap }: { assistantMap: TAssistant
     assistantMap,
     endpointsConfig,
     assistantListMap,
+    includeAssistants,
     interfaceConfig.presets,
     interfaceConfig.endpointsMenu,
   ]);

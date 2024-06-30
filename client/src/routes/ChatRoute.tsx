@@ -38,14 +38,14 @@ export default function ChatRoute() {
   const assistantListMap = useAssistantListMap();
 
   useEffect(() => {
-    if (
-      startupConfig &&
-      conversationId === 'new' &&
-      endpointsQuery.data &&
-      modelsQuery.data &&
-      !modelsQuery.data?.initial &&
-      !hasSetConversation.current
-    ) {
+    const shouldSetConvo =
+      startupConfig && !hasSetConversation.current && !modelsQuery.data?.initial;
+    /* Early exit if startupConfig is not loaded and conversation is already set and only initial models have loaded */
+    if (!shouldSetConvo) {
+      return;
+    }
+
+    if (conversationId === 'new' && endpointsQuery.data && modelsQuery.data) {
       const spec = getDefaultModelSpec(startupConfig.modelSpecs?.list);
 
       newConversation({
@@ -63,14 +63,7 @@ export default function ChatRoute() {
       });
 
       hasSetConversation.current = true;
-    } else if (
-      startupConfig &&
-      initialConvoQuery.data &&
-      endpointsQuery.data &&
-      modelsQuery.data &&
-      !modelsQuery.data?.initial &&
-      !hasSetConversation.current
-    ) {
+    } else if (initialConvoQuery.data && endpointsQuery.data && modelsQuery.data) {
       newConversation({
         template: initialConvoQuery.data,
         /* this is necessary to load all existing settings */
@@ -80,9 +73,6 @@ export default function ChatRoute() {
       });
       hasSetConversation.current = true;
     } else if (
-      startupConfig &&
-      !hasSetConversation.current &&
-      !modelsQuery.data?.initial &&
       conversationId === 'new' &&
       assistantListMap[EModelEndpoint.assistants] &&
       assistantListMap[EModelEndpoint.azureAssistants]
@@ -103,9 +93,6 @@ export default function ChatRoute() {
       });
       hasSetConversation.current = true;
     } else if (
-      startupConfig &&
-      !hasSetConversation.current &&
-      !modelsQuery.data?.initial &&
       assistantListMap[EModelEndpoint.assistants] &&
       assistantListMap[EModelEndpoint.azureAssistants]
     ) {

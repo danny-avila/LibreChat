@@ -47,7 +47,7 @@ export default function Footer({ className }: { className?: string }) {
       : '[LibreChat ' +
         Constants.VERSION +
         '](https://librechat.ai) - ' +
-        localize('com_ui_pay_per_call')
+        localize('com_ui_latest_footer')
   ).split('|');
 
   const mainContentRender = mainContentParts.map((text, index) => (
