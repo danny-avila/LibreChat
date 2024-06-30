@@ -191,8 +191,8 @@ function localAIProvider(ttsSchema, input, voice) {
  * @returns {Promise<[string, TProviderSchema]>}
  */
 async function getProviderSchema(customConfig) {
-  const provider = getProvider(customConfig.tts);
-  return [provider, customConfig.tts[provider]];
+  const provider = getProvider(customConfig.speech.tts);
+  return [provider, customConfig.speech.tts[provider]];
 }
 
 /**

@@ -10,18 +10,16 @@ export default function ConversationModeSwitch({
 }) {
   const localize = useLocalize();
   const [conversationMode, setConversationMode] = useRecoilState<boolean>(store.conversationMode);
-  const [advancedMode] = useRecoilState<boolean>(store.advancedMode);
-  const [textToSpeech] = useRecoilState<boolean>(store.TextToSpeech);
+  const [speechToText] = useRecoilState<boolean>(store.speechToText);
+  const [textToSpeech] = useRecoilState<boolean>(store.textToSpeech);
   const [, setAutoSendText] = useRecoilState<boolean>(store.autoSendText);
   const [, setDecibelValue] = useRecoilState(store.decibelValue);
   const [, setAutoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
 
   const handleCheckedChange = (value: boolean) => {
-    if (!advancedMode) {
-      setAutoTranscribeAudio(value);
-      setAutoSendText(value);
-      setDecibelValue(-45);
-    }
+    setAutoTranscribeAudio(value);
+    setAutoSendText(value);
+    setDecibelValue(-45);
     setConversationMode(value);
     if (onCheckedChange) {
       onCheckedChange(value);
@@ -40,7 +38,7 @@ export default function ConversationModeSwitch({
           onCheckedChange={handleCheckedChange}
           className="ml-4"
           data-testid="ConversationMode"
-          disabled={!textToSpeech}
+          disabled={!textToSpeech || !speechToText}
         />
       </div>
     </div>

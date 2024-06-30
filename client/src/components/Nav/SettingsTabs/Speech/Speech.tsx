@@ -1,6 +1,6 @@
 import * as Tabs from '@radix-ui/react-tabs';
 import { SettingsTabValues } from 'librechat-data-provider';
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useRecoilState } from 'recoil';
 import { Lightbulb, Cog } from 'lucide-react';
 import { useOnClickOutside, useMediaQuery } from '~/hooks';
@@ -10,7 +10,7 @@ import ConversationModeSwitch from './ConversationModeSwitch';
 import {
   TextToSpeechSwitch,
   EngineTTSDropdown,
-  AutomaticPlayback,
+  AutomaticPlaybackSwitch,
   CacheTTSSwitch,
   VoiceDropdown,
   PlaybackRate,
@@ -18,16 +18,100 @@ import {
 import {
   DecibelSelector,
   EngineSTTDropdown,
+  LanguageSTTDropdown,
   SpeechToTextSwitch,
   AutoSendTextSwitch,
   AutoTranscribeAudioSwitch,
 } from './STT';
+import { useCustomConfigSpeechQuery } from '~/data-provider';
 
 function Speech() {
-  const isSmallScreen = useMediaQuery('(max-width: 767px)');
-  const [advancedMode, setAdvancedMode] = useRecoilState<boolean>(store.advancedMode);
-  const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
   const [confirmClear, setConfirmClear] = useState(false);
+  const { data } = useCustomConfigSpeechQuery();
+  const isSmallScreen = useMediaQuery('(max-width: 767px)');
+
+  const [advancedMode, setAdvancedMode] = useRecoilState(store.advancedMode);
+  const [autoTranscribeAudio, setAutoTranscribeAudio] = useRecoilState(store.autoTranscribeAudio);
+  const [conversationMode, setConversationMode] = useRecoilState(store.conversationMode);
+  const [speechToText, setSpeechToText] = useRecoilState(store.speechToText);
+  const [textToSpeech, setTextToSpeech] = useRecoilState(store.textToSpeech);
+  const [cacheTTS, setCacheTTS] = useRecoilState(store.cacheTTS);
+  const [engineSTT, setEngineSTT] = useRecoilState<string>(store.engineSTT);
+  const [languageSTT, setLanguageSTT] = useRecoilState<string>(store.languageSTT);
+  const [decibelValue, setDecibelValue] = useRecoilState(store.decibelValue);
+  const [autoSendText, setAutoSendText] = useRecoilState(store.autoSendText);
+  const [engineTTS, setEngineTTS] = useRecoilState<string>(store.engineTTS);
+  const [voice, setVoice] = useRecoilState<string>(store.voice);
+  const [languageTTS, setLanguageTTS] = useRecoilState<string>(store.languageTTS);
+  const [automaticPlayback, setAutomaticPlayback] = useRecoilState(store.automaticPlayback);
+  const [playbackRate, setPlaybackRate] = useRecoilState(store.playbackRate);
+
+  const updateSetting = useCallback(
+    (key, newValue) => {
+      const settings = {
+        conversationMode: { value: conversationMode, setFunc: setConversationMode },
+        advancedMode: { value: advancedMode, setFunc: setAdvancedMode },
+        speechToText: { value: speechToText, setFunc: setSpeechToText },
+        textToSpeech: { value: textToSpeech, setFunc: setTextToSpeech },
+        cacheTTS: { value: cacheTTS, setFunc: setCacheTTS },
+        engineSTT: { value: engineSTT, setFunc: setEngineSTT },
+        languageSTT: { value: languageSTT, setFunc: setLanguageSTT },
+        autoTranscribeAudio: { value: autoTranscribeAudio, setFunc: setAutoTranscribeAudio },
+        decibelValue: { value: decibelValue, setFunc: setDecibelValue },
+        autoSendText: { value: autoSendText, setFunc: setAutoSendText },
+        engineTTS: { value: engineTTS, setFunc: setEngineTTS },
+        voice: { value: voice, setFunc: setVoice },
+        languageTTS: { value: languageTTS, setFunc: setLanguageTTS },
+        automaticPlayback: { value: automaticPlayback, setFunc: setAutomaticPlayback },
+        playbackRate: { value: playbackRate, setFunc: setPlaybackRate },
+      };
+
+      if (settings[key]) {
+        const setting = settings[key];
+        setting.setFunc(newValue);
+      }
+    },
+    [
+      conversationMode,
+      advancedMode,
+      speechToText,
+      textToSpeech,
+      cacheTTS,
+      engineSTT,
+      languageSTT,
+      autoTranscribeAudio,
+      decibelValue,
+      autoSendText,
+      engineTTS,
+      voice,
+      languageTTS,
+      automaticPlayback,
+      playbackRate,
+      setConversationMode,
+      setAdvancedMode,
+      setSpeechToText,
+      setTextToSpeech,
+      setCacheTTS,
+      setEngineSTT,
+      setLanguageSTT,
+      setAutoTranscribeAudio,
+      setDecibelValue,
+      setAutoSendText,
+      setEngineTTS,
+      setVoice,
+      setLanguageTTS,
+      setAutomaticPlayback,
+      setPlaybackRate,
+    ],
+  );
+
+  useEffect(() => {
+    if (data) {
+      Object.entries(data).forEach(([key, value]) => {
+        updateSetting(key, value);
+      });
+    }
+  }, []);
 
   const contentRef = useRef(null);
   useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);
@@ -91,12 +175,12 @@ function Speech() {
             <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
               <EngineSTTDropdown />
             </div>
+            <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+              <LanguageSTTDropdown />
+            </div>
             <div className="h-px bg-black/20 bg-white/20" role="none" />
             <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
               <TextToSpeechSwitch />
-            </div>
-            <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-              <AutomaticPlayback />
             </div>
             <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
               <EngineTTSDropdown />
@@ -120,6 +204,9 @@ function Speech() {
               <EngineSTTDropdown />
             </div>
             <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+              <LanguageSTTDropdown />
+            </div>
+            <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
               <AutoTranscribeAudioSwitch />
             </div>
             {autoTranscribeAudio && (
@@ -135,7 +222,7 @@ function Speech() {
               <TextToSpeechSwitch />
             </div>
             <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-              <AutomaticPlayback />
+              <AutomaticPlaybackSwitch />
             </div>
             <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
               <EngineTTSDropdown />

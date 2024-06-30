@@ -423,6 +423,13 @@ export const useVoicesQuery = (): UseQueryResult<t.VoiceResponse> => {
   return useQuery([QueryKeys.voices], () => dataService.getVoices());
 };
 
+/* Custom config speech */
+export const useCustomConfigSpeechQuery = (): UseQueryResult<t.getCustomConfigSpeechResponse> => {
+  return useQuery([QueryKeys.customConfigSpeech], () => dataService.getCustomConfigSpeech());
+};
+
+/** Prompt */
+
 export const usePromptGroupsInfiniteQuery = (
   params?: t.TPromptGroupsWithFilterRequest,
   config?: UseInfiniteQueryOptions<t.PromptGroupListResponse, unknown>,

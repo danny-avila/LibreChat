@@ -27,7 +27,6 @@ const {
   createContextHandlers,
 } = require('./prompts');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
-const { updateTokenWebsocket } = require('~/server/services/Files/Audio');
 const { isEnabled, sleep } = require('~/server/utils');
 const { handleOpenAIErrors } = require('./tools/util');
 const spendTokens = require('~/models/spendTokens');
@@ -595,7 +594,6 @@ class OpenAIClient extends BaseClient {
         payload,
         (progressMessage) => {
           if (progressMessage === '[DONE]') {
-            updateTokenWebsocket('[DONE]');
             return;
           }
 

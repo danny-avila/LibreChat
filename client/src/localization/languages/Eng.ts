@@ -539,7 +539,7 @@ export default {
   com_nav_modular_chat: 'Enable switching Endpoints mid-conversation',
   com_nav_latex_parsing: 'Parsing LaTeX in messages (may affect performance)',
   com_nav_text_to_speech: 'Text to Speech',
-  com_nav_automatic_playback: 'Autoplay Latest Message (external only)',
+  com_nav_automatic_playback: 'Autoplay Latest Message',
   com_nav_speech_to_text: 'Speech to Text',
   com_nav_profile_picture: 'Profile Picture',
   com_nav_change_picture: 'Change picture',
