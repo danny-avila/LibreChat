@@ -66,6 +66,8 @@ export default {
   com_ui_share: 'Share',
   com_ui_share_link_to_chat: 'Share link to chat',
   com_ui_share_error: 'There was an error sharing the chat link',
+  com_ui_share_retrieve_error: 'Une erreur est survenue lors de la suppression du lien partagé.',
+  com_ui_share_delete_error: 'Une erreur est survenue lors de la suppression du lien partagé.',
   com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
   com_ui_share_created_message:
     'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
@@ -823,6 +825,14 @@ export const comparisons = {
   com_ui_share_link_to_chat: {
     english: 'Share link to chat',
     translated: 'Share link to chat',
+  },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Une erreur est survenue lors de la suppression du lien partagé.',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Une erreur est survenue lors de la suppression du lien partagé.',
   },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',

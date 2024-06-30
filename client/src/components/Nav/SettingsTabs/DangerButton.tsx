@@ -6,6 +6,7 @@ import { Spinner } from '~/components/svg';
 import type { TDangerButtonProps } from '~/common';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+import HoverCardSettings from './HoverCardSettings';
 
 const DangerButton = (props: TDangerButtonProps, ref: ForwardedRef<HTMLButtonElement>) => {
   const {
@@ -20,6 +21,7 @@ const DangerButton = (props: TDangerButtonProps, ref: ForwardedRef<HTMLButtonEle
     showText = true,
     dataTestIdInitial,
     dataTestIdConfirm,
+    infoDescriptionCode,
     confirmActionTextCode = 'com_ui_confirm_action',
   } = props;
   const localize = useLocalize();
@@ -33,14 +35,19 @@ const DangerButton = (props: TDangerButtonProps, ref: ForwardedRef<HTMLButtonEle
 
   return (
     <div className="flex items-center justify-between">
-      {showText && <div> {localize(infoTextCode)} </div>}
+      {showText && (
+        <div className={`flex items-center ${infoDescriptionCode ? 'space-x-2' : ''}`}>
+          <div>{localize(infoTextCode)}</div>
+          {infoDescriptionCode && <HoverCardSettings side="bottom" text={infoDescriptionCode} />}
+        </div>
+      )}
       <DialogButton
         id={id}
         ref={ref}
         disabled={disabled}
         onClick={onClick}
         className={cn(
-          ' btn btn-danger relative min-w-[70px] border-none bg-red-700 text-white hover:bg-red-800 dark:hover:bg-red-800',
+          'btn relative border-none bg-red-500 text-white hover:bg-red-700 dark:hover:bg-red-700',
           className,
         )}
       >
