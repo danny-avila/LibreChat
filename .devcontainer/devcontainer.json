@@ -1,18 +1,21 @@
 {
+  "name": "LibreChat Development",
   "dockerComposeFile": "docker-compose.yml",
   "service": "app",
   "workspaceFolder": "/workspaces",
   "customizations": {
     "vscode": {
-      "extensions": [],
+      "extensions": ["ms-azuretools.vscode-docker"],
       "settings": {
-        "terminal.integrated.profiles.linux": {
-          "bash": null
-        }
+        "terminal.integrated.defaultProfile.linux": "bash"
       }
     }
   },
-  "postCreateCommand": "",
-  "features": { "ghcr.io/devcontainers/features/git:1": {} },
-  "remoteUser": "vscode"
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y docker.io docker-compose",
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "remoteUser": "vscode",
+  "forwardPorts": [3080, 27017, 7700]
 }
