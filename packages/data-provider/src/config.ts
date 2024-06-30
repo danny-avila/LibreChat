@@ -321,6 +321,13 @@ export enum EImageOutputType {
   JPEG = 'jpeg',
 }
 
+export const sdSchema = z.object({
+  name: z.string(),
+  webUI: z.string().optional(),
+  specs: z.array(z.string()).optional(),
+  parameters: z.record(z.any()).optional(),
+});
+
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().default(true),
@@ -377,6 +384,11 @@ export const configSchema = z.object({
     .strict()
     .refine((data) => Object.keys(data).length > 0, {
       message: 'At least one `endpoints` field must be provided.',
+    })
+    .optional(),
+  tools: z
+    .object({
+      stableDiffusion: z.array(sdSchema.partial()).optional(),
     })
     .optional(),
 });
