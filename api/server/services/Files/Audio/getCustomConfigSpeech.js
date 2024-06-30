@@ -1,4 +1,3 @@
-const { logger } = require('~/config');
 const getCustomConfig = require('~/server/services/Config/getCustomConfig');
 
 /**
@@ -44,8 +43,7 @@ async function getCustomConfigSpeech(req, res) {
 
     res.json(settings);
   } catch (error) {
-    logger.error(`Failed to get speechTab settings: ${error.message}`);
-    res.status(500).json({ error: 'Failed to get speechTab settings' });
+    res.status(200).send();
   }
 }
 

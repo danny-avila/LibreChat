@@ -1,4 +1,3 @@
-const { logger } = require('~/config');
 const getCustomConfig = require('~/server/services/Config/getCustomConfig');
 const { getProvider } = require('./textToSpeech');
 
@@ -40,8 +39,7 @@ async function getVoices(req, res) {
 
     res.json(voices);
   } catch (error) {
-    logger.error(`Failed to get voices: ${error.message}`);
-    res.status(500).json({ error: 'Failed to get voices' });
+    res.status(500).json({ error: `Failed to get voices: ${error.message}` });
   }
 }
 
