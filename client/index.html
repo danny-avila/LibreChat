@@ -39,6 +39,12 @@
   </head>
   <body>
     <div id="root"></div>
+   <script>
+      document.addEventListener('DOMContentLoaded', () => {
+        const savedFontSize = localStorage.getItem('fontSize') || '16';
+        document.documentElement.style.setProperty('--base-font-size', savedFontSize + 'px');
+      });
+    </script>
 
     <script
       type="module"

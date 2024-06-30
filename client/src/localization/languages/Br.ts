@@ -2072,6 +2072,10 @@ export const comparisons = {
     english: 'Light',
     translated: 'Claro',
   },
+  com_nav_font_size: {
+    english: 'Font Size',
+    translated: 'Tamanho da fonte',
+  },
   com_nav_user_name_display: {
     english: 'Display username in messages',
     translated: 'Exibir nome de usuário nas mensagens',
