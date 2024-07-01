@@ -727,6 +727,10 @@ export enum CacheKeys {
    * Key for the cached audio run Ids.
    */
   AUDIO_RUNS = 'audioRuns',
+  /**
+   * Key for in-progress messages.
+   */
+  MESSAGES = 'messages',
 }
 
 /**
