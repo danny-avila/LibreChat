@@ -154,7 +154,7 @@ const Nav = ({ navVisible, setNavVisible }) => {
                         />
                       )}
                     </div>
-                    <NavLinks />
+                    <NavLinks className="md:hidden" />
                   </nav>
                 </div>
               </div>

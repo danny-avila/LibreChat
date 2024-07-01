@@ -1,26 +1,29 @@
-import { FileText } from 'lucide-react';
-import { useRecoilState } from 'recoil';
+import { useLocation } from 'react-router-dom';
 import { Fragment, useState, memo } from 'react';
+import { FileText } from 'lucide-react';
 import { Menu, Transition } from '@headlessui/react';
+import { useRecoilValue, useRecoilState } from 'recoil';
 import { useGetUserBalance, useGetStartupConfig } from 'librechat-data-provider/react-query';
+import type { TConversation } from 'librechat-data-provider';
 import FilesView from '~/components/Chat/Input/Files/FilesView';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useAvatar from '~/hooks/Messages/useAvatar';
 import { LinkIcon, GearIcon } from '~/components';
 import { UserIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
-import Settings from './Settings';
-import NavLink from './NavLink';
-import Logout from './Logout';
+import Settings from '~/components/Nav/Settings';
+import NavLink from '~/components/Nav/NavLink';
+import Logout from '~/components/Nav/Logout';
 import { cn } from '~/utils/';
 import store from '~/store';
 
-interface NavLinksProps {
+interface ProfileButtonProps {
   className?: string;
 }
 
-function NavLinks({ className }: NavLinksProps) {
+function ProfileButton({ className }: ProfileButtonProps) {
   const localize = useLocalize();
+  const location = useLocation();
   const { user, isAuthenticated } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
   const balanceQuery = useGetUserBalance({
@@ -29,21 +32,31 @@ function NavLinks({ className }: NavLinksProps) {
   const [showSettings, setShowSettings] = useState(false);
   const [showFiles, setShowFiles] = useRecoilState(store.showFiles);
 
+  const activeConvo = useRecoilValue(store.conversationByIndex(0));
+  const globalConvo = useRecoilValue(store.conversation) ?? ({} as TConversation);
+
   const avatarSrc = useAvatar(user);
+
+  let conversation: TConversation | null | undefined;
+  if (location.state?.from?.pathname.includes('/chat')) {
+    conversation = globalConvo;
+  } else {
+    conversation = activeConvo;
+  }
 
   return (
     <>
-      <Menu as="div" className={cn('group relative', className)}>
+      <Menu as="div" className={cn('group', className)}>
         {({ open }) => (
           <>
             <Menu.Button
               className={cn(
-                'group-ui-open:bg-gray-100 dark:group-ui-open:bg-gray-700 duration-350 mt-text-sm flex h-auto w-full items-center gap-2 rounded-lg p-2 text-sm transition-colors hover:bg-gray-100 dark:hover:bg-gray-800',
-                open ? 'bg-gray-100 dark:bg-gray-800' : '',
+                'flex h-10 w-10 items-center justify-center rounded-full hover:bg-gray-100 focus-visible:bg-gray-100 focus-visible:outline-0 dark:hover:bg-gray-700',
+                open ? 'bg-gray-100 dark:bg-gray-700' : '',
               )}
               data-testid="nav-user"
             >
-              <div className="-ml-0.9 -mt-0.8 h-8 w-8 flex-shrink-0">
+              <div className="flex items-center justify-center overflow-hidden rounded-full">
                 <div className="relative flex">
                   {!user?.avatar && !user?.username ? (
                     <div
@@ -58,15 +71,9 @@ function NavLinks({ className }: NavLinksProps) {
                       <UserIcon />
                     </div>
                   ) : (
-                    <img className="rounded-full" src={user?.avatar || avatarSrc} alt="avatar" />
+                    <img className="rounded-sm" width={32} height={32} src={user?.avatar || avatarSrc} alt="avatar" />
                   )}
                 </div>
-              </div>
-              <div
-                className="mt-2 grow overflow-hidden text-ellipsis whitespace-nowrap text-left text-black dark:text-gray-100"
-                style={{ marginTop: '0', marginLeft: '0' }}
-              >
-                {user?.name || user?.username || localize('com_nav_user')}
               </div>
             </Menu.Button>
 
@@ -79,11 +86,7 @@ function NavLinks({ className }: NavLinksProps) {
               leaveFrom="translate-y-0 opacity-100"
               leaveTo="translate-y-2 opacity-0"
             >
-              <Menu.Items className="absolute bottom-full left-0 z-[100] mb-1 mt-1 w-full translate-y-0 overflow-hidden rounded-lg border border-gray-300 bg-white p-1.5 opacity-100 shadow-lg outline-none dark:border-gray-600 dark:bg-gray-700">
-                <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm" role="none">
-                  {user?.email || localize('com_nav_user')}
-                </div>
-                <div className="my-1.5 h-px bg-black/10 dark:bg-white/10" role="none" />
+              <Menu.Items className="top-15 absolute right-0 z-[100] mb-1 mr-2 mt-1 w-64 translate-y-0 overflow-hidden rounded-2xl border border-gray-300 bg-white p-2 opacity-100 shadow-lg outline-none dark:border-gray-600 dark:bg-gray-700">
                 {startupConfig?.checkBalance &&
                   balanceQuery.data &&
                   !isNaN(parseFloat(balanceQuery.data)) && (
@@ -132,4 +135,4 @@ function NavLinks({ className }: NavLinksProps) {
   );
 }
 
-export default memo(NavLinks);
+export default memo(ProfileButton);
