@@ -1,17 +1,18 @@
 const throttle = require('lodash/throttle');
 const {
+  Time,
+  CacheKeys,
   StepTypes,
   ContentTypes,
   ToolCallTypes,
-  // StepStatus,
   MessageContentTypes,
   AssistantStreamEvents,
 } = require('librechat-data-provider');
 const { retrieveAndProcessFile } = require('~/server/services/Files/process');
 const { processRequiredActions } = require('~/server/services/ToolService');
-const { saveMessage, updateMessageText } = require('~/models/Message');
 const { createOnProgress, sendMessage } = require('~/server/utils');
 const { processMessages } = require('~/server/services/Threads');
+const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
 
 /**
@@ -68,8 +69,6 @@ class StreamRunManager {
     this.attachedFileIds = fields.attachedFileIds;
     /** @type {undefined | Promise<ChatCompletion>} */
     this.visionPromise = fields.visionPromise;
-    /** @type {boolean} */
-    this.savedInitialMessage = false;
 
     /**
      * @type {Object.<AssistantStreamEvents, (event: AssistantStreamEvent) => Promise<void>>}
@@ -139,11 +138,11 @@ class StreamRunManager {
     return this.intermediateText;
   }
 
-  /** Saves the initial intermediate message
-   * @returns {Promise<void>}
+  /** Returns the current, intermediate message
+   * @returns {TMessage}
    */
-  async saveInitialMessage() {
-    return saveMessage({
+  getIntermediateMessage() {
+    return {
       conversationId: this.finalMessage.conversationId,
       messageId: this.finalMessage.messageId,
       parentMessageId: this.parentMessageId,
@@ -155,7 +154,7 @@ class StreamRunManager {
       sender: 'Assistant',
       unfinished: true,
       error: false,
-    });
+    };
   }
 
   /* <------------------ Main Event Handlers ------------------> */
@@ -589,21 +588,14 @@ class StreamRunManager {
       const index = this.getStepIndex(stepKey);
       this.orderedRunSteps.set(index, message_creation);
 
+      const messageCache = getLogStores(CacheKeys.MESSAGES);
       // Create the Factory Function to stream the message
       const { onProgress: progressCallback } = createOnProgress({
         onProgress: throttle(
           () => {
-            if (!this.savedInitialMessage) {
-              this.saveInitialMessage();
-              this.savedInitialMessage = true;
-            } else {
-              updateMessageText({
-                messageId: this.finalMessage.messageId,
-                text: this.getText(),
-              });
-            }
+            messageCache.set(this.finalMessage.messageId, this.getText(), Time.FIVE_MINUTES);
           },
-          2000,
+          3000,
           { trailing: false },
         ),
       });

@@ -1,10 +1,11 @@
 const crypto = require('crypto');
 const fetch = require('node-fetch');
-const { supportsBalanceCheck, Constants } = require('librechat-data-provider');
+const { supportsBalanceCheck, Constants, CacheKeys, Time } = require('librechat-data-provider');
 const { getMessages, saveMessage, updateMessage, saveConvo } = require('~/models');
 const { addSpaceIfNeeded, isEnabled } = require('~/server/utils');
 const checkBalance = require('~/models/checkBalance');
 const { getFiles } = require('~/models/File');
+const { getLogStores } = require('~/cache');
 const TextStream = require('./TextStream');
 const { logger } = require('~/config');
 
@@ -540,6 +541,15 @@ class BaseClient {
       await this.recordTokenUsage({ promptTokens, completionTokens });
     }
     this.responsePromise = this.saveMessageToDatabase(responseMessage, saveOptions, user);
+    const messageCache = getLogStores(CacheKeys.MESSAGES);
+    messageCache.set(
+      responseMessageId,
+      {
+        text: responseMessage.text,
+        complete: true,
+      },
+      Time.FIVE_MINUTES,
+    );
     delete responseMessage.tokenCount;
     return responseMessage;
   }

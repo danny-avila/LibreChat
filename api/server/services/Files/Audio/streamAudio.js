@@ -1,5 +1,6 @@
 const WebSocket = require('ws');
-const { Message } = require('~/models/Message');
+const { CacheKeys } = require('librechat-data-provider');
+const { getLogStores } = require('~/cache');
 
 /**
  * @param {string[]} voiceIds - Array of voice IDs
@@ -104,6 +105,8 @@ function createChunkProcessor(messageId) {
     throw new Error('Message ID is required');
   }
 
+  const messageCache = getLogStores(CacheKeys.MESSAGES);
+
   /**
    * @returns {Promise<{ text: string, isFinished: boolean }[] | string>}
    */
@@ -116,14 +119,17 @@ function createChunkProcessor(messageId) {
       return `No change in message after ${MAX_NO_CHANGE_COUNT} attempts`;
     }
 
-    const message = await Message.findOne({ messageId }, 'text unfinished').lean();
+    /** @type { string | { text: string; complete: boolean } } */
+    const message = await messageCache.get(messageId);
 
-    if (!message || !message.text) {
+    if (!message) {
       notFoundCount++;
       return [];
     }
 
-    const { text, unfinished } = message;
+    const text = typeof message === 'string' ? message : message.text;
+    const complete = typeof message === 'string' ? false : message.complete;
+
     if (text === processedText) {
       noChangeCount++;
     }
@@ -131,7 +137,7 @@ function createChunkProcessor(messageId) {
     const remainingText = text.slice(processedText.length);
     const chunks = [];
 
-    if (unfinished && remainingText.length >= 20) {
+    if (!complete && remainingText.length >= 20) {
       const separatorIndex = findLastSeparatorIndex(remainingText);
       if (separatorIndex !== -1) {
         const chunkText = remainingText.slice(0, separatorIndex + 1);
@@ -141,7 +147,7 @@ function createChunkProcessor(messageId) {
         chunks.push({ text: remainingText, isFinished: false });
         processedText = text;
       }
-    } else if (!unfinished && remainingText.trim().length > 0) {
+    } else if (complete && remainingText.trim().length > 0) {
       chunks.push({ text: remainingText.trim(), isFinished: true });
       processedText = text;
     }
