@@ -1,14 +1,37 @@
-import { useState, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import type { ReactNode } from 'react';
 
 const useDelayedRender = (delay: number) => {
   const [delayed, setDelayed] = useState(true);
+  const timerPromiseRef = useRef<Promise<void> | null>(null);
+
   useEffect(() => {
-    const timeout = setTimeout(() => setDelayed(false), delay);
-    return () => clearTimeout(timeout);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  return (fn: () => ReactNode) => !delayed && fn();
+    if (delayed) {
+      const timerPromise = new Promise<void>((resolve) => {
+        const timeout = setTimeout(() => {
+          setDelayed(false);
+          resolve();
+        }, delay);
+
+        return () => {
+          clearTimeout(timeout);
+        };
+      });
+
+      timerPromiseRef.current = timerPromise;
+    }
+
+    return () => {
+      timerPromiseRef.current = null;
+    };
+  }, [delay, delayed]);
+
+  return (fn: () => ReactNode) => {
+    if (delayed && timerPromiseRef.current) {
+      throw timerPromiseRef.current;
+    }
+    return fn();
+  };
 };
 
 export default useDelayedRender;

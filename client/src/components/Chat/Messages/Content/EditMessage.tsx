@@ -1,12 +1,14 @@
+import { useRecoilState } from 'recoil';
 import TextareaAutosize from 'react-textarea-autosize';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useUpdateMessageMutation } from 'librechat-data-provider/react-query';
 import type { TEditProps } from '~/common';
-import { cn, removeFocusOutlines } from '~/utils';
-import { useChatContext } from '~/Providers';
+import { useChatContext, useAddedChatContext } from '~/Providers';
+import { cn, removeFocusRings } from '~/utils';
 import { useLocalize } from '~/hooks';
 import Container from './Container';
+import store from '~/store';
 
 const EditMessage = ({
   text,
@@ -17,7 +19,11 @@ const EditMessage = ({
   siblingIdx,
   setSiblingIdx,
 }: TEditProps) => {
+  const { addedIndex } = useAddedChatContext();
   const { getMessages, setMessages, conversation } = useChatContext();
+  const [latestMultiMessage, setLatestMultiMessage] = useRecoilState(
+    store.latestMessageFamily(addedIndex),
+  );
 
   const [editedText, setEditedText] = useState<string>(text ?? '');
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -85,17 +91,28 @@ const EditMessage = ({
       text: editedText,
       messageId,
     });
-    setMessages(
-      messages.map((msg) =>
-        msg.messageId === messageId
-          ? {
-            ...msg,
-            text: editedText,
-            isEdited: true,
-          }
-          : msg,
-      ),
-    );
+
+    if (message.messageId === latestMultiMessage?.messageId) {
+      setLatestMultiMessage({ ...latestMultiMessage, text: editedText });
+    }
+
+    const isInMessages = messages?.some((message) => message?.messageId === messageId);
+    if (!isInMessages) {
+      message.text = editedText;
+    } else {
+      setMessages(
+        messages.map((msg) =>
+          msg.messageId === messageId
+            ? {
+              ...msg,
+              text: editedText,
+              isEdited: true,
+            }
+            : msg,
+        ),
+      );
+    }
+
     enterEdit(true);
   };
 
@@ -111,36 +128,43 @@ const EditMessage = ({
 
   return (
     <Container message={message}>
-      <TextareaAutosize
-        ref={textAreaRef}
-        onChange={(e) => {
-          setEditedText(e.target.value);
-        }}
-        onKeyDown={handleKeyDown}
-        data-testid="message-text-editor"
-        className={cn(
-          'markdown prose dark:prose-invert light whitespace-pre-wrap break-words dark:text-gray-20',
-          'm-0 w-full resize-none border-0 bg-transparent p-0',
-          removeFocusOutlines,
-        )}
-        onPaste={(e) => {
-          e.preventDefault();
+      <div className="bg-token-main-surface-primary relative flex w-full flex-grow flex-col overflow-hidden rounded-2xl border dark:border-gray-600 dark:text-white [&:has(textarea:focus)]:border-gray-300 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)] dark:[&:has(textarea:focus)]:border-gray-500">
+        <TextareaAutosize
+          ref={textAreaRef}
+          onChange={(e) => {
+            setEditedText(e.target.value);
+          }}
+          onKeyDown={handleKeyDown}
+          data-testid="message-text-editor"
+          className={cn(
+            'markdown prose dark:prose-invert light whitespace-pre-wrap break-words',
+            'pl-3 md:pl-4',
+            'm-0 w-full resize-none border-0 bg-transparent py-[10px]',
+            'placeholder-black/50 focus:ring-0 focus-visible:ring-0 dark:bg-transparent dark:placeholder-white/50 md:py-3.5  ',
+            'pr-3 md:pr-4',
+            'max-h-[65vh] md:max-h-[75vh]',
+            removeFocusRings,
+          )}
+          onPaste={(e) => {
+            e.preventDefault();
 
-          const pastedData = e.clipboardData.getData('text/plain');
-          const textArea = textAreaRef.current;
-          if (!textArea) {
-            return;
-          }
-          const start = textArea.selectionStart;
-          const end = textArea.selectionEnd;
-          const newValue =
-            textArea.value.substring(0, start) + pastedData + textArea.value.substring(end);
-          setEditedText(newValue);
-        }}
-        contentEditable={true}
-        value={editedText}
-        suppressContentEditableWarning={true}
-      />
+            const pastedData = e.clipboardData.getData('text/plain');
+            const textArea = textAreaRef.current;
+            if (!textArea) {
+              return;
+            }
+            const start = textArea.selectionStart;
+            const end = textArea.selectionEnd;
+            const newValue =
+              textArea.value.substring(0, start) + pastedData + textArea.value.substring(end);
+            setEditedText(newValue);
+          }}
+          contentEditable={true}
+          value={editedText}
+          suppressContentEditableWarning={true}
+          dir="auto"
+        />
+      </div>
       <div className="mt-2 flex w-full justify-center text-center">
         <button
           className="btn btn-primary relative mr-2"

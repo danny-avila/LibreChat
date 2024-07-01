@@ -1,6 +1,7 @@
 import {
   EToolResources,
   LocalStorageKeys,
+  InfiniteCollections,
   defaultAssistantsVersion,
 } from 'librechat-data-provider';
 import { useSetRecoilState } from 'recoil';
@@ -9,9 +10,11 @@ import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librech
 import type { UseMutationResult } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
 import {
+  /* Shared Links */
   addSharedLink,
-  addConversation,
   deleteSharedLink,
+  /* Conversations */
+  addConversation,
   updateConvoFields,
   updateConversation,
   deleteConversation,
@@ -20,13 +23,15 @@ import { useConversationsInfiniteQuery, useSharedLinksInfiniteQuery } from './qu
 import { normalizeData } from '~/utils/collection';
 import store from '~/store';
 
-/** Conversations */
-export const useGenTitleMutation = (): UseMutationResult<
+export type TGenTitleMutation = UseMutationResult<
   t.TGenTitleResponse,
   unknown,
   t.TGenTitleRequest,
   unknown
-> => {
+>;
+
+/** Conversations */
+export const useGenTitleMutation = (): TGenTitleMutation => {
   const queryClient = useQueryClient();
   return useMutation((payload: t.TGenTitleRequest) => dataService.genTitle(payload), {
     onSuccess: (response, vars) => {
@@ -174,7 +179,7 @@ export const useCreateSharedLinkMutation = (
           vars.isPublic
             ? addSharedLink(sharedLink, _data)
             : deleteSharedLink(sharedLink, _data.shareId),
-          'sharedLinks',
+          InfiniteCollections.SHARED_LINKS,
           pageSize,
         );
       });
@@ -216,7 +221,7 @@ export const useUpdateSharedLinkMutation = (
           // Therefore, when isPublic is true, use addSharedLink instead of updateSharedLink.
             addSharedLink(sharedLink, _data)
             : deleteSharedLink(sharedLink, _data.shareId),
-          'sharedLinks',
+          InfiniteCollections.SHARED_LINKS,
           sharedLink.pages[0].pageSize as number,
         );
       });
@@ -254,7 +259,7 @@ export const useDeleteSharedLinkMutation = (
         }
         return normalizeData(
           deleteSharedLink(data, vars.shareId),
-          'sharedLinks',
+          InfiniteCollections.SHARED_LINKS,
           data.pages[0].pageSize as number,
         );
       });
@@ -344,81 +349,18 @@ export const useForkConvoMutation = (
 };
 
 export const useUploadConversationsMutation = (
-  _options?: t.MutationOptions<t.TImportJobStatus, FormData>,
+  _options?: t.MutationOptions<t.TImportResponse, FormData>,
 ) => {
   const queryClient = useQueryClient();
   const { onSuccess, onError, onMutate } = _options || {};
 
-  // returns the job status or reason of failure
-  const checkJobStatus = async (jobId) => {
-    try {
-      const response = await dataService.queryImportConversationJobStatus(jobId);
-      return response;
-    } catch (error) {
-      throw new Error('Failed to check job status');
-    }
-  };
-
-  // Polls the job status until it is completed, failed, or timed out
-  const pollJobStatus = (jobId, onSuccess, onError) => {
-    let timeElapsed = 0;
-    const timeout = 60000; // Timeout after a minute
-    const pollInterval = 500; // Poll every 500ms
-    const intervalId = setInterval(async () => {
-      try {
-        const statusResponse = await checkJobStatus(jobId);
-        console.log('Polling job status', statusResponse);
-        if (statusResponse.status === 'completed' || statusResponse.status === 'failed') {
-          clearInterval(intervalId);
-          if (statusResponse.status === 'completed') {
-            onSuccess && onSuccess(statusResponse);
-          } else {
-            onError &&
-              onError(
-                new Error(
-                  statusResponse.failReason
-                    ? statusResponse.failReason
-                    : 'Failed to import conversations',
-                ),
-              );
-          }
-        }
-        timeElapsed += pollInterval; // Increment time elapsed by polling interval
-        if (timeElapsed >= timeout) {
-          clearInterval(intervalId);
-          onError && onError(new Error('Polling timed out'));
-        }
-      } catch (error) {
-        clearInterval(intervalId);
-        onError && onError(error);
-      }
-    }, pollInterval);
-  };
-
-  return useMutation<t.TImportStartResponse, unknown, FormData>({
+  return useMutation<t.TImportResponse, unknown, FormData>({
     mutationFn: (formData: FormData) => dataService.importConversationsFile(formData),
     onSuccess: (data, variables, context) => {
+      /* TODO: optimize to return imported conversations and add manually */
       queryClient.invalidateQueries([QueryKeys.allConversations]);
-      // Assuming the job ID is in the response data
-      const jobId = data.jobId;
-      if (jobId) {
-        // Start polling for job status
-        pollJobStatus(
-          jobId,
-          (statusResponse) => {
-            // This is the final success callback when the job is completed
-            queryClient.invalidateQueries([QueryKeys.allConversations]); // Optionally refresh conversations query
-            if (onSuccess) {
-              onSuccess(statusResponse, variables, context);
-            }
-          },
-          (error) => {
-            // This is the error callback for job failure or polling errors
-            if (onError) {
-              onError(error, variables, context);
-            }
-          },
-        );
+      if (onSuccess) {
+        onSuccess(data, variables, context);
       }
     },
     onError: (err, variables, context) => {
@@ -585,6 +527,8 @@ export const useLogoutUserMutation = (
       setDefaultPreset(null);
       queryClient.removeQueries();
       localStorage.removeItem(LocalStorageKeys.LAST_CONVO_SETUP);
+      localStorage.removeItem(`${LocalStorageKeys.LAST_CONVO_SETUP}_0`);
+      localStorage.removeItem(`${LocalStorageKeys.LAST_CONVO_SETUP}_1`);
       localStorage.removeItem(LocalStorageKeys.LAST_MODEL);
       localStorage.removeItem(LocalStorageKeys.LAST_TOOLS);
       localStorage.removeItem(LocalStorageKeys.FILES_TO_DELETE);
@@ -625,6 +569,8 @@ export const useDeleteUserMutation = (
       setDefaultPreset(null);
       queryClient.removeQueries();
       localStorage.removeItem(LocalStorageKeys.LAST_CONVO_SETUP);
+      localStorage.removeItem(`${LocalStorageKeys.LAST_CONVO_SETUP}_0`);
+      localStorage.removeItem(`${LocalStorageKeys.LAST_CONVO_SETUP}_1`);
       localStorage.removeItem(LocalStorageKeys.LAST_MODEL);
       localStorage.removeItem(LocalStorageKeys.LAST_TOOLS);
       localStorage.removeItem(LocalStorageKeys.FILES_TO_DELETE);

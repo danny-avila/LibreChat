@@ -1,6 +1,6 @@
 {
   "name": "@librechat/frontend",
-  "version": "0.7.2",
+  "version": "0.7.4-rc1",
   "description": "",
   "type": "module",
   "scripts": {
@@ -66,7 +66,7 @@
     "image-blob-reduce": "^4.1.0",
     "librechat-data-provider": "*",
     "lodash": "^4.17.21",
-    "lucide-react": "^0.220.0",
+    "lucide-react": "^0.394.0",
     "match-sorter": "^6.3.4",
     "rc-input-number": "^7.4.2",
     "react": "^18.2.0",
@@ -74,6 +74,7 @@
     "react-dnd-html5-backend": "^16.0.1",
     "react-dom": "^18.2.0",
     "react-flip-toolkit": "^7.1.0",
+    "react-gtm-module": "^2.0.11",
     "react-hook-form": "^7.43.9",
     "react-lazy-load-image-component": "^1.6.0",
     "react-markdown": "^8.0.6",

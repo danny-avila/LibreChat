@@ -8,6 +8,7 @@ import { EndpointsMenu, ModelSpecsMenu, PresetsMenu, HeaderNewChat } from './Men
 import ProfileButton from './ProfileButton';
 import ExportAndShareMenu from './ExportAndShareMenu';
 import HeaderOptions from './Input/HeaderOptions';
+import AddMultiConvo from './AddMultiConvo';
 import { useMediaQuery } from '~/hooks';
 
 const defaultInterface = getConfigDefaults().interface;
@@ -32,10 +33,18 @@ export default function Header() {
           {modelSpecs?.length > 0 && <ModelSpecsMenu modelSpecs={modelSpecs} />}
           {<HeaderOptions interfaceConfig={interfaceConfig} />}
           {interfaceConfig.presets && <PresetsMenu />}
-          {isSmallScreen && <ExportAndShareMenu className="pl-0" />}
+          {isSmallScreen && (
+            <ExportAndShareMenu
+              isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
+              className="pl-0"
+            />
+          )}
+          <AddMultiConvo />
         </div>
         <div className="flex items-center gap-2 font-normal">
-          {!isSmallScreen && <ExportAndShareMenu />}
+          {!isSmallScreen && (
+            <ExportAndShareMenu isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false} />
+          )}
           <ProfileButton className="hidden md:block" />
         </div>
       </div>

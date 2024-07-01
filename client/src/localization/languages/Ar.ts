@@ -32,7 +32,6 @@ export default {
   com_ui_enter: 'أدخل',
   com_ui_submit: 'إرسال',
   com_ui_upload_success: 'تم تحميل الملف بنجاح',
-  com_ui_upload_invalid: 'ملف غير صالح للتحميل',
   com_ui_cancel: 'إلغاء',
   com_ui_save: 'حفظ',
   com_ui_copy_to_clipboard: 'نسخ إلى الحافظة',
@@ -51,20 +50,24 @@ export default {
   com_ui_import_conversation_error: 'حدث خطأ أثناء استيراد محادثاتك',
   com_ui_confirm_action: 'تأكيد الإجراء',
   com_ui_chats: 'الدردشات',
-  com_ui_share: 'Share',
-  com_ui_share_link_to_chat: 'Share link to chat',
-  com_ui_share_error: 'There was an error sharing the chat link',
-  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share: 'مشاركة',
+  com_ui_copy_link: 'نسخ الرابط',
+  com_ui_update_link: 'رابط التحديث',
+  com_ui_create_link: 'إنشاء رابط',
+  com_ui_share_link_to_chat: 'شارك الرابط في الدردشة',
+  com_ui_share_error: 'حدث خطأ أثناء مشاركة رابط الدردشة',
+  com_ui_share_retrieve_error: 'حدث خطأ أثناء حذف الرابط المشترك.',
+  com_ui_share_delete_error: 'حدث خطأ أثناء حذف الرابط المشترك.',
+  com_ui_share_create_message: 'سيظل اسمك وأي رسائل تضيفها بعد المشاركة خاصة.',
   com_ui_share_created_message:
-    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
-  com_ui_share_update_message:
-    'Your name, custom instructions, and any messages you add after sharing stay private.',
+    'تم إنشاء رابط مشترك للدردشة الخاصة بك. يمكنك إدارة الدردشات المشتركة مسبقًا في أي وقت عبر الإعدادات.',
+  com_ui_share_update_message: 'سيظل اسمك والتعليمات المخصصة وأي رسائل تضيفها بعد المشاركة خاصة.',
   com_ui_share_updated_message:
-    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
-  com_ui_shared_link_not_found: 'Shared link not found',
+    'تم تحديث رابط مشترك للدردشة الخاصة بك. يمكنك إدارة الدردشات المشتركة مسبقًا في أي وقت عبر الإعدادات.',
+  com_ui_shared_link_not_found: 'الرابط المشترك غير موجود',
   com_ui_delete: 'حذف',
   com_ui_delete_conversation: 'حذف الدردشة؟',
-  com_ui_delete_conversation_confirm: 'سيتم حذف هذا',
+  com_ui_delete_confirm: 'سيتم حذف هذا',
   com_ui_rename: 'إعادة تسمية',
   com_ui_archive: 'أرشفة',
   com_ui_archive_error: 'فشل في أرشفة المحادثة',
@@ -308,9 +311,6 @@ export default {
   com_ui_assistant_delete_error: 'حدث خطأ أثناء حذف المساعد',
   com_ui_copied: 'تم النسخ',
   com_ui_copy_code: 'نسخ الكود',
-  com_ui_copy_link: 'نسخ الرابط',
-  com_ui_update_link: 'رابط التحديث',
-  com_ui_create_link: 'إنشاء رابط',
   com_nav_source_chat: 'عرض محادثة المصدر',
   com_ui_date_today: 'اليوم',
   com_ui_date_yesterday: 'أمس',
@@ -544,6 +544,7 @@ export default {
   com_nav_my_files: 'ملفاتي',
   com_nav_enter_to_send: 'اضغط على مفتاح الإدخال لإرسال الرسائل',
   com_nav_user_name_display: 'عرض اسم المستخدم في الرسائل',
+  com_nav_save_drafts: 'حفظ المستخدمين',
   com_nav_show_code: 'إظهار الشفرة دائمًا عند استخدام مفسر الشفرة',
   com_nav_send_message: 'إرسال رسالة',
   com_nav_setting_beta: 'ميزات تجريبية',
@@ -692,10 +693,6 @@ export const comparisons = {
     english: 'Successfully uploaded file',
     translated: 'تم تحميل الملف بنجاح',
   },
-  com_ui_upload_invalid: {
-    english: 'Invalid file for upload. Must be an image not exceeding 2 MB',
-    translated: 'ملف غير صالح للتحميل',
-  },
   com_ui_cancel: {
     english: 'Cancel',
     translated: 'إلغاء',
@@ -770,40 +767,59 @@ export const comparisons = {
   },
   com_ui_share: {
     english: 'Share',
-    translated: 'Share',
+    translated: 'مشاركة',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: 'نسخ الرابط',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: 'رابط التحديث',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: 'إنشاء رابط',
   },
   com_ui_share_link_to_chat: {
     english: 'Share link to chat',
-    translated: 'Share link to chat',
+    translated: 'شارك الرابط في الدردشة',
+  },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'حدث خطأ أثناء حذف الرابط المشترك.',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'حدث خطأ أثناء حذف الرابط المشترك.',
   },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
-    translated: 'There was an error sharing the chat link',
+    translated: 'حدث خطأ أثناء مشاركة رابط الدردشة',
   },
   com_ui_share_create_message: {
     english: 'Your name and any messages you add after sharing stay private.',
-    translated: 'Your name and any messages you add after sharing stay private.',
+    translated: 'سيظل اسمك وأي رسائل تضيفها بعد المشاركة خاصة.',
   },
   com_ui_share_created_message: {
     english:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
     translated:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'تم إنشاء رابط مشترك للدردشة الخاصة بك. يمكنك إدارة الدردشات المشتركة مسبقًا في أي وقت عبر الإعدادات.',
   },
   com_ui_share_update_message: {
     english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
-    translated:
-      'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated: 'سيظل اسمك والتعليمات المخصصة وأي رسائل تضيفها بعد المشاركة خاصة.',
   },
   com_ui_share_updated_message: {
     english:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
     translated:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'تم تحديث رابط مشترك للدردشة الخاصة بك. يمكنك إدارة الدردشات المشتركة مسبقًا في أي وقت عبر الإعدادات.',
   },
   com_ui_shared_link_not_found: {
     english: 'Shared link not found',
-    translated: 'Shared link not found',
+    translated: 'الرابط المشترك غير موجود',
   },
   com_ui_delete: {
     english: 'Delete',
@@ -813,7 +829,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'حذف الدردشة؟',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'سيتم حذف هذا',
   },
@@ -1683,18 +1699,6 @@ export const comparisons = {
     english: 'Copy code',
     translated: 'نسخ الكود',
   },
-  com_ui_copy_link: {
-    english: 'Copy link',
-    translated: 'نسخ الرابط',
-  },
-  com_ui_update_link: {
-    english: 'Update link',
-    translated: 'رابط التحديث',
-  },
-  com_ui_create_link: {
-    english: 'Create link',
-    translated: 'إنشاء رابط',
-  },
   com_nav_source_chat: {
     english: 'View source chat',
     translated: 'عرض محادثة المصدر',
@@ -2558,6 +2562,10 @@ export const comparisons = {
   com_nav_user_name_display: {
     english: 'Display username in messages',
     translated: 'عرض اسم المستخدم في الرسائل',
+  },
+  com_nav_save_drafts: {
+    english: 'Save drafts locally',
+    translated: 'حفظ المستخدمين محليًا',
   },
   com_nav_show_code: {
     english: 'Always show code when using code interpreter',

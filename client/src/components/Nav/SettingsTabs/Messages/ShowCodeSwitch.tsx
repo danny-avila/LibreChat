@@ -1,4 +1,5 @@
 import { useRecoilState } from 'recoil';
+import HoverCardSettings from '../HoverCardSettings';
 import { Switch } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import store from '~/store';

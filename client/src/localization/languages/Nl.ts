@@ -34,7 +34,6 @@ export default {
   com_ui_enter: 'Invoeren',
   com_ui_submit: 'Indienen',
   com_ui_upload_success: 'Bestand succesvol geüpload',
-  com_ui_upload_invalid: 'Ongeldig bestand voor uploaden',
   com_ui_cancel: 'Annuleren',
   com_ui_save: 'Opslaan',
   com_ui_copy_to_clipboard: 'Kopiëren naar klembord',
@@ -54,20 +53,27 @@ export default {
     'Er is een fout opgetreden bij het importeren van je gesprekken',
   com_ui_confirm_action: 'Bevestig actie',
   com_ui_chats: 'chats',
-  com_ui_share: 'Share',
-  com_ui_share_link_to_chat: 'Share link to chat',
-  com_ui_share_error: 'There was an error sharing the chat link',
-  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share: 'Delen',
+  com_ui_copy_link: 'Link kopiëren',
+  com_ui_update_link: 'Link bijwerken',
+  com_ui_create_link: 'Link aanmaken',
+  com_ui_share_link_to_chat: 'Deel link naar chat',
+  com_ui_share_error: 'Er is een fout opgetreden bij het delen van de chatlink',
+  com_ui_share_retrieve_error:
+    'Er is een fout opgetreden bij het verwijderen van de gedeelde link.',
+  com_ui_share_delete_error: 'Er is een fout opgetreden bij het verwijderen van de gedeelde link.',
+  com_ui_share_create_message:
+    'Uw naam en alle berichten die u na het delen toevoegt, blijven privé.',
   com_ui_share_created_message:
-    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    'Een gedeelde link naar uw chat is aangemaakt. Beheer eerder gedeelde chats op elk moment via Instellingen.',
   com_ui_share_update_message:
-    'Your name, custom instructions, and any messages you add after sharing stay private.',
+    'Uw naam, aangepaste instructies en alle berichten die u na het delen toevoegt, blijven privé.',
   com_ui_share_updated_message:
-    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
-  com_ui_shared_link_not_found: 'Shared link not found',
+    'Een gedeelde link naar uw chat is bijgewerkt. Beheer eerder gedeelde chats op elk moment via Instellingen.',
+  com_ui_shared_link_not_found: 'Gedeelde link niet gevonden',
   com_ui_delete: 'Verwijderen',
   com_ui_delete_conversation: 'Chat verwijderen?',
-  com_ui_delete_conversation_confirm: 'Hiermee wordt',
+  com_ui_delete_confirm: 'Hiermee wordt',
   com_ui_rename: 'Hernoemen',
   com_ui_archive: 'Archiveren',
   com_ui_archive_error: 'Kan conversatie niet archiveren',
@@ -513,40 +519,60 @@ export const comparisons = {
   },
   com_ui_share: {
     english: 'Share',
-    translated: 'Share',
+    translated: 'Delen',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: 'Link kopiëren',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: 'Link bijwerken',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: 'Link aanmaken',
   },
   com_ui_share_link_to_chat: {
     english: 'Share link to chat',
-    translated: 'Share link to chat',
+    translated: 'Deel link naar chat',
+  },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Er is een fout opgetreden bij het verwijderen van de gedeelde link.',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Er is een fout opgetreden bij het verwijderen van de gedeelde link.',
   },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
-    translated: 'There was an error sharing the chat link',
+    translated: 'Er is een fout opgetreden bij het delen van de chatlink',
   },
   com_ui_share_create_message: {
     english: 'Your name and any messages you add after sharing stay private.',
-    translated: 'Your name and any messages you add after sharing stay private.',
+    translated: 'Uw naam en alle berichten die u na het delen toevoegt, blijven privé.',
   },
   com_ui_share_created_message: {
     english:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
     translated:
-      'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+      'Een gedeelde link naar uw chat is aangemaakt. Beheer eerder gedeelde chats op elk moment via Instellingen.',
   },
   com_ui_share_update_message: {
     english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
     translated:
-      'Your name, custom instructions, and any messages you add after sharing stay private.',
+      'Uw naam, aangepaste instructies en alle berichten die u na het delen toevoegt, blijven privé.',
   },
   com_ui_share_updated_message: {
     english:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
     translated:
-      'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+      'Een gedeelde link naar uw chat is bijgewerkt. Beheer eerder gedeelde chats op elk moment via Instellingen.',
   },
   com_ui_shared_link_not_found: {
     english: 'Shared link not found',
-    translated: 'Shared link not found',
+    translated: 'Gedeelde link niet gevonden',
   },
   com_ui_delete: {
     english: 'Delete',
@@ -556,7 +582,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'Chat verwijderen?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Hiermee wordt',
   },
