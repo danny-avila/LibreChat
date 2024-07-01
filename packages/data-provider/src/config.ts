@@ -658,6 +658,16 @@ export enum InfiniteCollections {
 }
 
 /**
+ * Enum for time intervals
+ */
+export enum Time {
+  THIRTY_MINUTES = 1800000,
+  TEN_MINUTES = 600000,
+  FIVE_MINUTES = 300000,
+  TWO_MINUTES = 120000,
+}
+
+/**
  * Enum for cache keys.
  */
 export enum CacheKeys {
