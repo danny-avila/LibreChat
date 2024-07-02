@@ -134,14 +134,17 @@ function UserList({
               localStorage.setItem('react-resizable-panels:collapsed', 'true');
             }}
             className={cn(
-              'sidenav hide-scrollbar border-l relative border-gray-200 bg-white p-1 dark:border-gray-800/50 dark:bg-gray-900',
+              'sidenav hide-scrollbar relative border-l border-gray-200 bg-white p-1 dark:border-gray-800/50 dark:bg-gray-900',
               isCollapsed ? 'min-w-[50px]' : 'min-w-[250px] sm:min-w-[250px]',
               minSize === 0 ? 'min-w-0' : '',
             )}
           >
             <Users isCollapsed={isCollapsed} />
-            <div className='bottom-0 absolute flex flex-col w-full z-50 bg-white dark:bg-gray-850 rounded-md pb-3'>
-              <button className='flex gap-3 w-full cursor-pointer hover:bg-gray-50 py-3 px-3 rounded-md hover:dark:bg-gray-700 dark:text-gray-200' onClick={handleShare}>
+            <div className="absolute bottom-0 z-50 flex w-full flex-col rounded-md bg-white pb-3 dark:bg-gray-850">
+              <button
+                className="flex w-full cursor-pointer gap-3 rounded-md px-3 py-3 hover:bg-gray-50 dark:text-gray-200 hover:dark:bg-gray-700"
+                onClick={handleShare}
+              >
                 <ShareIcon />
                 <p>Share Room</p>
               </button>

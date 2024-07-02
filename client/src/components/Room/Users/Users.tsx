@@ -4,14 +4,15 @@ import { useChatContext, useToastContext } from '~/Providers';
 import User from './User';
 import { TUser } from 'librechat-data-provider';
 
-export default function Users({ isCollapsed = false }: { isCollapsed?: boolean }) {
+const Users: React.FC<{ isCollapsed?: boolean }> = ({ isCollapsed = false }) => {
   const { conversation } = useChatContext();
   const navigate = useNavigate();
   const { showToast } = useToastContext();
 
   if (!conversation?.user) {
     showToast({ message: 'This room has been closed.', status: 'warning' });
-    return navigate('/r/new');
+    navigate('/r/new');
+    return null;
   }
 
   return (
@@ -34,8 +35,9 @@ export default function Users({ isCollapsed = false }: { isCollapsed?: boolean }
       >
         {isCollapsed ? 'Admin' : 'Administrator'}
       </div>
-      {conversation?.user && typeof conversation.user !== 'string'}
-      <User user={conversation?.user as unknown as TUser} isCollapsed={isCollapsed} />
+      {conversation?.user && typeof conversation.user !== 'string' && (
+        <User user={conversation.user as TUser} isCollapsed={isCollapsed} />
+      )}
       <div
         style={{
           color: '#aaa',
@@ -52,8 +54,14 @@ export default function Users({ isCollapsed = false }: { isCollapsed?: boolean }
         conversation.users
           .filter((u) => u !== undefined && typeof u !== 'string')
           .map((u) => (
-            <User key={`user-${u?._id || ''}`} user={u as TUser} isCollapsed={isCollapsed} />
+            <User
+              key={`user-${u && typeof u !== 'string' ? (u.id ? u.id : u._id) : ''}`}
+              user={u as TUser}
+              isCollapsed={isCollapsed}
+            />
           ))}
     </>
   );
-}
+};
+
+export default Users;

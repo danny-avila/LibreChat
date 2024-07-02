@@ -20,14 +20,11 @@ const useAvatar = (user: TUser | undefined) => {
     }
 
     const generateAvatar = async () => {
-
       if (!user) {
         return;
       }
 
       const { username, name } = user;
-
-      console.log('--- test ---', username, name, username ?? name);
 
       const avatar = createAvatar(initials, {
         seed: username.length === 0 ? name : username,

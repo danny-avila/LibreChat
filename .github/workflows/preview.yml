@@ -46,7 +46,7 @@ jobs:
             git pull origin dev-branch
             npm ci
             npm run frontend
-            pm2 restart chatg --update-env
+            pm2 restart chatg-dev --update-env
 
       - name: Update deployment Status (success)
         if: success()
