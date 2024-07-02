@@ -18,8 +18,8 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit }) => {
   const renderError = (fieldName: string) => {
     const errorMessage = errors[fieldName]?.message;
     return errorMessage ? (
-      <span role="alert" className="mt-1 text-sm text-black dark:text-white">
-        {String(errorMessage)}
+      <span role="alert" className="mt-1 text-sm text-red-600 dark:text-white">
+        * {String(errorMessage)}
       </span>
     ) : null;
   };
