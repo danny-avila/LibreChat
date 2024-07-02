@@ -29,7 +29,7 @@ jobs:
           environment-url: ${{ vars.MY_APP }}
           environment: production
 
-      - name: Set up SSH Key and Deploy my App to Docker on Server
+      - name: Set up SSH Key and Deploy my App to ChatG on Server
         # run: |
         uses: appleboy/ssh-action@master
         env:
