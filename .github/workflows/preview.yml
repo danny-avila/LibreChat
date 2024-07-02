@@ -29,8 +29,10 @@ jobs:
           environment-url: ${{ vars.MY_APP }}
           environment: preview
 
-      - name: Set up SSH Key and Deploy my App to Docker on Server
-        # run: |
+      - name: Debug - Print VPS_IP
+        run: echo "VPS_IP=${{ secrets.VPS_IP }}"
+
+      - name: Set up SSH Key and Deploy my ChatG on Server
         uses: appleboy/ssh-action@master
         env:
           GITHUB_TOKEN: ${{ secrets.PERSONAL_GITHUB_TOKEN }}
