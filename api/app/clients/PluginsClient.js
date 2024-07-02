@@ -238,7 +238,7 @@ class PluginsClient extends OpenAIClient {
       await this.recordTokenUsage(responseMessage);
     }
 
-    await this.saveMessageToDatabase(responseMessage, saveOptions, user);
+    this.responsePromise = this.saveMessageToDatabase(responseMessage, saveOptions, user);
     delete responseMessage.tokenCount;
     return { ...responseMessage, ...result };
   }
@@ -301,7 +301,15 @@ class PluginsClient extends OpenAIClient {
     if (payload) {
       this.currentMessages = payload;
     }
-    await this.saveMessageToDatabase(userMessage, saveOptions, user);
+
+    if (!this.skipSaveUserMessage) {
+      this.userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user);
+      if (typeof opts?.getReqData === 'function') {
+        opts.getReqData({
+          userMessagePromise: this.userMessagePromise,
+        });
+      }
+    }
 
     if (isEnabled(process.env.CHECK_BALANCE)) {
       await checkBalance({

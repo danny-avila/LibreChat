@@ -31,7 +31,6 @@ export default {
   com_ui_enter: 'Enter',
   com_ui_submit: '제출',
   com_ui_upload_success: '파일 업로드 성공',
-  com_ui_upload_invalid: '잘못된 파일입니다',
   com_ui_cancel: '취소',
   com_ui_save: '저장',
   com_ui_copy_to_clipboard: '클립보드에 복사',
@@ -56,6 +55,8 @@ export default {
   com_ui_create_link: '링크 만들기',
   com_ui_share_link_to_chat: '채팅으로 링크 공유하기',
   com_ui_share_error: '채팅 링크를 공유하는 동안 오류가 발생했습니다',
+  com_ui_share_retrieve_error: '공유 링크를 삭제하는 중에 오류가 발생했습니다.',
+  com_ui_share_delete_error: '공유 링크를 삭제하는 중에 오류가 발생했습니다.',
   com_ui_share_create_message: '이름과 공유 후에 추가하는 메시지는 비공개로 유지됩니다.',
   com_ui_share_created_message:
     '귀하의 채팅에 대한 공유 링크가 생성되었습니다. 설정을 통해 언제든지 이전에 공유한 채팅을 관리할 수 있습니다.',
@@ -66,7 +67,7 @@ export default {
   com_ui_shared_link_not_found: '공유 링크를 찾을 수 없습니다',
   com_ui_delete: '삭제',
   com_ui_delete_conversation: '채팅을 삭제하시겠습니까?',
-  com_ui_delete_conversation_confirm: '이 채팅이 삭제됩니다',
+  com_ui_delete_confirm: '이 채팅이 삭제됩니다',
   com_ui_rename: '이름 바꾸기',
   com_ui_archive: '아카이브',
   com_ui_archive_error: '대화 아카이브 실패',
@@ -782,6 +783,14 @@ export const comparisons = {
     english: 'Share link to chat',
     translated: '채팅으로 링크 공유하기',
   },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: '공유 링크를 삭제하는 중에 오류가 발생했습니다.',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: '공유 링크를 삭제하는 중에 오류가 발생했습니다.',
+  },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
     translated: '채팅 링크를 공유하는 동안 오류가 발생했습니다',
@@ -803,7 +812,8 @@ export const comparisons = {
   com_ui_share_updated_message: {
     english:
       'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
-    translated: '귀하의 채팅에 대한 공유 링크가 업데이트되었습니다. 설정을 통해 언제든지 이전에 공유한 채팅을 관리할 수 있습니다.',
+    translated:
+      '귀하의 채팅에 대한 공유 링크가 업데이트되었습니다. 설정을 통해 언제든지 이전에 공유한 채팅을 관리할 수 있습니다.',
   },
   com_ui_shared_link_not_found: {
     english: 'Shared link not found',
@@ -817,7 +827,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: '채팅을 삭제하시겠습니까?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: '이 채팅이 삭제됩니다',
   },

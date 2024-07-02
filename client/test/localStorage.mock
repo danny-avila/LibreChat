@@ -1,0 +1,21 @@
+let store = {};
+Object.defineProperty(window, 'localStorage', {
+    writable: true,
+    value: {
+        getItem: jest.fn().mockImplementation((key) => {
+            if(key in store) {
+                return store[key];
+            }
+            return null;
+        }),
+        setItem: jest.fn().mockImplementation((key, value) => {
+            store[key] = value.toString();
+        }),
+        clear: jest.fn().mockImplementation(() => {
+            store = {};
+        }),
+        removeItem: jest.fn().mockImplementation(() => {
+            delete store[key];
+        }),
+    },
+});

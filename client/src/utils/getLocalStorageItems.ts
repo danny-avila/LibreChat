@@ -5,7 +5,7 @@ export default function getLocalStorageItems() {
     lastSelectedModel: localStorage.getItem(LocalStorageKeys.LAST_MODEL),
     lastSelectedTools: localStorage.getItem(LocalStorageKeys.LAST_TOOLS),
     lastBingSettings: localStorage.getItem(LocalStorageKeys.LAST_BING),
-    lastConversationSetup: localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP),
+    lastConversationSetup: localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP + '_0'),
   };
 
   const lastSelectedModel = items.lastSelectedModel ? JSON.parse(items.lastSelectedModel) : {};

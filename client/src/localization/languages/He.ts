@@ -67,7 +67,6 @@ export default {
   com_ui_submit: 'שלח',
   com_ui_upload_success: 'קובץ שהועלה בהצלחה',
   com_ui_upload_error: 'אירעה שגיאה בהעלאת הקובץ שלך',
-  com_ui_upload_invalid: 'קובץ לא חוקי להעלאה. חייבת להיות תמונה שגודלה לא עולה על 2 MB',
   com_ui_cancel: 'בטל',
   com_ui_save: 'שמור',
   com_ui_save_submit: 'שמור ושלח',
@@ -97,6 +96,8 @@ export default {
   com_ui_create_link: 'צור קישור',
   com_ui_share_link_to_chat: 'שתף קישור בצ\'אט',
   com_ui_share_error: 'אירעה שגיאה בעת שיתוף קישור הצ\'אט',
+  com_ui_share_retrieve_error: 'אירעה שגיאה בעת מחיקת הקישור המשותף.',
+  com_ui_share_delete_error: 'אירעה שגיאה בעת מחיקת הקישור המשותף.',
   com_ui_share_create_message: 'שמך וכל הודעה שתוסיף לאחר השיתוף יישארו פרטיים.',
   com_ui_share_created_message:
     'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
@@ -106,7 +107,7 @@ export default {
     'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
   com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete_conversation: 'למחוק את השיחה (צאט)?',
-  com_ui_delete_conversation_confirm: 'זה ימחק',
+  com_ui_delete_confirm: 'זה ימחק',
   com_ui_delete_assistant_confirm:
     'האם אתה בטוח שאתה רוצה למחוק את הסייען הזה? אי אפשר לבטל את זה.',
   com_ui_rename: 'שם מחדש',
@@ -648,10 +649,6 @@ export const comparisons = {
     english: 'There was an error uploading your file',
     translated: 'אירעה שגיאה בהעלאת הקובץ שלך',
   },
-  com_ui_upload_invalid: {
-    english: 'Invalid file for upload. Must be an image not exceeding 2 MB',
-    translated: 'קובץ לא חוקי להעלאה. חייבת להיות תמונה שגודלה לא עולה על 2 MB',
-  },
   com_ui_cancel: {
     english: 'Cancel',
     translated: 'בטל',
@@ -764,6 +761,14 @@ export const comparisons = {
     english: 'Share link to chat',
     translated: 'שתף קישור בצ\'אט',
   },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'אירעה שגיאה בעת מחיקת הקישור המשותף.',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'אירעה שגיאה בעת מחיקת הקישור המשותף.',
+  },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
     translated: 'אירעה שגיאה בעת שיתוף קישור הצ\'אט',
@@ -780,7 +785,8 @@ export const comparisons = {
   },
   com_ui_share_update_message: {
     english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
-    translated: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated:
+      'Your name, custom instructions, and any messages you add after sharing stay private.',
   },
   com_ui_share_updated_message: {
     english:
@@ -796,7 +802,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'למחוק את השיחה (צאט)?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'זה ימחק',
   },

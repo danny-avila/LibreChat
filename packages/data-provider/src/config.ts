@@ -473,6 +473,7 @@ export const defaultModels = {
     'code-bison-32k',
   ],
   [EModelEndpoint.anthropic]: [
+    'claude-3-5-sonnet-20240620',
     'claude-3-opus-20240229',
     'claude-3-sonnet-20240229',
     'claude-3-haiku-20240307',
@@ -586,6 +587,20 @@ export function validateVisionModel({
 export const imageGenTools = new Set(['dalle', 'dall-e', 'stable-diffusion']);
 
 /**
+ * Enum for collections using infinite queries
+ */
+export enum InfiniteCollections {
+  /**
+   * Collection for Prompt Groups
+   */
+  PROMPT_GROUPS = 'promptGroups',
+  /**
+   * Collection for Shared Links
+   */
+  SHARED_LINKS = 'sharedLinks',
+}
+
+/**
  * Enum for cache keys.
  */
 export enum CacheKeys {
@@ -593,6 +608,10 @@ export enum CacheKeys {
    * Key for the config store namespace.
    */
   CONFIG_STORE = 'configStore',
+  /**
+   * Key for the config store namespace.
+   */
+  ROLES = 'roles',
   /**
    * Key for the plugins cache.
    */
@@ -614,6 +633,10 @@ export enum CacheKeys {
    * Key for the model queries cache.
    */
   MODEL_QUERIES = 'modelQueries',
+  /**
+   * Key for the default startup config cache.
+   */
+  STARTUP_CONFIG = 'startupConfig',
   /**
    * Key for the default endpoint config cache.
    */
@@ -791,10 +814,16 @@ export enum Constants {
   CONFIG_VERSION = '1.1.4',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
+  /** Standard value for the initial conversationId before a request is sent */
+  NEW_CONVO = 'new',
   /** Fixed, encoded domain length for Azure OpenAI Assistants Function name parsing. */
   ENCODED_DOMAIN_LENGTH = 10,
   /** Identifier for using current_model in multi-model requests. */
   CURRENT_MODEL = 'current_model',
+  /** Common divider for text values */
+  COMMON_DIVIDER = '__',
+  /** Max length for commands */
+  COMMANDS_MAX_LENGTH = 56,
 }
 
 export enum LocalStorageKeys {
@@ -824,6 +853,8 @@ export enum LocalStorageKeys {
   TEXT_DRAFT = 'textDraft_',
   /** Key for saving file drafts */
   FILES_DRAFT = 'filesDraft_',
+  /** Key for last Selected Prompt Category */
+  LAST_PROMPT_CATEGORY = 'lastPromptCategory',
 }
 
 export enum ForkOptions {
@@ -859,4 +890,11 @@ export enum CohereConstants {
    * Title message as required by Cohere
    */
   TITLE_MESSAGE = 'TITLE:',
+}
+
+export enum SystemCategories {
+  ALL = 'sys__all__sys',
+  MY_PROMPTS = 'sys__my__prompts__sys',
+  NO_CATEGORY = 'sys__no__category__sys',
+  SHARED_PROMPTS = 'sys__shared__prompts__sys',
 }

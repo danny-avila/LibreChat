@@ -57,18 +57,13 @@ module.exports = {
       if (files) {
         update.files = files;
       }
-      // may also need to update the conversation here
-      await Message.findOneAndUpdate({ messageId }, update, { upsert: true, new: true });
 
-      return {
-        messageId,
-        conversationId,
-        parentMessageId,
-        sender,
-        text,
-        isCreatedByUser,
-        tokenCount,
-      };
+      const message = await Message.findOneAndUpdate({ messageId }, update, {
+        upsert: true,
+        new: true,
+      });
+
+      return message.toObject();
     } catch (err) {
       logger.error('Error saving message:', err);
       throw new Error('Failed to save message.');
