@@ -68,8 +68,6 @@ async function loadConfigModels(req) {
     let API_KEY = extractEnvVariable(apiKey);
     const BASE_URL = extractEnvVariable(baseURL);
 
-    const uniqueKey = `${BASE_URL}__${API_KEY}`;
-
     modelsConfig[name] = [];
     /** if key user provided and not expired use it instead of user_defined */
     if (models.fetch && isUserProvided(API_KEY)) {
@@ -83,6 +81,9 @@ async function loadConfigModels(req) {
         // ignore if key is missing or invalid
       }
     }
+
+    const uniqueKey = `${BASE_URL}__${API_KEY}`;
+
     if (models.fetch && !isUserProvided(API_KEY) && !isUserProvided(BASE_URL)) {
       fetchPromisesMap[uniqueKey] =
         fetchPromisesMap[uniqueKey] ||
