@@ -1,5 +1,6 @@
 const { EModelEndpoint, extractEnvVariable } = require('librechat-data-provider');
 const { fetchModels } = require('~/server/services/ModelService');
+const { getUserKeyWithExpiry } = require('../UserService');
 const { isUserProvided } = require('~/server/utils');
 const getCustomConfig = require('./getCustomConfig');
 
@@ -64,13 +65,24 @@ async function loadConfigModels(req) {
     const { models, name, baseURL, apiKey } = endpoint;
     endpointsMap[name] = endpoint;
 
-    const API_KEY = extractEnvVariable(apiKey);
+    let API_KEY = extractEnvVariable(apiKey);
     const BASE_URL = extractEnvVariable(baseURL);
 
     const uniqueKey = `${BASE_URL}__${API_KEY}`;
 
     modelsConfig[name] = [];
-
+    /** if key user provided and not expired use it instead of user_defined */
+    if (models.fetch && isUserProvided(API_KEY)) {
+      try {
+        const userKey = await getUserKeyWithExpiry({ userId: req.user.id, name });
+        if (userKey.expiresAt && new Date(userKey.expiresAt).getTime() > Date.now()) {
+          // in case key is valid replace the default key with the user provided key
+          API_KEY = userKey.apiKey || API_KEY;
+        }
+      } catch (e) {
+        // ignore if key is missing or invalid
+      }
+    }
     if (models.fetch && !isUserProvided(API_KEY) && !isUserProvided(BASE_URL)) {
       fetchPromisesMap[uniqueKey] =
         fetchPromisesMap[uniqueKey] ||

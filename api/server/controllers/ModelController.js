@@ -18,16 +18,10 @@ const getModelsConfig = async (req) => {
  * @returns {Promise<TModelsConfig>} The models config.
  */
 async function loadModels(req) {
+  const modelConfig = { ...(await loadDefaultModels(req)), ...(await loadConfigModels(req)) };
+
+  // caching for other services
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
-  const cachedModelsConfig = await cache.get(CacheKeys.MODELS_CONFIG);
-  if (cachedModelsConfig) {
-    return cachedModelsConfig;
-  }
-  const defaultModelsConfig = await loadDefaultModels(req);
-  const customModelsConfig = await loadConfigModels(req);
-
-  const modelConfig = { ...defaultModelsConfig, ...customModelsConfig };
-
   await cache.set(CacheKeys.MODELS_CONFIG, modelConfig);
   return modelConfig;
 }
