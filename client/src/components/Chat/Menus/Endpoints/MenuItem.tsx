@@ -21,7 +21,6 @@ type MenuItemProps = {
   // iconPath: string;
   // hoverContent?: string;
 };
-
 const MenuItem: FC<MenuItemProps> = ({
   title,
   value: endpoint,
@@ -123,9 +122,7 @@ const MenuItem: FC<MenuItemProps> = ({
               )}
               <div className="flex items-center gap-3">
                 {title}
-                {
-                  <img src="/assets/premium.png" alt="premium" className="h-4 w-4" />
-                }
+                {<img src="/assets/premium.png" alt="premium" className="h-4 w-4" />}
                 <div className="text-token-text-tertiary">{description}</div>
               </div>
             </div>

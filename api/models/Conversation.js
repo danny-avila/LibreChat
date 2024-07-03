@@ -12,7 +12,7 @@ const getConvosByQuery = async (title, endpoint, sort = 'participants', order = 
       sortQuery['createdAt'] = sortOrder;
     }
 
-    const result =  await Conversation.aggregate([
+    const result = await Conversation.aggregate([
       {
         $project: {
           conversationId: 1,
@@ -24,7 +24,7 @@ const getConvosByQuery = async (title, endpoint, sort = 'participants', order = 
           isPrivate: 1,
           users: 1,
           createdAt: 1,
-          userLength: { '$size': { '$ifNull': ['$users', []] } },
+          userLength: { $size: { $ifNull: ['$users', []] } },
         },
       },
       {
@@ -94,8 +94,9 @@ module.exports = {
         isRoom: isRoom === 'true' ? true : false,
       })
         .sort({ updatedAt: -1 })
-        .skip((pageNumber - 1) * pageSize)
-        .limit(pageSize)
+        // Remove it in the future. Infinite query
+        // .skip((pageNumber - 1) * pageSize)
+        // .limit(pageSize)
         .lean();
       return { conversations: convos, pages: totalPages, pageNumber, pageSize };
     } catch (error) {
