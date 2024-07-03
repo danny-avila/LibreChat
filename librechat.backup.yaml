@@ -55,6 +55,6 @@ endpoints:
         version: "2024-02-01" # Your Azure OpenAI API version
         # Model-level configuration
         models:
-          gpt-4-turbo-2024-04-09:
-            deploymentName: "qimagpt-turbo-2024-04-09-PROD" # Your Azure OpenAI deployment name
+          gpt-4o:
+            deploymentName: "qimagpt-4o-PROD" # Your Azure OpenAI deployment name
             version: "2024-02-01" # Your Azure OpenAI API version
