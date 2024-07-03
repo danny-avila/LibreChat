@@ -5,11 +5,10 @@ import type { Option } from '~/common';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils/';
 import { useMultiSearch } from './MultiSearch';
-import { isPremiumUser } from '~/utils/checkUserValid';
-import { TUser } from 'librechat-data-provider';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
 import { useToastContext } from '~/Providers';
+import { modelQuotes } from '../Chat/Menus/Presets/PresetItems';
 
 type SelectDropDownProps = {
   id?: string;
@@ -34,7 +33,6 @@ function SelectDropDownPop({
   showLabel = true,
   emptyTitle = false,
 }: SelectDropDownProps) {
-  const { showToast } = useToastContext();
   const localize = useLocalize();
   const transitionProps = { className: 'top-full mt-3' };
   if (showAbove) {
@@ -59,7 +57,6 @@ function SelectDropDownPop({
   const options = hasSearchRender ? filteredValues : availableValues;
 
   const premiumModels = useRecoilValue(store.premiumModelsConfig);
-  const user = useRecoilValue(store.user);
 
   return (
     <Root>
@@ -85,10 +82,7 @@ function SelectDropDownPop({
                     'min-w-[75px] font-normal',
                   )}
                 >
-                  {/* {!showLabel && !emptyTitle && (
-                    <span className="text-xs text-gray-700 dark:text-gray-500">{title}:</span>
-                  )} */}
-                  {typeof value !== 'string' && value ? value?.label ?? '' : value ?? ''}
+                  {(typeof value === 'string' && modelQuotes[value]) || value}
                 </span>
               </span>
               <span className="absolute inset-y-0 right-0 flex items-center pr-2">

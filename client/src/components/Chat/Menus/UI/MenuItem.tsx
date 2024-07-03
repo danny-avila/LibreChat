@@ -2,6 +2,7 @@ import type { FC } from 'react';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
 import { cn } from '~/utils';
+import { modelQuotes } from '../Presets/PresetItems';
 
 type MenuItemProps = {
   title: string;
@@ -50,7 +51,7 @@ const MenuItem: FC<MenuItemProps> = ({
           <div className={cn('flex items-center gap-1 ')}>
             {icon && icon}
             <div className={cn('truncate', textClassName)}>
-              {title}
+              {modelQuotes[title] || title}
               <div className="text-token-text-tertiary">{description}</div>
             </div>
           </div>

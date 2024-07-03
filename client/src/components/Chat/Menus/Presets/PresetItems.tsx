@@ -1,3 +1,4 @@
+/* eslint-disable indent */
 import { Trash2 } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { Close } from '@radix-ui/react-popover';
@@ -14,6 +15,12 @@ import { MenuSeparator, MenuItem } from '../UI';
 import { icons } from '../Endpoints/Icons';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
+
+export const modelQuotes = {
+  'claude-3-opus-20240229': 'claude-3-opus',
+  'claude-3-sonnet-20240229': 'claude-3-sonnet',
+  'claude-3-5-sonnet-20240620': 'claude-3.5-sonnet',
+};
 
 const PresetItems: FC<{
   presets: TPreset[];
@@ -35,6 +42,7 @@ const PresetItems: FC<{
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const defaultPreset = useRecoilValue(store.defaultPreset);
   const localize = useLocalize();
+
   return (
     <>
       <div
@@ -45,17 +53,21 @@ const PresetItems: FC<{
         <div className="flex h-full grow items-center justify-end gap-2">
           <label
             htmlFor="default-preset"
-            className="w-40 truncate rounded bg-transparent py-1 text-xs font-medium font-normal text-gray-600 transition-colors dark:bg-transparent dark:text-gray-300 sm:w-72"
+            className="w-40 truncate rounded bg-transparent py-1 text-xs font-normal text-gray-600 transition-colors dark:bg-transparent dark:text-gray-300 sm:w-72"
           >
             {defaultPreset
-              ? `${localize('com_endpoint_preset_default_item')} ${defaultPreset.title}`
+              ? `${localize('com_endpoint_preset_default_item')} ${
+                  typeof defaultPreset.title === 'string'
+                    ? modelQuotes[defaultPreset.title] || defaultPreset.title
+                    : defaultPreset.title
+                }`
               : localize('com_endpoint_preset_default_none')}
           </label>
           <Dialog>
             <DialogTrigger asChild>
               <label
                 htmlFor="file-upload"
-                className="mr-1 flex h-[32px] cursor-pointer items-center rounded bg-transparent px-2 py-1 text-xs font-medium font-normal text-gray-600 transition-colors hover:bg-gray-100 hover:text-red-700 dark:bg-transparent dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-green-500 dark:hover:text-red-700"
+                className="mr-1 flex h-[32px] cursor-pointer items-center rounded bg-transparent px-2 py-1 text-xs font-normal text-gray-600 transition-colors hover:bg-gray-100 hover:text-red-700 dark:bg-transparent dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-green-500 dark:hover:text-red-700"
               >
                 <svg
                   width="24"
