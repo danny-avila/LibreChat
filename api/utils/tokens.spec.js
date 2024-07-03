@@ -106,7 +106,7 @@ describe('getModelMaxTokens', () => {
       'claude-1-100k',
       'claude-instant-1',
       'claude-instant-1-100k',
-      'claude-3.5-sonnet',
+      'claude-3-5-sonnet-20240620',
     ];
 
     const claudeMaxTokens = maxTokensMap[EModelEndpoint.anthropic]['claude-'];

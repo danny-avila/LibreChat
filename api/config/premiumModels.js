@@ -20,7 +20,7 @@ const premiumModels = [
   'claude-3-opus-20240229',
   'claude-3-sonnet-20240229',
   'claude-instant-1-100k',
-  'claude-3.5-sonnet',
+  'claude-3-5-sonnet-20240620',
   // Gemini Premium Models
   'gemini-pro',
   'gemini-pro-vision',
