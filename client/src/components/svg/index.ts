@@ -66,3 +66,6 @@ export { default as NemIcon } from './NemIcon';
 export { default as IotalIcon } from './IotaIcon';
 export { default as PancakeSwapIcon } from './PancakeSwapIcon';
 export { default as BellIcon } from './BellIcon';
+
+export { default as ShowPasswordIcon } from './ShowPasswordIcon';
+export { default as HidePasswordIcon } from './HidePasswordIcon';

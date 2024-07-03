@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useLocalize } from '~/hooks';
 import { TLoginUser } from 'librechat-data-provider';
+import { HidePasswordIcon, ShowPasswordIcon } from '../svg';
 
 type TLoginFormProps = {
   onSubmit: (data: TLoginUser) => void;
@@ -14,6 +15,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit }) => {
     handleSubmit,
     formState: { errors },
   } = useForm<TLoginUser>();
+  const [showPassword, setShowPassword] = useState<boolean>(false);
 
   const renderError = (fieldName: string) => {
     const errorMessage = errors[fieldName]?.message;
@@ -22,6 +24,10 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit }) => {
         * {String(errorMessage)}
       </span>
     ) : null;
+  };
+
+  const toggleShowPassword = () => {
+    setShowPassword(!showPassword);
   };
 
   return (
@@ -59,7 +65,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit }) => {
       <div className="mb-2">
         <div className="relative">
           <input
-            type="password"
+            type={showPassword ? 'text' : 'password'}
             id="password"
             autoComplete="current-password"
             aria-label={localize('com_auth_password')}
@@ -72,6 +78,9 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit }) => {
             className="webkit-dark-styles peer block w-full appearance-none rounded-md border border-black/10 bg-white px-2.5 pb-2.5 pt-5 text-sm text-gray-800 focus:border-green-500 focus:outline-none dark:border-white/20 dark:bg-gray-900 dark:text-white dark:focus:border-green-500"
             placeholder=" "
           />
+          <button type="button" onClick={toggleShowPassword} className="absolute right-3 top-3.5">
+            {showPassword ? <HidePasswordIcon /> : <ShowPasswordIcon />}
+          </button>
           <label
             htmlFor="password"
             className="pointer-events-none absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-100 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500 dark:text-gray-200"

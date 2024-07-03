@@ -7,7 +7,7 @@ on:
 
 jobs:
   deploy:
-    name: Deploy to Docker
+    name: Deploy to ChatG Server with dev branch
 
     permissions:
       deployments: write
@@ -18,7 +18,7 @@ jobs:
       - name: Checkout Repository
         uses: 'actions/checkout@v2'
         with:
-          ref: main
+          ref: dev-branch
           token: ${{ secrets.PERSONAL_GITHUB_TOKEN }}
 
       - name: Create GitHub deployment
