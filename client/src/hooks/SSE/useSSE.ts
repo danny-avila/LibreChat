@@ -554,7 +554,6 @@ export default function useSSE(submission: TSubmission | null, index = 0, socket
     const { isRegenerate } = submission;
 
     if (!isRegenerate) {
-      console.log('---- !isRegenerate ---', message);
       sendMessage({ ...message, user }, true);
     }
 

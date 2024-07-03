@@ -33,6 +33,7 @@ const Nav = ({ navVisible, setNavVisible }) => {
   const [convoType, setConvoType] = useState('c');
   const convo = useRecoilValue(store.convoType);
   const [roomSearchIndex, setRoomSearchIndex] = useRecoilState(store.roomSearchIndex);
+  const setSearchQuery = useSetRecoilState(store.searchQuery);
 
   useEffect(() => {
     setConvoType(convo);
@@ -63,14 +64,23 @@ const Nav = ({ navVisible, setNavVisible }) => {
   const setSearchResultMessages = useSetRecoilState(store.searchResultMessages);
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useConversationsInfiniteQuery(
-    { pageNumber: pageNumber.toString() },
+    {
+      pageNumber: pageNumber.toString(),
+      searchOptions: {
+        sort: 'none',
+        endpoint: null,
+      },
+    },
     { enabled: isAuthenticated },
   );
 
   const searchQueryRes = useSearchInfiniteQuery(
     {
       pageNumber: pageNumber.toString(),
-      searchQuery: searchQuery.text, roomIndex: roomSearchIndex, searchOptions: searchQuery.searchOptions,
+      searchQuery: searchQuery.text,
+      roomIndex: roomSearchIndex,
+      searchOptions: searchQuery.searchOptions,
+      convoType: convoType === 'r' ? 'r' : 'c',
     },
     { enabled: isAuthenticated && !!searchQuery.text.length },
   );
@@ -88,6 +98,22 @@ const Nav = ({ navVisible, setNavVisible }) => {
       [],
     [data, searchQuery, searchQueryRes?.data],
   );
+
+  // console.log('---data---', data);
+
+  useEffect(() => {
+    if (convoType === 'c') {
+      fetchNextPage({ pageParam: 1 });
+      // setSearchQuery({
+      //   text: '',
+      //   category: 'user',
+      //   searchOptions: {
+      //     sort: 'none',
+      //     endpoint: null,
+      //   },
+      // });
+    }
+  }, [convoType, fetchNextPage, setSearchQuery]);
 
   const onSearchSuccess = useCallback(({ data }: { data: ConversationListResponse }) => {
     const res = data;
@@ -165,7 +191,12 @@ const Nav = ({ navVisible, setNavVisible }) => {
                       ref={containerRef}
                     >
                       <CategorySwitch convoType={convoType} setConvoType={setConvoType} />
-                      {convoType === 'r' &&  <RoomsSwitch roomSearchIndex={roomSearchIndex} setRoomSearchIndex={setRoomSearchIndex} />}
+                      {convoType === 'r' && (
+                        <RoomsSwitch
+                          roomSearchIndex={roomSearchIndex}
+                          setRoomSearchIndex={setRoomSearchIndex}
+                        />
+                      )}
                       {convoType === 'c' ? (
                         <>
                           <NewChat
@@ -173,7 +204,8 @@ const Nav = ({ navVisible, setNavVisible }) => {
                             subHeaders={isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
                           />
                           <Conversations
-                            conversations={conversations.filter((i) => !i.isRoom)}
+                            // conversations={conversations.filter((i) => !i.isRoom)}
+                            conversations={data?.pages[0].conversations || []}
                             moveToTop={moveToTop}
                             toggleNav={itemToggleNav}
                           />

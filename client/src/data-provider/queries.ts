@@ -1,3 +1,4 @@
+/* eslint-disable indent */
 import { EModelEndpoint, QueryKeys, dataService } from 'librechat-data-provider';
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import type {
@@ -117,7 +118,16 @@ export const useSearchInfiniteQuery = (
     [QueryKeys.searchConversations, params], // Include the searchQuery in the query key
     ({ pageParam = '1' }) =>
       dataService.listConversationsByQuery({
-        ...params, pageNumber: pageParam, roomIndex: params?.roomIndex, searchOptions: params?.searchOptions,
+        ...params,
+        pageNumber: pageParam,
+        roomIndex: params?.roomIndex,
+        convoType: params?.convoType || 'r',
+        searchOptions: params
+          ? params.searchOptions
+          : {
+              endpoint: null,
+              sort: 'none',
+            },
       }),
     {
       getNextPageParam: (lastPage) => {
@@ -140,7 +150,14 @@ export const useConversationsInfiniteQuery = (
   return useInfiniteQuery<ConversationListResponse, unknown>(
     [QueryKeys.allConversations],
     ({ pageParam = '' }) =>
-      dataService.listConversations({ ...params, pageNumber: pageParam?.toString() }),
+      dataService.listConversations({
+        ...params,
+        pageNumber: pageParam?.toString(),
+        searchOptions: {
+          sort: 'none',
+          endpoint: null,
+        },
+      }),
     {
       getNextPageParam: (lastPage) => {
         const currentPageNumber = Number(lastPage.pageNumber);
@@ -162,7 +179,15 @@ export const useRoomsInfiniteQuery = (
 ) => {
   return useInfiniteQuery<ConversationListResponse, unknown>(
     [QueryKeys.allConversations],
-    ({ pageParam = '' }) => dataService.listRooms({ ...params, pageNumber: pageParam?.toString() }),
+    ({ pageParam = '' }) =>
+      dataService.listRooms({
+        ...params,
+        pageNumber: pageParam?.toString(),
+        searchOptions: {
+          sort: 'none',
+          endpoint: null,
+        },
+      }),
     {
       getNextPageParam: (lastPage) => {
         const currentPageNumber = Number(lastPage.pageNumber);

@@ -271,11 +271,16 @@ export const listConversationsByQuery = (
   const searchQuery = params?.searchQuery || ''; // If no search query is provided, default to an empty string
   const roomIndex = params?.roomIndex || 'user'; // Default to user room if not provided
   const searchOptions = params?.searchOptions;
+  const convoType = params?.convoType || 'r';
   // Update the endpoint to handle a search query
   if (searchQuery !== '') {
-    return request.get(endpoints.search(searchQuery, pageNumber, 'r', roomIndex, searchOptions));
+    return request.get(
+      endpoints.search(searchQuery, pageNumber, convoType, roomIndex, searchOptions),
+    );
   } else {
-    return request.get(endpoints.search(searchQuery, pageNumber, 'r', roomIndex, searchOptions));
+    return request.get(
+      endpoints.search(searchQuery, pageNumber, convoType, roomIndex, searchOptions),
+    );
     // return request.get(endpoints.conversations(pageNumber));
   }
 };
