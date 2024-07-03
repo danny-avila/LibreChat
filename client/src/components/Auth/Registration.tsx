@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import React, { useState, useEffect } from 'react';
 import { useRegisterUserMutation, useGetStartupConfig } from 'librechat-data-provider/react-query';
-import type { TRegisterUser } from 'librechat-data-provider';
+import { request, type TRegisterUser } from 'librechat-data-provider';
 import {
   GoogleIcon,
   FacebookIcon,
@@ -70,6 +70,16 @@ const Registration: React.FC = () => {
     }
   };
 
+  const checkUsernameUnique = async (username: string) => {
+    try {
+      const response = await request.get(`/api/user/isusernametaken?username=${username}`);
+      const data = await response;
+      return data ? 'Username already taken. Please choose a different username' : true;
+    } catch (error) {
+      return 'Failed to validate username';
+    }
+  };
+
   const renderInput = (id: string, label: string, type: string, validation: object) => (
     <div className="mb-2">
       <div className="relative">
@@ -97,7 +107,7 @@ const Registration: React.FC = () => {
           <button
             type="button"
             onClick={() => toggleShowPassword('password')}
-            className="absolute right-3 top-3.5"
+            className="absolute right-3 top-4"
           >
             {showPassword ? <HidePasswordIcon /> : <ShowPasswordIcon />}
           </button>
@@ -106,7 +116,7 @@ const Registration: React.FC = () => {
           <button
             type="button"
             onClick={() => toggleShowPassword('confirm_password')}
-            className="absolute right-3 top-3.5"
+            className="absolute right-3 top-4"
           >
             {showConfirmPassword ? <HidePasswordIcon /> : <ShowPasswordIcon />}
           </button>
@@ -238,6 +248,7 @@ const Registration: React.FC = () => {
               message: localize('com_auth_username_max_length'),
             },
             required: 'Username is required',
+            validate: checkUsernameUnique,
           })}
           {renderInput('email', 'com_auth_email', 'email', {
             required: localize('com_auth_email_required'),

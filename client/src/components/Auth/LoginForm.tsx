@@ -78,7 +78,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit }) => {
             className="webkit-dark-styles peer block w-full appearance-none rounded-md border border-black/10 bg-white px-2.5 pb-2.5 pt-5 text-sm text-gray-800 focus:border-green-500 focus:outline-none dark:border-white/20 dark:bg-gray-900 dark:text-white dark:focus:border-green-500"
             placeholder=" "
           />
-          <button type="button" onClick={toggleShowPassword} className="absolute right-3 top-3.5">
+          <button type="button" onClick={toggleShowPassword} className="absolute right-3 top-4">
             {showPassword ? <HidePasswordIcon /> : <ShowPasswordIcon />}
           </button>
           <label

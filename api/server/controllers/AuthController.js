@@ -13,6 +13,20 @@ const { logger } = require('~/config');
 const sendEmail = require('~/server/utils/sendEmail');
 const emailTemplates = require('~/server/utils/emailTemplates');
 
+const validateUsername = async (req, res) => {
+  try {
+    const { username } = req.query;
+    const user = await User.findOne({ username });
+    if (user) {
+      return res.json(true);
+    }
+    return res.json(false);
+  } catch (err) {
+    logger.error('[validateUsername]', err);
+    return res.status(500).json({ message: err.message });
+  }
+};
+
 const registrationController = async (req, res) => {
   try {
     const response = await registerUser(req.body);
@@ -144,4 +158,5 @@ module.exports = {
   registrationController,
   resetPasswordRequestController,
   resetPasswordController,
+  validateUsername,
 };

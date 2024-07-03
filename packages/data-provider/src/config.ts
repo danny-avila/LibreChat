@@ -311,7 +311,7 @@ export const defaultModels = {
     'claude-1-100k',
     'claude-instant-1',
     'claude-instant-1-100k',
-    'claude-3.5-sonnet',
+    'claude-3-5-sonnet-20240620',
   ],
   [EModelEndpoint.openAI]: [
     'gpt-3.5-turbo-0125',

@@ -11,6 +11,7 @@ const {
   deleteTip,
   muteUser,
 } = require('../controllers/UserController');
+const { validateUsername } = require('~/server/controllers/AuthController');
 
 const router = express.Router();
 
@@ -23,5 +24,6 @@ router.get('/tip', requireJwtAuth, getTipTrack);
 router.delete('/tip/:id', requireJwtAuth, deleteTip);
 router.post('/confirmtip', requireJwtAuth, confirmCryptoTip);
 router.post('/mute/:userId', requireJwtAuth, muteUser);
+router.get('/isusernametaken', validateUsername);
 
 module.exports = router;
