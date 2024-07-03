@@ -1,5 +1,6 @@
 const tokenSchema = require('./schema/tokenSchema');
 const mongoose = require('mongoose');
+const { logger } = require('~/config');
 
 /**
  * Token model.
@@ -70,18 +71,15 @@ function updateToken(query, updateData) {
  * @throws Will throw an error if the delete operation fails.
  */
 function deleteTokens(query) {
-  console.log('Attempting to delete tokens with query:', query);
-
   return Token.deleteMany({
     $or: [{ userId: query.userId }, { token: query.token }, { email: query.email }],
   })
     .exec()
     .then((result) => {
-      console.log('Tokens deleted successfully. Result:', result);
       return result;
     })
     .catch((error) => {
-      console.error('An error occurred while deleting tokens:', error);
+      logger.debug('An error occurred while deleting tokens:', error);
       throw error;
     });
 }
