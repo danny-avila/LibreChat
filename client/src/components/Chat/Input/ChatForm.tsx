@@ -48,6 +48,9 @@ const ChatForm = ({ index = 0 }) => {
     store.showMentionPopoverFamily(index),
   );
 
+  const chatDirection = useRecoilValue(store.chatDirection).toLowerCase();
+  const isRTL = chatDirection === 'rtl';
+
   const { requiresKey } = useRequiresKey();
   const handleKeyUp = useHandleKeyUp({
     index,
@@ -179,7 +182,7 @@ const ChatForm = ({ index = 0 }) => {
                     ? ' pl-10 md:pl-[55px]'
                     : 'pl-3 md:pl-4',
                   'm-0 w-full resize-none border-0 bg-transparent py-[10px] placeholder-black/50 focus:ring-0 focus-visible:ring-0 dark:bg-transparent dark:placeholder-white/50 md:py-3.5  ',
-                  SpeechToText ? 'pr-20 md:pr-[85px]' : 'pr-10 md:pr-12',
+                  SpeechToText && !isRTL ? 'pr-20 md:pr-[85px]' : 'pr-10 md:pr-12',
                   'max-h-[65vh] md:max-h-[75vh]',
                   removeFocusRings,
                 )}
@@ -188,6 +191,7 @@ const ChatForm = ({ index = 0 }) => {
             <AttachFile
               endpoint={_endpoint ?? ''}
               endpointType={endpointType}
+              isRTL={isRTL}
               disabled={disableInputs}
             />
             {(isSubmitting || isSubmittingAdded) && (showStopButton || showStopAdded) ? (
@@ -197,6 +201,7 @@ const ChatForm = ({ index = 0 }) => {
                 <SendButton
                   ref={submitButtonRef}
                   control={methods.control}
+                  isRTL={isRTL}
                   disabled={!!(filesLoading || isSubmitting || disableInputs)}
                 />
               )
@@ -206,6 +211,7 @@ const ChatForm = ({ index = 0 }) => {
                 disabled={!!disableInputs}
                 textAreaRef={textAreaRef}
                 ask={submitMessage}
+                isRTL={isRTL}
                 methods={methods}
               />
             )}

@@ -539,7 +539,6 @@ export default {
   com_ui_import_conversation_file_type_error:
     'com_ui_import_conversation_file_type_error: Tipo de archivo no compatible para importar',
   com_ui_min_tags: 'No se pueden eliminar más valores, se requiere un mínimo de {0}.',
-  com_endpoint_messages: 'Mensajes',
   com_endpoint_context_tokens: 'Máximo de tokens de contexto',
   com_endpoint_stop_placeholder: 'Separe los valores presionando `Intro`',
   com_error_no_base_url:
@@ -2512,10 +2511,6 @@ export const comparisons = {
   com_ui_min_tags: {
     english: 'Cannot remove more values, a minimum of {0} are required.',
     translated: 'No se pueden eliminar más valores, se requiere un mínimo de {0}.',
-  },
-  com_endpoint_messages: {
-    english: 'Messages',
-    translated: 'Mensajes',
   },
   com_endpoint_context_tokens: {
     english: 'Max Context Tokens',

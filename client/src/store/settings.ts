@@ -44,6 +44,7 @@ const localStorageAtoms = {
   rememberForkOption: atomWithLocalStorage('rememberForkOption', true),
   playbackRate: atomWithLocalStorage<number | null>('playbackRate', null),
   saveDrafts: atomWithLocalStorage('saveDrafts', false),
+  chatDirection: atomWithLocalStorage('chatDirection', 'LTR'),
 };
 
 export default { ...staticAtoms, ...localStorageAtoms };

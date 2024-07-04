@@ -4,7 +4,7 @@ import { SettingsTabValues } from 'librechat-data-provider';
 import type { TDialogProps } from '~/common';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui';
 import { GearIcon, DataIcon, SpeechIcon, UserIcon, ExperimentIcon } from '~/components/svg';
-import { General, Messages, Speech, Beta, Data, Account } from './SettingsTabs';
+import { General, Chat, Speech, Beta, Data, Account } from './SettingsTabs';
 import { useMediaQuery, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -65,11 +65,11 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     : 'bg-white radix-state-active:bg-gray-100',
                   isSmallScreen ? '' : 'dark:bg-gray-700',
                 )}
-                value={SettingsTabValues.MESSAGES}
+                value={SettingsTabValues.CHAT}
                 style={{ userSelect: 'none' }}
               >
                 <MessageSquare className="icon-sm" />
-                {localize('com_endpoint_messages')}
+                {localize('com_nav_setting_chat')}
               </Tabs.Trigger>
               <Tabs.Trigger
                 className={cn(
@@ -130,7 +130,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
             </Tabs.List>
             <div className="h-auto min-h-[280px] overflow-auto sm:w-full sm:max-w-none">
               <General />
-              <Messages />
+              <Chat />
               <Beta />
               <Speech />
               <Data />
