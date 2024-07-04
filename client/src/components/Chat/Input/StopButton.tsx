@@ -1,6 +1,13 @@
-export default function StopButton({ stop, setShowStopButton }) {
+import { cn } from '~/utils';
+
+export default function StopButton({ stop, setShowStopButton, isRTL }) {
   return (
-    <div className="absolute bottom-3 right-2 md:bottom-4 md:right-4">
+    <div
+      className={cn(
+        'absolute',
+        isRTL ? 'bottom-3 left-2 md:bottom-4 md:left-4' : 'bottom-3 right-2 md:bottom-4 md:right-4',
+      )}
+    >
       <button
         type="button"
         className="border-gizmo-gray-900 rounded-full border-2 p-1 dark:border-gray-200"
