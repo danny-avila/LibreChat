@@ -99,10 +99,11 @@ https://www.librechat.ai/docs/configuration/stt_tts`);
     }
 
     return null;
+  } else {
+    logger.info('Custom config file loaded:');
+    logger.info(JSON.stringify(customConfig, null, 2));
+    logger.debug('Custom config:', customConfig);
   }
-
-  logger.info('Custom config file loaded');
-  logger.debug('Custom config:', customConfig);
 
   if (customConfig.cache) {
     const cache = getLogStores(CacheKeys.CONFIG_STORE);
