@@ -13,6 +13,7 @@ const {
   endpointSettings,
   EModelEndpoint,
   VisionModes,
+  Constants,
   AuthKeys,
 } = require('librechat-data-provider');
 const { encodeAndFormat } = require('~/server/services/Files/images');
@@ -623,7 +624,7 @@ class GoogleClient extends BaseClient {
   async getCompletion(_payload, options = {}) {
     const { parameters, instances } = _payload;
     const { onProgress, abortController } = options;
-    const streamRate = this.options.streamRate ?? 2;
+    const streamRate = this.options.streamRate ?? Constants.DEFAULT_STREAM_RATE;
     const { messages: _messages, context, examples: _examples } = instances?.[0] ?? {};
 
     let examples;

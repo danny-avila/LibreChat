@@ -1,6 +1,7 @@
 const { z } = require('zod');
 const axios = require('axios');
 const { Ollama } = require('ollama');
+const { Constants } = require('librechat-data-provider');
 const { deriveBaseURL } = require('~/utils');
 const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
@@ -41,7 +42,7 @@ const getValidBase64 = (imageUrl) => {
 class OllamaClient {
   constructor(options = {}) {
     const host = deriveBaseURL(options.baseURL ?? 'http://localhost:11434');
-    this.streamRate = options.streamRate ?? 2;
+    this.streamRate = options.streamRate ?? Constants.DEFAULT_STREAM_RATE;
     /** @type {Ollama} */
     this.client = new Ollama({ host });
   }

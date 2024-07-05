@@ -1182,7 +1182,7 @@ ${convo}
         });
       }
 
-      const streamRate = this.options.streamRate ?? 2;
+      const streamRate = this.options.streamRate ?? Constants.DEFAULT_STREAM_RATE;
 
       if (this.message_file_map && this.isOllama) {
         const ollamaClient = new OllamaClient({ baseURL, streamRate });

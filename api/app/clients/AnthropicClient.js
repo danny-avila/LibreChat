@@ -2,8 +2,9 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const {
-  getResponseSender,
+  Constants,
   EModelEndpoint,
+  getResponseSender,
   validateVisionModel,
 } = require('librechat-data-provider');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
@@ -606,7 +607,7 @@ class AnthropicClient extends BaseClient {
     };
 
     const maxRetries = 3;
-    const streamRate = this.options.streamRate ?? 2;
+    const streamRate = this.options.streamRate ?? Constants.DEFAULT_STREAM_RATE;
     async function processResponse() {
       let attempts = 0;
 
