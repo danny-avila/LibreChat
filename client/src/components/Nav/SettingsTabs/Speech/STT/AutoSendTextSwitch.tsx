@@ -10,7 +10,7 @@ export default function AutoSendTextSwitch({
 }) {
   const localize = useLocalize();
   const [autoSendText, setAutoSendText] = useRecoilState<boolean>(store.autoSendText);
-  const [SpeechToText] = useRecoilState<boolean>(store.SpeechToText);
+  const [SpeechToText] = useRecoilState<boolean>(store.speechToText);
 
   const handleCheckedChange = (value: boolean) => {
     setAutoSendText(value);
