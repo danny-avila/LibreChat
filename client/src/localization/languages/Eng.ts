@@ -507,6 +507,7 @@ export default {
   com_endpoint_config_value: 'Enter value for',
   com_endpoint_config_key_name_placeholder: 'Set API key first',
   com_endpoint_config_key_encryption: 'Your key will be encrypted and deleted at',
+  com_endpoint_config_key_never_expires: 'Your key will never expire',
   com_endpoint_config_key_expiry: 'the expiry time',
   com_endpoint_config_click_here: 'Click Here',
   com_endpoint_config_google_service_key: 'Google Service Account Key',
