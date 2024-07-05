@@ -66,10 +66,8 @@ function Speech() {
         playbackRate: { value: playbackRate, setFunc: setPlaybackRate },
       };
 
-      if (settings[key]) {
-        const setting = settings[key];
-        setting.setFunc(newValue);
-      }
+      const setting = settings[key];
+      setting.setFunc(newValue);
     },
     [
       conversationMode,
