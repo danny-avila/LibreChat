@@ -244,6 +244,17 @@ class PluginsClient extends OpenAIClient {
   }
 
   async sendMessage(message, opts = {}) {
+    /** @type {{ filteredTools: string[], includedTools: string[] }} */
+    const { filteredTools = [], includedTools = [] } = this.options.req.app.locals;
+
+    if (includedTools.length > 0) {
+      const tools = this.options.tools.filter((plugin) => includedTools.includes(plugin));
+      this.options.tools = tools;
+    } else {
+      const tools = this.options.tools.filter((plugin) => !filteredTools.includes(plugin));
+      this.options.tools = tools;
+    }
+
     // If a message is edited, no tools can be used.
     const completionMode = this.options.tools.length === 0 || opts.isEdited;
     if (completionMode) {

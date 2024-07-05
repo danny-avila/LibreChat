@@ -5,21 +5,21 @@ import store from '~/store';
 
 export default function EngineSTTDropdown() {
   const localize = useLocalize();
-  const [endpointSTT, setEndpointSTT] = useRecoilState<string>(store.endpointSTT);
+  const [engineSTT, setEngineSTT] = useRecoilState<string>(store.engineSTT);
   const endpointOptions = [
     { value: 'browser', display: localize('com_nav_browser') },
     { value: 'external', display: localize('com_nav_external') },
   ];
 
   const handleSelect = (value: string) => {
-    setEndpointSTT(value);
+    setEngineSTT(value);
   };
 
   return (
     <div className="flex items-center justify-between">
       <div>{localize('com_nav_engine')}</div>
       <Dropdown
-        value={endpointSTT}
+        value={engineSTT}
         onChange={handleSelect}
         options={endpointOptions}
         width={180}
