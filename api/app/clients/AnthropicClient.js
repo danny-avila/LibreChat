@@ -16,6 +16,7 @@ const {
 } = require('./prompts');
 const spendTokens = require('~/models/spendTokens');
 const { getModelMaxTokens } = require('~/utils');
+const { sleep } = require('~/server/utils');
 const BaseClient = require('./BaseClient');
 const { logger } = require('~/config');
 
@@ -605,6 +606,7 @@ class AnthropicClient extends BaseClient {
     };
 
     const maxRetries = 3;
+    const streamRate = this.options.streamRate ?? 2;
     async function processResponse() {
       let attempts = 0;
 
@@ -627,6 +629,8 @@ class AnthropicClient extends BaseClient {
             } else if (completion.completion) {
               handleChunk(completion.completion);
             }
+
+            await sleep(streamRate);
           }
 
           // Successful processing, exit loop
