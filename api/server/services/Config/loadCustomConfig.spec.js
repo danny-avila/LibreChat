@@ -146,7 +146,8 @@ describe('loadCustomConfig', () => {
     process.env.CONFIG_PATH = 'validConfig.yaml';
     loadYaml.mockReturnValueOnce(mockConfig);
     await loadCustomConfig();
-    expect(logger.info).toHaveBeenCalledWith('Custom config file loaded');
+    expect(logger.info).toHaveBeenCalledWith('Custom config file loaded:');
+    expect(logger.info).toHaveBeenCalledWith(JSON.stringify(mockConfig, null, 2));
     expect(logger.debug).toHaveBeenCalledWith('Custom config:', mockConfig);
   });
 });
