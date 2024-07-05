@@ -1,5 +1,4 @@
 const { TTSProviders } = require('librechat-data-provider');
-const { logger } = require('~/config');
 const getCustomConfig = require('~/server/services/Config/getCustomConfig');
 const { getProvider } = require('./textToSpeech');
 
