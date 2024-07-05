@@ -6,7 +6,6 @@ import { fileConfigSchema } from './file-config';
 import { specsConfigSchema } from './models';
 import { FileSources } from './types/files';
 import { TModelsConfig } from './types';
-import { speech } from './api-endpoints';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord'];
 
@@ -872,7 +871,7 @@ export enum STTProviders {
   /**
    * Provider for Microsoft Azure STT
    */
-  AZURE = 'azure',
+  AZURE_OPENAI = 'azureOpenAI',
 }
 
 export enum TTSProviders {
