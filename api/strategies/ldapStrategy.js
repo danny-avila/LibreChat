@@ -1,8 +1,8 @@
 const fs = require('fs');
 const LdapStrategy = require('passport-ldapauth');
 const { findUser, createUser, updateUser } = require('~/models/userMethods');
-const logger = require('~/utils/logger');
 const { isEnabled } = require('~/server/utils');
+const logger = require('~/utils/logger');
 
 const {
   LDAP_URL,
