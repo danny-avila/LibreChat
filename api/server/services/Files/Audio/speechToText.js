@@ -35,7 +35,7 @@ async function handleResponse(response) {
  * @throws {Error} Throws an error if multiple providers are set or no provider is set
  */
 async function getProviderSchema(customConfig) {
-  const sttSchema = customConfig.stt;
+  const sttSchema = customConfig.speech.stt;
 
   if (!sttSchema) {
     throw new Error(`No STT schema is set. Did you configure STT in the custom config (librechat.yaml)?

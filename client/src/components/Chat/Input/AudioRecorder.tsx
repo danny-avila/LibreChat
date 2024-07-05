@@ -31,15 +31,26 @@ export default function AudioRecorder({
     }
   };
 
-  const { isListening, isLoading, startRecording, stopRecording, speechText, clearText } =
-    useSpeechToText(handleTranscriptionComplete);
+  const {
+    isListening,
+    isLoading,
+    startRecording,
+    stopRecording,
+    interimTranscript,
+    speechText,
+    clearText,
+  } = useSpeechToText(handleTranscriptionComplete);
 
   useEffect(() => {
-    if (textAreaRef.current) {
+    if (isListening && textAreaRef.current) {
+      methods.setValue('text', interimTranscript, {
+        shouldValidate: true,
+      });
+    } else if (textAreaRef.current) {
       textAreaRef.current.value = speechText;
       methods.setValue('text', speechText, { shouldValidate: true });
     }
-  }, [speechText, methods, textAreaRef]);
+  }, [interimTranscript, speechText, methods, textAreaRef]);
 
   const handleStartRecording = async () => {
     await startRecording();

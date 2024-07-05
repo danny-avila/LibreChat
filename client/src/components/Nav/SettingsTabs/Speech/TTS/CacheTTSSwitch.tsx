@@ -10,7 +10,7 @@ export default function CacheTTSSwitch({
 }) {
   const localize = useLocalize();
   const [cacheTTS, setCacheTTS] = useRecoilState<boolean>(store.cacheTTS);
-  const [textToSpeech] = useRecoilState<boolean>(store.TextToSpeech);
+  const [textToSpeech] = useRecoilState<boolean>(store.textToSpeech);
 
   const handleCheckedChange = (value: boolean) => {
     setCacheTTS(value);

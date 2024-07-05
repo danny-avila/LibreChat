@@ -17,11 +17,11 @@ async function getVoices(req, res) {
   try {
     const customConfig = await getCustomConfig();
 
-    if (!customConfig || !customConfig?.tts) {
+    if (!customConfig || !customConfig?.speech?.tts) {
       throw new Error('Configuration or TTS schema is missing');
     }
 
-    const ttsSchema = customConfig?.tts;
+    const ttsSchema = customConfig?.speech?.tts;
     const provider = getProvider(ttsSchema);
     let voices;
 
@@ -44,8 +44,7 @@ async function getVoices(req, res) {
 
     res.json(voices);
   } catch (error) {
-    logger.error(`Failed to get voices: ${error.message}`);
-    res.status(500).json({ error: 'Failed to get voices' });
+    res.status(500).json({ error: `Failed to get voices: ${error.message}` });
   }
 }
 
