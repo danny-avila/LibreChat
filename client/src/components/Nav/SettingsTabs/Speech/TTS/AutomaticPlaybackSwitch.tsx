@@ -3,7 +3,7 @@ import { Switch } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
-export default function AutomaticPlayback({
+export default function AutomaticPlaybackSwitch({
   onCheckedChange,
 }: {
   onCheckedChange?: (value: boolean) => void;

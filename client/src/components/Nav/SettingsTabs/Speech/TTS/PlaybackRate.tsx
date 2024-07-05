@@ -7,7 +7,7 @@ import { cn, defaultTextProps, optionText } from '~/utils/';
 
 export default function DecibelSelector() {
   const localize = useLocalize();
-  const textToSpeech = useRecoilValue(store.TextToSpeech);
+  const textToSpeech = useRecoilValue(store.textToSpeech);
   const [playbackRate, setPlaybackRate] = useRecoilState(store.playbackRate);
 
   return (
