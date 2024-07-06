@@ -182,7 +182,7 @@ async function speechToText(req, res) {
 
   switch (provider) {
     case 'openai':
-      [url, data, headers] = openAIProvider(customConfig.stt, audioReadStream);
+      [url, data, headers] = openAIProvider(customConfig.speech.stt, audioReadStream);
       break;
     case 'azure':
       [url, data, headers] = azureProvider(req, audioReadStream);
