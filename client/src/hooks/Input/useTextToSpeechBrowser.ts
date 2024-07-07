@@ -3,6 +3,20 @@ import { useState } from 'react';
 function useTextToSpeechBrowser() {
   const [isSpeaking, setIsSpeaking] = useState(false);
 
+  const getVoices = () => {
+    return new Promise((resolve) => {
+      let voices = speechSynthesis.getVoices();
+      if (voices.length) {
+        resolve(voices);
+      } else {
+        speechSynthesis.onvoiceschanged = () => {
+          voices = speechSynthesis.getVoices();
+          resolve(voices);
+        };
+      }
+    });
+  };
+
   const generateSpeechLocal = (text: string) => {
     const synth = window.speechSynthesis;
     synth.cancel();
