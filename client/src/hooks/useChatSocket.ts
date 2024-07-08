@@ -6,7 +6,10 @@ import useChatHelpers from './useChatHelpers';
 import { useParams } from 'react-router-dom';
 import { request, type TMessage } from 'librechat-data-provider';
 import { useToastContext } from '~/Providers';
-
+// 
+import useSound from 'use-sound';
+import tipSFX from '../../public/assets/mp3/tipSFX.mp3';
+// 
 export const useInitSocket = () => {
   const user = useRecoilValue(store.user);
   const [socket, setSocket] = useState<Socket>();
