@@ -92,7 +92,7 @@ const sendKarma = async (req, res) => {
 };
 
 const copyCryptoAddress = async (req, res) => {
-  console.log(req.body);
+  // console.log(req.body);
   try {
     const result = await new TipTrackModel({
       sender: req.user._id,
