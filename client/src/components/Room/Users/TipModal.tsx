@@ -138,6 +138,14 @@ export default function TipModal({
           showToast({ message: 'Tip sent successfully', status: 'success' });
         });
     }
+    if(socket){
+      socket.emit('tip', {
+        recipient: user._id ?? user.id,
+        network: selectedNetwork?.id,
+        sender: you?.username,
+        anonymous: !v
+      });
+    }
     setOpen(false);
     setSelectedNetwork(null);
   };
