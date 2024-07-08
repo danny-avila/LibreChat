@@ -14,6 +14,9 @@ import {
 import { AssistantsMapContext, FileMapContext } from '~/Providers';
 import { Nav, MobileNav } from '~/components/Nav';
 import store from '~/store';
+//
+import { useInitSocket, usePushSocket } from '~/hooks/useChatSocket';
+//
 
 export default function Root() {
   const location = useLocation();
@@ -25,7 +28,10 @@ export default function Root() {
     const savedNavVisible = localStorage.getItem('navVisible');
     return savedNavVisible !== null ? JSON.parse(savedNavVisible) : true;
   });
-
+  //
+  const socket = useInitSocket();
+  usePushSocket(socket);
+  //
   useEffect(() => {
     if (convoType === 'r' && user?.username === 'guest-user') {
       setNavAvailable(false);
