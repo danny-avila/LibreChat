@@ -1,8 +1,9 @@
-const { EModelEndpoint, extractEnvVariable } = require('librechat-data-provider');
+const { EModelEndpoint, extractEnvVariable, CacheKeys } = require('librechat-data-provider');
 const { fetchModels } = require('~/server/services/ModelService');
 const { getUserKeyWithExpiry } = require('../UserService');
 const { isUserProvided } = require('~/server/utils');
 const getCustomConfig = require('./getCustomConfig');
+const getLogStores = require('~/cache/getLogStores');
 
 /**
  * Load config endpoints from the cached configuration object
@@ -76,24 +77,36 @@ async function loadConfigModels(req) {
         if (userKey.expiresAt && new Date(userKey.expiresAt).getTime() > Date.now()) {
           // in case key is valid replace the default key with the user provided key
           API_KEY = userKey.apiKey || API_KEY;
+        } else {
+          // if key is expired remove it from the cache
+          await keyRemoveFromCache(getUniqueKey(BASE_URL, userKey.apiKey));
         }
       } catch (e) {
         // ignore if key is missing or invalid
       }
     }
 
-    const uniqueKey = `${BASE_URL}__${API_KEY}`;
+    const uniqueKey = getUniqueKey(BASE_URL, API_KEY);
 
     if (models.fetch && !isUserProvided(API_KEY) && !isUserProvided(BASE_URL)) {
-      fetchPromisesMap[uniqueKey] =
-        fetchPromisesMap[uniqueKey] ||
-        fetchModels({
-          user: req.user.id,
-          baseURL: BASE_URL,
-          apiKey: API_KEY,
-          name,
-          userIdQuery: models.userIdQuery,
-        });
+      const modelsCache = getLogStores(CacheKeys.MODEL_QUERIES);
+      const cachedModels = await modelsCache.get(uniqueKey);
+      if (cachedModels) {
+        fetchPromisesMap[uniqueKey] = Promise.resolve(cachedModels);
+      } else {
+        fetchPromisesMap[uniqueKey] =
+          fetchPromisesMap[uniqueKey] ||
+          fetchModels({
+            user: req.user.id,
+            baseURL: BASE_URL,
+            apiKey: API_KEY,
+            name,
+            userIdQuery: models.userIdQuery,
+          }).then((models) => {
+            // add models to cache
+            return modelsCache.set(uniqueKey, models).then(() => models);
+          });
+      }
       uniqueKeyToEndpointsMap[uniqueKey] = uniqueKeyToEndpointsMap[uniqueKey] || [];
       uniqueKeyToEndpointsMap[uniqueKey].push(name);
       continue;
@@ -120,5 +133,8 @@ async function loadConfigModels(req) {
 
   return modelsConfig;
 }
-
+const keyRemoveFromCache = async (key) => {
+  await getLogStores(CacheKeys.MODEL_QUERIES).delete(key);
+};
+const getUniqueKey = (url, key) => `${url}__${key}`;
 module.exports = loadConfigModels;
