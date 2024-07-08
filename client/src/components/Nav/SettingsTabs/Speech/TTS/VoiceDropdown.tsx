@@ -27,6 +27,7 @@ export default function VoiceDropdown() {
   const localize = useLocalize();
   const [voice, setVoice] = useRecoilState(store.voice);
   const [engineTTS] = useRecoilState(store.engineTTS);
+  const [cloudBrowserVoices] = useRecoilState(store.cloudBrowserVoices);
   const externalTextToSpeech = engineTTS === 'external';
   const { data: externalVoices = [] } = useVoicesQuery();
   const [localVoices, setLocalVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -53,9 +54,11 @@ export default function VoiceDropdown() {
     if (externalTextToSpeech) {
       return externalVoices.map((v) => ({ value: v, display: v }));
     } else {
-      return localVoices.map((v) => ({ value: v.name, display: v.name }));
+      return localVoices
+        .filter((v) => cloudBrowserVoices || v.localService === true)
+        .map((v) => ({ value: v.name, display: v.name }));
     }
-  }, [externalTextToSpeech, externalVoices, localVoices]);
+  }, [externalTextToSpeech, externalVoices, localVoices, cloudBrowserVoices]);
 
   return (
     <div className="flex items-center justify-between">
