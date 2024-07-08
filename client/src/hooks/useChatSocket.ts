@@ -118,3 +118,35 @@ export const useChatSocket = (socket?: Socket) => {
 
   return { socket };
 };
+//
+export const usePushSocket = (socket?: Socket) =>
+{
+  const user = useRecoilValue(store.user);
+  const [play] = useSound(tipSFX);
+  const { showToast } = useToastContext();
+  //
+  useEffect(() => {
+    socket?.on('tipNotification', (data) => {
+        const { recipient, network, sender, anonymous } = data;
+        console.log(data)
+        if(user?.id == recipient){
+          const isMuted = localStorage.getItem('NotificationDisplay') || 'false';
+          if(isMuted=='false'){
+            play()
+          }
+          if(!anonymous){
+            showToast({ message: `Congratulations! Tip received from ${sender} on the ${network} network` , status: 'success' });
+          }else {
+            showToast({ message: `Congratulations! Tip received from Anonymous on the ${network} network` , status: 'success' });
+          }
+
+        }
+    });
+    //
+    return () => {
+      socket?.off('tipNotification');
+    };
+  }, [ socket ]);
+  //
+  return { socket };
+};
