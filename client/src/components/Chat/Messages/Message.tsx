@@ -118,13 +118,13 @@ export default function Message(props: TMessageProps) {
                   </div>
                 ) : (
                   <div className="relative pt-0.5">
-                    {isPremiumUser(user as TUser) && (
+                    {message?.user?.subscription?.active && (
                       <img
-                        src="/assets/premium.png"
-                        alt="premium"
-                        className="absolute -right-1 -top-1 h-4 w-4"
-                      />
-                    )}
+                          src="/assets/premium.png"
+                          alt="premium"
+                          className="absolute -right-1 -top-1 h-4 w-4 z-10"
+                        />
+                      )}
                     <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
                       {userAvatar ? (
                         <img src={userAvatar} />
