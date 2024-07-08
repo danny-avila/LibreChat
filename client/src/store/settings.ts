@@ -156,7 +156,26 @@ const UsernameDisplay = atom<boolean>({
     },
   ] as const,
 });
+// 
+const NotificationDisplay = atom<boolean>({
+  key: 'NotificationDisplay',
+  default: localStorage.getItem('NotificationDisplay') === 'true',
+  effects: [
+    ({ setSelf, onSet }) => {
+      const savedValue = localStorage.getItem('NotificationDisplay');
+      if (savedValue != null) {
+        setSelf(savedValue === 'true');
+      }
 
+      onSet((newValue: unknown) => {
+        if (typeof newValue === 'boolean') {
+          localStorage.setItem('NotificationDisplay', newValue.toString());
+        }
+      });
+    },
+  ] as const,
+});
+// 
 export default {
   abortScroll,
   showFiles,
@@ -172,4 +191,5 @@ export default {
   modularChat,
   LaTeXParsing,
   UsernameDisplay,
+  NotificationDisplay
 };
