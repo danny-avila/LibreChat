@@ -10,10 +10,18 @@ import SubscriptionField from './SubscriptionField';
 
 function Account({ onCheckedChange }: { onCheckedChange?: (value: boolean) => void }) {
   const [UsernameDisplay, setUsernameDisplay] = useRecoilState<boolean>(store.UsernameDisplay);
+  const [NotificationDisplay, setNotificationDisplay] = useRecoilState<boolean>(store.NotificationDisplay);
+
   const localize = useLocalize();
 
   const handleCheckedChange = (value: boolean) => {
     setUsernameDisplay(value);
+    if (onCheckedChange) {
+      onCheckedChange(value);
+    }
+  };
+  const handleNotificationChange = (value: boolean) => {
+    setNotificationDisplay(value);
     if (onCheckedChange) {
       onCheckedChange(value);
     }
@@ -37,6 +45,16 @@ function Account({ onCheckedChange }: { onCheckedChange?: (value: boolean) => vo
             onCheckedChange={handleCheckedChange}
             className="ml-4 mt-2"
             data-testid="UsernameDisplay"
+          />
+        </div>
+        <div className="flex items-center justify-between border-b pb-3 dark:border-gray-700">
+          <div> {localize('com_nav_user_mute_notification')} </div>
+          <Switch
+            id="NotificationDisplay"
+            checked={NotificationDisplay}
+            onCheckedChange={handleNotificationChange}
+            className="ml-4 mt-2"
+            data-testid="NotificationDisplay"
           />
         </div>
         <SubscriptionField />
