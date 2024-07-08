@@ -13,6 +13,7 @@ import store from '~/store';
 import { isPremiumUser } from '~/utils/checkUserValid';
 import { TUser } from 'librechat-data-provider';
 import { useEffect } from 'react';
+import useAvatar from '~/hooks/Messages/useAvatar';
 
 export default function Message(props: TMessageProps) {
   const UsernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
@@ -79,7 +80,8 @@ export default function Message(props: TMessageProps) {
         }
       } else {
         messageLabel = message.user.name;
-        userAvatar = message.user.avatar;
+        // userAvatar = message.user.avatar;
+        userAvatar = message.user.avatar || useAvatar({username:message.user.name});
       }
 
       if (message.sender === 'Tip Bot' || message.sender === 'Karma Bot') {
