@@ -332,6 +332,7 @@ export default {
   com_nav_tool_remove: 'Remove',
   com_nav_tool_dialog: 'Assistant Tools',
   com_nav_tool_dialog_description: 'Assistant must be saved to persist tool selections.',
+  com_nav_user_mute_notification: 'Mute Notifications',
   com_show_agent_settings: 'Show Agent Settings',
   com_show_completion_settings: 'Show Completion Settings',
   com_hide_examples: 'Hide Examples',
