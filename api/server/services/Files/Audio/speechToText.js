@@ -25,7 +25,7 @@ async function handleResponse(response) {
 }
 
 function getProvider(sttSchema) {
-  if (sttSchema.openai) {
+  if (sttSchema?.openai) {
     return 'openai';
   }
 
@@ -176,13 +176,13 @@ async function speechToText(req, res) {
   const audioReadStream = Readable.from(audioBuffer);
   audioReadStream.path = 'audio.wav';
 
-  const provider = getProvider(customConfig.stt);
+  const provider = getProvider(customConfig.speech.stt);
 
   let [url, data, headers] = [];
 
   switch (provider) {
     case 'openai':
-      [url, data, headers] = openAIProvider(customConfig.stt, audioReadStream);
+      [url, data, headers] = openAIProvider(customConfig.speech.stt, audioReadStream);
       break;
     case 'azure':
       [url, data, headers] = azureProvider(req, audioReadStream);

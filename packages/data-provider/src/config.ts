@@ -6,6 +6,7 @@ import { fileConfigSchema } from './file-config';
 import { specsConfigSchema } from './models';
 import { FileSources } from './types/files';
 import { TModelsConfig } from './types';
+import { speech } from './api-endpoints';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord'];
 
@@ -273,6 +274,40 @@ const sttSchema = z.object({
     .optional(),
 });
 
+const speechTab = z
+  .object({
+    conversationMode: z.boolean().optional(),
+    advancedMode: z.boolean().optional(),
+    speechToText: z
+      .boolean()
+      .optional()
+      .or(
+        z.object({
+          engineSTT: z.string().optional(),
+          languageSTT: z.string().optional(),
+          autoTranscribeAudio: z.boolean().optional(),
+          decibelValue: z.number().optional(),
+          autoSendText: z.boolean().optional(),
+        }),
+      )
+      .optional(),
+    textToSpeech: z
+      .boolean()
+      .optional()
+      .or(
+        z.object({
+          engineTTS: z.string().optional(),
+          voice: z.string().optional(),
+          languageTTS: z.string().optional(),
+          automaticPlayback: z.boolean().optional(),
+          playbackRate: z.number().optional(),
+          cacheTTS: z.boolean().optional(),
+        }),
+      )
+      .optional(),
+  })
+  .optional();
+
 export enum RateLimitPrefix {
   FILE_UPLOAD = 'FILE_UPLOAD',
   IMPORT = 'IMPORT',
@@ -362,8 +397,13 @@ export const configSchema = z.object({
       allowedDomains: z.array(z.string()).optional(),
     })
     .default({ socialLogins: defaultSocialLogins }),
-  tts: ttsSchema.optional(),
-  stt: sttSchema.optional(),
+  speech: z
+    .object({
+      tts: ttsSchema.optional(),
+      stt: sttSchema.optional(),
+      speechTab: speechTab.optional(),
+    })
+    .optional(),
   rateLimits: rateLimitSchema.optional(),
   fileConfig: fileConfigSchema.optional(),
   modelSpecs: specsConfigSchema.optional(),
@@ -811,7 +851,7 @@ export enum Constants {
   /** Key for the app's version. */
   VERSION = 'v0.7.4-rc1',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.1.4',
+  CONFIG_VERSION = '1.1.5',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value for the initial conversationId before a request is sent */

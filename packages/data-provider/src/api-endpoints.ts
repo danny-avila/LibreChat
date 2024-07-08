@@ -128,13 +128,17 @@ export const images = () => `${files()}/images`;
 
 export const avatar = () => `${images()}/avatar`;
 
-export const speechToText = () => `${files()}/stt`;
+export const speech = () => `${files()}/speech`;
 
-export const textToSpeech = () => `${files()}/tts`;
+export const speechToText = () => `${speech()}/stt`;
+
+export const textToSpeech = () => `${speech()}/tts`;
 
 export const textToSpeechManual = () => `${textToSpeech()}/manual`;
 
 export const textToSpeechVoices = () => `${textToSpeech()}/voices`;
+
+export const getCustomConfigSpeech = () => `${speech()}/config/get`;
 
 export const getPromptGroup = (_id: string) => `${prompts()}/groups/${_id}`;
 
