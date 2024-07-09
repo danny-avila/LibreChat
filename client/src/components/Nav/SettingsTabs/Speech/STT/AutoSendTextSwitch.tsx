@@ -1,5 +1,5 @@
 import React from 'react';
-import { useRecoilState, useRecoilValue } from 'recoil';
+import { useRecoilState } from 'recoil';
 import { cn, defaultTextProps, optionText } from '~/utils/';
 import { Slider, InputNumber } from '~/components/ui';
 import { useLocalize } from '~/hooks';
@@ -8,7 +8,7 @@ import store from '~/store';
 export default function AutoSendTextSwitch() {
   const localize = useLocalize();
 
-  const speechToText = useRecoilValue(store.speechToText);
+  const speechToText = useRecoilState<boolean>(store.speechToText);
   const [autoSendText, setAutoSendText] = useRecoilState(store.autoSendText);
 
   return (
