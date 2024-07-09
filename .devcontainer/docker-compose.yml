@@ -4,8 +4,8 @@ version: "3.8"
 
 services:
   app:
-      group_add:
-      - docker
+    group_add:
+    - docker
     build: 
       context: ..
       dockerfile: .devcontainer/Dockerfile
