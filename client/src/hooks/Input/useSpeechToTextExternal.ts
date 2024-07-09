@@ -27,10 +27,11 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
       const extractedText = data.text;
       setText(extractedText);
       setIsRequestBeingMade(false);
-      if (autoSendText < -1 && speechToText && extractedText.length > 0) {
+
+      if (autoSendText > -1 && speechToText && extractedText.length > 0) {
         setTimeout(() => {
           onTranscriptionComplete(extractedText);
-        }, autoSendText);
+        }, autoSendText * 1000);
       }
     },
     onError: () => {
