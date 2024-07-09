@@ -30,6 +30,8 @@ function Speech() {
   const { data } = useCustomConfigSpeechQuery();
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
 
+  const [sttExternal, setSttExternal] = useState(false);
+  const [ttsExternal, setTtsExternal] = useState(false);
   const [advancedMode, setAdvancedMode] = useRecoilState(store.advancedMode);
   const [autoTranscribeAudio, setAutoTranscribeAudio] = useRecoilState(store.autoTranscribeAudio);
   const [conversationMode, setConversationMode] = useRecoilState(store.conversationMode);
@@ -49,6 +51,8 @@ function Speech() {
   const updateSetting = useCallback(
     (key, newValue) => {
       const settings = {
+        sttExternal: { value: sttExternal, setFunc: setSttExternal },
+        ttsExternal: { value: ttsExternal, setFunc: setTtsExternal },
         conversationMode: { value: conversationMode, setFunc: setConversationMode },
         advancedMode: { value: advancedMode, setFunc: setAdvancedMode },
         speechToText: { value: speechToText, setFunc: setSpeechToText },
@@ -72,6 +76,8 @@ function Speech() {
       }
     },
     [
+      sttExternal,
+      ttsExternal,
       conversationMode,
       advancedMode,
       speechToText,
@@ -87,6 +93,8 @@ function Speech() {
       languageTTS,
       automaticPlayback,
       playbackRate,
+      setSttExternal,
+      setTtsExternal,
       setConversationMode,
       setAdvancedMode,
       setSpeechToText,
@@ -112,6 +120,9 @@ function Speech() {
       });
     }
   }, []);
+
+  console.log(sttExternal);
+  console.log(ttsExternal);
 
   const contentRef = useRef(null);
   useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);
@@ -173,7 +184,7 @@ function Speech() {
               <SpeechToTextSwitch />
             </div>
             <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-              <EngineSTTDropdown />
+              <EngineSTTDropdown external={sttExternal} />
             </div>
             <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
               <LanguageSTTDropdown />
@@ -183,7 +194,7 @@ function Speech() {
               <TextToSpeechSwitch />
             </div>
             <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-              <EngineTTSDropdown />
+              <EngineTTSDropdown external={ttsExternal} />
             </div>
             <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
               <VoiceDropdown />
@@ -201,7 +212,7 @@ function Speech() {
               <SpeechToTextSwitch />
             </div>
             <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-              <EngineSTTDropdown />
+              <EngineSTTDropdown external={sttExternal} />
             </div>
             <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
               <LanguageSTTDropdown />
@@ -225,7 +236,7 @@ function Speech() {
               <AutomaticPlaybackSwitch />
             </div>
             <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-              <EngineTTSDropdown />
+              <EngineTTSDropdown external={ttsExternal} />
             </div>
             <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
               <VoiceDropdown />
