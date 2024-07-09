@@ -14,9 +14,16 @@ RUN if [ "$INSTALL_DOCKER" = "true" ]; then \
         apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin; \
     fi
 
+# Install sudo
+RUN apt-get update && apt-get install -y sudo
+
 # Set up non-root user
 RUN useradd -m -s /bin/bash vscode
 RUN if [ "$INSTALL_DOCKER" = "true" ]; then usermod -aG docker vscode; fi
+
+# Add vscode user to sudoers
+RUN echo "vscode ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/vscode && \
+    chmod 0440 /etc/sudoers.d/vscode
 
 USER vscode
 
