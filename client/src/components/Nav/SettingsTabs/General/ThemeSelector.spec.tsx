@@ -1,4 +1,5 @@
 // ThemeSelector.spec.tsx
+import 'test/matchMedia.mock';
 
 import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react';
@@ -14,10 +15,15 @@ describe('ThemeSelector', () => {
   });
 
   it('renders correctly', () => {
+    global.ResizeObserver = class MockedResizeObserver {
+      observe = jest.fn();
+      unobserve = jest.fn();
+      disconnect = jest.fn();
+    };
     const { getByText } = render(
       <RecoilRoot>
         <ThemeSelector theme="system" onChange={mockOnChange} />
-      </RecoilRoot>
+      </RecoilRoot>,
     );
 
     expect(getByText('Theme')).toBeInTheDocument();
@@ -25,10 +31,15 @@ describe('ThemeSelector', () => {
   });
 
   it('calls onChange when the select value changes', async () => {
+    global.ResizeObserver = class MockedResizeObserver {
+      observe = jest.fn();
+      unobserve = jest.fn();
+      disconnect = jest.fn();
+    };
     const { getByText, getByTestId } = render(
       <RecoilRoot>
         <ThemeSelector theme="system" onChange={mockOnChange} />
-      </RecoilRoot>
+      </RecoilRoot>,
     );
 
     expect(getByText('Theme')).toBeInTheDocument();
