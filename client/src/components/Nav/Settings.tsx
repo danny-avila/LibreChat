@@ -10,8 +10,8 @@ import {
   Transition,
   TransitionChild,
 } from '@headlessui/react';
-import { GearIcon, DataIcon, UserIcon, ExperimentIcon } from '~/components/svg';
-import { General, Messages, Beta, Data, Account } from './SettingsTabs';
+import { GearIcon, DataIcon, SpeechIcon, UserIcon, ExperimentIcon } from '~/components/svg';
+import { General, Messages, Speech, Beta, Data, Account } from './SettingsTabs';
 import { useMediaQuery, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -142,6 +142,20 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     </Tabs.Trigger>
                     <Tabs.Trigger
                       className={cn(
+                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black transition-all duration-200 ease-in-out radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
+                        isSmallScreen
+                          ? 'flex-row items-center justify-center text-sm radix-state-active:bg-gray-100'
+                          : 'bg-white radix-state-active:bg-gray-100',
+                        isSmallScreen ? '' : 'dark:bg-gray-700',
+                      )}
+                      value={SettingsTabValues.SPEECH}
+                      style={{ userSelect: 'none' }}
+                    >
+                      <SpeechIcon className="icon-sm" />
+                      {localize('com_nav_setting_speech')}
+                    </Tabs.Trigger>
+                    <Tabs.Trigger
+                      className={cn(
                         'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
                         isSmallScreen
                           ? 'flex-1 items-center justify-center text-nowrap text-sm dark:text-gray-500 dark:radix-state-active:text-white'
@@ -173,6 +187,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     <General />
                     <Messages />
                     <Beta />
+                    <Speech />
                     <Data />
                     <Account />
                   </div>
