@@ -94,7 +94,7 @@ const Dropdown: FC<DropdownProps> = ({
                   key={index}
                   value={typeof item === 'string' ? item : item.value}
                   className={cn(
-                    'relative cursor-pointer select-none rounded border-gray-300 bg-white py-2.5 pl-3 pr-6 text-sm text-gray-700 hover:bg-gray-100 dark:border-gray-300 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600',
+                    'relative cursor-pointer select-none rounded border-gray-300 bg-white py-2.5 pl-3 pr-3 text-sm text-gray-700 hover:bg-gray-100 dark:border-gray-300 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600',
                   )}
                   style={{ width: '100%' }}
                   data-theme={typeof item === 'string' ? item : (item as OptionType).value}
