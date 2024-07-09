@@ -1,5 +1,5 @@
 import { Content, Portal, Root } from '@radix-ui/react-popover';
-import { alternateName, EModelEndpoint } from 'librechat-data-provider';
+import { alternateName, isAssistantsEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { FC } from 'react';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
@@ -16,7 +16,8 @@ const EndpointsMenu: FC = () => {
   const { endpoint = '', assistant_id = null } = conversation ?? {};
   const assistantMap = useAssistantsMapContext();
 
-  const assistant = endpoint === EModelEndpoint.assistants && assistantMap?.[assistant_id ?? ''];
+  const assistant =
+    isAssistantsEndpoint(endpoint) && assistantMap?.[endpoint ?? '']?.[assistant_id ?? ''];
   const assistantName = (assistant && assistant?.name) || 'Assistant';
 
   if (!endpoint) {

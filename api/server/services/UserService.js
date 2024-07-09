@@ -1,6 +1,6 @@
 const { ErrorTypes } = require('librechat-data-provider');
 const { encrypt, decrypt } = require('~/server/utils');
-const { User, Key } = require('~/models');
+const { updateUser, Key } = require('~/models');
 const { logger } = require('~/config');
 
 /**
@@ -16,16 +16,13 @@ const { logger } = require('~/config');
  */
 const updateUserPluginsService = async (user, pluginKey, action) => {
   try {
+    const userPlugins = user.plugins || [];
     if (action === 'install') {
-      return await User.updateOne(
-        { _id: user._id },
-        { $set: { plugins: [...user.plugins, pluginKey] } },
-      );
+      return await updateUser(user._id, { plugins: [...userPlugins, pluginKey] });
     } else if (action === 'uninstall') {
-      return await User.updateOne(
-        { _id: user._id },
-        { $set: { plugins: user.plugins.filter((plugin) => plugin !== pluginKey) } },
-      );
+      return await updateUser(user._id, {
+        plugins: userPlugins.filter((plugin) => plugin !== pluginKey),
+      });
     }
   } catch (err) {
     logger.error('[updateUserPluginsService]', err);
@@ -96,7 +93,7 @@ const getUserKeyExpiry = async ({ userId, name }) => {
   if (!keyValue) {
     return { expiresAt: null };
   }
-  return { expiresAt: keyValue.expiresAt };
+  return { expiresAt: keyValue.expiresAt || 'never' };
 };
 
 /**
@@ -111,18 +108,23 @@ const getUserKeyExpiry = async ({ userId, name }) => {
  * @description This function either updates an existing user key or inserts a new one into the database,
  *              after encrypting the provided value. It sets the provided expiry date for the key.
  */
-const updateUserKey = async ({ userId, name, value, expiresAt }) => {
+const updateUserKey = async ({ userId, name, value, expiresAt = null }) => {
   const encryptedValue = encrypt(value);
-  return await Key.findOneAndUpdate(
-    { userId, name },
-    {
-      userId,
-      name,
-      value: encryptedValue,
-      expiresAt: new Date(expiresAt),
-    },
-    { upsert: true, new: true },
-  ).lean();
+  let updateObject = {
+    userId,
+    name,
+    value: encryptedValue,
+  };
+
+  // Only add expiresAt to the update object if it's not null
+  if (expiresAt) {
+    updateObject.expiresAt = new Date(expiresAt);
+  }
+
+  return await Key.findOneAndUpdate({ userId, name }, updateObject, {
+    upsert: true,
+    new: true,
+  }).lean();
 };
 
 /**
@@ -167,11 +169,11 @@ const checkUserKeyExpiry = (expiresAt, endpoint) => {
 };
 
 module.exports = {
-  updateUserPluginsService,
   getUserKey,
-  getUserKeyValues,
-  getUserKeyExpiry,
   updateUserKey,
   deleteUserKey,
+  getUserKeyValues,
+  getUserKeyExpiry,
   checkUserKeyExpiry,
+  updateUserPluginsService,
 };

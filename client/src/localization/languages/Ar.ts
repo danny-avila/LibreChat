@@ -32,7 +32,6 @@ export default {
   com_ui_enter: 'أدخل',
   com_ui_submit: 'إرسال',
   com_ui_upload_success: 'تم تحميل الملف بنجاح',
-  com_ui_upload_invalid: 'ملف غير صالح للتحميل',
   com_ui_cancel: 'إلغاء',
   com_ui_save: 'حفظ',
   com_ui_copy_to_clipboard: 'نسخ إلى الحافظة',
@@ -51,9 +50,24 @@ export default {
   com_ui_import_conversation_error: 'حدث خطأ أثناء استيراد محادثاتك',
   com_ui_confirm_action: 'تأكيد الإجراء',
   com_ui_chats: 'الدردشات',
+  com_ui_share: 'مشاركة',
+  com_ui_copy_link: 'نسخ الرابط',
+  com_ui_update_link: 'رابط التحديث',
+  com_ui_create_link: 'إنشاء رابط',
+  com_ui_share_link_to_chat: 'شارك الرابط في الدردشة',
+  com_ui_share_error: 'حدث خطأ أثناء مشاركة رابط الدردشة',
+  com_ui_share_retrieve_error: 'حدث خطأ أثناء حذف الرابط المشترك.',
+  com_ui_share_delete_error: 'حدث خطأ أثناء حذف الرابط المشترك.',
+  com_ui_share_create_message: 'سيظل اسمك وأي رسائل تضيفها بعد المشاركة خاصة.',
+  com_ui_share_created_message:
+    'تم إنشاء رابط مشترك للدردشة الخاصة بك. يمكنك إدارة الدردشات المشتركة مسبقًا في أي وقت عبر الإعدادات.',
+  com_ui_share_update_message: 'سيظل اسمك والتعليمات المخصصة وأي رسائل تضيفها بعد المشاركة خاصة.',
+  com_ui_share_updated_message:
+    'تم تحديث رابط مشترك للدردشة الخاصة بك. يمكنك إدارة الدردشات المشتركة مسبقًا في أي وقت عبر الإعدادات.',
+  com_ui_shared_link_not_found: 'الرابط المشترك غير موجود',
   com_ui_delete: 'حذف',
   com_ui_delete_conversation: 'حذف الدردشة؟',
-  com_ui_delete_conversation_confirm: 'سيتم حذف هذا',
+  com_ui_delete_confirm: 'سيتم حذف هذا',
   com_ui_rename: 'إعادة تسمية',
   com_ui_archive: 'أرشفة',
   com_ui_archive_error: 'فشل في أرشفة المحادثة',
@@ -254,6 +268,12 @@ export default {
   com_nav_export_recursive_or_sequential: 'التراجع أو التسلسل؟',
   com_nav_export_recursive: 'تكراري',
   com_nav_export_conversation: 'تصدير المحادثة',
+  com_nav_export: 'تصدير',
+  com_nav_shared_links: 'روابط مشتركة',
+  com_nav_shared_links_manage: 'الإدارة',
+  com_nav_shared_links_empty: 'ليس لديك أي روابط مشتركة.',
+  com_nav_shared_links_name: 'الاسم',
+  com_nav_shared_links_date_shared: 'تاريخ المشترك',
   com_nav_theme: 'المظهر',
   com_nav_theme_system: 'النظام',
   com_nav_theme_dark: 'داكن',
@@ -280,6 +300,36 @@ export default {
   com_nav_setting_general: 'عام',
   com_nav_setting_data: 'تحكم في البيانات',
   /* The following are AI translated */
+  com_assistants_file_search: 'بحث الملفات',
+  com_assistants_file_search_info:
+    'لا يتم دعم إرفاق مخازن الكتل الرقمية لميزة البحث في الملفات بعد. يمكنك إرفاقها من ملعب المزود أو إرفاق ملفات إلى الرسائل للبحث في الملفات على أساس المحادثة.',
+  com_assistants_non_retrieval_model:
+    'البحث في الملفات غير مُمكّن على هذا النموذج. يرجى تحديد نموذج آخر.',
+  com_ui_attach_error_openai: 'لا يمكن إرفاق ملفات المساعد إلى نقاط نهائية أخرى',
+  com_ui_attach_warn_endpoint: 'قد يتم تجاهل الملفات غير المساعدة دون وجود أداة متوافقة',
+  com_ui_assistant_deleted: 'تم حذف المساعد بنجاح',
+  com_ui_assistant_delete_error: 'حدث خطأ أثناء حذف المساعد',
+  com_ui_copied: 'تم النسخ',
+  com_ui_copy_code: 'نسخ الكود',
+  com_nav_source_chat: 'عرض محادثة المصدر',
+  com_ui_date_today: 'اليوم',
+  com_ui_date_yesterday: 'أمس',
+  com_ui_date_previous_7_days: 'الأيام السبعة السابقة',
+  com_ui_date_previous_30_days: 'الـ 30 يومًا السابقة',
+  com_ui_date_january: 'يناير',
+  com_ui_date_february: 'فبراير',
+  com_ui_date_march: 'مارس',
+  com_ui_date_april: 'أبريل',
+  com_ui_date_may: 'مايو',
+  com_ui_date_june: 'يونيو',
+  com_ui_date_july: 'يوليو',
+  com_ui_date_august: 'أغسطس',
+  com_ui_date_september: 'سبتمبر',
+  com_ui_date_october: 'أكتوبر',
+  com_ui_date_november: 'نوفمبر',
+  com_ui_date_december: 'ديسمبر',
+  com_ui_nothing_found: 'لم يتم العثور على أي شيء',
+  com_ui_go_to_conversation: 'انتقل إلى المحادثة',
   com_error_moderation:
     'يبدو أن المحتوى المقدم قد تم وضع علامة عليه من قبل نظام الرقابة لدينا لعدم توافقه مع إرشادات مجتمعنا. لا نستطيع المضي قدمًا في هذا الموضوع المحدد. إذا كانت لديك أسئلة أخرى أو مواضيع ترغب في استكشافها، يرجى تحرير رسالتك، أو إنشاء محادثة جديدة.',
   com_error_no_user_key: 'لم يتم العثور على مفتاح. يرجى تقديم مفتاح والمحاولة مرة أخرى.',
@@ -494,6 +544,7 @@ export default {
   com_nav_my_files: 'ملفاتي',
   com_nav_enter_to_send: 'اضغط على مفتاح الإدخال لإرسال الرسائل',
   com_nav_user_name_display: 'عرض اسم المستخدم في الرسائل',
+  com_nav_save_drafts: 'حفظ المستخدمين',
   com_nav_show_code: 'إظهار الشفرة دائمًا عند استخدام مفسر الشفرة',
   com_nav_send_message: 'إرسال رسالة',
   com_nav_setting_beta: 'ميزات تجريبية',
@@ -642,10 +693,6 @@ export const comparisons = {
     english: 'Successfully uploaded file',
     translated: 'تم تحميل الملف بنجاح',
   },
-  com_ui_upload_invalid: {
-    english: 'Invalid file for upload. Must be an image not exceeding 2 MB',
-    translated: 'ملف غير صالح للتحميل',
-  },
   com_ui_cancel: {
     english: 'Cancel',
     translated: 'إلغاء',
@@ -718,6 +765,62 @@ export const comparisons = {
     english: 'chats',
     translated: 'الدردشات',
   },
+  com_ui_share: {
+    english: 'Share',
+    translated: 'مشاركة',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: 'نسخ الرابط',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: 'رابط التحديث',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: 'إنشاء رابط',
+  },
+  com_ui_share_link_to_chat: {
+    english: 'Share link to chat',
+    translated: 'شارك الرابط في الدردشة',
+  },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'حدث خطأ أثناء حذف الرابط المشترك.',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'حدث خطأ أثناء حذف الرابط المشترك.',
+  },
+  com_ui_share_error: {
+    english: 'There was an error sharing the chat link',
+    translated: 'حدث خطأ أثناء مشاركة رابط الدردشة',
+  },
+  com_ui_share_create_message: {
+    english: 'Your name and any messages you add after sharing stay private.',
+    translated: 'سيظل اسمك وأي رسائل تضيفها بعد المشاركة خاصة.',
+  },
+  com_ui_share_created_message: {
+    english:
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated:
+      'تم إنشاء رابط مشترك للدردشة الخاصة بك. يمكنك إدارة الدردشات المشتركة مسبقًا في أي وقت عبر الإعدادات.',
+  },
+  com_ui_share_update_message: {
+    english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated: 'سيظل اسمك والتعليمات المخصصة وأي رسائل تضيفها بعد المشاركة خاصة.',
+  },
+  com_ui_share_updated_message: {
+    english:
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated:
+      'تم تحديث رابط مشترك للدردشة الخاصة بك. يمكنك إدارة الدردشات المشتركة مسبقًا في أي وقت عبر الإعدادات.',
+  },
+  com_ui_shared_link_not_found: {
+    english: 'Shared link not found',
+    translated: 'الرابط المشترك غير موجود',
+  },
   com_ui_delete: {
     english: 'Delete',
     translated: 'حذف',
@@ -726,7 +829,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'حذف الدردشة؟',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'سيتم حذف هذا',
   },
@@ -1438,6 +1541,30 @@ export const comparisons = {
     english: 'Export conversation',
     translated: 'تصدير المحادثة',
   },
+  com_nav_export: {
+    english: 'Export',
+    translated: 'تصدير',
+  },
+  com_nav_shared_links: {
+    english: 'Shared links',
+    translated: 'روابط مشتركة',
+  },
+  com_nav_shared_links_manage: {
+    english: 'Manage',
+    translated: 'الإدارة',
+  },
+  com_nav_shared_links_empty: {
+    english: 'You have no shared links.',
+    translated: 'ليس لديك أي روابط مشتركة.',
+  },
+  com_nav_shared_links_name: {
+    english: 'Name',
+    translated: 'الاسم',
+  },
+  com_nav_shared_links_date_shared: {
+    english: 'Date shared',
+    translated: 'تاريخ المشترك',
+  },
   com_nav_theme: {
     english: 'Theme',
     translated: 'المظهر',
@@ -1533,6 +1660,120 @@ export const comparisons = {
   com_nav_setting_data: {
     english: 'Data controls',
     translated: 'تحكم في البيانات',
+  },
+  com_assistants_file_search: {
+    english: 'File Search',
+    translated: 'بحث الملفات',
+  },
+  com_assistants_file_search_info: {
+    english:
+      'Attaching vector stores for File Search is not yet supported. You can attach them from the Provider Playground or attach files to messages for file search on a thread basis.',
+    translated:
+      'لا يتم دعم إرفاق مخازن الكتل الرقمية لميزة البحث في الملفات بعد. يمكنك إرفاقها من ملعب المزود أو إرفاق ملفات إلى الرسائل للبحث في الملفات على أساس المحادثة.',
+  },
+  com_assistants_non_retrieval_model: {
+    english: 'File search is not enabled on this model. Please select another model.',
+    translated: 'البحث في الملفات غير مُمكّن على هذا النموذج. يرجى تحديد نموذج آخر.',
+  },
+  com_ui_attach_error_openai: {
+    english: 'Cannot attach Assistant files to other endpoints',
+    translated: 'لا يمكن إرفاق ملفات المساعد إلى نقاط نهائية أخرى',
+  },
+  com_ui_attach_warn_endpoint: {
+    english: 'Non-Assistant files may be ignored without a compatible tool',
+    translated: 'قد يتم تجاهل الملفات غير المساعدة دون وجود أداة متوافقة',
+  },
+  com_ui_assistant_deleted: {
+    english: 'Successfully deleted assistant',
+    translated: 'تم حذف المساعد بنجاح',
+  },
+  com_ui_assistant_delete_error: {
+    english: 'There was an error deleting the assistant',
+    translated: 'حدث خطأ أثناء حذف المساعد',
+  },
+  com_ui_copied: {
+    english: 'Copied!',
+    translated: 'تم النسخ',
+  },
+  com_ui_copy_code: {
+    english: 'Copy code',
+    translated: 'نسخ الكود',
+  },
+  com_nav_source_chat: {
+    english: 'View source chat',
+    translated: 'عرض محادثة المصدر',
+  },
+  com_ui_date_today: {
+    english: 'Today',
+    translated: 'اليوم',
+  },
+  com_ui_date_yesterday: {
+    english: 'Yesterday',
+    translated: 'أمس',
+  },
+  com_ui_date_previous_7_days: {
+    english: 'Previous 7 days',
+    translated: 'الأيام السبعة السابقة',
+  },
+  com_ui_date_previous_30_days: {
+    english: 'Previous 30 days',
+    translated: 'الـ 30 يومًا السابقة',
+  },
+  com_ui_date_january: {
+    english: 'January',
+    translated: 'يناير',
+  },
+  com_ui_date_february: {
+    english: 'February',
+    translated: 'فبراير',
+  },
+  com_ui_date_march: {
+    english: 'March',
+    translated: 'مارس',
+  },
+  com_ui_date_april: {
+    english: 'April',
+    translated: 'أبريل',
+  },
+  com_ui_date_may: {
+    english: 'May',
+    translated: 'مايو',
+  },
+  com_ui_date_june: {
+    english: 'June',
+    translated: 'يونيو',
+  },
+  com_ui_date_july: {
+    english: 'July',
+    translated: 'يوليو',
+  },
+  com_ui_date_august: {
+    english: 'August',
+    translated: 'أغسطس',
+  },
+  com_ui_date_september: {
+    english: 'September',
+    translated: 'سبتمبر',
+  },
+  com_ui_date_october: {
+    english: 'October',
+    translated: 'أكتوبر',
+  },
+  com_ui_date_november: {
+    english: 'November',
+    translated: 'نوفمبر',
+  },
+  com_ui_date_december: {
+    english: 'December',
+    translated: 'ديسمبر',
+  },
+  com_ui_nothing_found: {
+    english: 'Nothing found',
+    translated: 'لم يتم العثور على أي شيء',
+  },
+  com_ui_go_to_conversation: {
+    english: 'Go to conversation',
+    translated: 'انتقل إلى المحادثة',
   },
   com_error_moderation: {
     english:
@@ -2321,6 +2562,10 @@ export const comparisons = {
   com_nav_user_name_display: {
     english: 'Display username in messages',
     translated: 'عرض اسم المستخدم في الرسائل',
+  },
+  com_nav_save_drafts: {
+    english: 'Save drafts locally',
+    translated: 'حفظ المستخدمين محليًا',
   },
   com_nav_show_code: {
     english: 'Always show code when using code interpreter',

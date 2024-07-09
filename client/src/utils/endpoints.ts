@@ -3,6 +3,7 @@ import {
   defaultEndpoints,
   modularEndpoints,
   LocalStorageKeys,
+  isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type {
   TConfig,
@@ -84,6 +85,8 @@ export function mapEndpoints(endpointsConfig: TEndpointsConfig) {
   );
 }
 
+const firstLocalConvoKey = LocalStorageKeys.LAST_CONVO_SETUP + '_0';
+
 /**
  * Ensures the last selected model stays up to date, as conversation may
  * update without updating last convo setup when same endpoint */
@@ -97,13 +100,11 @@ export function updateLastSelectedModel({
   if (!model) {
     return;
   }
-  const lastConversationSetup = JSON.parse(
-    localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP) || '{}',
-  );
+  const lastConversationSetup = JSON.parse(localStorage.getItem(firstLocalConvoKey) || '{}');
 
   if (lastConversationSetup.endpoint === endpoint) {
     lastConversationSetup.model = model;
-    localStorage.setItem(LocalStorageKeys.LAST_CONVO_SETUP, JSON.stringify(lastConversationSetup));
+    localStorage.setItem(firstLocalConvoKey, JSON.stringify(lastConversationSetup));
   }
 
   const lastSelectedModels = JSON.parse(localStorage.getItem(LocalStorageKeys.LAST_MODEL) || '{}');
@@ -139,8 +140,8 @@ export function getConvoSwitchLogic(params: ConversationInitParams): InitiatedTe
   };
 
   const isAssistantSwitch =
-    newEndpoint === EModelEndpoint.assistants &&
-    currentEndpoint === EModelEndpoint.assistants &&
+    isAssistantsEndpoint(newEndpoint) &&
+    isAssistantsEndpoint(currentEndpoint) &&
     currentEndpoint === newEndpoint;
 
   const conversationId = conversation?.conversationId;

@@ -1,7 +1,6 @@
 import { useParams } from 'react-router-dom';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { useRecoilValue } from 'recoil';
 import { useCallback, useEffect, useState, useMemo, memo } from 'react';
-import type { ConversationListResponse } from 'librechat-data-provider';
 import {
   useMediaQuery,
   useAuthContext,
@@ -10,15 +9,17 @@ import {
   useNavScrolling,
   useConversations,
 } from '~/hooks';
-import { useSearchInfiniteQuery, useConversationsInfiniteQuery } from '~/data-provider';
+import { useConversationsInfiniteQuery } from '~/data-provider';
 import { TooltipProvider, Tooltip } from '~/components/ui';
 import { Conversations } from '~/components/Conversations';
+import { useSearchContext } from '~/Providers';
 import { Spinner } from '~/components/svg';
 import SearchBar from './SearchBar';
 import NavToggle from './NavToggle';
 import NavLinks from './NavLinks';
 import NewChat from './NewChat';
 import { cn } from '~/utils';
+import { ConversationListResponse } from 'librechat-data-provider';
 import store from '~/store';
 
 const Nav = ({ navVisible, setNavVisible }) => {
@@ -41,33 +42,29 @@ const Nav = ({ navVisible, setNavVisible }) => {
 
   useEffect(() => {
     if (isSmallScreen) {
+      const savedNavVisible = localStorage.getItem('navVisible');
+      if (savedNavVisible === null) {
+        toggleNavVisible();
+      }
       setNavWidth('320px');
     } else {
       setNavWidth('260px');
     }
   }, [isSmallScreen]);
 
-  const [pageNumber, setPageNumber] = useState(1);
+  const { newConversation } = useConversation();
   const [showLoading, setShowLoading] = useState(false);
-
-  const searchQuery = useRecoilValue(store.searchQuery);
   const isSearchEnabled = useRecoilValue(store.isSearchEnabled);
-  const { newConversation, searchPlaceholderConversation } = useConversation();
 
   const { refreshConversations } = useConversations();
-  const setSearchResultMessages = useSetRecoilState(store.searchResultMessages);
+  const { pageNumber, searchQuery, setPageNumber, searchQueryRes } = useSearchContext();
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useConversationsInfiniteQuery(
     { pageNumber: pageNumber.toString(), isArchived: false },
     { enabled: isAuthenticated },
   );
 
-  const searchQueryRes = useSearchInfiniteQuery(
-    { pageNumber: pageNumber.toString(), searchQuery: searchQuery, isArchived: false },
-    { enabled: isAuthenticated && !!searchQuery.length },
-  );
-
-  const { containerRef, moveToTop } = useNavScrolling({
+  const { containerRef, moveToTop } = useNavScrolling<ConversationListResponse>({
     setShowLoading,
     hasNextPage: searchQuery ? searchQueryRes.hasNextPage : hasNextPage,
     fetchNextPage: searchQuery ? searchQueryRes.fetchNextPage : fetchNextPage,
@@ -80,21 +77,6 @@ const Nav = ({ navVisible, setNavVisible }) => {
       [],
     [data, searchQuery, searchQueryRes?.data],
   );
-
-  const onSearchSuccess = useCallback(({ data }: { data: ConversationListResponse }) => {
-    const res = data;
-    searchPlaceholderConversation();
-    setSearchResultMessages(res.messages);
-    /* disabled due recoil methods not recognized as state setters */
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Empty dependency array
-
-  useEffect(() => {
-    //we use isInitialLoading here instead of isLoading because query is disabled by default
-    if (searchQueryRes.data) {
-      onSearchSuccess({ data: searchQueryRes.data.pages[0] });
-    }
-  }, [searchQueryRes.data, searchQueryRes.isInitialLoading, onSearchSuccess]);
 
   const clearSearch = () => {
     setPageNumber(1);
@@ -124,8 +106,9 @@ const Nav = ({ navVisible, setNavVisible }) => {
     <TooltipProvider delayDuration={250}>
       <Tooltip>
         <div
+          data-testid="nav"
           className={
-            'nav active max-w-[320px] flex-shrink-0 overflow-x-hidden bg-gray-50 dark:bg-gray-750 md:max-w-[260px]'
+            'nav active max-w-[320px] flex-shrink-0 overflow-x-hidden bg-gray-50 dark:bg-gray-850 md:max-w-[260px]'
           }
           style={{
             width: navVisible ? navWidth : '0px',
@@ -183,7 +166,7 @@ const Nav = ({ navVisible, setNavVisible }) => {
           setIsHovering={setIsToggleHovering}
           onToggle={toggleNavVisible}
           navVisible={navVisible}
-          className="fixed left-0 top-1/2 z-40"
+          className="fixed left-0 top-1/2 z-40 hidden md:flex"
         />
         <div className={`nav-mask${navVisible ? ' active' : ''}`} onClick={toggleNavVisible} />
       </Tooltip>

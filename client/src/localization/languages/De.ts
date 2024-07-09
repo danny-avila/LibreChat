@@ -116,8 +116,6 @@ export default {
   com_ui_submit: 'Abschicken',
   com_ui_upload_success: 'Erfolgreich hochgeladene Datei',
   com_ui_upload_error: 'Beim Hochladen deiner Datei ist ein Fehler aufgetreten',
-  com_ui_upload_invalid:
-    'Ungültige Datei zum Hochladen. Muss ein Bild sein, das nicht größer als 2 MB ist',
   com_ui_cancel: 'Abbrechen',
   com_ui_save: 'Speichern',
   com_ui_save_submit: 'Speichern & Absenden',
@@ -148,8 +146,25 @@ export default {
   com_ui_assistants_output: 'Assistenten Ausgabe',
   com_ui_delete: 'Löschen',
   com_ui_create: 'Erstellen',
+  com_ui_share: 'Teilen',
+  com_ui_copy_link: 'Link kopieren',
+  com_ui_update_link: 'Link aktualisieren',
+  com_ui_create_link: 'Link erstellen',
+  com_ui_share_link_to_chat: 'Link zum Chat teilen',
+  com_ui_share_error: 'Beim Teilen des Chat-Links ist ein Fehler aufgetreten',
+  com_ui_share_retrieve_error: 'Beim Löschen des Freigabelinks ist ein Fehler aufgetreten.',
+  com_ui_share_delete_error: 'Beim Löschen des Freigabelinks ist ein Fehler aufgetreten.',
+  com_ui_share_create_message:
+    'Ihr Name und alle Nachrichten, die Sie nach dem Teilen hinzufügen, bleiben privat.',
+  com_ui_share_created_message:
+    'Ein geteiltes Link zu Ihrem Chat wurde erstellt. Verwalten Sie zuvor geteilte Chats jederzeit über die Einstellungen.',
+  com_ui_share_update_message:
+    'Ihr Name, benutzerdefinierte Anweisungen und alle Nachrichten, die Sie nach dem Teilen hinzufügen, bleiben privat.',
+  com_ui_share_updated_message:
+    'Ein geteiltes Link zu Ihrem Chat wurde aktualisiert. Verwalten Sie zuvor geteilte Chats jederzeit über die Einstellungen.',
+  com_ui_shared_link_not_found: 'Geteilter Link nicht gefunden',
   com_ui_delete_conversation: 'Chat löschen?',
-  com_ui_delete_conversation_confirm: 'Damit wird gelöscht',
+  com_ui_delete_confirm: 'Damit wird gelöscht',
   com_ui_delete_assistant_confirm:
     'Bist du sicher, dass du diesen Assistenten löschen willst? Dies kann nicht rückgängig gemacht werden.',
   com_ui_rename: 'Umbenennen',
@@ -431,12 +446,19 @@ export default {
   com_nav_export_recursive_or_sequential: 'Rekursiv oder sequentiell?',
   com_nav_export_recursive: 'Rekursiv',
   com_nav_export_conversation: 'Konversation exportieren',
+  com_nav_export: 'Exportieren',
+  com_nav_shared_links: 'Gemeinsame Links',
+  com_nav_shared_links_manage: 'Verwalten',
+  com_nav_shared_links_empty: 'Sie haben keine gemeinsam genutzten Links.',
+  com_nav_shared_links_name: 'Name',
+  com_nav_shared_links_date_shared: 'Datum geteilt',
   com_nav_my_files: 'Meine Dateien',
   com_nav_theme: 'Farbschema',
   com_nav_theme_system: 'System',
   com_nav_theme_dark: 'Dunkel',
   com_nav_theme_light: 'Hell',
   com_nav_user_name_display: 'Benutzernamen in Nachrichten anzeigen',
+  com_nav_save_drafts: 'Entwurf lokal speichern',
   com_nav_show_code: 'Code immer anzeigen, wenn Code-Interpreter verwendet wird',
   com_nav_clear_all_chats: 'Alle Chats löschen',
   com_nav_confirm_clear: 'Bestätige Löschen',
@@ -464,6 +486,37 @@ export default {
   com_nav_setting_account: 'Konto',
   com_nav_language: 'Sprache',
   /* The following are AI Translated */
+  com_assistants_file_search: 'Dateisuche',
+  com_assistants_file_search_info:
+    'Das Anhängen von Vektorspeichern für die Dateisuche wird derzeit noch nicht unterstützt. Du kannst sie im Provider Playground anhängen oder Dateien für die Dateisuche pro Thread anhängen.',
+  com_assistants_non_retrieval_model:
+    'Die Dateisuche ist für dieses Modell nicht aktiviert. Bitte wähle ein anderes Modell aus.',
+  com_ui_attach_error_openai: 'Assistent-Dateien können nicht an andere Endpunkte angehängt werden',
+  com_ui_attach_warn_endpoint:
+    'Nicht-Assistent-Dateien könnten ohne ein kompatibles Werkzeug ignoriert werden',
+  com_ui_assistant_deleted: 'Assistent erfolgreich gelöscht',
+  com_ui_assistant_delete_error: 'Beim Löschen des Assistenten ist ein Fehler aufgetreten.',
+  com_ui_copied: 'Kopiert',
+  com_ui_copy_code: 'Code kopieren',
+  com_nav_source_chat: 'Quellchat anzeigen',
+  com_ui_date_today: 'Heute',
+  com_ui_date_yesterday: 'Gestern',
+  com_ui_date_previous_7_days: 'Letzte 7 Tage',
+  com_ui_date_previous_30_days: 'Letzte 30 Tage',
+  com_ui_date_january: 'Januar',
+  com_ui_date_february: 'Februar',
+  com_ui_date_march: 'März',
+  com_ui_date_april: 'April',
+  com_ui_date_may: 'Mai',
+  com_ui_date_june: 'Juni',
+  com_ui_date_july: 'Juli',
+  com_ui_date_august: 'August',
+  com_ui_date_september: 'September',
+  com_ui_date_october: 'Oktober',
+  com_ui_date_november: 'November',
+  com_ui_date_december: 'Dezember',
+  com_ui_nothing_found: 'Keine Ergebnisse gefunden',
+  com_ui_go_to_conversation: 'Zum Chat wechseln',
   com_error_moderation:
     'Es sieht so aus, als ob der übermittelte Inhalt von unserem Moderationssystem als nicht konform mit unseren Gemeinschaftsrichtlinien markiert wurde. Wir können mit diesem spezifischen Thema leider nicht fortfahren. Wenn du andere Fragen oder Themen hast, die du gerne erörtern möchtest, bearbeite bitte deine Nachricht oder starte eine neue Konversation.',
   com_error_no_user_key:
@@ -960,10 +1013,6 @@ export const comparisons = {
     english: 'There was an error uploading your file',
     translated: 'Beim Hochladen deiner Datei ist ein Fehler aufgetreten',
   },
-  com_ui_upload_invalid: {
-    english: 'Invalid file for upload. Must be an image not exceeding 2 MB',
-    translated: 'Ungültige Datei zum Hochladen. Muss ein Bild sein, das nicht größer als 2 MB ist',
-  },
   com_ui_cancel: {
     english: 'Cancel',
     translated: 'Abbrechen',
@@ -1084,11 +1133,69 @@ export const comparisons = {
     english: 'Create',
     translated: 'Erstellen',
   },
+  com_ui_share: {
+    english: 'Share',
+    translated: 'Teilen',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: 'Link kopieren',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: 'Link aktualisieren',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: 'Link erstellen',
+  },
+  com_ui_share_link_to_chat: {
+    english: 'Share link to chat',
+    translated: 'Link zum Chat teilen',
+  },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Beim Löschen des Freigabelinks ist ein Fehler aufgetreten.',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Beim Löschen des Freigabelinks ist ein Fehler aufgetreten.',
+  },
+  com_ui_share_error: {
+    english: 'There was an error sharing the chat link',
+    translated: 'Beim Teilen des Chat-Links ist ein Fehler aufgetreten',
+  },
+  com_ui_share_create_message: {
+    english: 'Your name and any messages you add after sharing stay private.',
+    translated:
+      'Ihr Name und alle Nachrichten, die Sie nach dem Teilen hinzufügen, bleiben privat.',
+  },
+  com_ui_share_created_message: {
+    english:
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated:
+      'Ein geteiltes Link zu Ihrem Chat wurde erstellt. Verwalten Sie zuvor geteilte Chats jederzeit über die Einstellungen.',
+  },
+  com_ui_share_update_message: {
+    english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated:
+      'Ihr Name, benutzerdefinierte Anweisungen und alle Nachrichten, die Sie nach dem Teilen hinzufügen, bleiben privat.',
+  },
+  com_ui_share_updated_message: {
+    english:
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated:
+      'Ein geteiltes Link zu Ihrem Chat wurde aktualisiert. Verwalten Sie zuvor geteilte Chats jederzeit über die Einstellungen.',
+  },
+  com_ui_shared_link_not_found: {
+    english: 'Shared link not found',
+    translated: 'Geteilter Link nicht gefunden',
+  },
   com_ui_delete_conversation: {
     english: 'Delete chat?',
     translated: 'Chat löschen?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Damit wird gelöscht',
   },
@@ -2079,6 +2186,30 @@ export const comparisons = {
     english: 'Export conversation',
     translated: 'Konversation exportieren',
   },
+  com_nav_export: {
+    english: 'Export',
+    translated: 'Exportieren',
+  },
+  com_nav_shared_links: {
+    english: 'Shared links',
+    translated: 'Gemeinsame Links',
+  },
+  com_nav_shared_links_manage: {
+    english: 'Manage',
+    translated: 'Verwalten',
+  },
+  com_nav_shared_links_empty: {
+    english: 'You have no shared links.',
+    translated: 'Sie haben keine gemeinsam genutzten Links.',
+  },
+  com_nav_shared_links_name: {
+    english: 'Name',
+    translated: 'Name',
+  },
+  com_nav_shared_links_date_shared: {
+    english: 'Date shared',
+    translated: 'Datum geteilt',
+  },
   com_nav_my_files: {
     english: 'My Files',
     translated: 'Meine Dateien',
@@ -2102,6 +2233,10 @@ export const comparisons = {
   com_nav_user_name_display: {
     english: 'Display username in messages',
     translated: 'Benutzernamen in Nachrichten anzeigen',
+  },
+  com_nav_save_drafts: {
+    english: 'Save drafts locally',
+    translated: 'Entwurf lokal speichern',
   },
   com_nav_show_code: {
     english: 'Always show code when using code interpreter',
@@ -2202,6 +2337,121 @@ export const comparisons = {
   com_nav_language: {
     english: 'Language',
     translated: 'Sprache',
+  },
+  com_assistants_file_search: {
+    english: 'File Search',
+    translated: 'Dateisuche',
+  },
+  com_assistants_file_search_info: {
+    english:
+      'Attaching vector stores for File Search is not yet supported. You can attach them from the Provider Playground or attach files to messages for file search on a thread basis.',
+    translated:
+      'Das Anhängen von Vektorspeichern für die Dateisuche wird derzeit noch nicht unterstützt. Du kannst sie im Provider Playground anhängen oder Dateien für die Dateisuche pro Thread anhängen.',
+  },
+  com_assistants_non_retrieval_model: {
+    english: 'File search is not enabled on this model. Please select another model.',
+    translated:
+      'Die Dateisuche ist für dieses Modell nicht aktiviert. Bitte wähle ein anderes Modell aus.',
+  },
+  com_ui_attach_error_openai: {
+    english: 'Cannot attach Assistant files to other endpoints',
+    translated: 'Assistent-Dateien können nicht an andere Endpunkte angehängt werden',
+  },
+  com_ui_attach_warn_endpoint: {
+    english: 'Non-Assistant files may be ignored without a compatible tool',
+    translated: 'Nicht-Assistent-Dateien könnten ohne ein kompatibles Werkzeug ignoriert werden',
+  },
+  com_ui_assistant_deleted: {
+    english: 'Successfully deleted assistant',
+    translated: 'Assistent erfolgreich gelöscht',
+  },
+  com_ui_assistant_delete_error: {
+    english: 'There was an error deleting the assistant',
+    translated: 'Beim Löschen des Assistenten ist ein Fehler aufgetreten.',
+  },
+  com_ui_copied: {
+    english: 'Copied!',
+    translated: 'Kopiert',
+  },
+  com_ui_copy_code: {
+    english: 'Copy code',
+    translated: 'Code kopieren',
+  },
+  com_nav_source_chat: {
+    english: 'View source chat',
+    translated: 'Quellchat anzeigen',
+  },
+  com_ui_date_today: {
+    english: 'Today',
+    translated: 'Heute',
+  },
+  com_ui_date_yesterday: {
+    english: 'Yesterday',
+    translated: 'Gestern',
+  },
+  com_ui_date_previous_7_days: {
+    english: 'Previous 7 days',
+    translated: 'Letzte 7 Tage',
+  },
+  com_ui_date_previous_30_days: {
+    english: 'Previous 30 days',
+    translated: 'Letzte 30 Tage',
+  },
+  com_ui_date_january: {
+    english: 'January',
+    translated: 'Januar',
+  },
+  com_ui_date_february: {
+    english: 'February',
+    translated: 'Februar',
+  },
+  com_ui_date_march: {
+    english: 'March',
+    translated: 'März',
+  },
+  com_ui_date_april: {
+    english: 'April',
+    translated: 'April',
+  },
+  com_ui_date_may: {
+    english: 'May',
+    translated: 'Mai',
+  },
+  com_ui_date_june: {
+    english: 'June',
+    translated: 'Juni',
+  },
+  com_ui_date_july: {
+    english: 'July',
+    translated: 'Juli',
+  },
+  com_ui_date_august: {
+    english: 'August',
+    translated: 'August',
+  },
+  com_ui_date_september: {
+    english: 'September',
+    translated: 'September',
+  },
+  com_ui_date_october: {
+    english: 'October',
+    translated: 'Oktober',
+  },
+  com_ui_date_november: {
+    english: 'November',
+    translated: 'November',
+  },
+  com_ui_date_december: {
+    english: 'December',
+    translated: 'Dezember',
+  },
+  com_ui_nothing_found: {
+    english: 'Nothing found',
+    translated: 'Keine Ergebnisse gefunden',
+  },
+  com_ui_go_to_conversation: {
+    english: 'Go to conversation',
+    translated: 'Zum Chat wechseln',
   },
   com_error_moderation: {
     english:

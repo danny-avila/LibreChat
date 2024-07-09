@@ -104,7 +104,6 @@ export default {
   com_ui_submit: 'Enviar',
   com_ui_upload_success: 'Arquivo carregado com sucesso',
   com_ui_upload_error: 'Ocorreu um erro ao carregar seu arquivo',
-  com_ui_upload_invalid: 'Arquivo inválido para upload. Deve ser uma imagem não excedendo 2 MB',
   com_ui_cancel: 'Cancelar',
   com_ui_save: 'Salvar',
   com_ui_save_submit: 'Salvar & Enviar',
@@ -135,8 +134,25 @@ export default {
   com_ui_assistants_output: 'Saída dos Assistentes',
   com_ui_delete: 'Excluir',
   com_ui_create: 'Criar',
+  com_ui_share: 'Compartilhar',
+  com_ui_copy_link: 'Copiar link',
+  com_ui_update_link: 'Atualizar link',
+  com_ui_create_link: 'Criar link',
+  com_ui_share_link_to_chat: 'Compartilhar link no chat',
+  com_ui_share_error: 'Ocorreu um erro ao compartilhar o link do chat',
+  com_ui_share_retrieve_error: 'Ocorreu um erro ao excluir o link compartilhado.',
+  com_ui_share_delete_error: 'Ocorreu um erro ao excluir o link compartilhado.',
+  com_ui_share_create_message:
+    'Seu nome e quaisquer mensagens que você adicionar após o compartilhamento permanecem privadas.',
+  com_ui_share_created_message:
+    'Um link compartilhado para o seu chat foi criado. Gerencie conversas compartilhadas previamente a qualquer momento via Configurações.',
+  com_ui_share_update_message:
+    'Seu nome, instruções personalizadas e quaisquer mensagens que você adicionar após o compartilhamento permanecem privadas.',
+  com_ui_share_updated_message:
+    'Um link compartilhado para o seu chat foi atualizado. Gerencie conversas compartilhadas previamente a qualquer momento via Configurações.',
+  com_ui_shared_link_not_found: 'Link compartilhado não encontrado',
   com_ui_delete_conversation: 'Excluir conversa?',
-  com_ui_delete_conversation_confirm: 'Isso excluirá',
+  com_ui_delete_confirm: 'Isso excluirá',
   com_ui_delete_assistant_confirm:
     'Tem certeza de que deseja excluir este Assistente? Esta ação não pode ser desfeita.',
   com_ui_rename: 'Renomear',
@@ -417,12 +433,19 @@ export default {
   com_nav_export_recursive_or_sequential: 'Recursivo ou sequencial?',
   com_nav_export_recursive: 'Recursivo',
   com_nav_export_conversation: 'Exportar conversa',
+  com_nav_export: 'Exportar',
+  com_nav_shared_links: 'Links Compartilhados',
+  com_nav_shared_links_manage: 'Gerenciar',
+  com_nav_shared_links_empty: 'Você não tem nenhum link compartilhado.',
+  com_nav_shared_links_name: 'Nome',
+  com_nav_shared_links_date_shared: 'Data compartilhada',
   com_nav_my_files: 'Meus arquivos',
   com_nav_theme: 'Tema',
   com_nav_theme_system: 'Sistema',
   com_nav_theme_dark: 'Escuro',
   com_nav_theme_light: 'Claro',
   com_nav_user_name_display: 'Exibir nome de usuário nas mensagens',
+  com_nav_save_drafts: 'Salvar rascunhos localmente',
   com_nav_show_code: 'Sempre mostrar código ao usar o interpretador de código',
   com_nav_clear_all_chats: 'Limpar todas as conversas',
   com_nav_confirm_clear: 'Confirmar Limpeza',
@@ -839,10 +862,6 @@ export const comparisons = {
     english: 'There was an error uploading your file',
     translated: 'Ocorreu um erro ao carregar seu arquivo',
   },
-  com_ui_upload_invalid: {
-    english: 'Invalid file for upload. Must be an image not exceeding 2 MB',
-    translated: 'Arquivo inválido para upload. Deve ser uma imagem não excedendo 2 MB',
-  },
   com_ui_cancel: {
     english: 'Cancel',
     translated: 'Cancelar',
@@ -963,11 +982,69 @@ export const comparisons = {
     english: 'Create',
     translated: 'Criar',
   },
+  com_ui_share: {
+    english: 'Share',
+    translated: 'Compartilhar',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: 'Copiar link',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: 'Atualizar link',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: 'Criar link',
+  },
+  com_ui_share_link_to_chat: {
+    english: 'Share link to chat',
+    translated: 'Compartilhar link no chat',
+  },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Ocorreu um erro ao excluir o link compartilhado.',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Ocorreu um erro ao excluir o link compartilhado.',
+  },
+  com_ui_share_error: {
+    english: 'There was an error sharing the chat link',
+    translated: 'Ocorreu um erro ao compartilhar o link do chat',
+  },
+  com_ui_share_create_message: {
+    english: 'Your name and any messages you add after sharing stay private.',
+    translated:
+      'Seu nome e quaisquer mensagens que você adicionar após o compartilhamento permanecem privadas.',
+  },
+  com_ui_share_created_message: {
+    english:
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated:
+      'Um link compartilhado para o seu chat foi criado. Gerencie conversas compartilhadas previamente a qualquer momento via Configurações.',
+  },
+  com_ui_share_update_message: {
+    english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated:
+      'Seu nome, instruções personalizadas e quaisquer mensagens que você adicionar após o compartilhamento permanecem privadas.',
+  },
+  com_ui_share_updated_message: {
+    english:
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated:
+      'Um link compartilhado para o seu chat foi atualizado. Gerencie conversas compartilhadas previamente a qualquer momento via Configurações.',
+  },
+  com_ui_shared_link_not_found: {
+    english: 'Shared link not found',
+    translated: 'Link compartilhado não encontrado',
+  },
   com_ui_delete_conversation: {
     english: 'Delete chat?',
     translated: 'Excluir conversa?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Isso excluirá',
   },
@@ -1951,6 +2028,30 @@ export const comparisons = {
     english: 'Export conversation',
     translated: 'Exportar conversa',
   },
+  com_nav_export: {
+    english: 'Export',
+    translated: 'Exportar',
+  },
+  com_nav_shared_links: {
+    english: 'Shared links',
+    translated: 'Links Compartilhados',
+  },
+  com_nav_shared_links_manage: {
+    english: 'Manage',
+    translated: 'Gerenciar',
+  },
+  com_nav_shared_links_empty: {
+    english: 'You have no shared links.',
+    translated: 'Você não tem nenhum link compartilhado.',
+  },
+  com_nav_shared_links_name: {
+    english: 'Name',
+    translated: 'Nome',
+  },
+  com_nav_shared_links_date_shared: {
+    english: 'Date shared',
+    translated: 'Data compartilhada',
+  },
   com_nav_my_files: {
     english: 'My Files',
     translated: 'Meus arquivos',
@@ -1974,6 +2075,10 @@ export const comparisons = {
   com_nav_user_name_display: {
     english: 'Display username in messages',
     translated: 'Exibir nome de usuário nas mensagens',
+  },
+  com_nav_save_drafts: {
+    english: 'Save drafts locally',
+    translated: 'Salvar rascunhos localmente',
   },
   com_nav_show_code: {
     english: 'Always show code when using code interpreter',

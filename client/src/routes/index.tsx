@@ -1,15 +1,20 @@
 import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom';
-import Root from './Root';
-import ChatRoute from './ChatRoute';
-// import Search from './Search';
 import {
   Login,
   Registration,
   RequestPasswordReset,
   ResetPassword,
+  VerifyEmail,
   ApiErrorWatcher,
 } from '~/components/Auth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
+import StartupLayout from './Layouts/Startup';
+import LoginLayout from './Layouts/Login';
+import dashboardRoutes from './Dashboard';
+import ShareRoute from './ShareRoute';
+import ChatRoute from './ChatRoute';
+import Search from './Search';
+import Root from './Root';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -20,24 +25,45 @@ const AuthLayout = () => (
 
 export const router = createBrowserRouter([
   {
-    path: 'register',
-    element: <Registration />,
+    path: 'share/:shareId',
+    element: <ShareRoute />,
   },
   {
-    path: 'forgot-password',
-    element: <RequestPasswordReset />,
+    path: '/',
+    element: <StartupLayout />,
+    children: [
+      {
+        path: 'register',
+        element: <Registration />,
+      },
+      {
+        path: 'forgot-password',
+        element: <RequestPasswordReset />,
+      },
+      {
+        path: 'reset-password',
+        element: <ResetPassword />,
+      },
+    ],
   },
   {
-    path: 'reset-password',
-    element: <ResetPassword />,
+    path: 'verify',
+    element: <VerifyEmail />,
   },
   {
     element: <AuthLayout />,
     children: [
       {
-        path: 'login',
-        element: <Login />,
+        path: '/',
+        element: <LoginLayout />,
+        children: [
+          {
+            path: 'login',
+            element: <Login />,
+          },
+        ],
       },
+      dashboardRoutes,
       {
         path: '/',
         element: <Root />,
@@ -50,10 +76,10 @@ export const router = createBrowserRouter([
             path: 'c/:conversationId?',
             element: <ChatRoute />,
           },
-          // {
-          //   path: 'search/:query?',
-          //   element: <Search />,
-          // },
+          {
+            path: 'search',
+            element: <Search />,
+          },
         ],
       },
     ],

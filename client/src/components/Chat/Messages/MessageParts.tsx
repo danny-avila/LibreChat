@@ -16,6 +16,7 @@ export default function Message(props: TMessageProps) {
   const {
     ask,
     edit,
+    index,
     isLast,
     enterEdit,
     assistant,
@@ -82,7 +83,9 @@ export default function Message(props: TMessageProps) {
                   />
                 </div>
               </div>
-              {isLast && isSubmitting ? null : (
+              {isLast && isSubmitting ? (
+                <div className="mt-1 h-[27px] bg-transparent" />
+              ) : (
                 <SubRow classes="text-xs">
                   <SiblingSwitch
                     siblingIdx={siblingIdx}
@@ -90,6 +93,7 @@ export default function Message(props: TMessageProps) {
                     setSiblingIdx={setSiblingIdx}
                   />
                   <HoverButtons
+                    index={index}
                     isEditing={edit}
                     message={message}
                     enterEdit={enterEdit}

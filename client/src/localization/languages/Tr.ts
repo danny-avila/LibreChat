@@ -34,7 +34,6 @@ export default {
   com_ui_enter: 'Gir',
   com_ui_submit: 'Gönder',
   com_ui_upload_success: 'Dosya başarıyla yüklendi',
-  com_ui_upload_invalid: 'Geçersiz dosya yükleme',
   com_ui_cancel: 'İptal',
   com_ui_save: 'Kaydet',
   com_ui_copy_to_clipboard: 'Panoya kopyala',
@@ -53,9 +52,26 @@ export default {
   com_ui_import_conversation_error: 'Sohbetlerinizi içe aktarırken bir hata oluştu',
   com_ui_confirm_action: 'İşlemi Onayla',
   com_ui_chats: 'sohbetler',
+  com_ui_share: 'Paylaş',
+  com_ui_copy_link: 'Bağlantıyı kopyala',
+  com_ui_update_link: 'Bağlantıyı güncelle',
+  com_ui_create_link: 'Bağlantı oluştur',
+  com_ui_share_link_to_chat: 'Bağlantıyı sohbete paylaş',
+  com_ui_share_error: 'Sohbet bağlantısını paylaşırken bir hata oluştu',
+  com_ui_share_retrieve_error: 'Paylaşılan bağlantıyı silerken bir hata oluştu.',
+  com_ui_share_delete_error: 'Paylaşılan bağlantıyı silerken bir hata oluştu.',
+  com_ui_share_create_message:
+    'Adınız ve paylaşım sonrasında eklediğiniz herhangi bir mesaj özel kalır.',
+  com_ui_share_created_message:
+    'Sohbetiniz için paylaşılan bir bağlantı oluşturuldu. Ayarlar aracılığıyla önceden paylaşılan sohbetleri istediğiniz zaman yönetin.',
+  com_ui_share_update_message:
+    'Adınız, özel talimatlarınız ve paylaşım sonrasında eklediğiniz herhangi bir mesaj özel kalır.',
+  com_ui_share_updated_message:
+    'Sohbetiniz için paylaşılan bir bağlantı güncellendi. Ayarlar aracılığıyla önceden paylaşılan sohbetleri istediğiniz zaman yönetin.',
+  com_ui_shared_link_not_found: 'Paylaşılan bağlantı bulunamadı',
   com_ui_delete: 'Sil',
   com_ui_delete_conversation: 'Sohbet silinecek?',
-  com_ui_delete_conversation_confirm: 'Bu silinecek',
+  com_ui_delete_confirm: 'Bu silinecek',
   com_ui_rename: 'Yeniden adlandır',
   com_ui_archive: 'Arşivle',
   com_ui_archive_error: 'Sohbet arşivlemeye çalışırken bir hata oluştu',
@@ -277,6 +293,12 @@ export default {
   com_nav_export_recursive_or_sequential: 'Yinelemeli mi yoksa sıralı mı?',
   com_nav_export_recursive: 'Yinelemeli',
   com_nav_export_conversation: 'Konuşmayı dışa aktar',
+  com_nav_export: 'Dışa Aktar',
+  com_nav_shared_links: 'Paylaşılan linkler',
+  com_nav_shared_links_manage: 'Ynetmek',
+  com_nav_shared_links_empty: 'Paylaşılan linkleriniz yok.',
+  com_nav_shared_links_name: 'İsim',
+  com_nav_shared_links_date_shared: 'Paylaşılan tarih',
   com_nav_theme: 'Tema',
   com_nav_theme_system: 'Sistem',
   com_nav_theme_dark: 'Koyu',
@@ -510,6 +532,63 @@ export const comparisons = {
     english: 'chats',
     translated: 'sohbetler',
   },
+  com_ui_share: {
+    english: 'Share',
+    translated: 'Paylaş',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: 'Bağlantıyı kopyala',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: 'Bağlantıyı güncelle',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: 'Bağlantı oluştur',
+  },
+  com_ui_share_link_to_chat: {
+    english: 'Share link to chat',
+    translated: 'Bağlantıyı sohbete paylaş',
+  },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Paylaşılan bağlantıyı silerken bir hata oluştu.',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Paylaşılan bağlantıyı silerken bir hata oluştu.',
+  },
+  com_ui_share_error: {
+    english: 'There was an error sharing the chat link',
+    translated: 'Sohbet bağlantısını paylaşırken bir hata oluştu',
+  },
+  com_ui_share_create_message: {
+    english: 'Your name and any messages you add after sharing stay private.',
+    translated: 'Adınız ve paylaşım sonrasında eklediğiniz herhangi bir mesaj özel kalır.',
+  },
+  com_ui_share_created_message: {
+    english:
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated:
+      'Sohbetiniz için paylaşılan bir bağlantı oluşturuldu. Ayarlar aracılığıyla önceden paylaşılan sohbetleri istediğiniz zaman yönetin.',
+  },
+  com_ui_share_update_message: {
+    english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated:
+      'Adınız, özel talimatlarınız ve paylaşım sonrasında eklediğiniz herhangi bir mesaj özel kalır.',
+  },
+  com_ui_share_updated_message: {
+    english:
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated:
+      'Sohbetiniz için paylaşılan bir bağlantı güncellendi. Ayarlar aracılığıyla önceden paylaşılan sohbetleri istediğiniz zaman yönetin.',
+  },
+  com_ui_shared_link_not_found: {
+    english: 'Shared link not found',
+    translated: 'Paylaşılan bağlantı bulunamadı',
+  },
   com_ui_delete: {
     english: 'Delete',
     translated: 'Sil',
@@ -518,7 +597,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'Sohbet silinecek?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Bu silinecek',
   },
@@ -1301,6 +1380,30 @@ export const comparisons = {
   com_nav_export_conversation: {
     english: 'Export conversation',
     translated: 'Konuşmayı dışa aktar',
+  },
+  com_nav_export: {
+    english: 'Export',
+    translated: 'Dışa Aktar',
+  },
+  com_nav_shared_links: {
+    english: 'Shared links',
+    translated: 'Paylaşılan linkler',
+  },
+  com_nav_shared_links_manage: {
+    english: 'Manage',
+    translated: 'Ynetmek',
+  },
+  com_nav_shared_links_empty: {
+    english: 'You have no shared links.',
+    translated: 'Paylaşılan linkleriniz yok.',
+  },
+  com_nav_shared_links_name: {
+    english: 'Name',
+    translated: 'İsim',
+  },
+  com_nav_shared_links_date_shared: {
+    english: 'Date shared',
+    translated: 'Paylaşılan tarih',
   },
   com_nav_theme: {
     english: 'Theme',

@@ -32,8 +32,10 @@ export function sha1(input: string) {
 }
 
 export function createURL(domain: string, path: string) {
-  const myURL = new URL(path, domain);
-  return myURL.toString();
+  const cleanDomain = domain.replace(/\/$/, '');
+  const cleanPath = path.replace(/^\//, '');
+  const fullURL = `${cleanDomain}/${cleanPath}`;
+  return new URL(fullURL).toString();
 }
 
 export class FunctionSignature {
@@ -92,7 +94,7 @@ export class ActionRequest {
   private authHeaders: Record<string, string> = {};
   private authToken?: string;
 
-  async setParams(params: object) {
+  setParams(params: object) {
     this.operationHash = sha1(JSON.stringify(params));
     this.params = params;
 
@@ -212,6 +214,10 @@ export function resolveRef(
   return schema as OpenAPIV3.SchemaObject;
 }
 
+function sanitizeOperationId(input: string) {
+  return input.replace(/[^a-zA-Z0-9_-]/g, '');
+}
+
 /** Function to convert OpenAPI spec to function signatures and request builders */
 export function openapiToFunction(openapiSpec: OpenAPIV3.Document): {
   functionSignatures: FunctionSignature[];
@@ -231,7 +237,8 @@ export function openapiToFunction(openapiSpec: OpenAPIV3.Document): {
       };
 
       // Operation ID is used as the function name
-      const operationId = operationObj.operationId || `${method}_${path}`;
+      const defaultOperationId = `${method}_${path}`;
+      const operationId = operationObj.operationId || sanitizeOperationId(defaultOperationId);
       const description = operationObj.summary || operationObj.description || '';
 
       const parametersSchema: ParametersSchema = { type: 'object', properties: {}, required: [] };

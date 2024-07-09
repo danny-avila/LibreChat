@@ -1,7 +1,9 @@
-import { forwardRef, useState, useCallback, useMemo, Ref } from 'react';
+import debounce from 'lodash/debounce';
 import { Search, X } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
-import debounce from 'lodash/debounce';
+import { QueryKeys } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
+import { forwardRef, useState, useCallback, useMemo, Ref } from 'react';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -12,6 +14,8 @@ type SearchBarProps = {
 
 const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) => {
   const { clearSearch } = props;
+  const queryClient = useQueryClient();
+  const clearConvoState = store.useClearConvoState();
   const setSearchQuery = useSetRecoilState(store.searchQuery);
   const [showClearIcon, setShowClearIcon] = useState(false);
   const [text, setText] = useState('');
@@ -31,7 +35,17 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
     }
   };
 
-  const sendRequest = useCallback((value: string) => setSearchQuery(value), [setSearchQuery]);
+  const sendRequest = useCallback(
+    (value: string) => {
+      setSearchQuery(value);
+      if (!value) {
+        return;
+      }
+      queryClient.invalidateQueries([QueryKeys.messages]);
+      clearConvoState();
+    },
+    [queryClient, clearConvoState, setSearchQuery],
+  );
   const debouncedSendRequest = useMemo(() => debounce(sendRequest, 350), [sendRequest]);
 
   const onChange = (e: React.FormEvent<HTMLInputElement>) => {
@@ -44,7 +58,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
   return (
     <div
       ref={ref}
-      className="relative mt-1 flex flex h-10 cursor-pointer items-center gap-3 rounded-lg border-white bg-gray-50 px-2 px-3 py-2 text-black transition-colors duration-200 focus-within:bg-gray-200 hover:bg-gray-200 dark:bg-gray-750 dark:text-white dark:focus-within:bg-gray-800 dark:hover:bg-gray-800"
+      className="relative mt-1 flex flex h-10 cursor-pointer items-center gap-3 rounded-lg border-white bg-gray-50 px-2 px-3 py-2 text-black transition-colors duration-200 focus-within:bg-gray-200 hover:bg-gray-200 dark:bg-gray-850 dark:text-white dark:focus-within:bg-gray-800 dark:hover:bg-gray-800"
     >
       {<Search className="absolute left-3 h-4 w-4" />}
       <input
@@ -57,6 +71,8 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
         }}
         placeholder={localize('com_nav_search_placeholder')}
         onKeyUp={handleKeyUp}
+        autoComplete="off"
+        dir="auto"
       />
       <X
         className={cn(

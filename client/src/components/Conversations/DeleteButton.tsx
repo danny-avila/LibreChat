@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
-import { useParams } from 'react-router-dom';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
+import { useParams, useNavigate } from 'react-router-dom';
 import type { TMessage } from 'librechat-data-provider';
 import { useDeleteConversationMutation } from '~/data-provider';
 import {
@@ -26,13 +26,15 @@ export default function DeleteButton({
   className = '',
 }) {
   const localize = useLocalize();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { newConversation } = useNewConvo();
   const { conversationId: currentConvoId } = useParams();
   const deleteConvoMutation = useDeleteConversationMutation({
     onSuccess: () => {
-      if (currentConvoId === conversationId) {
+      if (currentConvoId === conversationId || currentConvoId === 'new') {
         newConversation();
+        navigate('/c/new', { replace: true });
       }
       retainView();
     },
@@ -82,8 +84,8 @@ export default function DeleteButton({
           <>
             <div className="flex w-full flex-col items-center gap-2">
               <div className="grid w-full items-center gap-2">
-                <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
-                  {localize('com_ui_delete_conversation_confirm')} <strong>{title}</strong>
+                <Label htmlFor="dialog-confirm-delete" className="text-left text-sm font-medium">
+                  {localize('com_ui_delete_confirm')} <strong>{title}</strong>
                 </Label>
               </div>
             </div>

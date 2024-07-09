@@ -2,9 +2,9 @@ const { v4 } = require('uuid');
 const express = require('express');
 const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
 const { actionDelimiter, EModelEndpoint } = require('librechat-data-provider');
-const { initializeClient } = require('~/server/services/Endpoints/assistants');
+const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
-const { updateAssistant, getAssistant } = require('~/models/Assistant');
+const { updateAssistantDoc, getAssistant } = require('~/models/Assistant');
 const { logger } = require('~/config');
 
 const router = express.Router();
@@ -45,7 +45,6 @@ router.post('/:assistant_id', async (req, res) => {
     let metadata = encryptMetadata(_metadata);
 
     let { domain } = metadata;
-    /* Azure doesn't support periods in function names */
     domain = await domainParser(req, domain, true);
 
     if (!domain) {
@@ -55,8 +54,7 @@ router.post('/:assistant_id', async (req, res) => {
     const action_id = _action_id ?? v4();
     const initialPromises = [];
 
-    /** @type {{ openai: OpenAI }} */
-    const { openai } = await initializeClient({ req, res });
+    const { openai } = await getOpenAIClient({ req, res });
 
     initialPromises.push(getAssistant({ assistant_id }));
     initialPromises.push(openai.beta.assistants.retrieve(assistant_id));
@@ -111,7 +109,7 @@ router.post('/:assistant_id', async (req, res) => {
     let updatedAssistant = await openai.beta.assistants.update(assistant_id, { tools });
     const promises = [];
     promises.push(
-      updateAssistant(
+      updateAssistantDoc(
         { assistant_id },
         {
           actions,
@@ -157,9 +155,7 @@ router.delete('/:assistant_id/:action_id/:model', async (req, res) => {
   try {
     const { assistant_id, action_id, model } = req.params;
     req.body.model = model;
-
-    /** @type {{ openai: OpenAI }} */
-    const { openai } = await initializeClient({ req, res });
+    const { openai } = await getOpenAIClient({ req, res });
 
     const initialPromises = [];
     initialPromises.push(getAssistant({ assistant_id }));
@@ -190,7 +186,7 @@ router.delete('/:assistant_id/:action_id/:model', async (req, res) => {
 
     const promises = [];
     promises.push(
-      updateAssistant(
+      updateAssistantDoc(
         { assistant_id },
         {
           actions: updatedActions,

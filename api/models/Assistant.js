@@ -14,7 +14,7 @@ const Assistant = mongoose.model('assistant', assistantSchema);
  * @param {mongoose.ClientSession} [session] - The transaction session to use (optional).
  * @returns {Promise<Object>} The updated or newly created assistant document as a plain object.
  */
-const updateAssistant = async (searchParams, updateData, session = null) => {
+const updateAssistantDoc = async (searchParams, updateData, session = null) => {
   const options = { new: true, upsert: true, session };
   return await Assistant.findOneAndUpdate(searchParams, updateData, options).lean();
 };
@@ -39,8 +39,21 @@ const getAssistants = async (searchParams) => {
   return await Assistant.find(searchParams).lean();
 };
 
+/**
+ * Deletes an assistant based on the provided ID.
+ *
+ * @param {Object} searchParams - The search parameters to find the assistant to delete.
+ * @param {string} searchParams.assistant_id - The ID of the assistant to delete.
+ * @param {string} searchParams.user - The user ID of the assistant's author.
+ * @returns {Promise<void>} Resolves when the assistant has been successfully deleted.
+ */
+const deleteAssistant = async (searchParams) => {
+  return await Assistant.findOneAndDelete(searchParams);
+};
+
 module.exports = {
-  updateAssistant,
+  updateAssistantDoc,
+  deleteAssistant,
   getAssistants,
   getAssistant,
 };

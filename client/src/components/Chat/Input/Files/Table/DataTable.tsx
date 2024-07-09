@@ -48,7 +48,12 @@ const contextMap = {
   [FileContext.bytes]: 'com_ui_size',
 };
 
-type Style = { width?: number | string; maxWidth?: number | string; minWidth?: number | string };
+type Style = {
+  width?: number | string;
+  maxWidth?: number | string;
+  minWidth?: number | string;
+  zIndex?: number;
+};
 
 export default function DataTable<TData, TValue>({ columns, data }: DataTableProps<TData, TValue>) {
   const localize = useLocalize();
@@ -91,7 +96,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
             deleteFiles({ files: filesToDelete as TFile[] });
             setRowSelection({});
           }}
-          className="ml-1 gap-2 dark:hover:bg-gray-750/25 sm:ml-0"
+          className="ml-1 gap-2 dark:hover:bg-gray-850/25 sm:ml-0"
           disabled={!table.getFilteredSelectedRowModel().rows.length || isDeleting}
         >
           {isDeleting ? (
@@ -116,7 +121,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           {/* Filter Menu */}
           <DropdownMenuContent
             align="end"
-            className="z-[1001] dark:border-gray-700 dark:bg-gray-750"
+            className="z-[1001] dark:border-gray-700 dark:bg-gray-850"
           >
             {table
               .getAllColumns()
@@ -142,7 +147,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header, index) => {
-                  const style: Style = { maxWidth: '32px', minWidth: '125px' };
+                  const style: Style = { maxWidth: '32px', minWidth: '125px', zIndex: 50 };
                   if (header.id === 'filename') {
                     style.maxWidth = '50%';
                     style.width = '50%';
@@ -220,7 +225,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           )}
         </div>
         <Button
-          className="dark:border-gray-500 dark:hover:bg-gray-600"
+          className="select-none dark:border-gray-500 dark:hover:bg-gray-600"
           variant="outline"
           size="sm"
           onClick={() => table.previousPage()}
@@ -229,7 +234,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           {localize('com_ui_prev')}
         </Button>
         <Button
-          className="dark:border-gray-500 dark:hover:bg-gray-600"
+          className="select-none dark:border-gray-500 dark:hover:bg-gray-600"
           variant="outline"
           size="sm"
           onClick={() => table.nextPage()}

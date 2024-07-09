@@ -1,9 +1,11 @@
 import React from 'react';
+import ReactMarkdown from 'react-markdown';
+import TagManager from 'react-gtm-module';
 import { Constants } from 'librechat-data-provider';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { useLocalize } from '~/hooks';
 
-export default function Footer() {
+export default function Footer({ className }: { className?: string }) {
   const { data: config } = useGetStartupConfig();
   const localize = useLocalize();
 
@@ -32,27 +34,57 @@ export default function Footer() {
     </a>
   );
 
-  const mainContentRender = (
-    <span>
-      {typeof config?.customFooter === 'string' ? (
-        config.customFooter
-      ) : (
-        <>
-          <a href="https://librechat.ai" target="_blank" rel="noreferrer" className="underline">
-            {config?.appTitle || 'LibreChat'} {Constants.VERSION}
-          </a>
-          {' - '} {localize('com_ui_new_footer')}
-        </>
-      )}
-    </span>
-  );
+  if (config?.analyticsGtmId) {
+    const tagManagerArgs = {
+      gtmId: config?.analyticsGtmId,
+    };
+    TagManager.initialize(tagManagerArgs);
+  }
 
-  const footerElements = [mainContentRender, privacyPolicyRender, termsOfServiceRender].filter(
+  const mainContentParts = (
+    typeof config?.customFooter === 'string'
+      ? config.customFooter
+      : '[LibreChat ' +
+        Constants.VERSION +
+        '](https://librechat.ai) - ' +
+        localize('com_ui_latest_footer')
+  ).split('|');
+
+  const mainContentRender = mainContentParts.map((text, index) => (
+    <React.Fragment key={`main-content-part-${index}`}>
+      <ReactMarkdown
+        components={{
+          a: (props) => {
+            const { ['node']: _, href, ...otherProps } = props;
+            return (
+              <a
+                className=" text-gray-600 underline dark:text-gray-300"
+                href={href}
+                target="_blank"
+                rel="noreferrer"
+                {...otherProps}
+              />
+            );
+          },
+          p: ({ node, ...props }) => <span {...props} />,
+        }}
+      >
+        {text.trim()}
+      </ReactMarkdown>
+    </React.Fragment>
+  ));
+
+  const footerElements = [...mainContentRender, privacyPolicyRender, termsOfServiceRender].filter(
     Boolean,
   );
 
   return (
-    <div className="relative flex items-center justify-center gap-2 px-2 py-2 text-xs text-gray-600 dark:text-gray-300 md:px-[60px]">
+    <div
+      className={
+        className ||
+        'relative flex items-center justify-center gap-2 px-2 py-2 text-center text-xs text-gray-600 dark:text-gray-300 md:px-[60px]'
+      }
+    >
       {footerElements.map((contentRender, index) => {
         const isLastElement = index === footerElements.length - 1;
         return (

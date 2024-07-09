@@ -59,6 +59,8 @@ const openAIModels = {
   'gpt-3.5-turbo-1106': 16375, // -10 from max
   'gpt-3.5-turbo-0125': 16375, // -10 from max
   'mistral-': 31990, // -10 from max
+  llama3: 8187, // -5 from max
+  'llama-3': 8187, // -5 from max
 };
 
 const cohereModels = {
@@ -94,6 +96,7 @@ const anthropicModels = {
   'claude-3-haiku': 200000,
   'claude-3-sonnet': 200000,
   'claude-3-opus': 200000,
+  'claude-3-5-sonnet': 200000,
 };
 
 const aggregateModels = { ...openAIModels, ...googleModels, ...anthropicModels, ...cohereModels };

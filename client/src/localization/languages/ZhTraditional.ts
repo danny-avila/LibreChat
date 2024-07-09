@@ -31,7 +31,6 @@ export default {
   com_ui_enter: '輸入',
   com_ui_submit: '送出',
   com_ui_upload_success: '檔案上傳成功',
-  com_ui_upload_invalid: '上傳檔案無效',
   com_ui_cancel: '取消',
   com_ui_save: '儲存',
   com_ui_copy_to_clipboard: '複製到剪貼簿',
@@ -44,15 +43,28 @@ export default {
   com_ui_clear: '清除',
   com_ui_revoke: '撤銷',
   com_ui_revoke_info: '撤銷所有使用者提供的憑證。',
-  com_ui_import_conversation: '導入',
-  com_ui_import_conversation_info: '從JSON文件導入對話',
-  com_ui_import_conversation_success: '對話導入成功',
-  com_ui_import_conversation_error: '導入對話時發生錯誤',
+  com_ui_import_conversation: '匯入',
+  com_ui_import_conversation_info: '從JSON文件匯入對話',
+  com_ui_import_conversation_success: '對話匯入成功',
+  com_ui_import_conversation_error: '匯入對話時發生錯誤',
   com_ui_confirm_action: '確認操作',
   com_ui_chats: '對話',
+  com_ui_share: '分享',
+  com_ui_copy_link: '複製連結',
+  com_ui_update_link: '更新連結',
+  com_ui_create_link: '建立連結',
+  com_ui_share_link_to_chat: '分享連結到聊天',
+  com_ui_share_error: '分享聊天連結時發生錯誤',
+  com_ui_share_retrieve_error: '刪除共享鏈接時出錯。',
+  com_ui_share_delete_error: '刪除共享鏈接時出錯。',
+  com_ui_share_create_message: '您的姓名以及您在共享後新增的任何訊息都會保密。',
+  com_ui_share_created_message: '已建立到您的聊天的共享連結。可以隨時透過設定管理以前共享的聊天。',
+  com_ui_share_update_message: '您的姓名、自定義指示以及您在共享後新增的任何訊息都會保密。',
+  com_ui_share_updated_message: '已更新到您的聊天的共享連結。可以隨時透過設定管理以前共享的聊天。',
+  com_ui_shared_link_not_found: '未找到共享連結',
   com_ui_delete: '刪除',
   com_ui_delete_conversation: '刪除對話？',
-  com_ui_delete_conversation_confirm: '這將刪除',
+  com_ui_delete_confirm: '這將刪除',
   com_ui_rename: '重新命名',
   com_ui_archive: '封存',
   com_ui_archive_error: '封存對話時發生錯誤',
@@ -240,6 +252,12 @@ export default {
   com_nav_export_recursive_or_sequential: '遞迴還是序列？',
   com_nav_export_recursive: '遞迴',
   com_nav_export_conversation: '匯出對話',
+  com_nav_export: '匯出',
+  com_nav_shared_links: '共享連結',
+  com_nav_shared_links_manage: '管理',
+  com_nav_shared_links_empty: '您沒有任何共享連結。',
+  com_nav_shared_links_name: '名稱',
+  com_nav_shared_links_date_shared: '共享日期',
   com_nav_theme: '主題',
   com_nav_theme_system: '跟隨系統設定',
   com_nav_theme_dark: '深色',
@@ -266,6 +284,35 @@ export default {
   com_nav_setting_general: '一般',
   com_nav_setting_data: '資料控制',
   /* The following are AI translated */
+  com_assistants_file_search: '檔案搜尋',
+  com_assistants_file_search_info:
+    '目前尚不支援為檔案搜尋附加向量儲存。您可以從提供者遊樂場附加它們，或在每個主題的基礎上為檔案搜尋附加檔案。',
+  com_assistants_non_retrieval_model: '此模型未啟用檔案搜尋功能。請選擇其他模型。',
+  com_ui_attach_error_openai: '無法將助理檔案附加至其他端點',
+  com_ui_attach_warn_endpoint: '非相容工具的非助理檔案可能會被忽略',
+  com_ui_assistant_deleted: '已成功刪除助理',
+  com_ui_assistant_delete_error: '刪除助理時發生錯誤',
+  com_ui_copied: '已複製！',
+  com_ui_copy_code: '複製程式碼',
+  com_nav_source_chat: '檢視原始對話',
+  com_ui_date_today: '今天',
+  com_ui_date_yesterday: '昨天',
+  com_ui_date_previous_7_days: '前 7 天',
+  com_ui_date_previous_30_days: '過去 30 天',
+  com_ui_date_january: '一月',
+  com_ui_date_february: '二月',
+  com_ui_date_march: '三月',
+  com_ui_date_april: '四月',
+  com_ui_date_may: '五月',
+  com_ui_date_june: '六月',
+  com_ui_date_july: '七月',
+  com_ui_date_august: '八月',
+  com_ui_date_september: '九月',
+  com_ui_date_october: '十月',
+  com_ui_date_november: '十一月',
+  com_ui_date_december: '十二月',
+  com_ui_nothing_found: '找不到任何內容',
+  com_ui_go_to_conversation: '前往對話',
   com_error_moderation:
     '似乎您所提交的內容被我們的內容審查系統標記為不符合社群準則。我們無法就此特定主題繼續進行。如果您有任何其他問題或想要探討的主題,請編輯您的訊息或開啟新的對話。',
   com_error_no_user_key: '找不到金鑰，請提供金鑰後再試一次。',
@@ -288,7 +335,7 @@ export default {
     '助理必須先建立，並啟用及儲存「程式碼解譯器」或「資訊檢索」功能，才能上傳檔案作為知識庫。',
   com_assistants_image_vision: '影像視覺',
   com_assistants_code_interpreter: '程式碼解譯器',
-  com_assistants_code_interpreter_files: '以下檔案僅適用於代碼解譯器：',
+  com_assistants_code_interpreter_files: '以下檔案僅適用於程式碼解譯器：',
   com_assistants_retrieval: '檢索',
   com_assistants_search_name: '搜尋助理名稱',
   com_assistants_tools: '工具',
@@ -378,16 +425,16 @@ export default {
   com_ui_fork_visible: '僅顯示分支訊息',
   com_ui_fork_from_message: '選擇分支選項',
   com_ui_mention: '提及端點、助理或預設設定以快速切換',
-  com_ui_import_conversation_file_type_error: '不支援的導入檔案類型',
+  com_ui_import_conversation_file_type_error: '不支援的匯入檔案類型',
   com_ui_avatar: '大頭照',
   com_ui_unknown: '未知',
   com_ui_result: '結果',
-  com_ui_image_gen: '圖像生成',
+  com_ui_image_gen: '影象生成',
   com_ui_assistant: '助理',
   com_ui_assistants: '助理',
   com_ui_attachment: '附件',
   com_ui_assistants_output: '助理輸出',
-  com_ui_create: '創建',
+  com_ui_create: '建立',
   com_ui_delete_assistant_confirm: '您確定要刪除這個助理嗎？此操作無法復原。',
   com_ui_preview: '預覽',
   com_ui_upload: '上傳',
@@ -403,27 +450,27 @@ export default {
   com_endpoint_message_not_appendable: '無法附加訊息或重新生成。',
   com_endpoint_context_tokens: '最大前後文 Token 數',
   com_endpoint_context_info:
-    '可用於上下文的最大 token 數量。用於控制每個請求發送的 token 數量。如果未指定，將根據已知模型的上下文大小使用系統預設值。設置較高的值可能會導致錯誤和/或更高的 token 成本。',
+    '可用於上下文的最大 token 數量。用於控制每個請求傳送的 token 數量。如果未指定，將根據已知模型的上下文大小使用系統預設值。設定較高的值可能會導致錯誤和/或更高的 token 成本。',
   com_endpoint_instructions_assistants_placeholder:
     '覆寫助理的指示。這對於在每次執行時修改行為很有用。',
   com_endpoint_prompt_prefix_assistants_placeholder:
     '在助手的主要指示之上設定額外的指示或上下文。如果為空白，則會被忽略。',
-  com_endpoint_prompt_prefix_assistants: '提示前綴',
+  com_endpoint_prompt_prefix_assistants: '提示字首',
   com_endpoint_instructions_assistants: '覆寫指示',
   com_endpoint_stop: '停止序列',
   com_endpoint_stop_placeholder: '以 `Enter` 鍵分隔值',
   com_endpoint_openai_max_tokens:
     '可選的 `max_tokens` 欄位，代表在對話完成中可以生成的最大 token 數。\n\n輸入 token 和生成 token 的總長度受限於模型的上下文長度。如果此數字超過最大上下文 token 數，您可能會遇到錯誤。',
   com_endpoint_openai_resend:
-    '重新發送之前所有附加的圖片。注意:這可能會大幅增加 token 成本,如果附加了太多圖片,您可能會遇到錯誤。',
+    '重新傳送之前所有附加的圖片。注意:這可能會大幅增加 token 成本,如果附加了太多圖片,您可能會遇到錯誤。',
   com_endpoint_openai_resend_files:
     '重新傳送之前附加的所有檔案。注意：這將增加 token 成本，如果附件過多，您可能會遇到錯誤。',
   com_endpoint_openai_detail:
-    '「低」解析度的視覺請求較便宜且快速，「高」解析度則更詳細但成本較高，而「自動」會根據圖像解析度自動在兩者之間選擇。',
+    '「低」解析度的視覺請求較便宜且快速，「高」解析度則更詳細但成本較高，而「自動」會根據影象解析度自動在兩者之間選擇。',
   com_endpoint_openai_stop: '最多 4 個序列，API 將在生成更多 token 時停止。',
   com_endpoint_plug_resend_files: '重新傳送檔案',
   com_endpoint_plug_resend_images: '重新傳送圖片',
-  com_endpoint_plug_image_detail: '圖像詳細資訊',
+  com_endpoint_plug_image_detail: '影象詳細資訊',
   com_endpoint_preset_delete_confirm: '您確定要刪除這個預設設定嗎？',
   com_endpoint_preset_clear_all_confirm: '您確定要刪除所有的預設設定嗎？',
   com_endpoint_preset_import: '預設設定已匯入！',
@@ -445,7 +492,7 @@ export default {
   com_endpoint_config_placeholder: '在標頭選單中設定您的金鑰以開始對話。',
   com_endpoint_config_click_here: '點此',
   com_endpoint_config_google_service_key: 'Google 服務帳戶金鑰',
-  com_endpoint_config_google_cloud_platform: 'Google 雲端平台設定',
+  com_endpoint_config_google_cloud_platform: 'Google 雲端平臺設定',
   com_endpoint_config_google_api_key: 'Google API 金鑰',
   com_endpoint_config_google_gemini_api: 'Google Gemini API 設定',
   com_endpoint_config_google_api_info: '要取得 Generative Language API 金鑰（適用於 Gemini），',
@@ -470,6 +517,7 @@ export default {
   com_nav_my_files: '我的檔案',
   com_nav_enter_to_send: '按 Enter 鍵傳送訊息',
   com_nav_user_name_display: '在訊息中顯示使用者名稱',
+  com_nav_save_drafts: '儲存本機草稿',
   com_nav_show_code: '一律顯示使用程式碼解譯器時的程式碼',
   com_nav_setting_beta: '測試功能',
   com_nav_setting_account: '帳號',
@@ -671,19 +719,19 @@ export const comparisons = {
   },
   com_ui_import_conversation: {
     english: 'Import',
-    translated: '導入',
+    translated: '匯入',
   },
   com_ui_import_conversation_info: {
     english: 'Import conversations from a JSON file',
-    translated: '從JSON文件導入對話',
+    translated: '從JSON文件匯入對話',
   },
   com_ui_import_conversation_success: {
     english: 'Conversations imported successfully',
-    translated: '對話導入成功',
+    translated: '對話匯入成功',
   },
   com_ui_import_conversation_error: {
     english: 'There was an error importing your conversations',
-    translated: '導入對話時發生錯誤',
+    translated: '匯入對話時發生錯誤',
   },
   com_ui_confirm_action: {
     english: 'Confirm Action',
@@ -693,6 +741,60 @@ export const comparisons = {
     english: 'chats',
     translated: '對話',
   },
+  com_ui_share: {
+    english: 'Share',
+    translated: '分享',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: '複製連結',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: '更新連結',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: '建立連結',
+  },
+  com_ui_share_link_to_chat: {
+    english: 'Share link to chat',
+    translated: '分享連結到聊天',
+  },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: '刪除共享鏈接時出錯。',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: '刪除共享鏈接時出錯。',
+  },
+  com_ui_share_error: {
+    english: 'There was an error sharing the chat link',
+    translated: '分享聊天連結時發生錯誤',
+  },
+  com_ui_share_create_message: {
+    english: 'Your name and any messages you add after sharing stay private.',
+    translated: '您的姓名以及您在共享後新增的任何訊息都會保密。',
+  },
+  com_ui_share_created_message: {
+    english:
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated: '已建立到您的聊天的共享連結。可以隨時透過設定管理以前共享的聊天。',
+  },
+  com_ui_share_update_message: {
+    english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated: '您的姓名、自定義指示以及您在共享後新增的任何訊息都會保密。',
+  },
+  com_ui_share_updated_message: {
+    english:
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated: '已更新到您的聊天的共享連結。可以隨時透過設定管理以前共享的聊天。',
+  },
+  com_ui_shared_link_not_found: {
+    english: 'Shared link not found',
+    translated: '未找到共享連結',
+  },
   com_ui_delete: {
     english: 'Delete',
     translated: '刪除',
@@ -701,7 +803,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: '刪除對話？',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: '這將刪除',
   },
@@ -1409,6 +1511,30 @@ export const comparisons = {
     english: 'Export conversation',
     translated: '匯出對話',
   },
+  com_nav_export: {
+    english: 'Export',
+    translated: '匯出',
+  },
+  com_nav_shared_links: {
+    english: 'Shared links',
+    translated: '共享連結',
+  },
+  com_nav_shared_links_manage: {
+    english: 'Manage',
+    translated: '管理',
+  },
+  com_nav_shared_links_empty: {
+    english: 'You have no shared links.',
+    translated: '您沒有任何共享連結。',
+  },
+  com_nav_shared_links_name: {
+    english: 'Name',
+    translated: '名稱',
+  },
+  com_nav_shared_links_date_shared: {
+    english: 'Date shared',
+    translated: '共享日期',
+  },
   com_nav_theme: {
     english: 'Theme',
     translated: '主題',
@@ -1509,6 +1635,120 @@ export const comparisons = {
     english: 'Data controls',
     translated: '資料控制',
   },
+  com_assistants_file_search: {
+    english: 'File Search',
+    translated: '檔案搜尋',
+  },
+  com_assistants_file_search_info: {
+    english:
+      'Attaching vector stores for File Search is not yet supported. You can attach them from the Provider Playground or attach files to messages for file search on a thread basis.',
+    translated:
+      '目前尚不支援為檔案搜尋附加向量儲存。您可以從提供者遊樂場附加它們，或在每個主題的基礎上為檔案搜尋附加檔案。',
+  },
+  com_assistants_non_retrieval_model: {
+    english: 'File search is not enabled on this model. Please select another model.',
+    translated: '此模型未啟用檔案搜尋功能。請選擇其他模型。',
+  },
+  com_ui_attach_error_openai: {
+    english: 'Cannot attach Assistant files to other endpoints',
+    translated: '無法將助理檔案附加至其他端點',
+  },
+  com_ui_attach_warn_endpoint: {
+    english: 'Non-Assistant files may be ignored without a compatible tool',
+    translated: '非相容工具的非助理檔案可能會被忽略',
+  },
+  com_ui_assistant_deleted: {
+    english: 'Successfully deleted assistant',
+    translated: '已成功刪除助理',
+  },
+  com_ui_assistant_delete_error: {
+    english: 'There was an error deleting the assistant',
+    translated: '刪除助理時發生錯誤',
+  },
+  com_ui_copied: {
+    english: 'Copied!',
+    translated: '已複製！',
+  },
+  com_ui_copy_code: {
+    english: 'Copy code',
+    translated: '複製程式碼',
+  },
+  com_nav_source_chat: {
+    english: 'View source chat',
+    translated: '檢視原始對話',
+  },
+  com_ui_date_today: {
+    english: 'Today',
+    translated: '今天',
+  },
+  com_ui_date_yesterday: {
+    english: 'Yesterday',
+    translated: '昨天',
+  },
+  com_ui_date_previous_7_days: {
+    english: 'Previous 7 days',
+    translated: '前 7 天',
+  },
+  com_ui_date_previous_30_days: {
+    english: 'Previous 30 days',
+    translated: '過去 30 天',
+  },
+  com_ui_date_january: {
+    english: 'January',
+    translated: '一月',
+  },
+  com_ui_date_february: {
+    english: 'February',
+    translated: '二月',
+  },
+  com_ui_date_march: {
+    english: 'March',
+    translated: '三月',
+  },
+  com_ui_date_april: {
+    english: 'April',
+    translated: '四月',
+  },
+  com_ui_date_may: {
+    english: 'May',
+    translated: '五月',
+  },
+  com_ui_date_june: {
+    english: 'June',
+    translated: '六月',
+  },
+  com_ui_date_july: {
+    english: 'July',
+    translated: '七月',
+  },
+  com_ui_date_august: {
+    english: 'August',
+    translated: '八月',
+  },
+  com_ui_date_september: {
+    english: 'September',
+    translated: '九月',
+  },
+  com_ui_date_october: {
+    english: 'October',
+    translated: '十月',
+  },
+  com_ui_date_november: {
+    english: 'November',
+    translated: '十一月',
+  },
+  com_ui_date_december: {
+    english: 'December',
+    translated: '十二月',
+  },
+  com_ui_nothing_found: {
+    english: 'Nothing found',
+    translated: '找不到任何內容',
+  },
+  com_ui_go_to_conversation: {
+    english: 'Go to conversation',
+    translated: '前往對話',
+  },
   com_error_moderation: {
     english:
       'It appears that the content submitted has been flagged by our moderation system for not aligning with our community guidelines. We\'re unable to proceed with this specific topic. If you have any other questions or topics you\'d like to explore, please edit your message, or create a new conversation.',
@@ -1596,7 +1836,7 @@ export const comparisons = {
   },
   com_assistants_code_interpreter_files: {
     english: 'The following files are only available for Code Interpreter:',
-    translated: '以下檔案僅適用於代碼解譯器：',
+    translated: '以下檔案僅適用於程式碼解譯器：',
   },
   com_assistants_retrieval: {
     english: 'Retrieval',
@@ -1941,7 +2181,7 @@ export const comparisons = {
   },
   com_ui_import_conversation_file_type_error: {
     english: 'Unsupported import type',
-    translated: '不支援的導入檔案類型',
+    translated: '不支援的匯入檔案類型',
   },
   com_ui_avatar: {
     english: 'Avatar',
@@ -1957,7 +2197,7 @@ export const comparisons = {
   },
   com_ui_image_gen: {
     english: 'Image Gen',
-    translated: '圖像生成',
+    translated: '影象生成',
   },
   com_ui_assistant: {
     english: 'Assistant',
@@ -1977,7 +2217,7 @@ export const comparisons = {
   },
   com_ui_create: {
     english: 'Create',
-    translated: '創建',
+    translated: '建立',
   },
   com_ui_delete_assistant_confirm: {
     english: 'Are you sure you want to delete this Assistant? This cannot be undone.',
@@ -2040,7 +2280,7 @@ export const comparisons = {
     english:
       'The maximum number of tokens that can be used for context. Use this for control of how many tokens are sent per request.\n  If unspecified, will use system defaults based on known models\' context size. Setting higher values may result in errors and/or higher token cost.',
     translated:
-      '可用於上下文的最大 token 數量。用於控制每個請求發送的 token 數量。如果未指定，將根據已知模型的上下文大小使用系統預設值。設置較高的值可能會導致錯誤和/或更高的 token 成本。',
+      '可用於上下文的最大 token 數量。用於控制每個請求傳送的 token 數量。如果未指定，將根據已知模型的上下文大小使用系統預設值。設定較高的值可能會導致錯誤和/或更高的 token 成本。',
   },
   com_endpoint_instructions_assistants_placeholder: {
     english:
@@ -2054,7 +2294,7 @@ export const comparisons = {
   },
   com_endpoint_prompt_prefix_assistants: {
     english: 'Additional Instructions',
-    translated: '提示前綴',
+    translated: '提示字首',
   },
   com_endpoint_instructions_assistants: {
     english: 'Override Instructions',
@@ -2078,7 +2318,7 @@ export const comparisons = {
     english:
       'Resend all previously attached images. Note: this can significantly increase token cost and you may experience errors with many image attachments.',
     translated:
-      '重新發送之前所有附加的圖片。注意:這可能會大幅增加 token 成本,如果附加了太多圖片,您可能會遇到錯誤。',
+      '重新傳送之前所有附加的圖片。注意:這可能會大幅增加 token 成本,如果附加了太多圖片,您可能會遇到錯誤。',
   },
   com_endpoint_openai_resend_files: {
     english:
@@ -2090,7 +2330,7 @@ export const comparisons = {
     english:
       'The resolution for Vision requests. "Low" is cheaper and faster, "High" is more detailed and expensive, and "Auto" will automatically choose between the two based on the image resolution.',
     translated:
-      '「低」解析度的視覺請求較便宜且快速，「高」解析度則更詳細但成本較高，而「自動」會根據圖像解析度自動在兩者之間選擇。',
+      '「低」解析度的視覺請求較便宜且快速，「高」解析度則更詳細但成本較高，而「自動」會根據影象解析度自動在兩者之間選擇。',
   },
   com_endpoint_openai_stop: {
     english: 'Up to 4 sequences where the API will stop generating further tokens.',
@@ -2106,7 +2346,7 @@ export const comparisons = {
   },
   com_endpoint_plug_image_detail: {
     english: 'Image Detail',
-    translated: '圖像詳細資訊',
+    translated: '影象詳細資訊',
   },
   com_endpoint_preset_delete_confirm: {
     english: 'Are you sure you want to delete this preset?',
@@ -2194,7 +2434,7 @@ export const comparisons = {
   },
   com_endpoint_config_google_cloud_platform: {
     english: '(from Google Cloud Platform)',
-    translated: 'Google 雲端平台設定',
+    translated: 'Google 雲端平臺設定',
   },
   com_endpoint_config_google_api_key: {
     english: 'Google API Key',
@@ -2291,6 +2531,10 @@ export const comparisons = {
   com_nav_user_name_display: {
     english: 'Display username in messages',
     translated: '在訊息中顯示使用者名稱',
+  },
+  com_nav_save_drafts: {
+    english: 'Save drafts locally',
+    translated: '儲存本機草稿',
   },
   com_nav_show_code: {
     english: 'Always show code when using code interpreter',

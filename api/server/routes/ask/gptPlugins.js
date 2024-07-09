@@ -2,9 +2,9 @@ const express = require('express');
 const throttle = require('lodash/throttle');
 const { getResponseSender, Constants } = require('librechat-data-provider');
 const { initializeClient } = require('~/server/services/Endpoints/gptPlugins');
-const { saveMessage, getConvoTitle, getConvo } = require('~/models');
 const { sendMessage, createOnProgress } = require('~/server/utils');
 const { addTitle } = require('~/server/services/Endpoints/openAI');
+const { saveMessage } = require('~/models');
 const {
   handleAbort,
   createAbortController,
@@ -41,6 +41,7 @@ router.post(
     logger.debug('[/ask/gptPlugins]', { text, conversationId, ...endpointOption });
 
     let userMessage;
+    let userMessagePromise;
     let promptTokens;
     let userMessageId;
     let responseMessageId;
@@ -58,6 +59,8 @@ router.post(
         if (key === 'userMessage') {
           userMessage = data[key];
           userMessageId = data[key].messageId;
+        } else if (key === 'userMessagePromise') {
+          userMessagePromise = data[key];
         } else if (key === 'responseMessageId') {
           responseMessageId = data[key];
         } else if (key === 'promptTokens') {
@@ -106,7 +109,11 @@ router.post(
     const pluginMap = new Map();
     const onAgentAction = async (action, runId) => {
       pluginMap.set(runId, action.tool);
-      sendIntermediateMessage(res, { plugins });
+      sendIntermediateMessage(res, {
+        plugins,
+        parentMessageId: userMessage.messageId,
+        messageId: responseMessageId,
+      });
     };
 
     const onToolStart = async (tool, input, runId, parentRunId) => {
@@ -124,7 +131,11 @@ router.post(
       }
       const extraTokens = ':::plugin:::\n';
       plugins.push(latestPlugin);
-      sendIntermediateMessage(res, { plugins }, extraTokens);
+      sendIntermediateMessage(
+        res,
+        { plugins, parentMessageId: userMessage.messageId, messageId: responseMessageId },
+        extraTokens,
+      );
     };
 
     const onToolEnd = async (output, runId) => {
@@ -140,14 +151,10 @@ router.post(
       }
     };
 
-    const onChainEnd = () => {
-      saveMessage({ ...userMessage, user });
-      sendIntermediateMessage(res, { plugins });
-    };
-
     const getAbortData = () => ({
       sender,
       conversationId,
+      userMessagePromise,
       messageId: responseMessageId,
       parentMessageId: overrideParentMessageId ?? userMessageId,
       text: getPartialText(),
@@ -155,11 +162,22 @@ router.post(
       userMessage,
       promptTokens,
     });
-    const { abortController, onStart } = createAbortController(req, res, getAbortData);
+    const { abortController, onStart } = createAbortController(req, res, getAbortData, getReqData);
 
     try {
       endpointOption.tools = await validateTools(user, endpointOption.tools);
       const { client } = await initializeClient({ req, res, endpointOption });
+
+      const onChainEnd = () => {
+        if (!client.skipSaveUserMessage) {
+          saveMessage({ ...userMessage, user });
+        }
+        sendIntermediateMessage(res, {
+          plugins,
+          parentMessageId: userMessage.messageId,
+          messageId: responseMessageId,
+        });
+      };
 
       let response = await client.sendMessage(text, {
         user,
@@ -174,12 +192,13 @@ router.post(
         onStart,
         getPartialText,
         ...endpointOption,
-        onProgress: progressCallback.call(null, {
+        progressCallback,
+        progressOptions: {
           res,
           text,
-          parentMessageId: overrideParentMessageId || userMessageId,
+          // parentMessageId: overrideParentMessageId || userMessageId,
           plugins,
-        }),
+        },
         abortController,
       });
 
@@ -192,10 +211,14 @@ router.post(
       response.plugins = plugins.map((p) => ({ ...p, loading: false }));
       await saveMessage({ ...response, user });
 
+      const { conversation = {} } = await client.responsePromise;
+      conversation.title =
+        conversation && !conversation.title ? null : conversation?.title || 'New Chat';
+
       sendMessage(res, {
-        title: await getConvoTitle(user, conversationId),
+        title: conversation.title,
         final: true,
-        conversation: await getConvo(user, conversationId),
+        conversation,
         requestMessage: userMessage,
         responseMessage: response,
       });

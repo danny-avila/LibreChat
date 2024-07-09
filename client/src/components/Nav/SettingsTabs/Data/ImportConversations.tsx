@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Import } from 'lucide-react';
+import type { TError } from 'librechat-data-provider';
 import { useUploadConversationsMutation } from '~/data-provider';
 import { useLocalize, useConversations } from '~/hooks';
 import { useToastContext } from '~/Providers';
@@ -25,8 +26,7 @@ function ImportConversations() {
       console.error('Error: ', error);
       setAllowImport(true);
       setError(
-        (error as { response: { data: { message?: string } } })?.response?.data?.message ??
-          'An error occurred while uploading the file.',
+        (error as TError)?.response?.data?.message ?? 'An error occurred while uploading the file.',
       );
       if (error?.toString().includes('Unsupported import type')) {
         showToast({
@@ -68,11 +68,8 @@ function ImportConversations() {
 
   return (
     <div className="flex items-center justify-between">
-      <span>{localize('com_ui_import_conversation_info')}</span>
-      <label
-        htmlFor={'import-conversations-file'}
-        className="flex h-auto cursor-pointer items-center rounded bg-transparent px-2 py-3 text-xs font-medium font-normal transition-colors hover:bg-gray-100 hover:text-green-700 dark:bg-transparent dark:text-white dark:hover:bg-gray-600 dark:hover:text-green-500"
-      >
+      <div>{localize('com_ui_import_conversation_info')}</div>
+      <label htmlFor={'import-conversations-file'} className="btn btn-neutral relative">
         {allowImport ? (
           <Import className="mr-1 flex h-4 w-4 items-center stroke-1" />
         ) : (

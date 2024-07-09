@@ -28,7 +28,8 @@ export const ThemeSelector = ({
 
   return (
     <div className="flex items-center justify-between">
-      <div> {localize('com_nav_theme')} </div>
+      <div>{localize('com_nav_theme')}</div>
+
       <Dropdown
         value={theme}
         onChange={onChange}
@@ -63,6 +64,7 @@ export const ClearChatsButton = ({
       confirmActionTextCode="com_nav_confirm_clear"
       dataTestIdInitial="clear-convos-initial"
       dataTestIdConfirm="clear-convos-confirm"
+      infoDescriptionCode="com_nav_info_clear_all_chats"
       onClick={onClick}
     />
   );
@@ -82,7 +84,7 @@ export const LangSelector = ({
     { value: 'auto', display: localize('com_nav_lang_auto') },
     { value: 'en-US', display: localize('com_nav_lang_english') },
     { value: 'zh-CN', display: localize('com_nav_lang_chinese') },
-    { value: 'zh-TC', display: localize('com_nav_lang_traditionalchinese') },
+    { value: 'zh-TW', display: localize('com_nav_lang_traditionalchinese') },
     { value: 'ar-EG', display: localize('com_nav_lang_arabic') },
     { value: 'de-DE', display: localize('com_nav_lang_german') },
     { value: 'es-ES', display: localize('com_nav_lang_spanish') },
@@ -103,7 +105,8 @@ export const LangSelector = ({
 
   return (
     <div className="flex items-center justify-between">
-      <div> {localize('com_nav_language')} </div>
+      <div>{localize('com_nav_language')}</div>
+
       <Dropdown
         value={langcode}
         onChange={onChange}
@@ -152,7 +155,7 @@ function General() {
       className="w-full md:min-h-[271px]"
       ref={contentRef}
     >
-      <div className="flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-50">
+      <div className="flex flex-col gap-3 text-sm text-black dark:text-gray-50">
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <ThemeSelector theme={theme} onChange={changeTheme} />
         </div>

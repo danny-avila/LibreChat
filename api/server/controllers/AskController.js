@@ -2,7 +2,7 @@ const throttle = require('lodash/throttle');
 const { getResponseSender, Constants, EModelEndpoint } = require('librechat-data-provider');
 const { createAbortController, handleAbortError } = require('~/server/middleware');
 const { sendMessage, createOnProgress } = require('~/server/utils');
-const { saveMessage, getConvo } = require('~/models');
+const { saveMessage } = require('~/models');
 const { logger } = require('~/config');
 
 const AskController = async (req, res, next, initializeClient, addTitle) => {
@@ -18,6 +18,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
   logger.debug('[AskController]', { text, conversationId, ...endpointOption });
 
   let userMessage;
+  let userMessagePromise;
   let promptTokens;
   let userMessageId;
   let responseMessageId;
@@ -34,6 +35,8 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       if (key === 'userMessage') {
         userMessage = data[key];
         userMessageId = data[key].messageId;
+      } else if (key === 'userMessagePromise') {
+        userMessagePromise = data[key];
       } else if (key === 'responseMessageId') {
         responseMessageId = data[key];
       } else if (key === 'promptTokens') {
@@ -74,6 +77,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
     const getAbortData = () => ({
       sender,
       conversationId,
+      userMessagePromise,
       messageId: responseMessageId,
       parentMessageId: overrideParentMessageId ?? userMessageId,
       text: getPartialText(),
@@ -81,7 +85,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       promptTokens,
     });
 
-    const { abortController, onStart } = createAbortController(req, res, getAbortData);
+    const { abortController, onStart } = createAbortController(req, res, getAbortData, getReqData);
 
     res.on('close', () => {
       logger.debug('[AskController] Request closed');
@@ -105,11 +109,12 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       getReqData,
       onStart,
       abortController,
-      onProgress: progressCallback.call(null, {
+      progressCallback,
+      progressOptions: {
         res,
         text,
-        parentMessageId: overrideParentMessageId || userMessageId,
-      }),
+        // parentMessageId: overrideParentMessageId || userMessageId,
+      },
     };
 
     let response = await client.sendMessage(text, messageOptions);
@@ -120,7 +125,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
 
     response.endpoint = endpointOption.endpoint;
 
-    const conversation = await getConvo(user, conversationId);
+    const { conversation = {} } = await client.responsePromise;
     conversation.title =
       conversation && !conversation.title ? null : conversation?.title || 'New Chat';
 
@@ -143,7 +148,9 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       await saveMessage({ ...response, user });
     }
 
-    await saveMessage(userMessage);
+    if (!client.skipSaveUserMessage) {
+      await saveMessage(userMessage);
+    }
 
     if (addTitle && parentMessageId === Constants.NO_PARENT && newConvo) {
       addTitle(req, {

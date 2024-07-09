@@ -1,19 +1,33 @@
-import { useRecoilState } from 'recoil';
-import { useForm } from 'react-hook-form';
-import { memo, useCallback, useRef, useMemo } from 'react';
+import { memo, useRef, useMemo } from 'react';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import {
   supportsFiles,
-  EModelEndpoint,
   mergeFileConfig,
+  isAssistantsEndpoint,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
-import { useChatContext, useAssistantsMapContext } from '~/Providers';
-import { useRequiresKey, useTextarea } from '~/hooks';
+import {
+  useChatContext,
+  useAddedChatContext,
+  useAssistantsMapContext,
+  useChatFormContext,
+} from '~/Providers';
+import {
+  useTextarea,
+  useAutoSave,
+  useRequiresKey,
+  useHandleKeyUp,
+  useSubmitMessage,
+} from '~/hooks';
 import { TextareaAutosize } from '~/components/ui';
 import { useGetFileConfig } from '~/data-provider';
-import { cn, removeFocusOutlines } from '~/utils';
+import { cn, removeFocusRings } from '~/utils';
+import TextareaHeader from './TextareaHeader';
+import PromptsCommand from './PromptsCommand';
 import AttachFile from './Files/AttachFile';
+import AudioRecorder from './AudioRecorder';
 import { mainTextareaId } from '~/common';
+import StreamAudio from './StreamAudio';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
 import FileRow from './Files/FileRow';
@@ -23,46 +37,59 @@ import store from '~/store';
 const ChatForm = ({ index = 0 }) => {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const SpeechToText = useRecoilValue(store.speechToText);
+  const TextToSpeech = useRecoilValue(store.textToSpeech);
+  const automaticPlayback = useRecoilValue(store.automaticPlayback);
+
   const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
+  const [showPlusPopover, setShowPlusPopover] = useRecoilState(store.showPlusPopoverFamily(index));
   const [showMentionPopover, setShowMentionPopover] = useRecoilState(
     store.showMentionPopoverFamily(index),
   );
-  const { requiresKey } = useRequiresKey();
 
-  const methods = useForm<{ text: string }>({
-    defaultValues: { text: '' },
+  const { requiresKey } = useRequiresKey();
+  const handleKeyUp = useHandleKeyUp({
+    index,
+    textAreaRef,
+    setShowPlusPopover,
+    setShowMentionPopover,
+  });
+  const { handlePaste, handleKeyDown, handleCompositionStart, handleCompositionEnd } = useTextarea({
+    textAreaRef,
+    submitButtonRef,
+    disabled: !!requiresKey,
   });
 
-  const { handlePaste, handleKeyDown, handleKeyUp, handleCompositionStart, handleCompositionEnd } =
-    useTextarea({
-      textAreaRef,
-      submitButtonRef,
-      disabled: !!requiresKey,
-    });
-
   const {
-    ask,
     files,
     setFiles,
     conversation,
     isSubmitting,
     filesLoading,
     setFilesLoading,
+    newConversation,
     handleStopGenerating,
   } = useChatContext();
+  const methods = useChatFormContext();
+  const {
+    addedIndex,
+    generateConversation,
+    conversation: addedConvo,
+    setConversation: setAddedConvo,
+    isSubmitting: isSubmittingAdded,
+  } = useAddedChatContext();
+  const showStopAdded = useRecoilValue(store.showStopButtonByIndex(addedIndex));
+
+  const { clearDraft } = useAutoSave({
+    conversationId: useMemo(() => conversation?.conversationId, [conversation]),
+    textAreaRef,
+    files,
+    setFiles,
+  });
 
   const assistantMap = useAssistantsMapContext();
-
-  const submitMessage = useCallback(
-    (data?: { text: string }) => {
-      if (!data) {
-        return console.warn('No data provided to submitMessage');
-      }
-      ask({ text: data.text });
-      methods.reset();
-    },
-    [ask, methods],
-  );
+  const { submitMessage, submitPrompt } = useSubmitMessage({ clearDraft });
 
   const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };
   const endpoint = endpointType ?? _endpoint;
@@ -74,8 +101,9 @@ const ChatForm = ({ index = 0 }) => {
   const endpointFileConfig = fileConfig.endpoints[endpoint ?? ''];
   const invalidAssistant = useMemo(
     () =>
-      conversation?.endpoint === EModelEndpoint.assistants &&
-      (!conversation?.assistant_id || !assistantMap?.[conversation?.assistant_id ?? '']),
+      isAssistantsEndpoint(conversation?.endpoint) &&
+      (!conversation?.assistant_id ||
+        !assistantMap?.[conversation?.endpoint ?? '']?.[conversation?.assistant_id ?? '']),
     [conversation?.assistant_id, conversation?.endpoint, assistantMap],
   );
   const disableInputs = useMemo(
@@ -86,7 +114,7 @@ const ChatForm = ({ index = 0 }) => {
   const { ref, ...registerProps } = methods.register('text', {
     required: true,
     onChange: (e) => {
-      methods.setValue('text', e.target.value);
+      methods.setValue('text', e.target.value, { shouldValidate: true });
     },
   });
 
@@ -97,10 +125,26 @@ const ChatForm = ({ index = 0 }) => {
     >
       <div className="relative flex h-full flex-1 items-stretch md:flex-col">
         <div className="flex w-full items-center">
-          {showMentionPopover && (
-            <Mention setShowMentionPopover={setShowMentionPopover} textAreaRef={textAreaRef} />
+          {showPlusPopover && !isAssistantsEndpoint(endpoint) && (
+            <Mention
+              setShowMentionPopover={setShowPlusPopover}
+              newConversation={generateConversation}
+              textAreaRef={textAreaRef}
+              commandChar="+"
+              placeholder="com_ui_add"
+              includeAssistants={false}
+            />
           )}
+          {showMentionPopover && (
+            <Mention
+              setShowMentionPopover={setShowMentionPopover}
+              newConversation={newConversation}
+              textAreaRef={textAreaRef}
+            />
+          )}
+          <PromptsCommand index={index} textAreaRef={textAreaRef} submitPrompt={submitPrompt} />
           <div className="bg-token-main-surface-primary relative flex w-full flex-grow flex-col overflow-hidden rounded-2xl border dark:border-gray-600 dark:text-white [&:has(textarea:focus)]:border-gray-300 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)] dark:[&:has(textarea:focus)]:border-gray-500">
+            <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
             <FileRow
               files={files}
               setFiles={setFiles}
@@ -134,9 +178,10 @@ const ChatForm = ({ index = 0 }) => {
                   supportsFiles[endpointType ?? endpoint ?? ''] && !endpointFileConfig?.disabled
                     ? ' pl-10 md:pl-[55px]'
                     : 'pl-3 md:pl-4',
-                  'm-0 w-full resize-none border-0 bg-transparent py-[10px] pr-10 placeholder-black/50 focus:ring-0 focus-visible:ring-0 dark:bg-transparent dark:placeholder-white/50 md:py-3.5 md:pr-12 ',
-                  removeFocusOutlines,
+                  'm-0 w-full resize-none border-0 bg-transparent py-[10px] placeholder-black/50 focus:ring-0 focus-visible:ring-0 dark:bg-transparent dark:placeholder-white/50 md:py-3.5  ',
+                  SpeechToText ? 'pr-20 md:pr-[85px]' : 'pr-10 md:pr-12',
                   'max-h-[65vh] md:max-h-[75vh]',
+                  removeFocusRings,
                 )}
               />
             )}
@@ -145,7 +190,7 @@ const ChatForm = ({ index = 0 }) => {
               endpointType={endpointType}
               disabled={disableInputs}
             />
-            {isSubmitting && showStopButton ? (
+            {(isSubmitting || isSubmittingAdded) && (showStopButton || showStopAdded) ? (
               <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
             ) : (
               endpoint && (
@@ -156,6 +201,15 @@ const ChatForm = ({ index = 0 }) => {
                 />
               )
             )}
+            {SpeechToText && (
+              <AudioRecorder
+                disabled={!!disableInputs}
+                textAreaRef={textAreaRef}
+                ask={submitMessage}
+                methods={methods}
+              />
+            )}
+            {TextToSpeech && automaticPlayback && <StreamAudio index={index} />}
           </div>
         </div>
       </div>

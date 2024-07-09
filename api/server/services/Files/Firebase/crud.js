@@ -180,7 +180,15 @@ const deleteFirebaseFile = async (req, file) => {
   if (!fileName.includes(req.user.id)) {
     throw new Error('Invalid file path');
   }
-  await deleteFile('', fileName);
+  try {
+    await deleteFile('', fileName);
+  } catch (error) {
+    logger.error('Error deleting file from Firebase:', error);
+    if (error.code === 'storage/object-not-found') {
+      return;
+    }
+    throw error;
+  }
 };
 
 /**
