@@ -310,6 +310,7 @@ export const tConversationSchema = z.object({
   updatedAt: z.string(),
   modelLabel: z.string().nullable().optional(),
   examples: z.array(tExampleSchema).optional(),
+  tags: z.array(z.string()).optional(),
   /* Prefer modelLabel over chatGptLabel */
   chatGptLabel: z.string().nullable().optional(),
   userLabel: z.string().optional(),
@@ -414,6 +415,17 @@ export const tSharedLinkSchema = z.object({
   updatedAt: z.string(),
 });
 export type TSharedLink = z.infer<typeof tSharedLinkSchema>;
+
+export const tConversationTagSchema = z.object({
+  user: z.string(),
+  tag: z.string(),
+  description: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  count: z.number(),
+  position: z.number(),
+});
+export type TConversationTag = z.infer<typeof tConversationTagSchema>;
 
 export const openAISchema = tConversationSchema
   .pick({
