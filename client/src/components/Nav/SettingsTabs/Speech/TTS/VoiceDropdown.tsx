@@ -28,7 +28,8 @@ export default function VoiceDropdown() {
         value={voice}
         onChange={(value: string) => setVoice(value)}
         options={voiceOptions}
-        position={'left'}
+        sizeClasses="[--anchor-max-height:256px]"
+        anchor="bottom start"
         testId="VoiceDropdown"
       />
     </div>
