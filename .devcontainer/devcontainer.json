@@ -2,7 +2,7 @@
   "name": "LibreChat Development",
   "dockerComposeFile": "docker-compose.yml",
   "service": "app",
-  "workspaceFolder": "/workspaces",
+  "workspaceFolder": "/workspaces/LibreChat",
   "customizations": {
     "vscode": {
       "extensions": ["ms-azuretools.vscode-docker"]
@@ -16,7 +16,7 @@
     }
   },
   "remoteUser": "vscode",
-  "postCreateCommand": "sudo chown root:docker /var/run/docker.sock && sudo chmod 660 /var/run/docker.sock",
+  "postCreateCommand": "sudo chown root:docker /var/run/docker.sock && sudo chmod 660 /var/run/docker.sock && npm run reinstall && npm run pull:rag && npm run copy-ex && MEILI_MASTER_KEY=$(docker-compose -f .devcontainer/docker-compose.yml exec -T meilisearch printenv MEILI_MASTER_KEY) && sed -i \"s/^MEILI_MASTER_KEY=.*/MEILI_MASTER_KEY=$MEILI_MASTER_KEY/\" .env",
   "remoteEnv": {
     "INSTALL_DOCKER": "${localEnv:INSTALL_DOCKER:false}"
   }
