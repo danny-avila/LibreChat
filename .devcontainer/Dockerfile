@@ -28,3 +28,14 @@ RUN echo "vscode ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/vscode && \
 USER vscode
 
 WORKDIR /workspaces
+
+# Copy package.json and package-lock.json
+COPY package*.json ./
+
+# Run npm install and other commands
+RUN npm run reinstall && \
+    npm run pull:rag && \
+    npm run copy-ex
+
+# Set the default command
+CMD ["/bin/bash"]
