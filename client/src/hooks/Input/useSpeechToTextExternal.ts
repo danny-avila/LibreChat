@@ -10,7 +10,7 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
   const { externalSpeechToText } = useGetAudioSettings();
   const [speechToText] = useRecoilState<boolean>(store.speechToText);
   const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
-  const [autoSendText] = useRecoilState<boolean>(store.autoSendText);
+  const [autoSendText] = useRecoilState(store.autoSendText);
   const [text, setText] = useState<string>('');
   const [isListening, setIsListening] = useState(false);
   const [permission, setPermission] = useState(false);

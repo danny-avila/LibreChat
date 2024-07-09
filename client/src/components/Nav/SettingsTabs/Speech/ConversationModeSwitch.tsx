@@ -1,4 +1,4 @@
-import { useRecoilState } from 'recoil';
+import { useRecoilValue, useRecoilState } from 'recoil';
 import { Switch } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -10,15 +10,15 @@ export default function ConversationModeSwitch({
 }) {
   const localize = useLocalize();
   const [conversationMode, setConversationMode] = useRecoilState<boolean>(store.conversationMode);
-  const [speechToText] = useRecoilState<boolean>(store.speechToText);
-  const [textToSpeech] = useRecoilState<boolean>(store.textToSpeech);
-  const [, setAutoSendText] = useRecoilState<boolean>(store.autoSendText);
+  const speechToText = useRecoilValue(store.speechToText);
+  const textToSpeech = useRecoilValue(store.textToSpeech);
+  const [, setAutoSendText] = useRecoilState(store.autoSendText);
   const [, setDecibelValue] = useRecoilState(store.decibelValue);
   const [, setAutoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
 
   const handleCheckedChange = (value: boolean) => {
     setAutoTranscribeAudio(value);
-    setAutoSendText(value);
+    setAutoSendText(3);
     setDecibelValue(-45);
     setConversationMode(value);
     if (onCheckedChange) {
