@@ -28,7 +28,7 @@ export default function VoiceDropdown() {
         value={voice}
         onChange={(value: string) => setVoice(value)}
         options={voiceOptions}
-        sizeClasses="w-[200px] [--anchor-max-height:200px]"
+        sizeClasses="min-w-[200px] !max-w-[400px] [--anchor-max-width:400px]"
         anchor="bottom start"
         testId="VoiceDropdown"
       />
