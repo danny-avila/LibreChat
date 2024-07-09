@@ -8,6 +8,7 @@ const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { forkConversation } = require('~/server/utils/import/fork');
 const { importConversations } = require('~/server/utils/import');
 const { createImportLimiters } = require('~/server/middleware');
+const { updateTagsForConversation } = require('~/models/ConversationTag');
 const getLogStores = require('~/cache/getLogStores');
 const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
@@ -30,8 +31,13 @@ router.get('/', async (req, res) => {
     return res.status(400).json({ error: 'Invalid page size' });
   }
   const isArchived = req.query.isArchived === 'true';
+  const tags = req.query.tags
+    ? Array.isArray(req.query.tags)
+      ? req.query.tags
+      : [req.query.tags]
+    : undefined;
 
-  res.status(200).send(await getConvosByPage(req.user.id, pageNumber, pageSize, isArchived));
+  res.status(200).send(await getConvosByPage(req.user.id, pageNumber, pageSize, isArchived, tags));
 });
 
 router.get('/:conversationId', async (req, res) => {
@@ -165,6 +171,11 @@ router.post('/fork', async (req, res) => {
     logger.error('Error forking conversation', error);
     res.status(500).send('Error forking conversation');
   }
+});
+
+router.put('/tags/:conversationId', async (req, res) => {
+  const tag = await updateTagsForConversation(req.user.id, req.params.conversationId, req.body);
+  res.status(200).json(tag);
 });
 
 module.exports = router;
