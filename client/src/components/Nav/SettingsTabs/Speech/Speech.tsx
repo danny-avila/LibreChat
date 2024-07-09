@@ -120,7 +120,7 @@ function Speech() {
     <Tabs.Content
       value={SettingsTabValues.SPEECH}
       role="tabpanel"
-      className="w-full px-4 md:min-h-[300px]"
+      className="w-full md:min-h-[271px]"
       ref={contentRef}
     >
       <Tabs.Root

@@ -98,8 +98,8 @@ export default function LanguageSTTDropdown() {
         value={languageSTT}
         onChange={handleSelect}
         options={languageOptions}
-        width={220}
-        position={'left'}
+        sizeClasses="w-[220px]"
+        anchor="bottom start"
         testId="LanguageSTTDropdown"
       />
     </div>
