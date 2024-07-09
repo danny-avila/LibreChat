@@ -98,7 +98,7 @@ export default function LanguageSTTDropdown() {
         value={languageSTT}
         onChange={handleSelect}
         options={languageOptions}
-        sizeClasses="w-[220px]"
+        sizeClasses="[--anchor-max-height:256px]"
         anchor="bottom start"
         testId="LanguageSTTDropdown"
       />
