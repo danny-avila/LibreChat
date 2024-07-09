@@ -18,7 +18,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v3
         with:
-          node-version: '16' 
+          node-version: '20' 
           ref: dev-branch
           token: ${{ secrets.PERSONAL_GITHUB_TOKEN }}
 
