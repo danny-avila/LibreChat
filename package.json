@@ -58,7 +58,9 @@
     "b:test:client": "cd client && bun run b:test",
     "b:test:api": "cd api && bun run b:test",
     "b:balance": "bun config/add-balance.js",
-    "b:list-balances": "bun config/list-balances.js"
+    "b:list-balances": "bun config/list-balances.js",
+    "pull:rag": "docker compose -f ./rag.yml pull",
+    "copy-ex": "cp .env.example .env"
   },
   "repository": {
     "type": "git",
