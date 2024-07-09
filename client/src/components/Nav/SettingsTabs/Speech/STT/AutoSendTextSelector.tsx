@@ -5,7 +5,7 @@ import { Slider, InputNumber } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
-export default function AutoSendTextSwitch() {
+export default function AutoSendTextSelector() {
   const localize = useLocalize();
 
   const speechToText = useRecoilState<boolean>(store.speechToText);

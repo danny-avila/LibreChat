@@ -20,7 +20,7 @@ import {
   EngineSTTDropdown,
   LanguageSTTDropdown,
   SpeechToTextSwitch,
-  AutoSendTextSwitch,
+  AutoSendTextSelector,
   AutoTranscribeAudioSwitch,
 } from './STT';
 import { useCustomConfigSpeechQuery } from '~/data-provider';
@@ -215,7 +215,7 @@ function Speech() {
               </div>
             )}
             <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-              <AutoSendTextSwitch />
+              <AutoSendTextSelector />
             </div>
             <div className="h-px bg-black/20 bg-white/20" role="none" />
             <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
