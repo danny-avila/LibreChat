@@ -23,11 +23,11 @@ import {
   AutoSendTextSwitch,
   AutoTranscribeAudioSwitch,
 } from './STT';
-import { useCustomConfigSpeechQuery } from '~/data-provider';
+import { useGetCustomConfigSpeechQuery } from 'librechat-data-provider/react-query';
 
 function Speech() {
   const [confirmClear, setConfirmClear] = useState(false);
-  const { data } = useCustomConfigSpeechQuery();
+  const { data } = useGetCustomConfigSpeechQuery();
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
 
   const [advancedMode, setAdvancedMode] = useRecoilState(store.advancedMode);
@@ -66,10 +66,12 @@ function Speech() {
         playbackRate: { value: playbackRate, setFunc: setPlaybackRate },
       };
 
-      if (settings[key]) {
-        const setting = settings[key];
-        setting.setFunc(newValue);
+      if (settings[key].value !== newValue || settings[key].value === newValue || !settings[key]) {
+        return;
       }
+
+      const setting = settings[key];
+      setting.setFunc(newValue);
     },
     [
       conversationMode,
@@ -111,7 +113,8 @@ function Speech() {
         updateSetting(key, value);
       });
     }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
 
   const contentRef = useRef(null);
   useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);
