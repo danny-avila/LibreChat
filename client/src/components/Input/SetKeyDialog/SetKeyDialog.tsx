@@ -178,7 +178,7 @@ const SetKeyDialog = ({
               value={expiresAtLabel}
               onChange={handleExpirationChange}
               options={expirationOptions.map((option) => option.display)}
-              width={185}
+              sizeClasses="w-[185px]"
             />
             <FormProvider {...methods}>
               <EndpointComponent
