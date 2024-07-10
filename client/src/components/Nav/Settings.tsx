@@ -100,7 +100,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                   >
                     <Tabs.Trigger
                       className={cn(
-                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
+                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black transition-all duration-200 ease-in-out radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
                         isSmallScreen
                           ? 'flex-1 items-center justify-center text-nowrap text-sm dark:text-gray-500 dark:radix-state-active:text-white'
                           : 'bg-white radix-state-active:bg-gray-200',
@@ -114,7 +114,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     </Tabs.Trigger>
                     <Tabs.Trigger
                       className={cn(
-                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
+                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black transition-all duration-200 ease-in-out radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
                         isSmallScreen
                           ? 'flex-1 items-center justify-center text-nowrap text-sm dark:text-gray-500 dark:radix-state-active:text-white'
                           : 'bg-white radix-state-active:bg-gray-200',
@@ -128,7 +128,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     </Tabs.Trigger>
                     <Tabs.Trigger
                       className={cn(
-                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
+                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black transition-all duration-200 ease-in-out radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
                         isSmallScreen
                           ? 'flex-1 items-center justify-center text-nowrap text-sm dark:text-gray-500 dark:radix-state-active:text-white'
                           : 'bg-white radix-state-active:bg-gray-200',
@@ -142,7 +142,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     </Tabs.Trigger>
                     <Tabs.Trigger
                       className={cn(
-                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
+                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black transition-all duration-200 ease-in-out radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
                         isSmallScreen
                           ? 'flex-1 items-center justify-center text-nowrap text-sm dark:text-gray-500 dark:radix-state-active:text-white'
                           : 'bg-white radix-state-active:bg-gray-200',
@@ -156,7 +156,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     </Tabs.Trigger>
                     <Tabs.Trigger
                       className={cn(
-                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
+                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black transition-all duration-200 ease-in-out radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
                         isSmallScreen
                           ? 'flex-1 items-center justify-center text-nowrap text-sm dark:text-gray-500 dark:radix-state-active:text-white'
                           : 'bg-white radix-state-active:bg-gray-200',
@@ -170,7 +170,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     </Tabs.Trigger>
                     <Tabs.Trigger
                       className={cn(
-                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
+                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black transition-all duration-200 ease-in-out radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
                         isSmallScreen
                           ? 'flex-1 items-center justify-center text-nowrap text-sm dark:text-gray-500 dark:radix-state-active:text-white'
                           : 'bg-white radix-state-active:bg-gray-200',
