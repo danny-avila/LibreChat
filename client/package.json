@@ -70,6 +70,7 @@
     "match-sorter": "^6.3.4",
     "rc-input-number": "^7.4.2",
     "react": "^18.2.0",
+    "react-avatar-editor": "^13.0.2",
     "react-dnd": "^16.0.1",
     "react-dnd-html5-backend": "^16.0.1",
     "react-dom": "^18.2.0",

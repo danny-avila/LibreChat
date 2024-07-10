@@ -38,8 +38,8 @@ const ChatForm = ({ index = 0 }) => {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const SpeechToText = useRecoilValue(store.SpeechToText);
-  const TextToSpeech = useRecoilValue(store.TextToSpeech);
+  const SpeechToText = useRecoilValue(store.speechToText);
+  const TextToSpeech = useRecoilValue(store.textToSpeech);
   const automaticPlayback = useRecoilValue(store.automaticPlayback);
 
   const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));

@@ -3,16 +3,19 @@ import { Switch } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
-export default function TextToSpeechSwitch({
+export default function CloudBrowserVoicesSwitch({
   onCheckedChange,
 }: {
   onCheckedChange?: (value: boolean) => void;
 }) {
   const localize = useLocalize();
-  const [TextToSpeech, setTextToSpeech] = useRecoilState<boolean>(store.textToSpeech);
+  const [cloudBrowserVoices, setCloudBrowserVoices] = useRecoilState<boolean>(
+    store.cloudBrowserVoices,
+  );
+  const [textToSpeech] = useRecoilState<boolean>(store.textToSpeech);
 
   const handleCheckedChange = (value: boolean) => {
-    setTextToSpeech(value);
+    setCloudBrowserVoices(value);
     if (onCheckedChange) {
       onCheckedChange(value);
     }
@@ -20,15 +23,14 @@ export default function TextToSpeechSwitch({
 
   return (
     <div className="flex items-center justify-between">
-      <div>
-        <strong>{localize('com_nav_text_to_speech')}</strong>
-      </div>
+      <div>{localize('com_nav_enable_cloud_browser_voice')}</div>
       <Switch
-        id="TextToSpeech"
-        checked={TextToSpeech}
+        id="CloudBrowserVoices"
+        checked={cloudBrowserVoices}
         onCheckedChange={handleCheckedChange}
         className="ml-4"
-        data-testid="TextToSpeech"
+        data-testid="CloudBrowserVoices"
+        disabled={!textToSpeech}
       />
     </div>
   );
