@@ -107,7 +107,7 @@ export const getFileType = (
  * @example
  * formatDate('2020-01-01T00:00:00.000Z') // '1 Jan 2020'
  */
-export function formatDate(dateString) {
+export function formatDate(dateString: string) {
   const months = [
     'Jan',
     'Feb',
