@@ -559,6 +559,9 @@ export default {
   com_ui_code: 'Code',
   com_ui_travel: 'Travel',
   com_ui_teach_or_explain: 'Learning',
+  com_ui_select_file: 'Select a file',
+  com_ui_drag_drop_file: 'Drag and drop a file here',
+  com_ui_upload_image: 'Upload an image',
   com_ui_select_a_category: 'No category selected',
   com_nav_tool_dialog_description: 'Assistant must be saved to persist tool selections.',
   com_show_agent_settings: 'Show Agent Settings',
@@ -638,6 +641,7 @@ export default {
   com_nav_delete_cache_storage: 'Delete TTS cache storage',
   com_nav_enable_cache_tts: 'Enable cache TTS',
   com_nav_voice_select: 'Voice',
+  com_nav_enable_cloud_browser_voice: 'Use cloud-based voices',
   com_nav_info_enter_to_send:
     'When enabled, pressing `ENTER` will send your message. When disabled, pressing Enter will add a new line, and you\'ll need to press `CTRL + ENTER` to send your message.',
   com_nav_info_save_draft:
@@ -680,4 +684,5 @@ export default {
   com_nav_lang_dutch: 'Nederlands',
   com_nav_lang_indonesia: 'Indonesia',
   com_nav_lang_hebrew: 'עברית',
+  com_nav_lang_finnish: 'Suomi',
 };

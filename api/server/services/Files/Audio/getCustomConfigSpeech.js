@@ -31,19 +31,19 @@ async function getCustomConfigSpeech(req, res) {
     if (speechTab.advancedMode !== undefined) {
       settings.advancedMode = speechTab.advancedMode;
     }
+
     if (speechTab.speechToText) {
-      settings.speechToText = {};
       for (const key in speechTab.speechToText) {
         if (speechTab.speechToText[key] !== undefined) {
-          settings.speechToText[key] = speechTab.speechToText[key];
+          settings[key] = speechTab.speechToText[key];
         }
       }
     }
+
     if (speechTab.textToSpeech) {
-      settings.textToSpeech = {};
       for (const key in speechTab.textToSpeech) {
         if (speechTab.textToSpeech[key] !== undefined) {
-          settings.textToSpeech[key] = speechTab.textToSpeech[key];
+          settings[key] = speechTab.textToSpeech[key];
         }
       }
     }

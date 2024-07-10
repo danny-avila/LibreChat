@@ -30,8 +30,8 @@ const EngineSTTDropdown: React.FC<EngineSTTDropdownProps> = ({ external }) => {
         value={engineSTT}
         onChange={handleSelect}
         options={endpointOptions}
-        width={180}
-        position={'left'}
+        sizeClasses="w-[180px]"
+        anchor="bottom start"
         testId="EngineSTTDropdown"
       />
     </div>
