@@ -93,6 +93,7 @@ const startServer = async () => {
   app.use('/images/', validateImageRequest, routes.staticRoute);
   app.use('/api/share', routes.share);
   app.use('/api/roles', routes.roles);
+  app.use('/api/update-ragk', routes.updateRagK);
 
   app.use((req, res) => {
     res.sendFile(path.join(app.locals.paths.dist, 'index.html'));

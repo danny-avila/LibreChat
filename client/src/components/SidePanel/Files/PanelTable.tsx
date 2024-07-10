@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { useSetRecoilState } from 'recoil';
+import axios from 'axios';
+import { useState, useEffect } from 'react';
+import { useSetRecoilState, useRecoilState, atom } from 'recoil';
 import { LucideArrowUpLeft } from 'lucide-react';
 import { useLocalize } from '~/hooks';
 import {
@@ -17,6 +18,7 @@ import type {
   ColumnFiltersState,
 } from '@tanstack/react-table';
 import type { AugmentedColumnDef } from '~/common';
+import { cn, defaultTextProps, optionText } from '~/utils';
 import {
   Button,
   Input,
@@ -26,8 +28,16 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  Slider,
+  InputNumber,
+  Label,
 } from '~/components/ui';
 import store from '~/store';
+
+const ragKState = atom({
+  key: 'ragKState',
+  default: undefined,
+});
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -42,6 +52,22 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [paginationState, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
   const setShowFiles = useSetRecoilState(store.showFiles);
+  const [currentRagK, setRagK] = useRecoilState(ragKState);
+
+  useEffect(() => {
+    const fetchRagK = async () => {
+      try {
+        const response = await axios.get('/api/update-ragk');
+        setRagK(response.data.ragK);
+      } catch (error) {
+        console.error('Error fetching initial ragK:', error);
+        // Set default value if fetching fails
+        setRagK(parseInt(process.env.RAG_K || '4', 10));
+      }
+    };
+
+    fetchRagK();
+  }, []);
 
   const table = useReactTable({
     data,
@@ -80,6 +106,56 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           className="max-w-xs dark:border-gray-700"
         />
       </div>
+      <div className="flex justify-between">
+        <Label htmlFor="temp-int" className="text-left text-sm font-medium">
+          Number of Documents to Retrieve (ragK):
+          <small className="opacity-40">default: 20</small>
+        </Label>
+        <InputNumber
+          id="rag_k"
+          value={currentRagK}
+          onChange={setRagK}
+          onBlur={async (e) => {
+            const newValue = parseInt(e.target.value, 10);
+            if (!isNaN(newValue) && newValue >= 4 && newValue <= 100) {
+              try {
+                await axios.post('/api/update-ragk', { ragK: newValue });
+              } catch (error) {
+                console.error('Error updating ragK:', error);
+              }
+            } else {
+              setRagK(parseInt(process.env.RAG_K || '4', 10));
+            }
+          }}
+          min={4}
+          max={100}
+          step={1}
+          controls={false}
+          className={cn(
+            defaultTextProps,
+            cn(
+              optionText,
+              'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+            ),
+          )}
+        />
+      </div>
+      <Slider
+        value={[currentRagK]}
+        doubleClickHandler={() => setRagK(4)}
+        onValueChange={async (value) => {
+          setRagK(value[0]);
+          try {
+            await axios.post('/api/update-ragk', { ragK: value[0] });
+          } catch (error) {
+            console.error('Error updating ragK:', error);
+          }
+        }}
+        min={4}
+        max={100}
+        step={1}
+        className="flex h-4 w-full"
+      />
       <div className="overflow-y-auto rounded-md border border-black/10 dark:border-white/10">
         <Table className="border-separate border-spacing-0 ">
           <TableHeader>
