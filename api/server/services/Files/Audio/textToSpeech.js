@@ -1,8 +1,9 @@
 const axios = require('axios');
-const getCustomConfig = require('~/server/services/Config/getCustomConfig');
-const { getRandomVoiceId, createChunkProcessor, splitTextIntoChunks } = require('./streamAudio');
-const { extractEnvVariable } = require('librechat-data-provider');
+const { extractEnvVariable, TTSProviders } = require('librechat-data-provider');
 const { logger } = require('~/config');
+const getCustomConfig = require('~/server/services/Config/getCustomConfig');
+const { genAzureEndpoint } = require('~/utils');
+const { getRandomVoiceId, createChunkProcessor, splitTextIntoChunks } = require('./streamAudio');
 
 /**
  * getProvider function
@@ -87,6 +88,59 @@ function openAIProvider(ttsSchema, input, voice) {
   };
 
   [data, headers].forEach(removeUndefined);
+
+  return [url, data, headers];
+}
+
+/**
+ * Generates the necessary parameters for making a request to Azure's OpenAI Text-to-Speech API.
+ *
+ * @param {TCustomConfig['tts']['azureOpenAI']} ttsSchema - The TTS schema containing the AzureOpenAI configuration
+ * @param {string} input - The text to be converted to speech
+ * @param {string} voice - The voice to be used for the speech
+ *
+ * @returns {Array} An array containing the URL for the API request, the data to be sent, and the headers for the request
+ * If an error occurs, it throws an error with a message indicating that the selected voice is not available
+ */
+function azureOpenAIProvider(ttsSchema, input, voice) {
+  const instanceName = ttsSchema?.instanceName;
+  const deploymentName = ttsSchema?.deploymentName;
+  const apiVersion = ttsSchema?.apiVersion;
+
+  const url =
+    genAzureEndpoint({
+      azureOpenAIApiInstanceName: instanceName,
+      azureOpenAIApiDeploymentName: deploymentName,
+    }) +
+    '/audio/speech?api-version=' +
+    apiVersion;
+
+  const apiKey = ttsSchema.apiKey ? extractEnvVariable(ttsSchema.apiKey) : '';
+
+  if (
+    ttsSchema?.voices &&
+    ttsSchema.voices.length > 0 &&
+    !ttsSchema.voices.includes(voice) &&
+    !ttsSchema.voices.includes('ALL')
+  ) {
+    throw new Error(`Voice ${voice} is not available.`);
+  }
+
+  let data = {
+    model: ttsSchema?.model,
+    input,
+    voice: ttsSchema?.voices && ttsSchema.voices.length > 0 ? voice : undefined,
+  };
+
+  let headers = {
+    'Content-Type': 'application/json',
+  };
+
+  [data, headers].forEach(removeUndefined);
+
+  if (apiKey) {
+    headers['api-key'] = apiKey;
+  }
 
   return [url, data, headers];
 }
@@ -225,13 +279,16 @@ async function getVoice(providerSchema, requestVoice) {
 async function ttsRequest(provider, ttsSchema, { input, voice, stream = true } = { stream: true }) {
   let [url, data, headers] = [];
   switch (provider) {
-    case 'openai':
+    case TTSProviders.OPENAI:
       [url, data, headers] = openAIProvider(ttsSchema, input, voice);
       break;
-    case 'elevenlabs':
+    case TTSProviders.AZURE_OPENAI:
+      [url, data, headers] = azureOpenAIProvider(ttsSchema, input, voice);
+      break;
+    case TTSProviders.ELEVENLABS:
       [url, data, headers] = elevenLabsProvider(ttsSchema, input, voice, stream);
       break;
-    case 'localai':
+    case TTSProviders.LOCALAI:
       [url, data, headers] = localAIProvider(ttsSchema, input, voice);
       break;
     default:
