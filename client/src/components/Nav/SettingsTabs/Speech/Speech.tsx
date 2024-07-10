@@ -130,7 +130,7 @@ function Speech() {
     <Tabs.Content
       value={SettingsTabValues.SPEECH}
       role="tabpanel"
-      className="w-full px-4 md:min-h-[300px]"
+      className="w-full md:min-h-[271px]"
       ref={contentRef}
     >
       <Tabs.Root
@@ -138,8 +138,8 @@ function Speech() {
         orientation="horizontal"
         value={advancedMode ? 'advanced' : 'simple'}
       >
-        <div className="sticky top-0 z-50 bg-white dark:bg-gray-700">
-          <Tabs.List className="sticky top-0 mb-4 flex justify-center bg-white dark:bg-gray-700">
+        <div className="sticky -top-1 z-50 mb-4 bg-white dark:bg-gray-700">
+          <Tabs.List className="flex justify-center bg-white dark:bg-gray-700">
             <Tabs.Trigger
               onClick={() => setAdvancedMode(false)}
               className={cn(
