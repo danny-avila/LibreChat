@@ -1,5 +1,12 @@
 import React, { useState, useRef } from 'react';
-import { Listbox, Transition } from '@headlessui/react';
+import {
+  Listbox,
+  ListboxButton,
+  Label,
+  ListboxOptions,
+  ListboxOption,
+  Transition,
+} from '@headlessui/react';
 import { Wrench, ArrowRight } from 'lucide-react';
 import { CheckMark } from '~/components/svg';
 import useOnClickOutside from '~/hooks/useOnClickOutside';
@@ -74,7 +81,7 @@ function MultiSelectDropDown({
         <Listbox value={value} onChange={handleSelect} disabled={disabled}>
           {() => (
             <>
-              <Listbox.Button
+              <ListboxButton
                 className={cn(
                   'relative flex w-full cursor-default flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:outline-none focus:ring-0 focus:ring-offset-0 dark:border-gray-600 dark:border-white/20 dark:bg-gray-800 sm:text-sm',
                   className ?? '',
@@ -85,13 +92,13 @@ function MultiSelectDropDown({
               >
                 {' '}
                 {showLabel && (
-                  <Listbox.Label
+                  <Label
                     className={cn('block text-xs text-gray-700 dark:text-gray-500', labelClassName)}
                     id={excludeIds[1]}
                     data-headlessui-state=""
                   >
                     {title}
-                  </Listbox.Label>
+                  </Label>
                 )}
                 <span className="inline-flex w-full truncate" id={excludeIds[2]}>
                   <span
@@ -144,7 +151,7 @@ function MultiSelectDropDown({
                     <polyline points="6 9 12 15 18 9"></polyline>
                   </svg>
                 </span>
-              </Listbox.Button>
+              </ListboxButton>
               <Transition
                 show={isOpen}
                 as={React.Fragment}
@@ -153,7 +160,7 @@ function MultiSelectDropDown({
                 leaveTo="opacity-0"
                 {...transitionProps}
               >
-                <Listbox.Options
+                <ListboxOptions
                   ref={menuRef}
                   className={cn(
                     'absolute z-50 mt-2 max-h-60 w-full overflow-auto rounded bg-white text-base text-xs ring-1 ring-black/10 focus:outline-none dark:bg-gray-800 dark:ring-white/20 dark:last:border-0 md:w-[100%]',
@@ -167,7 +174,7 @@ function MultiSelectDropDown({
                     }
                     const selected = isSelected(option[optionValueKey]);
                     return (
-                      <Listbox.Option
+                      <ListboxOption
                         key={i}
                         value={option[optionValueKey]}
                         className="group relative flex h-[42px] cursor-pointer select-none items-center overflow-hidden border-b border-black/10 pl-3 pr-9 text-gray-800 last:border-0 hover:bg-gray-20 dark:border-white/20 dark:text-white dark:hover:bg-gray-700"
@@ -208,10 +215,10 @@ function MultiSelectDropDown({
                             </span>
                           )}
                         </span>
-                      </Listbox.Option>
+                      </ListboxOption>
                     );
                   })}
-                </Listbox.Options>
+                </ListboxOptions>
               </Transition>
             </>
           )}
