@@ -44,7 +44,7 @@ export default {
   com_ui_revoke: '撤銷',
   com_ui_revoke_info: '撤銷所有使用者提供的憑證。',
   com_ui_import_conversation: '匯入',
-  com_ui_import_conversation_info: '從JSON文件匯入對話',
+  com_ui_import_conversation_info: '從 JSON 文件匯入對話',
   com_ui_import_conversation_success: '對話匯入成功',
   com_ui_import_conversation_error: '匯入對話時發生錯誤',
   com_ui_confirm_action: '確認操作',
@@ -55,11 +55,11 @@ export default {
   com_ui_create_link: '建立連結',
   com_ui_share_link_to_chat: '分享連結到聊天',
   com_ui_share_error: '分享聊天連結時發生錯誤',
-  com_ui_share_retrieve_error: '刪除共享鏈接時出錯。',
-  com_ui_share_delete_error: '刪除共享鏈接時出錯。',
+  com_ui_share_retrieve_error: '刪除共享連結時發生錯誤。',
+  com_ui_share_delete_error: '刪除共享連結時發生錯誤。',
   com_ui_share_create_message: '您的姓名以及您在共享後新增的任何訊息都會保密。',
   com_ui_share_created_message: '已建立到您的聊天的共享連結。可以隨時透過設定管理以前共享的聊天。',
-  com_ui_share_update_message: '您的姓名、自定義指示以及您在共享後新增的任何訊息都會保密。',
+  com_ui_share_update_message: '您的姓名、自訂提示指令以及您在共享後新增的任何訊息都會保密。',
   com_ui_share_updated_message: '已更新到您的聊天的共享連結。可以隨時透過設定管理以前共享的聊天。',
   com_ui_shared_link_not_found: '未找到共享連結',
   com_ui_delete: '刪除',
@@ -150,9 +150,9 @@ export default {
     'Top-k 調整模型如何選取輸出的 token。當 Top-k 設為 1 時，模型會選取在其詞彙庫中機率最高的 token 進行輸出（這也被稱為貪婪解碼）。相對地，當 Top-k 設為 3 時，模型會從機率最高的三個 token 中選取下一個輸出 token（這會涉及到所謂的「溫度」調整）',
   com_endpoint_google_maxoutputtokens:
     '設定回應中可生成的最大 token 數。若希望回應簡短，請設定較低的數值；若需較長的回應，則設定較高的數值。',
-  com_endpoint_google_custom_name_placeholder: '為 Google 設定自定義名稱',
-  com_endpoint_prompt_prefix_placeholder: '設定自定義提示或前後文。如果為空則忽略。',
-  com_endpoint_custom_name: '自定義名稱',
+  com_endpoint_google_custom_name_placeholder: '為 Google 設定自訂名稱',
+  com_endpoint_prompt_prefix_placeholder: '設定自訂提示或前後文。如果為空則忽略。',
+  com_endpoint_custom_name: '自訂名稱',
   com_endpoint_prompt_prefix: '提示起始字串',
   com_endpoint_temperature: '溫度',
   com_endpoint_default: '預設',
@@ -164,13 +164,13 @@ export default {
   com_endpoint_openai_max:
     '要生成的最大 token 數。輸入 token 和生成 token 的總長度受到模型前後文長度的限制。',
   com_endpoint_openai_topp:
-    '與溫度取樣的替代方法，稱為核心取樣，其中模型考慮 top_p 機率質量的 token 結果。所以 0.1 表示只考慮佔 top 10% 機率質量的 token 。我們建議修改這個或溫度，但不建議兩者都修改。',
+    '與溫度取樣的替代方法，稱為核心取樣，其中模型考慮 top_p 機率質量的 token 結果。所以 0.1 表示只考慮佔 top 10% 機率質量的 token。我們建議修改這個或溫度，但不建議兩者都修改。',
   com_endpoint_openai_freq:
     '數值範圍介於 -2.0 和 2.0 之間。正值會根據該 token 在目前的文字中出現的頻率進行懲罰，減少模型產生重複內容的可能性。',
   com_endpoint_openai_pres:
     '數值範圍介於 -2.0 和 2.0 之間。正值會根據該 token 是否在目前的文字中出現來進行懲罰，增加模型談及新主題的可能性。',
-  com_endpoint_openai_custom_name_placeholder: '為 ChatGPT 設定自定義名稱',
-  com_endpoint_openai_prompt_prefix_placeholder: '在系統訊息中設定自定義提示。',
+  com_endpoint_openai_custom_name_placeholder: '為 ChatGPT 設定自訂名稱',
+  com_endpoint_openai_prompt_prefix_placeholder: '在系統訊息中設定自訂提示。',
   com_endpoint_anthropic_temp:
     '範圍從 0 到 1。對於分析/多選題，使用接近 0 的溫度，對於創意和生成式任務，使用接近 1 的溫度。我們建議修改這個或 Top P，但不建議兩者都修改。',
   com_endpoint_anthropic_topp:
@@ -179,16 +179,16 @@ export default {
     'Top-k 改變模型選擇輸出 token 的方式。Top-k 為 1 表示所選 token 在模型詞彙表中所有 token 中最可能（也稱為貪婪解碼），而 Top-k 為 3 表示下一個 token 從最可能的 3 個 token 中選擇（使用溫度）。',
   com_endpoint_anthropic_maxoutputtokens:
     '設定回應中可生成的最大 token 數。若希望回應簡短，請設定較低的數值；若需較長的回應，則設定較高的數值。',
-  com_endpoint_anthropic_custom_name_placeholder: '為 Anthropic 設定自定義名稱',
+  com_endpoint_anthropic_custom_name_placeholder: '為 Anthropic 設定自訂名稱',
   com_endpoint_frequency_penalty: '頻率懲罰',
   com_endpoint_presence_penalty: '出現懲罰',
   com_endpoint_plug_use_functions: '使用外掛作為 OpenAI 函式',
   com_endpoint_plug_skip_completion: '跳過完成步驟',
   com_endpoint_disabled_with_tools: '與工具一起停用',
   com_endpoint_disabled_with_tools_placeholder: '選擇工具時停用',
-  com_endpoint_plug_set_custom_instructions_for_gpt_placeholder: '在系統訊息中新增自定義提示。',
+  com_endpoint_plug_set_custom_instructions_for_gpt_placeholder: '在系統訊息中新增自訂提示。',
   com_endpoint_import: '匯入',
-  com_endpoint_set_custom_name: '設定自定義名稱，以便您找到此預設設定',
+  com_endpoint_set_custom_name: '設定自訂名稱，以便您找到此預設設定',
   com_endpoint_preset: '預設設定',
   com_endpoint_presets: '預設設定',
   com_endpoint_preset_name: '名稱',
@@ -297,7 +297,7 @@ export default {
   com_nav_source_chat: '檢視原始對話',
   com_ui_date_today: '今天',
   com_ui_date_yesterday: '昨天',
-  com_ui_date_previous_7_days: '前 7 天',
+  com_ui_date_previous_7_days: '過去 7 天',
   com_ui_date_previous_30_days: '過去 30 天',
   com_ui_date_january: '一月',
   com_ui_date_february: '二月',
@@ -314,7 +314,7 @@ export default {
   com_ui_nothing_found: '找不到任何內容',
   com_ui_go_to_conversation: '前往對話',
   com_error_moderation:
-    '似乎您所提交的內容被我們的內容審查系統標記為不符合社群準則。我們無法就此特定主題繼續進行。如果您有任何其他問題或想要探討的主題,請編輯您的訊息或開啟新的對話。',
+    '您所提交的內容似乎被我們的內容審查系統標記為不符合社群準則。我們無法就此特定主題繼續進行討論。如果您有任何其他問題或想要探討的主題，請編輯您的訊息或開啟新的對話。',
   com_error_no_user_key: '找不到金鑰，請提供金鑰後再試一次。',
   com_error_no_base_url: '找不到基礎 URL。請提供一個基礎 URL 後再試一次。',
   com_error_invalid_user_key: '提供的金鑰無效。請提供有效的金鑰並重試。',
@@ -324,7 +324,7 @@ export default {
   com_files_number_selected: '已選取 {0} 個檔案，共 {1} 個檔案',
   com_sidepanel_select_assistant: '選擇一位助理',
   com_sidepanel_parameters: '參數',
-  com_sidepanel_assistant_builder: '助手建構器',
+  com_sidepanel_assistant_builder: '助理建構器',
   com_sidepanel_hide_panel: '隱藏側邊選單',
   com_sidepanel_attach_files: '附加檔案',
   com_sidepanel_manage_files: '管理檔案',
@@ -354,16 +354,16 @@ export default {
   com_assistants_delete_actions_error: '刪除操作時發生錯誤',
   com_assistants_actions_info: '讓您的助理透過 API 取得資訊或執行操作',
   com_assistants_name_placeholder: '選填：助理的名稱',
-  com_assistants_instructions_placeholder: '系統指令是助理使用的指示',
-  com_assistants_description_placeholder: '選擇性：在此描述您的助理',
-  com_assistants_actions_disabled: '您需要先建立一個助手，才能新增動作。',
+  com_assistants_instructions_placeholder: '系統指令是助理使用的提示指令',
+  com_assistants_description_placeholder: '選填：在此描述您的助理',
+  com_assistants_actions_disabled: '您需要先建立一個助理，才能新增動作。',
   com_assistants_update_success: '更新成功',
   com_assistants_update_error: '更新您的助理時發生錯誤。',
   com_assistants_create_success: '已成功建立',
   com_assistants_create_error: '建立您的助理時發生錯誤。',
   com_ui_field_required: '此欄位為必填',
   com_ui_download_error: '下載檔案時發生錯誤。該檔案可能已被刪除。',
-  com_ui_attach_error_type: '不支援的檔案類型，無法上傳至端點:',
+  com_ui_attach_error_type: '不支援的檔案類型，無法上傳至端點：',
   com_ui_attach_error_size: '檔案大小超過端點的限制',
   com_ui_attach_error: '無法附加檔案。請建立或選擇對話，或嘗試重新整理頁面。',
   com_ui_experimental: '實驗性功能',
@@ -371,7 +371,7 @@ export default {
   com_ui_off: '關閉',
   com_ui_yes: '是',
   com_ui_no: '否',
-  com_ui_ascending: '升冪',
+  com_ui_ascending: '遞增',
   com_ui_descending: '遞減',
   com_ui_show_all: '顯示全部',
   com_ui_name: '名稱',
@@ -429,7 +429,7 @@ export default {
   com_ui_avatar: '大頭照',
   com_ui_unknown: '未知',
   com_ui_result: '結果',
-  com_ui_image_gen: '影象生成',
+  com_ui_image_gen: '影像生成',
   com_ui_assistant: '助理',
   com_ui_assistants: '助理',
   com_ui_attachment: '附件',
@@ -448,29 +448,29 @@ export default {
   com_endpoint_message: '訊息',
   com_endpoint_messages: '訊息',
   com_endpoint_message_not_appendable: '無法附加訊息或重新生成。',
-  com_endpoint_context_tokens: '最大前後文 Token 數',
+  com_endpoint_context_tokens: '最大前後文 token 數',
   com_endpoint_context_info:
     '可用於上下文的最大 token 數量。用於控制每個請求傳送的 token 數量。如果未指定，將根據已知模型的上下文大小使用系統預設值。設定較高的值可能會導致錯誤和/或更高的 token 成本。',
   com_endpoint_instructions_assistants_placeholder:
-    '覆寫助理的指示。這對於在每次執行時修改行為很有用。',
+    '覆寫助理的提示指令。這對於在每次執行時修改行為很有用。',
   com_endpoint_prompt_prefix_assistants_placeholder:
-    '在助手的主要指示之上設定額外的指示或上下文。如果為空白，則會被忽略。',
+    '在助理的主要提示指令之上設定額外的提示指令或上下文。如果為空白，則會被忽略。',
   com_endpoint_prompt_prefix_assistants: '提示字首',
-  com_endpoint_instructions_assistants: '覆寫指示',
+  com_endpoint_instructions_assistants: '覆寫提示指令',
   com_endpoint_stop: '停止序列',
   com_endpoint_stop_placeholder: '以 `Enter` 鍵分隔值',
   com_endpoint_openai_max_tokens:
     '可選的 `max_tokens` 欄位，代表在對話完成中可以生成的最大 token 數。\n\n輸入 token 和生成 token 的總長度受限於模型的上下文長度。如果此數字超過最大上下文 token 數，您可能會遇到錯誤。',
   com_endpoint_openai_resend:
-    '重新傳送之前所有附加的圖片。注意:這可能會大幅增加 token 成本,如果附加了太多圖片,您可能會遇到錯誤。',
+    '重新傳送之前所有附加的圖片。注意：這可能會大幅增加 token 成本，如果附加了太多圖片，您可能會遇到錯誤。',
   com_endpoint_openai_resend_files:
     '重新傳送之前附加的所有檔案。注意：這將增加 token 成本，如果附件過多，您可能會遇到錯誤。',
   com_endpoint_openai_detail:
-    '「低」解析度的視覺請求較便宜且快速，「高」解析度則更詳細但成本較高，而「自動」會根據影象解析度自動在兩者之間選擇。',
+    '「低」解析度的視覺請求較便宜且快速，「高」解析度則更詳細但成本較高，而「自動」會根據影像解析度自動在兩者之間選擇。',
   com_endpoint_openai_stop: '最多 4 個序列，API 將在生成更多 token 時停止。',
   com_endpoint_plug_resend_files: '重新傳送檔案',
   com_endpoint_plug_resend_images: '重新傳送圖片',
-  com_endpoint_plug_image_detail: '影象詳細資訊',
+  com_endpoint_plug_image_detail: '影像詳細資訊',
   com_endpoint_preset_delete_confirm: '您確定要刪除這個預設設定嗎？',
   com_endpoint_preset_clear_all_confirm: '您確定要刪除所有的預設設定嗎？',
   com_endpoint_preset_import: '預設設定已匯入！',
@@ -485,8 +485,8 @@ export default {
   com_endpoint_preset_default: '現在是預設的預設設定。',
   com_endpoint_preset_selected: '已選擇預設設定！',
   com_endpoint_preset_selected_title: '已選取！',
-  com_endpoint_assistant: '助手',
-  com_endpoint_use_active_assistant: '使用活躍助手',
+  com_endpoint_assistant: '助理',
+  com_endpoint_use_active_assistant: '使用活躍助理',
   com_endpoint_assistant_model: 'AI 模型',
   com_endpoint_assistant_placeholder: '請從右側面板選擇一位助理',
   com_endpoint_config_placeholder: '在標頭選單中設定您的金鑰以開始對話。',
@@ -524,7 +524,7 @@ export default {
   com_nav_language: '語言',
   com_nav_lang_auto: '自動偵測',
   com_nav_lang_english: '英文',
-  com_nav_lang_chinese: '繁體中文',
+  com_nav_lang_chinese: '中文',
   com_nav_lang_german: '德語',
   com_nav_lang_spanish: '西班牙語',
   com_nav_lang_french: '法語',
@@ -723,7 +723,7 @@ export const comparisons = {
   },
   com_ui_import_conversation_info: {
     english: 'Import conversations from a JSON file',
-    translated: '從JSON文件匯入對話',
+    translated: '從 JSON 文件匯入對話',
   },
   com_ui_import_conversation_success: {
     english: 'Conversations imported successfully',
@@ -763,11 +763,11 @@ export const comparisons = {
   },
   com_ui_share_retrieve_error: {
     english: 'There was an error deleting the shared link.',
-    translated: '刪除共享鏈接時出錯。',
+    translated: '刪除共享連結時發生錯誤。',
   },
   com_ui_share_delete_error: {
     english: 'There was an error deleting the shared link.',
-    translated: '刪除共享鏈接時出錯。',
+    translated: '刪除共享連結時發生錯誤。',
   },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
@@ -784,7 +784,7 @@ export const comparisons = {
   },
   com_ui_share_update_message: {
     english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
-    translated: '您的姓名、自定義指示以及您在共享後新增的任何訊息都會保密。',
+    translated: '您的姓名、自訂提示指令以及您在共享後新增的任何訊息都會保密。',
   },
   com_ui_share_updated_message: {
     english:
@@ -1135,15 +1135,15 @@ export const comparisons = {
   },
   com_endpoint_google_custom_name_placeholder: {
     english: 'Set a custom name for Google',
-    translated: '為 Google 設定自定義名稱',
+    translated: '為 Google 設定自訂名稱',
   },
   com_endpoint_prompt_prefix_placeholder: {
     english: 'Set custom instructions or context. Ignored if empty.',
-    translated: '設定自定義提示或前後文。如果為空則忽略。',
+    translated: '設定自訂提示或前後文。如果為空則忽略。',
   },
   com_endpoint_custom_name: {
     english: 'Custom Name',
-    translated: '自定義名稱',
+    translated: '自訂名稱',
   },
   com_endpoint_prompt_prefix: {
     english: 'Custom Instructions',
@@ -1200,11 +1200,11 @@ export const comparisons = {
   },
   com_endpoint_openai_custom_name_placeholder: {
     english: 'Set a custom name for the AI',
-    translated: '為 ChatGPT 設定自定義名稱',
+    translated: '為 ChatGPT 設定自訂名稱',
   },
   com_endpoint_openai_prompt_prefix_placeholder: {
     english: 'Set custom instructions to include in System Message. Default: none',
-    translated: '在系統訊息中設定自定義提示。',
+    translated: '在系統訊息中設定自訂提示。',
   },
   com_endpoint_anthropic_temp: {
     english:
@@ -1232,7 +1232,7 @@ export const comparisons = {
   },
   com_endpoint_anthropic_custom_name_placeholder: {
     english: 'Set a custom name for Anthropic',
-    translated: '為 Anthropic 設定自定義名稱',
+    translated: '為 Anthropic 設定自訂名稱',
   },
   com_endpoint_frequency_penalty: {
     english: 'Frequency Penalty',
@@ -1260,7 +1260,7 @@ export const comparisons = {
   },
   com_endpoint_plug_set_custom_instructions_for_gpt_placeholder: {
     english: 'Set custom instructions to include in System Message. Default: none',
-    translated: '在系統訊息中新增自定義提示。',
+    translated: '在系統訊息中新增自訂提示。',
   },
   com_endpoint_import: {
     english: 'Import',
@@ -1268,7 +1268,7 @@ export const comparisons = {
   },
   com_endpoint_set_custom_name: {
     english: 'Set a custom name, in case you can find this preset',
-    translated: '設定自定義名稱，以便您找到此預設設定',
+    translated: '設定自訂名稱，以便您找到此預設設定',
   },
   com_endpoint_preset: {
     english: 'preset',
@@ -1753,7 +1753,7 @@ export const comparisons = {
     english:
       'It appears that the content submitted has been flagged by our moderation system for not aligning with our community guidelines. We\'re unable to proceed with this specific topic. If you have any other questions or topics you\'d like to explore, please edit your message, or create a new conversation.',
     translated:
-      '似乎您所提交的內容被我們的內容審查系統標記為不符合社群準則。我們無法就此特定主題繼續進行。如果您有任何其他問題或想要探討的主題,請編輯您的訊息或開啟新的對話。',
+      '似乎您所提交的內容被我們的內容審查系統標記為不符合社群準則。我們無法就此特定主題繼續進行。如果您有任何其他問題或想要探討的主題，請編輯您的訊息或開啟新的對話。',
   },
   com_error_no_user_key: {
     english: 'No key found. Please provide a key and try again.',
@@ -1793,7 +1793,7 @@ export const comparisons = {
   },
   com_sidepanel_assistant_builder: {
     english: 'Assistant Builder',
-    translated: '助手建構器',
+    translated: '助理建構器',
   },
   com_sidepanel_hide_panel: {
     english: 'Hide Panel',
@@ -1912,7 +1912,7 @@ export const comparisons = {
   },
   com_assistants_instructions_placeholder: {
     english: 'The system instructions that the assistant uses',
-    translated: '系統指令是助理使用的指示',
+    translated: '系統指令是助理使用的提示指令',
   },
   com_assistants_description_placeholder: {
     english: 'Optional: Describe your Assistant here',
@@ -1920,7 +1920,7 @@ export const comparisons = {
   },
   com_assistants_actions_disabled: {
     english: 'You need to create an assistant before adding actions.',
-    translated: '您需要先建立一個助手，才能新增動作。',
+    translated: '您需要先建立一個助理，才能新增動作。',
   },
   com_assistants_update_success: {
     english: 'Successfully updated',
@@ -2197,7 +2197,7 @@ export const comparisons = {
   },
   com_ui_image_gen: {
     english: 'Image Gen',
-    translated: '影象生成',
+    translated: '影像生成',
   },
   com_ui_assistant: {
     english: 'Assistant',
@@ -2274,7 +2274,7 @@ export const comparisons = {
   },
   com_endpoint_context_tokens: {
     english: 'Max Context Tokens',
-    translated: '最大前後文 Token 數',
+    translated: '最大前後文 token 數',
   },
   com_endpoint_context_info: {
     english:
@@ -2285,20 +2285,20 @@ export const comparisons = {
   com_endpoint_instructions_assistants_placeholder: {
     english:
       'Overrides the instructions of the assistant. This is useful for modifying the behavior on a per-run basis.',
-    translated: '覆寫助理的指示。這對於在每次執行時修改行為很有用。',
+    translated: '覆寫助理的提示指令。這對於在每次執行時修改行為很有用。',
   },
   com_endpoint_prompt_prefix_assistants_placeholder: {
     english:
       'Set additional instructions or context on top of the Assistant\'s main instructions. Ignored if empty.',
-    translated: '在助手的主要指示之上設定額外的指示或上下文。如果為空白，則會被忽略。',
+    translated: '在助理的主要提示指令之上設定額外的提示指令或上下文。如果為空白，則會被忽略。',
   },
   com_endpoint_prompt_prefix_assistants: {
     english: 'Additional Instructions',
-    translated: '提示字首',
+    translated: '額外的提示指令',
   },
   com_endpoint_instructions_assistants: {
     english: 'Override Instructions',
-    translated: '覆寫指示',
+    translated: '覆寫提示指令',
   },
   com_endpoint_stop: {
     english: 'Stop Sequences',
@@ -2330,7 +2330,7 @@ export const comparisons = {
     english:
       'The resolution for Vision requests. "Low" is cheaper and faster, "High" is more detailed and expensive, and "Auto" will automatically choose between the two based on the image resolution.',
     translated:
-      '「低」解析度的視覺請求較便宜且快速，「高」解析度則更詳細但成本較高，而「自動」會根據影象解析度自動在兩者之間選擇。',
+      '「低」解析度的視覺請求較便宜且快速，「高」解析度則更詳細但成本較高，而「自動」會根據影像解析度自動在兩者之間選擇。',
   },
   com_endpoint_openai_stop: {
     english: 'Up to 4 sequences where the API will stop generating further tokens.',
@@ -2346,7 +2346,7 @@ export const comparisons = {
   },
   com_endpoint_plug_image_detail: {
     english: 'Image Detail',
-    translated: '影象詳細資訊',
+    translated: '影像詳細資訊',
   },
   com_endpoint_preset_delete_confirm: {
     english: 'Are you sure you want to delete this preset?',
@@ -2406,11 +2406,11 @@ export const comparisons = {
   },
   com_endpoint_assistant: {
     english: 'Assistant',
-    translated: '助手',
+    translated: '助理',
   },
   com_endpoint_use_active_assistant: {
     english: 'Use Active Assistant',
-    translated: '使用活躍助手',
+    translated: '使用活躍助理',
   },
   com_endpoint_assistant_model: {
     english: 'Assistant Model',
