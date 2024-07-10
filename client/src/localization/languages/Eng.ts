@@ -641,6 +641,7 @@ export default {
   com_nav_delete_cache_storage: 'Delete TTS cache storage',
   com_nav_enable_cache_tts: 'Enable cache TTS',
   com_nav_voice_select: 'Voice',
+  com_nav_enable_cloud_browser_voice: 'Use cloud-based voices',
   com_nav_info_enter_to_send:
     'When enabled, pressing `ENTER` will send your message. When disabled, pressing Enter will add a new line, and you\'ll need to press `CTRL + ENTER` to send your message.',
   com_nav_info_save_draft:

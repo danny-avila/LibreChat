@@ -8,20 +8,21 @@ import store from '~/store';
 import { cn } from '~/utils';
 import ConversationModeSwitch from './ConversationModeSwitch';
 import {
+  CloudBrowserVoicesSwitch,
+  AutomaticPlaybackSwitch,
   TextToSpeechSwitch,
   EngineTTSDropdown,
-  AutomaticPlaybackSwitch,
   CacheTTSSwitch,
   VoiceDropdown,
   PlaybackRate,
 } from './TTS';
 import {
-  DecibelSelector,
-  EngineSTTDropdown,
+  AutoTranscribeAudioSwitch,
   LanguageSTTDropdown,
   SpeechToTextSwitch,
   AutoSendTextSwitch,
-  AutoTranscribeAudioSwitch,
+  EngineSTTDropdown,
+  DecibelSelector,
 } from './STT';
 import { useGetCustomConfigSpeechQuery } from 'librechat-data-provider/react-query';
 
@@ -42,6 +43,9 @@ function Speech() {
   const [autoSendText, setAutoSendText] = useRecoilState(store.autoSendText);
   const [engineTTS, setEngineTTS] = useRecoilState<string>(store.engineTTS);
   const [voice, setVoice] = useRecoilState<string>(store.voice);
+  const [cloudBrowserVoices, setCloudBrowserVoices] = useRecoilState<boolean>(
+    store.cloudBrowserVoices,
+  );
   const [languageTTS, setLanguageTTS] = useRecoilState<string>(store.languageTTS);
   const [automaticPlayback, setAutomaticPlayback] = useRecoilState(store.automaticPlayback);
   const [playbackRate, setPlaybackRate] = useRecoilState(store.playbackRate);
@@ -61,6 +65,7 @@ function Speech() {
         autoSendText: { value: autoSendText, setFunc: setAutoSendText },
         engineTTS: { value: engineTTS, setFunc: setEngineTTS },
         voice: { value: voice, setFunc: setVoice },
+        cloudBrowserVoices: { value: cloudBrowserVoices, setFunc: setCloudBrowserVoices },
         languageTTS: { value: languageTTS, setFunc: setLanguageTTS },
         automaticPlayback: { value: automaticPlayback, setFunc: setAutomaticPlayback },
         playbackRate: { value: playbackRate, setFunc: setPlaybackRate },
@@ -86,6 +91,7 @@ function Speech() {
       autoSendText,
       engineTTS,
       voice,
+      cloudBrowserVoices,
       languageTTS,
       automaticPlayback,
       playbackRate,
@@ -101,6 +107,7 @@ function Speech() {
       setAutoSendText,
       setEngineTTS,
       setVoice,
+      setCloudBrowserVoices,
       setLanguageTTS,
       setAutomaticPlayback,
       setPlaybackRate,
@@ -169,26 +176,22 @@ function Speech() {
         <Tabs.Content value={'simple'}>
           <div className="flex flex-col gap-3 text-sm text-black dark:text-gray-50">
             <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-              <ConversationModeSwitch />
-            </div>
-            <div className="h-px bg-black/20 bg-white/20" role="none" />
-            <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
               <SpeechToTextSwitch />
             </div>
-            <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+            <div className="border-b last-of-type:border-b-0 dark:border-gray-700">
               <EngineSTTDropdown />
             </div>
-            <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+            <div className="border-b last-of-type:border-b-0 dark:border-gray-700">
               <LanguageSTTDropdown />
             </div>
             <div className="h-px bg-black/20 bg-white/20" role="none" />
             <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
               <TextToSpeechSwitch />
             </div>
-            <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+            <div className="border-b last-of-type:border-b-0 dark:border-gray-700">
               <EngineTTSDropdown />
             </div>
-            <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+            <div className="border-b last-of-type:border-b-0 dark:border-gray-700">
               <VoiceDropdown />
             </div>
           </div>
@@ -196,47 +199,52 @@ function Speech() {
 
         <Tabs.Content value={'advanced'}>
           <div className="flex flex-col gap-3 text-sm text-black dark:text-gray-50">
-            <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+            <div className="border-b last-of-type:border-b-0 dark:border-gray-700">
               <ConversationModeSwitch />
             </div>
             <div className="h-px bg-black/20 bg-white/20" role="none" />
             <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
               <SpeechToTextSwitch />
             </div>
-            <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+            <div className="border-b last-of-type:border-b-0 dark:border-gray-700">
               <EngineSTTDropdown />
             </div>
-            <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+            <div className="border-b last-of-type:border-b-0 dark:border-gray-700">
               <LanguageSTTDropdown />
             </div>
-            <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+            <div className="border-b pb-2 last-of-type:border-b-0 dark:border-gray-700">
               <AutoTranscribeAudioSwitch />
             </div>
             {autoTranscribeAudio && (
-              <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+              <div className="border-b pb-2 last-of-type:border-b-0 dark:border-gray-700">
                 <DecibelSelector />
               </div>
             )}
-            <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+            <div className="border-b last-of-type:border-b-0 dark:border-gray-700">
               <AutoSendTextSwitch />
             </div>
             <div className="h-px bg-black/20 bg-white/20" role="none" />
             <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
               <TextToSpeechSwitch />
             </div>
-            <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+            <div className="border-b last-of-type:border-b-0 dark:border-gray-700">
               <AutomaticPlaybackSwitch />
             </div>
-            <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+            <div className="border-b last-of-type:border-b-0 dark:border-gray-700">
               <EngineTTSDropdown />
             </div>
-            <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+            <div className="border-b last-of-type:border-b-0 dark:border-gray-700">
               <VoiceDropdown />
             </div>
-            <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+            {engineTTS === 'browser' && (
+              <div className="border-b pb-2 last-of-type:border-b-0 dark:border-gray-700">
+                <CloudBrowserVoicesSwitch />
+              </div>
+            )}
+            <div className="border-b pb-2 last-of-type:border-b-0 dark:border-gray-700">
               <PlaybackRate />
             </div>
-            <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+            <div className="border-b last-of-type:border-b-0 dark:border-gray-700">
               <CacheTTSSwitch />
             </div>
           </div>
