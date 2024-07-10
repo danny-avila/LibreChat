@@ -12,6 +12,7 @@ import { ResizableHandleAlt, ResizablePanel, ResizablePanelGroup } from '~/compo
 import { TooltipProvider, Tooltip } from '~/components/ui/Tooltip';
 import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
 import { useMediaQuery, useLocalStorage } from '~/hooks';
+import BookmarkPanel from './Bookmarks/BookmarkPanel';
 import NavToggle from '~/components/Nav/NavToggle';
 import { useChatContext } from '~/Providers';
 import Switcher from './Switcher';
@@ -79,8 +80,20 @@ const SidePanel = ({
     localStorage.setItem('fullPanelCollapse', 'true');
     panelRef.current?.collapse();
   }, []);
+  const [showBookmarks, setShowBookmarks] = useState(false);
+  const manageBookmarks = useCallback((e) => {
+    e.preventDefault();
+    setShowBookmarks((prev) => !prev);
+  }, []);
 
-  const Links = useSideNavLinks({ hidePanel, assistants, keyProvided, endpoint, interfaceConfig });
+  const Links = useSideNavLinks({
+    hidePanel,
+    assistants,
+    keyProvided,
+    endpoint,
+    interfaceConfig,
+    manageBookmarks,
+  });
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const throttledSaveLayout = useCallback(
@@ -128,6 +141,7 @@ const SidePanel = ({
 
   return (
     <>
+      {showBookmarks && <BookmarkPanel open={showBookmarks} onOpenChange={setShowBookmarks} />}
       <TooltipProvider delayDuration={0}>
         <ResizablePanelGroup
           direction="horizontal"
@@ -216,7 +230,7 @@ const SidePanel = ({
         </ResizablePanelGroup>
       </TooltipProvider>
       <div
-        className={`nav-mask${!isCollapsed ? ' active' : ''}`}
+        className={`nav-mask${!isCollapsed ? 'active' : ''}`}
         onClick={() => {
           setIsCollapsed(() => {
             localStorage.setItem('fullPanelCollapse', 'true');

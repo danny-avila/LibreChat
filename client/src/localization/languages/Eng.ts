@@ -19,6 +19,7 @@ export default {
   com_sidepanel_hide_panel: 'Hide Panel',
   com_sidepanel_attach_files: 'Attach Files',
   com_sidepanel_manage_files: 'Manage Files',
+  com_sidepanel_conversation_tags: 'Bookmarks',
   com_assistants_capabilities: 'Capabilities',
   com_assistants_file_search: 'File Search',
   com_assistants_file_search_info:
@@ -287,6 +288,19 @@ export default {
   com_ui_use_micrphone: 'Use microphone',
   com_ui_min_tags: 'Cannot remove more values, a minimum of {0} are required.',
   com_ui_max_tags: 'Maximum number allowed is {0}, using latest values.',
+  com_ui_bookmarks: 'Bookmarks',
+  com_ui_bookmarks_rebuild: 'Rebuild',
+  com_ui_bookmarks_new: 'New Bookmark',
+  com_ui_bookmark_delete_confirm: 'Are you sure you want to delete this bookmark?',
+  com_ui_bookmarks_title: 'Title',
+  com_ui_bookmarks_count: 'Count',
+  com_ui_bookmarks_description: 'Description',
+  com_ui_bookmarks_create_success: 'Bookmark created successfully',
+  com_ui_bookmarks_update_success: 'Bookmark updated successfully',
+  com_ui_bookmarks_delete_success: 'Bookmark deleted successfully',
+  com_ui_bookmarks_create_error: 'There was an error creating the bookmark',
+  com_ui_bookmarks_update_error: 'There was an error updating the bookmark',
+  com_ui_bookmarks_delete_error: 'There was an error deleting the bookmark',
   com_auth_error_login:
     'Unable to login with the information provided. Please check your credentials and try again.',
   com_auth_error_login_rl:
