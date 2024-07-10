@@ -34,8 +34,8 @@ router.get('/', async function (req, res) {
   const instanceProject = await getProjectByName('instance', '_id');
 
   const ldapLoginEnabled = !!process.env.LDAP_URL && !!process.env.LDAP_USER_SEARCH_BASE;
-  const ldapLoginUsesUsername =
-    (process.env.LDAP_LOGIN_USES_USERNAME ?? 'false').toLowerCase() === 'true';
+  const ldapLoginUsesUsername = isEnabled(process.env.LDAP_LOGIN_USES_USERNAME);
+
   try {
     /** @type {TStartupConfig} */
     const payload = {
