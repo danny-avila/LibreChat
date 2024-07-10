@@ -355,7 +355,7 @@ export const getVoices = (): Promise<f.VoiceResponse> => {
   return request.get(endpoints.textToSpeechVoices());
 };
 
-export const getCustomConfigSpeech = (): Promise<f.getCustomConfigSpeechResponse[]> => {
+export const getCustomConfigSpeech = (): Promise<t.TCustomConfigSpeechResponse> => {
   return request.get(endpoints.getCustomConfigSpeech());
 };
 

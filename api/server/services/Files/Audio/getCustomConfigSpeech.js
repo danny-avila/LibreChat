@@ -26,6 +26,7 @@ async function getCustomConfigSpeech(req, res) {
     if (ttsSchema.advancedMode !== undefined) {
       settings.advancedMode = ttsSchema.advancedMode;
     }
+
     if (ttsSchema.speechToText) {
       for (const key in ttsSchema.speechToText) {
         if (ttsSchema.speechToText[key] !== undefined) {
@@ -33,6 +34,7 @@ async function getCustomConfigSpeech(req, res) {
         }
       }
     }
+
     if (ttsSchema.textToSpeech) {
       for (const key in ttsSchema.textToSpeech) {
         if (ttsSchema.textToSpeech[key] !== undefined) {
@@ -41,7 +43,7 @@ async function getCustomConfigSpeech(req, res) {
       }
     }
 
-    res.json(settings);
+    return res.status(200).send(settings);
   } catch (error) {
     res.status(200).send();
   }
