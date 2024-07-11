@@ -168,7 +168,6 @@ router.post(
         progressCallback,
         progressOptions: {
           res,
-          text,
           plugin,
           // parentMessageId: overrideParentMessageId || userMessageId,
         },

@@ -107,7 +107,7 @@ export default function useChatFunctions({
     const intermediateId = overrideUserMessageId ?? v4();
     parentMessageId = parentMessageId || latestMessage?.messageId || Constants.NO_PARENT;
 
-    if (conversationId == 'new') {
+    if (conversationId == Constants.NEW_CONVO) {
       parentMessageId = Constants.NO_PARENT;
       currentMessages = [];
       conversationId = null;
