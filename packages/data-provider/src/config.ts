@@ -266,11 +266,28 @@ const ttsLocalaiSchema = z.object({
   backend: z.string(),
 });
 
+const ttsDeepgramSchema = z
+  .object({
+    url: z.string().optional(),
+    apiKey: z.string().optional(),
+    voices: z.array(z.string()),
+    model: z.string(),
+    language: z.string().optional(),
+    media_settings: z
+      .object({
+        bit_rate: z.number().optional(),
+        sample_rate: z.number().optional(),
+      })
+      .optional(),
+  })
+  .optional();
+
 const ttsSchema = z.object({
   openai: ttsOpenaiSchema.optional(),
   azureOpenAI: ttsAzureOpenAISchema.optional(),
   elevenLabs: ttsElevenLabsSchema.optional(),
   localai: ttsLocalaiSchema.optional(),
+  deepgram: ttsDeepgramSchema.optional(),
 });
 
 const sttOpenaiSchema = z.object({
@@ -936,6 +953,10 @@ export enum TTSProviders {
    * Provider for LocalAI TTS
    */
   LOCALAI = 'localai',
+  /**
+   * Provider for Deepgram TTS
+   */
+  DEEPGRAM = 'deepgram',
 }
 
 /** Enum for app-wide constants */

@@ -237,6 +237,65 @@ function localAIProvider(ttsSchema, input, voice) {
   return [url, data, headers];
 }
 
+function setDeepgramUrlParams(ttsSchema, voice) {
+  let url = ttsSchema?.url || 'https://api.deepgram.com/v1/speak';
+  const params = new URLSearchParams();
+
+  const model = ttsSchema?.model;
+  const voiceFormatted = voice.toLowerCase();
+  const language = ttsSchema?.language || 'en';
+
+  if (model && voiceFormatted && language) {
+    params.append('model', `${model}-${voiceFormatted}-${language}`);
+  }
+
+  if (ttsSchema?.media_settings) {
+    const bit_rate = ttsSchema?.media_settings?.bit_rate;
+    const sample_rate = ttsSchema?.media_settings?.sample_rate;
+
+    if (bit_rate !== undefined) {
+      params.append('bit_rate', bit_rate.toString());
+    }
+    if (sample_rate !== undefined) {
+      params.append('sample_rate', sample_rate.toString());
+    }
+  }
+
+  // Append parameters to URL if any were set
+  const paramString = params.toString();
+  if (paramString) {
+    url += '?' + paramString;
+  }
+
+  return url;
+}
+function deepgramProvider(ttsSchema, input, voice) {
+  if (
+    ttsSchema?.voices &&
+    ttsSchema.voices.length > 0 &&
+    !ttsSchema.voices.includes(voice) &&
+    !ttsSchema.voices.includes('ALL')
+  ) {
+    throw new Error(`Voice ${voice} is not available.`);
+  }
+
+  const url = setDeepgramUrlParams(ttsSchema, voice);
+  const apiKey = ttsSchema?.apiKey ? extractEnvVariable(ttsSchema.apiKey) : '';
+
+  let data = {
+    text: input,
+  };
+
+  let headers = {
+    'Content-Type': 'application/json',
+    Authorization: apiKey ? `Token ${apiKey}` : '',
+  };
+
+  [data, headers].forEach(removeUndefined);
+
+  return [url, data, headers];
+}
+
 /**
  *
  * Returns provider and its schema for use with TTS requests
@@ -290,6 +349,9 @@ async function ttsRequest(provider, ttsSchema, { input, voice, stream = true } =
       break;
     case TTSProviders.LOCALAI:
       [url, data, headers] = localAIProvider(ttsSchema, input, voice);
+      break;
+    case TTSProviders.DEEPGRAM:
+      [url, data, headers] = deepgramProvider(ttsSchema, input, voice);
       break;
     default:
       throw new Error('Invalid provider');
