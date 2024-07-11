@@ -119,7 +119,6 @@ const EditController = async (req, res, next, initializeClient) => {
       progressCallback,
       progressOptions: {
         res,
-        text,
         // parentMessageId: overrideParentMessageId || userMessageId,
       },
     });
