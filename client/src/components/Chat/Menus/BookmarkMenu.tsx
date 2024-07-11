@@ -1,18 +1,18 @@
 import { useEffect, useState, type FC } from 'react';
-import { useLocation } from 'react-router-dom';
 import { useRecoilValue } from 'recoil';
+import { useLocation } from 'react-router-dom';
 import { TConversation } from 'librechat-data-provider';
 import { Content, Portal, Root, Trigger } from '@radix-ui/react-popover';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
-import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
-import store from '~/store';
-
 import { useConversationTagsQuery, useTagConversationMutation } from '~/data-provider';
 import { Spinner } from '~/components';
 import { BookmarkMenuItems } from './Bookmarks/BookmarkMenuItems';
 import { BookmarkContext } from '~/Providers/BookmarkContext';
+import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
+import store from '~/store';
 
+const SAVED_TAG = 'Saved';
 const BookmarkMenu: FC = () => {
   const localize = useLocalize();
   const location = useLocation();
@@ -73,12 +73,12 @@ const BookmarkMenu: FC = () => {
       if (thisConversation && thisConversation.conversationId) {
         await mutateAsync({
           conversationId: thisConversation.conversationId,
-          tags: ['saved'],
+          tags: [SAVED_TAG],
         });
-        setTags(['saved']);
-        setConversation({ ...thisConversation, tags: ['saved'] });
+        setTags([SAVED_TAG]);
+        setConversation({ ...thisConversation, tags: [SAVED_TAG] });
       }
-      setIsOpen(true);
+      //setIsOpen(true);
     }
   };
 

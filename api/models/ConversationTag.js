@@ -4,6 +4,8 @@ const logger = require('~/config/winston');
 const Conversation = require('./schema/convoSchema');
 const ConversationTag = require('./schema/conversationTagSchema');
 
+const SAVED_TAG = 'Saved';
+
 const createConversationTag = async (user, data) => {
   try {
     const cTag = await ConversationTag.findOne({ user, tag: data.tag });
@@ -69,7 +71,7 @@ const updateTagPosition = async (user, tag, newPosition) => {
           filter: {
             user,
             position: { $gt: oldPosition, $lte: newPosition },
-            tag: { $ne: 'saved' },
+            tag: { $ne: SAVED_TAG },
           },
           update: { $inc: { position: -1 } },
         },
@@ -81,7 +83,7 @@ const updateTagPosition = async (user, tag, newPosition) => {
           filter: {
             user,
             position: { $gte: newPosition, $lt: oldPosition },
-            tag: { $ne: 'saved' },
+            tag: { $ne: SAVED_TAG },
           },
           update: { $inc: { position: 1 } },
         },
@@ -105,11 +107,12 @@ const updateTagPosition = async (user, tag, newPosition) => {
   }
 };
 module.exports = {
+  SAVED_TAG,
   ConversationTag,
   getConversationTags: async (user) => {
     try {
       const cTags = await ConversationTag.find({ user }).sort({ position: 1 }).lean();
-      cTags.sort((a, b) => (a.tag === 'saved' ? -1 : b.tag === 'saved' ? 1 : 0));
+      cTags.sort((a, b) => (a.tag === SAVED_TAG ? -1 : b.tag === SAVED_TAG ? 1 : 0));
 
       return cTags;
     } catch (error) {
@@ -229,7 +232,7 @@ module.exports = {
       tags.sort((a, b) => a.position - b.position);
 
       // Move the tag with name "saved" to the first position
-      const savedTagIndex = tags.findIndex((tag) => tag.tag === 'saved');
+      const savedTagIndex = tags.findIndex((tag) => tag.tag === SAVED_TAG);
       if (savedTagIndex !== -1) {
         const [savedTag] = tags.splice(savedTagIndex, 1);
         tags.unshift(savedTag);

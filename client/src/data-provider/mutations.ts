@@ -362,7 +362,7 @@ export const useConversationTagMutation = (
           if (!data) {
             return [
               {
-                tag: 'saved',
+                tag: 'Saved',
                 count: 1,
                 position: 0,
                 createdAt: new Date().toISOString(),
