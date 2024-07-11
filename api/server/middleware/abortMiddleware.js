@@ -69,8 +69,10 @@ const createAbortController = (req, res, getAbortData, getReqData) => {
    */
   const onStart = (userMessage, responseMessageId) => {
     sendMessage(res, { message: userMessage, created: true });
+
     const abortKey = userMessage?.conversationId ?? req.user.id;
     const prevRequest = abortControllers.get(abortKey);
+
     if (prevRequest && prevRequest?.abortController) {
       const data = prevRequest.abortController.getAbortData();
       getReqData({ userMessage: data?.userMessage });
@@ -81,6 +83,7 @@ const createAbortController = (req, res, getAbortData, getReqData) => {
       });
       return;
     }
+
     abortControllers.set(abortKey, { abortController, ...endpointOption });
 
     res.on('finish', function () {
