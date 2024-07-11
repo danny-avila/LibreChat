@@ -195,7 +195,6 @@ router.post(
         progressCallback,
         progressOptions: {
           res,
-          text,
           // parentMessageId: overrideParentMessageId || userMessageId,
           plugins,
         },
