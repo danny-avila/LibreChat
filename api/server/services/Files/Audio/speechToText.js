@@ -172,6 +172,13 @@ function azureOpenAIProvider(sttSchema, audioBuffer, audioFile) {
   }
 }
 
+/**
+ * Sets the URL parameters for the Deepgram API request.
+ *
+ * @param {Object} sttSchema - The speech-to-text schema containing the Deepgram configuration.
+ *
+ * @returns {string} The complete URL with query parameters for the Deepgram API request.
+ */
 function setDeepgramUrlParams(sttSchema) {
   let url = sttSchema?.url || 'https://api.deepgram.com/v1/listen';
   const params = new URLSearchParams();
@@ -207,6 +214,21 @@ function setDeepgramUrlParams(sttSchema) {
   return url;
 }
 
+/**
+ * Prepares the necessary data and headers for making a request to the Deepgram API.
+ *
+ * @param {Object} sttSchema - The STT schema containing the Deepgram configuration.
+ * @param {string} [sttSchema.url] - The base URL for the Deepgram API.
+ * @param {string} [sttSchema.apiKey] - The API key for authentication.
+ * @param {Buffer} audioBuffer - The audio data to be transcribed.
+ *
+ * @returns {Array} An array containing three elements:
+ *   1. {string} The URL for the API request.
+ *   2. {Buffer} The audio buffer to be sent in the request body.
+ *   3. {Object} The headers for the request.
+ *
+ * @throws {Error} Logs an error if there's an issue preparing the request.
+ */
 function deepgramProvider(sttSchema, audioBuffer) {
   try {
     const url = setDeepgramUrlParams(sttSchema);

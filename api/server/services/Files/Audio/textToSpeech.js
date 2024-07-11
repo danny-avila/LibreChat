@@ -237,6 +237,20 @@ function localAIProvider(ttsSchema, input, voice) {
   return [url, data, headers];
 }
 
+/**
+ * Sets the URL parameters for the Deepgram API request.
+ *
+ * @param {Object} ttsSchema - The TTS schema containing the Deepgram configuration.
+ * @param {string} ttsSchema.url - The base URL for the Deepgram API.
+ * @param {string} ttsSchema.model - The Deepgram model to use.
+ * @param {string} ttsSchema.language - The language code (default is 'en').
+ * @param {Object} ttsSchema.media_settings - Optional media settings.
+ * @param {number} ttsSchema.media_settings.bit_rate - The bit rate for the audio.
+ * @param {number} ttsSchema.media_settings.sample_rate - The sample rate for the audio.
+ * @param {string} voice - The voice to be used for the speech.
+ *
+ * @returns {string} The complete URL with query parameters for the Deepgram API request.
+ */
 function setDeepgramUrlParams(ttsSchema, voice) {
   let url = ttsSchema?.url || 'https://api.deepgram.com/v1/speak';
   const params = new URLSearchParams();
@@ -269,6 +283,29 @@ function setDeepgramUrlParams(ttsSchema, voice) {
 
   return url;
 }
+
+/**
+ * Prepares the necessary data and headers for making a request to the Deepgram TTS API
+ *
+ * @param {Object} ttsSchema - The TTS schema containing the Deepgram configuration.
+ * @param {string} ttsSchema.url - The base URL for the Deepgram API.
+ * @param {string} ttsSchema.apiKey - The API key for authentication.
+ * @param {string} ttsSchema.model - The Deepgram model to use.
+ * @param {string} ttsSchema.language - The language code (default is 'en').
+ * @param {string[]} ttsSchema.voices - Array of available voices.
+ * @param {Object} ttsSchema.media_settings - Optional media settings.
+ * @param {number} ttsSchema.media_settings.bit_rate - The bit rate for the audio.
+ * @param {number} ttsSchema.media_settings.sample_rate - The sample rate for the audio.
+ * @param {string} input - The text to be converted to speech.
+ * @param {string} voice - The voice to be used for the speech.
+ *
+ * @returns {Array} An array containing three elements:
+ *   1. {string} The URL for the API request.
+ *   2. {Object} The data to be sent in the request body.
+ *   3. {Object} The headers for the request.
+ *
+ * @throws {Error} Throws an error if the selected voice is not available.
+ */
 function deepgramProvider(ttsSchema, input, voice) {
   if (
     ttsSchema?.voices &&
