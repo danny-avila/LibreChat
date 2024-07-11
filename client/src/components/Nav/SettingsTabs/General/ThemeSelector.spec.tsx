@@ -1,6 +1,8 @@
+// ThemeSelector.spec.tsx
 import 'test/matchMedia.mock';
+
 import React from 'react';
-import { render, fireEvent } from '@testing-library/react';
+import { render, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/extend-expect';
 import { ThemeSelector } from './General';
 import { RecoilRoot } from 'recoil';
@@ -13,6 +15,11 @@ describe('ThemeSelector', () => {
   });
 
   it('renders correctly', () => {
+    global.ResizeObserver = class MockedResizeObserver {
+      observe = jest.fn();
+      unobserve = jest.fn();
+      disconnect = jest.fn();
+    };
     const { getByText } = render(
       <RecoilRoot>
         <ThemeSelector theme="system" onChange={mockOnChange} />
@@ -24,6 +31,11 @@ describe('ThemeSelector', () => {
   });
 
   it('calls onChange when the select value changes', async () => {
+    global.ResizeObserver = class MockedResizeObserver {
+      observe = jest.fn();
+      unobserve = jest.fn();
+      disconnect = jest.fn();
+    };
     const { getByText, getByTestId } = render(
       <RecoilRoot>
         <ThemeSelector theme="system" onChange={mockOnChange} />
@@ -42,9 +54,9 @@ describe('ThemeSelector', () => {
     const darkOption = getByText('Dark');
     fireEvent.click(darkOption);
 
-    // Ensure that the onChange is called with the expected value after a short delay
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(mockOnChange).toHaveBeenCalledWith('dark');
+    // Ensure that the onChange is called with the expected value
+    await waitFor(() => {
+      expect(mockOnChange).toHaveBeenCalledWith('dark');
+    });
   });
 });
