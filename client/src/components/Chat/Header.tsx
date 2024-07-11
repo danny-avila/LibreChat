@@ -6,6 +6,7 @@ import type { ContextType } from '~/common';
 import { EndpointsMenu, ModelSpecsMenu, PresetsMenu, HeaderNewChat } from './Menus';
 import ExportAndShareMenu from './ExportAndShareMenu';
 import HeaderOptions from './Input/HeaderOptions';
+import BookmarkMenu from './Menus/BookmarkMenu';
 import AddMultiConvo from './AddMultiConvo';
 import { useMediaQuery } from '~/hooks';
 
@@ -37,6 +38,7 @@ export default function Header() {
               className="pl-0"
             />
           )}
+          <BookmarkMenu />
           <AddMultiConvo />
         </div>
         {!isSmallScreen && (
