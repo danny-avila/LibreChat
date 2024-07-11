@@ -6,6 +6,7 @@ const { Issuer, Strategy: OpenIDStrategy, custom } = require('openid-client');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { findUser, createUser, updateUser } = require('~/models/userMethods');
 const { logger } = require('~/config');
+const { hashToken } = require('~/server/utils/crypto');
 
 let crypto;
 try {
@@ -184,9 +185,7 @@ async function setupOpenId() {
 
             let fileName;
             if (crypto) {
-              const hash = crypto.createHash('sha256');
-              hash.update(userinfo.sub);
-              fileName = hash.digest('hex') + '.png';
+              fileName = (await hashToken(userinfo.sub)) + '.png';
             } else {
               fileName = userinfo.sub + '.png';
             }

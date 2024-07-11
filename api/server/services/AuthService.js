@@ -1,4 +1,3 @@
-const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { SystemRoles, errorsToString } = require('librechat-data-provider');
 const {
@@ -16,6 +15,7 @@ const isDomainAllowed = require('./isDomainAllowed');
 const Token = require('~/models/schema/tokenSchema');
 const Session = require('~/models/Session');
 const { logger } = require('~/config');
+const { hashToken } = require('~/server/utils/crypto');
 
 const domains = {
   client: process.env.DOMAIN_CLIENT,
@@ -34,7 +34,7 @@ const genericVerificationMessage = 'Please check your email to verify your email
  */
 const logoutUser = async (userId, refreshToken) => {
   try {
-    const hash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+    const hash = await hashToken(refreshToken);
 
     // Find the session with the matching user and refreshTokenHash
     const session = await Session.findOne({ user: userId, refreshTokenHash: hash });
