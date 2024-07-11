@@ -13,13 +13,19 @@ const { logger } = require('~/config');
  *
  * @throws Will throw an error if the response status is not 200 or the response data is missing
  */
-async function handleResponse(response) {
+async function handleResponse(response, provider) {
   if (response.status !== 200) {
     throw new Error('Invalid response from the STT API');
   }
 
-  if (!response.data || !response.data.text) {
+  if (!response.data) {
     throw new Error('Missing data in response from the STT API');
+  }
+
+  console.log(response.data.results.channels[0].alternatives[0].transcript);
+
+  if (provider === STTProviders.DEEPGRAM) {
+    return response.data.results.channels[0].alternatives[0].transcript.trim();
   }
 
   return response.data.text.trim();
@@ -166,6 +172,58 @@ function azureOpenAIProvider(sttSchema, audioBuffer, audioFile) {
   }
 }
 
+function setDeepgramUrlParams(sttSchema) {
+  let url = sttSchema?.url || 'https://api.deepgram.com/v1/listen';
+  const params = new URLSearchParams();
+
+  function addParams(obj) {
+    for (const [key, value] of Object.entries(obj)) {
+      if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+        addParams(value);
+      } else if (value !== undefined) {
+        if (Array.isArray(value)) {
+          value.forEach((item) => params.append(key, item.toString()));
+        } else {
+          params.append(key, value.toString());
+        }
+      }
+    }
+  }
+
+  if (sttSchema) {
+    addParams(sttSchema);
+  }
+
+  // Remove the 'url' and 'apiKey' parameters if they were added
+  params.delete('url');
+  params.delete('apiKey');
+
+  // Append parameters to URL if any were set
+  const paramString = params.toString();
+  if (paramString) {
+    url += '?' + paramString;
+  }
+
+  return url;
+}
+
+function deepgramProvider(sttSchema, audioBuffer) {
+  try {
+    const url = setDeepgramUrlParams(sttSchema);
+    const apiKey = sttSchema?.apiKey ? extractEnvVariable(sttSchema.apiKey) : '';
+
+    let headers = {
+      'Content-Type': 'audio/wav',
+      Authorization: apiKey ? `Token ${apiKey}` : '',
+    };
+
+    return [url, audioBuffer, headers];
+  } catch (error) {
+    logger.error('An error occurred while preparing the Deepgram API STT request: ', error);
+    return [null, null, null];
+  }
+}
+
 /**
  * Convert speech to text
  * @param {Object} req - The request object
@@ -201,6 +259,9 @@ async function speechToText(req, res) {
     case STTProviders.AZURE_OPENAI:
       [url, data, headers] = azureOpenAIProvider(sttSchema, audioBuffer, req.file);
       break;
+    case STTProviders.DEEPGRAM:
+      [url, data, headers] = deepgramProvider(sttSchema, audioBuffer);
+      break;
     default:
       throw new Error('Invalid provider');
   }
@@ -213,7 +274,9 @@ async function speechToText(req, res) {
 
   try {
     const response = await axios.post(url, data, { headers: headers });
-    const text = await handleResponse(response);
+    const text = await handleResponse(response, provider);
+
+    console.log(text);
 
     res.json({ text });
   } catch (error) {
