@@ -10,6 +10,14 @@ const invalidKeys = {
   Escape: true,
   Backspace: true,
   Enter: true,
+  ArrowUp: true,
+  ArrowDown: true,
+  ArrowLeft: true,
+  ArrowRight: true,
+  Home: true,
+  End: true,
+  PageUp: true,
+  PageDown: true,
 };
 
 /**
@@ -19,21 +27,19 @@ const shouldTriggerCommand = (
   textAreaRef: React.RefObject<HTMLTextAreaElement>,
   commandChar: string,
 ) => {
-  const text = textAreaRef.current?.value;
-  if (!(text && text[text.length - 1] === commandChar)) {
+  const textArea = textAreaRef.current;
+  if (!textArea) {
     return false;
   }
 
-  const startPos = textAreaRef.current?.selectionStart;
-  if (!startPos) {
+  const text = textArea.value;
+  const cursorPosition = textArea.selectionStart;
+
+  if (cursorPosition !== text.length || text.length !== 1 || text[0] !== commandChar) {
     return false;
   }
 
-  const isAtStart = startPos === 1;
-  const isPrecededBySpace = textAreaRef.current?.value.charAt(startPos - 2) === ' ';
-
-  const shouldTrigger = isAtStart || isPrecededBySpace;
-  return shouldTrigger;
+  return true;
 };
 
 /**
