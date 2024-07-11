@@ -34,9 +34,8 @@ export const ThemeSelector = ({
         value={theme}
         onChange={onChange}
         options={themeOptions}
-        width={180}
-        position={'left'}
-        maxHeight="200px"
+        sizeClasses="w-[220px]"
+        anchor="bottom start"
         testId="theme-selector"
       />
     </div>
@@ -102,6 +101,7 @@ export const LangSelector = ({
     { value: 'nl-NL', display: localize('com_nav_lang_dutch') },
     { value: 'id-ID', display: localize('com_nav_lang_indonesia') },
     { value: 'he-HE', display: localize('com_nav_lang_hebrew') },
+    { value: 'fi-FI', display: localize('com_nav_lang_finnish') },
   ];
 
   return (
@@ -111,8 +111,8 @@ export const LangSelector = ({
       <Dropdown
         value={langcode}
         onChange={onChange}
-        position={'left'}
-        maxHeight="271px"
+        sizeClasses="[--anchor-max-height:256px]"
+        anchor="bottom start"
         options={languageOptions}
       />
     </div>

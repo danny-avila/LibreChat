@@ -83,8 +83,6 @@ export type SpeechToTextResponse = {
 
 export type VoiceResponse = string[];
 
-export type getCustomConfigSpeechResponse = { [key: string]: string };
-
 export type UploadMutationOptions = {
   onSuccess?: (data: TFileUpload, variables: FormData, context?: unknown) => void;
   onMutate?: (variables: FormData) => void | Promise<unknown>;
@@ -111,12 +109,6 @@ export type TextToSpeechOptions = {
 
 export type VoiceOptions = {
   onSuccess?: (data: VoiceResponse, variables: unknown, context?: unknown) => void;
-  onMutate?: () => void | Promise<unknown>;
-  onError?: (error: unknown, variables: unknown, context?: unknown) => void;
-};
-
-export type getCustomConfigSpeechOptions = {
-  onSuccess?: (data: getCustomConfigSpeechResponse, variables: unknown, context?: unknown) => void;
   onMutate?: () => void | Promise<unknown>;
   onError?: (error: unknown, variables: unknown, context?: unknown) => void;
 };

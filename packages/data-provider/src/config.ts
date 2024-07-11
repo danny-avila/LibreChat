@@ -6,7 +6,6 @@ import { fileConfigSchema } from './file-config';
 import { specsConfigSchema } from './models';
 import { FileSources } from './types/files';
 import { TModelsConfig } from './types';
-import { speech } from './api-endpoints';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord'];
 
@@ -234,6 +233,15 @@ const ttsOpenaiSchema = z.object({
   voices: z.array(z.string()),
 });
 
+const ttsAzureOpenAISchema = z.object({
+  instanceName: z.string(),
+  apiKey: z.string(),
+  deploymentName: z.string(),
+  apiVersion: z.string(),
+  model: z.string(),
+  voices: z.array(z.string()),
+});
+
 const ttsElevenLabsSchema = z.object({
   url: z.string().optional(),
   websocketUrl: z.string().optional(),
@@ -260,18 +268,27 @@ const ttsLocalaiSchema = z.object({
 
 const ttsSchema = z.object({
   openai: ttsOpenaiSchema.optional(),
+  azureOpenAI: ttsAzureOpenAISchema.optional(),
   elevenLabs: ttsElevenLabsSchema.optional(),
   localai: ttsLocalaiSchema.optional(),
 });
 
+const sttOpenaiSchema = z.object({
+  url: z.string().optional(),
+  apiKey: z.string(),
+  model: z.string(),
+});
+
+const sttAzureOpenAISchema = z.object({
+  instanceName: z.string(),
+  apiKey: z.string(),
+  deploymentName: z.string(),
+  apiVersion: z.string(),
+});
+
 const sttSchema = z.object({
-  openai: z
-    .object({
-      url: z.string().optional(),
-      apiKey: z.string().optional(),
-      model: z.string().optional(),
-    })
-    .optional(),
+  openai: sttOpenaiSchema.optional(),
+  azureOpenAI: sttAzureOpenAISchema.optional(),
 });
 
 const speechTab = z
@@ -846,12 +863,42 @@ export enum SettingsTabValues {
   ACCOUNT = 'account',
 }
 
+export enum STTProviders {
+  /**
+   * Provider for OpenAI STT
+   */
+  OPENAI = 'openai',
+  /**
+   * Provider for Microsoft Azure STT
+   */
+  AZURE_OPENAI = 'azureOpenAI',
+}
+
+export enum TTSProviders {
+  /**
+   * Provider for OpenAI TTS
+   */
+  OPENAI = 'openai',
+  /**
+   * Provider for Microsoft Azure OpenAI TTS
+   */
+  AZURE_OPENAI = 'azureOpenAI',
+  /**
+   * Provider for ElevenLabs TTS
+   */
+  ELEVENLABS = 'elevenlabs',
+  /**
+   * Provider for LocalAI TTS
+   */
+  LOCALAI = 'localai',
+}
+
 /** Enum for app-wide constants */
 export enum Constants {
   /** Key for the app's version. */
   VERSION = 'v0.7.4-rc1',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.1.4',
+  CONFIG_VERSION = '1.1.5',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value for the initial conversationId before a request is sent */

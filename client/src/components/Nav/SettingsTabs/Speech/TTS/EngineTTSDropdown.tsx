@@ -22,8 +22,8 @@ export default function EngineTTSDropdown() {
         value={engineTTS}
         onChange={handleSelect}
         options={endpointOptions}
-        width={180}
-        position={'left'}
+        sizeClasses="w-[180px]"
+        anchor="bottom start"
         testId="EngineTTSDropdown"
       />
     </div>
