@@ -1,21 +1,36 @@
 import React, { useEffect } from 'react';
-import { useForm } from 'react-hook-form';
-import type { TConversationTag } from 'librechat-data-provider';
+import { Controller, useForm } from 'react-hook-form';
+import type {
+  TConversationTag,
+  TConversation,
+  TConversationTagRequest,
+} from 'librechat-data-provider';
 import { cn, removeFocusOutlines, defaultTextProps } from '~/utils/';
 import { useBookmarkContext } from '~/Providers/BookmarkContext';
 import { useConversationTagMutation } from '~/data-provider';
-import { Label, TextareaAutosize } from '~/components/ui/';
+import { Checkbox, Label, TextareaAutosize } from '~/components/ui/';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 
 type TBookmarkFormProps = {
   bookmark?: TConversationTag;
+  conversation?: TConversation;
   onOpenChange: React.Dispatch<React.SetStateAction<boolean>>;
   formRef: React.RefObject<HTMLFormElement>;
   setIsLoading: React.Dispatch<React.SetStateAction<boolean>>;
+  tags?: string[];
+  setTags?: (tags: string[]) => void;
 };
-const BookmarkForm = ({ bookmark, onOpenChange, formRef, setIsLoading }: TBookmarkFormProps) => {
+const BookmarkForm = ({
+  bookmark,
+  conversation,
+  onOpenChange,
+  formRef,
+  setIsLoading,
+  tags,
+  setTags,
+}: TBookmarkFormProps) => {
   const { showToast } = useToastContext();
   const localize = useLocalize();
   const mutation = useConversationTagMutation(bookmark?.tag);
@@ -25,11 +40,15 @@ const BookmarkForm = ({ bookmark, onOpenChange, formRef, setIsLoading }: TBookma
     register,
     handleSubmit,
     setValue,
+    getValues,
+    control,
     formState: { errors },
-  } = useForm<TConversationTag>({
+  } = useForm<TConversationTagRequest>({
     defaultValues: {
       tag: bookmark?.tag || '',
       description: bookmark?.description || '',
+      conversationId: conversation?.conversationId || '',
+      addToConversation: conversation ? true : false,
     },
   });
 
@@ -40,7 +59,7 @@ const BookmarkForm = ({ bookmark, onOpenChange, formRef, setIsLoading }: TBookma
     }
   }, [bookmark, setValue]);
 
-  const onSubmit = (data: TConversationTag) => {
+  const onSubmit = (data: TConversationTagRequest) => {
     if (mutation.isLoading) {
       return;
     }
@@ -58,6 +77,12 @@ const BookmarkForm = ({ bookmark, onOpenChange, formRef, setIsLoading }: TBookma
         });
         setIsLoading(false);
         onOpenChange(false);
+        if (setTags && data.addToConversation) {
+          const newTags = [...(tags || []), data.tag].filter(
+            (tag) => tag !== undefined,
+          ) as string[];
+          setTags(newTags);
+        }
       },
       onError: () => {
         showToast({
@@ -82,7 +107,7 @@ const BookmarkForm = ({ bookmark, onOpenChange, formRef, setIsLoading }: TBookma
       <div className="flex w-full flex-col items-center gap-2">
         <div className="grid w-full items-center gap-2">
           <Label htmlFor="bookmark-tag" className="text-left text-sm font-medium">
-            {localize('com_ui_bookmarks_tag')}
+            {localize('com_ui_bookmarks_title')}
           </Label>
           <input
             type="text"
@@ -132,6 +157,36 @@ const BookmarkForm = ({ bookmark, onOpenChange, formRef, setIsLoading }: TBookma
             )}
           />
         </div>
+        {conversation && (
+          <div className="flex w-full items-center">
+            <Controller
+              name="addToConversation"
+              control={control}
+              render={({ field }) => (
+                <Checkbox
+                  {...field}
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                  className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
+                  value={field?.value?.toString()}
+                />
+              )}
+            />
+            <label
+              className="form-check-label text-token-text-primary w-full cursor-pointer"
+              htmlFor="addToConversation"
+              onClick={() =>
+                setValue('addToConversation', !getValues('addToConversation'), {
+                  shouldDirty: true,
+                })
+              }
+            >
+              <div className="flex select-none items-center">
+                {localize('com_ui_bookmarks_add_to_conversation')}
+              </div>
+            </label>
+          </div>
+        )}
       </div>
     </form>
   );

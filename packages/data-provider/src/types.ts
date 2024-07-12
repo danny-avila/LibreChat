@@ -176,7 +176,10 @@ export type TConversationTagsResponse = TConversationTag[];
 // type for creating conversation tag
 export type TConversationTagRequest = Partial<
   Omit<TConversationTag, 'createdAt' | 'updatedAt' | 'count' | 'user'>
->;
+> & {
+  conversationId?: string;
+  addToConversation?: boolean;
+};
 
 export type TConversationTagResponse = TConversationTag;
 

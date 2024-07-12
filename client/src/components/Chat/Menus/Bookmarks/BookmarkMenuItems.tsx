@@ -20,7 +20,7 @@ export const BookmarkMenuItems: FC<{
   const { mutateAsync } = useTagConversationMutation(conversation?.conversationId ?? '');
   const handleSubmit = useCallback(
     async (tag: string): Promise<void> => {
-      if (tags !== undefined && conversation && conversation.conversationId) {
+      if (tags !== undefined && conversation?.conversationId) {
         const newTags = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
         await mutateAsync(
           {
@@ -31,7 +31,6 @@ export const BookmarkMenuItems: FC<{
             onSuccess: (newTags: string[]) => {
               setTags(newTags);
               setConversation({ ...conversation, tags: newTags });
-              refetch();
             },
             onError: () => {
               showToast({
@@ -53,6 +52,9 @@ export const BookmarkMenuItems: FC<{
       header={
         <div>
           <BookmarkEditDialog
+            conversation={conversation}
+            tags={tags}
+            setTags={setTags}
             trigger={
               <div
                 role="menuitem"

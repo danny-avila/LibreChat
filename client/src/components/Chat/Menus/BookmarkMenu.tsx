@@ -78,7 +78,6 @@ const BookmarkMenu: FC = () => {
         setTags([SAVED_TAG]);
         setConversation({ ...thisConversation, tags: [SAVED_TAG] });
       }
-      //setIsOpen(true);
     }
   };
 
@@ -113,15 +112,15 @@ const BookmarkMenu: FC = () => {
           align="start"
         >
           {data && conversation && (
-            // ユーザーが登録しているすべてのブックマークを表示し、現在選択されている会話のタグをハイライトする
+            // Display all bookmarks registered by the user and highlight the tags of the currently selected conversation
             <BookmarkContext.Provider value={{ bookmarks: data }}>
               <BookmarkMenuItems
-                // 現在選択されている会話
+                // Currently selected conversation
                 conversation={conversation}
                 setConversation={setConversation}
-                // 会話に含まれているタグ
+                // Tags in the conversation
                 tags={tags ?? []}
-                // 会話に含まれているタグを更新
+                // Update tags in the conversation
                 setTags={setTags}
                 refetch={refetch}
               />

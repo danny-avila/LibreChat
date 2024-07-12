@@ -301,6 +301,7 @@ export default {
   com_ui_bookmarks_create_error: 'There was an error creating the bookmark',
   com_ui_bookmarks_update_error: 'There was an error updating the bookmark',
   com_ui_bookmarks_delete_error: 'There was an error deleting the bookmark',
+  com_ui_bookmarks_add_to_conversation: 'Add to current conversation',
   com_auth_error_login:
     'Unable to login with the information provided. Please check your credentials and try again.',
   com_auth_error_login_rl:

@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { DialogTrigger } from '@radix-ui/react-dialog';
-import { TConversationTag } from 'librechat-data-provider/dist/types';
+import { TConversationTag, TConversation } from 'librechat-data-provider';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { Dialog, DialogButton } from '~/components/ui/';
 import BookmarkForm from './BookmarkForm';
@@ -9,9 +9,18 @@ import { Spinner } from '../svg';
 
 type BookmarkEditDialogProps = {
   bookmark?: TConversationTag;
+  conversation?: TConversation;
+  tags?: string[];
+  setTags?: (tags: string[]) => void;
   trigger: React.ReactNode;
 };
-const BookmarkEditDialog = ({ bookmark, trigger }: BookmarkEditDialogProps) => {
+const BookmarkEditDialog = ({
+  bookmark,
+  conversation,
+  tags,
+  setTags,
+  trigger,
+}: BookmarkEditDialogProps) => {
   const localize = useLocalize();
   const [isLoading, setIsLoading] = useState(false);
   const [open, setOpen] = useState(false);
@@ -32,10 +41,13 @@ const BookmarkEditDialog = ({ bookmark, trigger }: BookmarkEditDialogProps) => {
         showCloseButton={false}
         main={
           <BookmarkForm
+            conversation={conversation}
             onOpenChange={setOpen}
             setIsLoading={setIsLoading}
             bookmark={bookmark}
             formRef={formRef}
+            setTags={setTags}
+            tags={tags}
           />
         }
         buttons={

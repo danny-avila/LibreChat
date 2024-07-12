@@ -6,6 +6,30 @@ const ConversationTag = require('./schema/conversationTagSchema');
 
 const SAVED_TAG = 'Saved';
 
+const updateTagsForConversation = async (user, conversationId, tags) => {
+  try {
+    const conversation = await Conversation.findOne({ user, conversationId });
+    if (!conversation) {
+      return { message: 'Conversation not found' };
+    }
+
+    const addedTags = tags.tags.filter((tag) => !conversation.tags.includes(tag));
+    const removedTags = conversation.tags.filter((tag) => !tags.tags.includes(tag));
+    for (const tag of addedTags) {
+      await ConversationTag.updateOne({ tag, user }, { $inc: { count: 1 } }, { upsert: true });
+    }
+    for (const tag of removedTags) {
+      await ConversationTag.updateOne({ tag, user }, { $inc: { count: -1 } });
+    }
+    conversation.tags = tags.tags;
+    await conversation.save({ timestamps: { updatedAt: false } });
+    return conversation.tags;
+  } catch (error) {
+    logger.error('[updateTagsToConversation] Error updating tags', error);
+    return { message: 'Error updating tags' };
+  }
+};
+
 const createConversationTag = async (user, data) => {
   try {
     const cTag = await ConversationTag.findOne({ user, tag: data.tag });
@@ -13,9 +37,11 @@ const createConversationTag = async (user, data) => {
       return cTag;
     }
 
+    const addToConversation = data.addToConversation && data.conversationId;
     const newTag = await ConversationTag.create({
       user,
       tag: data.tag,
+      count: 0,
       description: data.description,
       position: 1,
     });
@@ -25,7 +51,20 @@ const createConversationTag = async (user, data) => {
       { $inc: { position: 1 } },
     );
 
-    return newTag;
+    if (addToConversation) {
+      const conversation = await Conversation.findOne({
+        user,
+        conversationId: data.conversationId,
+      });
+      if (conversation) {
+        const tags = [...(conversation.tags || []), data.tag];
+        await updateTagsForConversation(user, data.conversationId, { tags });
+      } else {
+        logger.warn('[updateTagsForConversation] Conversation not found', data.conversationId);
+      }
+    }
+
+    return await ConversationTag.findOne({ user, tag: data.tag });
   } catch (error) {
     logger.error('[createConversationTag] Error updating conversation tag', error);
     return { message: 'Error updating conversation tag' };
@@ -165,30 +204,7 @@ module.exports = {
     }
   },
 
-  updateTagsForConversation: async (user, conversationId, tags) => {
-    try {
-      const conversation = await Conversation.findOne({ user, conversationId });
-      if (!conversation) {
-        return { message: 'Conversation not found' };
-      }
-
-      const addedTags = tags.tags.filter((tag) => !conversation.tags.includes(tag));
-      const removedTags = conversation.tags.filter((tag) => !tags.tags.includes(tag));
-      for (const tag of addedTags) {
-        await ConversationTag.updateOne({ tag, user }, { $inc: { count: 1 } }, { upsert: true });
-      }
-      for (const tag of removedTags) {
-        await ConversationTag.updateOne({ tag, user }, { $inc: { count: -1 } });
-      }
-      conversation.tags = tags.tags;
-      await conversation.save({ timestamps: { updatedAt: false } });
-      return conversation.tags;
-    } catch (error) {
-      logger.error('[updateTagsToConversation] Error updating tags', error);
-      return { message: 'Error updating tags' };
-    }
-  },
-
+  updateTagsForConversation,
   rebuildConversationTags: async (user) => {
     try {
       const conversations = await Conversation.find({ user }).select('tags');

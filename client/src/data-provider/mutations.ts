@@ -88,52 +88,59 @@ export const useUpdateConversationMutation = (
   );
 };
 
+const useUpdateTagsInConversation = () => {
+  const queryClient = useQueryClient();
+
+  const updateTags = (conversationId: string, tags: string[]) => {
+    // Update the tags for the current conversation
+    const currentConvo = queryClient.getQueryData<t.TConversation>([
+      QueryKeys.conversation,
+      conversationId,
+    ]);
+    if (!currentConvo) {
+      return;
+    }
+
+    const updatedConvo = {
+      ...currentConvo,
+      tags,
+    } as t.TConversation;
+    queryClient.setQueryData([QueryKeys.conversation, conversationId], updatedConvo);
+    queryClient.setQueryData<t.ConversationData>([QueryKeys.allConversations], (convoData) => {
+      if (!convoData) {
+        return convoData;
+      }
+      return updateConvoFields(
+        convoData,
+        {
+          conversationId: currentConvo.conversationId,
+          tags: updatedConvo.tags,
+        } as t.TConversation,
+        true,
+      );
+    });
+  };
+
+  return updateTags;
+};
 /**
  * Add or remove tags for a conversation
  */
 export const useTagConversationMutation = (
   conversationId: string,
 ): UseMutationResult<t.TTagConversationResponse, unknown, t.TTagConversationRequest, unknown> => {
-  const queryClient = useQueryClient();
   const query = useConversationTagsQuery();
+  const updateTagsInConversation = useUpdateTagsInConversation();
   return useMutation(
     (payload: t.TTagConversationRequest) =>
       dataService.addTagToConversation(conversationId, payload),
     {
       onSuccess: (updatedTags) => {
-        const data = queryClient.getQueryData<t.TConversationTag[]>([QueryKeys.conversationTags]);
-        if (!data || data?.length === 0) {
-          // If the tag data has not been loaded yet (e.g., when using tags for the first time), fetch the tag data
-          query.refetch();
-        }
-
-        // Update the tags for the current conversation
-        const currentConvo = queryClient.getQueryData<t.TConversation>([
-          QueryKeys.conversation,
-          conversationId,
-        ]);
-        if (!currentConvo) {
-          return;
-        }
-
-        const updatedConvo = {
-          ...currentConvo,
-          tags: [...(currentConvo.tags || []), updatedTags],
-        } as t.TConversation;
-        queryClient.setQueryData([QueryKeys.conversation, conversationId], updatedConvo);
-        queryClient.setQueryData<t.ConversationData>([QueryKeys.allConversations], (convoData) => {
-          if (!convoData) {
-            return convoData;
-          }
-          return updateConvoFields(
-            convoData,
-            {
-              conversationId: currentConvo.conversationId,
-              tags: updatedTags,
-            } as t.TConversation,
-            true,
-          );
-        });
+        // Because the logic for calculating the bookmark count is complex,
+        // the client does not perform the calculation,
+        // but instead refetch the data from the API.
+        query.refetch();
+        updateTagsInConversation(conversationId, updatedTags);
       },
     },
   );
@@ -351,6 +358,7 @@ export const useConversationTagMutation = (
 ): UseMutationResult<t.TConversationTagResponse, unknown, t.TConversationTagRequest, unknown> => {
   const queryClient = useQueryClient();
   const { ..._options } = options || {};
+  const updateTagsInConversation = useUpdateTagsInConversation();
   return useMutation(
     (payload: t.TConversationTagRequest) =>
       tag
@@ -372,6 +380,17 @@ export const useConversationTagMutation = (
           }
           return updateConversationTag(data, vars, _data, tag);
         });
+
+        if (vars.addToConversation && vars.conversationId && _data.tag) {
+          const currentConvo = queryClient.getQueryData<t.TConversation>([
+            QueryKeys.conversation,
+            vars.conversationId,
+          ]);
+          if (!currentConvo) {
+            return;
+          }
+          updateTagsInConversation(vars.conversationId, [...(currentConvo.tags || []), _data.tag]);
+        }
       },
       ...(_options || {}),
     },
