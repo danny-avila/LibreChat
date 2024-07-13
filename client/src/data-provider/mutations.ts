@@ -92,7 +92,8 @@ export const useUpdateConversationMutation = (
 const useUpdateTagsInConversation = () => {
   const queryClient = useQueryClient();
 
-  const updateTags = (conversationId: string, tags: string[]) => {
+  // Update the queryClient cache with the new tag when a new tag is added to a conversation
+  const updateTagsInConversation = (conversationId: string, tags: string[]) => {
     // Update the tags for the current conversation
     const currentConvo = queryClient.getQueryData<t.TConversation>([
       QueryKeys.conversation,
@@ -122,7 +123,49 @@ const useUpdateTagsInConversation = () => {
     });
   };
 
-  return updateTags;
+  // update the tag to newTag in all conversations when a tag is updated to a newTag
+  const updateTagsInAllConversation = (tag: string, newTag: string) => {
+    const data = queryClient.getQueryData<InfiniteData<ConversationListResponse>>([
+      QueryKeys.allConversations,
+    ]);
+
+    const conversationIdsWithTag = [] as string[];
+
+    // update tag to newTag in all conversations
+    const newData = JSON.parse(JSON.stringify(data)) as InfiniteData<ConversationListResponse>;
+    for (let pageIndex = 0; pageIndex < newData.pages.length; pageIndex++) {
+      const page = newData.pages[pageIndex];
+      page.conversations = page.conversations.map((conversation) => {
+        if (conversation.conversationId && conversation.tags?.includes(tag)) {
+          conversationIdsWithTag.push(conversation.conversationId);
+          conversation.tags = conversation.tags.map((t) => (t === tag ? newTag : t));
+        }
+        return conversation;
+      });
+    }
+    queryClient.setQueryData<InfiniteData<ConversationListResponse>>(
+      [QueryKeys.allConversations],
+      newData,
+    );
+
+    // update the tag to newTag from the cache of each conversation
+    for (let i = 0; i < conversationIdsWithTag.length; i++) {
+      const conversationId = conversationIdsWithTag[i];
+      const conversation = queryClient.getQueryData<t.TConversation>([
+        QueryKeys.conversation,
+        conversationId,
+      ]);
+      if (conversation && conversation.tags) {
+        conversation.tags = conversation.tags.map((t) => (t === tag ? newTag : t));
+        queryClient.setQueryData<t.TConversation>(
+          [QueryKeys.conversation, conversationId],
+          conversation,
+        );
+      }
+    }
+  };
+
+  return { updateTagsInConversation, updateTagsInAllConversation };
 };
 /**
  * Add or remove tags for a conversation
@@ -131,7 +174,7 @@ export const useTagConversationMutation = (
   conversationId: string,
 ): UseMutationResult<t.TTagConversationResponse, unknown, t.TTagConversationRequest, unknown> => {
   const query = useConversationTagsQuery();
-  const updateTagsInConversation = useUpdateTagsInConversation();
+  const { updateTagsInConversation } = useUpdateTagsInConversation();
   return useMutation(
     (payload: t.TTagConversationRequest) =>
       dataService.addTagToConversation(conversationId, payload),
@@ -359,7 +402,7 @@ export const useConversationTagMutation = (
 ): UseMutationResult<t.TConversationTagResponse, unknown, t.TConversationTagRequest, unknown> => {
   const queryClient = useQueryClient();
   const { ..._options } = options || {};
-  const updateTagsInConversation = useUpdateTagsInConversation();
+  const { updateTagsInConversation, updateTagsInAllConversation } = useUpdateTagsInConversation();
   return useMutation(
     (payload: t.TConversationTagRequest) =>
       tag
@@ -381,7 +424,6 @@ export const useConversationTagMutation = (
           }
           return updateConversationTag(data, vars, _data, tag);
         });
-
         if (vars.addToConversation && vars.conversationId && _data.tag) {
           const currentConvo = queryClient.getQueryData<t.TConversation>([
             QueryKeys.conversation,
@@ -392,6 +434,9 @@ export const useConversationTagMutation = (
           }
           updateTagsInConversation(vars.conversationId, [...(currentConvo.tags || []), _data.tag]);
         }
+        if (tag) {
+          updateTagsInAllConversation(tag, _data.tag);
+        }
       },
       ...(_options || {}),
     },
@@ -401,7 +446,7 @@ export const useConversationTagMutation = (
 // When a bookmark is deleted, remove that bookmark(tag) from all conversations associated with it
 export const useDeleteTagInConversations = () => {
   const queryClient = useQueryClient();
-  const deleteTagInConversation = (deletedTag: string) => {
+  const deleteTagInAllConversation = (deletedTag: string) => {
     const data = queryClient.getQueryData<InfiniteData<ConversationListResponse>>([
       QueryKeys.allConversations,
     ]);
@@ -441,14 +486,14 @@ export const useDeleteTagInConversations = () => {
       }
     }
   };
-  return deleteTagInConversation;
+  return deleteTagInAllConversation;
 };
 // Delete a tag
 export const useDeleteConversationTagMutation = (
   options?: t.DeleteConversationTagOptions,
 ): UseMutationResult<t.TConversationTagResponse, unknown, string, void> => {
   const queryClient = useQueryClient();
-  const deleteTagInConversations = useDeleteTagInConversations();
+  const deleteTagInAllConversations = useDeleteTagInConversations();
   const { onSuccess, ..._options } = options || {};
   return useMutation((tag: string) => dataService.deleteConversationTag(tag), {
     onSuccess: (_data, vars, context) => {
@@ -459,7 +504,7 @@ export const useDeleteConversationTagMutation = (
         return data.filter((t) => t.tag !== vars);
       });
 
-      deleteTagInConversations(vars);
+      deleteTagInAllConversations(vars);
       onSuccess?.(_data, vars, context);
     },
     ...(_options || {}),
