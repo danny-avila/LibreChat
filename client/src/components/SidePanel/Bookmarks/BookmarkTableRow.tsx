@@ -26,7 +26,7 @@ interface DragItem {
   type: string;
 }
 
-const BookmarkTableRow: FC<BookmarkItemProps> = ({ position, moveRow: moveCard, row, ...rest }) => {
+const BookmarkTableRow: FC<BookmarkItemProps> = ({ position, moveRow, row, ...rest }) => {
   const ref = useRef<HTMLTableRowElement>(null);
 
   const mutation = useConversationTagMutation(row.tag);
@@ -83,7 +83,7 @@ const BookmarkTableRow: FC<BookmarkItemProps> = ({ position, moveRow: moveCard, 
         return;
       }
 
-      moveCard(dragIndex, hoverIndex);
+      moveRow(dragIndex, hoverIndex);
 
       item.index = hoverIndex;
     },
