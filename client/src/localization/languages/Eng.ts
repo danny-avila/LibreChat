@@ -673,6 +673,8 @@ export default {
     'This action will revoke and remove all the API keys that you have provided. You will need to re-enter these credentials to continue using those endpoints.',
   com_nav_info_delete_cache_storage:
     'This action will delete all cached TTS (Text-to-Speech) audio files stored on your device. Cached audio files are used to speed up playback of previously generated TTS audio, but they can consume storage space on your device.',
+  com_nav_info_bookmarks_rebuild:
+    'If the bookmark count is incorrect, please rebuild the bookmark information. The bookmark count will be recalculated and the data will be restored to its correct state.',
   com_nav_setting_general: 'General',
   com_nav_setting_beta: 'Beta features',
   com_nav_setting_data: 'Data controls',
