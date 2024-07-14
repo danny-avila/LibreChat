@@ -92,7 +92,7 @@ export const useUpdateConversationMutation = (
 const useUpdateTagsInConversation = () => {
   const queryClient = useQueryClient();
 
-  // Update the queryClient cache with the new tag when a new tag is added to a conversation
+  // Update the queryClient cache with the new tag when a new tag is added/removed to a conversation
   const updateTagsInConversation = (conversationId: string, tags: string[]) => {
     // Update the tags for the current conversation
     const currentConvo = queryClient.getQueryData<t.TConversation>([
@@ -124,7 +124,9 @@ const useUpdateTagsInConversation = () => {
   };
 
   // update the tag to newTag in all conversations when a tag is updated to a newTag
-  const updateTagsInAllConversation = (tag: string, newTag: string) => {
+  // The difference with updateTagsInConversation is that it adds or removes tags for a specific conversation,
+  // whereas this function is for changing the title of a specific tag.
+  const replaceTagsInAllConversations = (tag: string, newTag: string) => {
     const data = queryClient.getQueryData<InfiniteData<ConversationListResponse>>([
       QueryKeys.allConversations,
     ]);
@@ -168,7 +170,7 @@ const useUpdateTagsInConversation = () => {
     }
   };
 
-  return { updateTagsInConversation, updateTagsInAllConversation };
+  return { updateTagsInConversation, replaceTagsInAllConversations };
 };
 /**
  * Add or remove tags for a conversation
@@ -405,7 +407,7 @@ export const useConversationTagMutation = (
 ): UseMutationResult<t.TConversationTagResponse, unknown, t.TConversationTagRequest, unknown> => {
   const queryClient = useQueryClient();
   const { ..._options } = options || {};
-  const { updateTagsInConversation, updateTagsInAllConversation } = useUpdateTagsInConversation();
+  const { updateTagsInConversation, replaceTagsInAllConversations } = useUpdateTagsInConversation();
   return useMutation(
     (payload: t.TConversationTagRequest) =>
       tag
@@ -437,8 +439,9 @@ export const useConversationTagMutation = (
           }
           updateTagsInConversation(vars.conversationId, [...(currentConvo.tags || []), _data.tag]);
         }
+        // Change the tag title to the new title
         if (tag) {
-          updateTagsInAllConversation(tag, _data.tag);
+          replaceTagsInAllConversations(tag, _data.tag);
         }
       },
       ...(_options || {}),
