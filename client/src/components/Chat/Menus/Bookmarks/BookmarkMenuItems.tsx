@@ -5,16 +5,16 @@ import type { TConversation } from 'librechat-data-provider';
 import { BookmarkItems, BookmarkEditDialog } from '~/components/Bookmarks';
 import { useTagConversationMutation } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
-import { useLocalize, useToast } from '~/hooks';
+import { useToastContext } from '~/Providers';
+import { useLocalize } from '~/hooks';
 
 export const BookmarkMenuItems: FC<{
   conversation: TConversation;
   tags: string[];
   setTags: (tags: string[]) => void;
   setConversation: (conversation: TConversation) => void;
-  refetch: () => void;
-}> = ({ conversation, tags, setTags, setConversation, refetch }) => {
-  const { showToast } = useToast();
+}> = ({ conversation, tags, setTags, setConversation }) => {
+  const { showToast } = useToastContext();
   const localize = useLocalize();
 
   const { mutateAsync } = useTagConversationMutation(conversation?.conversationId ?? '');

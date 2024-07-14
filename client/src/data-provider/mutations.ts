@@ -156,10 +156,13 @@ const useUpdateTagsInConversation = () => {
         conversationId,
       ]);
       if (conversation && conversation.tags) {
-        conversation.tags = conversation.tags.map((t) => (t === tag ? newTag : t));
+        const updatedConvo = {
+          ...conversation,
+          tags: conversation.tags.map((t) => (t === tag ? newTag : t)),
+        } as t.TConversation;
         queryClient.setQueryData<t.TConversation>(
           [QueryKeys.conversation, conversationId],
-          conversation,
+          updatedConvo,
         );
       }
     }

@@ -5,9 +5,9 @@ import { TConversation } from 'librechat-data-provider';
 import { Content, Portal, Root, Trigger } from '@radix-ui/react-popover';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
 import { useConversationTagsQuery, useTagConversationMutation } from '~/data-provider';
-import { Spinner } from '~/components';
 import { BookmarkMenuItems } from './Bookmarks/BookmarkMenuItems';
 import { BookmarkContext } from '~/Providers/BookmarkContext';
+import { Spinner } from '~/components';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -32,11 +32,11 @@ const BookmarkMenu: FC = () => {
     thisConversation = activeConvo;
   }
 
-  const { mutateAsync, isLoading, isError } = useTagConversationMutation(
+  const { mutateAsync, isLoading } = useTagConversationMutation(
     thisConversation?.conversationId ?? '',
   );
 
-  const { data, refetch } = useConversationTagsQuery();
+  const { data } = useConversationTagsQuery();
   useEffect(() => {
     if (
       (!conversation && thisConversation) ||
@@ -122,7 +122,6 @@ const BookmarkMenu: FC = () => {
                 tags={tags ?? []}
                 // Update tags in the conversation
                 setTags={setTags}
-                refetch={refetch}
               />
             </BookmarkContext.Provider>
           )}
