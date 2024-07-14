@@ -28,7 +28,7 @@ export const updateConversationTag = (
   // Remove the updated data from the array
   const filteredData = queryCache.filter((t) => t.tag !== tag);
 
-  if (newPosition === undefined) {
+  if (newPosition === undefined || oldPosition === newPosition) {
     // If the position hasn't changed, just replace the updated tag
     return queryCache.map((t) => (t.tag === tag ? response : t));
   }
