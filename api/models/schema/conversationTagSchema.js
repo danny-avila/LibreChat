@@ -26,4 +26,6 @@ const conversationTagSchema = mongoose.Schema(
   { timestamps: true },
 );
 
+conversationTagSchema.index({ tag: 1, user: 1 }, { unique: true });
+
 module.exports = mongoose.model('ConversationTag', conversationTagSchema);
