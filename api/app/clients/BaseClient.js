@@ -619,7 +619,7 @@ class BaseClient {
   }
 
   async updateMessageInDatabase(message) {
-    await updateMessage(message);
+    await updateMessage(this.options.req, message);
   }
 
   /**
