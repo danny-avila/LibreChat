@@ -24,6 +24,7 @@ export default function MessageAudio({ index, message, isLast }: THoverButtons) 
   const isMouseDownRef = useRef(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const counterRef = useRef(0);
+  const hasTriggeredSpeechRef = useRef(false);
 
   const renderIcon = (size: string) => {
     if (isLoading) {
@@ -110,18 +111,23 @@ export default function MessageAudio({ index, message, isLast }: THoverButtons) 
                 }
               }}
               type="button"
-              title={isSpeaking ? localize('com_ui_stop') : localize('com_ui_read_aloud')}
             >
               {renderIcon('19')}
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom" sideOffset={0}>
             <div className="space-y-2">
-              <p className="text-center text-sm text-gray-600 dark:text-gray-300">
-                {localize('com_ui_read_aloud')}
-                <br />
-                {audioText}
-              </p>
+              {isSpeaking ? (
+                <p className="text-center text-sm text-gray-600 dark:text-gray-300">
+                  {localize('com_ui_stop')}
+                </p>
+              ) : (
+                <p className="text-center text-sm text-gray-600 dark:text-gray-300">
+                  {localize('com_ui_read_aloud')}
+                  <br />
+                  {audioText}
+                </p>
+              )}
             </div>
           </TooltipContent>
         </Tooltip>
