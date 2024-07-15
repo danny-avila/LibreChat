@@ -6,6 +6,7 @@ import {
   parseISO,
   startOfDay,
   startOfYear,
+  startOfToday,
   isWithinInterval,
 } from 'date-fns';
 import { EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
@@ -14,7 +15,11 @@ import type {
   ConversationData,
   ConversationUpdater,
   GroupedConversations,
+  ConversationListResponse,
 } from 'librechat-data-provider';
+
+import { addData, deleteData, updateData, findPage } from './collection';
+import { InfiniteData } from '@tanstack/react-query';
 
 export const dateKeys = {
   today: 'com_ui_date_today',
@@ -72,7 +77,7 @@ export const groupConversationsByDate = (conversations: TConversation[]): Groupe
     }
     seenConversationIds.add(conversation.conversationId);
 
-    const date = parseISO(conversation.updatedAt);
+    const date = conversation.updatedAt ? parseISO(conversation.updatedAt) : startOfToday();
     const groupName = getGroupName(date);
     if (!acc[groupName]) {
       acc[groupName] = [];
@@ -105,52 +110,39 @@ export const groupConversationsByDate = (conversations: TConversation[]): Groupe
   return Object.entries(sortedGroups);
 };
 
-export const addConversation: ConversationUpdater = (data, newConversation) => {
-  const newData = JSON.parse(JSON.stringify(data)) as ConversationData;
-  const { pageIndex, convIndex } = findPageForConversation(newData, newConversation);
-
-  if (pageIndex !== -1 && convIndex !== -1) {
-    return updateConversation(data, newConversation);
-  }
-  newData.pages[0].conversations.unshift({
-    ...newConversation,
-    updatedAt: new Date().toISOString(),
-  });
-
-  return newData;
+export const addConversation = (
+  data: InfiniteData<ConversationListResponse>,
+  newConversation: TConversation,
+): ConversationData => {
+  return addData<ConversationListResponse, TConversation>(
+    data,
+    'conversations',
+    newConversation,
+    (page) =>
+      page.conversations.findIndex((c) => c.conversationId === newConversation.conversationId),
+  );
 };
 
 export function findPageForConversation(
   data: ConversationData,
   conversation: TConversation | { conversationId: string },
 ) {
-  for (let pageIndex = 0; pageIndex < data.pages.length; pageIndex++) {
-    const page = data.pages[pageIndex];
-    const convIndex = page.conversations.findIndex(
-      (c) => c.conversationId === conversation.conversationId,
-    );
-    if (convIndex !== -1) {
-      return { pageIndex, convIndex };
-    }
-  }
-  return { pageIndex: -1, convIndex: -1 }; // Not found
+  return findPage<ConversationListResponse>(data, (page) =>
+    page.conversations.findIndex((c) => c.conversationId === conversation.conversationId),
+  );
 }
 
-export const updateConversation: ConversationUpdater = (data, updatedConversation) => {
-  const newData = JSON.parse(JSON.stringify(data));
-  const { pageIndex, convIndex } = findPageForConversation(newData, updatedConversation);
-
-  if (pageIndex !== -1 && convIndex !== -1) {
-    // Remove the conversation from its current position
-    newData.pages[pageIndex].conversations.splice(convIndex, 1);
-    // Add the updated conversation to the top of the first page
-    newData.pages[0].conversations.unshift({
-      ...updatedConversation,
-      updatedAt: new Date().toISOString(),
-    });
-  }
-
-  return newData;
+export const updateConversation = (
+  data: InfiniteData<ConversationListResponse>,
+  newConversation: TConversation,
+): ConversationData => {
+  return updateData<ConversationListResponse, TConversation>(
+    data,
+    'conversations',
+    newConversation,
+    (page) =>
+      page.conversations.findIndex((c) => c.conversationId === newConversation.conversationId),
+  );
 };
 
 export const updateConvoFields: ConversationUpdater = (
@@ -158,13 +150,13 @@ export const updateConvoFields: ConversationUpdater = (
   updatedConversation: Partial<TConversation> & Pick<TConversation, 'conversationId'>,
 ): ConversationData => {
   const newData = JSON.parse(JSON.stringify(data));
-  const { pageIndex, convIndex } = findPageForConversation(
+  const { pageIndex, index } = findPageForConversation(
     newData,
     updatedConversation as { conversationId: string },
   );
 
-  if (pageIndex !== -1 && convIndex !== -1) {
-    const deleted = newData.pages[pageIndex].conversations.splice(convIndex, 1);
+  if (pageIndex !== -1 && index !== -1) {
+    const deleted = newData.pages[pageIndex].conversations.splice(index, 1);
     const oldConversation = deleted[0] as TConversation;
 
     newData.pages[0].conversations.unshift({
@@ -181,15 +173,9 @@ export const deleteConversation = (
   data: ConversationData,
   conversationId: string,
 ): ConversationData => {
-  const newData = JSON.parse(JSON.stringify(data));
-  const { pageIndex, convIndex } = findPageForConversation(newData, { conversationId });
-
-  if (pageIndex !== -1 && convIndex !== -1) {
-    // Delete the conversation from its current page
-    newData.pages[pageIndex].conversations.splice(convIndex, 1);
-  }
-
-  return newData;
+  return deleteData<ConversationListResponse, ConversationData>(data, 'conversations', (page) =>
+    page.conversations.findIndex((c) => c.conversationId === conversationId),
+  );
 };
 
 export const getConversationById = (

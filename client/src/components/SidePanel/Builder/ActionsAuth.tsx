@@ -134,7 +134,7 @@ const ApiKey = () => {
       <input
         placeholder="<HIDDEN>"
         type="password"
-        autoComplete="off"
+        autoComplete="new-password"
         className="border-token-border-medium mb-2 h-9 w-full resize-none overflow-y-auto rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400 dark:bg-gray-600"
         {...register('api_key', { required: type === AuthTypeEnum.ServiceHttp })}
       />

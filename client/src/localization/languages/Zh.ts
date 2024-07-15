@@ -132,6 +132,20 @@ export default {
   com_ui_assistants_output: '助手输出',
   com_ui_delete: '删除',
   com_ui_create: '创建',
+  com_ui_share: '分享',
+  com_ui_copy_link: '复制链接',
+  com_ui_update_link: '更新链接',
+  com_ui_create_link: '创建链接',
+  com_ui_share_link_to_chat: '分享链接到聊天',
+  com_ui_share_error: '分享聊天链接时发生错误',
+  com_ui_share_create_message: '您的名字及您在分享后添加的任何消息将保持私密。',
+  com_ui_share_created_message:
+    '已创建到您聊天的共享链接。可以通过设置随时管理以前共享的聊天。',
+  com_ui_share_update_message:
+    '您的名字、定制指令及您在分享后添加的任何消息将保持私密。',
+  com_ui_share_updated_message:
+    '已更新到您聊天的共享链接。可以通过设置随时管理以前共享的聊天。',
+  com_ui_shared_link_not_found: '未找到共享链接',
   com_ui_delete_conversation: '删除对话？',
   com_ui_delete_conversation_confirm: '这将删除',
   com_ui_delete_assistant_confirm: '确定要删除此助手吗？该操作无法撤销。',
@@ -386,12 +400,19 @@ export default {
   com_nav_export_recursive_or_sequential: '递归或顺序？',
   com_nav_export_recursive: '递归',
   com_nav_export_conversation: '导出对话',
+  com_nav_export: '导出',
+  com_nav_shared_links: '共享链接',
+  com_nav_shared_links_manage: '管理',
+  com_nav_shared_links_empty: '您没有共享链接。',
+  com_nav_shared_links_name: '名称',
+  com_nav_shared_links_date_shared: '共享日期',
   com_nav_my_files: '我的文件',
   com_nav_theme: '主题',
   com_nav_theme_system: '跟随系统设置',
   com_nav_theme_dark: '暗色主题',
   com_nav_theme_light: '亮色主题',
   com_nav_user_name_display: '在消息中显示用户名',
+  com_nav_save_drafts: '保存草稿本地',
   com_nav_show_code: '使用代码解释器时始终显示代码',
   com_nav_clear_all_chats: '清空所有对话',
   com_nav_confirm_clear: '确认清空',
@@ -417,6 +438,20 @@ export default {
   com_nav_setting_data: '数据管理',
   com_nav_setting_account: '账户',
   /* The following are AI Translated */
+  com_assistants_file_search: '文件搜索',
+  com_assistants_file_search_info:
+    '暂不支持为文件搜索附加向量存储。您可以从提供程序游乐场附加它们,或者在线程基础上为文件搜索附加文件。',
+  com_assistants_non_retrieval_model: '此模型未启用文件搜索功能。请选择其他模型。',
+  com_ui_attach_error_openai: '无法将助手文件附加到其他渠道',
+  com_ui_attach_warn_endpoint: '不兼容的工具可能会忽略非助手文件',
+  com_ui_assistant_deleted: '助手已成功删除',
+  com_ui_assistant_delete_error: '删除助手时出错。',
+  com_ui_date_october: '十月',
+  com_ui_date_november: '十一月',
+  com_ui_date_december: '十二月',
+  com_ui_copied: '已复制！',
+  com_ui_copy_code: '复制代码',
+  com_nav_source_chat: '查看源代码对话',
   com_ui_date_today: '今天',
   com_ui_date_yesterday: '昨天',
   com_ui_date_previous_7_days: '过去7天',
@@ -1021,6 +1056,52 @@ export const comparisons = {
   com_ui_create: {
     english: 'Create',
     translated: '创建',
+  },
+  com_ui_share: {
+    english: 'Share',
+    translated: '分享',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: '复制链接',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: '更新链接',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: '创建链接',
+  },
+  com_ui_share_link_to_chat: {
+    english: 'Share link to chat',
+    translated: '分享链接到聊天',
+  },
+  com_ui_share_error: {
+    english: 'There was an error sharing the chat link',
+    translated: '分享聊天链接时发生错误',
+  },
+  com_ui_share_create_message: {
+    english: 'Your name and any messages you add after sharing stay private.',
+    translated: '您的名字及您在分享后添加的任何消息将保持私密。',
+  },
+  com_ui_share_created_message: {
+    english:
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated: '已创建到您聊天的共享链接。可以通过设置随时管理以前共享的聊天。',
+  },
+  com_ui_share_update_message: {
+    english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated: '您的名字、定制指令及您在分享后添加的任何消息将保持私密。',
+  },
+  com_ui_share_updated_message: {
+    english:
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated: '已更新到您聊天的共享链接。可以通过设置随时管理以前共享的聊天。',
+  },
+  com_ui_shared_link_not_found: {
+    english: 'Shared link not found',
+    translated: '未找到共享链接',
   },
   com_ui_delete_conversation: {
     english: 'Delete chat?',
@@ -1991,6 +2072,30 @@ export const comparisons = {
     english: 'Export conversation',
     translated: '导出对话',
   },
+  com_nav_export: {
+    english: 'Export',
+    translated: '导出',
+  },
+  com_nav_shared_links: {
+    english: 'Shared links',
+    translated: '共享链接',
+  },
+  com_nav_shared_links_manage: {
+    english: 'Manage',
+    translated: '管理',
+  },
+  com_nav_shared_links_empty: {
+    english: 'You have no shared links.',
+    translated: '您没有共享链接。',
+  },
+  com_nav_shared_links_name: {
+    english: 'Name',
+    translated: '名称',
+  },
+  com_nav_shared_links_date_shared: {
+    english: 'Date shared',
+    translated: '共享日期',
+  },
   com_nav_my_files: {
     english: 'My Files',
     translated: '我的文件',
@@ -2014,6 +2119,10 @@ export const comparisons = {
   com_nav_user_name_display: {
     english: 'Display username in messages',
     translated: '在消息中显示用户名',
+  },
+  com_nav_save_drafts: {
+    english: 'Save drafts locally',
+    translated: '保存草稿本地',
   },
   com_nav_show_code: {
     english: 'Always show code when using code interpreter',
@@ -2110,6 +2219,60 @@ export const comparisons = {
   com_nav_setting_account: {
     english: 'Account',
     translated: '账户',
+  },
+  com_assistants_file_search: {
+    english: 'File Search',
+    translated: '文件搜索',
+  },
+  com_assistants_file_search_info: {
+    english:
+      'Attaching vector stores for File Search is not yet supported. You can attach them from the Provider Playground or attach files to messages for file search on a thread basis.',
+    translated:
+      '暂不支持为文件搜索附加向量存储。您可以从提供程序游乐场附加它们,或者在线程基础上为文件搜索附加文件。',
+  },
+  com_assistants_non_retrieval_model: {
+    english: 'File search is not enabled on this model. Please select another model.',
+    translated: '此模型未启用文件搜索功能。请选择其他模型。',
+  },
+  com_ui_attach_error_openai: {
+    english: 'Cannot attach Assistant files to other endpoints',
+    translated: '无法将助手文件附加到其他渠道',
+  },
+  com_ui_attach_warn_endpoint: {
+    english: 'Non-Assistant files may be ignored without a compatible tool',
+    translated: '不兼容的工具可能会忽略非助手文件',
+  },
+  com_ui_assistant_deleted: {
+    english: 'Successfully deleted assistant',
+    translated: '助手已成功删除',
+  },
+  com_ui_assistant_delete_error: {
+    english: 'There was an error deleting the assistant',
+    translated: '删除助手时出错。',
+  },
+  com_ui_date_october: {
+    english: 'October',
+    translated: '十月',
+  },
+  com_ui_date_november: {
+    english: 'November',
+    translated: '十一月',
+  },
+  com_ui_date_december: {
+    english: 'December',
+    translated: '十二月',
+  },
+  com_ui_copied: {
+    english: 'Copied!',
+    translated: '已复制！',
+  },
+  com_ui_copy_code: {
+    english: 'Copy code',
+    translated: '复制代码',
+  },
+  com_nav_source_chat: {
+    english: 'View source chat',
+    translated: '查看源代码对话',
   },
   com_ui_date_today: {
     english: 'Today',

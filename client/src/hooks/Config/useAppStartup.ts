@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import TagManager from 'react-gtm-module';
 import { useRecoilState, useSetRecoilState } from 'recoil';
 import { LocalStorageKeys } from 'librechat-data-provider';
 import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
@@ -98,4 +99,11 @@ export default function useAppStartup({
 
     setAvailableTools({ pluginStore, ...mapPlugins(tools) });
   }, [allPlugins, user, setAvailableTools]);
+
+  if (startupConfig?.analyticsGtmId) {
+    const tagManagerArgs = {
+      gtmId: startupConfig?.analyticsGtmId,
+    };
+    TagManager.initialize(tagManagerArgs);
+  }
 }

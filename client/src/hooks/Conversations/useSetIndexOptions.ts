@@ -157,13 +157,13 @@ const useSetIndexOptions: TUseSetOptions = (preset = false) => {
   };
 
   return {
+    setTools,
     setOption,
     setExample,
     addExample,
     removeExample,
     setAgentOption,
     checkPluginSelection,
-    setTools,
   };
 };
 

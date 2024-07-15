@@ -1,9 +1,11 @@
+const fetch = require('node-fetch');
 const passport = require('passport');
 const jwtDecode = require('jsonwebtoken/decode');
-const { Issuer, Strategy: OpenIDStrategy } = require('openid-client');
+const { HttpsProxyAgent } = require('https-proxy-agent');
+const { Issuer, Strategy: OpenIDStrategy, custom } = require('openid-client');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { findUser, createUser, updateUser } = require('~/models/userMethods');
 const { logger } = require('~/config');
-const User = require('~/models/User');
 
 let crypto;
 try {
@@ -66,6 +68,13 @@ function convertToUsername(input, defaultValue = '') {
 
 async function setupOpenId() {
   try {
+    if (process.env.PROXY) {
+      const proxyAgent = new HttpsProxyAgent(process.env.PROXY);
+      custom.setHttpOptionsDefaults({
+        agent: proxyAgent,
+      });
+      logger.info(`[openidStrategy] proxy agent added: ${process.env.PROXY}`);
+    }
     const issuer = await Issuer.discover(process.env.OPENID_ISSUER);
     const client = new issuer.Client({
       client_id: process.env.OPENID_CLIENT_ID,
@@ -84,10 +93,21 @@ async function setupOpenId() {
       },
       async (tokenset, userinfo, done) => {
         try {
-          let user = await User.findOne({ openidId: userinfo.sub });
+          logger.info(`[openidStrategy] verify login openidId: ${userinfo.sub}`);
+          logger.debug('[openidStrategy] very login tokenset and userinfo', { tokenset, userinfo });
+
+          let user = await findUser({ openidId: userinfo.sub });
+          logger.info(
+            `[openidStrategy] user ${user ? 'found' : 'not found'} with openidId: ${userinfo.sub}`,
+          );
 
           if (!user) {
-            user = await User.findOne({ email: userinfo.email });
+            user = await findUser({ email: userinfo.email });
+            logger.info(
+              `[openidStrategy] user ${user ? 'found' : 'not found'} with email: ${
+                userinfo.email
+              } for openidId: ${userinfo.sub}`,
+            );
           }
 
           let fullName = '';
@@ -119,8 +139,8 @@ async function setupOpenId() {
             }, decodedToken);
 
             if (!found) {
-              console.error(
-                `Key '${requiredRoleParameterPath}' not found in ${requiredRoleTokenKind} token!`,
+              logger.error(
+                `[openidStrategy] Key '${requiredRoleParameterPath}' not found in ${requiredRoleTokenKind} token!`,
               );
             }
 
@@ -136,14 +156,15 @@ async function setupOpenId() {
           );
 
           if (!user) {
-            user = new User({
+            user = {
               provider: 'openid',
               openidId: userinfo.sub,
               username,
               email: userinfo.email || '',
               emailVerified: userinfo.email_verified || false,
               name: fullName,
-            });
+            };
+            user = await createUser(user, true, true);
           } else {
             user.provider = 'openid';
             user.openidId = userinfo.sub;
@@ -151,7 +172,7 @@ async function setupOpenId() {
             user.name = fullName;
           }
 
-          if (userinfo.picture) {
+          if (userinfo.picture && !user.avatar?.includes('manual=true')) {
             /** @type {string | undefined} */
             const imageUrl = userinfo.picture;
 
@@ -165,25 +186,34 @@ async function setupOpenId() {
             }
 
             const imageBuffer = await downloadImage(imageUrl, tokenset.access_token);
-            const { saveBuffer } = getStrategyFunctions(process.env.CDN_PROVIDER);
             if (imageBuffer) {
+              const { saveBuffer } = getStrategyFunctions(process.env.CDN_PROVIDER);
               const imagePath = await saveBuffer({
                 fileName,
                 userId: user._id.toString(),
                 buffer: imageBuffer,
               });
               user.avatar = imagePath ?? '';
-            } else {
-              user.avatar = '';
             }
-          } else {
-            user.avatar = '';
           }
 
-          await user.save();
+          user = await updateUser(user._id, user);
+
+          logger.info(
+            `[openidStrategy] login success openidId: ${user.openidId} | email: ${user.email} | username: ${user.username} `,
+            {
+              user: {
+                openidId: user.openidId,
+                username: user.username,
+                email: user.email,
+                name: user.name,
+              },
+            },
+          );
 
           done(null, user);
         } catch (err) {
+          logger.error('[openidStrategy] login failed', err);
           done(err);
         }
       },

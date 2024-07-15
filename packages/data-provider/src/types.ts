@@ -1,5 +1,12 @@
 import OpenAI from 'openai';
-import type { TResPlugin, TMessage, TConversation, EModelEndpoint, ImageDetail } from './schemas';
+import type {
+  TResPlugin,
+  TMessage,
+  TConversation,
+  EModelEndpoint,
+  ImageDetail,
+  TSharedLink,
+} from './schemas';
 import type { TSpecsConfig } from './models';
 export type TOpenAIMessage = OpenAI.Chat.ChatCompletionMessageParam;
 export type TOpenAIFunction = OpenAI.Chat.ChatCompletionCreateParams.Function;
@@ -30,10 +37,17 @@ export type TEndpointOption = {
   thread_id?: string;
 };
 
+export type TPayload = Partial<TMessage> &
+  Partial<TEndpointOption> & {
+    isContinued: boolean;
+    conversationId: string | null;
+    messages?: TMessages;
+  };
+
 export type TSubmission = {
   plugin?: TResPlugin;
   plugins?: TResPlugin[];
-  message: TMessage;
+  userMessage: TMessage;
   isEdited?: boolean;
   isContinued?: boolean;
   messages: TMessage[];
@@ -133,6 +147,19 @@ export type TArchiveConversationRequest = {
 
 export type TArchiveConversationResponse = TConversation;
 
+export type TSharedMessagesResponse = Omit<TSharedLink, 'messages'> & {
+  messages: TMessage[];
+};
+export type TSharedLinkRequest = Partial<
+  Omit<TSharedLink, 'messages' | 'createdAt' | 'updatedAt'>
+> & {
+  conversationId: string;
+};
+
+export type TSharedLinkResponse = TSharedLink;
+export type TSharedLinksResponse = TSharedLink[];
+export type TDeleteSharedLinkResponse = TSharedLink;
+
 export type TForkConvoRequest = {
   messageId: string;
   conversationId: string;
@@ -163,6 +190,7 @@ export type TConfig = {
   plugins?: Record<string, string>;
   name?: string;
   iconURL?: string;
+  version?: string;
   modelDisplayLabel?: string;
   userProvide?: boolean | null;
   userProvideURL?: boolean | null;
@@ -186,6 +214,10 @@ export type TMessageTreeNode = object;
 export type TSearchMessage = object;
 
 export type TSearchMessageTreeNode = object;
+
+export type TRegisterUserResponse = {
+  message: string;
+};
 
 export type TRegisterUser = {
   name: string;
@@ -216,6 +248,15 @@ export type TResetPassword = {
   confirm_password?: string;
 };
 
+export type VerifyEmailResponse = { message: string };
+
+export type TVerifyEmail = {
+  email: string;
+  token: string;
+};
+
+export type TResendVerificationEmail = Omit<TVerifyEmail, 'token'>;
+
 export type TInterfaceConfig = {
   privacyPolicy?: {
     externalUrl?: string;
@@ -243,16 +284,21 @@ export type TStartupConfig = {
   openidLoginEnabled: boolean;
   openidLabel: string;
   openidImageUrl: string;
+  ldapLoginEnabled: boolean;
   serverDomain: string;
   emailLoginEnabled: boolean;
   registrationEnabled: boolean;
   socialLoginEnabled: boolean;
+  passwordResetEnabled: boolean;
   emailEnabled: boolean;
   checkBalance: boolean;
   showBirthdayIcon: boolean;
   helpAndFaqURL: string;
   customFooter?: string;
   modelSpecs?: TSpecsConfig;
+  sharedLinksEnabled: boolean;
+  publicSharedLinksEnabled: boolean;
+  analyticsGtmId?: string;
 };
 
 export type TRefreshTokenResponse = {
@@ -272,39 +318,9 @@ export type TRequestPasswordResetResponse = {
 /**
  * Represents the response from the import endpoint.
  */
-export type TImportStartResponse = {
+export type TImportResponse = {
   /**
    * The message associated with the response.
    */
   message: string;
-
-  /**
-   * The ID of the job associated with the import.
-   */
-  jobId: string;
-};
-
-/**
- * Represents the status of an import job.
- */
-export type TImportJobStatus = {
-  /**
-   * The name of the job.
-   */
-  name: string;
-
-  /**
-   * The ID of the job.
-   */
-  id: string;
-
-  /**
-   * The status of the job.
-   */
-  status: 'scheduled' | 'running' | 'completed' | 'failed';
-
-  /**
-   * The reason the job failed, if applicable.
-   */
-  failReason?: string;
 };

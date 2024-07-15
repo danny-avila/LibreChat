@@ -53,6 +53,20 @@ export default {
   com_ui_import_conversation_error: 'Đã xảy ra lỗi khi nhập khẩu cuộc trò chuyện của bạn',
   com_ui_confirm_action: 'Xác nhận hành động',
   com_ui_chats: 'cuộc trò chuyện',
+  com_ui_share: 'Chia sẻ',
+  com_ui_copy_link: 'Sao chép liên kết',
+  com_ui_update_link: 'Cập nhật liên kết',
+  com_ui_create_link: 'Tạo liên kết',
+  com_ui_share_link_to_chat: 'Chia sẻ liên kết đến cuộc trò chuyện',
+  com_ui_share_error: 'Có lỗi xảy ra khi chia sẻ liên kết trò chuyện',
+  com_ui_share_create_message: 'Tên của bạn và bất kỳ tin nhắn nào bạn thêm sau khi chia sẻ sẽ được giữ kín.',
+  com_ui_share_created_message:
+    'Liên kết chia sẻ đến cuộc trò chuyện của bạn đã được tạo. Quản lý các cuộc trò chuyện đã chia sẻ trước đây bất cứ lúc nào thông qua Cài đặt.',
+  com_ui_share_update_message:
+    'Tên của bạn, hướng dẫn tùy chỉnh và bất kỳ tin nhắn nào bạn thêm sau khi chia sẻ sẽ được giữ kín.',
+  com_ui_share_updated_message:
+    'Liên kết chia sẻ đến cuộc trò chuyện của bạn đã được cập nhật. Quản lý các cuộc trò chuyện đã chia sẻ trước đây bất cứ lúc nào thông qua Cài đặt.',
+  com_ui_shared_link_not_found: 'Không tìm thấy liên kết chia sẻ',
   com_ui_delete: 'Xóa',
   com_ui_delete_conversation: 'Xóa cuộc trò chuyện?',
   com_ui_delete_conversation_confirm: 'Điều này sẽ xóa',
@@ -254,6 +268,12 @@ export default {
   com_nav_export_recursive_or_sequential: 'Đệ quy hay tuần tự?',
   com_nav_export_recursive: 'Đệ quy',
   com_nav_export_conversation: 'Xuất cuộc trò chuyện',
+  com_nav_export: 'Xuất',
+  com_nav_shared_links: 'Liên kết được chia sẻ',
+  com_nav_shared_links_manage: 'Quản l',
+  com_nav_shared_links_empty: 'Bạn không có link được chia sẻ.',
+  com_nav_shared_links_name: 'Tên',
+  com_nav_shared_links_date_shared: 'Ngày chia sẻ',
   com_nav_theme: 'Chủ đề',
   com_nav_theme_system: 'Hệ thống',
   com_nav_theme_dark: 'Tối',
@@ -472,6 +492,54 @@ export const comparisons = {
   com_ui_chats: {
     english: 'chats',
     translated: 'cuộc trò chuyện',
+  },
+  com_ui_share: {
+    english: 'Share',
+    translated: 'Chia sẻ',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: 'Sao chép liên kết',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: 'Cập nhật liên kết',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: 'Tạo liên kết',
+  },
+  com_ui_share_link_to_chat: {
+    english: 'Share link to chat',
+    translated: 'Chia sẻ liên kết đến cuộc trò chuyện',
+  },
+  com_ui_share_error: {
+    english: 'There was an error sharing the chat link',
+    translated: 'Có lỗi xảy ra khi chia sẻ liên kết trò chuyện',
+  },
+  com_ui_share_create_message: {
+    english: 'Your name and any messages you add after sharing stay private.',
+    translated: 'Tên của bạn và bất kỳ tin nhắn nào bạn thêm sau khi chia sẻ sẽ được giữ kín.',
+  },
+  com_ui_share_created_message: {
+    english:
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated:
+      'Liên kết chia sẻ đến cuộc trò chuyện của bạn đã được tạo. Quản lý các cuộc trò chuyện đã chia sẻ trước đây bất cứ lúc nào thông qua Cài đặt.',
+  },
+  com_ui_share_update_message: {
+    english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated: 'Tên của bạn, hướng dẫn tùy chỉnh và bất kỳ tin nhắn nào bạn thêm sau khi chia sẻ sẽ được giữ kín.',
+  },
+  com_ui_share_updated_message: {
+    english:
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated:
+      'Liên kết chia sẻ đến cuộc trò chuyện của bạn đã được cập nhật. Quản lý các cuộc trò chuyện đã chia sẻ trước đây bất cứ lúc nào thông qua Cài đặt.',
+  },
+  com_ui_shared_link_not_found: {
+    english: 'Shared link not found',
+    translated: 'Không tìm thấy liên kết chia sẻ',
   },
   com_ui_delete: {
     english: 'Delete',
@@ -1192,6 +1260,30 @@ export const comparisons = {
   com_nav_export_conversation: {
     english: 'Export conversation',
     translated: 'Xuất cuộc trò chuyện',
+  },
+  com_nav_export: {
+    english: 'Export',
+    translated: 'Xuất',
+  },
+  com_nav_shared_links: {
+    english: 'Shared links',
+    translated: 'Liên kết được chia sẻ',
+  },
+  com_nav_shared_links_manage: {
+    english: 'Manage',
+    translated: 'Quản l',
+  },
+  com_nav_shared_links_empty: {
+    english: 'You have no shared links.',
+    translated: 'Bạn không có link được chia sẻ.',
+  },
+  com_nav_shared_links_name: {
+    english: 'Name',
+    translated: 'Tên',
+  },
+  com_nav_shared_links_date_shared: {
+    english: 'Date shared',
+    translated: 'Ngày chia sẻ',
   },
   com_nav_theme: {
     english: 'Theme',

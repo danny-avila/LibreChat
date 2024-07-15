@@ -5,10 +5,11 @@ import { GoogleSettings, PluginSettings } from './MultiView';
 import AssistantsSettings from './Assistants';
 import AnthropicSettings from './Anthropic';
 import BingAISettings from './BingAI';
-import OpenAISettings from './OpenAIQima';
+import OpenAISettings from './OpenAI';
 
 const settings: { [key: string]: FC<TModelSelectProps> } = {
   [EModelEndpoint.assistants]: AssistantsSettings,
+  [EModelEndpoint.azureAssistants]: AssistantsSettings,
   [EModelEndpoint.openAI]: OpenAISettings,
   [EModelEndpoint.custom]: OpenAISettings,
   [EModelEndpoint.azureOpenAI]: OpenAISettings,

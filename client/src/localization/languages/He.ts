@@ -91,6 +91,20 @@ export default {
   com_ui_assistant: 'סייען',
   com_ui_delete: 'מחק',
   com_ui_create: 'צור',
+  com_ui_share: 'שתף',
+  com_ui_copy_link: 'העתק קישור',
+  com_ui_update_link: 'עדכן קישור',
+  com_ui_create_link: 'צור קישור',
+  com_ui_share_link_to_chat: 'שתף קישור בצ\'אט',
+  com_ui_share_error: 'אירעה שגיאה בעת שיתוף קישור הצ\'אט',
+  com_ui_share_create_message: 'שמך וכל הודעה שתוסיף לאחר השיתוף יישארו פרטיים.',
+  com_ui_share_created_message:
+    'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  com_ui_share_update_message:
+    'Your name, custom instructions, and any messages you add after sharing stay private.',
+  com_ui_share_updated_message:
+    'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete_conversation: 'למחוק את השיחה (צאט)?',
   com_ui_delete_conversation_confirm: 'זה ימחק',
   com_ui_delete_assistant_confirm:
@@ -345,11 +359,18 @@ export default {
   com_nav_export_recursive_or_sequential: 'רקורסיבי או רציף?',
   com_nav_export_recursive: 'רקורסיבי',
   com_nav_export_conversation: 'ייצא שיחה',
+  com_nav_export: 'ייצא',
+  com_nav_shared_links: 'קישורים משותפים',
+  com_nav_shared_links_manage: 'ניהול',
+  com_nav_shared_links_empty: 'אין לך קישורים משותפים.',
+  com_nav_shared_links_name: 'שם',
+  com_nav_shared_links_date_shared: 'תאריך שיתוף',
   com_nav_theme: 'נושא',
   com_nav_theme_system: 'מערכת',
   com_nav_theme_dark: 'כהה',
   com_nav_theme_light: 'אור',
   com_nav_user_name_display: 'הצג שם משתמש בהודעות',
+  com_nav_save_drafts: 'שמיר את האפצה באותו מחשב',
   com_nav_clear_all_chats: 'נקה את כל השיחות',
   com_nav_confirm_clear: 'אשר נקה',
   com_nav_close_sidebar: 'סגור סרגל צד',
@@ -722,6 +743,54 @@ export const comparisons = {
   com_ui_create: {
     english: 'Create',
     translated: 'צור',
+  },
+  com_ui_share: {
+    english: 'Share',
+    translated: 'שתף',
+  },
+  com_ui_copy_link: {
+    english: 'Copy link',
+    translated: 'העתק קישור',
+  },
+  com_ui_update_link: {
+    english: 'Update link',
+    translated: 'עדכן קישור',
+  },
+  com_ui_create_link: {
+    english: 'Create link',
+    translated: 'צור קישור',
+  },
+  com_ui_share_link_to_chat: {
+    english: 'Share link to chat',
+    translated: 'שתף קישור בצ\'אט',
+  },
+  com_ui_share_error: {
+    english: 'There was an error sharing the chat link',
+    translated: 'אירעה שגיאה בעת שיתוף קישור הצ\'אט',
+  },
+  com_ui_share_create_message: {
+    english: 'Your name and any messages you add after sharing stay private.',
+    translated: 'שמך וכל הודעה שתוסיף לאחר השיתוף יישארו פרטיים.',
+  },
+  com_ui_share_created_message: {
+    english:
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_share_update_message: {
+    english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+    translated: 'Your name, custom instructions, and any messages you add after sharing stay private.',
+  },
+  com_ui_share_updated_message: {
+    english:
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+    translated:
+      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  },
+  com_ui_shared_link_not_found: {
+    english: 'Shared link not found',
+    translated: 'Shared link not found',
   },
   com_ui_delete_conversation: {
     english: 'Delete chat?',
@@ -1659,6 +1728,30 @@ export const comparisons = {
     english: 'Export conversation',
     translated: 'ייצא שיחה',
   },
+  com_nav_export: {
+    english: 'Export',
+    translated: 'ייצא',
+  },
+  com_nav_shared_links: {
+    english: 'Shared links',
+    translated: 'קישורים משותפים',
+  },
+  com_nav_shared_links_manage: {
+    english: 'Manage',
+    translated: 'ניהול',
+  },
+  com_nav_shared_links_empty: {
+    english: 'You have no shared links.',
+    translated: 'אין לך קישורים משותפים.',
+  },
+  com_nav_shared_links_name: {
+    english: 'Name',
+    translated: 'שם',
+  },
+  com_nav_shared_links_date_shared: {
+    english: 'Date shared',
+    translated: 'תאריך שיתוף',
+  },
   com_nav_theme: {
     english: 'Theme',
     translated: 'נושא',
@@ -1678,6 +1771,10 @@ export const comparisons = {
   com_nav_user_name_display: {
     english: 'Display username in messages',
     translated: 'הצג שם משתמש בהודעות',
+  },
+  com_nav_save_drafts: {
+    english: 'Save drafts locally',
+    translated: 'שמיר את האפצה באותו מחשב',
   },
   com_nav_clear_all_chats: {
     english: 'Clear all chats',

@@ -1,5 +1,7 @@
 import TextareaAutosize from 'react-textarea-autosize';
 import { ImageDetail, imageDetailNumeric, imageDetailValue } from 'librechat-data-provider';
+import type { ValueType } from '@rc-component/mini-decimal';
+import type { TModelSelectProps } from '~/common';
 import {
   Input,
   Label,
@@ -11,7 +13,6 @@ import {
 } from '~/components/ui';
 import { cn, defaultTextProps, optionText, removeFocusOutlines } from '~/utils/';
 import { useLocalize, useDebouncedInput } from '~/hooks';
-import type { TModelSelectProps } from '~/common';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
 
@@ -127,7 +128,7 @@ export default function Settings({
                 id="temp-int"
                 disabled={readonly}
                 value={temperatureValue as number}
-                onChange={setTemperature}
+                onChange={setTemperature as (value: ValueType | null) => void}
                 max={2}
                 min={0}
                 step={0.01}
