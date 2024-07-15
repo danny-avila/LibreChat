@@ -44,7 +44,7 @@ const ten_minutes = 1000 * 60 * 10;
 const chatV2 = async (req, res) => {
   logger.debug('[/assistants/chat/] req.body', req.body);
 
-  /** @type {{ files: MongoFile[]}} */
+  /** @type {{files: MongoFile[]}} */
   const {
     text,
     model,
@@ -370,6 +370,11 @@ const chatV2 = async (req, res) => {
         },
       };
 
+      /** @type {undefined | TAssistantEndpoint} */
+      const config = req.app.locals[endpoint] ?? {};
+      /** @type {undefined | TBaseEndpoint} */
+      const allConfig = req.app.locals.all;
+
       const streamRunManager = new StreamRunManager({
         req,
         res,
@@ -379,6 +384,7 @@ const chatV2 = async (req, res) => {
         attachedFileIds,
         parentMessageId: userMessageId,
         responseMessage: openai.responseMessage,
+        streamRate: allConfig?.streamRate ?? config.streamRate,
         // streamOptions: {
 
         // },

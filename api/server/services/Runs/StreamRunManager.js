@@ -7,10 +7,11 @@ const {
   ToolCallTypes,
   MessageContentTypes,
   AssistantStreamEvents,
+  Constants,
 } = require('librechat-data-provider');
 const { retrieveAndProcessFile } = require('~/server/services/Files/process');
 const { processRequiredActions } = require('~/server/services/ToolService');
-const { createOnProgress, sendMessage } = require('~/server/utils');
+const { createOnProgress, sendMessage, sleep } = require('~/server/utils');
 const { processMessages } = require('~/server/services/Threads');
 const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
@@ -69,6 +70,8 @@ class StreamRunManager {
     this.attachedFileIds = fields.attachedFileIds;
     /** @type {undefined | Promise<ChatCompletion>} */
     this.visionPromise = fields.visionPromise;
+    /** @type {number} */
+    this.streamRate = fields.streamRate ?? Constants.DEFAULT_STREAM_RATE;
 
     /**
      * @type {Object.<AssistantStreamEvents, (event: AssistantStreamEvent) => Promise<void>>}
@@ -346,6 +349,8 @@ class StreamRunManager {
           type: ContentTypes.TOOL_CALL,
           index,
         });
+
+        await sleep(this.streamRate);
       }
     };
 
@@ -443,6 +448,7 @@ class StreamRunManager {
     if (content && content.type === MessageContentTypes.TEXT) {
       this.intermediateText += content.text.value;
       onProgress(content.text.value);
+      await sleep(this.streamRate);
     }
   }
 

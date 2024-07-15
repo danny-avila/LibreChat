@@ -942,7 +942,7 @@ export enum Constants {
   /** Max length for commands */
   COMMANDS_MAX_LENGTH = 56,
   /** Default Stream Rate (ms) */
-  DEFAULT_STREAM_RATE = 2,
+  DEFAULT_STREAM_RATE = 1,
 }
 
 export enum LocalStorageKeys {
