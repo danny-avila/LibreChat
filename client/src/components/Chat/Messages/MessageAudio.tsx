@@ -24,7 +24,6 @@ export default function MessageAudio({ index, message, isLast }: THoverButtons) 
   const isMouseDownRef = useRef(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const counterRef = useRef(0);
-  const hasTriggeredSpeechRef = useRef(false);
 
   const renderIcon = (size: string) => {
     if (isLoading) {

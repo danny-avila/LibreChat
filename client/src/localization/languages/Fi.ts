@@ -415,8 +415,8 @@ export default {
   com_endpoint_stop: 'Pysäytyssekvenssit',
   com_endpoint_stop_placeholder: 'Erota arvot toisistaan rivinvaihdoilla',
   com_endpoint_openai_max_tokens: `Valinnainen \`max_tokens\` -kenttä, joka kuvaa keskustelun vastauksessa generoitujen tokeneiden maksimimäärää.
-  
-      Syötteen ja vastauksen kokonaispituutta rajoittaa mallin konteksti-ikkuna. Konteksti -ikkunan koon ylittämisestä voi seurata virheitä.`,
+
+    Syötteen ja vastauksen kokonaispituutta rajoittaa mallin konteksti-ikkuna. Konteksti -ikkunan koon ylittämisestä voi seurata virheitä.`,
   com_endpoint_openai_temp:
     'Korkeampi arvo = satunnaisempi; matalampi arvo = keskittyneempi ja deterministisempi. Suosittelemme, että muokkaat tätä tai Top P:tä, mutta ei molempia.',
   com_endpoint_openai_max:
