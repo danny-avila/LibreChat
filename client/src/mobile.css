@@ -275,3 +275,20 @@
 .azure-bg-color {
   background: linear-gradient(0.375turn, #61bde2, #4389d0);
 }
+
+@keyframes slowPulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.slow-pulse {
+  animation: slowPulse 2.5s ease-in-out infinite;
+}
+
+.scrollbar-gutter-stable {
+  scrollbar-gutter: stable;
+}

@@ -87,6 +87,7 @@ const EditMessage = ({
         contentEditable={true}
         ref={textEditor}
         suppressContentEditableWarning={true}
+        dir="auto"
       >
         {text}
       </div>

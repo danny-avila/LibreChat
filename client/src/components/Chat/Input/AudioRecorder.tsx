@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
-import type { UseFormReturn } from 'react-hook-form';
-import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui/';
+import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
 import { ListeningIcon, Spinner } from '~/components/svg';
 import { useLocalize, useSpeechToText } from '~/hooks';
+import { useChatFormContext } from '~/Providers';
 import { globalAudioId } from '~/common';
 
 export default function AudioRecorder({
@@ -12,7 +12,7 @@ export default function AudioRecorder({
   disabled,
 }: {
   textAreaRef: React.RefObject<HTMLTextAreaElement>;
-  methods: UseFormReturn<{ text: string }>;
+  methods: ReturnType<typeof useChatFormContext>;
   ask: (data: { text: string }) => void;
   disabled: boolean;
 }) {
@@ -31,15 +31,26 @@ export default function AudioRecorder({
     }
   };
 
-  const { isListening, isLoading, startRecording, stopRecording, speechText, clearText } =
-    useSpeechToText(handleTranscriptionComplete);
+  const {
+    isListening,
+    isLoading,
+    startRecording,
+    stopRecording,
+    interimTranscript,
+    speechText,
+    clearText,
+  } = useSpeechToText(handleTranscriptionComplete);
 
   useEffect(() => {
-    if (textAreaRef.current) {
+    if (isListening && textAreaRef.current) {
+      methods.setValue('text', interimTranscript, {
+        shouldValidate: true,
+      });
+    } else if (textAreaRef.current) {
       textAreaRef.current.value = speechText;
       methods.setValue('text', speechText, { shouldValidate: true });
     }
-  }, [speechText, methods, textAreaRef]);
+  }, [interimTranscript, speechText, methods, textAreaRef]);
 
   const handleStartRecording = async () => {
     await startRecording();

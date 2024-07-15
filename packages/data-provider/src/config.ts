@@ -233,6 +233,15 @@ const ttsOpenaiSchema = z.object({
   voices: z.array(z.string()),
 });
 
+const ttsAzureOpenAISchema = z.object({
+  instanceName: z.string(),
+  apiKey: z.string(),
+  deploymentName: z.string(),
+  apiVersion: z.string(),
+  model: z.string(),
+  voices: z.array(z.string()),
+});
+
 const ttsElevenLabsSchema = z.object({
   url: z.string().optional(),
   websocketUrl: z.string().optional(),
@@ -259,19 +268,62 @@ const ttsLocalaiSchema = z.object({
 
 const ttsSchema = z.object({
   openai: ttsOpenaiSchema.optional(),
+  azureOpenAI: ttsAzureOpenAISchema.optional(),
   elevenLabs: ttsElevenLabsSchema.optional(),
   localai: ttsLocalaiSchema.optional(),
 });
 
-const sttSchema = z.object({
-  openai: z
-    .object({
-      url: z.string().optional(),
-      apiKey: z.string().optional(),
-      model: z.string().optional(),
-    })
-    .optional(),
+const sttOpenaiSchema = z.object({
+  url: z.string().optional(),
+  apiKey: z.string(),
+  model: z.string(),
 });
+
+const sttAzureOpenAISchema = z.object({
+  instanceName: z.string(),
+  apiKey: z.string(),
+  deploymentName: z.string(),
+  apiVersion: z.string(),
+});
+
+const sttSchema = z.object({
+  openai: sttOpenaiSchema.optional(),
+  azureOpenAI: sttAzureOpenAISchema.optional(),
+});
+
+const speechTab = z
+  .object({
+    conversationMode: z.boolean().optional(),
+    advancedMode: z.boolean().optional(),
+    speechToText: z
+      .boolean()
+      .optional()
+      .or(
+        z.object({
+          engineSTT: z.string().optional(),
+          languageSTT: z.string().optional(),
+          autoTranscribeAudio: z.boolean().optional(),
+          decibelValue: z.number().optional(),
+          autoSendText: z.boolean().optional(),
+        }),
+      )
+      .optional(),
+    textToSpeech: z
+      .boolean()
+      .optional()
+      .or(
+        z.object({
+          engineTTS: z.string().optional(),
+          voice: z.string().optional(),
+          languageTTS: z.string().optional(),
+          automaticPlayback: z.boolean().optional(),
+          playbackRate: z.number().optional(),
+          cacheTTS: z.boolean().optional(),
+        }),
+      )
+      .optional(),
+  })
+  .optional();
 
 export enum RateLimitPrefix {
   FILE_UPLOAD = 'FILE_UPLOAD',
@@ -362,8 +414,13 @@ export const configSchema = z.object({
       allowedDomains: z.array(z.string()).optional(),
     })
     .default({ socialLogins: defaultSocialLogins }),
-  tts: ttsSchema.optional(),
-  stt: sttSchema.optional(),
+  speech: z
+    .object({
+      tts: ttsSchema.optional(),
+      stt: sttSchema.optional(),
+      speechTab: speechTab.optional(),
+    })
+    .optional(),
   rateLimits: rateLimitSchema.optional(),
   fileConfig: fileConfigSchema.optional(),
   modelSpecs: specsConfigSchema.optional(),
@@ -473,6 +530,7 @@ export const defaultModels = {
     'code-bison-32k',
   ],
   [EModelEndpoint.anthropic]: [
+    'claude-3-5-sonnet-20240620',
     'claude-3-opus-20240229',
     'claude-3-sonnet-20240229',
     'claude-3-haiku-20240307',
@@ -586,6 +644,20 @@ export function validateVisionModel({
 export const imageGenTools = new Set(['dalle', 'dall-e', 'stable-diffusion']);
 
 /**
+ * Enum for collections using infinite queries
+ */
+export enum InfiniteCollections {
+  /**
+   * Collection for Prompt Groups
+   */
+  PROMPT_GROUPS = 'promptGroups',
+  /**
+   * Collection for Shared Links
+   */
+  SHARED_LINKS = 'sharedLinks',
+}
+
+/**
  * Enum for cache keys.
  */
 export enum CacheKeys {
@@ -593,6 +665,10 @@ export enum CacheKeys {
    * Key for the config store namespace.
    */
   CONFIG_STORE = 'configStore',
+  /**
+   * Key for the config store namespace.
+   */
+  ROLES = 'roles',
   /**
    * Key for the plugins cache.
    */
@@ -614,6 +690,10 @@ export enum CacheKeys {
    * Key for the model queries cache.
    */
   MODEL_QUERIES = 'modelQueries',
+  /**
+   * Key for the default startup config cache.
+   */
+  STARTUP_CONFIG = 'startupConfig',
   /**
    * Key for the default endpoint config cache.
    */
@@ -783,18 +863,54 @@ export enum SettingsTabValues {
   ACCOUNT = 'account',
 }
 
+export enum STTProviders {
+  /**
+   * Provider for OpenAI STT
+   */
+  OPENAI = 'openai',
+  /**
+   * Provider for Microsoft Azure STT
+   */
+  AZURE_OPENAI = 'azureOpenAI',
+}
+
+export enum TTSProviders {
+  /**
+   * Provider for OpenAI TTS
+   */
+  OPENAI = 'openai',
+  /**
+   * Provider for Microsoft Azure OpenAI TTS
+   */
+  AZURE_OPENAI = 'azureOpenAI',
+  /**
+   * Provider for ElevenLabs TTS
+   */
+  ELEVENLABS = 'elevenlabs',
+  /**
+   * Provider for LocalAI TTS
+   */
+  LOCALAI = 'localai',
+}
+
 /** Enum for app-wide constants */
 export enum Constants {
   /** Key for the app's version. */
   VERSION = 'v0.7.4-rc1',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.1.4',
+  CONFIG_VERSION = '1.1.5',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
+  /** Standard value for the initial conversationId before a request is sent */
+  NEW_CONVO = 'new',
   /** Fixed, encoded domain length for Azure OpenAI Assistants Function name parsing. */
   ENCODED_DOMAIN_LENGTH = 10,
   /** Identifier for using current_model in multi-model requests. */
   CURRENT_MODEL = 'current_model',
+  /** Common divider for text values */
+  COMMON_DIVIDER = '__',
+  /** Max length for commands */
+  COMMANDS_MAX_LENGTH = 56,
 }
 
 export enum LocalStorageKeys {
@@ -824,6 +940,8 @@ export enum LocalStorageKeys {
   TEXT_DRAFT = 'textDraft_',
   /** Key for saving file drafts */
   FILES_DRAFT = 'filesDraft_',
+  /** Key for last Selected Prompt Category */
+  LAST_PROMPT_CATEGORY = 'lastPromptCategory',
 }
 
 export enum ForkOptions {
@@ -859,4 +977,11 @@ export enum CohereConstants {
    * Title message as required by Cohere
    */
   TITLE_MESSAGE = 'TITLE:',
+}
+
+export enum SystemCategories {
+  ALL = 'sys__all__sys',
+  MY_PROMPTS = 'sys__my__prompts__sys',
+  NO_CATEGORY = 'sys__no__category__sys',
+  SHARED_PROMPTS = 'sys__shared__prompts__sys',
 }

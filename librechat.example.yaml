@@ -2,7 +2,7 @@
 # https://www.librechat.ai/docs/configuration/librechat_yaml
 
 # Configuration version (required)
-version: 1.0.9
+version: 1.1.5
 
 # Cache settings: Set to true to enable caching
 cache: true
@@ -25,24 +25,19 @@ registration:
   # allowedDomains:
   # - "gmail.com"
 
-# tts:
-#   url: ''
-#   apiKey: '${TTS_API_KEY}'
-#   model: ''
-#   backend: ''
-#   voice: ''
-#   compatibility: ''
-#   voice_settings:
-#     similarity_boost: ''
-#     stability: ''
-#     style: ''
-#     use_speaker_boost:
-#   pronunciation_dictionary_locators: ['']
+# speech:
+#   tts:
+#     openai:
+#       url: ''
+#       apiKey: '${TTS_API_KEY}'
+#       model: ''
+#       voice: ''
 #  
-# stt:
-#   url: ''
-#   apiKey: '${STT_API_KEY}'
-#   model: ''
+#   stt:
+#     openai:
+#       url: ''
+#       apiKey: '${STT_API_KEY}'
+#       model: ''
 
 # rateLimits:
 #   fileUploads:

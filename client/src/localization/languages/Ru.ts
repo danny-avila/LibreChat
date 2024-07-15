@@ -42,7 +42,6 @@ export default {
   com_ui_enter: 'Ввести',
   com_ui_submit: 'Отправить',
   com_ui_upload_success: 'Файл успешно загружен',
-  com_ui_upload_invalid: 'Недопустимый файл для загрузки',
   com_ui_cancel: 'Отмена',
   com_ui_save: 'Сохранить',
   com_ui_save_submit: 'Сохранить и отправить',
@@ -72,7 +71,10 @@ export default {
   com_ui_create_link: 'Создать ссылку',
   com_ui_share_link_to_chat: 'Поделиться ссылкой в чате',
   com_ui_share_error: 'Произошла ошибка при попытке поделиться ссылкой на чат',
-  com_ui_share_create_message: 'Ваше имя и любые сообщения, которые вы добавите после обмена, останутся конфиденциальными.',
+  com_ui_share_retrieve_error: 'Произошла ошибка при удалении общей ссылки.',
+  com_ui_share_delete_error: 'Произошла ошибка при удалении общей ссылки.',
+  com_ui_share_create_message:
+    'Ваше имя и любые сообщения, которые вы добавите после обмена, останутся конфиденциальными.',
   com_ui_share_created_message:
     'Создана общая ссылка на ваш чат. Управляйте ранее общими чатами в любое время через Настройки.',
   com_ui_share_update_message:
@@ -81,7 +83,7 @@ export default {
     'Обновлена общая ссылка на ваш чат. Управляйте ранее общими чатами в любое время через Настройки.',
   com_ui_shared_link_not_found: 'Общая ссылка не найдена',
   com_ui_delete_conversation: 'Удалить чат?',
-  com_ui_delete_conversation_confirm: 'Будет удален следующий чат: ',
+  com_ui_delete_confirm: 'Будет удален следующий чат: ',
   com_ui_rename: 'Переименовать',
   com_ui_archive: 'Архивировать',
   com_ui_archive_error: 'Nie udało się archiwizować rozmowy',
@@ -854,13 +856,22 @@ export const comparisons = {
     english: 'Share link to chat',
     translated: 'Поделиться ссылкой в чате',
   },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Произошла ошибка при удалении общей ссылки.',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Произошла ошибка при удалении общей ссылки.',
+  },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
     translated: 'Произошла ошибка при попытке поделиться ссылкой на чат',
   },
   com_ui_share_create_message: {
     english: 'Your name and any messages you add after sharing stay private.',
-    translated: 'Ваше имя и любые сообщения, которые вы добавите после обмена, останутся конфиденциальными.',
+    translated:
+      'Ваше имя и любые сообщения, которые вы добавите после обмена, останутся конфиденциальными.',
   },
   com_ui_share_created_message: {
     english:
@@ -887,7 +898,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'Удалить чат?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Будет удален следующий чат: ',
   },

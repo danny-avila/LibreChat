@@ -576,7 +576,11 @@ describe('BaseClient', () => {
       const onStart = jest.fn();
       const opts = { onStart };
       await TestClient.sendMessage('Hello, world!', opts);
-      expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ text: 'Hello, world!' }));
+
+      expect(onStart).toHaveBeenCalledWith(
+        expect.objectContaining({ text: 'Hello, world!' }),
+        expect.any(String),
+      );
     });
 
     test('saveMessageToDatabase is called with the correct arguments', async () => {

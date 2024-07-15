@@ -1,4 +1,5 @@
 import { useRecoilState } from 'recoil';
+import HoverCardSettings from '../HoverCardSettings';
 import { Switch } from '~/components/ui/Switch';
 import useLocalize from '~/hooks/useLocalize';
 import store from '~/store';
@@ -20,7 +21,10 @@ export default function SendMessageKeyEnter({
 
   return (
     <div className="flex items-center justify-between">
-      <div> {localize('com_nav_enter_to_send')} </div>
+      <div className="flex items-center space-x-2">
+        <div>{localize('com_nav_enter_to_send')}</div>
+        <HoverCardSettings side="bottom" text="com_nav_info_enter_to_send" />
+      </div>
       <Switch
         id="enterToSend"
         checked={enterToSend}

@@ -1,16 +1,20 @@
+import React from 'react';
 import { FileSources } from 'librechat-data-provider';
 import type * as InputNumberPrimitive from 'rc-input-number';
 import type { ColumnDef } from '@tanstack/react-table';
 import type { SetterOrUpdater } from 'recoil';
 import type {
+  TRole,
   TUser,
   Action,
   TPreset,
   TPlugin,
   TMessage,
   Assistant,
+  TResPlugin,
   TLoginUser,
   AuthTypeEnum,
+  TModelsConfig,
   TConversation,
   TStartupConfig,
   EModelEndpoint,
@@ -52,6 +56,8 @@ export type LastSelectedModels = Record<EModelEndpoint, string>;
 
 export type LocalizeFunction = (phraseKey: string, ...values: string[]) => string;
 
+export type ChatFormValues = { text: string };
+
 export const mainTextareaId = 'prompt-textarea';
 export const globalAudioId = 'global-audio';
 
@@ -75,7 +81,7 @@ export type IconMapProps = {
 export type NavLink = {
   title: string;
   label?: string;
-  icon: LucideIcon;
+  icon: LucideIcon | React.FC;
   Component?: React.ComponentType;
   onClick?: () => void;
   variant?: 'default' | 'ghost';
@@ -225,6 +231,8 @@ export type TGenButtonProps = {
 
 export type TAskProps = {
   text: string;
+  overrideConvoId?: string;
+  overrideUserMessageId?: string;
   parentMessageId?: string | null;
   conversationId?: string | null;
   messageId?: string | null;
@@ -237,6 +245,7 @@ export type TOptions = {
   isRegenerate?: boolean;
   isContinued?: boolean;
   isEdited?: boolean;
+  overrideMessages?: TMessage[];
 };
 
 export type TAskFunction = (props: TAskProps, options?: TOptions) => void;
@@ -299,6 +308,7 @@ export type TDangerButtonProps = {
   actionTextCode: string;
   dataTestIdInitial: string;
   dataTestIdConfirm: string;
+  infoDescriptionCode?: string;
   confirmActionTextCode?: string;
 };
 
@@ -325,6 +335,7 @@ export type TAuthContext = {
   login: (data: TLoginUser) => void;
   logout: () => void;
   setError: React.Dispatch<React.SetStateAction<string | undefined>>;
+  roles?: Record<string, TRole | null | undefined>;
 };
 
 export type TUserContext = {
@@ -364,6 +375,9 @@ export type MentionOption = OptionWithIcon & {
   value: string;
   description?: string;
 };
+export type PromptOption = MentionOption & {
+  id: string;
+};
 
 export type TOptionSettings = {
   showExamples?: boolean;
@@ -394,7 +408,6 @@ export interface SwitcherProps {
   endpointKeyProvided: boolean;
   isCollapsed: boolean;
 }
-
 export type TLoginLayoutContext = {
   startupConfig: TStartupConfig | null;
   startupConfigError: unknown;
@@ -404,3 +417,42 @@ export type TLoginLayoutContext = {
   headerText: string;
   setHeaderText: React.Dispatch<React.SetStateAction<string>>;
 };
+
+export type NewConversationParams = {
+  template?: Partial<TConversation>;
+  preset?: Partial<TPreset>;
+  modelsData?: TModelsConfig;
+  buildDefault?: boolean;
+  keepLatestMessage?: boolean;
+  keepAddedConvos?: boolean;
+};
+
+export type ConvoGenerator = (params: NewConversationParams) => void | TConversation;
+
+export type TResData = {
+  plugin?: TResPlugin;
+  final?: boolean;
+  initial?: boolean;
+  previousMessages?: TMessage[];
+  requestMessage: TMessage;
+  responseMessage: TMessage;
+  conversation: TConversation;
+  conversationId?: string;
+  runMessages?: TMessage[];
+};
+export type TVectorStore = {
+  _id: string;
+  object: 'vector_store';
+  created_at: string | Date;
+  name: string;
+  bytes?: number;
+  file_counts?: {
+    in_progress: number;
+    completed: number;
+    failed: number;
+    cancelled: number;
+    total: number;
+  };
+};
+
+export type TThread = { id: string; createdAt: string };
