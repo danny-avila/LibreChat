@@ -637,6 +637,7 @@ export default {
   com_nav_long_audio_warning: 'Longer texts will take longer to process.',
   com_nav_engine: 'Engine',
   com_nav_browser: 'Browser',
+  com_nav_edge: 'Edge',
   com_nav_external: 'External',
   com_nav_delete_cache_storage: 'Delete TTS cache storage',
   com_nav_enable_cache_tts: 'Enable cache TTS',

@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import useSpeechToTextBrowser from './useSpeechToTextBrowser';
 import useSpeechToTextExternal from './useSpeechToTextExternal';
 import useGetAudioSettings from './useGetAudioSettings';
 
 const useSpeechToText = (handleTranscriptionComplete: (text: string) => void) => {
-  const { externalSpeechToText } = useGetAudioSettings();
+  const { speechToTextEndpoint } = useGetAudioSettings();
   const [animatedText, setAnimatedText] = useState('');
 
   const {
@@ -25,23 +25,7 @@ const useSpeechToText = (handleTranscriptionComplete: (text: string) => void) =>
     clearText,
   } = useSpeechToTextExternal(handleTranscriptionComplete);
 
-  const isListening = externalSpeechToText ? speechIsListeningExternal : speechIsListeningBrowser;
-  const isLoading = externalSpeechToText ? speechIsLoadingExternal : speechIsLoadingBrowser;
-  const speechTextForm = externalSpeechToText ? speechTextExternal : speechTextBrowser;
-  const startRecording = externalSpeechToText
-    ? startSpeechRecordingExternal
-    : startSpeechRecordingBrowser;
-  const stopRecording = externalSpeechToText
-    ? stopSpeechRecordingExternal
-    : stopSpeechRecordingBrowser;
-  const speechText =
-    isListening || (speechTextExternal && speechTextExternal.length > 0)
-      ? speechTextExternal
-      : speechTextForm || '';
-  // for a future real-time STT external
-  const interimTranscript = externalSpeechToText ? '' : interimTranscriptBrowser;
-
-  const animateTextTyping = (text: string) => {
+  const animateTextTyping = useCallback((text: string) => {
     const totalDuration = 2000;
     const frameRate = 60;
     const totalFrames = totalDuration / (1000 / frameRate);
@@ -61,23 +45,40 @@ const useSpeechToText = (handleTranscriptionComplete: (text: string) => void) =>
     };
 
     requestAnimationFrame(animate);
-  };
+  }, []);
 
   useEffect(() => {
-    if (speechText && externalSpeechToText) {
-      animateTextTyping(speechText);
+    if (speechTextExternal && speechToTextEndpoint === 'external') {
+      animateTextTyping(speechTextExternal);
     }
-  }, [speechText, externalSpeechToText]);
+  }, [speechTextExternal, speechToTextEndpoint, animateTextTyping]);
 
-  return {
-    isListening,
-    isLoading,
-    startRecording,
-    stopRecording,
-    interimTranscript,
-    speechText: externalSpeechToText ? animatedText : speechText,
-    clearText,
-  };
+  if (speechToTextEndpoint === 'browser') {
+    return {
+      isListening: speechIsListeningBrowser,
+      isLoading: speechIsLoadingBrowser,
+      speechTextForm: speechTextBrowser,
+      startRecording: startSpeechRecordingBrowser,
+      stopRecording: stopSpeechRecordingBrowser,
+      interimTranscript: interimTranscriptBrowser,
+      speechText: speechTextBrowser,
+      clearText,
+    };
+  } else if (speechToTextEndpoint === 'external') {
+    return {
+      isListening: speechIsListeningExternal,
+      isLoading: speechIsLoadingExternal,
+      speechTextForm: speechTextExternal,
+      startRecording: startSpeechRecordingExternal,
+      stopRecording: stopSpeechRecordingExternal,
+      interimTranscript: '',
+      speechText: animatedText,
+      clearText,
+    };
+  }
+
+  // Default case (should not happen, but TypeScript requires a return statement)
+  throw new Error('Invalid speechToTextEndpoint');
 };
 
 export default useSpeechToText;

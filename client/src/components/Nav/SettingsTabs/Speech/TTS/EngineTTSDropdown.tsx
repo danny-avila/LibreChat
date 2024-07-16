@@ -8,6 +8,7 @@ export default function EngineTTSDropdown() {
   const [engineTTS, setEngineTTS] = useRecoilState<string>(store.engineTTS);
   const endpointOptions = [
     { value: 'browser', display: localize('com_nav_browser') },
+    { value: 'edge', display: localize('com_nav_edge') },
     { value: 'external', display: localize('com_nav_external') },
   ];
 

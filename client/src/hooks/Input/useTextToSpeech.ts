@@ -5,28 +5,69 @@ import useTextToSpeechExternal from './useTextToSpeechExternal';
 import useTextToSpeechBrowser from './useTextToSpeechBrowser';
 import { usePauseGlobalAudio } from '../Audio';
 import useGetAudioSettings from './useGetAudioSettings';
+import useTextToSpeechEdge from './useTextToSpeechEdge';
 
 const useTextToSpeech = (message: TMessage, isLast: boolean, index = 0) => {
-  const { externalTextToSpeech } = useGetAudioSettings();
+  const { textToSpeechEndpoint } = useGetAudioSettings();
+  const { pauseGlobalAudio } = usePauseGlobalAudio(index);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const {
-    generateSpeechLocal: generateSpeechLocal,
-    cancelSpeechLocal: cancelSpeechLocal,
+    generateSpeechLocal,
+    cancelSpeechLocal,
     isSpeaking: isSpeakingLocal,
   } = useTextToSpeechBrowser();
 
   const {
-    generateSpeechExternal: generateSpeechExternal,
+    generateSpeechEdge,
+    cancelSpeechEdge,
+    isSpeaking: isSpeakingEdge,
+  } = useTextToSpeechEdge();
+
+  const {
+    generateSpeechExternal,
     cancelSpeech: cancelSpeechExternal,
     isSpeaking: isSpeakingExternal,
-    isLoading: isLoading,
-    audioRef,
+    isLoading: isLoadingExternal,
+    audioRef: audioRefExternal,
   } = useTextToSpeechExternal(message.messageId, isLast, index);
-  const { pauseGlobalAudio } = usePauseGlobalAudio(index);
 
-  const generateSpeech = externalTextToSpeech ? generateSpeechExternal : generateSpeechLocal;
-  const cancelSpeech = externalTextToSpeech ? cancelSpeechExternal : cancelSpeechLocal;
-  const isSpeaking = externalTextToSpeech ? isSpeakingExternal : isSpeakingLocal;
+  let generateSpeech, cancelSpeech, isSpeaking, isLoading;
+
+  console.log(`textToSpeechEndpoint: ${textToSpeechEndpoint}`);
+
+  switch (textToSpeechEndpoint) {
+    case 'external':
+      generateSpeech = generateSpeechExternal;
+      cancelSpeech = cancelSpeechExternal;
+      isSpeaking = isSpeakingExternal;
+      isLoading = isLoadingExternal;
+      if (audioRefExternal) {
+        audioRef.current = audioRefExternal.current;
+      }
+      break;
+    case 'edge':
+      generateSpeech = generateSpeechEdge;
+      cancelSpeech = cancelSpeechEdge;
+      isSpeaking = isSpeakingEdge;
+      isLoading = false;
+      break;
+    case 'browser':
+    default:
+      generateSpeech = generateSpeechLocal;
+      cancelSpeech = cancelSpeechLocal;
+      isSpeaking = isSpeakingLocal;
+      isLoading = false;
+      break;
+  }
+
+  console.log({
+    generateSpeech,
+    cancelSpeech,
+    isSpeaking,
+    isLoading,
+    audioRef,
+  });
 
   const isMouseDownRef = useRef(false);
   const timerRef = useRef<number | undefined>(undefined);
