@@ -73,10 +73,6 @@ function loadAndFormatTools({ directory, adminFilter = [], adminIncluded = [] })
       continue;
     }
 
-    if (included.size > 0 && !included.has(file)) {
-      continue;
-    }
-
     let toolInstance = null;
     try {
       toolInstance = new ToolClass({ override: true });
@@ -89,6 +85,14 @@ function loadAndFormatTools({ directory, adminFilter = [], adminIncluded = [] })
     }
 
     if (!toolInstance) {
+      continue;
+    }
+
+    if (filter.has(toolInstance.name) && included.size === 0) {
+      continue;
+    }
+
+    if (included.size > 0 && !included.has(file) && !included.has(toolInstance.name)) {
       continue;
     }
 
