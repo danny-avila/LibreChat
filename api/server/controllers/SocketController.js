@@ -29,6 +29,9 @@ const setupWebSocket = (server) => {
     socket.on('join room', (data) => joinRoom(socket, data.user, data.roomId));
 
     socket.on('move room', (data) => moveRoom(socket.id, data.roomId));
+    socket.on('tip', (data)=>{
+      socket.broadcast.emit('tipNotification', data);
+    })
   });
 };
 

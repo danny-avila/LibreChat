@@ -11,7 +11,7 @@ export default function Header() {
   const convoType = useRecoilValue(store.convoType);
   const { conversation } = useChatContext();
   return (
-    <div className="sticky top-0 z-10 flex h-14 w-full items-center justify-between bg-white p-2 font-semibold dark:bg-gray-800 dark:text-white">
+    <div className="sticky top-0 z-20 flex h-14 w-full items-center justify-between bg-white p-2 font-semibold dark:bg-gray-800 dark:text-white">
       <div className="hide-scrollbar flex items-center gap-2 overflow-x-auto">
         {!navVisible && <HeaderNewChat />}
         {convoType === 'r' && conversation?.conversationId !== 'new' ? (

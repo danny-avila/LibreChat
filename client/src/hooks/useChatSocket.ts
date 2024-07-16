@@ -1,3 +1,4 @@
+/* eslint-disable indent */
 import { useEffect, useState } from 'react';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import { Socket, io } from 'socket.io-client';
@@ -6,7 +7,10 @@ import useChatHelpers from './useChatHelpers';
 import { useParams } from 'react-router-dom';
 import { request, type TMessage } from 'librechat-data-provider';
 import { useToastContext } from '~/Providers';
-
+//
+import useSound from 'use-sound';
+import tipSFX from '../../public/assets/mp3/tipSFX.mp3';
+//
 export const useInitSocket = () => {
   const user = useRecoilValue(store.user);
   const [socket, setSocket] = useState<Socket>();
@@ -113,5 +117,41 @@ export const useChatSocket = (socket?: Socket) => {
     }
   }, [conversationId, convoType, socket]);
 
+  return { socket };
+};
+//
+export const usePushSocket = (socket?: Socket) => {
+  const user = useRecoilValue(store.user);
+  const [play] = useSound(tipSFX);
+  const { showToast } = useToastContext();
+  //
+  useEffect(() => {
+    socket?.on('tipNotification', (data) => {
+      const { recipient, network, sender, anonymous } = data;
+      console.log(data);
+      if (user?.id == recipient) {
+        const isMuted = localStorage.getItem('NotificationDisplay') || 'false';
+        if (isMuted == 'false') {
+          play();
+        }
+        if (!anonymous) {
+          showToast({
+            message: `Congratulations! Tip received from ${sender} on the ${network} network`,
+            status: 'success',
+          });
+        } else {
+          showToast({
+            message: `Congratulations! Tip received from Anonymous on the ${network} network`,
+            status: 'success',
+          });
+        }
+      }
+    });
+    //
+    return () => {
+      socket?.off('tipNotification');
+    };
+  }, [socket]);
+  //
   return { socket };
 };
