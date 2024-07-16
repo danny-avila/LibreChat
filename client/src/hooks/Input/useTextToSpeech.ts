@@ -3,11 +3,11 @@ import { parseTextParts } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import useTextToSpeechExternal from './useTextToSpeechExternal';
 import useTextToSpeechBrowser from './useTextToSpeechBrowser';
-import { usePauseGlobalAudio } from '../Audio';
 import useGetAudioSettings from './useGetAudioSettings';
 import useTextToSpeechEdge from './useTextToSpeechEdge';
+import { usePauseGlobalAudio } from '../Audio';
 
-const useTextToSpeech = (message: TMessage, isLast: boolean, index = 0) => {
+const useTextToSpeech = (message?: TMessage, isLast = false, index = 0) => {
   const { textToSpeechEndpoint } = useGetAudioSettings();
   const { pauseGlobalAudio } = usePauseGlobalAudio(index);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -16,12 +16,14 @@ const useTextToSpeech = (message: TMessage, isLast: boolean, index = 0) => {
     generateSpeechLocal,
     cancelSpeechLocal,
     isSpeaking: isSpeakingLocal,
+    voices: voicesLocal,
   } = useTextToSpeechBrowser();
 
   const {
     generateSpeechEdge,
     cancelSpeechEdge,
     isSpeaking: isSpeakingEdge,
+    voices: voicesEdge,
   } = useTextToSpeechEdge();
 
   const {
@@ -30,11 +32,10 @@ const useTextToSpeech = (message: TMessage, isLast: boolean, index = 0) => {
     isSpeaking: isSpeakingExternal,
     isLoading: isLoadingExternal,
     audioRef: audioRefExternal,
-  } = useTextToSpeechExternal(message.messageId, isLast, index);
+    voices: voicesExternal,
+  } = useTextToSpeechExternal(message?.messageId || '', isLast, index);
 
-  let generateSpeech, cancelSpeech, isSpeaking, isLoading;
-
-  console.log(`textToSpeechEndpoint: ${textToSpeechEndpoint}`);
+  let generateSpeech, cancelSpeech, isSpeaking, isLoading, voices;
 
   switch (textToSpeechEndpoint) {
     case 'external':
@@ -45,12 +46,14 @@ const useTextToSpeech = (message: TMessage, isLast: boolean, index = 0) => {
       if (audioRefExternal) {
         audioRef.current = audioRefExternal.current;
       }
+      voices = voicesExternal;
       break;
     case 'edge':
       generateSpeech = generateSpeechEdge;
       cancelSpeech = cancelSpeechEdge;
       isSpeaking = isSpeakingEdge;
       isLoading = false;
+      voices = voicesEdge;
       break;
     case 'browser':
     default:
@@ -58,16 +61,9 @@ const useTextToSpeech = (message: TMessage, isLast: boolean, index = 0) => {
       cancelSpeech = cancelSpeechLocal;
       isSpeaking = isSpeakingLocal;
       isLoading = false;
+      voices = voicesLocal;
       break;
   }
-
-  console.log({
-    generateSpeech,
-    cancelSpeech,
-    isSpeaking,
-    isLoading,
-    audioRef,
-  });
 
   const isMouseDownRef = useRef(false);
   const timerRef = useRef<number | undefined>(undefined);
@@ -93,7 +89,6 @@ const useTextToSpeech = (message: TMessage, isLast: boolean, index = 0) => {
 
   const toggleSpeech = () => {
     if (isSpeaking) {
-      console.log('canceling message audio speech');
       cancelSpeech();
       pauseGlobalAudio();
     } else {
@@ -110,6 +105,7 @@ const useTextToSpeech = (message: TMessage, isLast: boolean, index = 0) => {
     toggleSpeech,
     isSpeaking,
     isLoading,
+    voices,
     audioRef,
   };
 };
