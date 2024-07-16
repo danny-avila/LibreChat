@@ -6,7 +6,6 @@ import store from '~/store';
 
 interface EngineTTSDropdownProps {
   external: boolean;
-  // Include other props as necessary
 }
 
 const EngineTTSDropdown: React.FC<EngineTTSDropdownProps> = ({ external }) => {
