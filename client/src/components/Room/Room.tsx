@@ -1,3 +1,4 @@
+/* eslint-disable indent */
 import { useParams } from 'react-router-dom';
 import { useState, useRef, useMemo } from 'react';
 import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
@@ -133,7 +134,7 @@ export default function Room({ room, toggleNav, retainView }) {
     aProps.className =
       'group relative grow overflow-hidden whitespace-nowrap rounded-lg active:opacity-50 flex cursor-pointer items-center mt-2 gap-2 break-all rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 py-2 px-2';
   }
-  if(room.isPrivate) return <></>
+  if(room.isPrivate) {return <></>;}
   return (
     <a
       href={`/r/${conversationId}`}
