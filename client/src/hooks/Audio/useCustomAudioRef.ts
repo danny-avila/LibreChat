@@ -1,4 +1,6 @@
 import { useEffect, useRef } from 'react';
+import { useRecoilState } from 'recoil';
+import store from '~/store';
 
 interface CustomAudioElement extends HTMLAudioElement {
   customStarted?: boolean;
@@ -19,12 +21,14 @@ export default function useCustomAudioRef({
   setIsPlaying: (isPlaying: boolean) => void;
 }): TCustomAudioResult {
   const audioRef = useRef<CustomAudioElement | null>(null);
+  const [isStreamingAudio, setIsStreamingAudio] = useRecoilState(store.isStreamingAudio);
   useEffect(() => {
     let lastTimeUpdate: number | null = null;
     let sameTimeUpdateCount = 0;
 
     const handleEnded = () => {
       setIsPlaying(false);
+      setIsStreamingAudio(false);
       console.log('global audio ended');
       if (audioRef.current) {
         audioRef.current.customEnded = true;
@@ -35,12 +39,14 @@ export default function useCustomAudioRef({
     const handleStart = () => {
       setIsPlaying(true);
       console.log('global audio started');
+      setIsStreamingAudio(true);
       if (audioRef.current) {
         audioRef.current.customStarted = true;
       }
     };
 
     const handlePause = () => {
+      setIsStreamingAudio(false);
       console.log('global audio paused');
       if (audioRef.current) {
         audioRef.current.customPaused = true;
