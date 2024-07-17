@@ -687,4 +687,8 @@ export default {
   com_nav_lang_indonesia: 'Indonesia',
   com_nav_lang_hebrew: 'עברית',
   com_nav_lang_finnish: 'Suomi',
+  com_voiceover_listening: 'Listening...',
+  com_voiceover_linterrupt: 'Click to Interrupt',
+  com_voiceover_processing: 'Processing...',
+  com_voiceover_click_to_talk: 'Click to talk',
 };

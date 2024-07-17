@@ -7,6 +7,7 @@ import store from '~/store';
 import { useRecoilState } from 'recoil';
 import { usePauseGlobalAudio } from '~/hooks/Audio';
 import CameraFeed from './CameraFeed';
+import { useLocalize } from '~/hooks';
 
 let isThinking = false;
 
@@ -27,6 +28,8 @@ export default function AudioRecorderCall({
   const { pauseGlobalAudio } = usePauseGlobalAudio();
   const [showCallOverlay, setShowCallOverlay] = useRecoilState(store.showCallOverlay);
   const [isCameraOn, setIsCameraOn] = useState(false);
+
+  const localize = useLocalize();
 
   const handleTranscriptionComplete = (text: string) => {
     if (text) {
@@ -60,7 +63,9 @@ export default function AudioRecorderCall({
   };
 
   const handleCloseOverlay = () => {
-    if (isListening) {handleStopRecording();}
+    if (isListening) {
+      handleStopRecording();
+    }
     setShowCallOverlay(false);
   };
 
@@ -102,15 +107,31 @@ export default function AudioRecorderCall({
 
   function renderStatus() {
     if (isListening) {
-      return <span className="mt-0 text-black dark:text-white">Ouvindo...</span>;
+      return (
+        <span className="mt-0 text-black dark:text-white">
+          {localize('com_voiceover_listening')}
+        </span>
+      );
     } else if (isStreamingAudio) {
       isThinking = false;
-      return <span className="mt-0 text-black dark:text-white">Clique para interromper...</span>;
+      return (
+        <span className="mt-0 text-black dark:text-white">
+          {localize('com_voiceover_linterrupt')}
+        </span>
+      );
     } else if (isLoading || isThinking) {
       isThinking = true;
-      return <span className="mt-0 text-black dark:text-white">Processando...</span>;
+      return (
+        <span className="mt-0 text-black dark:text-white">
+          {localize('com_voiceover_processing')}
+        </span>
+      );
     } else if (!isThinking) {
-      return <span className="mt-0 text-black dark:text-white">Clique para falar...</span>;
+      return (
+        <span className="mt-0 text-black dark:text-white">
+          {localize('com_voiceover_click_to_talk')}
+        </span>
+      );
     }
   }
 
