@@ -1,19 +1,20 @@
 const express = require('express');
 const throttle = require('lodash/throttle');
-const { getResponseSender } = require('librechat-data-provider');
+const { getResponseSender, CacheKeys, Time } = require('librechat-data-provider');
 const {
-  handleAbort,
-  createAbortController,
-  handleAbortError,
   setHeaders,
+  handleAbort,
+  moderateText,
   validateModel,
+  handleAbortError,
   validateEndpoint,
   buildEndpointOption,
-  moderateText,
+  createAbortController,
 } = require('~/server/middleware');
 const { sendMessage, createOnProgress, formatSteps, formatAction } = require('~/server/utils');
 const { initializeClient } = require('~/server/services/Endpoints/gptPlugins');
 const { saveMessage } = require('~/models');
+const { getLogStores } = require('~/cache');
 const { validateTools } = require('~/app');
 const { logger } = require('~/config');
 
@@ -79,7 +80,8 @@ router.post(
       }
     };
 
-    const throttledSaveMessage = throttle(saveMessage, 3000, { trailing: false });
+    const messageCache = getLogStores(CacheKeys.MESSAGES);
+    const throttledSetMessage = throttle(messageCache.set, 3000, { trailing: false });
     const {
       onProgress: progressCallback,
       sendIntermediateMessage,
@@ -91,7 +93,8 @@ router.post(
           plugin.loading = false;
         }
 
-        throttledSaveMessage(req, {
+        /*
+        {
           messageId: responseMessageId,
           sender,
           conversationId,
@@ -102,7 +105,9 @@ router.post(
           isEdited: true,
           error: false,
           user,
-        });
+        }
+        */
+        throttledSetMessage(responseMessageId, partialText, Time.FIVE_MINUTES);
       },
     });
 

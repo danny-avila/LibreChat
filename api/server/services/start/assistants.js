@@ -51,6 +51,7 @@ function assistantsConfigSetup(config, assistantsEndpoint, prevConfig = {}) {
     excludedIds: parsedConfig.excludedIds,
     privateAssistants: parsedConfig.privateAssistants,
     timeoutMs: parsedConfig.timeoutMs,
+    streamRate: parsedConfig.streamRate,
   };
 }
 
