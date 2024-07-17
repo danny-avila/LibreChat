@@ -446,7 +446,6 @@ export default {
   com_ui_max_tags: '允許的最大數量為 {0}，已使用最新值。',
   com_auth_back_to_login: '返回登入',
   com_endpoint_message: '訊息',
-  com_endpoint_messages: '訊息',
   com_endpoint_message_not_appendable: '無法附加訊息或重新生成。',
   com_endpoint_context_tokens: '最大前後文 token 數',
   com_endpoint_context_info:
@@ -2262,10 +2261,6 @@ export const comparisons = {
   },
   com_endpoint_message: {
     english: 'Message',
-    translated: '訊息',
-  },
-  com_endpoint_messages: {
-    english: 'Messages',
     translated: '訊息',
   },
   com_endpoint_message_not_appendable: {
