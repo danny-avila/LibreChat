@@ -455,7 +455,6 @@ export default {
   com_auth_error_login_server: '내부 서버 오류가 발생했습니다. 잠시 기다렸다가 다시 시도해 주세요.',
   com_auth_back_to_login: '로그인 화면으로 돌아가기',
   com_endpoint_message: '메시지',
-  com_endpoint_messages: '메시지',
   com_endpoint_message_not_appendable: '메시지를 수정하거나 다시 생성하세요.',
   com_endpoint_context_tokens: '최대 컨텍스트 토큰 수',
   com_endpoint_context_info:
@@ -2255,10 +2254,6 @@ export const comparisons = {
   },
   com_endpoint_message: {
     english: 'Message',
-    translated: '메시지',
-  },
-  com_endpoint_messages: {
-    english: 'Messages',
     translated: '메시지',
   },
   com_endpoint_message_not_appendable: {

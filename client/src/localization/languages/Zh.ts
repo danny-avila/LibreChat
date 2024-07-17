@@ -507,7 +507,6 @@ export default {
   com_ui_import_conversation_file_type_error: '不支持的导入类型',
   com_ui_min_tags: '无法再移除更多值,至少需要保留{0}个。',
   com_ui_max_tags: '最多允许{0}个,使用最新值。',
-  com_endpoint_messages: '消息',
   com_endpoint_context_tokens: '最大上下文词元数',
   com_endpoint_context_info:
     '可用于上下文的最大词元数。用于控制每个请求发送的词元数量。如果未指定,将根据已知模型的上下文大小使用系统默认值。设置较高的值可能会导致错误和/或更高的词元成本。',
@@ -2500,10 +2499,6 @@ export const comparisons = {
   com_ui_max_tags: {
     english: 'Maximum number allowed is {0}, using latest values.',
     translated: '最多允许{0}个,使用最新值。',
-  },
-  com_endpoint_messages: {
-    english: 'Messages',
-    translated: '消息',
   },
   com_endpoint_context_tokens: {
     english: 'Max Context Tokens',

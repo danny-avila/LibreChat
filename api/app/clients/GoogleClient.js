@@ -13,10 +13,12 @@ const {
   endpointSettings,
   EModelEndpoint,
   VisionModes,
+  Constants,
   AuthKeys,
 } = require('librechat-data-provider');
 const { encodeAndFormat } = require('~/server/services/Files/images');
 const { getModelMaxTokens } = require('~/utils');
+const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
 const {
   formatMessage,
@@ -620,8 +622,9 @@ class GoogleClient extends BaseClient {
   }
 
   async getCompletion(_payload, options = {}) {
-    const { onProgress, abortController } = options;
     const { parameters, instances } = _payload;
+    const { onProgress, abortController } = options;
+    const streamRate = this.options.streamRate ?? Constants.DEFAULT_STREAM_RATE;
     const { messages: _messages, context, examples: _examples } = instances?.[0] ?? {};
 
     let examples;
@@ -701,6 +704,7 @@ class GoogleClient extends BaseClient {
           delay,
         });
         reply += chunkText;
+        await sleep(streamRate);
       }
       return reply;
     }
@@ -712,10 +716,17 @@ class GoogleClient extends BaseClient {
       safetySettings: safetySettings,
     });
 
-    let delay = this.isGenerativeModel ? 12 : 8;
-    if (modelName.includes('flash')) {
-      delay = 5;
+    let delay = this.options.streamRate || 8;
+
+    if (!this.options.streamRate) {
+      if (this.isGenerativeModel) {
+        delay = 12;
+      }
+      if (modelName.includes('flash')) {
+        delay = 5;
+      }
     }
+
     for await (const chunk of stream) {
       const chunkText = chunk?.content ?? chunk;
       await this.generateTextStream(chunkText, onProgress, {
