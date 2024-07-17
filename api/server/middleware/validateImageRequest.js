@@ -1,4 +1,3 @@
-const path = require('path');
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
 const { logger } = require('~/config');
@@ -32,10 +31,10 @@ function validateImageRequest(req, res, next) {
     return res.status(403).send('Access Denied');
   }
 
-  const normalizedPath = path.normalize(req.path).replace(/\\/g, '/');
-  const pathRegex = new RegExp(`^/images/${payload.id}/[^/]+$`);
+  const fullPath = decodeURIComponent(req.originalUrl);
+  const pathPattern = new RegExp(`^/images/${payload.id}/[^/]+$`);
 
-  if (pathRegex.test(normalizedPath)) {
+  if (pathPattern.test(fullPath)) {
     logger.debug('[validateImageRequest] Image request validated');
     next();
   } else {
