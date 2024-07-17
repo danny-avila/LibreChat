@@ -81,7 +81,7 @@ export default function Message(props: TMessageProps) {
       } else {
         messageLabel = message.user.name;
         // userAvatar = message.user.avatar;
-        userAvatar = message.user.avatar || useAvatar({username:message.user.name});
+        userAvatar = message.user.avatar || useAvatar({ username: message.user.name });
       }
 
       if (message.sender === 'Tip Bot' || message.sender === 'Karma Bot') {
@@ -120,11 +120,11 @@ export default function Message(props: TMessageProps) {
                   <div className="relative pt-0.5">
                     {message?.user?.subscription?.active && (
                       <img
-                          src="/assets/premium.png"
-                          alt="premium"
-                          className="absolute -right-1 -top-1 h-4 w-4 z-10"
-                        />
-                      )}
+                        src="/assets/premium.png"
+                        alt="premium"
+                        className="absolute -right-1 -top-1 z-10 h-4 w-4"
+                      />
+                    )}
                     <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
                       {userAvatar ? (
                         <img src={userAvatar} />

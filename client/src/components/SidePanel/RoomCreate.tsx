@@ -21,11 +21,16 @@ export default function RoomCreate() {
     password: '',
   };
   const [room, setRoom] = useState<RoomState>(initialRoomState);
+  const [inputError, setInputError] = useState<string>('');
   const [rooms, setRooms] = useRecoilState(store.rooms);
 
   const { conversation, setConversation } = useChatContext();
 
   const handleSubmit = () => {
+    if (room.title.length < 3) {
+      setInputError('Room title must be at least 3 characters');
+      return;
+    }
     request
       .post('/api/rooms', { ...conversation, ...room, isRoom: true })
       .then((res) => {
@@ -45,14 +50,16 @@ export default function RoomCreate() {
       className="mt-10 flex w-full flex-col gap-5 px-8 lg:w-1/3"
     >
       <EndpointsMenu />
-
-      <Input
-        placeholder="Room Title"
-        name="name"
-        value={room.title}
-        required
-        onChange={(e) => setRoom({ ...room, title: e.currentTarget.value })}
-      />
+      <div>
+        <Input
+          placeholder="Room Title"
+          name="name"
+          value={room.title}
+          required
+          onChange={(e) => setRoom({ ...room, title: e.currentTarget.value })}
+        />
+        {inputError && <p className="text-red-500">{inputError}</p>}
+      </div>
       <div className="flex items-center gap-1">
         <Checkbox
           checked={room.isPrivate}

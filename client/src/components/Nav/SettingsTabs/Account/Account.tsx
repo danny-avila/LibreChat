@@ -10,7 +10,9 @@ import SubscriptionField from './SubscriptionField';
 
 function Account({ onCheckedChange }: { onCheckedChange?: (value: boolean) => void }) {
   const [UsernameDisplay, setUsernameDisplay] = useRecoilState<boolean>(store.UsernameDisplay);
-  const [NotificationDisplay, setNotificationDisplay] = useRecoilState<boolean>(store.NotificationDisplay);
+  const [NotificationDisplay, setNotificationDisplay] = useRecoilState<boolean>(
+    store.NotificationDisplay,
+  );
 
   const localize = useLocalize();
 

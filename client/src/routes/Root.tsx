@@ -26,7 +26,7 @@ export default function Root() {
     const savedNavVisible = localStorage.getItem('navVisible');
     return savedNavVisible !== null ? JSON.parse(savedNavVisible) : true;
   });
-  // 
+  //
   const socket = useInitSocket();
   usePushSocket(socket);
 
