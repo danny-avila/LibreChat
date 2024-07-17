@@ -7,7 +7,6 @@ import store from '~/store';
 import { useRecoilState } from 'recoil';
 import { usePauseGlobalAudio } from '~/hooks/Audio';
 import CameraFeed from './CameraFeed';
-import { useLocalize } from '~/hooks';
 
 let isThinking = false;
 
@@ -28,8 +27,6 @@ export default function AudioRecorderCall({
   const { pauseGlobalAudio } = usePauseGlobalAudio();
   const [showCallOverlay, setShowCallOverlay] = useRecoilState(store.showCallOverlay);
   const [isCameraOn, setIsCameraOn] = useState(false);
-
-  const localize = useLocalize();
 
   const handleTranscriptionComplete = (text: string) => {
     if (text) {
@@ -53,6 +50,20 @@ export default function AudioRecorderCall({
     }
   }, [speechText, methods, textAreaRef]);
 
+  // Automatically start recording when the component mounts
+  useEffect(() => {
+    // Define o tempo de espera em milissegundos
+    const delay = 1000; // 5 segundos, por exemplo
+
+    // Inicia um temporizador que chama startRecording após o delay
+    const timer = setTimeout(() => {
+      if (!isStreamingAudio && !isThinking && !isListening) {startRecording();}
+    }, delay);
+
+    // Limpa o temporizador quando o componente é desmontado ou a dependência muda
+    return () => clearTimeout(timer);
+  }, [!isStreamingAudio]);
+
   const handleStartRecording = async () => {
     await startRecording();
   };
@@ -63,9 +74,6 @@ export default function AudioRecorderCall({
   };
 
   const handleCloseOverlay = () => {
-    if (isListening) {
-      handleStopRecording();
-    }
     setShowCallOverlay(false);
   };
 
@@ -87,7 +95,6 @@ export default function AudioRecorderCall({
             : rmsLevel > 0.01
               ? 1.2
               : 1;
-
     return (
       <div className="smooth-transition" style={{ transform: `scale(${transformScale})` }}>
         <CircleIcon size="256" />
