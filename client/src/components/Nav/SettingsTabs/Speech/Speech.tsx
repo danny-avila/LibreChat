@@ -20,7 +20,7 @@ import {
   AutoTranscribeAudioSwitch,
   LanguageSTTDropdown,
   SpeechToTextSwitch,
-  AutoSendTextSwitch,
+  AutoSendTextSelector,
   EngineSTTDropdown,
   DecibelSelector,
 } from './STT';
@@ -220,8 +220,8 @@ function Speech() {
                 <DecibelSelector />
               </div>
             )}
-            <div className="border-b last-of-type:border-b-0 dark:border-gray-700">
-              <AutoSendTextSwitch />
+            <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+              <AutoSendTextSelector />
             </div>
             <div className="h-px bg-black/20 bg-white/20" role="none" />
             <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
