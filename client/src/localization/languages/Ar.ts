@@ -469,7 +469,6 @@ export default {
   com_ui_max_tags: 'الحد الأقصى المسموح به هو {0}، باستخدام أحدث القيم.',
   com_auth_back_to_login: 'العودة إلى تسجيل الدخول',
   com_endpoint_message: 'رسالة',
-  com_endpoint_messages: 'رسائل',
   com_endpoint_message_not_appendable: 'عدّل رسالتك أو أعد إنشاءها.',
   com_endpoint_context_tokens: 'الحد الأقصى لرموز السياق',
   com_endpoint_context_info:
@@ -2293,10 +2292,6 @@ export const comparisons = {
   com_endpoint_message: {
     english: 'Message',
     translated: 'رسالة',
-  },
-  com_endpoint_messages: {
-    english: 'Messages',
-    translated: 'رسائل',
   },
   com_endpoint_message_not_appendable: {
     english: 'Edit your message or Regenerate.',

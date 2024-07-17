@@ -371,7 +371,6 @@ export default {
     'WARNING: Misuse of this feature can get you BANNED from using Bing! Click on \'System Message\' for full instructions and the default message if omitted, which is the \'Sydney\' preset that is considered safe.',
   com_endpoint_system_message: 'System Message',
   com_endpoint_message: 'Message',
-  com_endpoint_messages: 'Messages',
   com_endpoint_message_not_appendable: 'Edit your message or Regenerate.',
   com_endpoint_default_blank: 'default: blank',
   com_endpoint_default_false: 'default: false',
@@ -597,6 +596,7 @@ export default {
   com_nav_enter_to_send: 'Press Enter to send messages',
   com_nav_user_name_display: 'Display username in messages',
   com_nav_save_drafts: 'Save drafts locally',
+  com_nav_chat_direction: 'Chat direction',
   com_nav_show_code: 'Always show code when using code interpreter',
   com_nav_auto_send_prompts: 'Auto-send Prompts',
   com_nav_always_make_prod: 'Always make new versions production',
@@ -660,6 +660,7 @@ export default {
   com_nav_info_delete_cache_storage:
     'This action will delete all cached TTS (Text-to-Speech) audio files stored on your device. Cached audio files are used to speed up playback of previously generated TTS audio, but they can consume storage space on your device.',
   com_nav_setting_general: 'General',
+  com_nav_setting_chat: 'Chat',
   com_nav_setting_beta: 'Beta features',
   com_nav_setting_data: 'Data controls',
   com_nav_setting_account: 'Account',
