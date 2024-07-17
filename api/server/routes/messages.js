@@ -5,15 +5,15 @@ const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
 const { countTokens } = require('~/server/utils');
 
 router.use(requireJwtAuth);
-router.use(validateMessageReq);
 
-router.get('/:conversationId', async (req, res) => {
+/* Note: It's necessary to add `validateMessageReq` within route definition for correct params */
+router.get('/:conversationId', validateMessageReq, async (req, res) => {
   const { conversationId } = req.params;
   res.status(200).send(await getMessages({ conversationId }, '-_id -__v -user'));
 });
 
 // CREATE
-router.post('/:conversationId', async (req, res) => {
+router.post('/:conversationId', validateMessageReq, async (req, res) => {
   const message = req.body;
   const savedMessage = await saveMessage(req, { ...message, user: req.user.id });
   await saveConvo(req.user.id, savedMessage);
@@ -21,13 +21,13 @@ router.post('/:conversationId', async (req, res) => {
 });
 
 // READ
-router.get('/:conversationId/:messageId', async (req, res) => {
+router.get('/:conversationId/:messageId', validateMessageReq, async (req, res) => {
   const { conversationId, messageId } = req.params;
   res.status(200).send(await getMessages({ conversationId, messageId }, '-_id -__v -user'));
 });
 
 // UPDATE
-router.put('/:conversationId/:messageId', async (req, res) => {
+router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) => {
   const { messageId, model } = req.params;
   const { text } = req.body;
   const tokenCount = await countTokens(text, model);
@@ -36,7 +36,7 @@ router.put('/:conversationId/:messageId', async (req, res) => {
 });
 
 // DELETE
-router.delete('/:conversationId/:messageId', async (req, res) => {
+router.delete('/:conversationId/:messageId', validateMessageReq, async (req, res) => {
   const { messageId } = req.params;
   await deleteMessages({ messageId });
   res.status(204).send();
