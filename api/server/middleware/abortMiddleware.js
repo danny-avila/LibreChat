@@ -116,7 +116,7 @@ const createAbortController = (req, res, getAbortData, getReqData) => {
       { promptTokens, completionTokens },
     );
 
-    saveMessage({ ...responseMessage, user });
+    saveMessage(req, { ...responseMessage, user });
 
     let conversation;
     if (userMessagePromise) {
@@ -190,7 +190,7 @@ const handleAbortError = async (res, req, error, data) => {
       }
     };
 
-    await sendError(res, options, callback);
+    await sendError(req, res, options, callback);
   };
 
   if (partialText && partialText.length > 5) {

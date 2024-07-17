@@ -91,7 +91,7 @@ router.post(
           plugin.loading = false;
         }
 
-        throttledSaveMessage({
+        throttledSaveMessage(req, {
           messageId: responseMessageId,
           sender,
           conversationId,
@@ -110,7 +110,7 @@ router.post(
       let { intermediateSteps: steps } = data;
       plugin.outputs = steps && steps[0].action ? formatSteps(steps) : 'An error occurred.';
       plugin.loading = false;
-      saveMessage({ ...userMessage, user });
+      saveMessage(req, { ...userMessage, user });
       sendIntermediateMessage(res, {
         plugin,
         parentMessageId: userMessage.messageId,
@@ -141,7 +141,7 @@ router.post(
         plugin.inputs.push(formattedAction);
         plugin.latest = formattedAction.plugin;
         if (!start && !client.skipSaveUserMessage) {
-          saveMessage({ ...userMessage, user });
+          saveMessage(req, { ...userMessage, user });
         }
         sendIntermediateMessage(res, {
           plugin,
@@ -180,7 +180,7 @@ router.post(
 
       logger.debug('[/edit/gptPlugins] CLIENT RESPONSE', response);
       response.plugin = { ...plugin, loading: false };
-      await saveMessage({ ...response, user });
+      await saveMessage(req, { ...response, user });
 
       const { conversation = {} } = await client.responsePromise;
       conversation.title =
