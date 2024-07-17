@@ -1,3 +1,4 @@
+/* eslint-disable curly */
 /* eslint-disable indent */
 import { useParams } from 'react-router-dom';
 import { useState, useRef, useMemo } from 'react';
@@ -135,13 +136,16 @@ export default function Room({ room, toggleNav, retainView }) {
       'group relative grow overflow-hidden whitespace-nowrap rounded-lg active:opacity-50 flex cursor-pointer items-center mt-2 gap-2 break-all rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 py-2 px-2';
   }
   if (room.isPrivate && room.user.id != user?.id) return <></>;
+
+  console.log('--- room ---', room);
+
   return (
     <a
       href={`/r/${conversationId}`}
       data-testid="convo-item"
       onClick={clickHandler}
       {...aProps}
-      title={`${title} - ${room.users ? room.users.length + 1 : 1} Participants`}
+      title={`${title} - ${room.users ? room.userCount + 1 : 1} Participants`}
     >
       {/* {icon} */}
       <div className="relative line-clamp-1 max-h-5 flex-1 grow overflow-hidden">
@@ -169,13 +173,11 @@ export default function Room({ room, toggleNav, retainView }) {
                 : { width: '100%' }
             }
           >
-            {title} &#160;-&#160;{room.users ? room.users.length + 1 : 1}&#160; Participants
-            &#160;&#160;&#160;
+            {title} &#160;-&#160;{room.userCount + 1}&#160; Participants &#160;&#160;&#160;
           </Marquee>
         ) : (
           <>
-            {title} &#160;-&#160;{room.users ? room.users.length + 1 : 1}&#160; Participants
-            &#160;&#160;&#160;
+            {title} &#160;-&#160;{room.userCount + 1}&#160; Participants &#160;&#160;&#160;
           </>
         )}
       </div>

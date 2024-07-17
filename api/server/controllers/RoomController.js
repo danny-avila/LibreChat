@@ -14,14 +14,20 @@ const ReportModel = require('~/models/Report');
 
 const getRoomsByQuery = async (req, res) => {
   try {
-    const rooms = await getConvosByQuery(req.query.title ?? '', req.query.endpoint ?? '', req.query.sort ?? 'participants', req.query.order ?? 'asc');
+    const rooms = await getConvosByQuery(
+      req.query.title ?? '',
+      req.query.endpoint ?? '',
+      req.query.sort ?? 'participants',
+      req.query.order ?? 'asc',
+    );
     // return res.json(rooms.filter(i => i.user)).map(i => ({ ...i, userLength: i.uesrLength + 1 })); // Old version, Web crash on Reload
-    const list = []
-    for(let i in rooms) {
-  	  const v = rooms[i];
-	      list.push({
-          ...v , userLength: (v.userLength || 0 ) + 1
-	    })
+    const list = [];
+    for (let i in rooms) {
+      const v = rooms[i];
+      list.push({
+        ...v,
+        userLength: (v.userLength || 0) + 1,
+      });
     }
     return res.json(list);
   } catch (error) {
@@ -68,7 +74,14 @@ const getRoomById = async (req, res) => {
   const { roomId } = req.params;
   try {
     const room = await getRoom(roomId);
-    return res.json(room);
+    return res.json(
+      // JSON.parse(JSON.stringify(room)).map((i) => ({
+      //   ...i,
+      //   user: encryptDataV2(JSON.stringify(i.user)),
+      //   users: encryptDataV2(JSON.stringify(i.users)),
+      // })),
+      room,
+    );
   } catch (error) {
     return res.status(500).json(error);
   }
