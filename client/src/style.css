@@ -2184,3 +2184,28 @@ ol ol):not(:where([class~=not-prose] *)) {
   animation: moveUp 4s ease-in-out infinite;
   
 }
+
+@keyframes wave {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+.wave1 {
+  animation: wave 1s infinite;
+}
+
+.wave2 {
+  animation: wave 1s infinite 0.2s;
+}
+
+.wave3 {
+  animation: wave 1s infinite 0.4s;
+}
+
+.smooth-transition {
+  transition: transform 0.3s ease-in-out;
+}
