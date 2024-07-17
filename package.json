@@ -100,5 +100,8 @@
       "admin/",
       "packages/"
     ]
+  },
+  "dependencies": {
+    "annyang": "^2.6.1"
   }
 }

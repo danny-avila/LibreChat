@@ -203,6 +203,26 @@ const audioRunFamily = atomFamily<string | null, string | number | null>({
   default: null,
 });
 
+const isStreamingAudio = atom<boolean>({
+  key: 'isStreamingAudio',
+  default: false,
+});
+
+const isAudioDetected = atom<boolean>({
+  key: 'isAudioDetected',
+  default: false,
+});
+
+const showCallOverlay = atom<boolean>({
+  key: 'showCallOverlay',
+  default: false,
+});
+
+const streamAudioActiveState = atom<boolean>({
+  key: 'streamAudioActiveState',
+  default: false,
+});
+
 function useCreateConversationAtom(key: string | number) {
   const [keys, setKeys] = useRecoilState(conversationKeysAtom);
   const setConversation = useSetRecoilState(conversationByIndex(key));
@@ -332,4 +352,8 @@ export default {
   useClearSubmissionState,
   useClearLatestMessages,
   showPromptsPopoverFamily,
+  isStreamingAudio,
+  streamAudioActiveState,
+  isAudioDetected,
+  showCallOverlay,
 };

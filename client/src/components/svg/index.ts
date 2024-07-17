@@ -56,3 +56,5 @@ export { default as Sparkles } from './Sparkles';
 export { default as SpeechIcon } from './SpeechIcon';
 export { default as SaveIcon } from './SaveIcon';
 export { default as CircleHelpIcon } from './CircleHelpIcon';
+export { default as CircleIcon } from './CircleIcon';
+export { default as CircleDotsIcon } from './CircleDotsIcon';
