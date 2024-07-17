@@ -10,7 +10,6 @@ function CallOverlay({
   textAreaRef,
   methods,
   index,
-  TextToSpeech,
   automaticPlayback,
   ask,
 }: {
@@ -20,7 +19,6 @@ function CallOverlay({
   textAreaRef: React.RefObject<HTMLTextAreaElement>;
   methods: ReturnType<typeof useChatFormContext>;
   index: number;
-  TextToSpeech: boolean;
   automaticPlayback: boolean;
   ask: (data: { text: string }) => void;
 }) {
@@ -44,7 +42,7 @@ function CallOverlay({
         ask={ask}
         methods={methods}
       />
-      {TextToSpeech && automaticPlayback && <StreamAudioCall index={index} />}
+      {automaticPlayback && <StreamAudioCall index={index} />}
     </div>
   );
 }

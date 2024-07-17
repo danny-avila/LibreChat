@@ -205,7 +205,6 @@ const ChatForm = ({ index = 0 }) => {
               textAreaRef={textAreaRef}
               methods={methods}
               index={index}
-              TextToSpeech={TextToSpeech}
               automaticPlayback={automaticPlayback}
               ask={submitMessage}
             />
