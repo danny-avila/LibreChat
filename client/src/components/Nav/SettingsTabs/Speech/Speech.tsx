@@ -31,6 +31,8 @@ function Speech() {
   const { data } = useGetCustomConfigSpeechQuery();
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
 
+  const [sttExternal, setSttExternal] = useState(false);
+  const [ttsExternal, setTtsExternal] = useState(false);
   const [advancedMode, setAdvancedMode] = useRecoilState(store.advancedMode);
   const [autoTranscribeAudio, setAutoTranscribeAudio] = useRecoilState(store.autoTranscribeAudio);
   const [conversationMode, setConversationMode] = useRecoilState(store.conversationMode);
@@ -53,6 +55,8 @@ function Speech() {
   const updateSetting = useCallback(
     (key, newValue) => {
       const settings = {
+        sttExternal: { value: sttExternal, setFunc: setSttExternal },
+        ttsExternal: { value: ttsExternal, setFunc: setTtsExternal },
         conversationMode: { value: conversationMode, setFunc: setConversationMode },
         advancedMode: { value: advancedMode, setFunc: setAdvancedMode },
         speechToText: { value: speechToText, setFunc: setSpeechToText },
@@ -79,6 +83,8 @@ function Speech() {
       setting.setFunc(newValue);
     },
     [
+      sttExternal,
+      ttsExternal,
       conversationMode,
       advancedMode,
       speechToText,
@@ -95,6 +101,8 @@ function Speech() {
       languageTTS,
       automaticPlayback,
       playbackRate,
+      setSttExternal,
+      setTtsExternal,
       setConversationMode,
       setAdvancedMode,
       setSpeechToText,
@@ -122,6 +130,9 @@ function Speech() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
+
+  console.log(sttExternal);
+  console.log(ttsExternal);
 
   const contentRef = useRef(null);
   useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);
@@ -175,21 +186,21 @@ function Speech() {
 
         <Tabs.Content value={'simple'}>
           <div className="flex flex-col gap-3 text-sm text-black dark:text-gray-50">
-            <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+            <div className="border-b last-of-type:border-b-0 dark:border-gray-700">
               <SpeechToTextSwitch />
             </div>
             <div className="border-b last-of-type:border-b-0 dark:border-gray-700">
-              <EngineSTTDropdown />
+              <EngineSTTDropdown external={sttExternal} />
             </div>
             <div className="border-b last-of-type:border-b-0 dark:border-gray-700">
               <LanguageSTTDropdown />
             </div>
             <div className="h-px bg-black/20 bg-white/20" role="none" />
-            <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+            <div className="border-b last-of-type:border-b-0 dark:border-gray-700">
               <TextToSpeechSwitch />
             </div>
             <div className="border-b last-of-type:border-b-0 dark:border-gray-700">
-              <EngineTTSDropdown />
+              <EngineTTSDropdown external={ttsExternal} />
             </div>
             <div className="border-b last-of-type:border-b-0 dark:border-gray-700">
               <VoiceDropdown />
@@ -199,15 +210,15 @@ function Speech() {
 
         <Tabs.Content value={'advanced'}>
           <div className="flex flex-col gap-3 text-sm text-black dark:text-gray-50">
-            <div className="border-b last-of-type:border-b-0 dark:border-gray-700">
+            <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
               <ConversationModeSwitch />
             </div>
             <div className="h-px bg-black/20 bg-white/20" role="none" />
-            <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+            <div className="border-b last-of-type:border-b-0 dark:border-gray-700">
               <SpeechToTextSwitch />
             </div>
             <div className="border-b last-of-type:border-b-0 dark:border-gray-700">
-              <EngineSTTDropdown />
+              <EngineSTTDropdown external={sttExternal} />
             </div>
             <div className="border-b last-of-type:border-b-0 dark:border-gray-700">
               <LanguageSTTDropdown />
@@ -231,7 +242,7 @@ function Speech() {
               <AutomaticPlaybackSwitch />
             </div>
             <div className="border-b last-of-type:border-b-0 dark:border-gray-700">
-              <EngineTTSDropdown />
+              <EngineTTSDropdown external={ttsExternal} />
             </div>
             <div className="border-b last-of-type:border-b-0 dark:border-gray-700">
               <VoiceDropdown />
