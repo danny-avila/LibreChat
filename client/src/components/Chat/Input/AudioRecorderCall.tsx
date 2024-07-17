@@ -7,6 +7,7 @@ import store from '~/store';
 import { useRecoilState } from 'recoil';
 import { usePauseGlobalAudio } from '~/hooks/Audio';
 import CameraFeed from './CameraFeed';
+import { useLocalize, useCombobox } from '~/hooks';
 
 let isThinking = false;
 
@@ -25,6 +26,8 @@ export default function AudioRecorderCall({
   const [isStreamingAudio, setIsStreamingAudio] = useRecoilState(store.isStreamingAudio);
 
   const { pauseGlobalAudio } = usePauseGlobalAudio();
+  const localize = useLocalize();
+
   const [showCallOverlay, setShowCallOverlay] = useRecoilState(store.showCallOverlay);
   const [isCameraOn, setIsCameraOn] = useState(false);
 
@@ -57,7 +60,9 @@ export default function AudioRecorderCall({
 
     // Inicia um temporizador que chama startRecording após o delay
     const timer = setTimeout(() => {
-      if (!isStreamingAudio && !isThinking && !isListening) {startRecording();}
+      if (!isStreamingAudio && !isThinking && !isListening) {
+        startRecording();
+      }
     }, delay);
 
     // Limpa o temporizador quando o componente é desmontado ou a dependência muda
