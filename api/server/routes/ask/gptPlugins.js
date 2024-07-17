@@ -85,7 +85,7 @@ router.post(
           clearTimeout(timer);
         }
 
-        throttledSaveMessage({
+        throttledSaveMessage(req, {
           messageId: responseMessageId,
           sender,
           conversationId,
@@ -170,7 +170,7 @@ router.post(
 
       const onChainEnd = () => {
         if (!client.skipSaveUserMessage) {
-          saveMessage({ ...userMessage, user });
+          saveMessage(req, { ...userMessage, user });
         }
         sendIntermediateMessage(res, {
           plugins,
@@ -208,7 +208,7 @@ router.post(
       logger.debug('[/ask/gptPlugins]', response);
 
       response.plugins = plugins.map((p) => ({ ...p, loading: false }));
-      await saveMessage({ ...response, user });
+      await saveMessage(req, { ...response, user });
 
       const { conversation = {} } = await client.responsePromise;
       conversation.title =

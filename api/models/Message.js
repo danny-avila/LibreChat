@@ -9,8 +9,8 @@ const idSchema = z.string().uuid();
  *
  * @async
  * @function saveMessage
+ * @param {Express.Request} req - The request object containing user information.
  * @param {Object} params - The message data object.
- * @param {string} params.user - The identifier of the user.
  * @param {string} params.endpoint - The endpoint where the message originated.
  * @param {string} params.iconURL - The URL of the sender's icon.
  * @param {string} params.messageId - The unique identifier for the message.
@@ -32,35 +32,41 @@ const idSchema = z.string().uuid();
  * @returns {Promise<TMessage>} The updated or newly inserted message document.
  * @throws {Error} If there is an error in saving the message.
  */
-async function saveMessage({
-  user,
-  endpoint,
-  iconURL,
-  messageId,
-  newMessageId,
-  conversationId,
-  parentMessageId,
-  sender,
-  text,
-  isCreatedByUser,
-  error,
-  unfinished,
-  files,
-  isEdited,
-  finish_reason,
-  tokenCount,
-  plugin,
-  plugins,
-  model,
-}) {
+async function saveMessage(
+  req,
+  {
+    endpoint,
+    iconURL,
+    messageId,
+    newMessageId,
+    conversationId,
+    parentMessageId,
+    sender,
+    text,
+    isCreatedByUser,
+    error,
+    unfinished,
+    files,
+    isEdited,
+    finish_reason,
+    tokenCount,
+    plugin,
+    plugins,
+    model,
+  },
+) {
   try {
+    if (!req.user.id) {
+      throw new Error('User not authenticated');
+    }
+
     const validConvoId = idSchema.safeParse(conversationId);
     if (!validConvoId.success) {
-      return;
+      throw new Error('Invalid conversation ID');
     }
 
     const update = {
-      user,
+      user: req.user.id,
       iconURL,
       endpoint,
       messageId: newMessageId || messageId,
@@ -83,7 +89,7 @@ async function saveMessage({
       update.files = files;
     }
 
-    const message = await Message.findOneAndUpdate({ messageId }, update, {
+    const message = await Message.findOneAndUpdate({ messageId, user: req.user.id }, update, {
       upsert: true,
       new: true,
     });

@@ -598,7 +598,11 @@ class BaseClient {
    * @param {string | null} user
    */
   async saveMessageToDatabase(message, endpointOptions, user = null) {
-    const savedMessage = await saveMessage({
+    if (this.user && user !== this.user) {
+      throw new Error('User mismatch.');
+    }
+
+    const savedMessage = await saveMessage(this.options.req, {
       ...message,
       endpoint: this.options.endpoint,
       unfinished: false,

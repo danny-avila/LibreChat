@@ -143,7 +143,7 @@ class StreamRunManager {
    * @returns {Promise<void>}
    */
   async saveInitialMessage() {
-    return saveMessage({
+    return saveMessage(this.req, {
       conversationId: this.finalMessage.conversationId,
       messageId: this.finalMessage.messageId,
       parentMessageId: this.parentMessageId,

@@ -56,7 +56,7 @@ const EditController = async (req, res, next, initializeClient) => {
     generation,
     onProgress: throttle(
       ({ text: partialText }) => {
-        saveMessage({
+        saveMessage(req, {
           messageId: responseMessageId,
           sender,
           conversationId,
@@ -141,7 +141,7 @@ const EditController = async (req, res, next, initializeClient) => {
       });
       res.end();
 
-      await saveMessage({ ...response, user });
+      await saveMessage(req, { ...response, user });
     }
   } catch (error) {
     const partialText = getPartialText();

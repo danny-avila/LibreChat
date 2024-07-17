@@ -55,7 +55,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
     const { onProgress: progressCallback, getPartialText } = createOnProgress({
       onProgress: throttle(
         ({ text: partialText }) => {
-          saveMessage({
+          saveMessage(req, {
             messageId: responseMessageId,
             sender,
             conversationId,
@@ -144,11 +144,11 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       });
       res.end();
 
-      await saveMessage({ ...response, user });
+      await saveMessage(req, { ...response, user });
     }
 
     if (!client.skipSaveUserMessage) {
-      await saveMessage(userMessage);
+      await saveMessage(req, userMessage);
     }
 
     if (addTitle && parentMessageId === Constants.NO_PARENT && newConvo) {
