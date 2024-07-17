@@ -57,9 +57,9 @@ const getRooms = async (name = '', roomIndex = 'user', sort, endpoint) => {
  */
 const getRoomsByUser = async (userId) => {
   try {
-    const owned = await Conversation.find({ user: userId, isRoom: true });
-    // .populate('user')
-    // .populate('users');
+    const owned = await Conversation.find({ user: userId, isRoom: true })
+      .populate('user', ['username', 'name', 'avatar', 'credits', 'karma', 'cryptocurrency'])
+      .populate('users', ['username', 'name', 'avatar', 'credits', 'karma', 'cryptocurrency']);
     const joined = await Conversation.find({
       users: { $elemMatch: { $eq: userId } },
       isRoom: true,
@@ -80,10 +80,10 @@ const getRoomsByUser = async (userId) => {
  */
 const getRoom = async (conversationId) => {
   try {
-    return await Conversation.findOne({ conversationId, isRoom: true });
-    // .populate('user')
-    // .populate('users')
-    // .lean();
+    return await Conversation.findOne({ conversationId, isRoom: true })
+      .populate('user', ['username', 'name', 'avatar', 'credits', 'karma', 'cryptocurrency'])
+      .populate('users', ['username', 'name', 'avatar', 'credits', 'karma', 'cryptocurrency'])
+      .lean();
   } catch (error) {
     logger.error('[getRoom] Error getting single room', error);
     return { message: 'Error getting single room' };

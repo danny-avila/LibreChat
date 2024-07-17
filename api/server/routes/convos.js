@@ -27,7 +27,7 @@ router.get('/:conversationId', async (req, res) => {
   const convo = await getConvo(req.user.id, conversationId);
 
   if (convo) {
-    res.status(200).json(convo);
+    res.status(200).json(JSON.parse(JSON.stringify(convo)));
   } else {
     res.status(404).end();
   }

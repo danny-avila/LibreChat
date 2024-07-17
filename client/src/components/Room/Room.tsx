@@ -137,8 +137,6 @@ export default function Room({ room, toggleNav, retainView }) {
   }
   if (room.isPrivate && room.user.id != user?.id) return <></>;
 
-  console.log('--- room ---', room);
-
   return (
     <a
       href={`/r/${conversationId}`}

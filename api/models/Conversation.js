@@ -57,8 +57,8 @@ const getConvo = async (user, conversationId) => {
       //   $in: user,
       // },
     })
-      .populate('user')
-      .populate('users')
+      .populate('user', ['username', 'name', 'avatar', 'credits', 'karma', 'cryptocurrency'])
+      .populate('users', ['username', 'name', 'avatar', 'credits', 'karma', 'cryptocurrency'])
       .lean();
   } catch (error) {
     logger.error('[getConvo] Error getting single conversation', error);

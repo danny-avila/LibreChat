@@ -74,14 +74,7 @@ const getRoomById = async (req, res) => {
   const { roomId } = req.params;
   try {
     const room = await getRoom(roomId);
-    return res.json(
-      // JSON.parse(JSON.stringify(room)).map((i) => ({
-      //   ...i,
-      //   user: encryptDataV2(JSON.stringify(i.user)),
-      //   users: encryptDataV2(JSON.stringify(i.users)),
-      // })),
-      room,
-    );
+    return res.json(room);
   } catch (error) {
     return res.status(500).json(error);
   }
