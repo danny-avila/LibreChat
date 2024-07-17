@@ -304,7 +304,7 @@ const speechTab = z
           languageSTT: z.string().optional(),
           autoTranscribeAudio: z.boolean().optional(),
           decibelValue: z.number().optional(),
-          autoSendText: z.boolean().optional(),
+          autoSendText: z.number().optional(),
         }),
       )
       .optional(),
