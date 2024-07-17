@@ -19,6 +19,16 @@ const {
   processLocalAvatar,
   getLocalFileStream,
 } = require('./Local');
+const {
+  deleteS3FileByPath,
+  getS3URL,
+  saveURLToS3,
+  saveBufferToS3,
+  getS3FileStream,
+  uploadImageToS3,
+  prepareImageURLS3,
+  processS3Avatar,
+} = require('./S3');
 const { uploadOpenAIFile, deleteOpenAIFile, getOpenAIFileStream } = require('./OpenAI');
 const { uploadVectors, deleteVectors } = require('./VectorDB');
 
@@ -55,6 +65,23 @@ const localStrategy = () => ({
   handleImageUpload: uploadLocalImage,
   prepareImagePayload: prepareImagesLocal,
   getDownloadStream: getLocalFileStream,
+});
+
+/**
+ * S3 Storage Strategy Functions
+ *
+ * */
+const s3Strategy = () => ({
+  /** @type {typeof uploadVectors | null} */
+  handleFileUpload: null,
+  saveURL: saveURLToS3,
+  getFileURL: getS3URL,
+  deleteFile: deleteS3FileByPath,
+  saveBuffer: saveBufferToS3,
+  prepareImagePayload: prepareImageURLS3,
+  processAvatar: processS3Avatar,
+  handleImageUpload: uploadImageToS3,
+  getDownloadStream: getS3FileStream,
 });
 
 /**
@@ -115,6 +142,8 @@ const getStrategyFunctions = (fileSource) => {
     return openAIStrategy();
   } else if (fileSource === FileSources.vectordb) {
     return vectorStrategy();
+  } else if (fileSource === FileSources.s3) {
+    return s3Strategy();
   } else {
     throw new Error('Invalid file source');
   }

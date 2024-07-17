@@ -7,6 +7,8 @@ version: 1.0.9
 # Cache settings: Set to true to enable caching
 cache: true
 
+fileStrategy: "firebase"
+
 # Custom interface configuration
 interface:
   # Privacy policy settings
