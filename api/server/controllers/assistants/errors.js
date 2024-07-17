@@ -25,6 +25,7 @@ const { recordUsage, checkMessageGaps } = require('~/server/services/Threads');
  * @property {Express.Request} req - The Express request object
  * @property {Express.Response} res - The Express response object
  * @property {() => ErrorHandlerContext} getContext - Function to get the current context
+ * @property {string} [originPath] - The origin path for the error handler
  */
 
 /**
@@ -32,7 +33,7 @@ const { recordUsage, checkMessageGaps } = require('~/server/services/Threads');
  * @param {ErrorHandlerDependencies} dependencies - The dependencies for the error handler
  * @returns {(error: Error) => Promise<void>} The error handler function
  */
-const createErrorHandler = ({ req, res, getContext }) => {
+const createErrorHandler = ({ req, res, getContext, originPath = '/assistants/chat/' }) => {
   const cache = getLogStores(CacheKeys.ABORT_KEYS);
 
   /**
@@ -73,7 +74,7 @@ const createErrorHandler = ({ req, res, getContext }) => {
     } else if (error.message === 'Request closed' && completedRun) {
       return;
     } else if (error.message === 'Request closed') {
-      logger.debug('[/assistants/chat/] Request aborted on close');
+      logger.debug(`[${originPath}] Request aborted on close`);
     } else if (/Files.*are invalid/.test(error.message)) {
       const errorMessage = `Files are invalid, or may not have uploaded yet.${
         endpoint === 'azureAssistants'
@@ -91,7 +92,7 @@ const createErrorHandler = ({ req, res, getContext }) => {
     } else if (error?.message?.includes(ViolationTypes.TOKEN_BALANCE)) {
       return sendResponse(req, res, messageData, error.message);
     } else {
-      logger.error('[/assistants/chat/]', error);
+      logger.error(`[${originPath}]`, error);
     }
 
     if (!openai || !thread_id || !run_id) {
@@ -103,14 +104,14 @@ const createErrorHandler = ({ req, res, getContext }) => {
     try {
       const status = await cache.get(cacheKey);
       if (status === 'cancelled') {
-        logger.debug('[/assistants/chat/] Run already cancelled');
+        logger.debug(`[${originPath}] Run already cancelled`);
         return res.end();
       }
       await cache.delete(cacheKey);
       const cancelledRun = await openai.beta.threads.runs.cancel(thread_id, run_id);
-      logger.debug('[/assistants/chat/] Cancelled run:', cancelledRun);
+      logger.debug(`[${originPath}] Cancelled run:`, cancelledRun);
     } catch (error) {
-      logger.error('[/assistants/chat/] Error cancelling run', error);
+      logger.error(`[${originPath}] Error cancelling run`, error);
     }
 
     await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -125,7 +126,7 @@ const createErrorHandler = ({ req, res, getContext }) => {
         conversationId,
       });
     } catch (error) {
-      logger.error('[/assistants/chat/] Error fetching or processing run', error);
+      logger.error(`[${originPath}] Error fetching or processing run`, error);
     }
 
     let finalEvent;
@@ -181,7 +182,7 @@ const createErrorHandler = ({ req, res, getContext }) => {
         runMessages,
       };
     } catch (error) {
-      logger.error('[/assistants/chat/] Error finalizing error process', error);
+      logger.error(`[${originPath}] Error finalizing error process`, error);
       return sendResponse(req, res, messageData, 'The Assistant run failed');
     }
 
