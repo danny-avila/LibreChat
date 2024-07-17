@@ -30,7 +30,10 @@ async function abortMessage(req, res) {
     return res.status(204).send({ message: 'Request not found' });
   }
   const finalEvent = await abortController.abortCompletion();
-  logger.info('[abortMessage] Aborted request', { abortKey });
+  logger.debug(
+    `[abortMessage] ID: ${req.user.id} | ${req.user.email} | Aborted request: ` +
+      JSON.stringify({ abortKey }),
+  );
   abortControllers.delete(abortKey);
 
   if (res.headersSent && finalEvent) {
