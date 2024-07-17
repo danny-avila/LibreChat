@@ -29,9 +29,11 @@ const setupWebSocket = (server) => {
     socket.on('join room', (data) => joinRoom(socket, data.user, data.roomId));
 
     socket.on('move room', (data) => moveRoom(socket.id, data.roomId));
-    socket.on('tip', (data)=>{
+    //
+    socket.on('tip', (data) => {
       socket.broadcast.emit('tipNotification', data);
-    })
+    });
+    //
   });
 };
 
@@ -169,7 +171,6 @@ const moveRoom = (socketId, roomId) => {
     // const newRoom = clients[clientIndex].roomId;
 
     // clients.filter(client => client.roomId === lastRoom).forEach(client => client.socket.emit('user left the room', ))
-
   } catch (error) {
     throw new Error(`[moveRoom] Error in moverRoom ${error}`);
   }
