@@ -15,37 +15,43 @@ const getCustomConfig = require('~/server/services/Config/getCustomConfig');
 async function getCustomConfigSpeech(req, res) {
   try {
     const customConfig = await getCustomConfig();
+    const sttExternal = !!customConfig.speech?.stt;
+    const ttsExternal = !!customConfig.speech?.tts;
+    let settings = {
+      sttExternal,
+      ttsExternal,
+    };
 
     if (!customConfig || !customConfig.speech?.speechTab) {
-      throw new Error('Configuration or speechTab schema is missing');
+      return res.status(200).send(settings);
     }
 
-    const ttsSchema = customConfig.speech?.speechTab;
-    let settings = {};
+    const speechTab = customConfig.speech.speechTab;
 
-    if (ttsSchema.advancedMode !== undefined) {
-      settings.advancedMode = ttsSchema.advancedMode;
+    if (speechTab.advancedMode !== undefined) {
+      settings.advancedMode = speechTab.advancedMode;
     }
 
-    if (ttsSchema.speechToText) {
-      for (const key in ttsSchema.speechToText) {
-        if (ttsSchema.speechToText[key] !== undefined) {
-          settings[key] = ttsSchema.speechToText[key];
+    if (speechTab.speechToText) {
+      for (const key in speechTab.speechToText) {
+        if (speechTab.speechToText[key] !== undefined) {
+          settings[key] = speechTab.speechToText[key];
         }
       }
     }
 
-    if (ttsSchema.textToSpeech) {
-      for (const key in ttsSchema.textToSpeech) {
-        if (ttsSchema.textToSpeech[key] !== undefined) {
-          settings[key] = ttsSchema.textToSpeech[key];
+    if (speechTab.textToSpeech) {
+      for (const key in speechTab.textToSpeech) {
+        if (speechTab.textToSpeech[key] !== undefined) {
+          settings[key] = speechTab.textToSpeech[key];
         }
       }
     }
 
     return res.status(200).send(settings);
   } catch (error) {
-    res.status(200).send();
+    console.error('Failed to get custom config speech settings:', error);
+    res.status(500).send('Internal Server Error');
   }
 }
 
