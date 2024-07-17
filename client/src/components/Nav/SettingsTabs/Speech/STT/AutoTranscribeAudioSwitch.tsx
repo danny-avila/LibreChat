@@ -12,7 +12,7 @@ export default function AutoTranscribeAudioSwitch({
   const [autoTranscribeAudio, setAutoTranscribeAudio] = useRecoilState<boolean>(
     store.autoTranscribeAudio,
   );
-  const [speechToText] = useRecoilState<boolean>(store.SpeechToText);
+  const speechToText = useRecoilState<boolean>(store.speechToText);
 
   const handleCheckedChange = (value: boolean) => {
     setAutoTranscribeAudio(value);

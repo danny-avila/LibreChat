@@ -565,7 +565,6 @@ export default {
   com_ui_min_tags:
     'Es können keine weiteren Werte entfernt werden, mindestens {0} sind erforderlich.',
   com_ui_max_tags: 'Die maximal erlaubte Anzahl ist {0}, die neuesten Werte werden verwendet.',
-  com_endpoint_messages: 'Nachrichten',
   com_endpoint_context_tokens: 'Max. Kontexttoken',
   com_endpoint_context_info:
     'Die maximale Anzahl an Token, die für den Kontext verwendet werden kann. Verwenden Sie dies, um zu steuern, wie viele Token pro Anfrage gesendet werden. Wenn nicht angegeben, werden systemseitige Standardwerte basierend auf der bekannten Kontextgröße der Modelle verwendet. Höhere Werte können zu Fehlern und/oder höheren Tokenkosten führen.',
@@ -2602,10 +2601,6 @@ export const comparisons = {
   com_ui_max_tags: {
     english: 'Maximum number allowed is {0}, using latest values.',
     translated: 'Die maximal erlaubte Anzahl ist {0}, die neuesten Werte werden verwendet.',
-  },
-  com_endpoint_messages: {
-    english: 'Messages',
-    translated: 'Nachrichten',
   },
   com_endpoint_context_tokens: {
     english: 'Max Context Tokens',

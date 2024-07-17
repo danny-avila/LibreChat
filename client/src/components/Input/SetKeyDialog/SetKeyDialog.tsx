@@ -41,6 +41,7 @@ const EXPIRY = {
   ONE_DAY: { display: 'in 1 day', value: 24 * 60 * 60 * 1000 },
   ONE_WEEK: { display: 'in 7 days', value: 7 * 24 * 60 * 60 * 1000 },
   ONE_MONTH: { display: 'in 30 days', value: 30 * 24 * 60 * 60 * 1000 },
+  NEVER: { display: 'never', value: 0 },
 };
 
 const SetKeyDialog = ({
@@ -84,7 +85,13 @@ const SetKeyDialog = ({
 
   const submit = () => {
     const selectedOption = expirationOptions.find((option) => option.display === expiresAtLabel);
-    const expiresAt = Date.now() + (selectedOption ? selectedOption.value : 0);
+    let expiresAt;
+
+    if (selectedOption?.value === 0) {
+      expiresAt = null;
+    } else {
+      expiresAt = Date.now() + (selectedOption ? selectedOption.value : 0);
+    }
 
     const saveKey = (key: string) => {
       saveUserKey(key, expiresAt);
@@ -160,18 +167,18 @@ const SetKeyDialog = ({
         main={
           <div className="grid w-full items-center gap-2">
             <small className="text-red-600">
-              {`${localize('com_endpoint_config_key_encryption')} ${
-                !expiryTime
-                  ? localize('com_endpoint_config_key_expiry')
-                  : `${new Date(expiryTime).toLocaleString()}`
-              }`}
-            </small>
+              {expiryTime === 'never'
+                ? localize('com_endpoint_config_key_never_expires')
+                : `${localize('com_endpoint_config_key_encryption')} ${new Date(
+                  expiryTime,
+                ).toLocaleString()}`}
+            </small>{' '}
             <Dropdown
               label="Expires "
               value={expiresAtLabel}
               onChange={handleExpirationChange}
               options={expirationOptions.map((option) => option.display)}
-              width={185}
+              sizeClasses="w-[185px]"
             />
             <FormProvider {...methods}>
               <EndpointComponent
