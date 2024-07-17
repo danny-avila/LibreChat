@@ -56,7 +56,7 @@ async function saveMessage(
   },
 ) {
   try {
-    if (!req.user.id) {
+    if (!req || !req.user || !req.user.id) {
       throw new Error('User not authenticated');
     }
 
@@ -97,7 +97,7 @@ async function saveMessage(
     return message.toObject();
   } catch (err) {
     logger.error('Error saving message:', err);
-    throw new Error('Failed to save message.');
+    throw err;
   }
 }
 
@@ -124,7 +124,7 @@ async function bulkSaveMessages(messages) {
     return result;
   } catch (err) {
     logger.error('Error saving messages in bulk:', err);
-    throw new Error('Failed to save messages in bulk.');
+    throw err;
   }
 }
 
@@ -168,7 +168,7 @@ async function recordMessage({
     });
   } catch (err) {
     logger.error('Error saving message:', err);
-    throw new Error('Failed to save message.');
+    throw err;
   }
 }
 
@@ -189,7 +189,7 @@ async function updateMessageText(req, { messageId, text }) {
     await Message.updateOne({ messageId, user: req.user.id }, { text });
   } catch (err) {
     logger.error('Error updating message text:', err);
-    throw new Error('Failed to update message text.');
+    throw err;
   }
 }
 
@@ -222,7 +222,7 @@ async function updateMessage(req, message) {
     );
 
     if (!updatedMessage) {
-      throw new Error('Message not found.');
+      throw new Error('Message not found or user not authorized.');
     }
 
     return {
@@ -237,7 +237,7 @@ async function updateMessage(req, message) {
     };
   } catch (err) {
     logger.error('Error updating message:', err);
-    throw new Error('Failed to update message.');
+    throw err;
   }
 }
 
@@ -258,13 +258,15 @@ async function deleteMessagesSince(req, { messageId, conversationId }) {
     const message = await Message.findOne({ messageId, user: req.user.id }).lean();
 
     if (message) {
-      return await Message.find({ conversationId }).deleteMany({
+      const query = Message.find({ conversationId, user: req.user.id });
+      return await query.deleteMany({
         createdAt: { $gt: message.createdAt },
       });
     }
+    return undefined;
   } catch (err) {
     logger.error('Error deleting messages:', err);
-    throw new Error('Failed to delete messages.');
+    throw err;
   }
 }
 
@@ -286,7 +288,7 @@ async function getMessages(filter, select) {
     return await Message.find(filter).sort({ createdAt: 1 }).lean();
   } catch (err) {
     logger.error('Error getting messages:', err);
-    throw new Error('Failed to get messages.');
+    throw err;
   }
 }
 
@@ -304,7 +306,7 @@ async function deleteMessages(filter) {
     return await Message.deleteMany(filter);
   } catch (err) {
     logger.error('Error deleting messages:', err);
-    throw new Error('Failed to delete messages.');
+    throw err;
   }
 }
 
