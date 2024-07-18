@@ -560,12 +560,11 @@ export const defaultModels = {
   ],
   [EModelEndpoint.openAI]: [
     'gpt-4o',
+    'gpt-4o-mini',
     ...sharedOpenAIModels,
     'gpt-4-vision-preview',
     'gpt-3.5-turbo-instruct-0914',
-    'gpt-3.5-turbo-0301',
     'gpt-3.5-turbo-instruct',
-    'text-davinci-003',
   ],
 };
 
@@ -621,6 +620,7 @@ export const supportsBalanceCheck = {
 
 export const visionModels = [
   'gpt-4o',
+  'gpt-4o-mini',
   'gpt-4-turbo',
   'gpt-4-vision',
   'llava',
