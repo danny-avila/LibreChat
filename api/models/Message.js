@@ -1,6 +1,6 @@
 const { z } = require('zod');
 const Message = require('./schema/messageSchema');
-const logger = require('~/config/winston');
+const { logger } = require('~/config');
 
 const idSchema = z.string().uuid();
 
@@ -27,42 +27,43 @@ const idSchema = z.string().uuid();
  * @param {string} [params.finish_reason] - Reason for finishing the message.
  * @param {number} [params.tokenCount] - The number of tokens in the message.
  * @param {string} [params.plugin] - Plugin associated with the message.
- * @param {Object[]} [params.plugins] - An array of plugins associated with the message.
+ * @param {string[]} [params.plugins] - An array of plugins associated with the message.
  * @param {string} [params.model] - The model used to generate the message.
  * @returns {Promise<TMessage>} The updated or newly inserted message document.
  * @throws {Error} If there is an error in saving the message.
  */
-async function saveMessage(
-  req,
-  {
-    endpoint,
-    iconURL,
-    messageId,
-    newMessageId,
-    conversationId,
-    parentMessageId,
-    sender,
-    text,
-    isCreatedByUser,
-    error,
-    unfinished,
-    files,
-    isEdited,
-    finish_reason,
-    tokenCount,
-    plugin,
-    plugins,
-    model,
-  },
-) {
+async function saveMessage(req, params) {
   try {
     if (!req || !req.user || !req.user.id) {
       throw new Error('User not authenticated');
     }
 
+    const {
+      text,
+      error,
+      model,
+      files,
+      plugin,
+      sender,
+      plugins,
+      iconURL,
+      endpoint,
+      isEdited,
+      messageId,
+      unfinished,
+      tokenCount,
+      newMessageId,
+      finish_reason,
+      conversationId,
+      parentMessageId,
+      isCreatedByUser,
+    } = params;
+
     const validConvoId = idSchema.safeParse(conversationId);
     if (!validConvoId.success) {
-      throw new Error('Invalid conversation ID');
+      logger.warn(`Invalid conversation ID: ${conversationId}`);
+      logger.info(params);
+      return;
     }
 
     const update = {
