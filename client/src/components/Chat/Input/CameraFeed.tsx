@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import DropdownMenu from './DropdownMenu'; // Adjust the path as necessary
 
 const CameraFeed = ({
@@ -14,7 +14,7 @@ const CameraFeed = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  const getVideoInputDevices = useCallback(async () => {
+  const getVideoInputDevices = async () => {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
       const videoDevices = devices.filter(
@@ -27,9 +27,9 @@ const CameraFeed = ({
     } catch (error) {
       console.error('Error fetching video input devices:', error);
     }
-  }, []);
+  };
 
-  const startVideoStream = useCallback(async () => {
+  const startVideoStream = async () => {
     try {
       const constraints =
         selectedVideoInputDeviceId === 'screen'
@@ -45,9 +45,9 @@ const CameraFeed = ({
     } catch (error) {
       console.error('Error accessing webcam:', error);
     }
-  }, [selectedVideoInputDeviceId]);
+  };
 
-  const stopVideoStream = useCallback(() => {
+  const stopVideoStream = () => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
@@ -55,7 +55,7 @@ const CameraFeed = ({
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
-  }, []);
+  };
 
   const takeScreenshot = async () => {
     if (!canvasRef.current || !videoRef.current) {return;}
@@ -99,13 +99,13 @@ const CameraFeed = ({
     return () => {
       stopVideoStream();
     };
-  }, [getVideoInputDevices, stopVideoStream]);
+  }, []);
 
   useEffect(() => {
     if (selectedVideoInputDeviceId) {
       startVideoStream();
     }
-  }, [selectedVideoInputDeviceId, startVideoStream]);
+  }, [selectedVideoInputDeviceId]);
 
   const handleDeviceChange = (deviceId: string) => {
     setSelectedVideoInputDeviceId(deviceId);
@@ -129,11 +129,11 @@ const CameraFeed = ({
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 16 16"
+          viewBox="0 0 20 20"
           fill="currentColor"
-          className="size-6"
+          className="size-5 text-white"
         >
-          <path d="M5.28 4.22a.75.75 0 1 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 0 0 1.06 1.06L8 9.06l2.72-2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
+          <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
         </svg>
       </button>
       <button
@@ -147,7 +147,7 @@ const CameraFeed = ({
           viewBox="0 0 24 24"
           strokeWidth="1.5"
           stroke="currentColor"
-          className="size-6"
+          className="size-5"
         >
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 5.25v13.5M18.75 12H5.25" />
         </svg>
