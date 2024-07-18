@@ -48,7 +48,7 @@ async function getS3URL({ fileName, basePath = 'images' }) {
   const params = {
     Bucket: bucketName,
     Key: `${basePath}/${fileName}`,
-    Expires: 86400, // URL expires in 1 week
+    Expires: 86400, // URL expires in 24 hours
   };
 
   try {
@@ -87,7 +87,7 @@ async function saveBufferToS3({ userId, buffer, fileName, basePath = 'images' })
 }
 
 /**
- * Extracts the S3 file path from a signed URL and deletes it.
+ * Extracts the S3 file path from a signed URL.
  * @param {string} url - The signed URL.
  * @returns {string} - The file path in S3.
  */
@@ -97,6 +97,11 @@ function extractS3FilePath(url) {
   return decodeURIComponent(pathname.substring(1)); // Remove the leading "/" and decode
 }
 
+/**
+ * Deletes a file from S3 using its signed URL.
+ * @param {string} signedUrl - The signed URL of the file to delete.
+ * @returns {Promise<Object>} - The data returned from the S3 delete operation.
+ */
 async function deleteFiles(signedUrl) {
   try {
     const keyPath = extractS3FilePath(signedUrl);
@@ -112,6 +117,11 @@ async function deleteFiles(signedUrl) {
   }
 }
 
+/**
+ * Deletes a file from the database.
+ * @param {string} fileId - The ID of the file to delete.
+ * @returns {Promise<void>}
+ */
 async function deleteFileFromDatabase(fileId) {
   try {
     const result = await FileModel.deleteFile(fileId);
