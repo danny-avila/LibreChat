@@ -62,7 +62,8 @@ async function saveMessage(
 
     const validConvoId = idSchema.safeParse(conversationId);
     if (!validConvoId.success) {
-      throw new Error('Invalid conversation ID');
+      logger.warn(`Invalid conversation ID: ${conversationId}`);
+      return;
     }
 
     const update = {
