@@ -2,8 +2,9 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const {
-  getResponseSender,
+  Constants,
   EModelEndpoint,
+  getResponseSender,
   validateVisionModel,
 } = require('librechat-data-provider');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
@@ -16,6 +17,7 @@ const {
 } = require('./prompts');
 const spendTokens = require('~/models/spendTokens');
 const { getModelMaxTokens } = require('~/utils');
+const { sleep } = require('~/server/utils');
 const BaseClient = require('./BaseClient');
 const { logger } = require('~/config');
 
@@ -605,6 +607,7 @@ class AnthropicClient extends BaseClient {
     };
 
     const maxRetries = 3;
+    const streamRate = this.options.streamRate ?? Constants.DEFAULT_STREAM_RATE;
     async function processResponse() {
       let attempts = 0;
 
@@ -627,6 +630,8 @@ class AnthropicClient extends BaseClient {
             } else if (completion.completion) {
               handleChunk(completion.completion);
             }
+
+            await sleep(streamRate);
           }
 
           // Successful processing, exit loop

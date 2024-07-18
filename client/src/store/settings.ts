@@ -1,36 +1,7 @@
 import { atom } from 'recoil';
 import { SettingsViews } from 'librechat-data-provider';
+import { atomWithLocalStorage } from '~/store/utils';
 import type { TOptionSettings } from '~/common';
-
-// Improved helper function to create atoms with localStorage
-function atomWithLocalStorage<T>(key: string, defaultValue: T) {
-  return atom<T>({
-    key,
-    default: defaultValue,
-    effects_UNSTABLE: [
-      ({ setSelf, onSet }) => {
-        const savedValue = localStorage.getItem(key);
-        if (savedValue !== null) {
-          try {
-            const parsedValue = JSON.parse(savedValue);
-            setSelf(parsedValue);
-          } catch (e) {
-            console.error(
-              `Error parsing localStorage key "${key}", \`savedValue\`: defaultValue, error:`,
-              e,
-            );
-            localStorage.setItem(key, JSON.stringify(defaultValue));
-            setSelf(defaultValue);
-          }
-        }
-
-        onSet((newValue: T) => {
-          localStorage.setItem(key, JSON.stringify(newValue));
-        });
-      },
-    ],
-  });
-}
 
 // Static atoms without localStorage
 const staticAtoms = {
@@ -47,32 +18,47 @@ const staticAtoms = {
   showPopover: atom<boolean>({ key: 'showPopover', default: false }),
 };
 
-// Atoms with localStorage
 const localStorageAtoms = {
+  // General settings
   autoScroll: atomWithLocalStorage('autoScroll', false),
-  showCode: atomWithLocalStorage('showCode', false),
   hideSidePanel: atomWithLocalStorage('hideSidePanel', false),
-  modularChat: atomWithLocalStorage('modularChat', true),
-  LaTeXParsing: atomWithLocalStorage('LaTeXParsing', true),
-  UsernameDisplay: atomWithLocalStorage('UsernameDisplay', true),
-  TextToSpeech: atomWithLocalStorage('textToSpeech', true),
-  automaticPlayback: atomWithLocalStorage('automaticPlayback', false),
+
+  // Messages settings
   enterToSend: atomWithLocalStorage('enterToSend', true),
-  SpeechToText: atomWithLocalStorage('speechToText', true),
-  conversationMode: atomWithLocalStorage('conversationMode', false),
-  advancedMode: atomWithLocalStorage('advancedMode', false),
-  autoSendText: atomWithLocalStorage('autoSendText', false),
-  autoTranscribeAudio: atomWithLocalStorage('autoTranscribeAudio', false),
-  decibelValue: atomWithLocalStorage('decibelValue', -45),
-  endpointSTT: atomWithLocalStorage('endpointSTT', 'browser'),
-  endpointTTS: atomWithLocalStorage('endpointTTS', 'browser'),
-  cacheTTS: atomWithLocalStorage('cacheTTS', true),
-  voice: atomWithLocalStorage('voice', ''),
+  chatDirection: atomWithLocalStorage('chatDirection', 'LTR'),
+  showCode: atomWithLocalStorage('showCode', false),
+  saveDrafts: atomWithLocalStorage('saveDrafts', false),
   forkSetting: atomWithLocalStorage('forkSetting', ''),
   splitAtTarget: atomWithLocalStorage('splitAtTarget', false),
+
   rememberForkOption: atomWithLocalStorage('rememberForkOption', true),
+
+  // Beta features settings
+  modularChat: atomWithLocalStorage('modularChat', true),
+  LaTeXParsing: atomWithLocalStorage('LaTeXParsing', true),
+
+  // Speech settings
+  conversationMode: atomWithLocalStorage('conversationMode', false),
+  advancedMode: atomWithLocalStorage('advancedMode', false),
+
+  speechToText: atomWithLocalStorage('speechToText', true),
+  engineSTT: atomWithLocalStorage('engineSTT', 'browser'),
+  languageSTT: atomWithLocalStorage('languageSTT', ''),
+  autoTranscribeAudio: atomWithLocalStorage('autoTranscribeAudio', false),
+  decibelValue: atomWithLocalStorage('decibelValue', -45),
+  autoSendText: atomWithLocalStorage('autoSendText', -1),
+
+  textToSpeech: atomWithLocalStorage('textToSpeech', true),
+  engineTTS: atomWithLocalStorage('engineTTS', 'browser'),
+  voice: atomWithLocalStorage('voice', ''),
+  cloudBrowserVoices: atomWithLocalStorage('cloudBrowserVoices', false),
+  languageTTS: atomWithLocalStorage('languageTTS', ''),
+  automaticPlayback: atomWithLocalStorage('automaticPlayback', false),
   playbackRate: atomWithLocalStorage<number | null>('playbackRate', null),
-  saveDrafts: atomWithLocalStorage('saveDrafts', false),
+  cacheTTS: atomWithLocalStorage('cacheTTS', true),
+
+  // Account settings
+  UsernameDisplay: atomWithLocalStorage('UsernameDisplay', true),
 };
 
 export default { ...staticAtoms, ...localStorageAtoms };

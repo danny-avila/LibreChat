@@ -1,7 +1,7 @@
 import debounce from 'lodash/debounce';
 import { useEffect, useRef, useCallback } from 'react';
+import { useRecoilValue, useRecoilState } from 'recoil';
 import { isAssistantsEndpoint } from 'librechat-data-provider';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
 import type { TEndpointOption } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
 import { forceResize, insertTextAtCursor, getAssistantName } from '~/utils';
@@ -40,8 +40,7 @@ export default function useTextarea({
     setFilesLoading,
     setShowBingToneSetting,
   } = useChatContext();
-
-  const setShowMentionPopover = useSetRecoilState(store.showMentionPopoverFamily(index));
+  const [activePrompt, setActivePrompt] = useRecoilState(store.activePromptByIndex(index));
 
   const { conversationId, jailbreak, endpoint = '', assistant_id } = conversation || {};
   const isNotAppendable =
@@ -52,6 +51,14 @@ export default function useTextarea({
   const assistant =
     isAssistantsEndpoint(endpoint) && assistantMap?.[endpoint ?? '']?.[assistant_id ?? ''];
   const assistantName = (assistant && assistant?.name) || '';
+
+  useEffect(() => {
+    if (activePrompt && textAreaRef.current) {
+      insertTextAtCursor(textAreaRef.current, activePrompt);
+      forceResize(textAreaRef.current);
+      setActivePrompt(undefined);
+    }
+  }, [activePrompt, setActivePrompt, textAreaRef]);
 
   // auto focus to input, when enter a conversation.
   useEffect(() => {
@@ -105,7 +112,7 @@ export default function useTextarea({
         ? getAssistantName({ name: assistantName, localize })
         : getSender(conversation as TEndpointOption);
 
-      return `${localize('com_endpoint_message')} ${sender ? sender : 'ChatGPT'}…`;
+      return `${localize('com_endpoint_message')} ${sender ? sender : 'AI'}`;
     };
 
     const placeholder = getPlaceholderText();
@@ -119,7 +126,7 @@ export default function useTextarea({
 
       if (textAreaRef.current?.getAttribute('placeholder') !== placeholder) {
         textAreaRef.current?.setAttribute('placeholder', placeholder);
-        forceResize(textAreaRef);
+        forceResize(textAreaRef.current);
       }
     };
 
@@ -139,23 +146,6 @@ export default function useTextarea({
     assistantMap,
   ]);
 
-  const handleKeyUp = useCallback(() => {
-    const text = textAreaRef.current?.value;
-    if (!(text && text[text.length - 1] === '@')) {
-      return;
-    }
-
-    const startPos = textAreaRef.current?.selectionStart;
-    if (!startPos) {
-      return;
-    }
-
-    const isAtStart = startPos === 1;
-    const isPrecededBySpace = textAreaRef.current?.value.charAt(startPos - 2) === ' ';
-
-    setShowMentionPopover(isAtStart || isPrecededBySpace);
-  }, [textAreaRef, setShowMentionPopover]);
-
   const handleKeyDown = useCallback(
     (e: KeyEvent) => {
       if (e.key === 'Enter' && isSubmitting) {
@@ -173,10 +163,16 @@ export default function useTextarea({
         e.preventDefault();
       }
 
-      if (e.key === 'Enter' && !enterToSend && !isCtrlEnter && textAreaRef.current) {
+      if (
+        e.key === 'Enter' &&
+        !enterToSend &&
+        !isCtrlEnter &&
+        textAreaRef.current &&
+        !isComposing?.current
+      ) {
         e.preventDefault();
         insertTextAtCursor(textAreaRef.current, '\n');
-        forceResize(textAreaRef);
+        forceResize(textAreaRef.current);
         return;
       }
 
@@ -229,7 +225,6 @@ export default function useTextarea({
   return {
     textAreaRef,
     handlePaste,
-    handleKeyUp,
     handleKeyDown,
     handleCompositionStart,
     handleCompositionEnd,

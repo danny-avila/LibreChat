@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { OpenAPIV3 } from 'openapi-types';
 import {
+  createURL,
   resolveRef,
   ActionRequest,
   openapiToFunction,
@@ -504,5 +505,47 @@ describe('validateAndParseOpenAPISpec', () => {
     expect(requestBuilders).toHaveProperty('searchAbstracts');
     expect(requestBuilders).toHaveProperty('getFullText');
     expect(requestBuilders).toHaveProperty('saveCitation');
+  });
+});
+
+describe('createURL', () => {
+  it('correctly combines domain and path', () => {
+    expect(createURL('https://example.com', '/api/v1/users')).toBe(
+      'https://example.com/api/v1/users',
+    );
+  });
+
+  it('handles domain with trailing slash', () => {
+    expect(createURL('https://example.com/', '/api/v1/users')).toBe(
+      'https://example.com/api/v1/users',
+    );
+  });
+
+  it('handles path with leading slash', () => {
+    expect(createURL('https://example.com', 'api/v1/users')).toBe(
+      'https://example.com/api/v1/users',
+    );
+  });
+
+  it('handles domain with trailing slash and path with leading slash', () => {
+    expect(createURL('https://example.com/', '/api/v1/users')).toBe(
+      'https://example.com/api/v1/users',
+    );
+  });
+
+  it('handles domain without trailing slash and path without leading slash', () => {
+    expect(createURL('https://example.com', 'api/v1/users')).toBe(
+      'https://example.com/api/v1/users',
+    );
+  });
+
+  it('handles empty path', () => {
+    expect(createURL('https://example.com', '')).toBe('https://example.com/');
+  });
+
+  it('handles domain with subdirectory', () => {
+    expect(createURL('https://example.com/subdirectory', '/api/v1/users')).toBe(
+      'https://example.com/subdirectory/api/v1/users',
+    );
   });
 });

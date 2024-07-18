@@ -56,10 +56,11 @@ const updateUser = async function (userId, updateData) {
  * Creates a new user, optionally with a TTL of 1 week.
  * @param {MongoUser} data - The user data to be created, must contain user_id.
  * @param {boolean} [disableTTL=true] - Whether to disable the TTL. Defaults to `true`.
+ * @param {boolean} [returnUser=false] - Whether to disable the TTL. Defaults to `true`.
  * @returns {Promise<ObjectId>} A promise that resolves to the created user document ID.
  * @throws {Error} If a user with the same user_id already exists.
  */
-const createUser = async (data, disableTTL = true) => {
+const createUser = async (data, disableTTL = true, returnUser = false) => {
   const userData = {
     ...data,
     expiresAt: disableTTL ? null : new Date(Date.now() + 604800 * 1000), // 1 week in milliseconds
@@ -69,17 +70,11 @@ const createUser = async (data, disableTTL = true) => {
     delete userData.expiresAt;
   }
 
-  try {
-    const user = await User.create(userData);
-    return user._id;
-  } catch (error) {
-    if (error.code === 11000) {
-      // Duplicate key error code
-      throw new Error(`User with \`_id\` ${data._id} already exists.`);
-    } else {
-      throw error;
-    }
+  const user = await User.create(userData);
+  if (returnUser) {
+    return user.toObject();
   }
+  return user._id;
 };
 
 /**

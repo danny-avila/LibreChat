@@ -25,12 +25,18 @@ const downloadImage = async (url, accessToken) => {
   }
 
   try {
-    const response = await fetch(url, {
+    const options = {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },
-    });
+    };
+
+    if (process.env.PROXY) {
+      options.agent = new HttpsProxyAgent(process.env.PROXY);
+    }
+
+    const response = await fetch(url, options);
 
     if (response.ok) {
       const buffer = await response.buffer();
@@ -164,8 +170,7 @@ async function setupOpenId() {
               emailVerified: userinfo.email_verified || false,
               name: fullName,
             };
-            const userId = await createUser();
-            user._id = userId;
+            user = await createUser(user, true, true);
           } else {
             user.provider = 'openid';
             user.openidId = userinfo.sub;

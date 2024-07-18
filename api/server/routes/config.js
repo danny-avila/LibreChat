@@ -1,6 +1,8 @@
 const express = require('express');
-const { defaultSocialLogins } = require('librechat-data-provider');
+const { CacheKeys, defaultSocialLogins } = require('librechat-data-provider');
+const { getProjectByName } = require('~/models/Project');
 const { isEnabled } = require('~/server/utils');
+const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
 
 const router = express.Router();
@@ -17,13 +19,21 @@ const publicSharedLinksEnabled =
     isEnabled(process.env.ALLOW_SHARED_LINKS_PUBLIC));
 
 router.get('/', async function (req, res) {
+  const cache = getLogStores(CacheKeys.CONFIG_STORE);
+  const cachedStartupConfig = await cache.get(CacheKeys.STARTUP_CONFIG);
+  if (cachedStartupConfig) {
+    res.send(cachedStartupConfig);
+    return;
+  }
+
   const isBirthday = () => {
     const today = new Date();
     return today.getMonth() === 1 && today.getDate() === 11;
   };
 
-  const ldapLoginEnabled =
-    !!process.env.LDAP_URL && !!process.env.LDAP_BIND_DN && !!process.env.LDAP_USER_SEARCH_BASE;
+  const instanceProject = await getProjectByName('instance', '_id');
+
+  const ldapLoginEnabled = !!process.env.LDAP_URL && !!process.env.LDAP_USER_SEARCH_BASE;
   try {
     /** @type {TStartupConfig} */
     const payload = {
@@ -63,12 +73,14 @@ router.get('/', async function (req, res) {
       sharedLinksEnabled,
       publicSharedLinksEnabled,
       analyticsGtmId: process.env.ANALYTICS_GTM_ID,
+      instanceProjectId: instanceProject._id.toString(),
     };
 
     if (typeof process.env.CUSTOM_FOOTER === 'string') {
       payload.customFooter = process.env.CUSTOM_FOOTER;
     }
 
+    await cache.set(CacheKeys.STARTUP_CONFIG, payload);
     return res.status(200).send(payload);
   } catch (err) {
     logger.error('Error in startup config', err);

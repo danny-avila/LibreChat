@@ -124,8 +124,6 @@ export default {
   com_ui_none_selected: 'Nessuna selezionata',
   com_ui_upload_success: 'File caricato con successo',
   com_ui_upload_error: 'Si è verificato un errore durante il caricamento del file',
-  com_ui_upload_invalid:
-    'File non valido per il caricamento. Deve essere un\'immagine non superiore a 2 MB',
   com_ui_cancel: 'Annulla',
   com_ui_save: 'Salva',
   com_ui_save_submit: 'Salva e Invia',
@@ -194,7 +192,11 @@ export default {
   com_ui_create_link: 'Crea link',
   com_ui_share_link_to_chat: 'Condividi link a chat',
   com_ui_share_error: 'Si è verificato un errore durante la condivisione del link della chat',
-  com_ui_share_create_message: 'Il tuo nome e qualsiasi messaggio aggiunto dopo la condivisione rimarranno privati.',
+  com_ui_share_retrieve_error:
+    'Si è verificato un errore durante l\'eliminazione del link condiviso.',
+  com_ui_share_delete_error: 'Si è verificato un errore durante l\'eliminazione del link condiviso.',
+  com_ui_share_create_message:
+    'Il tuo nome e qualsiasi messaggio aggiunto dopo la condivisione rimarranno privati.',
   com_ui_share_created_message:
     'È stato creato un link condiviso per la tua chat. Gestisci le chat condivise in precedenza in qualsiasi momento tramite Impostazioni.',
   com_ui_share_update_message:
@@ -203,7 +205,7 @@ export default {
     'Il link condiviso per la tua chat è stato aggiornato. Gestisci le chat condivise in precedenza in qualsiasi momento tramite Impostazioni.',
   com_ui_shared_link_not_found: 'Link condiviso non trovato',
   com_ui_delete_conversation: 'Eliminare la chat?',
-  com_ui_delete_conversation_confirm: 'Questo eliminerà',
+  com_ui_delete_confirm: 'Questo eliminerà',
   com_ui_rename: 'Rinominare',
   com_ui_archive: 'Arsip',
   com_ui_archive_error: 'Errore durante l\'archiviazione della conversazione',
@@ -291,7 +293,6 @@ export default {
     'ATTENZIONE: L\'uso improprio di questa funzione può farti BANNARE dall\'utilizzo di Bing! Clicca su "Messaggio di sistema" per le istruzioni complete e il messaggio predefinito se omesso, che è il preset "Sydney" considerato sicuro.',
   com_endpoint_system_message: 'Messaggio di sistema',
   com_endpoint_message: 'Messaggio',
-  com_endpoint_messages: 'Messaggi',
   com_endpoint_message_not_appendable: 'Modifica il tuo messaggio o Rigenera.',
   com_endpoint_default_blank: 'predefinito: vuoto',
   com_endpoint_default_false: 'predefinito: falso',
@@ -1287,13 +1288,22 @@ export const comparisons = {
     english: 'Share link to chat',
     translated: 'Condividi link a chat',
   },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Si è verificato un errore durante l\'eliminazione del link condiviso.',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Si è verificato un errore durante l\'eliminazione del link condiviso.',
+  },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
     translated: 'Si è verificato un errore durante la condivisione del link della chat',
   },
   com_ui_share_create_message: {
     english: 'Your name and any messages you add after sharing stay private.',
-    translated: 'Il tuo nome e qualsiasi messaggio aggiunto dopo la condivisione rimarranno privati.',
+    translated:
+      'Il tuo nome e qualsiasi messaggio aggiunto dopo la condivisione rimarranno privati.',
   },
   com_ui_share_created_message: {
     english:
@@ -1303,7 +1313,8 @@ export const comparisons = {
   },
   com_ui_share_update_message: {
     english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
-    translated: 'Il tuo nome, istruzioni personalizzate e qualsiasi messaggio aggiunto dopo la condivisione rimarranno privati.',
+    translated:
+      'Il tuo nome, istruzioni personalizzate e qualsiasi messaggio aggiunto dopo la condivisione rimarranno privati.',
   },
   com_ui_share_updated_message: {
     english:
@@ -1319,7 +1330,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'Eliminare la chat?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Questo eliminerà',
   },
@@ -1636,10 +1647,6 @@ export const comparisons = {
   com_endpoint_message: {
     english: 'Message',
     translated: 'Messaggio',
-  },
-  com_endpoint_messages: {
-    english: 'Messages',
-    translated: 'Messaggi',
   },
   com_endpoint_message_not_appendable: {
     english: 'Edit your message or Regenerate.',

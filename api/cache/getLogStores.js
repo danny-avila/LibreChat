@@ -1,13 +1,11 @@
 const Keyv = require('keyv');
-const { CacheKeys, ViolationTypes } = require('librechat-data-provider');
+const { CacheKeys, ViolationTypes, Time } = require('librechat-data-provider');
 const { logFile, violationFile } = require('./keyvFiles');
 const { math, isEnabled } = require('~/server/utils');
 const keyvRedis = require('./keyvRedis');
 const keyvMongo = require('./keyvMongo');
 
 const { BAN_DURATION, USE_REDIS } = process.env ?? {};
-const THIRTY_MINUTES = 1800000;
-const TEN_MINUTES = 600000;
 
 const duration = math(BAN_DURATION, 7200000);
 
@@ -25,17 +23,25 @@ const config = isEnabled(USE_REDIS)
   ? new Keyv({ store: keyvRedis })
   : new Keyv({ namespace: CacheKeys.CONFIG_STORE });
 
-const audioRuns = isEnabled(USE_REDIS) // ttl: 30 minutes
-  ? new Keyv({ store: keyvRedis, ttl: TEN_MINUTES })
-  : new Keyv({ namespace: CacheKeys.AUDIO_RUNS, ttl: TEN_MINUTES });
+const roles = isEnabled(USE_REDIS)
+  ? new Keyv({ store: keyvRedis })
+  : new Keyv({ namespace: CacheKeys.ROLES });
+
+const audioRuns = isEnabled(USE_REDIS)
+  ? new Keyv({ store: keyvRedis, ttl: Time.TEN_MINUTES })
+  : new Keyv({ namespace: CacheKeys.AUDIO_RUNS, ttl: Time.TEN_MINUTES });
+
+const messages = isEnabled(USE_REDIS)
+  ? new Keyv({ store: keyvRedis, ttl: Time.FIVE_MINUTES })
+  : new Keyv({ namespace: CacheKeys.MESSAGES, ttl: Time.FIVE_MINUTES });
 
 const tokenConfig = isEnabled(USE_REDIS) // ttl: 30 minutes
-  ? new Keyv({ store: keyvRedis, ttl: THIRTY_MINUTES })
-  : new Keyv({ namespace: CacheKeys.TOKEN_CONFIG, ttl: THIRTY_MINUTES });
+  ? new Keyv({ store: keyvRedis, ttl: Time.THIRTY_MINUTES })
+  : new Keyv({ namespace: CacheKeys.TOKEN_CONFIG, ttl: Time.THIRTY_MINUTES });
 
 const genTitle = isEnabled(USE_REDIS) // ttl: 2 minutes
-  ? new Keyv({ store: keyvRedis, ttl: 120000 })
-  : new Keyv({ namespace: CacheKeys.GEN_TITLE, ttl: 120000 });
+  ? new Keyv({ store: keyvRedis, ttl: Time.TWO_MINUTES })
+  : new Keyv({ namespace: CacheKeys.GEN_TITLE, ttl: Time.TWO_MINUTES });
 
 const modelQueries = isEnabled(process.env.USE_REDIS)
   ? new Keyv({ store: keyvRedis })
@@ -43,9 +49,10 @@ const modelQueries = isEnabled(process.env.USE_REDIS)
 
 const abortKeys = isEnabled(USE_REDIS)
   ? new Keyv({ store: keyvRedis })
-  : new Keyv({ namespace: CacheKeys.ABORT_KEYS, ttl: 600000 });
+  : new Keyv({ namespace: CacheKeys.ABORT_KEYS, ttl: Time.TEN_MINUTES });
 
 const namespaces = {
+  [CacheKeys.ROLES]: roles,
   [CacheKeys.CONFIG_STORE]: config,
   pending_req,
   [ViolationTypes.BAN]: new Keyv({ store: keyvMongo, namespace: CacheKeys.BANS, ttl: duration }),
@@ -76,6 +83,7 @@ const namespaces = {
   [CacheKeys.GEN_TITLE]: genTitle,
   [CacheKeys.MODEL_QUERIES]: modelQueries,
   [CacheKeys.AUDIO_RUNS]: audioRuns,
+  [CacheKeys.MESSAGES]: messages,
 };
 
 /**

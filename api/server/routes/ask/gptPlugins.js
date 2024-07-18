@@ -1,10 +1,11 @@
 const express = require('express');
 const throttle = require('lodash/throttle');
-const { getResponseSender, Constants } = require('librechat-data-provider');
+const { getResponseSender, Constants, CacheKeys, Time } = require('librechat-data-provider');
 const { initializeClient } = require('~/server/services/Endpoints/gptPlugins');
-const { saveMessage, getConvoTitle, getConvo } = require('~/models');
 const { sendMessage, createOnProgress } = require('~/server/utils');
 const { addTitle } = require('~/server/services/Endpoints/openAI');
+const { saveMessage } = require('~/models');
+const { getLogStores } = require('~/cache');
 const {
   handleAbort,
   createAbortController,
@@ -41,6 +42,7 @@ router.post(
     logger.debug('[/ask/gptPlugins]', { text, conversationId, ...endpointOption });
 
     let userMessage;
+    let userMessagePromise;
     let promptTokens;
     let userMessageId;
     let responseMessageId;
@@ -58,6 +60,8 @@ router.post(
         if (key === 'userMessage') {
           userMessage = data[key];
           userMessageId = data[key].messageId;
+        } else if (key === 'userMessagePromise') {
+          userMessagePromise = data[key];
         } else if (key === 'responseMessageId') {
           responseMessageId = data[key];
         } else if (key === 'promptTokens') {
@@ -68,7 +72,8 @@ router.post(
       }
     };
 
-    const throttledSaveMessage = throttle(saveMessage, 3000, { trailing: false });
+    const messageCache = getLogStores(CacheKeys.MESSAGES);
+    const throttledSetMessage = throttle(messageCache.set, 3000, { trailing: false });
     let streaming = null;
     let timer = null;
 
@@ -82,7 +87,8 @@ router.post(
           clearTimeout(timer);
         }
 
-        throttledSaveMessage({
+        /*
+        {
           messageId: responseMessageId,
           sender,
           conversationId,
@@ -93,7 +99,9 @@ router.post(
           error: false,
           plugins,
           user,
-        });
+        }
+         */
+        throttledSetMessage(responseMessageId, partialText, Time.FIVE_MINUTES);
 
         streaming = new Promise((resolve) => {
           timer = setTimeout(() => {
@@ -148,18 +156,10 @@ router.post(
       }
     };
 
-    const onChainEnd = () => {
-      saveMessage({ ...userMessage, user });
-      sendIntermediateMessage(res, {
-        plugins,
-        parentMessageId: userMessage.messageId,
-        messageId: responseMessageId,
-      });
-    };
-
     const getAbortData = () => ({
       sender,
       conversationId,
+      userMessagePromise,
       messageId: responseMessageId,
       parentMessageId: overrideParentMessageId ?? userMessageId,
       text: getPartialText(),
@@ -167,11 +167,22 @@ router.post(
       userMessage,
       promptTokens,
     });
-    const { abortController, onStart } = createAbortController(req, res, getAbortData);
+    const { abortController, onStart } = createAbortController(req, res, getAbortData, getReqData);
 
     try {
       endpointOption.tools = await validateTools(user, endpointOption.tools);
       const { client } = await initializeClient({ req, res, endpointOption });
+
+      const onChainEnd = () => {
+        if (!client.skipSaveUserMessage) {
+          saveMessage(req, { ...userMessage, user });
+        }
+        sendIntermediateMessage(res, {
+          plugins,
+          parentMessageId: userMessage.messageId,
+          messageId: responseMessageId,
+        });
+      };
 
       let response = await client.sendMessage(text, {
         user,
@@ -189,7 +200,6 @@ router.post(
         progressCallback,
         progressOptions: {
           res,
-          text,
           // parentMessageId: overrideParentMessageId || userMessageId,
           plugins,
         },
@@ -203,12 +213,16 @@ router.post(
       logger.debug('[/ask/gptPlugins]', response);
 
       response.plugins = plugins.map((p) => ({ ...p, loading: false }));
-      await saveMessage({ ...response, user });
+      await saveMessage(req, { ...response, user });
+
+      const { conversation = {} } = await client.responsePromise;
+      conversation.title =
+        conversation && !conversation.title ? null : conversation?.title || 'New Chat';
 
       sendMessage(res, {
-        title: await getConvoTitle(user, conversationId),
+        title: conversation.title,
         final: true,
-        conversation: await getConvo(user, conversationId),
+        conversation,
         requestMessage: userMessage,
         responseMessage: response,
       });

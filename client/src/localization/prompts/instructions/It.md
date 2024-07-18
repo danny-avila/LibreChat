@@ -647,7 +647,7 @@ Write a prompt that is mindful of the nuances in the language with respect to it
   - **english**: Delete chat?
   - **translated**: Eliminare la chat?
 
-- **com_ui_delete_conversation_confirm**:
+- **com_ui_delete_confirm**:
   - **english**: This will delete
   - **translated**: Questo eliminerà
 
@@ -950,10 +950,6 @@ Write a prompt that is mindful of the nuances in the language with respect to it
 - **com_endpoint_message**:
   - **english**: Message
   - **translated**: Messaggio
-
-- **com_endpoint_messages**:
-  - **english**: Messages
-  - **translated**: Messaggi
 
 - **com_endpoint_message_not_appendable**:
   - **english**: Edit your message or Regenerate.

@@ -7,6 +7,7 @@ const handleRateLimits = require('./Config/handleRateLimits');
 const { loadDefaultInterface } = require('./start/interface');
 const { azureConfigSetup } = require('./start/azureOpenAI');
 const { loadAndFormatTools } = require('./ToolService');
+const { initializeRoles } = require('~/models/Role');
 const paths = require('~/config/paths');
 
 /**
@@ -16,6 +17,7 @@ const paths = require('~/config/paths');
  * @param {Express.Application} app - The Express application object.
  */
 const AppService = async (app) => {
+  await initializeRoles();
   /** @type {TCustomConfig}*/
   const config = (await loadCustomConfig()) ?? {};
   const configDefaults = getConfigDefaults();
@@ -65,17 +67,18 @@ const AppService = async (app) => {
   handleRateLimits(config?.rateLimits);
 
   const endpointLocals = {};
+  const endpoints = config?.endpoints;
 
-  if (config?.endpoints?.[EModelEndpoint.azureOpenAI]) {
+  if (endpoints?.[EModelEndpoint.azureOpenAI]) {
     endpointLocals[EModelEndpoint.azureOpenAI] = azureConfigSetup(config);
     checkAzureVariables();
   }
 
-  if (config?.endpoints?.[EModelEndpoint.azureOpenAI]?.assistants) {
+  if (endpoints?.[EModelEndpoint.azureOpenAI]?.assistants) {
     endpointLocals[EModelEndpoint.azureAssistants] = azureAssistantsDefaults();
   }
 
-  if (config?.endpoints?.[EModelEndpoint.azureAssistants]) {
+  if (endpoints?.[EModelEndpoint.azureAssistants]) {
     endpointLocals[EModelEndpoint.azureAssistants] = assistantsConfigSetup(
       config,
       EModelEndpoint.azureAssistants,
@@ -83,12 +86,25 @@ const AppService = async (app) => {
     );
   }
 
-  if (config?.endpoints?.[EModelEndpoint.assistants]) {
+  if (endpoints?.[EModelEndpoint.assistants]) {
     endpointLocals[EModelEndpoint.assistants] = assistantsConfigSetup(
       config,
       EModelEndpoint.assistants,
       endpointLocals[EModelEndpoint.assistants],
     );
+  }
+
+  if (endpoints?.[EModelEndpoint.openAI]) {
+    endpointLocals[EModelEndpoint.openAI] = endpoints[EModelEndpoint.openAI];
+  }
+  if (endpoints?.[EModelEndpoint.google]) {
+    endpointLocals[EModelEndpoint.google] = endpoints[EModelEndpoint.google];
+  }
+  if (endpoints?.[EModelEndpoint.anthropic]) {
+    endpointLocals[EModelEndpoint.anthropic] = endpoints[EModelEndpoint.anthropic];
+  }
+  if (endpoints?.[EModelEndpoint.gptPlugins]) {
+    endpointLocals[EModelEndpoint.gptPlugins] = endpoints[EModelEndpoint.gptPlugins];
   }
 
   app.locals = {

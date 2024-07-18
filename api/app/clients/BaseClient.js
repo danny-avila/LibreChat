@@ -1,10 +1,11 @@
 const crypto = require('crypto');
 const fetch = require('node-fetch');
-const { supportsBalanceCheck, Constants } = require('librechat-data-provider');
-const { getConvo, getMessages, saveMessage, updateMessage, saveConvo } = require('~/models');
+const { supportsBalanceCheck, Constants, CacheKeys, Time } = require('librechat-data-provider');
+const { getMessages, saveMessage, updateMessage, saveConvo } = require('~/models');
 const { addSpaceIfNeeded, isEnabled } = require('~/server/utils');
 const checkBalance = require('~/models/checkBalance');
 const { getFiles } = require('~/models/File');
+const { getLogStores } = require('~/cache');
 const TextStream = require('./TextStream');
 const { logger } = require('~/config');
 
@@ -19,6 +20,14 @@ class BaseClient {
       day: 'numeric',
     });
     this.fetch = this.fetch.bind(this);
+    /** @type {boolean} */
+    this.skipSaveConvo = false;
+    /** @type {boolean} */
+    this.skipSaveUserMessage = false;
+    /** @type {ClientDatabaseSavePromise} */
+    this.userMessagePromise;
+    /** @type {ClientDatabaseSavePromise} */
+    this.responsePromise;
   }
 
   setOptions() {
@@ -84,19 +93,45 @@ class BaseClient {
     await stream.processTextStream(onProgress);
   }
 
+  /**
+   * @returns {[string|undefined, string|undefined]}
+   */
+  processOverideIds() {
+    /** @type {Record<string, string | undefined>} */
+    let { overrideConvoId, overrideUserMessageId } = this.options?.req?.body ?? {};
+    if (overrideConvoId) {
+      const [conversationId, index] = overrideConvoId.split(Constants.COMMON_DIVIDER);
+      overrideConvoId = conversationId;
+      if (index !== '0') {
+        this.skipSaveConvo = true;
+      }
+    }
+    if (overrideUserMessageId) {
+      const [userMessageId, index] = overrideUserMessageId.split(Constants.COMMON_DIVIDER);
+      overrideUserMessageId = userMessageId;
+      if (index !== '0') {
+        this.skipSaveUserMessage = true;
+      }
+    }
+
+    return [overrideConvoId, overrideUserMessageId];
+  }
+
   async setMessageOptions(opts = {}) {
     if (opts && opts.replaceOptions) {
       this.setOptions(opts);
     }
 
+    const [overrideConvoId, overrideUserMessageId] = this.processOverideIds();
     const { isEdited, isContinued } = opts;
     const user = opts.user ?? null;
     this.user = user;
     const saveOptions = this.getSaveOptions();
     this.abortController = opts.abortController ?? new AbortController();
-    const conversationId = opts.conversationId ?? crypto.randomUUID();
+    const conversationId = overrideConvoId ?? opts.conversationId ?? crypto.randomUUID();
     const parentMessageId = opts.parentMessageId ?? Constants.NO_PARENT;
-    const userMessageId = opts.overrideParentMessageId ?? crypto.randomUUID();
+    const userMessageId =
+      overrideUserMessageId ?? opts.overrideParentMessageId ?? crypto.randomUUID();
     let responseMessageId = opts.responseMessageId ?? crypto.randomUUID();
     let head = isEdited ? responseMessageId : parentMessageId;
     this.currentMessages = (await this.loadHistory(conversationId, head)) ?? [];
@@ -160,7 +195,7 @@ class BaseClient {
     }
 
     if (typeof opts?.onStart === 'function') {
-      opts.onStart(userMessage);
+      opts.onStart(userMessage, responseMessageId);
     }
 
     return {
@@ -450,8 +485,13 @@ class BaseClient {
       this.handleTokenCountMap(tokenCountMap);
     }
 
-    if (!isEdited) {
-      await this.saveMessageToDatabase(userMessage, saveOptions, user);
+    if (!isEdited && !this.skipSaveUserMessage) {
+      this.userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user);
+      if (typeof opts?.getReqData === 'function') {
+        opts.getReqData({
+          userMessagePromise: this.userMessagePromise,
+        });
+      }
     }
 
     if (
@@ -500,13 +540,18 @@ class BaseClient {
       const completionTokens = this.getTokenCount(completion);
       await this.recordTokenUsage({ promptTokens, completionTokens });
     }
-    await this.saveMessageToDatabase(responseMessage, saveOptions, user);
+    this.responsePromise = this.saveMessageToDatabase(responseMessage, saveOptions, user);
+    const messageCache = getLogStores(CacheKeys.MESSAGES);
+    messageCache.set(
+      responseMessageId,
+      {
+        text: responseMessage.text,
+        complete: true,
+      },
+      Time.FIVE_MINUTES,
+    );
     delete responseMessage.tokenCount;
     return responseMessage;
-  }
-
-  async getConversation(conversationId, user = null) {
-    return await getConvo(user, conversationId);
   }
 
   async loadHistory(conversationId, parentMessageId = null) {
@@ -563,22 +608,32 @@ class BaseClient {
    * @param {string | null} user
    */
   async saveMessageToDatabase(message, endpointOptions, user = null) {
-    await saveMessage({
+    if (this.user && user !== this.user) {
+      throw new Error('User mismatch.');
+    }
+
+    const savedMessage = await saveMessage(this.options.req, {
       ...message,
       endpoint: this.options.endpoint,
       unfinished: false,
       user,
     });
-    await saveConvo(user, {
+
+    if (this.skipSaveConvo) {
+      return { message: savedMessage };
+    }
+    const conversation = await saveConvo(user, {
       conversationId: message.conversationId,
       endpoint: this.options.endpoint,
       endpointType: this.options.endpointType,
       ...endpointOptions,
     });
+
+    return { message: savedMessage, conversation };
   }
 
   async updateMessageInDatabase(message) {
-    await updateMessage(message);
+    await updateMessage(this.options.req, message);
   }
 
   /**

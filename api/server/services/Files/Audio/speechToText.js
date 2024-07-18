@@ -1,8 +1,9 @@
-const axios = require('axios');
 const { Readable } = require('stream');
-const { logger } = require('~/config');
+const axios = require('axios');
+const { extractEnvVariable, STTProviders } = require('librechat-data-provider');
 const getCustomConfig = require('~/server/services/Config/getCustomConfig');
-const { extractEnvVariable } = require('librechat-data-provider');
+const { genAzureEndpoint } = require('~/utils');
+const { logger } = require('~/config');
 
 /**
  * Handle the response from the STT API
@@ -24,12 +25,34 @@ async function handleResponse(response) {
   return response.data.text.trim();
 }
 
-function getProvider(sttSchema) {
-  if (sttSchema.openai) {
-    return 'openai';
+/**
+ * getProviderSchema function
+ * This function takes the customConfig object and returns the name of the provider and its schema
+ * If more than one provider is set or no provider is set, it throws an error
+ *
+ * @param {Object} customConfig - The custom configuration containing the STT schema
+ * @returns {Promise<[string, Object]>} The name of the provider and its schema
+ * @throws {Error} Throws an error if multiple providers are set or no provider is set
+ */
+async function getProviderSchema(customConfig) {
+  const sttSchema = customConfig.speech.stt;
+
+  if (!sttSchema) {
+    throw new Error(`No STT schema is set. Did you configure STT in the custom config (librechat.yaml)?
+    
+    https://www.librechat.ai/docs/configuration/stt_tts#stt`);
   }
 
-  throw new Error('Invalid provider');
+  const providers = Object.entries(sttSchema).filter(([, value]) => Object.keys(value).length > 0);
+
+  if (providers.length > 1) {
+    throw new Error('Multiple providers are set. Please set only one provider.');
+  } else if (providers.length === 0) {
+    throw new Error('No provider is set. Please set a provider.');
+  } else {
+    const provider = providers[0][0];
+    return [provider, sttSchema[provider]];
+  }
 }
 
 function removeUndefined(obj) {
@@ -83,72 +106,63 @@ function openAIProvider(sttSchema, audioReadStream) {
 }
 
 /**
- * This function prepares the necessary data and headers for making a request to the Azure API
- * It uses the provided request and audio stream to create the request
+ * Prepares the necessary data and headers for making a request to the Azure API.
+ * It uses the provided Speech-to-Text (STT) schema and audio file to create the request.
  *
- * @param {Object} req - The request object, which should contain the endpoint in its body
- * @param {Stream} audioReadStream - The audio data to be transcribed
+ * @param {Object} sttSchema - The STT schema object, which should contain instanceName, deploymentName, apiVersion, and apiKey.
+ * @param {Buffer} audioBuffer - The audio data to be transcribed
+ * @param {Object} audioFile - The audio file object, which should contain originalname, mimetype, and size.
  *
- * @returns {Array} An array containing the URL for the API request, the data to be sent, and the headers for the request
- * If an error occurs, it returns an array with three null values and logs the error with logger
+ * @returns {Array} An array containing the URL for the API request, the data to be sent, and the headers for the request.
+ * If an error occurs, it logs the error with logger and returns an array with three null values.
  */
-function azureProvider(req, audioReadStream) {
+function azureOpenAIProvider(sttSchema, audioBuffer, audioFile) {
   try {
-    const { endpoint } = req.body;
-    const azureConfig = req.app.locals[endpoint];
+    const instanceName = sttSchema?.instanceName;
+    const deploymentName = sttSchema?.deploymentName;
+    const apiVersion = sttSchema?.apiVersion;
 
-    if (!azureConfig) {
-      throw new Error(`No configuration found for endpoint: ${endpoint}`);
+    const url =
+      genAzureEndpoint({
+        azureOpenAIApiInstanceName: instanceName,
+        azureOpenAIApiDeploymentName: deploymentName,
+      }) +
+      '/audio/transcriptions?api-version=' +
+      apiVersion;
+
+    const apiKey = sttSchema.apiKey ? extractEnvVariable(sttSchema.apiKey) : '';
+
+    if (audioBuffer.byteLength > 25 * 1024 * 1024) {
+      throw new Error('The audio file size exceeds the limit of 25MB');
+    }
+    const acceptedFormats = ['flac', 'mp3', 'mp4', 'mpeg', 'mpga', 'm4a', 'ogg', 'wav', 'webm'];
+    const fileFormat = audioFile.mimetype.split('/')[1];
+    if (!acceptedFormats.includes(fileFormat)) {
+      throw new Error(`The audio file format ${fileFormat} is not accepted`);
     }
 
-    const { apiKey, instanceName, whisperModel, apiVersion } = Object.entries(
-      azureConfig.groupMap,
-    ).reduce((acc, [, value]) => {
-      if (acc) {
-        return acc;
-      }
+    const formData = new FormData();
 
-      const whisperKey = Object.keys(value.models).find((modelKey) =>
-        modelKey.startsWith('whisper'),
-      );
+    const audioBlob = new Blob([audioBuffer], { type: audioFile.mimetype });
 
-      if (whisperKey) {
-        return {
-          apiVersion: value.version,
-          apiKey: value.apiKey,
-          instanceName: value.instanceName,
-          whisperModel: value.models[whisperKey]['deploymentName'],
-        };
-      }
+    formData.append('file', audioBlob, audioFile.originalname);
 
-      return null;
-    }, null);
+    let data = formData;
 
-    if (!apiKey || !instanceName || !whisperModel || !apiVersion) {
-      throw new Error('Required Azure configuration values are missing');
-    }
-
-    const baseURL = `https://${instanceName}.openai.azure.com`;
-
-    const url = `${baseURL}/openai/deployments/${whisperModel}/audio/transcriptions?api-version=${apiVersion}`;
-
-    let data = {
-      file: audioReadStream,
-      filename: 'audio.wav',
-      contentType: 'audio/wav',
-      knownLength: audioReadStream.length,
-    };
-
-    const headers = {
-      ...data.getHeaders(),
+    let headers = {
       'Content-Type': 'multipart/form-data',
-      'api-key': apiKey,
     };
+
+    [headers].forEach(removeUndefined);
+
+    if (apiKey) {
+      headers['api-key'] = apiKey;
+    }
 
     return [url, data, headers];
   } catch (error) {
-    logger.error('An error occurred while preparing the Azure API STT request: ', error);
-    return [null, null, null];
+    logger.error('An error occurred while preparing the Azure OpenAI API STT request: ', error);
+    throw error;
   }
 }
 
@@ -176,16 +190,16 @@ async function speechToText(req, res) {
   const audioReadStream = Readable.from(audioBuffer);
   audioReadStream.path = 'audio.wav';
 
-  const provider = getProvider(customConfig.stt);
+  const [provider, sttSchema] = await getProviderSchema(customConfig);
 
   let [url, data, headers] = [];
 
   switch (provider) {
-    case 'openai':
-      [url, data, headers] = openAIProvider(customConfig.stt, audioReadStream);
+    case STTProviders.OPENAI:
+      [url, data, headers] = openAIProvider(sttSchema, audioReadStream);
       break;
-    case 'azure':
-      [url, data, headers] = azureProvider(req, audioReadStream);
+    case STTProviders.AZURE_OPENAI:
+      [url, data, headers] = azureOpenAIProvider(sttSchema, audioBuffer, req.file);
       break;
     default:
       throw new Error('Invalid provider');

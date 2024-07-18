@@ -116,8 +116,6 @@ export default {
   com_ui_submit: 'Abschicken',
   com_ui_upload_success: 'Erfolgreich hochgeladene Datei',
   com_ui_upload_error: 'Beim Hochladen deiner Datei ist ein Fehler aufgetreten',
-  com_ui_upload_invalid:
-    'Ungültige Datei zum Hochladen. Muss ein Bild sein, das nicht größer als 2 MB ist',
   com_ui_cancel: 'Abbrechen',
   com_ui_save: 'Speichern',
   com_ui_save_submit: 'Speichern & Absenden',
@@ -154,7 +152,10 @@ export default {
   com_ui_create_link: 'Link erstellen',
   com_ui_share_link_to_chat: 'Link zum Chat teilen',
   com_ui_share_error: 'Beim Teilen des Chat-Links ist ein Fehler aufgetreten',
-  com_ui_share_create_message: 'Ihr Name und alle Nachrichten, die Sie nach dem Teilen hinzufügen, bleiben privat.',
+  com_ui_share_retrieve_error: 'Beim Löschen des Freigabelinks ist ein Fehler aufgetreten.',
+  com_ui_share_delete_error: 'Beim Löschen des Freigabelinks ist ein Fehler aufgetreten.',
+  com_ui_share_create_message:
+    'Ihr Name und alle Nachrichten, die Sie nach dem Teilen hinzufügen, bleiben privat.',
   com_ui_share_created_message:
     'Ein geteiltes Link zu Ihrem Chat wurde erstellt. Verwalten Sie zuvor geteilte Chats jederzeit über die Einstellungen.',
   com_ui_share_update_message:
@@ -163,7 +164,7 @@ export default {
     'Ein geteiltes Link zu Ihrem Chat wurde aktualisiert. Verwalten Sie zuvor geteilte Chats jederzeit über die Einstellungen.',
   com_ui_shared_link_not_found: 'Geteilter Link nicht gefunden',
   com_ui_delete_conversation: 'Chat löschen?',
-  com_ui_delete_conversation_confirm: 'Damit wird gelöscht',
+  com_ui_delete_confirm: 'Damit wird gelöscht',
   com_ui_delete_assistant_confirm:
     'Bist du sicher, dass du diesen Assistenten löschen willst? Dies kann nicht rückgängig gemacht werden.',
   com_ui_rename: 'Umbenennen',
@@ -564,7 +565,6 @@ export default {
   com_ui_min_tags:
     'Es können keine weiteren Werte entfernt werden, mindestens {0} sind erforderlich.',
   com_ui_max_tags: 'Die maximal erlaubte Anzahl ist {0}, die neuesten Werte werden verwendet.',
-  com_endpoint_messages: 'Nachrichten',
   com_endpoint_context_tokens: 'Max. Kontexttoken',
   com_endpoint_context_info:
     'Die maximale Anzahl an Token, die für den Kontext verwendet werden kann. Verwenden Sie dies, um zu steuern, wie viele Token pro Anfrage gesendet werden. Wenn nicht angegeben, werden systemseitige Standardwerte basierend auf der bekannten Kontextgröße der Modelle verwendet. Höhere Werte können zu Fehlern und/oder höheren Tokenkosten führen.',
@@ -1012,10 +1012,6 @@ export const comparisons = {
     english: 'There was an error uploading your file',
     translated: 'Beim Hochladen deiner Datei ist ein Fehler aufgetreten',
   },
-  com_ui_upload_invalid: {
-    english: 'Invalid file for upload. Must be an image not exceeding 2 MB',
-    translated: 'Ungültige Datei zum Hochladen. Muss ein Bild sein, das nicht größer als 2 MB ist',
-  },
   com_ui_cancel: {
     english: 'Cancel',
     translated: 'Abbrechen',
@@ -1156,13 +1152,22 @@ export const comparisons = {
     english: 'Share link to chat',
     translated: 'Link zum Chat teilen',
   },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Beim Löschen des Freigabelinks ist ein Fehler aufgetreten.',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Beim Löschen des Freigabelinks ist ein Fehler aufgetreten.',
+  },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
     translated: 'Beim Teilen des Chat-Links ist ein Fehler aufgetreten',
   },
   com_ui_share_create_message: {
     english: 'Your name and any messages you add after sharing stay private.',
-    translated: 'Ihr Name und alle Nachrichten, die Sie nach dem Teilen hinzufügen, bleiben privat.',
+    translated:
+      'Ihr Name und alle Nachrichten, die Sie nach dem Teilen hinzufügen, bleiben privat.',
   },
   com_ui_share_created_message: {
     english:
@@ -1189,7 +1194,7 @@ export const comparisons = {
     english: 'Delete chat?',
     translated: 'Chat löschen?',
   },
-  com_ui_delete_conversation_confirm: {
+  com_ui_delete_confirm: {
     english: 'This will delete',
     translated: 'Damit wird gelöscht',
   },
@@ -2596,10 +2601,6 @@ export const comparisons = {
   com_ui_max_tags: {
     english: 'Maximum number allowed is {0}, using latest values.',
     translated: 'Die maximal erlaubte Anzahl ist {0}, die neuesten Werte werden verwendet.',
-  },
-  com_endpoint_messages: {
-    english: 'Messages',
-    translated: 'Nachrichten',
   },
   com_endpoint_context_tokens: {
     english: 'Max Context Tokens',

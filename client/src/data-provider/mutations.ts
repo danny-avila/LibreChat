@@ -1,6 +1,7 @@
 import {
   EToolResources,
   LocalStorageKeys,
+  InfiniteCollections,
   defaultAssistantsVersion,
 } from 'librechat-data-provider';
 import { useSetRecoilState } from 'recoil';
@@ -9,9 +10,11 @@ import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librech
 import type { UseMutationResult } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
 import {
+  /* Shared Links */
   addSharedLink,
-  addConversation,
   deleteSharedLink,
+  /* Conversations */
+  addConversation,
   updateConvoFields,
   updateConversation,
   deleteConversation,
@@ -20,13 +23,15 @@ import { useConversationsInfiniteQuery, useSharedLinksInfiniteQuery } from './qu
 import { normalizeData } from '~/utils/collection';
 import store from '~/store';
 
-/** Conversations */
-export const useGenTitleMutation = (): UseMutationResult<
+export type TGenTitleMutation = UseMutationResult<
   t.TGenTitleResponse,
   unknown,
   t.TGenTitleRequest,
   unknown
-> => {
+>;
+
+/** Conversations */
+export const useGenTitleMutation = (): TGenTitleMutation => {
   const queryClient = useQueryClient();
   return useMutation((payload: t.TGenTitleRequest) => dataService.genTitle(payload), {
     onSuccess: (response, vars) => {
@@ -174,7 +179,7 @@ export const useCreateSharedLinkMutation = (
           vars.isPublic
             ? addSharedLink(sharedLink, _data)
             : deleteSharedLink(sharedLink, _data.shareId),
-          'sharedLinks',
+          InfiniteCollections.SHARED_LINKS,
           pageSize,
         );
       });
@@ -216,7 +221,7 @@ export const useUpdateSharedLinkMutation = (
           // Therefore, when isPublic is true, use addSharedLink instead of updateSharedLink.
             addSharedLink(sharedLink, _data)
             : deleteSharedLink(sharedLink, _data.shareId),
-          'sharedLinks',
+          InfiniteCollections.SHARED_LINKS,
           sharedLink.pages[0].pageSize as number,
         );
       });
@@ -254,7 +259,7 @@ export const useDeleteSharedLinkMutation = (
         }
         return normalizeData(
           deleteSharedLink(data, vars.shareId),
-          'sharedLinks',
+          InfiniteCollections.SHARED_LINKS,
           data.pages[0].pageSize as number,
         );
       });
@@ -522,6 +527,8 @@ export const useLogoutUserMutation = (
       setDefaultPreset(null);
       queryClient.removeQueries();
       localStorage.removeItem(LocalStorageKeys.LAST_CONVO_SETUP);
+      localStorage.removeItem(`${LocalStorageKeys.LAST_CONVO_SETUP}_0`);
+      localStorage.removeItem(`${LocalStorageKeys.LAST_CONVO_SETUP}_1`);
       localStorage.removeItem(LocalStorageKeys.LAST_MODEL);
       localStorage.removeItem(LocalStorageKeys.LAST_TOOLS);
       localStorage.removeItem(LocalStorageKeys.FILES_TO_DELETE);
@@ -562,6 +569,8 @@ export const useDeleteUserMutation = (
       setDefaultPreset(null);
       queryClient.removeQueries();
       localStorage.removeItem(LocalStorageKeys.LAST_CONVO_SETUP);
+      localStorage.removeItem(`${LocalStorageKeys.LAST_CONVO_SETUP}_0`);
+      localStorage.removeItem(`${LocalStorageKeys.LAST_CONVO_SETUP}_1`);
       localStorage.removeItem(LocalStorageKeys.LAST_MODEL);
       localStorage.removeItem(LocalStorageKeys.LAST_TOOLS);
       localStorage.removeItem(LocalStorageKeys.FILES_TO_DELETE);

@@ -29,12 +29,12 @@ export default function ModelSpecsMenu({ modelSpecs }: { modelSpecs: TModelSpec[
     }
 
     const {
+      template,
       shouldSwitch,
       isNewModular,
+      newEndpointType,
       isCurrentModular,
       isExistingConversation,
-      newEndpointType,
-      template,
     } = getConvoSwitchLogic({
       newEndpoint,
       modularChat,
@@ -42,7 +42,8 @@ export default function ModelSpecsMenu({ modelSpecs }: { modelSpecs: TModelSpec[
       endpointsConfig,
     });
 
-    if (isExistingConversation && isCurrentModular && isNewModular && shouldSwitch) {
+    const isModular = isCurrentModular && isNewModular && shouldSwitch;
+    if (isExistingConversation && isModular) {
       template.endpointType = newEndpointType as EModelEndpoint | undefined;
 
       const currentConvo = getDefaultConversation({
@@ -52,11 +53,20 @@ export default function ModelSpecsMenu({ modelSpecs }: { modelSpecs: TModelSpec[
       });
 
       /* We don't reset the latest message, only when changing settings mid-converstion */
-      newConversation({ template: currentConvo, preset, keepLatestMessage: true });
+      newConversation({
+        template: currentConvo,
+        preset,
+        keepLatestMessage: true,
+        keepAddedConvos: true,
+      });
       return;
     }
 
-    newConversation({ template: { ...(template as Partial<TConversation>) }, preset });
+    newConversation({
+      template: { ...(template as Partial<TConversation>) },
+      preset,
+      keepAddedConvos: isModular,
+    });
   };
 
   const selected = useMemo(() => {
