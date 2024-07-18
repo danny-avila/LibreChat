@@ -156,13 +156,15 @@ const CameraFeed = ({
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 5.25v13.5M18.75 12H5.25" />
         </svg>
       </button>
-
-      <button
-        type="button"
-        className="absolute bottom-4 right-4 cursor-pointer rounded-md bg-black/10 p-1.5 text-white backdrop-blur-xl md:bottom-8"
-      >
-        <DropdownMenu devices={videoInputDevices} onSelect={handleDeviceChange} />
-      </button>
+      {videoInputDevices.length > 1 && (
+        <button
+          type="button"
+          className="absolute bottom-4 right-4 cursor-pointer rounded-md bg-black/10 p-1.5 text-white backdrop-blur-xl md:bottom-8"
+        >
+          <DropdownMenu devices={videoInputDevices} onSelect={handleDeviceChange} />
+        </button>
+      )}
+      ;
     </div>
   );
 };
