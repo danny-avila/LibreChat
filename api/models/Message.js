@@ -29,10 +29,12 @@ const idSchema = z.string().uuid();
  * @param {string} [params.plugin] - Plugin associated with the message.
  * @param {string[]} [params.plugins] - An array of plugins associated with the message.
  * @param {string} [params.model] - The model used to generate the message.
+ * @param {Object} [metadata] - Additional metadata for this operation
+ * @param {string} [metadata.context] - The context of the operation
  * @returns {Promise<TMessage>} The updated or newly inserted message document.
  * @throws {Error} If there is an error in saving the message.
  */
-async function saveMessage(req, params) {
+async function saveMessage(req, params, metadata) {
   try {
     if (!req || !req.user || !req.user.id) {
       throw new Error('User not authenticated');
@@ -61,8 +63,16 @@ async function saveMessage(req, params) {
 
     const validConvoId = idSchema.safeParse(conversationId);
     if (!validConvoId.success) {
+      if (metadata && metadata?.context) {
+        logger.info(`\`saveMessage\` context: ${metadata.context}`);
+      }
+
       logger.warn(`Invalid conversation ID: ${conversationId}`);
-      logger.info(params);
+      logger.info(`Invalid conversation ID Params:
+
+${JSON.stringify(params, null, 2)}
+
+`);
       return;
     }
 
