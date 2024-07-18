@@ -53,18 +53,17 @@ export default function AudioRecorderCall({
     }
   }, [speechText, methods, textAreaRef, submitPrompt]);
 
-  // Automatically start recording when the component mounts
-  // useEffect(() => {
-  //   const delay = 1000; // 1 segundo
+  useEffect(() => {
+    const delay = 1000;
 
-  //   const timer = setTimeout(() => {
-  //     if (!isStreamingAudio && !isThinking && !isListening) {
-  //       startRecording();
-  //     }
-  //   }, delay);
+    const timer = setTimeout(() => {
+      if (!isStreamingAudio && !isThinking && !isListening) {
+        startRecording();
+      }
+    }, delay);
 
-  //   return () => clearTimeout(timer);
-  // }, [isStreamingAudio]);
+    return () => clearTimeout(timer);
+  }, [isStreamingAudio]);
 
   const handleToggleCamera = async () => {
     if (isCameraOn) {
@@ -76,7 +75,9 @@ export default function AudioRecorderCall({
       setIsCameraOn(false);
     } else {
       // Stop the audio feed before starting the camera
-      if (isListening) {await handleStopRecording();}
+      if (isListening) {
+        await handleStopRecording();
+      }
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -98,7 +99,9 @@ export default function AudioRecorderCall({
   };
 
   const handleCloseOverlay = () => {
-    if (isListening) {handleStopRecording();}
+    if (isListening) {
+      handleStopRecording();
+    }
     setShowCallOverlay(false);
   };
 
