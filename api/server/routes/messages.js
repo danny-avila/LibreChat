@@ -22,7 +22,11 @@ router.get('/:conversationId', validateMessageReq, async (req, res) => {
 router.post('/:conversationId', validateMessageReq, async (req, res) => {
   try {
     const message = req.body;
-    const savedMessage = await saveMessage(req, { ...message, user: req.user.id });
+    const savedMessage = await saveMessage(
+      req,
+      { ...message, user: req.user.id },
+      { context: 'POST /api/messages/:conversationId' },
+    );
     if (!savedMessage) {
       return res.status(400).json({ error: 'Message not saved' });
     }
