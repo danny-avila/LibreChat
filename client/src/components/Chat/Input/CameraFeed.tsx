@@ -1,9 +1,11 @@
 import React, { useRef, useEffect } from 'react';
 
-const CameraFeed: React.FC<{ onClose: () => void; onScreenshot: (dataURL: string) => void }> = ({
-  onClose,
-  onScreenshot,
-}) => {
+interface CameraFeedProps {
+  onClose: () => void;
+  onScreenshot: (dataURL: string) => void;
+}
+
+const CameraFeed: React.FC<CameraFeedProps> = ({ onClose, onScreenshot }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -34,7 +36,7 @@ const CameraFeed: React.FC<{ onClose: () => void; onScreenshot: (dataURL: string
     };
   }, [onClose]);
 
-  const takeScreenshot = () => {
+  const takeScreenshot = async () => {
     if (!canvasRef.current || !videoRef.current) {return;}
 
     const canvas = canvasRef.current;
@@ -48,8 +50,23 @@ const CameraFeed: React.FC<{ onClose: () => void; onScreenshot: (dataURL: string
 
     context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
 
-    const dataURL = canvas.toDataURL('image/png');
-    onScreenshot(dataURL);
+    canvas.toBlob(async (blob) => {
+      if (!blob) {return;}
+
+      const item = new ClipboardItem({ 'image/png': blob });
+      try {
+        await navigator.clipboard.write([item]);
+        console.log('Screenshot copied to clipboard as image');
+
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          onScreenshot(reader.result as string); // Passa o dataURL para a função onScreenshot
+        };
+        reader.readAsDataURL(blob);
+      } catch (error) {
+        console.error('Failed to write to clipboard: ', error);
+      }
+    }, 'image/png');
   };
 
   return (
