@@ -7,7 +7,7 @@ import store from '~/store';
 import { useRecoilState } from 'recoil';
 import { usePauseGlobalAudio } from '~/hooks/Audio';
 import CameraFeed from './CameraFeed';
-import { useLocalize, useCombobox } from '~/hooks';
+import { useLocalize } from '~/hooks';
 
 let isThinking = false;
 
@@ -26,9 +26,10 @@ export default function AudioRecorderCall({
   const [isStreamingAudio, setIsStreamingAudio] = useRecoilState(store.isStreamingAudio);
 
   const { pauseGlobalAudio } = usePauseGlobalAudio();
-  const localize = useLocalize();
-  const [showCallOverlay, setShowCallOverlay] = useRecoilState(store.showCallOverlay);
+  const [, setShowCallOverlay] = useRecoilState(store.showCallOverlay);
   const [isCameraOn, setIsCameraOn] = useState(false);
+  const localize = useLocalize();
+  const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
 
   const handleTranscriptionComplete = (text: string) => {
     if (text) {
@@ -50,23 +51,42 @@ export default function AudioRecorderCall({
     if (textAreaRef.current) {
       submitPrompt(speechText);
     }
-  }, [speechText, methods, textAreaRef]);
+  }, [speechText, methods, textAreaRef, submitPrompt]);
 
   // Automatically start recording when the component mounts
-  useEffect(() => {
-    // Define o tempo de espera em milissegundos
-    const delay = 1000; // 5 segundos, por exemplo
+  // useEffect(() => {
+  //   const delay = 1000; // 1 segundo
 
-    // Inicia um temporizador que chama startRecording após o delay
-    const timer = setTimeout(() => {
-      if (!isStreamingAudio && !isThinking && !isListening) {
-        startRecording();
+  //   const timer = setTimeout(() => {
+  //     if (!isStreamingAudio && !isThinking && !isListening) {
+  //       startRecording();
+  //     }
+  //   }, delay);
+
+  //   return () => clearTimeout(timer);
+  // }, [isStreamingAudio]);
+
+  const handleToggleCamera = async () => {
+    if (isCameraOn) {
+      // Stop the camera feed
+      if (mediaStream) {
+        mediaStream.getTracks().forEach((track) => track.stop());
+        setMediaStream(null);
       }
-    }, delay);
+      setIsCameraOn(false);
+    } else {
+      // Stop the audio feed before starting the camera
+      if (isListening) {await handleStopRecording();}
 
-    // Limpa o temporizador quando o componente é desmontado ou a dependência muda
-    return () => clearTimeout(timer);
-  }, [!isStreamingAudio]);
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        setMediaStream(stream);
+        setIsCameraOn(true);
+      } catch (error) {
+        console.error('Error accessing camera:', error);
+      }
+    }
+  };
 
   const handleStartRecording = async () => {
     await startRecording();
@@ -82,15 +102,8 @@ export default function AudioRecorderCall({
     setShowCallOverlay(false);
   };
 
-  const handleScreenshot = (dataURL: string) => {
-    if (textAreaRef.current) {
-      textAreaRef.current.value = dataURL;
-      submitPrompt(dataURL);
-    }
-  };
-
   const renderIcon = () => {
-    const transformScale =
+    let transformScale =
       rmsLevel > 0.08
         ? 1.8
         : rmsLevel > 0.07
@@ -100,6 +113,11 @@ export default function AudioRecorderCall({
             : rmsLevel > 0.01
               ? 1.2
               : 1;
+
+    if (isCameraOn) {
+      transformScale *= 0.5;
+    }
+
     return (
       <div className="smooth-transition" style={{ transform: `scale(${transformScale})` }}>
         <CircleIcon size="256" />
@@ -150,7 +168,11 @@ export default function AudioRecorderCall({
   return (
     <>
       <div className="absolute bottom-12 flex w-full justify-center">{renderStatus()}</div>
+
       <div className="relative flex flex-col items-center justify-center space-y-0 text-lg text-white">
+        {isCameraOn && (
+          <CameraFeed onClose={() => setIsCameraOn(false)} textAreaRef={textAreaRef} />
+        )}
         {!isStreamingAudio ? (
           <button
             onClick={isListening ? handleStopRecording : handleStartRecording}
@@ -173,15 +195,12 @@ export default function AudioRecorderCall({
             {renderDotsIcon()}
           </button>
         )}
-        {isCameraOn && (
-          <CameraFeed onClose={() => setIsCameraOn(false)} onScreenshot={handleScreenshot} />
-        )}
       </div>
 
       <div className="absolute bottom-10 flex w-full justify-center gap-80">
         <button
           className="rounded-full bg-gray-50 p-3 hover:bg-gray-100 dark:bg-gray-900 dark:hover:bg-gray-800"
-          onClick={() => setIsCameraOn(true)}
+          onClick={handleToggleCamera}
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"

@@ -1,72 +1,114 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import DropdownMenu from './DropdownMenu'; // Adjust the path as necessary
 
-interface CameraFeedProps {
+const CameraFeed = ({
+  onClose,
+  textAreaRef,
+}: {
   onClose: () => void;
-  onScreenshot: (dataURL: string) => void;
-}
-
-const CameraFeed: React.FC<CameraFeedProps> = ({ onClose, onScreenshot }) => {
+  textAreaRef: React.RefObject<HTMLTextAreaElement>;
+}) => {
+  const [videoInputDevices, setVideoInputDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedVideoInputDeviceId, setSelectedVideoInputDeviceId] = useState<string>('');
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  useEffect(() => {
-    const startCamera = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+  const getVideoInputDevices = useCallback(async () => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(
+        (device) => device.kind === 'videoinput',
+      ) as MediaDeviceInfo[];
+      setVideoInputDevices(videoDevices);
+      if (videoDevices.length > 0) {
+        setSelectedVideoInputDeviceId(videoDevices[0].deviceId);
+      }
+    } catch (error) {
+      console.error('Error fetching video input devices:', error);
+    }
+  }, []);
+
+  const startVideoStream = useCallback(async () => {
+    try {
+      const constraints =
+        selectedVideoInputDeviceId === 'screen'
+          ? { video: { cursor: 'always' } }
+          : { video: { deviceId: { exact: selectedVideoInputDeviceId } } };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
         streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.onloadedmetadata = () => {
-            videoRef.current?.play().catch((error) => console.error('Error playing video:', error));
-          };
-        }
-      } catch (error) {
-        console.error('Error accessing camera:', error);
-        onClose();
+        await videoRef.current.play();
       }
-    };
+    } catch (error) {
+      console.error('Error accessing webcam:', error);
+    }
+  }, [selectedVideoInputDeviceId]);
 
-    startCamera();
-
-    return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
-      }
-    };
-  }, [onClose]);
+  const stopVideoStream = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  }, []);
 
   const takeScreenshot = async () => {
     if (!canvasRef.current || !videoRef.current) {return;}
 
-    const canvas = canvasRef.current;
-    const video = videoRef.current;
-    const context = canvas.getContext('2d');
-
+    const context = canvasRef.current.getContext('2d');
     if (!context) {return;}
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    canvasRef.current.width = videoRef.current.videoWidth;
+    canvasRef.current.height = videoRef.current.videoHeight;
+    context.drawImage(
+      videoRef.current,
+      0,
+      0,
+      videoRef.current.videoWidth,
+      videoRef.current.videoHeight,
+    );
 
-    context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+    const dataURL = canvasRef.current.toDataURL('image/png');
 
-    canvas.toBlob(async (blob) => {
-      if (!blob) {return;}
+    const response = await fetch(dataURL);
+    const blob = await response.blob();
+    const file = new File([blob], 'screenshot.png', { type: 'image/png' });
 
-      const item = new ClipboardItem({ 'image/png': blob });
-      try {
-        await navigator.clipboard.write([item]);
-        console.log('Screenshot copied to clipboard as image');
+    const clipboardData = new DataTransfer();
+    clipboardData.items.add(file);
 
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          onScreenshot(reader.result as string); // Passa o dataURL para a função onScreenshot
-        };
-        reader.readAsDataURL(blob);
-      } catch (error) {
-        console.error('Failed to write to clipboard: ', error);
-      }
-    }, 'image/png');
+    const pasteEvent = new ClipboardEvent('paste', {
+      clipboardData: clipboardData,
+      bubbles: true,
+      cancelable: true,
+    });
+
+    if (textAreaRef.current) {
+      textAreaRef.current.focus();
+      textAreaRef.current.dispatchEvent(pasteEvent);
+    }
+  };
+
+  useEffect(() => {
+    getVideoInputDevices();
+    return () => {
+      stopVideoStream();
+    };
+  }, [getVideoInputDevices, stopVideoStream]);
+
+  useEffect(() => {
+    if (selectedVideoInputDeviceId) {
+      startVideoStream();
+    }
+  }, [selectedVideoInputDeviceId, startVideoStream]);
+
+  const handleDeviceChange = (deviceId: string) => {
+    setSelectedVideoInputDeviceId(deviceId);
   };
 
   return (
@@ -81,9 +123,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ onClose, onScreenshot }) => {
         type="button"
         className="absolute left-4 top-4 cursor-pointer rounded-full bg-black/10 p-1.5 text-white backdrop-blur-xl md:top-8"
         onClick={() => {
-          if (streamRef.current) {
-            streamRef.current.getTracks().forEach((track) => track.stop());
-          }
+          stopVideoStream();
           onClose();
         }}
       >
@@ -93,7 +133,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ onClose, onScreenshot }) => {
           fill="currentColor"
           className="size-6"
         >
-          <path d="M5.28 4.22a.75.75 0 1 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 0 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
+          <path d="M5.28 4.22a.75.75 0 1 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 0 0 1.06 1.06L8 9.06l2.72-2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
         </svg>
       </button>
       <button
@@ -112,6 +152,15 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ onClose, onScreenshot }) => {
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 5.25v13.5M18.75 12H5.25" />
         </svg>
       </button>
+
+      {/* <button
+          type="button"
+          className="absolute right-4 bottom-4 cursor-pointer rounded-md bg-black/10 p-1.5 text-white backdrop-blur-xl md:bottom-8"
+        >
+
+          <DropdownMenu devices={videoInputDevices} onClose={() => {}} onSelect={handleDeviceChange} />
+        </button>
+     */}
     </div>
   );
 };
