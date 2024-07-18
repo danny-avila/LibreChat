@@ -119,7 +119,11 @@ const createAbortController = (req, res, getAbortData, getReqData) => {
       { promptTokens, completionTokens },
     );
 
-    saveMessage(req, { ...responseMessage, user });
+    saveMessage(
+      req,
+      { ...responseMessage, user },
+      { context: 'api/server/middleware/abortMiddleware.js' },
+    );
 
     let conversation;
     if (userMessagePromise) {

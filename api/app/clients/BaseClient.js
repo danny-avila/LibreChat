@@ -612,12 +612,16 @@ class BaseClient {
       throw new Error('User mismatch.');
     }
 
-    const savedMessage = await saveMessage(this.options.req, {
-      ...message,
-      endpoint: this.options.endpoint,
-      unfinished: false,
-      user,
-    });
+    const savedMessage = await saveMessage(
+      this.options.req,
+      {
+        ...message,
+        endpoint: this.options.endpoint,
+        unfinished: false,
+        user,
+      },
+      { context: 'api/app/clients/BaseClient.js - saveMessageToDatabase' },
+    );
 
     if (this.skipSaveConvo) {
       return { message: savedMessage };
