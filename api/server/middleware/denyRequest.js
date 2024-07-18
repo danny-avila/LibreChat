@@ -41,10 +41,14 @@ const denyRequest = async (req, res, errorMessage) => {
   const shouldSaveMessage = _convoId && parentMessageId && parentMessageId !== Constants.NO_PARENT;
 
   if (shouldSaveMessage) {
-    await saveMessage({ ...userMessage, user: req.user.id });
+    await saveMessage(
+      req,
+      { ...userMessage, user: req.user.id },
+      { context: `api/server/middleware/denyRequest.js - ${responseText}` },
+    );
   }
 
-  return await sendError(res, {
+  return await sendError(req, res, {
     sender: getResponseSender(req.body),
     messageId: crypto.randomUUID(),
     conversationId,

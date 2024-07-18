@@ -70,7 +70,7 @@ router.post('/', setHeaders, async (req, res) => {
   });
 
   if (!overrideParentMessageId) {
-    await saveMessage({ ...userMessage, user: req.user.id });
+    await saveMessage(req, { ...userMessage, user: req.user.id });
     await saveConvo(req.user.id, {
       ...userMessage,
       ...endpointOption,
@@ -118,7 +118,7 @@ const ask = async ({
       const currentTimestamp = Date.now();
       if (currentTimestamp - lastSavedTimestamp > 500) {
         lastSavedTimestamp = currentTimestamp;
-        saveMessage({
+        saveMessage(req, {
           messageId: responseMessageId,
           sender: model,
           conversationId,
@@ -197,7 +197,7 @@ const ask = async ({
       isCreatedByUser: false,
     };
 
-    await saveMessage({ ...responseMessage, user });
+    await saveMessage(req, { ...responseMessage, user });
     responseMessage.messageId = newResponseMessageId;
 
     let conversationUpdate = {
@@ -221,7 +221,7 @@ const ask = async ({
 
     // If response has parentMessageId, the fake userMessage.messageId should be updated to the real one.
     if (!overrideParentMessageId) {
-      await saveMessage({
+      await saveMessage(req, {
         ...userMessage,
         user,
         messageId: userMessageId,
@@ -266,7 +266,7 @@ const ask = async ({
         isCreatedByUser: false,
       };
 
-      saveMessage({ ...responseMessage, user });
+      saveMessage(req, { ...responseMessage, user });
 
       return {
         title: await getConvoTitle(user, conversationId),
@@ -288,7 +288,7 @@ const ask = async ({
         model,
         isCreatedByUser: false,
       };
-      await saveMessage({ ...errorMessage, user });
+      await saveMessage(req, { ...errorMessage, user });
       handleError(res, errorMessage);
     }
   }

@@ -9,14 +9,17 @@ import { useGetFileConfig } from '~/data-provider';
 import { AttachmentIcon } from '~/components/svg';
 import { FileUpload } from '~/components/ui';
 import { useFileHandling } from '~/hooks';
+import { cn } from '~/utils';
 
 const AttachFile = ({
   endpoint,
   endpointType,
+  isRTL,
   disabled = false,
 }: {
   endpoint: EModelEndpoint | '';
   endpointType?: EModelEndpoint;
+  isRTL: boolean;
   disabled?: boolean | null;
 }) => {
   const { handleFileChange } = useFileHandling();
@@ -30,7 +33,14 @@ const AttachFile = ({
   }
 
   return (
-    <div className="absolute bottom-2 left-2 md:bottom-3 md:left-4">
+    <div
+      className={cn(
+        'absolute',
+        isRTL
+          ? 'bottom-2 right-14 md:bottom-3.5 md:right-3'
+          : 'bottom-2 left-2 md:bottom-3.5 md:left-4',
+      )}
+    >
       <FileUpload handleFileChange={handleFileChange} className="flex">
         <button
           disabled={!!disabled}

@@ -293,7 +293,6 @@ export default {
     'ATTENZIONE: L\'uso improprio di questa funzione può farti BANNARE dall\'utilizzo di Bing! Clicca su "Messaggio di sistema" per le istruzioni complete e il messaggio predefinito se omesso, che è il preset "Sydney" considerato sicuro.',
   com_endpoint_system_message: 'Messaggio di sistema',
   com_endpoint_message: 'Messaggio',
-  com_endpoint_messages: 'Messaggi',
   com_endpoint_message_not_appendable: 'Modifica il tuo messaggio o Rigenera.',
   com_endpoint_default_blank: 'predefinito: vuoto',
   com_endpoint_default_false: 'predefinito: falso',
@@ -1648,10 +1647,6 @@ export const comparisons = {
   com_endpoint_message: {
     english: 'Message',
     translated: 'Messaggio',
-  },
-  com_endpoint_messages: {
-    english: 'Messages',
-    translated: 'Messaggi',
   },
   com_endpoint_message_not_appendable: {
     english: 'Edit your message or Regenerate.',

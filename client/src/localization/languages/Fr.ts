@@ -571,7 +571,6 @@ export default {
   com_ui_min_tags: 'Impossible de supprimer plus de valeurs, un minimum de {0} est requis.',
   com_ui_max_tags: 'Le nombre maximum autorisé est {0}, en utilisant les dernières valeurs.',
   com_auth_back_to_login: 'Retour à la connexion',
-  com_endpoint_messages: 'Messages',
   com_endpoint_context_tokens: 'Jetons de contexte maximum',
   com_endpoint_context_info:
     'Le nombre maximum de jetons qui peuvent être utilisés pour le contexte. Utilisez ceci pour contrôler le nombre de jetons envoyés par requête. Si non spécifié, les valeurs par défaut du système seront utilisées en fonction de la taille de contexte connue des modèles. Définir des valeurs plus élevées peut entraîner des erreurs et/ou un coût en jetons plus élevé.',
@@ -2732,10 +2731,6 @@ export const comparisons = {
   com_auth_back_to_login: {
     english: 'Back to Login',
     translated: 'Retour à la connexion',
-  },
-  com_endpoint_messages: {
-    english: 'Messages',
-    translated: 'Messages',
   },
   com_endpoint_context_tokens: {
     english: 'Max Context Tokens',
