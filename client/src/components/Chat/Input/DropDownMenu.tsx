@@ -2,16 +2,13 @@ import React from 'react';
 
 const DropdownMenu = ({
   devices,
-  onClose,
   onSelect,
 }: {
   devices: MediaDeviceInfo[];
-  onClose: () => void;
   onSelect: (deviceId: string) => void;
 }) => {
   const handleDeviceChange = (deviceId: string) => {
     onSelect(deviceId);
-    onClose();
   };
 
   return (

@@ -153,14 +153,12 @@ const CameraFeed = ({
         </svg>
       </button>
 
-      {/* <button
-          type="button"
-          className="absolute right-4 bottom-4 cursor-pointer rounded-md bg-black/10 p-1.5 text-white backdrop-blur-xl md:bottom-8"
-        >
-
-          <DropdownMenu devices={videoInputDevices} onClose={() => {}} onSelect={handleDeviceChange} />
-        </button>
-     */}
+      <button
+        type="button"
+        className="absolute bottom-4 right-4 cursor-pointer rounded-md bg-black/10 p-1.5 text-white backdrop-blur-xl md:bottom-8"
+      >
+        <DropdownMenu devices={videoInputDevices} onSelect={handleDeviceChange} />
+      </button>
     </div>
   );
 };
