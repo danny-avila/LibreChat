@@ -544,7 +544,6 @@ export default {
   com_ui_mention:
     'エンドポイント、アシスタント、またはプリセットを素早く切り替えるには、それらを言及してください。',
   com_ui_import_conversation_file_type_error: 'サポートされていないインポート形式です',
-  com_endpoint_messages: 'メッセージ',
   com_endpoint_context_tokens: 'コンテキストトークン数の最大値',
   com_endpoint_context_info:
     'コンテキストに使用できるトークンの最大数です。リクエストごとに送信されるトークン数を制御するために使用します。指定しない場合は、既知のモデルのコンテキストサイズに基づいてシステムのデフォルト値が使用されます。高い値を設定すると、エラーが発生したり、トークンコストが高くなる可能性があります。',
@@ -2567,10 +2566,6 @@ export const comparisons = {
   com_ui_import_conversation_file_type_error: {
     english: 'Unsupported import type',
     translated: 'サポートされていないインポート形式です',
-  },
-  com_endpoint_messages: {
-    english: 'Messages',
-    translated: 'メッセージ',
   },
   com_endpoint_context_tokens: {
     english: 'Max Context Tokens',

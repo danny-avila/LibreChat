@@ -1,10 +1,11 @@
 const express = require('express');
 const throttle = require('lodash/throttle');
-const { getResponseSender, Constants } = require('librechat-data-provider');
+const { getResponseSender, Constants, CacheKeys, Time } = require('librechat-data-provider');
 const { initializeClient } = require('~/server/services/Endpoints/gptPlugins');
 const { sendMessage, createOnProgress } = require('~/server/utils');
 const { addTitle } = require('~/server/services/Endpoints/openAI');
 const { saveMessage } = require('~/models');
+const { getLogStores } = require('~/cache');
 const {
   handleAbort,
   createAbortController,
@@ -71,7 +72,8 @@ router.post(
       }
     };
 
-    const throttledSaveMessage = throttle(saveMessage, 3000, { trailing: false });
+    const messageCache = getLogStores(CacheKeys.MESSAGES);
+    const throttledSetMessage = throttle(messageCache.set, 3000, { trailing: false });
     let streaming = null;
     let timer = null;
 
@@ -85,7 +87,8 @@ router.post(
           clearTimeout(timer);
         }
 
-        throttledSaveMessage({
+        /*
+        {
           messageId: responseMessageId,
           sender,
           conversationId,
@@ -96,7 +99,9 @@ router.post(
           error: false,
           plugins,
           user,
-        });
+        }
+         */
+        throttledSetMessage(responseMessageId, partialText, Time.FIVE_MINUTES);
 
         streaming = new Promise((resolve) => {
           timer = setTimeout(() => {
@@ -170,7 +175,7 @@ router.post(
 
       const onChainEnd = () => {
         if (!client.skipSaveUserMessage) {
-          saveMessage({ ...userMessage, user });
+          saveMessage(req, { ...userMessage, user });
         }
         sendIntermediateMessage(res, {
           plugins,
@@ -208,7 +213,7 @@ router.post(
       logger.debug('[/ask/gptPlugins]', response);
 
       response.plugins = plugins.map((p) => ({ ...p, loading: false }));
-      await saveMessage({ ...response, user });
+      await saveMessage(req, { ...response, user });
 
       const { conversation = {} } = await client.responsePromise;
       conversation.title =

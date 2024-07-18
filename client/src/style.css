@@ -1058,6 +1058,7 @@ button {
   border-color:transparent;
   border-radius:.5rem;
   border-width:1px;
+  cursor: pointer;
   display:inline-flex;
   font-size:.875rem;
   font-weight:500;
