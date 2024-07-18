@@ -1,20 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import DropdownMenu from './DropdownMenu'; // Adjust the path as necessary
 
-const CameraFeed = ({
-  onClose,
-  textAreaRef,
-}: {
-  onClose: () => void;
-  textAreaRef: React.RefObject<HTMLTextAreaElement>;
-}) => {
+const CameraFeed = ({ onClose, textAreaRef, isSpeaking }) => {
   const [videoInputDevices, setVideoInputDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedVideoInputDeviceId, setSelectedVideoInputDeviceId] = useState<string>('');
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  const getVideoInputDevices = async () => {
+  const getVideoInputDevices = useCallback(async () => {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
       const videoDevices = devices.filter(
@@ -27,9 +21,9 @@ const CameraFeed = ({
     } catch (error) {
       console.error('Error fetching video input devices:', error);
     }
-  };
+  }, []);
 
-  const startVideoStream = async () => {
+  const startVideoStream = useCallback(async () => {
     try {
       const constraints =
         selectedVideoInputDeviceId === 'screen'
@@ -45,9 +39,9 @@ const CameraFeed = ({
     } catch (error) {
       console.error('Error accessing webcam:', error);
     }
-  };
+  }, [selectedVideoInputDeviceId]);
 
-  const stopVideoStream = () => {
+  const stopVideoStream = useCallback(() => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
@@ -55,18 +49,14 @@ const CameraFeed = ({
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
-  };
+  }, []);
 
   const takeScreenshot = async () => {
-    if (!canvasRef.current || !videoRef.current) {
-      return;
-    }
+    if (!canvasRef.current || !videoRef.current) {return;}
 
     const context = canvasRef.current.getContext('2d');
-    if (!context) {
-      return;
-    }
-
+    if (!context) {return;}
+    console.log('Taking screenshot...');
     canvasRef.current.width = videoRef.current.videoWidth;
     canvasRef.current.height = videoRef.current.videoHeight;
     context.drawImage(
@@ -103,13 +93,19 @@ const CameraFeed = ({
     return () => {
       stopVideoStream();
     };
-  }, []);
+  }, [getVideoInputDevices, stopVideoStream]);
 
   useEffect(() => {
     if (selectedVideoInputDeviceId) {
       startVideoStream();
     }
-  }, [selectedVideoInputDeviceId]);
+  }, [selectedVideoInputDeviceId, startVideoStream]);
+
+  useEffect(() => {
+    if (isSpeaking) {
+      takeScreenshot();
+    }
+  }, [isSpeaking]);
 
   const handleDeviceChange = (deviceId: string) => {
     setSelectedVideoInputDeviceId(deviceId);
@@ -140,22 +136,6 @@ const CameraFeed = ({
           <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
         </svg>
       </button>
-      <button
-        type="button"
-        className="absolute right-4 top-4 cursor-pointer rounded-full bg-black/10 p-1.5 text-white backdrop-blur-xl md:top-8"
-        onClick={takeScreenshot}
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-          strokeWidth="1.5"
-          stroke="currentColor"
-          className="size-5"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 5.25v13.5M18.75 12H5.25" />
-        </svg>
-      </button>
       {videoInputDevices.length > 1 && (
         <button
           type="button"
@@ -164,7 +144,6 @@ const CameraFeed = ({
           <DropdownMenu devices={videoInputDevices} onSelect={handleDeviceChange} />
         </button>
       )}
-      ;
     </div>
   );
 };

@@ -8,6 +8,7 @@ import { useRecoilState } from 'recoil';
 import { usePauseGlobalAudio } from '~/hooks/Audio';
 import CameraFeed from './CameraFeed';
 import { useLocalize } from '~/hooks';
+import { set } from 'date-fns';
 
 let isThinking = false;
 
@@ -47,23 +48,24 @@ export default function AudioRecorderCall({
   const { isListening, isLoading, startRecording, stopRecording, speechText, clearText, rmsLevel } =
     useSpeechToTextCall(handleTranscriptionComplete);
 
-  useEffect(() => {
-    if (textAreaRef.current) {
-      submitPrompt(speechText);
-    }
-  }, [speechText, methods, textAreaRef, submitPrompt]);
+  // useEffect(() => {
+  //   if (textAreaRef.current) {
+  //     submitPrompt(speechText);
+  //   }
+  // }, [speechText, methods, textAreaRef, submitPrompt]);
 
-  useEffect(() => {
-    const delay = 1000;
+  // Automatically start recording when the component mounts
+  // useEffect(() => {
+  //   const delay = 1000; // 1 segundo
 
-    const timer = setTimeout(() => {
-      if (!isStreamingAudio && !isThinking && !isListening) {
-        startRecording();
-      }
-    }, delay);
+  //   const timer = setTimeout(() => {
+  //     if (!isStreamingAudio && !isThinking && !isListening) {
+  //       startRecording();
+  //     }
+  //   }, delay);
 
-    return () => clearTimeout(timer);
-  }, [isStreamingAudio]);
+  //   return () => clearTimeout(timer);
+  // }, [isStreamingAudio]);
 
   const handleToggleCamera = async () => {
     if (isCameraOn) {
@@ -95,6 +97,7 @@ export default function AudioRecorderCall({
 
   const handleStopRecording = async () => {
     isThinking = true;
+    setIsStreamingAudio(false);
     await stopRecording();
   };
 
@@ -102,6 +105,7 @@ export default function AudioRecorderCall({
     if (isListening) {
       handleStopRecording();
     }
+    setIsStreamingAudio(false);
     setShowCallOverlay(false);
   };
 
@@ -167,6 +171,7 @@ export default function AudioRecorderCall({
       );
     }
   }
+  console.log(isStreamingAudio);
 
   return (
     <>
@@ -174,7 +179,11 @@ export default function AudioRecorderCall({
 
       <div className="relative flex flex-col items-center justify-center space-y-0 text-lg text-white">
         {isCameraOn && (
-          <CameraFeed onClose={() => setIsCameraOn(false)} textAreaRef={textAreaRef} />
+          <CameraFeed
+            onClose={() => setIsCameraOn(false)}
+            textAreaRef={textAreaRef}
+            isSpeaking={isListening}
+          />
         )}
         {!isStreamingAudio ? (
           <button
