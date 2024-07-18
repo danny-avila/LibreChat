@@ -27,7 +27,6 @@ export default function AudioRecorderCall({
 
   const { pauseGlobalAudio } = usePauseGlobalAudio();
   const localize = useLocalize();
-
   const [showCallOverlay, setShowCallOverlay] = useRecoilState(store.showCallOverlay);
   const [isCameraOn, setIsCameraOn] = useState(false);
 
@@ -79,6 +78,7 @@ export default function AudioRecorderCall({
   };
 
   const handleCloseOverlay = () => {
+    if (isListening) {handleStopRecording();}
     setShowCallOverlay(false);
   };
 
