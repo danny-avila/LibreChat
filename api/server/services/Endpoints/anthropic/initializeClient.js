@@ -19,11 +19,27 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     checkUserKeyExpiry(expiresAt, EModelEndpoint.anthropic);
   }
 
+  const clientOptions = {};
+
+  /** @type {undefined | TBaseEndpoint} */
+  const anthropicConfig = req.app.locals[EModelEndpoint.anthropic];
+
+  if (anthropicConfig) {
+    clientOptions.streamRate = anthropicConfig.streamRate;
+  }
+
+  /** @type {undefined | TBaseEndpoint} */
+  const allConfig = req.app.locals.all;
+  if (allConfig) {
+    clientOptions.streamRate = allConfig.streamRate;
+  }
+
   const client = new AnthropicClient(anthropicApiKey, {
     req,
     res,
     reverseProxyUrl: ANTHROPIC_REVERSE_PROXY ?? null,
     proxy: PROXY ?? null,
+    ...clientOptions,
     ...endpointOption,
   });
 
