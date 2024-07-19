@@ -219,7 +219,7 @@ export enum EAgent {
 
 export const agentOptionSettings = {
   model: {
-    default: 'gpt-4o',
+    default: 'gpt-4o-mini',
   },
   temperature: {
     min: 0,
