@@ -4,7 +4,7 @@ const { getResponseSender, Constants, CacheKeys, Time } = require('librechat-dat
 const { initializeClient } = require('~/server/services/Endpoints/gptPlugins');
 const { sendMessage, createOnProgress } = require('~/server/utils');
 const { addTitle } = require('~/server/services/Endpoints/openAI');
-const { saveMessage } = require('~/models');
+const { saveMessage, updateMessage } = require('~/models');
 const { getLogStores } = require('~/cache');
 const {
   handleAbort,
@@ -73,7 +73,14 @@ router.post(
     };
 
     const messageCache = getLogStores(CacheKeys.MESSAGES);
-    const throttledSetMessage = throttle(messageCache.set, 3000, { trailing: false });
+    const throttledCacheSet = throttle(
+      (text) => {
+        messageCache.set(responseMessageId, text, Time.FIVE_MINUTES);
+      },
+      3000,
+      { trailing: false },
+    );
+
     let streaming = null;
     let timer = null;
 
@@ -87,21 +94,7 @@ router.post(
           clearTimeout(timer);
         }
 
-        /*
-        {
-          messageId: responseMessageId,
-          sender,
-          conversationId,
-          parentMessageId: overrideParentMessageId || userMessageId,
-          text: partialText,
-          model: endpointOption.modelOptions.model,
-          unfinished: true,
-          error: false,
-          plugins,
-          user,
-        }
-         */
-        throttledSetMessage(responseMessageId, partialText, Time.FIVE_MINUTES);
+        throttledCacheSet(partialText);
 
         streaming = new Promise((resolve) => {
           timer = setTimeout(() => {
@@ -175,7 +168,11 @@ router.post(
 
       const onChainEnd = () => {
         if (!client.skipSaveUserMessage) {
-          saveMessage(req, { ...userMessage, user });
+          saveMessage(
+            req,
+            { ...userMessage, user },
+            { context: 'api/server/routes/ask/gptPlugins.js - onChainEnd' },
+          );
         }
         sendIntermediateMessage(res, {
           plugins,
@@ -212,9 +209,6 @@ router.post(
 
       logger.debug('[/ask/gptPlugins]', response);
 
-      response.plugins = plugins.map((p) => ({ ...p, loading: false }));
-      await saveMessage(req, { ...response, user });
-
       const { conversation = {} } = await client.responsePromise;
       conversation.title =
         conversation && !conversation.title ? null : conversation?.title || 'New Chat';
@@ -234,6 +228,15 @@ router.post(
           response,
           client,
         });
+      }
+
+      response.plugins = plugins.map((p) => ({ ...p, loading: false }));
+      if (response.plugins?.length > 0) {
+        await updateMessage(
+          req,
+          { ...response, user },
+          { context: 'api/server/routes/ask/gptPlugins.js - save plugins used' },
+        );
       }
     } catch (error) {
       const partialText = getPartialText();
