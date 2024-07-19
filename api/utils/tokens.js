@@ -48,8 +48,8 @@ const openAIModels = {
   'gpt-4-32k-0613': 32758, // -10 from max
   'gpt-4-1106': 127990, // -10 from max
   'gpt-4-0125': 127990, // -10 from max
-  'gpt-4o': 127990, // -10 from max
   'gpt-4o-mini': 127990, // -10 from max
+  'gpt-4o': 127990, // -10 from max
   'gpt-4-turbo': 127990, // -10 from max
   'gpt-4-vision': 127990, // -10 from max
   'gpt-3.5-turbo': 16375, // -10 from max
@@ -74,18 +74,15 @@ const cohereModels = {
 };
 
 const googleModels = {
-  /* Max I/O is combined so we subtract the amount from max response tokens for actual total */
-  gemini: 30720, // -2048 from max
-  'gemini-pro-vision': 12288, // -4096 from max
-  'gemini-1.5': 1048576, // -8192 from max
-  'text-bison-32k': 32758, // -10 from max
-  'chat-bison-32k': 32758, // -10 from max
-  'code-bison-32k': 32758, // -10 from max
+  gemini: 30720,
+  'gemini-pro-vision': 12288,
+  'gemini-1.5': 1048576,
+  'text-bison-32k': 32758,
+  'chat-bison-32k': 32758,
+  'code-bison-32k': 32758,
   'codechat-bison-32k': 32758,
-  /* Codey, -5 from max: 6144 */
   'code-': 6139,
   'codechat-': 6139,
-  /* PaLM2, -5 from max: 8192 */
   'text-': 8187,
   'chat-': 8187,
 };
@@ -102,7 +99,6 @@ const anthropicModels = {
 
 const aggregateModels = { ...openAIModels, ...googleModels, ...anthropicModels, ...cohereModels };
 
-// Order is important here: by model series and context size (gpt-4 then gpt-3, ascending)
 const maxTokensMap = {
   [EModelEndpoint.azureOpenAI]: openAIModels,
   [EModelEndpoint.openAI]: aggregateModels,
@@ -110,6 +106,47 @@ const maxTokensMap = {
   [EModelEndpoint.google]: googleModels,
   [EModelEndpoint.anthropic]: anthropicModels,
 };
+
+// New: Ordered array of model patterns
+const modelPatterns = [
+  'gpt-4o-mini',
+  'gpt-4o',
+  'gpt-4-32k',
+  'gpt-4-1106',
+  'gpt-4-0125',
+  'gpt-4-turbo',
+  'gpt-4-vision',
+  'gpt-4',
+  'gpt-3.5-turbo-16k',
+  'gpt-3.5-turbo-1106',
+  'gpt-3.5-turbo-0125',
+  'gpt-3.5-turbo',
+  'mistral-',
+  'llama3',
+  'llama-3',
+  'command-light',
+  'command-r-plus',
+  'command-r',
+  'command',
+  'gemini-pro-vision',
+  'gemini-1.5',
+  'gemini',
+  'text-bison-32k',
+  'chat-bison-32k',
+  'code-bison-32k',
+  'codechat-bison-32k',
+  'code-',
+  'codechat-',
+  'text-',
+  'chat-',
+  'claude-3-opus',
+  'claude-3-sonnet',
+  'claude-3-haiku',
+  'claude-3-5-sonnet',
+  'claude-2.1',
+  'claude-2',
+  'claude-',
+];
 
 /**
  * Retrieves the maximum tokens for a given model name. If the exact model name isn't found,
@@ -144,10 +181,10 @@ function getModelMaxTokens(modelName, endpoint = EModelEndpoint.openAI, endpoint
     return tokensMap[modelName];
   }
 
-  const keys = Object.keys(tokensMap);
-  for (let i = keys.length - 1; i >= 0; i--) {
-    if (modelName.includes(keys[i])) {
-      const result = tokensMap[keys[i]];
+  // Use the new modelPatterns array for consistent ordering
+  for (const pattern of modelPatterns) {
+    if (modelName.includes(pattern)) {
+      const result = tokensMap[pattern];
       return result?.context ?? result;
     }
   }
@@ -182,11 +219,9 @@ function matchModelName(modelName, endpoint = EModelEndpoint.openAI) {
     return modelName;
   }
 
-  const keys = Object.keys(tokensMap);
-  for (let i = keys.length - 1; i >= 0; i--) {
-    const modelKey = keys[i];
-    if (modelName.includes(modelKey)) {
-      return modelKey;
+  for (const pattern of modelPatterns) {
+    if (modelName.includes(pattern)) {
+      return pattern;
     }
   }
 
@@ -250,4 +285,5 @@ module.exports = {
   getModelMaxTokens,
   matchModelName,
   processModelData,
+  modelPatterns,
 };
