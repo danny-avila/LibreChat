@@ -22,7 +22,7 @@ export default {
   com_assistants_capabilities: 'Capabilities',
   com_assistants_file_search: 'File Search',
   com_assistants_file_search_info:
-    'File search enables the assistant with knowledge from files that you or your users upload. Once a file is uploaded, the assistant automatically decides when to retrieve content based on user requests.',
+    'File search enables the assistant with knowledge from files that you or your users upload. Once a file is uploaded, the assistant automatically decides when to retrieve content based on user requests. Attaching vector stores for File Search is not yet supported. You can attach them from the Provider Playground or attach files to messages for file search on a thread basis.',
   com_assistants_code_interpreter_info:
     'Code Interpreter enables the assistant to write and run code. This tool can process files with diverse data and formatting, and generate files such as graphs.',
   com_assistants_knowledge: 'Knowledge',
