@@ -30,6 +30,7 @@ services:
         target: /app/librechat.yaml
       - ./images:/app/client/public/images
       - ./logs:/app/api/logs
+      - ./librechat.yaml:/app/api/librechat.yaml
   client:
     build:
       context: .
