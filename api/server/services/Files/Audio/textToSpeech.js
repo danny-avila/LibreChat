@@ -442,7 +442,7 @@ async function streamAudio(req, res) {
             break;
           }
         } catch (innerError) {
-          logger.error('Error processing update:', update, innerError);
+          logger.error('Error processing audio stream update:', update, innerError);
           if (!res.headersSent) {
             res.status(500).end();
           }
