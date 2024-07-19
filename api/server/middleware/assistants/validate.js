@@ -1,6 +1,5 @@
 const { v4 } = require('uuid');
 const { handleAbortError } = require('~/server/middleware/abortMiddleware');
-const { logger } = require('~/config');
 
 /**
  * Checks if the assistant is supported or excluded
@@ -20,24 +19,7 @@ const validateAssistant = async (req, res, next) => {
   }
 
   const { supportedIds, excludedIds } = assistantsConfig;
-  const message = 'Assistant not supported';
-  const error = { message };
-
-  logger.warn(`validateAssistant:
-
-${JSON.stringify(
-    {
-      message,
-      userId: req.user.id,
-      conversationId,
-      assistant_id,
-      supportedIds,
-      excludedIds,
-    },
-    null,
-    2,
-  )}
-`);
+  const error = { message: 'validateAssistant: Assistant not supported' };
 
   if (supportedIds?.length && !supportedIds.includes(assistant_id)) {
     return await handleAbortError(res, req, error, {
