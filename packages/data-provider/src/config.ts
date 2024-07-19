@@ -12,6 +12,8 @@ export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'd
 export const defaultRetrievalModels = [
   'gpt-4o',
   'gpt-4o-2024-05-13',
+  'gpt-4o-mini',
+  'gpt-4o-mini-2024-07-18',
   'gpt-4-turbo-preview',
   'gpt-3.5-turbo-0125',
   'gpt-4-0125-preview',
@@ -530,7 +532,7 @@ const sharedOpenAIModels = [
 
 export const defaultModels = {
   [EModelEndpoint.azureAssistants]: sharedOpenAIModels,
-  [EModelEndpoint.assistants]: ['gpt-4o', ...sharedOpenAIModels],
+  [EModelEndpoint.assistants]: ['gpt-4o-mini', 'gpt-4o', ...sharedOpenAIModels],
   [EModelEndpoint.google]: [
     'gemini-pro',
     'gemini-pro-vision',
@@ -559,13 +561,12 @@ export const defaultModels = {
     'claude-instant-1-100k',
   ],
   [EModelEndpoint.openAI]: [
+    'gpt-4o-mini',
     'gpt-4o',
     ...sharedOpenAIModels,
     'gpt-4-vision-preview',
     'gpt-3.5-turbo-instruct-0914',
-    'gpt-3.5-turbo-0301',
     'gpt-3.5-turbo-instruct',
-    'text-davinci-003',
   ],
 };
 
@@ -621,6 +622,7 @@ export const supportsBalanceCheck = {
 
 export const visionModels = [
   'gpt-4o',
+  'gpt-4o-mini',
   'gpt-4-turbo',
   'gpt-4-vision',
   'llava',
