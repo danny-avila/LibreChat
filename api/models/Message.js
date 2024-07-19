@@ -108,6 +108,9 @@ ${JSON.stringify(params, null, 2)}
     return message.toObject();
   } catch (err) {
     logger.error('Error saving message:', err);
+    if (metadata && metadata?.context) {
+      logger.info(`\`saveMessage\` context: ${metadata.context}`);
+    }
     throw err;
   }
 }
@@ -178,7 +181,7 @@ async function recordMessage({
       new: true,
     });
   } catch (err) {
-    logger.error('Error saving message:', err);
+    logger.error('Error recording message:', err);
     throw err;
   }
 }
@@ -217,10 +220,12 @@ async function updateMessageText(req, { messageId, text }) {
  * @param {boolean} [message.isCreatedByUser] - Indicates if the message was created by the user.
  * @param {string} [message.sender] - The identifier of the sender.
  * @param {number} [message.tokenCount] - The number of tokens in the message.
+ * @param {Object} [metadata] - The operation metadata
+ * @param {string} [metadata.context] - The operation metadata
  * @returns {Promise<TMessage>} The updated message document.
  * @throws {Error} If there is an error in updating the message or if the message is not found.
  */
-async function updateMessage(req, message) {
+async function updateMessage(req, message, metadata) {
   try {
     const { messageId, ...update } = message;
     update.isEdited = true;
@@ -248,6 +253,9 @@ async function updateMessage(req, message) {
     };
   } catch (err) {
     logger.error('Error updating message:', err);
+    if (metadata && metadata?.context) {
+      logger.info(`\`updateMessage\` context: ${metadata.context}`);
+    }
     throw err;
   }
 }
