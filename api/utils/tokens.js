@@ -1,45 +1,6 @@
 const z = require('zod');
 const { EModelEndpoint } = require('librechat-data-provider');
 
-const models = [
-  'text-davinci-003',
-  'text-davinci-002',
-  'text-davinci-001',
-  'text-curie-001',
-  'text-babbage-001',
-  'text-ada-001',
-  'davinci',
-  'curie',
-  'babbage',
-  'ada',
-  'code-davinci-002',
-  'code-davinci-001',
-  'code-cushman-002',
-  'code-cushman-001',
-  'davinci-codex',
-  'cushman-codex',
-  'text-davinci-edit-001',
-  'code-davinci-edit-001',
-  'text-embedding-ada-002',
-  'text-similarity-davinci-001',
-  'text-similarity-curie-001',
-  'text-similarity-babbage-001',
-  'text-similarity-ada-001',
-  'text-search-davinci-doc-001',
-  'text-search-curie-doc-001',
-  'text-search-babbage-doc-001',
-  'text-search-ada-doc-001',
-  'code-search-babbage-code-001',
-  'code-search-ada-code-001',
-  'gpt2',
-  'gpt-4',
-  'gpt-4-0314',
-  'gpt-4-32k',
-  'gpt-4-32k-0314',
-  'gpt-3.5-turbo',
-  'gpt-3.5-turbo-0301',
-];
-
 const openAIModels = {
   'gpt-4': 8187, // -5 from max
   'gpt-4-0613': 8187, // -5 from max
@@ -148,6 +109,15 @@ const modelPatterns = [
   'claude-',
 ];
 
+function findMatchingPattern(modelName, patterns) {
+  for (const pattern of patterns) {
+    if (modelName.includes(pattern)) {
+      return pattern;
+    }
+  }
+  return null;
+}
+
 /**
  * Retrieves the maximum tokens for a given model name. If the exact model name isn't found,
  * it searches for partial matches within the model name, checking keys in reverse order.
@@ -181,12 +151,13 @@ function getModelMaxTokens(modelName, endpoint = EModelEndpoint.openAI, endpoint
     return tokensMap[modelName];
   }
 
-  // Use the new modelPatterns array for consistent ordering
-  for (const pattern of modelPatterns) {
-    if (modelName.includes(pattern)) {
-      const result = tokensMap[pattern];
-      return result?.context ?? result;
-    }
+  /* Note, order of keys from Object.keys() can't be guaranteed */
+  const patternsToUse = endpointTokenConfig ? Object.keys(tokensMap) : modelPatterns;
+  const matchedPattern = findMatchingPattern(modelName, patternsToUse);
+
+  if (matchedPattern) {
+    const result = tokensMap[matchedPattern];
+    return result?.context ?? result;
   }
 
   return undefined;
@@ -219,13 +190,8 @@ function matchModelName(modelName, endpoint = EModelEndpoint.openAI) {
     return modelName;
   }
 
-  for (const pattern of modelPatterns) {
-    if (modelName.includes(pattern)) {
-      return pattern;
-    }
-  }
-
-  return modelName;
+  const matchedPattern = findMatchingPattern(modelName, modelPatterns);
+  return matchedPattern || modelName;
 }
 
 const modelSchema = z.object({
@@ -277,8 +243,47 @@ function processModelData(input) {
   return tokenConfig;
 }
 
+const tiktokenModels = new Set([
+  'text-davinci-003',
+  'text-davinci-002',
+  'text-davinci-001',
+  'text-curie-001',
+  'text-babbage-001',
+  'text-ada-001',
+  'davinci',
+  'curie',
+  'babbage',
+  'ada',
+  'code-davinci-002',
+  'code-davinci-001',
+  'code-cushman-002',
+  'code-cushman-001',
+  'davinci-codex',
+  'cushman-codex',
+  'text-davinci-edit-001',
+  'code-davinci-edit-001',
+  'text-embedding-ada-002',
+  'text-similarity-davinci-001',
+  'text-similarity-curie-001',
+  'text-similarity-babbage-001',
+  'text-similarity-ada-001',
+  'text-search-davinci-doc-001',
+  'text-search-curie-doc-001',
+  'text-search-babbage-doc-001',
+  'text-search-ada-doc-001',
+  'code-search-babbage-code-001',
+  'code-search-ada-code-001',
+  'gpt2',
+  'gpt-4',
+  'gpt-4-0314',
+  'gpt-4-32k',
+  'gpt-4-32k-0314',
+  'gpt-3.5-turbo',
+  'gpt-3.5-turbo-0301',
+]);
+
 module.exports = {
-  tiktokenModels: new Set(models),
+  tiktokenModels,
   maxTokensMap,
   inputSchema,
   modelSchema,
