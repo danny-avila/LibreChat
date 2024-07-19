@@ -30,6 +30,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
     maxContextTokens,
     resendFiles,
   } = conversation ?? {};
+  const isClaude35Sonnet = model === 'claude-3-5-sonnet-20240620';
   const [setMaxContextTokens, maxContextTokensValue] = useDebouncedInput<number | null | undefined>(
     {
       setOption,
@@ -259,7 +260,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               <Label htmlFor="max-tokens-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_max_output_tokens')}{' '}
                 <small className="opacity-40">
-                  ({localize('com_endpoint_default_with_num', '4000')})
+                  ({localize('com_endpoint_default_with_num', isClaude35Sonnet ? '8192' : '4000')})
                 </small>
               </Label>
               <InputNumber
@@ -267,7 +268,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                 disabled={readonly}
                 value={maxOutputTokens}
                 onChange={(value) => setMaxOutputTokens(Number(value))}
-                max={4000}
+                max={isClaude35Sonnet ? 8192 : 4000}
                 min={1}
                 step={1}
                 controls={false}
@@ -282,10 +283,10 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             </div>
             <Slider
               disabled={readonly}
-              value={[maxOutputTokens ?? 4000]}
+              value={[maxOutputTokens ?? (isClaude35Sonnet ? 8192 : 4000)]}
               onValueChange={(value) => setMaxOutputTokens(value[0])}
-              doubleClickHandler={() => setMaxOutputTokens(0)}
-              max={4000}
+              doubleClickHandler={() => setMaxOutputTokens(isClaude35Sonnet ? 8192 : 4000)}
+              max={isClaude35Sonnet ? 8192 : 4000}
               min={1}
               step={1}
               className="flex h-4 w-full"

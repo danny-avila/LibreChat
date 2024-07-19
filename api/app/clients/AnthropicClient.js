@@ -72,6 +72,7 @@ class AnthropicClient extends BaseClient {
     };
 
     this.isClaude3 = this.modelOptions.model.includes('claude-3');
+    this.isClaude35Sonnet = this.modelOptions.model === 'claude-3-5-sonnet-20240620';
     this.useMessages = this.isClaude3 || !!this.options.attachments;
 
     this.defaultVisionModel = this.options.visionModel ?? 'claude-3-sonnet-20240229';
@@ -81,7 +82,9 @@ class AnthropicClient extends BaseClient {
       this.options.maxContextTokens ??
       getModelMaxTokens(this.modelOptions.model, EModelEndpoint.anthropic) ??
       100000;
-    this.maxResponseTokens = this.modelOptions.maxOutputTokens || 1500;
+    this.maxResponseTokens = this.isClaude35Sonnet
+      ? Math.min(this.modelOptions.maxOutputTokens || 8192, 8192)
+      : this.modelOptions.maxOutputTokens || 1500;
     this.maxPromptTokens =
       this.options.maxPromptTokens || this.maxContextTokens - this.maxResponseTokens;
 
@@ -136,6 +139,11 @@ class AnthropicClient extends BaseClient {
 
     if (this.options.reverseProxyUrl) {
       options.baseURL = this.options.reverseProxyUrl;
+    }
+    if (this.isClaude35Sonnet) {
+      options.defaultHeaders = {
+        'anthropic-beta': 'max-tokens-3-5-sonnet-2024-07-15',
+      };
     }
 
     return new Anthropic(options);
@@ -587,10 +595,14 @@ class AnthropicClient extends BaseClient {
 
     if (this.useMessages) {
       requestOptions.messages = payload;
-      requestOptions.max_tokens = maxOutputTokens || 1500;
+      requestOptions.max_tokens = this.isClaude35Sonnet
+        ? Math.min(maxOutputTokens || 8192, 8192)
+        : maxOutputTokens || 1500;
     } else {
       requestOptions.prompt = payload;
-      requestOptions.max_tokens_to_sample = maxOutputTokens || 1500;
+      requestOptions.max_tokens = this.isClaude35Sonnet
+        ? Math.min(maxOutputTokens || 8192, 8192)
+        : maxOutputTokens || 1500;
     }
 
     if (this.systemMessage) {
