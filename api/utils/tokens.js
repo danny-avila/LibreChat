@@ -71,6 +71,12 @@ const maxTokensMap = {
   [EModelEndpoint.anthropic]: anthropicModels,
 };
 
+/**
+ * Finds the first matching pattern in the tokens map.
+ * @param {string} modelName
+ * @param {Record<string, number>} tokensMap
+ * @returns {string|null}
+ */
 function findMatchingPattern(modelName, tokensMap) {
   const keys = Object.keys(tokensMap);
   for (let i = keys.length - 1; i >= 0; i--) {
