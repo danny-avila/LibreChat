@@ -1,4 +1,3 @@
-import * as Popover from '@radix-ui/react-popover';
 import type { Assistant, AssistantCreateParams, AssistantsEndpoint } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import { Dialog, DialogTrigger, Label } from '~/components/ui';
@@ -7,7 +6,7 @@ import { useDeleteAssistantMutation } from '~/data-provider';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { useLocalize, useSetIndexOptions } from '~/hooks';
 import { cn, removeFocusOutlines } from '~/utils/';
-import { NewTrashIcon } from '~/components/svg';
+import { TrashIcon } from '~/components/svg';
 
 export default function ContextButton({
   activeModel,
@@ -87,7 +86,7 @@ export default function ContextButton({
           type="button"
         >
           <div className="flex w-full items-center justify-center gap-2 text-red-500">
-            <NewTrashIcon />
+            <TrashIcon />
           </div>
         </button>
       </DialogTrigger>

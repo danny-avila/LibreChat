@@ -267,6 +267,10 @@ export default {
   com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete_conversation: 'Delete chat?',
   com_ui_delete_confirm: 'This will delete',
+  com_ui_delete_tool: 'Delete Tool',
+  com_ui_delete_tool_confirm: 'Are you sure you want to delete this tool?',
+  com_ui_delete_action: 'Delete Action',
+  com_ui_delete_action_confirm: 'Are you sure you want to delete this action?',
   com_ui_delete_confirm_prompt_version_var:
     'This will delete the selected version for "{0}." If no other versions exist, the prompt will be deleted.',
   com_ui_delete_assistant_confirm:

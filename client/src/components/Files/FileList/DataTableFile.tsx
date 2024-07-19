@@ -32,7 +32,7 @@ import {
   DropdownMenuTrigger,
 } from '~/components/ui';
 import { useDeleteFilesFromTable } from '~/hooks/Files';
-import { NewTrashIcon, Spinner } from '~/components/svg';
+import { TrashIcon, Spinner } from '~/components/svg';
 import useLocalize from '~/hooks/useLocalize';
 import ActionButton from '../ActionButton';
 import UploadFileButton from './UploadFileButton';
@@ -112,7 +112,7 @@ export default function DataTableFile<TData, TValue>({
               {isDeleting ? (
                 <Spinner className="h-4 w-4" />
               ) : (
-                <NewTrashIcon className="h-4 w-4 text-red-400" />
+                <TrashIcon className="h-4 w-4 text-red-400" />
               )}
               {localize('com_ui_delete')}
             </Button>
