@@ -540,6 +540,9 @@ class BaseClient {
       const completionTokens = this.getTokenCount(completion);
       await this.recordTokenUsage({ promptTokens, completionTokens });
     }
+    if (this.userMessagePromise) {
+      await this.userMessagePromise;
+    }
     this.responsePromise = this.saveMessageToDatabase(responseMessage, saveOptions, user);
     const messageCache = getLogStores(CacheKeys.MESSAGES);
     messageCache.set(
@@ -620,18 +623,23 @@ class BaseClient {
         unfinished: false,
         user,
       },
-      { context: 'api/app/clients/BaseClient.js - saveMessageToDatabase' },
+      { context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveMessage' },
     );
 
     if (this.skipSaveConvo) {
       return { message: savedMessage };
     }
-    const conversation = await saveConvo(user, {
-      conversationId: message.conversationId,
-      endpoint: this.options.endpoint,
-      endpointType: this.options.endpointType,
-      ...endpointOptions,
-    });
+
+    const conversation = await saveConvo(
+      this.options.req,
+      {
+        conversationId: message.conversationId,
+        endpoint: this.options.endpoint,
+        endpointType: this.options.endpointType,
+        ...endpointOptions,
+      },
+      { context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveConvo' },
+    );
 
     return { message: savedMessage, conversation };
   }

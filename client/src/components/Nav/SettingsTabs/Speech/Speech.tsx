@@ -1,12 +1,9 @@
+import { useRecoilState } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
+import { Lightbulb, Cog } from 'lucide-react';
 import { SettingsTabValues } from 'librechat-data-provider';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { useRecoilState } from 'recoil';
-import { Lightbulb, Cog } from 'lucide-react';
-import { useOnClickOutside, useMediaQuery } from '~/hooks';
-import store from '~/store';
-import { cn } from '~/utils';
-import ConversationModeSwitch from './ConversationModeSwitch';
+import { useGetCustomConfigSpeechQuery } from 'librechat-data-provider/react-query';
 import {
   CloudBrowserVoicesSwitch,
   AutomaticPlaybackSwitch,
@@ -24,7 +21,10 @@ import {
   EngineSTTDropdown,
   DecibelSelector,
 } from './STT';
-import { useGetCustomConfigSpeechQuery } from 'librechat-data-provider/react-query';
+import ConversationModeSwitch from './ConversationModeSwitch';
+import { useOnClickOutside, useMediaQuery } from '~/hooks';
+import { cn, logger } from '~/utils';
+import store from '~/store';
 
 function Speech() {
   const [confirmClear, setConfirmClear] = useState(false);
@@ -131,8 +131,7 @@ function Speech() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
-  console.log(sttExternal);
-  console.log(ttsExternal);
+  logger.log({ sttExternal, ttsExternal });
 
   const contentRef = useRef(null);
   useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);

@@ -1,8 +1,9 @@
 import { useRecoilValue } from 'recoil';
+import { Constants } from 'librechat-data-provider';
 import { useEffect, useRef, useCallback, useMemo, useState } from 'react';
 import type { TMessage } from 'librechat-data-provider';
 import { useChatContext, useAddedChatContext } from '~/Providers';
-import { getLatestText, getLengthAndFirstFiveChars } from '~/utils';
+import { getTextKey, logger } from '~/utils';
 import store from '~/store';
 
 export default function useMessageProcess({ message }: { message?: TMessage | null }) {
@@ -26,7 +27,8 @@ export default function useMessageProcess({ message }: { message?: TMessage | nu
   );
 
   useEffect(() => {
-    if (conversation?.conversationId === 'new') {
+    const convoId = conversation?.conversationId;
+    if (convoId === Constants.NEW_CONVO) {
       return;
     }
     if (!message) {
@@ -36,15 +38,27 @@ export default function useMessageProcess({ message }: { message?: TMessage | nu
       return;
     }
 
-    const text = getLatestText(message);
-    const textKey = `${message?.messageId ?? ''}${getLengthAndFirstFiveChars(text)}`;
+    const textKey = getTextKey(message, convoId);
 
-    if (textKey === latestText.current) {
-      return;
+    // Check for text/conversation change
+    const logInfo = {
+      textKey,
+      'latestText.current': latestText.current,
+      messageId: message?.messageId,
+      convoId,
+    };
+    if (
+      textKey !== latestText.current ||
+      (convoId &&
+        latestText.current &&
+        convoId !== latestText.current.split(Constants.COMMON_DIVIDER)[2])
+    ) {
+      logger.log('[useMessageProcess] Setting latest message: ', logInfo);
+      latestText.current = textKey;
+      setLatestMessage({ ...message });
+    } else {
+      logger.log('No change in latest message', logInfo);
     }
-
-    latestText.current = textKey;
-    setLatestMessage({ ...message });
   }, [hasNoChildren, message, setLatestMessage, conversation?.conversationId]);
 
   const handleScroll = useCallback(() => {
