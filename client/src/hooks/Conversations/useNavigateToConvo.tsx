@@ -1,7 +1,7 @@
 import { useSetRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
+import { QueryKeys, EModelEndpoint, LocalStorageKeys, Constants } from 'librechat-data-provider';
 import type { TConversation, TEndpointsConfig, TModelsConfig } from 'librechat-data-provider';
 import { buildDefaultConvo, getDefaultEndpoint, getEndpointField } from '~/utils';
 import store from '~/store';
@@ -10,7 +10,7 @@ const useNavigateToConvo = (index = 0) => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const clearAllConversations = store.useClearConvoState();
-  const clearAllLatestMessages = store.useClearLatestMessages();
+  const clearAllLatestMessages = store.useClearLatestMessages(`useNavigateToConvo ${index}`);
   const setSubmission = useSetRecoilState(store.submissionByIndex(index));
   const { setConversation } = store.useCreateConversationAtom(index);
 
@@ -50,10 +50,10 @@ const useNavigateToConvo = (index = 0) => {
     }
     clearAllConversations(true);
     setConversation(convo);
-    navigate(`/c/${convo.conversationId ?? 'new'}`);
+    navigate(`/c/${convo.conversationId ?? Constants.NEW_CONVO}`);
   };
 
-  const navigateWithLastTools = (conversation: TConversation) => {
+  const navigateWithLastTools = (conversation: TConversation, _resetLatestMessage?: boolean) => {
     // set conversation to the new conversation
     if (conversation?.endpoint === EModelEndpoint.gptPlugins) {
       let lastSelectedTools = [];
@@ -63,12 +63,15 @@ const useNavigateToConvo = (index = 0) => {
       } catch (e) {
         // console.error(e);
       }
-      navigateToConvo({
-        ...conversation,
-        tools: conversation?.tools?.length ? conversation?.tools : lastSelectedTools,
-      });
+      navigateToConvo(
+        {
+          ...conversation,
+          tools: conversation?.tools?.length ? conversation?.tools : lastSelectedTools,
+        },
+        _resetLatestMessage,
+      );
     } else {
-      navigateToConvo(conversation);
+      navigateToConvo(conversation, _resetLatestMessage);
     }
   };
 

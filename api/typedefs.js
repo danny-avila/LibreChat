@@ -466,6 +466,12 @@
  */
 
 /**
+ * @exports TBaseEndpoint
+ * @typedef {import('librechat-data-provider').TBaseEndpoint} TBaseEndpoint
+ * @memberof typedefs
+ */
+
+/**
  * @exports TEndpoint
  * @typedef {import('librechat-data-provider').TEndpoint} TEndpoint
  * @memberof typedefs

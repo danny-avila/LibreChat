@@ -25,6 +25,7 @@ const localStorageAtoms = {
 
   // Messages settings
   enterToSend: atomWithLocalStorage('enterToSend', true),
+  chatDirection: atomWithLocalStorage('chatDirection', 'LTR'),
   showCode: atomWithLocalStorage('showCode', false),
   saveDrafts: atomWithLocalStorage('saveDrafts', false),
   forkSetting: atomWithLocalStorage('forkSetting', ''),
@@ -45,7 +46,7 @@ const localStorageAtoms = {
   languageSTT: atomWithLocalStorage('languageSTT', ''),
   autoTranscribeAudio: atomWithLocalStorage('autoTranscribeAudio', false),
   decibelValue: atomWithLocalStorage('decibelValue', -45),
-  autoSendText: atomWithLocalStorage('autoSendText', false),
+  autoSendText: atomWithLocalStorage('autoSendText', -1),
 
   textToSpeech: atomWithLocalStorage('textToSpeech', true),
   engineTTS: atomWithLocalStorage('engineTTS', 'browser'),
