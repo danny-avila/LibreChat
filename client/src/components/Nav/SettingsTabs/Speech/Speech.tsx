@@ -75,12 +75,17 @@ function Speech() {
         playbackRate: { value: playbackRate, setFunc: setPlaybackRate },
       };
 
-      if (settings[key].value !== newValue || settings[key].value === newValue || !settings[key]) {
+      if (
+        (settings[key].value !== newValue || settings[key].value === newValue || !settings[key]) &&
+        settings[key].value !== 'sttExternal' &&
+        settings[key].value !== 'ttsExternal'
+      ) {
         return;
       }
 
       const setting = settings[key];
       setting.setFunc(newValue);
+      console.log(`Setting ${key} to ${newValue}`);
     },
     [
       sttExternal,
