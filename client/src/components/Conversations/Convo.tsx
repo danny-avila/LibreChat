@@ -1,6 +1,7 @@
 import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { useState, useRef, useMemo } from 'react';
+import { Constants } from 'librechat-data-provider';
 import { useGetEndpointsQuery, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
 import { useUpdateConversationMutation } from '~/data-provider';
@@ -9,14 +10,14 @@ import { useConversations, useNavigateToConvo } from '~/hooks';
 import { NotificationSeverity } from '~/common';
 import { ArchiveIcon } from '~/components/svg';
 import { useToastContext } from '~/Providers';
-import DropDownMenu from './DropDownMenu';
 import ArchiveButton from './ArchiveButton';
+import DropDownMenu from './DropDownMenu';
 import DeleteButton from './DeleteButton';
 import RenameButton from './RenameButton';
 import HoverToggle from './HoverToggle';
+import ShareButton from './ShareButton';
 import { cn } from '~/utils';
 import store from '~/store';
-import ShareButton from './ShareButton';
 
 type KeyEvent = KeyboardEvent<HTMLInputElement>;
 
@@ -51,7 +52,8 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
 
     // set document title
     document.title = title;
-    navigateWithLastTools(conversation);
+    /* Note: Latest Message should not be reset if existing convo */
+    navigateWithLastTools(conversation, !conversationId || conversationId === Constants.NEW_CONVO);
   };
 
   const renameHandler = (e: MouseEvent<HTMLButtonElement>) => {
