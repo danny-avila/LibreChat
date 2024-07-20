@@ -1,5 +1,5 @@
-import React from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
+import { anthropicSettings } from 'librechat-data-provider';
 import type { TModelSelectProps, OnInputNumberChange } from '~/common';
 import {
   Input,
@@ -41,14 +41,30 @@ export default function Settings({ conversation, setOption, models, readonly }: 
     return null;
   }
 
-  const setModel = setOption('model');
   const setModelLabel = setOption('modelLabel');
   const setPromptPrefix = setOption('promptPrefix');
   const setTemperature = setOption('temperature');
   const setTopP = setOption('topP');
   const setTopK = setOption('topK');
-  const setMaxOutputTokens = setOption('maxOutputTokens');
   const setResendFiles = setOption('resendFiles');
+
+  const setModel = (newModel: string) => {
+    const modelSetter = setOption('model');
+    const maxOutputSetter = setOption('maxOutputTokens');
+    if (maxOutputTokens) {
+      maxOutputSetter(anthropicSettings.maxOutputTokens.set(maxOutputTokens, newModel));
+    }
+    modelSetter(newModel);
+  };
+
+  const setMaxOutputTokens = (value: number) => {
+    const setter = setOption('maxOutputTokens');
+    if (model) {
+      setter(anthropicSettings.maxOutputTokens.set(value, model));
+    } else {
+      setter(value);
+    }
+  };
 
   return (
     <div className="grid grid-cols-5 gap-6">
@@ -139,14 +155,16 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             <div className="flex justify-between">
               <Label htmlFor="temp-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_temperature')}{' '}
-                <small className="opacity-40">({localize('com_endpoint_default')}: 1)</small>
+                <small className="opacity-40">
+                  ({localize('com_endpoint_default')}: {anthropicSettings.temperature.default})
+                </small>
               </Label>
               <InputNumber
                 id="temp-int"
                 disabled={readonly}
                 value={temperature}
                 onChange={(value) => setTemperature(Number(value))}
-                max={1}
+                max={anthropicSettings.temperature.max}
                 min={0}
                 step={0.01}
                 controls={false}
@@ -161,10 +179,10 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             </div>
             <Slider
               disabled={readonly}
-              value={[temperature ?? 1]}
+              value={[temperature ?? anthropicSettings.temperature.default]}
               onValueChange={(value) => setTemperature(value[0])}
-              doubleClickHandler={() => setTemperature(1)}
-              max={1}
+              doubleClickHandler={() => setTemperature(anthropicSettings.temperature.default)}
+              max={anthropicSettings.temperature.max}
               min={0}
               step={0.01}
               className="flex h-4 w-full"
@@ -178,7 +196,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               <Label htmlFor="top-p-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_top_p')}{' '}
                 <small className="opacity-40">
-                  ({localize('com_endpoint_default_with_num', '0.7')})
+                  ({localize('com_endpoint_default_with_num', anthropicSettings.topP.default + '')})
                 </small>
               </Label>
               <InputNumber
@@ -186,7 +204,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                 disabled={readonly}
                 value={topP}
                 onChange={(value) => setTopP(Number(value))}
-                max={1}
+                max={anthropicSettings.topP.max}
                 min={0}
                 step={0.01}
                 controls={false}
@@ -203,8 +221,8 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               disabled={readonly}
               value={[topP ?? 0.7]}
               onValueChange={(value) => setTopP(value[0])}
-              doubleClickHandler={() => setTopP(1)}
-              max={1}
+              doubleClickHandler={() => setTopP(anthropicSettings.topP.default)}
+              max={anthropicSettings.topP.max}
               min={0}
               step={0.01}
               className="flex h-4 w-full"
@@ -219,7 +237,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               <Label htmlFor="top-k-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_top_k')}{' '}
                 <small className="opacity-40">
-                  ({localize('com_endpoint_default_with_num', '5')})
+                  ({localize('com_endpoint_default_with_num', anthropicSettings.topK.default + '')})
                 </small>
               </Label>
               <InputNumber
@@ -227,7 +245,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                 disabled={readonly}
                 value={topK}
                 onChange={(value) => setTopK(Number(value))}
-                max={40}
+                max={anthropicSettings.topK.max}
                 min={1}
                 step={0.01}
                 controls={false}
@@ -244,8 +262,8 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               disabled={readonly}
               value={[topK ?? 5]}
               onValueChange={(value) => setTopK(value[0])}
-              doubleClickHandler={() => setTopK(0)}
-              max={40}
+              doubleClickHandler={() => setTopK(anthropicSettings.topK.default)}
+              max={anthropicSettings.topK.max}
               min={1}
               step={0.01}
               className="flex h-4 w-full"
@@ -258,16 +276,14 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             <div className="flex justify-between">
               <Label htmlFor="max-tokens-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_max_output_tokens')}{' '}
-                <small className="opacity-40">
-                  ({localize('com_endpoint_default_with_num', '4000')})
-                </small>
+                <small className="opacity-40">({anthropicSettings.maxOutputTokens.default})</small>
               </Label>
               <InputNumber
                 id="max-tokens-int"
                 disabled={readonly}
                 value={maxOutputTokens}
                 onChange={(value) => setMaxOutputTokens(Number(value))}
-                max={4000}
+                max={anthropicSettings.maxOutputTokens.max}
                 min={1}
                 step={1}
                 controls={false}
@@ -282,10 +298,12 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             </div>
             <Slider
               disabled={readonly}
-              value={[maxOutputTokens ?? 4000]}
+              value={[maxOutputTokens ?? anthropicSettings.maxOutputTokens.default]}
               onValueChange={(value) => setMaxOutputTokens(value[0])}
-              doubleClickHandler={() => setMaxOutputTokens(0)}
-              max={4000}
+              doubleClickHandler={() =>
+                setMaxOutputTokens(anthropicSettings.maxOutputTokens.default)
+              }
+              max={anthropicSettings.maxOutputTokens.max}
               min={1}
               step={1}
               className="flex h-4 w-full"
