@@ -19,18 +19,32 @@ const getConvo = async (user, conversationId) => {
 
 module.exports = {
   Conversation,
-  saveConvo: async (user, { conversationId, newConversationId, ...convo }) => {
+  /**
+   * Saves a conversation to the database.
+   * @param {Object} req - The request object.
+   * @param {string} conversationId - The conversation's ID.
+   * @param {Object} metadata - Additional metadata to log for operation.
+   * @returns {Promise<TConversation>} The conversation object.
+   */
+  saveConvo: async (req, { conversationId, newConversationId, ...convo }, metadata) => {
     try {
+      if (metadata && metadata?.context) {
+        logger.info(`[saveConvo] ${metadata.context}`);
+      }
       const messages = await getMessages({ conversationId }, '_id');
-      const update = { ...convo, messages, user };
+      const update = { ...convo, messages, user: req.user.id };
       if (newConversationId) {
         update.conversationId = newConversationId;
       }
 
-      const conversation = await Conversation.findOneAndUpdate({ conversationId, user }, update, {
-        new: true,
-        upsert: true,
-      });
+      const conversation = await Conversation.findOneAndUpdate(
+        { conversationId, user: req.user.id },
+        update,
+        {
+          new: true,
+          upsert: true,
+        },
+      );
 
       return conversation.toObject();
     } catch (error) {
