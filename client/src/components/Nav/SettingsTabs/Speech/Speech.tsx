@@ -85,7 +85,6 @@ function Speech() {
 
       const setting = settings[key];
       setting.setFunc(newValue);
-      console.log(`Setting ${key} to ${newValue}`);
     },
     [
       sttExternal,
