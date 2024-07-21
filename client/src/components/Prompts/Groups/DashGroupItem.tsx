@@ -18,7 +18,7 @@ import CategoryIcon from '~/components/Prompts/Groups/CategoryIcon';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { RenameButton } from '~/components/Conversations';
 import { useLocalize, useAuthContext } from '~/hooks';
-import { NewTrashIcon } from '~/components/svg';
+import { TrashIcon } from '~/components/svg';
 import { cn } from '~/utils/';
 
 export default function DashGroupItem({
@@ -169,7 +169,7 @@ export default function DashGroupItem({
                               e.stopPropagation();
                             }}
                           >
-                            <NewTrashIcon className="icon-md text-gray-600 dark:text-gray-300" />
+                            <TrashIcon className="icon-md text-gray-600 dark:text-gray-300" />
                           </Button>
                         </DialogTrigger>
                         <DialogTemplate
