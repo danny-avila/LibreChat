@@ -1,15 +1,14 @@
 import { forwardRef, ReactNode, Ref } from 'react';
 import {
-  OGDialog,
+  OGDialogTitle,
   OGDialogClose,
-  OGDialogContent,
-  OGDialogDescription,
   OGDialogFooter,
   OGDialogHeader,
-  OGDialogTitle,
+  OGDialogContent,
+  OGDialogDescription,
 } from './';
-import { cn } from '~/utils/';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils/';
 
 type SelectionProps = {
   selectHandler?: () => void;
