@@ -26,6 +26,7 @@ type DialogTemplateProps = {
   selection?: SelectionProps;
   className?: string;
   headerClassName?: string;
+  mainClassName?: string;
   footerClassName?: string;
   showCloseButton?: boolean;
   showCancelButton?: boolean;
@@ -35,12 +36,13 @@ const OGDialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDi
   const localize = useLocalize();
   const {
     title,
-    description,
     main,
     buttons,
-    leftButtons,
     selection,
     className,
+    leftButtons,
+    description,
+    mainClassName,
     headerClassName,
     footerClassName,
     showCloseButton,
@@ -65,7 +67,7 @@ const OGDialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDi
         <OGDialogTitle>{title}</OGDialogTitle>
         {description && <OGDialogDescription className="">{description}</OGDialogDescription>}
       </OGDialogHeader>
-      <div className="px-6">{main ? main : null}</div>
+      <div className={cn('px-6', mainClassName)}>{main ? main : null}</div>
       <OGDialogFooter className={footerClassName}>
         <div>{leftButtons ? leftButtons : null}</div>
         <div className="flex h-auto gap-3">
