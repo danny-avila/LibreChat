@@ -63,12 +63,12 @@ async function saveMessage(req, params, metadata) {
 
     const validConvoId = idSchema.safeParse(conversationId);
     if (!validConvoId.success) {
+      logger.warn(`Invalid conversation ID: ${conversationId}`);
       if (metadata && metadata?.context) {
-        logger.info(`\`saveMessage\` context: ${metadata.context}`);
+        logger.info(`---\`saveMessage\` context: ${metadata.context}`);
       }
 
-      logger.warn(`Invalid conversation ID: ${conversationId}`);
-      logger.info(`Invalid conversation ID Params:
+      logger.info(`---Invalid conversation ID Params:
 
 ${JSON.stringify(params, null, 2)}
 
@@ -109,7 +109,7 @@ ${JSON.stringify(params, null, 2)}
   } catch (err) {
     logger.error('Error saving message:', err);
     if (metadata && metadata?.context) {
-      logger.info(`\`saveMessage\` context: ${metadata.context}`);
+      logger.info(`---\`saveMessage\` context: ${metadata.context}`);
     }
     throw err;
   }
@@ -254,7 +254,7 @@ async function updateMessage(req, message, metadata) {
   } catch (err) {
     logger.error('Error updating message:', err);
     if (metadata && metadata?.context) {
-      logger.info(`\`updateMessage\` context: ${metadata.context}`);
+      logger.info(`---\`updateMessage\` context: ${metadata.context}`);
     }
     throw err;
   }

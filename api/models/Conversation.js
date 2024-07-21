@@ -29,7 +29,7 @@ module.exports = {
   saveConvo: async (req, { conversationId, newConversationId, ...convo }, metadata) => {
     try {
       if (metadata && metadata?.context) {
-        logger.info(`[saveConvo] ${metadata.context}`);
+        logger.debug(`[saveConvo] ${metadata.context}`);
       }
       const messages = await getMessages({ conversationId }, '_id');
       const update = { ...convo, messages, user: req.user.id };
@@ -49,6 +49,9 @@ module.exports = {
       return conversation.toObject();
     } catch (error) {
       logger.error('[saveConvo] Error saving conversation', error);
+      if (metadata && metadata?.context) {
+        logger.info(`[saveConvo] ${metadata.context}`);
+      }
       return { message: 'Error saving conversation' };
     }
   },
