@@ -77,8 +77,8 @@ function Speech() {
 
       if (
         (settings[key].value !== newValue || settings[key].value === newValue || !settings[key]) &&
-        settings[key].value !== 'sttExternal' &&
-        settings[key].value !== 'ttsExternal'
+        settings[key].value === 'sttExternal' &&
+        settings[key].value === 'ttsExternal'
       ) {
         return;
       }
