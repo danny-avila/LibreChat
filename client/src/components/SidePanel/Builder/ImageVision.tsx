@@ -33,10 +33,7 @@ export default function ImageVision() {
           })
         }
       >
-        <div className="flex items-center">
-          {localize('com_assistants_image_vision')}
-          <QuestionMark />
-        </div>
+        <div className="flex items-center">{localize('com_assistants_image_vision')}</div>
       </label>
     </div>
   );
