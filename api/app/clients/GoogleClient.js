@@ -16,17 +16,16 @@ const {
   Constants,
   AuthKeys,
 } = require('librechat-data-provider');
+const {
+  truncateText,
+  formatMessage,
+  titleInstruction,
+  createContextHandlers,
+} = require('./prompts');
 const { encodeAndFormat } = require('~/server/services/Files/images');
 const { getModelMaxTokens } = require('~/utils');
-const { sleep } = require('~/server/utils');
-const { logger } = require('~/config');
-const {
-  formatMessage,
-  createContextHandlers,
-  titleInstruction,
-  truncateText,
-} = require('./prompts');
 const BaseClient = require('./BaseClient');
+const { logger } = require('~/config');
 
 const loc = 'us-central1';
 const publisher = 'google';
@@ -35,6 +34,22 @@ const endpointPrefix = `https://${loc}-aiplatform.googleapis.com`;
 const tokenizersCache = {};
 
 const settings = endpointSettings[EModelEndpoint.google];
+
+async function* decodeVertexStream(stream) {
+  const decoder = new TextDecoder('utf-8');
+  for await (const chunk of stream) {
+    if (typeof chunk === 'string') {
+      yield chunk;
+    } else if (chunk && typeof chunk.content === 'string') {
+      yield chunk.content;
+    } else if (chunk instanceof Uint8Array || chunk instanceof ArrayBuffer) {
+      yield decoder.decode(chunk, { stream: true });
+    } else {
+      console.warn('Unexpected chunk type:', typeof chunk);
+      yield '';
+    }
+  }
+}
 
 class GoogleClient extends BaseClient {
   constructor(credentials, options = {}) {
@@ -668,7 +683,7 @@ class GoogleClient extends BaseClient {
 
     const model = this.createLLM(clientOptions);
 
-    let reply = '';
+    let reply = [];
     const messages = this.isTextModel ? _payload.trim() : _messages;
 
     if (!this.isVisionModel && context && messages?.length > 0) {
@@ -696,21 +711,19 @@ class GoogleClient extends BaseClient {
       const safetySettings = _payload.safetySettings;
       requestOptions.safetySettings = safetySettings;
 
-      const delay = modelName.includes('flash') ? 8 : 14;
       const result = await client.generateContentStream(requestOptions);
       for await (const chunk of result.stream) {
         const chunkText = chunk.text();
         await this.generateTextStream(chunkText, onProgress, {
-          delay,
+          delay: streamRate,
         });
-        reply += chunkText;
-        await sleep(streamRate);
+        reply.push(chunkText);
       }
-      return reply;
+      return reply.join('');
     }
 
     const safetySettings = _payload.safetySettings;
-    const stream = await model.stream(messages, {
+    const _stream = await model.stream(messages, {
       signal: abortController.signal,
       timeout: 7000,
       safetySettings: safetySettings,
@@ -727,15 +740,15 @@ class GoogleClient extends BaseClient {
       }
     }
 
+    const stream = decodeVertexStream(_stream);
     for await (const chunk of stream) {
-      const chunkText = chunk?.content ?? chunk;
-      await this.generateTextStream(chunkText, onProgress, {
+      await this.generateTextStream(chunk, onProgress, {
         delay,
       });
-      reply += chunkText;
+      reply.push(chunk);
     }
 
-    return reply;
+    return reply.join('');
   }
 
   /**
@@ -770,7 +783,6 @@ class GoogleClient extends BaseClient {
 
     const model = this.createLLM(clientOptions);
 
-    let reply = '';
     const messages = this.isTextModel ? _payload.trim() : _messages;
 
     const modelName = clientOptions.modelName ?? clientOptions.model ?? '';
@@ -796,10 +808,7 @@ class GoogleClient extends BaseClient {
       requestOptions.safetySettings = safetySettings;
 
       const result = await client.generateContent(requestOptions);
-
-      reply = result.response?.text();
-
-      return reply;
+      return result.response?.text();
     } else {
       logger.debug('Beginning titling');
       const safetySettings = _payload.safetySettings;
@@ -810,9 +819,7 @@ class GoogleClient extends BaseClient {
         safetySettings: safetySettings,
       });
 
-      reply = titleResponse.content;
-
-      return reply;
+      return titleResponse.content;
     }
   }
 
@@ -898,8 +905,7 @@ class GoogleClient extends BaseClient {
       payload.safetySettings = safetySettings;
     }
 
-    let reply = '';
-    reply = await this.getCompletion(payload, opts);
+    const reply = await this.getCompletion(payload, opts);
     return reply.trim();
   }
 

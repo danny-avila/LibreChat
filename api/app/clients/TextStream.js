@@ -4,7 +4,9 @@ const { logger } = require('~/config');
 class TextStream extends Readable {
   constructor(text, options = {}) {
     super(options);
-    this.text = text;
+    this.encoder = new TextEncoder();
+    this.decoder = new TextDecoder('utf-8', { stream: true });
+    this.bytes = this.encoder.encode(text);
     this.currentIndex = 0;
     this.minChunkSize = options.minChunkSize ?? 2;
     this.maxChunkSize = options.maxChunkSize ?? 4;
@@ -14,12 +16,12 @@ class TextStream extends Readable {
   _read() {
     const { delay, minChunkSize, maxChunkSize } = this;
 
-    if (this.currentIndex < this.text.length) {
+    if (this.currentIndex < this.bytes.length) {
       setTimeout(() => {
-        const remainingChars = this.text.length - this.currentIndex;
-        const chunkSize = Math.min(this.randomInt(minChunkSize, maxChunkSize + 1), remainingChars);
+        const remainingBytes = this.bytes.length - this.currentIndex;
+        const chunkSize = Math.min(this.randomInt(minChunkSize, maxChunkSize + 1), remainingBytes);
 
-        const chunk = this.text.slice(this.currentIndex, this.currentIndex + chunkSize);
+        const chunk = this.bytes.slice(this.currentIndex, this.currentIndex + chunkSize);
         this.push(chunk);
         this.currentIndex += chunkSize;
       }, delay);
@@ -35,11 +37,15 @@ class TextStream extends Readable {
   async processTextStream(onProgressCallback) {
     const streamPromise = new Promise((resolve, reject) => {
       this.on('data', (chunk) => {
-        onProgressCallback(chunk.toString());
+        const decodedChunk = this.decoder.decode(chunk, { stream: true });
+        onProgressCallback(decodedChunk);
       });
 
       this.on('end', () => {
-        // logger.debug('[processTextStream] Stream ended');
+        const finalChunk = this.decoder.decode(); // Flush the decoder
+        if (finalChunk) {
+          onProgressCallback(finalChunk);
+        }
         resolve();
       });
 
@@ -52,7 +58,7 @@ class TextStream extends Readable {
       await streamPromise;
     } catch (err) {
       logger.error('[processTextStream] Error in text stream:', err);
-      // Handle the error appropriately, e.g., return an error message or throw an error
+      // Handle the error appropriately
     }
   }
 }
