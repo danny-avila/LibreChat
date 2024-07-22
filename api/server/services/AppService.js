@@ -106,6 +106,9 @@ const AppService = async (app) => {
   if (endpoints?.[EModelEndpoint.gptPlugins]) {
     endpointLocals[EModelEndpoint.gptPlugins] = endpoints[EModelEndpoint.gptPlugins];
   }
+  if (endpoints?.all) {
+    endpointLocals.all = endpoints.all;
+  }
 
   app.locals = {
     ...defaultLocals,
