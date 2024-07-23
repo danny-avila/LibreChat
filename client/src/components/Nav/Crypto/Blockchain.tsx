@@ -328,7 +328,7 @@ export const networkTokens: BlockchainNetwork[] = [
     type: 'Token',
     blockchain: CryptoId.ETH,
     id: CryptoId.CAKE,
-    label: 'Panecakeswap',
+    label: 'PancakeSwap',
     icon: <PancakeSwapIcon />,
     placeholder: 'Enter your CAKE address',
     scanUrl: 'https://etherscan.io/address/(walletaddress)',

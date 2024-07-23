@@ -5,6 +5,7 @@ import { Button, Dialog, DialogTrigger } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { blockchainNetworks, networkTokens } from './Blockchain';
 import { CryptoAddress, CryptoId } from 'librechat-data-provider/dist/types';
+import Marquee from 'react-fast-marquee';
 
 export default function NetworkSelect({
   networks,
@@ -81,7 +82,13 @@ export default function NetworkSelect({
                         >
                           {item.icon}
                           <div className="mb-0 w-full break-words font-bold">
-                            <p className="w-full break-words">{item.label}</p>
+                            <p className="w-full break-words">
+                              {item.label.length > 7 ? (
+                                <Marquee speed={10}>{item.label} </Marquee>
+                              ) : (
+                                item.label
+                              )}
+                            </p>
                             <p>({item.id})</p>
                           </div>
                         </button>
