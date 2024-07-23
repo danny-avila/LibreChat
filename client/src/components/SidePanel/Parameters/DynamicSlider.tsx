@@ -147,6 +147,7 @@ function DynamicSlider({
             )}
           </div>
           <Slider
+            ariaLabel={`${label ?? settingKey} Slider`}
             id={`${settingKey}-dynamic-setting-slider`}
             disabled={readonly}
             value={[

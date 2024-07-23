@@ -162,6 +162,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               />
             </div>
             <Slider
+              ariaLabel="Temperature Slider"
               disabled={readonly}
               value={[temperature ?? google.temperature.default]}
               onValueChange={(value) => setTemperature(value[0])}
@@ -202,6 +203,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               />
             </div>
             <Slider
+              ariaLabel="Top P Slider"
               disabled={readonly}
               value={[topP ?? google.topP.default]}
               onValueChange={(value) => setTopP(value[0])}
@@ -243,6 +245,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               />
             </div>
             <Slider
+              ariaLabel="Top K Slider"
               disabled={readonly}
               value={[topK ?? google.topK.default]}
               onValueChange={(value) => setTopK(value[0])}
@@ -283,6 +286,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               />
             </div>
             <Slider
+              ariaLabel="Max Output Tokens Slider"
               disabled={readonly}
               value={[maxOutputTokens ?? google.maxOutputTokens.default]}
               onValueChange={(value) => setMaxOutputTokens(value[0])}

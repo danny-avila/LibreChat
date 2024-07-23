@@ -74,6 +74,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               />
             </div>
             <Slider
+              ariaLabel="Temperature Slider"
               disabled={readonly}
               value={[temperature ?? 0]}
               onValueChange={(value: number[]) => setTemperature(value[0])}
@@ -124,119 +125,6 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             <OptionHover endpoint={conversation.endpoint ?? ''} type="skip" side={ESide.Bottom} />
           </HoverCard>
         </div>
-        {/* <HoverCard openDelay={300}>
-            <HoverCardTrigger className="grid w-full items-center gap-2">
-              <div className="flex justify-between">
-                <Label htmlFor="top-p-int" className="text-left text-sm font-medium">
-                  Top P <small className="opacity-40">(default: 1)</small>
-                </Label>
-                <InputNumber
-                  id="top-p-int"
-                  disabled={readonly}
-                  value={topP}
-                  onChange={(value) => setTopP(value)}
-                  max={1}
-                  min={0}
-                  step={0.01}
-                  controls={false}
-                  className={cn(
-                    defaultTextProps,
-                    cn(
-                      optionText,
-                      'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200'
-                    )
-                  )}
-                />
-              </div>
-              <Slider
-                disabled={readonly}
-                value={[topP]}
-                onValueChange={(value) => setTopP(value[0])}
-                doubleClickHandler={() => setTopP(1)}
-                max={1}
-                min={0}
-                step={0.01}
-                className="flex h-4 w-full"
-              />
-            </HoverCardTrigger>
-            <OptionHover type="topp" side="left" />
-          </HoverCard>
-
-          <HoverCard openDelay={300}>
-            <HoverCardTrigger className="grid w-full items-center gap-2">
-              <div className="flex justify-between">
-                <Label htmlFor="freq-penalty-int" className="text-left text-sm font-medium">
-                  Frequency Penalty <small className="opacity-40">(default: 0)</small>
-                </Label>
-                <InputNumber
-                  id="freq-penalty-int"
-                  disabled={readonly}
-                  value={freqP}
-                  onChange={(value) => setFreqP(value)}
-                  max={2}
-                  min={-2}
-                  step={0.01}
-                  controls={false}
-                  className={cn(
-                    defaultTextProps,
-                    cn(
-                      optionText,
-                      'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200'
-                    )
-                  )}
-                />
-              </div>
-              <Slider
-                disabled={readonly}
-                value={[freqP]}
-                onValueChange={(value) => setFreqP(value[0])}
-                doubleClickHandler={() => setFreqP(0)}
-                max={2}
-                min={-2}
-                step={0.01}
-                className="flex h-4 w-full"
-              />
-            </HoverCardTrigger>
-            <OptionHover type="freq" side="left" />
-          </HoverCard>
-
-          <HoverCard openDelay={300}>
-            <HoverCardTrigger className="grid w-full items-center gap-2">
-              <div className="flex justify-between">
-                <Label htmlFor="pres-penalty-int" className="text-left text-sm font-medium">
-                  Presence Penalty <small className="opacity-40">(default: 0)</small>
-                </Label>
-                <InputNumber
-                  id="pres-penalty-int"
-                  disabled={readonly}
-                  value={presP}
-                  onChange={(value) => setPresP(value)}
-                  max={2}
-                  min={-2}
-                  step={0.01}
-                  controls={false}
-                  className={cn(
-                    defaultTextProps,
-                    cn(
-                      optionText,
-                      'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200'
-                    )
-                  )}
-                />
-              </div>
-              <Slider
-                disabled={readonly}
-                value={[presP]}
-                onValueChange={(value) => setPresP(value[0])}
-                doubleClickHandler={() => setPresP(0)}
-                max={2}
-                min={-2}
-                step={0.01}
-                className="flex h-4 w-full"
-              />
-            </HoverCardTrigger>
-            <OptionHover type="pres" side="left" />
-          </HoverCard> */}
       </div>
     </div>
   );
