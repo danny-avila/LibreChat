@@ -3,8 +3,8 @@ import React from 'react';
 const SolendIcon = () => {
   return (
     <svg
-      width={25}
-      height={25}
+      width="2.5rem"
+      height="2.5rem"
       viewBox="0 0 1000 1000"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"

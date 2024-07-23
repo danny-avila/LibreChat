@@ -84,7 +84,7 @@ export default function NetworkSelect({
                           <div className="mb-0 w-full break-words font-bold">
                             <p className="w-full break-words">
                               {item.label.length > 7 ? (
-                                <Marquee speed={10}>{item.label} </Marquee>
+                                <Marquee speed={20}>{item.label}&nbsp; &nbsp; &nbsp;</Marquee>
                               ) : (
                                 item.label
                               )}

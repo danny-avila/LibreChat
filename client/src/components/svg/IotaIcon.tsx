@@ -2,7 +2,7 @@ import React from 'react';
 
 const IotaIcon = () => {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width={25} height={25}>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="2.5rem" height="2.5rem">
       <defs>
         <style>{'.cls-1{fill:#232628;}.cls-2{fill:#fff;fill-rule:evenodd;}'}</style>
       </defs>

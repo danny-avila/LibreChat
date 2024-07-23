@@ -7,8 +7,8 @@ const BonkIcon = () => {
       id="CIRCLE_OUTLINE_BLACK"
       xmlns="http://www.w3.org/2000/svg"
       xmlnsXlink="http://www.w3.org/1999/xlink"
-      width={25}
-      height={25}
+      width="2.5rem"
+      height="2.5rem"
       x="0px"
       y="0px"
       viewBox="0 0 512 512"

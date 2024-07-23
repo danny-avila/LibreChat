@@ -2,7 +2,7 @@ import React from 'react';
 
 const NemIcon = () => {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width={28} height={28}>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="2.5rem" height="2.5rem">
       <defs>
         <style>
           {'.cls-1{fill:#fff;}.cls-2{fill:#f7a800;}.cls-3{fill:#67b2e8;}.cls-4{fill:#00c4b3;}'}

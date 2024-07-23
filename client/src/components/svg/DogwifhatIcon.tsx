@@ -9,8 +9,8 @@ const DogwifhatIcon = () => {
       xmlnsXlink="http://www.w3.org/1999/xlink"
       x="0px"
       y="0px"
-      width={25}
-      height={25}
+      width="2.5rem"
+      height="2.5rem"
       viewBox="0 0 600 600"
       xmlSpace="preserve"
     >
