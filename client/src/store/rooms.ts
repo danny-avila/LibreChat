@@ -1,4 +1,4 @@
-import { TUser } from 'librechat-data-provider';
+// import { TConversation } from 'librechat-data-provider';
 import { atom } from 'recoil';
 
 const refreshRoomHint = atom<number>({
@@ -6,7 +6,7 @@ const refreshRoomHint = atom<number>({
   default: 1,
 });
 
-const usersInRoom = atom<TUser[]>({
+const usersInRoom = atom<any>({
   key: 'users',
   default: [],
 });

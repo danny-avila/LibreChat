@@ -13,8 +13,7 @@ export default function UserKickButton({ user }) {
   const confirmKick = () => {
     request
       .post(`/api/rooms/kick/${conversation?.conversationId}`, { userId: user._id })
-      .then((res) => {
-        console.log(res);
+      .then(() => {
         setConversation((prevConv: TConversation) => ({
           ...prevConv,
           users: prevConv?.users?.filter((i) => i !== userId),

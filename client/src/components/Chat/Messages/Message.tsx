@@ -10,9 +10,6 @@ import HoverButtons from './HoverButtons';
 import SubRow from './SubRow';
 import { cn } from '~/utils';
 import store from '~/store';
-import { isPremiumUser } from '~/utils/checkUserValid';
-import { TUser } from 'librechat-data-provider';
-import { useEffect } from 'react';
 import useAvatar from '~/hooks/Messages/useAvatar';
 
 export default function Message(props: TMessageProps) {
@@ -81,11 +78,7 @@ export default function Message(props: TMessageProps) {
       } else {
         messageLabel = message.user.name;
         // userAvatar = message.user.avatar;
-<<<<<<< HEAD
-        userAvatar = message.user.avatar || useAvatar({username:message.user.name}) ;
-=======
         userAvatar = message.user.avatar || useAvatar({ username: message.user.name });
->>>>>>> 8b9720cb9fee78ad3bd2f49b63af4bb1e38bf4e6
       }
 
       if (message.sender === 'Tip Bot' || message.sender === 'Karma Bot') {
@@ -124,19 +117,11 @@ export default function Message(props: TMessageProps) {
                   <div className="relative pt-0.5">
                     {message?.user?.subscription?.active && (
                       <img
-<<<<<<< HEAD
-                          src="/assets/premium.png"
-                          alt="premium"
-                          className="absolute -right-1 -top-1 h-4 w-4 z-10"
-                        />
-                      )}
-=======
                         src="/assets/premium.png"
                         alt="premium"
                         className="absolute -right-1 -top-1 z-10 h-4 w-4"
                       />
                     )}
->>>>>>> 8b9720cb9fee78ad3bd2f49b63af4bb1e38bf4e6
                     <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
                       {userAvatar ? (
                         <img src={userAvatar} />

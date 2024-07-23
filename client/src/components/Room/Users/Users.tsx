@@ -1,19 +1,24 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useChatContext, useToastContext } from '~/Providers';
+import { useToastContext } from '~/Providers';
 import User from './User';
 import { TUser } from 'librechat-data-provider';
+import store from '~/store';
+import { useRecoilValue } from 'recoil';
 
 const Users: React.FC<{ isCollapsed?: boolean }> = ({ isCollapsed = false }) => {
-  const { conversation } = useChatContext();
+  // const { conversation } = useChatContext();
   const navigate = useNavigate();
   const { showToast } = useToastContext();
+  const conversation = useRecoilValue(store.usersInRoom);
 
   if (!conversation?.user) {
     showToast({ message: 'This room has been closed.', status: 'warning' });
     navigate('/r/new');
     return null;
   }
+
+  console.log('---conversation', conversation);
 
   return (
     <>

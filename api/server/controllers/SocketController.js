@@ -30,16 +30,10 @@ const setupWebSocket = (server) => {
 
     socket.on('move room', (data) => moveRoom(socket.id, data.roomId));
     //
-<<<<<<< HEAD
-    socket.on('tip', (data)=>{
-      socket.broadcast.emit('tipNotification', data);
-    })
-=======
     socket.on('tip', (data) => {
       socket.broadcast.emit('tipNotification', data);
     });
     //
->>>>>>> 8b9720cb9fee78ad3bd2f49b63af4bb1e38bf4e6
   });
 };
 

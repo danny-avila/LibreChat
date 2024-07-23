@@ -10,14 +10,10 @@ import SubscriptionField from './SubscriptionField';
 
 function Account({ onCheckedChange }: { onCheckedChange?: (value: boolean) => void }) {
   const [UsernameDisplay, setUsernameDisplay] = useRecoilState<boolean>(store.UsernameDisplay);
-<<<<<<< HEAD
-  const [NotificationDisplay, setNotificationDisplay] = useRecoilState<boolean>(store.NotificationDisplay);
-=======
   const [NotificationDisplay, setNotificationDisplay] = useRecoilState<boolean>(
     store.NotificationDisplay,
   );
 
->>>>>>> 8b9720cb9fee78ad3bd2f49b63af4bb1e38bf4e6
   const localize = useLocalize();
 
   const handleCheckedChange = (value: boolean) => {
@@ -26,21 +22,12 @@ function Account({ onCheckedChange }: { onCheckedChange?: (value: boolean) => vo
       onCheckedChange(value);
     }
   };
-<<<<<<< HEAD
-  //
-=======
->>>>>>> 8b9720cb9fee78ad3bd2f49b63af4bb1e38bf4e6
   const handleNotificationChange = (value: boolean) => {
     setNotificationDisplay(value);
     if (onCheckedChange) {
       onCheckedChange(value);
     }
   };
-<<<<<<< HEAD
-  //
-=======
-
->>>>>>> 8b9720cb9fee78ad3bd2f49b63af4bb1e38bf4e6
   return (
     <Tabs.Content
       value={SettingsTabValues.ACCOUNT}

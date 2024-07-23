@@ -43,7 +43,7 @@ function ChatView({ index = 0 }: { index?: number }) {
 
   const chatHelpers = useChatHelpers(index, conversationId, socket);
   const { conversation, setConversation } = chatHelpers;
-  useRoomUsers(conversationId, socket);
+  useRoomUsers(conversationId);
 
   useEffect(() => {
     if (

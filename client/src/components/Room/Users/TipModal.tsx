@@ -137,20 +137,12 @@ export default function TipModal({
           showToast({ message: 'Tip sent successfully', status: 'success' });
         });
     }
-<<<<<<< HEAD
-    if(socket){
-=======
     if (socket) {
->>>>>>> 8b9720cb9fee78ad3bd2f49b63af4bb1e38bf4e6
       socket.emit('tip', {
         recipient: user._id ?? user.id,
         network: selectedNetwork?.id,
         sender: you?.username,
-<<<<<<< HEAD
-        anonymous: !v
-=======
         anonymous: !v,
->>>>>>> 8b9720cb9fee78ad3bd2f49b63af4bb1e38bf4e6
       });
     }
     setOpen(false);

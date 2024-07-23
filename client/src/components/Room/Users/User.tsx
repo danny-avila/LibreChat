@@ -44,12 +44,21 @@ export default function User({
         you?.username !== 'guest-user' &&
         you?.id !== user?._id && <TipModal user={user} />}
 
-      <TipModal user={user} isKarmaOnly={true} OpenButton={<div className="flex gap-3">
-        {!isCollapsed && (user.name).length > 15 ? <Marquee speed={30} className="w-full">{user.name}&nbsp; &nbsp; &nbsp; </Marquee>
-         : 
-           user.name
-         }
-      </div>} />
+      <TipModal
+        user={user}
+        isKarmaOnly={true}
+        OpenButton={
+          <div className="flex gap-3">
+            {!isCollapsed && user.name.length > 15 ? (
+              <Marquee speed={30} className="w-full">
+                {user.name}&nbsp; &nbsp; &nbsp;{' '}
+              </Marquee>
+            ) : (
+              user.name
+            )}
+          </div>
+        }
+      />
       {!isCollapsed && you?.id === conversation?.user.id && you.id !== user.id && (
         <UserKickButton user={user} />
       )}
