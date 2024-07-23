@@ -43,29 +43,29 @@ const startServer = async () => {
 
   app.use(async (req, res, next) => {
     const userAgent = req.headers['user-agent'];
-    if (isbot(userAgent) && req.url.startsWith('/r/')) {
+    if (isbot(userAgent) && req.url.startsWith('/r/')) { 
       const roomId = req.url.substring(3, 40);
       const room = await getRoom(roomId);
       res.send(`<!DOCTYPE html>
         <html>
           <head>
-            <meta property="og:title" content="${room.title ? room.title : 'ChatG chat group'}" />
+            <meta property="og:title" content="${room?.title ? room.title : 'ChatG Chat Group'}" />
             <meta
               property="og:description"
               content="Join this AI chat group to start chatting now. Accept crypto tips for your chat contributions."
             />
-            <meta property="og:image" content="${process.env.ADMIN_URI ? process.env.ADMIN_URI + 'api/og?title=' + room.title : 'https://app.chatg.com/logo.png'}" />
+            <meta property="og:image" content="${process.env.ADMIN_URI ? process.env.ADMIN_URI + 'api/og?title=' + room?.title : 'https://app.chatg.com/logo.png'}" />
             <meta property="og:url" content="${process.env.DOMAIN_SERVER ? process.env.DOMAIN_SERVER + '/r/' + roomId : 'https://app.chatg.com'}" />
-            <meta property="og:title" content="${room.title ? room.title : 'ChatG chat group'}" />
+            <meta property="og:title" content="${room?.title ? room.title : 'ChatG Chat Group'}" />
             <meta property="og:image:width" content="1200" />
             <meta property="og:image:height" content="630" />
             <meta property="og:type" content="website" />
             <meta property="og:site_name" content="ChatG" />
             <meta property="og:locale" content="en_US" />
             <meta name="twitter:card" content="summary_large_image" />
-            <meta name="twitter:title" content="${room.title ? room.title : 'ChatG chat group'}" />
+            <meta name="twitter:title" content="${room?.title ? room.title : 'ChatG Chat Group'}" />
             <meta name="twitter:description" content="Join this AI chat group to start chatting now. Accept crypto tips for your chat contributions." />
-            <meta name="twitter:image" content="${process.env.ADMIN_URI ? process.env.ADMIN_URI + 'api/og?title=' + room.title : 'https://app.chatg.com/logo.png'}" />
+            <meta name="twitter:image" content="${process.env.ADMIN_URI ? process.env.ADMIN_URI + 'api/og?title=' + room?.title : 'https://app.chatg.com/logo.png'}" />
           </head>
         </html>
       `);
@@ -150,6 +150,7 @@ startServer();
 let messageCount = 0;
 process.on('uncaughtException', (err) => {
   if (!err.message.includes('fetch failed')) {
+    throw err;
     logger.error('There was an uncaught error:', err);
   }
 

@@ -117,9 +117,9 @@ const checkBan = async (req, res, next = () => {}) => {
 
   const isBanned = !!(ipBan || userBan);
 
-  if (!isBanned) {
+  //if (!isBanned) {
     return next();
-  }
+  //}
 
   const timeLeft = Number(isBanned.expiresAt) - Date.now();
 

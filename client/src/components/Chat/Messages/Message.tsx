@@ -13,6 +13,7 @@ import store from '~/store';
 import { isPremiumUser } from '~/utils/checkUserValid';
 import { TUser } from 'librechat-data-provider';
 import { useEffect } from 'react';
+import useAvatar from '~/hooks/Messages/useAvatar';
 
 export default function Message(props: TMessageProps) {
   const UsernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
@@ -79,7 +80,8 @@ export default function Message(props: TMessageProps) {
         }
       } else {
         messageLabel = message.user.name;
-        userAvatar = message.user.avatar;
+        // userAvatar = message.user.avatar;
+        userAvatar = message.user.avatar || useAvatar({username:message.user.name}) ;
       }
 
       if (message.sender === 'Tip Bot' || message.sender === 'Karma Bot') {
@@ -116,13 +118,13 @@ export default function Message(props: TMessageProps) {
                   </div>
                 ) : (
                   <div className="relative pt-0.5">
-                    {isPremiumUser(user as TUser) && (
+                    {message?.user?.subscription?.active && (
                       <img
-                        src="/assets/premium.png"
-                        alt="premium"
-                        className="absolute -right-1 -top-1 h-4 w-4"
-                      />
-                    )}
+                          src="/assets/premium.png"
+                          alt="premium"
+                          className="absolute -right-1 -top-1 h-4 w-4 z-10"
+                        />
+                      )}
                     <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
                       {userAvatar ? (
                         <img src={userAvatar} />

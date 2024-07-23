@@ -118,7 +118,7 @@ export default function Room({ room, toggleNav, retainView }) {
   //   modelLabel: undefined,
   //   jailbreak: undefined,
   // });
-
+ 
   const handleKeyDown = (e: KeyEvent) => {
     if (e.key === 'Enter') {
       onRename(e);
@@ -133,7 +133,7 @@ export default function Room({ room, toggleNav, retainView }) {
     aProps.className =
       'group relative grow overflow-hidden whitespace-nowrap rounded-lg active:opacity-50 flex cursor-pointer items-center mt-2 gap-2 break-all rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 py-2 px-2';
   }
-  if(room.isPrivate) return <></>
+  if(room.isPrivate && room.user.id != user?.id) return <></>
   return (
     <a
       href={`/r/${conversationId}`}

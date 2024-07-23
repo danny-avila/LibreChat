@@ -168,7 +168,7 @@ module.exports = {
     try {
       const result = await Message.find(filter)
         .sort({ createdAt: 1 })
-        .populate('user', ['name', 'avatar', 'karma'])
+        .populate('user', ['name', 'avatar', 'karma', 'subscription'])
         .lean();
       return result;
     } catch (err) {

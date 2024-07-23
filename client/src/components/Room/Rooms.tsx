@@ -49,7 +49,7 @@ export default function Rooms({
         searchQueryRes.data?.pages[0].conversations ?? []);
     }
   }, [searchQueryRes.data?.pages, setSearchResult]);
-
+    
   return (
     <div className="text-token-text-primary flex flex-col gap-2 pb-2 text-sm">
       <div>

@@ -5,7 +5,8 @@ import { useEffect } from 'react';
 // const defaultTitle = useRef(document.title);
 function useDocumentTitle(title: string) {
   useEffect(() => {
-    document.title = title;
+    if(!title) return;
+    // document.title = title;
   }, [title]);
 
   // useEffect(
