@@ -1,3 +1,4 @@
+/* eslint-disable indent */
 import { useEffect, useState } from 'react';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import { Socket, io } from 'socket.io-client';
@@ -6,7 +7,10 @@ import useChatHelpers from './useChatHelpers';
 import { useParams } from 'react-router-dom';
 import { request, type TMessage } from 'librechat-data-provider';
 import { useToastContext } from '~/Providers';
+<<<<<<< HEAD
 //
+=======
+>>>>>>> 8b9720cb9fee78ad3bd2f49b63af4bb1e38bf4e6
 import useSound from 'use-sound';
 import tipSFX from '../../public/assets/mp3/tipSFX.mp3';
 
@@ -119,14 +123,19 @@ export const useChatSocket = (socket?: Socket) => {
   return { socket };
 };
 //
+<<<<<<< HEAD
 export const usePushSocket = (socket?: Socket) =>
 {
+=======
+export const usePushSocket = (socket?: Socket) => {
+>>>>>>> 8b9720cb9fee78ad3bd2f49b63af4bb1e38bf4e6
   const user = useRecoilValue(store.user);
   const [play] = useSound(tipSFX);
   const { showToast } = useToastContext();
   //
   useEffect(() => {
     socket?.on('tipNotification', (data) => {
+<<<<<<< HEAD
         const { recipient, network, sender, anonymous } = data;
         console.log(data)
         if(user?.id == recipient){
@@ -141,12 +150,37 @@ export const usePushSocket = (socket?: Socket) =>
           }
 
         }
+=======
+      const { recipient, network, sender, anonymous } = data;
+      console.log(data);
+      if (user?.id == recipient) {
+        const isMuted = localStorage.getItem('NotificationDisplay') || 'false';
+        if (isMuted == 'false') {
+          play();
+        }
+        if (!anonymous) {
+          showToast({
+            message: `Congratulations! Tip received from ${sender} on the ${network} network`,
+            status: 'success',
+          });
+        } else {
+          showToast({
+            message: `Congratulations! Tip received from Anonymous on the ${network} network`,
+            status: 'success',
+          });
+        }
+      }
+>>>>>>> 8b9720cb9fee78ad3bd2f49b63af4bb1e38bf4e6
     });
     //
     return () => {
       socket?.off('tipNotification');
     };
+<<<<<<< HEAD
   }, [ socket ]);
+=======
+  }, [socket]);
+>>>>>>> 8b9720cb9fee78ad3bd2f49b63af4bb1e38bf4e6
   //
   return { socket };
 };

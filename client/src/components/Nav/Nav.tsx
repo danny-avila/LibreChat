@@ -1,7 +1,7 @@
 import { useParams } from 'react-router-dom';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import { useCallback, useEffect, useState, useMemo, memo } from 'react';
-import type { ConversationListResponse } from 'librechat-data-provider';
+import { decryptDataV2, type ConversationListResponse } from 'librechat-data-provider';
 import {
   useMediaQuery,
   useAuthContext,
@@ -92,7 +92,7 @@ const Nav = ({ navVisible, setNavVisible }) => {
     isFetchingNextPage: searchQuery ? searchQueryRes.isFetchingNextPage : isFetchingNextPage,
   });
 
-  const conversations = useMemo(
+  const _c = useMemo(
     () =>
       (searchQuery ? searchQueryRes?.data : data)?.pages.flatMap((page) => page.conversations) ||
       [],

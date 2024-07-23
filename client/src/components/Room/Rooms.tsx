@@ -15,10 +15,15 @@ export default function Rooms({
   const [rooms, setRooms] = useRecoilState(store.rooms);
   const searchQuery = useRecoilValue(store.searchQuery);
   const roomSearchIndex = useRecoilValue(store.roomSearchIndex);
-  const [searchOptions ] = useRecoilState<SearchOptions>(store.searchOptions);
+  const [searchOptions] = useRecoilState<SearchOptions>(store.searchOptions);
 
   const searchQueryRes = useSearchInfiniteQuery(
-    { pageNumber: '1', searchQuery: searchQuery.text, roomIndex: roomSearchIndex, searchOptions: searchOptions },
+    {
+      pageNumber: '1',
+      searchQuery: searchQuery.text,
+      roomIndex: roomSearchIndex,
+      searchOptions: searchOptions,
+    },
     { enabled: true },
   );
 
@@ -45,8 +50,7 @@ export default function Rooms({
           .sort((a, b) => (b.users?.length ?? 0) - (a.users?.length ?? 0)) ?? [],
       );
     } else {
-      setSearchResult(
-        searchQueryRes.data?.pages[0].conversations ?? []);
+      setSearchResult(searchQueryRes.data?.pages[0].conversations ?? []);
     }
   }, [searchQueryRes.data?.pages, setSearchResult]);
     

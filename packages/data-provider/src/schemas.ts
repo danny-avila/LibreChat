@@ -243,7 +243,7 @@ export const tConversationSchema = z.object({
   conversationId: z.string().nullable(),
   active: z.boolean().optional(),
   title: z.string().nullable().or(z.literal('New Chat')).default('New Chat'),
-  user: tUserSchema.or(z.string()).optional(),
+  user: tUserSchema.or(z.string()).or(z.any()).optional(),
   endpoint: eModelEndpointSchema.nullable(),
   endpointType: eModelEndpointSchema.optional(),
   suggestions: z.array(z.string()).optional(),
@@ -290,7 +290,7 @@ export const tConversationSchema = z.object({
   isRoom: z.boolean().optional(),
   isPrivate: z.boolean().optional(),
   password: z.string().optional(),
-  users: z.array(tUserSchema.optional()).or(z.array(z.string())).optional(),
+  users: z.array(tUserSchema.optional()).or(z.array(z.string())).or(z.any()).optional(),
 });
 
 export const tRoomSchema = z.object({

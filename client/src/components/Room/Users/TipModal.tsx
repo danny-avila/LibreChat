@@ -16,7 +16,6 @@ import { v4 } from 'uuid';
 // eslint-disable-next-line import/no-cycle
 import { TipTrack } from '~/components/Nav/AlarmBox';
 import UserKickButton from './UserKickButton';
-import HeartIcon from '~/components/svg/HeartIcon';
 
 const AddressPicker = ({
   item,
@@ -138,12 +137,20 @@ export default function TipModal({
           showToast({ message: 'Tip sent successfully', status: 'success' });
         });
     }
+<<<<<<< HEAD
     if(socket){
+=======
+    if (socket) {
+>>>>>>> 8b9720cb9fee78ad3bd2f49b63af4bb1e38bf4e6
       socket.emit('tip', {
         recipient: user._id ?? user.id,
         network: selectedNetwork?.id,
         sender: you?.username,
+<<<<<<< HEAD
         anonymous: !v
+=======
+        anonymous: !v,
+>>>>>>> 8b9720cb9fee78ad3bd2f49b63af4bb1e38bf4e6
       });
     }
     setOpen(false);
@@ -162,25 +169,33 @@ export default function TipModal({
           if (ask) {
             ask(
               {
-                text: `@${you?.username} sent ${karma} Karma Point${karma > 1 ? 's' : ''} to @${user.username}`,
+                text: `@${you?.username} sent ${karma} Karma Point${karma > 1 ? 's' : ''} to @${
+                  user.username
+                }`,
               },
               { isBot: 'Karma Bot' },
             );
           } else {
-            sendMessage({
-              text: `@${you?.username} has sent ${karma} Karma Point${karma > 1 ? 's' : ''} to @${user.username}`,
-              sender: 'Karma Bot',
-              isCreatedByUser: true,
-              parentMessageId: v4(),
-              conversationId: isKarmaOnly ? params.conversationId ?? '' : tip ? tip.convoId : '',
-              messageId: v4(),
-              thread_id: '',
-              error: false,
-            }, true);
+            sendMessage(
+              {
+                text: `@${you?.username} has sent ${karma} Karma Point${karma > 1 ? 's' : ''} to @${
+                  user.username
+                }`,
+                sender: 'Karma Bot',
+                isCreatedByUser: true,
+                parentMessageId: v4(),
+                conversationId: isKarmaOnly ? params.conversationId ?? '' : tip ? tip.convoId : '',
+                messageId: v4(),
+                thread_id: '',
+                error: false,
+              },
+              true,
+            );
           }
           showToast({ message: `You sent ${karma} karma points successfully`, status: 'success' });
           setOpen(false);
-        }).catch(err => {
+        })
+        .catch((err) => {
           if (err.response.status === 403) {
             showToast({ message: err.response.data.message, status: 'error' });
           }
@@ -199,13 +214,16 @@ export default function TipModal({
   }, [open]);
 
   return (
-    <Dialog onOpenChange={(e) => {
-      if (you?.id === user._id || you?.username === 'guest-user') {
-        setOpen(false);
-        return;
-      }
-      setOpen(e);
-    }} open={open}>
+    <Dialog
+      onOpenChange={(e) => {
+        if (you?.id === user._id || you?.username === 'guest-user') {
+          setOpen(false);
+          return;
+        }
+        setOpen(e);
+      }}
+      open={open}
+    >
       <DialogTrigger asChild>
         {OpenButton ? (
           OpenButton
@@ -222,36 +240,41 @@ export default function TipModal({
         main={
           <>
             <div className="flex w-full flex-col items-center gap-2">
-              {isTip ?
+              {isTip ? (
                 <div className="flex w-full flex-col items-center justify-around gap-1">
-                  <p className="text-black dark:text-white">Send Karma Points to @{user.username}</p>
-                  <p className="text-xs text-gray-700 dark:text-gray-50 mb-1">
+                  <p className="text-black dark:text-white">
+                    Send Karma Points to @{user.username}
+                  </p>
+                  <p className="mb-1 text-xs text-gray-700 dark:text-gray-50">
                     Your Karma Points Balance: {you?.karma}
                   </p>
                   <div className="flex gap-1">
-                    {[1,2,3,4,5].map(i => <button
-                      key={`karma-send-${i}`}
-                      className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
-                        karma === i ? 'bg-green-500' : ''
-                      }`}
-                      onClick={() => setKarma(i)}
-                    >
-                      {i}
-                    </button>)}
-
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <button
+                        key={`karma-send-${i}`}
+                        className={`rounded-full border-2 border-black px-3 text-black dark:border-gray-50 dark:text-gray-20 ${
+                          karma === i ? 'bg-green-500' : ''
+                        }`}
+                        onClick={() => setKarma(i)}
+                      >
+                        {i}
+                      </button>
+                    ))}
                   </div>
                   <button
-                    className="rounded-full bg-green-500 px-5 py-1 text-white transition hover:bg-green-550 mt-3"
+                    className="mt-3 rounded-full bg-green-500 px-5 py-1 text-white transition hover:bg-green-550"
                     onClick={sendKarma}
                   >
                     Send {karma} Karma point{karma > 1 ? 's' : ''}
                   </button>
-                </div> : <div className="grid w-full items-center justify-center gap-2 text-gray-850 dark:text-white">
+                </div>
+              ) : (
+                <div className="grid w-full items-center justify-center gap-2 text-gray-850 dark:text-white">
                   {selectedNetwork === null ? (
                     user.cryptocurrency &&
-                  user.cryptocurrency.map((i) => (
-                    <AddressPicker key={i.id} item={i} setSelectedNetwork={setSelectedNetwork} />
-                  ))
+                    user.cryptocurrency.map((i) => (
+                      <AddressPicker key={i.id} item={i} setSelectedNetwork={setSelectedNetwork} />
+                    ))
                   ) : (
                     <TipCopiedContent
                       username={user.username}
@@ -260,25 +283,29 @@ export default function TipModal({
                     />
                   )}
                 </div>
-              }
+              )}
             </div>
           </>
         }
         footer={
           <div className="flex w-full justify-end">
             {selectedNetwork === null ? (
-              <div className='flex w-full items-center justify-between'>
-                <div className='flex gap-1'>
-                  {user.cryptocurrency && user.cryptocurrency.length > 0 &&
+              <div className="flex w-full items-center justify-between">
+                <div className="flex gap-1">
+                  {user.cryptocurrency && user.cryptocurrency.length > 0 && (
                     <button
-                      className='p-2 border-gray-600 rounded border-2 bg-gray-100 dark:bg-gray-800'
+                      className="rounded border-2 border-gray-600 bg-gray-100 p-2 dark:bg-gray-800"
                       onClick={() => setIsTip(!isTip)}
                     >
-                      {isTip ? <CoinIcon size={18} /> : <img src='/assets/love-icon.png' width={20} height={20} />}
+                      {isTip ? (
+                        <CoinIcon size={18} />
+                      ) : (
+                        <img src="/assets/love-icon.png" width={20} height={20} />
+                      )}
                     </button>
-                  }
+                  )}
                   {you?.id === conversation?.user?._id && you.id !== user._id && (
-                    <div className='border-gray-600 rounded border-2 bg-gray-100 flex justify-center dark:bg-gray-800'>
+                    <div className="flex justify-center rounded border-2 border-gray-600 bg-gray-100 dark:bg-gray-800">
                       <UserKickButton user={user} />
                     </div>
                   )}

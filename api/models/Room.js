@@ -33,24 +33,17 @@ const getRooms = async (name = '', roomIndex = 'user', sort, endpoint) => {
     }
 
     if (roomIndex === 'all') {
-      rooms = await Conversation.find(findQuery)
-        .sort(sortQuery)
-        .populate('user')
-        .populate('users');
+      rooms = await Conversation.find(findQuery).sort(sortQuery);
     } else {
       rooms = await Conversation.find({
         ...findQuery,
-        $or: [
-          { user: roomIndex },
-          { users: { $in: [roomIndex] } },
-        ],
-      })
-        .sort(sortQuery)
-        .populate('user')
-        .populate('users');
+        $or: [{ user: roomIndex }, { users: { $in: [roomIndex] } }],
+      }).sort(sortQuery);
     }
 
-    return rooms.reverse();
+    return JSON.parse(JSON.stringify(rooms))
+      .map((r) => ({ ...r, userCount: r.users.length }))
+      .reverse();
   } catch (error) {
     logger.error('[getRooms] Error getting entire rooms', error);
     return { message: 'Error getting Rooms by name' };
@@ -65,8 +58,8 @@ const getRooms = async (name = '', roomIndex = 'user', sort, endpoint) => {
 const getRoomsByUser = async (userId) => {
   try {
     const owned = await Conversation.find({ user: userId, isRoom: true })
-      .populate('user')
-      .populate('users');
+      .populate('user', ['username', 'name', 'avatar', 'credits', 'karma', 'cryptocurrency'])
+      .populate('users', ['username', 'name', 'avatar', 'credits', 'karma', 'cryptocurrency']);
     const joined = await Conversation.find({
       users: { $elemMatch: { $eq: userId } },
       isRoom: true,
@@ -88,8 +81,8 @@ const getRoomsByUser = async (userId) => {
 const getRoom = async (conversationId) => {
   try {
     return await Conversation.findOne({ conversationId, isRoom: true })
-      .populate('user')
-      .populate('users')
+      .populate('user', ['username', 'name', 'avatar', 'credits', 'karma', 'cryptocurrency'])
+      .populate('users', ['username', 'name', 'avatar', 'credits', 'karma', 'cryptocurrency'])
       .lean();
   } catch (error) {
     logger.error('[getRoom] Error getting single room', error);

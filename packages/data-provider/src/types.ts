@@ -112,6 +112,10 @@ export enum CryptoId {
   NEM = 'NEM',
   ZEC = 'ZEC',
   SLORP = 'SLORP',
+  Bonk = 'BONK',
+  Solend = 'SLND',
+  Woof = 'WOOF',
+  Dogwifhat = 'WIF',
 }
 
 export type CryptoAddress = {

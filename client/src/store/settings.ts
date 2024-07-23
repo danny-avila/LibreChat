@@ -156,7 +156,11 @@ const UsernameDisplay = atom<boolean>({
     },
   ] as const,
 });
+<<<<<<< HEAD
 //
+=======
+// 
+>>>>>>> 8b9720cb9fee78ad3bd2f49b63af4bb1e38bf4e6
 const NotificationDisplay = atom<boolean>({
   key: 'NotificationDisplay',
   default: localStorage.getItem('NotificationDisplay') === 'true',
@@ -175,8 +179,12 @@ const NotificationDisplay = atom<boolean>({
     },
   ] as const,
 });
+<<<<<<< HEAD
 
 //
+=======
+// 
+>>>>>>> 8b9720cb9fee78ad3bd2f49b63af4bb1e38bf4e6
 export default {
   abortScroll,
   showFiles,

@@ -15,7 +15,10 @@ import { AssistantsMapContext, FileMapContext } from '~/Providers';
 import { Nav, MobileNav } from '~/components/Nav';
 import store from '~/store';
 import { useInitSocket, usePushSocket } from '~/hooks/useChatSocket';
+<<<<<<< HEAD
 
+=======
+>>>>>>> 8b9720cb9fee78ad3bd2f49b63af4bb1e38bf4e6
 
 export default function Root() {
   const location = useLocation();
@@ -30,7 +33,10 @@ export default function Root() {
   //
   const socket = useInitSocket();
   usePushSocket(socket);
+<<<<<<< HEAD
   //
+=======
+>>>>>>> 8b9720cb9fee78ad3bd2f49b63af4bb1e38bf4e6
 
   useEffect(() => {
     if (convoType === 'r' && user?.username === 'guest-user') {

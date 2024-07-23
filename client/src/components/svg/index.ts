@@ -63,9 +63,14 @@ export { default as AdaIcon } from './AdaIcon';
 export { default as TerraIcon } from './TerraIcon';
 export { default as ShibIcon } from './ShibIcon';
 export { default as NemIcon } from './NemIcon';
-export { default as IotalIcon } from './IotaIcon';
+export { default as IotaIcon } from './IotaIcon';
 export { default as PancakeSwapIcon } from './PancakeSwapIcon';
 export { default as BellIcon } from './BellIcon';
 
 export { default as ShowPasswordIcon } from './ShowPasswordIcon';
 export { default as HidePasswordIcon } from './HidePasswordIcon';
+
+export { default as BonkIcon } from './BonkIcon';
+export { default as DogwifhatIcon } from './DogwifhatIcon';
+export { default as WoofIcon } from './WoofIcon';
+export { default as SolendIcon } from './SolendIcon';
