@@ -69,3 +69,8 @@ export { default as BellIcon } from './BellIcon';
 
 export { default as ShowPasswordIcon } from './ShowPasswordIcon';
 export { default as HidePasswordIcon } from './HidePasswordIcon';
+
+export { default as BonkIcon } from './BonkIcon';
+export { default as DogwifhatIcon } from './DogwifhatIcon';
+export { default as WoofIcon } from './WoofIcon';
+export { default as SolendIcon } from './SolendIcon';

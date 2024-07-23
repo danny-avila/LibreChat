@@ -6,16 +6,21 @@ import {
   IotalIcon,
   PancakeSwapIcon,
   NemIcon,
+  BonkIcon,
+  DogwifhatIcon,
+  WoofIcon,
+  SolendIcon,
 } from '~/components/svg';
 
 export interface BlockchainNetwork {
+  type?: 'Network' | 'Token';
+  blockchain?: CryptoId;
   label: string;
   id: CryptoId;
   icon: ReactNode;
   placeholder: string;
   scanUrl: string;
 }
-
 export const blockchainNetworks: BlockchainNetwork[] = [
   {
     id: CryptoId.BTC,
@@ -38,13 +43,7 @@ export const blockchainNetworks: BlockchainNetwork[] = [
     placeholder: 'Enter your BNB address',
     scanUrl: 'https://bscscan.com/address/(walletaddress)',
   },
-  {
-    id: CryptoId.USDT,
-    label: 'Tether',
-    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/usdt.png" />,
-    placeholder: 'Enter your USDT address',
-    scanUrl: 'https://etherscan.io/address/(walletaddress)',
-  },
+
   {
     id: CryptoId.ADA,
     label: 'Cardano',
@@ -80,13 +79,7 @@ export const blockchainNetworks: BlockchainNetwork[] = [
     placeholder: 'Enter your BCH address',
     scanUrl: 'https://blockchair.com/bitcoin-cash/address/(walletaddress)',
   },
-  {
-    id: CryptoId.UNI,
-    label: 'Uniswap',
-    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/uni.png" />,
-    placeholder: 'Enter your UNI address',
-    scanUrl: 'https://etherscan.io/address/(walletaddress)',
-  },
+
   {
     id: CryptoId.LTC,
     label: 'Litecoin',
@@ -101,27 +94,15 @@ export const blockchainNetworks: BlockchainNetwork[] = [
     placeholder: 'Enter your SOL address',
     scanUrl: 'https://solscan.io/account/(walletaddress)',
   },
-  {
-    id: CryptoId.LINK,
-    label: 'Chainlink',
-    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/link.png" />,
-    placeholder: 'Enter your LINK address',
-    scanUrl: 'https://etherscan.io/address/(walletaddress)',
-  },
+
   {
     id: CryptoId.MATIC,
-    label: 'Litecoin',
+    label: 'Matic',
     icon: <img className="h-6 w-6" src="/assets/cryptocurrency/matic.png" />,
     placeholder: 'Enter your MATIC address',
     scanUrl: 'https://polygonscan.com/address/(walletaddress)',
   },
-  {
-    id: CryptoId.WBTC,
-    label: 'Wrapped Bitcoin',
-    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/wbtc.png" />,
-    placeholder: 'Enter your WBTC address',
-    scanUrl: 'https://etherscan.io/address/(walletaddress)',
-  },
+
   {
     id: CryptoId.THETA,
     label: 'Theta',
@@ -136,13 +117,7 @@ export const blockchainNetworks: BlockchainNetwork[] = [
     placeholder: 'Enter your XLM address',
     scanUrl: 'https://stellarchain.io/accounts/(walletaddress)',
   },
-  {
-    id: CryptoId.DAI,
-    label: 'DAI',
-    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/dai.png" />,
-    placeholder: 'Enter your DAI address',
-    scanUrl: 'https://etherscan.io/address/(walletaddress)',
-  },
+
   {
     id: CryptoId.ICP,
     label: 'Dfinity',
@@ -185,27 +160,7 @@ export const blockchainNetworks: BlockchainNetwork[] = [
     placeholder: 'Enter your XMR address',
     scanUrl: 'https://bloks.io/(walletaddress)',
   },
-  {
-    id: CryptoId.AAVE,
-    label: 'Aave',
-    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/aave.png" />,
-    placeholder: 'Enter your AAVE address',
-    scanUrl: 'https://etherscan.io/address/(walletaddress)',
-  },
-  {
-    id: CryptoId.CAKE,
-    label: 'Panecakeswap',
-    icon: <PancakeSwapIcon />,
-    placeholder: 'Enter your CAKE address',
-    scanUrl: 'https://etherscan.io/address/(walletaddress)',
-  },
-  {
-    id: CryptoId.SHIB,
-    label: 'Shiba',
-    icon: <ShibIcon />,
-    placeholder: 'Enter your SHIB address',
-    scanUrl: 'https://neoscan.io/(walletaddress)',
-  },
+
   {
     id: CryptoId.NEO,
     label: 'NEO',
@@ -213,13 +168,7 @@ export const blockchainNetworks: BlockchainNetwork[] = [
     placeholder: 'Enter your NEO address',
     scanUrl: 'https://neo2.neotube.io/address/(walletaddress)',
   },
-  {
-    id: CryptoId.COMP,
-    label: 'Compound',
-    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/comp.png" />,
-    placeholder: 'Enter your COMP address',
-    scanUrl: 'https://etherscan.io/address/(walletaddress)',
-  },
+
   {
     id: CryptoId.IOTA,
     label: 'IOTA',
@@ -255,11 +204,133 @@ export const blockchainNetworks: BlockchainNetwork[] = [
     placeholder: 'Enter your ZEC address',
     scanUrl: 'https://explorer.nemtool.com/#s_account?account=(walletaddress)',
   },
+];
+
+export const networkTokens: BlockchainNetwork[] = [
   {
+    id: CryptoId.UNI,
+    type: 'Token',
+    blockchain: CryptoId.ETH,
+    label: 'Uniswap',
+    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/uni.png" />,
+    placeholder: 'Enter your UNI address',
+    scanUrl: 'https://etherscan.io/address/(walletaddress)',
+  },
+  {
+    type: 'Token',
+    blockchain: CryptoId.ETH,
+    id: CryptoId.USDT,
+    label: 'Tether',
+    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/usdt.png" />,
+    placeholder: 'Enter your USDT address',
+    scanUrl: 'https://etherscan.io/address/(walletaddress)',
+  },
+  {
+    type: 'Token',
+    blockchain: CryptoId.ETH,
+    id: CryptoId.LINK,
+    label: 'Chainlink',
+    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/link.png" />,
+    placeholder: 'Enter your LINK address',
+    scanUrl: 'https://etherscan.io/address/(walletaddress)',
+  },
+  {
+    type: 'Token',
+    blockchain: CryptoId.ETH,
+    id: CryptoId.WBTC,
+    label: 'Wrapped Bitcoin',
+    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/wbtc.png" />,
+    placeholder: 'Enter your WBTC address',
+    scanUrl: 'https://etherscan.io/address/(walletaddress)',
+  },
+  {
+    type: 'Token',
+    blockchain: CryptoId.ETH,
+    id: CryptoId.DAI,
+    label: 'DAI',
+    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/dai.png" />,
+    placeholder: 'Enter your DAI address',
+    scanUrl: 'https://etherscan.io/address/(walletaddress)',
+  },
+  {
+    type: 'Token',
+    blockchain: CryptoId.ETH,
+    id: CryptoId.AAVE,
+    label: 'Aave',
+    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/aave.png" />,
+    placeholder: 'Enter your AAVE address',
+    scanUrl: 'https://etherscan.io/address/(walletaddress)',
+  },
+  {
+    type: 'Token',
+    blockchain: CryptoId.ETH,
+    id: CryptoId.COMP,
+    label: 'Compound',
+    icon: <img className="h-6 w-6" src="/assets/cryptocurrency/comp.png" />,
+    placeholder: 'Enter your COMP address',
+    scanUrl: 'https://etherscan.io/address/(walletaddress)',
+  },
+  {
+    type: 'Token',
+    blockchain: CryptoId.SOL,
     id: CryptoId.SLORP,
     label: 'Slorp',
     icon: <img className="h-6 w-6" src="/assets/cryptocurrency/SlorpCoin.png" />,
     placeholder: 'https://solscan.io/',
     scanUrl: 'https://solscan.io/account/(walletaddress)',
+  },
+  {
+    type: 'Token',
+    blockchain: CryptoId.SOL,
+    id: CryptoId.Solend,
+    label: 'Solend',
+    icon: <SolendIcon />,
+    placeholder: 'https://solscan.io/',
+    scanUrl: 'https://solscan.io/account/(walletaddress)',
+  },
+  {
+    type: 'Token',
+    blockchain: CryptoId.SOL,
+    id: CryptoId.Woof,
+    label: 'Woof',
+    icon: <WoofIcon />,
+    placeholder: 'https://solscan.io/',
+    scanUrl: 'https://solscan.io/account/(walletaddress)',
+  },
+  {
+    type: 'Token',
+    blockchain: CryptoId.SOL,
+    id: CryptoId.Bonk,
+    label: 'Bonk',
+    icon: <BonkIcon />,
+    placeholder: 'https://solscan.io/',
+    scanUrl: 'https://solscan.io/account/(walletaddress)',
+  },
+  {
+    type: 'Token',
+    blockchain: CryptoId.SOL,
+    id: CryptoId.Dogwifhat,
+    label: 'Dogwifhat',
+    icon: <DogwifhatIcon />,
+    placeholder: 'https://solscan.io/',
+    scanUrl: 'https://solscan.io/account/(walletaddress)',
+  },
+  {
+    type: 'Token',
+    blockchain: CryptoId.DOGE,
+    id: CryptoId.SHIB,
+    label: 'Shiba',
+    icon: <ShibIcon />,
+    placeholder: 'Enter your SHIB address',
+    scanUrl: 'https://neoscan.io/(walletaddress)',
+  },
+  {
+    type: 'Token',
+    blockchain: CryptoId.ETH,
+    id: CryptoId.CAKE,
+    label: 'Panecakeswap',
+    icon: <PancakeSwapIcon />,
+    placeholder: 'Enter your CAKE address',
+    scanUrl: 'https://etherscan.io/address/(walletaddress)',
   },
 ];
