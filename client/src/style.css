@@ -2186,12 +2186,6 @@ ol ol):not(:where([class~=not-prose] *)) {
 }
 
 .focus-visible-button {
-  position: relative;
-  cursor: pointer;
-  padding: 0.5rem 1rem;
-  border-radius: 0.75rem;
-  font-size: 1.125rem;
-  font-weight: 500;
   background-color: transparent;
   transition: background-color 0.2s;
 }
@@ -2201,12 +2195,11 @@ ol ol):not(:where([class~=not-prose] *)) {
 }
 
 .focus-visible-button:focus-visible {
-  outline: 2px solid #3b82f6;
+  outline: 2px solid #000;
   outline-offset: 2px;
 }
 
-@media (prefers-color-scheme: dark) {
-  .focus-visible-button:focus-visible {
-    outline-color: #60a5fa;
-  }
+.dark .focus-visible-button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
 }
