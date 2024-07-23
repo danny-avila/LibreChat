@@ -3,7 +3,7 @@ import { ReactNode } from 'react';
 import {
   AdaIcon,
   ShibIcon,
-  IotalIcon,
+  IotaIcon,
   PancakeSwapIcon,
   NemIcon,
   BonkIcon,
@@ -172,7 +172,7 @@ export const blockchainNetworks: BlockchainNetwork[] = [
   {
     id: CryptoId.IOTA,
     label: 'IOTA',
-    icon: <IotalIcon />,
+    icon: <IotaIcon />,
     placeholder: 'Enter your IOTA address',
     scanUrl: 'https://explorer.iota.org/mainnet/addr/(walletaddress)',
   },
@@ -276,7 +276,7 @@ export const networkTokens: BlockchainNetwork[] = [
     id: CryptoId.SLORP,
     label: 'Slorp',
     icon: <img className="h-6 w-6" src="/assets/cryptocurrency/SlorpCoin.png" />,
-    placeholder: 'https://solscan.io/',
+    placeholder: 'Enter your Slorp Address',
     scanUrl: 'https://solscan.io/account/(walletaddress)',
   },
   {
@@ -285,7 +285,7 @@ export const networkTokens: BlockchainNetwork[] = [
     id: CryptoId.Solend,
     label: 'Solend',
     icon: <SolendIcon />,
-    placeholder: 'https://solscan.io/',
+    placeholder: 'Enter your Solend Address',
     scanUrl: 'https://solscan.io/account/(walletaddress)',
   },
   {
@@ -294,7 +294,7 @@ export const networkTokens: BlockchainNetwork[] = [
     id: CryptoId.Woof,
     label: 'Woof',
     icon: <WoofIcon />,
-    placeholder: 'https://solscan.io/',
+    placeholder: 'Enter your Woof Address',
     scanUrl: 'https://solscan.io/account/(walletaddress)',
   },
   {
@@ -303,7 +303,7 @@ export const networkTokens: BlockchainNetwork[] = [
     id: CryptoId.Bonk,
     label: 'Bonk',
     icon: <BonkIcon />,
-    placeholder: 'https://solscan.io/',
+    placeholder: 'Enter your Bonk Address',
     scanUrl: 'https://solscan.io/account/(walletaddress)',
   },
   {
@@ -312,12 +312,12 @@ export const networkTokens: BlockchainNetwork[] = [
     id: CryptoId.Dogwifhat,
     label: 'Dogwifhat',
     icon: <DogwifhatIcon />,
-    placeholder: 'https://solscan.io/',
+    placeholder: 'Enter your Dogwifhat Address',
     scanUrl: 'https://solscan.io/account/(walletaddress)',
   },
   {
     type: 'Token',
-    blockchain: CryptoId.DOGE,
+    blockchain: CryptoId.ETH,
     id: CryptoId.SHIB,
     label: 'Shiba',
     icon: <ShibIcon />,

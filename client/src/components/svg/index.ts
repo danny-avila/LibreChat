@@ -63,7 +63,7 @@ export { default as AdaIcon } from './AdaIcon';
 export { default as TerraIcon } from './TerraIcon';
 export { default as ShibIcon } from './ShibIcon';
 export { default as NemIcon } from './NemIcon';
-export { default as IotalIcon } from './IotaIcon';
+export { default as IotaIcon } from './IotaIcon';
 export { default as PancakeSwapIcon } from './PancakeSwapIcon';
 export { default as BellIcon } from './BellIcon';
 

@@ -52,6 +52,7 @@ export default function CryptoModal({
   ];
 
   const [crypto, setCrypto] = useState<CryptoAddress[]>([]);
+
   useEffect(() => {
     setCrypto(user?.cryptocurrency ? user.cryptocurrency : []);
   }, [user]);
@@ -80,7 +81,6 @@ export default function CryptoModal({
   return (
     <Dialog onOpenChange={(e) => setOpen(e)} open={open}>
       <DialogTemplate
-        showCloseButton={false}
         title={'Setup Crypto Tips'}
         className="max-w-[450px]"
         main={
@@ -107,12 +107,11 @@ export default function CryptoModal({
                         ? crypto.filter((i) => i.id === item.id)[0].address
                         : initialCryptoState.filter((i) => i.id === item.id)[0].address
                     }
-                    setValue={(value) =>
-                      setCrypto([
-                        ...crypto.filter((i) => i.id !== item.id),
-                        { id: item.id, address: value },
-                      ])
-                    }
+                    setValue={(value) => {
+                      setCrypto(
+                        crypto.map((i) => (i.id === item.id ? { ...i, address: value } : i)),
+                      );
+                    }}
                     clearCrypto={() => setCrypto(crypto.filter((i) => i.id !== item.id))}
                   />
                 ))}
