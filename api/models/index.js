@@ -15,7 +15,7 @@ const {
   getConvosByQuery,
 } = require('./Conversation');
 const { getPreset, getPresets, savePreset, deletePresets } = require('./Preset');
-const { hashPassword, getUser, updateUser } = require('./userMethods');
+const { hashPassword, getUser, updateUser, findUser } = require('./userMethods');
 const {
   findFileById,
   createFile,
@@ -41,6 +41,7 @@ module.exports = {
   hashPassword,
   updateUser,
   getUser,
+  findUser,
 
   getMessages,
   getMessageById,

@@ -22,6 +22,7 @@ router.get('/', async function (req, res) {
         !!process.env.FACEBOOK_CLIENT_ID && !!process.env.FACEBOOK_CLIENT_SECRET,
       githubLoginEnabled: !!process.env.GITHUB_CLIENT_ID && !!process.env.GITHUB_CLIENT_SECRET,
       googleLoginEnabled: !!process.env.GOOGLE_CLIENT_ID && !!process.env.GOOGLE_CLIENT_SECRET,
+      appleLoginEnabled: !!process.env.APPLE_CLIENT_ID && !!process.env.APPLE_CLIENT_ID,
       openidLoginEnabled:
         !!process.env.OPENID_CLIENT_ID &&
         !!process.env.OPENID_CLIENT_SECRET &&

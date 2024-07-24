@@ -1,7 +1,7 @@
 import { useContext, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
-import { GoogleIcon, FacebookIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components';
+import { GoogleIcon, FacebookIcon, OpenIDIcon, GithubIcon, DiscordIcon, AppleIcon } from '~/components';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { ThemeSelector } from '~/components/ui';
 import SocialButton from './SocialButton';
@@ -70,6 +70,17 @@ function Login() {
         Icon={GoogleIcon}
         label={localize('com_auth_google_login')}
         id="google"
+      />
+    ),
+    apple: (
+      <SocialButton
+        key="apple"
+        enabled={startupConfig.googleLoginEnabled}
+        serverDomain={startupConfig.serverDomain}
+        oauthPath="apple"
+        Icon={AppleIcon}
+        label={'Continue with Apple'}
+        id="apple"
       />
     ),
     openid: (

@@ -61,6 +61,7 @@ describe.skip('GET /', () => {
       facebookLoginEnabled: true,
       githubLoginEnabled: true,
       googleLoginEnabled: true,
+      appleLoginEnabled: true,
       openidLoginEnabled: true,
       openidLabel: 'Test OpenID',
       openidImageUrl: 'http://test-server.com',
