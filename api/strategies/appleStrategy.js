@@ -1,20 +1,41 @@
+const { User } = require('~/models');
 const AppleStrategy = require('passport-apple');
-const socialLogin = require('./socialLogin');
+const { createNewUser, handleExistingUser } = require('./process');
+const { logger } = require('~/config');
 
-const getProfileDetails = (req, accessToken, refreshToken, idToken, profile, cb) => {
-  console.log('--- profile ---', profile);
+const appleLogin = async (accessToken, refreshToken, profile, cb) => {
+  console.log('access', accessToken, refreshToken, profile, cb);
+  try {
+    const email = profile.emails[0].value;
+    const googleId = profile.id;
+    const oldUser = await User.findOne({ email });
+    const ALLOW_SOCIAL_REGISTRATION =
+      process.env.ALLOW_SOCIAL_REGISTRATION?.toLowerCase() === 'true';
+    const avatarUrl = profile.photos[0].value;
 
-  cb(null, {
-    email: profile.emails[0]?.value,
-    id: profile.id,
-    avatarUrl: profile.photos[0]?.value,
-    username: profile.displayName,
-    name: profile.name?.givenName + ' ' + profile.name?.familyName,
-    emailVerified: true,
-  });
-};
+    if (oldUser) {
+      await handleExistingUser(oldUser, avatarUrl);
+      return cb(null, oldUser);
+    }
 
-const appleLogin = socialLogin('apple', getProfileDetails);
+    if (ALLOW_SOCIAL_REGISTRATION) {
+      const newUser = await createNewUser({
+        email,
+        avatarUrl,
+        provider: 'google',
+        providerKey: 'googleId',
+        providerId: googleId,
+        username: profile.name.givenName,
+        name: `${profile.name.givenName} ${profile.name.familyName}`,
+        emailVerified: profile.emails[0].verified,
+      });
+      return cb(null, newUser);
+    }
+  } catch (err) {
+    logger.error('[googleLogin]', err);
+    return cb(err);
+  }
+};;
 
 module.exports = () =>
   new AppleStrategy(
