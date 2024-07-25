@@ -53,10 +53,7 @@ router.get(
 
 router.get(
   '/apple',
-  passport.authenticate('apple', {
-    scope: ['email', 'name'],
-    session: false,
-  }),
+  passport.authenticate('apple'),
 );
 
 // router.get(
@@ -70,10 +67,7 @@ router.get(
 
 router.post(
   '/apple/callback',
-  passport.authenticate('apple', {
-    session: false,
-    scope: ['email', 'name'],
-  }),
+  passport.authenticate('apple'),
   oauthHandler,
 );
 
