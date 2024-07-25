@@ -2,9 +2,10 @@ const { User } = require('~/models');
 const AppleStrategy = require('passport-apple');
 const { createNewUser, handleExistingUser } = require('./process');
 const { logger } = require('~/config');
+const jwt = require('jsonwebtoken');
 
-const appleLogin = async (accessToken, refreshToken, profile, cb) => {
-  console.log('access', accessToken, refreshToken, profile, cb);
+const appleLogin = async (req, accessToken, refreshToken, idToken, profile, cb) => {
+  console.log('access', req, accessToken, refreshToken, jwt.decode(idToken), profile);
   try {
     const email = profile.emails[0].value;
     const googleId = profile.id;
@@ -32,7 +33,7 @@ const appleLogin = async (accessToken, refreshToken, profile, cb) => {
       return cb(null, newUser);
     }
   } catch (err) {
-    logger.error('[googleLogin]', err);
+    logger.error('[appleLogin]', err);
     return cb(err);
   }
 };;

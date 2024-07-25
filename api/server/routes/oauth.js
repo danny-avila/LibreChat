@@ -15,6 +15,7 @@ const domains = {
 router.use(loginLimiter);
 
 const oauthHandler = async (req, res) => {
+  console.log('=== oauthHandler === ', req);
   try {
     await checkDomainAllowed(req, res);
     await checkBan(req, res);
@@ -58,14 +59,14 @@ router.get(
   }),
 );
 
-router.get(
-  '/apple/callback',
-  passport.authenticate('apple', {
-    session: false,
-    scope: ['email', 'name'],
-  }),
-  oauthHandler,
-);
+// router.get(
+//   '/apple/callback',
+//   passport.authenticate('apple', {
+//     session: false,
+//     scope: ['email', 'name'],
+//   }),
+//   oauthHandler,
+// );
 
 router.post(
   '/apple/callback',
