@@ -36,10 +36,18 @@ const appleLogin = async (req, accessToken, refreshToken, idToken, profile, cb) 
     logger.error('[appleLogin]', err);
     return cb(err);
   }
-};;
+};
+
+class AppleUpdateStrategy extends AppleStrategy {
+  constructor() {
+    super({
+      secretOrKey: process.env.JWT_SECRET,
+    });
+  }
+}
 
 module.exports = () =>
-  new AppleStrategy(
+  new AppleUpdateStrategy(
     {
       clientID: process.env.APPLE_CLIENT_ID,
       teamID: process.env.APPLE_TEAM_ID,
