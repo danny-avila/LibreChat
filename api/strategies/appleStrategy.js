@@ -38,16 +38,8 @@ const appleLogin = async (req, accessToken, refreshToken, idToken, profile, cb) 
   }
 };
 
-class AppleUpdateStrategy extends AppleStrategy {
-  constructor() {
-    super({
-      secretOrKey: process.env.JWT_SECRET,
-    });
-  }
-}
-
 module.exports = () =>
-  new AppleUpdateStrategy(
+  new AppleStrategy(
     {
       clientID: process.env.APPLE_CLIENT_ID,
       teamID: process.env.APPLE_TEAM_ID,
