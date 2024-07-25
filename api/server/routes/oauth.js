@@ -61,8 +61,6 @@ router.get(
 router.get(
   '/apple/callback',
   passport.authenticate('apple', {
-    failureRedirect: `${domains.client}/login`,
-    failureMessage: true,
     session: false,
     scope: ['email', 'name'],
   }),
