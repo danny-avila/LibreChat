@@ -32,7 +32,7 @@ const oauthHandler = async (req, res) => {
  * Google Routes
  */
 router.get(
-  '/google',
+  '/  ',
   passport.authenticate('google', {
     scope: ['openid', 'profile', 'email'],
     session: false,
@@ -59,6 +59,15 @@ router.get(
 );
 
 router.get(
+  '/apple/callback',
+  passport.authenticate('apple', {
+    session: false,
+    scope: ['email', 'name'],
+  }),
+  oauthHandler,
+);
+
+router.post(
   '/apple/callback',
   passport.authenticate('apple', {
     session: false,
