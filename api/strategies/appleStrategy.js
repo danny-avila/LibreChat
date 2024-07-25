@@ -33,6 +33,7 @@ const appleLogin = async (req, accessToken, refreshToken, idToken, profile, cb) 
       return cb(null, newUser);
     }
   } catch (err) {
+    console.error('[appleLogin]', err);
     logger.error('[appleLogin]', err);
     return cb(err);
   }
