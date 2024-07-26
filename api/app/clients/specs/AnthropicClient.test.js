@@ -1,4 +1,6 @@
-const AnthropicClient = require('../AnthropicClient');
+const { anthropicSettings } = require('librechat-data-provider');
+const AnthropicClient = require('~/app/clients/AnthropicClient');
+
 const HUMAN_PROMPT = '\n\nHuman:';
 const AI_PROMPT = '\n\nAssistant:';
 
@@ -22,7 +24,7 @@ describe('AnthropicClient', () => {
     const options = {
       modelOptions: {
         model,
-        temperature: 0.7,
+        temperature: anthropicSettings.temperature.default,
       },
     };
     client = new AnthropicClient('test-api-key');
@@ -33,7 +35,42 @@ describe('AnthropicClient', () => {
     it('should set the options correctly', () => {
       expect(client.apiKey).toBe('test-api-key');
       expect(client.modelOptions.model).toBe(model);
-      expect(client.modelOptions.temperature).toBe(0.7);
+      expect(client.modelOptions.temperature).toBe(anthropicSettings.temperature.default);
+    });
+
+    it('should set legacy maxOutputTokens for non-Claude-3 models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-2',
+          maxOutputTokens: anthropicSettings.maxOutputTokens.default,
+        },
+      });
+      expect(client.modelOptions.maxOutputTokens).toBe(
+        anthropicSettings.legacy.maxOutputTokens.default,
+      );
+    });
+    it('should not set maxOutputTokens if not provided', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-3',
+        },
+      });
+      expect(client.modelOptions.maxOutputTokens).toBeUndefined();
+    });
+
+    it('should not set legacy maxOutputTokens for Claude-3 models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-3-opus-20240229',
+          maxOutputTokens: anthropicSettings.legacy.maxOutputTokens.default,
+        },
+      });
+      expect(client.modelOptions.maxOutputTokens).toBe(
+        anthropicSettings.legacy.maxOutputTokens.default,
+      );
     });
   });
 
@@ -134,6 +171,59 @@ describe('AnthropicClient', () => {
       const { prompt } = result;
       expect(prompt).toContain('Human\'s name: John');
       expect(prompt).toContain('You are Claude-2');
+    });
+  });
+
+  describe('getClient', () => {
+    it('should set legacy maxOutputTokens for non-Claude-3 models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-2',
+          maxOutputTokens: anthropicSettings.legacy.maxOutputTokens.default,
+        },
+      });
+      expect(client.modelOptions.maxOutputTokens).toBe(
+        anthropicSettings.legacy.maxOutputTokens.default,
+      );
+    });
+
+    it('should not set legacy maxOutputTokens for Claude-3 models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-3-opus-20240229',
+          maxOutputTokens: anthropicSettings.legacy.maxOutputTokens.default,
+        },
+      });
+      expect(client.modelOptions.maxOutputTokens).toBe(
+        anthropicSettings.legacy.maxOutputTokens.default,
+      );
+    });
+
+    it('should add beta header for claude-3-5-sonnet model', () => {
+      const client = new AnthropicClient('test-api-key');
+      const modelOptions = {
+        model: 'claude-3-5-sonnet-20240307',
+      };
+      client.setOptions({ modelOptions });
+      const anthropicClient = client.getClient(modelOptions);
+      expect(anthropicClient._options.defaultHeaders).toBeDefined();
+      expect(anthropicClient._options.defaultHeaders).toHaveProperty('anthropic-beta');
+      expect(anthropicClient._options.defaultHeaders['anthropic-beta']).toBe(
+        'max-tokens-3-5-sonnet-2024-07-15',
+      );
+    });
+
+    it('should not add beta header for other models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-2',
+        },
+      });
+      const anthropicClient = client.getClient();
+      expect(anthropicClient.defaultHeaders).not.toHaveProperty('anthropic-beta');
     });
   });
 });

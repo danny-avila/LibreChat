@@ -129,6 +129,7 @@ if (process.env.MEILI_HOST && process.env.MEILI_MASTER_KEY) {
 }
 
 messageSchema.index({ createdAt: 1 });
+messageSchema.index({ messageId: 1, user: 1 }, { unique: true });
 
 const Message = mongoose.models.Message || mongoose.model('Message', messageSchema);
 
