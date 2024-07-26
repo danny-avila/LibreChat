@@ -45,6 +45,7 @@
     "bcryptjs": "^2.4.3",
     "cheerio": "^1.0.0-rc.12",
     "cohere-ai": "^7.9.1",
+    "compression": "^1.7.4",
     "connect-redis": "^7.1.0",
     "cookie": "^0.5.0",
     "cors": "^2.8.5",

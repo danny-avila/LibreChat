@@ -4,6 +4,7 @@ require('module-alias')({ base: path.resolve(__dirname, '..') });
 const cors = require('cors');
 const axios = require('axios');
 const express = require('express');
+const compression = require('compression');
 const passport = require('passport');
 const mongoSanitize = require('express-mongo-sanitize');
 const { jwtLogin, passportLogin } = require('~/strategies');
@@ -17,6 +18,7 @@ const configureSocialLogins = require('./socialLogins');
 const AppService = require('./services/AppService');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
+const staticCache = require('./utils/staticCache');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN } = process.env ?? {};
 
@@ -38,14 +40,15 @@ const startServer = async () => {
   app.get('/health', (_req, res) => res.status(200).send('OK'));
 
   // Middleware
+  app.use(compression());
   app.use(noIndex);
   app.use(errorController);
   app.use(express.json({ limit: '3mb' }));
   app.use(mongoSanitize());
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
-  app.use(express.static(app.locals.paths.dist));
-  app.use(express.static(app.locals.paths.fonts));
-  app.use(express.static(app.locals.paths.assets));
+  app.use(staticCache(app.locals.paths.dist));
+  app.use(staticCache(app.locals.paths.fonts));
+  app.use(staticCache(app.locals.paths.assets));
   app.set('trust proxy', 1); // trust first proxy
   app.use(cors());
 
