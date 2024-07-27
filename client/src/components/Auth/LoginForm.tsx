@@ -24,7 +24,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
   const [showResendLink, setShowResendLink] = useState<boolean>(false);
 
   const { data: config } = useGetStartupConfig();
-  const useUsernameLogin = config?.ldapLoginUsesUsername;
+  const useUsernameLogin = config?.ldap?.username;
 
   useEffect(() => {
     if (error && error.includes('422') && !showResendLink) {
