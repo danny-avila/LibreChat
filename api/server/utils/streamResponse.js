@@ -30,7 +30,8 @@ const sendMessage = (res, message, event = 'message') => {
 /**
  * Processes an error with provided options, saves the error message and sends a corresponding SSE response
  * @async
- * @param {object} res - The server response.
+ * @param {object} req - The request.
+ * @param {object} res - The response.
  * @param {object} options - The options for handling the error containing message properties.
  * @param {object} options.user - The user ID.
  * @param {string} options.sender - The sender of the message.
@@ -41,7 +42,7 @@ const sendMessage = (res, message, event = 'message') => {
  * @param {boolean} options.shouldSaveMessage - [Optional] Whether the message should be saved. Default is true.
  * @param {function} callback - [Optional] The callback function to be executed.
  */
-const sendError = async (res, options, callback) => {
+const sendError = async (req, res, options, callback) => {
   const {
     user,
     sender,
@@ -69,7 +70,7 @@ const sendError = async (res, options, callback) => {
   }
 
   if (shouldSaveMessage) {
-    await saveMessage({ ...errorMessage, user });
+    await saveMessage(req, { ...errorMessage, user });
   }
 
   if (!errorMessage.error) {
@@ -97,11 +98,12 @@ const sendError = async (res, options, callback) => {
 
 /**
  * Sends the response based on whether headers have been sent or not.
+ * @param {Express.Request} req - The server response.
  * @param {Express.Response} res - The server response.
  * @param {Object} data - The data to be sent.
  * @param {string} [errorMessage] - The error message, if any.
  */
-const sendResponse = (res, data, errorMessage) => {
+const sendResponse = (req, res, data, errorMessage) => {
   if (!res.headersSent) {
     if (errorMessage) {
       return res.status(500).json({ error: errorMessage });
@@ -110,7 +112,7 @@ const sendResponse = (res, data, errorMessage) => {
   }
 
   if (errorMessage) {
-    return sendError(res, { ...data, text: errorMessage });
+    return sendError(req, res, { ...data, text: errorMessage });
   }
   return sendMessage(res, data);
 };

@@ -2,8 +2,10 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const {
-  getResponseSender,
+  Constants,
   EModelEndpoint,
+  anthropicSettings,
+  getResponseSender,
   validateVisionModel,
 } = require('librechat-data-provider');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
@@ -16,6 +18,7 @@ const {
 } = require('./prompts');
 const spendTokens = require('~/models/spendTokens');
 const { getModelMaxTokens } = require('~/utils');
+const { sleep } = require('~/server/utils');
 const BaseClient = require('./BaseClient');
 const { logger } = require('~/config');
 
@@ -28,6 +31,8 @@ const tokenizersCache = {};
 function delayBeforeRetry(attempts, baseDelay = 1000) {
   return new Promise((resolve) => setTimeout(resolve, baseDelay * attempts));
 }
+
+const { legacy } = anthropicSettings;
 
 class AnthropicClient extends BaseClient {
   constructor(apiKey, options = {}) {
@@ -61,15 +66,20 @@ class AnthropicClient extends BaseClient {
     const modelOptions = this.options.modelOptions || {};
     this.modelOptions = {
       ...modelOptions,
-      // set some good defaults (check for undefined in some cases because they may be 0)
-      model: modelOptions.model || 'claude-1',
-      temperature: typeof modelOptions.temperature === 'undefined' ? 1 : modelOptions.temperature, // 0 - 1, 1 is default
-      topP: typeof modelOptions.topP === 'undefined' ? 0.7 : modelOptions.topP, // 0 - 1, default: 0.7
-      topK: typeof modelOptions.topK === 'undefined' ? 40 : modelOptions.topK, // 1-40, default: 40
-      stop: modelOptions.stop, // no stop method for now
+      model: modelOptions.model || anthropicSettings.model.default,
     };
 
     this.isClaude3 = this.modelOptions.model.includes('claude-3');
+    this.isLegacyOutput = !this.modelOptions.model.includes('claude-3-5-sonnet');
+
+    if (
+      this.isLegacyOutput &&
+      this.modelOptions.maxOutputTokens &&
+      this.modelOptions.maxOutputTokens > legacy.maxOutputTokens.default
+    ) {
+      this.modelOptions.maxOutputTokens = legacy.maxOutputTokens.default;
+    }
+
     this.useMessages = this.isClaude3 || !!this.options.attachments;
 
     this.defaultVisionModel = this.options.visionModel ?? 'claude-3-sonnet-20240229';
@@ -119,10 +129,11 @@ class AnthropicClient extends BaseClient {
 
   /**
    * Get the initialized Anthropic client.
+   * @param {Partial<Anthropic.ClientOptions>} requestOptions - The options for the client.
    * @returns {Anthropic} The Anthropic client instance.
    */
-  getClient() {
-    /** @type {Anthropic.default.RequestOptions} */
+  getClient(requestOptions) {
+    /** @type {Anthropic.ClientOptions} */
     const options = {
       fetch: this.fetch,
       apiKey: this.apiKey,
@@ -134,6 +145,12 @@ class AnthropicClient extends BaseClient {
 
     if (this.options.reverseProxyUrl) {
       options.baseURL = this.options.reverseProxyUrl;
+    }
+
+    if (requestOptions?.model && requestOptions.model.includes('claude-3-5-sonnet')) {
+      options.defaultHeaders = {
+        'anthropic-beta': 'max-tokens-3-5-sonnet-2024-07-15',
+      };
     }
 
     return new Anthropic(options);
@@ -556,8 +573,6 @@ class AnthropicClient extends BaseClient {
     }
 
     logger.debug('modelOptions', { modelOptions });
-
-    const client = this.getClient();
     const metadata = {
       user_id: this.user,
     };
@@ -585,7 +600,7 @@ class AnthropicClient extends BaseClient {
 
     if (this.useMessages) {
       requestOptions.messages = payload;
-      requestOptions.max_tokens = maxOutputTokens || 1500;
+      requestOptions.max_tokens = maxOutputTokens || legacy.maxOutputTokens.default;
     } else {
       requestOptions.prompt = payload;
       requestOptions.max_tokens_to_sample = maxOutputTokens || 1500;
@@ -605,12 +620,14 @@ class AnthropicClient extends BaseClient {
     };
 
     const maxRetries = 3;
+    const streamRate = this.options.streamRate ?? Constants.DEFAULT_STREAM_RATE;
     async function processResponse() {
       let attempts = 0;
 
       while (attempts < maxRetries) {
         let response;
         try {
+          const client = this.getClient(requestOptions);
           response = await this.createResponse(client, requestOptions);
 
           signal.addEventListener('abort', () => {
@@ -627,6 +644,8 @@ class AnthropicClient extends BaseClient {
             } else if (completion.completion) {
               handleChunk(completion.completion);
             }
+
+            await sleep(streamRate);
           }
 
           // Successful processing, exit loop
@@ -737,7 +756,11 @@ class AnthropicClient extends BaseClient {
       };
 
       try {
-        const response = await this.createResponse(this.getClient(), requestOptions, true);
+        const response = await this.createResponse(
+          this.getClient(requestOptions),
+          requestOptions,
+          true,
+        );
         let promptTokens = response?.usage?.input_tokens;
         let completionTokens = response?.usage?.output_tokens;
         if (!promptTokens) {
