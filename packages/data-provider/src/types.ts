@@ -294,7 +294,13 @@ export type TStartupConfig = {
   openidLoginEnabled: boolean;
   openidLabel: string;
   openidImageUrl: string;
-  ldapLoginEnabled: boolean;
+  /** LDAP Auth Configuration */
+  ldap?: {
+    /** LDAP enabled */
+    enabled: boolean;
+    /** Whether LDAP uses username vs. email */
+    username?: boolean;
+  };
   serverDomain: string;
   emailLoginEnabled: boolean;
   registrationEnabled: boolean;
