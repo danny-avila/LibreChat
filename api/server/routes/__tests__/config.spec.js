@@ -76,7 +76,9 @@ describe.skip('GET /', () => {
       openidLoginEnabled: true,
       openidLabel: 'Test OpenID',
       openidImageUrl: 'http://test-server.com',
-      ldapLoginEnabled: true,
+      ldap: {
+        enabled: true,
+      },
       serverDomain: 'http://test-server.com',
       emailLoginEnabled: 'true',
       registrationEnabled: 'true',

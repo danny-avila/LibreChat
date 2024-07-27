@@ -23,7 +23,9 @@ const mockStartupConfig: TStartupConfig = {
   passwordResetEnabled: true,
   serverDomain: 'mock-server',
   appTitle: '',
-  ldapLoginEnabled: false,
+  ldap: {
+    enabled: false,
+  },
   emailEnabled: false,
   checkBalance: false,
   showBirthdayIcon: false,
