@@ -107,6 +107,16 @@ export default function useChatFunctions({
     const intermediateId = overrideUserMessageId ?? v4();
     parentMessageId = parentMessageId || latestMessage?.messageId || Constants.NO_PARENT;
 
+    logger.dir('Ask function called with:', {
+      index,
+      latestMessage,
+      conversationId,
+      intermediateId,
+      parentMessageId,
+      currentMessages,
+    });
+    logger.log('=====================================');
+
     if (conversationId == Constants.NEW_CONVO) {
       parentMessageId = Constants.NO_PARENT;
       currentMessages = [];
