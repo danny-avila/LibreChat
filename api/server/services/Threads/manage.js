@@ -41,6 +41,7 @@ async function initThread({ openai, body, thread_id: _thread_id }) {
 /**
  * Saves a user message to the DB in the Assistants endpoint format.
  *
+ * @param {Object} req - The request object.
  * @param {Object} params - The parameters of the user message
  * @param {string} params.user - The user's ID.
  * @param {string} params.text - The user's prompt.
@@ -59,7 +60,7 @@ async function initThread({ openai, body, thread_id: _thread_id }) {
  * @param {string[]} [params.file_ids] - Optional. List of File IDs attached to the userMessage.
  * @return {Promise<Run>} A promise that resolves to the created run object.
  */
-async function saveUserMessage(params) {
+async function saveUserMessage(req, params) {
   const tokenCount = await countTokens(params.text);
 
   // todo: do this on the frontend
@@ -110,14 +111,16 @@ async function saveUserMessage(params) {
   }
 
   const message = await recordMessage(userMessage);
-  await saveConvo(params.user, convo);
-
+  await saveConvo(req, convo, {
+    context: 'api/server/services/Threads/manage.js #saveUserMessage',
+  });
   return message;
 }
 
 /**
  * Saves an Assistant message to the DB in the Assistants endpoint format.
  *
+ * @param {Object} req - The request object.
  * @param {Object} params - The parameters of the Assistant message
  * @param {string} params.user - The user's ID.
  * @param {string} params.messageId - The message Id.
@@ -134,7 +137,7 @@ async function saveUserMessage(params) {
  * @param {string} [params.promptPrefix] - Optional: from preset for `additional_instructions` field.
  * @return {Promise<Run>} A promise that resolves to the created run object.
  */
-async function saveAssistantMessage(params) {
+async function saveAssistantMessage(req, params) {
   // const tokenCount = // TODO: need to count each content part
 
   const message = await recordMessage({
@@ -154,14 +157,18 @@ async function saveAssistantMessage(params) {
     // tokenCount,
   });
 
-  await saveConvo(params.user, {
-    endpoint: params.endpoint,
-    conversationId: params.conversationId,
-    promptPrefix: params.promptPrefix,
-    instructions: params.instructions,
-    assistant_id: params.assistant_id,
-    model: params.model,
-  });
+  await saveConvo(
+    req,
+    {
+      endpoint: params.endpoint,
+      conversationId: params.conversationId,
+      promptPrefix: params.promptPrefix,
+      instructions: params.instructions,
+      assistant_id: params.assistant_id,
+      model: params.model,
+    },
+    { context: 'api/server/services/Threads/manage.js #saveAssistantMessage' },
+  );
 
   return message;
 }
@@ -338,10 +345,14 @@ async function syncMessages({
   await Promise.all(modifyPromises);
   await Promise.all(recordPromises);
 
-  await saveConvo(openai.req.user.id, {
-    conversationId,
-    file_ids: attached_file_ids,
-  });
+  await saveConvo(
+    openai.req,
+    {
+      conversationId,
+      file_ids: attached_file_ids,
+    },
+    { context: 'api/server/services/Threads/manage.js #syncMessages' },
+  );
 
   return result;
 }

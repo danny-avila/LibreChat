@@ -1,19 +1,30 @@
 import { memo } from 'react';
 import { useParams } from 'react-router-dom';
-import { useGetSharedMessages } from 'librechat-data-provider/react-query';
+import { useGetSharedMessages, useGetStartupConfig } from 'librechat-data-provider/react-query';
+import { useLocalize, useDocumentTitle } from '~/hooks';
 import { ShareContext } from '~/Providers';
 import { Spinner } from '~/components/svg';
 import MessagesView from './MessagesView';
-import { useLocalize } from '~/hooks';
 import { buildTree } from '~/utils';
 import Footer from '../Chat/Footer';
 
 function SharedView() {
   const localize = useLocalize();
+  const { data: config } = useGetStartupConfig();
   const { shareId } = useParams();
   const { data, isLoading } = useGetSharedMessages(shareId ?? '');
   const dataTree = data && buildTree({ messages: data.messages });
   const messagesTree = dataTree?.length === 0 ? null : dataTree ?? null;
+
+  // configure document title
+  let docTitle = '';
+  if (config?.appTitle && data?.title) {
+    docTitle = `${data?.title} | ${config.appTitle}`;
+  } else {
+    docTitle = data?.title || config?.appTitle || document.title;
+  }
+
+  useDocumentTitle(docTitle);
 
   return (
     <ShareContext.Provider value={{ isSharedConvo: true }}>

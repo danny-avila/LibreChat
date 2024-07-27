@@ -52,7 +52,7 @@ router.post('/', setHeaders, async (req, res) => {
 
   if (!overrideParentMessageId) {
     await saveMessage(req, { ...userMessage, user: req.user.id });
-    await saveConvo(req.user.id, {
+    await saveConvo(req, {
       ...userMessage,
       ...endpointOption,
       conversationId,
@@ -183,7 +183,7 @@ const ask = async ({
       }
     }
 
-    await saveConvo(user, conversationUpdate);
+    await saveConvo(req, conversationUpdate);
     conversationId = newConversationId;
 
     // STEP3 update the user message
@@ -213,7 +213,7 @@ const ask = async ({
     if (userParentMessageId == Constants.NO_PARENT) {
       // const title = await titleConvo({ endpoint: endpointOption?.endpoint, text, response: responseMessage });
       const title = await response.details.title;
-      await saveConvo(user, {
+      await saveConvo(req, {
         conversationId: conversationId,
         title,
       });
