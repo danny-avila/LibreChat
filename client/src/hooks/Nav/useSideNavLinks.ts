@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import {
   ArrowRightToLine,
   MessageSquareQuote,
+  Bookmark,
   // Settings2,
 } from 'lucide-react';
 import {
@@ -25,12 +26,14 @@ export default function useSideNavLinks({
   keyProvided,
   endpoint,
   interfaceConfig,
+  manageBookmarks,
 }: {
   hidePanel: () => void;
   assistants?: TConfig | null;
   keyProvided: boolean;
   endpoint?: EModelEndpoint | null;
   interfaceConfig: Partial<TInterfaceConfig>;
+  manageBookmarks: (e?: React.MouseEvent) => void;
 }) {
   const hasAccessToPrompts = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
@@ -74,6 +77,14 @@ export default function useSideNavLinks({
     });
 
     links.push({
+      title: 'com_sidepanel_conversation_tags',
+      label: '',
+      icon: Bookmark,
+      onClick: manageBookmarks,
+      id: 'bookmarks',
+    });
+
+    links.push({
       title: 'com_sidepanel_hide_panel',
       label: '',
       icon: ArrowRightToLine,
@@ -89,6 +100,7 @@ export default function useSideNavLinks({
     endpoint,
     interfaceConfig.parameters,
     hasAccessToPrompts,
+    manageBookmarks,
   ]);
 
   return Links;

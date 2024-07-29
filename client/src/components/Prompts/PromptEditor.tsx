@@ -70,7 +70,7 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
                 onBlur={() => setIsEditing(false)}
               />
             ) : (
-              <span className="block break-words px-2 py-1 dark:text-gray-200">{field.value}</span>
+              <pre className="block break-words px-2 py-1 dark:text-gray-200">{field.value}</pre>
             )
           }
         />
