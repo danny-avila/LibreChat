@@ -88,7 +88,6 @@ export default function AssistantTool({
       <OGDialogTemplate
         showCloseButton={false}
         title={localize('com_ui_delete_tool')}
-        mainClassName="px-0"
         className="max-w-[450px]"
         main={
           <Label className="text-left text-sm font-medium">

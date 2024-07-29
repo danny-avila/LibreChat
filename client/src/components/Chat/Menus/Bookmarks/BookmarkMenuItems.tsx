@@ -58,7 +58,7 @@ export const BookmarkMenuItems: FC<{
             trigger={
               <div
                 role="menuitem"
-                className="group m-1.5 flex cursor-pointer gap-2 rounded px-1 !pr-3.5 pb-2.5 pt-3 text-sm !opacity-100 hover:bg-black/5 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-white/5"
+                className="group m-1.5 flex cursor-pointer gap-2 rounded px-2 !pr-3.5 pb-2.5 pt-3 text-sm !opacity-100 hover:bg-black/5 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-white/5"
                 tabIndex={-1}
               >
                 <div className="flex grow items-center justify-between gap-2">
