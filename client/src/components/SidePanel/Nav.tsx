@@ -41,9 +41,9 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                               ? 'dark:bg-muted dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-white'
                               : '',
                           )}
-                          onClick={() => {
+                          onClick={(e) => {
                             if (link.onClick) {
-                              link.onClick();
+                              link.onClick(e);
                               setActive('');
                               return;
                             }
@@ -87,9 +87,9 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                                 'hover:bg-gray-50 data-[state=open]:bg-gray-50 data-[state=open]:text-black dark:hover:bg-gray-700 dark:data-[state=open]:bg-gray-700 dark:data-[state=open]:text-white',
                                 'w-full justify-start rounded-md border dark:border-gray-700',
                               )}
-                              onClick={() => {
+                              onClick={(e) => {
                                 if (link.onClick) {
-                                  link.onClick();
+                                  link.onClick(e);
                                   setActive('');
                                 }
                               }}
