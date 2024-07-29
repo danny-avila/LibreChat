@@ -158,7 +158,7 @@ const BookmarkForm = ({
           />
         </div>
         {conversation && (
-          <div className="flex w-full items-center">
+          <div className="mt-2 flex w-full items-center">
             <Controller
               name="addToConversation"
               control={control}

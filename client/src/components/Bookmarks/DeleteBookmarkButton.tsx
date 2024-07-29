@@ -42,7 +42,7 @@ const DeleteBookmarkButton: FC<{
       title="Delete Bookmark"
       confirmMessage={
         <Label htmlFor="bookmark" className="text-left text-sm font-medium">
-          {localize('com_ui_bookmark_delete_confirm')} : {bookmark}
+          {localize('com_ui_bookmark_delete_confirm')} {bookmark}
         </Label>
       }
       confirm={confirmDelete}
