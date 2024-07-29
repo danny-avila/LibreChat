@@ -150,6 +150,7 @@ export const useConversationsInfiniteQuery = (
         ...params,
         pageNumber: pageParam?.toString(),
         isArchived: params?.isArchived || false,
+        tags: params?.tags || [],
       }),
     {
       getNextPageParam: (lastPage) => {
@@ -185,6 +186,21 @@ export const useSharedLinksInfiniteQuery = (
         // If the current page number is less than total pages, return the next page number
         return currentPageNumber < totalPages ? currentPageNumber + 1 : undefined;
       },
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      ...config,
+    },
+  );
+};
+
+export const useConversationTagsQuery = (
+  config?: UseQueryOptions<t.TConversationTagsResponse>,
+): QueryObserverResult<t.TConversationTagsResponse> => {
+  return useQuery<t.TConversationTag[]>(
+    [QueryKeys.conversationTags],
+    () => dataService.getConversationTags(),
+    {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
