@@ -33,6 +33,7 @@ export default function MessagesView({
         <div
           onScroll={debouncedHandleScroll}
           ref={scrollableRef}
+          tabIndex={0}
           style={{
             height: '100%',
             overflowY: 'auto',
