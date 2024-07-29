@@ -20,7 +20,7 @@ const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
 const staticCache = require('./utils/staticCache');
 
-const { PORT, HOST, ALLOW_SOCIAL_LOGIN } = process.env ?? {};
+const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION } = process.env ?? {};
 
 const port = Number(PORT) || 3080;
 const host = HOST || 'localhost';
@@ -40,7 +40,6 @@ const startServer = async () => {
   app.get('/health', (_req, res) => res.status(200).send('OK'));
 
   // Middleware
-  app.use(compression());
   app.use(noIndex);
   app.use(errorController);
   app.use(express.json({ limit: '3mb' }));
@@ -51,6 +50,10 @@ const startServer = async () => {
   app.use(staticCache(app.locals.paths.assets));
   app.set('trust proxy', 1); // trust first proxy
   app.use(cors());
+
+  if (DISABLE_COMPRESSION !== 'true') {
+    app.use(compression());
+  }
 
   if (!ALLOW_SOCIAL_LOGIN) {
     console.warn(
