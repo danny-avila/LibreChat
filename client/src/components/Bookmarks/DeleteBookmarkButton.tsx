@@ -8,7 +8,12 @@ import { TrashIcon } from '~/components/svg';
 import { Label } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 
-const DeleteBookmarkButton: FC<{ bookmark: string }> = ({ bookmark }) => {
+const DeleteBookmarkButton: FC<{
+  bookmark: string;
+  tabIndex?: number;
+  onFocus?: () => void;
+  onBlur?: () => void;
+}> = ({ bookmark, tabIndex = 0, onFocus, onBlur }) => {
   const localize = useLocalize();
   const { showToast } = useToastContext();
 
@@ -37,13 +42,17 @@ const DeleteBookmarkButton: FC<{ bookmark: string }> = ({ bookmark }) => {
       title="Delete Bookmark"
       confirmMessage={
         <Label htmlFor="bookmark" className="text-left text-sm font-medium">
-          {localize('com_ui_bookmark_delete_confirm')} : {bookmark}
+          {localize('com_ui_bookmark_delete_confirm')} {bookmark}
         </Label>
       }
       confirm={confirmDelete}
-      className="hover:text-gray-300 focus-visible:bg-gray-100 focus-visible:outline-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-600 dark:focus-visible:bg-gray-600"
+      className="transition-color flex h-7 w-7 min-w-7 items-center justify-center rounded-lg duration-200 hover:bg-gray-200 dark:hover:bg-gray-700"
       icon={<TrashIcon className="size-4" />}
+      tabIndex={tabIndex}
+      onFocus={onFocus}
+      onBlur={onBlur}
     />
   );
 };
+
 export default DeleteBookmarkButton;

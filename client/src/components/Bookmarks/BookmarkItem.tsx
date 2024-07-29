@@ -32,7 +32,7 @@ const BookmarkItem: FC<MenuItemProps> = ({
     <div
       role="menuitem"
       className={cn(
-        'group m-1.5 flex cursor-pointer gap-2 rounded px-1 py-2.5 !pr-3 text-sm !opacity-100 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50',
+        'group m-1.5 flex cursor-pointer gap-2 rounded px-2 py-2.5 !pr-3 text-sm !opacity-100 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50',
         'hover:bg-black/5 dark:hover:bg-white/5',
         highlightSelected && selected && 'bg-black/5 dark:bg-white/5',
       )}
@@ -58,8 +58,8 @@ const BookmarkItem: FC<MenuItemProps> = ({
           <div className="flex items-center justify-end">
             <span
               className={cn(
-                'ml-auto w-9 min-w-max whitespace-nowrap rounded-full bg-white px-2.5 py-0.5 text-center text-xs font-medium leading-5 text-gray-600 ring-1 ring-inset ring-gray-200',
-                'dark:bg-gray-800 dark:text-white dark:ring-gray-100/50',
+                'ml-auto w-9 min-w-max whitespace-nowrap rounded-md bg-white px-2.5 py-0.5 text-center text-xs font-medium leading-5 text-gray-600',
+                'dark:bg-gray-800 dark:text-white',
               )}
               aria-hidden="true"
             >

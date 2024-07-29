@@ -13,6 +13,7 @@ import {
 } from 'librechat-data-provider';
 import type { TConfig, TInterfaceConfig } from 'librechat-data-provider';
 import type { NavLink } from '~/common';
+import BookmarkPanel from '~/components/SidePanel/Bookmarks/BookmarkPanel';
 import PanelSwitch from '~/components/SidePanel/Builder/PanelSwitch';
 import PromptsAccordion from '~/components/Prompts/PromptsAccordion';
 // import Parameters from '~/components/SidePanel/Parameters/Panel';
@@ -26,14 +27,12 @@ export default function useSideNavLinks({
   keyProvided,
   endpoint,
   interfaceConfig,
-  manageBookmarks,
 }: {
   hidePanel: () => void;
   assistants?: TConfig | null;
   keyProvided: boolean;
   endpoint?: EModelEndpoint | null;
   interfaceConfig: Partial<TInterfaceConfig>;
-  manageBookmarks: (e?: React.MouseEvent) => void;
 }) {
   const hasAccessToPrompts = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
@@ -80,8 +79,8 @@ export default function useSideNavLinks({
       title: 'com_sidepanel_conversation_tags',
       label: '',
       icon: Bookmark,
-      onClick: manageBookmarks,
       id: 'bookmarks',
+      Component: BookmarkPanel,
     });
 
     links.push({
@@ -100,7 +99,6 @@ export default function useSideNavLinks({
     endpoint,
     interfaceConfig.parameters,
     hasAccessToPrompts,
-    manageBookmarks,
   ]);
 
   return Links;
