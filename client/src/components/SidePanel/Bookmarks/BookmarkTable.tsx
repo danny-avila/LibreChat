@@ -50,10 +50,10 @@ const BookmarkTable = () => {
         <Table className="table-fixed border-separate border-spacing-0">
           <TableHeader>
             <TableRow>
-              <TableCell className="w-96 px-3 py-3.5 pl-6 dark:bg-gray-700">
+              <TableCell className="w-full px-3 py-3.5 pl-6 dark:bg-gray-700">
                 <div>{localize('com_ui_bookmarks_title')}</div>
               </TableCell>
-              <TableCell className="w-28 px-3 py-3.5 dark:bg-gray-700 sm:pl-6">
+              <TableCell className="w-full px-3 py-3.5 dark:bg-gray-700 sm:pl-6">
                 <div>{localize('com_ui_bookmarks_count')}</div>
               </TableCell>
             </TableRow>
