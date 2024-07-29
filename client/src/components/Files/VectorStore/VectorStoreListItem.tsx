@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TVectorStore } from '~/common';
-import { DotsIcon, NewTrashIcon, TrashIcon } from '~/components/svg';
+import { DotsIcon, TrashIcon, TrashIcon } from '~/components/svg';
 import { Button } from '~/components/ui';
 
 type VectorStoreListItemProps = {
@@ -39,7 +39,7 @@ export default function VectorStoreListItem({
           className="m-0 w-full bg-transparent p-0 text-[#666666] hover:bg-slate-200 sm:w-fit"
           onClick={() => deleteVectorStore(vectorStore._id)}
         >
-          <NewTrashIcon className="m-0 p-0" />
+          <TrashIcon className="m-0 p-0" />
         </Button>
       </div>
     </div>
