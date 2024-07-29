@@ -42,6 +42,11 @@ const convoSchema = mongoose.Schema(
     invocationId: {
       type: Number,
     },
+    tags: {
+      type: [String],
+      default: [],
+      meiliIndex: true,
+    },
   },
   { timestamps: true },
 );

@@ -12,6 +12,7 @@ export default {
   com_sidepanel_hide_panel: 'Seitenleiste ausblenden',
   com_sidepanel_attach_files: 'Dateien anhängen',
   com_sidepanel_manage_files: 'Dateien verwalten',
+  com_sidepanel_conversation_tags: 'Lesezeichen',
   com_assistants_capabilities: 'Fähigkeiten',
   com_assistants_knowledge: 'Wissen',
   com_assistants_knowledge_info:
@@ -180,6 +181,20 @@ export default {
     'Das Hochladen von "{0}" dauert länger als erwartet. Bitte warte, während die Datei zum Abruf indiziert wird.',
   com_ui_privacy_policy: 'Datenschutzrichtlinie',
   com_ui_terms_of_service: 'Nutzungsbedingungen',
+  com_ui_bookmarks: 'Lesezeichen',
+  com_ui_bookmarks_rebuild: 'Neu aufbauen',
+  com_ui_bookmarks_new: 'Neues Lesezeichen',
+  com_ui_bookmark_delete_confirm: 'Möchten Sie dieses Lesezeichen wirklich löschen?',
+  com_ui_bookmarks_title: 'Titel',
+  com_ui_bookmarks_count: 'Anzahl',
+  com_ui_bookmarks_description: 'Beschreibung',
+  com_ui_bookmarks_create_success: 'Lesezeichen erfolgreich erstellt',
+  com_ui_bookmarks_update_success: 'Lesezeichen erfolgreich aktualisiert',
+  com_ui_bookmarks_delete_success: 'Lesezeichen erfolgreich gelöscht',
+  com_ui_bookmarks_create_error: 'Fehler beim Erstellen des Lesezeichens',
+  com_ui_bookmarks_update_error: 'Fehler beim Aktualisieren des Lesezeichens',
+  com_ui_bookmarks_delete_error: 'Fehler beim Löschen des Lesezeichens',
+  com_ui_bookmarks_add_to_conversation: 'Zur aktuellen Konversation hinzufügen',
   com_auth_error_login:
     'Die Anmeldung mit den angegebenen Daten ist fehlgeschlagen. Bitte überprüfe deine Anmeldedaten und versuche es erneut.',
   com_auth_error_login_rl:
@@ -480,6 +495,8 @@ export default {
   com_nav_help_faq: 'Hilfe & FAQ',
   com_nav_settings: 'Einstellungen',
   com_nav_search_placeholder: 'Nachrichten suchen',
+  com_nav_info_bookmarks_rebuild:
+    'Wenn die Lesezeichenanzahl falsch ist, bauen Sie bitte die Lesezeicheninformationen neu auf. Die Lesezeichenanzahl wird neu berechnet und die Daten werden in ihren korrekten Zustand wiederhergestellt.',
   com_nav_setting_general: 'Allgemein',
   com_nav_setting_beta: 'Beta-Funktionen',
   com_nav_setting_data: 'Datenkontrollen',
@@ -633,6 +650,10 @@ export const comparisons = {
   com_sidepanel_manage_files: {
     english: 'Manage Files',
     translated: 'Dateien verwalten',
+  },
+  com_sidepanel_conversation_tags: {
+    english: 'Bookmarks',
+    translated: 'Lesezeichen',
   },
   com_assistants_capabilities: {
     english: 'Capabilities',
@@ -1252,6 +1273,90 @@ export const comparisons = {
   com_ui_terms_of_service: {
     english: 'Terms of service',
     translated: 'Nutzungsbedingungen',
+  },
+  com_ui_bookmarks: {
+    english:
+      'Bookmarks',
+    translated:
+      'Lesezeichen',
+  },
+  com_ui_bookmarks_rebuild: {
+    english:
+      'Rebuild',
+    translated:
+      'Neu aufbauen',
+  },
+  com_ui_bookmarks_new: {
+    english:
+      'New Bookmark',
+    translated:
+      'Neues Lesezeichen',
+  },
+  com_ui_bookmark_delete_confirm: {
+    english:
+      'Are you sure you want to delete this bookmark?',
+    translated:
+      'Möchten Sie dieses Lesezeichen wirklich löschen?',
+  },
+  com_ui_bookmarks_title: {
+    english:
+      'Title',
+    translated:
+      'Titel',
+  },
+  com_ui_bookmarks_count: {
+    english:
+      'Count',
+    translated:
+      'Anzahl',
+  },
+  com_ui_bookmarks_description: {
+    english:
+      'Description',
+    translated:
+      'Beschreibung',
+  },
+  com_ui_bookmarks_create_success: {
+    english:
+      'Bookmark created successfully',
+    translated:
+      'Lesezeichen erfolgreich erstellt',
+  },
+  com_ui_bookmarks_update_success: {
+    english:
+      'Bookmark updated successfully',
+    translated:
+      'Lesezeichen erfolgreich aktualisiert',
+  },
+  com_ui_bookmarks_delete_success: {
+    english:
+      'Bookmark deleted successfully',
+    translated:
+      'Lesezeichen erfolgreich gelöscht',
+  },
+  com_ui_bookmarks_create_error: {
+    english:
+      'There was an error creating the bookmark',
+    translated:
+      'Fehler beim Erstellen des Lesezeichens',
+  },
+  com_ui_bookmarks_update_error: {
+    english:
+      'There was an error updating the bookmark',
+    translated:
+      'Fehler beim Aktualisieren des Lesezeichens',
+  },
+  com_ui_bookmarks_delete_error: {
+    english:
+      'There was an error deleting the bookmark',
+    translated:
+      'Fehler beim Löschen des Lesezeichens',
+  },
+  com_ui_bookmarks_add_to_conversation: {
+    english:
+      'Add to current conversation',
+    translated:
+      'Zur aktuellen Konversation hinzufügen',
   },
   com_auth_error_login: {
     english:
@@ -2316,6 +2421,12 @@ export const comparisons = {
   com_nav_search_placeholder: {
     english: 'Search messages',
     translated: 'Nachrichten suchen',
+  },
+  com_nav_info_bookmarks_rebuild: {
+    english:
+      'If the bookmark count is incorrect, please rebuild the bookmark information. The bookmark count will be recalculated and the data will be restored to its correct state.',
+    translated:
+      'Wenn die Lesezeichenanzahl falsch ist, bauen Sie bitte die Lesezeicheninformationen neu auf. Die Lesezeichenanzahl wird neu berechnet und die Daten werden in ihren korrekten Zustand wiederhergestellt.',
   },
   com_nav_setting_general: {
     english: 'General',

@@ -73,12 +73,15 @@ module.exports = {
       throw new Error('Failed to save conversations in bulk.');
     }
   },
-  getConvosByPage: async (user, pageNumber = 1, pageSize = 25, isArchived = false) => {
+  getConvosByPage: async (user, pageNumber = 1, pageSize = 25, isArchived = false, tags) => {
     const query = { user };
     if (isArchived) {
       query.isArchived = true;
     } else {
       query.$or = [{ isArchived: false }, { isArchived: { $exists: false } }];
+    }
+    if (Array.isArray(tags) && tags.length > 0) {
+      query.tags = { $in: tags };
     }
     try {
       const totalConvos = (await Conversation.countDocuments(query)) || 1;

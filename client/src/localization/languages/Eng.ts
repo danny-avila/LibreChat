@@ -19,6 +19,7 @@ export default {
   com_sidepanel_hide_panel: 'Hide Panel',
   com_sidepanel_attach_files: 'Attach Files',
   com_sidepanel_manage_files: 'Manage Files',
+  com_sidepanel_conversation_tags: 'Bookmarks',
   com_assistants_capabilities: 'Capabilities',
   com_assistants_file_search: 'File Search',
   com_assistants_file_search_info:
@@ -292,6 +293,20 @@ export default {
   com_ui_use_micrphone: 'Use microphone',
   com_ui_min_tags: 'Cannot remove more values, a minimum of {0} are required.',
   com_ui_max_tags: 'Maximum number allowed is {0}, using latest values.',
+  com_ui_bookmarks: 'Bookmarks',
+  com_ui_bookmarks_rebuild: 'Rebuild',
+  com_ui_bookmarks_new: 'New Bookmark',
+  com_ui_bookmark_delete_confirm: 'Are you sure you want to delete this bookmark?',
+  com_ui_bookmarks_title: 'Title',
+  com_ui_bookmarks_count: 'Count',
+  com_ui_bookmarks_description: 'Description',
+  com_ui_bookmarks_create_success: 'Bookmark created successfully',
+  com_ui_bookmarks_update_success: 'Bookmark updated successfully',
+  com_ui_bookmarks_delete_success: 'Bookmark deleted successfully',
+  com_ui_bookmarks_create_error: 'There was an error creating the bookmark',
+  com_ui_bookmarks_update_error: 'There was an error updating the bookmark',
+  com_ui_bookmarks_delete_error: 'There was an error deleting the bookmark',
+  com_ui_bookmarks_add_to_conversation: 'Add to current conversation',
   com_auth_error_login:
     'Unable to login with the information provided. Please check your credentials and try again.',
   com_auth_error_login_rl:
@@ -664,6 +679,8 @@ export default {
     'This action will revoke and remove all the API keys that you have provided. You will need to re-enter these credentials to continue using those endpoints.',
   com_nav_info_delete_cache_storage:
     'This action will delete all cached TTS (Text-to-Speech) audio files stored on your device. Cached audio files are used to speed up playback of previously generated TTS audio, but they can consume storage space on your device.',
+  com_nav_info_bookmarks_rebuild:
+    'If the bookmark count is incorrect, please rebuild the bookmark information. The bookmark count will be recalculated and the data will be restored to its correct state.',
   com_nav_setting_general: 'General',
   com_nav_setting_chat: 'Chat',
   com_nav_setting_beta: 'Beta features',
