@@ -130,7 +130,7 @@ const BookmarkForm = ({
             aria-invalid={!!errors.tag}
             className={cn(
               defaultTextProps,
-              'flex h-10 max-h-10 w-full resize-none border-gray-100 px-3 py-2 dark:border-gray-600',
+              'flex h-10 max-h-10 w-full resize-none px-3 py-2',
               removeFocusOutlines,
             )}
             placeholder=" "

@@ -1,14 +1,14 @@
 import { ReactElement } from 'react';
 import {
-  Dialog,
-  DialogTrigger,
+  OGDialog,
+  OGDialogTrigger,
   Label,
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from '~/components/ui';
-import DialogTemplate from '~/components/ui/DialogTemplate';
+import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { CrossIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 
@@ -20,6 +20,9 @@ export default function TooltipIcon({
   confirm,
   confirmMessage,
   icon,
+  tabIndex,
+  onFocus,
+  onBlur,
 }: {
   disabled: boolean;
   title: string;
@@ -28,6 +31,9 @@ export default function TooltipIcon({
   confirm?: () => void;
   confirmMessage?: ReactElement;
   icon?: ReactElement;
+  tabIndex?: number;
+  onFocus?: () => void;
+  onBlur?: () => void;
 }) {
   const localize = useLocalize();
 
@@ -55,27 +61,29 @@ export default function TooltipIcon({
 
   if (!confirmMessage) {
     return (
-      <button className={className} onClick={confirm}>
+      <button
+        className={className}
+        onClick={confirm}
+        tabIndex={tabIndex}
+        onFocus={onFocus}
+        onBlur={onBlur}
+      >
         {disabled ? <CrossIcon /> : renderDeleteButton()}
       </button>
     );
   }
   return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <button className={className}>{disabled ? <CrossIcon /> : renderDeleteButton()}</button>
-      </DialogTrigger>
-      <DialogTemplate
+    <OGDialog>
+      <OGDialogTrigger asChild>
+        <button className={className} tabIndex={tabIndex} onFocus={onFocus} onBlur={onBlur}>
+          {disabled ? <CrossIcon /> : renderDeleteButton()}
+        </button>
+      </OGDialogTrigger>
+      <OGDialogTemplate
         showCloseButton={false}
         title={title}
         className="max-w-[450px]"
-        main={
-          <>
-            <div className="flex w-full flex-col items-center gap-2">
-              <div className="grid w-full items-center gap-2">{confirmMessage}</div>
-            </div>
-          </>
-        }
+        main={<Label className="text-left text-sm font-medium">{confirmMessage}</Label>}
         selection={{
           selectHandler: confirm,
           selectClasses:
@@ -83,6 +91,6 @@ export default function TooltipIcon({
           selectText: localize('com_ui_delete'),
         }}
       />
-    </Dialog>
+    </OGDialog>
   );
 }

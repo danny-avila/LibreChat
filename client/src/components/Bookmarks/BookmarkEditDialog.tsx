@@ -1,8 +1,7 @@
 import React, { useRef, useState } from 'react';
-import { DialogTrigger } from '@radix-ui/react-dialog';
 import { TConversationTag, TConversation } from 'librechat-data-provider';
-import DialogTemplate from '~/components/ui/DialogTemplate';
-import { Dialog, DialogButton } from '~/components/ui/';
+import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
+import { OGDialog, OGDialogTrigger, OGDialogClose } from '~/components/ui/';
 import BookmarkForm from './BookmarkForm';
 import { useLocalize } from '~/hooks';
 import { Spinner } from '../svg';
@@ -33,9 +32,9 @@ const BookmarkEditDialog = ({
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogTemplate
+    <OGDialog open={open} onOpenChange={setOpen}>
+      <OGDialogTrigger asChild>{trigger}</OGDialogTrigger>
+      <OGDialogTemplate
         title="Bookmark"
         className="w-11/12 sm:w-1/4"
         showCloseButton={false}
@@ -51,18 +50,19 @@ const BookmarkEditDialog = ({
           />
         }
         buttons={
-          <div className="mb-6 md:mb-2">
-            <DialogButton
+          <OGDialogClose asChild>
+            <button
+              type="submit"
               disabled={isLoading}
               onClick={handleSubmitForm}
-              className="bg-green-500 text-white hover:bg-green-600 dark:hover:bg-green-600"
+              className="btn rounded bg-green-500 font-bold text-white transition-all hover:bg-green-600"
             >
               {isLoading ? <Spinner /> : localize('com_ui_save')}
-            </DialogButton>
-          </div>
+            </button>
+          </OGDialogClose>
         }
       />
-    </Dialog>
+    </OGDialog>
   );
 };
 
