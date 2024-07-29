@@ -15,6 +15,8 @@ const getLdapConfig = () => {
   if (ldapLoginUsesUsername) {
     ldap.username = true;
   }
+  
+  return ldap;
 };
 
 module.exports = {
