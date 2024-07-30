@@ -32,7 +32,7 @@ async function getVoices(req, res) {
         voices = ttsSchema.azureOpenAI?.voices;
         break;
       case TTSProviders.ELEVENLABS:
-        voices = ttsSchema.elevenLabs?.voices;
+        voices = ttsSchema.elevenlabs?.voices;
         break;
       case TTSProviders.LOCALAI:
         voices = ttsSchema.localai?.voices;

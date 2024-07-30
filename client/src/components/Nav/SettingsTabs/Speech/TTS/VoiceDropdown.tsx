@@ -69,7 +69,6 @@ export default function VoiceDropdown() {
         options={voiceOptions}
         sizeClasses="min-w-[200px] !max-w-[400px] [--anchor-max-width:400px]"
         anchor="bottom start"
-        position="left"
         testId="VoiceDropdown"
       />
     </div>
