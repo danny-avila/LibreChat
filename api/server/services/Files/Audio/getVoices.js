@@ -21,7 +21,7 @@ async function getVoices(req, res) {
     }
 
     const ttsSchema = customConfig?.speech?.tts;
-    const provider = getProvider(ttsSchema);
+    const provider = await getProvider(ttsSchema);
     let voices;
 
     switch (provider) {
@@ -32,7 +32,7 @@ async function getVoices(req, res) {
         voices = ttsSchema.azureOpenAI?.voices;
         break;
       case TTSProviders.ELEVENLABS:
-        voices = ttsSchema.elevenlabs?.voices;
+        voices = ttsSchema.elevenLabs?.voices;
         break;
       case TTSProviders.LOCALAI:
         voices = ttsSchema.localai?.voices;
