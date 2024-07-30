@@ -282,7 +282,7 @@ const ttsLocalaiSchema = z.object({
 const ttsSchema = z.object({
   openai: ttsOpenaiSchema.optional(),
   azureOpenAI: ttsAzureOpenAISchema.optional(),
-  elevenLabs: ttsElevenLabsSchema.optional(),
+  elevenlabs: ttsElevenLabsSchema.optional(),
   localai: ttsLocalaiSchema.optional(),
 });
 

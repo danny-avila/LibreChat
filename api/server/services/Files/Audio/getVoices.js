@@ -21,7 +21,7 @@ async function getVoices(req, res) {
     }
 
     const ttsSchema = customConfig?.speech?.tts;
-    const provider = getProvider(ttsSchema);
+    const provider = await getProvider(ttsSchema);
     let voices;
 
     switch (provider) {
