@@ -245,4 +245,4 @@ async function speechToText(req, res) {
   await sttService.processTextToSpeech(req, res);
 }
 
-module.exports = speechToText;
+module.exports = { speechToText };
