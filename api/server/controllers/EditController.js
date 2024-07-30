@@ -145,7 +145,11 @@ const EditController = async (req, res, next, initializeClient) => {
       });
       res.end();
 
-      await saveMessage(req, { ...response, user });
+      await saveMessage(
+        req,
+        { ...response, user },
+        { context: 'api/server/controllers/EditController.js - response end' },
+      );
     }
   } catch (error) {
     const partialText = getPartialText();

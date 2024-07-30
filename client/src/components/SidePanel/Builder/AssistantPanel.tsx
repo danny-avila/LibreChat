@@ -13,6 +13,7 @@ import {
 import type { FunctionTool, TConfig, TPlugin } from 'librechat-data-provider';
 import type { AssistantForm, AssistantPanelProps } from '~/common';
 import { useCreateAssistantMutation, useUpdateAssistantMutation } from '~/data-provider';
+import { cn, cardStyle, defaultTextProps, removeFocusOutlines } from '~/utils';
 import { useAssistantsMapContext, useToastContext } from '~/Providers';
 import { useSelectAssistant, useLocalize } from '~/hooks';
 import { ToolSelectDialog } from '~/components/Tools';
@@ -24,13 +25,15 @@ import AssistantAction from './AssistantAction';
 import ContextButton from './ContextButton';
 import AssistantTool from './AssistantTool';
 import { Spinner } from '~/components/svg';
-import { cn, cardStyle } from '~/utils/';
 import Knowledge from './Knowledge';
 import { Panel } from '~/common';
 
-const labelClass = 'mb-2 block text-xs font-bold text-gray-700 dark:text-gray-400';
-const inputClass =
-  'focus:shadow-outline w-full appearance-none rounded-md border px-3 py-2 text-sm leading-tight text-gray-700 dark:text-white shadow focus:border-green-500 focus:outline-none focus:ring-0 dark:bg-gray-800 dark:border-gray-700/80';
+const labelClass = 'mb-2 text-token-text-primary block font-medium';
+const inputClass = cn(
+  defaultTextProps,
+  'flex w-full px-3 py-2 dark:border-gray-800 dark:bg-gray-800',
+  removeFocusOutlines,
+);
 
 export default function AssistantPanel({
   // index = 0,
@@ -297,7 +300,7 @@ export default function AssistantPanel({
                   {...field}
                   value={field.value ?? ''}
                   {...{ max: 32768 }}
-                  className="focus:shadow-outline min-h-[150px] w-full resize-none resize-y appearance-none rounded-md border px-3 py-2 text-sm leading-tight text-gray-700 shadow focus:border-green-500 focus:outline-none focus:ring-0 dark:border-gray-700/80 dark:bg-gray-800 dark:text-white"
+                  className={cn(inputClass, 'min-h-[100px] resize-none resize-y')}
                   id="instructions"
                   placeholder={localize('com_assistants_instructions_placeholder')}
                   rows={3}
@@ -357,7 +360,7 @@ export default function AssistantPanel({
               ${toolsEnabled && actionsEnabled ? ' + ' : ''}
               ${actionsEnabled ? localize('com_assistants_actions') : ''}`}
             </label>
-            <div className="space-y-1">
+            <div className="space-y-2">
               {functions.map((func, i) => (
                 <AssistantTool
                   key={`${func}-${i}-${assistant_id}`}
@@ -373,37 +376,39 @@ export default function AssistantPanel({
                     <AssistantAction key={i} action={action} onClick={() => setAction(action)} />
                   );
                 })}
-              {toolsEnabled && (
-                <button
-                  type="button"
-                  onClick={() => setShowToolDialog(true)}
-                  className="btn border-token-border-light relative mx-1 mt-2 h-8 rounded-lg bg-transparent font-medium hover:bg-gray-100 dark:hover:bg-gray-800"
-                >
-                  <div className="flex w-full items-center justify-center gap-2">
-                    {localize('com_assistants_add_tools')}
-                  </div>
-                </button>
-              )}
-              {actionsEnabled && (
-                <button
-                  type="button"
-                  disabled={!assistant_id}
-                  onClick={() => {
-                    if (!assistant_id) {
-                      return showToast({
-                        message: localize('com_assistants_actions_disabled'),
-                        status: 'warning',
-                      });
-                    }
-                    setActivePanel(Panel.actions);
-                  }}
-                  className="btn border-token-border-light relative mt-2 h-8 rounded-lg bg-transparent font-medium hover:bg-gray-100 dark:hover:bg-gray-800"
-                >
-                  <div className="flex w-full items-center justify-center gap-2">
-                    {localize('com_assistants_add_actions')}
-                  </div>
-                </button>
-              )}
+              <div className="flex space-x-2">
+                {toolsEnabled && (
+                  <button
+                    type="button"
+                    onClick={() => setShowToolDialog(true)}
+                    className="btn btn-neutral border-token-border-light relative h-8 w-full rounded-lg font-medium"
+                  >
+                    <div className="flex w-full items-center justify-center gap-2">
+                      {localize('com_assistants_add_tools')}
+                    </div>
+                  </button>
+                )}
+                {actionsEnabled && (
+                  <button
+                    type="button"
+                    disabled={!assistant_id}
+                    onClick={() => {
+                      if (!assistant_id) {
+                        return showToast({
+                          message: localize('com_assistants_actions_disabled'),
+                          status: 'warning',
+                        });
+                      }
+                      setActivePanel(Panel.actions);
+                    }}
+                    className="btn btn-neutral border-token-border-light relative h-8 w-full rounded-lg font-medium"
+                  >
+                    <div className="flex w-full items-center justify-center gap-2">
+                      {localize('com_assistants_add_actions')}
+                    </div>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex items-center justify-end gap-2">
@@ -415,23 +420,9 @@ export default function AssistantPanel({
               createMutation={create}
               endpoint={endpoint}
             />
-            {/* Secondary Select Button */}
-            {assistant_id && (
-              <button
-                className="btn btn-secondary"
-                type="button"
-                disabled={!assistant_id}
-                onClick={(e) => {
-                  e.preventDefault();
-                  onSelectAssistant(assistant_id);
-                }}
-              >
-                {localize('com_ui_select')}
-              </button>
-            )}
             {/* Submit Button */}
             <button
-              className="btn btn-primary focus:shadow-outline flex w-[90px] items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"
+              className="btn btn-primary focus:shadow-outline flex w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"
               type="submit"
             >
               {create.isLoading || update.isLoading ? (

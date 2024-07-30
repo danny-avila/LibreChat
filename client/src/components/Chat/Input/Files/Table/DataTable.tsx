@@ -32,7 +32,7 @@ import {
   DropdownMenuTrigger,
 } from '~/components/ui';
 import { useDeleteFilesFromTable } from '~/hooks/Files';
-import { NewTrashIcon, Spinner } from '~/components/svg';
+import { TrashIcon, Spinner } from '~/components/svg';
 import useLocalize from '~/hooks/useLocalize';
 
 interface DataTableProps<TData, TValue> {
@@ -102,7 +102,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           {isDeleting ? (
             <Spinner className="h-4 w-4" />
           ) : (
-            <NewTrashIcon className="h-4 w-4 text-red-400" />
+            <TrashIcon className="h-4 w-4 text-red-400" />
           )}
           {localize('com_ui_delete')}
         </Button>

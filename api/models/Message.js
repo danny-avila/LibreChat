@@ -1,6 +1,6 @@
 const { z } = require('zod');
 const Message = require('./schema/messageSchema');
-const logger = require('~/config/winston');
+const { logger } = require('~/config');
 
 const idSchema = z.string().uuid();
 
@@ -27,42 +27,53 @@ const idSchema = z.string().uuid();
  * @param {string} [params.finish_reason] - Reason for finishing the message.
  * @param {number} [params.tokenCount] - The number of tokens in the message.
  * @param {string} [params.plugin] - Plugin associated with the message.
- * @param {Object[]} [params.plugins] - An array of plugins associated with the message.
+ * @param {string[]} [params.plugins] - An array of plugins associated with the message.
  * @param {string} [params.model] - The model used to generate the message.
+ * @param {Object} [metadata] - Additional metadata for this operation
+ * @param {string} [metadata.context] - The context of the operation
  * @returns {Promise<TMessage>} The updated or newly inserted message document.
  * @throws {Error} If there is an error in saving the message.
  */
-async function saveMessage(
-  req,
-  {
-    endpoint,
-    iconURL,
-    messageId,
-    newMessageId,
-    conversationId,
-    parentMessageId,
-    sender,
-    text,
-    isCreatedByUser,
-    error,
-    unfinished,
-    files,
-    isEdited,
-    finish_reason,
-    tokenCount,
-    plugin,
-    plugins,
-    model,
-  },
-) {
+async function saveMessage(req, params, metadata) {
   try {
     if (!req || !req.user || !req.user.id) {
       throw new Error('User not authenticated');
     }
 
+    const {
+      text,
+      error,
+      model,
+      files,
+      plugin,
+      sender,
+      plugins,
+      iconURL,
+      endpoint,
+      isEdited,
+      messageId,
+      unfinished,
+      tokenCount,
+      newMessageId,
+      finish_reason,
+      conversationId,
+      parentMessageId,
+      isCreatedByUser,
+    } = params;
+
     const validConvoId = idSchema.safeParse(conversationId);
     if (!validConvoId.success) {
-      throw new Error('Invalid conversation ID');
+      logger.warn(`Invalid conversation ID: ${conversationId}`);
+      if (metadata && metadata?.context) {
+        logger.info(`---\`saveMessage\` context: ${metadata.context}`);
+      }
+
+      logger.info(`---Invalid conversation ID Params:
+
+${JSON.stringify(params, null, 2)}
+
+`);
+      return;
     }
 
     const update = {
@@ -97,6 +108,9 @@ async function saveMessage(
     return message.toObject();
   } catch (err) {
     logger.error('Error saving message:', err);
+    if (metadata && metadata?.context) {
+      logger.info(`---\`saveMessage\` context: ${metadata.context}`);
+    }
     throw err;
   }
 }
@@ -167,7 +181,7 @@ async function recordMessage({
       new: true,
     });
   } catch (err) {
-    logger.error('Error saving message:', err);
+    logger.error('Error recording message:', err);
     throw err;
   }
 }
@@ -206,10 +220,12 @@ async function updateMessageText(req, { messageId, text }) {
  * @param {boolean} [message.isCreatedByUser] - Indicates if the message was created by the user.
  * @param {string} [message.sender] - The identifier of the sender.
  * @param {number} [message.tokenCount] - The number of tokens in the message.
+ * @param {Object} [metadata] - The operation metadata
+ * @param {string} [metadata.context] - The operation metadata
  * @returns {Promise<TMessage>} The updated message document.
  * @throws {Error} If there is an error in updating the message or if the message is not found.
  */
-async function updateMessage(req, message) {
+async function updateMessage(req, message, metadata) {
   try {
     const { messageId, ...update } = message;
     update.isEdited = true;
@@ -237,6 +253,9 @@ async function updateMessage(req, message) {
     };
   } catch (err) {
     logger.error('Error updating message:', err);
+    if (metadata && metadata?.context) {
+      logger.info(`---\`updateMessage\` context: ${metadata.context}`);
+    }
     throw err;
   }
 }

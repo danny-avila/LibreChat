@@ -145,25 +145,37 @@ export const updateConversation = (
   );
 };
 
-export const updateConvoFields: ConversationUpdater = (
+export const updateConvoFields = (
   data: ConversationData,
   updatedConversation: Partial<TConversation> & Pick<TConversation, 'conversationId'>,
+  keepPosition = false,
 ): ConversationData => {
   const newData = JSON.parse(JSON.stringify(data));
   const { pageIndex, index } = findPageForConversation(
     newData,
     updatedConversation as { conversationId: string },
   );
-
   if (pageIndex !== -1 && index !== -1) {
-    const deleted = newData.pages[pageIndex].conversations.splice(index, 1);
-    const oldConversation = deleted[0] as TConversation;
+    const oldConversation = newData.pages[pageIndex].conversations[index] as TConversation;
 
-    newData.pages[0].conversations.unshift({
-      ...oldConversation,
-      ...updatedConversation,
-      updatedAt: new Date().toISOString(),
-    });
+    /**
+     * Do not change the position of the conversation if the tags are updated.
+     */
+    if (keepPosition) {
+      const updatedConvo = {
+        ...oldConversation,
+        ...updatedConversation,
+      };
+      newData.pages[pageIndex].conversations[index] = updatedConvo;
+    } else {
+      const updatedConvo = {
+        ...oldConversation,
+        ...updatedConversation,
+        updatedAt: new Date().toISOString(),
+      };
+      newData.pages[pageIndex].conversations.splice(index, 1);
+      newData.pages[0].conversations.unshift(updatedConvo);
+    }
   }
 
   return newData;

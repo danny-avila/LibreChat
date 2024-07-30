@@ -156,9 +156,70 @@ export const googleSettings = {
   },
 };
 
+const ANTHROPIC_MAX_OUTPUT = 8192;
+const LEGACY_ANTHROPIC_MAX_OUTPUT = 4096;
+export const anthropicSettings = {
+  model: {
+    default: 'claude-3-5-sonnet-20240620',
+  },
+  temperature: {
+    min: 0,
+    max: 1,
+    step: 0.01,
+    default: 1,
+  },
+  maxOutputTokens: {
+    min: 1,
+    max: ANTHROPIC_MAX_OUTPUT,
+    step: 1,
+    default: ANTHROPIC_MAX_OUTPUT,
+    reset: (modelName: string) => {
+      if (modelName.includes('claude-3-5-sonnet')) {
+        return ANTHROPIC_MAX_OUTPUT;
+      }
+
+      return 4096;
+    },
+    set: (value: number, modelName: string) => {
+      if (!modelName.includes('claude-3-5-sonnet') && value > LEGACY_ANTHROPIC_MAX_OUTPUT) {
+        return LEGACY_ANTHROPIC_MAX_OUTPUT;
+      }
+
+      return value;
+    },
+  },
+  topP: {
+    min: 0,
+    max: 1,
+    step: 0.01,
+    default: 0.7,
+  },
+  topK: {
+    min: 1,
+    max: 40,
+    step: 1,
+    default: 5,
+  },
+  resendFiles: {
+    default: true,
+  },
+  maxContextTokens: {
+    default: undefined,
+  },
+  legacy: {
+    maxOutputTokens: {
+      min: 1,
+      max: LEGACY_ANTHROPIC_MAX_OUTPUT,
+      step: 1,
+      default: LEGACY_ANTHROPIC_MAX_OUTPUT,
+    },
+  },
+};
+
 export const endpointSettings = {
   [EModelEndpoint.openAI]: openAISettings,
   [EModelEndpoint.google]: googleSettings,
+  [EModelEndpoint.anthropic]: anthropicSettings,
 };
 
 const google = endpointSettings[EModelEndpoint.google];
@@ -219,7 +280,7 @@ export enum EAgent {
 
 export const agentOptionSettings = {
   model: {
-    default: 'gpt-4o',
+    default: 'gpt-4o-mini',
   },
   temperature: {
     min: 0,
@@ -310,6 +371,7 @@ export const tConversationSchema = z.object({
   updatedAt: z.string(),
   modelLabel: z.string().nullable().optional(),
   examples: z.array(tExampleSchema).optional(),
+  tags: z.array(z.string()).optional(),
   /* Prefer modelLabel over chatGptLabel */
   chatGptLabel: z.string().nullable().optional(),
   userLabel: z.string().optional(),
@@ -414,6 +476,17 @@ export const tSharedLinkSchema = z.object({
   updatedAt: z.string(),
 });
 export type TSharedLink = z.infer<typeof tSharedLinkSchema>;
+
+export const tConversationTagSchema = z.object({
+  user: z.string(),
+  tag: z.string(),
+  description: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  count: z.number(),
+  position: z.number(),
+});
+export type TConversationTag = z.infer<typeof tConversationTagSchema>;
 
 export const openAISchema = tConversationSchema
   .pick({
@@ -576,34 +649,40 @@ export const anthropicSchema = tConversationSchema
     spec: true,
     maxContextTokens: true,
   })
-  .transform((obj) => ({
-    ...obj,
-    model: obj.model ?? 'claude-1',
-    modelLabel: obj.modelLabel ?? null,
-    promptPrefix: obj.promptPrefix ?? null,
-    temperature: obj.temperature ?? 1,
-    maxOutputTokens: obj.maxOutputTokens ?? 4000,
-    topP: obj.topP ?? 0.7,
-    topK: obj.topK ?? 5,
-    resendFiles: typeof obj.resendFiles === 'boolean' ? obj.resendFiles : true,
-    iconURL: obj.iconURL ?? undefined,
-    greeting: obj.greeting ?? undefined,
-    spec: obj.spec ?? undefined,
-    maxContextTokens: obj.maxContextTokens ?? undefined,
-  }))
+  .transform((obj) => {
+    const model = obj.model ?? anthropicSettings.model.default;
+    return {
+      ...obj,
+      model,
+      modelLabel: obj.modelLabel ?? null,
+      promptPrefix: obj.promptPrefix ?? null,
+      temperature: obj.temperature ?? anthropicSettings.temperature.default,
+      maxOutputTokens: obj.maxOutputTokens ?? anthropicSettings.maxOutputTokens.reset(model),
+      topP: obj.topP ?? anthropicSettings.topP.default,
+      topK: obj.topK ?? anthropicSettings.topK.default,
+      resendFiles:
+        typeof obj.resendFiles === 'boolean'
+          ? obj.resendFiles
+          : anthropicSettings.resendFiles.default,
+      iconURL: obj.iconURL ?? undefined,
+      greeting: obj.greeting ?? undefined,
+      spec: obj.spec ?? undefined,
+      maxContextTokens: obj.maxContextTokens ?? anthropicSettings.maxContextTokens.default,
+    };
+  })
   .catch(() => ({
-    model: 'claude-1',
+    model: anthropicSettings.model.default,
     modelLabel: null,
     promptPrefix: null,
-    temperature: 1,
-    maxOutputTokens: 4000,
-    topP: 0.7,
-    topK: 5,
-    resendFiles: true,
+    temperature: anthropicSettings.temperature.default,
+    maxOutputTokens: anthropicSettings.maxOutputTokens.default,
+    topP: anthropicSettings.topP.default,
+    topK: anthropicSettings.topK.default,
+    resendFiles: anthropicSettings.resendFiles.default,
     iconURL: undefined,
     greeting: undefined,
     spec: undefined,
-    maxContextTokens: undefined,
+    maxContextTokens: anthropicSettings.maxContextTokens.default,
   }));
 
 export const chatGPTBrowserSchema = tConversationSchema
@@ -835,19 +914,19 @@ export const compactAnthropicSchema = tConversationSchema
   })
   .transform((obj) => {
     const newObj: Partial<TConversation> = { ...obj };
-    if (newObj.temperature === 1) {
+    if (newObj.temperature === anthropicSettings.temperature.default) {
       delete newObj.temperature;
     }
-    if (newObj.maxOutputTokens === 4000) {
+    if (newObj.maxOutputTokens === anthropicSettings.legacy.maxOutputTokens.default) {
       delete newObj.maxOutputTokens;
     }
-    if (newObj.topP === 0.7) {
+    if (newObj.topP === anthropicSettings.topP.default) {
       delete newObj.topP;
     }
-    if (newObj.topK === 5) {
+    if (newObj.topK === anthropicSettings.topK.default) {
       delete newObj.topK;
     }
-    if (newObj.resendFiles === true) {
+    if (newObj.resendFiles === anthropicSettings.resendFiles.default) {
       delete newObj.resendFiles;
     }
 
