@@ -1,5 +1,4 @@
 const mongoose = require('mongoose');
-const { SystemRoles } = require('librechat-data-provider');
 
 /**
  * @typedef {Object} MongoSession
@@ -79,7 +78,7 @@ const userSchema = mongoose.Schema(
     },
     role: {
       type: String,
-      default: SystemRoles.USER,
+      default: 'USER',
     },
     googleId: {
       type: String,
