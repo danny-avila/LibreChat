@@ -58,9 +58,9 @@ router.get(
   '/apple',
   (req, res) => {
     const CLIENT_ID = process.env.APPLE_CLIENT_ID;
-    const scope = 'email name';
+    const scope = 'email name openid';
     const state = process.env.APPLE_KEY_ID;
-    const redirectUri = `${process.env.DOMAIN_SERVER}/${process.env.APPLE_CALLBACK_URL}`;
+    const redirectUri = `${process.env.DOMAIN_SERVER}${process.env.APPLE_CALLBACK_URL}`;
 
     const authorizationUri = `https://appleid.apple.com/auth/authorize?response_type=code id_token&client_id=${CLIENT_ID}&redirect_uri=${redirectUri}&state=${state}&scope=${scope}&response_mode=form_post`;
 
