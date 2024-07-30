@@ -23,6 +23,7 @@ const {
   TraversaalSearch,
   StructuredWolfram,
   TavilySearchResults,
+  AzureAIFunctions
 } = require('../');
 const { loadToolSuite } = require('./loadToolSuite');
 const { loadSpecs } = require('./loadSpecs');
@@ -98,6 +99,41 @@ const validateTools = async (user, tools = []) => {
 };
 
 /**
+ * Fetch file with Azure OpenAI functions specifications
+ * 
+ * @param {} url  URL to fetch the functions
+ * @returns {Object} JSON object with the functions
+ */
+
+async function getAzureOpenAIFunctions(url) {
+  logger.info(`[validateTools] fetchRemoteAzureFunctions: Fetching remote functions at URL "${url}"`);
+  const response = await fetch(url);
+  if(response.ok){
+    const json = await response.json();
+
+    return json.functions;
+  }
+  else{
+    logger.error(
+      `[validateTools] fetchRemoteAzureFunctions: Error fetching remote functions at URL "${url}": ${response.statusText} (HTTP ${response.status})`,
+    );
+  }
+}
+
+/**
+ * Verify if a tool is defined in the functions
+ * 
+ * @param {} tool  tool name
+ * @param {} functions  JSON object with the functions
+ * @returns {boolean} If its found or not
+ */
+
+async function isToolDefinedInFunctions(tool,functions){
+  var found = functions.some(f => f.name === tool);
+  return found;
+}
+
+/**
  * Initializes a tool with authentication values for the given user, supporting alternate authentication fields.
  * Authentication fields can have alternates separated by "||", and the first defined variable will be used.
  *
@@ -169,6 +205,12 @@ const loadTools = async ({
     traversaal_search: TraversaalSearch,
   };
 
+  var azureOpenAIFunctions;
+  if(process.env.AZURE_ASSISTANTS_FUNCTIONS_URL && process.env.AZURE_ASSISTANTS_FUNCTIONS_URL!=""){
+    azureOpenAIFunctions = await getAzureOpenAIFunctions(process.env.AZURE_ASSISTANTS_FUNCTIONS_URL);
+    global.myCache.set("functions", azureOpenAIFunctions);
+  }
+
   const openAIApiKey = await getOpenAIKey(options, user);
 
   const customConstructors = {
@@ -234,6 +276,7 @@ const loadTools = async ({
   if (functions) {
     toolConstructors.dalle = DALLE3;
     toolConstructors.codesherpa = CodeSherpa;
+    toolConstructors.AzureAIFunctions = AzureAIFunctions;
   }
 
   const imageGenOptions = {
@@ -281,6 +324,22 @@ const loadTools = async ({
       continue;
     }
 
+    if(process.env.AZURE_ASSISTANTS_FUNCTIONS_URL && process.env.AZURE_ASSISTANTS_FUNCTIONS_URL!=""){
+      if(azureOpenAIFunctions){
+        if(await isToolDefinedInFunctions(tool,azureOpenAIFunctions)){
+          const options = toolOptions[tool] || {};
+          const toolInstance = loadToolWithAuth(
+            user,
+            toolAuthFields["azure-ai-functions"],
+            toolConstructors[["AzureAIFunctions"]],
+            options,
+          );
+          requestedTools[tool] = toolInstance;
+          continue;
+        }
+      }
+    }
+    
     if (functions) {
       remainingTools.push(tool);
     }
