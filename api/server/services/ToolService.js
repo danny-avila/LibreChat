@@ -215,6 +215,11 @@ async function processRequiredActions(client, requiredActions) {
     }
     let tool = ToolMap[currentAction.tool] ?? ActionToolMap[currentAction.tool];
 
+    const functionList = global.myCache.get("functions");
+    
+    if(functionList.some(f => f.name == currentAction.tool)) 
+      tool = ToolMap["azure-ai-functions"]
+
     const handleToolOutput = async (output) => {
       requiredActions[i].output = output;
 

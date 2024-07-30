@@ -424,6 +424,11 @@ async function runAssistant({
   const actions = submit_tool_outputs.tool_calls.map((item) => {
     const functionCall = item.function;
     const args = JSON.parse(functionCall.arguments);
+    if(process.env.AZURE_ASSISTANTS_FUNCTIONS_URL && process.env.AZURE_ASSISTANTS_FUNCTIONS_URL!=""){
+      const matchingTool = run.tools.find((tool) => tool.function.name === functionCall.name);
+      if(matchingTool)
+        args["functionInfo"] = matchingTool
+    }
     return {
       tool: functionCall.name,
       toolInput: args,

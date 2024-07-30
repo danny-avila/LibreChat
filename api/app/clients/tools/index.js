@@ -19,6 +19,7 @@ const GoogleSearchAPI = require('./structured/GoogleSearch');
 const StructuredWolfram = require('./structured/Wolfram');
 const TavilySearchResults = require('./structured/TavilySearchResults');
 const TraversaalSearch = require('./structured/TraversaalSearch');
+const AzureAIFunctions = require('./structured/AzureAiFunctions');
 
 module.exports = {
   availableTools,
@@ -41,4 +42,5 @@ module.exports = {
   StructuredWolfram,
   TavilySearchResults,
   TraversaalSearch,
+  AzureAIFunctions
 };

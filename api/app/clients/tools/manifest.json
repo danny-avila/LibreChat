@@ -169,6 +169,24 @@
     ]
   },
   {
+    "name": "Azure AI Functions",
+    "pluginKey": "azure-ai-functions",
+    "description": "Use Azure AI Functions to perform various tasks like sentiment analysis, text summarization, and more.",
+    "icon": "https://azure.microsoft.com/en-us/patterns/styles/glyphs-icons/azure-blue.svg",
+    "authConfig": [
+      {
+        "authField": "AZURE_RESOURSE_NAME",
+        "label": "Azure AI Functions Endpoint",
+        "description": "You need to provide your Endpoint for Azure AI Functions."
+      },
+      {
+        "authField": "AZURE_ASSISTANTS_API_KEY",
+        "label": "Azure AI Functions API Key",
+        "description": "You need to provide your API Key for Azure AI Functions."
+      }
+    ]
+  },
+  {
     "name": "Azure AI Search",
     "pluginKey": "azure-ai-search",
     "description": "Use Azure AI Search to find information",
