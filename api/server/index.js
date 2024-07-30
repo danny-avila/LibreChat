@@ -138,6 +138,7 @@ const startServer = async () => {
   const server = createServer(app);
 
   setupWebSocket(server);
+
   server.listen(port, host, () => {
     if (host == '0.0.0.0') {
       logger.info(

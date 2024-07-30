@@ -47,7 +47,7 @@ module.exports = () =>
       callbackURL: `${process.env.DOMAIN_SERVER}${process.env.APPLE_CALLBACK_URL}`,
       keyID: process.env.APPLE_KEY_ID,
       passReqToCallback: true,
-      // privateKeyLocation: '',
+      privateKeyLocation: 'AuthKey_P7DF6USJVH.p8',
     },
     appleLogin,
   );

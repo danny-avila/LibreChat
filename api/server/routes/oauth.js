@@ -4,6 +4,8 @@ const passport = require('passport');
 const { loginLimiter, checkBan, checkDomainAllowed } = require('~/server/middleware');
 const { setAuthTokens } = require('~/server/services/AuthService');
 const { logger } = require('~/config');
+const axios = require('axios');
+const jwt = require('jsonwebtoken');
 
 const router = express.Router();
 
@@ -54,23 +56,50 @@ router.get(
 
 router.get(
   '/apple',
-  passport.authenticate('apple'),
+  (req, res) => {
+    const CLIENT_ID = process.env.APPLE_CLIENT_ID;
+    const scope = 'email name';
+    const state = process.env.APPLE_KEY_ID;
+    const redirectUri = process.env.APPLE_CALLBACK_URL;
+
+    const authorizationUri = `https://appleid.apple.com/auth/authorize?response_type=code id_token&client_id=${CLIENT_ID}&redirect_uri=${redirectUri}&state=${state}&scope=${scope}&response_mode=form_post`;
+
+    res.redirect(authorizationUri);
+  },
+);
+
+router.get(
+  '/apple/callback',
+  async (req, res) => {
+    const { code, id_token } = req.body;
+
+    try {
+      // Verify the id_token
+      const applePublicKey = await axios.get('https://appleid.apple.com/auth/keys');
+      const decoded = jwt.verify(id_token, applePublicKey.data, { algorithms: ['RS256'] });
+
+      console.log('[apple callback]', decoded, code);
+
+      // Code to handle user authentication and retrieval using the decoded information
+
+      res.redirect('/');
+    } catch (error) {
+      console.error('Error:', error.message);
+      res.redirect('/login');
+    }
+  },
 );
 
 // router.get(
-//   '/apple/callback',
-//   passport.authenticate('apple', {
-//     session: false,
-//     scope: ['email', 'name'],
-//   }),
-//   oauthHandler,
+//   '/apple',
+//   passport.authenticate('apple'),
 // );
 
-router.post(
-  '/apple/callback',
-  passport.authenticate('apple'),
-  oauthHandler,
-);
+// router.post(
+//   '/apple/callback',
+//   passport.authenticate('apple'),
+//   oauthHandler,
+// );
 
 router.get(
   '/facebook',
