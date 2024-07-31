@@ -15,5 +15,6 @@ docs
 
 docker-compose.override.yml
 librechat.yml
+
 # Ignore all hidden files
 .*
