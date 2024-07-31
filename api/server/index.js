@@ -15,6 +15,7 @@ const AppService = require('./services/AppService');
 const noIndex = require('./middleware/noIndex');
 const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
+const bodyParser = require('body-parser');
 
 const routes = require('./routes');
 const { setupWebSocket } = require('./controllers/SocketController');
@@ -40,6 +41,9 @@ const startServer = async () => {
   await AppService(app);
 
   app.get('/health', (_req, res) => res.status(200).send('OK'));
+
+  app.use(bodyParser.urlencoded({ extended: true }));
+  app.use(bodyParser.json());
 
   app.use(async (req, res, next) => {
     const userAgent = req.headers['user-agent'];
@@ -134,6 +138,7 @@ const startServer = async () => {
   const server = createServer(app);
 
   setupWebSocket(server);
+
   server.listen(port, host, () => {
     if (host == '0.0.0.0') {
       logger.info(

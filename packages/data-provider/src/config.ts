@@ -4,7 +4,7 @@ import { EModelEndpoint, eModelEndpointSchema } from './schemas';
 import { fileConfigSchema } from './file-config';
 import { FileSources } from './types/files';
 
-export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord'];
+export const defaultSocialLogins = ['google', 'apple', 'facebook', 'openid', 'github', 'discord'];
 
 export const defaultRetrievalModels = [
   'gpt-4-turbo-preview',

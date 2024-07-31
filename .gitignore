@@ -92,3 +92,5 @@ auth.json
 
 # User uploads
 uploads/
+
+*.p8
