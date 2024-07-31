@@ -82,7 +82,9 @@ class TavilySearchResults extends Tool {
 
     const json = await response.json();
     if (!response.ok) {
-      throw new Error(`Request failed with status ${response.status}: ${json.error}`);
+      throw new Error(
+        `Request failed with status ${response.status}: ${json?.detail?.error || json?.error}`,
+      );
     }
 
     return JSON.stringify(json);
