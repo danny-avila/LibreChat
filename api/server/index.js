@@ -94,6 +94,7 @@ const startServer = async () => {
   app.use('/api/share', routes.share);
   app.use('/api/roles', routes.roles);
 
+  app.use('/api/tags', routes.tags);
   app.use((req, res) => {
     res.sendFile(path.join(app.locals.paths.dist, 'index.html'));
   });

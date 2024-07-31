@@ -292,6 +292,21 @@ export default {
   com_ui_use_micrphone: 'Käytä mikrofonia',
   com_ui_min_tags: 'Enempää arvoja ei voida poistaa. Niiden minimimäärä on {0}.',
   com_ui_max_tags: 'Maksimimäärä on {0}. käytetään viimeisimpiä arvoja.',
+  com_ui_bookmarks: 'Kirjanmerkit',
+  com_ui_bookmarks_rebuild: 'Uudelleenkokoa',
+  com_ui_bookmarks_new: 'Uusi kirjanmerkki',
+  com_ui_bookmark_delete_confirm:
+      'Oletko varma, että haluat poistaa tämän kirjanmerkin?',
+  com_ui_bookmarks_title: 'Otsikko',
+  com_ui_bookmarks_count: 'Määrä',
+  com_ui_bookmarks_description: 'Kuvaus',
+  com_ui_bookmarks_create_success: 'Kirjanmerkki luotu onnistuneesti',
+  com_ui_bookmarks_update_success: 'Kirjanmerkki päivitetty onnistuneesti',
+  com_ui_bookmarks_delete_success: 'Kirjanmerkki poistettu onnistuneesti',
+  com_ui_bookmarks_create_error: 'Virhe kirjanmerkin luomisessa',
+  com_ui_bookmarks_update_error: 'Virhe kirjanmerkin päivittämisessä',
+  com_ui_bookmarks_delete_error: 'Virhe kirjanmerkin poistamisessa',
+  com_ui_bookmarks_add_to_conversation: 'Lisää nykyiseen keskusteluun',
   com_auth_error_login:
     'Kirjautuminen annetuilla tiedoilla ei onnistunut. Tarkista kirjautumistiedot, ja yritä uudestaan.',
   com_auth_error_login_rl:
@@ -415,7 +430,7 @@ export default {
   com_endpoint_stop: 'Pysäytyssekvenssit',
   com_endpoint_stop_placeholder: 'Erota arvot toisistaan rivinvaihdoilla',
   com_endpoint_openai_max_tokens: `Valinnainen \`max_tokens\` -kenttä, joka kuvaa keskustelun vastauksessa generoitujen tokeneiden maksimimäärää.
-  
+
       Syötteen ja vastauksen kokonaispituutta rajoittaa mallin konteksti-ikkuna. Konteksti -ikkunan koon ylittämisestä voi seurata virheitä.`,
   com_endpoint_openai_temp:
     'Korkeampi arvo = satunnaisempi; matalampi arvo = keskittyneempi ja deterministisempi. Suosittelemme, että muokkaat tätä tai Top P:tä, mutta ei molempia.',
