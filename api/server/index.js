@@ -43,7 +43,7 @@ const startServer = async () => {
 
   app.use(async (req, res, next) => {
     const userAgent = req.headers['user-agent'];
-    if (isbot(userAgent) && req.url.startsWith('/r/')) { 
+    if (isbot(userAgent) && req.url.startsWith('/r/')) {
       const roomId = req.url.substring(3, 40);
       const room = await getRoom(roomId);
       res.send(`<!DOCTYPE html>

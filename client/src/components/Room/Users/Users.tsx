@@ -12,7 +12,7 @@ const Users: React.FC<{ isCollapsed?: boolean }> = ({ isCollapsed = false }) => 
   const { showToast } = useToastContext();
   let conversation = useRecoilValue(store.usersInRoom);
 
-  if (!conversation) {
+  if (contextConvo) {
     conversation = contextConvo;
   }
 
