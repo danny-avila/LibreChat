@@ -20,7 +20,7 @@ COPY --from=data-provider-build /app/packages/data-provider/ /app/client/node_mo
 RUN npm install; npm cache clean --force
 COPY ./client/ ./
 ENV NODE_OPTIONS="--max-old-space-size=2048"
-RUN npm run build
+# RUN npm run build
 
 # Node API setup
 FROM base AS api-build
