@@ -421,13 +421,21 @@ async function runAssistant({
   }
 
   const { submit_tool_outputs } = run.required_action;
+
   const actions = submit_tool_outputs.tool_calls.map((item) => {
     const functionCall = item.function;
     const args = JSON.parse(functionCall.arguments);
-    if(process.env.AZURE_ASSISTANTS_FUNCTIONS_URL && process.env.AZURE_ASSISTANTS_FUNCTIONS_URL!=""){
+    if (
+      process.env.AZURE_ASSISTANTS_FUNCTIONS_URL &&
+      process.env.AZURE_ASSISTANTS_FUNCTIONS_URL != ''
+    ) {
       const matchingTool = run.tools.find((tool) => tool.function.name === functionCall.name);
-      if(matchingTool)
-        args["functionInfo"] = matchingTool
+      if (matchingTool) {
+        // args["functionInfo"] = matchingTool
+        args['toolName'] = functionCall.name;
+        args['assistant'] = run.assistant_id;
+        args['toolInput'] = JSON.parse(item.function.arguments);
+      }
     }
     return {
       tool: functionCall.name,
