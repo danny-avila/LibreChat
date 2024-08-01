@@ -66,7 +66,7 @@ export default function Presentation({
   }, []);
   const defaultCollapsed = useMemo(() => {
     const collapsedPanels = localStorage.getItem('react-resizable-panels:collapsed');
-    return collapsedPanels ? JSON.parse(collapsedPanels) : undefined;
+    return collapsedPanels ? JSON.parse(collapsedPanels) : true;
   }, []);
   const fullCollapse = useMemo(() => localStorage.getItem('fullPanelCollapse') === 'true', []);
 
