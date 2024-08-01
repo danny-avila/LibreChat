@@ -34,33 +34,33 @@ class AzureAIFunctions extends Tool {
     if (this.override) {
       return;
     }
-    // this.openai = new OpenAI(config);
   }
 
   async _call(data) {
-    // TO-DO cambiar data para que traiga los datos de la funcion
-    const url = `https://${process.env.AZURE_RESOURSE_NAME}.openai.azure.com/openai/assistants?api-version=2024-02-15-preview`;
-    const headers = {
-      'Content-Type': 'application/json',
-      'api-key': `${process.env.AZURE_ASSISTANTS_API_KEY}`,
-    };
+    const azureFunctions = global.myCache.get('functions');
+    const logicAppFunction = azureFunctions.find((f) => f.name === data.toolName);
+    const isAssistantAllowed = logicAppFunction.assistants.some(
+      (assistandId) => assistandId == data.assistant,
+    );
+    if (isAssistantAllowed) {
+      const url = logicAppFunction.url;
+      const method = logicAppFunction.method;
+      const headers = { 'Content-Type': 'application/json' };
+      const body = data.toolInput;
 
-    const body = {
-      tools: [data.functionInfo],
-      model: 'gpt4',
-    };
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-    });
+      const response = await fetch(url, {
+        method,
+        headers,
+        body: JSON.stringify(body),
+      });
 
-    const json = await response.json();
+      const json = await response.json();
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}: ${json.error.message}`);
+      }
 
-    if (!response.ok) {
-      throw new Error(`Request failed with status ${response.status}: ${json.error.message}`);
+      return JSON.stringify(json);
     }
-    return JSON.stringify(json);
   }
 }
 
