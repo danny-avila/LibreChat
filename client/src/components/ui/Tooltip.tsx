@@ -34,7 +34,7 @@ const TooltipContent = React.forwardRef<
     >
       <span className="flex items-center whitespace-pre-wrap px-2 py-1 text-center text-sm font-medium normal-case text-white">
         {children}
-        <TooltipArrow className="TooltipArrow" />
+        <TooltipArrow className="TooltipArrow border-gray-700" />
       </span>
     </TooltipPrimitive.Content>
   </TooltipPortal>

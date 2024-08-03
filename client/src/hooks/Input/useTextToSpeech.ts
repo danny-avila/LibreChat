@@ -50,7 +50,7 @@ const useTextToSpeech = (message: TMessage, isLast: boolean, index = 0) => {
     }
   };
 
-  const toggleSpeech = () => {
+  const toggleSpeech = (download: boolean) => {
     if (isSpeaking) {
       console.log('canceling message audio speech');
       cancelSpeech();
@@ -59,7 +59,7 @@ const useTextToSpeech = (message: TMessage, isLast: boolean, index = 0) => {
       const messageContent = message?.content ?? message?.text ?? '';
       const parsedMessage =
         typeof messageContent === 'string' ? messageContent : parseTextParts(messageContent);
-      generateSpeech(parsedMessage, false);
+      generateSpeech(parsedMessage, download);
     }
   };
 
