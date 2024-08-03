@@ -5,11 +5,13 @@
 export default {
   com_error_moderation:
     'Es scheint, dass der eingereichte Inhalt von unserem Moderationssystem als nicht mit unseren Community-Richtlinien vereinbar gekennzeichnet wurde. Wir können mit diesem spezifischen Thema nicht fortfahren. Wenn Sie andere Fragen oder Themen haben, die Sie erkunden möchten, bearbeiten Sie bitte Ihre Nachricht oder erstellen Sie eine neue Konversation.',
-  com_error_no_user_key: 'Kein Schlüssel gefunden. Bitte geben Sie einen Schlüssel ein und versuchen Sie es erneut.',
-  com_error_no_base_url: 'Keine Basis-URL gefunden. Bitte geben Sie eine ein und versuchen Sie es erneut.',
-  com_error_invalid_user_key: 'Ungültiger Schlüssel angegeben. Bitte geben Sie einen gültigen Schlüssel ein und versuchen Sie es erneut.',
+  com_error_no_user_key:
+    'Kein API-Key gefunden. Bitte gebe einen API-Key ein und versuche es erneut.',
+  com_error_no_base_url: 'Keine Basis-URL gefunden. Bitte gebe eine ein und versuche es erneut.',
+  com_error_invalid_user_key:
+    'Ungültiger API-Key angegeben. Bitte gebe einen gültigen API-Key ein und versuche es erneut.',
   com_error_expired_user_key:
-    'Der angegebene Schlüssel für {0} ist am {1} abgelaufen. Bitte geben Sie einen neuen Schlüssel ein und versuchen Sie es erneut.',
+    'Der angegebene API-Key für {0} ist am {1} abgelaufen. Bitte gebe einen neuen API-Key ein und versuche es erneut.',
   com_files_no_results: 'Keine Ergebnisse.',
   com_files_filter: 'Dateien filtern...',
   com_files_number_selected: '{0} von {1} Datei(en) ausgewählt',
@@ -23,12 +25,12 @@ export default {
   com_assistants_capabilities: 'Fähigkeiten',
   com_assistants_file_search: 'Dateisuche',
   com_assistants_file_search_info:
-    'Die Dateisuche ermöglicht dem Assistenten, Wissen aus Dateien zu nutzen, die Sie oder Ihre Benutzer hochladen. Sobald eine Datei hochgeladen wurde, entscheidet der Assistent automatisch, wann er basierend auf Benutzeranfragen Inhalte abruft. Das Anhängen von Vektor-Speichern für die Dateisuche wird noch nicht unterstützt. Sie können sie vom Provider-Playground aus anhängen oder Dateien für die Dateisuche auf Thread-Basis an Nachrichten anhängen.',
+    'Die Dateisuche ermöglicht dem Assistenten, Wissen aus Dateien zu nutzen, die du oder deine Benutzer hochladen. Sobald eine Datei hochgeladen wurde, entscheidet der Assistent automatisch, wann er basierend auf Benutzeranfragen Inhalte abruft. Das Anhängen von Vektor-Speichern für die Dateisuche wird noch nicht unterstützt. Sie können sie vom Provider-Playground aus anhängen oder Dateien für die Dateisuche auf Thread-Basis an Nachrichten anhängen.',
   com_assistants_code_interpreter_info:
     'Der Code-Interpreter ermöglicht es dem Assistenten, Code zu schreiben und auszuführen. Dieses Tool kann Dateien mit verschiedenen Daten und Formatierungen verarbeiten und Dateien wie Grafiken generieren.',
   com_assistants_knowledge: 'Wissen',
   com_assistants_knowledge_info:
-    'Wenn Sie Dateien unter Wissen hochladen, können Gespräche mit Ihrem Assistenten Dateiinhalte einbeziehen.',
+    'Wenn du Dateien unter Wissen hochlädst, kannst du bei Gesprächen mit deinem Assistenten Dateiinhalte einbeziehen.',
   com_assistants_knowledge_disabled:
     'Der Assistent muss erstellt und Code-Interpreter oder Abruf müssen aktiviert und gespeichert werden, bevor Dateien als Wissen hochgeladen werden können.',
   com_assistants_image_vision: 'Bildanalyse',
@@ -41,7 +43,7 @@ export default {
   com_assistants_add_tools: 'Werkzeuge hinzufügen',
   com_assistants_add_actions: 'Aktionen hinzufügen',
   com_assistants_non_retrieval_model:
-    'Die Dateisuche ist für dieses Modell nicht aktiviert. Bitte wählen Sie ein anderes Modell aus.',
+    'Die Dateisuche ist für dieses KI-Modell nicht aktiviert. Bitte wähle ein anderes Modell aus.',
   com_assistants_available_actions: 'Verfügbare Aktionen',
   com_assistants_running_action: 'Aktion wird ausgeführt',
   com_assistants_completed_action: 'Mit {0} gesprochen',
@@ -50,17 +52,21 @@ export default {
   com_assistants_domain_info: 'Assistent hat diese Information an {0} gesendet',
   com_assistants_delete_actions_success: 'Aktion erfolgreich vom Assistenten gelöscht',
   com_assistants_update_actions_success: 'Aktion erfolgreich erstellt oder aktualisiert',
-  com_assistants_update_actions_error: 'Bei der Erstellung oder Aktualisierung der Aktion ist ein Fehler aufgetreten.',
+  com_assistants_update_actions_error:
+    'Bei der Erstellung oder Aktualisierung der Aktion ist ein Fehler aufgetreten.',
   com_assistants_delete_actions_error: 'Beim Löschen der Aktion ist ein Fehler aufgetreten.',
-  com_assistants_actions_info: 'Lassen Sie Ihren Assistenten Informationen abrufen oder Aktionen über APIs ausführen',
+  com_assistants_actions_info:
+    'Lasse deinen Assistenten Informationen abrufen oder Aktionen über APIs ausführen',
   com_assistants_name_placeholder: 'Optional: Der Name des Assistenten',
   com_assistants_instructions_placeholder: 'Die Systemanweisungen, die der Assistent verwendet',
-  com_assistants_description_placeholder: 'Optional: Beschreiben Sie Ihren Assistenten hier',
-  com_assistants_actions_disabled: 'Sie müssen einen Assistenten erstellen, bevor Sie Aktionen hinzufügen können.',
+  com_assistants_description_placeholder: 'Optional: Beschreibe deinen Assistenten hier',
+  com_assistants_actions_disabled:
+    'Du müsst einen Assistenten erstellen, bevor du Aktionen hinzufügen kannst.',
   com_assistants_update_success: 'Erfolgreich aktualisiert',
-  com_assistants_update_error: 'Bei der Aktualisierung Ihres Assistenten ist ein Fehler aufgetreten.',
+  com_assistants_update_error:
+    'Bei der Aktualisierung deines Assistenten ist ein Fehler aufgetreten.',
   com_assistants_create_success: 'Erfolgreich erstellt',
-  com_assistants_create_error: 'Bei der Erstellung Ihres Assistenten ist ein Fehler aufgetreten.',
+  com_assistants_create_error: 'Bei der Erstellung deines Assistenten ist ein Fehler aufgetreten.',
   com_ui_date_today: 'Heute',
   com_ui_date_yesterday: 'Gestern',
   com_ui_date_previous_7_days: 'Letzte 7 Tage',
@@ -78,13 +84,16 @@ export default {
   com_ui_date_november: 'November',
   com_ui_date_december: 'Dezember',
   com_ui_field_required: 'Dieses Feld ist erforderlich',
-  com_ui_download_error: 'Fehler beim Herunterladen der Datei. Die Datei wurde möglicherweise gelöscht.',
+  com_ui_download_error:
+    'Fehler beim Herunterladen der Datei. Die Datei wurde möglicherweise gelöscht.',
   com_ui_attach_error_type: 'Nicht unterstützter Dateityp für Endpunkt:',
-  com_ui_attach_error_openai: 'Assistentendateien können nicht an andere Endpunkte angehängt werden',
-  com_ui_attach_warn_endpoint: 'Nicht-Assistentendateien werden möglicherweise ohne kompatibles Werkzeug ignoriert',
+  com_ui_attach_error_openai:
+    'Assistentendateien können nicht an andere Endpunkte angehängt werden',
+  com_ui_attach_warn_endpoint:
+    'Nicht-Assistentendateien werden möglicherweise ohne kompatibles Werkzeug ignoriert',
   com_ui_attach_error_size: 'Dateigrößenlimit für Endpunkt überschritten:',
   com_ui_attach_error:
-    'Datei kann nicht angehängt werden. Erstellen oder wählen Sie eine Konversation oder versuchen Sie, die Seite zu aktualisieren.',
+    'Datei kann nicht angehängt werden. Erstelle oder wähle einen Chat oder versuche, die Seite zu aktualisieren.',
   com_ui_examples: 'Beispiele',
   com_ui_new_chat: 'Neuer Chat',
   com_ui_happy_birthday: 'Es ist mein 1. Geburtstag!',
@@ -107,13 +116,13 @@ export default {
   com_ui_instructions: 'Anweisungen',
   com_ui_description: 'Beschreibung',
   com_ui_error: 'Fehler',
-  com_ui_error_connection: 'Verbindungsfehler zum Server, versuchen Sie, die Seite zu aktualisieren.',
+  com_ui_error_connection: 'Verbindungsfehler zum Server. Versuche, die Seite zu aktualisieren.',
   com_ui_select: 'Auswählen',
   com_ui_input: 'Eingabe',
   com_ui_close: 'Schließen',
-  com_ui_model: 'Modell',
-  com_ui_select_model: 'Ein Modell auswählen',
-  com_ui_select_search_model: 'Modell nach Namen suchen',
+  com_ui_model: 'KI-Modell',
+  com_ui_select_model: 'Ein KI-Modell auswählen',
+  com_ui_select_search_model: 'KI-Modell nach Namen suchen',
   com_ui_select_search_plugin: 'Plugin nach Namen suchen',
   com_ui_use_prompt: 'Prompt verwenden',
   com_ui_prev: 'Zurück',
@@ -130,8 +139,10 @@ export default {
   com_ui_version_var: 'Version {0}',
   com_ui_advanced: 'Erweitert',
   com_ui_admin_settings: 'Admin-Einstellungen',
-  com_ui_error_save_admin_settings: 'Beim Speichern Ihrer Admin-Einstellungen ist ein Fehler aufgetreten.',
-  com_ui_prompt_preview_not_shared: 'Der Autor hat die Zusammenarbeit für diesen Prompt nicht erlaubt.',
+  com_ui_error_save_admin_settings:
+    'Beim Speichern Ihrer Admin-Einstellungen ist ein Fehler aufgetreten.',
+  com_ui_prompt_preview_not_shared:
+    'Der Autor hat die Zusammenarbeit für diesen Prompt nicht erlaubt.',
   com_ui_prompt_name_required: 'Prompt-Name ist erforderlich',
   com_ui_prompt_text_required: 'Text ist erforderlich',
   com_ui_prompt_text: 'Text',
@@ -143,38 +154,42 @@ export default {
   com_ui_manage: 'Verwalten',
   com_ui_variables: 'Variablen',
   com_ui_variables_info:
-    'Verwenden Sie doppelte geschweifte Klammern in Ihrem Text, um Variablen zu erstellen, z.B. {{Beispielvariable}}, die Sie später beim Verwenden des Prompts ausfüllen können.',
+    'Verwende doppelte geschweifte Klammern in Ihrem Text, um Variablen zu erstellen, z.B. {{Beispielvariable}}, die du später beim Verwenden des Prompts ausfüllen kannst.',
   com_ui_special_variables:
-    'Spezielle Variablen: Verwenden Sie {{current_date}} für das aktuelle Datum und {{current_user}} für Ihren angegebenen Kontonamen.',
+    'Spezielle Variablen: Verwende {{current_date}} für das aktuelle Datum und {{current_user}} für deinen angegebenen Kontonamen.',
   com_ui_showing: 'Anzeige von',
   com_ui_of: 'von',
   com_ui_entries: 'Einträgen',
-  com_ui_pay_per_call: 'Alle KI-Gespräche an einem Ort. Bezahlen Sie pro Aufruf und nicht pro Monat',
-  com_ui_new_footer: 'Alle KI-Gespräche an einem Ort.',
-  com_ui_latest_footer: 'Jede KI für jeden.',
+  com_ui_pay_per_call:
+    'Alle KI-Chats an einem Ort. Bezahle pro Anfrage an die KI und nicht pro Monat',
+  com_ui_new_footer: 'Alle KI-Chats an einem Ort.',
+  com_ui_latest_footer: 'Alle KIs für alle.',
   com_ui_enter: 'Eingabe',
   com_ui_submit: 'Absenden',
   com_ui_none_selected: 'Nichts ausgewählt',
   com_ui_upload_success: 'Datei erfolgreich hochgeladen',
   com_ui_upload_error: 'Beim Hochladen Ihrer Datei ist ein Fehler aufgetreten',
-  com_ui_upload_invalid: 'Ungültige Datei zum Hochladen. Muss ein Bild sein und das Limit nicht überschreiten',
-  com_ui_upload_invalid_var: 'Ungültige Datei zum Hochladen. Muss ein Bild sein und {0} MB nicht überschreiten',
+  com_ui_upload_invalid:
+    'Ungültige Datei zum Hochladen. Muss ein Bild sein und das Limit nicht überschreiten',
+  com_ui_upload_invalid_var:
+    'Ungültige Datei zum Hochladen. Muss ein Bild sein und {0} MB nicht überschreiten',
   com_ui_cancel: 'Abbrechen',
   com_ui_save: 'Speichern',
   com_ui_renaming_var: '"{0}" umbenennen',
   com_ui_save_submit: 'Speichern & Absenden',
-  com_user_message: 'Sie',
+  com_user_message: 'Du',
   com_ui_read_aloud: 'Vorlesen',
   com_ui_copied: 'Kopiert!',
   com_ui_copy_code: 'Code kopieren',
   com_ui_copy_to_clipboard: 'In die Zwischenablage kopieren',
   com_ui_copied_to_clipboard: 'In die Zwischenablage kopiert',
   com_ui_fork: 'Abzweigen',
-  com_ui_fork_info_1: 'Verwenden Sie diese Einstellung, um Nachrichten mit dem gewünschten Verhalten abzuzweigen.',
+  com_ui_fork_info_1:
+    'Verwende diese Einstellung, um Nachrichten mit dem gewünschten Verhalten abzuzweigen.',
   com_ui_fork_info_2:
     '"Abzweigen" bezieht sich auf das Erstellen einer neuen Konversation, die von bestimmten Nachrichten in der aktuellen Konversation ausgeht/endet und eine Kopie gemäß den ausgewählten Optionen erstellt.',
   com_ui_fork_info_3:
-    'Die "Zielnachricht" bezieht sich entweder auf die Nachricht, von der aus dieses Popup geöffnet wurde, oder, wenn Sie "{0}" aktivieren, auf die letzte Nachricht in der Konversation.',
+    'Die "Zielnachricht" bezieht sich entweder auf die Nachricht, von der aus dieses Popup geöffnet wurde, oder, wenn du "{0}" aktivierst, auf die letzte Nachricht in der Konversation.',
   com_ui_fork_info_visible:
     'Diese Option zweigt nur die sichtbaren Nachrichten ab; mit anderen Worten, den direkten Pfad zur Zielnachricht, ohne jegliche Verzweigungen.',
   com_ui_fork_info_branches:
@@ -184,7 +199,7 @@ export default {
   com_ui_fork_info_start:
     'Wenn aktiviert, beginnt das Abzweigen von dieser Nachricht bis zur letzten Nachricht in der Konversation, gemäß dem oben ausgewählten Verhalten.',
   com_ui_fork_info_remember:
-    'Aktivieren Sie dies, um sich die von Ihnen ausgewählten Optionen für zukünftige Verwendung zu merken, um das Abzweigen von Konversationen nach Ihren Vorlieben zu beschleunigen.',
+    'Aktiviere dies, um sich die von dir ausgewählten Optionen für zukünftige Verwendung zu merken, um das Abzweigen von Konversationen nach deinen Vorlieben zu beschleunigen.',
   com_ui_fork_success: 'Konversation erfolgreich abgezweigt',
   com_ui_fork_processing: 'Konversation wird abgezweigt...',
   com_ui_fork_error: 'Beim Abzweigen der Konversation ist ein Fehler aufgetreten',
@@ -194,13 +209,14 @@ export default {
   com_ui_fork_split_target_setting: 'Abzweigung standardmäßig von der Zielnachricht beginnen',
   com_ui_fork_split_target: 'Abzweigung hier beginnen',
   com_ui_fork_remember_checked:
-    'Ihre Auswahl wird nach der Verwendung gespeichert. Sie können dies jederzeit in den Einstellungen ändern.',
+    'Ihre Auswahl wird nach der Verwendung gespeichert. Du kannst dies jederzeit in den Einstellungen ändern.',
   com_ui_fork_all_target: 'Alle bis/von hier einbeziehen',
   com_ui_fork_branches: 'Zugehörige Verzweigungen einbeziehen',
   com_ui_fork_visible: 'Nur sichtbare Nachrichten',
-  com_ui_fork_from_message: 'Wählen Sie eine Abzweigungsoption',
-  com_ui_mention: 'Erwähnen Sie einen Endpunkt, Assistenten oder eine Voreinstellung, um schnell dorthin zu wechseln',
-  com_ui_add: 'Ein Modell oder eine Voreinstellung für eine zusätzliche Antwort hinzufügen',
+  com_ui_fork_from_message: 'Wähle eine Abzweigungsoption',
+  com_ui_mention:
+    'Erwähne einen Endpunkt, Assistenten oder eine Voreinstellung, um schnell dorthin zu wechseln',
+  com_ui_add: 'Ein KI-Modell oder eine Voreinstellung für eine zusätzliche Antwort hinzufügen',
   com_ui_regenerate: 'Neu generieren',
   com_ui_continue: 'Fortfahren',
   com_ui_edit: 'Bearbeiten',
@@ -210,13 +226,14 @@ export default {
   com_ui_all_proper: 'Alle',
   com_ui_clear: 'Löschen',
   com_ui_revoke: 'Widerrufen',
-  com_ui_revoke_info: 'Alle vom Benutzer bereitgestellten Anmeldedaten widerrufen',
+  com_ui_revoke_info: 'Alle vom Benutzer angegebenen API-Keys widerrufen',
   com_ui_import_conversation: 'Importieren',
   com_ui_nothing_found: 'Nichts gefunden',
   com_ui_go_to_conversation: 'Zur Konversation gehen',
   com_ui_import_conversation_info: 'Konversationen aus einer JSON-Datei importieren',
   com_ui_import_conversation_success: 'Konversationen erfolgreich importiert',
-  com_ui_import_conversation_error: 'Beim Importieren Ihrer Konversationen ist ein Fehler aufgetreten',
+  com_ui_import_conversation_error:
+    'Beim Importieren Ihrer Konversationen ist ein Fehler aufgetreten',
   com_ui_import_conversation_file_type_error: 'Nicht unterstützter Importtyp',
   com_ui_confirm_action: 'Aktion bestätigen',
   com_ui_chat: 'Chat',
@@ -250,32 +267,33 @@ export default {
   com_ui_prompt_shared_to_all: 'Dieser Prompt wird mit allen Benutzern geteilt',
   com_ui_prompt_update_error: 'Beim Aktualisieren des Prompts ist ein Fehler aufgetreten',
   com_ui_prompt_already_shared_to_all: 'Dieser Prompt wird bereits mit allen Benutzern geteilt',
-  com_ui_description_placeholder: 'Optional: Geben Sie eine Beschreibung für den Prompt ein',
-  com_ui_command_placeholder: 'Optional: Geben Sie einen Befehl für den Prompt ein, oder der Name wird verwendet.',
-  com_ui_command_usage_placeholder: 'Wählen Sie einen Prompt nach Befehl oder Name aus',
+  com_ui_description_placeholder: 'Optional: Gib eine Beschreibung für den Prompt ein',
+  com_ui_command_placeholder: 'Optional: Gib einen Promptbefehl ein oder den Namen.',
+  com_ui_command_usage_placeholder: 'Wähle einen Prompt nach Befehl oder Name aus',
   com_ui_no_prompt_description: 'Keine Beschreibung gefunden.',
   com_ui_share_link_to_chat: 'Link zum Chat teilen',
   com_ui_share_error: 'Beim Teilen des Chat-Links ist ein Fehler aufgetreten',
   com_ui_share_retrieve_error: 'Beim Abrufen der geteilten Links ist ein Fehler aufgetreten',
   com_ui_share_delete_error: 'Beim Löschen des geteilten Links ist ein Fehler aufgetreten',
-  com_ui_share_create_message: 'Ihr Name und alle Nachrichten, die Sie nach dem Teilen hinzufügen, bleiben privat.',
+  com_ui_share_create_message:
+    'Ihr Name und alle Nachrichten, die du nach dem Teilen hinzufügst, bleiben privat.',
   com_ui_share_created_message:
-    'Ein geteilter Link zu Ihrem Chat wurde erstellt. Verwalten Sie zuvor geteilte Chats jederzeit über die Einstellungen.',
+    'Ein geteilter Link zu Ihrem Chat wurde erstellt. Verwalte zuvor geteilte Chats jederzeit über die Einstellungen.',
   com_ui_share_update_message:
-    'Ihr Name, benutzerdefinierte Anweisungen und alle Nachrichten, die Sie nach dem Teilen hinzufügen, bleiben privat.',
+    'Ihr Name, benutzerdefinierte Anweisungen und alle Nachrichten, die du nach dem Teilen hinzufügen, bleiben privat.',
   com_ui_share_updated_message:
-    'Ein geteilter Link zu Ihrem Chat wurde aktualisiert. Verwalten Sie zuvor geteilte Chats jederzeit über die Einstellungen.',
+    'Ein geteilter Link zu Ihrem Chat wurde aktualisiert. Verwalte zuvor geteilte Chats jederzeit über die Einstellungen.',
   com_ui_shared_link_not_found: 'Geteilter Link nicht gefunden',
   com_ui_delete_conversation: 'Chat löschen?',
   com_ui_delete_confirm: 'Dies wird löschen:',
   com_ui_delete_tool: 'Werkzeug löschen',
-  com_ui_delete_tool_confirm: 'Sind Sie sicher, dass Sie dieses Werkzeug löschen möchten?',
+  com_ui_delete_tool_confirm: 'Bist du sicher, dass du dieses Werkzeug löschen möchtest?',
   com_ui_delete_action: 'Aktion löschen',
-  com_ui_delete_action_confirm: 'Sind Sie sicher, dass Sie diese Aktion löschen möchten?',
+  com_ui_delete_action_confirm: 'Bist du sicher, dass du diese Aktion löschen möchtest?',
   com_ui_delete_confirm_prompt_version_var:
     'Dies wird die ausgewählte Version für "{0}" löschen. Wenn keine anderen Versionen existieren, wird der Prompt gelöscht.',
   com_ui_delete_assistant_confirm:
-    'Sind Sie sicher, dass Sie diesen Assistenten löschen möchten? Dies kann nicht rückgängig gemacht werden.',
+    'Bist du sicher, dass du diesen Assistenten löschen möchtest? Dies kann nicht rückgängig gemacht werden.',
   com_ui_rename: 'Umbenennen',
   com_ui_archive: 'Archivieren',
   com_ui_archive_error: 'Konversation konnte nicht archiviert werden',
@@ -287,16 +305,16 @@ export default {
   com_ui_connect: 'Verbinden',
   com_ui_locked: 'Gesperrt',
   com_ui_upload_delay:
-    'Das Hochladen von "{0}" dauert länger als erwartet. Bitte warten Sie, während die Datei für den Abruf indexiert wird.',
+    'Das Hochladen von "{0}" dauert etwas länger. Bitte warte, während die Datei für den Abruf indexiert wird.',
   com_ui_privacy_policy: 'Datenschutzerklärung',
   com_ui_terms_of_service: 'Nutzungsbedingungen',
   com_ui_use_micrphone: 'Mikrofon verwenden',
   com_ui_min_tags: 'Es können nicht mehr Werte entfernt werden, mindestens {0} sind erforderlich.',
   com_ui_max_tags: 'Die maximale Anzahl ist {0}, es werden die neuesten Werte verwendet.',
   com_ui_bookmarks: 'Lesezeichen',
-  com_ui_bookmarks_rebuild: 'Neu aufbauen',
+  com_ui_bookmarks_rebuild: 'Erneuern',
   com_ui_bookmarks_new: 'Neues Lesezeichen',
-  com_ui_bookmark_delete_confirm: 'Sind Sie sicher, dass Sie dieses Lesezeichen löschen möchten?',
+  com_ui_bookmark_delete_confirm: 'Bist du sicher, dass du dieses Lesezeichen löschen möchtest?',
   com_ui_bookmarks_title: 'Titel',
   com_ui_bookmarks_count: 'Anzahl',
   com_ui_bookmarks_description: 'Beschreibung',
@@ -309,16 +327,16 @@ export default {
   com_ui_bookmarks_add_to_conversation: 'Zur aktuellen Konversation hinzufügen',
   com_ui_bookmarks_filter: 'Lesezeichen filtern...',
   com_auth_error_login:
-    'Anmeldung mit den angegebenen Informationen nicht möglich. Bitte überprüfen Sie Ihre Anmeldedaten und versuchen Sie es erneut.',
+    'Anmeldung mit den angegebenen Informationen nicht möglich. Bitte überprüfe deine Anmeldedaten und versuche es erneut.',
   com_auth_error_login_rl:
-    'Zu viele Anmeldeversuche in kurzer Zeit. Bitte versuchen Sie es später erneut.',
+    'Zu viele Anmeldeversuche in kurzer Zeit. Bitte versuche es später erneut.',
   com_auth_error_login_ban:
-    'Ihr Konto wurde aufgrund von Verstößen gegen unseren Dienst vorübergehend gesperrt.',
+    'Dein Konto wurde aufgrund von Verstößen gegen unseren Dienst vorübergehend gesperrt.',
   com_auth_error_login_server:
-    'Es gab einen internen Serverfehler. Bitte warten Sie einen Moment und versuchen Sie es erneut.',
+    'Es gab einen internen Serverfehler. Bitte warte einen Moment und versuche es erneut.',
   com_auth_error_login_unverified:
-    'Ihr Konto wurde nicht verifiziert. Bitte überprüfen Sie Ihre E-Mail auf einen Verifizierungslink.',
-  com_auth_no_account: 'Sie haben noch kein Konto?',
+    'Dein Konto wurde nicht verifiziert. Bitte überprüfe deine E-Mail auf einen Verifizierungslink.',
+  com_auth_no_account: 'Du hast noch kein Konto?',
   com_auth_sign_up: 'Registrieren',
   com_auth_sign_in: 'Anmelden',
   com_auth_google_login: 'Mit Google fortfahren',
@@ -329,7 +347,7 @@ export default {
   com_auth_email_required: 'E-Mail ist erforderlich',
   com_auth_email_min_length: 'E-Mail muss mindestens 6 Zeichen lang sein',
   com_auth_email_max_length: 'E-Mail sollte nicht länger als 120 Zeichen sein',
-  com_auth_email_pattern: 'Sie müssen eine gültige E-Mail-Adresse eingeben',
+  com_auth_email_pattern: 'Du musst eine gültige E-Mail-Adresse eingeben',
   com_auth_email_address: 'E-Mail-Adresse',
   com_auth_password: 'Passwort',
   com_auth_password_required: 'Passwort ist erforderlich',
@@ -339,9 +357,9 @@ export default {
   com_auth_password_confirm: 'Passwort bestätigen',
   com_auth_password_not_match: 'Passwörter stimmen nicht überein',
   com_auth_continue: 'Fortfahren',
-  com_auth_create_account: 'Erstellen Sie Ihr Konto',
+  com_auth_create_account: 'Erstelle dein Konto',
   com_auth_error_create:
-    'Bei der Registrierung Ihres Kontos ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut.',
+    'Bei der Registrierung deines Kontos ist ein Fehler aufgetreten. Bitte versuche es erneut.',
   com_auth_full_name: 'Vollständiger Name',
   com_auth_name_required: 'Name ist erforderlich',
   com_auth_name_min_length: 'Name muss mindestens 3 Zeichen lang sein',
@@ -350,29 +368,30 @@ export default {
   com_auth_username_required: 'Benutzername ist erforderlich',
   com_auth_username_min_length: 'Benutzername muss mindestens 2 Zeichen lang sein',
   com_auth_username_max_length: 'Benutzername darf nicht länger als 20 Zeichen sein',
-  com_auth_already_have_account: 'Haben Sie bereits ein Konto?',
+  com_auth_already_have_account: 'Hast du bereits ein Konto?',
   com_auth_login: 'Anmelden',
   com_auth_registration_success_insecure: 'Registrierung erfolgreich.',
-  com_auth_registration_success_generic: 'Bitte überprüfen Sie Ihre E-Mail, um Ihre E-Mail-Adresse zu verifizieren.',
-  com_auth_reset_password: 'Setzen Sie Ihr Passwort zurück',
-  com_auth_click: 'Klicken Sie',
+  com_auth_registration_success_generic:
+    'Bitte überprüfe deine E-Mail, um deine E-Mail-Adresse zu verifizieren.',
+  com_auth_reset_password: 'Setze dein Passwort zurück',
+  com_auth_click: 'Klicke',
   com_auth_here: 'HIER',
   com_auth_to_reset_your_password: 'um Ihr Passwort zurückzusetzen.',
   com_auth_reset_password_link_sent: 'E-Mail gesendet',
   com_auth_reset_password_if_email_exists:
-    'Wenn ein Konto mit dieser E-Mail-Adresse existiert, wurde eine E-Mail mit Anweisungen zum Zurücksetzen des Passworts gesendet. Bitte überprüfen Sie auch Ihren Spam-Ordner.',
+    'Wenn ein Konto mit dieser E-Mail-Adresse existiert, wurde eine E-Mail mit Anweisungen zum Zurücksetzen des Passworts gesendet. Bitte überprüfe auch deinen Spam-Ordner.',
   com_auth_reset_password_email_sent:
     'Wenn der Benutzer registriert ist, wird eine E-Mail an das Postfach gesendet.',
   com_auth_reset_password_success: 'Passwort erfolgreich zurückgesetzt',
-  com_auth_login_with_new_password: 'Sie können sich jetzt mit Ihrem neuen Passwort anmelden.',
+  com_auth_login_with_new_password: 'Du kannst dich jetzt mit deinem neuen Passwort anmelden.',
   com_auth_error_invalid_reset_token: 'Dieser Passwort-Reset-Token ist nicht mehr gültig.',
-  com_auth_click_here: 'Klicken Sie hier',
+  com_auth_click_here: 'Klicke hier',
   com_auth_to_try_again: 'um es erneut zu versuchen.',
   com_auth_submit_registration: 'Registrierung absenden',
   com_auth_welcome_back: 'Willkommen zurück',
   com_auth_back_to_login: 'Zurück zur Anmeldung',
   com_auth_email_verification_failed: 'E-Mail-Verifizierung fehlgeschlagen',
-  com_auth_email_verification_rate_limited: 'Zu viele Anfragen. Bitte versuchen Sie es später erneut',
+  com_auth_email_verification_rate_limited: 'Zu viele Anfragen. Bitte versuche es später erneut',
   com_auth_email_verification_success: 'E-Mail erfolgreich verifiziert',
   com_auth_email_resent_success: 'Verifizierungs-E-Mail erfolgreich erneut gesendet',
   com_auth_email_resent_failed: 'Erneutes Senden der Verifizierungs-E-Mail fehlgeschlagen',
@@ -389,10 +408,10 @@ export default {
   com_endpoint_bing_context_placeholder:
     'Bing kann bis zu 7k Token für \'Kontext\' verwenden, auf die es sich im Gespräch beziehen kann. Das spezifische Limit ist nicht bekannt, kann aber bei Überschreitung von 7k Token zu Fehlern führen',
   com_endpoint_bing_system_message_placeholder:
-    'WARNUNG: Missbrauch dieser Funktion kann zu einer SPERRE für die Nutzung von Bing führen! Klicken Sie auf \'Systemnachricht\' für vollständige Anweisungen und die Standardnachricht, wenn ausgelassen, was die \'Sydney\'-Voreinstellung ist, die als sicher gilt.',
+    'WARNUNG: Missbrauch dieser Funktion kann zu einer SPERRE für die Nutzung von Bing führen! Klicke auf \'Systemnachricht\' für vollständige Anweisungen und die Standardnachricht, wenn ausgelassen, was die \'Sydney\'-Voreinstellung ist, die als sicher gilt.',
   com_endpoint_system_message: 'Systemnachricht',
   com_endpoint_message: 'Nachricht',
-  com_endpoint_message_not_appendable: 'Bearbeiten Sie Ihre Nachricht oder generieren Sie neu.',
+  com_endpoint_message_not_appendable: 'Bearbeite deine Nachricht oder generiere neu.',
   com_endpoint_default_blank: 'Standard: leer',
   com_endpoint_default_false: 'Standard: falsch',
   com_endpoint_default_creative: 'Standard: kreativ',
@@ -401,24 +420,26 @@ export default {
   com_endpoint_context: 'Kontext',
   com_endpoint_tone_style: 'Tonstil',
   com_endpoint_token_count: 'Token-Anzahl',
-  com_endpoint_output: 'Ausgabe',
+  com_endpoint_output: 'Antwort',
   com_endpoint_context_tokens: 'Max. Kontext-Token',
-  com_endpoint_context_info: `Die maximale Anzahl von Token, die für den Kontext verwendet werden können. Verwenden Sie dies zur Kontrolle, wie viele Token pro Anfrage gesendet werden.
+  com_endpoint_context_info: `Die maximale Anzahl von Token, die für den Kontext verwendet werden können. Verwende dies zur Kontrolle, wie viele Token pro Anfrage gesendet werden.
   Wenn nicht angegeben, werden Systemstandards basierend auf der bekannten Kontextgröße der Modelle verwendet. Das Setzen höherer Werte kann zu Fehlern und/oder höheren Token-Kosten führen.`,
   com_endpoint_google_temp:
     'Höhere Werte = zufälliger, während niedrigere Werte = fokussierter und deterministischer. Wir empfehlen, entweder dies oder Top P zu ändern, aber nicht beides.',
   com_endpoint_google_topp:
-    'Top-p ändert, wie das Modell Token für die Ausgabe auswählt. Token werden von den wahrscheinlichsten K (siehe topK-Parameter) bis zu den am wenigsten wahrscheinlichen ausgewählt, bis die Summe ihrer Wahrscheinlichkeiten dem Top-p-Wert entspricht.',
+    'Top-p ändert, wie das Modell Token für die Antwort auswählt. Token werden von den wahrscheinlichsten K (siehe topK-Parameter) bis zu den am wenigsten wahrscheinlichen ausgewählt, bis die Summe ihrer Wahrscheinlichkeiten dem Top-p-Wert entspricht.',
   com_endpoint_google_topk:
-    'Top-k ändert, wie das Modell Token für die Ausgabe auswählt. Ein Top-k von 1 bedeutet, dass das ausgewählte Token das wahrscheinlichste unter allen Token im Vokabular des Modells ist (auch Greedy-Decoding genannt), während ein Top-k von 3 bedeutet, dass das nächste Token aus den 3 wahrscheinlichsten Token ausgewählt wird (unter Verwendung der Temperatur).',
+    'Top-k ändert, wie das Modell Token für die Antwort auswählt. Ein Top-k von 1 bedeutet, dass das ausgewählte Token das wahrscheinlichste unter allen Token im Vokabular des Modells ist (auch Greedy-Decoding genannt), während ein Top-k von 3 bedeutet, dass das nächste Token aus den 3 wahrscheinlichsten Token ausgewählt wird (unter Verwendung der Temperatur).',
   com_endpoint_google_maxoutputtokens:
-    'Maximale Anzahl von Token, die in der Antwort generiert werden können. Geben Sie einen niedrigeren Wert für kürzere Antworten und einen höheren Wert für längere Antworten an. Hinweis: Modelle können möglicherweise vor Erreichen dieses Maximums stoppen.',
-  com_endpoint_google_custom_name_placeholder: 'Legen Sie einen benutzerdefinierten Namen für Google fest',
-  com_endpoint_prompt_prefix_placeholder: 'Legen Sie benutzerdefinierte Anweisungen oder Kontext fest. Wird ignoriert, wenn leer.',
+    'Maximale Anzahl von Token, die in der Antwort generiert werden können. Gib einen niedrigeren Wert für kürzere Antworten und einen höheren Wert für längere Antworten an. Hinweis: Modelle können möglicherweise vor Erreichen dieses Maximums stoppen.',
+  com_endpoint_google_custom_name_placeholder:
+    'Lege einen benutzerdefinierten Namen für Google fest',
+  com_endpoint_prompt_prefix_placeholder:
+    'Lege benutzerdefinierte Anweisungen oder Kontext fest. Wird ignoriert, wenn leer.',
   com_endpoint_instructions_assistants_placeholder:
     'Überschreibt die Anweisungen des Assistenten. Dies ist nützlich, um das Verhalten auf Basis einzelner Ausführungen zu modifizieren.',
   com_endpoint_prompt_prefix_assistants_placeholder:
-    'Legen Sie zusätzliche Anweisungen oder Kontext zusätzlich zu den Hauptanweisungen des Assistenten fest. Wird ignoriert, wenn leer.',
+    'Lege zusätzliche Anweisungen oder Kontext zusätzlich zu den Hauptanweisungen des Assistenten fest. Wird ignoriert, wenn leer.',
   com_endpoint_custom_name: 'Benutzerdefinierter Name',
   com_endpoint_prompt_prefix: 'Benutzerdefinierte Anweisungen',
   com_endpoint_prompt_prefix_assistants: 'Zusätzliche Anweisungen',
@@ -427,13 +448,18 @@ export default {
   com_endpoint_default: 'Standard',
   com_endpoint_top_p: 'Top P',
   com_endpoint_top_k: 'Top K',
-  com_endpoint_max_output_tokens: 'Max. Ausgabe-Token',
+  com_endpoint_max_output_tokens: 'Max. Antwort-Token',
   com_endpoint_stop: 'Stop-Sequenzen',
-  com_endpoint_stop_placeholder: 'Trennen Sie Werte durch Drücken der `Enter`-Taste',
+  com_endpoint_plug_image_detail: 'Bild-Detail',
+  com_endpoint_plug_resend_files: 'Anhänge erneut senden',
+  com_endpoint_frequency_penalty: 'Frequency Penalty',
+  com_endpoint_presence_penalty: 'Presence Penalty',
+  com_endpoint_plug_skip_completion: 'Fertigstellung überspringen',
+  com_endpoint_stop_placeholder: 'Trenne Stoppwörter durch Drücken der `Enter`-Taste',
   com_endpoint_openai_max_tokens: `Optionales \`max_tokens\`-Feld, das die maximale Anzahl von Token darstellt, die in der Chat-Vervollständigung generiert werden können.
-    Die Gesamtlänge der Eingabe-Token und der generierten Token ist durch die Kontextlänge des Modells begrenzt. Sie können Fehler erleben, wenn diese Zahl die maximalen Kontext-Token überschreitet.`,
+    Die Gesamtlänge der Eingabe-Token und der generierten Token ist durch die Kontextlänge des Modells begrenzt. Du kannst Fehler erleben, wenn diese Zahl die maximalen Kontext-Token überschreitet.`,
   com_endpoint_openai_temp:
-    'Höhere Werte = zufälliger, während niedrigere Werte = fokussierter und deterministischer. Wir empfehlen, entweder dies oder Top P zu ändern, aber nicht beides.',
+    'Entspricht der Kreativität der KI. Höhere Werte = zufälliger und kreativer, während niedrigere Werte = unkreativer und deterministischer. Wir empfehlen, entweder dies oder Top P zu ändern, aber nicht beides. Temperaturen über 1 sind nicht empfehlenswert.',
   com_endpoint_openai_max:
     'Die maximale Anzahl zu generierender Token. Die Gesamtlänge der Eingabe-Token und der generierten Token ist durch die Kontextlänge des Modells begrenzt.',
   com_endpoint_openai_topp:
@@ -443,29 +469,36 @@ export default {
   com_endpoint_openai_pres:
     'Zahl zwischen -2,0 und 2,0. Positive Werte bestrafen neue Token basierend darauf, ob sie im bisherigen Text vorkommen, wodurch die Wahrscheinlichkeit des Modells erhöht wird, über neue Themen zu sprechen.',
   com_endpoint_openai_resend:
-    'Alle zuvor angehängten Bilder erneut senden. Hinweis: Dies kann die Token-Kosten erheblich erhöhen und Sie können bei vielen Bildanhängen Fehler erleben.',
+    'Alle im Chat zuvor angehängten Bilder mit jeder neuen Nachricht erneut senden. Hinweis: Dies kann die Kosten der Anfrage  aufgrund höherer Token-Anzahl erheblich erhöhen und du kannst bei vielen Bildanhängen Fehler erleben.',
   com_endpoint_openai_resend_files:
-    'Alle zuvor angehängten Dateien erneut senden. Hinweis: Dies wird die Token-Kosten erhöhen und Sie können bei vielen Anhängen Fehler erleben.',
+    'Alle im Chat zuvor angehängten Dateien mit jeder neuen Nachricht erneut senden. Hinweis: Dies wird die Kosten der Anfrage aufgrund höherer Token-Anzahl erheblich erhöhen und du kannst bei vielen Anhängen Fehler erleben.',
   com_endpoint_openai_detail:
-    'Die Auflösung für Vision-Anfragen. "Niedrig" ist günstiger und schneller, "Hoch" ist detaillierter und teurer, und "Auto" wählt automatisch zwischen den beiden basierend auf der Bildauflösung.',
+    'Die Auflösung für Bilderkennungs-Anfragen. "Niedrig" ist günstiger und schneller, "Hoch" ist detaillierter und teurer, und "Auto" wählt automatisch zwischen den beiden basierend auf der Bildauflösung.',
   com_endpoint_openai_stop: 'Bis zu 4 Sequenzen, bei denen die API keine weiteren Token generiert.',
-  com_endpoint_openai_custom_name_placeholder: 'Legen Sie einen benutzerdefinierten Namen für die KI fest',
+  com_endpoint_openai_custom_name_placeholder:
+    'Lege einen benutzerdefinierten Namen für die KI fest.',
   com_endpoint_openai_prompt_prefix_placeholder:
-    'Legen Sie benutzerdefinierte Anweisungen fest, die in die Systemnachricht aufgenommen werden sollen. Standard: keine',
+    'Lege benutzerdefinierte Anweisungen fest, die in die Systemnachricht an die KI aufgenommen werden sollen. Standard: keine',
   com_endpoint_anthropic_temp:
-    'Reicht von 0 bis 1. Verwenden Sie Temperaturen näher an 0 für analytische / Multiple-Choice-Aufgaben und näher an 1 für kreative und generative Aufgaben. Wir empfehlen, entweder dies oder Top P zu ändern, aber nicht beides.',
+    'Reicht von 0 bis 1. Verwende Temperaturen näher an 0 für analytische / Multiple-Choice-Aufgaben und näher an 1 für kreative und generative Aufgaben. Wir empfehlen, entweder dies oder Top P zu ändern, aber nicht beides.',
   com_endpoint_anthropic_topp:
     'Top-p ändert, wie das Modell Token für die Ausgabe auswählt. Token werden von den wahrscheinlichsten K (siehe topK-Parameter) bis zu den am wenigsten wahrscheinlichen ausgewählt, bis die Summe ihrer Wahrscheinlichkeiten dem Top-p-Wert entspricht.',
   com_endpoint_plug_set_custom_instructions_for_gpt_placeholder:
-    'Legen Sie benutzerdefinierte Anweisungen fest, die in die Systemnachricht aufgenommen werden sollen. Standard: keine',
+    'Lege benutzerdefinierte Anweisungen fest, die in die Systemnachricht aufgenommen werden sollen. Standard: keine',
   com_endpoint_import: 'Importieren',
-  com_endpoint_set_custom_name: 'Legen Sie einen benutzerdefinierten Namen fest, falls Sie diese Voreinstellung finden möchten',
-  com_endpoint_preset_delete_confirm: 'Sind Sie sicher, dass Sie diese Voreinstellung löschen möchten?',
-  com_endpoint_preset_clear_all_confirm: 'Sind Sie sicher, dass Sie alle Ihre Voreinstellungen löschen möchten?',
-  com_endpoint_preset_import: 'Voreinstellung importiert!',
-  com_endpoint_preset_import_error: 'Beim Importieren Ihrer Voreinstellung ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut.',
-  com_endpoint_preset_save_error: 'Beim Speichern Ihrer Voreinstellung ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut.',
-  com_endpoint_preset_delete_error: 'Beim Löschen Ihrer Voreinstellung ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut.',
+  com_endpoint_set_custom_name:
+    'Lege einen benutzerdefinierten Namen fest, falls du diese Voreinstellung wiederfinden möchtest',
+  com_endpoint_preset_delete_confirm:
+    'Bist du sicher, dass du diese Voreinstellung löschen möchtest?',
+  com_endpoint_preset_clear_all_confirm:
+    'Bist du sicher, dass du alle deine Voreinstellungen löschen möchtest?',
+  com_endpoint_preset_import: 'Voreinstellung erfolgreich importiert!',
+  com_endpoint_preset_import_error:
+    'Beim Importieren deiner Voreinstellung ist ein Fehler aufgetreten. Bitte versuche es erneut.',
+  com_endpoint_preset_save_error:
+    'Beim Speichern deiner Voreinstellung ist ein Fehler aufgetreten. Bitte versuche es erneut.',
+  com_endpoint_preset_delete_error:
+    'Beim Löschen deiner Voreinstellung ist ein Fehler aufgetreten. Bitte versuche es erneut.',
   com_endpoint_preset_default_removed: 'ist nicht mehr die Standardvoreinstellung.',
   com_endpoint_preset_default_item: 'Standard:',
   com_endpoint_preset_default_none: 'Keine Standardvoreinstellung aktiv.',
@@ -490,56 +523,63 @@ export default {
   com_endpoint_assistant: 'Assistent',
   com_endpoint_use_active_assistant: 'Aktiven Assistenten verwenden',
   com_endpoint_assistant_model: 'Assistentenmodell',
-  com_endpoint_save_as_preset: 'Als Voreinstellung speichern',
+  com_endpoint_save_as_preset: 'Voreinstellung speichern',
   com_endpoint_presets_clear_warning:
-    'Sind Sie sicher, dass Sie alle Voreinstellungen löschen möchten? Dies ist nicht rückgängig zu machen.',
+    'Bist du sicher, dass du alle Voreinstellungen löschen möchtest? Dies ist nicht rückgängig zu machen.',
   com_endpoint_not_implemented: 'Nicht implementiert',
-  com_endpoint_no_presets: 'Noch keine Voreinstellungen, verwenden Sie die Einstellungsschaltfläche, um eine zu erstellen',
+  com_endpoint_no_presets:
+    'Noch keine Voreinstellungen, verwende die KI-Einstellungsschaltfläche, um eine zu erstellen',
   com_endpoint_not_available: 'Kein Endpunkt verfügbar',
   com_endpoint_view_options: 'Optionen anzeigen',
   com_endpoint_save_convo_as_preset: 'Konversation als Voreinstellung speichern',
   com_endpoint_my_preset: 'Meine Voreinstellung',
-  com_endpoint_agent_model: 'Agentenmodell (Empfohlen: GPT-3.5)',
-  com_endpoint_completion_model: 'Vervollständigungsmodell (Empfohlen: GPT-4)',
+  com_endpoint_agent_model: 'Agentenmodell (Empfohlen: GPT-4o-mini)',
+  com_endpoint_completion_model: 'Vervollständigungsmodell (Empfohlen: GPT-4o)',
   com_endpoint_func_hover: 'Verwendung von Plugins als OpenAI-Funktionen aktivieren',
   com_endpoint_skip_hover:
-    'Aktivieren Sie das Überspringen des Vervollständigungsschritts, der die endgültige Antwort und die generierten Schritte überprüft',
-  com_endpoint_config_key: 'API-Schlüssel festlegen',
-  com_endpoint_assistant_placeholder: 'Bitte wählen Sie einen Assistenten aus dem rechten Seitenpanel aus',
-  com_endpoint_config_placeholder: 'Legen Sie Ihren Schlüssel im Kopfzeilenmenü fest, um zu chatten.',
-  com_endpoint_config_key_for: 'API-Schlüssel festlegen für',
-  com_endpoint_config_key_name: 'Schlüssel',
+    'Aktiviere das Überspringen des Vervollständigungsschritts, der die endgültige Antwort und die generierten Schritte überprüft',
+  com_endpoint_config_key: 'API-Key festlegen',
+  com_endpoint_assistant_placeholder:
+    'Bitte wähle einen Assistenten aus dem rechten Seitenpanel aus',
+  com_endpoint_config_placeholder: 'Lege deinen API-Key im Kopfzeilenmenü fest, um zu chatten.',
+  com_endpoint_config_key_for: 'API-Key festlegen für',
+  com_endpoint_config_key_name: 'API-Key',
   com_endpoint_config_value: 'Wert eingeben für',
-  com_endpoint_config_key_name_placeholder: 'Zuerst API-Schlüssel festlegen',
-  com_endpoint_config_key_encryption: 'Ihr Schlüssel wird verschlüsselt und gelöscht um',
-  com_endpoint_config_key_never_expires: 'Ihr Schlüssel läuft nie ab',
+  com_endpoint_config_key_name_placeholder: 'Zuerst API-Key festlegen',
+  com_endpoint_config_key_encryption: 'Dein API-Key wird verschlüsselt und gelöscht um',
+  com_endpoint_config_key_never_expires: 'Dein API-Key läuft nie ab',
   com_endpoint_config_key_expiry: 'die Ablaufzeit',
-  com_endpoint_config_click_here: 'Klicken Sie hier',
+  com_endpoint_config_click_here: 'Klicke hier',
   com_endpoint_config_google_service_key: 'Google Service Account Key',
   com_endpoint_config_google_cloud_platform: '(von Google Cloud Platform)',
-  com_endpoint_config_google_api_key: 'Google API-Schlüssel',
+  com_endpoint_config_google_api_key: 'Google API-Key',
   com_endpoint_config_google_gemini_api: '(Gemini API)',
-  com_endpoint_config_google_api_info: 'Um Ihren Generative Language API-Schlüssel (für Gemini) zu erhalten,',
-  com_endpoint_config_key_import_json_key: 'Service Account JSON-Schlüssel importieren.',
-  com_endpoint_config_key_import_json_key_success: 'Service Account JSON-Schlüssel erfolgreich importiert',
+  com_endpoint_config_google_api_info:
+    'Um deinen Generative Language API-Key (für Gemini) zu erhalten,',
+  com_endpoint_config_key_import_json_key: 'Service Account JSON-Key importieren.',
+  com_endpoint_config_key_import_json_key_success:
+    'Service Account JSON-Key erfolgreich importiert',
   com_endpoint_config_key_import_json_key_invalid:
-    'Ungültiger Service Account JSON-Schlüssel. Haben Sie die richtige Datei importiert?',
-  com_endpoint_config_key_get_edge_key: 'Um Ihren Zugriffstoken für Bing zu erhalten, melden Sie sich an bei',
+    'Ungültiger Service Account JSON-Key. Hast du die richtige Datei importiert?',
+  com_endpoint_config_key_get_edge_key:
+    'Um deinen Zugriffstoken für Bing zu erhalten, melde dich an bei',
   com_endpoint_config_key_get_edge_key_dev_tool:
-    'Verwenden Sie die Entwicklertools oder eine Erweiterung, während Sie auf der Seite angemeldet sind, um den Inhalt des _U-Cookies zu kopieren. Wenn dies fehlschlägt, folgen Sie diesen',
+    'Verwende die Entwicklertools oder eine Erweiterung, während du auf der Seite angemeldet sind, um den Inhalt des _U-Cookies zu kopieren. Wenn dies fehlschlägt, folge diesen',
   com_endpoint_config_key_edge_instructions: 'Anweisungen',
-  com_endpoint_config_key_edge_full_key_string: 'um die vollständigen Cookie-Zeichenfolgen bereitzustellen.',
-  com_endpoint_config_key_chatgpt: 'Um Ihren Zugriffstoken für ChatGPT "Kostenlose Version" zu erhalten, melden Sie sich an bei',
-  com_endpoint_config_key_chatgpt_then_visit: 'dann besuchen Sie',
+  com_endpoint_config_key_edge_full_key_string:
+    'um die vollständigen Cookie-Zeichenfolgen bereitzustellen.',
+  com_endpoint_config_key_chatgpt:
+    'Um deinen Zugriffstoken für ChatGPT "Kostenlose Version" zu erhalten, melde dich an bei',
+  com_endpoint_config_key_chatgpt_then_visit: 'dann besuche',
   com_endpoint_config_key_chatgpt_copy_token: 'Zugriffstoken kopieren.',
-  com_endpoint_config_key_google_need_to: 'Sie müssen',
+  com_endpoint_config_key_google_need_to: 'Du musst',
   com_endpoint_config_key_google_vertex_ai: 'Vertex AI aktivieren',
   com_endpoint_config_key_google_vertex_api: 'API auf Google Cloud, dann',
   com_endpoint_config_key_google_service_account: 'Ein Service-Konto erstellen',
   com_endpoint_config_key_google_vertex_api_role:
-    'Stellen Sie sicher, dass Sie auf "Erstellen und Fortfahren" klicken, um mindestens die Rolle "Vertex AI User" zu vergeben. Erstellen Sie zuletzt einen JSON-Schlüssel zum Importieren hier.',
-  com_nav_welcome_assistant: 'Bitte wählen Sie einen Assistenten aus',
-  com_nav_welcome_message: 'Wie kann ich Ihnen heute helfen?',
+    'Stelle sicher, dass du auf "Erstellen und Fortfahren" klickst, um mindestens die Rolle "Vertex AI User" zu vergeben. Erstelle zuletzt einen JSON-Key zum Importieren hier.',
+  com_nav_welcome_assistant: 'Bitte wähle einen Assistenten aus',
+  com_nav_welcome_message: 'Wie kann ich dir heute helfen?',
   com_nav_auto_scroll: 'Automatisch zur neuesten Nachricht scrollen, wenn der Chat geöffnet wird',
   com_nav_hide_panel: 'Rechtes Seitenpanel ausblenden',
   com_nav_modular_chat: 'Ermöglicht das Wechseln der Endpunkte mitten im Gespräch',
@@ -568,7 +608,8 @@ export default {
   com_ui_drag_drop_file: 'Datei hier hinziehen und ablegen',
   com_ui_upload_image: 'Ein Bild hochladen',
   com_ui_select_a_category: 'Keine Kategorie ausgewählt',
-  com_nav_tool_dialog_description: 'Assistent muss gespeichert werden, um Werkzeugauswahlen zu speichern.',
+  com_nav_tool_dialog_description:
+    'Assistent muss gespeichert werden, um Werkzeugauswahlen zu speichern.',
   com_show_agent_settings: 'Agenteneinstellungen anzeigen',
   com_show_completion_settings: 'Vervollständigungseinstellungen anzeigen',
   com_hide_examples: 'Beispiele ausblenden',
@@ -576,9 +617,9 @@ export default {
   com_nav_plugin_search: 'Plugins suchen',
   com_nav_tool_search: 'Werkzeuge suchen',
   com_nav_plugin_auth_error:
-    'Bei dem Versuch, dieses Plugin zu authentifizieren, ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut.',
+    'Bei dem Versuch, dieses Plugin zu authentifizieren, ist ein Fehler aufgetreten. Bitte versuche es erneut.',
   com_nav_export_filename: 'Dateiname',
-  com_nav_export_filename_placeholder: 'Legen Sie den Dateinamen fest',
+  com_nav_export_filename_placeholder: 'Lege den Dateinamen fest',
   com_nav_export_type: 'Typ',
   com_nav_export_include_endpoint_options: 'Endpunktoptionen einbeziehen',
   com_nav_enabled: 'Aktiviert',
@@ -590,7 +631,7 @@ export default {
   com_nav_export: 'Exportieren',
   com_nav_shared_links: 'Geteilte Links',
   com_nav_shared_links_manage: 'Verwalten',
-  com_nav_shared_links_empty: 'Sie haben keine geteilten Links.',
+  com_nav_shared_links_empty: 'Du hast keine geteilten Links.',
   com_nav_shared_links_name: 'Name',
   com_nav_shared_links_date_shared: 'Datum geteilt',
   com_nav_source_chat: 'Quell-Chat anzeigen',
@@ -605,7 +646,7 @@ export default {
   com_nav_chat_direction: 'Chat-Richtung',
   com_nav_show_code: 'Code immer anzeigen, wenn der Code-Interpreter verwendet wird',
   com_nav_auto_send_prompts: 'Prompts automatisch senden',
-  com_nav_always_make_prod: 'Immer neue Versionen als Produktion erstellen',
+  com_nav_always_make_prod: 'Neue Versionen direkt produktiv nehmen',
   com_nav_clear_all_chats: 'Alle Chats löschen',
   com_nav_confirm_clear: 'Löschen bestätigen',
   com_nav_close_sidebar: 'Seitenleiste schließen',
@@ -615,24 +656,25 @@ export default {
   com_nav_user: 'BENUTZER',
   com_nav_archived_chats: 'Archivierte Chats',
   com_nav_archived_chats_manage: 'Verwalten',
-  com_nav_archived_chats_empty: 'Sie haben keine archivierten Konversationen.',
+  com_nav_archived_chats_empty: 'Du hast keine archivierten Chats.',
   com_nav_archive_all_chats: 'Alle Chats archivieren',
   com_nav_archive_all: 'Alle archivieren',
   com_nav_archive_name: 'Name',
   com_nav_archive_created_at: 'Archivierungsdatum',
   com_nav_clear_conversation: 'Konversationen löschen',
   com_nav_clear_conversation_confirm_message:
-    'Sind Sie sicher, dass Sie alle Konversationen löschen möchten? Dies ist nicht rückgängig zu machen.',
+    'Bist du sicher, dass du alle Konversationen löschen möchtest? Dies ist nicht rückgängig zu machen.',
   com_nav_help_faq: 'Hilfe & FAQ',
   com_nav_settings: 'Einstellungen',
   com_nav_search_placeholder: 'Nachrichten durchsuchen',
   com_nav_delete_account: 'Konto löschen',
-  com_nav_delete_account_confirm: 'Konto löschen - sind Sie sicher?',
+  com_nav_delete_account_confirm: 'Konto löschen - bist du sicher?',
   com_nav_delete_account_button: 'Mein Konto dauerhaft löschen',
-  com_nav_delete_account_email_placeholder: 'Bitte geben Sie Ihre Konto-E-Mail ein',
-  com_nav_delete_account_confirm_placeholder: 'Um fortzufahren, tippen Sie "LÖSCHEN" in das Eingabefeld unten',
-  com_nav_delete_warning: 'WARNUNG: Dies wird Ihr Konto dauerhaft löschen.',
-  com_nav_delete_data_info: 'Alle Ihre Daten werden gelöscht.',
+  com_nav_delete_account_email_placeholder: 'Bitte gebe deine Konto-E-Mail ein',
+  com_nav_delete_account_confirm_placeholder:
+    'Um fortzufahren, tippe "LÖSCHEN" in das Eingabefeld unten',
+  com_nav_delete_warning: 'WARNUNG: Dies wird dein Konto dauerhaft löschen.',
+  com_nav_delete_data_info: 'Alle deine Daten werden gelöscht.',
   com_nav_conversation_mode: 'Konversationsmodus',
   com_nav_auto_send_text: 'Text automatisch senden',
   com_nav_auto_send_text_disabled: '-1 setzen zum Deaktivieren',
@@ -650,23 +692,23 @@ export default {
   com_nav_voice_select: 'Stimme',
   com_nav_enable_cloud_browser_voice: 'Cloud-basierte Stimmen verwenden',
   com_nav_info_enter_to_send:
-    'Wenn aktiviert, sendet das Drücken von `ENTER` Ihre Nachricht. Wenn deaktiviert, fügt das Drücken von Enter eine neue Zeile hinzu, und Sie müssen `STRG + ENTER` drücken, um Ihre Nachricht zu senden.',
+    'Wenn aktiviert, sendet das Drücken von `ENTER` Ihre Nachricht. Wenn deaktiviert, fügt das Drücken von Enter eine neue Zeile hinzu, und du musst `STRG + ENTER` drücken, um deine Nachricht zu senden.',
   com_nav_info_save_draft:
-    'Wenn aktiviert, werden der Text und die Anhänge, die Sie in das Chat-Formular eingeben, automatisch lokal als Entwürfe gespeichert. Diese Entwürfe sind auch verfügbar, wenn Sie die Seite neu laden oder zu einer anderen Konversation wechseln. Entwürfe werden lokal auf Ihrem Gerät gespeichert und werden gelöscht, sobald die Nachricht gesendet wird.',
+    'Wenn aktiviert, werden der Text und die Anhänge, die du in das Chat-Formular eingibst, automatisch lokal als Entwürfe gespeichert. Diese Entwürfe sind auch verfügbar, wenn du die Seite neu lädst oder zu einer anderen Konversation wechseln. Entwürfe werden lokal auf deinem Gerät gespeichert und werden gelöscht, sobald die Nachricht gesendet wird.',
   com_nav_info_fork_change_default:
     '`Nur sichtbare Nachrichten` umfasst nur den direkten Pfad zur ausgewählten Nachricht. `Zugehörige Verzweigungen einbeziehen` fügt Verzweigungen entlang des Pfades hinzu. `Alle bis/von hier einbeziehen` umfasst alle verbundenen Nachrichten und Verzweigungen.',
   com_nav_info_fork_split_target_setting:
     'Wenn aktiviert, beginnt das Abzweigen von der Zielnachricht bis zur letzten Nachricht in der Konversation, gemäß dem ausgewählten Verhalten.',
   com_nav_info_user_name_display:
-    'Wenn aktiviert, wird der Benutzername des Absenders über jeder Nachricht angezeigt, die Sie senden. Wenn deaktiviert, sehen Sie nur "Sie" über Ihren Nachrichten.',
+    'Wenn aktiviert, wird der Benutzername des Absenders über jeder Nachricht angezeigt, die du sendest. Wenn deaktiviert, siehst du nur "Du" über deinen Nachrichten.',
   com_nav_info_latex_parsing:
-    'Wenn aktiviert, wird LaTeX-Code in Nachrichten als mathematische Gleichungen gerendert. Das Deaktivieren kann die Leistung verbessern, wenn Sie keine LaTeX-Darstellung benötigen.',
+    'Wenn aktiviert, wird LaTeX-Code in Nachrichten als mathematische Gleichungen gerendert. Das Deaktivieren kann die Leistung verbessern, wenn du keine LaTeX-Darstellung benötigst.',
   com_nav_info_revoke:
-    'Diese Aktion wird alle API-Schlüssel, die Sie bereitgestellt haben, widerrufen und entfernen. Sie müssen diese Anmeldedaten erneut eingeben, um diese Endpunkte weiterhin zu nutzen.',
+    'Diese Aktion wird alle API-Keys, die du bereitgestellt hast, widerrufen und entfernen. Du musst diese Anmeldedaten erneut eingeben, um diese Endpunkte weiterhin zu nutzen.',
   com_nav_info_delete_cache_storage:
-    'Diese Aktion löscht alle zwischengespeicherten TTS (Text-zu-Sprache) Audiodateien, die auf Ihrem Gerät gespeichert sind. Zwischengespeicherte Audiodateien werden verwendet, um die Wiedergabe von zuvor generierten TTS-Audiodateien zu beschleunigen, können aber Speicherplatz auf Ihrem Gerät verbrauchen.',
+    'Diese Aktion löscht alle zwischengespeicherten TTS (Text-zu-Sprache) Audiodateien, die auf Ihrem Gerät gespeichert sind. Zwischengespeicherte Audiodateien werden verwendet, um die Wiedergabe von zuvor generierten TTS-Audiodateien zu beschleunigen, können aber Speicherplatz auf deinem Gerät verbrauchen.',
   com_nav_info_bookmarks_rebuild:
-    'Wenn die Lesezeichenanzahl falsch ist, bitte bauen Sie die Lesezeicheninformationen neu auf. Die Lesezeichenanzahl wird neu berechnet und die Daten werden in ihren korrekten Zustand zurückversetzt.',
+    'Wenn die Lesezeichenanzahl falsch ist, bitte baue die Lesezeicheninformationen neu auf. Die Lesezeichenanzahl wird neu berechnet und die Daten werden in ihren korrekten Zustand zurückversetzt.',
   com_nav_setting_general: 'Allgemein',
   com_nav_setting_chat: 'Chat',
   com_nav_setting_beta: 'Beta-Funktionen',
@@ -1338,88 +1380,60 @@ export const comparisons = {
     translated: 'Nutzungsbedingungen',
   },
   com_ui_bookmarks: {
-    english:
-      'Bookmarks',
-    translated:
-      'Lesezeichen',
+    english: 'Bookmarks',
+    translated: 'Lesezeichen',
   },
   com_ui_bookmarks_rebuild: {
-    english:
-      'Rebuild',
-    translated:
-      'Neu aufbauen',
+    english: 'Rebuild',
+    translated: 'Neu aufbauen',
   },
   com_ui_bookmarks_new: {
-    english:
-      'New Bookmark',
-    translated:
-      'Neues Lesezeichen',
+    english: 'New Bookmark',
+    translated: 'Neues Lesezeichen',
   },
   com_ui_bookmark_delete_confirm: {
-    english:
-      'Are you sure you want to delete this bookmark?',
-    translated:
-      'Möchten Sie dieses Lesezeichen wirklich löschen?',
+    english: 'Are you sure you want to delete this bookmark?',
+    translated: 'Möchten Sie dieses Lesezeichen wirklich löschen?',
   },
   com_ui_bookmarks_title: {
-    english:
-      'Title',
-    translated:
-      'Titel',
+    english: 'Title',
+    translated: 'Titel',
   },
   com_ui_bookmarks_count: {
-    english:
-      'Count',
-    translated:
-      'Anzahl',
+    english: 'Count',
+    translated: 'Anzahl',
   },
   com_ui_bookmarks_description: {
-    english:
-      'Description',
-    translated:
-      'Beschreibung',
+    english: 'Description',
+    translated: 'Beschreibung',
   },
   com_ui_bookmarks_create_success: {
-    english:
-      'Bookmark created successfully',
-    translated:
-      'Lesezeichen erfolgreich erstellt',
+    english: 'Bookmark created successfully',
+    translated: 'Lesezeichen erfolgreich erstellt',
   },
   com_ui_bookmarks_update_success: {
-    english:
-      'Bookmark updated successfully',
-    translated:
-      'Lesezeichen erfolgreich aktualisiert',
+    english: 'Bookmark updated successfully',
+    translated: 'Lesezeichen erfolgreich aktualisiert',
   },
   com_ui_bookmarks_delete_success: {
-    english:
-      'Bookmark deleted successfully',
-    translated:
-      'Lesezeichen erfolgreich gelöscht',
+    english: 'Bookmark deleted successfully',
+    translated: 'Lesezeichen erfolgreich gelöscht',
   },
   com_ui_bookmarks_create_error: {
-    english:
-      'There was an error creating the bookmark',
-    translated:
-      'Fehler beim Erstellen des Lesezeichens',
+    english: 'There was an error creating the bookmark',
+    translated: 'Fehler beim Erstellen des Lesezeichens',
   },
   com_ui_bookmarks_update_error: {
-    english:
-      'There was an error updating the bookmark',
-    translated:
-      'Fehler beim Aktualisieren des Lesezeichens',
+    english: 'There was an error updating the bookmark',
+    translated: 'Fehler beim Aktualisieren des Lesezeichens',
   },
   com_ui_bookmarks_delete_error: {
-    english:
-      'There was an error deleting the bookmark',
-    translated:
-      'Fehler beim Löschen des Lesezeichens',
+    english: 'There was an error deleting the bookmark',
+    translated: 'Fehler beim Löschen des Lesezeichens',
   },
   com_ui_bookmarks_add_to_conversation: {
-    english:
-      'Add to current conversation',
-    translated:
-      'Zur aktuellen Konversation hinzufügen',
+    english: 'Add to current conversation',
+    translated: 'Zur aktuellen Konversation hinzufügen',
   },
   com_auth_error_login: {
     english:
