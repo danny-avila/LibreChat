@@ -69,9 +69,9 @@ const MessageRender = React.memo(
     const showCardRender = isLast && !(isSubmittingFamily === true) && isCard === true;
     const isLatestCard = isCard === true && !(isSubmittingFamily === true) && isLatestMessage;
     const clickHandler =
-      showCardRender && isLatestMessage
+      showCardRender && !isLatestMessage
         ? () => {
-          logger.log(`Message ${msg.messageId} clicked to set as latest message`);
+          logger.log(`Message Card click: Setting ${msg.messageId} as latest message`);
           logger.dir(msg);
           setLatestMessage(msg);
         }
@@ -87,7 +87,7 @@ const MessageRender = React.memo(
             : 'md:max-w-3xl md:px-5 lg:max-w-[40rem] lg:px-1 xl:max-w-[48rem] xl:px-5',
           isLatestCard === true ? 'bg-surface-secondary' : '',
           showCardRender ? 'cursor-pointer transition-colors duration-300' : '',
-          'focus:outline-none focus:ring-2 focus:ring-blue-500', // Add focus styles
+          'focus:outline-none focus:ring-2 focus:ring-border-xheavy',
         )}
         onClick={clickHandler}
         onKeyDown={(e) => {
