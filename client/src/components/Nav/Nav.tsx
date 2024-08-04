@@ -83,9 +83,8 @@ const Nav = ({ navVisible, setNavVisible }) => {
 
   const conversations = useMemo(
     () =>
-      (searchQuery ? searchQueryRes?.data : data)?.pages.flatMap((page) => page.conversations) ||
-      [],
-    [data, searchQuery, searchQueryRes?.data],
+      (searchQuery ? searchQueryRes.data : data)?.pages.flatMap((page) => page.conversations) || [],
+    [data, searchQuery, searchQueryRes.data],
   );
 
   const clearSearch = () => {
@@ -179,7 +178,18 @@ const Nav = ({ navVisible, setNavVisible }) => {
           navVisible={navVisible}
           className="fixed left-0 top-1/2 z-40 hidden md:flex"
         />
-        <div className={`nav-mask${navVisible ? 'active' : ''}`} onClick={toggleNavVisible} />
+        <div
+          role="button"
+          tabIndex={0}
+          className={`nav-mask ${navVisible ? 'active' : ''}`}
+          onClick={toggleNavVisible}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              toggleNavVisible();
+            }
+          }}
+          aria-label="Toggle navigation"
+        />
       </Tooltip>
     </TooltipProvider>
   );
