@@ -2,12 +2,12 @@ name: Lint for accessibility issues
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    paths:
+      - 'client/src/**'
 
 jobs:
   axe-linter:
     runs-on: ubuntu-latest
-    if: contains(github.event.pull_request.labels.*.name, 'a11y')
     
     steps:
       - uses: actions/checkout@v4
