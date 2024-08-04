@@ -28,7 +28,7 @@ export default function MenuButton({
           className,
         )}
         type="button"
-        aria-label="Select model"
+        aria-label={`Select ${primaryText}`}
       >
         {selected && selected.showIconInHeader === true && (
           <SpecIcon currentSpec={selected} endpointsConfig={endpointsConfig} />
