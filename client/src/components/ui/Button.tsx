@@ -3,7 +3,7 @@ import { VariantProps, cva } from 'class-variance-authority';
 import { cn } from '~/utils';
 
 const buttonVariants = cva(
-  'rounded-md inline-flex items-center justify-center text-sm font-medium transition-colors dark:hover:bg-gray-700 dark:hover:text-gray-100 disabled:opacity-50 disabled:pointer-events-none data-[state=open]:bg-gray-100 dark:data-[state=open]:bg-gray-700',
+  'rounded-md inline-flex items-center justify-center text-sm font-medium transition-colors dark:hover:bg-gray-700 dark:hover:text-gray-100 disabled:opacity-50 disabled:pointer-events-none data-[state=open]:bg-gray-100 dark:data-[state=open]:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-500',
   {
     variants: {
       variant: {
@@ -41,7 +41,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps & { customId?: st
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
         {...props}
-        id={customId ?? props?.id ?? 'shadcn-button'}
+        id={customId ?? props.id ?? 'shadcn-button'}
       />
     );
   },
