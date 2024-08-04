@@ -34,6 +34,7 @@ const PresetsMenu: FC = () => {
           id="presets-button"
           data-testid="presets-button"
           title={localize('com_endpoint_examples')}
+          aria-label={localize('com_endpoint_examples')}
         >
           <BookCopy className="icon-sm" id="presets-button" />
         </button>
