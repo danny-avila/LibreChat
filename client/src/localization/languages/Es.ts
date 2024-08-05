@@ -185,6 +185,10 @@ export default {
   com_ui_bookmarks_update_error: 'Hubo un error al actualizar el marcador',
   com_ui_bookmarks_delete_error: 'Hubo un error al eliminar el marcador',
   com_ui_bookmarks_add_to_conversation: 'Agregar a la conversación actual',
+  com_ui_accept: 'Acepto',
+  com_ui_decline: 'No acepto',
+  com_ui_terms_and_conditions: 'Términos y Condiciones',
+  com_ui_no_terms_content: 'No hay contenido de términos y condiciones para mostrar',
   com_auth_error_login:
     'No se puede iniciar sesión con la información proporcionada. Verifique sus credenciales y vuelva a intentarlo.',
   com_auth_error_login_rl:
