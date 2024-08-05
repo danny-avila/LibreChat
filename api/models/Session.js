@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const signPayload = require('~/server/services/signPayload');
-const { logger } = require('~/config');
 const { hashToken } = require('~/server/utils/crypto');
+const { logger } = require('~/config');
 
 const { REFRESH_TOKEN_EXPIRY } = process.env ?? {};
 const expires = eval(REFRESH_TOKEN_EXPIRY) ?? 1000 * 60 * 60 * 24 * 7;
