@@ -221,10 +221,10 @@ async function deleteAllSharedLinks(user) {
 
 module.exports = {
   SharedLink,
-  getSharedMessages,
   getSharedLinks,
   createSharedLink,
   updateSharedLink,
   deleteSharedLink,
+  getSharedMessages,
   deleteAllSharedLinks,
 };
