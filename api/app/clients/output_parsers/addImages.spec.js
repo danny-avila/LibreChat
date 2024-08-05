@@ -81,4 +81,62 @@ describe('addImages', () => {
     addImages(intermediateSteps, responseMessage);
     expect(responseMessage.text).toBe(`${originalText}\n${imageMarkdown}`);
   });
+
+  it('should extract only image markdowns when there is text between them', () => {
+    const markdownWithTextBetweenImages = `
+      ![image1](/images/image1.png)
+      Some text between images that should not be included.
+      ![image2](/images/image2.png)
+      More text that should be ignored.
+      ![image3](/images/image3.png)
+    `;
+    intermediateSteps.push({ observation: markdownWithTextBetweenImages });
+    addImages(intermediateSteps, responseMessage);
+    expect(responseMessage.text).toBe('\n![image1](/images/image1.png)');
+  });
+
+  it('should only return the first image when multiple images are present', () => {
+    const markdownWithMultipleImages = `
+      ![image1](/images/image1.png)
+      ![image2](/images/image2.png)
+      ![image3](/images/image3.png)
+    `;
+    intermediateSteps.push({ observation: markdownWithMultipleImages });
+    addImages(intermediateSteps, responseMessage);
+    expect(responseMessage.text).toBe('\n![image1](/images/image1.png)');
+  });
+
+  it('should not include any text or metadata surrounding the image markdown', () => {
+    const markdownWithMetadata = `
+      Title: Test Document
+      Author: John Doe
+      ![image1](/images/image1.png)
+      Some content after the image.
+      Vector values: [0.1, 0.2, 0.3]
+    `;
+    intermediateSteps.push({ observation: markdownWithMetadata });
+    addImages(intermediateSteps, responseMessage);
+    expect(responseMessage.text).toBe('\n![image1](/images/image1.png)');
+  });
+
+  it('should handle complex markdown with multiple images and only return the first one', () => {
+    const complexMarkdown = `
+      # Document Title
+      
+      ## Section 1
+      Here's some text with an embedded image:
+      ![image1](/images/image1.png)
+      
+      ## Section 2
+      More text here...
+      ![image2](/images/image2.png)
+      
+      ### Subsection
+      Even more content
+      ![image3](/images/image3.png)
+    `;
+    intermediateSteps.push({ observation: complexMarkdown });
+    addImages(intermediateSteps, responseMessage);
+    expect(responseMessage.text).toBe('\n![image1](/images/image1.png)');
+  });
 });
