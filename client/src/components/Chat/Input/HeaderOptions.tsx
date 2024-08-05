@@ -91,6 +91,7 @@ export default function HeaderOptions({
                     'hover:bg-gray-50 radix-state-open:bg-gray-50 dark:hover:bg-gray-700 dark:radix-state-open:bg-gray-700',
                   )}
                   onClick={triggerAdvancedMode}
+                  aria-label="Settings/parameters"
                 >
                   <Settings2 className="w-4 text-gray-600 dark:text-white" />
                 </Button>
@@ -100,7 +101,7 @@ export default function HeaderOptions({
               <OptionsPopover
                 visible={showPopover}
                 saveAsPreset={saveAsPreset}
-                presetsDisabled={!interfaceConfig?.presets}
+                presetsDisabled={!interfaceConfig.presets}
                 PopoverButtons={<PopoverButtons />}
                 closePopover={() => setShowPopover(false)}
               >

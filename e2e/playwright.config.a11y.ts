@@ -43,7 +43,7 @@ const config: PlaywrightTestConfig = {
   },
   fullyParallel: false, // if you are on Windows, keep this as `false`. On a Mac, `true` could make tests faster (maybe on some Windows too, just try)
   // workers: 1,
-  // testMatch: /messages/,
+  testMatch: /a11y/,
   // retries: 0,
 };
 
