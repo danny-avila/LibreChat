@@ -3,7 +3,7 @@ require('dotenv').config();
 const { webcrypto } = require('node:crypto');
 const key = Buffer.from(process.env.CREDS_KEY, 'hex');
 const iv = Buffer.from(process.env.CREDS_IV, 'hex');
-const algorithm = 'aes-256-cbc';
+const algorithm = 'AES-CBC';
 
 async function encrypt(value) {
   const cryptoKey = await webcrypto.subtle.importKey('raw', key, { name: algorithm }, false, [
