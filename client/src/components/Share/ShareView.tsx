@@ -18,15 +18,15 @@ function SharedView() {
 
   // configure document title
   let docTitle = '';
-  if (config?.appTitle && data?.title) {
+  if (config?.appTitle != null && data?.title != null) {
     docTitle = `${data.title} | ${config.appTitle}`;
   } else {
-    docTitle = data?.title || config?.appTitle || document.title;
+    docTitle = data?.title ?? config?.appTitle ?? document.title;
   }
 
   useDocumentTitle(docTitle);
 
-  let content;
+  let content: JSX.Element;
   if (isLoading) {
     content = (
       <div className="flex h-screen items-center justify-center">
