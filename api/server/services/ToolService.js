@@ -335,7 +335,7 @@ async function processRequiredActions(client, requiredActions) {
         continue;
       }
 
-      tool = createActionTool({ action: actionSet, requestBuilder });
+      tool = await createActionTool({ action: actionSet, requestBuilder });
       isActionTool = !!tool;
       ActionToolMap[currentAction.tool] = tool;
     }
