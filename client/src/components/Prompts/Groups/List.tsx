@@ -13,7 +13,7 @@ export default function List({
   isLoading,
 }: {
   groups?: TPromptGroup[];
-  isChatRoute?: boolean;
+  isChatRoute: boolean;
   isLoading: boolean;
 }) {
   const navigate = useNavigate();
@@ -56,7 +56,7 @@ export default function List({
               {localize('com_ui_nothing_found')}
             </div>
           )}
-          {groups?.map((group) => {
+          {groups.map((group) => {
             if (isChatRoute) {
               return (
                 <ChatGroupItem
