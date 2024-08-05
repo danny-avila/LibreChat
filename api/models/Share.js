@@ -110,7 +110,7 @@ async function getSharedMessages(shareId) {
 async function getSharedLinks(user, pageNumber = 1, pageSize = 25, isPublic = true) {
   const query = { user, isPublic };
   try {
-    const [totalConvos, shares] = await Promise.all([
+    const [totalConvos, sharedLinks] = await Promise.all([
       SharedLink.countDocuments(query),
       SharedLink.find(query)
         .sort({ updatedAt: -1 })
@@ -121,14 +121,6 @@ async function getSharedLinks(user, pageNumber = 1, pageSize = 25, isPublic = tr
     ]);
 
     const totalPages = Math.ceil((totalConvos || 1) / pageSize);
-
-    const sharedLinks = shares.map((share) => {
-      const newConvoId = anonymizeConvoId();
-      return Object.assign(share, {
-        conversationId: newConvoId,
-        messages: anonymizeMessages(share.messages, newConvoId),
-      });
-    });
 
     return {
       sharedLinks,
