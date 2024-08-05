@@ -13,12 +13,33 @@ function anonymizeConvoId() {
 }
 
 /**
+ * Anonymizes an assistant ID
+ * @returns {string} The anonymized assistant ID
+ */
+function anonymizeAssistantId() {
+  return `a_${nanoid()}`;
+}
+
+/**
  * Anonymizes a message ID
  * @param {string} id - The original message ID
  * @returns {string} The anonymized message ID
  */
 function anonymizeMessageId(id) {
   return id === Constants.NO_PARENT ? id : `msg_${nanoid()}`;
+}
+
+/**
+ * Anonymizes a conversation object
+ * @param {object} conversation - The conversation object
+ * @returns {object} The anonymized conversation object
+ */
+function anonymizeConvo(conversation) {
+  const newConvo = { ...conversation };
+  if (newConvo.assistant_id) {
+    newConvo.assistant_id = anonymizeAssistantId();
+  }
+  return newConvo;
 }
 
 /**
@@ -33,12 +54,18 @@ function anonymizeMessages(messages, newConvoId) {
     const newMessageId = anonymizeMessageId(message.messageId);
     idMap.set(message.messageId, newMessageId);
 
-    return Object.assign(message, {
+    const anonymizedMessage = Object.assign(message, {
       messageId: newMessageId,
       parentMessageId:
         idMap.get(message.parentMessageId) || anonymizeMessageId(message.parentMessageId),
       conversationId: newConvoId,
     });
+
+    if (anonymizedMessage.model && anonymizedMessage.model.startsWith('asst_')) {
+      anonymizedMessage.model = anonymizeAssistantId();
+    }
+
+    return anonymizedMessage;
   });
 }
 
@@ -127,7 +154,8 @@ async function createSharedLink(user, { conversationId, ...shareData }) {
     const share = await SharedLink.findOne({ conversationId }).select('-_id -__v -user').lean();
     if (share) {
       const newConvoId = anonymizeConvoId();
-      return Object.assign(share, {
+      const sharedConvo = anonymizeConvo(share);
+      return Object.assign(sharedConvo, {
         conversationId: newConvoId,
         messages: anonymizeMessages(share.messages, newConvoId),
       });
@@ -142,7 +170,8 @@ async function createSharedLink(user, { conversationId, ...shareData }) {
     }).lean();
 
     const newConvoId = anonymizeConvoId();
-    return Object.assign(newShare, {
+    const sharedConvo = anonymizeConvo(newShare);
+    return Object.assign(sharedConvo, {
       conversationId: newConvoId,
       messages: anonymizeMessages(newShare.messages, newConvoId),
     });
@@ -174,7 +203,8 @@ async function updateSharedLink(user, { conversationId, ...shareData }) {
     }).lean();
 
     const newConvoId = anonymizeConvoId();
-    return Object.assign(updatedShare, {
+    const sharedConvo = anonymizeConvo(updatedShare);
+    return Object.assign(sharedConvo, {
       conversationId: newConvoId,
       messages: anonymizeMessages(updatedShare.messages, newConvoId),
     });
