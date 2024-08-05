@@ -100,6 +100,9 @@ version: '3.4'
 # # USE RAG API IMAGE WITH LOCAL EMBEDDINGS SUPPORT
 #  rag_api:
 #    image: ghcr.io/danny-avila/librechat-rag-api-dev:latest
+# # For Linux user: 
+#    extra_hosts:
+#      - "host.docker.internal:host-gateway"
 
 # # ADD OLLAMA
 #  ollama:

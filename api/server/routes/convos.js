@@ -31,11 +31,12 @@ router.get('/', async (req, res) => {
     return res.status(400).json({ error: 'Invalid page size' });
   }
   const isArchived = req.query.isArchived === 'true';
-  const tags = req.query.tags
-    ? Array.isArray(req.query.tags)
-      ? req.query.tags
-      : [req.query.tags]
-    : undefined;
+  let tags;
+  if (req.query.tags) {
+    tags = Array.isArray(req.query.tags) ? req.query.tags : [req.query.tags];
+  } else {
+    tags = undefined;
+  }
 
   res.status(200).send(await getConvosByPage(req.user.id, pageNumber, pageSize, isArchived, tags));
 });

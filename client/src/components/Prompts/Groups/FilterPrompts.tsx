@@ -133,7 +133,13 @@ export default function FilterPrompts({
     <div className={cn('flex gap-2', className)}>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="sm" className="h-10 w-10 flex-shrink-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-10 w-10 flex-shrink-0"
+            id="filter-prompts"
+            aria-label="filter-prompts"
+          >
             {selectedIcon}
           </Button>
         </DropdownMenuTrigger>

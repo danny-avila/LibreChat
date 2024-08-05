@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unnecessary-condition */
+/* Reason: SearchContext is not specifying potential undefined type */
 import { useCallback, useEffect, useState, useMemo, memo } from 'react';
 import { useParams } from 'react-router-dom';
 import { useRecoilValue } from 'recoil';
@@ -76,9 +78,9 @@ const Nav = ({ navVisible, setNavVisible }) => {
   }, [tags]);
   const { containerRef, moveToTop } = useNavScrolling<ConversationListResponse>({
     setShowLoading,
-    hasNextPage: searchQuery ? searchQueryRes.hasNextPage : hasNextPage,
-    fetchNextPage: searchQuery ? searchQueryRes.fetchNextPage : fetchNextPage,
-    isFetchingNextPage: searchQuery ? searchQueryRes.isFetchingNextPage : isFetchingNextPage,
+    hasNextPage: searchQuery ? searchQueryRes?.hasNextPage : hasNextPage,
+    fetchNextPage: searchQuery ? searchQueryRes?.fetchNextPage : fetchNextPage,
+    isFetchingNextPage: searchQuery ? searchQueryRes?.isFetchingNextPage : isFetchingNextPage,
   });
 
   const conversations = useMemo(
@@ -139,7 +141,11 @@ const Nav = ({ navVisible, setNavVisible }) => {
                     'scrollbar-trigger relative h-full w-full flex-1 items-start border-white/20',
                   )}
                 >
-                  <nav className="flex h-full w-full flex-col px-3 pb-3.5">
+                  <nav
+                    id="chat-history-nav"
+                    aria-label="chat-history-nav"
+                    className="flex h-full w-full flex-col px-3 pb-3.5"
+                  >
                     <div
                       className={cn(
                         '-mr-2 flex-1 flex-col overflow-y-auto pr-2 transition-opacity duration-500',
@@ -179,7 +185,18 @@ const Nav = ({ navVisible, setNavVisible }) => {
           navVisible={navVisible}
           className="fixed left-0 top-1/2 z-40 hidden md:flex"
         />
-        <div className={`nav-mask${navVisible ? 'active' : ''}`} onClick={toggleNavVisible} />
+        <div
+          role="button"
+          tabIndex={0}
+          className={`nav-mask ${navVisible ? 'active' : ''}`}
+          onClick={toggleNavVisible}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              toggleNavVisible();
+            }
+          }}
+          aria-label="Toggle navigation"
+        />
       </Tooltip>
     </TooltipProvider>
   );
