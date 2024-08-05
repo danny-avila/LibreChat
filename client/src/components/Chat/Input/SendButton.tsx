@@ -22,6 +22,8 @@ const SubmitButton = React.memo(
             <TooltipTrigger asChild>
               <button
                 ref={ref}
+                aria-label={localize('com_nav_send_message')}
+                id="send-button"
                 disabled={props.disabled}
                 className={cn(
                   'absolute rounded-lg border border-black p-0.5 text-white outline-offset-4 transition-colors enabled:bg-black disabled:bg-black disabled:text-gray-400 disabled:opacity-10 dark:border-white dark:bg-white dark:disabled:bg-white',
