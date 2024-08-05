@@ -171,6 +171,9 @@ const SidePanel = ({
             <ResizableHandleAlt withHandle className="bg-transparent dark:text-white" />
           )}
           <ResizablePanel
+            tagName="nav"
+            id="controls-nav"
+            aria-label="controls-nav"
             collapsedSize={collapsedSize}
             defaultSize={defaultLayout[1]}
             collapsible={true}

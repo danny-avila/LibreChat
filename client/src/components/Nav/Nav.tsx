@@ -141,7 +141,11 @@ const Nav = ({ navVisible, setNavVisible }) => {
                     'scrollbar-trigger relative h-full w-full flex-1 items-start border-white/20',
                   )}
                 >
-                  <nav className="flex h-full w-full flex-col px-3 pb-3.5">
+                  <nav
+                    id="chat-history-nav"
+                    aria-label="chat-history-nav"
+                    className="flex h-full w-full flex-col px-3 pb-3.5"
+                  >
                     <div
                       className={cn(
                         '-mr-2 flex-1 flex-col overflow-y-auto pr-2 transition-opacity duration-500',
