@@ -626,11 +626,11 @@ class GoogleClient extends BaseClient {
     const { onProgress, abortController } = options;
     const streamRate = this.options.streamRate ?? Constants.DEFAULT_STREAM_RATE;
     const { messages: _messages, context, examples: _examples } = instances?.[0] ?? {};
-  
+
     let examples;
-  
+
     let clientOptions = { ...parameters, maxRetries: 2 };
-  
+
     if (this.project_id) {
       clientOptions['authOptions'] = {
         credentials: {
@@ -639,16 +639,16 @@ class GoogleClient extends BaseClient {
         projectId: this.project_id,
       };
     }
-  
+
     if (!parameters) {
       clientOptions = { ...clientOptions, ...this.modelOptions };
     }
-  
+
     if (this.isGenerativeModel && !this.project_id) {
       clientOptions.modelName = clientOptions.model;
       delete clientOptions.model;
     }
-  
+
     if (_examples && _examples.length) {
       examples = _examples
         .map((ex) => {
@@ -662,26 +662,26 @@ class GoogleClient extends BaseClient {
           };
         })
         .filter((ex) => ex);
-  
+
       clientOptions.examples = examples;
     }
-  
+
     const model = this.createLLM(clientOptions);
-  
+
     let reply = '';
     const messages = this.isTextModel ? _payload.trim() : _messages;
-  
+
     if (!this.isVisionModel && context && messages?.length > 0) {
       messages.unshift(new SystemMessage(context));
     }
-  
+
     const modelName = clientOptions.modelName ?? clientOptions.model ?? '';
     if (modelName?.includes('1.5') && !this.project_id) {
       const client = model;
       const requestOptions = {
         contents: _payload,
       };
-  
+
       if (this.options?.promptPrefix?.length) {
         requestOptions.systemInstruction = {
           parts: [
@@ -691,9 +691,9 @@ class GoogleClient extends BaseClient {
           ],
         };
       }
-  
+
       requestOptions.safetySettings = _payload.safetySettings;
-  
+
       const delay = modelName.includes('flash') ? 8 : 14;
       const result = await client.generateContentStream(requestOptions);
       for await (const chunk of result.stream) {
@@ -706,15 +706,15 @@ class GoogleClient extends BaseClient {
       }
       return reply;
     }
-  
+
     const stream = await model.stream(messages, {
       signal: abortController.signal,
       timeout: 7000,
       safetySettings: _payload.safetySettings,
     });
-  
+
     let delay = this.options.streamRate || 8;
-  
+
     if (!this.options.streamRate) {
       if (this.isGenerativeModel) {
         delay = 12;
@@ -723,7 +723,7 @@ class GoogleClient extends BaseClient {
         delay = 5;
       }
     }
-  
+
     for await (const chunk of stream) {
       const chunkText = chunk?.content ?? chunk;
       await this.generateTextStream(chunkText, onProgress, {
@@ -731,7 +731,7 @@ class GoogleClient extends BaseClient {
       });
       reply += chunkText;
     }
-  
+
     return reply;
   }
 
@@ -869,17 +869,18 @@ class GoogleClient extends BaseClient {
 
   async sendCompletion(payload, opts = {}) {
     payload.safetySettings = this.getSafetySettings();
-  
+
     let reply = '';
     reply = await this.getCompletion(payload, opts);
     return reply.trim();
   }
-  
+
   getSafetySettings() {
     return [
       {
         category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-        threshold: process.env.GOOGLE_SAFETY_SEXUALLY_EXPLICIT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+        threshold:
+          process.env.GOOGLE_SAFETY_SEXUALLY_EXPLICIT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
       },
       {
         category: 'HARM_CATEGORY_HATE_SPEECH',
@@ -891,7 +892,8 @@ class GoogleClient extends BaseClient {
       },
       {
         category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
-        threshold: process.env.GOOGLE_SAFETY_DANGEROUS_CONTENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+        threshold:
+          process.env.GOOGLE_SAFETY_DANGEROUS_CONTENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
       },
     ];
   }
