@@ -6,8 +6,8 @@ const { Issuer, Strategy: OpenIDStrategy, custom } = require('openid-client');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { findUser, createUser, updateUser } = require('~/models/userMethods');
 const { logger } = require('~/config');
-const NodeCache = require('node-cache');  
-global.myCache = new NodeCache();  
+const NodeCache = require('node-cache');
+global.myCache = new NodeCache();
 
 let crypto;
 try {
@@ -80,14 +80,15 @@ function convertToUsername(input, defaultValue = '') {
  * @returns {Object} List of permissions
  */
 async function fetchRemoteAzureGroups(url) {
-  logger.info(`[openidStrategy] fetchRemoteAzureGroups: Fetching remote permissions at URL "${url}"`);
+  logger.info(
+    `[openidStrategy] fetchRemoteAzureGroups: Fetching remote permissions at URL "${url}"`,
+  );
   const response = await fetch(url);
-  if(response.ok){
+  if (response.ok) {
     const json = await response.json();
 
     return json.permissions;
-  }
-  else{
+  } else {
     logger.error(
       `[openidStrategy] fetchRemoteAzureGroups: Error fetching remote permissions at URL "${url}": ${response.statusText} (HTTP ${response.status})`,
     );
@@ -201,12 +202,14 @@ async function setupOpenId() {
             user.name = fullName;
           }
 
-          if(azureAssistantsRemotePermisionFile && azureAssistantsRemotePermisionFile!= ""){
+          if (azureAssistantsRemotePermisionFile && azureAssistantsRemotePermisionFile != '') {
             let userIdToken = jwtDecode(tokenset.id_token);
-            global.myCache.set(user._id.toString(), userIdToken.groups,3900);
-            global.azureAssistantsGroupsPermissions = await fetchRemoteAzureGroups(azureAssistantsRemotePermisionFile);
+            global.myCache.set(user._id.toString(), userIdToken.groups, 604206);
+            global.azureAssistantsGroupsPermissions = await fetchRemoteAzureGroups(
+              azureAssistantsRemotePermisionFile,
+            );
           }
-          
+
           if (userinfo.picture && !user.avatar?.includes('manual=true')) {
             /** @type {string | undefined} */
             const imageUrl = userinfo.picture;
