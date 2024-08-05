@@ -1,6 +1,6 @@
-const crypto = require('crypto');
 const mongoose = require('mongoose');
 const signPayload = require('~/server/services/signPayload');
+const { hashToken } = require('~/server/utils/crypto');
 const { logger } = require('~/config');
 
 const { REFRESH_TOKEN_EXPIRY } = process.env ?? {};
@@ -39,8 +39,7 @@ sessionSchema.methods.generateRefreshToken = async function () {
       expirationTime: Math.floor((expiresIn - Date.now()) / 1000),
     });
 
-    const hash = crypto.createHash('sha256');
-    this.refreshTokenHash = hash.update(refreshToken).digest('hex');
+    this.refreshTokenHash = await hashToken(refreshToken);
 
     await this.save();
 
