@@ -151,7 +151,16 @@ module.exports = {
   getConversationTags: async (user) => {
     try {
       const cTags = await ConversationTag.find({ user }).sort({ position: 1 }).lean();
-      cTags.sort((a, b) => (a.tag === SAVED_TAG ? -1 : b.tag === SAVED_TAG ? 1 : 0));
+
+      cTags.sort((a, b) => {
+        if (a.tag === SAVED_TAG) {
+          return -1;
+        }
+        if (b.tag === SAVED_TAG) {
+          return 1;
+        }
+        return 0;
+      });
 
       return cTags;
     } catch (error) {
