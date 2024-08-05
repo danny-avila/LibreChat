@@ -11,11 +11,11 @@ const {
 } = require('~/models/userMethods');
 const { sendEmail, checkEmailConfig } = require('~/server/utils');
 const { registerSchema } = require('~/strategies/validators');
+const { hashToken } = require('~/server/utils/crypto');
 const isDomainAllowed = require('./isDomainAllowed');
 const Token = require('~/models/schema/tokenSchema');
 const Session = require('~/models/Session');
 const { logger } = require('~/config');
-const { hashToken } = require('~/server/utils/crypto');
 
 const domains = {
   client: process.env.DOMAIN_CLIENT,
