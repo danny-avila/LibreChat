@@ -12,9 +12,9 @@ class GoogleSearchResults extends Tool {
     this.envVarApiKey = 'GOOGLE_SEARCH_API_KEY';
     this.envVarSearchEngineId = 'GOOGLE_CSE_ID';
     this.override = fields.override ?? false;
-    this.apiKey = fields.apiKey ?? getEnvironmentVariable(this.envVarApiKey);
+    this.apiKey = fields[this.envVarApiKey] ?? getEnvironmentVariable(this.envVarApiKey);
     this.searchEngineId =
-      fields.searchEngineId ?? getEnvironmentVariable(this.envVarSearchEngineId);
+      fields[this.envVarSearchEngineId] ?? getEnvironmentVariable(this.envVarSearchEngineId);
 
     this.kwargs = fields?.kwargs ?? {};
     this.name = 'google';

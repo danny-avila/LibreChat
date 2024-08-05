@@ -12,7 +12,7 @@ class TavilySearchResults extends Tool {
     this.envVar = 'TAVILY_API_KEY';
     /* Used to initialize the Tool without necessary variables. */
     this.override = fields.override ?? false;
-    this.apiKey = fields.apiKey ?? this.getApiKey();
+    this.apiKey = fields[this.envVar] ?? this.getApiKey();
 
     this.kwargs = fields?.kwargs ?? {};
     this.name = 'tavily_search_results_json';
