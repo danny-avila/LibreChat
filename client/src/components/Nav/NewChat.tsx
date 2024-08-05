@@ -99,7 +99,11 @@ export default function NewChat({
               <div className="flex gap-3">
                 <span className="flex items-center" data-state="closed">
                   <TooltipTrigger asChild>
-                    <button className="text-token-text-primary">
+                    <button
+                      id="nav-new-chat-btn"
+                      aria-label="nav-new-chat-btn"
+                      className="text-token-text-primary"
+                    >
                       <NewChatIcon className="h-[18px] w-[18px]" />
                     </button>
                   </TooltipTrigger>
