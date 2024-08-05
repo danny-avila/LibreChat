@@ -6,9 +6,9 @@ const {
   setAuthTokens,
   requestPasswordReset,
 } = require('~/server/services/AuthService');
+const { hashToken } = require('~/server/utils/crypto');
 const { Session, getUserById } = require('~/models');
 const { logger } = require('~/config');
-const { hashToken } = require('~/server/utils/crypto');
 
 const registrationController = async (req, res) => {
   try {
