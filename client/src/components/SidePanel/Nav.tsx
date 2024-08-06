@@ -26,7 +26,7 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
         <div className="flex h-full min-h-0 flex-col">
           <div className="flex h-full min-h-0 flex-col opacity-100 transition-opacity">
             <div className="scrollbar-trigger relative h-full w-full flex-1 items-start border-white/20">
-              <nav className="flex h-full w-full flex-col gap-1 px-2 px-3 pb-3.5 group-[[data-collapsed=true]]:items-center group-[[data-collapsed=true]]:justify-center group-[[data-collapsed=true]]:px-2">
+              <div className="flex h-full w-full flex-col gap-1 px-3 pb-3.5 group-[[data-collapsed=true]]:items-center group-[[data-collapsed=true]]:justify-center group-[[data-collapsed=true]]:px-2">
                 {links.map((link, index) => {
                   const variant = getVariant(link);
                   return isCollapsed ? (
@@ -41,9 +41,9 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                               ? 'dark:bg-muted dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-white'
                               : '',
                           )}
-                          onClick={() => {
+                          onClick={(e) => {
                             if (link.onClick) {
-                              link.onClick();
+                              link.onClick(e);
                               setActive('');
                               return;
                             }
@@ -87,9 +87,9 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                                 'hover:bg-gray-50 data-[state=open]:bg-gray-50 data-[state=open]:text-black dark:hover:bg-gray-700 dark:data-[state=open]:bg-gray-700 dark:data-[state=open]:text-white',
                                 'w-full justify-start rounded-md border dark:border-gray-700',
                               )}
-                              onClick={() => {
+                              onClick={(e) => {
                                 if (link.onClick) {
-                                  link.onClick();
+                                  link.onClick(e);
                                   setActive('');
                                 }
                               }}
@@ -118,7 +118,7 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                     </Accordion>
                   );
                 })}
-              </nav>
+              </div>
             </div>
           </div>
         </div>

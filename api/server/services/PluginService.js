@@ -29,7 +29,7 @@ const getUserPluginAuthValue = async (userId, authField) => {
       throw new Error(`No plugin auth ${authField} found for user ${userId}`);
     }
 
-    const decryptedValue = decrypt(pluginAuth.value);
+    const decryptedValue = await decrypt(pluginAuth.value);
     return decryptedValue;
   } catch (err) {
     logger.error('[getUserPluginAuthValue]', err);
@@ -64,7 +64,7 @@ const getUserPluginAuthValue = async (userId, authField) => {
 
 const updateUserPluginAuth = async (userId, authField, pluginKey, value) => {
   try {
-    const encryptedValue = encrypt(value);
+    const encryptedValue = await encrypt(value);
     const pluginAuth = await PluginAuth.findOne({ userId, authField }).lean();
     if (pluginAuth) {
       const pluginAuth = await PluginAuth.updateOne(
