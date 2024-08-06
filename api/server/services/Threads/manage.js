@@ -564,68 +564,69 @@ async function processMessages({ openai, client, messages = [] }) {
       const { annotations } = contentType ?? {};
 
       // Process annotations if they exist
-      if (annotations?.length) {
-        const replacements = [];
-        const annotationPromises = annotations.map(async (annotation) => {
-          const type = annotation.type;
-          const annotationType = annotation[type];
-          const file_id = annotationType?.file_id;
-          const alreadyProcessed = client.processedFileIds.has(file_id);
+      if (!annotations?.length) {
+        continue;
+      }
+      const replacements = [];
+      const annotationPromises = annotations.map(async (annotation) => {
+        const type = annotation.type;
+        const annotationType = annotation[type];
+        const file_id = annotationType?.file_id;
+        const alreadyProcessed = client.processedFileIds.has(file_id);
 
-          let file;
-          let replacementText = '';
+        let file;
+        let replacementText = '';
 
-          try {
-            if (alreadyProcessed) {
-              file = await retrieveAndProcessFile({ openai, client, file_id, unknownType: true });
-            } else if (type === AnnotationTypes.FILE_PATH) {
-              const basename = path.basename(annotation.text);
-              file = await retrieveAndProcessFile({
-                openai,
-                client,
-                file_id,
-                basename,
-              });
-              replacementText = file.filepath;
-            } else if (type === AnnotationTypes.FILE_CITATION && file_id) {
-              file = await retrieveAndProcessFile({
-                openai,
-                client,
-                file_id,
-                unknownType: true,
-              });
-              if (file && file.filename) {
-                if (!sources.has(file.filename)) {
-                  sources.set(file.filename, sources.size + 1);
-                }
-                replacementText = `^${sources.get(file.filename)}^`;
+        try {
+          if (alreadyProcessed) {
+            file = await retrieveAndProcessFile({ openai, client, file_id, unknownType: true });
+          } else if (type === AnnotationTypes.FILE_PATH) {
+            const basename = path.basename(annotation.text);
+            file = await retrieveAndProcessFile({
+              openai,
+              client,
+              file_id,
+              basename,
+            });
+            replacementText = file.filepath;
+          } else if (type === AnnotationTypes.FILE_CITATION && file_id) {
+            file = await retrieveAndProcessFile({
+              openai,
+              client,
+              file_id,
+              unknownType: true,
+            });
+            if (file && file.filename) {
+              if (!sources.has(file.filename)) {
+                sources.set(file.filename, sources.size + 1);
               }
+              replacementText = `^${sources.get(file.filename)}^`;
             }
-
-            if (file && replacementText) {
-              replacements.push({
-                start: annotation.start_index,
-                end: annotation.end_index,
-                text: replacementText,
-              });
-              edited = true;
-              if (!alreadyProcessed) {
-                client.processedFileIds.add(file_id);
-                message.files.push(file);
-              }
-            }
-          } catch (error) {
-            console.error(`Failed to process annotation: ${error.message}`);
           }
-        });
 
-        await Promise.all(annotationPromises);
-
-        // Apply replacements in reverse order
-        replacements.sort((a, b) => b.start - a.start);
-        for (const { start, end, text: replacementText } of replacements) {
-          currentText = currentText.slice(0, start) + replacementText + currentText.slice(end);
+          if (file && replacementText) {
+            replacements.push({
+              start: annotation.start_index,
+              end: annotation.end_index,
+              text: replacementText,
+            });
+            edited = true;
+            if (!alreadyProcessed) {
+              client.processedFileIds.add(file_id);
+              message.files.push(file);
+            }
+          }
+        } catch (error) {
+          console.error(`Failed to process annotation: ${error.message}`);
         }
+      });
+
+      await Promise.all(annotationPromises);
+
+      // Apply replacements in reverse order
+      replacements.sort((a, b) => b.start - a.start);
+      for (const { start, end, text: replacementText } of replacements) {
+        currentText = currentText.slice(0, start) + replacementText + currentText.slice(end);
       }
 
       text += currentText;
@@ -634,8 +635,12 @@ async function processMessages({ openai, client, messages = [] }) {
 
   await Promise.all(fileRetrievalPromises);
 
-  // Handle adjacent identical citations only for our specific format
-  text = text.replace(/\^(\d+)\^\s*\^(\1)\^/g, '^$1^');
+  // Handle adjacent identical citations
+  text = text.replace(/\^(\d+)\^(\s*)\^(\d+)\^/g, (match, num1, space, num2) => {
+    return num1 === num2 ? `^${num1}^` : `^${num1}^${space}^${num2}^`;
+  });
+  // Remove any remaining adjacent identical citations
+  text = text.replace(/(\^(\d+)\^)\s*\1+/g, '$1');
 
   if (sources.size) {
     text += '\n\n';

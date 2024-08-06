@@ -1,5 +1,5 @@
-const { processMessages } = require('./manage');
 const { retrieveAndProcessFile } = require('~/server/services/Files/process');
+const { processMessages } = require('./manage');
 
 jest.mock('~/server/services/Files/process', () => ({
   retrieveAndProcessFile: jest.fn(),
@@ -234,6 +234,343 @@ describe('processMessages', () => {
     const result = await processMessages({ openai, client, messages });
 
     expect(result.text).toBe('This is a test ^1^ and ^1^\n\n^1.^ test.txt');
+    expect(result.edited).toBe(true);
+  });
+  test('handles real data with multiple adjacent citations', async () => {
+    const messages = [
+      {
+        id: 'msg_XXXXXXXXXXXXXXXXXXXX',
+        object: 'thread.message',
+        created_at: 1722980324,
+        assistant_id: 'asst_XXXXXXXXXXXXXXXXXXXX',
+        thread_id: 'thread_XXXXXXXXXXXXXXXXXXXX',
+        run_id: 'run_XXXXXXXXXXXXXXXXXXXX',
+        status: 'completed',
+        incomplete_details: null,
+        incomplete_at: null,
+        completed_at: 1722980331,
+        role: 'assistant',
+        content: [
+          {
+            type: 'text',
+            text: {
+              value:
+                'The text you have uploaded is from the book "Harry Potter and the Philosopher\'s Stone" by J.K. Rowling. It follows the story of a young boy named Harry Potter who discovers that he is a wizard on his eleventh birthday. Here are some key points of the narrative:\n\n1. **Discovery and Invitation to Hogwarts**: Harry learns that he is a wizard and receives an invitation to attend Hogwarts School of Witchcraft and Wizardry【11:2†source】【11:4†source】.\n\n2. **Shopping for Supplies**: Hagrid takes Harry to Diagon Alley to buy his school supplies, including his wand from Ollivander\'s【11:9†source】【11:14†source】.\n\n3. **Introduction to Hogwarts**: Harry is introduced to Hogwarts, the magical school where he will learn about magic and discover more about his own background【11:12†source】【11:18†source】.\n\n4. **Meeting Friends and Enemies**: At Hogwarts, Harry makes friends like Ron Weasley and Hermione Granger, and enemies like Draco Malfoy【11:16†source】.\n\n5. **Uncovering the Mystery**: Harry, along with Ron and Hermione, uncovers the mystery of the Philosopher\'s Stone and its connection to the dark wizard Voldemort【11:1†source】【11:10†source】【11:7†source】.\n\nThese points highlight Harry\'s initial experiences in the magical world and set the stage for his adventures at Hogwarts.',
+              annotations: [
+                {
+                  type: 'file_citation',
+                  text: '【11:2†source】',
+                  start_index: 420,
+                  end_index: 433,
+                  file_citation: {
+                    file_id: 'file-XXXXXXXXXXXXXXXXXXXX',
+                  },
+                },
+                {
+                  type: 'file_citation',
+                  text: '【11:4†source】',
+                  start_index: 433,
+                  end_index: 446,
+                  file_citation: {
+                    file_id: 'file-XXXXXXXXXXXXXXXXXXXX',
+                  },
+                },
+                {
+                  type: 'file_citation',
+                  text: '【11:9†source】',
+                  start_index: 578,
+                  end_index: 591,
+                  file_citation: {
+                    file_id: 'file-XXXXXXXXXXXXXXXXXXXX',
+                  },
+                },
+                {
+                  type: 'file_citation',
+                  text: '【11:14†source】',
+                  start_index: 591,
+                  end_index: 605,
+                  file_citation: {
+                    file_id: 'file-XXXXXXXXXXXXXXXXXXXX',
+                  },
+                },
+                {
+                  type: 'file_citation',
+                  text: '【11:12†source】',
+                  start_index: 767,
+                  end_index: 781,
+                  file_citation: {
+                    file_id: 'file-XXXXXXXXXXXXXXXXXXXX',
+                  },
+                },
+                {
+                  type: 'file_citation',
+                  text: '【11:18†source】',
+                  start_index: 781,
+                  end_index: 795,
+                  file_citation: {
+                    file_id: 'file-XXXXXXXXXXXXXXXXXXXX',
+                  },
+                },
+                {
+                  type: 'file_citation',
+                  text: '【11:16†source】',
+                  start_index: 935,
+                  end_index: 949,
+                  file_citation: {
+                    file_id: 'file-XXXXXXXXXXXXXXXXXXXX',
+                  },
+                },
+                {
+                  type: 'file_citation',
+                  text: '【11:1†source】',
+                  start_index: 1114,
+                  end_index: 1127,
+                  file_citation: {
+                    file_id: 'file-XXXXXXXXXXXXXXXXXXXX',
+                  },
+                },
+                {
+                  type: 'file_citation',
+                  text: '【11:10†source】',
+                  start_index: 1127,
+                  end_index: 1141,
+                  file_citation: {
+                    file_id: 'file-XXXXXXXXXXXXXXXXXXXX',
+                  },
+                },
+                {
+                  type: 'file_citation',
+                  text: '【11:7†source】',
+                  start_index: 1141,
+                  end_index: 1154,
+                  file_citation: {
+                    file_id: 'file-XXXXXXXXXXXXXXXXXXXX',
+                  },
+                },
+              ],
+            },
+          },
+        ],
+        attachments: [],
+        metadata: {},
+        files: [
+          {
+            object: 'file',
+            id: 'file-XXXXXXXXXXXXXXXXXXXX',
+            purpose: 'assistants',
+            filename: 'hp1.txt',
+            bytes: 439742,
+            created_at: 1722962139,
+            status: 'processed',
+            status_details: null,
+            type: 'text/plain',
+            file_id: 'file-XXXXXXXXXXXXXXXXXXXX',
+            filepath:
+              'https://api.openai.com/v1/files/XXXXXXXXXXXXXXXXXXXX/file-XXXXXXXXXXXXXXXXXXXX/hp1.txt',
+            usage: 1,
+            user: 'XXXXXXXXXXXXXXXXXXXX',
+            context: 'assistants',
+            source: 'openai',
+            model: 'gpt-4o',
+          },
+        ],
+      },
+    ];
+
+    retrieveAndProcessFile.mockResolvedValue({ filename: 'hp1.txt' });
+
+    const result = await processMessages({
+      openai: {},
+      client: { processedFileIds: new Set() },
+      messages,
+    });
+
+    const expectedText = `The text you have uploaded is from the book "Harry Potter and the Philosopher's Stone" by J.K. Rowling. It follows the story of a young boy named Harry Potter who discovers that he is a wizard on his eleventh birthday. Here are some key points of the narrative:
+
+1. **Discovery and Invitation to Hogwarts**: Harry learns that he is a wizard and receives an invitation to attend Hogwarts School of Witchcraft and Wizardry^1^.
+
+2. **Shopping for Supplies**: Hagrid takes Harry to Diagon Alley to buy his school supplies, including his wand from Ollivander's^1^.
+
+3. **Introduction to Hogwarts**: Harry is introduced to Hogwarts, the magical school where he will learn about magic and discover more about his own background^1^.
+
+4. **Meeting Friends and Enemies**: At Hogwarts, Harry makes friends like Ron Weasley and Hermione Granger, and enemies like Draco Malfoy^1^.
+
+5. **Uncovering the Mystery**: Harry, along with Ron and Hermione, uncovers the mystery of the Philosopher's Stone and its connection to the dark wizard Voldemort^1^.
+
+These points highlight Harry's initial experiences in the magical world and set the stage for his adventures at Hogwarts.
+
+^1.^ hp1.txt`;
+
+    expect(result.text).toBe(expectedText);
+    expect(result.edited).toBe(true);
+  });
+
+  test('handles real data with multiple adjacent citations with multiple sources', async () => {
+    const messages = [
+      {
+        id: 'msg_XXXXXXXXXXXXXXXXXXXX',
+        object: 'thread.message',
+        created_at: 1722980324,
+        assistant_id: 'asst_XXXXXXXXXXXXXXXXXXXX',
+        thread_id: 'thread_XXXXXXXXXXXXXXXXXXXX',
+        run_id: 'run_XXXXXXXXXXXXXXXXXXXX',
+        status: 'completed',
+        incomplete_details: null,
+        incomplete_at: null,
+        completed_at: 1722980331,
+        role: 'assistant',
+        content: [
+          {
+            type: 'text',
+            text: {
+              value:
+                'The text you have uploaded is from the book "Harry Potter and the Philosopher\'s Stone" by J.K. Rowling. It follows the story of a young boy named Harry Potter who discovers that he is a wizard on his eleventh birthday. Here are some key points of the narrative:\n\n1. **Discovery and Invitation to Hogwarts**: Harry learns that he is a wizard and receives an invitation to attend Hogwarts School of Witchcraft and Wizardry【11:2†source】【11:4†source】.\n\n2. **Shopping for Supplies**: Hagrid takes Harry to Diagon Alley to buy his school supplies, including his wand from Ollivander\'s【11:9†source】【11:14†source】.\n\n3. **Introduction to Hogwarts**: Harry is introduced to Hogwarts, the magical school where he will learn about magic and discover more about his own background【11:12†source】【11:18†source】.\n\n4. **Meeting Friends and Enemies**: At Hogwarts, Harry makes friends like Ron Weasley and Hermione Granger, and enemies like Draco Malfoy【11:16†source】.\n\n5. **Uncovering the Mystery**: Harry, along with Ron and Hermione, uncovers the mystery of the Philosopher\'s Stone and its connection to the dark wizard Voldemort【11:1†source】【11:10†source】【11:7†source】.\n\nThese points highlight Harry\'s initial experiences in the magical world and set the stage for his adventures at Hogwarts.',
+              annotations: [
+                {
+                  type: 'file_citation',
+                  text: '【11:2†source】',
+                  start_index: 420,
+                  end_index: 433,
+                  file_citation: {
+                    file_id: 'file-XXXXXXXXXXXXXXXXXXXX',
+                  },
+                },
+                {
+                  type: 'file_citation',
+                  text: '【11:4†source】',
+                  start_index: 433,
+                  end_index: 446,
+                  file_citation: {
+                    file_id: 'file-XXXXXXXXXXXXXXXXXXXX',
+                  },
+                },
+                {
+                  type: 'file_citation',
+                  text: '【11:9†source】',
+                  start_index: 578,
+                  end_index: 591,
+                  file_citation: {
+                    file_id: 'file-XXXXXXXXXXXXXXXXXXXX',
+                  },
+                },
+                {
+                  type: 'file_citation',
+                  text: '【11:14†source】',
+                  start_index: 591,
+                  end_index: 605,
+                  file_citation: {
+                    file_id: 'file-XXXXXXXXXXXXXXXXXXXX',
+                  },
+                },
+                {
+                  type: 'file_citation',
+                  text: '【11:12†source】',
+                  start_index: 767,
+                  end_index: 781,
+                  file_citation: {
+                    file_id: 'file-XXXXXXXXXXXXXXXXXXXX',
+                  },
+                },
+                {
+                  type: 'file_citation',
+                  text: '【11:18†source】',
+                  start_index: 781,
+                  end_index: 795,
+                  file_citation: {
+                    file_id: 'file-XXXXXXXXXXXXXXXXXXXX',
+                  },
+                },
+                {
+                  type: 'file_citation',
+                  text: '【11:16†source】',
+                  start_index: 935,
+                  end_index: 949,
+                  file_citation: {
+                    file_id: 'file-XXXXXXXXXXXXXXXXXXXX',
+                  },
+                },
+                {
+                  type: 'file_citation',
+                  text: '【11:1†source】',
+                  start_index: 1114,
+                  end_index: 1127,
+                  file_citation: {
+                    file_id: 'file-XXXXXXXXXXXXXXXXXXXX',
+                  },
+                },
+                {
+                  type: 'file_citation',
+                  text: '【11:10†source】',
+                  start_index: 1127,
+                  end_index: 1141,
+                  file_citation: {
+                    file_id: 'file-XXXXXXXXXXXXXXXXXXXX',
+                  },
+                },
+                {
+                  type: 'file_citation',
+                  text: '【11:7†source】',
+                  start_index: 1141,
+                  end_index: 1154,
+                  file_citation: {
+                    file_id: 'file-XXXXXXXXXXXXXXXXXXXX',
+                  },
+                },
+              ],
+            },
+          },
+        ],
+        attachments: [],
+        metadata: {},
+        files: [
+          {
+            object: 'file',
+            id: 'file-XXXXXXXXXXXXXXXXXXXX',
+            purpose: 'assistants',
+            filename: 'hp1.txt',
+            bytes: 439742,
+            created_at: 1722962139,
+            status: 'processed',
+            status_details: null,
+            type: 'text/plain',
+            file_id: 'file-XXXXXXXXXXXXXXXXXXXX',
+            filepath:
+              'https://api.openai.com/v1/files/XXXXXXXXXXXXXXXXXXXX/file-XXXXXXXXXXXXXXXXXXXX/hp1.txt',
+            usage: 1,
+            user: 'XXXXXXXXXXXXXXXXXXXX',
+            context: 'assistants',
+            source: 'openai',
+            model: 'gpt-4o',
+          },
+        ],
+      },
+    ];
+
+    retrieveAndProcessFile.mockResolvedValue({ filename: 'hp1.txt' });
+
+    const result = await processMessages({
+      openai: {},
+      client: { processedFileIds: new Set() },
+      messages,
+    });
+
+    const expectedText = `The text you have uploaded is from the book "Harry Potter and the Philosopher's Stone" by J.K. Rowling. It follows the story of a young boy named Harry Potter who discovers that he is a wizard on his eleventh birthday. Here are some key points of the narrative:
+
+1. **Discovery and Invitation to Hogwarts**: Harry learns that he is a wizard and receives an invitation to attend Hogwarts School of Witchcraft and Wizardry^1^.
+
+2. **Shopping for Supplies**: Hagrid takes Harry to Diagon Alley to buy his school supplies, including his wand from Ollivander's^1^.
+
+3. **Introduction to Hogwarts**: Harry is introduced to Hogwarts, the magical school where he will learn about magic and discover more about his own background^1^.
+
+4. **Meeting Friends and Enemies**: At Hogwarts, Harry makes friends like Ron Weasley and Hermione Granger, and enemies like Draco Malfoy^1^.
+
+5. **Uncovering the Mystery**: Harry, along with Ron and Hermione, uncovers the mystery of the Philosopher's Stone and its connection to the dark wizard Voldemort^1^.
+
+These points highlight Harry's initial experiences in the magical world and set the stage for his adventures at Hogwarts.
+
+^1.^ hp1.txt`;
+
+    expect(result.text).toBe(expectedText);
     expect(result.edited).toBe(true);
   });
 });
