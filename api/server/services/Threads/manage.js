@@ -565,6 +565,7 @@ async function processMessages({ openai, client, messages = [] }) {
 
       // Process annotations if they exist
       if (annotations?.length) {
+        const replacements = [];
         const annotationPromises = annotations.map(async (annotation) => {
           const type = annotation.type;
           const annotationType = annotation[type];
@@ -602,10 +603,11 @@ async function processMessages({ openai, client, messages = [] }) {
             }
 
             if (file && replacementText) {
-              currentText =
-                currentText.slice(0, annotation.start_index) +
-                replacementText +
-                currentText.slice(annotation.end_index);
+              replacements.push({
+                start: annotation.start_index,
+                end: annotation.end_index,
+                text: replacementText,
+              });
               edited = true;
               if (!alreadyProcessed) {
                 client.processedFileIds.add(file_id);
@@ -618,19 +620,22 @@ async function processMessages({ openai, client, messages = [] }) {
         });
 
         await Promise.all(annotationPromises);
+
+        // Apply replacements in reverse order
+        replacements.sort((a, b) => b.start - a.start);
+        for (const { start, end, text: replacementText } of replacements) {
+          currentText = currentText.slice(0, start) + replacementText + currentText.slice(end);
+        }
       }
 
-      text += currentText + ' ';
+      text += currentText;
     }
   }
 
   await Promise.all(fileRetrievalPromises);
 
-  // Remove extra spaces and handle adjacent citations
-  text = text.replace(/\s+/g, ' ').trim();
-  text = text.replace(/\^(\d+)\^\s*\^(\d+)\^/g, (match, num1, num2) =>
-    num1 === num2 ? `^${num1}^` : `^${num1}^ ^${num2}^`,
-  );
+  // Handle adjacent identical citations only for our specific format
+  text = text.replace(/\^(\d+)\^\s*\^(\1)\^/g, '^$1^');
 
   if (sources.size) {
     text += '\n\n';
