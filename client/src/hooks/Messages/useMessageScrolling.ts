@@ -1,7 +1,8 @@
 import { useRecoilValue } from 'recoil';
+import { Constants } from 'librechat-data-provider';
 import { useState, useRef, useCallback, useEffect } from 'react';
 import type { TMessage } from 'librechat-data-provider';
-import useScrollToRef from '../useScrollToRef';
+import useScrollToRef from '~/hooks/useScrollToRef';
 import { useChatContext } from '~/Providers';
 import store from '~/store';
 
@@ -84,7 +85,7 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
   }, [isSubmitting, messagesTree, scrollToBottom, abortScroll]);
 
   useEffect(() => {
-    if (scrollToBottom && autoScroll && conversationId !== 'new') {
+    if (scrollToBottom && autoScroll && conversationId !== Constants.NEW_CONVO) {
       scrollToBottom();
     }
   }, [autoScroll, conversationId, scrollToBottom]);
