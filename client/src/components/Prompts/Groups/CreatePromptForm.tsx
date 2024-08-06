@@ -113,8 +113,6 @@ const CreatePromptForm = ({
                     type="text"
                     className="mr-2 w-full border border-gray-300 p-2 text-2xl dark:border-gray-600"
                     placeholder={`${localize('com_ui_prompt_name')}*`}
-                    tabIndex={1}
-                    autoFocus={true}
                   />
                   <div
                     className={cn(
@@ -127,7 +125,7 @@ const CreatePromptForm = ({
                 </div>
               )}
             />
-            <CategorySelector tabIndex={5} />
+            <CategorySelector />
           </div>
         </div>
         <div className="flex w-full flex-col gap-4 md:mt-[1.075rem]">
@@ -146,7 +144,6 @@ const CreatePromptForm = ({
                       {...field}
                       className="w-full rounded border border-gray-300 px-2 py-1 focus:outline-none dark:border-gray-600 dark:bg-transparent dark:text-gray-200"
                       minRows={6}
-                      tabIndex={2}
                     />
                     <div
                       className={`mt-1 text-sm text-red-500 ${
@@ -161,18 +158,10 @@ const CreatePromptForm = ({
             </div>
           </div>
           <PromptVariables promptText={promptText} />
-          <Description
-            onValueChange={(value) => methods.setValue('oneliner', value)}
-            tabIndex={3}
-          />
-          <Command onValueChange={(value) => methods.setValue('command', value)} tabIndex={4} />
-          <div className="mt-4 flex justify-end">
-            <Button
-              tabIndex={6}
-              type="submit"
-              variant="default"
-              disabled={!isDirty || isSubmitting || !isValid}
-            >
+          <Description onValueChange={(value) => methods.setValue('oneliner', value)} />
+          <Command onValueChange={(value) => methods.setValue('command', value)} />
+          <div className="z-50 mt-4 flex justify-end">
+            <Button type="submit" variant="default" disabled={!isDirty || isSubmitting || !isValid}>
               {localize('com_ui_create_prompt')}
             </Button>
           </div>

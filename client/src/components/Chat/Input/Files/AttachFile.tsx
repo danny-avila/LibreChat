@@ -45,7 +45,7 @@ const AttachFile = ({
         <button
           disabled={!!disabled}
           type="button"
-          className="btn relative text-black focus:outline-none focus:ring-2 focus:ring-border-xheavy focus:ring-opacity-50 dark:text-white"
+          className="btn text-blac relative dark:text-white"
           aria-label="Attach files"
           style={{ padding: 0 }}
         >
