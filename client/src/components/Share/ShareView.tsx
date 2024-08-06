@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useGetSharedMessages, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { useLocalize, useDocumentTitle } from '~/hooks';
@@ -25,7 +25,15 @@ function SharedView() {
   }
 
   useDocumentTitle(docTitle);
+  useEffect(() => {
+    const devicePixelRatio = window.devicePixelRatio || 1;
 
+    const favicon = document.querySelector('link[rel~=\'icon\']');
+    if (favicon) {
+      favicon['href'] = devicePixelRatio >= 2 ? config?.favicon32 : config?.favicon16;
+    }
+    console.log(favicon);
+  }, [config]);
   return (
     <ShareContext.Provider value={{ isSharedConvo: true }}>
       <div

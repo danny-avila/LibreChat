@@ -336,6 +336,9 @@ export type TStartupConfig = {
   publicSharedLinksEnabled: boolean;
   analyticsGtmId?: string;
   instanceProjectId: string;
+  logo?: string;
+  favicon16?: string;
+  favicon32?: string;
 };
 
 export type TRefreshTokenResponse = {

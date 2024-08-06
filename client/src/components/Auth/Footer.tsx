@@ -32,13 +32,23 @@ function Footer({ startupConfig }: { startupConfig: TStartupConfig | null | unde
   );
 
   return (
-    <div className="align-end m-4 flex justify-center gap-2">
-      {privacyPolicyRender}
-      {privacyPolicyRender && termsOfServiceRender && (
-        <div className="border-r-[1px] border-gray-300 dark:border-gray-600" />
-      )}
-      {termsOfServiceRender}
-    </div>
+    <>
+      <div className="align-end m-4 flex justify-center gap-2">
+        {privacyPolicyRender}
+        {privacyPolicyRender && termsOfServiceRender && (
+          <div className="border-r-[1px] border-gray-300 dark:border-gray-600" />
+        )}
+        {termsOfServiceRender}
+      </div>
+      <div className="align-end m-2 flex justify-center gap-2">
+        <h2>Powered by Intelequia</h2>
+        <img
+          src="https://intelequia.com/Portals/0/Images/iss-logo-grey.png"
+          width="50"
+          alt="Logo"
+        />
+      </div>
+    </>
   );
 }
 

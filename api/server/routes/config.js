@@ -39,7 +39,7 @@ router.get('/', async function (req, res) {
   try {
     /** @type {TStartupConfig} */
     const payload = {
-      appTitle: process.env.APP_TITLE || 'LibreChat',
+      appTitle: process.env.APP_TITLE || 'Intelewriter',
       socialLogins: req.app.locals.socialLogins ?? defaultSocialLogins,
       discordLoginEnabled: !!process.env.DISCORD_CLIENT_ID && !!process.env.DISCORD_CLIENT_SECRET,
       facebookLoginEnabled:
@@ -84,6 +84,10 @@ router.get('/', async function (req, res) {
     if (typeof process.env.CUSTOM_FOOTER === 'string') {
       payload.customFooter = process.env.CUSTOM_FOOTER;
     }
+
+    payload.favicon32 = process.env.FAVICON_URL_32;
+    payload.favicon16 = process.env.FAVICON_URL_16;
+    payload.logo = process.env.LOGO_URL;
 
     await cache.set(CacheKeys.STARTUP_CONFIG, payload);
     return res.status(200).send(payload);

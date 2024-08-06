@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { TStartupConfig } from 'librechat-data-provider';
@@ -28,6 +28,17 @@ export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: b
   const location = useLocation();
 
   useEffect(() => {
+    document.title = startupConfig?.appTitle || 'Intelewriter';
+    const devicePixelRatio = window.devicePixelRatio || 1;
+
+    const favicon = document.querySelector('link[rel~=\'icon\']');
+    if (favicon) {
+      favicon['href'] = devicePixelRatio >= 2 ? startupConfig?.favicon32 : startupConfig?.favicon16;
+    }
+    console.log(favicon);
+  }, [startupConfig]);
+
+  useEffect(() => {
     if (isAuthenticated) {
       navigate('/c/new', { replace: true });
     }
@@ -35,10 +46,6 @@ export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: b
       setStartupConfig(data);
     }
   }, [isAuthenticated, navigate, data]);
-
-  useEffect(() => {
-    document.title = startupConfig?.appTitle || 'LibreChat';
-  }, [startupConfig?.appTitle]);
 
   useEffect(() => {
     setError(null);
