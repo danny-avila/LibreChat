@@ -615,4 +615,192 @@ These points highlight Harry's initial experiences in the magical world and set 
     expect(result.text).toBe(expectedText);
     expect(result.edited).toBe(true);
   });
+
+  test('handles FILE_PATH annotation type', async () => {
+    const messages = [
+      {
+        content: [
+          {
+            type: 'text',
+            text: {
+              value: 'Here is a file path: [file_path]',
+              annotations: [
+                {
+                  type: 'file_path',
+                  text: '[file_path]',
+                  start_index: 21,
+                  end_index: 32,
+                  file_path: {
+                    file_id: 'file-XXXXXXXXXXXXXXXXXXXX',
+                  },
+                },
+              ],
+            },
+          },
+        ],
+        created_at: 1,
+      },
+    ];
+
+    retrieveAndProcessFile.mockResolvedValue({
+      filename: 'test.txt',
+      filepath: '/path/to/test.txt',
+    });
+
+    const result = await processMessages({
+      openai: {},
+      client: { processedFileIds: new Set() },
+      messages,
+    });
+
+    const expectedText = 'Here is a file path: /path/to/test.txt';
+
+    expect(result.text).toBe(expectedText);
+    expect(result.edited).toBe(true);
+  });
+
+  test('handles FILE_CITATION annotation type', async () => {
+    const messages = [
+      {
+        content: [
+          {
+            type: 'text',
+            text: {
+              value: 'Here is a citation: [citation]',
+              annotations: [
+                {
+                  type: 'file_citation',
+                  text: '[citation]',
+                  start_index: 20,
+                  end_index: 30,
+                  file_citation: {
+                    file_id: 'file-XXXXXXXXXXXXXXXXXXXX',
+                  },
+                },
+              ],
+            },
+          },
+        ],
+        created_at: 1,
+      },
+    ];
+
+    retrieveAndProcessFile.mockResolvedValue({ filename: 'test.txt' });
+
+    const result = await processMessages({
+      openai: {},
+      client: { processedFileIds: new Set() },
+      messages,
+    });
+
+    const expectedText = 'Here is a citation: ^1^\n\n^1.^ test.txt';
+
+    expect(result.text).toBe(expectedText);
+    expect(result.edited).toBe(true);
+  });
+
+  test('handles multiple annotation types in a single message', async () => {
+    const messages = [
+      {
+        content: [
+          {
+            type: 'text',
+            text: {
+              value:
+                'File path: [file_path]. Citation: [citation1]. Another citation: [citation2].',
+              annotations: [
+                {
+                  type: 'file_path',
+                  text: '[file_path]',
+                  start_index: 11,
+                  end_index: 22,
+                  file_path: {
+                    file_id: 'file-XXXXXXXXXXXXXXXX1',
+                  },
+                },
+                {
+                  type: 'file_citation',
+                  text: '[citation1]',
+                  start_index: 34,
+                  end_index: 45,
+                  file_citation: {
+                    file_id: 'file-XXXXXXXXXXXXXXXX2',
+                  },
+                },
+                {
+                  type: 'file_citation',
+                  text: '[citation2]',
+                  start_index: 65,
+                  end_index: 76,
+                  file_citation: {
+                    file_id: 'file-XXXXXXXXXXXXXXXX3',
+                  },
+                },
+              ],
+            },
+          },
+        ],
+        created_at: 1,
+      },
+    ];
+
+    retrieveAndProcessFile.mockResolvedValueOnce({
+      filename: 'file1.txt',
+      filepath: '/path/to/file1.txt',
+    });
+    retrieveAndProcessFile.mockResolvedValueOnce({ filename: 'file2.txt' });
+    retrieveAndProcessFile.mockResolvedValueOnce({ filename: 'file3.txt' });
+
+    const result = await processMessages({
+      openai: {},
+      client: { processedFileIds: new Set() },
+      messages,
+    });
+
+    const expectedText =
+      'File path: /path/to/file1.txt. Citation: ^1^. Another citation: ^2^.\n\n^1.^ file2.txt\n^2.^ file3.txt';
+
+    expect(result.text).toBe(expectedText);
+    expect(result.edited).toBe(true);
+  });
+
+  test('handles annotation processing failure', async () => {
+    const messages = [
+      {
+        content: [
+          {
+            type: 'text',
+            text: {
+              value: 'This citation will fail: [citation]',
+              annotations: [
+                {
+                  type: 'file_citation',
+                  text: '[citation]',
+                  start_index: 25,
+                  end_index: 35,
+                  file_citation: {
+                    file_id: 'file-XXXXXXXXXXXXXXXXXXXX',
+                  },
+                },
+              ],
+            },
+          },
+        ],
+        created_at: 1,
+      },
+    ];
+
+    retrieveAndProcessFile.mockRejectedValue(new Error('File not found'));
+
+    const result = await processMessages({
+      openai: {},
+      client: { processedFileIds: new Set() },
+      messages,
+    });
+
+    const expectedText = 'This citation will fail: [citation]';
+
+    expect(result.text).toBe(expectedText);
+    expect(result.edited).toBe(false);
+  });
 });
