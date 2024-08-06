@@ -83,18 +83,20 @@ export default function HeaderOptions({
                 />
               )}
               {!noSettings[endpoint] && interfaceConfig?.parameters && (
-                <Button
+                <button
                   type="button"
+                  id="parameters-button"
+                  data-testid="parameters-button"
                   className={cn(
-                    cardStyle,
-                    'z-50 flex h-[40px] min-w-4 flex-none items-center justify-center px-3 focus:ring-0 focus:ring-offset-0',
+                    'pointer-cursor relative flex flex-col rounded-md border border-gray-100 bg-white text-left dark:border-gray-700 dark:bg-gray-800 sm:text-sm',
                     'hover:bg-gray-50 radix-state-open:bg-gray-50 dark:hover:bg-gray-700 dark:radix-state-open:bg-gray-700',
+                    'z-50 flex h-[40px] min-w-4 flex-none items-center justify-center px-3',
                   )}
                   onClick={triggerAdvancedMode}
                   aria-label="Settings/parameters"
                 >
                   <Settings2 className="w-4 text-gray-600 dark:text-white" />
-                </Button>
+                </button>
               )}
             </div>
             {interfaceConfig?.parameters && (
