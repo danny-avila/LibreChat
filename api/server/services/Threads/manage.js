@@ -517,6 +517,7 @@ const recordUsage = async ({
 
 const uniqueCitationStart = '^====||===';
 const uniqueCitationEnd = '==|||||^';
+
 /** Helper function to escape special characters in regex
  * @param {string} string - The string to escape.
  * @returns {string} The escaped string.
@@ -573,8 +574,8 @@ async function processMessages({ openai, client, messages = [] }) {
       /** @type {{ annotations: Annotation[] }} */
       const { annotations } = contentType ?? {};
 
-      // Process annotations if they exist
       if (!annotations?.length) {
+        text += currentText;
         continue;
       }
 

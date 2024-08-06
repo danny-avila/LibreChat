@@ -573,4 +573,46 @@ These points highlight Harry's initial experiences in the magical world and set 
     expect(result.text).toBe(expectedText);
     expect(result.edited).toBe(true);
   });
+
+  test('handles edge case with pre-existing citation-like text', async () => {
+    const messages = [
+      {
+        content: [
+          {
+            type: 'text',
+            text: {
+              value:
+                'This is a test ^1^ with pre-existing citation-like text. Here\'s a real citation【11:2†source】.',
+              annotations: [
+                {
+                  type: 'file_citation',
+                  text: '【11:2†source】',
+                  start_index: 79,
+                  end_index: 92,
+                  file_citation: {
+                    file_id: 'file-XXXXXXXXXXXXXXXXXXXX',
+                  },
+                },
+              ],
+            },
+          },
+        ],
+        created_at: 1,
+      },
+    ];
+
+    retrieveAndProcessFile.mockResolvedValue({ filename: 'test.txt' });
+
+    const result = await processMessages({
+      openai: {},
+      client: { processedFileIds: new Set() },
+      messages,
+    });
+
+    const expectedText =
+      'This is a test ^1^ with pre-existing citation-like text. Here\'s a real citation^1^.\n\n^1.^ test.txt';
+
+    expect(result.text).toBe(expectedText);
+    expect(result.edited).toBe(true);
+  });
 });
