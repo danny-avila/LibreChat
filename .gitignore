@@ -97,6 +97,7 @@ data.ms/*
 auth.json
 
 /packages/ux-shared/
+/packages/data-provider/undefined/
 /images
 
 !client/src/components/Nav/SettingsTabs/Data/
