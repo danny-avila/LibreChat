@@ -32,9 +32,9 @@ function math(str, fallbackValue) {
     throw new Error('Invalid characters in string');
   }
 
-  const value = eval(str);
+  const value = parseInt(str, 10);
 
-  if (typeof value !== 'number') {
+  if (isNaN(value)) {
     if (fallback) {
       return fallbackValue;
     }

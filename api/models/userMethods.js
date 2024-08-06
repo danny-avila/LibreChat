@@ -106,7 +106,7 @@ const deleteUserById = async function (userId) {
 };
 
 const { SESSION_EXPIRY } = process.env ?? {};
-const expires = eval(SESSION_EXPIRY) ?? 1000 * 60 * 15;
+const expires = parseInt(SESSION_EXPIRY, 10) ?? 1000 * 60 * 15;
 
 /**
  * Generates a JWT token for a given user.

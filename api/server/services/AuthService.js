@@ -327,7 +327,7 @@ const setAuthTokens = async (userId, res, sessionId = null) => {
     } else {
       session = new Session({ user: userId });
       const { REFRESH_TOKEN_EXPIRY } = process.env ?? {};
-      const expires = eval(REFRESH_TOKEN_EXPIRY) ?? 1000 * 60 * 60 * 24 * 7;
+      const expires = parseInt(REFRESH_TOKEN_EXPIRY, 10) ?? 1000 * 60 * 60 * 24 * 7;
       refreshTokenExpires = Date.now() + expires;
     }
 
