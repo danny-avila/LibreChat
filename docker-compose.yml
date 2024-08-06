@@ -31,6 +31,8 @@ services:
   mongodb:
     container_name: chat-mongodb
     image: mongo
+    ports:
+      - "27017:27017"
     restart: always
     user: "${UID}:${GID}"
     volumes:
