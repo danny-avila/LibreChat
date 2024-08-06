@@ -11,7 +11,6 @@ const { recordMessage, getMessages } = require('~/models/Message');
 const { saveConvo } = require('~/models/Conversation');
 const spendTokens = require('~/models/spendTokens');
 const { countTokens } = require('~/server/utils');
-const { logger } = require('~/config');
 
 /**
  * Initializes a new thread or adds messages to an existing thread.
@@ -517,79 +516,22 @@ const recordUsage = async ({
 };
 
 /**
- * Creates a replaceAnnotation function with internal state for tracking the index offset.
- *
- * @returns {function} The replaceAnnotation function with closure for index offset.
- */
-function createReplaceAnnotation() {
-  let indexOffset = 0;
-
-  /**
-   * Safely replaces the annotated text within the specified range denoted by start_index and end_index,
-   * after verifying that the text within that range matches the given annotation text.
-   * Proceeds with the replacement even if a mismatch is found, but logs a warning.
-   *
-   * @param {object} params The original text content.
-   * @param {string} params.currentText The current text content, with/without replacements.
-   * @param {number} params.start_index The starting index where replacement should begin.
-   * @param {number} params.end_index The ending index where replacement should end.
-   * @param {string} params.expectedText The text expected to be found in the specified range.
-   * @param {string} params.replacementText The text to insert in place of the existing content.
-   * @returns {string} The text with the replacement applied, regardless of text match.
-   */
-  function replaceAnnotation({
-    currentText,
-    start_index,
-    end_index,
-    expectedText,
-    replacementText,
-  }) {
-    const adjustedStartIndex = start_index + indexOffset;
-    const adjustedEndIndex = end_index + indexOffset;
-
-    if (
-      adjustedStartIndex < 0 ||
-      adjustedEndIndex > currentText.length ||
-      adjustedStartIndex > adjustedEndIndex
-    ) {
-      logger.warn(`Invalid range specified for annotation replacement.
-      Attempting replacement with \`replace\` method instead...
-      length: ${currentText.length}
-      start_index: ${adjustedStartIndex}
-      end_index: ${adjustedEndIndex}`);
-      return currentText.replace(expectedText, replacementText);
-    }
-
-    if (currentText.substring(adjustedStartIndex, adjustedEndIndex) !== expectedText) {
-      return currentText.replace(expectedText, replacementText);
-    }
-
-    indexOffset += replacementText.length - (adjustedEndIndex - adjustedStartIndex);
-    return (
-      currentText.slice(0, adjustedStartIndex) +
-      replacementText +
-      currentText.slice(adjustedEndIndex)
-    );
-  }
-
-  return replaceAnnotation;
-}
-
-/**
  * Sorts, processes, and flattens messages to a single string.
  *
- * @param {object} params - The OpenAI client instance.
+ * @param {object} params - The parameters for processing messages.
  * @param {OpenAIClient} params.openai - The OpenAI client instance.
  * @param {RunClient} params.client - The LibreChat client that manages the run: either refers to `OpenAI` or `StreamRunManager`.
  * @param {ThreadMessage[]} params.messages - An array of messages.
- * @returns {Promise<{messages: ThreadMessage[], text: string}>} The sorted messages and the flattened text.
+ * @returns {Promise<{messages: ThreadMessage[], text: string, edited: boolean}>} The sorted messages, the flattened text, and whether it was edited.
  */
 async function processMessages({ openai, client, messages = [] }) {
   const sorted = messages.sort((a, b) => a.created_at - b.created_at);
 
   let text = '';
   let edited = false;
-  const sources = [];
+  const sources = new Map();
+  const fileRetrievalPromises = [];
+
   for (const message of sorted) {
     message.files = [];
     for (const content of message.content) {
@@ -598,15 +540,21 @@ async function processMessages({ openai, client, messages = [] }) {
       const currentFileId = contentType?.file_id;
 
       if (type === ContentTypes.IMAGE_FILE && !client.processedFileIds.has(currentFileId)) {
-        const file = await retrieveAndProcessFile({
-          openai,
-          client,
-          file_id: currentFileId,
-          basename: `${currentFileId}.png`,
-        });
-
-        client.processedFileIds.add(currentFileId);
-        message.files.push(file);
+        fileRetrievalPromises.push(
+          retrieveAndProcessFile({
+            openai,
+            client,
+            file_id: currentFileId,
+            basename: `${currentFileId}.png`,
+          })
+            .then((file) => {
+              client.processedFileIds.add(currentFileId);
+              message.files.push(file);
+            })
+            .catch((error) => {
+              console.error(`Failed to retrieve file: ${error.message}`);
+            }),
+        );
         continue;
       }
 
@@ -616,77 +564,79 @@ async function processMessages({ openai, client, messages = [] }) {
       const { annotations } = contentType ?? {};
 
       // Process annotations if they exist
-      if (!annotations?.length) {
-        text += currentText + ' ';
-        continue;
+      if (annotations?.length) {
+        const annotationPromises = annotations.map(async (annotation) => {
+          const type = annotation.type;
+          const annotationType = annotation[type];
+          const file_id = annotationType?.file_id;
+          const alreadyProcessed = client.processedFileIds.has(file_id);
+
+          let file;
+          let replacementText = '';
+
+          try {
+            if (alreadyProcessed) {
+              file = await retrieveAndProcessFile({ openai, client, file_id, unknownType: true });
+            } else if (type === AnnotationTypes.FILE_PATH) {
+              const basename = path.basename(annotation.text);
+              file = await retrieveAndProcessFile({
+                openai,
+                client,
+                file_id,
+                basename,
+              });
+              replacementText = file.filepath;
+            } else if (type === AnnotationTypes.FILE_CITATION && file_id) {
+              file = await retrieveAndProcessFile({
+                openai,
+                client,
+                file_id,
+                unknownType: true,
+              });
+              if (file && file.filename) {
+                if (!sources.has(file.filename)) {
+                  sources.set(file.filename, sources.size + 1);
+                }
+                replacementText = `^${sources.get(file.filename)}^`;
+              }
+            }
+
+            if (file && replacementText) {
+              currentText =
+                currentText.slice(0, annotation.start_index) +
+                replacementText +
+                currentText.slice(annotation.end_index);
+              edited = true;
+              if (!alreadyProcessed) {
+                client.processedFileIds.add(file_id);
+                message.files.push(file);
+              }
+            }
+          } catch (error) {
+            console.error(`Failed to process annotation: ${error.message}`);
+          }
+        });
+
+        await Promise.all(annotationPromises);
       }
 
-      const originalText = currentText;
-      text += originalText;
-
-      const replaceAnnotation = createReplaceAnnotation();
-
-      logger.debug('[processMessages] Processing annotations:', annotations);
-      for (const annotation of annotations) {
-        let file;
-        const type = annotation.type;
-        const annotationType = annotation[type];
-        const file_id = annotationType?.file_id;
-        const alreadyProcessed = client.processedFileIds.has(file_id);
-
-        const replaceCurrentAnnotation = (replacementText = '') => {
-          const { start_index, end_index, text: expectedText } = annotation;
-          currentText = replaceAnnotation({
-            originalText,
-            currentText,
-            start_index,
-            end_index,
-            expectedText,
-            replacementText,
-          });
-          edited = true;
-        };
-
-        if (alreadyProcessed) {
-          const { file_id } = annotationType || {};
-          file = await retrieveAndProcessFile({ openai, client, file_id, unknownType: true });
-        } else if (type === AnnotationTypes.FILE_PATH) {
-          const basename = path.basename(annotation.text);
-          file = await retrieveAndProcessFile({
-            openai,
-            client,
-            file_id,
-            basename,
-          });
-          replaceCurrentAnnotation(file.filepath);
-        } else if (type === AnnotationTypes.FILE_CITATION) {
-          file = await retrieveAndProcessFile({
-            openai,
-            client,
-            file_id,
-            unknownType: true,
-          });
-          sources.push(file.filename);
-          replaceCurrentAnnotation(`^${sources.length}^`);
-        }
-
-        text = currentText;
-
-        if (!file) {
-          continue;
-        }
-
-        client.processedFileIds.add(file_id);
-        message.files.push(file);
-      }
+      text += currentText + ' ';
     }
   }
 
-  if (sources.length) {
+  await Promise.all(fileRetrievalPromises);
+
+  // Remove extra spaces and handle adjacent citations
+  text = text.replace(/\s+/g, ' ').trim();
+  text = text.replace(/\^(\d+)\^\s*\^(\d+)\^/g, (match, num1, num2) =>
+    num1 === num2 ? `^${num1}^` : `^${num1}^ ^${num2}^`,
+  );
+
+  if (sources.size) {
     text += '\n\n';
-    for (let i = 0; i < sources.length; i++) {
-      text += `^${i + 1}.^ ${sources[i]}${i === sources.length - 1 ? '' : '\n'}`;
-    }
+    Array.from(sources.entries()).forEach(([source, index], arrayIndex) => {
+      text += `^${index}.^ ${source}${arrayIndex === sources.size - 1 ? '' : '\n'}`;
+    });
   }
 
   return { messages: sorted, text, edited };
