@@ -803,4 +803,181 @@ These points highlight Harry's initial experiences in the magical world and set 
     expect(result.text).toBe(expectedText);
     expect(result.edited).toBe(false);
   });
+
+  test('handles multiple FILE_PATH annotations with sandbox links', async () => {
+    const messages = [
+      {
+        id: 'msg_XXXXXXXXXXXXXXXXXXXX',
+        object: 'thread.message',
+        created_at: 1722983745,
+        assistant_id: 'asst_XXXXXXXXXXXXXXXXXXXX',
+        thread_id: 'thread_XXXXXXXXXXXXXXXXXXXX',
+        run_id: 'run_XXXXXXXXXXXXXXXXXXXX',
+        status: 'completed',
+        incomplete_details: null,
+        incomplete_at: null,
+        completed_at: 1722983747,
+        role: 'assistant',
+        content: [
+          {
+            type: 'text',
+            text: {
+              value:
+                'I have generated three dummy CSV files for you. You can download them using the links below:\n\n1. [Download Dummy Data 1](sandbox:/mnt/data/dummy_data1.csv)\n2. [Download Dummy Data 2](sandbox:/mnt/data/dummy_data2.csv)\n3. [Download Dummy Data 3](sandbox:/mnt/data/dummy_data3.csv)',
+              annotations: [
+                {
+                  type: 'file_path',
+                  text: 'sandbox:/mnt/data/dummy_data1.csv',
+                  start_index: 121,
+                  end_index: 154,
+                  file_path: {
+                    file_id: 'file-XXXXXXXXXXXXXXXXXXXX',
+                  },
+                },
+                {
+                  type: 'file_path',
+                  text: 'sandbox:/mnt/data/dummy_data2.csv',
+                  start_index: 183,
+                  end_index: 216,
+                  file_path: {
+                    file_id: 'file-YYYYYYYYYYYYYYYYYYYY',
+                  },
+                },
+                {
+                  type: 'file_path',
+                  text: 'sandbox:/mnt/data/dummy_data3.csv',
+                  start_index: 245,
+                  end_index: 278,
+                  file_path: {
+                    file_id: 'file-ZZZZZZZZZZZZZZZZZZZZ',
+                  },
+                },
+              ],
+            },
+          },
+        ],
+        attachments: [
+          {
+            file_id: 'file-XXXXXXXXXXXXXXXXXXXX',
+            tools: [
+              {
+                type: 'code_interpreter',
+              },
+            ],
+          },
+          {
+            file_id: 'file-YYYYYYYYYYYYYYYYYYYY',
+            tools: [
+              {
+                type: 'code_interpreter',
+              },
+            ],
+          },
+          {
+            file_id: 'file-ZZZZZZZZZZZZZZZZZZZZ',
+            tools: [
+              {
+                type: 'code_interpreter',
+              },
+            ],
+          },
+        ],
+        metadata: {},
+        files: [
+          {
+            object: 'file',
+            id: 'file-XXXXXXXXXXXXXXXXXXXX',
+            purpose: 'assistants_output',
+            filename: 'dummy_data1.csv',
+            bytes: 1925,
+            created_at: 1722983746,
+            status: 'processed',
+            status_details: null,
+            type: 'text/csv',
+            file_id: 'file-XXXXXXXXXXXXXXXXXXXX',
+            filepath:
+              'https://api.openai.com/v1/files/XXXXXXXXXXXXXXXXXXXX/file-XXXXXXXXXXXXXXXXXXXX/dummy_data1.csv',
+            usage: 1,
+            user: 'XXXXXXXXXXXXXXXXXXXX',
+            context: 'assistants_output',
+            source: 'openai',
+            model: 'gpt-4o-mini',
+          },
+          {
+            object: 'file',
+            id: 'file-YYYYYYYYYYYYYYYYYYYY',
+            purpose: 'assistants_output',
+            filename: 'dummy_data2.csv',
+            bytes: 4221,
+            created_at: 1722983746,
+            status: 'processed',
+            status_details: null,
+            type: 'text/csv',
+            file_id: 'file-YYYYYYYYYYYYYYYYYYYY',
+            filepath:
+              'https://api.openai.com/v1/files/XXXXXXXXXXXXXXXXXXXX/file-YYYYYYYYYYYYYYYYYYYY/dummy_data2.csv',
+            usage: 1,
+            user: 'XXXXXXXXXXXXXXXXXXXX',
+            context: 'assistants_output',
+            source: 'openai',
+            model: 'gpt-4o-mini',
+          },
+          {
+            object: 'file',
+            id: 'file-ZZZZZZZZZZZZZZZZZZZZ',
+            purpose: 'assistants_output',
+            filename: 'dummy_data3.csv',
+            bytes: 3534,
+            created_at: 1722983747,
+            status: 'processed',
+            status_details: null,
+            type: 'text/csv',
+            file_id: 'file-ZZZZZZZZZZZZZZZZZZZZ',
+            filepath:
+              'https://api.openai.com/v1/files/XXXXXXXXXXXXXXXXXXXX/file-ZZZZZZZZZZZZZZZZZZZZ/dummy_data3.csv',
+            usage: 1,
+            user: 'XXXXXXXXXXXXXXXXXXXX',
+            context: 'assistants_output',
+            source: 'openai',
+            model: 'gpt-4o-mini',
+          },
+        ],
+      },
+    ];
+
+    const mockClient = {
+      processedFileIds: new Set(),
+    };
+
+    // Mock the retrieveAndProcessFile function for each file
+    retrieveAndProcessFile.mockImplementation(({ file_id }) => {
+      const fileMap = {
+        'file-XXXXXXXXXXXXXXXXXXXX': {
+          filename: 'dummy_data1.csv',
+          filepath:
+            'https://api.openai.com/v1/files/XXXXXXXXXXXXXXXXXXXX/file-XXXXXXXXXXXXXXXXXXXX/dummy_data1.csv',
+        },
+        'file-YYYYYYYYYYYYYYYYYYYY': {
+          filename: 'dummy_data2.csv',
+          filepath:
+            'https://api.openai.com/v1/files/XXXXXXXXXXXXXXXXXXXX/file-YYYYYYYYYYYYYYYYYYYY/dummy_data2.csv',
+        },
+        'file-ZZZZZZZZZZZZZZZZZZZZ': {
+          filename: 'dummy_data3.csv',
+          filepath:
+            'https://api.openai.com/v1/files/XXXXXXXXXXXXXXXXXXXX/file-ZZZZZZZZZZZZZZZZZZZZ/dummy_data3.csv',
+        },
+      };
+
+      return Promise.resolve(fileMap[file_id]);
+    });
+
+    const result = await processMessages({ openai: {}, client: mockClient, messages });
+
+    const expectedText =
+      'I have generated three dummy CSV files for you. You can download them using the links below:\n\n1. [Download Dummy Data 1](https://api.openai.com/v1/files/XXXXXXXXXXXXXXXXXXXX/file-XXXXXXXXXXXXXXXXXXXX/dummy_data1.csv)\n2. [Download Dummy Data 2](https://api.openai.com/v1/files/XXXXXXXXXXXXXXXXXXXX/file-YYYYYYYYYYYYYYYYYYYY/dummy_data2.csv)\n3. [Download Dummy Data 3](https://api.openai.com/v1/files/XXXXXXXXXXXXXXXXXXXX/file-ZZZZZZZZZZZZZZZZZZZZ/dummy_data3.csv)';
+
+    expect(result.text).toBe(expectedText);
+    expect(result.edited).toBe(true);
+  });
 });
