@@ -1,31 +1,31 @@
+import { useRecoilState } from 'recoil';
 import { Dropdown } from '~/components/ui';
-import { useEffect, useState } from 'react';
+import { useLocalize } from '~/hooks';
+import store from '~/store';
 
-export default function FontSizeChanger() {
-  const getInitialFontSize = () => localStorage.getItem('fontSize') || '16';
-  const [fontSize, setFontSize] = useState<string>(getInitialFontSize);
-
-  useEffect(() => {
-    const savedFontSize = localStorage.getItem('fontSize') || '16';
-    setFontSize(savedFontSize);
-  }, []);
+export default function FontSizeSelector() {
+  const [fontSize, setFontSize] = useRecoilState(store.fontSize);
+  const localize = useLocalize();
 
   const handleChange = (val: string) => {
     setFontSize(val);
-    localStorage.setItem('fontSize', val);
-    document.documentElement.style.setProperty('--base-font-size', val + 'px');
   };
 
+  const options = [
+    { value: 'text-xs', label: localize('com_nav_font_size_xs') },
+    { value: 'text-sm', label: localize('com_nav_font_size_sm') },
+    { value: 'text-base', label: localize('com_nav_font_size_base') },
+    { value: 'text-lg', label: localize('com_nav_font_size_lg') },
+    { value: 'text-xl', label: localize('com_nav_font_size_xl') },
+  ];
+
   return (
-    <div className="flex items-center justify-between">
-      <div>Font Size</div>
+    <div className="flex w-full items-center justify-between">
+      <div>{localize('com_nav_font_size')}</div>
       <Dropdown
         value={fontSize}
+        options={options}
         onChange={handleChange}
-        options={['12', '14', '16', '18', '20']}
-        width={100}
-        position={'left'}
-        maxHeight="200px"
         testId="font-size-selector"
       />
     </div>
