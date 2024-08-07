@@ -5,7 +5,6 @@ import React, { useContext, useCallback, useRef } from 'react';
 import type { TDangerButtonProps } from '~/common';
 import { ThemeContext, useLocalize, useLocalStorage } from '~/hooks';
 import HideSidePanelSwitch from './HideSidePanelSwitch';
-import FontSizeSelector from './FontSizeSelector';
 import AutoScrollSwitch from './AutoScrollSwitch';
 import ArchivedChats from './ArchivedChats';
 import { Dropdown } from '~/components/ui';
@@ -163,9 +162,6 @@ function General() {
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <LangSelector langcode={selectedLang} onChange={changeLang} />
-        </div>
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
-          <FontSizeSelector />
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <AutoScrollSwitch />
