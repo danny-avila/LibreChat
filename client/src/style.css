@@ -2227,3 +2227,18 @@ ol ol):not(:where([class~=not-prose] *)) {
 .code-analyze-block .overflow-y-auto {
   font-size: var(--markdown-font-size, 1rem);
 }
+
+.progress-text-wrapper {
+  font-size: var(--markdown-font-size, 1rem);
+  line-height: calc(1.25 * var(--markdown-font-size, 1rem));
+}
+
+.progress-text-content {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.progress-text-wrapper button {
+  font-size: inherit;
+  line-height: inherit;
+}
