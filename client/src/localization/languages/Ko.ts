@@ -273,6 +273,7 @@ export default {
   com_nav_theme_system: '시스템',
   com_nav_theme_dark: '다크',
   com_nav_theme_light: '라이트',
+  com_nav_font_size: '글꼴 크기',
   com_nav_clear_all_chats: '모든 채팅 지우기',
   com_nav_confirm_clear: '지우기 확인',
   com_nav_close_sidebar: '사이드바 닫기',

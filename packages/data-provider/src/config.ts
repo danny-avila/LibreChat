@@ -895,6 +895,10 @@ export enum SettingsTabValues {
    * Tab for Account Settings
    */
   ACCOUNT = 'account',
+  /**
+   * Chat input commands
+   */
+  COMMANDS = 'commands',
 }
 
 export enum STTProviders {

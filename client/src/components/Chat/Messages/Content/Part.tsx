@@ -23,8 +23,8 @@ const DisplayMessage = ({ text, isCreatedByUser = false, message, showCursor }: 
   return (
     <div
       className={cn(
-        showCursor && !!text?.length ? 'result-streaming' : '',
-        'markdown prose dark:prose-invert light w-full break-words',
+        showCursor && !!text.length ? 'result-streaming' : '',
+        'markdown prose message-content dark:prose-invert light w-full break-words',
         isCreatedByUser ? 'whitespace-pre-wrap dark:text-gray-20' : 'dark:text-gray-70',
       )}
     >
@@ -58,14 +58,12 @@ export default function Part({
     // Access the value property
     return (
       <Container message={message}>
-        <div className="markdown prose dark:prose-invert light dark:text-gray-70 my-1 w-full break-words">
-          <DisplayMessage
-            text={part[ContentTypes.TEXT].value}
-            isCreatedByUser={message.isCreatedByUser}
-            message={message}
-            showCursor={showCursor}
-          />
-        </div>
+        <DisplayMessage
+          text={part[ContentTypes.TEXT].value}
+          isCreatedByUser={message.isCreatedByUser}
+          message={message}
+          showCursor={showCursor}
+        />
       </Container>
     );
   } else if (
@@ -107,14 +105,12 @@ export default function Part({
       if (isSubmitting && showCursor) {
         return (
           <Container message={message}>
-            <div className="markdown prose dark:prose-invert light dark:text-gray-70 my-1 w-full break-words">
-              <DisplayMessage
-                text={''}
-                isCreatedByUser={message.isCreatedByUser}
-                message={message}
-                showCursor={showCursor}
-              />
-            </div>
+            <DisplayMessage
+              text={''}
+              isCreatedByUser={message.isCreatedByUser}
+              message={message}
+              showCursor={showCursor}
+            />
           </Container>
         );
       }

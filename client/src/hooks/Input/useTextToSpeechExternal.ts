@@ -1,6 +1,6 @@
 import { useRecoilValue } from 'recoil';
 import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
-import { useTextToSpeechMutation } from '~/data-provider';
+import { useTextToSpeechMutation, useVoicesQuery } from '~/data-provider';
 import useAudioRef from '~/hooks/Audio/useAudioRef';
 import useLocalize from '~/hooks/useLocalize';
 import { useToastContext } from '~/Providers';
@@ -178,7 +178,18 @@ function useTextToSpeechExternal(messageId: string, isLast: boolean, index = 0) 
     return isLocalSpeaking || (isLast && globalIsPlaying);
   }, [isLocalSpeaking, globalIsPlaying, isLast]);
 
-  return { generateSpeechExternal, cancelSpeech, isLoading, isSpeaking, audioRef };
+  const useVoices = () => {
+    return useVoicesQuery().data ?? [];
+  };
+
+  return {
+    generateSpeechExternal,
+    cancelSpeech,
+    isLoading,
+    isSpeaking,
+    audioRef,
+    voices: useVoices,
+  };
 }
 
 export default useTextToSpeechExternal;

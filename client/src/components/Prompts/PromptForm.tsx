@@ -5,7 +5,7 @@ import { useForm, FormProvider } from 'react-hook-form';
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useParams, useOutletContext } from 'react-router-dom';
 import { PermissionTypes, Permissions, SystemRoles } from 'librechat-data-provider';
-import type { TCreatePrompt } from 'librechat-data-provider';
+import type { TCreatePrompt, TPrompt } from 'librechat-data-provider';
 import {
   useGetPrompts,
   useCreatePrompt,
@@ -22,6 +22,7 @@ import { Button, Skeleton } from '~/components/ui';
 import PromptVariables from './PromptVariables';
 import { useToastContext } from '~/Providers';
 import PromptVersions from './PromptVersions';
+import { PromptsEditorMode } from '~/common';
 import DeleteConfirm from './DeleteVersion';
 import PromptDetails from './PromptDetails';
 import { findPromptGroup } from '~/utils';
@@ -33,7 +34,7 @@ import PromptName from './PromptName';
 import Command from './Command';
 import store from '~/store';
 
-const { PromptsEditorMode, promptsEditorMode } = store;
+const { promptsEditorMode } = store;
 
 const PromptForm = () => {
   const params = useParams();
@@ -55,7 +56,10 @@ const PromptForm = () => {
   const [initialLoad, setInitialLoad] = useState(true);
   const [selectionIndex, setSelectionIndex] = useState<number>(0);
   const isOwner = useMemo(() => user?.id === group?.author, [user, group]);
-  const selectedPrompt = useMemo(() => prompts[selectionIndex], [prompts, selectionIndex]);
+  const selectedPrompt = useMemo(
+    () => prompts[selectionIndex] as TPrompt | undefined,
+    [prompts, selectionIndex],
+  );
 
   const hasShareAccess = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
@@ -229,7 +233,7 @@ const PromptForm = () => {
               <Skeleton className="mb-1 flex h-10 w-32 flex-row items-center font-bold sm:text-xl md:mb-0 md:h-12 md:text-2xl" />
             ) : (
               <PromptName
-                name={group?.name}
+                name={group.name}
                 onSave={(value) => {
                   if (!group) {
                     return console.warn('Group not found');
@@ -241,11 +245,11 @@ const PromptForm = () => {
             <div className="flex h-10 flex-row gap-x-2">
               <CategorySelector
                 className="w-48 md:w-56"
-                currentCategory={group?.category}
+                currentCategory={group.category}
                 onValueChange={(value) =>
                   updateGroupMutation.mutate({
-                    id: group?._id || '',
-                    payload: { name: group?.name || '', category: value },
+                    id: group._id || '',
+                    payload: { name: group.name || '', category: value },
                   })
                 }
               />
@@ -256,11 +260,11 @@ const PromptForm = () => {
                   className="h-10 border border-transparent bg-green-500 transition-all hover:bg-green-600 dark:bg-green-500 dark:hover:bg-green-600"
                   variant={'default'}
                   onClick={() => {
-                    const { _id: promptVersionId = '', prompt } = selectedPrompt;
+                    const { _id: promptVersionId = '', prompt } = selectedPrompt ?? ({} as TPrompt);
                     makeProductionMutation.mutate(
                       {
                         id: promptVersionId || '',
-                        groupId: group?._id || '',
+                        groupId: group._id || '',
                         productionPrompt: { prompt },
                       },
                       {
@@ -275,7 +279,7 @@ const PromptForm = () => {
                   }}
                   disabled={
                     isLoadingGroup ||
-                    selectedPrompt?._id === group?.productionId ||
+                    selectedPrompt?._id === group.productionId ||
                     makeProductionMutation.isLoading
                   }
                 >
@@ -288,7 +292,7 @@ const PromptForm = () => {
                 selectHandler={() => {
                   deletePromptMutation.mutate({
                     _id: selectedPrompt?._id || '',
-                    groupId: group?._id || '',
+                    groupId: group._id || '',
                   });
                 }}
               />
@@ -309,11 +313,11 @@ const PromptForm = () => {
                   <PromptEditor name="prompt" isEditing={isEditing} setIsEditing={setIsEditing} />
                   <PromptVariables promptText={promptText} />
                   <Description
-                    initialValue={group?.oneliner ?? ''}
+                    initialValue={group.oneliner ?? ''}
                     onValueChange={debouncedUpdateOneliner}
                   />
                   <Command
-                    initialValue={group?.command ?? ''}
+                    initialValue={group.command ?? ''}
                     onValueChange={debouncedUpdateCommand}
                   />
                 </div>

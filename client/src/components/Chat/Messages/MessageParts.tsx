@@ -1,3 +1,4 @@
+import { useRecoilValue } from 'recoil';
 import type { TMessageProps } from '~/common';
 import Icon from '~/components/Chat/Messages/MessageIcon';
 import ContentParts from './Content/ContentParts';
@@ -8,6 +9,7 @@ import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
 import SubRow from './SubRow';
 import { cn } from '~/utils';
+import store from '~/store';
 
 export default function Message(props: TMessageProps) {
   const { message, siblingIdx, siblingCount, setSiblingIdx, currentEditId, setCurrentEditId } =
@@ -28,6 +30,7 @@ export default function Message(props: TMessageProps) {
     copyToClipboard,
     regenerateMessage,
   } = useMessageHelpers(props);
+  const fontSize = useRecoilValue(store.fontSize);
 
   const { content, children, messageId = null, isCreatedByUser, error, unfinished } = message ?? {};
 
@@ -42,8 +45,8 @@ export default function Message(props: TMessageProps) {
         onWheel={handleScroll}
         onTouchMove={handleScroll}
       >
-        <div className="m-auto justify-center p-4 py-2 text-base md:gap-6 ">
-          <div className="group mx-auto flex flex-1 gap-3 text-base md:max-w-3xl md:px-5 lg:max-w-[40rem] lg:px-1 xl:max-w-[48rem] xl:px-5">
+        <div className="m-auto justify-center p-4 py-2 md:gap-6 ">
+          <div className="group mx-auto flex flex-1 gap-3 md:max-w-3xl md:px-5 lg:max-w-[40rem] lg:px-1 xl:max-w-[48rem] xl:px-5">
             <div className="relative flex flex-shrink-0 flex-col items-end">
               <div>
                 <div className="pt-0.5">
@@ -54,10 +57,14 @@ export default function Message(props: TMessageProps) {
               </div>
             </div>
             <div
-              className={cn('relative flex w-full flex-col', isCreatedByUser ? '' : 'agent-turn')}
+              className={cn(
+                'relative flex w-full flex-col',
+                isCreatedByUser != null ? '' : 'agent-turn',
+              )}
             >
-              <div className="select-none font-semibold">
-                {isCreatedByUser ? 'You' : (assistant && assistant?.name) ?? 'Assistant'}
+              <div className={cn('select-none font-semibold', fontSize)}>
+                {/* TODO: LOCALIZE */}
+                {isCreatedByUser != null ? 'You' : (assistant && assistant.name) ?? 'Assistant'}
               </div>
               <div className="flex-col gap-1 md:gap-3">
                 <div className="flex max-w-full flex-grow flex-col gap-0">
