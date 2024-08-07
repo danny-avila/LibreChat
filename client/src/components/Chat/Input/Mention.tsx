@@ -103,10 +103,11 @@ export default function Mention({
     };
   }, []);
 
+  const type = commandChar !== '@' ? 'add-convo' : 'mention';
   useEffect(() => {
-    const currentActiveItem = document.getElementById(`mention-item-${activeIndex}`);
+    const currentActiveItem = document.getElementById(`${type}-item-${activeIndex}`);
     currentActiveItem?.scrollIntoView({ behavior: 'instant', block: 'nearest' });
-  }, [activeIndex]);
+  }, [type, activeIndex]);
 
   return (
     <div className="absolute bottom-16 z-10 w-full space-y-2">
@@ -157,7 +158,7 @@ export default function Mention({
           <div className="max-h-40 overflow-y-auto">
             {(matches as MentionOption[]).map((mention, index) => (
               <MentionItem
-                type={commandChar !== '@' ? 'add-convo' : 'mention'}
+                type={type}
                 index={index}
                 key={`${mention.value}-${index}`}
                 onClick={() => {
