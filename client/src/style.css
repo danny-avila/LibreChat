@@ -2217,3 +2217,13 @@ ol ol):not(:where([class~=not-prose] *)) {
 .message-content pre {
   font-size: var(--markdown-font-size, 1rem);
 }
+
+.code-analyze-block pre code,
+.code-analyze-block .overflow-y-auto code {
+  font-size: calc(0.85 * var(--markdown-font-size, 1rem));
+}
+
+.code-analyze-block pre,
+.code-analyze-block .overflow-y-auto {
+  font-size: var(--markdown-font-size, 1rem);
+}
