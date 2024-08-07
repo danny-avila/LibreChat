@@ -6,6 +6,9 @@ import useScrollToRef from '~/hooks/useScrollToRef';
 import { useChatContext } from '~/Providers';
 import store from '~/store';
 
+const threshold = 0.14;
+const debounceRate = 250;
+
 export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
   const autoScroll = useRecoilValue(store.autoScroll);
 
@@ -21,7 +24,7 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
     clearTimeout(timeoutIdRef.current);
     timeoutIdRef.current = setTimeout(() => {
       setShowScrollButton(value);
-    }, 150);
+    }, debounceRate);
   }, []);
 
   useEffect(() => {
@@ -33,7 +36,7 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
       ([entry]) => {
         debouncedSetShowScrollButton(!entry.isIntersecting);
       },
-      { root: scrollableRef.current, threshold: 0.1 },
+      { root: scrollableRef.current, threshold },
     );
 
     observer.observe(messagesEndRef.current);
@@ -50,7 +53,7 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
         ([entry]) => {
           debouncedSetShowScrollButton(!entry.isIntersecting);
         },
-        { root: scrollableRef.current, threshold: 0.1 },
+        { root: scrollableRef.current, threshold },
       );
       observer.observe(messagesEndRef.current);
       return () => observer.disconnect();

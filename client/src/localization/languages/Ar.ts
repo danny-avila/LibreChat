@@ -292,6 +292,7 @@ export default {
   com_nav_theme_system: 'النظام',
   com_nav_theme_dark: 'داكن',
   com_nav_theme_light: 'فاتح',
+  com_nav_font_size: 'حجم الخط',
   com_nav_clear_all_chats: 'مسح كل الدردشات',
   com_nav_confirm_clear: 'تأكيد المسح',
   com_nav_close_sidebar: 'إغلاق القائمة الجانبية',
@@ -914,20 +915,20 @@ export const comparisons = {
     translated: 'تم حذف الإشارة المرجعية بنجاح',
   },
   com_ui_bookmarks_create_error: {
-    english:  'There was an error creating the bookmark',
-    translated:  'حدث خطأ أثناء إنشاء الإشارة المرجعية',
+    english: 'There was an error creating the bookmark',
+    translated: 'حدث خطأ أثناء إنشاء الإشارة المرجعية',
   },
   com_ui_bookmarks_update_error: {
-    english:  'There was an error updating the bookmark',
-    translated:  'حدث خطأ أثناء تحديث الإشارة المرجعية',
+    english: 'There was an error updating the bookmark',
+    translated: 'حدث خطأ أثناء تحديث الإشارة المرجعية',
   },
   com_ui_bookmarks_delete_error: {
-    english:  'There was an error deleting the bookmark',
-    translated:  'حدث خطأ أثناء حذف الإشارة المرجعية',
+    english: 'There was an error deleting the bookmark',
+    translated: 'حدث خطأ أثناء حذف الإشارة المرجعية',
   },
   com_ui_bookmarks_add_to_conversation: {
-    english:  'Add to current conversation',
-    translated:  'أضف إلى المحادثة الحالية',
+    english: 'Add to current conversation',
+    translated: 'أضف إلى المحادثة الحالية',
   },
   com_auth_error_login: {
     english:

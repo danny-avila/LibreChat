@@ -1,9 +1,9 @@
 import { useRecoilState, useSetRecoilState } from 'recoil';
+import { PromptsEditorMode } from '~/common';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 import store from '~/store';
 
-const { PromptsEditorMode, promptsEditorMode, alwaysMakeProd } = store;
+const { promptsEditorMode, alwaysMakeProd } = store;
 
 const AdvancedSwitch = () => {
   const localize = useLocalize();

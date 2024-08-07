@@ -1,5 +1,5 @@
-import React, { useCallback, useMemo } from 'react';
-import { useMessageActions } from '~/hooks';
+import { useRecoilValue } from 'recoil';
+import { useCallback, useMemo, memo } from 'react';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
@@ -9,7 +9,9 @@ import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import Icon from '~/components/Chat/Messages/MessageIcon';
 import { Plugin } from '~/components/Messages/Content';
 import SubRow from '~/components/Chat/Messages/SubRow';
+import { useMessageActions } from '~/hooks';
 import { cn, logger } from '~/utils';
+import store from '~/store';
 
 type MessageRenderProps = {
   message?: TMessage;
@@ -21,7 +23,7 @@ type MessageRenderProps = {
   'currentEditId' | 'setCurrentEditId' | 'siblingIdx' | 'setSiblingIdx' | 'siblingCount'
 >;
 
-const MessageRender = React.memo(
+const MessageRender = memo(
   ({
     isCard,
     siblingIdx,
@@ -54,6 +56,7 @@ const MessageRender = React.memo(
       setCurrentEditId,
     });
 
+    const fontSize = useRecoilValue(store.fontSize);
     const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
     const { isCreatedByUser, error, unfinished } = msg ?? {};
     const isLast = useMemo(
@@ -81,7 +84,7 @@ const MessageRender = React.memo(
       <div
         aria-label={`message-${msg.depth}-${msg.messageId}`}
         className={cn(
-          'final-completion group mx-auto flex flex-1 gap-3 text-base',
+          'final-completion group mx-auto flex flex-1 gap-3',
           isCard === true
             ? 'relative w-full gap-1 rounded-lg border border-border-medium bg-surface-primary-alt p-2 md:w-1/2 md:gap-3 md:p-4'
             : 'md:max-w-3xl md:px-5 lg:max-w-[40rem] lg:px-1 xl:max-w-[48rem] xl:px-5',
@@ -113,7 +116,7 @@ const MessageRender = React.memo(
         <div
           className={cn('relative flex w-11/12 flex-col', msg.isCreatedByUser ? '' : 'agent-turn')}
         >
-          <h2 className="select-none font-semibold">{messageLabel}</h2>
+          <h2 className={cn('select-none font-semibold', fontSize)}>{messageLabel}</h2>
           <div className="flex-col gap-1 md:gap-3">
             <div className="flex max-w-full flex-grow flex-col gap-0">
               {msg.plugin && <Plugin plugin={msg.plugin} />}
