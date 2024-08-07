@@ -1,5 +1,5 @@
-import { useSetRecoilState } from 'recoil';
 import { useCallback, useMemo } from 'react';
+import { useSetRecoilState, useRecoilValue } from 'recoil';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
@@ -52,26 +52,31 @@ const useHandleKeyUp = ({
   });
   const setShowPromptsPopover = useSetRecoilState(store.showPromptsPopoverFamily(index));
 
+  // Get the current state of command toggles
+  const atCommandEnabled = useRecoilValue(store.atCommand);
+  const plusCommandEnabled = useRecoilValue(store.plusCommand);
+  const slashCommandEnabled = useRecoilValue(store.slashCommand);
+
   const handleAtCommand = useCallback(() => {
-    if (shouldTriggerCommand(textAreaRef, '@')) {
+    if (atCommandEnabled && shouldTriggerCommand(textAreaRef, '@')) {
       setShowMentionPopover(true);
     }
-  }, [textAreaRef, setShowMentionPopover]);
+  }, [textAreaRef, setShowMentionPopover, atCommandEnabled]);
 
   const handlePlusCommand = useCallback(() => {
-    if (shouldTriggerCommand(textAreaRef, '+')) {
+    if (plusCommandEnabled && shouldTriggerCommand(textAreaRef, '+')) {
       setShowPlusPopover(true);
     }
-  }, [textAreaRef, setShowPlusPopover]);
+  }, [textAreaRef, setShowPlusPopover, plusCommandEnabled]);
 
   const handlePromptsCommand = useCallback(() => {
-    if (!hasAccess) {
+    if (!hasAccess || !slashCommandEnabled) {
       return;
     }
     if (shouldTriggerCommand(textAreaRef, '/')) {
       setShowPromptsPopover(true);
     }
-  }, [textAreaRef, hasAccess, setShowPromptsPopover]);
+  }, [textAreaRef, hasAccess, setShowPromptsPopover, slashCommandEnabled]);
 
   const commandHandlers = useMemo(
     () => ({

@@ -37,6 +37,11 @@ const localStorageAtoms = {
   modularChat: atomWithLocalStorage('modularChat', true),
   LaTeXParsing: atomWithLocalStorage('LaTeXParsing', true),
 
+  // Commands settings
+  atCommand: atomWithLocalStorage('atCommand', true),
+  plusCommand: atomWithLocalStorage('plusCommand', true),
+  slashCommand: atomWithLocalStorage('slashCommand', true),
+
   // Speech settings
   conversationMode: atomWithLocalStorage('conversationMode', false),
   advancedMode: atomWithLocalStorage('advancedMode', false),
