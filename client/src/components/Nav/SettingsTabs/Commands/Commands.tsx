@@ -1,26 +1,30 @@
 import { memo } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { SettingsTabValues } from 'librechat-data-provider';
-import LaTeXParsing from './LaTeXParsing';
-import ModularChat from './ModularChat';
+import SlashCommandSwitch from './SlashCommandSwitch';
+import PlusCommandSwitch from './PlusCommandSwitch';
+import AtCommandSwitch from './AtCommandSwitch';
 
-function Beta() {
+function Commands() {
   return (
     <Tabs.Content
-      value={SettingsTabValues.BETA}
+      value={SettingsTabValues.COMMANDS}
       role="tabpanel"
       className="w-full md:min-h-[271px]"
     >
       <div className="flex flex-col gap-3 text-sm text-text-primary">
         <div className="border-b border-border-medium pb-3 last-of-type:border-b-0">
-          <ModularChat />
+          <AtCommandSwitch />
         </div>
         <div className="border-b border-border-medium pb-3 last-of-type:border-b-0">
-          <LaTeXParsing />
+          <PlusCommandSwitch />
+        </div>
+        <div className="border-b border-border-medium pb-3 last-of-type:border-b-0">
+          <SlashCommandSwitch />
         </div>
       </div>
     </Tabs.Content>
   );
 }
 
-export default memo(Beta);
+export default memo(Commands);
