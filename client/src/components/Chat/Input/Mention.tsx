@@ -112,6 +112,8 @@ export default function Mention({
     <div className="absolute bottom-16 z-10 w-full space-y-2">
       <div className="popover border-token-border-light rounded-2xl border bg-white p-2 shadow-lg dark:bg-gray-700">
         <input
+          // The user expects focus to transition to the input field when the popover is opened
+          // eslint-disable-next-line jsx-a11y/no-autofocus
           autoFocus
           ref={inputRef}
           placeholder={localize(placeholder)}
@@ -155,6 +157,7 @@ export default function Mention({
           <div className="max-h-40 overflow-y-auto">
             {(matches as MentionOption[]).map((mention, index) => (
               <MentionItem
+                type={commandChar !== '@' ? 'add-convo' : 'mention'}
                 index={index}
                 key={`${mention.value}-${index}`}
                 onClick={() => {
