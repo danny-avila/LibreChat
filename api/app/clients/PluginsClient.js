@@ -118,6 +118,7 @@ class PluginsClient extends OpenAIClient {
         fileStrategy: this.options.req.app.locals.fileStrategy,
         processFileURL,
         message,
+        spec: this.options.spec,
       },
     });
 
