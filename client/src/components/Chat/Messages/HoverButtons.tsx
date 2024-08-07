@@ -131,7 +131,7 @@ export default function HoverButtons({
       {continueSupported ? (
         <button
           className={cn(
-            'hover-button active rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible',
+            'hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible',
             !isLast ? 'md:opacity-0 md:group-hover:opacity-100' : '',
           )}
           onClick={handleContinue}
