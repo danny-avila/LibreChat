@@ -1,5 +1,6 @@
 import { useRecoilState } from 'recoil';
 import { Dropdown } from '~/components/ui';
+import { applyFontSize } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -9,6 +10,7 @@ export default function FontSizeSelector() {
 
   const handleChange = (val: string) => {
     setFontSize(val);
+    applyFontSize(val);
   };
 
   const options = [
