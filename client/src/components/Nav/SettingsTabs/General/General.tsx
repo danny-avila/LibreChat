@@ -162,10 +162,10 @@ function General() {
           <ThemeSelector theme={theme} onChange={changeTheme} />
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
-          <FontSizeSelector />
+          <LangSelector langcode={selectedLang} onChange={changeLang} />
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
-          <LangSelector langcode={selectedLang} onChange={changeLang} />
+          <FontSizeSelector />
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <AutoScrollSwitch />
