@@ -2,6 +2,11 @@ import { useMemo, memo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { EditIcon } from 'lucide-react';
 import { Controller, useFormContext, useFormState } from 'react-hook-form';
+import remarkGfm from 'remark-gfm';
+import rehypeKatex from 'rehype-katex'
+import remarkMath from 'remark-math';
+import supersub from 'remark-supersub';
+import ReactMarkdown from 'react-markdown';
 import AlwaysMakeProd from '~/components/Prompts/Groups/AlwaysMakeProd';
 import { SaveIcon, CrossIcon } from '~/components/svg';
 import { TextareaAutosize } from '~/components/ui';
@@ -9,6 +14,9 @@ import { PromptsEditorMode } from '~/common';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
+import rehypeHighlight from 'rehype-highlight';
+import type { PluggableList } from 'unified';
+import { langSubset } from '~/utils';
 
 const { promptsEditorMode } = store;
 
@@ -32,6 +40,18 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
     return isEditing ? SaveIcon : EditIcon;
   }, [isEditing, prompt]);
 
+  const rehypePlugins: PluggableList = [
+    [rehypeKatex, { output: 'mathml' }],
+    [
+      rehypeHighlight,
+      {
+        detect: true,
+        ignoreMissing: true,
+        subset: langSubset,
+      },
+    ],
+  ];
+  
   return (
     <div>
       <h2 className="flex items-center justify-between rounded-t-lg border border-border-medium py-2 pl-4 text-base font-semibold text-text-primary">
@@ -85,9 +105,13 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
                 }}
               />
             ) : (
-              <pre className="block h-full w-full whitespace-pre-wrap break-words px-2 py-1 text-left text-text-primary">
+              <ReactMarkdown
+                remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
+                rehypePlugins={rehypePlugins}
+                className="markdown prose dark:prose-invert light dark:text-gray-70 my-1 w-full break-words"
+              >
                 {field.value}
-              </pre>
+              </ReactMarkdown>
             )
           }
         />
