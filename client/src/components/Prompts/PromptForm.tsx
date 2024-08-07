@@ -5,7 +5,7 @@ import { useForm, FormProvider } from 'react-hook-form';
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useParams, useOutletContext } from 'react-router-dom';
 import { PermissionTypes, Permissions, SystemRoles } from 'librechat-data-provider';
-import type { TCreatePrompt } from 'librechat-data-provider';
+import type { TCreatePrompt, TPrompt } from 'librechat-data-provider';
 import {
   useGetPrompts,
   useCreatePrompt,
@@ -56,7 +56,10 @@ const PromptForm = () => {
   const [initialLoad, setInitialLoad] = useState(true);
   const [selectionIndex, setSelectionIndex] = useState<number>(0);
   const isOwner = useMemo(() => user?.id === group?.author, [user, group]);
-  const selectedPrompt = useMemo(() => prompts[selectionIndex], [prompts, selectionIndex]);
+  const selectedPrompt = useMemo(
+    () => prompts[selectionIndex] as TPrompt | undefined,
+    [prompts, selectionIndex],
+  );
 
   const hasShareAccess = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
@@ -134,13 +137,13 @@ const PromptForm = () => {
       }
       const tempPrompt: TCreatePrompt = {
         prompt: {
-          type: selectedPrompt.type ?? 'text',
-          groupId: selectedPrompt.groupId ?? '',
+          type: selectedPrompt?.type ?? 'text',
+          groupId: selectedPrompt?.groupId ?? '',
           prompt: value,
         },
       };
 
-      if (value === selectedPrompt.prompt) {
+      if (value === selectedPrompt?.prompt) {
         return;
       }
 
@@ -173,7 +176,7 @@ const PromptForm = () => {
   }, [params.promptId, editorMode, group?.productionId, prompts, handleLoadingComplete]);
 
   useEffect(() => {
-    setValue('prompt', selectedPrompt.prompt || '', { shouldDirty: false });
+    setValue('prompt', selectedPrompt?.prompt || '', { shouldDirty: false });
     setValue('category', group?.category || '', { shouldDirty: false });
   }, [selectedPrompt, group?.category, setValue]);
 
@@ -257,7 +260,7 @@ const PromptForm = () => {
                   className="h-10 border border-transparent bg-green-500 transition-all hover:bg-green-600 dark:bg-green-500 dark:hover:bg-green-600"
                   variant={'default'}
                   onClick={() => {
-                    const { _id: promptVersionId = '', prompt } = selectedPrompt;
+                    const { _id: promptVersionId = '', prompt } = selectedPrompt ?? ({} as TPrompt);
                     makeProductionMutation.mutate(
                       {
                         id: promptVersionId || '',
@@ -276,7 +279,7 @@ const PromptForm = () => {
                   }}
                   disabled={
                     isLoadingGroup ||
-                    selectedPrompt._id === group.productionId ||
+                    selectedPrompt?._id === group.productionId ||
                     makeProductionMutation.isLoading
                   }
                 >
@@ -288,7 +291,7 @@ const PromptForm = () => {
                 disabled={isLoadingGroup}
                 selectHandler={() => {
                   deletePromptMutation.mutate({
-                    _id: selectedPrompt._id || '',
+                    _id: selectedPrompt?._id || '',
                     groupId: group._id || '',
                   });
                 }}
