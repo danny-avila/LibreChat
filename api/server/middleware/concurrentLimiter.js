@@ -1,5 +1,5 @@
-const clearPendingReq = require('../../cache/clearPendingReq');
-const { logViolation, getLogStores } = require('../../cache');
+const clearPendingReq = require('~/cache/clearPendingReq');
+const { logViolation, getLogStores } = require('~/cache');
 const denyRequest = require('./denyRequest');
 
 const {
