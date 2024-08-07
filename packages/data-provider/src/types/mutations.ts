@@ -173,3 +173,9 @@ export type UpdatePromptPermOptions = MutationOptions<
   unknown,
   types.TError
 >;
+
+export type UpdateConversationTagOptions = MutationOptions<
+  types.TConversationTag,
+  types.TConversationTagRequest
+>;
+export type DeleteConversationTagOptions = MutationOptions<types.TConversationTag, string>;

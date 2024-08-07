@@ -1,6 +1,6 @@
 import type { TFile } from 'librechat-data-provider';
 import React from 'react';
-import { NewTrashIcon } from '~/components/svg';
+import { TrashIcon } from '~/components/svg';
 import { Button } from '~/components/ui';
 
 type FileListItemProps = {
@@ -25,7 +25,7 @@ export default function FileListItem({ file, deleteFile, width = '400px' }: File
           className="my-0 ml-3 bg-transparent p-0 text-[#666666] hover:bg-slate-200"
           onClick={() => deleteFile(file._id)}
         >
-          <NewTrashIcon className="m-0 p-0" />
+          <TrashIcon className="m-0 p-0" />
         </Button>
       </div>
     </div>

@@ -12,6 +12,8 @@ export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'd
 export const defaultRetrievalModels = [
   'gpt-4o',
   'gpt-4o-2024-05-13',
+  'gpt-4o-mini',
+  'gpt-4o-mini-2024-07-18',
   'gpt-4-turbo-preview',
   'gpt-3.5-turbo-0125',
   'gpt-4-0125-preview',
@@ -280,7 +282,7 @@ const ttsLocalaiSchema = z.object({
 const ttsSchema = z.object({
   openai: ttsOpenaiSchema.optional(),
   azureOpenAI: ttsAzureOpenAISchema.optional(),
-  elevenLabs: ttsElevenLabsSchema.optional(),
+  elevenlabs: ttsElevenLabsSchema.optional(),
   localai: ttsLocalaiSchema.optional(),
 });
 
@@ -542,7 +544,7 @@ const sharedOpenAIModels = [
 
 export const defaultModels = {
   [EModelEndpoint.azureAssistants]: sharedOpenAIModels,
-  [EModelEndpoint.assistants]: ['gpt-4o', ...sharedOpenAIModels],
+  [EModelEndpoint.assistants]: ['gpt-4o-mini', 'gpt-4o', ...sharedOpenAIModels],
   [EModelEndpoint.google]: [
     'gemini-pro',
     'gemini-pro-vision',
@@ -571,13 +573,12 @@ export const defaultModels = {
     'claude-instant-1-100k',
   ],
   [EModelEndpoint.openAI]: [
+    'gpt-4o-mini',
     'gpt-4o',
     ...sharedOpenAIModels,
     'gpt-4-vision-preview',
     'gpt-3.5-turbo-instruct-0914',
-    'gpt-3.5-turbo-0301',
     'gpt-3.5-turbo-instruct',
-    'text-davinci-003',
   ],
 };
 
@@ -633,6 +634,7 @@ export const supportsBalanceCheck = {
 
 export const visionModels = [
   'gpt-4o',
+  'gpt-4o-mini',
   'gpt-4-turbo',
   'gpt-4-vision',
   'llava',
@@ -693,6 +695,8 @@ export enum Time {
   TEN_MINUTES = 600000,
   FIVE_MINUTES = 300000,
   TWO_MINUTES = 120000,
+  ONE_MINUTE = 60000,
+  THIRTY_SECONDS = 30000,
 }
 
 /**
@@ -903,6 +907,10 @@ export enum SettingsTabValues {
    * Tab for Account Settings
    */
   ACCOUNT = 'account',
+  /**
+   * Chat input commands
+   */
+  COMMANDS = 'commands',
 }
 
 export enum STTProviders {

@@ -29,10 +29,10 @@ export default function ChatGroupItem({
   const [isVariableDialogOpen, setVariableDialogOpen] = useState(false);
   const onEditClick = useCustomLink<HTMLDivElement>(`/d/prompts/${group._id}`);
   const groupIsGlobal = useMemo(
-    () => instanceProjectId && group?.projectIds?.includes(instanceProjectId),
+    () => instanceProjectId && group.projectIds?.includes(instanceProjectId),
     [group, instanceProjectId],
   );
-  const isOwner = useMemo(() => user?.id === group?.author, [user, group]);
+  const isOwner = useMemo(() => user?.id === group.author, [user, group]);
 
   const onCardClick = () => {
     const text = group.productionPrompt?.prompt ?? '';
@@ -53,13 +53,15 @@ export default function ChatGroupItem({
         name={group.name}
         category={group.category ?? ''}
         onClick={onCardClick}
-        snippet={group.oneliner ? group.oneliner : group?.productionPrompt?.prompt ?? ''}
+        snippet={group.oneliner ? group.oneliner : group.productionPrompt?.prompt ?? ''}
       >
         <div className="flex flex-row items-center gap-2">
           {groupIsGlobal && <EarthIcon className="icon-md text-green-400" />}
           <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <Button
+                id="promtps-menu-trigger"
+                aria-label="promtps-menu-trigger"
                 variant="outline"
                 onClick={(e) => {
                   e.stopPropagation();
