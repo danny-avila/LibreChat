@@ -22,6 +22,7 @@ import { Button, Skeleton } from '~/components/ui';
 import PromptVariables from './PromptVariables';
 import { useToastContext } from '~/Providers';
 import PromptVersions from './PromptVersions';
+import { PromptsEditorMode } from '~/common';
 import DeleteConfirm from './DeleteVersion';
 import PromptDetails from './PromptDetails';
 import { findPromptGroup } from '~/utils';
@@ -33,7 +34,7 @@ import PromptName from './PromptName';
 import Command from './Command';
 import store from '~/store';
 
-const { PromptsEditorMode, promptsEditorMode } = store;
+const { promptsEditorMode } = store;
 
 const PromptForm = () => {
   const params = useParams();
@@ -133,13 +134,13 @@ const PromptForm = () => {
       }
       const tempPrompt: TCreatePrompt = {
         prompt: {
-          type: selectedPrompt?.type ?? 'text',
-          groupId: selectedPrompt?.groupId ?? '',
+          type: selectedPrompt.type ?? 'text',
+          groupId: selectedPrompt.groupId ?? '',
           prompt: value,
         },
       };
 
-      if (value === selectedPrompt?.prompt) {
+      if (value === selectedPrompt.prompt) {
         return;
       }
 
@@ -172,7 +173,7 @@ const PromptForm = () => {
   }, [params.promptId, editorMode, group?.productionId, prompts, handleLoadingComplete]);
 
   useEffect(() => {
-    setValue('prompt', selectedPrompt?.prompt || '', { shouldDirty: false });
+    setValue('prompt', selectedPrompt.prompt || '', { shouldDirty: false });
     setValue('category', group?.category || '', { shouldDirty: false });
   }, [selectedPrompt, group?.category, setValue]);
 
@@ -229,7 +230,7 @@ const PromptForm = () => {
               <Skeleton className="mb-1 flex h-10 w-32 flex-row items-center font-bold sm:text-xl md:mb-0 md:h-12 md:text-2xl" />
             ) : (
               <PromptName
-                name={group?.name}
+                name={group.name}
                 onSave={(value) => {
                   if (!group) {
                     return console.warn('Group not found');
@@ -241,11 +242,11 @@ const PromptForm = () => {
             <div className="flex h-10 flex-row gap-x-2">
               <CategorySelector
                 className="w-48 md:w-56"
-                currentCategory={group?.category}
+                currentCategory={group.category}
                 onValueChange={(value) =>
                   updateGroupMutation.mutate({
-                    id: group?._id || '',
-                    payload: { name: group?.name || '', category: value },
+                    id: group._id || '',
+                    payload: { name: group.name || '', category: value },
                   })
                 }
               />
@@ -260,7 +261,7 @@ const PromptForm = () => {
                     makeProductionMutation.mutate(
                       {
                         id: promptVersionId || '',
-                        groupId: group?._id || '',
+                        groupId: group._id || '',
                         productionPrompt: { prompt },
                       },
                       {
@@ -275,7 +276,7 @@ const PromptForm = () => {
                   }}
                   disabled={
                     isLoadingGroup ||
-                    selectedPrompt?._id === group?.productionId ||
+                    selectedPrompt._id === group.productionId ||
                     makeProductionMutation.isLoading
                   }
                 >
@@ -287,8 +288,8 @@ const PromptForm = () => {
                 disabled={isLoadingGroup}
                 selectHandler={() => {
                   deletePromptMutation.mutate({
-                    _id: selectedPrompt?._id || '',
-                    groupId: group?._id || '',
+                    _id: selectedPrompt._id || '',
+                    groupId: group._id || '',
                   });
                 }}
               />
@@ -309,11 +310,11 @@ const PromptForm = () => {
                   <PromptEditor name="prompt" isEditing={isEditing} setIsEditing={setIsEditing} />
                   <PromptVariables promptText={promptText} />
                   <Description
-                    initialValue={group?.oneliner ?? ''}
+                    initialValue={group.oneliner ?? ''}
                     onValueChange={debouncedUpdateOneliner}
                   />
                   <Command
-                    initialValue={group?.command ?? ''}
+                    initialValue={group.command ?? ''}
                     onValueChange={debouncedUpdateCommand}
                   />
                 </div>

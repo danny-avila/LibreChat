@@ -26,6 +26,11 @@ import type {
 import type { UseMutationResult } from '@tanstack/react-query';
 import type { LucideIcon } from 'lucide-react';
 
+export enum PromptsEditorMode {
+  SIMPLE = 'simple',
+  ADVANCED = 'advanced',
+}
+
 export type AudioChunk = {
   audio: string;
   isFinal: boolean;
