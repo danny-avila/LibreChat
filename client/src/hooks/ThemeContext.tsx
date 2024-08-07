@@ -2,22 +2,7 @@
 // source: https://plainenglish.io/blog/light-and-dark-mode-in-react-web-application-with-tailwind-css-89674496b942
 
 import React, { createContext, useState, useEffect } from 'react';
-
-const getInitialTheme = () => {
-  if (typeof window !== 'undefined' && window.localStorage) {
-    const storedPrefs = window.localStorage.getItem('color-theme');
-    if (typeof storedPrefs === 'string') {
-      return storedPrefs;
-    }
-
-    const userMedia = window.matchMedia('(prefers-color-scheme: dark)');
-    if (userMedia.matches) {
-      return 'dark';
-    }
-  }
-
-  return 'light'; // light theme as the default;
-};
+import { getInitialTheme, applyFontSize } from '~/utils';
 
 type ProviderValue = {
   theme: string;
@@ -64,6 +49,14 @@ export const ThemeProvider = ({ initialTheme, children }) => {
     return () => {
       mediaQuery.removeEventListener('change', changeThemeOnSystemChange);
     };
+  }, []);
+
+  useEffect(() => {
+    const fontSize = localStorage.getItem('fontSize');
+    if (fontSize == null) {
+      return;
+    }
+    applyFontSize(JSON.parse(fontSize));
   }, []);
 
   if (initialTheme) {

@@ -6,10 +6,10 @@ import type { TDangerButtonProps } from '~/common';
 import { ThemeContext, useLocalize, useLocalStorage } from '~/hooks';
 import HideSidePanelSwitch from './HideSidePanelSwitch';
 import AutoScrollSwitch from './AutoScrollSwitch';
+import ArchivedChats from './ArchivedChats';
 import { Dropdown } from '~/components/ui';
 import DangerButton from '../DangerButton';
 import store from '~/store';
-import ArchivedChats from './ArchivedChats';
 
 export const ThemeSelector = ({
   theme,
@@ -156,7 +156,7 @@ function General() {
       className="w-full md:min-h-[271px]"
       ref={contentRef}
     >
-      <div className="flex flex-col gap-3 text-sm text-black dark:text-gray-50">
+      <div className="flex flex-col gap-3 text-sm text-text-primary">
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <ThemeSelector theme={theme} onChange={changeTheme} />
         </div>

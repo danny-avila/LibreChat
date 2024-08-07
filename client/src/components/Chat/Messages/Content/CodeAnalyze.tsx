@@ -54,11 +54,11 @@ export default function CodeAnalyze({
           onClick={() => setShowCode((prev) => !prev)}
           inProgressText="Analyzing"
           finishedText="Finished analyzing"
-          hasInput={!!code?.length}
+          hasInput={!!code.length}
         />
       </div>
       {showCode && (
-        <div className="mb-3 mt-0.5 overflow-hidden rounded-xl bg-black">
+        <div className="code-analyze-block mb-3 mt-0.5 overflow-hidden rounded-xl bg-black">
           <MarkdownLite content={code ? `\`\`\`python\n${code}\n\`\`\`` : ''} />
           {logs && (
             <div className="bg-gray-700 p-4 text-xs">
