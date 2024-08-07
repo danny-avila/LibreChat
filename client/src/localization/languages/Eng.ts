@@ -682,6 +682,18 @@ export default {
     'This action will delete all cached TTS (Text-to-Speech) audio files stored on your device. Cached audio files are used to speed up playback of previously generated TTS audio, but they can consume storage space on your device.',
   com_nav_info_bookmarks_rebuild:
     'If the bookmark count is incorrect, please rebuild the bookmark information. The bookmark count will be recalculated and the data will be restored to its correct state.',
+  // Command Settings Tab
+  com_nav_commands: 'Commands',
+  com_nav_commands_tab: 'Command Settings',
+  com_nav_at_command: '@-Command',
+  com_nav_at_command_description:
+    'Toggle command "@" for switching endpoints, models, presets, etc.',
+  com_nav_plus_command: '+-Command',
+  com_nav_plus_command_description: 'Toggle command "+" for adding a multi-response setting',
+  com_nav_slash_command: '/-Command',
+  com_nav_slash_command_description: 'Toggle command "/" for selecting a prompt via keyboard',
+  com_nav_command_settings: 'Command Settings',
+  com_nav_command_settings_description: 'Customize which commands are available in the chat',
   com_nav_setting_general: 'General',
   com_nav_setting_chat: 'Chat',
   com_nav_setting_beta: 'Beta features',
