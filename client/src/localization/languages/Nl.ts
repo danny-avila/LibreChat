@@ -83,20 +83,16 @@ export default {
   com_ui_bookmarks: 'Bladwijzers',
   com_ui_bookmarks_rebuild: 'Herbouwen',
   com_ui_bookmarks_new: 'Nieuwe bladwijzer',
-  com_ui_bookmark_delete_confirm:
-    'Weet je zeker dat je deze bladwijzer wilt verwijderen?',
+  com_ui_bookmark_delete_confirm: 'Weet je zeker dat je deze bladwijzer wilt verwijderen?',
   com_ui_bookmarks_title: 'Titel',
   com_ui_bookmarks_count: 'Aantal',
   com_ui_bookmarks_description: 'Beschrijving',
   com_ui_bookmarks_create_success: 'Bladwijzer succesvol aangemaakt',
   com_ui_bookmarks_update_success: 'Bladwijzer succesvol bijgewerkt',
   com_ui_bookmarks_delete_success: 'Bladwijzer succesvol verwijderd',
-  com_ui_bookmarks_create_error:
-    'Er is een fout opgetreden bij het maken van de bladwijzer',
-  com_ui_bookmarks_update_error:
-    'Er is een fout opgetreden bij het bijwerken van de bladwijzer',
-  com_ui_bookmarks_delete_error:
-    'Er is een fout opgetreden bij het verwijderen van de bladwijzer',
+  com_ui_bookmarks_create_error: 'Er is een fout opgetreden bij het maken van de bladwijzer',
+  com_ui_bookmarks_update_error: 'Er is een fout opgetreden bij het bijwerken van de bladwijzer',
+  com_ui_bookmarks_delete_error: 'Er is een fout opgetreden bij het verwijderen van de bladwijzer',
   com_ui_bookmarks_add_to_conversation: 'Toevoegen aan huidig gesprek',
   com_auth_error_login:
     'Kan niet inloggen met de verstrekte informatie. Controleer uw referenties en probeer het opnieuw.',
@@ -306,6 +302,7 @@ export default {
   com_nav_theme_system: 'Systeem',
   com_nav_theme_dark: 'Donker',
   com_nav_theme_light: 'Licht',
+  com_nav_font_size: 'Lettertypegrootte',
   com_nav_clear_all_chats: 'Alle chats wissen',
   com_nav_confirm_clear: 'Wissen bevestigen',
   com_nav_close_sidebar: 'Zijbalk sluiten',

@@ -640,6 +640,7 @@ export default {
   com_nav_theme_system: 'System',
   com_nav_theme_dark: 'Dunkel',
   com_nav_theme_light: 'Hell',
+  com_nav_font_size: 'Schriftgröße',
   com_nav_enter_to_send: 'Enter drücken, um Nachrichten zu senden',
   com_nav_user_name_display: 'Benutzernamen in Nachrichten anzeigen',
   com_nav_save_drafts: 'Entwürfe lokal speichern',

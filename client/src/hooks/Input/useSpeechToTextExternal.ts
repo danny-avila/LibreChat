@@ -7,7 +7,8 @@ import useGetAudioSettings from './useGetAudioSettings';
 
 const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void) => {
   const { showToast } = useToastContext();
-  const { externalSpeechToText } = useGetAudioSettings();
+  const { speechToTextEndpoint } = useGetAudioSettings();
+  const isExternalSTTEnabled = speechToTextEndpoint === 'external';
   const [speechToText] = useRecoilState<boolean>(store.speechToText);
   const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
   const [autoSendText] = useRecoilState(store.autoSendText);
@@ -194,7 +195,7 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
   };
 
   const handleKeyDown = async (e: KeyboardEvent) => {
-    if (e.shiftKey && e.altKey && e.code === 'KeyL' && !externalSpeechToText) {
+    if (e.shiftKey && e.altKey && e.code === 'KeyL' && isExternalSTTEnabled) {
       if (!window.MediaRecorder) {
         showToast({ message: 'MediaRecorder is not supported in this browser', status: 'error' });
         return;

@@ -464,6 +464,7 @@ export default {
   com_nav_theme_system: 'システム',
   com_nav_theme_dark: 'ダーク',
   com_nav_theme_light: 'ライト',
+  com_nav_font_size: 'フォントサイズ',
   com_nav_enter_to_send: 'Enterキーでメッセージを送信する',
   com_nav_user_name_display: 'メッセージにユーザー名を表示する',
   com_nav_save_drafts: 'ローカルにドラフトを保存する',

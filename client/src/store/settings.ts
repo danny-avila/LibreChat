@@ -22,6 +22,7 @@ const localStorageAtoms = {
   // General settings
   autoScroll: atomWithLocalStorage('autoScroll', false),
   hideSidePanel: atomWithLocalStorage('hideSidePanel', false),
+  fontSize: atomWithLocalStorage('fontSize', 'text-base'),
 
   // Messages settings
   enterToSend: atomWithLocalStorage('enterToSend', true),
