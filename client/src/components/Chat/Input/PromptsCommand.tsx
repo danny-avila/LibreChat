@@ -60,7 +60,7 @@ function PromptsCommand({
         label: `${group.command ? `/${group.command} - ` : ''}${group.name}: ${
           group.oneliner?.length ? group.oneliner : group.productionPrompt?.prompt ?? ''
         }`,
-        icon: <CategoryIcon category={group.category ?? ''} />,
+        icon: <CategoryIcon category={group.category ?? ''} className="h-5 w-5" />,
       }));
 
       const promptsMap = mapPromptGroups(data);
@@ -108,7 +108,7 @@ function PromptsCommand({
       }
 
       const group = promptsMap[mention.id];
-      const hasVariables = detectVariables(group?.productionPrompt?.prompt ?? '');
+      const hasVariables = detectVariables(group.productionPrompt?.prompt ?? '');
       if (group && hasVariables) {
         if (e && e.key === 'Tab') {
           e.preventDefault();
@@ -154,6 +154,8 @@ function PromptsCommand({
       <div className="absolute bottom-16 z-10 w-full space-y-2">
         <div className="popover border-token-border-light rounded-2xl border bg-surface-tertiary-alt p-2 shadow-lg">
           <input
+            // The user expects focus to transition to the input field when the popover is opened
+            // eslint-disable-next-line jsx-a11y/no-autofocus
             autoFocus
             ref={inputRef}
             placeholder={localize('com_ui_command_usage_placeholder')}
@@ -204,6 +206,7 @@ function PromptsCommand({
                 return (matches as PromptOption[]).map((mention, index) => (
                   <MentionItem
                     index={index}
+                    type="prompt"
                     key={`${mention.value}-${index}`}
                     onClick={() => {
                       if (timeoutRef.current) {
