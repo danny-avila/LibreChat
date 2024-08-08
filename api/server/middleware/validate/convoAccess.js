@@ -23,9 +23,6 @@ const { USE_REDIS, CONVO_ACCESS_VIOLATION_SCORE: score = 0 } = process.env ?? {}
 const validateConvoAccess = async (req, res, next) => {
   const namespace = ViolationTypes.CONVO_ACCESS;
   const cache = getLogStores(namespace);
-  if (!cache) {
-    return next();
-  }
 
   const conversationId = req.body.conversationId;
 
@@ -35,15 +32,16 @@ const validateConvoAccess = async (req, res, next) => {
 
   const userId = req.user?.id ?? req.user?._id ?? '';
   const type = ViolationTypes.CONVO_ACCESS;
-
   const key = `${isEnabled(USE_REDIS) ? namespace : ''}:${userId}:${conversationId}`;
-  const cachedAccess = await cache.get(key);
-
-  if (cachedAccess === 'authorized') {
-    return next();
-  }
 
   try {
+    if (cache) {
+      const cachedAccess = await cache.get(key);
+      if (cachedAccess === 'authorized') {
+        return next();
+      }
+    }
+
     const conversation = await getConvo(userId, conversationId);
 
     if (!conversation) {
@@ -56,11 +54,15 @@ const validateConvoAccess = async (req, res, next) => {
         error: 'User not authorized for this conversation',
       };
 
-      await logViolation(req, res, type, errorMessage, score);
+      if (cache) {
+        await logViolation(req, res, type, errorMessage, score);
+      }
       return await denyRequest(req, res, errorMessage);
     }
 
-    await cache.set(key, 'authorized', Time.TEN_MINUTES);
+    if (cache) {
+      await cache.set(key, 'authorized', Time.TEN_MINUTES);
+    }
     next();
   } catch (error) {
     console.error('Error validating conversation access:', error);
