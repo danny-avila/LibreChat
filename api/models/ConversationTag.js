@@ -52,13 +52,22 @@ const createConversationTag = async (user, data) => {
     const maxPosition = await ConversationTag.findOne({ user }).sort('-position').lean();
     const position = (maxPosition?.position || 0) + 1;
 
-    const newTag = await ConversationTag.create({
-      user,
-      tag,
-      count: 0,
-      description,
-      position,
-    });
+    const newTag = await ConversationTag.findOneAndUpdate(
+      { tag, user },
+      {
+        tag,
+        user,
+        count: 0,
+        position,
+        description,
+        $setOnInsert: { createdAt: new Date() },
+      },
+      {
+        new: true,
+        upsert: true,
+        lean: true,
+      },
+    );
 
     if (addToConversation && conversationId) {
       await Conversation.findOneAndUpdate(
