@@ -330,6 +330,9 @@ export const useConversationTagMutation = (
               },
             ] as t.TConversationTag[];
           }
+          if (!tag) {
+            return [...data, _data].sort((a, b) => a.position - b.position);
+          }
           return updateConversationTag(data, vars, _data, tag);
         });
         if (vars.addToConversation && vars.conversationId && _data.tag) {
