@@ -1,6 +1,7 @@
 const { Constants, ViolationTypes, Time } = require('librechat-data-provider');
 const denyRequest = require('~/server/middleware/denyRequest');
 const { logViolation, getLogStores } = require('~/cache');
+const { isEnabled } = require('~/server/utils');
 const { getConvo } = require('~/models');
 
 const { USE_REDIS, CONVO_ACCESS_VIOLATION_SCORE: score = 0 } = process.env ?? {};
@@ -35,7 +36,7 @@ const validateConvoAccess = async (req, res, next) => {
   const userId = req.user?.id ?? req.user?._id ?? '';
   const type = ViolationTypes.CONVO_ACCESS;
 
-  const key = `${USE_REDIS ? namespace : ''}:${userId}:${conversationId}`;
+  const key = `${isEnabled(USE_REDIS) ? namespace : ''}:${userId}:${conversationId}`;
   const cachedAccess = await cache.get(key);
 
   if (cachedAccess === 'authorized') {
