@@ -169,7 +169,7 @@ const adjustPositions = async (user, oldPosition, newPosition) => {
  */
 const deleteConversationTag = async (user, tag) => {
   try {
-    const deletedTag = await ConversationTag.findOneAndDelete({ user, tag });
+    const deletedTag = await ConversationTag.findOneAndDelete({ user, tag }).lean();
     if (!deletedTag) {
       return null;
     }
