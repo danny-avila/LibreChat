@@ -16,7 +16,17 @@ const createTitlePrompt = ({ convo }) => {
   const titlePrompt = new ChatPromptTemplate({
     promptMessages: [
       SystemMessagePromptTemplate.fromTemplate(
-        `Write a concise title for this conversation in the given language. Title in 5 Words or Less. No Punctuation or Quotation. Must be in Title Case, written in the given Language.
+        `Write a concise title for this conversation in the given language.
+Title in 5 Words or Less. No Punctuation or Quotation.
+Must be in Title Case, written in the given Language.
+Find an appropriate emoji to start the title.
+Examples:
+🌿 Sustainable Gardening Tips
+🚀 Space Exploration Future Plans
+🎨 Modern Art Movement Analysis
+🏋️ Effective Workout Routines Explained
+🍳 Quick Healthy Breakfast Ideas
+
 ${convo}`,
       ),
       HumanMessagePromptTemplate.fromTemplate('Language: {language}'),
