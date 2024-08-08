@@ -12,6 +12,19 @@ export const useHealthCheck = () => {
     },
     cacheTime: 0,
     staleTime: 0,
+    refetchOnWindowFocus: (query) => {
+      if (!query.state.dataUpdatedAt) {
+        return true;
+      }
+
+      const lastUpdated = new Date(query.state.dataUpdatedAt);
+      const tenMinutesAgo = new Date(Date.now() - Time.TEN_MINUTES);
+
+      logger.log(`Last health check: ${lastUpdated.toISOString()}`);
+      logger.log(`Ten minutes ago: ${tenMinutesAgo.toISOString()}`);
+
+      return lastUpdated < tenMinutesAgo;
+    },
   });
 };
 
