@@ -24,7 +24,6 @@ export const BookmarkMenuItems: FC<{
         const newTags = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
         await mutateAsync(
           {
-            conversationId: conversation.conversationId,
             tags: newTags,
           },
           {

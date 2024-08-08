@@ -1,6 +1,6 @@
-const logger = require('~/config/winston');
-const Conversation = require('./schema/convoSchema');
 const ConversationTag = require('./schema/conversationTagSchema');
+const Conversation = require('./schema/convoSchema');
+const logger = require('~/config/winston');
 
 const SAVED_TAG = 'Saved';
 
@@ -44,12 +44,12 @@ const createConversationTag = async (user, data) => {
   try {
     const { tag, description, addToConversation, conversationId } = data;
 
-    const existingTag = await ConversationTag.findOne({ user, tag });
+    const existingTag = await ConversationTag.findOne({ user, tag }).lean();
     if (existingTag) {
       return existingTag;
     }
 
-    const maxPosition = await ConversationTag.findOne({ user }).sort('-position');
+    const maxPosition = await ConversationTag.findOne({ user }).sort('-position').lean();
     const position = (maxPosition?.position || 0) + 1;
 
     const newTag = await ConversationTag.create({
@@ -90,13 +90,13 @@ const updateConversationTag = async (user, oldTag, data) => {
   try {
     const { tag: newTag, description, position } = data;
 
-    const existingTag = await ConversationTag.findOne({ user, tag: oldTag });
+    const existingTag = await ConversationTag.findOne({ user, tag: oldTag }).lean();
     if (!existingTag) {
       return null;
     }
 
     if (newTag && newTag !== oldTag) {
-      const tagAlreadyExists = await ConversationTag.findOne({ user, tag: newTag });
+      const tagAlreadyExists = await ConversationTag.findOne({ user, tag: newTag }).lean();
       if (tagAlreadyExists) {
         throw new Error('Tag already exists');
       }
@@ -116,11 +116,10 @@ const updateConversationTag = async (user, oldTag, data) => {
       updateData.position = position;
     }
 
-    const updatedTag = await ConversationTag.findOneAndUpdate({ user, tag: oldTag }, updateData, {
+    return await ConversationTag.findOneAndUpdate({ user, tag: oldTag }, updateData, {
       new: true,
+      lean: true,
     });
-
-    return updatedTag;
   } catch (error) {
     logger.error('[updateConversationTag] Error updating conversation tag', error);
     throw new Error('Error updating conversation tag');
@@ -189,7 +188,7 @@ const deleteConversationTag = async (user, tag) => {
  */
 const updateTagsForConversation = async (user, conversationId, tags) => {
   try {
-    const conversation = await Conversation.findOne({ user, conversationId });
+    const conversation = await Conversation.findOne({ user, conversationId }).lean();
     if (!conversation) {
       throw new Error('Conversation not found');
     }
@@ -225,10 +224,15 @@ const updateTagsForConversation = async (user, conversationId, tags) => {
       await ConversationTag.bulkWrite(bulkOps);
     }
 
-    conversation.tags = [...newTags];
-    await conversation.save();
+    const updatedConversation = (
+      await Conversation.findOneAndUpdate(
+        { user, conversationId },
+        { $set: { tags: [...newTags] } },
+        { new: true },
+      )
+    ).toObject();
 
-    return conversation.tags;
+    return updatedConversation.tags;
   } catch (error) {
     logger.error('[updateTagsForConversation] Error updating tags', error);
     throw new Error('Error updating tags for conversation');

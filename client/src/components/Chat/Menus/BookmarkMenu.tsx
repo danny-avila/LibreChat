@@ -72,13 +72,22 @@ const BookmarkMenu: FC = () => {
     } else {
       if (thisConversation && thisConversation.conversationId) {
         await mutateAsync({
-          conversationId: thisConversation.conversationId,
           tags: [SAVED_TAG],
         });
         setTags([SAVED_TAG]);
         setConversation({ ...thisConversation, tags: [SAVED_TAG] });
       }
     }
+  };
+
+  const renderButtonContent = () => {
+    if (isLoading) {
+      return <Spinner />;
+    }
+    if (tags && tags.length > 0) {
+      return <BookmarkFilledIcon className="icon-sm" />;
+    }
+    return <BookmarkIcon className="icon-sm" />;
   };
 
   return (
@@ -92,13 +101,7 @@ const BookmarkMenu: FC = () => {
           )}
           title={localize('com_ui_bookmarks')}
         >
-          {isLoading ? (
-            <Spinner />
-          ) : tags && tags.length > 0 ? (
-            <BookmarkFilledIcon className="icon-sm" />
-          ) : (
-            <BookmarkIcon className="icon-sm" />
-          )}
+          {renderButtonContent()}
         </button>
       </Trigger>
       <Portal>
@@ -112,15 +115,11 @@ const BookmarkMenu: FC = () => {
           align="start"
         >
           {data && conversation && (
-            // Display all bookmarks registered by the user and highlight the tags of the currently selected conversation
             <BookmarkContext.Provider value={{ bookmarks: data }}>
               <BookmarkMenuItems
-                // Currently selected conversation
                 conversation={conversation}
                 setConversation={setConversation}
-                // Tags in the conversation
                 tags={tags ?? []}
-                // Update tags in the conversation
                 setTags={setTags}
               />
             </BookmarkContext.Provider>

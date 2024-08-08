@@ -385,21 +385,6 @@ export const useDeleteSharedLinkMutation = (
   });
 };
 
-// If the number of conversations tagged is incorrect, recalculate the tag information.
-export const useRebuildConversationTagsMutation = (): UseMutationResult<
-  t.TConversationTagsResponse,
-  unknown,
-  unknown,
-  unknown
-> => {
-  const queryClient = useQueryClient();
-  return useMutation(() => dataService.rebuildConversationTags(), {
-    onSuccess: (_data) => {
-      queryClient.setQueryData<t.TConversationTag[]>([QueryKeys.conversationTags], _data);
-    },
-  });
-};
-
 // Add a tag or update tag information (tag, description, position, etc.)
 export const useConversationTagMutation = (
   tag?: string,
