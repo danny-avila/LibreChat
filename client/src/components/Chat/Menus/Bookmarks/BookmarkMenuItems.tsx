@@ -1,26 +1,28 @@
-import { useCallback } from 'react';
+import React, { useCallback } from 'react';
 import { BookmarkPlusIcon } from 'lucide-react';
 import type { FC } from 'react';
 import type { TConversation } from 'librechat-data-provider';
 import { BookmarkItems, BookmarkEditDialog } from '~/components/Bookmarks';
 import { useTagConversationMutation } from '~/data-provider';
+import { useLocalize, useBookmarkSucess } from '~/hooks';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
-import { useLocalize } from '~/hooks';
 
 export const BookmarkMenuItems: FC<{
   conversation: TConversation;
   tags: string[];
-  setTags: (tags: string[]) => void;
-  setConversation: (conversation: TConversation) => void;
-}> = ({ conversation, tags, setTags, setConversation }) => {
+  setTags: React.Dispatch<React.SetStateAction<string[]>>;
+}> = ({ conversation, tags, setTags }) => {
   const { showToast } = useToastContext();
   const localize = useLocalize();
 
-  const { mutateAsync } = useTagConversationMutation(conversation?.conversationId ?? '');
+  const conversationId = conversation?.conversationId ?? '';
+  const onSuccess = useBookmarkSucess(conversationId);
+
+  const { mutateAsync } = useTagConversationMutation(conversationId);
   const handleSubmit = useCallback(
     async (tag: string): Promise<void> => {
-      if (tags !== undefined && conversation?.conversationId) {
+      if (tags !== undefined && conversationId) {
         const newTags = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
         await mutateAsync(
           {
@@ -29,7 +31,7 @@ export const BookmarkMenuItems: FC<{
           {
             onSuccess: (newTags: string[]) => {
               setTags(newTags);
-              setConversation({ ...conversation, tags: newTags });
+              onSuccess(newTags);
             },
             onError: () => {
               showToast({
@@ -41,7 +43,7 @@ export const BookmarkMenuItems: FC<{
         );
       }
     },
-    [tags, conversation],
+    [tags, conversationId, mutateAsync, setTags, onSuccess, showToast],
   );
 
   return (
