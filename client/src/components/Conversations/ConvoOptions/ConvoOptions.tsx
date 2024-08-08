@@ -16,14 +16,14 @@ export default function Conversation({
   conversation,
   retainView,
   renameHandler,
-  setPopoverActive,
+  setIsPopoverActive,
 }) {
   const localize = useLocalize();
   const { data: startupConfig } = useGetStartupConfig();
   const { conversationId, title } = conversation;
 
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={setIsPopoverActive}>
       <DropdownMenuTrigger asChild>
         <Button
           id="conversation-menu-button"
@@ -56,11 +56,7 @@ export default function Conversation({
         </DropdownMenuItem>
         {startupConfig && startupConfig.sharedLinksEnabled && (
           <DropdownMenuItem className="w-full cursor-pointer rounded-lg disabled:cursor-not-allowed dark:text-gray-300 dark:hover:bg-gray-700 dark:focus:bg-gray-700">
-            <ShareButton
-              conversationId={conversationId}
-              title={title}
-              setPopoverActive={setPopoverActive}
-            >
+            <ShareButton conversationId={conversationId} title={title}>
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -73,25 +69,6 @@ export default function Conversation({
             </ShareButton>
           </DropdownMenuItem>
         )}
-
-        <DropdownMenuItem
-          onClick={(e) => {
-            e.stopPropagation();
-          }}
-          className="w-full cursor-pointer rounded-lg disabled:cursor-not-allowed dark:text-gray-300 dark:hover:bg-gray-700 dark:focus:bg-gray-700"
-        >
-          <DeleteButton conversationId={conversationId} retainView={retainView} title={title}>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-              }}
-              className="flex items-center"
-            >
-              <Trash className="mr-2 h-4 w-4" />
-              <span>{localize('com_ui_delete')}</span>
-            </button>
-          </DeleteButton>
-        </DropdownMenuItem>
 
         <DropdownMenuItem
           onClick={(e) => {
@@ -114,6 +91,25 @@ export default function Conversation({
               <span>{localize('com_ui_archive')}</span>
             </button>
           </ArchiveButton>
+        </DropdownMenuItem>
+
+        <DropdownMenuItem
+          onClick={(e) => {
+            e.stopPropagation();
+          }}
+          className="w-full cursor-pointer rounded-lg disabled:cursor-not-allowed dark:text-gray-300 dark:hover:bg-gray-700 dark:focus:bg-gray-700"
+        >
+          <DeleteButton conversationId={conversationId} retainView={retainView} title={title}>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+              }}
+              className="flex items-center"
+            >
+              <Trash className="mr-2 h-4 w-4" />
+              <span>{localize('com_ui_delete')}</span>
+            </button>
+          </DeleteButton>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

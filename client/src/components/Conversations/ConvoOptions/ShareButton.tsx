@@ -22,12 +22,10 @@ export default function ShareButton({
   children,
   conversationId,
   title,
-  setPopoverActive,
 }: {
   children?: React.ReactNode;
   conversationId: string;
   title: string;
-  setPopoverActive: (isActive: boolean) => void;
 }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -76,8 +74,6 @@ export default function ShareButton({
   );
 
   const onOpenChange = (open: boolean) => {
-    console.log('onOpenChange called with:', open);
-    setPopoverActive(open);
     setOpen(open);
   };
 
