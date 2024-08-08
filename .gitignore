@@ -47,7 +47,7 @@ client/node_modules/
 bower_components/
 *.d.ts
 !vite-env.d.ts
-
+!.env.image-version
 # Floobits
 .floo
 .floobit
