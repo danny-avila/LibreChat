@@ -157,7 +157,12 @@ const Nav = ({ navVisible, setNavVisible }) => {
                     >
                       <NewChat
                         toggleNav={itemToggleNav}
-                        subHeaders={isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
+                        subHeaders={
+                          <>
+                           {isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
+                            <BookmarkNav tags={tags} setTags={setTags} />
+                          </>
+                        }
                       />
                       <Conversations
                         conversations={conversations}
@@ -170,7 +175,6 @@ const Nav = ({ navVisible, setNavVisible }) => {
                         />
                       )}
                     </div>
-                    <BookmarkNav tags={tags} setTags={setTags} />
                     <NavLinks />
                   </nav>
                 </div>
