@@ -65,6 +65,7 @@ module.exports = {
         'text-secondary': 'var(--text-secondary)',
         'text-secondary-alt': 'var(--text-secondary-alt)',
         'text-tertiary': 'var(--text-tertiary)',
+        'ring-primary': 'var(--ring-primary)',
         'surface-active': 'var(--surface-active)',
         'surface-primary': 'var(--surface-primary)',
         'surface-primary-alt': 'var(--surface-primary-alt)',

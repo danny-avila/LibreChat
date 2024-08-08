@@ -32,6 +32,7 @@ html {
   --text-secondary:var(--gray-600);
   --text-secondary-alt:var(--gray-500);
   --text-tertiary:var(--gray-500);
+  --ring-primary:var(--gray-500);
   --surface-active:var(--gray-100);
   --surface-primary:var(--white);
   --surface-primary-alt:var(--white);

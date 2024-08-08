@@ -96,9 +96,9 @@ const BookmarkMenu: FC = () => {
       <Trigger asChild>
         <button
           className={cn(
-            'pointer-cursor relative flex flex-col rounded-md border border-gray-100 bg-white text-left focus:outline-none focus:ring-0 dark:border-gray-700 dark:bg-gray-800 sm:text-sm',
-            'hover:bg-gray-50 radix-state-open:bg-gray-50 dark:hover:bg-gray-700 dark:radix-state-open:bg-gray-700',
-            'z-50 flex h-[40px] min-w-4 flex-none items-center justify-center px-3 focus:outline-offset-2 focus:ring-0 focus-visible:ring-2 focus-visible:ring-gray-500',
+            'pointer-cursor relative flex flex-col rounded-md border border-border-medium bg-surface-primary text-left focus:outline-none focus:ring-0 sm:text-sm',
+            'radix-state-open:bg-bg-surface-tertiary hover:bg-surface-tertiary',
+            'z-50 flex h-[40px] min-w-4 flex-none items-center justify-center px-3 focus:outline-offset-2 focus:ring-0 focus-visible:ring-2 focus-visible:ring-ring-primary ',
           )}
           title={localize('com_ui_bookmarks')}
         >
@@ -107,11 +107,7 @@ const BookmarkMenu: FC = () => {
       </Trigger>
       <Portal>
         <Content
-          className={cn(
-            'grid w-full',
-            'mt-2 min-w-[240px] overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-700 dark:text-white',
-            'max-h-[500px]',
-          )}
+          className="mt-2 grid max-h-[500px] w-full min-w-[240px] overflow-y-auto rounded-lg border border-border-medium bg-surface-tertiary-alt shadow-lg"
           side="bottom"
           align="start"
         >
