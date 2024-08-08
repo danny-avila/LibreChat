@@ -33,7 +33,7 @@ export default function MessagesView({
 
   return (
     <div className="flex-1 overflow-hidden overflow-y-auto">
-      <div className="dark:gpt-dark-gray relative h-full">
+      <div className="relative h-full">
         <div
           onScroll={debouncedHandleScroll}
           ref={scrollableRef}
@@ -68,7 +68,8 @@ export default function MessagesView({
               </>
             )}
             <div
-              className="dark:gpt-dark-gray group h-0 w-full flex-shrink-0 dark:border-gray-800/50"
+              id="messages-end"
+              className="group h-0 w-full flex-shrink-0"
               ref={messagesEndRef}
             />
           </div>
