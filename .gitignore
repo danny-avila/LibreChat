@@ -105,5 +105,3 @@ uploads/
 
 # owner
 release/
-
-!.env.image-version
