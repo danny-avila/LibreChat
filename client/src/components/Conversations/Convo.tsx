@@ -2,20 +2,15 @@ import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { useState, useRef, useMemo } from 'react';
 import { Constants } from 'librechat-data-provider';
-import { useGetEndpointsQuery, useGetStartupConfig } from 'librechat-data-provider/react-query';
+import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
+import { Check, X } from 'lucide-react';
 import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
 import { useUpdateConversationMutation } from '~/data-provider';
 import EndpointIcon from '~/components/Endpoints/EndpointIcon';
 import { useConversations, useNavigateToConvo } from '~/hooks';
 import { NotificationSeverity } from '~/common';
-import { ArchiveIcon } from '~/components/svg';
 import { useToastContext } from '~/Providers';
-import ArchiveButton from './ArchiveButton';
-import DropDownMenu from './DropDownMenu';
-import DeleteButton from './DeleteButton';
-import RenameButton from './RenameButton';
-import HoverToggle from './HoverToggle';
-import ShareButton from './ShareButton';
+import { ConvoOptions } from './ConvoOptions';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -28,7 +23,6 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
   const activeConvos = useRecoilValue(store.allConversationsSelector);
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { navigateWithLastTools } = useNavigateToConvo();
-  const { data: startupConfig } = useGetStartupConfig();
   const { refreshConversations } = useConversations();
   const { showToast } = useToastContext();
   const { conversationId, title } = conversation;
@@ -99,6 +93,12 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
     }
   };
 
+  const cancelRename = (e: MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    setTitleInput(title);
+    setRenaming(false);
+  };
+
   const isActiveConvo =
     currentConvoId === conversationId ||
     (isLatestConvo && currentConvoId === 'new' && activeConvos[0] && activeConvos[0] !== 'new');
@@ -114,54 +114,27 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
           <input
             ref={inputRef}
             type="text"
-            className="w-full rounded border border-blue-500 bg-transparent p-0.5 text-sm leading-tight outline-none"
+            className="w-full rounded bg-transparent p-0.5 text-sm leading-tight outline-none"
             value={titleInput}
             onChange={(e) => setTitleInput(e.target.value)}
-            onBlur={onRename}
             onKeyDown={handleKeyDown}
           />
+          <div className="flex gap-1">
+            <button onClick={cancelRename}>
+              <X className="transition-color h-4 w-4 duration-200 ease-in-out hover:opacity-70" />
+            </button>
+            <button onClick={onRename}>
+              <Check className="transition-color h-4 w-4 duration-200 ease-in-out hover:opacity-70" />
+            </button>
+          </div>
         </div>
       ) : (
-        <HoverToggle
-          isActiveConvo={isActiveConvo}
-          isPopoverActive={isPopoverActive}
-          setIsPopoverActive={setIsPopoverActive}
-        >
-          <DropDownMenu>
-            {startupConfig && startupConfig.sharedLinksEnabled && (
-              <ShareButton
-                conversationId={conversationId}
-                title={title}
-                appendLabel={true}
-                className="mb-[3.5px]"
-                setPopoverActive={setIsPopoverActive}
-              />
-            )}
-
-            <RenameButton
-              renaming={renaming}
-              onRename={onRename}
-              renameHandler={renameHandler}
-              appendLabel={true}
-              className="mb-[3.5px]"
-            />
-            <DeleteButton
-              conversationId={conversationId}
-              retainView={retainView}
-              renaming={renaming}
-              title={title}
-              appendLabel={true}
-              className="group m-1.5 mt-[3.5px] flex w-full cursor-pointer items-center gap-2 rounded p-2.5 text-sm hover:bg-gray-200 focus-visible:bg-gray-200 focus-visible:outline-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-600 dark:focus-visible:bg-gray-600"
-            />
-          </DropDownMenu>
-          <ArchiveButton
-            className="z-50 hover:text-black dark:hover:text-white"
-            conversationId={conversationId}
-            retainView={retainView}
-            shouldArchive={true}
-            icon={<ArchiveIcon className="hover:text-gray-400" />}
-          />
-        </HoverToggle>
+        <ConvoOptions
+          conversation={conversation}
+          retainView={retainView}
+          renameHandler={renameHandler}
+          setPopoverActive={setIsPopoverActive}
+        />
       )}
       <a
         href={`/c/${conversationId}`}

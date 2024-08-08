@@ -1,3 +1,4 @@
+import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
@@ -7,13 +8,16 @@ import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
 
 type ArchiveButtonProps = {
+  children?: React.ReactNode;
   conversationId: string;
   retainView: () => void;
   shouldArchive: boolean;
-  icon: React.ReactNode;
+  icon?: React.ReactNode;
   className?: string;
 };
+
 export default function ArchiveButton({
+  children,
   conversationId,
   retainView,
   shouldArchive,
@@ -58,6 +62,10 @@ export default function ArchiveButton({
       },
     );
   };
+
+  if (children) {
+    return React.cloneElement(children as React.ReactElement, { onClick: archiveHandler });
+  }
 
   return (
     <button type="button" className={className} onClick={archiveHandler}>

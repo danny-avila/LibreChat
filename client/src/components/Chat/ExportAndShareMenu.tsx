@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Upload } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import DropDownMenu from '~/components/Conversations/DropDownMenu';
-import ShareButton from '~/components/Conversations/ShareButton';
+import { ShareButton } from '~/components/Conversations/ConvoOptions';
 import HoverToggle from '~/components/Conversations/HoverToggle';
 import useLocalize from '~/hooks/useLocalize';
 import ExportButton from './ExportButton';
@@ -51,8 +51,6 @@ export default function ExportAndShareMenu({
               <ShareButton
                 conversationId={conversation.conversationId}
                 title={conversation.title ?? ''}
-                appendLabel={true}
-                className="mb-[3.5px]"
                 setPopoverActive={setIsPopoverActive}
               />
             )}
