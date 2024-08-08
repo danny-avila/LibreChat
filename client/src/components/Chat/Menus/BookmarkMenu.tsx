@@ -90,7 +90,7 @@ const BookmarkMenu: FC = () => {
       </Trigger>
       <Portal>
         <Content
-          className="mt-2 grid max-h-[500px] w-full min-w-[240px] overflow-y-auto rounded-lg border border-border-medium bg-surface-tertiary-alt shadow-lg"
+          className="mt-2 grid max-h-[500px] w-full min-w-[240px] overflow-y-auto rounded-lg border border-border-medium bg-surface-tertiary text-text-primary shadow-lg"
           side="bottom"
           align="start"
         >
