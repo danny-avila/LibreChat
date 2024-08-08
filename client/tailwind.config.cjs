@@ -6,9 +6,6 @@ module.exports = {
   // darkMode: 'class',
   darkMode: ['class'],
   theme: {
-    // colors: {
-    //   'gpt-dark-gray': '#171717',
-    // },
     fontFamily: {
       sans: ['Inter', 'sans-serif'],
       mono: ['Roboto Mono', 'monospace'],

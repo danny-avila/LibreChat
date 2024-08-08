@@ -120,8 +120,6 @@ module.exports = {
       ],
       rules: {
         '@typescript-eslint/no-explicit-any': 'error',
-        '@typescript-eslint/no-unnecessary-condition': 'warn',
-        '@typescript-eslint/strict-boolean-expressions': 'warn',
       },
     },
     {
