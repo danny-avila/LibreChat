@@ -4,7 +4,7 @@ import type { FC } from 'react';
 import type { TConversation } from 'librechat-data-provider';
 import { BookmarkItems, BookmarkEditDialog } from '~/components/Bookmarks';
 import { useTagConversationMutation } from '~/data-provider';
-import { useLocalize, useBookmarkSucess } from '~/hooks';
+import { useLocalize, useBookmarkSuccess } from '~/hooks';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
 
@@ -17,7 +17,7 @@ export const BookmarkMenuItems: FC<{
   const localize = useLocalize();
 
   const conversationId = conversation?.conversationId ?? '';
-  const onSuccess = useBookmarkSucess(conversationId);
+  const onSuccess = useBookmarkSuccess(conversationId);
 
   const { mutateAsync } = useTagConversationMutation(conversationId);
   const handleSubmit = useCallback(

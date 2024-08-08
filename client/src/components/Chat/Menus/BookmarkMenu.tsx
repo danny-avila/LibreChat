@@ -6,7 +6,7 @@ import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
 import { useConversationTagsQuery, useTagConversationMutation } from '~/data-provider';
 import { BookmarkMenuItems } from './Bookmarks/BookmarkMenuItems';
 import { BookmarkContext } from '~/Providers/BookmarkContext';
-import { useLocalize, useBookmarkSucess } from '~/hooks';
+import { useLocalize, useBookmarkSuccess } from '~/hooks';
 import { Spinner } from '~/components';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -17,7 +17,7 @@ const BookmarkMenu: FC = () => {
 
   const conversation = useRecoilValue(store.conversationByIndex(0));
   const conversationId = conversation?.conversationId ?? '';
-  const onSuccess = useBookmarkSucess(conversationId);
+  const onSuccess = useBookmarkSuccess(conversationId);
   const [tags, setTags] = useState<string[]>(conversation?.tags || []);
 
   const [open, setIsOpen] = useState(false);

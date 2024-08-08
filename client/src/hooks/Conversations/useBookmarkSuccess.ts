@@ -2,7 +2,7 @@ import { useSetRecoilState } from 'recoil';
 import useUpdateTagsInConvo from './useUpdateTagsInConvo';
 import store from '~/store';
 
-const useBookmarkSucess = (conversationId: string) => {
+const useBookmarkSuccess = (conversationId: string) => {
   const setConversation = useSetRecoilState(store.conversationByIndex(0));
   const { updateTagsInConversation } = useUpdateTagsInConvo();
 
@@ -24,4 +24,4 @@ const useBookmarkSucess = (conversationId: string) => {
   };
 };
 
-export default useBookmarkSucess;
+export default useBookmarkSuccess;
