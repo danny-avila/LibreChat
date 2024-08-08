@@ -5,7 +5,6 @@ const {
   updateConversationTag,
   createConversationTag,
   deleteConversationTag,
-  rebuildConversationTags,
 } = require('~/models/ConversationTag');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const router = express.Router();
@@ -23,11 +22,6 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   const tag = await createConversationTag(req.user.id, req.body);
-  res.status(200).json(tag);
-});
-
-router.post('/rebuild', async (req, res) => {
-  const tag = await rebuildConversationTags(req.user.id);
   res.status(200).json(tag);
 });
 
