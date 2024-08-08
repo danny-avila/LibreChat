@@ -424,6 +424,7 @@ export default {
   com_nav_theme_system: '跟随系统设置',
   com_nav_theme_dark: '暗色主题',
   com_nav_theme_light: '亮色主题',
+  com_nav_font_size: '字体大小:',
   com_nav_user_name_display: '在消息中显示用户名',
   com_nav_save_drafts: '保存草稿本地',
   com_nav_show_code: '使用代码解释器时始终显示代码',

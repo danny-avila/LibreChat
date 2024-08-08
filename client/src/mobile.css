@@ -292,3 +292,23 @@
 .scrollbar-gutter-stable {
   scrollbar-gutter: stable;
 }
+
+/* Styles for Chrome scrollbar */
+.chrome-scrollbar::-webkit-scrollbar {
+  width: 12px;  /* Increase the width of the scrollbar */
+}
+
+.chrome-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);  /* Color of the scroll thumb */
+  border-radius: 6px;  /* Rounded corners on the scroll thumb */
+  border: 2px solid transparent;  /* Creates padding around scroll thumb */
+  background-clip: padding-box;  /* Prevents background color from leaking outside the border */
+}
+
+.chrome-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.3);  /* Darker color when hovering */
+}
+
+.chrome-scrollbar::-webkit-scrollbar-track {
+  background-color: transparent;  /* Color of the tracking area */
+}

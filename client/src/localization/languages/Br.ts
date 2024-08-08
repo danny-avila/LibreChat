@@ -483,7 +483,7 @@ export default {
   com_nav_settings: 'Configurações',
   com_nav_search_placeholder: 'Pesquisar mensagens',
   com_nav_info_bookmarks_rebuild:
-  'Se a contagem de favoritos estiver incorreta, por favor, reconstrua as informações de favoritos. A contagem de favoritos será recalculada e os dados serão restaurados ao estado correto.',
+    'Se a contagem de favoritos estiver incorreta, por favor, reconstrua as informações de favoritos. A contagem de favoritos será recalculada e os dados serão restaurados ao estado correto.',
   com_nav_setting_general: 'Geral',
   com_nav_setting_beta: 'Recursos beta',
   com_nav_setting_data: 'Controles de dados',
@@ -2148,6 +2148,10 @@ export const comparisons = {
   com_nav_theme_light: {
     english: 'Light',
     translated: 'Claro',
+  },
+  com_nav_font_size: {
+    english: 'Font Size',
+    translated: 'Tamanho da fonte',
   },
   com_nav_user_name_display: {
     english: 'Display username in messages',

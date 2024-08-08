@@ -1,5 +1,5 @@
-import { Button, Dialog, DialogTrigger, Label } from '~/components/ui';
-import DialogTemplate from '~/components/ui/DialogTemplate';
+import { Button, OGDialog, OGDialogTrigger, Label } from '~/components/ui';
+import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { TrashIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 
@@ -15,8 +15,8 @@ const DeleteVersion = ({
   const localize = useLocalize();
 
   return (
-    <Dialog>
-      <DialogTrigger asChild>
+    <OGDialog>
+      <OGDialogTrigger asChild>
         <Button
           size={'sm'}
           className="h-10 w-10 border border-transparent bg-red-600 text-red-500 transition-all hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-800"
@@ -27,8 +27,8 @@ const DeleteVersion = ({
         >
           <TrashIcon className="icon-lg cursor-pointer text-white dark:text-white" />
         </Button>
-      </DialogTrigger>
-      <DialogTemplate
+      </OGDialogTrigger>
+      <OGDialogTemplate
         showCloseButton={false}
         title={localize('com_ui_delete_prompt')}
         className="max-w-[450px]"
@@ -53,7 +53,7 @@ const DeleteVersion = ({
           selectText: localize('com_ui_delete'),
         }}
       />
-    </Dialog>
+    </OGDialog>
   );
 };
 

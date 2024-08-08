@@ -681,6 +681,7 @@ export enum InfiniteCollections {
  * Enum for time intervals
  */
 export enum Time {
+  ONE_HOUR = 3600000,
   THIRTY_MINUTES = 1800000,
   TEN_MINUTES = 600000,
   FIVE_MINUTES = 300000,
@@ -801,6 +802,10 @@ export enum ViolationTypes {
    * Verify Email Limit Violation.
    */
   VERIFY_EMAIL_LIMIT = 'verify_email_limit',
+  /**
+   * Verify Conversation Access violation.
+   */
+  CONVO_ACCESS = 'convo_access',
 }
 
 /**
@@ -897,6 +902,10 @@ export enum SettingsTabValues {
    * Tab for Account Settings
    */
   ACCOUNT = 'account',
+  /**
+   * Chat input commands
+   */
+  COMMANDS = 'commands',
 }
 
 export enum STTProviders {

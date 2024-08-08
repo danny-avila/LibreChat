@@ -343,6 +343,7 @@ export default {
   com_nav_theme_system: 'Sistem',
   com_nav_theme_dark: 'Gelap',
   com_nav_theme_light: 'Terang',
+  com_nav_font_size: 'Ukuran huruf',
   com_nav_user_name_display: 'Tampilkan nama pengguna dalam pesan',
   com_nav_save_drafts: 'Simpan draft',
   com_nav_clear_all_chats: 'Hapus semua obrolan',
