@@ -1,7 +1,8 @@
 import { useEffect, useState, type FC } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useLocation } from 'react-router-dom';
-import { TConversation } from 'librechat-data-provider';
+import { Constants } from 'librechat-data-provider';
+import type { TConversation } from 'librechat-data-provider';
 import { Content, Portal, Root, Trigger } from '@radix-ui/react-popover';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
 import { useConversationTagsQuery, useTagConversationMutation } from '~/data-provider';
@@ -55,7 +56,7 @@ const BookmarkMenu: FC = () => {
   const isActiveConvo =
     thisConversation &&
     thisConversation.conversationId &&
-    thisConversation.conversationId !== 'new' &&
+    thisConversation.conversationId !== Constants.NEW_CONVO &&
     thisConversation.conversationId !== 'search';
 
   if (!isActiveConvo) {
