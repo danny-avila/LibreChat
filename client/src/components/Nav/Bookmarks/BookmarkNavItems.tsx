@@ -1,7 +1,9 @@
 import { useEffect, useState, type FC } from 'react';
 import { CrossCircledIcon } from '@radix-ui/react-icons';
 import type { TConversation } from 'librechat-data-provider';
+import { useBookmarkContext } from '~/Providers/BookmarkContext';
 import { BookmarkItems, BookmarkItem } from '~/components/Bookmarks';
+import { useLocalize } from '~/hooks';
 
 const BookmarkNavItems: FC<{
   conversation: TConversation;
@@ -9,6 +11,8 @@ const BookmarkNavItems: FC<{
   setTags: (tags: string[]) => void;
 }> = ({ conversation, tags, setTags }) => {
   const [currentConversation, setCurrentConversation] = useState<TConversation>();
+  const { bookmarks } = useBookmarkContext();
+  const localize = useLocalize();
 
   useEffect(() => {
     if (!currentConversation) {
@@ -35,8 +39,24 @@ const BookmarkNavItems: FC<{
     return Promise.resolve();
   };
 
+  console.log('bookmarks', bookmarks);
+
+  if (bookmarks.length === 0) {
+    return (
+      <div className="flex flex-col">
+        <BookmarkItem
+          tag={localize('com_ui_no_bookmarks')}
+          data-testid="bookmark-item-clear"
+          handleSubmit={() => Promise.resolve()}
+          selected={false}
+          icon={'🤔'}
+        />
+      </div>
+    );
+  }
+
   return (
-    <>
+    <div className="flex flex-col">
       <BookmarkItems
         tags={tags}
         handleSubmit={handleSubmit}
@@ -51,7 +71,7 @@ const BookmarkNavItems: FC<{
           />
         }
       />
-    </>
+    </div>
   );
 };
 

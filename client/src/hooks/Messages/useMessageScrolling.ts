@@ -6,8 +6,8 @@ import useScrollToRef from '~/hooks/useScrollToRef';
 import { useChatContext } from '~/Providers';
 import store from '~/store';
 
-const threshold = 0.14;
-const debounceRate = 250;
+const threshold = 0.85;
+const debounceRate = 150;
 
 export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
   const autoScroll = useRecoilValue(store.autoScroll);
