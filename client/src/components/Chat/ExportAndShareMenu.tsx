@@ -46,7 +46,7 @@ export default function ExportAndShareMenu({
           onClick={(e) => {
             e.stopPropagation();
           }}
-          className="border-border z-10 mr-4 h-8 w-8 p-0 transition-all duration-300 ease-in-out focus-visible:ring focus-visible:ring-opacity-75 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900"
+          className="border-xheavy z-10 mr-4 h-10 w-10 p-0 transition-all duration-300 ease-in-out focus-visible:ring focus-visible:ring-opacity-75 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900"
         >
           <Upload className="icon-md dark:text-gray-300" aria-hidden="true" focusable="false" />
         </Button>
