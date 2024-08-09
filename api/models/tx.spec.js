@@ -191,17 +191,37 @@ describe('AWS Bedrock Model Tests', () => {
     'amazon.titan-text-express-v1',
   ];
 
-  awsModels.forEach((model) => {
-    describe(`Model: ${model}`, () => {
-      it(`should return the correct 'prompt' multiplier for ${model}`, () => {
-        const multiplier = getMultiplier({ valueKey: model, tokenType: 'prompt' });
-        expect(multiplier).toBe(tokenValues[model].prompt);
-      });
-
-      it(`should return the correct 'completion' multiplier for ${model}`, () => {
-        const multiplier = getMultiplier({ valueKey: model, tokenType: 'completion' });
-        expect(multiplier).toBe(tokenValues[model].completion);
-      });
+  it('should return the correct prompt multipliers for all models', () => {
+    const results = awsModels.map((model) => {
+      const multiplier = getMultiplier({ valueKey: model, tokenType: 'prompt' });
+      return multiplier === tokenValues[model].prompt;
     });
+    expect(results.every(Boolean)).toBe(true);
+  });
+
+  it('should return the correct completion multipliers for all models', () => {
+    const results = awsModels.map((model) => {
+      const multiplier = getMultiplier({ valueKey: model, tokenType: 'completion' });
+      return multiplier === tokenValues[model].completion;
+    });
+    expect(results.every(Boolean)).toBe(true);
+  });
+
+  it('should return the correct prompt multipliers for all models with Bedrock prefix', () => {
+    const results = awsModels.map((model) => {
+      const modelName = `bedrock/${model}`;
+      const multiplier = getMultiplier({ valueKey: modelName, tokenType: 'prompt' });
+      return multiplier === tokenValues[model].prompt;
+    });
+    expect(results.every(Boolean)).toBe(true);
+  });
+
+  it('should return the correct completion multipliers for all models with Bedrock prefix', () => {
+    const results = awsModels.map((model) => {
+      const modelName = `bedrock/${model}`;
+      const multiplier = getMultiplier({ valueKey: modelName, tokenType: 'completion' });
+      return multiplier === tokenValues[model].completion;
+    });
+    expect(results.every(Boolean)).toBe(true);
   });
 });

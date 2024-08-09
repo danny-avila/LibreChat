@@ -1,37 +1,8 @@
 const { matchModelName } = require('../utils');
 const defaultRate = 6;
 
-/**
- * Mapping of model token sizes to their respective multipliers for prompt and completion.
- * The rates are 1 USD per 1M tokens.
- * @type {Object.<string, {prompt: number, completion: number}>}
- */
-const tokenValues = {
-  '8k': { prompt: 30, completion: 60 },
-  '32k': { prompt: 60, completion: 120 },
-  '4k': { prompt: 1.5, completion: 2 },
-  '16k': { prompt: 3, completion: 4 },
-  'gpt-3.5-turbo-1106': { prompt: 1, completion: 2 },
-  'gpt-4o-2024-08-06': { prompt: 2.5, completion: 10 },
-  'gpt-4o-mini': { prompt: 0.15, completion: 0.6 },
-  'gpt-4o': { prompt: 5, completion: 15 },
-  'gpt-4-1106': { prompt: 10, completion: 30 },
-  'gpt-3.5-turbo-0125': { prompt: 0.5, completion: 1.5 },
-  'claude-3-opus': { prompt: 15, completion: 75 },
-  'claude-3-sonnet': { prompt: 3, completion: 15 },
-  'claude-3-5-sonnet': { prompt: 3, completion: 15 },
-  'claude-3-haiku': { prompt: 0.25, completion: 1.25 },
-  'claude-2.1': { prompt: 8, completion: 24 },
-  'claude-2': { prompt: 8, completion: 24 },
-  'claude-': { prompt: 0.8, completion: 2.4 },
-  'command-r-plus': { prompt: 3, completion: 15 },
-  'command-r': { prompt: 0.5, completion: 1.5 },
-  /* cohere doesn't have rates for the older command models,
-  so this was from https://artificialanalysis.ai/models/command-light/providers */
-  command: { prompt: 0.38, completion: 0.38 },
-  'gemini-1.5': { prompt: 7, completion: 21 }, // May 2nd, 2024 pricing
-  gemini: { prompt: 0.5, completion: 1.5 }, // May 2nd, 2024 pricing
-  /* AWS Bedrock pricing */
+/** AWS Bedrock pricing */
+const bedrockValues = {
   'anthropic.claude-3-haiku-20240307-v1:0': { prompt: 0.25, completion: 1.25 },
   'anthropic.claude-3-sonnet-20240229-v1:0': { prompt: 3.0, completion: 15.0 },
   'anthropic.claude-3-opus-20240229-v1:0': { prompt: 15.0, completion: 75.0 },
@@ -59,6 +30,45 @@ const tokenValues = {
   'amazon.titan-text-lite-v1': { prompt: 0.15, completion: 0.2 },
   'amazon.titan-text-express-v1': { prompt: 0.2, completion: 0.6 },
 };
+
+for (const [key, value] of Object.entries(bedrockValues)) {
+  bedrockValues[`bedrock/${key}`] = value;
+}
+
+/**
+ * Mapping of model token sizes to their respective multipliers for prompt and completion.
+ * The rates are 1 USD per 1M tokens.
+ * @type {Object.<string, {prompt: number, completion: number}>}
+ */
+const tokenValues = Object.assign(
+  {
+    '8k': { prompt: 30, completion: 60 },
+    '32k': { prompt: 60, completion: 120 },
+    '4k': { prompt: 1.5, completion: 2 },
+    '16k': { prompt: 3, completion: 4 },
+    'gpt-3.5-turbo-1106': { prompt: 1, completion: 2 },
+    'gpt-4o-2024-08-06': { prompt: 2.5, completion: 10 },
+    'gpt-4o-mini': { prompt: 0.15, completion: 0.6 },
+    'gpt-4o': { prompt: 5, completion: 15 },
+    'gpt-4-1106': { prompt: 10, completion: 30 },
+    'gpt-3.5-turbo-0125': { prompt: 0.5, completion: 1.5 },
+    'claude-3-opus': { prompt: 15, completion: 75 },
+    'claude-3-sonnet': { prompt: 3, completion: 15 },
+    'claude-3-5-sonnet': { prompt: 3, completion: 15 },
+    'claude-3-haiku': { prompt: 0.25, completion: 1.25 },
+    'claude-2.1': { prompt: 8, completion: 24 },
+    'claude-2': { prompt: 8, completion: 24 },
+    'claude-': { prompt: 0.8, completion: 2.4 },
+    'command-r-plus': { prompt: 3, completion: 15 },
+    'command-r': { prompt: 0.5, completion: 1.5 },
+    /* cohere doesn't have rates for the older command models,
+  so this was from https://artificialanalysis.ai/models/command-light/providers */
+    command: { prompt: 0.38, completion: 0.38 },
+    'gemini-1.5': { prompt: 7, completion: 21 }, // May 2nd, 2024 pricing
+    gemini: { prompt: 0.5, completion: 1.5 }, // May 2nd, 2024 pricing
+  },
+  bedrockValues,
+);
 
 /**
  * Retrieves the key associated with a given model name.
