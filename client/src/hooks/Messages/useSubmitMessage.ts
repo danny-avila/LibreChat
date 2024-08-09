@@ -31,7 +31,7 @@ export default function useSubmitMessage(helpers?: { clearDraft?: () => void }) 
       }
       const rootMessages = getMessages();
       const isLatestInRootMessages = rootMessages?.some(
-        (message) => message?.messageId === latestMessage?.messageId,
+        (message) => message.messageId === latestMessage?.messageId,
       );
       if (!isLatestInRootMessages && latestMessage) {
         setMessages([...(rootMessages || []), latestMessage]);
@@ -86,7 +86,7 @@ export default function useSubmitMessage(helpers?: { clearDraft?: () => void }) 
       }
 
       const currentText = methods.getValues('text');
-      const newText = currentText ? `\n${parsedText}` : parsedText;
+      const newText = currentText.trim().length > 1 ? `\n${parsedText}` : parsedText;
       setActivePrompt(newText);
     },
     [autoSendPrompts, submitMessage, setActivePrompt, methods, user],

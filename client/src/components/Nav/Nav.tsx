@@ -1,8 +1,6 @@
-/* eslint-disable @typescript-eslint/no-unnecessary-condition */
-/* Reason: SearchContext is not specifying potential undefined type */
 import { useCallback, useEffect, useState, useMemo, memo } from 'react';
-import { useParams } from 'react-router-dom';
 import { useRecoilValue } from 'recoil';
+import { useParams } from 'react-router-dom';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import {
   useMediaQuery,
@@ -78,16 +76,16 @@ const Nav = ({ navVisible, setNavVisible }) => {
   }, [tags]);
   const { containerRef, moveToTop } = useNavScrolling<ConversationListResponse>({
     setShowLoading,
-    hasNextPage: searchQuery ? searchQueryRes?.hasNextPage : hasNextPage,
-    fetchNextPage: searchQuery ? searchQueryRes?.fetchNextPage : fetchNextPage,
-    isFetchingNextPage: searchQuery ? searchQueryRes?.isFetchingNextPage : isFetchingNextPage,
+    hasNextPage: searchQuery ? searchQueryRes.hasNextPage : hasNextPage,
+    fetchNextPage: searchQuery ? searchQueryRes.fetchNextPage : fetchNextPage,
+    isFetchingNextPage: searchQuery ? searchQueryRes.isFetchingNextPage : isFetchingNextPage,
   });
 
   const conversations = useMemo(
     () =>
-      (searchQuery ? searchQueryRes?.data : data)?.pages.flatMap((page) => page.conversations) ||
+      (searchQuery ? searchQueryRes.data : data)?.pages.flatMap((page) => page.conversations) ||
       [],
-    [data, searchQuery, searchQueryRes?.data],
+    [data, searchQuery, searchQueryRes.data],
   );
 
   const clearSearch = () => {
@@ -159,7 +157,7 @@ const Nav = ({ navVisible, setNavVisible }) => {
                         toggleNav={itemToggleNav}
                         subHeaders={
                           <>
-                           {isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
+                            {isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
                             <BookmarkNav tags={tags} setTags={setTags} />
                           </>
                         }

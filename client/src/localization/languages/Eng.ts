@@ -294,7 +294,6 @@ export default {
   com_ui_min_tags: 'Cannot remove more values, a minimum of {0} are required.',
   com_ui_max_tags: 'Maximum number allowed is {0}, using latest values.',
   com_ui_bookmarks: 'Bookmarks',
-  com_ui_bookmarks_rebuild: 'Rebuild',
   com_ui_bookmarks_new: 'New Bookmark',
   com_ui_bookmark_delete_confirm: 'Are you sure you want to delete this bookmark?',
   com_ui_bookmarks_title: 'Title',
@@ -696,8 +695,6 @@ export default {
     'This action will revoke and remove all the API keys that you have provided. You will need to re-enter these credentials to continue using those endpoints.',
   com_nav_info_delete_cache_storage:
     'This action will delete all cached TTS (Text-to-Speech) audio files stored on your device. Cached audio files are used to speed up playback of previously generated TTS audio, but they can consume storage space on your device.',
-  com_nav_info_bookmarks_rebuild:
-    'If the bookmark count is incorrect, please rebuild the bookmark information. The bookmark count will be recalculated and the data will be restored to its correct state.',
   // Command Settings Tab
   com_nav_commands: 'Commands',
   com_nav_commands_tab: 'Command Settings',

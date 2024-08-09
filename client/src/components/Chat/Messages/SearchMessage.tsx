@@ -23,7 +23,9 @@ export default function Message({ message }: Pick<TMessageProps, 'message'>) {
 
   let messageLabel = '';
   if (isCreatedByUser) {
-    messageLabel = UsernameDisplay ? user?.name || user?.username : localize('com_user_message');
+    messageLabel = UsernameDisplay
+      ? (user?.name ?? '') || user?.username
+      : localize('com_user_message');
   } else {
     messageLabel = message.sender;
   }

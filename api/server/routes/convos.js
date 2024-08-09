@@ -175,8 +175,17 @@ router.post('/fork', async (req, res) => {
 });
 
 router.put('/tags/:conversationId', async (req, res) => {
-  const tag = await updateTagsForConversation(req.user.id, req.params.conversationId, req.body);
-  res.status(200).json(tag);
+  try {
+    const conversationTags = await updateTagsForConversation(
+      req.user.id,
+      req.params.conversationId,
+      req.body.tags,
+    );
+    res.status(200).json(conversationTags);
+  } catch (error) {
+    logger.error('Error updating conversation tags', error);
+    res.status(500).send('Error updating conversation tags');
+  }
 });
 
 module.exports = router;

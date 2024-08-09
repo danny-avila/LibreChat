@@ -1,3 +1,4 @@
+import React, { useMemo } from 'react';
 import { isAssistantsEndpoint } from 'librechat-data-provider';
 import type {
   TAssistantsMap,
@@ -20,7 +21,7 @@ export default function ConvoIcon({
 }: {
   conversation: TConversation | TPreset | null;
   endpointsConfig: TEndpointsConfig;
-  assistantMap: TAssistantsMap;
+  assistantMap: TAssistantsMap | undefined;
   containerClassName?: string;
   context?: 'message' | 'nav' | 'landing' | 'menu-item';
   className?: string;
@@ -29,11 +30,19 @@ export default function ConvoIcon({
   const iconURL = conversation?.iconURL;
   let endpoint = conversation?.endpoint;
   endpoint = getIconEndpoint({ endpointsConfig, iconURL, endpoint });
-  const assistant =
-    isAssistantsEndpoint(endpoint) && assistantMap?.[endpoint]?.[conversation?.assistant_id ?? ''];
-  const assistantName = (assistant && assistant?.name) || '';
+  const assistant = useMemo(() => {
+    if (!isAssistantsEndpoint(conversation?.endpoint)) {
+      return undefined;
+    }
 
-  const avatar = (assistant && (assistant?.metadata?.avatar as string)) || '';
+    const endpointKey = conversation?.endpoint ?? '';
+    const assistantId = conversation?.assistant_id ?? '';
+
+    return assistantMap?.[endpointKey] ? assistantMap[endpointKey][assistantId] : undefined;
+  }, [conversation?.endpoint, conversation?.assistant_id, assistantMap]);
+  const assistantName = assistant && (assistant.name ?? '');
+
+  const avatar = (assistant && (assistant.metadata?.avatar as string)) || '';
   const endpointIconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
   const iconKey = getIconKey({ endpoint, endpointsConfig, endpointIconURL });
   const Icon = icons[iconKey];

@@ -9,9 +9,9 @@ import { cn, removeFocusOutlines, defaultTextProps } from '~/utils/';
 import { useBookmarkContext } from '~/Providers/BookmarkContext';
 import { useConversationTagMutation } from '~/data-provider';
 import { Checkbox, Label, TextareaAutosize } from '~/components/ui/';
+import { useLocalize, useBookmarkSuccess } from '~/hooks';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
-import { useLocalize } from '~/hooks';
 
 type TBookmarkFormProps = {
   bookmark?: TConversationTag;
@@ -31,10 +31,11 @@ const BookmarkForm = ({
   tags,
   setTags,
 }: TBookmarkFormProps) => {
-  const { showToast } = useToastContext();
   const localize = useLocalize();
-  const mutation = useConversationTagMutation(bookmark?.tag);
+  const { showToast } = useToastContext();
   const { bookmarks } = useBookmarkContext();
+  const mutation = useConversationTagMutation(bookmark?.tag);
+  const onSuccess = useBookmarkSuccess(conversation?.conversationId || '');
 
   const {
     register,
@@ -82,6 +83,7 @@ const BookmarkForm = ({
             (tag) => tag !== undefined,
           ) as string[];
           setTags(newTags);
+          onSuccess(newTags);
         }
       },
       onError: () => {
@@ -168,13 +170,13 @@ const BookmarkForm = ({
                   checked={field.value}
                   onCheckedChange={field.onChange}
                   className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
-                  value={field?.value?.toString()}
+                  value={field.value?.toString()}
                 />
               )}
             />
-            <label
+            <button
+              aria-label={localize('com_ui_bookmarks_add_to_conversation')}
               className="form-check-label text-token-text-primary w-full cursor-pointer"
-              htmlFor="addToConversation"
               onClick={() =>
                 setValue('addToConversation', !getValues('addToConversation'), {
                   shouldDirty: true,
@@ -184,7 +186,7 @@ const BookmarkForm = ({
               <div className="flex select-none items-center">
                 {localize('com_ui_bookmarks_add_to_conversation')}
               </div>
-            </label>
+            </button>
           </div>
         )}
       </div>
