@@ -77,10 +77,10 @@ const BookmarkMenu: FC = () => {
     <Root open={open} onOpenChange={onOpenChange}>
       <Trigger asChild>
         <button
-          id="header-bookmark-menu"
+          id="header-bookmarks-menu"
           className={cn(
             'pointer-cursor relative flex flex-col rounded-md border border-border-light bg-transparent text-left focus:outline-none focus:ring-0 sm:text-sm',
-            'radix-state-open:bg-bg-surface-tertiary hover:bg-surface-tertiary',
+            'hover:bg-header-button-hover radix-state-open:bg-header-button-hover',
             'z-50 flex h-[40px] min-w-4 flex-none items-center justify-center px-3 focus:outline-offset-2 focus:ring-0 focus-visible:ring-2 focus-visible:ring-ring-primary ',
           )}
           title={localize('com_ui_bookmarks')}
@@ -90,7 +90,7 @@ const BookmarkMenu: FC = () => {
       </Trigger>
       <Portal>
         <Content
-          className="mt-2 grid max-h-[500px] w-full min-w-[240px] overflow-y-auto rounded-lg border border-border-medium bg-surface-tertiary text-text-primary shadow-lg"
+          className="mt-2 grid max-h-[500px] w-full min-w-[240px] overflow-y-auto rounded-lg border border-border-medium bg-header-primary text-text-primary shadow-lg"
           side="bottom"
           align="start"
         >

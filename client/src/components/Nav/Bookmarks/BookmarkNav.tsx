@@ -39,12 +39,12 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) 
       <Trigger asChild>
         <button
           className={cn(
-            'relative mt-1 flex h-10 w-full cursor-pointer items-center gap-1 rounded-lg border-border-light bg-transparent px-1 py-2 text-text-primary transition-colors duration-200 focus-within:bg-surface-secondary hover:bg-surface-secondary',
-            open ? 'bg-surface-secondary' : '',
+            'relative mt-1 flex h-10 w-full cursor-pointer items-center gap-1 rounded-lg border-border-light bg-transparent px-1 py-2 text-text-primary transition-colors duration-200 focus-within:bg-surface-hover hover:bg-surface-hover',
+            open ? 'bg-surface-hover' : '',
           )}
           id="show-bookmarks"
           data-testid="show-bookmarks"
-          title={localize('com_endpoint_examples')}
+          title={localize('com_ui_bookmarks')}
         >
           <div className="relative flex h-8 w-8 items-center justify-center rounded-full p-1 text-text-primary">
             {tags.length > 0 ? (
