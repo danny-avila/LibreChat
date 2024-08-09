@@ -1,4 +1,5 @@
 import {
+  Constants,
   EToolResources,
   LocalStorageKeys,
   InfiniteCollections,
@@ -322,9 +323,9 @@ export const useConversationTagMutation = (
           if (!data) {
             return [
               {
-                tag: 'Saved',
                 count: 1,
                 position: 0,
+                tag: Constants.SAVED_TAG,
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
               },

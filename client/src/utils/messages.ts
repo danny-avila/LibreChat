@@ -50,5 +50,5 @@ export const scrollToEnd = () => {
     if (messagesEndElement) {
       messagesEndElement.scrollIntoView({ behavior: 'instant' });
     }
-  }, 500);
+  }, 750);
 };
