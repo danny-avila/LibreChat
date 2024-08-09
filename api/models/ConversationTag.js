@@ -57,7 +57,7 @@ const createConversationTag = async (user, data) => {
       {
         tag,
         user,
-        count: 0,
+        count: addToConversation ? 1 : 0,
         position,
         description,
         $setOnInsert: { createdAt: new Date() },
@@ -75,7 +75,6 @@ const createConversationTag = async (user, data) => {
         { $addToSet: { tags: tag } },
         { new: true },
       );
-      await ConversationTag.findByIdAndUpdate(newTag._id, { $inc: { count: 1 } });
     }
 
     return newTag;
