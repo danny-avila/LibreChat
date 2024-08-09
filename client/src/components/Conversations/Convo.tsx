@@ -38,7 +38,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
     }
 
     event.preventDefault();
-    if (currentConvoId === conversationId) {
+    if (currentConvoId === conversationId || isPopoverActive) {
       return;
     }
 
