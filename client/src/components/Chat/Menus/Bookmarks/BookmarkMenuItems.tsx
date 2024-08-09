@@ -1,36 +1,37 @@
-import { useCallback } from 'react';
+import React, { useCallback } from 'react';
 import { BookmarkPlusIcon } from 'lucide-react';
 import type { FC } from 'react';
 import type { TConversation } from 'librechat-data-provider';
 import { BookmarkItems, BookmarkEditDialog } from '~/components/Bookmarks';
 import { useTagConversationMutation } from '~/data-provider';
+import { useLocalize, useBookmarkSuccess } from '~/hooks';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
-import { useLocalize } from '~/hooks';
 
 export const BookmarkMenuItems: FC<{
   conversation: TConversation;
   tags: string[];
-  setTags: (tags: string[]) => void;
-  setConversation: (conversation: TConversation) => void;
-}> = ({ conversation, tags, setTags, setConversation }) => {
+  setTags: React.Dispatch<React.SetStateAction<string[]>>;
+}> = ({ conversation, tags, setTags }) => {
   const { showToast } = useToastContext();
   const localize = useLocalize();
 
-  const { mutateAsync } = useTagConversationMutation(conversation?.conversationId ?? '');
+  const conversationId = conversation?.conversationId ?? '';
+  const onSuccess = useBookmarkSuccess(conversationId);
+
+  const { mutateAsync } = useTagConversationMutation(conversationId);
   const handleSubmit = useCallback(
     async (tag: string): Promise<void> => {
-      if (tags !== undefined && conversation?.conversationId) {
+      if (tags !== undefined && conversationId) {
         const newTags = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
         await mutateAsync(
           {
-            conversationId: conversation.conversationId,
             tags: newTags,
           },
           {
             onSuccess: (newTags: string[]) => {
               setTags(newTags);
-              setConversation({ ...conversation, tags: newTags });
+              onSuccess(newTags);
             },
             onError: () => {
               showToast({
@@ -42,11 +43,12 @@ export const BookmarkMenuItems: FC<{
         );
       }
     },
-    [tags, conversation],
+    [tags, conversationId, mutateAsync, setTags, onSuccess, showToast],
   );
 
   return (
     <BookmarkItems
+      ctx="header"
       tags={tags}
       handleSubmit={handleSubmit}
       header={
@@ -58,7 +60,7 @@ export const BookmarkMenuItems: FC<{
             trigger={
               <div
                 role="menuitem"
-                className="group m-1.5 flex cursor-pointer gap-2 rounded px-2 !pr-3.5 pb-2.5 pt-3 text-sm !opacity-100 hover:bg-black/5 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-white/5"
+                className="group m-1.5 flex cursor-pointer gap-2 rounded px-2 !pr-3.5 pb-2.5 pt-3 text-sm !opacity-100 hover:bg-header-hover focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50"
                 tabIndex={-1}
               >
                 <div className="flex grow items-center justify-between gap-2">
