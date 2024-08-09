@@ -11,7 +11,6 @@ import { Spinner } from '~/components';
 import { cn } from '~/utils';
 import store from '~/store';
 
-const SAVED_TAG = 'Saved';
 const BookmarkMenu: FC = () => {
   const localize = useLocalize();
 
@@ -47,7 +46,7 @@ const BookmarkMenu: FC = () => {
       if (conversation && conversationId) {
         await mutateAsync(
           {
-            tags: [SAVED_TAG],
+            tags: [Constants.SAVED_TAG as 'Saved'],
           },
           {
             onSuccess: (newTags: string[]) => {

@@ -957,6 +957,8 @@ export enum Constants {
   COMMANDS_MAX_LENGTH = 56,
   /** Default Stream Rate (ms) */
   DEFAULT_STREAM_RATE = 1,
+  /** Saved Tag */
+  SAVED_TAG = 'Saved',
 }
 
 export enum LocalStorageKeys {
