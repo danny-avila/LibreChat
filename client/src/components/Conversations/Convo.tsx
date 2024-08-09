@@ -106,7 +106,8 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
   return (
     <div
       className={cn(
-        'hover:bg-token-sidebar-surface-secondary group relative rounded-lg active:opacity-90',
+        'group relative mt-2 flex items-center rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700',
+        isActiveConvo ? 'bg-gray-200 dark:bg-gray-700' : '',
       )}
     >
       {renaming ? (
@@ -129,56 +130,50 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
           </div>
         </div>
       ) : (
-        <div
+        <a
+          href={`/c/${conversationId}`}
+          data-testid="convo-item"
+          onClick={clickHandler}
           className={cn(
-            'peer items-center gap-1.5 rounded-r-lg from-gray-900 pl-2 pr-2 dark:text-white',
-            isPopoverActive || isActiveConvo ? 'flex' : 'hidden group-hover:flex',
-            isActiveConvo
-              ? 'from-gray-50 from-85% to-transparent group-hover:bg-gradient-to-l group-hover:from-gray-200 dark:from-gray-800 dark:group-hover:from-gray-800'
-              : 'z-50 from-gray-50 from-0% to-transparent hover:bg-gradient-to-l hover:from-gray-200 dark:from-gray-800 dark:hover:from-gray-800',
-            isPopoverActive && !isActiveConvo ? 'from-gray-50 dark:from-gray-800' : '',
+            'flex grow cursor-pointer items-center gap-2 overflow-hidden whitespace-nowrap break-all rounded-lg px-2 py-2',
+            isActiveConvo ? 'bg-gray-200 dark:bg-gray-700' : '',
           )}
+          title={title}
         >
-          <ConvoOptions
+          <EndpointIcon
             conversation={conversation}
-            retainView={retainView}
-            renameHandler={renameHandler}
-            setIsPopoverActive={setIsPopoverActive}
+            endpointsConfig={endpointsConfig}
+            size={20}
+            context="menu-item"
           />
-        </div>
+          {!renaming && (
+            <div className="relative line-clamp-1 max-h-5 flex-1 grow overflow-hidden">{title}</div>
+          )}
+          {isActiveConvo ? (
+            <div
+              className={cn(
+                'absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-gradient-to-l',
+                !renaming ? 'from-gray-200 from-60% to-transparent dark:from-gray-700' : '',
+              )}
+            />
+          ) : (
+            <div className="absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-gradient-to-l from-gray-50 from-0% to-transparent group-hover:from-gray-200 group-hover:from-40% dark:from-gray-850 dark:group-hover:from-gray-700" />
+          )}
+        </a>
       )}
-      <a
-        href={`/c/${conversationId}`}
-        data-testid="convo-item"
-        onClick={clickHandler}
+      <div
         className={cn(
-          isActiveConvo || isPopoverActive
-            ? 'group relative mt-2 flex cursor-pointer items-center gap-2 break-all rounded-lg bg-gray-200 px-2 py-2 active:opacity-50 dark:bg-gray-700'
-            : 'group relative mt-2 flex grow cursor-pointer items-center gap-2 overflow-hidden whitespace-nowrap break-all rounded-lg px-2 py-2 hover:bg-gray-200 active:opacity-50 dark:hover:bg-gray-700',
-          !isActiveConvo && !renaming ? 'peer-hover:bg-gray-200 dark:peer-hover:bg-gray-800' : '',
+          'mr-2',
+          isPopoverActive || isActiveConvo ? 'flex' : 'hidden group-hover:flex',
         )}
-        title={title}
       >
-        <EndpointIcon
+        <ConvoOptions
           conversation={conversation}
-          endpointsConfig={endpointsConfig}
-          size={20}
-          context="menu-item"
+          retainView={retainView}
+          renameHandler={renameHandler}
+          setIsPopoverActive={setIsPopoverActive}
         />
-        {!renaming && (
-          <div className="relative line-clamp-1 max-h-5 flex-1 grow overflow-hidden">{title}</div>
-        )}
-        {isActiveConvo ? (
-          <div
-            className={cn(
-              'absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-gradient-to-l',
-              !renaming ? 'from-gray-200 from-60% to-transparent dark:from-gray-700' : '',
-            )}
-          />
-        ) : (
-          <div className="absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-gradient-to-l from-gray-50 from-0% to-transparent group-hover:from-gray-200 group-hover:from-60% dark:from-gray-850 dark:group-hover:from-gray-700" />
-        )}
-      </a>
+      </div>
     </div>
   );
 }

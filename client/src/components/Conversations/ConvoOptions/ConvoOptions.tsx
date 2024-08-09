@@ -11,7 +11,6 @@ import ArchiveButton from './ArchiveButton';
 import DeleteButton from './DeleteButton';
 import ShareButton from './ShareButton';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 
 export default function Conversation({
   conversation,
@@ -29,7 +28,7 @@ export default function Conversation({
         <Button
           id="conversation-menu-button"
           aria-label="conversation-menu-button"
-          variant="outline"
+          variant="link"
           onClick={(e) => {
             e.stopPropagation();
           }}
