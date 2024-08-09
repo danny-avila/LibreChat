@@ -45,10 +45,8 @@ export const getTextKey = (message?: TMessage | null, convoId?: string | null) =
 };
 
 export const scrollToEnd = () => {
-  setTimeout(() => {
-    const messagesEndElement = document.getElementById('messages-end');
-    if (messagesEndElement) {
-      messagesEndElement.scrollIntoView({ behavior: 'instant' });
-    }
-  }, 750);
+  const messagesEndElement = document.getElementById('messages-end');
+  if (messagesEndElement) {
+    messagesEndElement.scrollIntoView({ behavior: 'instant' });
+  }
 };
