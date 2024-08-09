@@ -11,14 +11,14 @@ const buttonVariants = cva(
           'bg-primary-600 text-white hover:bg-primary-700 dark:bg-primary-200 dark:text-gray-900 dark:hover:bg-primary-300',
         destructive: 'bg-red-600 text-white hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-700',
         outline:
-          'bg-transparent border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-100 dark:hover:bg-gray-800',
+          'bg-transparent border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-700',
         subtle:
           'bg-gray-100 text-gray-900 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600',
         ghost:
           'bg-transparent text-gray-900 hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-gray-800 data-[state=open]:bg-transparent',
         link: 'bg-transparent underline-offset-4 hover:underline text-primary-600 dark:text-primary-400 hover:bg-transparent dark:hover:bg-transparent',
         success:
-          'bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700',
+          'bg-green-500 text-white hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-700',
         warning:
           'bg-yellow-500 text-white hover:bg-yellow-600 dark:bg-yellow-600 dark:hover:bg-yellow-700',
         info: 'bg-blue-500 text-white hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700',

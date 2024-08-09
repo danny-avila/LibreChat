@@ -18,7 +18,7 @@ const EditBookmarkButton: FC<{
       trigger={
         <button
           type="button"
-          className="transition-color flex h-7 w-7 min-w-7 items-center justify-center rounded-lg duration-200 hover:bg-gray-200 dark:hover:bg-gray-700"
+          className="transition-button"
           tabIndex={tabIndex}
           onFocus={onFocus}
           onBlur={onBlur}

@@ -119,6 +119,7 @@ export default function ShareButton({
       </OGDialog>
     );
   }
+
   return (
     <OGDialog open={open} onOpenChange={setOpen}>
       <OGDialogTrigger asChild>
