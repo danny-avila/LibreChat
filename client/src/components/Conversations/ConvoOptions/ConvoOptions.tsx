@@ -12,7 +12,7 @@ import DeleteButton from './DeleteButton';
 import ShareButton from './ShareButton';
 import { useLocalize } from '~/hooks';
 
-export default function Conversation({
+export default function ConvoOptions({
   conversation,
   retainView,
   renameHandler,

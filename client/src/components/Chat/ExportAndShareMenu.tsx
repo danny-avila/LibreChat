@@ -24,11 +24,11 @@ export default function ExportAndShareMenu({
 
   const exportable =
     conversation &&
-    conversation.conversationId &&
+    conversation.conversationId != null &&
     conversation.conversationId !== 'new' &&
     conversation.conversationId !== 'search';
 
-  if (!exportable) {
+  if (exportable === false) {
     return null;
   }
 
@@ -57,7 +57,7 @@ export default function ExportAndShareMenu({
         align="end"
         aria-label="Export and Share Menu"
       >
-        {isSharedButtonEnabled && conversation.conversationId && (
+        {isSharedButtonEnabled && conversation.conversationId != null && (
           <ShareButton
             conversationId={conversation.conversationId}
             title={conversation.title ?? ''}
