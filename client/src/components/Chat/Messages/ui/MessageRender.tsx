@@ -114,7 +114,10 @@ const MessageRender = memo(
           </div>
         </div>
         <div
-          className={cn('relative flex w-11/12 flex-col', msg.isCreatedByUser ? '' : 'agent-turn')}
+          className={cn(
+            'relative flex w-11/12 flex-col',
+            msg.isCreatedByUser === true ? '' : 'agent-turn',
+          )}
         >
           <h2 className={cn('select-none font-semibold', fontSize)}>{messageLabel}</h2>
           <div className="flex-col gap-1 md:gap-3">
@@ -124,10 +127,10 @@ const MessageRender = memo(
                 ask={ask}
                 edit={edit}
                 isLast={isLast}
-                text={msg.text ?? ''}
+                text={msg.text || ''}
                 message={msg}
                 enterEdit={enterEdit}
-                error={!!error}
+                error={!!(error ?? false)}
                 isSubmitting={isSubmitting}
                 unfinished={unfinished ?? false}
                 isCreatedByUser={isCreatedByUser ?? true}
