@@ -17,15 +17,19 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Install doctl
-      uses: digitalocean/action-doctl@v2
+    - name: Install SSH Key
+      uses: shimataro/ssh-key-action@v2
       with:
-        token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+        key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+        known_hosts: ${{ secrets.DO_KNOWN_HOSTS }}
 
     - name: Run update script on DigitalOcean Droplet
+      env:
+        DO_HOST: ${{ secrets.DO_HOST }}
+        DO_USER: ${{ secrets.DO_USER }}
       run: |
-        doctl compute ssh ${{ secrets.DO_DROPLET_NAME }} --ssh-command '
-        sudo -i -u danny bash << EOF
+        ssh -o StrictHostKeyChecking=no ${DO_USER}@${DO_HOST} << EOF
+        sudo -i -u danny bash << EEOF
         cd ~/LibreChat && \
         git fetch origin main && \
         git checkout do-deploy && \
@@ -33,5 +37,5 @@ jobs:
         npm run update:deployed && \
         npm run start:deployed && \
         echo "Update completed. Application should be running now."
+        EEOF
         EOF
-        '
