@@ -52,6 +52,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
 
   const renameHandler = (e: MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
+    setIsPopoverActive(false);
     setTitleInput(title);
     setRenaming(true);
     setTimeout(() => {
