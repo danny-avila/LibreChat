@@ -1,12 +1,13 @@
 const fs = require('fs').promises;
 const express = require('express');
-const { isUUID, checkOpenAIStorage } = require('librechat-data-provider');
+const { isUUID, checkOpenAIStorage, FileSources } = require('librechat-data-provider');
 const {
   filterFile,
   processFileUpload,
   processDeleteRequest,
 } = require('~/server/services/Files/process');
-const { initializeClient } = require('~/server/services/Endpoints/assistants');
+const { initializeClient: initializeOpenAiClient } = require('~/server/services/Endpoints/assistants');
+const { initializeClient: initializeAzureClient } = require('~/server/services/Endpoints/azureAssistants');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getFiles } = require('~/models/File');
 const { logger } = require('~/config');
@@ -112,13 +113,24 @@ router.get('/download/:userId/:file_id', async (req, res) => {
     let fileStream;
 
     if (checkOpenAIStorage(file.source)) {
-      req.body = { model: file.model };
-      const { openai } = await initializeClient({ req, res });
-      logger.debug(`Downloading file ${file_id} from OpenAI`);
-      passThrough = await getDownloadStream(file_id, openai);
-      setHeaders();
-      logger.debug(`File ${file_id} downloaded from OpenAI`);
-      passThrough.body.pipe(res);
+      logger.debug(`File source: ${file.source}`);
+      if (file.source === FileSources.openai) {
+        req.body = { model: file.model };
+        logger.debug(`Downloading file ${file_id} from OpenAI`);
+        const { openai } = await initializeOpenAiClient({ req, res });
+        passThrough = await getDownloadStream(file_id, openai);
+        setHeaders();
+        logger.debug(`File ${file_id} downloaded from OpenAI`);
+        passThrough.body.pipe(res);
+      } else {
+        req.body = { model: file.model };
+        logger.debug(`Downloading file ${file_id} from Azure OpenAI`);
+        const { openai } = await initializeAzureClient({ req, res });
+        passThrough = await getDownloadStream(file_id, openai);
+        setHeaders();
+        logger.debug(`File ${file_id} downloaded from Azure OpenAI`);
+        passThrough.body.pipe(res);
+      }
     } else {
       fileStream = getDownloadStream(file_id);
       setHeaders();
