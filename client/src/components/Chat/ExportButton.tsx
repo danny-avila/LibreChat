@@ -28,12 +28,27 @@ function ExportButton({
 
   return (
     <>
-      <button
-        onClick={clickHandler}
-        className="group m-1.5 flex w-full cursor-pointer items-center gap-2 rounded p-2.5 text-sm hover:bg-gray-200 focus-visible:bg-gray-200 focus-visible:outline-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-600 dark:focus-visible:bg-gray-600"
-      >
-        <Upload size={16} /> {localize('com_nav_export')}
-      </button>
+      {exportable && (
+        <div className="flex gap-1 gap-2 pr-1">
+          <TooltipProvider delayDuration={50}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="h-10 rounded-lg px-2.5 text-token-text-secondary focus-visible:outline-0 hover:bg-gray-100 dark:hover:bg-gray-700 focus-visible:bg-gray-100 dark:focus-visible:bg-gray-700"
+                  onClick={clickHandler}
+                >
+                  <div className="flex w-full items-center justify-center gap-2">
+                    <Download size={24} />
+                  </div>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={5}>
+                {localize('com_nav_export_conversation')}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
+      )}
       {showExports && (
         <ExportModal open={showExports} onOpenChange={onOpenChange} conversation={conversation} />
       )}

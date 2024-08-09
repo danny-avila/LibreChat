@@ -4,6 +4,8 @@ import { getConfigDefaults } from 'librechat-data-provider';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { ContextType } from '~/common';
 import { EndpointsMenu, ModelSpecsMenu, PresetsMenu, HeaderNewChat } from './Menus';
+
+import ProfileButton from './ProfileButton';
 import ExportAndShareMenu from './ExportAndShareMenu';
 import HeaderOptions from './Input/HeaderOptions';
 import BookmarkMenu from './Menus/BookmarkMenu';
@@ -41,9 +43,12 @@ export default function Header() {
           <BookmarkMenu />
           <AddMultiConvo />
         </div>
-        {!isSmallScreen && (
-          <ExportAndShareMenu isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false} />
-        )}
+        <div className="flex items-center gap-2 font-normal">
+          {!isSmallScreen && (
+            <ExportAndShareMenu isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false} />
+          )}
+          <ProfileButton className="hidden md:block" />
+        </div>
       </div>
       {/* Empty div for spacing */}
       <div />
