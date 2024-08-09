@@ -53,6 +53,14 @@ describe('getValueKey', () => {
     expect(getValueKey('gpt-4o-mini-2024-07-18')).toBe('gpt-4o-mini');
     expect(getValueKey('openai/gpt-4o-mini')).toBe('gpt-4o-mini');
     expect(getValueKey('gpt-4o-mini-0718')).toBe('gpt-4o-mini');
+    expect(getValueKey('gpt-4o-2024-08-06-0718')).not.toBe('gpt-4o');
+  });
+
+  it('should return "gpt-4o-2024-08-06" for model type of "gpt-4o-2024-08-06"', () => {
+    expect(getValueKey('gpt-4o-2024-08-06-2024-07-18')).toBe('gpt-4o-2024-08-06');
+    expect(getValueKey('openai/gpt-4o-2024-08-06')).toBe('gpt-4o-2024-08-06');
+    expect(getValueKey('gpt-4o-2024-08-06-0718')).toBe('gpt-4o-2024-08-06');
+    expect(getValueKey('gpt-4o-2024-08-06-0718')).not.toBe('gpt-4o');
   });
 
   it('should return "claude-3-5-sonnet" for model type of "claude-3-5-sonnet-"', () => {

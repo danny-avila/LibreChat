@@ -12,6 +12,7 @@ const tokenValues = {
   '4k': { prompt: 1.5, completion: 2 },
   '16k': { prompt: 3, completion: 4 },
   'gpt-3.5-turbo-1106': { prompt: 1, completion: 2 },
+  'gpt-4o-2024-08-06': { prompt: 2.5, completion: 10 },
   'gpt-4o-mini': { prompt: 0.15, completion: 0.6 },
   'gpt-4o': { prompt: 5, completion: 15 },
   'gpt-4-1106': { prompt: 10, completion: 30 },
@@ -55,6 +56,8 @@ const getValueKey = (model, endpoint) => {
     return 'gpt-3.5-turbo-1106';
   } else if (modelName.includes('gpt-3.5')) {
     return '4k';
+  } else if (modelName.includes('gpt-4o-2024-08-06')) {
+    return 'gpt-4o-2024-08-06';
   } else if (modelName.includes('gpt-4o-mini')) {
     return 'gpt-4o-mini';
   } else if (modelName.includes('gpt-4o')) {
