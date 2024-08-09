@@ -106,7 +106,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
   return (
     <div
       className={cn(
-        'group relative mt-2 flex items-center rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700',
+        'group relative mt-2 flex h-9 items-center rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700',
         isActiveConvo ? 'bg-gray-200 dark:bg-gray-700' : '',
       )}
     >
@@ -147,7 +147,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
             context="menu-item"
           />
           {!renaming && (
-            <div className="relative line-clamp-1 max-h-5 flex-1 grow overflow-hidden">{title}</div>
+            <div className="relative line-clamp-1 flex-1 grow overflow-hidden">{title}</div>
           )}
           {isActiveConvo ? (
             <div
@@ -171,6 +171,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
           conversation={conversation}
           retainView={retainView}
           renameHandler={renameHandler}
+          isPopoverActive={isPopoverActive}
           setIsPopoverActive={setIsPopoverActive}
         />
       </div>

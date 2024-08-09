@@ -16,6 +16,7 @@ export default function Conversation({
   conversation,
   retainView,
   renameHandler,
+  isPopoverActive,
   setIsPopoverActive,
 }) {
   const localize = useLocalize();
@@ -23,7 +24,7 @@ export default function Conversation({
   const { conversationId, title } = conversation;
 
   return (
-    <DropdownMenu onOpenChange={setIsPopoverActive}>
+    <DropdownMenu open={isPopoverActive} onOpenChange={setIsPopoverActive}>
       <DropdownMenuTrigger asChild>
         <Button
           id="conversation-menu-button"
