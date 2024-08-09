@@ -31,10 +31,10 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
   endpoint = getIconEndpoint({ endpointsConfig, iconURL, endpoint });
 
   const isAssistant = isAssistantsEndpoint(endpoint);
-  const assistant = isAssistant && assistantMap[endpoint][assistant_id ?? ''];
-  const assistantName = (assistant && assistant.name) || '';
-  const assistantDesc = (assistant && assistant.description) || '';
-  const avatar = (assistant && (assistant.metadata?.avatar as string)) || '';
+  const assistant = isAssistant ? assistantMap?.[endpoint][assistant_id ?? ''] : undefined;
+  const assistantName = assistant && assistant.name;
+  const assistantDesc = assistant && assistant.description;
+  const avatar = assistant && (assistant.metadata?.avatar as string);
 
   const containerClassName =
     'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black';

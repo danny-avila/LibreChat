@@ -51,7 +51,7 @@ function Avatar({
   const { showToast } = useToastContext();
 
   const activeModel = useMemo(() => {
-    return assistantsMap[endpoint][assistant_id ?? '']?.model ?? '';
+    return assistantsMap?.[endpoint][assistant_id ?? '']?.model ?? '';
   }, [assistantsMap, endpoint, assistant_id]);
 
   const { mutate: uploadAvatar } = useUploadAssistantAvatarMutation({
@@ -59,7 +59,7 @@ function Avatar({
       setProgress(0.4);
     },
     onSuccess: (data, vars) => {
-      if (!vars.postCreation) {
+      if (vars.postCreation !== true) {
         showToast({ message: localize('com_ui_upload_success') });
       } else if (lastSeenCreatedId.current !== createMutation.data?.id) {
         lastSeenCreatedId.current = createMutation.data?.id ?? '';
@@ -136,9 +136,9 @@ function Avatar({
       createMutation.isSuccess &&
       input &&
       previewUrl &&
-      previewUrl?.includes('base64')
+      previewUrl.includes('base64')
     );
-    if (sharedUploadCondition && lastSeenCreatedId.current === createMutation.data?.id) {
+    if (sharedUploadCondition && lastSeenCreatedId.current === createMutation.data.id) {
       return;
     }
 
@@ -149,8 +149,8 @@ function Avatar({
       formData.append('file', input, input.name);
       formData.append('assistant_id', createMutation.data.id);
 
-      if (typeof createMutation.data?.metadata === 'object') {
-        formData.append('metadata', JSON.stringify(createMutation.data?.metadata));
+      if (typeof createMutation.data.metadata === 'object') {
+        formData.append('metadata', JSON.stringify(createMutation.data.metadata));
       }
 
       uploadAvatar({
