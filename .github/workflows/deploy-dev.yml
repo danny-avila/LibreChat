@@ -1,0 +1,37 @@
+name: Update DigitalOcean Server
+
+on:
+  workflow_run:
+    workflows: ["Docker Dev Images Build"]
+    types:
+      - completed
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: |
+      github.repository == 'danny-avila/LibreChat' &&
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install doctl
+      uses: digitalocean/action-doctl@v2
+      with:
+        token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+    - name: Run update script on DigitalOcean Droplet
+      run: |
+        doctl compute ssh ${{ secrets.DO_DROPLET_NAME }} --ssh-command '
+        sudo -i -u danny bash << EOF
+        cd ~/LibreChat && \
+        git fetch origin main && \
+        git checkout do-deploy && \
+        git rebase origin/main && \
+        npm run update:deployed && \
+        npm run start:deployed && \
+        echo "Update completed. Application should be running now."
+        EOF
+        '
