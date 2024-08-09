@@ -178,6 +178,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               />
             </div>
             <Slider
+              ariaLabel="Temperature Slider"
               disabled={readonly}
               value={[temperature ?? anthropicSettings.temperature.default]}
               onValueChange={(value) => setTemperature(value[0])}
@@ -218,6 +219,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               />
             </div>
             <Slider
+              ariaLabel="Top P Slider"
               disabled={readonly}
               value={[topP ?? 0.7]}
               onValueChange={(value) => setTopP(value[0])}
@@ -259,6 +261,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               />
             </div>
             <Slider
+              ariaLabel="Top K Slider"
               disabled={readonly}
               value={[topK ?? 5]}
               onValueChange={(value) => setTopK(value[0])}
@@ -297,6 +300,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               />
             </div>
             <Slider
+              ariaLabel="Max Tokens Slider"
               disabled={readonly}
               value={[maxOutputTokens ?? anthropicSettings.maxOutputTokens.default]}
               onValueChange={(value) => setMaxOutputTokens(value[0])}

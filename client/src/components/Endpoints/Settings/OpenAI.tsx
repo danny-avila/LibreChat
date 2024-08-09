@@ -263,6 +263,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               />
             </div>
             <Slider
+              ariaLabel="Temperature Slider"
               disabled={readonly}
               value={[(temperatureValue as number) ?? 1]}
               onValueChange={(value) => setTemperature(value[0])}
@@ -301,6 +302,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               />
             </div>
             <Slider
+              ariaLabel="Top P Slider"
               disabled={readonly}
               value={[(topPValue as number) ?? 1]}
               onValueChange={(value) => setTopP(value[0])}
@@ -340,6 +342,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               />
             </div>
             <Slider
+              ariaLabel="Frequency Penalty Slider"
               disabled={readonly}
               value={[(freqPValue as number) ?? 0]}
               onValueChange={(value) => setFreqP(value[0])}
@@ -379,6 +382,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               />
             </div>
             <Slider
+              ariaLabel="Presence Penalty Slider"
               disabled={readonly}
               value={[(presPValue as number) ?? 0]}
               onValueChange={(value) => setPresP(value[0])}
@@ -433,7 +437,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             <HoverCard openDelay={500}>
               <HoverCardTrigger className="flex w-[52%] md:w-[125px]">
                 <Slider
-                  id="image-detail-slider"
+                  ariaLabel="Image Detail Slider"
                   disabled={readonly}
                   value={[
                     imageDetailNumeric[imageDetail ?? ''] ?? imageDetailNumeric[ImageDetail.auto],
