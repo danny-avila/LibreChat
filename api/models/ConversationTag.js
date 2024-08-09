@@ -2,8 +2,6 @@ const ConversationTag = require('./schema/conversationTagSchema');
 const Conversation = require('./schema/convoSchema');
 const logger = require('~/config/winston');
 
-const SAVED_TAG = 'Saved';
-
 /**
  * Retrieves all conversation tags for a user.
  * @param {string} user - The user ID.
@@ -11,19 +9,7 @@ const SAVED_TAG = 'Saved';
  */
 const getConversationTags = async (user) => {
   try {
-    const cTags = await ConversationTag.find({ user }).sort({ position: 1 }).lean();
-
-    cTags.sort((a, b) => {
-      if (a.tag === SAVED_TAG) {
-        return -1;
-      }
-      if (b.tag === SAVED_TAG) {
-        return 1;
-      }
-      return 0;
-    });
-
-    return cTags;
+    return await ConversationTag.find({ user }).sort({ position: 1 }).lean();
   } catch (error) {
     logger.error('[getConversationTags] Error getting conversation tags', error);
     throw new Error('Error getting conversation tags');
@@ -248,7 +234,6 @@ const updateTagsForConversation = async (user, conversationId, tags) => {
 };
 
 module.exports = {
-  SAVED_TAG,
   getConversationTags,
   createConversationTag,
   updateConversationTag,

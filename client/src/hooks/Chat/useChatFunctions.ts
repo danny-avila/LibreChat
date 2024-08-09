@@ -18,8 +18,8 @@ import type {
 import type { SetterOrUpdater } from 'recoil';
 import type { TAskFunction, ExtendedFile } from '~/common';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
-import { getEndpointField, logger, scrollToEnd } from '~/utils';
 import useGetSender from '~/hooks/Conversations/useGetSender';
+import { getEndpointField, logger } from '~/utils';
 import useUserKey from '~/hooks/Input/useUserKey';
 import store from '~/store';
 
@@ -250,7 +250,6 @@ export default function useChatFunctions({
       setLatestMessage(initialResponse);
     }
 
-    scrollToEnd();
     setSubmission(submission);
     logger.log('Submission:');
     logger.dir(submission, { depth: null });
