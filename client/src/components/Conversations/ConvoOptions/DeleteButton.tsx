@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -17,12 +17,27 @@ import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { TrashIcon } from '~/components/svg';
 import { useLocalize, useNewConvo } from '~/hooks';
 
-export default function DeleteButton({ children, conversationId, retainView, title }) {
+type DeleteButtonProps = {
+  children?: React.ReactNode;
+  conversationId: string;
+  retainView: () => void;
+  title: string;
+  className?: string;
+};
+
+export default function DeleteButton({
+  children,
+  conversationId,
+  retainView,
+  title,
+  className = '',
+}: DeleteButtonProps) {
   const localize = useLocalize();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { newConversation } = useNewConvo();
   const { conversationId: currentConvoId } = useParams();
+  const [open, setOpen] = useState(false);
   const deleteConvoMutation = useDeleteConversationMutation({
     onSuccess: () => {
       if (currentConvoId === conversationId || currentConvoId === 'new') {
@@ -65,33 +80,38 @@ export default function DeleteButton({ children, conversationId, retainView, tit
     />
   );
 
+  const onClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    setOpen(true);
+  };
+
   if (children) {
     return (
-      <OGDialog>
-        <OGDialogTrigger asChild>{children}</OGDialogTrigger>
+      <OGDialog open={open} onOpenChange={setOpen}>
+        <OGDialogTrigger asChild>
+          {React.cloneElement(children as React.ReactElement, { onClick })}
+        </OGDialogTrigger>
         {dialogContent}
       </OGDialog>
     );
   }
 
   return (
-    <OGDialog>
-      <OGDialogTrigger asChild>
-        <TooltipProvider delayDuration={250}>
-          <Tooltip>
+    <OGDialog open={open} onOpenChange={setOpen}>
+      <TooltipProvider delayDuration={250}>
+        <Tooltip>
+          <OGDialogTrigger asChild>
             <TooltipTrigger asChild>
               <button>
-                <span>
-                  <TrashIcon className="h-5 w-5" />
-                </span>
+                <TrashIcon className="h-5 w-5" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="top" sideOffset={0}>
-              {localize('com_ui_delete')}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      </OGDialogTrigger>
+          </OGDialogTrigger>
+          <TooltipContent side="top" sideOffset={0} className={className}>
+            {localize('com_ui_delete')}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
       {dialogContent}
     </OGDialog>
   );

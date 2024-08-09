@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   OGDialog,
   Tooltip,
@@ -73,8 +73,9 @@ export default function ShareButton({
     />
   );
 
-  const onOpenChange = (open: boolean) => {
-    setOpen(open);
+  const onClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    setOpen(true);
   };
 
   const renderShareDialog = (
@@ -110,14 +111,16 @@ export default function ShareButton({
 
   if (children) {
     return (
-      <OGDialog open={open} onOpenChange={onOpenChange}>
-        <OGDialogTrigger asChild>{children}</OGDialogTrigger>
+      <OGDialog open={open} onOpenChange={setOpen}>
+        <OGDialogTrigger asChild>
+          {React.cloneElement(children as React.ReactElement, { onClick })}
+        </OGDialogTrigger>
         {renderShareDialog}
       </OGDialog>
     );
   }
   return (
-    <OGDialog open={open} onOpenChange={onOpenChange}>
+    <OGDialog open={open} onOpenChange={setOpen}>
       <OGDialogTrigger asChild>
         <button
           className={cn(

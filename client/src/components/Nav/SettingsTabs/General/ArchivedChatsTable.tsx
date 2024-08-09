@@ -90,10 +90,7 @@ export default function ArchivedChatsTable({ className }: { className?: string }
                           <DeleteButton
                             conversationId={conversation.conversationId}
                             retainView={moveToTop}
-                            renaming={false}
-                            title={conversation.title}
-                            appendLabel={false}
-                            className="group ml-4 flex w-full cursor-pointer items-center items-center gap-2 rounded text-sm hover:bg-gray-200 focus-visible:bg-gray-200 focus-visible:outline-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-600 dark:focus-visible:bg-gray-600"
+                            title={conversation.title ?? ''}
                           />
                         </div>
                       </>

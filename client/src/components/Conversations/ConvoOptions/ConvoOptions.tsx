@@ -11,6 +11,7 @@ import ArchiveButton from './ArchiveButton';
 import DeleteButton from './DeleteButton';
 import ShareButton from './ShareButton';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 
 export default function Conversation({
   conversation,
@@ -42,75 +43,52 @@ export default function Conversation({
         collisionPadding={2}
         align="center"
       >
-        <DropdownMenuItem className="w-full cursor-pointer rounded-lg disabled:cursor-not-allowed dark:text-gray-300 dark:hover:bg-gray-700 dark:focus:bg-gray-700">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              renameHandler(e);
-            }}
-            className="flex items-center"
-          >
-            <Pen className="mr-2 h-4 w-4" />
-            <span>{localize('com_ui_rename')}</span>
-          </button>
+        <DropdownMenuItem
+          onClick={(e) => {
+            e.stopPropagation();
+            renameHandler(e);
+          }}
+          className="w-full cursor-pointer rounded-lg disabled:cursor-not-allowed dark:text-gray-300 dark:hover:bg-gray-700 dark:focus:bg-gray-700"
+        >
+          <Pen className="mr-2 h-4 w-4" />
+          <span>{localize('com_ui_rename')}</span>
         </DropdownMenuItem>
         {startupConfig && startupConfig.sharedLinksEnabled && (
-          <DropdownMenuItem className="w-full cursor-pointer rounded-lg disabled:cursor-not-allowed dark:text-gray-300 dark:hover:bg-gray-700 dark:focus:bg-gray-700">
-            <ShareButton conversationId={conversationId} title={title}>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                }}
-                className="flex items-center"
-              >
-                <Share2 className="mr-2 h-4 w-4" />
-                <span>{localize('com_ui_share')}</span>
-              </button>
-            </ShareButton>
-          </DropdownMenuItem>
+          <ShareButton conversationId={conversationId} title={title}>
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+              }}
+              className="w-full cursor-pointer rounded-lg disabled:cursor-not-allowed dark:text-gray-300 dark:hover:bg-gray-700 dark:focus:bg-gray-700"
+            >
+              <Share2 className="mr-2 h-4 w-4" />
+              <span>{localize('com_ui_share')}</span>
+            </DropdownMenuItem>
+          </ShareButton>
         )}
 
-        <DropdownMenuItem
-          onClick={(e) => {
-            e.stopPropagation();
-          }}
-          className="w-full cursor-pointer rounded-lg disabled:cursor-not-allowed dark:text-gray-300 dark:hover:bg-gray-700 dark:focus:bg-gray-700"
-        >
-          <ArchiveButton
-            conversationId={conversationId}
-            retainView={retainView}
-            shouldArchive={true}
+        <ArchiveButton conversationId={conversationId} retainView={retainView} shouldArchive={true}>
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.stopPropagation();
+            }}
+            className="w-full cursor-pointer rounded-lg disabled:cursor-not-allowed dark:text-gray-300 dark:hover:bg-gray-700 dark:focus:bg-gray-700"
           >
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-              }}
-              className="flex items-center"
-            >
-              <Archive className="mr-2 h-4 w-4" />
-              <span>{localize('com_ui_archive')}</span>
-            </button>
-          </ArchiveButton>
-        </DropdownMenuItem>
-
-        <DropdownMenuItem
-          onClick={(e) => {
-            e.stopPropagation();
-          }}
-          className="w-full cursor-pointer rounded-lg disabled:cursor-not-allowed dark:text-gray-300 dark:hover:bg-gray-700 dark:focus:bg-gray-700"
-        >
-          <DeleteButton conversationId={conversationId} retainView={retainView} title={title}>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-              }}
-              className="flex items-center"
-            >
-              <Trash className="mr-2 h-4 w-4" />
-              <span>{localize('com_ui_delete')}</span>
-            </button>
-          </DeleteButton>
-        </DropdownMenuItem>
+            <Archive className="mr-2 h-4 w-4" />
+            <span>{localize('com_ui_archive')}</span>
+          </DropdownMenuItem>
+        </ArchiveButton>
+        <DeleteButton conversationId={conversationId} retainView={retainView} title={title}>
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.stopPropagation();
+            }}
+            className="w-full cursor-pointer rounded-lg disabled:cursor-not-allowed dark:text-gray-300 dark:hover:bg-gray-700 dark:focus:bg-gray-700"
+          >
+            <Trash className="mr-2 h-4 w-4" />
+            <span>{localize('com_ui_delete')}</span>
+          </DropdownMenuItem>
+        </DeleteButton>
       </DropdownMenuContent>
     </DropdownMenu>
   );
