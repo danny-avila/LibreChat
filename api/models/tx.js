@@ -46,7 +46,7 @@ const tokenValues = {
   'meta.llama3-1-70b-instruct-v1:0': { prompt: 2.65, completion: 3.5 },
   'meta.llama3-1-405b-instruct-v1:0': { prompt: 5.32, completion: 16.0 },
   'mistral.mistral-7b-instruct-v0:2': { prompt: 0.15, completion: 0.2 },
-  'mistral.small-2402-v1:w0': { prompt: 0.15, completion: 0.2 },
+  'mistral.mistral-small-2402-v1:0': { prompt: 0.15, completion: 0.2 },
   'mistral.mixtral-8x7b-instruct-v0:1': { prompt: 0.45, completion: 0.7 },
   'mistral.mistral-large-2402-v1:0': { prompt: 4.0, completion: 12.0 },
   'mistral.mistral-large-2407-v1:0': { prompt: 3.0, completion: 9.0 },
