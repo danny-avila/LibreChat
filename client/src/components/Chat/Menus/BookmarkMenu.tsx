@@ -7,12 +7,15 @@ import { useConversationTagsQuery, useTagConversationMutation } from '~/data-pro
 import { BookmarkMenuItems } from './Bookmarks/BookmarkMenuItems';
 import { BookmarkContext } from '~/Providers/BookmarkContext';
 import { useLocalize, useBookmarkSuccess } from '~/hooks';
+import { NotificationSeverity } from '~/common';
+import { useToastContext } from '~/Providers';
+import { Button } from '~/components/ui';
 import { Spinner } from '~/components';
-import { cn } from '~/utils';
 import store from '~/store';
 
 const BookmarkMenu: FC = () => {
   const localize = useLocalize();
+  const { showToast } = useToastContext();
 
   const conversation = useRecoilValue(store.conversationByIndex(0));
   const conversationId = conversation?.conversationId ?? '';
@@ -40,33 +43,39 @@ const BookmarkMenu: FC = () => {
       setIsOpen(open);
       return;
     }
-    if (open && tags && tags.length > 0) {
+    if (tags.length > 0) {
       setIsOpen(open);
-    } else {
-      if (conversation && conversationId) {
-        await mutateAsync(
-          {
-            tags: [Constants.SAVED_TAG as 'Saved'],
-          },
-          {
-            onSuccess: (newTags: string[]) => {
-              setTags(newTags);
-              onSuccess(newTags);
-            },
-            onError: () => {
-              console.error('Error adding bookmark');
-            },
-          },
-        );
-      }
+      return;
     }
+
+    if (!conversationId) {
+      showToast({
+        message: localize('com_ui_no_conversation_id'),
+        severity: NotificationSeverity.ERROR,
+      });
+    }
+
+    await mutateAsync(
+      {
+        tags: [Constants.SAVED_TAG as string],
+      },
+      {
+        onSuccess: (newTags: string[]) => {
+          setTags(newTags);
+          onSuccess(newTags);
+        },
+        onError: () => {
+          console.error('Error adding bookmark');
+        },
+      },
+    );
   };
 
   const renderButtonContent = () => {
     if (isLoading) {
       return <Spinner />;
     }
-    if (tags && tags.length > 0) {
+    if (tags.length > 0) {
       return <BookmarkFilledIcon className="icon-sm" />;
     }
     return <BookmarkIcon className="icon-sm" />;
@@ -75,17 +84,14 @@ const BookmarkMenu: FC = () => {
   return (
     <Root open={open} onOpenChange={onOpenChange}>
       <Trigger asChild>
-        <button
+        <Button
           id="header-bookmarks-menu"
-          className={cn(
-            'pointer-cursor relative flex flex-col rounded-md border border-border-light bg-transparent text-left focus:outline-none focus:ring-0 sm:text-sm',
-            'hover:bg-header-button-hover radix-state-open:bg-header-button-hover',
-            'z-50 flex h-[40px] min-w-4 flex-none items-center justify-center px-3 focus:outline-offset-2 focus:ring-0 focus-visible:ring-2 focus-visible:ring-ring-primary ',
-          )}
+          variant="outline"
+          className="h-10 w-10 p-0 transition-all duration-300 ease-in-out"
           title={localize('com_ui_bookmarks')}
         >
           {renderButtonContent()}
-        </button>
+        </Button>
       </Trigger>
       <Portal>
         <Content

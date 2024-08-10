@@ -46,13 +46,13 @@ export default function ExportAndShareMenu({
           onClick={(e) => {
             e.stopPropagation();
           }}
-          className="border-xheavy z-10 mr-4 h-10 w-10 p-0 transition-all duration-300 ease-in-out focus-visible:ring focus-visible:ring-opacity-75 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900"
+          className="mr-4 h-10 w-10 p-0 transition-all duration-300 ease-in-out"
         >
           <Upload className="icon-md dark:text-gray-300" aria-hidden="true" focusable="false" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
-        className="z-10 mt-2 w-36 rounded-lg dark:bg-gray-800"
+        className="mt-2 w-36 rounded-lg dark:bg-gray-800"
         collisionPadding={2}
         align="end"
         aria-label="Export and Share Menu"
