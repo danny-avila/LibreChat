@@ -19,6 +19,7 @@ import type {
 import type { SetterOrUpdater, Resetter } from 'recoil';
 import type { TResData, ConvoGenerator } from '~/common';
 import {
+  scrollToEnd,
   addConversation,
   deleteConversation,
   updateConversation,
@@ -291,6 +292,8 @@ export default function useEventHandlers({
       if (resetLatestMessage) {
         resetLatestMessage();
       }
+
+      scrollToEnd();
     },
     [setMessages, setConversation, queryClient, isAddedRequest, resetLatestMessage],
   );

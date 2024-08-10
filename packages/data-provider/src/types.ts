@@ -185,7 +185,6 @@ export type TConversationTagResponse = TConversationTag;
 
 // type for tagging conversation
 export type TTagConversationRequest = {
-  conversationId: string;
   tags: string[];
 };
 export type TTagConversationResponse = string[];

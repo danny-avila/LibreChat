@@ -35,11 +35,11 @@ const messages = isEnabled(USE_REDIS)
   ? new Keyv({ store: keyvRedis, ttl: Time.FIVE_MINUTES })
   : new Keyv({ namespace: CacheKeys.MESSAGES, ttl: Time.FIVE_MINUTES });
 
-const tokenConfig = isEnabled(USE_REDIS) // ttl: 30 minutes
+const tokenConfig = isEnabled(USE_REDIS)
   ? new Keyv({ store: keyvRedis, ttl: Time.THIRTY_MINUTES })
   : new Keyv({ namespace: CacheKeys.TOKEN_CONFIG, ttl: Time.THIRTY_MINUTES });
 
-const genTitle = isEnabled(USE_REDIS) // ttl: 2 minutes
+const genTitle = isEnabled(USE_REDIS)
   ? new Keyv({ store: keyvRedis, ttl: Time.TWO_MINUTES })
   : new Keyv({ namespace: CacheKeys.GEN_TITLE, ttl: Time.TWO_MINUTES });
 
@@ -69,6 +69,7 @@ const namespaces = {
   registrations: createViolationInstance('registrations'),
   [ViolationTypes.TTS_LIMIT]: createViolationInstance(ViolationTypes.TTS_LIMIT),
   [ViolationTypes.STT_LIMIT]: createViolationInstance(ViolationTypes.STT_LIMIT),
+  [ViolationTypes.CONVO_ACCESS]: createViolationInstance(ViolationTypes.CONVO_ACCESS),
   [ViolationTypes.FILE_UPLOAD_LIMIT]: createViolationInstance(ViolationTypes.FILE_UPLOAD_LIMIT),
   [ViolationTypes.VERIFY_EMAIL_LIMIT]: createViolationInstance(ViolationTypes.VERIFY_EMAIL_LIMIT),
   [ViolationTypes.RESET_PASSWORD_LIMIT]: createViolationInstance(

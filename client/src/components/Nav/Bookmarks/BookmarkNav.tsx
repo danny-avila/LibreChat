@@ -4,8 +4,8 @@ import { useLocation } from 'react-router-dom';
 import { TConversation } from 'librechat-data-provider';
 import { Content, Portal, Root, Trigger } from '@radix-ui/react-popover';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
-import { useGetConversationTags } from 'librechat-data-provider/react-query';
 import { BookmarkContext } from '~/Providers/BookmarkContext';
+import { useGetConversationTags } from '~/data-provider';
 import BookmarkNavItems from './BookmarkNavItems';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -15,6 +15,7 @@ type BookmarkNavProps = {
   tags: string[];
   setTags: (tags: string[]) => void;
 };
+
 const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) => {
   const localize = useLocalize();
   const location = useLocation();
@@ -33,39 +34,27 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) 
     conversation = activeConvo;
   }
 
-  // Hide the button if there are no tags
-  if (!data || !data.some((tag) => tag.count > 0)) {
-    return null;
-  }
-
   return (
     <Root open={open} onOpenChange={setIsOpen}>
       <Trigger asChild>
         <button
           className={cn(
-            'group-ui-open:bg-gray-100 dark:group-ui-open:bg-gray-700 duration-350 mt-text-sm flex h-auto w-full items-center gap-2 rounded-lg p-2 text-sm transition-colors hover:bg-gray-100 dark:hover:bg-gray-800',
-            open ? 'bg-gray-100 dark:bg-gray-800' : '',
+            'relative mt-1 flex h-10 w-full cursor-pointer items-center gap-1 rounded-lg border-border-light bg-transparent px-1 py-2 text-text-primary transition-colors duration-200 focus-within:bg-surface-hover hover:bg-surface-hover',
+            open ? 'bg-surface-hover' : '',
           )}
-          id="presets-button"
-          data-testid="presets-button"
-          title={localize('com_endpoint_examples')}
+          id="show-bookmarks"
+          data-testid="show-bookmarks"
+          title={localize('com_ui_bookmarks')}
         >
-          <div className="-ml-0.9 -mt-0.8 h-8 w-8 flex-shrink-0">
-            <div className="relative flex">
-              <div className="relative flex h-8 w-8 items-center justify-center rounded-full p-1 dark:text-white">
-                {tags.length > 0 ? (
-                  <BookmarkFilledIcon className="h-6 w-6" />
-                ) : (
-                  <BookmarkIcon className="h-6 w-6" />
-                )}
-              </div>
-            </div>
+          <div className="relative flex h-8 w-8 items-center justify-center rounded-full p-1 text-text-primary">
+            {tags.length > 0 ? (
+              <BookmarkFilledIcon className="h-5 w-5" />
+            ) : (
+              <BookmarkIcon className="h-5 w-5" />
+            )}
           </div>
-          <div
-            className="mt-2 grow overflow-hidden text-ellipsis whitespace-nowrap text-left text-black dark:text-gray-100"
-            style={{ marginTop: '0', marginLeft: '0' }}
-          >
-            {tags.length > 0 ? tags.join(',') : localize('com_ui_bookmarks')}
+          <div className="grow overflow-hidden whitespace-nowrap text-left text-sm text-text-primary">
+            {tags.length > 0 ? tags.join(', ') : localize('com_ui_bookmarks')}
           </div>
         </button>
       </Trigger>
@@ -74,9 +63,9 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) 
           <Content
             side="bottom"
             align="start"
-            className="mt-2 max-h-96 min-w-[240px] overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-700 dark:text-white lg:max-h-96"
+            className="mt-2 max-h-96 min-w-[240px] overflow-y-auto rounded-lg border border-border-medium bg-surface-primary-alt text-text-primary shadow-lg lg:max-h-96"
           >
-            {data && conversation && data.some((tag) => tag.count > 0) && (
+            {data && conversation && (
               // Display bookmarks and highlight the selected tag
               <BookmarkContext.Provider value={{ bookmarks: data.filter((tag) => tag.count > 0) }}>
                 <BookmarkNavItems

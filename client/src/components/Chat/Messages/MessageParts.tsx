@@ -1,9 +1,9 @@
 import { useRecoilValue } from 'recoil';
 import type { TMessageProps } from '~/common';
 import Icon from '~/components/Chat/Messages/MessageIcon';
+import { useMessageHelpers, useLocalize } from '~/hooks';
 import ContentParts from './Content/ContentParts';
 import SiblingSwitch from './SiblingSwitch';
-import { useMessageHelpers } from '~/hooks';
 // eslint-disable-next-line import/no-cycle
 import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
@@ -12,6 +12,7 @@ import { cn } from '~/utils';
 import store from '~/store';
 
 export default function Message(props: TMessageProps) {
+  const localize = useLocalize();
   const { message, siblingIdx, siblingCount, setSiblingIdx, currentEditId, setCurrentEditId } =
     props;
 
@@ -31,7 +32,6 @@ export default function Message(props: TMessageProps) {
     regenerateMessage,
   } = useMessageHelpers(props);
   const fontSize = useRecoilValue(store.fontSize);
-
   const { content, children, messageId = null, isCreatedByUser, error, unfinished } = message ?? {};
 
   if (!message) {
@@ -59,12 +59,13 @@ export default function Message(props: TMessageProps) {
             <div
               className={cn(
                 'relative flex w-full flex-col',
-                isCreatedByUser != null ? '' : 'agent-turn',
+                isCreatedByUser === true ? '' : 'agent-turn',
               )}
             >
               <div className={cn('select-none font-semibold', fontSize)}>
-                {/* TODO: LOCALIZE */}
-                {isCreatedByUser != null ? 'You' : (assistant && assistant.name) ?? 'Assistant'}
+                {isCreatedByUser === true
+                  ? localize('com_user_message')
+                  : (assistant && assistant.name) ?? localize('com_ui_assistant')}
               </div>
               <div className="flex-col gap-1 md:gap-3">
                 <div className="flex max-w-full flex-grow flex-col gap-0">
@@ -76,7 +77,7 @@ export default function Message(props: TMessageProps) {
                     message={message}
                     messageId={messageId}
                     enterEdit={enterEdit}
-                    error={!!error}
+                    error={!!(error ?? false)}
                     isSubmitting={isSubmitting}
                     unfinished={unfinished ?? false}
                     isCreatedByUser={isCreatedByUser ?? true}
