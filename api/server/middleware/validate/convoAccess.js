@@ -1,8 +1,8 @@
 const { Constants, ViolationTypes, Time } = require('librechat-data-provider');
+const { searchConversation } = require('~/models/Conversation');
 const denyRequest = require('~/server/middleware/denyRequest');
 const { logViolation, getLogStores } = require('~/cache');
 const { isEnabled } = require('~/server/utils');
-const { getConvo } = require('~/models');
 
 const { USE_REDIS, CONVO_ACCESS_VIOLATION_SCORE: score = 0 } = process.env ?? {};
 
@@ -42,7 +42,7 @@ const validateConvoAccess = async (req, res, next) => {
       }
     }
 
-    const conversation = await getConvo(userId, conversationId);
+    const conversation = await searchConversation(conversationId);
 
     if (!conversation) {
       return next();

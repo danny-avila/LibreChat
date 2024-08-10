@@ -32,7 +32,7 @@ export default function useMessageActions(props: TMessageActions) {
   } = useChatContext();
   const { conversation: addedConvo, isSubmitting: isSubmittingAdditional } = useAddedChatContext();
   const conversation = useMemo(
-    () => (isMultiMessage ? addedConvo : rootConvo),
+    () => (isMultiMessage === true ? addedConvo : rootConvo),
     [isMultiMessage, addedConvo, rootConvo],
   );
   const assistantMap = useAssistantsMapContext();
@@ -41,24 +41,28 @@ export default function useMessageActions(props: TMessageActions) {
   const edit = useMemo(() => messageId === currentEditId, [messageId, currentEditId]);
 
   const enterEdit = useCallback(
-    (cancel?: boolean) => setCurrentEditId && setCurrentEditId(cancel ? -1 : messageId),
+    (cancel?: boolean) => setCurrentEditId && setCurrentEditId(cancel === true ? -1 : messageId),
     [messageId, setCurrentEditId],
   );
 
-  const assistant = useMemo(
-    () =>
-      isAssistantsEndpoint(conversation?.endpoint) &&
-      assistantMap?.[conversation?.endpoint ?? '']?.[message?.model ?? ''],
-    [assistantMap, conversation?.endpoint, message?.model],
-  );
+  const assistant = useMemo(() => {
+    if (!isAssistantsEndpoint(conversation?.endpoint)) {
+      return undefined;
+    }
+
+    const endpointKey = conversation?.endpoint ?? '';
+    const modelKey = message?.model ?? '';
+
+    return assistantMap?.[endpointKey] ? assistantMap[endpointKey][modelKey] : undefined;
+  }, [conversation?.endpoint, message?.model, assistantMap]);
 
   const isSubmitting = useMemo(
-    () => (isMultiMessage ? isSubmittingAdditional : isSubmittingRoot),
+    () => (isMultiMessage === true ? isSubmittingAdditional : isSubmittingRoot),
     [isMultiMessage, isSubmittingAdditional, isSubmittingRoot],
   );
 
   const regenerateMessage = useCallback(() => {
-    if ((isSubmitting && isCreatedByUser) || !message) {
+    if ((isSubmitting && isCreatedByUser === true) || !message) {
       return;
     }
 
@@ -68,8 +72,8 @@ export default function useMessageActions(props: TMessageActions) {
   const copyToClipboard = useCopyToClipboard({ text, content });
 
   const messageLabel = useMemo(() => {
-    if (message?.isCreatedByUser) {
-      return UsernameDisplay ? user?.name || user?.username : localize('com_user_message');
+    if (message?.isCreatedByUser === true) {
+      return UsernameDisplay ? (user?.name ?? '') || user?.username : localize('com_user_message');
     } else if (assistant) {
       return assistant.name ?? 'Assistant';
     } else {

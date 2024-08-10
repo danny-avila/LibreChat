@@ -1,8 +1,6 @@
-/* eslint-disable @typescript-eslint/no-unnecessary-condition */
-/* Reason: SearchContext is not specifying potential undefined type */
 import { useCallback, useEffect, useState, useMemo, memo } from 'react';
-import { useParams } from 'react-router-dom';
 import { useRecoilValue } from 'recoil';
+import { useParams } from 'react-router-dom';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import {
   useMediaQuery,
@@ -159,7 +157,7 @@ const Nav = ({ navVisible, setNavVisible }) => {
                         toggleNav={itemToggleNav}
                         subHeaders={
                           <>
-                           {isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
+                            {isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
                             <BookmarkNav tags={tags} setTags={setTags} />
                           </>
                         }

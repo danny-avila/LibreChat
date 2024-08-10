@@ -12,6 +12,7 @@ export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'd
 export const defaultRetrievalModels = [
   'gpt-4o',
   'gpt-4o-2024-05-13',
+  'gpt-4o-2024-08-06',
   'gpt-4o-mini',
   'gpt-4o-mini-2024-07-18',
   'gpt-4-turbo-preview',
@@ -956,6 +957,8 @@ export enum Constants {
   COMMANDS_MAX_LENGTH = 56,
   /** Default Stream Rate (ms) */
   DEFAULT_STREAM_RATE = 1,
+  /** Saved Tag */
+  SAVED_TAG = 'Saved',
 }
 
 export enum LocalStorageKeys {

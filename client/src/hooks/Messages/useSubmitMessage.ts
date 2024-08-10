@@ -86,7 +86,7 @@ export default function useSubmitMessage(helpers?: { clearDraft?: () => void }) 
       }
 
       const currentText = methods.getValues('text');
-      const newText = currentText ? `\n${parsedText}` : parsedText;
+      const newText = currentText?.trim()?.length > 1 ? `\n${parsedText}` : parsedText;
       setActivePrompt(newText);
     },
     [autoSendPrompts, submitMessage, setActivePrompt, methods, user],
