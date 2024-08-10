@@ -57,6 +57,15 @@ export default function ExportAndShareMenu({
         align="end"
         aria-label="Export and Share Menu"
       >
+        <DropdownMenuItem
+          onClick={() => {
+            onOpenChange(true);
+          }}
+          className="w-full cursor-pointer rounded-lg focus-visible:bg-gray-700 focus-visible:ring focus-visible:ring-opacity-75 disabled:cursor-not-allowed dark:text-gray-300 dark:hover:bg-gray-700 dark:focus:bg-gray-700"
+        >
+          <Upload className="mr-2 h-4 w-4" aria-hidden="true" focusable="false" />
+          <span>{localize('com_endpoint_export')}</span>
+        </DropdownMenuItem>
         {isSharedButtonEnabled && conversation.conversationId != null && (
           <ShareButton
             conversationId={conversation.conversationId}
@@ -73,16 +82,6 @@ export default function ExportAndShareMenu({
             </DropdownMenuItem>
           </ShareButton>
         )}
-
-        <DropdownMenuItem
-          onClick={() => {
-            onOpenChange(true);
-          }}
-          className="w-full cursor-pointer rounded-lg focus-visible:bg-gray-700 focus-visible:ring focus-visible:ring-opacity-75 disabled:cursor-not-allowed dark:text-gray-300 dark:hover:bg-gray-700 dark:focus:bg-gray-700"
-        >
-          <Upload className="mr-2 h-4 w-4" aria-hidden="true" focusable="false" />
-          <span>{localize('com_endpoint_export')}</span>
-        </DropdownMenuItem>
       </DropdownMenuContent>
       {showExports && (
         <ExportModal
