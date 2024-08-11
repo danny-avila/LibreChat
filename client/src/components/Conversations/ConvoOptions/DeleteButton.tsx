@@ -18,19 +18,21 @@ import { TrashIcon } from '~/components/svg';
 import { useLocalize, useNewConvo } from '~/hooks';
 
 type DeleteButtonProps = {
-  children?: React.ReactNode;
   conversationId: string;
   retainView: () => void;
   title: string;
   className?: string;
+  showDeleteDialog?: boolean;
+  setShowDeleteDialog?: (value: boolean) => void;
 };
 
 export default function DeleteButton({
-  children,
   conversationId,
   retainView,
   title,
   className = '',
+  showDeleteDialog,
+  setShowDeleteDialog,
 }: DeleteButtonProps) {
   const localize = useLocalize();
   const navigate = useNavigate();
@@ -80,17 +82,9 @@ export default function DeleteButton({
     />
   );
 
-  const onClick = (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.preventDefault();
-    setOpen(true);
-  };
-
-  if (children) {
+  if (showDeleteDialog !== undefined && setShowDeleteDialog !== undefined) {
     return (
-      <OGDialog open={open} onOpenChange={setOpen}>
-        <OGDialogTrigger asChild>
-          {React.cloneElement(children as React.ReactElement, { onClick })}
-        </OGDialogTrigger>
+      <OGDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         {dialogContent}
       </OGDialog>
     );

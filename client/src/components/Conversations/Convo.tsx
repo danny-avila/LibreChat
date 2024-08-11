@@ -1,6 +1,7 @@
 import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
-import { useState, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+
 import { Constants } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import { Check, X } from 'lucide-react';
@@ -51,17 +52,16 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
   };
 
   const renameHandler = (e: MouseEvent<HTMLButtonElement>) => {
-    e.preventDefault();
     setIsPopoverActive(false);
     setTitleInput(title);
     setRenaming(true);
-    setTimeout(() => {
-      if (!inputRef.current) {
-        return;
-      }
-      inputRef.current.focus();
-    }, 25);
   };
+
+  useEffect(() => {
+    if (renaming && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [renaming]);
 
   const onRename = (e: MouseEvent<HTMLButtonElement> | FocusEvent<HTMLInputElement> | KeyEvent) => {
     e.preventDefault();
@@ -112,7 +112,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
       )}
     >
       {renaming ? (
-        <div className="absolute inset-0 z-50 flex w-full items-center rounded-lg bg-gray-200 p-1.5 dark:bg-gray-700">
+        <div className="absolute inset-0 z-20 flex w-full items-center rounded-lg bg-gray-200 p-1.5 dark:bg-gray-700">
           <input
             ref={inputRef}
             type="text"
@@ -174,6 +174,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
           renameHandler={renameHandler}
           isPopoverActive={isPopoverActive}
           setIsPopoverActive={setIsPopoverActive}
+          isActiveConvo={isActiveConvo}
         />
       </div>
     </div>

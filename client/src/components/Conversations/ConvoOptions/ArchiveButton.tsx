@@ -16,14 +16,11 @@ type ArchiveButtonProps = {
   className?: string;
 };
 
-export default function ArchiveButton({
-  children,
-  conversationId,
-  retainView,
-  shouldArchive,
-  icon,
-  className = '',
-}: ArchiveButtonProps) {
+export function useArchiveHandler(
+  conversationId: string,
+  shouldArchive: boolean,
+  retainView: () => void,
+) {
   const localize = useLocalize();
   const navigate = useNavigate();
   const { showToast } = useToastContext();
@@ -33,14 +30,11 @@ export default function ArchiveButton({
 
   const archiveConvoMutation = useArchiveConversationMutation(conversationId);
 
-  const label = shouldArchive ? 'archive' : 'unarchive';
-  const archiveHandler = (
-    e:
-      | MouseEvent<HTMLButtonElement>
-      | FocusEvent<HTMLInputElement>
-      | KeyboardEvent<HTMLInputElement>,
-  ) => {
-    e.preventDefault();
+  return async (e?: MouseEvent | FocusEvent | KeyboardEvent) => {
+    if (e) {
+      e.preventDefault();
+    }
+    const label = shouldArchive ? 'archive' : 'unarchive';
     archiveConvoMutation.mutate(
       { conversationId, isArchived: shouldArchive },
       {
@@ -62,10 +56,17 @@ export default function ArchiveButton({
       },
     );
   };
+}
 
-  if (children) {
-    return React.cloneElement(children as React.ReactElement, { onClick: archiveHandler });
-  }
+export default function ArchiveButton({
+  conversationId,
+  retainView,
+  shouldArchive,
+  icon,
+  className = '',
+}: ArchiveButtonProps) {
+  const localize = useLocalize();
+  const archiveHandler = useArchiveHandler(conversationId, shouldArchive, retainView);
 
   return (
     <button type="button" className={className} onClick={archiveHandler}>
@@ -75,10 +76,12 @@ export default function ArchiveButton({
             <span className="h-5 w-5">{icon}</span>
           </TooltipTrigger>
           <TooltipContent side="top" sideOffset={0}>
-            {localize(`com_ui_${label}`)}
+            {localize(`com_ui_${shouldArchive ? 'archive' : 'unarchive'}`)}
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
     </button>
   );
 }
+
+export { useArchiveHandler as archiveHandler };

@@ -1,14 +1,8 @@
 import { useState } from 'react';
-import { Upload, Share2Icon } from 'lucide-react';
+import { Upload, Share2 } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
-import {
-  Button,
-  DropdownMenu,
-  DropdownMenuItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from '~/components/ui';
 import { ShareButton } from '~/components/Conversations/ConvoOptions';
+import { Button, DropdownPopup } from '~/components/ui';
 import useLocalize from '~/hooks/useLocalize';
 import { ExportModal } from '../Nav';
 import store from '~/store';
@@ -20,7 +14,9 @@ export default function ExportAndShareMenu({
 }) {
   const localize = useLocalize();
   const conversation = useRecoilValue(store.conversationByIndex(0));
+  const [isPopoverActive, setIsPopoverActive] = useState(false);
   const [showExports, setShowExports] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
 
   const exportable =
     conversation &&
@@ -36,53 +32,56 @@ export default function ExportAndShareMenu({
     setShowExports(value);
   };
 
+  const shareHandler = () => {
+    setIsPopoverActive(false);
+    setShowShareDialog(true);
+  };
+
+  const exportHandler = () => {
+    setIsPopoverActive(false);
+    setShowExports(true);
+  };
+
+  const dropdownItems = [
+    {
+      label: localize('com_endpoint_export'),
+      onClick: exportHandler,
+      icon: <Upload className="icon-md mr-2 dark:text-gray-300" />,
+    },
+    {
+      label: localize('com_ui_share'),
+      onClick: shareHandler,
+      icon: <Share2 className="icon-md mr-2 dark:text-gray-300" />,
+      show: isSharedButtonEnabled,
+    },
+  ];
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          id="export-menu-button"
-          aria-label="Export options"
-          variant="outline"
-          onClick={(e) => {
-            e.stopPropagation();
-          }}
-          className="mr-4 h-10 w-10 p-0 transition-all duration-300 ease-in-out"
-        >
-          <Upload className="icon-md dark:text-gray-300" aria-hidden="true" focusable="false" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        className="mt-2 w-36 rounded-lg dark:bg-gray-800"
-        collisionPadding={2}
-        align="end"
-        aria-label="Export and Share Menu"
-      >
-        <DropdownMenuItem
-          onClick={() => {
-            onOpenChange(true);
-          }}
-          className="w-full cursor-pointer rounded-lg focus-visible:bg-gray-700 focus-visible:ring focus-visible:ring-opacity-75 disabled:cursor-not-allowed dark:text-gray-300 dark:hover:bg-gray-700 dark:focus:bg-gray-700"
-        >
-          <Upload className="mr-2 h-4 w-4" aria-hidden="true" focusable="false" />
-          <span>{localize('com_endpoint_export')}</span>
-        </DropdownMenuItem>
-        {isSharedButtonEnabled && conversation.conversationId != null && (
-          <ShareButton
-            conversationId={conversation.conversationId}
-            title={conversation.title ?? ''}
+    <>
+      <DropdownPopup
+        isOpen={isPopoverActive}
+        setIsOpen={setIsPopoverActive}
+        trigger={
+          <Button
+            id="export-menu-button"
+            aria-label="Export options"
+            variant="outline"
+            className="mr-4 h-10 w-10 p-0 transition-all duration-300 ease-in-out"
           >
-            <DropdownMenuItem
-              onClick={(e) => {
-                e.stopPropagation();
-              }}
-              className="w-full cursor-pointer rounded-lg focus-visible:bg-gray-700 focus-visible:ring focus-visible:ring-opacity-75 disabled:cursor-not-allowed dark:text-gray-300 dark:hover:bg-gray-700 dark:focus:bg-gray-700"
-            >
-              <Share2Icon className="mr-2 h-4 w-4" aria-hidden="true" focusable="false" />
-              <span>{localize('com_ui_share')}</span>
-            </DropdownMenuItem>
-          </ShareButton>
-        )}
-      </DropdownMenuContent>
+            <Upload className="icon-md dark:text-gray-300" aria-hidden="true" focusable="false" />
+          </Button>
+        }
+        items={dropdownItems}
+        anchor="bottom end"
+      />
+      {showShareDialog && conversation.conversationId != null && (
+        <ShareButton
+          conversationId={conversation.conversationId}
+          title={conversation.title ?? ''}
+          showShareDialog={showShareDialog}
+          setShowShareDialog={setShowShareDialog}
+        />
+      )}
       {showExports && (
         <ExportModal
           open={showExports}
@@ -91,6 +90,6 @@ export default function ExportAndShareMenu({
           aria-label="Export conversation modal"
         />
       )}
-    </DropdownMenu>
+    </>
   );
 }
