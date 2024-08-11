@@ -73,7 +73,7 @@ export default function useEventHandlers({
   const contentHandler = useContentHandler({ setMessages, getMessages });
 
   const messageHandler = useCallback(
-    (data: string, submission: TSubmission) => {
+    (data: string | undefined, submission: TSubmission) => {
       const {
         messages,
         userMessage,
@@ -82,14 +82,17 @@ export default function useEventHandlers({
         initialResponse,
         isRegenerate = false,
       } = submission;
-      announcePolite(data);
+      const text = data ?? '';
+      if (text.length > 0) {
+        announcePolite(text, '', true);
+      }
 
       if (isRegenerate) {
         setMessages([
           ...messages,
           {
             ...initialResponse,
-            text: data,
+            text,
             plugin: plugin ?? null,
             plugins: plugins ?? [],
             // unfinished: true
@@ -101,7 +104,7 @@ export default function useEventHandlers({
           userMessage,
           {
             ...initialResponse,
-            text: data,
+            text,
             plugin: plugin ?? null,
             plugins: plugins ?? [],
             // unfinished: true

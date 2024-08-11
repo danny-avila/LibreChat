@@ -1,8 +1,9 @@
+// AnnouncerContext.tsx
 import React from 'react';
 
 interface AnnouncerContextType {
-  announceAssertive: (message: string, id?: string) => void;
-  announcePolite: (message: string, id?: string) => void;
+  announceAssertive: (message: string, id?: string, isStream?: boolean) => void;
+  announcePolite: (message: string, id?: string, isStream?: boolean) => void;
 }
 
 const defaultContext: AnnouncerContextType = {
