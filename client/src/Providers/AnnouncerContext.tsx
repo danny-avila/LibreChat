@@ -1,9 +1,16 @@
 // AnnouncerContext.tsx
 import React from 'react';
 
+export interface AnnounceOptions {
+  message: string;
+  id?: string;
+  isStream?: boolean;
+  isComplete?: boolean;
+}
+
 interface AnnouncerContextType {
-  announceAssertive: (message: string, id?: string, isStream?: boolean) => void;
-  announcePolite: (message: string, id?: string, isStream?: boolean) => void;
+  announceAssertive: (options: AnnounceOptions) => void;
+  announcePolite: (options: AnnounceOptions) => void;
 }
 
 const defaultContext: AnnouncerContextType = {
@@ -15,9 +22,6 @@ const AnnouncerContext = React.createContext<AnnouncerContextType>(defaultContex
 
 export const useLiveAnnouncer = () => {
   const context = React.useContext(AnnouncerContext);
-  if (context === undefined) {
-    throw new Error('useLiveAnnouncer must be used within a LiveAnnouncer');
-  }
   return context;
 };
 

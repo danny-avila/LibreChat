@@ -43,10 +43,10 @@ const Announcer: React.FC<AnnouncerProps> = ({
 
   return (
     <div>
-      <MessageBlock aria-live="assertive" message={state.assertiveMessage1} />
-      <MessageBlock aria-live="assertive" message={state.assertiveMessage2} />
-      <MessageBlock aria-live="polite" message={state.politeMessage1} />
-      <MessageBlock aria-live="polite" message={state.politeMessage2} />
+      <MessageBlock aria-live="assertive" aria-atomic="true" message={state.assertiveMessage1} />
+      <MessageBlock aria-live="assertive" aria-atomic="true" message={state.assertiveMessage2} />
+      <MessageBlock aria-live="polite" aria-atomic="false" message={state.politeMessage1} />
+      <MessageBlock aria-live="polite" aria-atomic="false" message={state.politeMessage2} />
     </div>
   );
 };

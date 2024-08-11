@@ -1,5 +1,6 @@
-// LiveAnnouncer.tsx
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { findLastSeparatorIndex } from 'librechat-data-provider';
+import type { AnnounceOptions } from '~/Providers/AnnouncerContext';
 import AnnouncerContext from '~/Providers/AnnouncerContext';
 import Announcer from './Announcer';
 
@@ -13,61 +14,84 @@ const LiveAnnouncer: React.FC<LiveAnnouncerProps> = ({ children }) => {
   const [announceAssertiveMessage, setAnnounceAssertiveMessage] = useState('');
   const [assertiveMessageId, setAssertiveMessageId] = useState('');
 
-  const lastPoliteMessageRef = useRef('');
-  const lastAssertiveMessageRef = useRef('');
+  const politeProcessedTextRef = useRef('');
+  const politeQueueRef = useRef<Array<{ message: string; id: string }>>([]);
+  const isAnnouncingRef = useRef(false);
+  const counterRef = useRef(0);
 
-  const getNewContent = (currentMessage: string, lastMessage: string) => {
-    let newContent = currentMessage.slice(lastMessage.length);
-
-    // If the new content starts with a partial word, include the last word from the previous message
-    if (newContent.length > 0 && !/^\s/.test(newContent) && lastMessage.length > 0) {
-      const lastWordOfPrevious = lastMessage.split(/\s+/).pop() || '';
-      newContent = lastWordOfPrevious + newContent;
-    }
-
-    // If the new content ends with a partial word, remove it
-    const words = newContent.split(/\s+/);
-    if (words.length > 1 && currentMessage.endsWith(words[words.length - 1])) {
-      words.pop();
-      newContent = words.join(' ');
-    }
-
-    // Preserve original spacing
-    newContent = newContent.replace(/\s+/g, ' ').trim();
-
-    return newContent;
+  const generateUniqueId = (prefix: string) => {
+    counterRef.current += 1;
+    return `${prefix}-${counterRef.current}`;
   };
 
-  const announcePolite = useCallback((message: string, id?: string, isStream?: boolean) => {
-    if (isStream === true) {
-      const newContent = getNewContent(message, lastPoliteMessageRef.current);
-      if (newContent) {
-        setAnnouncePoliteMessage(newContent);
-      }
-    } else {
-      setAnnouncePoliteMessage(message);
+  const processChunks = (text: string, processedTextRef: React.MutableRefObject<string>) => {
+    const remainingText = text.slice(processedTextRef.current.length);
+    const separatorIndex = findLastSeparatorIndex(remainingText);
+    if (separatorIndex !== -1) {
+      const chunkText = remainingText.slice(0, separatorIndex + 1);
+      processedTextRef.current += chunkText;
+      return chunkText.trim();
     }
-    lastPoliteMessageRef.current = message;
-    setPoliteMessageId(id ?? '');
+    return '';
+  };
+
+  const announceNextInQueue = useCallback(() => {
+    if (politeQueueRef.current.length > 0 && !isAnnouncingRef.current) {
+      isAnnouncingRef.current = true;
+      const nextAnnouncement = politeQueueRef.current.shift();
+      if (nextAnnouncement) {
+        setAnnouncePoliteMessage(nextAnnouncement.message);
+        setPoliteMessageId(nextAnnouncement.id);
+        setTimeout(() => {
+          isAnnouncingRef.current = false;
+          announceNextInQueue();
+        }, 100);
+      }
+    }
   }, []);
 
-  const announceAssertive = useCallback((message: string, id?: string, isStream?: boolean) => {
-    if (isStream === true) {
-      const newContent = getNewContent(message, lastAssertiveMessageRef.current);
-      if (newContent) {
-        setAnnounceAssertiveMessage(newContent);
+  const announcePolite = useCallback(
+    ({ message, id, isStream = false, isComplete = false }: AnnounceOptions) => {
+      const announcementId = id ?? generateUniqueId('polite');
+      if (isStream) {
+        const chunk = processChunks(message, politeProcessedTextRef);
+        if (chunk) {
+          politeQueueRef.current.push({ message: chunk, id: announcementId });
+          announceNextInQueue();
+        }
+      } else if (isComplete) {
+        const remainingText = message.slice(politeProcessedTextRef.current.length);
+        if (remainingText.trim()) {
+          politeQueueRef.current.push({ message: remainingText.trim(), id: announcementId });
+          announceNextInQueue();
+        }
+        politeProcessedTextRef.current = '';
+      } else {
+        politeQueueRef.current.push({ message, id: announcementId });
+        announceNextInQueue();
+        politeProcessedTextRef.current = '';
       }
-    } else {
-      setAnnounceAssertiveMessage(message);
-    }
-    lastAssertiveMessageRef.current = message;
-    setAssertiveMessageId(id ?? '');
+    },
+    [announceNextInQueue],
+  );
+
+  const announceAssertive = useCallback(({ message, id }: AnnounceOptions) => {
+    const announcementId = id ?? generateUniqueId('assertive');
+    setAnnounceAssertiveMessage(message);
+    setAssertiveMessageId(announcementId);
   }, []);
 
   const contextValue = {
     announcePolite,
     announceAssertive,
   };
+
+  useEffect(() => {
+    return () => {
+      politeQueueRef.current = [];
+      isAnnouncingRef.current = false;
+    };
+  }, []);
 
   return (
     <AnnouncerContext.Provider value={contextValue}>

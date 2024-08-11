@@ -84,7 +84,10 @@ export default function useEventHandlers({
       } = submission;
       const text = data ?? '';
       if (text.length > 0) {
-        announcePolite(text, '', true);
+        announcePolite({
+          message: text,
+          isStream: true,
+        });
       }
 
       if (isRegenerate) {
@@ -112,7 +115,7 @@ export default function useEventHandlers({
         ]);
       }
     },
-    [setMessages],
+    [setMessages, announcePolite],
   );
 
   const cancelHandler = useCallback(
@@ -254,7 +257,10 @@ export default function useEventHandlers({
       }
 
       const { conversationId, parentMessageId } = userMessage;
-      announceAssertive('The AI is generating a response.');
+      announceAssertive({
+        message: 'The AI is generating a response.',
+        id: `ai-generating-${Date.now()}`,
+      });
 
       let update = {} as TConversation;
       if (setConversation && !isAddedRequest) {
@@ -302,7 +308,14 @@ export default function useEventHandlers({
 
       scrollToEnd();
     },
-    [setMessages, setConversation, queryClient, isAddedRequest, resetLatestMessage],
+    [
+      setMessages,
+      setConversation,
+      queryClient,
+      isAddedRequest,
+      resetLatestMessage,
+      announceAssertive,
+    ],
   );
 
   const finalHandler = useCallback(
@@ -318,6 +331,19 @@ export default function useEventHandlers({
       if (!currentMessages?.length) {
         return setIsSubmitting(false);
       }
+
+      /* a11y announcements */
+      announcePolite({
+        message: '',
+        isComplete: true,
+      });
+
+      setTimeout(() => {
+        announcePolite({
+          message: 'The AI has finished generating a response.',
+          id: `ai-finished-${Date.now()}`,
+        });
+      }, 100);
 
       // update the messages; if assistants endpoint, client doesn't receive responseMessage
       if (runMessages) {
@@ -374,6 +400,7 @@ export default function useEventHandlers({
       setMessages,
       setCompleted,
       isAddedRequest,
+      announcePolite,
       setConversation,
       setIsSubmitting,
       setShowStopButton,
