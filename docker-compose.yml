@@ -32,6 +32,9 @@ services:
       - type: bind
         source: ./librechat.yaml
         target: /app/librechat.yaml
+      - type: bind
+        source: ./global-bundle.pem
+        target: /app/global-bundle.pem
     env_file:
       - .env
   rag_api:
