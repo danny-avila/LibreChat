@@ -5,6 +5,7 @@ const { getProjectByName } = require('~/models/Project');
 const { isEnabled } = require('~/server/utils');
 const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
+const jwtDecode = require('jsonwebtoken/decode');
 
 const router = express.Router();
 const emailLoginEnabled =
@@ -19,6 +20,32 @@ const publicSharedLinksEnabled =
   (process.env.ALLOW_SHARED_LINKS_PUBLIC === undefined ||
     isEnabled(process.env.ALLOW_SHARED_LINKS_PUBLIC));
 
+function verifyAssistantConfigurations(headers) {
+  let jwt = '';
+  let found = false;
+  for (let header of headers) {
+    if (header.includes('Bearer')) {
+      jwt = header.replace('Bearer ', '');
+      found = true;
+      break;
+    }
+  }
+
+  if (found) {
+    let userToken = jwtDecode(jwt);
+    const userGroups = global.myCache.get(userToken.id);
+
+    if (userGroups) {
+      for (let group of userGroups) {
+        if (global.AssistantCreationPermissions.includes(group)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  } else {return false;}
+}
 router.get('/', async function (req, res) {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
   const cachedStartupConfig = await cache.get(CacheKeys.STARTUP_CONFIG);
@@ -27,6 +54,7 @@ router.get('/', async function (req, res) {
     return;
   }
 
+  console.log(req.user);
   const isBirthday = () => {
     const today = new Date();
     return today.getMonth() === 1 && today.getDate() === 11;
@@ -88,6 +116,7 @@ router.get('/', async function (req, res) {
     payload.favicon32 = process.env.FAVICON_URL_32;
     payload.favicon16 = process.env.FAVICON_URL_16;
     payload.logo = process.env.LOGO_URL;
+    payload.userAssistantConfigPermission = verifyAssistantConfigurations(req.rawHeaders);
 
     await cache.set(CacheKeys.STARTUP_CONFIG, payload);
     return res.status(200).send(payload);

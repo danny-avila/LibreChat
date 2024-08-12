@@ -984,6 +984,8 @@ export enum LocalStorageKeys {
   APP_FAVICON_32 = 'appFavicon32',
   /** Key for apps favicon for 16 px */
   APP_FAVICON_16 = 'appFavicon16',
+  /** Key for user permission at assistant config panel */
+  USER_ASSISTANT_CONFIG_PERMISSION = 'userAssistantConfigPermission',
 }
 
 export enum ForkOptions {

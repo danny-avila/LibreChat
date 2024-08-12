@@ -10,7 +10,6 @@ const {
 } = require('~/server/services/Endpoints/azureAssistants');
 const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { getLogStores } = require('~/cache');
-const NodeCache = require('node-cache');  
 
 /**
  * @param {Express.Request} req
@@ -65,20 +64,19 @@ const _listAssistants = async ({ req, res, version, query }) => {
 
 async function verifyAssistantPermissions(userId, allAssistants) {
   const targetGroupIds = global.myCache.get(userId);
-  const assistants = global.azureAssistantsGroupsPermissions;    
+  const assistants = global.azureAssistantsGroupsPermissions;
   const result = [];
-  
-  allAssistants.forEach(assistant => {    
-    const exist = assistants.some(a => a.assistant === assistant.id); 
-    if (!exist) {     
+
+  allAssistants.forEach((assistant) => {
+    const exist = assistants.some((a) => a.assistant === assistant.id);
+    if (!exist) {
       result.push(assistant);
     } else {
-      assistants.forEach(assist => {    
-
-        if(assist.assistant == assistant.id){
-          const matches = assist.groups.some(groupId => {
+      assistants.forEach((assist) => {
+        if (assist.assistant == assistant.id) {
+          const matches = assist.groups.some((groupId) => {
             return targetGroupIds.includes(groupId);
-          });  
+          });
 
           if (matches) {
             result.push(assistant);
@@ -89,7 +87,6 @@ async function verifyAssistantPermissions(userId, allAssistants) {
   });
   return result;
 }
-
 
 /**
  * Fetches all assistants based on provided query params, until `has_more` is `false`.
@@ -112,33 +109,32 @@ const listAllAssistants = async ({ req, res, version, query }) => {
   let afterToken = query.after;
   let hasMore = true;
 
-  if ( global.azureAssistantsGroupsPermissions){
+  if (global.azureAssistantsGroupsPermissions) {
     const response = await openai.beta.assistants.list({
       ...query,
       after: afterToken,
     });
-    
+
     const { body } = response;
-    const allowedAssistants = await verifyAssistantPermissions(req.user._id.toString(),body.data);
-    
-    allowedAssistants.forEach(assistant => allAssistants.push(assistant));  
-  }
-  else {
+    const allowedAssistants = await verifyAssistantPermissions(req.user._id.toString(), body.data);
+
+    allowedAssistants.forEach((assistant) => allAssistants.push(assistant));
+  } else {
     while (hasMore) {
       const response = await openai.beta.assistants.list({
         ...query,
         after: afterToken,
       });
-  
+
       const { body } = response;
-  
+
       allAssistants.push(...body.data);
       hasMore = body.has_more;
-  
+
       if (!first_id) {
         first_id = body.first_id;
       }
-  
+
       if (hasMore) {
         afterToken = body.last_id;
       } else {
@@ -146,7 +142,7 @@ const listAllAssistants = async ({ req, res, version, query }) => {
       }
     }
   }
-  
+
   return {
     data: allAssistants,
     body: {

@@ -32,10 +32,15 @@ export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: b
     const devicePixelRatio = window.devicePixelRatio || 1;
 
     const favicon = document.querySelector('link[rel~=\'icon\']');
+
     if (favicon) {
       favicon['href'] = devicePixelRatio >= 2 ? startupConfig?.favicon32 : startupConfig?.favicon16;
     }
-    console.log(favicon);
+
+    localStorage.setItem(
+      'userAssistantConfigPermission',
+      '' + startupConfig?.userAssistantConfigPermission,
+    );
   }, [startupConfig]);
 
   useEffect(() => {
