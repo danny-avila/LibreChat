@@ -339,6 +339,7 @@ export type TStartupConfig = {
   logo?: string;
   favicon16?: string;
   favicon32?: string;
+  userAssistantConfigPermission: boolean;
 };
 
 export type TRefreshTokenResponse = {

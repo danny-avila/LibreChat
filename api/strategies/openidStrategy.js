@@ -87,7 +87,7 @@ async function fetchRemoteAzureGroups(url) {
   if (response.ok) {
     const json = await response.json();
 
-    return json.permissions;
+    return json;
   } else {
     logger.error(
       `[openidStrategy] fetchRemoteAzureGroups: Error fetching remote permissions at URL "${url}": ${response.statusText} (HTTP ${response.status})`,
@@ -205,9 +205,11 @@ async function setupOpenId() {
           if (azureAssistantsRemotePermisionFile && azureAssistantsRemotePermisionFile != '') {
             let userIdToken = jwtDecode(tokenset.id_token);
             global.myCache.set(user._id.toString(), userIdToken.groups, 604206);
-            global.azureAssistantsGroupsPermissions = await fetchRemoteAzureGroups(
+            const azureAssistantGroups = await fetchRemoteAzureGroups(
               azureAssistantsRemotePermisionFile,
             );
+            global.azureAssistantsGroupsPermissions = azureAssistantGroups.permissions;
+            global.AssistantCreationPermissions = azureAssistantGroups.assistantCreator;
           }
 
           if (userinfo.picture && !user.avatar?.includes('manual=true')) {

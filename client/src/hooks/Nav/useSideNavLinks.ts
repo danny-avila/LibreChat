@@ -11,7 +11,7 @@ import {
   PermissionTypes,
   Permissions,
 } from 'librechat-data-provider';
-import type { TConfig, TInterfaceConfig } from 'librechat-data-provider';
+import type { TConfig, TInterfaceConfig, TStartupConfig } from 'librechat-data-provider';
 import type { NavLink } from '~/common';
 import BookmarkPanel from '~/components/SidePanel/Bookmarks/BookmarkPanel';
 import PanelSwitch from '~/components/SidePanel/Builder/PanelSwitch';
@@ -20,6 +20,7 @@ import PromptsAccordion from '~/components/Prompts/PromptsAccordion';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
 import { Blocks, AttachmentIcon } from '~/components/svg';
 import { useHasAccess } from '~/hooks';
+import { start } from 'repl';
 
 export default function useSideNavLinks({
   hidePanel,
@@ -27,12 +28,14 @@ export default function useSideNavLinks({
   keyProvided,
   endpoint,
   interfaceConfig,
+  startupConfig,
 }: {
   hidePanel: () => void;
   assistants?: TConfig | null;
   keyProvided: boolean;
   endpoint?: EModelEndpoint | null;
   interfaceConfig: Partial<TInterfaceConfig>;
+  startupConfig: TStartupConfig | null | undefined;
 }) {
   const hasAccessToPrompts = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
@@ -41,12 +44,22 @@ export default function useSideNavLinks({
 
   const Links = useMemo(() => {
     const links: NavLink[] = [];
+
+    let permission = false;
+
+    if (localStorage.getItem('userAssistantConfigPermission') == undefined) {
+      permission = startupConfig?.userAssistantConfigPermission || false;
+    }
+
+    if (localStorage.getItem('userAssistantConfigPermission') == 'true') {permission = true;}
+
     if (
       isAssistantsEndpoint(endpoint) &&
       assistants &&
       assistants.disableBuilder !== true &&
       keyProvided &&
-      interfaceConfig.parameters
+      interfaceConfig.parameters &&
+      permission
     ) {
       links.push({
         title: 'com_sidepanel_assistant_builder',
