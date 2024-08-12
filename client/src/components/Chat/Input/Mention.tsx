@@ -27,7 +27,7 @@ export default function Mention({
   const localize = useLocalize();
   const assistantMap = useAssistantsMapContext();
   const { options, presets, modelSpecs, modelsConfig, endpointsConfig, assistantListMap } =
-    useMentions({ assistantMap, includeAssistants });
+    useMentions({ assistantMap: assistantMap || {}, includeAssistants });
   const { onSelectMention } = useSelectMention({
     presets,
     modelSpecs,
@@ -161,7 +161,9 @@ export default function Mention({
                 type={type}
                 index={index}
                 key={`${mention.value}-${index}`}
-                onClick={() => {
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
                   if (timeoutRef.current) {
                     clearTimeout(timeoutRef.current);
                   }
