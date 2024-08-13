@@ -24,11 +24,11 @@ export default function MessageAudio({ isLast, index, messageId, content }: THov
   });
 
   const renderIcon = (size: string) => {
-    if (isLoading == true) {
+    if (isLoading === true) {
       return <Spinner size={size} />;
     }
 
-    if (isSpeaking == true) {
+    if (isSpeaking === true) {
       return <VolumeMuteIcon size={size} />;
     }
 
