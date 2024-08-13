@@ -1,7 +1,6 @@
 import { useRecoilValue } from 'recoil';
 import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { useTextToSpeechMutation, useVoicesQuery } from '~/data-provider';
-import useAudioRef from '~/hooks/Audio/useAudioRef';
 import useLocalize from '~/hooks/useLocalize';
 import { useToastContext } from '~/Providers';
 import store from '~/store';
@@ -13,7 +12,21 @@ const createFormData = (text: string, voice: string) => {
   return formData;
 };
 
-function useTextToSpeechExternal(messageId: string, isLast: boolean, index = 0) {
+type TUseTTSExternal = {
+  setIsSpeaking: (isSpeaking: boolean) => void;
+  audioRef: React.MutableRefObject<HTMLAudioElement | null>;
+  messageId?: string;
+  isLast: boolean;
+  index?: number;
+};
+
+function useTextToSpeechExternal({
+  setIsSpeaking,
+  audioRef,
+  messageId,
+  isLast,
+  index = 0,
+}: TUseTTSExternal) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const voice = useRecoilValue(store.voice);
@@ -21,8 +34,7 @@ function useTextToSpeechExternal(messageId: string, isLast: boolean, index = 0) 
   const playbackRate = useRecoilValue(store.playbackRate);
 
   const [downloadFile, setDownloadFile] = useState(false);
-  const [isLocalSpeaking, setIsSpeaking] = useState(false);
-  const { audioRef } = useAudioRef({ setIsPlaying: setIsSpeaking });
+
   const promiseAudioRef = useRef<HTMLAudioElement | null>(null);
 
   /* Global Audio Variables */
@@ -174,17 +186,12 @@ function useTextToSpeechExternal(messageId: string, isLast: boolean, index = 0) 
     return isProcessing || (isLast && globalIsFetching && !globalIsPlaying);
   }, [isProcessing, globalIsFetching, globalIsPlaying, isLast]);
 
-  const isSpeaking = useMemo(() => {
-    return isLocalSpeaking || (isLast && globalIsPlaying);
-  }, [isLocalSpeaking, globalIsPlaying, isLast]);
-
   const { data: voicesData = [] } = useVoicesQuery();
 
   return {
     generateSpeechExternal,
     cancelSpeech,
     isLoading,
-    isSpeaking,
     audioRef,
     voices: voicesData,
   };

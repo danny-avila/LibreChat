@@ -1,5 +1,5 @@
-import { useRecoilState } from 'recoil';
-import { useRef, useMemo, useEffect } from 'react';
+import { useRecoilState, useRecoilValue } from 'recoil';
+import { useRef, useMemo, useEffect, useState } from 'react';
 import { parseTextParts } from 'librechat-data-provider';
 import type { TMessageContentParts } from 'librechat-data-provider';
 import type { Option } from '~/common';
@@ -7,6 +7,7 @@ import useTextToSpeechExternal from './useTextToSpeechExternal';
 import useTextToSpeechBrowser from './useTextToSpeechBrowser';
 import useGetAudioSettings from './useGetAudioSettings';
 import useTextToSpeechEdge from './useTextToSpeechEdge';
+import useAudioRef from '~/hooks/Audio/useAudioRef';
 import { usePauseGlobalAudio } from '../Audio';
 import { logger } from '~/utils';
 import store from '~/store';
@@ -20,41 +21,77 @@ type TUseTextToSpeech = {
 
 const useTextToSpeech = (props?: TUseTextToSpeech) => {
   const { messageId, content, isLast = false, index = 0 } = props ?? {};
-  const [voice, setVoice] = useRecoilState(store.voice);
+
+  const isMouseDownRef = useRef(false);
+  const timerRef = useRef<number | undefined>(undefined);
+  const [isSpeakingState, setIsSpeaking] = useState(false);
+  const { audioRef } = useAudioRef({ setIsPlaying: setIsSpeaking });
+
   const { textToSpeechEndpoint } = useGetAudioSettings();
   const { pauseGlobalAudio } = usePauseGlobalAudio(index);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [voice, setVoice] = useRecoilState(store.voice);
+  const globalIsPlaying = useRecoilValue(store.globalAudioPlayingFamily(index));
+
+  const isSpeaking = isSpeakingState || (isLast && globalIsPlaying);
 
   const {
     generateSpeechLocal,
     cancelSpeechLocal,
-    isSpeaking: isSpeakingLocal,
     voices: voicesLocal,
-  } = useTextToSpeechBrowser();
+  } = useTextToSpeechBrowser({ setIsSpeaking });
 
   const {
     generateSpeechEdge,
     cancelSpeechEdge,
-    isSpeaking: isSpeakingEdge,
     voices: voicesEdge,
-  } = useTextToSpeechEdge();
+  } = useTextToSpeechEdge({ setIsSpeaking });
 
   const {
     generateSpeechExternal,
     cancelSpeech: cancelSpeechExternal,
-    isSpeaking: isSpeakingExternal,
     isLoading: isLoadingExternal,
-    audioRef: audioRefExternal,
     voices: voicesExternal,
-  } = useTextToSpeechExternal(messageId ?? '', isLast, index);
+  } = useTextToSpeechExternal({
+    setIsSpeaking,
+    audioRef,
+    messageId,
+    isLast,
+    index,
+  });
 
-  let generateSpeech, cancelSpeech, isSpeaking, isLoading;
+  const generateSpeech = useMemo(() => {
+    const map = {
+      edge: generateSpeechEdge,
+      browser: generateSpeechLocal,
+      external: generateSpeechExternal,
+    };
+
+    return map[textToSpeechEndpoint];
+  }, [generateSpeechEdge, generateSpeechExternal, generateSpeechLocal, textToSpeechEndpoint]);
+
+  const cancelSpeech = useMemo(() => {
+    const map = {
+      edge: cancelSpeechEdge,
+      browser: cancelSpeechLocal,
+      external: cancelSpeechExternal,
+    };
+    return map[textToSpeechEndpoint];
+  }, [cancelSpeechEdge, cancelSpeechExternal, cancelSpeechLocal, textToSpeechEndpoint]);
+
+  const isLoading = useMemo(() => {
+    const map = {
+      edge: false,
+      browser: false,
+      external: isLoadingExternal,
+    };
+    return map[textToSpeechEndpoint];
+  }, [isLoadingExternal, textToSpeechEndpoint]);
 
   const voices: Option[] | string[] = useMemo(() => {
     const voiceMap = {
-      external: voicesExternal,
       edge: voicesEdge,
       browser: voicesLocal,
+      external: voicesExternal,
     };
 
     return voiceMap[textToSpeechEndpoint];
@@ -87,34 +124,6 @@ const useTextToSpeech = (props?: TUseTextToSpeech) => {
       setVoice(firstVoice.toString());
     }
   }, [setVoice, textToSpeechEndpoint, voice, voices]);
-
-  switch (textToSpeechEndpoint) {
-    case 'external':
-      generateSpeech = generateSpeechExternal;
-      cancelSpeech = cancelSpeechExternal;
-      isSpeaking = isSpeakingExternal;
-      isLoading = isLoadingExternal;
-      if (audioRefExternal.current) {
-        audioRef.current = audioRefExternal.current;
-      }
-      break;
-    case 'edge':
-      generateSpeech = generateSpeechEdge;
-      cancelSpeech = cancelSpeechEdge;
-      isSpeaking = isSpeakingEdge;
-      isLoading = false;
-      break;
-    case 'browser':
-    default:
-      generateSpeech = generateSpeechLocal;
-      cancelSpeech = cancelSpeechLocal;
-      isSpeaking = isSpeakingLocal;
-      isLoading = false;
-      break;
-  }
-
-  const isMouseDownRef = useRef(false);
-  const timerRef = useRef<number | undefined>(undefined);
 
   const handleMouseDown = () => {
     isMouseDownRef.current = true;
