@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { CircleIcon, CircleDotsIcon } from '~/components/svg';
-import { useSpeechToTextCall, useSubmitMessageSpeech } from '~/hooks';
+import { useSpeechToTextCall, useSubmitMessageSpeech, useTextToSpeech } from '~/hooks';
 import { useChatFormContext } from '~/Providers';
 import { globalAudioId } from '~/common';
 import store from '~/store';
@@ -47,6 +47,19 @@ export default function AudioRecorderCall({
 
   const { isListening, isLoading, startRecording, stopRecording, speechText, clearText, rmsLevel } =
     useSpeechToTextCall(handleTranscriptionComplete);
+  const { toggleSpeech } = useTextToSpeech(
+    {
+      text: '',
+      error: false,
+      messageId: '',
+      conversationId: null,
+      parentMessageId: null,
+      sender: '',
+      isCreatedByUser: false,
+    },
+    true,
+    0,
+  );
 
   // useEffect(() => {
   //   if (textAreaRef.current) {
@@ -105,6 +118,7 @@ export default function AudioRecorderCall({
     if (isListening) {
       handleStopRecording();
     }
+    pauseGlobalAudio();
     setIsStreamingAudio(false);
     setShowCallOverlay(false);
   };
@@ -120,14 +134,15 @@ export default function AudioRecorderCall({
             : rmsLevel > 0.01
               ? 1.2
               : 1;
-
     if (isCameraOn) {
-      transformScale *= 0.5;
+      transformScale *= 0.8;
     }
 
+    const iconClassName = isListening ? 'smooth-transition' : 'smooth-transition pulse';
+
     return (
-      <div className="smooth-transition" style={{ transform: `scale(${transformScale})` }}>
-        <CircleIcon size="256" />
+      <div className={iconClassName} style={{ transform: `scale(${transformScale})` }}>
+        <CircleIcon size={isCameraOn ? '156' : '256'} />
       </div>
     );
   };
@@ -171,12 +186,10 @@ export default function AudioRecorderCall({
       );
     }
   }
-  console.log(isStreamingAudio);
+  console.log(isListening);
 
   return (
     <>
-      <div className="absolute bottom-12 flex w-full justify-center">{renderStatus()}</div>
-
       <div className="relative flex flex-col items-center justify-center space-y-0 text-lg text-white">
         {isCameraOn && (
           <CameraFeed
@@ -185,31 +198,10 @@ export default function AudioRecorderCall({
             isSpeaking={isListening}
           />
         )}
-        {!isStreamingAudio ? (
-          <button
-            onClick={isListening ? handleStopRecording : handleStartRecording}
-            disabled={disabled}
-            className="m-0 p-0"
-            type="button"
-          >
-            {renderIcon()}
-          </button>
-        ) : (
-          <button
-            onClickCapture={() => {
-              setIsStreamingAudio(false);
-              pauseGlobalAudio();
-            }}
-            disabled={disabled}
-            className="m-0 p-0"
-            type="button"
-          >
-            {renderDotsIcon()}
-          </button>
-        )}
+        {!isStreamingAudio ? <>{renderIcon()}</> : <>{renderDotsIcon()}</>}
       </div>
 
-      <div className="absolute bottom-10 flex w-full justify-center gap-80">
+      <div className="absolute bottom-10 flex  gap-80 ">
         <button
           className="rounded-full bg-gray-50 p-3 hover:bg-gray-100 dark:bg-gray-900 dark:hover:bg-gray-800"
           onClick={handleToggleCamera}
@@ -247,6 +239,21 @@ export default function AudioRecorderCall({
             <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
           </svg>
         </button>
+      </div>
+      <div className="w-100 absolute bottom-10 flex justify-center gap-80">
+        {!isStreamingAudio ? (
+          <button
+            className="rounded-full p-3 "
+            onClick={isListening ? handleStopRecording : handleStartRecording}
+            disabled={isThinking}
+          >
+            {renderStatus()}
+          </button>
+        ) : (
+          <button className="rounded-full p-3" onClick={toggleSpeech} disabled={!isStreamingAudio}>
+            {renderStatus()}
+          </button>
+        )}
       </div>
     </>
   );
