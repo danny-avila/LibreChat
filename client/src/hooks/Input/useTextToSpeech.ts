@@ -1,7 +1,7 @@
 import { useRecoilState } from 'recoil';
 import { useRef, useMemo, useEffect } from 'react';
 import { parseTextParts } from 'librechat-data-provider';
-import type { TMessage } from 'librechat-data-provider';
+import type { TMessageContentParts } from 'librechat-data-provider';
 import type { Option } from '~/common';
 import useTextToSpeechExternal from './useTextToSpeechExternal';
 import useTextToSpeechBrowser from './useTextToSpeechBrowser';
@@ -11,7 +11,15 @@ import { usePauseGlobalAudio } from '../Audio';
 import { logger } from '~/utils';
 import store from '~/store';
 
-const useTextToSpeech = (message?: TMessage, isLast = false, index = 0) => {
+type TUseTextToSpeech = {
+  messageId?: string;
+  content?: TMessageContentParts[] | string;
+  isLast?: boolean;
+  index?: number;
+};
+
+const useTextToSpeech = (props?: TUseTextToSpeech) => {
+  const { messageId, content, isLast = false, index = 0 } = props ?? {};
   const [voice, setVoice] = useRecoilState(store.voice);
   const { textToSpeechEndpoint } = useGetAudioSettings();
   const { pauseGlobalAudio } = usePauseGlobalAudio(index);
@@ -38,7 +46,7 @@ const useTextToSpeech = (message?: TMessage, isLast = false, index = 0) => {
     isLoading: isLoadingExternal,
     audioRef: audioRefExternal,
     voices: voicesExternal,
-  } = useTextToSpeechExternal(message?.messageId ?? '', isLast, index);
+  } = useTextToSpeechExternal(messageId ?? '', isLast, index);
 
   let generateSpeech, cancelSpeech, isSpeaking, isLoading;
 
@@ -112,7 +120,7 @@ const useTextToSpeech = (message?: TMessage, isLast = false, index = 0) => {
     isMouseDownRef.current = true;
     timerRef.current = window.setTimeout(() => {
       if (isMouseDownRef.current) {
-        const messageContent = message?.content ?? message?.text ?? '';
+        const messageContent = content ?? '';
         const parsedMessage =
           typeof messageContent === 'string' ? messageContent : parseTextParts(messageContent);
         generateSpeech(parsedMessage, false);
@@ -128,11 +136,11 @@ const useTextToSpeech = (message?: TMessage, isLast = false, index = 0) => {
   };
 
   const toggleSpeech = () => {
-    if (isSpeaking) {
+    if (isSpeaking === true) {
       cancelSpeech();
       pauseGlobalAudio();
     } else {
-      const messageContent = message?.content ?? message?.text ?? '';
+      const messageContent = content ?? '';
       const parsedMessage =
         typeof messageContent === 'string' ? messageContent : parseTextParts(messageContent);
       generateSpeech(parsedMessage, false);
