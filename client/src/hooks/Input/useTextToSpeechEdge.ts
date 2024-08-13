@@ -1,5 +1,5 @@
 import { useRecoilValue } from 'recoil';
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 import { useToastContext } from '~/Providers';
 import useLocalize from '~/hooks/useLocalize';
@@ -28,6 +28,8 @@ function useTextToSpeechEdge(): UseTextToSpeechEdgeReturn {
   const sourceBufferRef = useRef<SourceBuffer | null>(null);
   const pendingBuffers = useRef<Uint8Array[]>([]);
   const { showToast } = useToastContext();
+
+  const isBrowserSupported = useMemo(() => MediaSource.isTypeSupported('audio/mpeg'), []);
 
   const fetchVoices = useCallback(() => {
     if (!ttsRef.current) {
@@ -198,14 +200,23 @@ function useTextToSpeechEdge(): UseTextToSpeechEdgeReturn {
   }, [showToast, localize]);
 
   useEffect(() => {
+    if (!MediaSource.isTypeSupported('audio/mpeg')) {
+      return;
+    }
     fetchVoices();
   }, [fetchVoices]);
 
   useEffect(() => {
+    if (!MediaSource.isTypeSupported('audio/mpeg')) {
+      return;
+    }
     initializeTTS();
   }, [voiceName, initializeTTS]);
 
   useEffect(() => {
+    if (!MediaSource.isTypeSupported('audio/mpeg')) {
+      return;
+    }
     initializeMediaSource();
     return () => {
       if (mediaSourceRef.current) {
@@ -213,6 +224,15 @@ function useTextToSpeechEdge(): UseTextToSpeechEdgeReturn {
       }
     };
   }, [initializeMediaSource]);
+
+  if (!isBrowserSupported) {
+    return {
+      generateSpeechEdge: () => ({}),
+      cancelSpeechEdge: () => ({}),
+      isSpeaking: false,
+      voices: [],
+    };
+  }
 
   return { generateSpeechEdge, cancelSpeechEdge, isSpeaking, voices };
 }
