@@ -3,7 +3,7 @@ import * as Tabs from '@radix-ui/react-tabs';
 import { SettingsTabValues } from 'librechat-data-provider';
 import React, { useContext, useCallback, useRef } from 'react';
 import type { TDangerButtonProps } from '~/common';
-import { ThemeContext, useLocalize, useLocalStorage } from '~/hooks';
+import { ThemeContext, useLocalize } from '~/hooks';
 import HideSidePanelSwitch from './HideSidePanelSwitch';
 import AutoScrollSwitch from './AutoScrollSwitch';
 import ArchivedChats from './ArchivedChats';
@@ -123,7 +123,6 @@ function General() {
   const { theme, setTheme } = useContext(ThemeContext);
 
   const [langcode, setLangcode] = useRecoilState(store.lang);
-  const [selectedLang, setSelectedLang] = useLocalStorage('selectedLang', langcode);
 
   const contentRef = useRef(null);
 
@@ -136,7 +135,6 @@ function General() {
 
   const changeLang = useCallback(
     (value: string) => {
-      setSelectedLang(value);
       if (value === 'auto') {
         const userLang = navigator.language || navigator.languages[0];
         setLangcode(userLang);
@@ -146,7 +144,7 @@ function General() {
         localStorage.setItem('lang', value);
       }
     },
-    [setLangcode, setSelectedLang],
+    [setLangcode],
   );
 
   return (
@@ -161,7 +159,7 @@ function General() {
           <ThemeSelector theme={theme} onChange={changeTheme} />
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
-          <LangSelector langcode={selectedLang} onChange={changeLang} />
+          <LangSelector langcode={langcode} onChange={changeLang} />
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <AutoScrollSwitch />
