@@ -7,9 +7,12 @@ interface VoiceOption {
   label: string;
 }
 
-function useTextToSpeechBrowser() {
+function useTextToSpeechBrowser({
+  setIsSpeaking,
+}: {
+  setIsSpeaking: (isSpeaking: boolean) => void;
+}) {
   const [cloudBrowserVoices] = useRecoilState(store.cloudBrowserVoices);
-  const [isSpeaking, setIsSpeaking] = useState(false);
   const [voiceName] = useRecoilState(store.voice);
   const [voices, setVoices] = useState<VoiceOption[]>([]);
 
@@ -61,7 +64,7 @@ function useTextToSpeechBrowser() {
     setIsSpeaking(false);
   };
 
-  return { generateSpeechLocal, cancelSpeechLocal, isSpeaking, voices };
+  return { generateSpeechLocal, cancelSpeechLocal, voices };
 }
 
 export default useTextToSpeechBrowser;
