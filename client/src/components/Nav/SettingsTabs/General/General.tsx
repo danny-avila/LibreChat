@@ -1,5 +1,6 @@
 import { useRecoilState } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
+import Cookies from 'js-cookie';
 import { SettingsTabValues } from 'librechat-data-provider';
 import React, { useContext, useCallback, useRef } from 'react';
 import type { TDangerButtonProps } from '~/common';
@@ -135,14 +136,14 @@ function General() {
 
   const changeLang = useCallback(
     (value: string) => {
+      let userLang = value;
       if (value === 'auto') {
-        const userLang = navigator.language || navigator.languages[0];
-        setLangcode(userLang);
-        localStorage.setItem('lang', userLang);
-      } else {
-        setLangcode(value);
-        localStorage.setItem('lang', value);
+        userLang = navigator.language || navigator.languages[0];
       }
+
+      setLangcode(userLang);
+      Cookies.set('langcode', userLang, { expires: 365 });
+      document.documentElement.lang = userLang;
     },
     [setLangcode],
   );
