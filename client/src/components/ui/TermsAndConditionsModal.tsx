@@ -1,41 +1,32 @@
 import { useLocalize } from '~/hooks';
-import { useState, useEffect } from 'react';
 import { Dialog } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 
 const TermsAndConditionsModal = ({
+  open,
+  onOpenChange,
   onAccept,
   onDecline,
 }: {
+  open: boolean;
+  onOpenChange: (isOpen: boolean) => void;
   onAccept: () => void;
   onDecline: () => void;
 }) => {
   const localize = useLocalize();
-  const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    setOpen(true);
-  }, []);
 
   const handleAccept = () => {
-    setOpen(false);
     onAccept();
+    onOpenChange(false);
   };
 
   const handleDecline = () => {
-    setOpen(false);
     onDecline();
-  };
-
-  const handleOpenChange = (isOpen: boolean) => {
-    setOpen(isOpen);
-    if (!isOpen) {
-      handleDecline();
-    }
+    onOpenChange(false);
   };
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
         title={localize('com_ui_terms_and_conditions')}
         className="w-11/12 sm:w-3/4 md:w-1/2 lg:w-2/5"

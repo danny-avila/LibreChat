@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 
 import type { ContextType } from '~/common';
@@ -23,11 +23,13 @@ export default function Root() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      setShowTerms(true);
+      const hasAcceptedTerms = localStorage.getItem('termsAccepted') === 'true';
+      setShowTerms(!hasAcceptedTerms);
     }
   }, [isAuthenticated]);
 
   const handleAcceptTerms = () => {
+    localStorage.setItem('termsAccepted', 'true');
     setShowTerms(false);
   };
 
@@ -54,9 +56,12 @@ export default function Root() {
               </div>
             </div>
           </div>
-          {showTerms && (
-            <TermsAndConditionsModal onAccept={handleAcceptTerms} onDecline={handleDeclineTerms} />
-          )}
+          <TermsAndConditionsModal
+            open={showTerms}
+            onOpenChange={setShowTerms}
+            onAccept={handleAcceptTerms}
+            onDecline={handleDeclineTerms}
+          />
         </AssistantsMapContext.Provider>
       </FileMapContext.Provider>
     </SearchContext.Provider>
