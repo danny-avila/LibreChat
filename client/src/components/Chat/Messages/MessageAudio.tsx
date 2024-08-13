@@ -45,7 +45,6 @@ export default function MessageAudio({ isLast, index, messageId, content }: THov
     }
   }, [audioRef, isSpeaking, playbackRate, messageId]);
 
-  console.log('audioRef.current?.src', audioRef.current?.src);
   return (
     <>
       <button
