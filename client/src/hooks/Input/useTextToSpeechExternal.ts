@@ -37,7 +37,7 @@ function useTextToSpeechExternal(messageId: string, isLast: boolean, index = 0) 
   const playAudioPromise = (blobUrl: string) => {
     const newAudio = new Audio(blobUrl);
     const initializeAudio = () => {
-      if (playbackRate && playbackRate !== 1 && playbackRate > 0) {
+      if (playbackRate != null && playbackRate !== 1 && playbackRate > 0) {
         newAudio.playbackRate = playbackRate;
       }
     };
@@ -47,7 +47,7 @@ function useTextToSpeechExternal(messageId: string, isLast: boolean, index = 0) 
 
     playPromise().catch((error: Error) => {
       if (
-        error?.message &&
+        error.message &&
         error.message.includes('The play() request was interrupted by a call to pause()')
       ) {
         console.log('Play request was interrupted by a call to pause()');
@@ -92,7 +92,7 @@ function useTextToSpeechExternal(messageId: string, isLast: boolean, index = 0) 
 
         if (cacheTTS && inputText) {
           const cache = await caches.open('tts-responses');
-          const request = new Request(inputText!);
+          const request = new Request(inputText);
           const response = new Response(audioBlob);
           cache.put(request, response);
         }
@@ -118,7 +118,7 @@ function useTextToSpeechExternal(messageId: string, isLast: boolean, index = 0) 
   });
 
   const startMutation = (text: string, download: boolean) => {
-    const formData = createFormData(text, voice);
+    const formData = createFormData(text, voice ?? '');
     setDownloadFile(download);
     processAudio(formData);
   };
@@ -178,9 +178,7 @@ function useTextToSpeechExternal(messageId: string, isLast: boolean, index = 0) 
     return isLocalSpeaking || (isLast && globalIsPlaying);
   }, [isLocalSpeaking, globalIsPlaying, isLast]);
 
-  const useVoices = () => {
-    return useVoicesQuery().data ?? [];
-  };
+  const { data: voicesData = [] } = useVoicesQuery();
 
   return {
     generateSpeechExternal,
@@ -188,7 +186,7 @@ function useTextToSpeechExternal(messageId: string, isLast: boolean, index = 0) 
     isLoading,
     isSpeaking,
     audioRef,
-    voices: useVoices,
+    voices: voicesData,
   };
 }
 

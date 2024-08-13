@@ -56,7 +56,7 @@ const localStorageAtoms = {
 
   textToSpeech: atomWithLocalStorage('textToSpeech', true),
   engineTTS: atomWithLocalStorage('engineTTS', 'browser'),
-  voice: atomWithLocalStorage('voice', ''),
+  voice: atomWithLocalStorage<string | undefined>('voice', undefined),
   cloudBrowserVoices: atomWithLocalStorage('cloudBrowserVoices', false),
   languageTTS: atomWithLocalStorage('languageTTS', ''),
   automaticPlayback: atomWithLocalStorage('automaticPlayback', false),
