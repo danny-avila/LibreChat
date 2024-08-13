@@ -7,6 +7,8 @@ const express = require('express');
 const compression = require('compression');
 const passport = require('passport');
 const mongoSanitize = require('express-mongo-sanitize');
+const fs = require('fs');
+const cookieParser = require('cookie-parser');
 const { jwtLogin, passportLogin } = require('~/strategies');
 const { connectDb, indexSync } = require('~/lib/db');
 const { isEnabled } = require('~/server/utils');
@@ -50,6 +52,7 @@ const startServer = async () => {
   app.use(staticCache(app.locals.paths.assets));
   app.set('trust proxy', 1); // trust first proxy
   app.use(cors());
+  app.use(cookieParser());
 
   if (DISABLE_COMPRESSION !== 'true') {
     app.use(compression());
@@ -101,8 +104,21 @@ const startServer = async () => {
   app.use('/api/roles', routes.roles);
 
   app.use('/api/tags', routes.tags);
+
   app.use((req, res) => {
-    res.sendFile(path.join(app.locals.paths.dist, 'index.html'));
+    // Check for preferred language in cookies, else check accept-language header
+    const preferredLanguage =
+      req.cookies.langcode || req.headers['accept-language']?.split(',')[0] || 'en-US';
+    const indexPath = path.join(app.locals.paths.dist, 'index.html');
+
+    fs.readFile(indexPath, 'utf8', (err, data) => {
+      if (err) {
+        console.error('Error reading index file:', err);
+        return res.status(500).send('Internal Server Error');
+      }
+      const updatedIndexHtml = data.replace(/lang="en-US"/g, `lang="${preferredLanguage}"`);
+      res.send(updatedIndexHtml);
+    });
   });
 
   app.listen(port, host, () => {
