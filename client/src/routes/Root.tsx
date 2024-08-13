@@ -10,7 +10,7 @@ import TermsAndConditionsModal from '~/components/ui/TermsAndConditionsModal';
 export default function Root() {
   const { isAuthenticated, logout } = useAuthContext();
   const navigate = useNavigate();
-  const [navVisible, setNavVisible] = useState<boolean>(() => {
+  const [navVisible, setNavVisible] = useState(() => {
     const savedNavVisible = localStorage.getItem('navVisible');
     return savedNavVisible !== null ? JSON.parse(savedNavVisible) : true;
   });
