@@ -3,6 +3,7 @@ import { useRecoilState, useRecoilValue } from 'recoil';
 import type { Option } from '~/common';
 import DropdownNoState from '~/components/ui/DropdownNoState';
 import { useLocalize, useTextToSpeech } from '~/hooks';
+import { logger } from '~/utils';
 import store from '~/store';
 
 export default function VoiceDropdown() {
@@ -12,7 +13,7 @@ export default function VoiceDropdown() {
   const engineTTS = useRecoilValue<string>(store.engineTTS);
 
   const handleVoiceChange = (newValue?: string | Option) => {
-    console.log('Voice changed:', newValue);
+    logger.log('Voice changed:', newValue);
     const newVoice = typeof newValue === 'string' ? newValue : newValue?.value;
     if (newVoice != null) {
       return setVoice(newVoice.toString());
