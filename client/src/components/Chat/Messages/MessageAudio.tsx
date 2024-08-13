@@ -3,6 +3,7 @@ import { useRecoilValue } from 'recoil';
 import type { TMessageContentParts } from 'librechat-data-provider';
 import { VolumeIcon, VolumeMuteIcon, Spinner } from '~/components/svg';
 import { useLocalize, useTextToSpeech } from '~/hooks';
+import { logger } from '~/utils';
 import store from '~/store';
 
 type THoverButtons = {
@@ -45,6 +46,12 @@ export default function MessageAudio({ isLast, index, messageId, content }: THov
     }
   }, [audioRef, isSpeaking, playbackRate, messageId]);
 
+  logger.log(
+    'MessageAudio: audioRef.current?.src, audioRef.current',
+    audioRef.current?.src,
+    audioRef.current,
+  );
+
   return (
     <>
       <button
@@ -75,6 +82,7 @@ export default function MessageAudio({ isLast, index, messageId, content }: THov
       <audio
         ref={audioRef}
         controls
+        preload="none"
         controlsList="nodownload nofullscreen noremoteplayback"
         style={{
           position: 'absolute',
@@ -83,7 +91,10 @@ export default function MessageAudio({ isLast, index, messageId, content }: THov
           height: '0px',
           width: '0px',
         }}
-        src={audioRef.current?.src ?? undefined}
+        src={audioRef.current?.src}
+        onError={(error) => {
+          console.error('Error fetching audio:', error);
+        }}
         id={`audio-${messageId}`}
         muted
         autoPlay
