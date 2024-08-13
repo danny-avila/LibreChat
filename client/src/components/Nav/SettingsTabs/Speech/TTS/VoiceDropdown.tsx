@@ -1,39 +1,33 @@
-import React, { useEffect, useState, useMemo } from 'react';
-import { useRecoilState } from 'recoil';
-import Dropdown from '~/components/ui/DropdownNoState';
+import React from 'react';
+import { useRecoilState, useRecoilValue } from 'recoil';
+import type { Option } from '~/common';
+import DropdownNoState from '~/components/ui/DropdownNoState';
 import { useLocalize, useTextToSpeech } from '~/hooks';
+import { logger } from '~/utils';
 import store from '~/store';
 
 export default function VoiceDropdown() {
   const localize = useLocalize();
+  const { voices = [] } = useTextToSpeech();
   const [voice, setVoice] = useRecoilState(store.voice);
-  const { voices } = useTextToSpeech();
-  const [voiceOptions, setVoiceOptions] = useState([]);
-  const [engineTTS] = useRecoilState(store.engineTTS);
+  const engineTTS = useRecoilValue<string>(store.engineTTS);
 
-  useEffect(() => {
-    async function fetchVoices() {
-      const options = await voices();
-      setVoiceOptions(options);
-
-      if (!voice && options.length > 0) {
-        setVoice(options[0]);
-      }
+  const handleVoiceChange = (newValue?: string | Option) => {
+    logger.log('Voice changed:', newValue);
+    const newVoice = typeof newValue === 'string' ? newValue : newValue?.value;
+    if (newVoice != null) {
+      return setVoice(newVoice.toString());
     }
-
-    fetchVoices();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engineTTS]);
-
-  const memoizedVoiceOptions = useMemo(() => voiceOptions, [voiceOptions]);
+  };
 
   return (
     <div className="flex items-center justify-between">
       <div>{localize('com_nav_voice_select')}</div>
-      <Dropdown
+      <DropdownNoState
+        key={`voice-dropdown-${engineTTS}-${voices.length}`}
         value={voice}
-        onChange={setVoice}
-        options={memoizedVoiceOptions}
+        options={voices}
+        onChange={handleVoiceChange}
         sizeClasses="min-w-[200px] !max-w-[400px] [--anchor-max-width:400px]"
         anchor="bottom start"
         testId="VoiceDropdown"

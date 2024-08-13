@@ -1,21 +1,46 @@
 import { useRecoilState } from 'recoil';
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import store from '~/store';
 
 interface VoiceOption {
   value: string;
-  display: string;
+  label: string;
 }
 
 function useTextToSpeechBrowser() {
   const [cloudBrowserVoices] = useRecoilState(store.cloudBrowserVoices);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [voiceName] = useRecoilState(store.voice);
+  const [voices, setVoices] = useState<VoiceOption[]>([]);
+
+  const updateVoices = useCallback(() => {
+    const availableVoices = window.speechSynthesis
+      .getVoices()
+      .filter((v) => cloudBrowserVoices || v.localService === true);
+
+    const voiceOptions: VoiceOption[] = availableVoices.map((v) => ({
+      value: v.name,
+      label: v.name,
+    }));
+
+    setVoices(voiceOptions);
+  }, [cloudBrowserVoices]);
+
+  useEffect(() => {
+    if (window.speechSynthesis.getVoices().length) {
+      updateVoices();
+    } else {
+      window.speechSynthesis.onvoiceschanged = updateVoices;
+    }
+
+    return () => {
+      window.speechSynthesis.onvoiceschanged = null;
+    };
+  }, [updateVoices]);
 
   const generateSpeechLocal = (text: string) => {
     const synth = window.speechSynthesis;
-    const voices = synth.getVoices().filter((v) => cloudBrowserVoices || v.localService === true);
-    const voice = voices.find((v) => v.name === voiceName);
+    const voice = voices.find((v) => v.value === voiceName);
 
     if (!voice) {
       return;
@@ -23,7 +48,7 @@ function useTextToSpeechBrowser() {
 
     synth.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.voice = voice;
+    utterance.voice = synth.getVoices().find((v) => v.name === voice.value) || null;
     utterance.onend = () => {
       setIsSpeaking(false);
     };
@@ -32,32 +57,8 @@ function useTextToSpeechBrowser() {
   };
 
   const cancelSpeechLocal = () => {
-    const synth = window.speechSynthesis;
-    synth.cancel();
+    window.speechSynthesis.cancel();
     setIsSpeaking(false);
-  };
-
-  const voices = (): Promise<VoiceOption[]> => {
-    return new Promise((resolve) => {
-      const getAndMapVoices = () => {
-        const availableVoices = speechSynthesis
-          .getVoices()
-          .filter((v) => cloudBrowserVoices || v.localService === true);
-
-        const voiceOptions: VoiceOption[] = availableVoices.map((v) => ({
-          value: v.name,
-          display: v.name,
-        }));
-
-        resolve(voiceOptions);
-      };
-
-      if (speechSynthesis.getVoices().length) {
-        getAndMapVoices();
-      } else {
-        speechSynthesis.onvoiceschanged = getAndMapVoices;
-      }
-    });
   };
 
   return { generateSpeechLocal, cancelSpeechLocal, isSpeaking, voices };
