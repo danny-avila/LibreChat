@@ -82,11 +82,6 @@ export default defineConfig({
             type: 'image/png',
           },
           {
-            src: '/assets/apple-touch-icon-180x180.png',
-            sizes: '180x180',
-            type: 'image/png',
-          },
-          {
             src: '/assets/maskable-icon.png',
             sizes: '512x512',
             type: 'image/png',

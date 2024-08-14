@@ -16,19 +16,15 @@
       rel="icon"
       type="image/png"
       sizes="32x32"
-      href="#"
+      href="/assets/favicon-32x32.png"
     />
     <link
       id="favicon16"
       rel="icon"
       type="image/png"
       sizes="16x16"
-      href="#"
+      href="/assets/favicon-16x16.png"
       />
-    <link
-      rel="apple-touch-icon"
-      href="/assets/apple-touch-icon-180x180.png"
-    />
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1"
@@ -38,6 +34,17 @@
       type="module"
       src="/src/main.jsx"
     ></script>
+    <script>
+      document.addEventListener('DOMContentLoaded', function() {
+        const faviconUrl32 = localStorage.getItem('favicon32');
+        const faviconUrl16 = localStorage.getItem('favicon16');
+
+        if (faviconUrl) {
+          document.getElementById('favicon32').href = faviconUrl32;
+          document.getElementById('favicon16').href = faviconUrl16;
+        }
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>
