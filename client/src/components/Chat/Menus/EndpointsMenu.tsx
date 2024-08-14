@@ -74,7 +74,6 @@ const EndpointsMenu: FC = () => {
 
       const data = await response.json();
       localStorage.setItem('userAssistantConfigPermission', data.userAssistantConfigPermission);
-      console.log('se actualizo a: ', data.userAssistantConfigPermission);
     } catch (error) {
       console;
     }

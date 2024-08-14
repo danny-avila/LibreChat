@@ -30,9 +30,14 @@ function SharedView() {
 
     const favicon = document.querySelector('link[rel~=\'icon\']');
     if (favicon) {
-      favicon['href'] = devicePixelRatio >= 2 ? config?.favicon32 : config?.favicon16;
+      if (config?.favicon32 && config?.favicon16)
+      {favicon['href'] = devicePixelRatio >= 2 ? config?.favicon32 : config?.favicon16;}
+      else
+      {favicon['href'] =
+          devicePixelRatio >= 2
+            ? localStorage.getItem('favicon32')
+            : localStorage.getItem('favicon16');}
     }
-    console.log(favicon);
   }, [config]);
   return (
     <ShareContext.Provider value={{ isSharedConvo: true }}>
