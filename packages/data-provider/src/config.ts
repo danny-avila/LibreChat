@@ -940,7 +940,7 @@ export enum TTSProviders {
 /** Enum for app-wide constants */
 export enum Constants {
   /** Key for the app's version. */
-  VERSION = 'v0.7.4-rc1',
+  VERSION = 'v0.7.4',
   /** Key for the Custom Config's version (librechat.yaml). */
   CONFIG_VERSION = '1.1.5',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
@@ -957,6 +957,8 @@ export enum Constants {
   COMMANDS_MAX_LENGTH = 56,
   /** Default Stream Rate (ms) */
   DEFAULT_STREAM_RATE = 1,
+  /** Saved Tag */
+  SAVED_TAG = 'Saved',
 }
 
 export enum LocalStorageKeys {

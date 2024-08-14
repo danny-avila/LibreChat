@@ -2,6 +2,16 @@ import React from 'react';
 import { Clock4 } from 'lucide-react';
 import { cn } from '~/utils';
 
+export interface MentionItemProps {
+  name: string;
+  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  index: number;
+  type?: 'prompt' | 'mention' | 'add-convo';
+  icon?: React.ReactNode;
+  isActive?: boolean;
+  description?: string;
+}
+
 export default function MentionItem({
   name,
   onClick,
@@ -10,15 +20,7 @@ export default function MentionItem({
   isActive,
   description,
   type = 'mention',
-}: {
-  name: string;
-  onClick: () => void;
-  index: number;
-  type?: 'prompt' | 'mention' | 'add-convo';
-  icon?: React.ReactNode;
-  isActive?: boolean;
-  description?: string;
-}) {
+}: MentionItemProps) {
   return (
     <button tabIndex={index} onClick={onClick} id={`${type}-item-${index}`} className="w-full">
       <div

@@ -12,9 +12,9 @@ export const ForkSettings = () => {
   const [remember, setRemember] = useRecoilState<boolean>(store.rememberForkOption);
 
   const forkOptions = [
-    { value: ForkOptions.DIRECT_PATH, display: localize('com_ui_fork_visible') },
-    { value: ForkOptions.INCLUDE_BRANCHES, display: localize('com_ui_fork_branches') },
-    { value: ForkOptions.TARGET_LEVEL, display: localize('com_ui_fork_all_target') },
+    { value: ForkOptions.DIRECT_PATH, label: localize('com_ui_fork_visible') },
+    { value: ForkOptions.INCLUDE_BRANCHES, label: localize('com_ui_fork_branches') },
+    { value: ForkOptions.TARGET_LEVEL, label: localize('com_ui_fork_all_target') },
   ];
 
   return (
