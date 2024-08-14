@@ -20,22 +20,21 @@ import PromptsAccordion from '~/components/Prompts/PromptsAccordion';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
 import { Blocks, AttachmentIcon } from '~/components/svg';
 import { useHasAccess } from '~/hooks';
-import { start } from 'repl';
 
 export default function useSideNavLinks({
+  startupConfig,
   hidePanel,
   assistants,
   keyProvided,
   endpoint,
   interfaceConfig,
-  startupConfig,
 }: {
+  startupConfig: TStartupConfig | null | undefined;
   hidePanel: () => void;
   assistants?: TConfig | null;
   keyProvided: boolean;
   endpoint?: EModelEndpoint | null;
   interfaceConfig: Partial<TInterfaceConfig>;
-  startupConfig: TStartupConfig | null | undefined;
 }) {
   const hasAccessToPrompts = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
@@ -47,11 +46,12 @@ export default function useSideNavLinks({
 
     let permission = false;
 
-    if (localStorage.getItem('userAssistantConfigPermission') == undefined) {
-      permission = startupConfig?.userAssistantConfigPermission || false;
-    }
+    if (localStorage.getItem('userAssistantConfigPermission') == undefined)
+    {permission = startupConfig?.userAssistantConfigPermission || false;}
 
-    if (localStorage.getItem('userAssistantConfigPermission') == 'true') {permission = true;}
+    if (localStorage.getItem('userAssistantConfigPermission') == 'true') {
+      permission = true;
+    }
 
     if (
       isAssistantsEndpoint(endpoint) &&
@@ -106,6 +106,7 @@ export default function useSideNavLinks({
 
     return links;
   }, [
+    startupConfig,
     assistants,
     keyProvided,
     hidePanel,
