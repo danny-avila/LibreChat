@@ -1,28 +1,35 @@
 import { useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
-import type { TMessage } from 'librechat-data-provider';
+import type { TMessageContentParts } from 'librechat-data-provider';
 import { VolumeIcon, VolumeMuteIcon, Spinner } from '~/components/svg';
 import { useLocalize, useTextToSpeech } from '~/hooks';
+import { logger } from '~/utils';
 import store from '~/store';
 
 type THoverButtons = {
-  message: TMessage;
+  messageId?: string;
+  content?: TMessageContentParts[] | string;
   isLast: boolean;
   index: number;
 };
 
-export default function MessageAudio({ index, message, isLast }: THoverButtons) {
+export default function MessageAudio({ isLast, index, messageId, content }: THoverButtons) {
   const localize = useLocalize();
   const playbackRate = useRecoilValue(store.playbackRate);
 
-  const { toggleSpeech, isSpeaking, isLoading, audioRef } = useTextToSpeech(message, isLast, index);
+  const { toggleSpeech, isSpeaking, isLoading, audioRef } = useTextToSpeech({
+    isLast,
+    index,
+    messageId,
+    content,
+  });
 
   const renderIcon = (size: string) => {
-    if (isLoading) {
+    if (isLoading === true) {
       return <Spinner size={size} />;
     }
 
-    if (isSpeaking) {
+    if (isSpeaking === true) {
       return <VolumeMuteIcon size={size} />;
     }
 
@@ -30,21 +37,20 @@ export default function MessageAudio({ index, message, isLast }: THoverButtons) 
   };
 
   useEffect(() => {
-    const messageAudio = document.getElementById(
-      `audio-${message.messageId}`,
-    ) as HTMLAudioElement | null;
+    const messageAudio = document.getElementById(`audio-${messageId}`) as HTMLAudioElement | null;
     if (!messageAudio) {
       return;
     }
-    if (
-      playbackRate &&
-      playbackRate > 0 &&
-      messageAudio &&
-      messageAudio.playbackRate !== playbackRate
-    ) {
+    if (playbackRate != null && playbackRate > 0 && messageAudio.playbackRate !== playbackRate) {
       messageAudio.playbackRate = playbackRate;
     }
-  }, [audioRef, isSpeaking, playbackRate, message.messageId]);
+  }, [audioRef, isSpeaking, playbackRate, messageId]);
+
+  logger.log(
+    'MessageAudio: audioRef.current?.src, audioRef.current',
+    audioRef.current?.src,
+    audioRef.current,
+  );
 
   return (
     <>
@@ -69,13 +75,14 @@ export default function MessageAudio({ index, message, isLast }: THoverButtons) 
           toggleSpeech();
         }}
         type="button"
-        title={isSpeaking ? localize('com_ui_stop') : localize('com_ui_read_aloud')}
+        title={isSpeaking === true ? localize('com_ui_stop') : localize('com_ui_read_aloud')}
       >
         {renderIcon('19')}
       </button>
       <audio
         ref={audioRef}
         controls
+        preload="none"
         controlsList="nodownload nofullscreen noremoteplayback"
         style={{
           position: 'absolute',
@@ -84,8 +91,11 @@ export default function MessageAudio({ index, message, isLast }: THoverButtons) 
           height: '0px',
           width: '0px',
         }}
-        src={audioRef.current?.src || undefined}
-        id={`audio-${message.messageId}`}
+        src={audioRef.current?.src}
+        onError={(error) => {
+          console.error('Error fetching audio:', error);
+        }}
+        id={`audio-${messageId}`}
         muted
         autoPlay
       />

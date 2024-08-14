@@ -25,11 +25,11 @@ export default function ExportModal({
   const [recursive, setRecursive] = useState<boolean | 'indeterminate'>(true);
 
   const typeOptions = [
-    { value: 'screenshot', display: 'screenshot (.png)' },
-    { value: 'text', display: 'text (.txt)' },
-    { value: 'markdown', display: 'markdown (.md)' },
-    { value: 'json', display: 'json (.json)' },
-    { value: 'csv', display: 'csv (.csv)' },
+    { value: 'screenshot', label: 'screenshot (.png)' },
+    { value: 'text', label: 'text (.txt)' },
+    { value: 'markdown', label: 'markdown (.md)' },
+    { value: 'json', label: 'json (.json)' },
+    { value: 'csv', label: 'csv (.csv)' },
   ];
 
   useEffect(() => {
