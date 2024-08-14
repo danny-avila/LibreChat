@@ -20,7 +20,7 @@ const publicSharedLinksEnabled =
   (process.env.ALLOW_SHARED_LINKS_PUBLIC === undefined ||
     isEnabled(process.env.ALLOW_SHARED_LINKS_PUBLIC));
 
-function verifyAssistantConfigurations(headers) {
+async function verifyAssistantConfigurations(headers, cachedValue) {
   let jwt = '';
   let found = false;
   for (let header of headers) {
@@ -31,30 +31,37 @@ function verifyAssistantConfigurations(headers) {
     }
   }
 
-  if (found) {
+  //si no hay permisos de creacion de asistentes aplicados a ningun grupo
+  if (global.AssistantCreationPermissions) {
+    if (global.AssistantCreationPermissions.length === 0) {
+      return false;
+    }
+  } else {
+    return false;
+  }
+  // si encuentra jwt
+  if (found && jwt !== 'undefined') {
     let userToken = jwtDecode(jwt);
     const userGroups = global.myCache.get(userToken.id);
+    if (userGroups)
+    {for (let group of userGroups)
+    {if (global.AssistantCreationPermissions.includes(group)) {return true;}}}
+  }
 
-    if (userGroups) {
-      for (let group of userGroups) {
-        if (global.AssistantCreationPermissions.includes(group)) {
-          return true;
-        }
-      }
-    }
+  // en caso de que no exista jwt, verificamos si existe en cache
+  if (cachedValue) {return cachedValue.userAssistantConfigPermission;}
 
-    return false;
-  } else {return false;}
+  // por defecto no tiene permisos
+  return false;
 }
 router.get('/', async function (req, res) {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
   const cachedStartupConfig = await cache.get(CacheKeys.STARTUP_CONFIG);
-  if (cachedStartupConfig) {
-    res.send(cachedStartupConfig);
-    return;
-  }
+  // if (cachedStartupConfig && !haveToUpdateData) {
+  //   res.send(cachedStartupConfig);
+  //   return;
+  // }
 
-  console.log(req.user);
   const isBirthday = () => {
     const today = new Date();
     return today.getMonth() === 1 && today.getDate() === 11;
@@ -116,7 +123,10 @@ router.get('/', async function (req, res) {
     payload.favicon32 = process.env.FAVICON_URL_32;
     payload.favicon16 = process.env.FAVICON_URL_16;
     payload.logo = process.env.LOGO_URL;
-    payload.userAssistantConfigPermission = verifyAssistantConfigurations(req.rawHeaders);
+    payload.userAssistantConfigPermission = await verifyAssistantConfigurations(
+      req.rawHeaders,
+      cachedStartupConfig,
+    );
 
     await cache.set(CacheKeys.STARTUP_CONFIG, payload);
     return res.status(200).send(payload);
