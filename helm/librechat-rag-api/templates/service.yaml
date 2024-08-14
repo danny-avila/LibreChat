@@ -1,9 +1,11 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "librechat.fullname" . }}
+  name: {{ include "rag.fullname" . }}
   labels:
-    {{- include "librechat.labels" . | nindent 4 }}
+    {{- include "rag.labels" . | nindent 4 }}
+  annotations:
+  {{ .Values.service.annotations | toYaml | indent 4 }}
 spec:
   type: {{ .Values.service.type }}
   ports:
@@ -12,4 +14,4 @@ spec:
       protocol: TCP
       name: http
   selector:
-    {{- include "librechat.selectorLabels" . | nindent 4 }}
+    {{- include "rag.selectorLabels" . | nindent 4 }}
