@@ -36,6 +36,8 @@ export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: b
     if (favicon32 && favicon16) {
       favicon32.setAttribute('href', startupConfig?.favicon32 || '');
       favicon16.setAttribute('href', startupConfig?.favicon16 || '');
+      localStorage.setItem('favicon32', startupConfig?.favicon32 || '');
+      localStorage.setItem('favicon16', startupConfig?.favicon16 || '');
     }
 
     localStorage.setItem(
