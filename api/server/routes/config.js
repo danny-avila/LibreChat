@@ -31,25 +31,30 @@ async function verifyAssistantConfigurations(headers, cachedValue) {
     }
   }
 
-  //si no hay permisos de creacion de asistentes aplicados a ningun grupo
   if (global.AssistantCreationPermissions) {
     if (global.AssistantCreationPermissions.length === 0) {
       return false;
     }
   } else {
-    return false;
+    return true;
   }
-  // si encuentra jwt
+
   if (found && jwt !== 'undefined') {
     let userToken = jwtDecode(jwt);
     const userGroups = global.myCache.get(userToken.id);
-    if (userGroups)
-    {for (let group of userGroups)
-    {if (global.AssistantCreationPermissions.includes(group)) {return true;}}}
+    if (userGroups) {
+      for (let group of userGroups) {
+        if (global.AssistantCreationPermissions.includes(group)) {
+          return true;
+        }
+      }
+    }
   }
 
   // en caso de que no exista jwt, verificamos si existe en cache
-  if (cachedValue) {return cachedValue.userAssistantConfigPermission;}
+  if (cachedValue) {
+    return cachedValue.userAssistantConfigPermission;
+  }
 
   // por defecto no tiene permisos
   return false;
