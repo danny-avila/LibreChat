@@ -39,7 +39,7 @@ async function verifyAssistantConfigurations(headers, cachedValue) {
     return true;
   }
 
-  if (found && jwt !== 'undefined') {
+  if (found && jwt !== 'undefined' && jwt !== '') {
     let userToken = jwtDecode(jwt);
     const userGroups = global.myCache.get(userToken.id);
     if (userGroups) {
