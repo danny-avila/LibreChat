@@ -8,6 +8,10 @@ replicaCount: 1
 
 global:
   librechat:
+    # existing Secret for all envs/ only Passwords. Can be locally generated with: kubectl create secret generic librechat-secret-envs --from-env-file=.env.example --dry-run=client -o yaml > secret-envs.yaml
+    ## For better maintainabillity, you can put all vars directly in the config Section and only overwrite Secrets with this if nessesary.
+    # Required Values:
+    # - MEILI_MASTER_KEY
     existingSecretName: "librechat-credentials-env"
     # Used for Setting the Right Key, can be something like AZURE_API_KEY, if Azure OpenAI is used
     existingSecretApiKey: OPENAI_API_KEY
@@ -25,93 +29,60 @@ librechat:
     # Set Config Params here
     # ENV_NAME: env-value
 
-    # existing Secret for all envs/ only Passwords. Can be locally generated with: kubectl create secret generic librechat-secret-envs --from-env-file=.env.example --dry-run=client -o yaml > secret-envs.yaml
-    ## For better maintainabillity, you can put all vars directly in the config Section and only overwrite Secrets with this if nessesary.
-    # Required Values:
-    # - MEILI_MASTER_KEY
-  existingSecretName: "librechat-credentials-env"
+
   
-  # # For adding a custom config yaml-file you can set the contents in this var
+  # # For adding a custom config yaml-file you can set the contents in this var. See https://www.librechat.ai/docs/configuration/librechat_yaml/example
   configYamlContent: ""
   # configYamlContent: |
-    # version: 1.0.3
-    # cache: true
-    # # fileStrategy: "firebase"  # If using Firebase CDN
-    # fileConfig:
-    #   endpoints:
-    #     assistants:
-    #       fileLimit: 5
-    #       fileSizeLimit: 10  # Maximum size for an individual file in MB
-    #       totalSizeLimit: 50  # Maximum total size for all files in a single request in MB
-    #       supportedMimeTypes:
-    #         - "image/.*"
-    #         - "application/pdf"
-    #     openAI:
-    #       disabled: true  # Disables file uploading to the OpenAI endpoint
-    #     default:
-    #       totalSizeLimit: 20
-    #     YourCustomEndpointName:
-    #       fileLimit: 2
-    #       fileSizeLimit: 5
-    #   serverFileSizeLimit: 100  # Global server file size limit in MB
-    #   avatarSizeLimit: 2  # Limit for user avatar image size in MB
-    # rateLimits:
-    #   fileUploads:
-    #     ipMax: 100
-    #     ipWindowInMinutes: 60  # Rate limit window for file uploads per IP
-    #     userMax: 50
-    #     userWindowInMinutes: 60  # Rate limit window for file uploads per user
-    # registration:
-    #   socialLogins: ["google", "facebook", "github", "discord", "openid"]
-    #   allowedDomains:
-    #     - "example.com"
-    #     - "anotherdomain.com"
-    # endpoints:
-    #   assistants:
-    #     disableBuilder: false # Disable Assistants Builder Interface by setting to `true`
-    #     pollIntervalMs: 750  # Polling interval for checking assistant updates
-    #     timeoutMs: 180000  # Timeout for assistant operations
-    #     # Should only be one or the other, either `supportedIds` or `excludedIds`
-    #     supportedIds: ["asst_supportedAssistantId1", "asst_supportedAssistantId2"]
-    #     # excludedIds: ["asst_excludedAssistantId"]
-    #   custom:
-    #     - name: "Mistral"
-    #       apiKey: "${MISTRAL_API_KEY}"
-    #       baseURL: "https://api.mistral.ai/v1"
-    #       models:
-    #         default: ["mistral-tiny", "mistral-small", "mistral-medium"]
-    #         fetch: true  # Attempt to dynamically fetch available models
-    #         userIdQuery: false
-    #       iconURL: "https://example.com/mistral-icon.png"
-    #       titleConvo: true
-    #       titleMethod: "completion"
-    #       titleModel: "mistral-tiny"
-    #       summarize: true
-    #       summaryModel: "mistral-summary"
-    #       forcePrompt: false
-    #       modelDisplayLabel: "Mistral AI"
-    #       addParams:
-    #         safe_prompt: true
-    #       dropParams:
-    #         - "stop"
-    #         - "user"
-    #         - "presence_penalty"
-    #         - "frequency_penalty"
-    #       # headers:
-    #       #    x-custom-header: "${CUSTOM_HEADER_VALUE}"
-    #     - name: "OpenRouter"
-    #       apiKey: "${OPENROUTER_API_KEY}"
-    #       baseURL: "https://openrouter.ai/api/v1"
-    #       models:
-    #         default: ["gpt-3.5-turbo"]
-    #         fetch: false
-    #       titleConvo: true
-    #       titleModel: "gpt-3.5-turbo"
-    #       summarize: false
-    #       forcePrompt: false
-    #       modelDisplayLabel: "OpenRouter"
-    #       dropParams:
-    #         - "frequency_penalty"
+  #   version: 1.0.8
+    
+  #   cache: true
+    
+  #   interface:
+  #     # Privacy policy settings
+  #     privacyPolicy:
+  #       externalUrl: 'https://librechat.ai/privacy-policy'
+  #       openNewTab: true
+    
+  #     # Terms of service
+  #     termsOfService:
+  #       externalUrl: 'https://librechat.ai/tos'
+  #       openNewTab: true
+    
+  #   registration:
+  #     socialLogins: ["discord", "facebook", "github", "google", "openid"] 
+  #   endpoints:
+  #     azureOpenAI:
+  #      # Endpoint-level configuration
+  #      titleModel: "gpt-4o"
+  #      plugins: true
+  #      assistants: true
+  #      groups:
+  #           Group-level configuration
+  #         - group: "my-resource-sweden"
+  #           apiKey: "${SWEDEN_API_KEY}"
+  #           instanceName: "my-resource-sweden"
+  #           deploymentName: gpt-4-1106-preview
+  #           version: "2024-03-01-preview"
+  #           assistants: true
+  #           # Model-level configuration
+  #           models:
+  #             gpt-4o: true
+  #     custom:
+  #       # OpenRouter.ai
+  #       - name: "OpenRouter"
+  #         apiKey: "${OPENROUTER_KEY}"
+  #         baseURL: "https://openrouter.ai/api/v1"
+  #         models:
+  #           default: ["openai/gpt-3.5-turbo"]
+  #           fetch: true
+  #         titleConvo: true
+  #         titleModel: "gpt-3.5-turbo"
+  #         summarize: false
+  #         summaryModel: "gpt-3.5-turbo"
+  #         forcePrompt: false
+  #         modelDisplayLabel: "OpenRouter"
+
 
 # # name of existing Yaml configmap, key must be librechat.yaml
   existingConfigYaml: ""
