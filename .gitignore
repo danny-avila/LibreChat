@@ -106,3 +106,8 @@ uploads/
 
 # owner
 release/
+
+# Helm
+helm/**/Chart.lock
+helm/**/charts/
+helm/**/.values.yaml
