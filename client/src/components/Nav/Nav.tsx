@@ -83,8 +83,7 @@ const Nav = ({ navVisible, setNavVisible }) => {
 
   const conversations = useMemo(
     () =>
-      (searchQuery ? searchQueryRes.data : data)?.pages.flatMap((page) => page.conversations) ||
-      [],
+      (searchQuery ? searchQueryRes.data : data)?.pages.flatMap((page) => page.conversations) || [],
     [data, searchQuery, searchQueryRes.data],
   );
 
@@ -153,15 +152,30 @@ const Nav = ({ navVisible, setNavVisible }) => {
                       onMouseLeave={handleMouseLeave}
                       ref={containerRef}
                     >
-                      <NewChat
-                        toggleNav={itemToggleNav}
-                        subHeaders={
-                          <>
-                            {isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
-                            <BookmarkNav tags={tags} setTags={setTags} />
-                          </>
-                        }
-                      />
+                      {isSmallScreen == true ? (
+                        <div className="pt-3.5">
+                          {isSearchEnabled === true && (
+                            <SearchBar clearSearch={clearSearch} isSmallScreen={isSmallScreen} />
+                          )}
+                          <BookmarkNav tags={tags} setTags={setTags} />
+                        </div>
+                      ) : (
+                        <NewChat
+                          toggleNav={itemToggleNav}
+                          subHeaders={
+                            <>
+                              {isSearchEnabled === true && (
+                                <SearchBar
+                                  clearSearch={clearSearch}
+                                  isSmallScreen={isSmallScreen}
+                                />
+                              )}
+                              <BookmarkNav tags={tags} setTags={setTags} />
+                            </>
+                          }
+                        />
+                      )}
+
                       <Conversations
                         conversations={conversations}
                         moveToTop={moveToTop}

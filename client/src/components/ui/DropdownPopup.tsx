@@ -46,7 +46,7 @@ const DropdownPopup: React.FC<DropdownProps> = ({
               transition
               // @ts-ignore
               anchor={anchor}
-              className="z-10 mt-2 origin-top-right rounded-xl border border-black/5 bg-white/80 p-1 text-sm/6 text-black transition duration-200 ease-out [--anchor-gap:var(--spacing-1)] focus:outline-none data-[closed]:scale-95 data-[closed]:opacity-0 dark:border-white/5 dark:bg-gray-800/80 dark:text-white"
+              className="mt-2 overflow-hidden rounded-lg bg-header-primary p-1.5 shadow-lg outline-none"
             >
               <div>
                 {items
@@ -58,7 +58,7 @@ const DropdownPopup: React.FC<DropdownProps> = ({
                       <MenuItem key={index}>
                         <button
                           onClick={item.onClick}
-                          className="group flex w-full items-center gap-2 rounded-lg px-3 py-1.5 data-[focus]:bg-black/10 dark:data-[focus]:bg-white/10"
+                          className="group flex w-full gap-2 rounded-lg p-2.5 text-sm text-text-primary transition-colors duration-200 data-[focus]:bg-surface-hover"
                           disabled={item.disabled}
                         >
                           {typeof item.icon !== 'undefined' && (

@@ -6,9 +6,9 @@ import { Constants } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import { Check, X } from 'lucide-react';
 import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
+import { useConversations, useNavigateToConvo, useMediaQuery } from '~/hooks';
 import { useUpdateConversationMutation } from '~/data-provider';
 import EndpointIcon from '~/components/Endpoints/EndpointIcon';
-import { useConversations, useNavigateToConvo } from '~/hooks';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
 import { ConvoOptions } from './ConvoOptions';
@@ -31,6 +31,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
   const [titleInput, setTitleInput] = useState(title);
   const [renaming, setRenaming] = useState(false);
   const [isPopoverActive, setIsPopoverActive] = useState(false);
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
   const clickHandler = async (event: React.MouseEvent<HTMLAnchorElement>) => {
     if (event.button === 0 && (event.ctrlKey || event.metaKey)) {
@@ -109,6 +110,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
       className={cn(
         'group relative mt-2 flex h-9 items-center rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700',
         isActiveConvo ? 'bg-gray-200 dark:bg-gray-700' : '',
+        isSmallScreen ? 'h-12' : '',
       )}
     >
       {renaming ? (
@@ -154,7 +156,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
             <div
               className={cn(
                 'absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-gradient-to-l',
-                !renaming ? 'from-gray-200 from-60% to-transparent dark:from-gray-700' : '',
+                !renaming ? 'from-gray-200 from-40% to-transparent dark:from-gray-700' : '',
               )}
             />
           ) : (

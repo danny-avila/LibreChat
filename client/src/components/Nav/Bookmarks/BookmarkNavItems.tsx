@@ -43,9 +43,8 @@ const BookmarkNavItems: FC<{
     return (
       <div className="flex flex-col">
         <BookmarkItem
-          ctx="nav"
           tag={localize('com_ui_no_bookmarks')}
-          data-testid="bookmark-item-clear"
+          data-testid="bookmark-item-no-bookmarks"
           handleSubmit={() => Promise.resolve()}
           selected={false}
           icon={'🤔'}
@@ -57,18 +56,15 @@ const BookmarkNavItems: FC<{
   return (
     <div className="flex flex-col">
       <BookmarkItems
-        ctx="nav"
         tags={tags}
         handleSubmit={handleSubmit}
-        highlightSelected={true}
         header={
           <BookmarkItem
-            ctx="nav"
-            tag="Clear all"
+            tag={localize('com_ui_clear_all')}
             data-testid="bookmark-item-clear"
             handleSubmit={clear}
             selected={false}
-            icon={<CrossCircledIcon className="h-4 w-4" />}
+            icon={<CrossCircledIcon className="size-4" />}
           />
         }
       />

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { FC } from 'react';
 import type { TConversationTag } from 'librechat-data-provider';
 import BookmarkEditDialog from './BookmarkEditDialog';
@@ -12,30 +13,31 @@ const EditBookmarkButton: FC<{
   onBlur?: () => void;
 }> = ({ bookmark, tabIndex = 0, onFocus, onBlur }) => {
   const localize = useLocalize();
+  const [open, setOpen] = useState(false);
+
   return (
-    <BookmarkEditDialog
-      bookmark={bookmark}
-      trigger={
-        <button
-          type="button"
-          className="transition-button"
-          tabIndex={tabIndex}
-          onFocus={onFocus}
-          onBlur={onBlur}
-        >
-          <TooltipProvider delayDuration={250}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <EditIcon />
-              </TooltipTrigger>
-              <TooltipContent side="top" sideOffset={0}>
-                {localize('com_ui_edit')}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        </button>
-      }
-    />
+    <>
+      <BookmarkEditDialog bookmark={bookmark} open={open} setOpen={setOpen} />
+      <button
+        type="button"
+        className="transition-button"
+        tabIndex={tabIndex}
+        onFocus={onFocus}
+        onBlur={onBlur}
+        onClick={() => setOpen(!open)}
+      >
+        <TooltipProvider delayDuration={250}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <EditIcon />
+            </TooltipTrigger>
+            <TooltipContent side="top" sideOffset={0}>
+              {localize('com_ui_edit')}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </button>
+    </>
   );
 };
 

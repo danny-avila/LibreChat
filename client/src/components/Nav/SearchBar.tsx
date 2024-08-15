@@ -10,10 +10,11 @@ import store from '~/store';
 
 type SearchBarProps = {
   clearSearch: () => void;
+  isSmallScreen?: boolean;
 };
 
 const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) => {
-  const { clearSearch } = props;
+  const { clearSearch, isSmallScreen } = props;
   const queryClient = useQueryClient();
   const clearConvoState = store.useClearConvoState();
   const setSearchQuery = useSetRecoilState(store.searchQuery);
@@ -58,7 +59,10 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
   return (
     <div
       ref={ref}
-      className="relative mt-1 flex h-10 cursor-pointer items-center gap-3 rounded-lg border-border-medium px-3 py-2 text-text-primary transition-colors duration-200 focus-within:bg-surface-hover hover:bg-surface-hover dark:focus-within:bg-surface-hover"
+      className={cn(
+        'relative mt-1 flex h-10 cursor-pointer items-center gap-3 rounded-lg border-border-medium px-3 py-2 text-text-primary transition-colors duration-200 focus-within:bg-surface-hover hover:bg-surface-hover dark:focus-within:bg-surface-hover',
+        isSmallScreen === true ? 'h-16 rounded-2xl' : '',
+      )}
     >
       {<Search className="absolute left-3 h-4 w-4" />}
       <input
@@ -77,8 +81,9 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
       />
       <X
         className={cn(
-          'absolute right-[7px] h-5 w-5 cursor-pointer transition-opacity duration-1000',
+          'absolute right-[7px] h-5 w-5 cursor-pointer transition-opacity duration-200',
           showClearIcon ? 'opacity-100' : 'opacity-0',
+          isSmallScreen === true ? 'right-[16px]' : '',
         )}
         onClick={clearText}
       />

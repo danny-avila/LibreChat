@@ -590,6 +590,7 @@ export default {
   com_ui_drag_drop_file: 'Drag and drop a file here',
   com_ui_upload_image: 'Upload an image',
   com_ui_select_a_category: 'No category selected',
+  com_ui_clear_all: 'Clear all',
   com_nav_tool_dialog_description: 'Assistant must be saved to persist tool selections.',
   com_show_agent_settings: 'Show Agent Settings',
   com_show_completion_settings: 'Show Completion Settings',
