@@ -25,8 +25,15 @@ const TermsAndConditionsModal = ({
     onOpenChange(false);
   };
 
+  const handleOpenChange = (isOpen: boolean) => {
+    if (open && !isOpen) {
+      return;
+    }
+    onOpenChange(isOpen);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTemplate
         title={localize('com_ui_terms_and_conditions')}
         className="w-11/12 sm:w-3/4 md:w-1/2 lg:w-2/5"
