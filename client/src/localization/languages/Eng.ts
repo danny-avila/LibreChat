@@ -664,6 +664,8 @@ export default {
   com_nav_audio_process_error: 'Error processing audio: {0}',
   com_nav_long_audio_warning: 'Longer texts will take longer to process.',
   com_nav_tts_init_error: 'Failed to initialize text-to-speech: {0}',
+  com_nav_tts_unsupported_error:
+    'Text-to-speech for the selected engine is not supported in this browser.',
   com_nav_source_buffer_error: 'Error setting up audio playback. Please refresh the page.',
   com_nav_media_source_init_error:
     'Unable to prepare audio player. Please check your browser settings.',
