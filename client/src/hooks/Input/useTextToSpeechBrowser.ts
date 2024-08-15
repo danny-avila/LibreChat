@@ -13,27 +13,42 @@ function useTextToSpeechBrowser({
   const [voices, setVoices] = useState<VoiceOption[]>([]);
 
   const updateVoices = useCallback(() => {
-    const availableVoices = window.speechSynthesis
-      .getVoices()
-      .filter((v) => cloudBrowserVoices || v.localService === true);
+    try {
+      const availableVoices = window.speechSynthesis.getVoices();
+      if (!Array.isArray(availableVoices)) {
+        console.error('getVoices() did not return an array');
+        return;
+      }
 
-    const voiceOptions: VoiceOption[] = availableVoices.map((v) => ({
-      value: v.name,
-      label: v.name,
-    }));
+      const filteredVoices = availableVoices.filter(
+        (v) => cloudBrowserVoices || v.localService === true,
+      );
+      const voiceOptions: VoiceOption[] = filteredVoices.map((v) => ({
+        value: v.name,
+        label: v.name,
+      }));
 
-    setVoices(voiceOptions);
+      setVoices(voiceOptions);
+    } catch (error) {
+      console.error('Error updating voices:', error);
+    }
   }, [cloudBrowserVoices]);
 
   useEffect(() => {
-    if (window.speechSynthesis.getVoices().length) {
-      updateVoices();
-    } else {
-      window.speechSynthesis.onvoiceschanged = updateVoices;
+    const synth = window.speechSynthesis;
+
+    try {
+      if (synth.getVoices().length) {
+        updateVoices();
+      } else {
+        synth.onvoiceschanged = updateVoices;
+      }
+    } catch (error) {
+      console.error('Error in useEffect:', error);
     }
 
     return () => {
-      window.speechSynthesis.onvoiceschanged = null;
+      synth.onvoiceschanged = null;
     };
   }, [updateVoices]);
 
@@ -42,22 +57,37 @@ function useTextToSpeechBrowser({
     const voice = voices.find((v) => v.value === voiceName);
 
     if (!voice) {
+      console.warn('Selected voice not found');
       return;
     }
 
-    synth.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.voice = synth.getVoices().find((v) => v.name === voice.value) || null;
-    utterance.onend = () => {
+    try {
+      synth.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.voice = synth.getVoices().find((v) => v.name === voice.value) || null;
+      utterance.onend = () => {
+        setIsSpeaking(false);
+      };
+      utterance.onerror = (event) => {
+        console.error('Speech synthesis error:', event);
+        setIsSpeaking(false);
+      };
+      setIsSpeaking(true);
+      synth.speak(utterance);
+    } catch (error) {
+      console.error('Error generating speech:', error);
       setIsSpeaking(false);
-    };
-    setIsSpeaking(true);
-    synth.speak(utterance);
+    }
   };
 
   const cancelSpeechLocal = () => {
-    window.speechSynthesis.cancel();
-    setIsSpeaking(false);
+    try {
+      window.speechSynthesis.cancel();
+    } catch (error) {
+      console.error('Error cancelling speech:', error);
+    } finally {
+      setIsSpeaking(false);
+    }
   };
 
   return { generateSpeechLocal, cancelSpeechLocal, voices };
