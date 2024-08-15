@@ -32,6 +32,17 @@ export enum PromptsEditorMode {
   ADVANCED = 'advanced',
 }
 
+export enum STTEndpoints {
+  browser = 'browser',
+  external = 'external',
+}
+
+export enum TTSEndpoints {
+  browser = 'browser',
+  edge = 'edge',
+  external = 'external',
+}
+
 export type AudioChunk = {
   audio: string;
   isFinal: boolean;
