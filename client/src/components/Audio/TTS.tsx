@@ -1,9 +1,9 @@
-// client/src/components/Chat/Messages/MessageAudio.tsx
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import type { TMessageAudio } from '~/common';
 import { useLocalize, useTTSBrowser, useTTSEdge, useTTSExternal } from '~/hooks';
 import { VolumeIcon, VolumeMuteIcon, Spinner } from '~/components/svg';
+import { useToastContext } from '~/Providers/ToastContext';
 import { logger } from '~/utils';
 import store from '~/store';
 
@@ -88,7 +88,12 @@ export function BrowserTTS({ isLast, index, messageId, content, className }: TMe
 export function EdgeTTS({ isLast, index, messageId, content, className }: TMessageAudio) {
   const localize = useLocalize();
   const playbackRate = useRecoilValue(store.playbackRate);
+  const isBrowserSupported = useMemo(
+    () => typeof MediaSource !== 'undefined' && MediaSource.isTypeSupported('audio/mpeg'),
+    [],
+  );
 
+  const { showToast } = useToastContext();
   const { toggleSpeech, isSpeaking, isLoading, audioRef } = useTTSEdge({
     isLast,
     index,
@@ -129,6 +134,13 @@ export function EdgeTTS({ isLast, index, messageId, content, className }: TMessa
       <button
         className={className}
         onClickCapture={() => {
+          if (!isBrowserSupported) {
+            showToast({
+              message: localize('com_nav_tts_unsupported_error'),
+              status: 'error',
+            });
+            return;
+          }
           if (audioRef.current) {
             audioRef.current.muted = false;
           }
@@ -139,26 +151,28 @@ export function EdgeTTS({ isLast, index, messageId, content, className }: TMessa
       >
         {renderIcon('19')}
       </button>
-      <audio
-        ref={audioRef}
-        controls
-        preload="none"
-        controlsList="nodownload nofullscreen noremoteplayback"
-        style={{
-          position: 'absolute',
-          overflow: 'hidden',
-          display: 'none',
-          height: '0px',
-          width: '0px',
-        }}
-        src={audioRef.current?.src}
-        onError={(error) => {
-          console.error('Error fetching audio:', error);
-        }}
-        id={`audio-${messageId}`}
-        muted
-        autoPlay
-      />
+      {isBrowserSupported ? (
+        <audio
+          ref={audioRef}
+          controls
+          preload="none"
+          controlsList="nodownload nofullscreen noremoteplayback"
+          style={{
+            position: 'absolute',
+            overflow: 'hidden',
+            display: 'none',
+            height: '0px',
+            width: '0px',
+          }}
+          src={audioRef.current?.src}
+          onError={(error) => {
+            console.error('Error fetching audio:', error);
+          }}
+          id={`audio-${messageId}`}
+          muted
+          autoPlay
+        />
+      ) : null}
     </>
   );
 }
