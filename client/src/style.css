@@ -44,11 +44,11 @@ html {
   --surface-secondary: var(--gray-50);
   --surface-tertiary: var(--gray-100);
   --surface-tertiary-alt: var(--white);
-  --border-light: var(--gray-100);
+  --border-light: var(--gray-200);
   --border-medium-alt: var(--gray-300);
-  --border-medium: var(--gray-200);
-  --border-heavy: var(--gray-300);
-  --border-xheavy: var(--gray-400);
+  --border-medium: var(--gray-300);
+  --border-heavy: var(--gray-400);
+  --border-xheavy: var(--gray-500);
 }
 .dark {
   --text-primary: var(--gray-100);
@@ -2341,21 +2341,3 @@ button.scroll-convo {
   line-height: inherit;
 }
 
-.transition-button {
-  display: flex;
-  height: 1.75rem; /* 7 * 0.25rem */
-  width: 1.75rem; /* 7 * 0.25rem */
-  min-width: 1.75rem; /* 7 * 0.25rem */
-  align-items: center;
-  justify-content: center;
-  border-radius: 0.5rem; /* 8px */
-  transition-duration: 200ms;
-}
-
-.transition-button:hover {
-  background-color: var(--gray-200);
-}
-
-.dark .transition-button:hover {
-  background-color: var(--gray-700);
-}

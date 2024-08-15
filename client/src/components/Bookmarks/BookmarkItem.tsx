@@ -3,7 +3,7 @@ import { MenuItem } from '@headlessui/react';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
 import type { FC } from 'react';
 import { Spinner } from '~/components/svg';
-import cn from 'classnames';
+import { cn } from '~/utils';
 
 type MenuItemProps = {
   tag: string | React.ReactNode;

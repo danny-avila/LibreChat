@@ -20,7 +20,7 @@ const EditBookmarkButton: FC<{
       <BookmarkEditDialog bookmark={bookmark} open={open} setOpen={setOpen} />
       <button
         type="button"
-        className="transition-button"
+        className="transition-color flex size-7 items-center justify-center rounded-lg duration-200 hover:bg-surface-hover"
         tabIndex={tabIndex}
         onFocus={onFocus}
         onBlur={onBlur}
