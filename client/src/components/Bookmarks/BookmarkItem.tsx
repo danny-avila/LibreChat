@@ -16,7 +16,7 @@ type MenuItemProps = {
 const BookmarkItem: FC<MenuItemProps> = ({ tag, selected, handleSubmit, icon, ...rest }) => {
   const [isLoading, setIsLoading] = useState(false);
   const clickHandler = async () => {
-    if (tag === undefined) {
+    if (tag === 'New Bookmark') {
       await handleSubmit();
       return;
     }

@@ -1,4 +1,4 @@
-import { useState, type FC } from 'react';
+import { useState, type FC, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Constants } from 'librechat-data-provider';
 import { Menu, MenuButton, MenuItems } from '@headlessui/react';
@@ -7,15 +7,14 @@ import { useConversationTagsQuery, useTagConversationMutation } from '~/data-pro
 import { BookmarkMenuItems } from './Bookmarks/BookmarkMenuItems';
 import { BookmarkContext } from '~/Providers/BookmarkContext';
 import { BookmarkEditDialog } from '~/components/Bookmarks';
-import { useLocalize, useBookmarkSuccess } from '~/hooks';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
+import { useBookmarkSuccess } from '~/hooks';
 import { Spinner } from '~/components';
 import { cn } from '~/utils';
 import store from '~/store';
 
 const BookmarkMenu: FC = () => {
-  const localize = useLocalize();
   const { showToast } = useToastContext();
 
   const conversation = useRecoilValue(store.conversationByIndex(0));
@@ -28,11 +27,44 @@ const BookmarkMenu: FC = () => {
 
   const { data } = useConversationTagsQuery();
 
-  const isActiveConvo =
+  const isActiveConvo = Boolean(
     conversation &&
-    conversationId &&
-    conversationId !== Constants.NEW_CONVO &&
-    conversationId !== 'search';
+      conversationId &&
+      conversationId !== Constants.NEW_CONVO &&
+      conversationId !== 'search',
+  );
+
+  const handleSubmit = useCallback(
+    async (tag?: string): Promise<void> => {
+      if (tag === undefined || tag === '' || !conversationId) {
+        showToast({
+          message: 'Invalid tag or conversationId',
+          severity: NotificationSeverity.ERROR,
+        });
+        return;
+      }
+
+      const newTags = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
+      await mutateAsync(
+        {
+          tags: newTags,
+        },
+        {
+          onSuccess: (newTags: string[]) => {
+            setTags(newTags);
+            onSuccess(newTags);
+          },
+          onError: () => {
+            showToast({
+              message: 'Error adding bookmark',
+              severity: NotificationSeverity.ERROR,
+            });
+          },
+        },
+      );
+    },
+    [tags, conversationId, mutateAsync, setTags, onSuccess, showToast],
+  );
 
   if (!isActiveConvo) {
     return <></>;
@@ -72,16 +104,13 @@ const BookmarkMenu: FC = () => {
               anchor="bottom start"
               className="overflow-hidden rounded-lg bg-header-primary p-1.5 shadow-lg outline-none"
             >
-              {data && conversation && (
-                <BookmarkContext.Provider value={{ bookmarks: data }}>
-                  <BookmarkMenuItems
-                    handleToggleOpen={handleToggleOpen}
-                    conversation={conversation}
-                    tags={tags ?? []}
-                    setTags={setTags}
-                  />
-                </BookmarkContext.Provider>
-              )}
+              <BookmarkContext.Provider value={{ bookmarks: data || [] }}>
+                <BookmarkMenuItems
+                  handleToggleOpen={handleToggleOpen}
+                  tags={tags}
+                  handleSubmit={handleSubmit}
+                />
+              </BookmarkContext.Provider>
             </MenuItems>
           </>
         )}
