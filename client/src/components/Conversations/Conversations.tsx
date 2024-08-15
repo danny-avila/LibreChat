@@ -34,7 +34,7 @@ const Conversations = ({
             <div key={groupName}>
               <div
                 style={{
-                  color: '#aaa',
+                  color: '#535353',
                   fontSize: '0.7rem',
                   marginTop: '20px',
                   marginBottom: '5px',
