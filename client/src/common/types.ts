@@ -374,6 +374,11 @@ export type Option = Record<string, unknown> & {
   value: string | number | null;
 };
 
+export interface VoiceOption {
+  value: string;
+  label: string;
+}
+
 export type OptionWithIcon = Option & { icon?: React.ReactNode };
 export type MentionOption = OptionWithIcon & {
   type: string;

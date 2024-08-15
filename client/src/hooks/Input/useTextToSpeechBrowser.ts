@@ -1,16 +1,12 @@
 import { useRecoilState } from 'recoil';
 import { useState, useEffect, useCallback } from 'react';
+import type { VoiceOption } from '~/common';
 import store from '~/store';
-
-interface VoiceOption {
-  value: string;
-  label: string;
-}
 
 function useTextToSpeechBrowser({
   setIsSpeaking,
 }: {
-  setIsSpeaking: (isSpeaking: boolean) => void;
+  setIsSpeaking: React.Dispatch<React.SetStateAction<boolean>>;
 }) {
   const [cloudBrowserVoices] = useRecoilState(store.cloudBrowserVoices);
   const [voiceName] = useRecoilState(store.voice);
