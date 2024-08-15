@@ -17,7 +17,7 @@ import store from '~/store';
 const BookmarkMenu: FC = () => {
   const { showToast } = useToastContext();
 
-  const conversation = useRecoilValue(store.conversationByIndex(0));
+  const conversation = useRecoilValue(store.conversationByIndex(0)) || undefined;
   const conversationId = conversation?.conversationId ?? '';
   const onSuccess = useBookmarkSuccess(conversationId);
   const [tags, setTags] = useState<string[]>(conversation?.tags || []);
