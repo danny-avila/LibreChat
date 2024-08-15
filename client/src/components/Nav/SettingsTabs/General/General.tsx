@@ -21,9 +21,9 @@ export const ThemeSelector = ({
   const localize = useLocalize();
 
   const themeOptions = [
-    { value: 'system', display: localize('com_nav_theme_system') },
-    { value: 'dark', display: localize('com_nav_theme_dark') },
-    { value: 'light', display: localize('com_nav_theme_light') },
+    { value: 'system', label: localize('com_nav_theme_system') },
+    { value: 'dark', label: localize('com_nav_theme_dark') },
+    { value: 'light', label: localize('com_nav_theme_light') },
   ];
 
   return (
@@ -81,27 +81,27 @@ export const LangSelector = ({
 
   // Create an array of options for the Dropdown
   const languageOptions = [
-    { value: 'auto', display: localize('com_nav_lang_auto') },
-    { value: 'en-US', display: localize('com_nav_lang_english') },
-    { value: 'zh-CN', display: localize('com_nav_lang_chinese') },
-    { value: 'zh-TW', display: localize('com_nav_lang_traditionalchinese') },
-    { value: 'ar-EG', display: localize('com_nav_lang_arabic') },
-    { value: 'de-DE', display: localize('com_nav_lang_german') },
-    { value: 'es-ES', display: localize('com_nav_lang_spanish') },
-    { value: 'fr-FR', display: localize('com_nav_lang_french') },
-    { value: 'it-IT', display: localize('com_nav_lang_italian') },
-    { value: 'pl-PL', display: localize('com_nav_lang_polish') },
-    { value: 'pt-BR', display: localize('com_nav_lang_brazilian_portuguese') },
-    { value: 'ru-RU', display: localize('com_nav_lang_russian') },
-    { value: 'ja-JP', display: localize('com_nav_lang_japanese') },
-    { value: 'sv-SE', display: localize('com_nav_lang_swedish') },
-    { value: 'ko-KR', display: localize('com_nav_lang_korean') },
-    { value: 'vi-VN', display: localize('com_nav_lang_vietnamese') },
-    { value: 'tr-TR', display: localize('com_nav_lang_turkish') },
-    { value: 'nl-NL', display: localize('com_nav_lang_dutch') },
-    { value: 'id-ID', display: localize('com_nav_lang_indonesia') },
-    { value: 'he-HE', display: localize('com_nav_lang_hebrew') },
-    { value: 'fi-FI', display: localize('com_nav_lang_finnish') },
+    { value: 'auto', label: localize('com_nav_lang_auto') },
+    { value: 'en-US', label: localize('com_nav_lang_english') },
+    { value: 'zh-CN', label: localize('com_nav_lang_chinese') },
+    { value: 'zh-TW', label: localize('com_nav_lang_traditionalchinese') },
+    { value: 'ar-EG', label: localize('com_nav_lang_arabic') },
+    { value: 'de-DE', label: localize('com_nav_lang_german') },
+    { value: 'es-ES', label: localize('com_nav_lang_spanish') },
+    { value: 'fr-FR', label: localize('com_nav_lang_french') },
+    { value: 'it-IT', label: localize('com_nav_lang_italian') },
+    { value: 'pl-PL', label: localize('com_nav_lang_polish') },
+    { value: 'pt-BR', label: localize('com_nav_lang_brazilian_portuguese') },
+    { value: 'ru-RU', label: localize('com_nav_lang_russian') },
+    { value: 'ja-JP', label: localize('com_nav_lang_japanese') },
+    { value: 'sv-SE', label: localize('com_nav_lang_swedish') },
+    { value: 'ko-KR', label: localize('com_nav_lang_korean') },
+    { value: 'vi-VN', label: localize('com_nav_lang_vietnamese') },
+    { value: 'tr-TR', label: localize('com_nav_lang_turkish') },
+    { value: 'nl-NL', label: localize('com_nav_lang_dutch') },
+    { value: 'id-ID', label: localize('com_nav_lang_indonesia') },
+    { value: 'he-HE', label: localize('com_nav_lang_hebrew') },
+    { value: 'fi-FI', label: localize('com_nav_lang_finnish') },
   ];
 
   return (
