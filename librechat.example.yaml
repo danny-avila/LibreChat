@@ -31,7 +31,8 @@ registration:
 #       url: ''
 #       apiKey: '${TTS_API_KEY}'
 #       model: ''
-#       voice: ''
+#       voices: ['']
+
 #  
 #   stt:
 #     openai:
