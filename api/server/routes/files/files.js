@@ -1,13 +1,18 @@
 const fs = require('fs').promises;
 const express = require('express');
-const { isUUID, checkOpenAIStorage } = require('librechat-data-provider');
+const {
+  isUUID,
+  checkOpenAIStorage,
+  FileSources,
+  EModelEndpoint,
+} = require('librechat-data-provider');
 const {
   filterFile,
   processFileUpload,
   processDeleteRequest,
 } = require('~/server/services/Files/process');
-const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { getFiles } = require('~/models/File');
 const { logger } = require('~/config');
 
@@ -113,7 +118,15 @@ router.get('/download/:userId/:file_id', async (req, res) => {
 
     if (checkOpenAIStorage(file.source)) {
       req.body = { model: file.model };
-      const { openai } = await initializeClient({ req, res });
+      const endpointMap = {
+        [FileSources.openai]: EModelEndpoint.assistants,
+        [FileSources.azure]: EModelEndpoint.azureAssistants,
+      };
+      const { openai } = await getOpenAIClient({
+        req,
+        res,
+        overrideEndpoint: endpointMap[file.source],
+      });
       logger.debug(`Downloading file ${file_id} from OpenAI`);
       passThrough = await getDownloadStream(file_id, openai);
       setHeaders();

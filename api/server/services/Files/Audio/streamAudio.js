@@ -1,5 +1,5 @@
 const WebSocket = require('ws');
-const { CacheKeys } = require('librechat-data-provider');
+const { CacheKeys, findLastSeparatorIndex, SEPARATORS } = require('librechat-data-provider');
 const { getLogStores } = require('~/cache');
 
 /**
@@ -69,25 +69,6 @@ function assembleQuery(parameters) {
   }
 
   return query;
-}
-
-const SEPARATORS = ['.', '?', '!', '۔', '。', '‥', ';', '¡', '¿', '\n'];
-
-/**
- *
- * @param {string} text
- * @param {string[] | undefined} [separators]
- * @returns
- */
-function findLastSeparatorIndex(text, separators = SEPARATORS) {
-  let lastIndex = -1;
-  for (const separator of separators) {
-    const index = text.lastIndexOf(separator);
-    if (index > lastIndex) {
-      lastIndex = index;
-    }
-  }
-  return lastIndex;
 }
 
 const MAX_NOT_FOUND_COUNT = 6;
