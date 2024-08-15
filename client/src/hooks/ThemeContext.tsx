@@ -1,23 +1,9 @@
 //ThemeContext.js
 // source: https://plainenglish.io/blog/light-and-dark-mode-in-react-web-application-with-tailwind-css-89674496b942
-
+import { useSetRecoilState } from 'recoil';
 import React, { createContext, useState, useEffect } from 'react';
-
-const getInitialTheme = () => {
-  if (typeof window !== 'undefined' && window.localStorage) {
-    const storedPrefs = window.localStorage.getItem('color-theme');
-    if (typeof storedPrefs === 'string') {
-      return storedPrefs;
-    }
-
-    const userMedia = window.matchMedia('(prefers-color-scheme: dark)');
-    if (userMedia.matches) {
-      return 'dark';
-    }
-  }
-
-  return 'light'; // light theme as the default;
-};
+import { getInitialTheme, applyFontSize } from '~/utils';
+import store from '~/store';
 
 type ProviderValue = {
   theme: string;
@@ -42,6 +28,7 @@ export const ThemeContext = createContext<ProviderValue>(defaultContextValue);
 
 export const ThemeProvider = ({ initialTheme, children }) => {
   const [theme, setTheme] = useState(getInitialTheme);
+  const setFontSize = useSetRecoilState(store.fontSize);
 
   const rawSetTheme = (rawTheme: string) => {
     const root = window.document.documentElement;
@@ -64,6 +51,19 @@ export const ThemeProvider = ({ initialTheme, children }) => {
     return () => {
       mediaQuery.removeEventListener('change', changeThemeOnSystemChange);
     };
+  }, []);
+
+  useEffect(() => {
+    const fontSize = localStorage.getItem('fontSize');
+    if (fontSize == null) {
+      setFontSize('text-base');
+      applyFontSize('text-base');
+      localStorage.setItem('fontSize', 'text-base');
+      return;
+    }
+    applyFontSize(JSON.parse(fontSize));
+    // Reason: This effect should only run once, and `setFontSize` is a stable function
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (initialTheme) {

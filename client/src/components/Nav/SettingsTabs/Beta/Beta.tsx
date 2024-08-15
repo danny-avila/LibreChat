@@ -11,11 +11,11 @@ function Beta() {
       role="tabpanel"
       className="w-full md:min-h-[271px]"
     >
-      <div className="flex flex-col gap-3 text-sm text-black dark:text-gray-50">
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
+      <div className="flex flex-col gap-3 text-sm text-text-primary">
+        <div className="border-b border-border-medium pb-3 last-of-type:border-b-0">
           <ModularChat />
         </div>
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
+        <div className="border-b border-border-medium pb-3 last-of-type:border-b-0">
           <LaTeXParsing />
         </div>
       </div>

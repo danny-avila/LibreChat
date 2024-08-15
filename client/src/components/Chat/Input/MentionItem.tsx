@@ -2,6 +2,16 @@ import React from 'react';
 import { Clock4 } from 'lucide-react';
 import { cn } from '~/utils';
 
+export interface MentionItemProps {
+  name: string;
+  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  index: number;
+  type?: 'prompt' | 'mention' | 'add-convo';
+  icon?: React.ReactNode;
+  isActive?: boolean;
+  description?: string;
+}
+
 export default function MentionItem({
   name,
   onClick,
@@ -9,37 +19,29 @@ export default function MentionItem({
   icon,
   isActive,
   description,
-}: {
-  name: string;
-  onClick: () => void;
-  index: number;
-  icon?: React.ReactNode;
-  isActive?: boolean;
-  description?: string;
-}) {
+  type = 'mention',
+}: MentionItemProps) {
   return (
-    <div tabIndex={index} onClick={onClick} id={`mention-item-${index}`} className="cursor-pointer">
+    <button tabIndex={index} onClick={onClick} id={`${type}-item-${index}`} className="w-full">
       <div
         className={cn(
-          'text-token-text-primary bg-token-main-surface-secondary group flex h-10 items-center gap-2 rounded-lg px-2 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-600',
-          isActive ? 'bg-gray-100 dark:bg-gray-600' : '',
+          'text-token-text-primary bg-token-main-surface-secondary group flex h-10 items-center gap-2 rounded-lg px-2 text-sm font-medium hover:bg-surface-secondary',
+          isActive ? 'bg-surface-active' : 'bg-transparent',
         )}
       >
-        {icon ? icon : null}
-        <div className="flex h-fit grow flex-row justify-between space-x-2 overflow-hidden text-ellipsis whitespace-nowrap">
-          <div className="flex flex-row space-x-2">
-            <span className="shrink-0 truncate">{name}</span>
+        <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center">{icon}</div>
+        <div className="flex min-w-0 flex-grow items-center justify-between">
+          <div className="truncate">
+            <span className="font-medium">{name}</span>
             {description ? (
-              <span className="text-token-text-tertiary flex-grow truncate text-sm font-light sm:max-w-xs lg:max-w-md">
+              <span className="text-token-text-tertiary ml-2 text-sm font-light">
                 {description}
               </span>
             ) : null}
           </div>
-          <span className="shrink-0 self-center">
-            <Clock4 size={16} className="icon-sm" />
-          </span>
+          <Clock4 size={16} className="ml-2 flex-shrink-0" />
         </div>
       </div>
-    </div>
+    </button>
   );
 }
