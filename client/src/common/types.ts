@@ -19,6 +19,7 @@ import type {
   TStartupConfig,
   EModelEndpoint,
   AssistantsEndpoint,
+  TMessageContentParts,
   AuthorizationTypeEnum,
   TSetOption as SetOption,
   TokenExchangeMethodEnum,
@@ -374,10 +375,18 @@ export type Option = Record<string, unknown> & {
   value: string | number | null;
 };
 
-export interface VoiceOption {
+export type VoiceOption = {
   value: string;
   label: string;
-}
+};
+
+export type TMessageAudio = {
+  messageId?: string;
+  content?: TMessageContentParts[] | string;
+  className?: string;
+  isLast: boolean;
+  index: number;
+};
 
 export type OptionWithIcon = Option & { icon?: React.ReactNode };
 export type MentionOption = OptionWithIcon & {

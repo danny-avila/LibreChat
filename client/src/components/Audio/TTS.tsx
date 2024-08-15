@@ -1,21 +1,13 @@
 // client/src/components/Chat/Messages/MessageAudio.tsx
 import { useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
-import type { TMessageContentParts } from 'librechat-data-provider';
+import type { TMessageAudio } from '~/common';
 import { useLocalize, useTTSBrowser, useTTSEdge, useTTSExternal } from '~/hooks';
 import { VolumeIcon, VolumeMuteIcon, Spinner } from '~/components/svg';
 import { logger } from '~/utils';
 import store from '~/store';
 
-type THoverButtons = {
-  messageId?: string;
-  content?: TMessageContentParts[] | string;
-  className?: string;
-  isLast: boolean;
-  index: number;
-};
-
-export function BrowserTTS({ isLast, index, messageId, content, className }: THoverButtons) {
+export function BrowserTTS({ isLast, index, messageId, content, className }: TMessageAudio) {
   const localize = useLocalize();
   const playbackRate = useRecoilValue(store.playbackRate);
 
@@ -58,18 +50,6 @@ export function BrowserTTS({ isLast, index, messageId, content, className }: THo
     <>
       <button
         className={className}
-        // onMouseDownCapture={() => {
-        //   if (audioRef.current) {
-        //     audioRef.current.muted = false;
-        //   }
-        //   handleMouseDown();
-        // }}
-        // onMouseUpCapture={() => {
-        //   if (audioRef.current) {
-        //     audioRef.current.muted = false;
-        //   }
-        //   handleMouseUp();
-        // }}
         onClickCapture={() => {
           if (audioRef.current) {
             audioRef.current.muted = false;
@@ -105,7 +85,7 @@ export function BrowserTTS({ isLast, index, messageId, content, className }: THo
   );
 }
 
-export function EdgeTTS({ isLast, index, messageId, content, className }: THoverButtons) {
+export function EdgeTTS({ isLast, index, messageId, content, className }: TMessageAudio) {
   const localize = useLocalize();
   const playbackRate = useRecoilValue(store.playbackRate);
 
@@ -148,18 +128,6 @@ export function EdgeTTS({ isLast, index, messageId, content, className }: THover
     <>
       <button
         className={className}
-        // onMouseDownCapture={() => {
-        //   if (audioRef.current) {
-        //     audioRef.current.muted = false;
-        //   }
-        //   handleMouseDown();
-        // }}
-        // onMouseUpCapture={() => {
-        //   if (audioRef.current) {
-        //     audioRef.current.muted = false;
-        //   }
-        //   handleMouseUp();
-        // }}
         onClickCapture={() => {
           if (audioRef.current) {
             audioRef.current.muted = false;
@@ -195,7 +163,7 @@ export function EdgeTTS({ isLast, index, messageId, content, className }: THover
   );
 }
 
-export function ExternalTTS({ isLast, index, messageId, content, className }: THoverButtons) {
+export function ExternalTTS({ isLast, index, messageId, content, className }: TMessageAudio) {
   const localize = useLocalize();
   const playbackRate = useRecoilValue(store.playbackRate);
 
@@ -238,18 +206,6 @@ export function ExternalTTS({ isLast, index, messageId, content, className }: TH
     <>
       <button
         className={className}
-        // onMouseDownCapture={() => {
-        //   if (audioRef.current) {
-        //     audioRef.current.muted = false;
-        //   }
-        //   handleMouseDown();
-        // }}
-        // onMouseUpCapture={() => {
-        //   if (audioRef.current) {
-        //     audioRef.current.muted = false;
-        //   }
-        //   handleMouseUp();
-        // }}
         onClickCapture={() => {
           if (audioRef.current) {
             audioRef.current.muted = false;
