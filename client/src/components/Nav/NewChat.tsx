@@ -37,7 +37,7 @@ const NewChatButtonIcon = ({ conversation }: { conversation: TConversation | nul
       {iconURL && iconURL.includes('http') ? (
         <ConvoIconURL preset={conversation} endpointIconURL={iconURL} context="nav" />
       ) : (
-        <div className="shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black dark:bg-white">
+        <div className="shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black">
           {endpoint && Icon && (
             <Icon
               size={41}

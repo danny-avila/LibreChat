@@ -9,6 +9,7 @@ import {
   useLocalStorage,
   useNavScrolling,
   useConversations,
+  useLocalize,
 } from '~/hooks';
 import { useConversationsInfiniteQuery } from '~/data-provider';
 import { TooltipProvider, Tooltip } from '~/components/ui';
@@ -24,6 +25,7 @@ import { cn } from '~/utils';
 import store from '~/store';
 
 const Nav = ({ navVisible, setNavVisible }) => {
+  const localize = useLocalize();
   const { conversationId } = useParams();
   const { isAuthenticated } = useAuthContext();
 
@@ -140,7 +142,7 @@ const Nav = ({ navVisible, setNavVisible }) => {
                 >
                   <nav
                     id="chat-history-nav"
-                    aria-label="chat-history-nav"
+                    aria-label={localize('com_ui_chat_history')}
                     className="flex h-full w-full flex-col px-3 pb-3.5"
                   >
                     <div

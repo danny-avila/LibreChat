@@ -28,6 +28,7 @@ import {
 import useContentHandler from '~/hooks/SSE/useContentHandler';
 import type { TGenTitleMutation } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { useLiveAnnouncer } from '~/Providers';
 
 type TSyncData = {
   sync: boolean;
@@ -64,6 +65,7 @@ export default function useEventHandlers({
   resetLatestMessage,
 }: EventHandlerParams) {
   const queryClient = useQueryClient();
+  const { announcePolite, announceAssertive } = useLiveAnnouncer();
 
   const { conversationId: paramId } = useParams();
   const { token } = useAuthContext();
@@ -71,7 +73,7 @@ export default function useEventHandlers({
   const contentHandler = useContentHandler({ setMessages, getMessages });
 
   const messageHandler = useCallback(
-    (data: string, submission: TSubmission) => {
+    (data: string | undefined, submission: TSubmission) => {
       const {
         messages,
         userMessage,
@@ -80,13 +82,20 @@ export default function useEventHandlers({
         initialResponse,
         isRegenerate = false,
       } = submission;
+      const text = data ?? '';
+      if (text.length > 0) {
+        announcePolite({
+          message: text,
+          isStream: true,
+        });
+      }
 
       if (isRegenerate) {
         setMessages([
           ...messages,
           {
             ...initialResponse,
-            text: data,
+            text,
             plugin: plugin ?? null,
             plugins: plugins ?? [],
             // unfinished: true
@@ -98,7 +107,7 @@ export default function useEventHandlers({
           userMessage,
           {
             ...initialResponse,
-            text: data,
+            text,
             plugin: plugin ?? null,
             plugins: plugins ?? [],
             // unfinished: true
@@ -106,7 +115,7 @@ export default function useEventHandlers({
         ]);
       }
     },
-    [setMessages],
+    [setMessages, announcePolite],
   );
 
   const cancelHandler = useCallback(
@@ -248,6 +257,10 @@ export default function useEventHandlers({
       }
 
       const { conversationId, parentMessageId } = userMessage;
+      announceAssertive({
+        message: 'The AI is generating a response.',
+        id: `ai-generating-${Date.now()}`,
+      });
 
       let update = {} as TConversation;
       if (setConversation && !isAddedRequest) {
@@ -295,7 +308,14 @@ export default function useEventHandlers({
 
       scrollToEnd();
     },
-    [setMessages, setConversation, queryClient, isAddedRequest, resetLatestMessage],
+    [
+      setMessages,
+      setConversation,
+      queryClient,
+      isAddedRequest,
+      resetLatestMessage,
+      announceAssertive,
+    ],
   );
 
   const finalHandler = useCallback(
@@ -311,6 +331,19 @@ export default function useEventHandlers({
       if (!currentMessages?.length) {
         return setIsSubmitting(false);
       }
+
+      /* a11y announcements */
+      announcePolite({
+        message: '',
+        isComplete: true,
+      });
+
+      setTimeout(() => {
+        announcePolite({
+          message: 'The AI has finished generating a response.',
+          id: `ai-finished-${Date.now()}`,
+        });
+      }, 100);
 
       // update the messages; if assistants endpoint, client doesn't receive responseMessage
       if (runMessages) {
@@ -367,6 +400,7 @@ export default function useEventHandlers({
       setMessages,
       setCompleted,
       isAddedRequest,
+      announcePolite,
       setConversation,
       setIsSubmitting,
       setShowStopButton,

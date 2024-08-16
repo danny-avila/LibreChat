@@ -1,26 +1,25 @@
-import { useRecoilState } from 'recoil';
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useRecoilValue } from 'recoil';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
-import { useToastContext } from '~/Providers';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import type { VoiceOption } from '~/common';
+import { useToastContext } from '~/Providers/ToastContext';
 import useLocalize from '~/hooks/useLocalize';
 import store from '~/store';
 
-interface Voice {
-  value: string;
-  display: string;
-}
-
 interface UseTextToSpeechEdgeReturn {
-  generateSpeechEdge: (text: string) => Promise<void>;
+  generateSpeechEdge: (text: string) => void;
   cancelSpeechEdge: () => void;
-  isSpeaking: boolean;
-  voices: () => Promise<Voice[]>;
+  voices: VoiceOption[];
 }
 
-function useTextToSpeechEdge(): UseTextToSpeechEdgeReturn {
+function useTextToSpeechEdge({
+  setIsSpeaking,
+}: {
+  setIsSpeaking: React.Dispatch<React.SetStateAction<boolean>>;
+}): UseTextToSpeechEdgeReturn {
   const localize = useLocalize();
-  const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
-  const [voiceName] = useRecoilState<string>(store.voice);
+  const [voices, setVoices] = useState<VoiceOption[]>([]);
+  const voiceName = useRecoilValue(store.voice);
   const ttsRef = useRef<MsEdgeTTS | null>(null);
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
   const mediaSourceRef = useRef<MediaSource | null>(null);
@@ -28,61 +27,64 @@ function useTextToSpeechEdge(): UseTextToSpeechEdgeReturn {
   const pendingBuffers = useRef<Uint8Array[]>([]);
   const { showToast } = useToastContext();
 
-  const initializeTTS = useCallback(async (): Promise<void> => {
+  const isBrowserSupported = useMemo(
+    () => typeof MediaSource !== 'undefined' && MediaSource.isTypeSupported('audio/mpeg'),
+    [],
+  );
+
+  const fetchVoices = useCallback(() => {
     if (!ttsRef.current) {
       ttsRef.current = new MsEdgeTTS();
     }
-    try {
-      await ttsRef.current.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-    } catch (error) {
-      console.error('Error initializing TTS:', error);
-      showToast({
-        message: localize('com_nav_tts_init_error', (error as Error).message),
-        status: 'error',
-      });
-    }
-  }, [voiceName, showToast, localize]);
-
-  const onSourceOpen = useCallback((): void => {
-    if (!sourceBufferRef.current && mediaSourceRef.current) {
-      try {
-        sourceBufferRef.current = mediaSourceRef.current.addSourceBuffer('audio/mpeg');
-        sourceBufferRef.current.addEventListener('updateend', appendNextBuffer);
-      } catch (error) {
-        console.error('Error adding source buffer:', error);
+    ttsRef.current
+      .getVoices()
+      .then((voicesList) => {
+        setVoices(
+          voicesList.map((v) => ({
+            value: v.ShortName,
+            label: v.FriendlyName,
+          })),
+        );
+      })
+      .catch((error) => {
+        console.error('Error fetching voices:', error);
         showToast({
-          message: localize('com_nav_source_buffer_error'),
+          message: localize('com_nav_voices_fetch_error'),
           status: 'error',
         });
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+      });
   }, [showToast, localize]);
 
-  const initializeMediaSource = useCallback(async (): Promise<void> => {
-    return new Promise<void>((resolve) => {
-      if (!mediaSourceRef.current) {
-        mediaSourceRef.current = new MediaSource();
-        audioElementRef.current = new Audio();
-        audioElementRef.current.src = URL.createObjectURL(mediaSourceRef.current);
-      }
+  const initializeTTS = useCallback(() => {
+    if (!ttsRef.current) {
+      ttsRef.current = new MsEdgeTTS();
+    }
+    const availableVoice: VoiceOption | undefined = voices.find((v) => v.value === voiceName);
 
-      const mediaSource = mediaSourceRef.current;
-      if (mediaSource.readyState === 'open') {
-        onSourceOpen();
-        resolve();
-      } else {
-        const onSourceOpenWrapper = (): void => {
-          onSourceOpen();
-          resolve();
-          mediaSource.removeEventListener('sourceopen', onSourceOpenWrapper);
-        };
-        mediaSource.addEventListener('sourceopen', onSourceOpenWrapper);
-      }
-    });
-  }, [onSourceOpen]);
+    if (availableVoice) {
+      ttsRef.current
+        .setMetadata(availableVoice.value, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3)
+        .catch((error) => {
+          console.error('Error initializing TTS:', error);
+          showToast({
+            message: localize('com_nav_tts_init_error', (error as Error).message),
+            status: 'error',
+          });
+        });
+    } else if (voices.length > 0) {
+      ttsRef.current
+        .setMetadata(voices[0].value, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3)
+        .catch((error) => {
+          console.error('Error initializing TTS:', error);
+          showToast({
+            message: localize('com_nav_tts_init_error', (error as Error).message),
+            status: 'error',
+          });
+        });
+    }
+  }, [voiceName, showToast, localize, voices]);
 
-  const appendNextBuffer = useCallback((): void => {
+  const appendNextBuffer = useCallback(() => {
     if (
       sourceBufferRef.current &&
       !sourceBufferRef.current.updating &&
@@ -104,50 +106,81 @@ function useTextToSpeechEdge(): UseTextToSpeechEdgeReturn {
     }
   }, [showToast, localize]);
 
-  const generateSpeechEdge = useCallback(
-    async (text: string): Promise<void> => {
+  const onSourceOpen = useCallback(() => {
+    if (!sourceBufferRef.current && mediaSourceRef.current) {
       try {
-        await initializeTTS();
-        await initializeMediaSource();
-
-        if (!ttsRef.current || !audioElementRef.current) {
-          throw new Error('TTS or Audio element not initialized');
-        }
-
-        setIsSpeaking(true);
-        pendingBuffers.current = [];
-
-        const readable = await ttsRef.current.toStream(text);
-
-        readable.on('data', (chunk: Buffer) => {
-          pendingBuffers.current.push(new Uint8Array(chunk));
-          appendNextBuffer();
-        });
-
-        readable.on('end', () => {
-          if (mediaSourceRef.current && mediaSourceRef.current.readyState === 'open') {
-            mediaSourceRef.current.endOfStream();
-          }
-        });
-
-        audioElementRef.current.onended = () => {
-          setIsSpeaking(false);
-        };
-
-        await audioElementRef.current.play();
+        sourceBufferRef.current = mediaSourceRef.current.addSourceBuffer('audio/mpeg');
+        sourceBufferRef.current.addEventListener('updateend', appendNextBuffer);
       } catch (error) {
-        console.error('Error generating speech:', error);
+        console.error('Error adding source buffer:', error);
         showToast({
-          message: localize('com_nav_audio_play_error', (error as Error).message),
+          message: localize('com_nav_source_buffer_error'),
           status: 'error',
         });
-        setIsSpeaking(false);
       }
+    }
+  }, [showToast, localize, appendNextBuffer]);
+
+  const initializeMediaSource = useCallback(() => {
+    if (!mediaSourceRef.current) {
+      mediaSourceRef.current = new MediaSource();
+      audioElementRef.current = new Audio();
+      audioElementRef.current.src = URL.createObjectURL(mediaSourceRef.current);
+    }
+
+    const mediaSource = mediaSourceRef.current;
+    if (mediaSource.readyState === 'open') {
+      onSourceOpen();
+    } else {
+      mediaSource.addEventListener('sourceopen', onSourceOpen);
+    }
+  }, [onSourceOpen]);
+
+  const generateSpeechEdge = useCallback(
+    (text: string) => {
+      const generate = async () => {
+        try {
+          if (!ttsRef.current || !audioElementRef.current) {
+            throw new Error('TTS or Audio element not initialized');
+          }
+
+          setIsSpeaking(true);
+          pendingBuffers.current = [];
+
+          const readable = ttsRef.current.toStream(text);
+
+          readable.on('data', (chunk: Buffer) => {
+            pendingBuffers.current.push(new Uint8Array(chunk));
+            appendNextBuffer();
+          });
+
+          readable.on('end', () => {
+            if (mediaSourceRef.current && mediaSourceRef.current.readyState === 'open') {
+              mediaSourceRef.current.endOfStream();
+            }
+          });
+
+          audioElementRef.current.onended = () => {
+            setIsSpeaking(false);
+          };
+
+          await audioElementRef.current.play();
+        } catch (error) {
+          console.error('Error generating speech:', error);
+          showToast({
+            message: localize('com_nav_audio_play_error', (error as Error).message),
+            status: 'error',
+          });
+          setIsSpeaking(false);
+        }
+      };
+
+      generate();
     },
-    [initializeTTS, initializeMediaSource, appendNextBuffer, showToast, localize],
+    [setIsSpeaking, appendNextBuffer, showToast, localize],
   );
 
-  const cancelSpeechEdge = useCallback((): void => {
+  const cancelSpeechEdge = useCallback(() => {
     try {
       if (audioElementRef.current) {
         audioElementRef.current.pause();
@@ -165,37 +198,43 @@ function useTextToSpeechEdge(): UseTextToSpeechEdgeReturn {
         status: 'error',
       });
     }
-  }, [showToast, localize]);
-
-  const voices = useCallback(async (): Promise<Voice[]> => {
-    if (!ttsRef.current) {
-      ttsRef.current = new MsEdgeTTS();
-    }
-    try {
-      const voicesList = await ttsRef.current.getVoices();
-      return voicesList.map((v) => ({
-        value: v.ShortName,
-        display: v.FriendlyName,
-      }));
-    } catch (error) {
-      console.error('Error fetching voices:', error);
-      showToast({
-        message: localize('com_nav_voices_fetch_error'),
-        status: 'error',
-      });
-      return [];
-    }
-  }, [showToast, localize]);
+  }, [setIsSpeaking, showToast, localize]);
 
   useEffect(() => {
+    if (!isBrowserSupported) {
+      return;
+    }
+    fetchVoices();
+  }, [fetchVoices, isBrowserSupported]);
+
+  useEffect(() => {
+    if (!isBrowserSupported) {
+      return;
+    }
+    initializeTTS();
+  }, [voiceName, initializeTTS, isBrowserSupported]);
+
+  useEffect(() => {
+    if (!isBrowserSupported) {
+      return;
+    }
+    initializeMediaSource();
     return () => {
       if (mediaSourceRef.current) {
-        URL.revokeObjectURL(audioElementRef.current?.src || '');
+        URL.revokeObjectURL(audioElementRef.current?.src ?? '');
       }
     };
-  }, []);
+  }, [initializeMediaSource, isBrowserSupported]);
 
-  return { generateSpeechEdge, cancelSpeechEdge, isSpeaking, voices };
+  if (!isBrowserSupported) {
+    return {
+      generateSpeechEdge: () => ({}),
+      cancelSpeechEdge: () => ({}),
+      voices: [],
+    };
+  }
+
+  return { generateSpeechEdge, cancelSpeechEdge, voices };
 }
 
 export default useTextToSpeechEdge;
