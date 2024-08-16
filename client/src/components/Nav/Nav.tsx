@@ -24,7 +24,13 @@ import NewChat from './NewChat';
 import { cn } from '~/utils';
 import store from '~/store';
 
-const Nav = ({ navVisible, setNavVisible }) => {
+const Nav = ({
+  navVisible,
+  setNavVisible,
+}: {
+  navVisible: boolean;
+  setNavVisible: React.Dispatch<React.SetStateAction<boolean>>;
+}) => {
   const localize = useLocalize();
   const { conversationId } = useParams();
   const { isAuthenticated } = useAuthContext();
@@ -78,15 +84,18 @@ const Nav = ({ navVisible, setNavVisible }) => {
   }, [tags]);
   const { containerRef, moveToTop } = useNavScrolling<ConversationListResponse>({
     setShowLoading,
-    hasNextPage: searchQuery ? searchQueryRes.hasNextPage : hasNextPage,
-    fetchNextPage: searchQuery ? searchQueryRes.fetchNextPage : fetchNextPage,
-    isFetchingNextPage: searchQuery ? searchQueryRes.isFetchingNextPage : isFetchingNextPage,
+    hasNextPage: searchQuery ? searchQueryRes?.hasNextPage : hasNextPage,
+    fetchNextPage: searchQuery ? searchQueryRes?.fetchNextPage : fetchNextPage,
+    isFetchingNextPage: searchQuery
+      ? searchQueryRes?.isFetchingNextPage ?? false
+      : isFetchingNextPage,
   });
 
   const conversations = useMemo(
     () =>
-      (searchQuery ? searchQueryRes.data : data)?.pages.flatMap((page) => page.conversations) || [],
-    [data, searchQuery, searchQueryRes.data],
+      (searchQuery ? searchQueryRes?.data : data)?.pages.flatMap((page) => page.conversations) ||
+      [],
+    [data, searchQuery, searchQueryRes?.data],
   );
 
   const clearSearch = () => {
@@ -184,9 +193,7 @@ const Nav = ({ navVisible, setNavVisible }) => {
                         toggleNav={itemToggleNav}
                       />
                       {(isFetchingNextPage || showLoading) && (
-                        <Spinner
-                          className={cn('m-1 mx-auto mb-4 h-4 w-4 text-black dark:text-white')}
-                        />
+                        <Spinner className={cn('m-1 mx-auto mb-4 h-4 w-4 text-text-primary')} />
                       )}
                     </div>
                     <NavLinks />
