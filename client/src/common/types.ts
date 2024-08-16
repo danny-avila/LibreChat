@@ -112,10 +112,12 @@ export interface NavProps {
   defaultActive?: string;
 }
 
-interface ColumnMeta {
-  meta: {
-    size: number | string;
-  };
+export interface DataColumnMeta {
+  meta:
+    | {
+        size: number | string;
+      }
+    | undefined;
 }
 
 export enum Panel {
@@ -157,7 +159,7 @@ export type AssistantPanelProps = {
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
 };
 
-export type AugmentedColumnDef<TData, TValue> = ColumnDef<TData, TValue> & ColumnMeta;
+export type AugmentedColumnDef<TData, TValue> = ColumnDef<TData, TValue> & DataColumnMeta;
 
 export type TSetOption = SetOption;
 
