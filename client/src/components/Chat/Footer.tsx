@@ -84,6 +84,7 @@ export default function Footer({ className }: { className?: string }) {
         className ||
         'relative flex items-center justify-center gap-2 px-2 py-2 text-center text-xs text-gray-600 dark:text-gray-300 md:px-[60px]'
       }
+      role="contentinfo"
     >
       {footerElements.map((contentRender, index) => {
         const isLastElement = index === footerElements.length - 1;
