@@ -3,7 +3,7 @@ import { Upload, Share2 } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { ShareButton } from '~/components/Conversations/ConvoOptions';
 import { Button, DropdownPopup } from '~/components/ui';
-import useLocalize from '~/hooks/useLocalize';
+import { useMediaQuery, useLocalize } from '~/hooks';
 import { ExportModal } from '../Nav';
 import store from '~/store';
 
@@ -17,6 +17,7 @@ export default function ExportAndShareMenu({
   const [isPopoverActive, setIsPopoverActive] = useState(false);
   const [showExports, setShowExports] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
   const exportable =
     conversation &&
@@ -73,6 +74,7 @@ export default function ExportAndShareMenu({
         }
         items={dropdownItems}
         anchor="bottom end"
+        className={isSmallScreen ? '' : 'absolute right-0 top-0 mt-2'}
       />
       {showShareDialog && conversation.conversationId != null && (
         <ShareButton
