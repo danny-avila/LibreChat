@@ -5,15 +5,15 @@ import { useParams, useNavigate } from 'react-router-dom';
 import type { TMessage } from 'librechat-data-provider';
 import { useDeleteConversationMutation } from '~/data-provider';
 import {
-  Dialog,
-  DialogTrigger,
+  OGDialog,
+  OGDialogTrigger,
   Label,
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from '~/components/ui';
-import DialogTemplate from '~/components/ui/DialogTemplate';
+import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { TrashIcon, CrossIcon } from '~/components/svg';
 import { useLocalize, useNewConvo } from '~/hooks';
 
@@ -42,7 +42,7 @@ export default function DeleteButton({
 
   const confirmDelete = useCallback(() => {
     const messages = queryClient.getQueryData<TMessage[]>([QueryKeys.messages, conversationId]);
-    const thread_id = messages?.[messages?.length - 1]?.thread_id;
+    const thread_id = messages?.[messages.length - 1]?.thread_id;
 
     deleteConvoMutation.mutate({ conversationId, thread_id, source: 'button' });
   }, [conversationId, deleteConvoMutation, queryClient]);
@@ -72,11 +72,11 @@ export default function DeleteButton({
   };
 
   return (
-    <Dialog>
-      <DialogTrigger asChild>
+    <OGDialog>
+      <OGDialogTrigger asChild>
         <button className={className}>{renaming ? <CrossIcon /> : renderDeleteButton()}</button>
-      </DialogTrigger>
-      <DialogTemplate
+      </OGDialogTrigger>
+      <OGDialogTemplate
         showCloseButton={false}
         title={localize('com_ui_delete_conversation')}
         className="max-w-[450px]"
@@ -98,6 +98,6 @@ export default function DeleteButton({
           selectText: localize('com_ui_delete'),
         }}
       />
-    </Dialog>
+    </OGDialog>
   );
 }

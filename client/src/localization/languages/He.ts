@@ -385,6 +385,7 @@ export default {
   com_nav_theme_system: 'מערכת',
   com_nav_theme_dark: 'כהה',
   com_nav_theme_light: 'אור',
+  com_nav_font_size: 'גודל גופן',
   com_nav_user_name_display: 'הצג שם משתמש בהודעות',
   com_nav_save_drafts: 'שמיר את האפצה באותו מחשב',
   com_nav_clear_all_chats: 'נקה את כל השיחות',

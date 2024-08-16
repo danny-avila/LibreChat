@@ -80,7 +80,7 @@ export default function SharedLinkButton({
         ),
       };
     }
-    if (share?.isPublic) {
+    if (share.isPublic) {
       return {
         handler: async () => {
           await updateSharedLink();
@@ -107,12 +107,12 @@ export default function SharedLinkButton({
 
   const handlers = getHandler();
   return (
-    <Button
+    <button
       disabled={isLoading || isCopying}
       onClick={() => {
         handlers.handler();
       }}
-      className="min-w-32 whitespace-nowrap bg-green-500 text-white hover:bg-green-600 dark:bg-green-600 dark:text-white dark:hover:bg-green-800"
+      className="btn btn-primary flex items-center"
     >
       {isCopying && (
         <>
@@ -122,6 +122,6 @@ export default function SharedLinkButton({
       )}
       {!isCopying && !isLoading && handlers.label}
       {!isCopying && isLoading && <Spinner className="h-4 w-4" />}
-    </Button>
+    </button>
   );
 }

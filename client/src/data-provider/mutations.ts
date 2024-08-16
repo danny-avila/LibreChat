@@ -1,4 +1,5 @@
 import {
+  Constants,
   EToolResources,
   LocalStorageKeys,
   InfiniteCollections,
@@ -10,6 +11,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
 import type { InfiniteData, UseMutationResult } from '@tanstack/react-query';
+import useUpdateTagsInConvo from '~/hooks/Conversations/useUpdateTagsInConvo';
 import { updateConversationTag } from '~/utils/conversationTags';
 import { normalizeData } from '~/utils/collection';
 import store from '~/store';
@@ -89,89 +91,6 @@ export const useUpdateConversationMutation = (
   );
 };
 
-const useUpdateTagsInConversation = () => {
-  const queryClient = useQueryClient();
-
-  // Update the queryClient cache with the new tag when a new tag is added/removed to a conversation
-  const updateTagsInConversation = (conversationId: string, tags: string[]) => {
-    // Update the tags for the current conversation
-    const currentConvo = queryClient.getQueryData<t.TConversation>([
-      QueryKeys.conversation,
-      conversationId,
-    ]);
-    if (!currentConvo) {
-      return;
-    }
-
-    const updatedConvo = {
-      ...currentConvo,
-      tags,
-    } as t.TConversation;
-    queryClient.setQueryData([QueryKeys.conversation, conversationId], updatedConvo);
-    queryClient.setQueryData<t.ConversationData>([QueryKeys.allConversations], (convoData) => {
-      if (!convoData) {
-        return convoData;
-      }
-      return updateConvoFields(
-        convoData,
-        {
-          conversationId: currentConvo.conversationId,
-          tags: updatedConvo.tags,
-        } as t.TConversation,
-        true,
-      );
-    });
-  };
-
-  // update the tag to newTag in all conversations when a tag is updated to a newTag
-  // The difference with updateTagsInConversation is that it adds or removes tags for a specific conversation,
-  // whereas this function is for changing the title of a specific tag.
-  const replaceTagsInAllConversations = (tag: string, newTag: string) => {
-    const data = queryClient.getQueryData<InfiniteData<ConversationListResponse>>([
-      QueryKeys.allConversations,
-    ]);
-
-    const conversationIdsWithTag = [] as string[];
-
-    // update tag to newTag in all conversations
-    const newData = JSON.parse(JSON.stringify(data)) as InfiniteData<ConversationListResponse>;
-    for (let pageIndex = 0; pageIndex < newData.pages.length; pageIndex++) {
-      const page = newData.pages[pageIndex];
-      page.conversations = page.conversations.map((conversation) => {
-        if (conversation.conversationId && conversation.tags?.includes(tag)) {
-          conversationIdsWithTag.push(conversation.conversationId);
-          conversation.tags = conversation.tags.map((t) => (t === tag ? newTag : t));
-        }
-        return conversation;
-      });
-    }
-    queryClient.setQueryData<InfiniteData<ConversationListResponse>>(
-      [QueryKeys.allConversations],
-      newData,
-    );
-
-    // update the tag to newTag from the cache of each conversation
-    for (let i = 0; i < conversationIdsWithTag.length; i++) {
-      const conversationId = conversationIdsWithTag[i];
-      const conversation = queryClient.getQueryData<t.TConversation>([
-        QueryKeys.conversation,
-        conversationId,
-      ]);
-      if (conversation && conversation.tags) {
-        const updatedConvo = {
-          ...conversation,
-          tags: conversation.tags.map((t) => (t === tag ? newTag : t)),
-        } as t.TConversation;
-        queryClient.setQueryData<t.TConversation>(
-          [QueryKeys.conversation, conversationId],
-          updatedConvo,
-        );
-      }
-    }
-  };
-
-  return { updateTagsInConversation, replaceTagsInAllConversations };
-};
 /**
  * Add or remove tags for a conversation
  */
@@ -179,7 +98,7 @@ export const useTagConversationMutation = (
   conversationId: string,
 ): UseMutationResult<t.TTagConversationResponse, unknown, t.TTagConversationRequest, unknown> => {
   const query = useConversationTagsQuery();
-  const { updateTagsInConversation } = useUpdateTagsInConversation();
+  const { updateTagsInConversation } = useUpdateTagsInConvo();
   return useMutation(
     (payload: t.TTagConversationRequest) =>
       dataService.addTagToConversation(conversationId, payload),
@@ -385,21 +304,6 @@ export const useDeleteSharedLinkMutation = (
   });
 };
 
-// If the number of conversations tagged is incorrect, recalculate the tag information.
-export const useRebuildConversationTagsMutation = (): UseMutationResult<
-  t.TConversationTagsResponse,
-  unknown,
-  unknown,
-  unknown
-> => {
-  const queryClient = useQueryClient();
-  return useMutation(() => dataService.rebuildConversationTags(), {
-    onSuccess: (_data) => {
-      queryClient.setQueryData<t.TConversationTag[]>([QueryKeys.conversationTags], _data);
-    },
-  });
-};
-
 // Add a tag or update tag information (tag, description, position, etc.)
 export const useConversationTagMutation = (
   tag?: string,
@@ -407,7 +311,7 @@ export const useConversationTagMutation = (
 ): UseMutationResult<t.TConversationTagResponse, unknown, t.TConversationTagRequest, unknown> => {
   const queryClient = useQueryClient();
   const { ..._options } = options || {};
-  const { updateTagsInConversation, replaceTagsInAllConversations } = useUpdateTagsInConversation();
+  const { updateTagsInConversation, replaceTagsInAllConversations } = useUpdateTagsInConvo();
   return useMutation(
     (payload: t.TConversationTagRequest) =>
       tag
@@ -419,13 +323,16 @@ export const useConversationTagMutation = (
           if (!data) {
             return [
               {
-                tag: 'Saved',
                 count: 1,
                 position: 0,
+                tag: Constants.SAVED_TAG,
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
               },
             ] as t.TConversationTag[];
+          }
+          if (!tag) {
+            return [...data, _data].sort((a, b) => a.position - b.position);
           }
           return updateConversationTag(data, vars, _data, tag);
         });

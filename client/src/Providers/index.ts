@@ -11,3 +11,4 @@ export * from './BookmarkContext';
 export * from './DashboardContext';
 export * from './AssistantsContext';
 export * from './AssistantsMapContext';
+export * from './AnnouncerContext';

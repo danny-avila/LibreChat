@@ -1,5 +1,5 @@
-const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
+const { webcrypto } = require('node:crypto');
 const { SystemRoles, errorsToString } = require('librechat-data-provider');
 const {
   findUser,
@@ -12,6 +12,7 @@ const {
 } = require('~/models/userMethods');
 const { sendEmail, checkEmailConfig } = require('~/server/utils');
 const { registerSchema } = require('~/strategies/validators');
+const { hashToken } = require('~/server/utils/crypto');
 const isDomainAllowed = require('./isDomainAllowed');
 const Token = require('~/models/schema/tokenSchema');
 const Session = require('~/models/Session');
@@ -34,7 +35,7 @@ const genericVerificationMessage = 'Please check your email to verify your email
  */
 const logoutUser = async (userId, refreshToken) => {
   try {
-    const hash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+    const hash = await hashToken(refreshToken);
 
     // Find the session with the matching user and refreshTokenHash
     const session = await Session.findOne({ user: userId, refreshTokenHash: hash });
@@ -54,13 +55,22 @@ const logoutUser = async (userId, refreshToken) => {
 };
 
 /**
+ * Creates Token and corresponding Hash for verification
+ * @returns {[string, string]}
+ */
+const createTokenHash = () => {
+  const token = Buffer.from(webcrypto.getRandomValues(new Uint8Array(32))).toString('hex');
+  const hash = bcrypt.hashSync(token, 10);
+  return [token, hash];
+};
+
+/**
  * Send Verification Email
  * @param {Partial<MongoUser> & { _id: ObjectId, email: string, name: string}} user
  * @returns {Promise<void>}
  */
 const sendVerificationEmail = async (user) => {
-  let verifyToken = crypto.randomBytes(32).toString('hex');
-  const hash = bcrypt.hashSync(verifyToken, 10);
+  const [verifyToken, hash] = createTokenHash();
 
   const verificationLink = `${
     domains.client
@@ -226,8 +236,7 @@ const requestPasswordReset = async (req) => {
     await token.deleteOne();
   }
 
-  let resetToken = crypto.randomBytes(32).toString('hex');
-  const hash = bcrypt.hashSync(resetToken, 10);
+  const [resetToken, hash] = createTokenHash();
 
   await new Token({
     userId: user._id,
@@ -365,8 +374,7 @@ const resendVerificationEmail = async (req) => {
       return { status: 200, message: genericVerificationMessage };
     }
 
-    let verifyToken = crypto.randomBytes(32).toString('hex');
-    const hash = bcrypt.hashSync(verifyToken, 10);
+    const [verifyToken, hash] = createTokenHash();
 
     const verificationLink = `${
       domains.client

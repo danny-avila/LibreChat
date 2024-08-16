@@ -249,6 +249,7 @@ export default function useChatFunctions({
     if (index === 0 && setLatestMessage) {
       setLatestMessage(initialResponse);
     }
+
     setSubmission(submission);
     logger.log('Submission:');
     logger.dir(submission, { depth: null });

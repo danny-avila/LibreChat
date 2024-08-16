@@ -1,8 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useDrag, useDrop } from 'react-dnd';
 import type { TConversationTag } from 'librechat-data-provider';
 import { DeleteBookmarkButton, EditBookmarkButton } from '~/components/Bookmarks';
+import { useConversationTagMutation } from '~/data-provider';
 import { TableRow, TableCell } from '~/components/ui';
+import { NotificationSeverity } from '~/common';
+import { useToastContext } from '~/Providers';
+import { useLocalize } from '~/hooks';
 
 interface BookmarkTableRowProps {
   row: TConversationTag;
@@ -10,13 +14,39 @@ interface BookmarkTableRowProps {
   position: number;
 }
 
+interface DragItem {
+  index: number;
+  id: string;
+  type: string;
+}
+
 const BookmarkTableRow: React.FC<BookmarkTableRowProps> = ({ row, moveRow, position }) => {
   const [isHovered, setIsHovered] = useState(false);
-  const ref = React.useRef<HTMLTableRowElement>(null);
+  const ref = useRef<HTMLTableRowElement>(null);
+
+  const mutation = useConversationTagMutation(row.tag);
+  const localize = useLocalize();
+  const { showToast } = useToastContext();
+
+  const handleDrop = (item: DragItem) => {
+    const data = {
+      ...row,
+      position: item.index,
+    };
+    mutation.mutate(data, {
+      onError: () => {
+        showToast({
+          message: localize('com_ui_bookmarks_update_error'),
+          severity: NotificationSeverity.ERROR,
+        });
+      },
+    });
+  };
 
   const [, drop] = useDrop({
     accept: 'bookmark',
-    hover(item: { index: number }) {
+    drop: (item: DragItem) => handleDrop(item),
+    hover(item: DragItem) {
       if (!ref.current) {
         return;
       }
@@ -43,7 +73,7 @@ const BookmarkTableRow: React.FC<BookmarkTableRowProps> = ({ row, moveRow, posit
   return (
     <TableRow
       ref={ref}
-      className="cursor-move hover:bg-gray-100 dark:hover:bg-gray-800"
+      className="cursor-move hover:bg-surface-secondary"
       style={{ opacity: isDragging ? 0.5 : 1 }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}

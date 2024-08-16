@@ -20,13 +20,24 @@
   --gray-900: #0d0d0d;
   --gizmo-gray-500:#999;
   --gizmo-gray-600:#666;
-  --gizmo-gray-950:#0f0f0f
+  --gizmo-gray-950:#0f0f0f;
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.875rem;
+  --font-size-base: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.25rem;
 }
 html {
   --text-primary:var(--gray-800);
   --text-secondary:var(--gray-600);
   --text-secondary-alt:var(--gray-500);
   --text-tertiary:var(--gray-500);
+  --ring-primary:var(--gray-500);
+  --header-primary:var(--white);
+  --header-hover:var(--gray-50);
+  --header-button-hover:var(--gray-50);
+  --surface-active:var(--gray-100);
+  --surface-hover:var(--gray-200);
   --surface-primary:var(--white);
   --surface-primary-alt:var(--white);
   --surface-primary-contrast:var(--gray-100);
@@ -44,6 +55,11 @@ html {
   --text-secondary:var(--gray-300);
   --text-secondary-alt:var(--gray-400);
   --text-tertiary:var(--gray-500);
+  --header-primary:var(--gray-700);
+  --header-hover:var(--gray-600);
+  --header-button-hover:var(--gray-700);
+  --surface-active:var(--gray-600);
+  --surface-hover:var(--gray-700);
   --surface-primary:var(--gray-900);
   --surface-primary-alt:var(--gray-850);
   --surface-primary-contrast:var(--gray-850);
@@ -570,9 +586,12 @@ blockquote, dd, dl, fieldset, figure, h1, h2, h3, h4, h5, h6, hr, p, pre {
 }
 
 .prose {
-  color:var(--tw-prose-body);
-  max-width:65ch
- }
+  color: var(--tw-prose-body);
+  max-width: 65ch;
+  font-size: var(--markdown-font-size, var(--font-size-base));
+  line-height: calc(28px * var(--markdown-font-size, var(--font-size-base)) / var(--font-size-base));
+}
+
  .prose :where([class~=lead]):not(:where([class~=not-prose] *)) {
   color:var(--tw-prose-lead);
   font-size:1.25em;
@@ -1234,11 +1253,15 @@ html {
 
 .markdown {
   max-width: none;
+  font-size: var(--markdown-font-size, var(--font-size-base));
+  line-height: calc(28px * var(--markdown-font-size, var(--font-size-base)) / var(--font-size-base));
 }
 
-.markdown h1,
+.markdown h1 {
+  font-size: calc(var(--markdown-font-size) * 1.75);
+}
 .markdown h2 {
-  font-weight: 600;
+  font-size: calc(var(--markdown-font-size) * 1.5);
 }
 
 .markdown h2 {
@@ -1248,6 +1271,7 @@ html {
 
 .markdown h3 {
   font-weight: 600;
+  font-size: calc(var(--markdown-font-size) * 1.25);
 }
 
 .markdown h3,
@@ -1258,10 +1282,12 @@ html {
 
 .markdown h4 {
   font-weight: 400;
+  font-size: calc(var(--markdown-font-size) * 1.1);
 }
 
 .markdown h5 {
   font-weight: 600;
+  font-size: var(--markdown-font-size);
 }
 
 .markdown blockquote {
@@ -1495,8 +1521,8 @@ html {
 }
 .markdown ul li:before {
  content:"•";
- font-size:.875rem;
- line-height:1.25rem;
+ font-size: calc(var(--markdown-font-size) * 0.875);
+ line-height: calc(var(--markdown-font-size) * 1.25);
  margin-left:-1rem;
  position:absolute
 }
@@ -1955,6 +1981,11 @@ ol ol):not(:where([class~=not-prose] *)) {
 .markdown .prose ul:last-child {
   margin-bottom:0
 }
+.markdown .prose p {
+  margin-bottom: 1rem;
+  margin-top: 1rem;
+  line-height: calc(28px * var(--markdown-font-size, var(--font-size-base)) / var(--font-size-base));
+}
 .markdown .prose ol,
 .markdown .prose ul {
   display:contents;
@@ -2183,4 +2214,42 @@ ol ol):not(:where([class~=not-prose] *)) {
 .move-up {
   animation: moveUp 4s ease-in-out infinite;
   
+}
+
+.message-content {
+  font-size: var(--markdown-font-size, var(--font-size-base));
+  line-height: 1.75;
+}
+
+.message-content pre code {
+  font-size: calc(0.85 * var(--markdown-font-size, var(--font-size-base)));
+}
+
+.message-content pre {
+  font-size: var(--markdown-font-size, var(--font-size-base));
+}
+
+.code-analyze-block pre code,
+.code-analyze-block .overflow-y-auto code {
+  font-size: calc(0.85 * var(--markdown-font-size, var(--font-size-base)));
+}
+
+.code-analyze-block pre,
+.code-analyze-block .overflow-y-auto {
+  font-size: var(--markdown-font-size, var(--font-size-base));
+}
+
+.progress-text-wrapper {
+  font-size: var(--markdown-font-size, var(--font-size-base));
+  line-height: calc(1.25 * var(--markdown-font-size, var(--font-size-base)));
+}
+
+.progress-text-content {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.progress-text-wrapper button {
+  font-size: inherit;
+  line-height: inherit;
 }

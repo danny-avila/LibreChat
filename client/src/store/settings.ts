@@ -22,6 +22,7 @@ const localStorageAtoms = {
   // General settings
   autoScroll: atomWithLocalStorage('autoScroll', false),
   hideSidePanel: atomWithLocalStorage('hideSidePanel', false),
+  fontSize: atomWithLocalStorage('fontSize', 'text-base'),
 
   // Messages settings
   enterToSend: atomWithLocalStorage('enterToSend', true),
@@ -37,6 +38,11 @@ const localStorageAtoms = {
   modularChat: atomWithLocalStorage('modularChat', true),
   LaTeXParsing: atomWithLocalStorage('LaTeXParsing', true),
 
+  // Commands settings
+  atCommand: atomWithLocalStorage('atCommand', true),
+  plusCommand: atomWithLocalStorage('plusCommand', true),
+  slashCommand: atomWithLocalStorage('slashCommand', true),
+
   // Speech settings
   conversationMode: atomWithLocalStorage('conversationMode', false),
   advancedMode: atomWithLocalStorage('advancedMode', false),
@@ -50,7 +56,7 @@ const localStorageAtoms = {
 
   textToSpeech: atomWithLocalStorage('textToSpeech', true),
   engineTTS: atomWithLocalStorage('engineTTS', 'browser'),
-  voice: atomWithLocalStorage('voice', ''),
+  voice: atomWithLocalStorage<string | undefined>('voice', undefined),
   cloudBrowserVoices: atomWithLocalStorage('cloudBrowserVoices', false),
   languageTTS: atomWithLocalStorage('languageTTS', ''),
   automaticPlayback: atomWithLocalStorage('automaticPlayback', false),

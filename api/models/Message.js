@@ -317,7 +317,7 @@ async function getMessages(filter, select) {
  * @async
  * @function deleteMessages
  * @param {Object} filter - The filter criteria to find messages to delete.
- * @returns {Promise<Number>} The number of deleted messages.
+ * @returns {Promise<Object>} The metadata with count of deleted messages.
  * @throws {Error} If there is an error in deleting messages.
  */
 async function deleteMessages(filter) {

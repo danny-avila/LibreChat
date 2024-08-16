@@ -44,7 +44,7 @@ function Speech() {
   const [decibelValue, setDecibelValue] = useRecoilState(store.decibelValue);
   const [autoSendText, setAutoSendText] = useRecoilState(store.autoSendText);
   const [engineTTS, setEngineTTS] = useRecoilState<string>(store.engineTTS);
-  const [voice, setVoice] = useRecoilState<string>(store.voice);
+  const [voice, setVoice] = useRecoilState(store.voice);
   const [cloudBrowserVoices, setCloudBrowserVoices] = useRecoilState<boolean>(
     store.cloudBrowserVoices,
   );
@@ -53,7 +53,7 @@ function Speech() {
   const [playbackRate, setPlaybackRate] = useRecoilState(store.playbackRate);
 
   const updateSetting = useCallback(
-    (key, newValue) => {
+    (key: string, newValue: string | number) => {
       const settings = {
         sttExternal: { value: sttExternal, setFunc: setSttExternal },
         ttsExternal: { value: ttsExternal, setFunc: setTtsExternal },

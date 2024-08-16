@@ -232,6 +232,7 @@ export default {
   com_nav_theme_system: 'Domyślny',
   com_nav_theme_dark: 'Ciemny',
   com_nav_theme_light: 'Jasny',
+  com_nav_font_size: 'Rozmiar czcionki',
   com_nav_clear: 'Wyczyść',
   com_nav_clear_all_chats: 'Usuń wszystkie konwersacje',
   com_nav_confirm_clear: 'Potwierdź usunięcie',

@@ -1,17 +1,10 @@
 import * as Tabs from '@radix-ui/react-tabs';
-import { MessageSquare } from 'lucide-react';
+import { MessageSquare, Command } from 'lucide-react';
 import { SettingsTabValues } from 'librechat-data-provider';
 import type { TDialogProps } from '~/common';
-import {
-  Button,
-  Dialog,
-  DialogPanel,
-  DialogTitle,
-  Transition,
-  TransitionChild,
-} from '@headlessui/react';
+import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react';
 import { GearIcon, DataIcon, SpeechIcon, UserIcon, ExperimentIcon } from '~/components/svg';
-import { General, Chat, Speech, Beta, Data, Account } from './SettingsTabs';
+import { General, Chat, Speech, Beta, Commands, Data, Account } from './SettingsTabs';
 import { useMediaQuery, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -30,7 +23,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
-          <div className="fixed inset-0 bg-black/50 dark:bg-black/80" aria-hidden="true" />
+          <div className="fixed inset-0 bg-black opacity-50 dark:opacity-80" aria-hidden="true" />
         </TransitionChild>
 
         <TransitionChild
@@ -49,19 +42,19 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
           >
             <DialogPanel
               className={cn(
-                'overflow-hidden rounded-xl rounded-b-lg bg-white pb-6 shadow-2xl backdrop-blur-2xl animate-in dark:bg-gray-700 sm:rounded-lg md:min-h-[373px] md:w-[680px]',
+                'overflow-hidden rounded-xl rounded-b-lg bg-surface-tertiary-alt pb-6 shadow-2xl backdrop-blur-2xl animate-in sm:rounded-lg md:min-h-[373px] md:w-[680px]',
               )}
             >
               <DialogTitle
-                className="mb-3 flex items-center justify-between border-b border-black/10 p-6 pb-5 text-left dark:border-white/10"
+                className="mb-3 flex items-center justify-between border-b border-border-medium p-6 pb-5 text-left"
                 as="div"
               >
-                <h2 className="text-lg font-medium leading-6 text-gray-800 dark:text-gray-200">
+                <h2 className="text-lg font-medium leading-6 text-text-primary">
                   {localize('com_nav_settings')}
                 </h2>
                 <button
                   type="button"
-                  className="rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-gray-100 dark:focus:ring-gray-400 dark:focus:ring-offset-gray-900 dark:data-[state=open]:bg-gray-800"
+                  className="rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-border-xheavy focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-surface-primary dark:focus:ring-offset-surface-primary"
                   onClick={() => onOpenChange(false)}
                 >
                   <svg
@@ -74,7 +67,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     strokeWidth="2"
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    className="h-5 w-5 text-black dark:text-white"
+                    className="h-5 w-5 text-text-primary"
                   >
                     <line x1="18" x2="6" y1="6" y2="18"></line>
                     <line x1="6" x2="18" y1="6" y2="18"></line>
@@ -94,17 +87,17 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     aria-orientation="horizontal"
                     className={cn(
                       'min-w-auto max-w-auto -ml-[8px] flex flex-shrink-0 flex-col flex-nowrap overflow-auto sm:max-w-none',
-                      isSmallScreen ? 'flex-row rounded-lg bg-gray-200 p-1 dark:bg-gray-800' : '',
+                      isSmallScreen ? 'flex-row rounded-lg bg-surface-secondary' : '',
                     )}
                     style={{ outline: 'none' }}
                   >
                     <Tabs.Trigger
+                      tabIndex={0}
                       className={cn(
-                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black transition-all duration-200 ease-in-out radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
+                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-primary',
                         isSmallScreen
-                          ? 'flex-1 items-center justify-center text-nowrap text-sm dark:text-gray-500 dark:radix-state-active:text-white'
-                          : 'bg-white radix-state-active:bg-gray-200',
-                        isSmallScreen ? '' : 'dark:bg-gray-700',
+                          ? 'flex-1 items-center justify-center text-nowrap p-1 px-3 text-sm text-text-secondary'
+                          : 'bg-surface-tertiary-alt',
                       )}
                       value={SettingsTabValues.GENERAL}
                       style={{ userSelect: 'none' }}
@@ -113,12 +106,12 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                       {localize('com_nav_setting_general')}
                     </Tabs.Trigger>
                     <Tabs.Trigger
+                      tabIndex={0}
                       className={cn(
-                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black transition-all duration-200 ease-in-out radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
+                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-primary',
                         isSmallScreen
-                          ? 'flex-1 items-center justify-center text-nowrap text-sm dark:text-gray-500 dark:radix-state-active:text-white'
-                          : 'bg-white radix-state-active:bg-gray-200',
-                        isSmallScreen ? '' : 'dark:bg-gray-700',
+                          ? 'flex-1 items-center justify-center text-nowrap p-1 px-3 text-sm text-text-secondary'
+                          : 'bg-surface-tertiary-alt',
                       )}
                       value={SettingsTabValues.CHAT}
                       style={{ userSelect: 'none' }}
@@ -127,12 +120,12 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                       {localize('com_nav_setting_chat')}
                     </Tabs.Trigger>
                     <Tabs.Trigger
+                      tabIndex={0}
                       className={cn(
-                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black transition-all duration-200 ease-in-out radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
+                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-primary',
                         isSmallScreen
-                          ? 'flex-1 items-center justify-center text-nowrap text-sm dark:text-gray-500 dark:radix-state-active:text-white'
-                          : 'bg-white radix-state-active:bg-gray-200',
-                        isSmallScreen ? '' : 'dark:bg-gray-700',
+                          ? 'flex-1 items-center justify-center text-nowrap p-1 px-3 text-sm text-text-secondary'
+                          : 'bg-surface-tertiary-alt',
                       )}
                       value={SettingsTabValues.BETA}
                       style={{ userSelect: 'none' }}
@@ -141,12 +134,26 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                       {localize('com_nav_setting_beta')}
                     </Tabs.Trigger>
                     <Tabs.Trigger
+                      tabIndex={0}
                       className={cn(
-                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black transition-all duration-200 ease-in-out radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
+                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-primary',
                         isSmallScreen
-                          ? 'flex-1 items-center justify-center text-nowrap text-sm dark:text-gray-500 dark:radix-state-active:text-white'
-                          : 'bg-white radix-state-active:bg-gray-200',
-                        isSmallScreen ? '' : 'dark:bg-gray-700',
+                          ? 'flex-1 items-center justify-center text-nowrap text-sm text-text-secondary'
+                          : 'bg-surface-tertiary-alt',
+                      )}
+                      value={SettingsTabValues.COMMANDS}
+                      style={{ userSelect: 'none' }}
+                    >
+                      <Command className="icon-sm" />
+                      {localize('com_nav_commands')}
+                    </Tabs.Trigger>
+                    <Tabs.Trigger
+                      tabIndex={0}
+                      className={cn(
+                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-primary',
+                        isSmallScreen
+                          ? 'flex-1 items-center justify-center text-nowrap p-1 px-3 text-sm text-text-secondary'
+                          : 'bg-surface-tertiary-alt',
                       )}
                       value={SettingsTabValues.SPEECH}
                       style={{ userSelect: 'none' }}
@@ -155,12 +162,12 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                       {localize('com_nav_setting_speech')}
                     </Tabs.Trigger>
                     <Tabs.Trigger
+                      tabIndex={0}
                       className={cn(
-                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black transition-all duration-200 ease-in-out radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
+                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-primary',
                         isSmallScreen
-                          ? 'flex-1 items-center justify-center text-nowrap text-sm dark:text-gray-500 dark:radix-state-active:text-white'
-                          : 'bg-white radix-state-active:bg-gray-200',
-                        isSmallScreen ? '' : 'dark:bg-gray-700',
+                          ? 'flex-1 items-center justify-center text-nowrap p-1 px-3 text-sm text-text-secondary'
+                          : 'bg-surface-tertiary-alt',
                       )}
                       value={SettingsTabValues.DATA}
                       style={{ userSelect: 'none' }}
@@ -169,12 +176,12 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                       {localize('com_nav_setting_data')}
                     </Tabs.Trigger>
                     <Tabs.Trigger
+                      tabIndex={0}
                       className={cn(
-                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black transition-all duration-200 ease-in-out radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
+                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-primary',
                         isSmallScreen
-                          ? 'flex-1 items-center justify-center text-nowrap text-sm dark:text-gray-500 dark:radix-state-active:text-white'
-                          : 'bg-white radix-state-active:bg-gray-200',
-                        isSmallScreen ? '' : 'dark:bg-gray-700',
+                          ? 'flex-1 items-center justify-center text-nowrap p-1 px-3 text-sm text-text-secondary'
+                          : 'bg-surface-tertiary-alt',
                       )}
                       value={SettingsTabValues.ACCOUNT}
                       style={{ userSelect: 'none' }}
@@ -187,6 +194,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     <General />
                     <Chat />
                     <Beta />
+                    <Commands />
                     <Speech />
                     <Data />
                     <Account />

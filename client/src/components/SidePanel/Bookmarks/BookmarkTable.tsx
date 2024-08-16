@@ -14,7 +14,11 @@ const BookmarkTable = () => {
 
   const { bookmarks } = useBookmarkContext();
   useEffect(() => {
-    setRows(bookmarks?.map((item) => ({ id: item.tag, ...item })) || []);
+    setRows(
+      bookmarks
+        ?.map((item) => ({ id: item.tag, ...item }))
+        .sort((a, b) => a.position - b.position) || [],
+    );
   }, [bookmarks]);
 
   const moveRow = useCallback((dragIndex: number, hoverIndex: number) => {
@@ -22,13 +26,16 @@ const BookmarkTable = () => {
       const updatedRows = [...prevTags];
       const [movedRow] = updatedRows.splice(dragIndex, 1);
       updatedRows.splice(hoverIndex, 0, movedRow);
-      return updatedRows;
+      return updatedRows.map((row, index) => ({ ...row, position: index }));
     });
   }, []);
 
-  const renderRow = useCallback((row: TConversationTag, position: number) => {
-    return <BookmarkTableRow key={row.tag} moveRow={moveRow} row={row} position={position} />;
-  }, []);
+  const renderRow = useCallback(
+    (row: TConversationTag) => {
+      return <BookmarkTableRow key={row.tag} moveRow={moveRow} row={row} position={row.position} />;
+    },
+    [moveRow],
+  );
 
   const filteredRows = rows.filter((row) =>
     row.tag.toLowerCase().includes(searchQuery.toLowerCase()),
@@ -58,7 +65,7 @@ const BookmarkTable = () => {
               </TableCell>
             </TableRow>
           </TableHeader>
-          <TableBody>{currentRows.map((row, i) => renderRow(row, i))}</TableBody>
+          <TableBody>{currentRows.map((row) => renderRow(row))}</TableBody>
         </Table>
       </div>
       <div className="flex items-center justify-between py-4">

@@ -58,17 +58,18 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
   return (
     <div
       ref={ref}
-      className="relative mt-1 flex flex h-10 cursor-pointer items-center gap-3 rounded-lg border-white bg-gray-50 px-2 px-3 py-2 text-black transition-colors duration-200 focus-within:bg-gray-200 hover:bg-gray-200 dark:bg-gray-850 dark:text-white dark:focus-within:bg-gray-800 dark:hover:bg-gray-800"
+      className="relative mt-1 flex h-10 cursor-pointer items-center gap-3 rounded-lg border-border-medium px-3 py-2 text-text-primary transition-colors duration-200 focus-within:bg-surface-hover hover:bg-surface-hover dark:focus-within:bg-surface-hover"
     >
       {<Search className="absolute left-3 h-4 w-4" />}
       <input
         type="text"
-        className="m-0 mr-0 w-full border-none bg-transparent p-0 pl-7 text-sm leading-tight outline-none"
+        className="m-0 mr-0 w-full border-none bg-transparent p-0 pl-7 text-sm leading-tight placeholder-text-secondary placeholder-opacity-100 outline-none dark:placeholder-opacity-100"
         value={text}
         onChange={onChange}
         onKeyDown={(e) => {
           e.code === 'Space' ? e.stopPropagation() : null;
         }}
+        aria-label={localize('com_nav_search_placeholder')}
         placeholder={localize('com_nav_search_placeholder')}
         onKeyUp={handleKeyUp}
         autoComplete="off"

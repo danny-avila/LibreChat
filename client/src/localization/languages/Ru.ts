@@ -343,6 +343,7 @@ export default {
   com_nav_theme_system: 'Системная',
   com_nav_theme_dark: 'Темная',
   com_nav_theme_light: 'Светлая',
+  com_nav_font_size: 'Размер шрифта',
   com_nav_user_name_display: 'Отображать имя пользователя в сообщениях',
   com_nav_save_drafts: 'Сохранить черновики локально',
   com_nav_language: 'Локализация',
