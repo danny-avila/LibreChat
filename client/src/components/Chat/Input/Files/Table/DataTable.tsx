@@ -110,7 +110,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           placeholder={localize('com_files_filter')}
           value={(table.getColumn('filename')?.getFilterValue() as string) ?? ''}
           onChange={(event) => table.getColumn('filename')?.setFilterValue(event.target.value)}
-          className="max-w-sm dark:border-gray-500"
+          className="max-w-sm border-border-light placeholder:text-text-secondary"
         />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -175,7 +175,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
             ))}
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows?.length ? (
+            {table.getRowModel().rows.length ? (
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}
@@ -184,7 +184,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                 >
                   {row.getVisibleCells().map((cell, index) => {
                     const maxWidth =
-                      (cell.column.columnDef as AugmentedColumnDef<TData, TValue>)?.meta?.size ??
+                      (cell.column.columnDef as AugmentedColumnDef<TData, TValue>).meta.size ??
                       'auto';
 
                     const style: Style = {};
