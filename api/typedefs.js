@@ -27,6 +27,12 @@
  */
 
 /**
+ * @exports AnthropicMessage
+ * @typedef {import('@anthropic-ai/sdk').default.MessageParam} AnthropicMessage
+ * @memberof typedefs
+ */
+
+/**
  * @exports GenerativeModel
  * @typedef {import('@google/generative-ai').GenerativeModel} GenerativeModel
  * @memberof typedefs
@@ -1309,6 +1315,20 @@
  * @method onRunStepCompleted Handles the completion of a run step.
  * @method handleMessageEvent Handles events related to messages within the run.
  * @method messageCompleted Handles the completion of a message processing.
+ */
+
+/* TX Types */
+
+/**
+ * @typedef {object} txData - Transaction data.
+ * @property {mongoose.Schema.Types.ObjectId} user - The user ID.
+ * @property {String} conversationId - The ID of the conversation.
+ * @property {String} model - The model name.
+ * @property {String} context - The context in which the transaction is made.
+ * @property {EndpointTokenConfig} [endpointTokenConfig] - The current endpoint token config.
+ * @property {object} [cacheUsage] - Cache usage, if any.
+ * @property {String} [valueKey] - The value key (optional).
+ * @memberof typedefs
  */
 
 /* Native app/client methods */

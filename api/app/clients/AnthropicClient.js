@@ -12,12 +12,13 @@ const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const {
   truncateText,
   formatMessage,
+  addCacheControl,
   titleFunctionPrompt,
   parseParamFromPrompt,
   createContextHandlers,
 } = require('./prompts');
+const { getModelMaxTokens, matchModelName } = require('~/utils');
 const spendTokens = require('~/models/spendTokens');
-const { getModelMaxTokens } = require('~/utils');
 const { sleep } = require('~/server/utils');
 const BaseClient = require('./BaseClient');
 const { logger } = require('~/config');
@@ -32,6 +33,7 @@ function delayBeforeRetry(attempts, baseDelay = 1000) {
   return new Promise((resolve) => setTimeout(resolve, baseDelay * attempts));
 }
 
+const debugTypes = new Set(['message_start', 'message_delta']);
 const { legacy } = anthropicSettings;
 
 class AnthropicClient extends BaseClient {
@@ -44,6 +46,8 @@ class AnthropicClient extends BaseClient {
       ? options.contextStrategy.toLowerCase()
       : 'discard';
     this.setOptions(options);
+    /** @type { string | undefined } */
+    this.systemMessage;
   }
 
   setOptions(options) {
@@ -149,7 +153,7 @@ class AnthropicClient extends BaseClient {
 
     if (requestOptions?.model && requestOptions.model.includes('claude-3-5-sonnet')) {
       options.defaultHeaders = {
-        'anthropic-beta': 'max-tokens-3-5-sonnet-2024-07-15',
+        'anthropic-beta': 'max-tokens-3-5-sonnet-2024-07-15,prompt-caching-2024-07-31',
       };
     }
 
@@ -560,6 +564,18 @@ class AnthropicClient extends BaseClient {
       : await client.completions.create(options);
   }
 
+  /**
+   * @param {string} modelName
+   * @returns {boolean}
+   */
+  supportsCacheControl(modelName) {
+    const modelMatch = matchModelName(modelName, EModelEndpoint.anthropic);
+    if (modelMatch === 'claude-3-5-sonnet' || modelMatch === 'claude-3-sonnet') {
+      return true;
+    }
+    return false;
+  }
+
   async sendCompletion(payload, { onProgress, abortController }) {
     if (!abortController) {
       abortController = new AbortController();
@@ -606,8 +622,21 @@ class AnthropicClient extends BaseClient {
       requestOptions.max_tokens_to_sample = maxOutputTokens || 1500;
     }
 
-    if (this.systemMessage) {
+    const supportsCacheControl = this.supportsCacheControl(model);
+    if (this.systemMessage && supportsCacheControl === true) {
+      requestOptions.system = [
+        {
+          type: 'text',
+          text: this.systemMessage,
+          cache_control: 'ephemeral',
+        },
+      ];
+    } else if (this.systemMessage) {
       requestOptions.system = this.systemMessage;
+    }
+
+    if (supportsCacheControl && this.useMessages) {
+      requestOptions.messages = addCacheControl(requestOptions.messages);
     }
 
     logger.debug('[AnthropicClient]', { ...requestOptions });
@@ -639,6 +668,10 @@ class AnthropicClient extends BaseClient {
 
           for await (const completion of response) {
             // Handle each completion as before
+            const type = completion?.type ?? '';
+            if (debugTypes.has(type)) {
+              logger.debug(`[AnthropicClient] ${type}`, completion);
+            }
             if (completion?.delta?.text) {
               handleChunk(completion.delta.text);
             } else if (completion.completion) {

@@ -21,12 +21,15 @@ transactionSchema.methods.calculateTokenValue = function () {
   }
 };
 
-// Static method to create a transaction and update the balance
-transactionSchema.statics.create = async function (transactionData) {
+/**
+ * Static method to create a transaction and update the balance
+ * @param {txData} txData - Transaction data.
+ */
+transactionSchema.statics.create = async function (txData) {
   const Transaction = this;
 
-  const transaction = new Transaction(transactionData);
-  transaction.endpointTokenConfig = transactionData.endpointTokenConfig;
+  const transaction = new Transaction(txData);
+  transaction.endpointTokenConfig = txData.endpointTokenConfig;
   transaction.calculateTokenValue();
 
   // Save the transaction
