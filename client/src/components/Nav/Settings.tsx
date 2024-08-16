@@ -94,7 +94,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     <Tabs.Trigger
                       tabIndex={0}
                       className={cn(
-                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-primary',
+                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-active',
                         isSmallScreen
                           ? 'flex-1 items-center justify-center text-nowrap p-1 px-3 text-sm text-text-secondary'
                           : 'bg-surface-tertiary-alt',
@@ -108,7 +108,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     <Tabs.Trigger
                       tabIndex={0}
                       className={cn(
-                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-primary',
+                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-active',
                         isSmallScreen
                           ? 'flex-1 items-center justify-center text-nowrap p-1 px-3 text-sm text-text-secondary'
                           : 'bg-surface-tertiary-alt',
@@ -122,7 +122,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     <Tabs.Trigger
                       tabIndex={0}
                       className={cn(
-                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-primary',
+                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-active',
                         isSmallScreen
                           ? 'flex-1 items-center justify-center text-nowrap p-1 px-3 text-sm text-text-secondary'
                           : 'bg-surface-tertiary-alt',
@@ -136,7 +136,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     <Tabs.Trigger
                       tabIndex={0}
                       className={cn(
-                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-primary',
+                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-active',
                         isSmallScreen
                           ? 'flex-1 items-center justify-center text-nowrap text-sm text-text-secondary'
                           : 'bg-surface-tertiary-alt',
@@ -150,7 +150,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     <Tabs.Trigger
                       tabIndex={0}
                       className={cn(
-                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-primary',
+                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-active',
                         isSmallScreen
                           ? 'flex-1 items-center justify-center text-nowrap p-1 px-3 text-sm text-text-secondary'
                           : 'bg-surface-tertiary-alt',
@@ -164,7 +164,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     <Tabs.Trigger
                       tabIndex={0}
                       className={cn(
-                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-primary',
+                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-active',
                         isSmallScreen
                           ? 'flex-1 items-center justify-center text-nowrap p-1 px-3 text-sm text-text-secondary'
                           : 'bg-surface-tertiary-alt',
@@ -178,7 +178,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     <Tabs.Trigger
                       tabIndex={0}
                       className={cn(
-                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-primary',
+                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-active',
                         isSmallScreen
                           ? 'flex-1 items-center justify-center text-nowrap p-1 px-3 text-sm text-text-secondary'
                           : 'bg-surface-tertiary-alt',

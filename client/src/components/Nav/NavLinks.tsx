@@ -54,7 +54,7 @@ function NavLinks() {
                       <UserIcon />
                     </div>
                   ) : (
-                    <img className="rounded-full" src={user?.avatar || avatarSrc} alt="avatar" />
+                    <img className="rounded-full" src={user.avatar || avatarSrc} alt="avatar" />
                   )}
                 </div>
               </div>
@@ -68,7 +68,7 @@ function NavLinks() {
 
             <Transition
               as={Fragment}
-              enter="transition ease-out duration-110 transform"
+              enter="transition ease-out duration-100 transform"
               enterFrom="translate-y-2 opacity-0"
               enterTo="translate-y-0 opacity-100"
               leave="transition ease-in duration-100 transform"
