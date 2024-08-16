@@ -11,7 +11,7 @@ import type { TEndpointsConfig } from 'librechat-data-provider';
 import { ResizableHandleAlt, ResizablePanel, ResizablePanelGroup } from '~/components/ui/Resizable';
 import { TooltipProvider, Tooltip } from '~/components/ui/Tooltip';
 import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
-import { useMediaQuery, useLocalStorage } from '~/hooks';
+import { useMediaQuery, useLocalStorage, useLocalize } from '~/hooks';
 import NavToggle from '~/components/Nav/NavToggle';
 import { useChatContext } from '~/Providers';
 import Switcher from './Switcher';
@@ -36,6 +36,7 @@ const SidePanel = ({
   navCollapsedSize = 3,
   children,
 }: SidePanelProps) => {
+  const localize = useLocalize();
   const [isHovering, setIsHovering] = useState(false);
   const [minSize, setMinSize] = useState(defaultMinSize);
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
@@ -173,7 +174,8 @@ const SidePanel = ({
           <ResizablePanel
             tagName="nav"
             id="controls-nav"
-            aria-label="controls-nav"
+            aria-label={localize('com_ui_controls')}
+            role="region"
             collapsedSize={collapsedSize}
             defaultSize={defaultLayout[1]}
             collapsible={true}
