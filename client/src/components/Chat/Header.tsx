@@ -29,17 +29,16 @@ export default function Header() {
         <div className="flex items-center gap-2">
           {!navVisible && <HeaderNewChat />}
           {interfaceConfig.endpointsMenu && <EndpointsMenu />}
-          {modelSpecs?.length > 0 && <ModelSpecsMenu modelSpecs={modelSpecs} />}
+          {modelSpecs.length > 0 && <ModelSpecsMenu modelSpecs={modelSpecs} />}
           {<HeaderOptions interfaceConfig={interfaceConfig} />}
           {interfaceConfig.presets && <PresetsMenu />}
+          <BookmarkMenu />
+          <AddMultiConvo />
           {isSmallScreen && (
             <ExportAndShareMenu
               isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
-              className="pl-0"
             />
           )}
-          <BookmarkMenu />
-          <AddMultiConvo />
         </div>
         {!isSmallScreen && (
           <ExportAndShareMenu isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false} />

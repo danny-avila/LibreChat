@@ -11,16 +11,18 @@ export default function useNavScrolling<TData>({
   hasNextPage?: boolean;
   isFetchingNextPage: boolean;
   setShowLoading: React.Dispatch<React.SetStateAction<boolean>>;
-  fetchNextPage: (
-    options?: FetchNextPageOptions | undefined,
-  ) => Promise<InfiniteQueryObserverResult<TData, unknown>>;
+  fetchNextPage:
+    | ((
+        options?: FetchNextPageOptions | undefined,
+      ) => Promise<InfiniteQueryObserverResult<TData, unknown>>)
+    | undefined;
 }) {
   const scrollPositionRef = useRef<number | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const fetchNext = useCallback(
-    throttle(() => fetchNextPage(), 750, { leading: true }),
+    throttle(() => (fetchNextPage != null ? fetchNextPage() : () => ({})), 750, { leading: true }),
     [fetchNextPage],
   );
 
@@ -29,7 +31,7 @@ export default function useNavScrolling<TData>({
       const { scrollTop, clientHeight, scrollHeight } = containerRef.current;
       const nearBottomOfList = scrollTop + clientHeight >= scrollHeight * 0.97;
 
-      if (nearBottomOfList && hasNextPage && !isFetchingNextPage) {
+      if (nearBottomOfList && hasNextPage === true && !isFetchingNextPage) {
         setShowLoading(true);
         fetchNext();
       } else {

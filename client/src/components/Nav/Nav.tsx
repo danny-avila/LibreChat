@@ -24,7 +24,13 @@ import NewChat from './NewChat';
 import { cn } from '~/utils';
 import store from '~/store';
 
-const Nav = ({ navVisible, setNavVisible }) => {
+const Nav = ({
+  navVisible,
+  setNavVisible,
+}: {
+  navVisible: boolean;
+  setNavVisible: React.Dispatch<React.SetStateAction<boolean>>;
+}) => {
   const localize = useLocalize();
   const { conversationId } = useParams();
   const { isAuthenticated } = useAuthContext();
@@ -80,7 +86,9 @@ const Nav = ({ navVisible, setNavVisible }) => {
     setShowLoading,
     hasNextPage: searchQuery ? searchQueryRes?.hasNextPage : hasNextPage,
     fetchNextPage: searchQuery ? searchQueryRes?.fetchNextPage : fetchNextPage,
-    isFetchingNextPage: searchQuery ? searchQueryRes?.isFetchingNextPage : isFetchingNextPage,
+    isFetchingNextPage: searchQuery
+      ? searchQueryRes?.isFetchingNextPage ?? false
+      : isFetchingNextPage,
   });
 
   const conversations = useMemo(
@@ -155,24 +163,37 @@ const Nav = ({ navVisible, setNavVisible }) => {
                       onMouseLeave={handleMouseLeave}
                       ref={containerRef}
                     >
-                      <NewChat
-                        toggleNav={itemToggleNav}
-                        subHeaders={
-                          <>
-                            {isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
-                            <BookmarkNav tags={tags} setTags={setTags} />
-                          </>
-                        }
-                      />
+                      {isSmallScreen == true ? (
+                        <div className="pt-3.5">
+                          {isSearchEnabled === true && (
+                            <SearchBar clearSearch={clearSearch} isSmallScreen={isSmallScreen} />
+                          )}
+                          <BookmarkNav tags={tags} setTags={setTags} />
+                        </div>
+                      ) : (
+                        <NewChat
+                          toggleNav={itemToggleNav}
+                          subHeaders={
+                            <>
+                              {isSearchEnabled === true && (
+                                <SearchBar
+                                  clearSearch={clearSearch}
+                                  isSmallScreen={isSmallScreen}
+                                />
+                              )}
+                              <BookmarkNav tags={tags} setTags={setTags} />
+                            </>
+                          }
+                        />
+                      )}
+
                       <Conversations
                         conversations={conversations}
                         moveToTop={moveToTop}
                         toggleNav={itemToggleNav}
                       />
                       {(isFetchingNextPage || showLoading) && (
-                        <Spinner
-                          className={cn('m-1 mx-auto mb-4 h-4 w-4 text-black dark:text-white')}
-                        />
+                        <Spinner className={cn('m-1 mx-auto mb-4 h-4 w-4 text-text-primary')} />
                       )}
                     </div>
                     <NavLinks />

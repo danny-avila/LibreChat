@@ -36,7 +36,7 @@ const MenuItem: FC<MenuItemProps> = ({
   const expiryTime = getExpiry();
 
   const clickHandler = () => {
-    if (!expiryTime) {
+    if (expiryTime == null) {
       setDialogOpen(true);
     }
     if (onClick) {
@@ -60,6 +60,12 @@ const MenuItem: FC<MenuItemProps> = ({
         {...rest}
         onClick={clickHandler}
         aria-label={title}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            clickHandler();
+          }
+        }}
       >
         <div className="flex grow items-center justify-between gap-2">
           <div>
@@ -78,7 +84,7 @@ const MenuItem: FC<MenuItemProps> = ({
                   className={cn(
                     'invisible flex gap-x-1 group-hover:visible',
                     selected ? 'visible' : '',
-                    expiryTime
+                    expiryTime != null
                       ? 'w-full rounded-lg p-2 hover:bg-gray-200 dark:hover:bg-gray-900'
                       : '',
                   )}
@@ -88,10 +94,15 @@ const MenuItem: FC<MenuItemProps> = ({
                     setDialogOpen(true);
                   }}
                 >
-                  <div className={cn('invisible group-hover:visible', expiryTime ? 'text-xs' : '')}>
+                  <div
+                    className={cn(
+                      'invisible group-hover:visible',
+                      expiryTime != null ? 'text-xs' : '',
+                    )}
+                  >
                     {localize('com_endpoint_config_key')}
                   </div>
-                  <Settings className={cn(expiryTime ? 'icon-sm' : 'icon-md stroke-1')} />
+                  <Settings className={cn(expiryTime != null ? 'icon-sm' : 'icon-md stroke-1')} />
                 </button>
               </div>
             ) : null}
