@@ -26,6 +26,7 @@ function AccountSettings() {
   const [showFiles, setShowFiles] = useRecoilState(store.showFiles);
 
   const avatarSrc = useAvatar(user);
+  const name = user?.avatar ?? user?.username ?? '';
 
   return (
     <>
@@ -42,7 +43,7 @@ function AccountSettings() {
             >
               <div className="-ml-0.9 -mt-0.8 h-8 w-8 flex-shrink-0">
                 <div className="relative flex">
-                  {!user?.avatar && !user?.username ? (
+                  {name.length === 0 ? (
                     <div
                       style={{
                         backgroundColor: 'rgb(121, 137, 255)',
@@ -55,7 +56,7 @@ function AccountSettings() {
                       <UserIcon />
                     </div>
                   ) : (
-                    <img className="rounded-full" src={user.avatar || avatarSrc} alt="avatar" />
+                    <img className="rounded-full" src={user?.avatar ?? avatarSrc} alt="avatar" />
                   )}
                 </div>
               </div>
@@ -92,31 +93,40 @@ function AccountSettings() {
                   </>
                 )}
                 <MenuItem>
-                  <NavLink
-                    svg={() => <FileText className="icon-md" />}
-                    text={localize('com_nav_my_files')}
-                    clickHandler={() => setShowFiles(true)}
-                  />
+                  {({ focus }) => (
+                    <NavLink
+                      className={focus ? 'bg-surface-hover' : ''}
+                      svg={() => <FileText className="icon-md" />}
+                      text={localize('com_nav_my_files')}
+                      clickHandler={() => setShowFiles(true)}
+                    />
+                  )}
                 </MenuItem>
                 {startupConfig?.helpAndFaqURL !== '/' && (
                   <MenuItem>
-                    <NavLink
-                      svg={() => <LinkIcon />}
-                      text={localize('com_nav_help_faq')}
-                      clickHandler={() => window.open(startupConfig?.helpAndFaqURL, '_blank')}
-                    />
+                    {({ focus }) => (
+                      <NavLink
+                        className={focus ? 'bg-surface-hover' : ''}
+                        svg={() => <LinkIcon />}
+                        text={localize('com_nav_help_faq')}
+                        clickHandler={() => window.open(startupConfig?.helpAndFaqURL, '_blank')}
+                      />
+                    )}
                   </MenuItem>
                 )}
                 <MenuItem>
-                  <NavLink
-                    svg={() => <GearIcon className="icon-md" />}
-                    text={localize('com_nav_settings')}
-                    clickHandler={() => setShowSettings(true)}
-                  />
+                  {({ focus }) => (
+                    <NavLink
+                      className={focus ? 'bg-surface-hover' : ''}
+                      svg={() => <GearIcon className="icon-md" />}
+                      text={localize('com_nav_settings')}
+                      clickHandler={() => setShowSettings(true)}
+                    />
+                  )}
                 </MenuItem>
                 <div className="my-1.5 h-px border-b border-border-medium" role="none" />
                 <MenuItem>
-                  <Logout />
+                  {({ focus }) => <Logout className={focus ? 'bg-surface-hover' : ''} />}
                 </MenuItem>
               </MenuItems>
             </Transition>
