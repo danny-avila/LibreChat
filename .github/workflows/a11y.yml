@@ -8,6 +8,7 @@ on:
 jobs:
   axe-linter:
     runs-on: ubuntu-latest
+    if: github.event.pull_request.head.repo.full_name == 'danny-avila/LibreChat'
     
     steps:
       - uses: actions/checkout@v4

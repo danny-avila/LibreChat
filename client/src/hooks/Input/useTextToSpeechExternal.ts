@@ -1,8 +1,8 @@
 import { useRecoilValue } from 'recoil';
 import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { useTextToSpeechMutation, useVoicesQuery } from '~/data-provider';
+import { useToastContext } from '~/Providers/ToastContext';
 import useLocalize from '~/hooks/useLocalize';
-import { useToastContext } from '~/Providers';
 import store from '~/store';
 
 const createFormData = (text: string, voice: string) => {
@@ -13,7 +13,7 @@ const createFormData = (text: string, voice: string) => {
 };
 
 type TUseTTSExternal = {
-  setIsSpeaking: (isSpeaking: boolean) => void;
+  setIsSpeaking: React.Dispatch<React.SetStateAction<boolean>>;
   audioRef: React.MutableRefObject<HTMLAudioElement | null>;
   messageId?: string;
   isLast: boolean;
