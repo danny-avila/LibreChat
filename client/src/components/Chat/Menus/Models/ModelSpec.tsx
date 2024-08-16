@@ -53,13 +53,19 @@ const MenuItem: FC<MenuItemProps> = ({
 
   return (
     <>
-      <button
+      <div
         role="menuitem"
-        className="group m-1.5 flex w-full cursor-pointer gap-2 rounded px-1 py-2.5 !pr-3 text-sm !opacity-100 hover:bg-black/5 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-white/5"
+        className="group m-1.5 flex cursor-pointer gap-2 rounded px-1 py-2.5 !pr-3 text-sm !opacity-100 hover:bg-black/5 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-white/5"
         tabIndex={0}
         {...rest}
         onClick={clickHandler}
         aria-label={title}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            clickHandler();
+          }
+        }}
       >
         <div className="flex grow items-center justify-between gap-2">
           <div>
@@ -120,7 +126,7 @@ const MenuItem: FC<MenuItemProps> = ({
             )}
           </div>
         </div>
-      </button>
+      </div>
       {userProvidesKey && (
         <SetKeyDialog
           open={isDialogOpen}
