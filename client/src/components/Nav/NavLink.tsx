@@ -16,7 +16,7 @@ const NavLink: FC<Props> = forwardRef<HTMLAnchorElement, Props>((props, ref) => 
     onClick?: () => void;
   } = {
     className: cn(
-      'flex gap-2 rounded p-2.5 text-sm cursor-pointer focus:ring-0 group items-center transition-colors duration-200 hover:bg-gray-500/10 dark:text-white dark:hover:bg-gray-600',
+      'flex gap-2 rounded p-2.5 text-sm cursor-pointer focus:ring-0 group items-center transition-colors duration-200 text-text-primary hover:bg-surface-hover',
       className,
       {
         'opacity-50 pointer-events-none': disabled,
