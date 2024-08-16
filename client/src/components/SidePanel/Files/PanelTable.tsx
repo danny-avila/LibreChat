@@ -77,7 +77,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           placeholder={localize('com_files_filter')}
           value={(table.getColumn('filename')?.getFilterValue() as string) ?? ''}
           onChange={(event) => table.getColumn('filename')?.setFilterValue(event.target.value)}
-          className="w-full border-border-light"
+          className="w-full border-border-light placeholder:text-text-secondary"
         />
       </div>
       <div className="overflow-y-auto rounded-md border border-black/10 dark:border-white/10">
@@ -102,7 +102,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
             ))}
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows?.length ? (
+            {table.getRowModel().rows.length ? (
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}

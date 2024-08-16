@@ -271,7 +271,7 @@ export default function AssistantPanel({
               name="id"
               control={control}
               render={({ field }) => (
-                <p className="h-3 text-xs italic text-gray-600">{field.value ?? ''}</p>
+                <p className="h-3 text-xs italic text-text-secondary">{field.value ?? ''}</p>
               )}
             />
           </div>
@@ -310,7 +310,7 @@ export default function AssistantPanel({
                   {...field}
                   value={field.value ?? ''}
                   {...{ max: 32768 }}
-                  className={cn(inputClass, 'min-h-[100px] resize-none resize-y')}
+                  className={cn(inputClass, 'min-h-[100px] resize-y')}
                   id="instructions"
                   placeholder={localize('com_assistants_instructions_placeholder')}
                   rows={3}
