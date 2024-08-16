@@ -21,7 +21,7 @@ export const getLatestText = (message?: TMessage | null, includeIndex?: boolean)
   if (message.content?.length) {
     for (let i = message.content.length - 1; i >= 0; i--) {
       const part = message.content[i];
-      if (part.type === ContentTypes.TEXT && part[ContentTypes.TEXT]?.value?.length > 0) {
+      if (part.type === ContentTypes.TEXT && part[ContentTypes.TEXT].value.length > 0) {
         const text = part[ContentTypes.TEXT].value;
         if (includeIndex) {
           return `${text}-${i}`;

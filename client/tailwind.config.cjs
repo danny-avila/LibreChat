@@ -16,7 +16,7 @@ module.exports = {
     // },
     extend: {
       width: {
-        'authPageWidth': '370px',
+        authPageWidth: '370px',
       },
       keyframes: {
         'accordion-down': {

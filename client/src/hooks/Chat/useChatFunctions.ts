@@ -123,7 +123,7 @@ export default function useChatFunctions({
       conversationId = null;
     }
 
-    const parentMessage = currentMessages?.find(
+    const parentMessage = currentMessages.find(
       (msg) => msg.messageId === latestMessage?.parentMessageId,
     );
 

@@ -136,13 +136,13 @@ const adjustPositions = async (user, oldPosition, newPosition) => {
   const position =
     oldPosition < newPosition
       ? {
-          $gt: Math.min(oldPosition, newPosition),
-          $lte: Math.max(oldPosition, newPosition),
-        }
+        $gt: Math.min(oldPosition, newPosition),
+        $lte: Math.max(oldPosition, newPosition),
+      }
       : {
-          $gte: Math.min(oldPosition, newPosition),
-          $lt: Math.max(oldPosition, newPosition),
-        };
+        $gte: Math.min(oldPosition, newPosition),
+        $lt: Math.max(oldPosition, newPosition),
+      };
 
   await ConversationTag.updateMany(
     {
