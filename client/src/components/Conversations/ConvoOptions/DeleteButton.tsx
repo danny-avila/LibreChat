@@ -61,7 +61,7 @@ export default function DeleteButton({
     <OGDialogTemplate
       showCloseButton={false}
       title={localize('com_ui_delete_conversation')}
-      className="max-w-[450px]"
+      className="z-[1000] max-w-[450px]"
       main={
         <>
           <div className="flex w-full flex-col items-center gap-2">
