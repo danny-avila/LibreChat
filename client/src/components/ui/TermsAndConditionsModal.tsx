@@ -1,6 +1,7 @@
 import { useLocalize } from '~/hooks';
 import { Dialog } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
+import { useAuthContext } from '~/hooks';
 
 const TermsAndConditionsModal = ({
   open,
@@ -14,10 +15,29 @@ const TermsAndConditionsModal = ({
   onDecline: () => void;
 }) => {
   const localize = useLocalize();
+  const { token } = useAuthContext();
 
-  const handleAccept = () => {
-    onAccept();
-    onOpenChange(false);
+  const handleAccept = async () => {
+    try {
+      const response = await fetch('/api/user/accept-terms', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        onAccept();
+        onOpenChange(false);
+      } else {
+        const errorData = await response.json();
+        console.error('Failed to accept terms:', errorData.message);
+      }
+    } catch (error) {
+      console.error('Error accepting terms:', error);
+    }
   };
 
   const handleDecline = () => {

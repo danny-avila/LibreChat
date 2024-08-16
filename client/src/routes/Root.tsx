@@ -8,7 +8,7 @@ import { Nav, MobileNav } from '~/components/Nav';
 import TermsAndConditionsModal from '~/components/ui/TermsAndConditionsModal';
 
 export default function Root() {
-  const { isAuthenticated, logout } = useAuthContext();
+  const { isAuthenticated, logout, token } = useAuthContext();
   const navigate = useNavigate();
   const [navVisible, setNavVisible] = useState(() => {
     const savedNavVisible = localStorage.getItem('navVisible');
@@ -23,13 +23,23 @@ export default function Root() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      const hasAcceptedTerms = localStorage.getItem('termsAccepted') === 'true';
-      setShowTerms(!hasAcceptedTerms);
+      fetch('/api/user/terms-status', {
+        credentials: 'include',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+        .then((response) => response.json())
+        .then((data) => {
+          setShowTerms(!data.termsAccepted);
+        })
+        .catch((error) => {
+          console.error('Error fetching terms acceptance status:', error);
+        });
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, token]);
 
   const handleAcceptTerms = () => {
-    localStorage.setItem('termsAccepted', 'true');
     setShowTerms(false);
   };
 
