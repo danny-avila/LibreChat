@@ -84,7 +84,7 @@ export default function StreamAudio({ index = 0 }) {
 
         setAudioRunId(activeRunId);
         if (cachedResponse) {
-          console.log('Audio found in cache');
+          logger.log('Audio found in cache');
           const audioBlob = await cachedResponse.blob();
           const blobUrl = URL.createObjectURL(audioBlob);
           setGlobalAudioURL(blobUrl);
@@ -92,7 +92,7 @@ export default function StreamAudio({ index = 0 }) {
           return;
         }
 
-        console.log('Fetching audio...', navigator.userAgent);
+        logger.log('Fetching audio...', navigator.userAgent);
         const response = await fetch('/api/files/speech/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -137,7 +137,7 @@ export default function StreamAudio({ index = 0 }) {
         }
 
         if (chunks.length) {
-          console.log('Adding audio to cache');
+          logger.log('Adding audio to cache');
           const latestMessages = getMessages() ?? [];
           const targetMessage = latestMessages.find(
             (msg) => msg.messageId === latestMessage?.messageId,
@@ -161,13 +161,13 @@ export default function StreamAudio({ index = 0 }) {
           setIsFetching(false);
         }
 
-        console.log('Audio stream reading ended');
+        logger.log('Audio stream reading ended');
       } catch (error) {
         if (error?.['message'] !== promiseTimeoutMessage) {
-          console.log(promiseTimeoutMessage);
+          logger.log(promiseTimeoutMessage);
           return;
         }
-        console.error('Error fetching audio:', error);
+        logger.error('Error fetching audio:', error);
         setIsFetching(false);
         setGlobalAudioURL(null);
       } finally {
