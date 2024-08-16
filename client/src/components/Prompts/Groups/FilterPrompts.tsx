@@ -152,7 +152,7 @@ export default function FilterPrompts({
           setDisplayName(e.target.value);
           setName(e.target.value);
         }}
-        className="w-full border-border-light"
+        className="w-full border-border-light placeholder:text-text-secondary"
       />
     </div>
   );

@@ -60,14 +60,16 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
     <div
       ref={ref}
       className={cn(
-        'relative mt-1 flex h-10 cursor-pointer items-center gap-3 rounded-lg border-border-medium px-3 py-2 text-text-primary transition-colors duration-200 focus-within:bg-surface-hover hover:bg-surface-hover dark:focus-within:bg-surface-hover',
+        'group relative mt-1 flex h-10 cursor-pointer items-center gap-3 rounded-lg border-border-medium px-3 py-2 text-text-primary transition-colors duration-200 focus-within:bg-surface-hover hover:bg-surface-hover',
         isSmallScreen === true ? 'h-16 rounded-2xl' : '',
       )}
     >
-      {<Search className="absolute left-3 h-4 w-4" />}
+      {
+        <Search className="absolute left-3 h-4 w-4 text-text-secondary group-focus-within:text-text-primary group-hover:text-text-primary" />
+      }
       <input
         type="text"
-        className="m-0 mr-0 w-full border-none bg-transparent p-0 pl-7 text-sm leading-tight placeholder-text-secondary placeholder-opacity-100 outline-none dark:placeholder-opacity-100"
+        className="m-0 mr-0 w-full border-none bg-transparent p-0 pl-7 text-sm leading-tight placeholder-text-secondary placeholder-opacity-100 outline-none group-focus-within:placeholder-text-primary group-hover:placeholder-text-primary"
         value={text}
         onChange={onChange}
         onKeyDown={(e) => {

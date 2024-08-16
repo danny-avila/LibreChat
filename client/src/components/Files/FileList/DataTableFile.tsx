@@ -150,7 +150,7 @@ export default function DataTableFile<TData, TValue>({
               placeholder={localize('com_files_filter')}
               value={(table.getColumn('filename')?.getFilterValue() as string) ?? ''}
               onChange={(event) => table.getColumn('filename')?.setFilterValue(event.target.value)}
-              className="max-w-sm dark:border-gray-500"
+              className="max-w-sm border-border-light placeholder:text-text-secondary"
             />
             <UploadFileButton
               onClick={() => {
@@ -204,7 +204,7 @@ export default function DataTableFile<TData, TValue>({
             ))}
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows?.length ? (
+            {table.getRowModel().rows.length ? (
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}
@@ -213,7 +213,7 @@ export default function DataTableFile<TData, TValue>({
                 >
                   {row.getVisibleCells().map((cell, index) => {
                     const maxWidth =
-                      (cell.column.columnDef as AugmentedColumnDef<TData, TValue>)?.meta?.size ??
+                      (cell.column.columnDef as AugmentedColumnDef<TData, TValue>).meta.size ??
                       'auto';
 
                     const style: Style = {};
