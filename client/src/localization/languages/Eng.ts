@@ -220,6 +220,8 @@ export default {
   com_ui_import_conversation_file_type_error: 'Unsupported import type',
   com_ui_confirm_action: 'Confirm Action',
   com_ui_chat: 'Chat',
+  com_ui_chat_history: 'Chat History',
+  com_ui_controls: 'Controls',
   com_ui_dashboard: 'Dashboard',
   com_ui_chats: 'chats',
   com_ui_avatar: 'Avatar',
