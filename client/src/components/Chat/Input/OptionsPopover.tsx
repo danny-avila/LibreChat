@@ -33,12 +33,12 @@ export default function OptionsPopover({
     (_target) => {
       const target = _target as Element;
       if (
-        target?.id === 'presets-button' ||
-        (target?.parentNode instanceof Element && target.parentNode.id === 'presets-button')
+        target.id === 'presets-button' ||
+        (target.parentNode instanceof Element && target.parentNode.id === 'presets-button')
       ) {
         return false;
       }
-      const tagName = target?.tagName;
+      const tagName = target.tagName;
       return tagName === 'path' || tagName === 'svg' || tagName === 'circle';
     },
   );

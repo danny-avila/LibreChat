@@ -570,7 +570,7 @@ export const useUploadFileMutation = (
 
           return {
             ...prev,
-            data: prev?.data.map((assistant) => {
+            data: prev.data.map((assistant) => {
               if (assistant.id !== assistant_id) {
                 return assistant;
               }
@@ -817,7 +817,7 @@ export const useUpdateAssistantMutation = (
     ({ assistant_id, data }: { assistant_id: string; data: t.AssistantUpdateParams }) => {
       const { endpoint } = data;
       const endpointsConfig = queryClient.getQueryData<t.TEndpointsConfig>([QueryKeys.endpoints]);
-      const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
+      const version = endpointsConfig?.[endpoint].version ?? defaultAssistantsVersion[endpoint];
       return dataService.updateAssistant({
         data,
         version,
@@ -1020,7 +1020,7 @@ export const useDeleteAction = (
 
           return {
             ...prev,
-            data: prev?.data.map((assistant) => {
+            data: prev.data.map((assistant) => {
               if (assistant.id === variables.assistant_id) {
                 return {
                   ...assistant,

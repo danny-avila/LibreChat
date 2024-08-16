@@ -14,11 +14,11 @@ export default function FontSizeSelector() {
   };
 
   const options = [
-    { value: 'text-xs', display: localize('com_nav_font_size_xs') },
-    { value: 'text-sm', display: localize('com_nav_font_size_sm') },
-    { value: 'text-base', display: localize('com_nav_font_size_base') },
-    { value: 'text-lg', display: localize('com_nav_font_size_lg') },
-    { value: 'text-xl', display: localize('com_nav_font_size_xl') },
+    { value: 'text-xs', label: localize('com_nav_font_size_xs') },
+    { value: 'text-sm', label: localize('com_nav_font_size_sm') },
+    { value: 'text-base', label: localize('com_nav_font_size_base') },
+    { value: 'text-lg', label: localize('com_nav_font_size_lg') },
+    { value: 'text-xl', label: localize('com_nav_font_size_xl') },
   ];
 
   return (

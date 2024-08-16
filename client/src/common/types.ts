@@ -19,6 +19,7 @@ import type {
   TStartupConfig,
   EModelEndpoint,
   AssistantsEndpoint,
+  TMessageContentParts,
   AuthorizationTypeEnum,
   TSetOption as SetOption,
   TokenExchangeMethodEnum,
@@ -29,6 +30,17 @@ import type { LucideIcon } from 'lucide-react';
 export enum PromptsEditorMode {
   SIMPLE = 'simple',
   ADVANCED = 'advanced',
+}
+
+export enum STTEndpoints {
+  browser = 'browser',
+  external = 'external',
+}
+
+export enum TTSEndpoints {
+  browser = 'browser',
+  edge = 'edge',
+  external = 'external',
 }
 
 export type AudioChunk = {
@@ -100,10 +112,12 @@ export interface NavProps {
   defaultActive?: string;
 }
 
-interface ColumnMeta {
-  meta: {
-    size: number | string;
-  };
+export interface DataColumnMeta {
+  meta:
+    | {
+        size: number | string;
+      }
+    | undefined;
 }
 
 export enum Panel {
@@ -145,7 +159,7 @@ export type AssistantPanelProps = {
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
 };
 
-export type AugmentedColumnDef<TData, TValue> = ColumnDef<TData, TValue> & ColumnMeta;
+export type AugmentedColumnDef<TData, TValue> = ColumnDef<TData, TValue> & DataColumnMeta;
 
 export type TSetOption = SetOption;
 
@@ -372,6 +386,19 @@ export type IconProps = Pick<TMessage, 'isCreatedByUser' | 'model'> &
 export type Option = Record<string, unknown> & {
   label?: string;
   value: string | number | null;
+};
+
+export type VoiceOption = {
+  value: string;
+  label: string;
+};
+
+export type TMessageAudio = {
+  messageId?: string;
+  content?: TMessageContentParts[] | string;
+  className?: string;
+  isLast: boolean;
+  index: number;
 };
 
 export type OptionWithIcon = Option & { icon?: React.ReactNode };
