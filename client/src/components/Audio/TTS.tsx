@@ -75,7 +75,7 @@ export function BrowserTTS({ isLast, index, messageId, content, className }: TMe
         }}
         src={audioRef.current?.src}
         onError={(error) => {
-          console.error('Error fetching audio:', error);
+          logger.error('Error fetching audio:', error);
         }}
         id={`audio-${messageId}`}
         muted
@@ -166,7 +166,7 @@ export function EdgeTTS({ isLast, index, messageId, content, className }: TMessa
           }}
           src={audioRef.current?.src}
           onError={(error) => {
-            console.error('Error fetching audio:', error);
+            logger.error('Error fetching audio:', error);
           }}
           id={`audio-${messageId}`}
           muted
@@ -245,7 +245,7 @@ export function ExternalTTS({ isLast, index, messageId, content, className }: TM
         }}
         src={audioRef.current?.src}
         onError={(error) => {
-          console.error('Error fetching audio:', error);
+          logger.error('Error fetching audio:', error);
         }}
         id={`audio-${messageId}`}
         muted
