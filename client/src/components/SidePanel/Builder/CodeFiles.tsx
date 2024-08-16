@@ -45,7 +45,7 @@ export default function CodeFiles({
 
   const endpointFileConfig = fileConfig.endpoints[endpoint];
 
-  if (endpointFileConfig?.disabled) {
+  if (endpointFileConfig.disabled) {
     return null;
   }
 
@@ -60,7 +60,7 @@ export default function CodeFiles({
   return (
     <div className="mb-2 w-full">
       <div className="flex flex-col gap-4">
-        <div className="text-token-text-tertiary rounded-lg text-xs">
+        <div className="rounded-lg text-xs text-text-secondary">
           {localize('com_assistants_code_interpreter_files')}
         </div>
         <FileRow
