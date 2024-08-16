@@ -37,23 +37,23 @@ export default function ConvoOptions({
     {
       label: localize('com_ui_rename'),
       onClick: renameHandler,
-      icon: <Pen className="icon-md mr-2 dark:text-gray-300" />,
+      icon: <Pen className="icon-md mr-2 text-text-secondary" />,
     },
     {
       label: localize('com_ui_share'),
       onClick: shareHandler,
-      icon: <Share2 className="icon-md mr-2 dark:text-gray-300" />,
+      icon: <Share2 className="icon-md mr-2 text-text-secondary" />,
       show: startupConfig && startupConfig.sharedLinksEnabled,
     },
     {
       label: localize('com_ui_archive'),
       onClick: archiveHandler,
-      icon: <Archive className="icon-md mr-2 dark:text-gray-300" />,
+      icon: <Archive className="icon-md mr-2 text-text-secondary" />,
     },
     {
       label: localize('com_ui_delete'),
       onClick: deleteHandler,
-      icon: <Trash className="icon-md mr-2 dark:text-gray-300" />,
+      icon: <Trash className="icon-md mr-2 text-text-secondary" />,
     },
   ];
 
@@ -69,7 +69,7 @@ export default function ConvoOptions({
             variant="link"
             className="z-10 h-7 w-7 border-none p-0 transition-all duration-200 ease-in-out"
           >
-            <Ellipsis className="icon-md dark:text-gray-300" />
+            <Ellipsis className="icon-md text-text-secondary" />
           </Button>
         }
         items={dropdownItems}

@@ -56,7 +56,7 @@ const DropdownPopup: React.FC<DropdownProps> = ({
                   static
                   // @ts-ignore
                   anchor={anchor}
-                  className="mt-2 overflow-hidden rounded-lg bg-header-primary p-1.5 shadow-lg outline-none"
+                  className="mt-2 overflow-hidden rounded-lg bg-header-primary p-1.5 shadow-lg outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
                 >
                   <div>
                     {items
