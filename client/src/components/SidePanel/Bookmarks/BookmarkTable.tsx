@@ -50,7 +50,7 @@ const BookmarkTable = () => {
           placeholder={localize('com_ui_bookmarks_filter')}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full border-border-light"
+          className="w-full border-border-light placeholder:text-text-secondary"
         />
       </div>
       <div className="overflow-y-auto rounded-md border border-black/10 dark:border-white/10">
