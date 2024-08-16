@@ -45,7 +45,7 @@ interface DataTableProps<TData, TValue> {
 const contextMap = {
   [FileContext.filename]: 'com_ui_name',
   [FileContext.updatedAt]: 'com_ui_date',
-  [FileContext.source]: 'com_ui_storage',
+  [FileContext.filterSource]: 'com_ui_storage',
   [FileContext.context]: 'com_ui_context',
   [FileContext.bytes]: 'com_ui_size',
 };
@@ -121,7 +121,7 @@ export default function DataTableFile<TData, TValue>({
             {' '}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="ml-auto">
+                <Button variant="outline" className="ml-auto border border-border-medium">
                   <ListFilter className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -138,7 +138,7 @@ export default function DataTableFile<TData, TValue>({
                         key={column.id}
                         className="cursor-pointer capitalize dark:text-white dark:hover:bg-gray-800"
                         checked={column.getIsVisible()}
-                        onCheckedChange={(value) => column.toggleVisibility(!!value)}
+                        onCheckedChange={(value) => column.toggleVisibility(Boolean(value))}
                       >
                         {localize(contextMap[column.id])}
                       </DropdownMenuCheckboxItem>
@@ -148,15 +148,11 @@ export default function DataTableFile<TData, TValue>({
             </DropdownMenu>
             <Input
               placeholder={localize('com_files_filter')}
-              value={(table.getColumn('filename')?.getFilterValue() as string) ?? ''}
+              value={(table.getColumn('filename')?.getFilterValue() as string | undefined) ?? ''}
               onChange={(event) => table.getColumn('filename')?.setFilterValue(event.target.value)}
-              className="max-w-sm border-border-light placeholder:text-text-secondary"
+              className="max-w-sm border-border-medium placeholder:text-text-secondary"
             />
-            <UploadFileButton
-              onClick={() => {
-                console.log('click');
-              }}
-            />
+            <UploadFileButton onClick={() => console.log('click')} />
           </div>
         </div>
       </div>
@@ -213,7 +209,7 @@ export default function DataTableFile<TData, TValue>({
                 >
                   {row.getVisibleCells().map((cell, index) => {
                     const maxWidth =
-                      (cell.column.columnDef as AugmentedColumnDef<TData, TValue>).meta.size ??
+                      (cell.column.columnDef as AugmentedColumnDef<TData, TValue>).meta?.size ??
                       'auto';
 
                     const style: Style = {};
