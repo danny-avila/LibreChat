@@ -51,7 +51,6 @@ const Registration: React.FC = () => {
     onError: (error: unknown) => {
       setIsSubmitting(false);
       if ((error as TError).response?.data?.message) {
-        console.log((error as TError).response);
         setErrorMessage((error as TError).response?.data?.message ?? '');
       }
     },
