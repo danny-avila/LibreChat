@@ -1352,6 +1352,10 @@
  * @property {number} [output_tokens] - The number of output tokens used.
  */
 
+/**
+ * @typedef {AnthropicStreamUsage} StreamUsage - Stream usage for all providers (currently only Anthropic)
+ */
+
 /* Native app/client methods */
 
 /**

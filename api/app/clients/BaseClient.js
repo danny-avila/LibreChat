@@ -550,10 +550,34 @@ class BaseClient {
     ) {
       let completionTokens;
 
-      const usage = this.getStreamUsage != null ? this.getStreamUsage() : null;
-      if (usage != null && Number(usage.output_tokens) > 0) {
+      /** @type {StreamUsage | null} */
+      const usage =
+        this.getStreamUsage != null && this.calculateCurrentTokenCount != null
+          ? this.getStreamUsage()
+          : null;
+
+      if (usage != null && Number(usage.input_tokens) > 0 && Number(usage.output_tokens) > 0) {
         responseMessage.tokenCount = usage.output_tokens;
         completionTokens = responseMessage.tokenCount;
+        const userMessageTokenCount = this.calculateCurrentTokenCount({
+          tokenCountMap,
+          currentMessageId: userMessage.messageId,
+          usage,
+        });
+        userMessage.tokenCount = userMessageTokenCount;
+        /* Note: `AskController` saves the user message, so we update the count of its `userMessage` reference */
+        if (typeof opts?.getReqData === 'function') {
+          opts.getReqData({
+            userMessage,
+          });
+        }
+        /* Note: we update the user message to be sure it gets the calculated token count;
+        though `AskController` saves the user message, EditController does not */
+        await this.userMessagePromise;
+        await this.updateMessageInDatabase({
+          messageId: userMessage.messageId,
+          tokenCount: userMessageTokenCount,
+        });
       } else {
         responseMessage.tokenCount = this.getTokenCountForResponse(responseMessage);
         completionTokens = this.getTokenCount(completion);

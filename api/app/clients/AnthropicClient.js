@@ -52,6 +52,18 @@ class AnthropicClient extends BaseClient {
     this.message_start;
     /** @type {AnthropicMessageDeltaEvent| undefined} */
     this.message_delta;
+    /** Whether the model is part of the Claude 3 Family
+     * @type {boolean} */
+    this.isClaude3;
+    /** Whether to use Messages API or Completions API
+     * @type {boolean} */
+    this.useMessages;
+    /** Whether or not the model is limited to the legacy amount of output tokens
+     * @type {boolean} */
+    this.isLegacyOutput;
+    /** Whether or not the model supports Prompt Caching
+     * @type {boolean} */
+    this.supportsCacheControl;
   }
 
   setOptions(options) {
@@ -77,8 +89,10 @@ class AnthropicClient extends BaseClient {
       model: modelOptions.model || anthropicSettings.model.default,
     };
 
-    this.isClaude3 = this.modelOptions.model.includes('claude-3');
-    this.isLegacyOutput = !this.modelOptions.model.includes('claude-3-5-sonnet');
+    const modelMatch = matchModelName(this.modelOptions.model, EModelEndpoint.anthropic);
+    this.isClaude3 = modelMatch.startsWith('claude-3');
+    this.isLegacyOutput = !modelMatch.startsWith('claude-3-5-sonnet');
+    this.supportsCacheControl = this.checkPromptCacheSupport(modelMatch);
 
     if (
       this.isLegacyOutput &&
@@ -159,6 +173,10 @@ class AnthropicClient extends BaseClient {
       options.defaultHeaders = {
         'anthropic-beta': 'max-tokens-3-5-sonnet-2024-07-15,prompt-caching-2024-07-31',
       };
+    } else if (this.supportsCacheControl === true) {
+      options.defaultHeaders = {
+        'anthropic-beta': 'prompt-caching-2024-07-31',
+      };
     }
 
     return new Anthropic(options);
@@ -172,6 +190,31 @@ class AnthropicClient extends BaseClient {
     const inputUsage = this.message_start?.message?.usage ?? {};
     const outputUsage = this.message_delta?.usage ?? {};
     return Object.assign({}, inputUsage, outputUsage);
+  }
+
+  /**
+   * Calculates the correct token count for the current message based on the token count map and API usage.
+   * Edge case: If the calculation results in a negative value, it returns the original estimate.
+   * If revisiting a conversation with a chat history entirely composed of token estimates,
+   * the cumulative token count going forward should become more accurate as the conversation progresses.
+   * @param {Object} params - The parameters for the calculation.
+   * @param {Record<string, number>} params.tokenCountMap - A map of message IDs to their token counts.
+   * @param {string} params.currentMessageId - The ID of the current message to calculate.
+   * @param {AnthropicStreamUsage} params.usage - The usage object returned by the API.
+   * @returns {number} The correct token count for the current message.
+   */
+  calculateCurrentTokenCount({ tokenCountMap, currentMessageId, usage }) {
+    const originalEstimate = tokenCountMap[currentMessageId];
+
+    tokenCountMap[currentMessageId] = 0;
+    const totalTokensFromMap = Object.values(tokenCountMap).reduce((sum, count) => sum + count, 0);
+    const totalInputTokens =
+      (usage.input_tokens ?? 0) +
+      (usage.cache_creation_input_tokens ?? 0) +
+      (usage.cache_read_input_tokens ?? 0);
+
+    const currentMessageTokens = totalInputTokens - totalTokensFromMap;
+    return currentMessageTokens > 0 ? currentMessageTokens : originalEstimate;
   }
 
   /**
@@ -618,14 +661,9 @@ class AnthropicClient extends BaseClient {
    * @param {string} modelName
    * @returns {boolean}
    */
-  supportsCacheControl(modelName) {
+  checkPromptCacheSupport(modelName) {
     const modelMatch = matchModelName(modelName, EModelEndpoint.anthropic);
-    /*
-    Documentation says Claude-3-Haiku supports prompt caching, but it throws errors if we try
-    https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
-    */
-    // if (modelMatch === 'claude-3-5-sonnet' || modelMatch === 'claude-3-haiku') {
-    if (modelMatch === 'claude-3-5-sonnet') {
+    if (modelMatch === 'claude-3-5-sonnet' || modelMatch === 'claude-3-haiku') {
       return true;
     }
     return false;
@@ -677,8 +715,7 @@ class AnthropicClient extends BaseClient {
       requestOptions.max_tokens_to_sample = maxOutputTokens || 1500;
     }
 
-    const supportsCacheControl = this.supportsCacheControl(model);
-    if (this.systemMessage && supportsCacheControl === true) {
+    if (this.systemMessage && this.supportsCacheControl === true) {
       requestOptions.system = [
         {
           type: 'text',
@@ -690,7 +727,7 @@ class AnthropicClient extends BaseClient {
       requestOptions.system = this.systemMessage;
     }
 
-    if (supportsCacheControl && this.useMessages) {
+    if (this.supportsCacheControl === true && this.useMessages) {
       requestOptions.messages = addCacheControl(requestOptions.messages);
     }
 
