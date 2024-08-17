@@ -109,6 +109,7 @@
     "@testing-library/jest-dom": "^5.16.5",
     "@testing-library/react": "^14.0.0",
     "@testing-library/user-event": "^14.4.3",
+    "@types/annyang": "^2.6.5",
     "@types/jest": "^29.5.2",
     "@types/node": "^20.3.0",
     "@types/react": "^18.2.11",

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import DropdownMenu from './DropdownMenu'; // Adjust the path as necessary
+import DropdownMenu from './DropDownMenu';
 
 const CameraFeed = ({ onClose, textAreaRef, isSpeaking }) => {
   const [videoInputDevices, setVideoInputDevices] = useState<MediaDeviceInfo[]>([]);
@@ -52,10 +52,14 @@ const CameraFeed = ({ onClose, textAreaRef, isSpeaking }) => {
   }, []);
 
   const takeScreenshot = async () => {
-    if (!canvasRef.current || !videoRef.current) {return;}
+    if (!canvasRef.current || !videoRef.current) {
+      return;
+    }
 
     const context = canvasRef.current.getContext('2d');
-    if (!context) {return;}
+    if (!context) {
+      return;
+    }
     console.log('Taking screenshot...');
     canvasRef.current.width = videoRef.current.videoWidth;
     canvasRef.current.height = videoRef.current.videoHeight;

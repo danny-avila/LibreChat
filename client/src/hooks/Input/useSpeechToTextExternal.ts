@@ -3,7 +3,7 @@ import { useRecoilState } from 'recoil';
 import { useSpeechToTextMutation } from '~/data-provider';
 import { useToastContext } from '~/Providers';
 import store from '~/store';
-import annyang from 'annyang';
+import * as annyang from 'annyang';
 import useGetAudioSettings from './useGetAudioSettings';
 
 const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void) => {
