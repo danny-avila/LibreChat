@@ -1,6 +1,6 @@
 const buildOptions = (endpoint, parsedBody) => {
   // eslint-disable-next-line no-unused-vars
-  const { promptPrefix, assistant_id, iconURL, greeting, spec, ...rest } = parsedBody;
+  const { promptPrefix, assistant_id, iconURL, greeting, spec, ...modelOptions } = parsedBody;
   const endpointOption = {
     endpoint,
     promptPrefix,
@@ -8,9 +8,7 @@ const buildOptions = (endpoint, parsedBody) => {
     iconURL,
     greeting,
     spec,
-    modelOptions: {
-      ...rest,
-    },
+    modelOptions,
   };
 
   return endpointOption;
