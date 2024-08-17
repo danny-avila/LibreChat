@@ -71,6 +71,17 @@ const tokenValues = Object.assign(
 );
 
 /**
+ * Mapping of model token sizes to their respective multipliers for cached input, read and write.
+ * See Anthropic's documentation on this: https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching#pricing
+ * The rates are 1 USD per 1M tokens.
+ * @type {Object.<string, {write: number, read: number }>}
+ */
+const cacheTokenValues = {
+  'claude-3-5-sonnet': { write: 3.75, read: 0.3 },
+  'claude-3-haiku': { write: 0.3, read: 0.03 },
+};
+
+/**
  * Retrieves the key associated with a given model name.
  *
  * @param {string} model - The model name to match.
@@ -122,7 +133,7 @@ const getValueKey = (model, endpoint) => {
  *
  * @param {Object} params - The parameters for the function.
  * @param {string} [params.valueKey] - The key corresponding to the model name.
- * @param {string} [params.tokenType] - The type of token (e.g., 'prompt' or 'completion').
+ * @param {'prompt' | 'completion'} [params.tokenType] - The type of token (e.g., 'prompt' or 'completion').
  * @param {string} [params.model] - The model name to derive the value key from if not provided.
  * @param {string} [params.endpoint] - The endpoint name to derive the value key from if not provided.
  * @param {EndpointTokenConfig} [params.endpointTokenConfig] - The token configuration for the endpoint.
@@ -147,7 +158,41 @@ const getMultiplier = ({ valueKey, tokenType, model, endpoint, endpointTokenConf
   }
 
   // If we got this far, and values[tokenType] is undefined somehow, return a rough average of default multipliers
-  return tokenValues[valueKey][tokenType] ?? defaultRate;
+  return tokenValues[valueKey]?.[tokenType] ?? defaultRate;
 };
 
-module.exports = { tokenValues, getValueKey, getMultiplier, defaultRate };
+/**
+ * Retrieves the cache multiplier for a given value key and token type. If no value key is provided,
+ * it attempts to derive it from the model name.
+ *
+ * @param {Object} params - The parameters for the function.
+ * @param {string} [params.valueKey] - The key corresponding to the model name.
+ * @param {'write' | 'read'} [params.cacheType] - The type of token (e.g., 'write' or 'read').
+ * @param {string} [params.model] - The model name to derive the value key from if not provided.
+ * @param {string} [params.endpoint] - The endpoint name to derive the value key from if not provided.
+ * @param {EndpointTokenConfig} [params.endpointTokenConfig] - The token configuration for the endpoint.
+ * @returns {number | null} The multiplier for the given parameters, or `null` if not found.
+ */
+const getCacheMultiplier = ({ valueKey, cacheType, model, endpoint, endpointTokenConfig }) => {
+  if (endpointTokenConfig) {
+    return endpointTokenConfig?.[model]?.[cacheType] ?? null;
+  }
+
+  if (valueKey && cacheType) {
+    return cacheTokenValues[valueKey]?.[cacheType] ?? null;
+  }
+
+  if (!cacheType || !model) {
+    return null;
+  }
+
+  valueKey = getValueKey(model, endpoint);
+  if (!valueKey) {
+    return null;
+  }
+
+  // If we got this far, and values[cacheType] is undefined somehow, return a rough average of default multipliers
+  return cacheTokenValues[valueKey]?.[cacheType] ?? null;
+};
+
+module.exports = { tokenValues, getValueKey, getMultiplier, getCacheMultiplier, defaultRate };

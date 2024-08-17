@@ -27,9 +27,9 @@ const {
   createContextHandlers,
 } = require('./prompts');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { spendTokens } = require('~/models/spendTokens');
 const { isEnabled, sleep } = require('~/server/utils');
 const { handleOpenAIErrors } = require('./tools/util');
-const spendTokens = require('~/models/spendTokens');
 const { createLLM, RunManager } = require('./llm');
 const ChatGPTClient = require('./ChatGPTClient');
 const { summaryBuffer } = require('./memory');
