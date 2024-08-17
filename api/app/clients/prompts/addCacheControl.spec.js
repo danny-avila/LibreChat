@@ -143,18 +143,21 @@ describe('addCacheControl', () => {
     ];
 
     const result = addCacheControl(messages);
+    console.dir(result, { depth: null });
 
-    expect(result[0].content[0]).toEqual({
+    expect(result[0].content).toEqual('Hello');
+    expect(result[2].content[0]).toEqual({
       type: 'text',
-      text: 'Hello',
+      text: 'How are you?',
       cache_control: { type: 'ephemeral' },
     });
-    expect(result[2].content[0].cache_control).toEqual({ type: 'ephemeral' });
-    expect(result[4].content[0]).toEqual({
-      type: 'text',
-      text: 'Great!',
-      cache_control: { type: 'ephemeral' },
-    });
+    expect(result[4].content).toEqual([
+      {
+        type: 'text',
+        text: 'Great!',
+        cache_control: { type: 'ephemeral' },
+      },
+    ]);
     expect(result[1].content).toBe('Hi there');
     expect(result[3].content).toBe('I\'m doing well, thanks!');
   });
