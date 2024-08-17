@@ -8,8 +8,8 @@ const {
 } = require('librechat-data-provider');
 const { retrieveAndProcessFile } = require('~/server/services/Files/process');
 const { recordMessage, getMessages } = require('~/models/Message');
+const { spendTokens } = require('~/models/spendTokens');
 const { saveConvo } = require('~/models/Conversation');
-const spendTokens = require('~/models/spendTokens');
 const { countTokens } = require('~/server/utils');
 
 /**
