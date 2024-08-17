@@ -31,11 +31,13 @@
  * @typedef {import('@anthropic-ai/sdk').default.MessageParam} AnthropicMessage
  * @memberof typedefs
  */
+
 /**
  * @exports AnthropicMessageStartEvent
  * @typedef {import('@anthropic-ai/sdk').default.MessageStartEvent} AnthropicMessageStartEvent
  * @memberof typedefs
  */
+
 /**
  * @exports AnthropicMessageDeltaEvent
  * @typedef {import('@anthropic-ai/sdk').default.MessageDeltaEvent} AnthropicMessageDeltaEvent
@@ -1339,6 +1341,15 @@
  * @property {object} [cacheUsage] - Cache usage, if any.
  * @property {String} [valueKey] - The value key (optional).
  * @memberof typedefs
+ */
+
+/**
+ * https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching#pricing
+ * @typedef {object} AnthropicStreamUsage - Stream usage for Anthropic
+ * @property {number} [input_tokens] - The number of input tokens used.
+ * @property {number} [cache_creation_input_tokens] - The number of cache creation input tokens used (write).
+ * @property {number} [cache_read_input_tokens] - The number of cache input tokens used (read).
+ * @property {number} [output_tokens] - The number of output tokens used.
  */
 
 /* Native app/client methods */

@@ -56,7 +56,7 @@ class BaseClient {
 
   /**
    * Abstract method to get the token count for a message. Subclasses must implement this method.
-   * @param {Message} responseMessage
+   * @param {TMessage} responseMessage
    * @returns {number}
    */
   getTokenCountForResponse(responseMessage) {
@@ -550,20 +550,17 @@ class BaseClient {
     ) {
       let completionTokens;
 
-      // Use existing output tokens if available
-      if (this.message_delta?.usage?.output_tokens) {
-        responseMessage.tokenCount = this.message_delta.usage.output_tokens;
+      const usage = this.getStreamUsage != null ? this.getStreamUsage() : null;
+      if (usage != null) {
+        responseMessage.tokenCount = usage.output_tokens;
         completionTokens = responseMessage.tokenCount;
       } else {
-        // Calculate token count if not available
         responseMessage.tokenCount = this.getTokenCountForResponse(responseMessage);
         completionTokens = this.getTokenCount(completion);
       }
 
-      // Record token usage
-      const correctedUsage = await this.recordTokenUsage({ promptTokens, completionTokens });
+      const correctedUsage = await this.recordTokenUsage({ promptTokens, completionTokens, usage });
 
-      // Update token counts if corrected usage is available
       if (correctedUsage?.promptTokens > 0 && correctedUsage?.completionTokens > 0) {
         responseMessage.tokenCount = correctedUsage.completionTokens;
         await this.userMessagePromise;

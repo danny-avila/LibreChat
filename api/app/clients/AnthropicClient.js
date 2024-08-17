@@ -164,10 +164,25 @@ class AnthropicClient extends BaseClient {
     return new Anthropic(options);
   }
 
-  getTokenCountForResponse(response) {
+  /**
+   * Get stream usage as returned by this client's API response.
+   * @returns {AnthropicStreamUsage} The stream usage object.
+   */
+  getStreamUsage() {
+    const inputUsage = this.message_start?.message?.usage ?? {};
+    const outputUsage = this.message_delta?.usage ?? {};
+    return Object.assign({}, inputUsage, outputUsage);
+  }
+
+  /**
+   * Get Token Count for LibreChat Message
+   * @param {TMessage} responseMessage
+   * @returns {number}
+   */
+  getTokenCountForResponse(responseMessage) {
     return this.getTokenCountForMessage({
       role: 'assistant',
-      content: response.text,
+      content: responseMessage.text,
     });
   }
 
@@ -220,11 +235,20 @@ class AnthropicClient extends BaseClient {
     return files;
   }
 
-  async recordTokenUsage({ promptTokens, completionTokens, model, context = 'message' }) {
-    if (this.message_start && this.message_start.message?.usage) {
-      const input = this.message_start.message.usage.input_tokens ?? 0;
-      const write = this.message_start.message.usage.cache_creation_input_tokens ?? 0;
-      const read = this.message_start.message.usage.cache_read_input_tokens ?? 0;
+  /**
+   * @param {object} params
+   * @param {number} params.promptTokens
+   * @param {number} params.completionTokens
+   * @param {AnthropicStreamUsage} [params.usage]
+   * @param {string} [params.model]
+   * @param {string} [params.context='message']
+   * @returns {Promise<{ promptTokens: number, completionTokens: number } | undefined>}
+   */
+  async recordTokenUsage({ promptTokens, completionTokens, usage, model, context = 'message' }) {
+    if (usage != null && usage?.input_tokens != null) {
+      const input = usage.input_tokens ?? 0;
+      const write = usage.cache_creation_input_tokens ?? 0;
+      const read = usage.cache_read_input_tokens ?? 0;
 
       await spendStructuredTokens(
         {
@@ -596,7 +620,12 @@ class AnthropicClient extends BaseClient {
    */
   supportsCacheControl(modelName) {
     const modelMatch = matchModelName(modelName, EModelEndpoint.anthropic);
-    if (modelMatch === 'claude-3-5-sonnet' || modelMatch === 'claude-3-sonnet') {
+    /*
+    Documentation says Claude-3-Haiku supports prompt caching, but it throws errors if we try
+    https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
+    */
+    // if (modelMatch === 'claude-3-5-sonnet' || modelMatch === 'claude-3-haiku') {
+    if (modelMatch === 'claude-3-5-sonnet') {
       return true;
     }
     return false;
