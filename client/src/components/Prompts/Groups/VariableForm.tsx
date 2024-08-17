@@ -3,7 +3,7 @@ import { useForm, useFieldArray, Controller, useWatch } from 'react-hook-form';
 import type { TPromptGroup } from 'librechat-data-provider';
 import { extractVariableInfo, wrapVariable, replaceSpecialVars } from '~/utils';
 import { useAuthContext, useLocalize, useSubmitMessage } from '~/hooks';
-import { Input } from '~/components/ui';
+import { Textarea } from '~/components/ui';
 
 type FormValues = {
   fields: { variable: string; value: string }[];
@@ -103,11 +103,18 @@ export default function VariableForm({
                 name={`fields.${index}.value`}
                 control={control}
                 render={({ field }) => (
-                  <Input
+                  <Textarea
                     {...field}
                     id={`fields.${index}.value`}
-                    className="input text-grey-darker rounded border px-3 py-2 focus:bg-white dark:border-gray-500 dark:focus:bg-gray-700"
+                    className="input text-grey-darker h-10 rounded border px-3 py-2 focus:bg-white dark:border-gray-500 dark:focus:bg-gray-700"
                     placeholder={uniqueVariables[index]}
+                    onKeyDown={(e) => {
+                      // Submit the form on enter like you would with an Input component
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSubmit((data) => onSubmit(data))();
+                      }
+                    }}
                   />
                 )}
               />

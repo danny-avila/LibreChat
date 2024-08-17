@@ -6,6 +6,8 @@ import type { ContextType } from '~/common';
 import { EndpointsMenu, ModelSpecsMenu, PresetsMenu, HeaderNewChat } from './Menus';
 import ExportAndShareMenu from './ExportAndShareMenu';
 import HeaderOptions from './Input/HeaderOptions';
+import BookmarkMenu from './Menus/BookmarkMenu';
+import AddMultiConvo from './AddMultiConvo';
 import { useMediaQuery } from '~/hooks';
 
 const defaultInterface = getConfigDefaults().interface;
@@ -27,13 +29,14 @@ export default function Header() {
         <div className="flex items-center gap-2">
           {!navVisible && <HeaderNewChat />}
           {interfaceConfig.endpointsMenu && <EndpointsMenu />}
-          {modelSpecs?.length > 0 && <ModelSpecsMenu modelSpecs={modelSpecs} />}
+          {modelSpecs.length > 0 && <ModelSpecsMenu modelSpecs={modelSpecs} />}
           {<HeaderOptions interfaceConfig={interfaceConfig} />}
           {interfaceConfig.presets && <PresetsMenu />}
+          <BookmarkMenu />
+          <AddMultiConvo />
           {isSmallScreen && (
             <ExportAndShareMenu
               isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
-              className="pl-0"
             />
           )}
         </div>

@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
 import { useRecoilState } from 'recoil';
+import { useEffect, useCallback } from 'react';
 import type { TMessageProps } from '~/common';
 // eslint-disable-next-line import/no-cycle
 import Message from './Message';
@@ -16,9 +16,12 @@ export default function MultiMessage({
 }: TMessageProps) {
   const [siblingIdx, setSiblingIdx] = useRecoilState(store.messagesSiblingIdxFamily(messageId));
 
-  const setSiblingIdxRev = (value: number) => {
-    setSiblingIdx((messagesTree?.length ?? 0) - value - 1);
-  };
+  const setSiblingIdxRev = useCallback(
+    (value: number) => {
+      setSiblingIdx((messagesTree?.length ?? 0) - value - 1);
+    },
+    [messagesTree?.length, setSiblingIdx],
+  );
 
   useEffect(() => {
     // reset siblingIdx when the tree changes, mostly when a new message is submitting.

@@ -6,8 +6,9 @@ import CategorySelector from '~/components/Prompts/Groups/CategorySelector';
 import PromptVariables from '~/components/Prompts/PromptVariables';
 import { Button, TextareaAutosize, Input } from '~/components/ui';
 import Description from '~/components/Prompts/Description';
-import { useCreatePrompt } from '~/data-provider';
 import { useLocalize, useHasAccess } from '~/hooks';
+import Command from '~/components/Prompts/Command';
+import { useCreatePrompt } from '~/data-provider';
 import { cn } from '~/utils';
 
 type CreateFormValues = {
@@ -16,6 +17,7 @@ type CreateFormValues = {
   type: 'text' | 'chat';
   category: string;
   oneliner?: string;
+  command?: string;
 };
 
 const defaultPrompt: CreateFormValues = {
@@ -24,6 +26,7 @@ const defaultPrompt: CreateFormValues = {
   type: 'text',
   category: '',
   oneliner: undefined,
+  command: undefined,
 };
 
 const CreatePromptForm = ({
@@ -73,13 +76,16 @@ const CreatePromptForm = ({
   const promptText = watch('prompt');
 
   const onSubmit = (data: CreateFormValues) => {
-    const { name, category, oneliner, ...rest } = data;
+    const { name, category, oneliner, command, ...rest } = data;
     const groupData = { name, category } as Pick<
       CreateFormValues,
-      'name' | 'category' | 'oneliner'
+      'name' | 'category' | 'oneliner' | 'command'
     >;
     if ((oneliner?.length || 0) > 0) {
       groupData.oneliner = oneliner;
+    }
+    if ((command?.length || 0) > 0) {
+      groupData.command = command;
     }
     createPromptMutation.mutate({
       prompt: rest,
@@ -99,7 +105,7 @@ const CreatePromptForm = ({
             <Controller
               name="name"
               control={control}
-              rules={{ required: localize('com_ui_is_required', localize('com_ui_prompt_name')) }}
+              rules={{ required: localize('com_ui_prompt_name_required') }}
               render={({ field }) => (
                 <div className="mb-1 flex items-center md:mb-0">
                   <Input
@@ -121,19 +127,19 @@ const CreatePromptForm = ({
                 </div>
               )}
             />
-            <CategorySelector tabIndex={4} />
+            <CategorySelector tabIndex={5} />
           </div>
         </div>
-        <div className="w-full md:mt-[1.075rem]">
+        <div className="flex w-full flex-col gap-4 md:mt-[1.075rem]">
           <div>
             <h2 className="flex items-center justify-between rounded-t-lg border border-gray-300 py-2 pl-4 pr-1 text-base font-semibold dark:border-gray-600 dark:text-gray-200">
-              {localize('com_ui_text_prompt')}*
+              {localize('com_ui_prompt_text')}*
             </h2>
-            <div className="mb-4 min-h-32 rounded-b-lg border border-gray-300 p-4 transition-all duration-150 dark:border-gray-600">
+            <div className="min-h-32 rounded-b-lg border border-gray-300 p-4 transition-all duration-150 dark:border-gray-600">
               <Controller
                 name="prompt"
                 control={control}
-                rules={{ required: localize('com_ui_is_required', localize('com_ui_text_prompt')) }}
+                rules={{ required: localize('com_ui_prompt_text_required') }}
                 render={({ field }) => (
                   <div>
                     <TextareaAutosize
@@ -159,14 +165,15 @@ const CreatePromptForm = ({
             onValueChange={(value) => methods.setValue('oneliner', value)}
             tabIndex={3}
           />
-          <div className="flex justify-end">
+          <Command onValueChange={(value) => methods.setValue('command', value)} tabIndex={4} />
+          <div className="mt-4 flex justify-end">
             <Button
-              tabIndex={5}
+              tabIndex={6}
               type="submit"
               variant="default"
               disabled={!isDirty || isSubmitting || !isValid}
             >
-              {localize('com_ui_create_var', localize('com_ui_prompt'))}
+              {localize('com_ui_create_prompt')}
             </Button>
           </div>
         </div>

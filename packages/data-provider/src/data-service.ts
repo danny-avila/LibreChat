@@ -355,6 +355,10 @@ export const getVoices = (): Promise<f.VoiceResponse> => {
   return request.get(endpoints.textToSpeechVoices());
 };
 
+export const getCustomConfigSpeech = (): Promise<t.TCustomConfigSpeechResponse> => {
+  return request.get(endpoints.getCustomConfigSpeech());
+};
+
 /* actions */
 
 export const updateAction = (data: m.UpdateActionVariables): Promise<m.UpdateActionResponse> => {
@@ -420,7 +424,8 @@ export const listConversations = (
   // Assuming params has a pageNumber property
   const pageNumber = params?.pageNumber || '1'; // Default to page 1 if not provided
   const isArchived = params?.isArchived || false; // Default to false if not provided
-  return request.get(endpoints.conversations(pageNumber, isArchived));
+  const tags = params?.tags || []; // Default to an empty array if not provided
+  return request.get(endpoints.conversations(pageNumber, isArchived, tags));
 };
 
 export const listConversationsByQuery = (
@@ -473,6 +478,10 @@ export function getPrompt(id: string): Promise<{ prompt: t.TPrompt }> {
 
 export function getPrompts(filter: t.TPromptsWithFilterRequest): Promise<t.TPrompt[]> {
   return request.get(endpoints.getPromptsWithFilters(filter));
+}
+
+export function getAllPromptGroups(): Promise<q.AllPromptGroupsResponse> {
+  return request.get(endpoints.getAllPromptGroups());
 }
 
 export function getPromptGroups(
@@ -532,4 +541,39 @@ export function updatePromptPermissions(
   variables: m.UpdatePromptPermVars,
 ): Promise<m.UpdatePromptPermResponse> {
   return request.put(endpoints.updatePromptPermissions(variables.roleName), variables.updates);
+}
+
+/* Tags */
+export function getConversationTags(): Promise<t.TConversationTagsResponse> {
+  return request.get(endpoints.conversationTags());
+}
+
+export function createConversationTag(
+  payload: t.TConversationTagRequest,
+): Promise<t.TConversationTagResponse> {
+  return request.post(endpoints.conversationTags(), payload);
+}
+
+export function updateConversationTag(
+  tag: string,
+  payload: t.TConversationTagRequest,
+): Promise<t.TConversationTagResponse> {
+  return request.put(endpoints.conversationTags(tag), payload);
+}
+export function deleteConversationTag(tag: string): Promise<t.TConversationTagResponse> {
+  return request.delete(endpoints.conversationTags(tag));
+}
+
+export function addTagToConversation(
+  conversationId: string,
+  payload: t.TTagConversationRequest,
+): Promise<t.TTagConversationResponse> {
+  return request.put(endpoints.addTagToConversation(conversationId), payload);
+}
+export function rebuildConversationTags(): Promise<t.TConversationTagsResponse> {
+  return request.post(endpoints.conversationTags('rebuild'));
+}
+
+export function healthCheck(): Promise<string> {
+  return request.get(endpoints.health());
 }

@@ -1,6 +1,6 @@
-const { logger } = require('~/config');
+const { TTSProviders } = require('librechat-data-provider');
 const getCustomConfig = require('~/server/services/Config/getCustomConfig');
-const { getProvider } = require('./textToSpeech');
+const { getProvider } = require('./TTSService');
 
 /**
  * This function retrieves the available voices for the current TTS provider
@@ -16,22 +16,25 @@ async function getVoices(req, res) {
   try {
     const customConfig = await getCustomConfig();
 
-    if (!customConfig || !customConfig?.tts) {
+    if (!customConfig || !customConfig?.speech?.tts) {
       throw new Error('Configuration or TTS schema is missing');
     }
 
-    const ttsSchema = customConfig?.tts;
-    const provider = getProvider(ttsSchema);
+    const ttsSchema = customConfig?.speech?.tts;
+    const provider = await getProvider(ttsSchema);
     let voices;
 
     switch (provider) {
-      case 'openai':
+      case TTSProviders.OPENAI:
         voices = ttsSchema.openai?.voices;
         break;
-      case 'elevenlabs':
+      case TTSProviders.AZURE_OPENAI:
+        voices = ttsSchema.azureOpenAI?.voices;
+        break;
+      case TTSProviders.ELEVENLABS:
         voices = ttsSchema.elevenlabs?.voices;
         break;
-      case 'localai':
+      case TTSProviders.LOCALAI:
         voices = ttsSchema.localai?.voices;
         break;
       default:
@@ -40,8 +43,7 @@ async function getVoices(req, res) {
 
     res.json(voices);
   } catch (error) {
-    logger.error(`Failed to get voices: ${error.message}`);
-    res.status(500).json({ error: 'Failed to get voices' });
+    res.status(500).json({ error: `Failed to get voices: ${error.message}` });
   }
 }
 

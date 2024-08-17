@@ -46,7 +46,7 @@ export default function PromptsView() {
         </GroupSidePanel>
         <div
           className={cn(
-            'w-full overflow-y-auto lg:w-3/4 xl:w-3/4',
+            'scrollbar-gutter-stable w-full overflow-y-auto lg:w-3/4 xl:w-3/4',
             isDetailView ? 'block' : 'hidden md:block',
           )}
         >

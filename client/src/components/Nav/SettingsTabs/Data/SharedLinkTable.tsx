@@ -1,8 +1,11 @@
-import { useAuthContext, useLocalize, useNavScrolling } from '~/hooks';
-import { MessageSquare, Link as LinkIcon } from 'lucide-react';
 import { useMemo, useState, MouseEvent } from 'react';
+import { Link } from 'react-router-dom';
+import { MessageSquare, Link as LinkIcon } from 'lucide-react';
+import type { SharedLinksResponse, TSharedLink } from 'librechat-data-provider';
 import { useDeleteSharedLinkMutation, useSharedLinksInfiniteQuery } from '~/data-provider';
-
+import { useAuthContext, useLocalize, useNavScrolling } from '~/hooks';
+import { NotificationSeverity } from '~/common';
+import { useToastContext } from '~/Providers';
 import { cn } from '~/utils';
 import {
   Spinner,
@@ -12,8 +15,6 @@ import {
   TooltipTrigger,
   TrashIcon,
 } from '~/components';
-import { SharedLinksResponse, TSharedLink } from 'librechat-data-provider';
-import { Link } from 'react-router-dom';
 
 function SharedLinkDeleteButton({
   shareId,
@@ -23,7 +24,17 @@ function SharedLinkDeleteButton({
   setIsDeleting: (isDeleting: boolean) => void;
 }) {
   const localize = useLocalize();
-  const mutation = useDeleteSharedLinkMutation();
+  const { showToast } = useToastContext();
+  const mutation = useDeleteSharedLinkMutation({
+    onError: () => {
+      showToast({
+        message: localize('com_ui_share_delete_error'),
+        severity: NotificationSeverity.ERROR,
+        showIcon: true,
+      });
+      setIsDeleting(false);
+    },
+  });
 
   const handleDelete = async (e: MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
@@ -38,9 +49,9 @@ function SharedLinkDeleteButton({
     <TooltipProvider delayDuration={250}>
       <Tooltip>
         <TooltipTrigger asChild>
-          <span onClick={handleDelete}>
+          <button id="delete-shared-link" aria-label="Delete shared link" onClick={handleDelete}>
             <TrashIcon />
-          </span>
+          </button>
         </TooltipTrigger>
         <TooltipContent side="top" sideOffset={0}>
           {localize('com_ui_delete')}
@@ -124,10 +135,8 @@ export default function ShareLinkTable({ className }: { className?: string }) {
   const { isAuthenticated } = useAuthContext();
   const [showLoading, setShowLoading] = useState(false);
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useSharedLinksInfiniteQuery(
-    { pageNumber: '1', isPublic: true },
-    { enabled: isAuthenticated },
-  );
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isError, isLoading } =
+    useSharedLinksInfiniteQuery({ pageNumber: '1', isPublic: true }, { enabled: isAuthenticated });
 
   const { containerRef } = useNavScrolling<SharedLinksResponse>({
     setShowLoading,
@@ -144,6 +153,17 @@ export default function ShareLinkTable({ className }: { className?: string }) {
     classProp.className = className;
   }
 
+  if (isLoading) {
+    return <Spinner className="m-1 mx-auto mb-4 h-4 w-4 text-black dark:text-white" />;
+  }
+
+  if (isError) {
+    return (
+      <div className="rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200">
+        {localize('com_ui_share_retrieve_error')}
+      </div>
+    );
+  }
   if (!sharedLinks || sharedLinks.length === 0) {
     return <div className="text-gray-300">{localize('com_nav_shared_links_empty')}</div>;
   }

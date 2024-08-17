@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileSources, SystemRoles } from 'librechat-data-provider';
+import { FileSources } from 'librechat-data-provider';
 import type * as InputNumberPrimitive from 'rc-input-number';
 import type { ColumnDef } from '@tanstack/react-table';
 import type { SetterOrUpdater } from 'recoil';
@@ -11,18 +11,37 @@ import type {
   TPlugin,
   TMessage,
   Assistant,
+  TResPlugin,
   TLoginUser,
   AuthTypeEnum,
+  TModelsConfig,
   TConversation,
   TStartupConfig,
   EModelEndpoint,
   AssistantsEndpoint,
+  TMessageContentParts,
   AuthorizationTypeEnum,
   TSetOption as SetOption,
   TokenExchangeMethodEnum,
 } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type { LucideIcon } from 'lucide-react';
+
+export enum PromptsEditorMode {
+  SIMPLE = 'simple',
+  ADVANCED = 'advanced',
+}
+
+export enum STTEndpoints {
+  browser = 'browser',
+  external = 'external',
+}
+
+export enum TTSEndpoints {
+  browser = 'browser',
+  edge = 'edge',
+  external = 'external',
+}
 
 export type AudioChunk = {
   audio: string;
@@ -81,7 +100,7 @@ export type NavLink = {
   label?: string;
   icon: LucideIcon | React.FC;
   Component?: React.ComponentType;
-  onClick?: () => void;
+  onClick?: (e?: React.MouseEvent) => void;
   variant?: 'default' | 'ghost';
   id: string;
 };
@@ -93,10 +112,12 @@ export interface NavProps {
   defaultActive?: string;
 }
 
-interface ColumnMeta {
-  meta: {
-    size: number | string;
-  };
+export interface DataColumnMeta {
+  meta:
+    | {
+        size: number | string;
+      }
+    | undefined;
 }
 
 export enum Panel {
@@ -138,7 +159,7 @@ export type AssistantPanelProps = {
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
 };
 
-export type AugmentedColumnDef<TData, TValue> = ColumnDef<TData, TValue> & ColumnMeta;
+export type AugmentedColumnDef<TData, TValue> = ColumnDef<TData, TValue> & DataColumnMeta;
 
 export type TSetOption = SetOption;
 
@@ -229,6 +250,8 @@ export type TGenButtonProps = {
 
 export type TAskProps = {
   text: string;
+  overrideConvoId?: string;
+  overrideUserMessageId?: string;
   parentMessageId?: string | null;
   conversationId?: string | null;
   messageId?: string | null;
@@ -241,6 +264,7 @@ export type TOptions = {
   isRegenerate?: boolean;
   isContinued?: boolean;
   isEdited?: boolean;
+  overrideMessages?: TMessage[];
 };
 
 export type TAskFunction = (props: TAskProps, options?: TOptions) => void;
@@ -303,6 +327,7 @@ export type TDangerButtonProps = {
   actionTextCode: string;
   dataTestIdInitial: string;
   dataTestIdConfirm: string;
+  infoDescriptionCode?: string;
   confirmActionTextCode?: string;
 };
 
@@ -363,11 +388,27 @@ export type Option = Record<string, unknown> & {
   value: string | number | null;
 };
 
+export type VoiceOption = {
+  value: string;
+  label: string;
+};
+
+export type TMessageAudio = {
+  messageId?: string;
+  content?: TMessageContentParts[] | string;
+  className?: string;
+  isLast: boolean;
+  index: number;
+};
+
 export type OptionWithIcon = Option & { icon?: React.ReactNode };
 export type MentionOption = OptionWithIcon & {
   type: string;
   value: string;
   description?: string;
+};
+export type PromptOption = MentionOption & {
+  id: string;
 };
 
 export type TOptionSettings = {
@@ -407,6 +448,29 @@ export type TLoginLayoutContext = {
   setError: React.Dispatch<React.SetStateAction<string | null>>;
   headerText: string;
   setHeaderText: React.Dispatch<React.SetStateAction<string>>;
+};
+
+export type NewConversationParams = {
+  template?: Partial<TConversation>;
+  preset?: Partial<TPreset>;
+  modelsData?: TModelsConfig;
+  buildDefault?: boolean;
+  keepLatestMessage?: boolean;
+  keepAddedConvos?: boolean;
+};
+
+export type ConvoGenerator = (params: NewConversationParams) => void | TConversation;
+
+export type TResData = {
+  plugin?: TResPlugin;
+  final?: boolean;
+  initial?: boolean;
+  previousMessages?: TMessage[];
+  requestMessage: TMessage;
+  responseMessage: TMessage;
+  conversation: TConversation;
+  conversationId?: string;
+  runMessages?: TMessage[];
 };
 export type TVectorStore = {
   _id: string;

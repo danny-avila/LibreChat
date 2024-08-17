@@ -11,6 +11,7 @@ export default {
   com_sidepanel_hide_panel: '隐藏侧边栏',
   com_sidepanel_attach_files: '附加文件',
   com_sidepanel_manage_files: '管理文件',
+  com_sidepanel_conversation_tags: '书签',
   com_assistants_capabilities: '功能',
   com_assistants_knowledge: '知识',
   com_assistants_knowledge_info: '如果您在“知识”中上传文件，与助手的对话可能包括文件内容。',
@@ -137,6 +138,8 @@ export default {
   com_ui_create_link: '创建链接',
   com_ui_share_link_to_chat: '分享链接到聊天',
   com_ui_share_error: '分享聊天链接时发生错误',
+  com_ui_share_retrieve_error: '删除共享链接时出错。',
+  com_ui_share_delete_error: '删除共享链接时出错。',
   com_ui_share_create_message: '您的名字及您在分享后添加的任何消息将保持私密。',
   com_ui_share_created_message: '已创建到您聊天的共享链接。可以通过设置随时管理以前共享的聊天。',
   com_ui_share_update_message: '您的名字、定制指令及您在分享后添加的任何消息将保持私密。',
@@ -157,6 +160,20 @@ export default {
   com_ui_upload_delay: '上传 "{0}" 时比预期花了更长时间。 文件正在进行检索索引，请稍候。',
   com_ui_privacy_policy: '隐私政策',
   com_ui_terms_of_service: '服务政策',
+  com_ui_bookmarks: '书签',
+  com_ui_bookmarks_rebuild: '重建',
+  com_ui_bookmarks_new: '新书签',
+  com_ui_bookmark_delete_confirm: '你确定要删除这个书签吗？',
+  com_ui_bookmarks_title: '标题',
+  com_ui_bookmarks_count: '计数',
+  com_ui_bookmarks_description: '描述',
+  com_ui_bookmarks_create_success: '书签创建成功',
+  com_ui_bookmarks_update_success: '书签更新成功',
+  com_ui_bookmarks_delete_success: '书签删除成功',
+  com_ui_bookmarks_create_error: '创建书签时出错',
+  com_ui_bookmarks_update_error: '更新书签时出错',
+  com_ui_bookmarks_delete_error: '删除书签时出错',
+  com_ui_bookmarks_add_to_conversation: '添加到当前对话',
   com_auth_error_login: '无法登录，请确认提供的账户密码正确，并重新尝试。',
   com_auth_error_login_rl: '尝试登录次数过多，请稍后再试。',
   com_auth_error_login_ban: '根据我们的服务规则，您的帐号被暂时禁用。',
@@ -407,6 +424,7 @@ export default {
   com_nav_theme_system: '跟随系统设置',
   com_nav_theme_dark: '暗色主题',
   com_nav_theme_light: '亮色主题',
+  com_nav_font_size: '字体大小:',
   com_nav_user_name_display: '在消息中显示用户名',
   com_nav_save_drafts: '保存草稿本地',
   com_nav_show_code: '使用代码解释器时始终显示代码',
@@ -429,6 +447,8 @@ export default {
   com_nav_help_faq: '帮助',
   com_nav_settings: '设置',
   com_nav_search_placeholder: '搜索对话及对话内容',
+  com_nav_info_bookmarks_rebuild:
+    '如果书签计数不正确，请重新构建书签信息。书签计数将被重新计算，数据将恢复到其正确状态。',
   com_nav_setting_general: '通用',
   com_nav_setting_beta: '实验特性',
   com_nav_setting_data: '数据管理',
@@ -505,7 +525,6 @@ export default {
   com_ui_import_conversation_file_type_error: '不支持的导入类型',
   com_ui_min_tags: '无法再移除更多值,至少需要保留{0}个。',
   com_ui_max_tags: '最多允许{0}个,使用最新值。',
-  com_endpoint_messages: '消息',
   com_endpoint_context_tokens: '最大上下文词元数',
   com_endpoint_context_info:
     '可用于上下文的最大词元数。用于控制每个请求发送的词元数量。如果未指定,将根据已知模型的上下文大小使用系统默认值。设置较高的值可能会导致错误和/或更高的词元成本。',
@@ -570,6 +589,10 @@ export const comparisons = {
   com_sidepanel_manage_files: {
     english: 'Manage Files',
     translated: '管理文件',
+  },
+  com_sidepanel_conversation_tags: {
+    english: 'Bookmarks',
+    translated: '书签',
   },
   com_assistants_capabilities: {
     english: 'Capabilities',
@@ -1073,6 +1096,14 @@ export const comparisons = {
     english: 'Share link to chat',
     translated: '分享链接到聊天',
   },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: '删除共享链接时出错。',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: '删除共享链接时出错。',
+  },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
     translated: '分享聊天链接时发生错误',
@@ -1159,6 +1190,62 @@ export const comparisons = {
   com_ui_terms_of_service: {
     english: 'Terms of service',
     translated: '服务政策',
+  },
+  com_ui_bookmarks: {
+    english: 'Bookmarks',
+    translated: '书签',
+  },
+  com_ui_bookmarks_rebuild: {
+    english: 'Rebuild',
+    translated: '重建',
+  },
+  com_ui_bookmarks_new: {
+    english: 'New Bookmark',
+    translated: '新书签',
+  },
+  com_ui_bookmark_delete_confirm: {
+    english: 'Are you sure you want to delete this bookmark?',
+    translated: '你确定要删除这个书签吗？',
+  },
+  com_ui_bookmarks_title: {
+    english: 'Title',
+    translated: '标题',
+  },
+  com_ui_bookmarks_count: {
+    english: 'Count',
+    translated: '计数',
+  },
+  com_ui_bookmarks_description: {
+    english: 'Description',
+    translated: '描述',
+  },
+  com_ui_bookmarks_create_success: {
+    english: 'Bookmark created successfully',
+    translated: '书签创建成功',
+  },
+  com_ui_bookmarks_update_success: {
+    english: 'Bookmark updated successfully',
+    translated: '书签更新成功',
+  },
+  com_ui_bookmarks_delete_success: {
+    english: 'Bookmark deleted successfully',
+    translated: '书签删除成功',
+  },
+  com_ui_bookmarks_create_error: {
+    english: 'There was an error creating the bookmark',
+    translated: '创建书签时出错',
+  },
+  com_ui_bookmarks_update_error: {
+    english: 'There was an error updating the bookmark',
+    translated: '更新书签时出错',
+  },
+  com_ui_bookmarks_delete_error: {
+    english: 'There was an error deleting the bookmark',
+    translated: '删除书签时出错',
+  },
+  com_ui_bookmarks_add_to_conversation: {
+    english: 'Add to current conversation',
+    translated: '添加到当前对话',
   },
   com_auth_error_login: {
     english:
@@ -2200,6 +2287,12 @@ export const comparisons = {
     english: 'Search messages',
     translated: '搜索对话及对话内容',
   },
+  com_nav_info_bookmarks_rebuild: {
+    english:
+      'If the bookmark count is incorrect, please rebuild the bookmark information. The bookmark count will be recalculated and the data will be restored to its correct state.',
+    translated:
+      '如果书签计数不正确，请重新构建书签信息。书签计数将被重新计算，数据将恢复到其正确状态。',
+  },
   com_nav_setting_general: {
     english: 'General',
     translated: '通用',
@@ -2490,10 +2583,6 @@ export const comparisons = {
   com_ui_max_tags: {
     english: 'Maximum number allowed is {0}, using latest values.',
     translated: '最多允许{0}个,使用最新值。',
-  },
-  com_endpoint_messages: {
-    english: 'Messages',
-    translated: '消息',
   },
   com_endpoint_context_tokens: {
     english: 'Max Context Tokens',

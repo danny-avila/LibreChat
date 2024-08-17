@@ -20,12 +20,12 @@ const PromptVariables = ({ promptText }: { promptText: string }) => {
   }, [promptText]);
 
   return (
-    <>
+    <div>
       <h3 className="flex items-center gap-2 rounded-t-lg border border-border-medium py-2 pl-4 text-base font-semibold text-text-secondary">
         <Variable className="icon-sm" />
         {localize('com_ui_variables')}
       </h3>
-      <div className="mb-4 flex w-full flex-row flex-wrap rounded-b-lg border border-border-medium p-4 md:min-h-16">
+      <div className="flex w-full flex-row flex-wrap rounded-b-lg border border-border-medium p-4 md:min-h-16">
         {variables.length ? (
           <div className="flex h-7 items-center">
             {variables.map((variable, index) => (
@@ -52,7 +52,7 @@ const PromptVariables = ({ promptText }: { promptText: string }) => {
           {localize('com_ui_special_variables')}
         </span>
       </div>
-    </>
+    </div>
   );
 };
 

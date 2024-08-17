@@ -1,10 +1,11 @@
-import { UserIcon } from '~/components/svg';
+import { memo } from 'react';
+import type { IconProps } from '~/common';
+import MessageEndpointIcon from './MessageEndpointIcon';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useAvatar from '~/hooks/Messages/useAvatar';
 import useLocalize from '~/hooks/useLocalize';
-import { IconProps } from '~/common';
+import { UserIcon } from '~/components/svg';
 import { cn } from '~/utils';
-import MessageEndpointIcon from './MessageEndpointIcon';
 
 const Icon: React.FC<IconProps> = (props) => {
   const { user } = useAuthContext();
@@ -46,4 +47,4 @@ const Icon: React.FC<IconProps> = (props) => {
   return <MessageEndpointIcon {...props} />;
 };
 
-export default Icon;
+export default memo(Icon);

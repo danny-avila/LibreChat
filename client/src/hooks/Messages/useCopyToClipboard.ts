@@ -19,7 +19,7 @@ export default function useCopyToClipboard({
           return acc;
         }, '');
       }
-      copy(messageText ?? '');
+      copy(messageText ?? '', { format: 'text/plain' });
 
       setTimeout(() => {
         setIsCopied(false);

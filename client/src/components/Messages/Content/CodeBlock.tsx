@@ -33,7 +33,7 @@ const CodeBar: React.FC<CodeBarProps> = React.memo(({ lang, codeRef, error, plug
             const codeString = codeRef.current?.textContent;
             if (codeString) {
               setIsCopied(true);
-              copy(codeString);
+              copy(codeString, { format: 'text/plain' });
 
               setTimeout(() => {
                 setIsCopied(false);

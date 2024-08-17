@@ -76,6 +76,10 @@ const initializeClient = async ({ req, res, endpointOption }) => {
 
     clientOptions.titleConvo = azureConfig.titleConvo;
     clientOptions.titleModel = azureConfig.titleModel;
+
+    const azureRate = modelName.includes('gpt-4') ? 30 : 17;
+    clientOptions.streamRate = azureConfig.streamRate ?? azureRate;
+
     clientOptions.titleMethod = azureConfig.titleMethod ?? 'completion';
 
     const groupName = modelGroupMap[modelName].group;
@@ -88,6 +92,19 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   } else if (isAzureOpenAI) {
     clientOptions.azure = userProvidesKey ? JSON.parse(userValues.apiKey) : getAzureCredentials();
     apiKey = clientOptions.azure.azureOpenAIApiKey;
+  }
+
+  /** @type {undefined | TBaseEndpoint} */
+  const openAIConfig = req.app.locals[EModelEndpoint.openAI];
+
+  if (!isAzureOpenAI && openAIConfig) {
+    clientOptions.streamRate = openAIConfig.streamRate;
+  }
+
+  /** @type {undefined | TBaseEndpoint} */
+  const allConfig = req.app.locals.all;
+  if (allConfig) {
+    clientOptions.streamRate = allConfig.streamRate;
   }
 
   if (userProvidesKey & !apiKey) {

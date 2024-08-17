@@ -9,6 +9,7 @@ type TOptionHoverProps = {
   sideOffset?: number;
   disabled?: boolean;
   side: ESide;
+  className?: string;
 };
 
 function OptionHover({
@@ -17,6 +18,7 @@ function OptionHover({
   disabled,
   langCode,
   sideOffset = 30,
+  className,
 }: TOptionHoverProps) {
   const localize = useLocalize();
   if (disabled) {
@@ -25,11 +27,7 @@ function OptionHover({
   const text = langCode ? localize(description) : description;
   return (
     <HoverCardPortal>
-      <HoverCardContent
-        side={side}
-        className="z-[999] w-80 dark:bg-gray-700"
-        sideOffset={sideOffset}
-      >
+      <HoverCardContent side={side} className={`z-[999] w-80 ${className}`} sideOffset={sideOffset}>
         <div className="space-y-2">
           <p className="text-sm text-gray-600 dark:text-gray-300">{text}</p>
         </div>

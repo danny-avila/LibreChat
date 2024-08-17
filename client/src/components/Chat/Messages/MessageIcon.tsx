@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, memo } from 'react';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { TMessage, TPreset, Assistant } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
@@ -6,9 +6,9 @@ import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import { getEndpointField, getIconEndpoint } from '~/utils';
 import Icon from '~/components/Endpoints/Icon';
 
-export default function MessageIcon(
+function MessageIcon(
   props: Pick<TMessageProps, 'message' | 'conversation'> & {
-    assistant?: false | Assistant;
+    assistant?: Assistant;
   },
 ) {
   const { data: endpointsConfig } = useGetEndpointsQuery();
@@ -21,19 +21,19 @@ export default function MessageIcon(
     () => ({
       ...(conversation ?? {}),
       ...({
-        ...message,
+        ...(message ?? {}),
         iconURL: message?.iconURL ?? '',
       } as TMessage),
     }),
     [conversation, message],
   );
 
-  const iconURL = messageSettings?.iconURL;
-  let endpoint = messageSettings?.endpoint;
+  const iconURL = messageSettings.iconURL;
+  let endpoint = messageSettings.endpoint;
   endpoint = getIconEndpoint({ endpointsConfig, iconURL, endpoint });
   const endpointIconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
 
-  if (!message?.isCreatedByUser && iconURL && iconURL.includes('http')) {
+  if (message?.isCreatedByUser !== true && iconURL != null && iconURL.includes('http')) {
     return (
       <ConvoIconURL
         preset={messageSettings as typeof messageSettings & TPreset}
@@ -56,3 +56,5 @@ export default function MessageIcon(
     />
   );
 }
+
+export default memo(MessageIcon);

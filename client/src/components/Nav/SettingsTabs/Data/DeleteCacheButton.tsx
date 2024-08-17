@@ -45,6 +45,7 @@ export const DeleteCacheButton = ({
       id={'delete-cache'}
       actionTextCode={'com_ui_delete'}
       infoTextCode={'com_nav_delete_cache_storage'}
+      infoDescriptionCode={'com_nav_info_delete_cache_storage'}
       dataTestIdInitial={'delete-cache-initial'}
       dataTestIdConfirm={'delete-cache-confirm'}
     />

@@ -1,6 +1,6 @@
 {
   "name": "LibreChat",
-  "version": "0.7.4-rc1",
+  "version": "0.7.4",
   "description": "",
   "workspaces": [
     "api",
@@ -37,9 +37,11 @@
     "frontend:ci": "npm run build:data-provider && cd client && npm run build:ci",
     "frontend:dev": "cd client && npm run dev",
     "e2e": "playwright test --config=e2e/playwright.config.local.ts",
+    "e2e:headed": "playwright test --config=e2e/playwright.config.local.ts --headed",
+    "e2e:a11y": "playwright test --config=e2e/playwright.config.a11y.ts --headed",
     "e2e:ci": "playwright test --config=e2e/playwright.config.ts",
     "e2e:debug": "cross-env PWDEBUG=1 playwright test --config=e2e/playwright.config.local.ts",
-    "e2e:codegen": "npx playwright codegen --load-storage=e2e/storageState.json http://localhost:3080/chat/new",
+    "e2e:codegen": "npx playwright codegen --load-storage=e2e/storageState.json http://localhost:3080/c/new",
     "e2e:login": "npx playwright codegen --save-storage=e2e/auth.json http://localhost:3080/login",
     "e2e:github": "act -W .github/workflows/playwright.yml --secret-file my.secrets",
     "test:client": "cd client && npm run test",
@@ -72,6 +74,7 @@
   },
   "homepage": "https://librechat.ai/",
   "devDependencies": {
+    "@axe-core/playwright": "^4.9.1",
     "@playwright/test": "^1.38.1",
     "@typescript-eslint/eslint-plugin": "^5.62.0",
     "@typescript-eslint/parser": "^5.62.0",
@@ -82,6 +85,7 @@
     "eslint-import-resolver-typescript": "^3.5.5",
     "eslint-plugin-import": "^2.28.0",
     "eslint-plugin-jest": "^27.2.1",
+    "eslint-plugin-jsx-a11y": "^6.9.0",
     "eslint-plugin-prettier": "^4.2.1",
     "eslint-plugin-react": "^7.32.2",
     "eslint-plugin-react-hooks": "^4.6.0",

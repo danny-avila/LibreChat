@@ -21,7 +21,7 @@ const useCategories = (className = '') => {
       data.map((category) => ({
         label: category.label
           ? localize(`com_ui_${category.label}`) || category.label
-          : localize('com_ui_none_selected'),
+          : localize('com_ui_select_a_category'),
         value: category.value,
         icon: category.value ? (
           <CategoryIcon category={category.value} className={className} />

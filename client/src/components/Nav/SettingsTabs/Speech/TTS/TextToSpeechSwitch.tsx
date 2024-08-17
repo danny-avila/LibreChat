@@ -9,7 +9,7 @@ export default function TextToSpeechSwitch({
   onCheckedChange?: (value: boolean) => void;
 }) {
   const localize = useLocalize();
-  const [TextToSpeech, setTextToSpeech] = useRecoilState<boolean>(store.TextToSpeech);
+  const [TextToSpeech, setTextToSpeech] = useRecoilState<boolean>(store.textToSpeech);
 
   const handleCheckedChange = (value: boolean) => {
     setTextToSpeech(value);

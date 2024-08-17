@@ -71,6 +71,8 @@ export default {
   com_ui_create_link: 'Создать ссылку',
   com_ui_share_link_to_chat: 'Поделиться ссылкой в чате',
   com_ui_share_error: 'Произошла ошибка при попытке поделиться ссылкой на чат',
+  com_ui_share_retrieve_error: 'Произошла ошибка при удалении общей ссылки.',
+  com_ui_share_delete_error: 'Произошла ошибка при удалении общей ссылки.',
   com_ui_share_create_message:
     'Ваше имя и любые сообщения, которые вы добавите после обмена, останутся конфиденциальными.',
   com_ui_share_created_message:
@@ -88,6 +90,20 @@ export default {
   com_ui_unarchive: 'разархивировать',
   com_ui_unarchive_error: 'Nie udało się odtworzyć rozmowy z archiwum',
   com_ui_more_options: 'Еще',
+  com_ui_bookmarks: 'Закладки',
+  com_ui_bookmarks_rebuild: 'Перестроить',
+  com_ui_bookmarks_new: 'Новая закладка',
+  com_ui_bookmark_delete_confirm: 'Вы уверены, что хотите удалить э��у закладку?',
+  com_ui_bookmarks_title: 'Заголовок',
+  com_ui_bookmarks_count: 'Количество',
+  com_ui_bookmarks_description: 'Описание',
+  com_ui_bookmarks_create_success: 'Закладка успешно создана',
+  com_ui_bookmarks_update_success: 'Закладка успешно обновлена',
+  com_ui_bookmarks_delete_success: 'Закладка успешно удалена',
+  com_ui_bookmarks_create_error: 'Произошла ошибка при создании закладки',
+  com_ui_bookmarks_update_error: 'Произошла ошибка при обновлении закладки',
+  com_ui_bookmarks_delete_error: 'Произошла ошибка при удалении закладки',
+  com_ui_bookmarks_add_to_conversation: 'Добавить в текущий разговор',
   com_auth_error_login:
     'Не удалось войти с предоставленной информацией. Пожалуйста, проверьте ваши учетные данные и попробуйте снова.',
   com_auth_error_login_rl:
@@ -327,6 +343,7 @@ export default {
   com_nav_theme_system: 'Системная',
   com_nav_theme_dark: 'Темная',
   com_nav_theme_light: 'Светлая',
+  com_nav_font_size: 'Размер шрифта',
   com_nav_user_name_display: 'Отображать имя пользователя в сообщениях',
   com_nav_save_drafts: 'Сохранить черновики локально',
   com_nav_language: 'Локализация',
@@ -355,6 +372,8 @@ export default {
   com_nav_help_faq: 'Помощь и Вопросы',
   com_nav_settings: 'Настройки',
   com_nav_search_placeholder: 'Поиск сообщений',
+  com_nav_info_bookmarks_rebuild:
+    'Если количество закладок некорректно, пожалуйста, перестройте информацию о закладках. Количество закладок будет пересчитано, и данные будут восстановлены до правильного состояния.',
   com_nav_setting_general: 'Общие',
   com_nav_setting_beta: 'Бета-функции',
   com_nav_setting_data: 'Управление данными',
@@ -429,6 +448,7 @@ export default {
   com_files_number_selected: 'Выбрано {0} из {1} файл(а/ов)',
   com_sidepanel_parameters: 'Параметры',
   com_sidepanel_hide_panel: 'Скрыть панель',
+  com_sidepanel_conversation_tags: 'Закладки',
   com_assistants_capabilities: 'Возможности',
   com_assistants_image_vision: 'Анализ изображений',
   com_assistants_search_name: 'Поиск ассистентов по имени',
@@ -516,7 +536,6 @@ export default {
   com_ui_terms_of_service: 'Условия использования',
   com_ui_min_tags: 'Нельзя удалить больше значений, требуется минимум {0}.',
   com_ui_max_tags: 'Максимально допустимое количество - {0}, используются последние значения.',
-  com_endpoint_messages: 'Сообщения',
   com_endpoint_context_tokens: 'Максимальное количество контекстных токенов',
   com_endpoint_context_info:
     'Максимальное количество токенов, которое может быть использовано для контекста. Используется для контроля количества токенов, отправляемых за один запрос. Если не указано, будут использованы системные значения по умолчанию, основанные на известном размере контекста моделей. Установка более высоких значений может привести к ошибкам и/или более высокой стоимости токенов.',
@@ -854,6 +873,14 @@ export const comparisons = {
     english: 'Share link to chat',
     translated: 'Поделиться ссылкой в чате',
   },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Произошла ошибка при удалении общей ссылки.',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Произошла ошибка при удалении общей ссылки.',
+  },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
     translated: 'Произошла ошибка при попытке поделиться ссылкой на чат',
@@ -915,6 +942,62 @@ export const comparisons = {
   com_ui_more_options: {
     english: 'More',
     translated: 'Еще',
+  },
+  com_ui_bookmarks: {
+    english: 'Bookmarks',
+    translated: 'Закладки',
+  },
+  com_ui_bookmarks_rebuild: {
+    english: 'Rebuild',
+    translated: 'Перестроить',
+  },
+  com_ui_bookmarks_new: {
+    english: 'New Bookmark',
+    translated: 'Новая закладка',
+  },
+  com_ui_bookmark_delete_confirm: {
+    english: 'Are you sure you want to delete this bookmark?',
+    translated: 'Вы уверены, что хотите удалить эу закладку?',
+  },
+  com_ui_bookmarks_title: {
+    english: 'Title',
+    translated: 'Заголовок',
+  },
+  com_ui_bookmarks_count: {
+    english: 'Count',
+    translated: 'Количество',
+  },
+  com_ui_bookmarks_description: {
+    english: 'Description',
+    translated: 'Описание',
+  },
+  com_ui_bookmarks_create_success: {
+    english: 'Bookmark created successfully',
+    translated: 'Закладка успешно создана',
+  },
+  com_ui_bookmarks_update_success: {
+    english: 'Bookmark updated successfully',
+    translated: 'Закладка успешно обновлена',
+  },
+  com_ui_bookmarks_delete_success: {
+    english: 'Bookmark deleted successfully',
+    translated: 'Закладка успешно удалена',
+  },
+  com_ui_bookmarks_create_error: {
+    english: 'There was an error creating the bookmark',
+    translated: 'Произошла ошибка при создании закладки',
+  },
+  com_ui_bookmarks_update_error: {
+    english: 'There was an error updating the bookmark',
+    translated: 'Произошла ошибка при обновлении закладки',
+  },
+  com_ui_bookmarks_delete_error: {
+    english: 'There was an error deleting the bookmark',
+    translated: 'Произошла ошибка при удалении закладки',
+  },
+  com_ui_bookmarks_add_to_conversation: {
+    english: 'Add to current conversation',
+    translated: 'Добавить в текущий разговор',
   },
   com_auth_error_login: {
     english:
@@ -1867,6 +1950,12 @@ export const comparisons = {
     english: 'Search messages',
     translated: 'Поиск сообщений',
   },
+  com_nav_info_bookmarks_rebuild: {
+    english:
+      'If the bookmark count is incorrect, please rebuild the bookmark information. The bookmark count will be recalculated and the data will be restored to its correct state.',
+    translated:
+      'Если количество закладок некорректно, пожалуйста, перестройте информацию о закладках. Количество закладок будет пересчитано, и данные будут восстановлены до правильного состояния.',
+  },
   com_nav_setting_general: {
     english: 'General',
     translated: 'Общие',
@@ -2133,6 +2222,10 @@ export const comparisons = {
   com_sidepanel_hide_panel: {
     english: 'Hide Panel',
     translated: 'Скрыть панель',
+  },
+  com_sidepanel_conversation_tags: {
+    english: 'Bookmarks',
+    translated: 'Закладки',
   },
   com_assistants_capabilities: {
     english: 'Capabilities',
@@ -2455,10 +2548,6 @@ export const comparisons = {
   com_ui_max_tags: {
     english: 'Maximum number allowed is {0}, using latest values.',
     translated: 'Максимально допустимое количество - {0}, используются последние значения.',
-  },
-  com_endpoint_messages: {
-    english: 'Messages',
-    translated: 'Сообщения',
   },
   com_endpoint_context_tokens: {
     english: 'Max Context Tokens',

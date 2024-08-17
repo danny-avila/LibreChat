@@ -1,11 +1,20 @@
-import { InfiniteCollections } from 'librechat-data-provider';
+import { InfiniteCollections, QueryKeys } from 'librechat-data-provider';
+import type { InfiniteData, QueryClient } from '@tanstack/react-query';
 import type {
   PromptGroupListResponse,
   PromptGroupListData,
   TPromptGroup,
 } from 'librechat-data-provider';
-import { addData, deleteData, updateData, updateFields, getRecordByProperty } from './collection';
-import { InfiniteData } from '@tanstack/react-query';
+import {
+  addData,
+  deleteData,
+  updateData,
+  updateFields,
+  addToCacheList,
+  updateCacheList,
+  removeFromCacheList,
+  getRecordByProperty,
+} from './collection';
 
 export const addPromptGroup = (
   data: InfiniteData<PromptGroupListResponse>,
@@ -69,4 +78,25 @@ export const findPromptGroup = (
     InfiniteCollections.PROMPT_GROUPS,
     findProperty,
   );
+};
+
+export const addGroupToAll = (queryClient: QueryClient, newGroup: TPromptGroup) => {
+  addToCacheList<TPromptGroup>(queryClient, [QueryKeys.allPromptGroups], newGroup);
+};
+
+export const updateGroupInAll = (
+  queryClient: QueryClient,
+  updatedGroup: Partial<TPromptGroup> & { _id: string },
+) => {
+  updateCacheList<TPromptGroup>({
+    queryClient,
+    queryKey: [QueryKeys.allPromptGroups],
+    searchProperty: '_id',
+    updateData: updatedGroup,
+    searchValue: updatedGroup._id,
+  });
+};
+
+export const removeGroupFromAll = (queryClient: QueryClient, groupId: string) => {
+  removeFromCacheList<TPromptGroup>(queryClient, [QueryKeys.allPromptGroups], '_id', groupId);
 };

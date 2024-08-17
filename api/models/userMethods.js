@@ -70,20 +70,11 @@ const createUser = async (data, disableTTL = true, returnUser = false) => {
     delete userData.expiresAt;
   }
 
-  try {
-    const user = await User.create(userData);
-    if (returnUser) {
-      return user.toObject();
-    }
-    return user._id;
-  } catch (error) {
-    if (error.code === 11000) {
-      // Duplicate key error code
-      throw new Error(`User with \`_id\` ${data._id} already exists.`);
-    } else {
-      throw error;
-    }
+  const user = await User.create(userData);
+  if (returnUser) {
+    return user.toObject();
   }
+  return user._id;
 };
 
 /**

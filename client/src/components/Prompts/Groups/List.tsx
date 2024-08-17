@@ -13,7 +13,7 @@ export default function List({
   isLoading,
 }: {
   groups?: TPromptGroup[];
-  isChatRoute?: boolean;
+  isChatRoute: boolean;
   isLoading: boolean;
 }) {
   const navigate = useNavigate();
@@ -34,7 +34,7 @@ export default function List({
             className="mx-2 w-full px-3"
             onClick={() => navigate('/d/prompts/new')}
           >
-            + {localize('com_ui_create_var', localize('com_ui_prompt'))}
+            + {localize('com_ui_create_prompt')}
           </Button>
         </div>
       )}
@@ -56,7 +56,7 @@ export default function List({
               {localize('com_ui_nothing_found')}
             </div>
           )}
-          {groups?.map((group) => {
+          {groups.map((group) => {
             if (isChatRoute) {
               return (
                 <ChatGroupItem

@@ -1,5 +1,5 @@
-const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
+const { webcrypto } = require('node:crypto');
 const { SystemRoles, errorsToString } = require('librechat-data-provider');
 const {
   findUser,
@@ -13,6 +13,7 @@ const {
 const { createToken, findToken, deleteTokens, Session } = require('~/models');
 const { sendEmail, checkEmailConfig } = require('~/server/utils');
 const { registerSchema } = require('~/strategies/validators');
+const { hashToken } = require('~/server/utils/crypto');
 const isDomainAllowed = require('./isDomainAllowed');
 const { logger } = require('~/config');
 
@@ -33,7 +34,7 @@ const genericVerificationMessage = 'Please check your email to verify your email
  */
 const logoutUser = async (userId, refreshToken) => {
   try {
-    const hash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+    const hash = await hashToken(refreshToken);
 
     // Find the session with the matching user and refreshTokenHash
     const session = await Session.findOne({ user: userId, refreshTokenHash: hash });
@@ -53,13 +54,22 @@ const logoutUser = async (userId, refreshToken) => {
 };
 
 /**
+ * Creates Token and corresponding Hash for verification
+ * @returns {[string, string]}
+ */
+const createTokenHash = () => {
+  const token = Buffer.from(webcrypto.getRandomValues(new Uint8Array(32))).toString('hex');
+  const hash = bcrypt.hashSync(token, 10);
+  return [token, hash];
+};
+
+/**
  * Send Verification Email
  * @param {Partial<MongoUser> & { _id: ObjectId, email: string, name: string}} user
  * @returns {Promise<void>}
  */
 const sendVerificationEmail = async (user) => {
-  let verifyToken = crypto.randomBytes(32).toString('hex');
-  const hash = bcrypt.hashSync(verifyToken, 10);
+  const [verifyToken, hash] = createTokenHash();
 
   const verificationLink = `${
     domains.client
@@ -121,9 +131,10 @@ const verifyEmail = async (req) => {
 /**
  * Register a new user.
  * @param {MongoUser} user <email, password, name, username>
+ * @param {Partial<MongoUser>} [additionalData={}]
  * @returns {Promise<{status: number, message: string, user?: MongoUser}>}
  */
-const registerUser = async (user) => {
+const registerUser = async (user, additionalData = {}) => {
   const { error } = registerSchema.safeParse(user);
   if (error) {
     const errorMessage = errorsToString(error.errors);
@@ -173,11 +184,13 @@ const registerUser = async (user) => {
       avatar: null,
       role: isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER,
       password: bcrypt.hashSync(password, salt),
+      ...additionalData,
     };
 
     const emailEnabled = checkEmailConfig();
-    newUserId = await createUser(newUserData, false);
-    if (emailEnabled) {
+    const newUser = await createUser(newUserData, false, true);
+    newUserId = newUser._id;
+    if (emailEnabled && !newUser.emailVerified) {
       await sendVerificationEmail({
         _id: newUserId,
         email,
@@ -220,8 +233,7 @@ const requestPasswordReset = async (req) => {
 
   await deleteTokens({ userId: user._id });
 
-  let resetToken = crypto.randomBytes(32).toString('hex');
-  const hash = bcrypt.hashSync(resetToken, 10);
+  const [resetToken, hash] = createTokenHash();
 
   await createToken({
     userId: user._id,
@@ -363,8 +375,7 @@ const resendVerificationEmail = async (req) => {
       return { status: 200, message: genericVerificationMessage };
     }
 
-    let verifyToken = crypto.randomBytes(32).toString('hex');
-    const hash = bcrypt.hashSync(verifyToken, 10);
+    const [verifyToken, hash] = createTokenHash();
 
     const verificationLink = `${
       domains.client

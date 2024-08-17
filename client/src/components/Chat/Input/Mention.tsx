@@ -1,24 +1,39 @@
 import { useState, useRef, useEffect } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
-import type { MentionOption } from '~/common';
+import type { MentionOption, ConvoGenerator } from '~/common';
+import useSelectMention from '~/hooks/Input/useSelectMention';
 import { useAssistantsMapContext } from '~/Providers';
 import useMentions from '~/hooks/Input/useMentions';
 import { useLocalize, useCombobox } from '~/hooks';
-import { removeAtSymbolIfLast } from '~/utils';
+import { removeCharIfLast } from '~/utils';
 import MentionItem from './MentionItem';
 
 export default function Mention({
   setShowMentionPopover,
+  newConversation,
   textAreaRef,
+  commandChar = '@',
+  placeholder = 'com_ui_mention',
+  includeAssistants = true,
 }: {
   setShowMentionPopover: SetterOrUpdater<boolean>;
+  newConversation: ConvoGenerator;
   textAreaRef: React.MutableRefObject<HTMLTextAreaElement | null>;
+  commandChar?: string;
+  placeholder?: string;
+  includeAssistants?: boolean;
 }) {
   const localize = useLocalize();
   const assistantMap = useAssistantsMapContext();
-  const { options, modelsConfig, assistantListMap, onSelectMention } = useMentions({
+  const { options, presets, modelSpecs, modelsConfig, endpointsConfig, assistantListMap } =
+    useMentions({ assistantMap: assistantMap || {}, includeAssistants });
+  const { onSelectMention } = useSelectMention({
+    presets,
+    modelSpecs,
     assistantMap,
+    endpointsConfig,
+    newConversation,
   });
 
   const [activeIndex, setActiveIndex] = useState(0);
@@ -43,7 +58,7 @@ export default function Mention({
       onSelectMention(mention);
 
       if (textAreaRef.current) {
-        removeAtSymbolIfLast(textAreaRef.current);
+        removeCharIfLast(textAreaRef.current, commandChar);
       }
     };
 
@@ -81,17 +96,28 @@ export default function Mention({
   }, [open, options]);
 
   useEffect(() => {
-    const currentActiveItem = document.getElementById(`mention-item-${activeIndex}`);
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
+
+  const type = commandChar !== '@' ? 'add-convo' : 'mention';
+  useEffect(() => {
+    const currentActiveItem = document.getElementById(`${type}-item-${activeIndex}`);
     currentActiveItem?.scrollIntoView({ behavior: 'instant', block: 'nearest' });
-  }, [activeIndex]);
+  }, [type, activeIndex]);
 
   return (
     <div className="absolute bottom-16 z-10 w-full space-y-2">
       <div className="popover border-token-border-light rounded-2xl border bg-white p-2 shadow-lg dark:bg-gray-700">
         <input
+          // The user expects focus to transition to the input field when the popover is opened
+          // eslint-disable-next-line jsx-a11y/no-autofocus
           autoFocus
           ref={inputRef}
-          placeholder={localize('com_ui_mention')}
+          placeholder={localize(placeholder)}
           className="mb-1 w-full border-0 bg-white p-2 text-sm focus:outline-none dark:bg-gray-700 dark:text-gray-200"
           autoComplete="off"
           value={searchValue}
@@ -132,9 +158,12 @@ export default function Mention({
           <div className="max-h-40 overflow-y-auto">
             {(matches as MentionOption[]).map((mention, index) => (
               <MentionItem
+                type={type}
                 index={index}
                 key={`${mention.value}-${index}`}
-                onClick={() => {
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
                   if (timeoutRef.current) {
                     clearTimeout(timeoutRef.current);
                   }

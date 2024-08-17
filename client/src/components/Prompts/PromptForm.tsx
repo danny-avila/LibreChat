@@ -5,7 +5,7 @@ import { useForm, FormProvider } from 'react-hook-form';
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useParams, useOutletContext } from 'react-router-dom';
 import { PermissionTypes, Permissions, SystemRoles } from 'librechat-data-provider';
-import type { TCreatePrompt } from 'librechat-data-provider';
+import type { TCreatePrompt, TPrompt } from 'librechat-data-provider';
 import {
   useGetPrompts,
   useCreatePrompt,
@@ -14,13 +14,15 @@ import {
   useUpdatePromptGroup,
   useMakePromptProduction,
 } from '~/data-provider';
-import { useAuthContext, usePromptGroupsNav, useHasAccess } from '~/hooks';
+import { useAuthContext, usePromptGroupsNav, useHasAccess, useLocalize } from '~/hooks';
 import CategorySelector from './Groups/CategorySelector';
 import AlwaysMakeProd from './Groups/AlwaysMakeProd';
 import NoPromptGroup from './Groups/NoPromptGroup';
 import { Button, Skeleton } from '~/components/ui';
 import PromptVariables from './PromptVariables';
+import { useToastContext } from '~/Providers';
 import PromptVersions from './PromptVersions';
+import { PromptsEditorMode } from '~/common';
 import DeleteConfirm from './DeleteVersion';
 import PromptDetails from './PromptDetails';
 import { findPromptGroup } from '~/utils';
@@ -29,14 +31,18 @@ import SkeletonForm from './SkeletonForm';
 import Description from './Description';
 import SharePrompt from './SharePrompt';
 import PromptName from './PromptName';
+import Command from './Command';
 import store from '~/store';
 
-const { PromptsEditorMode, promptsEditorMode } = store;
+const { promptsEditorMode } = store;
 
 const PromptForm = () => {
   const params = useParams();
   const navigate = useNavigate();
+  const localize = useLocalize();
+
   const { user } = useAuthContext();
+  const { showToast } = useToastContext();
   const editorMode = useRecoilValue(promptsEditorMode);
   const alwaysMakeProd = useRecoilValue(store.alwaysMakeProd);
   const { data: group, isLoading: isLoadingGroup } = useGetPromptGroup(params.promptId || '');
@@ -50,7 +56,10 @@ const PromptForm = () => {
   const [initialLoad, setInitialLoad] = useState(true);
   const [selectionIndex, setSelectionIndex] = useState<number>(0);
   const isOwner = useMemo(() => user?.id === group?.author, [user, group]);
-  const selectedPrompt = useMemo(() => prompts[selectionIndex], [prompts, selectionIndex]);
+  const selectedPrompt = useMemo(
+    () => prompts[selectionIndex] as TPrompt | undefined,
+    [prompts, selectionIndex],
+  );
 
   const hasShareAccess = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
@@ -101,7 +110,14 @@ const PromptForm = () => {
       setSelectionIndex(0);
     },
   });
-  const updateGroupMutation = useUpdatePromptGroup();
+  const updateGroupMutation = useUpdatePromptGroup({
+    onError: () => {
+      showToast({
+        status: 'error',
+        message: localize('com_ui_prompt_update_error'),
+      });
+    },
+  });
   const makeProductionMutation = useMakePromptProduction();
   const deletePromptMutation = useDeletePrompt({
     onSuccess: (response) => {
@@ -175,6 +191,17 @@ const PromptForm = () => {
     [updateGroupMutation, group],
   );
 
+  const debouncedUpdateCommand = useCallback(
+    debounce((command: string) => {
+      if (!group) {
+        return console.warn('Group not found');
+      }
+
+      updateGroupMutation.mutate({ id: group._id || '', payload: { command } });
+    }, 950),
+    [updateGroupMutation, group],
+  );
+
   const { groupsQuery } = useOutletContext<ReturnType<typeof usePromptGroupsNav>>();
 
   if (initialLoad) {
@@ -206,7 +233,7 @@ const PromptForm = () => {
               <Skeleton className="mb-1 flex h-10 w-32 flex-row items-center font-bold sm:text-xl md:mb-0 md:h-12 md:text-2xl" />
             ) : (
               <PromptName
-                name={group?.name}
+                name={group.name}
                 onSave={(value) => {
                   if (!group) {
                     return console.warn('Group not found');
@@ -218,11 +245,11 @@ const PromptForm = () => {
             <div className="flex h-10 flex-row gap-x-2">
               <CategorySelector
                 className="w-48 md:w-56"
-                currentCategory={group?.category}
+                currentCategory={group.category}
                 onValueChange={(value) =>
                   updateGroupMutation.mutate({
-                    id: group?._id || '',
-                    payload: { name: group?.name || '', category: value },
+                    id: group._id || '',
+                    payload: { name: group.name || '', category: value },
                   })
                 }
               />
@@ -233,11 +260,11 @@ const PromptForm = () => {
                   className="h-10 border border-transparent bg-green-500 transition-all hover:bg-green-600 dark:bg-green-500 dark:hover:bg-green-600"
                   variant={'default'}
                   onClick={() => {
-                    const { _id: promptVersionId = '', prompt } = selectedPrompt;
+                    const { _id: promptVersionId = '', prompt } = selectedPrompt ?? ({} as TPrompt);
                     makeProductionMutation.mutate(
                       {
                         id: promptVersionId || '',
-                        groupId: group?._id || '',
+                        groupId: group._id || '',
                         productionPrompt: { prompt },
                       },
                       {
@@ -252,7 +279,7 @@ const PromptForm = () => {
                   }}
                   disabled={
                     isLoadingGroup ||
-                    selectedPrompt?._id === group?.productionId ||
+                    selectedPrompt?._id === group.productionId ||
                     makeProductionMutation.isLoading
                   }
                 >
@@ -265,7 +292,7 @@ const PromptForm = () => {
                 selectHandler={() => {
                   deletePromptMutation.mutate({
                     _id: selectedPrompt?._id || '',
-                    groupId: group?._id || '',
+                    groupId: group._id || '',
                   });
                 }}
               />
@@ -278,18 +305,22 @@ const PromptForm = () => {
           )}
           <div className="flex h-full w-full flex-col md:flex-row">
             {/* Left Section */}
-            <div className="flex-1 overflow-y-auto border-r border-gray-300 p-4 dark:border-gray-600 md:max-h-[calc(100vh-150px)]">
+            <div className="flex-1 overflow-y-auto border-gray-300 p-4 dark:border-gray-600 md:max-h-[calc(100vh-150px)] md:border-r">
               {isLoadingPrompts ? (
                 <Skeleton className="h-96" />
               ) : (
-                <>
+                <div className="flex flex-col gap-4">
                   <PromptEditor name="prompt" isEditing={isEditing} setIsEditing={setIsEditing} />
                   <PromptVariables promptText={promptText} />
                   <Description
-                    initialValue={group?.oneliner ?? ''}
+                    initialValue={group.oneliner ?? ''}
                     onValueChange={debouncedUpdateOneliner}
                   />
-                </>
+                  <Command
+                    initialValue={group.command ?? ''}
+                    onValueChange={debouncedUpdateCommand}
+                  />
+                </div>
               )}
             </div>
             {/* Right Section */}

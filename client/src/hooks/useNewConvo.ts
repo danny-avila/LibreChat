@@ -6,13 +6,7 @@ import {
 } from 'librechat-data-provider/react-query';
 import { useNavigate } from 'react-router-dom';
 import { FileSources, LocalStorageKeys, isAssistantsEndpoint } from 'librechat-data-provider';
-import {
-  useRecoilState,
-  useRecoilValue,
-  useSetRecoilState,
-  useRecoilCallback,
-  useResetRecoilState,
-} from 'recoil';
+import { useRecoilState, useRecoilValue, useSetRecoilState, useRecoilCallback } from 'recoil';
 import type {
   TPreset,
   TSubmission,
@@ -38,12 +32,14 @@ import store from '~/store';
 const useNewConvo = (index = 0) => {
   const navigate = useNavigate();
   const { data: startupConfig } = useGetStartupConfig();
+  const clearAllConversations = store.useClearConvoState();
   const defaultPreset = useRecoilValue(store.defaultPreset);
   const { setConversation } = store.useCreateConversationAtom(index);
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
+  const clearAllLatestMessages = store.useClearLatestMessages(`useNewConvo ${index}`);
   const setSubmission = useSetRecoilState<TSubmission | null>(store.submissionByIndex(index));
-  const resetLatestMessage = useResetRecoilState(store.latestMessageFamily(index));
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
+
   const modelsQuery = useGetModelsQuery();
   const timeoutIdRef = useRef<NodeJS.Timeout>();
   const assistantsListMap = useAssistantListMap();
@@ -67,6 +63,7 @@ const useNewConvo = (index = 0) => {
         modelsData?: TModelsConfig,
         buildDefault?: boolean,
         keepLatestMessage?: boolean,
+        keepAddedConvos?: boolean,
       ) => {
         const modelsConfig = modelsData ?? modelsQuery.data;
         const { endpoint = null } = conversation;
@@ -139,10 +136,13 @@ const useNewConvo = (index = 0) => {
           });
         }
 
+        if (!keepAddedConvos) {
+          clearAllConversations(true);
+        }
         setConversation(conversation);
         setSubmission({} as TSubmission);
         if (!keepLatestMessage) {
-          resetLatestMessage();
+          clearAllLatestMessages();
         }
 
         if (conversation.conversationId === 'new' && !modelsData) {
@@ -171,12 +171,14 @@ const useNewConvo = (index = 0) => {
       modelsData,
       buildDefault = true,
       keepLatestMessage = false,
+      keepAddedConvos = false,
     }: {
       template?: Partial<TConversation>;
       preset?: Partial<TPreset>;
       modelsData?: TModelsConfig;
       buildDefault?: boolean;
       keepLatestMessage?: boolean;
+      keepAddedConvos?: boolean;
     } = {}) => {
       pauseGlobalAudio();
 
@@ -217,7 +219,14 @@ const useNewConvo = (index = 0) => {
         }
       }
 
-      switchToConversation(conversation, preset, modelsData, buildDefault, keepLatestMessage);
+      switchToConversation(
+        conversation,
+        preset,
+        modelsData,
+        buildDefault,
+        keepLatestMessage,
+        keepAddedConvos,
+      );
     },
     [
       pauseGlobalAudio,

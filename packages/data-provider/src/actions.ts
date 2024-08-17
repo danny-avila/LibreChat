@@ -32,8 +32,10 @@ export function sha1(input: string) {
 }
 
 export function createURL(domain: string, path: string) {
-  const myURL = new URL(path, domain);
-  return myURL.toString();
+  const cleanDomain = domain.replace(/\/$/, '');
+  const cleanPath = path.replace(/^\//, '');
+  const fullURL = `${cleanDomain}/${cleanPath}`;
+  return new URL(fullURL).toString();
 }
 
 export class FunctionSignature {
@@ -92,7 +94,7 @@ export class ActionRequest {
   private authHeaders: Record<string, string> = {};
   private authToken?: string;
 
-  async setParams(params: object) {
+  setParams(params: object) {
     this.operationHash = sha1(JSON.stringify(params));
     this.params = params;
 

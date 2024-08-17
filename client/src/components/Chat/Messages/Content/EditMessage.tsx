@@ -1,12 +1,14 @@
+import { useRecoilState } from 'recoil';
 import TextareaAutosize from 'react-textarea-autosize';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useUpdateMessageMutation } from 'librechat-data-provider/react-query';
 import type { TEditProps } from '~/common';
+import { useChatContext, useAddedChatContext } from '~/Providers';
 import { cn, removeFocusRings } from '~/utils';
-import { useChatContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import Container from './Container';
+import store from '~/store';
 
 const EditMessage = ({
   text,
@@ -17,7 +19,11 @@ const EditMessage = ({
   siblingIdx,
   setSiblingIdx,
 }: TEditProps) => {
+  const { addedIndex } = useAddedChatContext();
   const { getMessages, setMessages, conversation } = useChatContext();
+  const [latestMultiMessage, setLatestMultiMessage] = useRecoilState(
+    store.latestMessageFamily(addedIndex),
+  );
 
   const [editedText, setEditedText] = useState<string>(text ?? '');
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -85,17 +91,28 @@ const EditMessage = ({
       text: editedText,
       messageId,
     });
-    setMessages(
-      messages.map((msg) =>
-        msg.messageId === messageId
-          ? {
-            ...msg,
-            text: editedText,
-            isEdited: true,
-          }
-          : msg,
-      ),
-    );
+
+    if (message.messageId === latestMultiMessage?.messageId) {
+      setLatestMultiMessage({ ...latestMultiMessage, text: editedText });
+    }
+
+    const isInMessages = messages?.some((message) => message?.messageId === messageId);
+    if (!isInMessages) {
+      message.text = editedText;
+    } else {
+      setMessages(
+        messages.map((msg) =>
+          msg.messageId === messageId
+            ? {
+              ...msg,
+              text: editedText,
+              isEdited: true,
+            }
+            : msg,
+        ),
+      );
+    }
+
     enterEdit(true);
   };
 
@@ -145,6 +162,7 @@ const EditMessage = ({
           contentEditable={true}
           value={editedText}
           suppressContentEditableWarning={true}
+          dir="auto"
         />
       </div>
       <div className="mt-2 flex w-full justify-center text-center">

@@ -165,6 +165,13 @@ const useFileHandling = (params?: UseFileHandling) => {
       formData.append('model', conversation?.model ?? '');
       formData.append('message_file', 'true');
     }
+    if (isAssistantsEndpoint(endpoint) && !formData.get('version')) {
+      const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
+      const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
+      formData.append('version', version);
+      formData.append('model', conversation?.model ?? '');
+      formData.append('message_file', 'true');
+    }
 
     formData.append('endpoint', endpoint);
 

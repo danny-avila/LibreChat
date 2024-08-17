@@ -9,7 +9,7 @@ export default function SharedLinks() {
 
   return (
     <div className="flex items-center justify-between">
-      <div> {localize('com_nav_shared_links')} </div>
+      <div>{localize('com_nav_shared_links')}</div>
 
       <Dialog>
         <DialogTrigger asChild>

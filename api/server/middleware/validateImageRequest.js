@@ -31,10 +31,14 @@ function validateImageRequest(req, res, next) {
     return res.status(403).send('Access Denied');
   }
 
-  if (req.path.includes(payload.id)) {
+  const fullPath = decodeURIComponent(req.originalUrl);
+  const pathPattern = new RegExp(`^/images/${payload.id}/[^/]+$`);
+
+  if (pathPattern.test(fullPath)) {
     logger.debug('[validateImageRequest] Image request validated');
     next();
   } else {
+    logger.warn('[validateImageRequest] Invalid image path');
     res.status(403).send('Access Denied');
   }
 }

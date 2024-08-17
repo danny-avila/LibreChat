@@ -52,6 +52,94 @@ const createGroupPipeline = (query, skip, limit) => {
 };
 
 /**
+ * Create a pipeline for the aggregation to get all prompt groups
+ * @param {Object} query
+ * @param {Partial<MongoPromptGroup>} $project
+ * @returns {[Object]} - The pipeline for the aggregation
+ */
+const createAllGroupsPipeline = (
+  query,
+  $project = {
+    name: 1,
+    oneliner: 1,
+    category: 1,
+    author: 1,
+    authorName: 1,
+    createdAt: 1,
+    updatedAt: 1,
+    command: 1,
+    'productionPrompt.prompt': 1,
+  },
+) => {
+  return [
+    { $match: query },
+    { $sort: { createdAt: -1 } },
+    {
+      $lookup: {
+        from: 'prompts',
+        localField: 'productionId',
+        foreignField: '_id',
+        as: 'productionPrompt',
+      },
+    },
+    { $unwind: { path: '$productionPrompt', preserveNullAndEmptyArrays: true } },
+    {
+      $project,
+    },
+  ];
+};
+
+/**
+ * Get all prompt groups with filters
+ * @param {Object} req
+ * @param {TPromptGroupsWithFilterRequest} filter
+ * @returns {Promise<PromptGroupListResponse>}
+ */
+const getAllPromptGroups = async (req, filter) => {
+  try {
+    const { name, ...query } = filter;
+
+    if (!query.author) {
+      throw new Error('Author is required');
+    }
+
+    let searchShared = true;
+    let searchSharedOnly = false;
+    if (name) {
+      query.name = new RegExp(name, 'i');
+    }
+    if (!query.category) {
+      delete query.category;
+    } else if (query.category === SystemCategories.MY_PROMPTS) {
+      searchShared = false;
+      delete query.category;
+    } else if (query.category === SystemCategories.NO_CATEGORY) {
+      query.category = '';
+    } else if (query.category === SystemCategories.SHARED_PROMPTS) {
+      searchSharedOnly = true;
+      delete query.category;
+    }
+
+    let combinedQuery = query;
+
+    if (searchShared) {
+      const project = await getProjectByName('instance', 'promptGroupIds');
+      if (project && project.promptGroupIds.length > 0) {
+        const projectQuery = { _id: { $in: project.promptGroupIds }, ...query };
+        delete projectQuery.author;
+        combinedQuery = searchSharedOnly ? projectQuery : { $or: [projectQuery, query] };
+      }
+    }
+
+    const promptGroupsPipeline = createAllGroupsPipeline(combinedQuery);
+    return await PromptGroup.aggregate(promptGroupsPipeline).exec();
+  } catch (error) {
+    console.error('Error getting all prompt groups', error);
+    return { message: 'Error getting all prompt groups' };
+  }
+};
+
+/**
  * Get prompt groups with filters
  * @param {Object} req
  * @param {TPromptGroupsWithFilterRequest} filter
@@ -126,6 +214,7 @@ const getPromptGroups = async (req, filter) => {
 
 module.exports = {
   getPromptGroups,
+  getAllPromptGroups,
   /**
    * Create a prompt and its respective group
    * @param {TCreatePromptRecord} saveData

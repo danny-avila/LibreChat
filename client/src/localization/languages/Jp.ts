@@ -18,6 +18,7 @@ export default {
   com_sidepanel_hide_panel: 'パネルを隠す',
   com_sidepanel_attach_files: 'ファイルを添付する',
   com_sidepanel_manage_files: 'ファイルを管理',
+  com_sidepanel_conversation_tags: 'ブックマーク',
   com_assistants_capabilities: 'Capabilities',
   com_assistants_knowledge: 'ナレッジ',
   com_assistants_knowledge_info:
@@ -152,6 +153,8 @@ export default {
   com_ui_create_link: 'リンクを作成する',
   com_ui_share_link_to_chat: 'チャットへの共有リンク',
   com_ui_share_error: 'チャットの共有リンクの共有中にエラーが発生しました',
+  com_ui_share_retrieve_error: '共有リンクの削除中にエラーが発生しました。',
+  com_ui_share_delete_error: '共有リンクの削除中にエラーが発生しました。',
   com_ui_share_create_message:
     'あなたの名前と共有リンクを作成した後のメッセージは、共有されません。',
   com_ui_share_created_message:
@@ -179,6 +182,20 @@ export default {
   com_ui_terms_of_service: '利用規約',
   com_ui_min_tags: 'これ以上の値を削除できません。少なくとも {0} が必要です。',
   com_ui_max_tags: '最新の値を使用した場合、許可される最大数は {0} です。',
+  com_ui_bookmarks: 'ブックマーク',
+  com_ui_bookmarks_rebuild: '再構築',
+  com_ui_bookmarks_new: '新しいブックマーク',
+  com_ui_bookmark_delete_confirm: 'このブックマークを削除してもよろしいですか？',
+  com_ui_bookmarks_title: 'タイトル',
+  com_ui_bookmarks_count: 'カウント',
+  com_ui_bookmarks_description: '説明',
+  com_ui_bookmarks_create_success: 'ブックマークが正常に作成されました',
+  com_ui_bookmarks_update_success: 'ブックマークが正常に更新されました',
+  com_ui_bookmarks_delete_success: 'ブックマークが正常に削除されました',
+  com_ui_bookmarks_create_error: 'ブックマークの作成中にエラーが発生しました',
+  com_ui_bookmarks_update_error: 'ブックマークの更新中にエラーが発生しました',
+  com_ui_bookmarks_delete_error: 'ブックマークの削除中にエラーが発生しました',
+  com_ui_bookmarks_add_to_conversation: '現在の会話に追加',
   com_auth_error_login:
     '入力された情報ではログインできませんでした。認証情報を確認した上で再度お試しください。',
   com_auth_error_login_rl:
@@ -447,6 +464,7 @@ export default {
   com_nav_theme_system: 'システム',
   com_nav_theme_dark: 'ダーク',
   com_nav_theme_light: 'ライト',
+  com_nav_font_size: 'フォントサイズ',
   com_nav_enter_to_send: 'Enterキーでメッセージを送信する',
   com_nav_user_name_display: 'メッセージにユーザー名を表示する',
   com_nav_save_drafts: 'ローカルにドラフトを保存する',
@@ -471,6 +489,8 @@ export default {
   com_nav_help_faq: 'ヘルプ & FAQ',
   com_nav_settings: '設定',
   com_nav_search_placeholder: 'メッセージ検索',
+  com_nav_info_bookmarks_rebuild:
+    'ブックマークのカウントが正しくない場合は、ブックマークの情報を再構築してください。ブックマークのカウントが再計算され、データが正しい状態に復元されます。',
   com_nav_setting_general: '一般',
   com_nav_setting_beta: 'ベータ版の機能',
   com_nav_setting_data: 'データ管理',
@@ -542,7 +562,6 @@ export default {
   com_ui_mention:
     'エンドポイント、アシスタント、またはプリセットを素早く切り替えるには、それらを言及してください。',
   com_ui_import_conversation_file_type_error: 'サポートされていないインポート形式です',
-  com_endpoint_messages: 'メッセージ',
   com_endpoint_context_tokens: 'コンテキストトークン数の最大値',
   com_endpoint_context_info:
     'コンテキストに使用できるトークンの最大数です。リクエストごとに送信されるトークン数を制御するために使用します。指定しない場合は、既知のモデルのコンテキストサイズに基づいてシステムのデフォルト値が使用されます。高い値を設定すると、エラーが発生したり、トークンコストが高くなる可能性があります。',
@@ -562,7 +581,7 @@ export default {
   com_nav_lang_polish: 'ポーランド語',
   com_nav_lang_brazilian_portuguese: 'ブラジルポルトガル語',
   com_nav_lang_russian: 'ロシア語',
-  com_nav_lang_japanese: 'ナビゲーションメニュー',
+  com_nav_lang_japanese: '日本語',
   com_nav_lang_swedish: 'スウェーデン語',
   com_nav_lang_korean: '韓国語',
   com_nav_lang_vietnamese: 'ベトナム語',
@@ -628,6 +647,10 @@ export const comparisons = {
   com_sidepanel_manage_files: {
     english: 'Manage Files',
     translated: 'ファイルを管理',
+  },
+  com_sidepanel_conversation_tags: {
+    english: 'Bookmarks',
+    translated: 'ブックマーク',
   },
   com_assistants_capabilities: {
     english: 'Capabilities',
@@ -1140,6 +1163,14 @@ export const comparisons = {
     english: 'Share link to chat',
     translated: 'チャットへの共有リンク',
   },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: '共有リンクの削除中にエラーが発生しました。',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: '共有リンクの削除中にエラーが発生しました。',
+  },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
     translated: 'チャットの共有リンクの共有中にエラーが発生しました',
@@ -1238,6 +1269,62 @@ export const comparisons = {
   com_ui_max_tags: {
     english: 'Maximum number allowed is {0}, using latest values.',
     translated: '最新の値を使用した場合、許可される最大数は {0} です。',
+  },
+  com_ui_bookmarks: {
+    english: 'Bookmarks',
+    translated: 'ブックマーク',
+  },
+  com_ui_bookmarks_rebuild: {
+    english: 'Rebuild',
+    translated: '再構築',
+  },
+  com_ui_bookmarks_new: {
+    english: 'New Bookmark',
+    translated: '新しいブックマーク',
+  },
+  com_ui_bookmark_delete_confirm: {
+    english: 'Are you sure you want to delete this bookmark?',
+    translated: 'このブックマークを削除してもよろしいですか？',
+  },
+  com_ui_bookmarks_title: {
+    english: 'Title',
+    translated: 'タイトル',
+  },
+  com_ui_bookmarks_count: {
+    english: 'Count',
+    translated: 'カウント',
+  },
+  com_ui_bookmarks_description: {
+    english: 'Description',
+    translated: '説明',
+  },
+  com_ui_bookmarks_create_success: {
+    english: 'Bookmark created successfully',
+    translated: 'ブックマークが正常に作成されました',
+  },
+  com_ui_bookmarks_update_success: {
+    english: 'Bookmark updated successfully',
+    translated: 'ブックマークが正常に更新されました',
+  },
+  com_ui_bookmarks_delete_success: {
+    english: 'Bookmark deleted successfully',
+    translated: 'ブックマークが正常に削除されました',
+  },
+  com_ui_bookmarks_create_error: {
+    english: 'There was an error creating the bookmark',
+    translated: 'ブックマークの作成中にエラーが発生しました',
+  },
+  com_ui_bookmarks_update_error: {
+    english: 'There was an error updating the bookmark',
+    translated: 'ブックマークの更新中にエラーが発生しました',
+  },
+  com_ui_bookmarks_delete_error: {
+    english: 'There was an error deleting the bookmark',
+    translated: 'ブックマークの削除中にエラーが発生しました',
+  },
+  com_ui_bookmarks_add_to_conversation: {
+    english: 'Add to current conversation',
+    translated: '現在の会話に追加',
   },
   com_auth_error_login: {
     english:
@@ -2294,6 +2381,12 @@ export const comparisons = {
     english: 'Search messages',
     translated: 'メッセージ検索',
   },
+  com_nav_info_bookmarks_rebuild: {
+    english:
+      'If the bookmark count is incorrect, please rebuild the bookmark information. The bookmark count will be recalculated and the data will be restored to its correct state.',
+    translated:
+      'ブックマークのカウントが正しくない場合は、ブックマークの情報を再構築してください。ブックマークのカウントが再計算され、データが正しい状態に復元されます。',
+  },
   com_nav_setting_general: {
     english: 'General',
     translated: '一般',
@@ -2558,10 +2651,6 @@ export const comparisons = {
     english: 'Unsupported import type',
     translated: 'サポートされていないインポート形式です',
   },
-  com_endpoint_messages: {
-    english: 'Messages',
-    translated: 'メッセージ',
-  },
   com_endpoint_context_tokens: {
     english: 'Max Context Tokens',
     translated: 'コンテキストトークン数の最大値',
@@ -2636,7 +2725,7 @@ export const comparisons = {
   },
   com_nav_lang_japanese: {
     english: '日本語',
-    translated: 'ナビゲーションメニュー',
+    translated: '日本語',
   },
   com_nav_lang_swedish: {
     english: 'Svenska',

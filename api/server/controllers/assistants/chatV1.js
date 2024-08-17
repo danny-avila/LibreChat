@@ -120,21 +120,22 @@ const chatV1 = async (req, res) => {
           ? ' If using Azure OpenAI, files are only available in the region of the assistant\'s model at the time of upload.'
           : ''
       }`;
-      return sendResponse(res, messageData, errorMessage);
+      return sendResponse(req, res, messageData, errorMessage);
     } else if (error?.message?.includes('string too long')) {
       return sendResponse(
+        req,
         res,
         messageData,
         'Message too long. The Assistants API has a limit of 32,768 characters per message. Please shorten it and try again.',
       );
     } else if (error?.message?.includes(ViolationTypes.TOKEN_BALANCE)) {
-      return sendResponse(res, messageData, error.message);
+      return sendResponse(req, res, messageData, error.message);
     } else {
       logger.error('[/assistants/chat/]', error);
     }
 
     if (!openai || !thread_id || !run_id) {
-      return sendResponse(res, messageData, defaultErrorMessage);
+      return sendResponse(req, res, messageData, defaultErrorMessage);
     }
 
     await sleep(2000);
@@ -221,10 +222,10 @@ const chatV1 = async (req, res) => {
       };
     } catch (error) {
       logger.error('[/assistants/chat/] Error finalizing error process', error);
-      return sendResponse(res, messageData, 'The Assistant run failed');
+      return sendResponse(req, res, messageData, 'The Assistant run failed');
     }
 
-    return sendResponse(res, finalEvent);
+    return sendResponse(req, res, finalEvent);
   };
 
   try {
@@ -382,6 +383,9 @@ const chatV1 = async (req, res) => {
       return files;
     };
 
+    /** @type {Promise<Run>|undefined} */
+    let userMessagePromise;
+
     const initializeThread = async () => {
       /** @type {[ undefined | MongoFile[]]}*/
       const [processedFiles] = await Promise.all([addVisionPrompt(), getRequestFileIds()]);
@@ -438,7 +442,7 @@ const chatV1 = async (req, res) => {
       previousMessages.push(requestMessage);
 
       /* asynchronous */
-      saveUserMessage({ ...requestMessage, model });
+      userMessagePromise = saveUserMessage(req, { ...requestMessage, model });
 
       conversation = {
         conversationId,
@@ -582,7 +586,10 @@ const chatV1 = async (req, res) => {
     });
     res.end();
 
-    await saveAssistantMessage({ ...responseMessage, model });
+    if (userMessagePromise) {
+      await userMessagePromise;
+    }
+    await saveAssistantMessage(req, { ...responseMessage, model });
 
     if (parentMessageId === Constants.NO_PARENT && !_thread_id) {
       addTitle(req, {

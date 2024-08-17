@@ -56,6 +56,8 @@ export default {
   com_ui_create_link: 'Skapa länk',
   com_ui_share_link_to_chat: 'Dela länk till chatt',
   com_ui_share_error: 'Ett fel uppstod vid delning av chattlänken',
+  com_ui_share_retrieve_error: 'Ett fel uppstod vid borttagningen av den delade länken.',
+  com_ui_share_delete_error: 'Ett fel uppstod vid borttagningen av den delade länken.',
   com_ui_share_create_message:
     'Ditt namn och alla meddelanden du lägger till efter delningen förblir privata.',
   com_ui_share_created_message:
@@ -74,6 +76,20 @@ export default {
   com_ui_unarchive: 'Avarkivera',
   com_ui_unarchive_error: 'Kunde inte avarkivera chatt',
   com_ui_more_options: 'Mer',
+  com_ui_bookmarks: 'Bokmärken',
+  com_ui_bookmarks_rebuild: 'Återuppbygg',
+  com_ui_bookmarks_new: 'Nytt Bokmärke',
+  com_ui_bookmark_delete_confirm: 'Är du säker på att du vill ta bort detta bokmärke?',
+  com_ui_bookmarks_title: 'Titel',
+  com_ui_bookmarks_count: 'Antal',
+  com_ui_bookmarks_description: 'Beskrivning',
+  com_ui_bookmarks_create_success: 'Bokmärke skapat framgångsrikt',
+  com_ui_bookmarks_update_success: 'Bokmärke uppdaterat framgångsrikt',
+  com_ui_bookmarks_delete_success: 'Bokm��rke raderat framgångsrikt',
+  com_ui_bookmarks_create_error: 'Ett fel uppstod vid skapandet av bokmärket',
+  com_ui_bookmarks_update_error: 'Ett fel uppstod vid uppdateringen av bokmärket',
+  com_ui_bookmarks_delete_error: 'Ett fel uppstod vid raderingen av bokmärket',
+  com_ui_bookmarks_add_to_conversation: 'Lägg till i nuvarande konversation',
   com_auth_error_login:
     'Kunde inte logga in med den angivna informationen. Kontrollera dina uppgifter och försök igen.',
   com_auth_error_login_rl:
@@ -273,6 +289,7 @@ export default {
   com_nav_theme_system: 'System',
   com_nav_theme_dark: 'Mörkt',
   com_nav_theme_light: 'Ljust',
+  com_nav_font_size: 'Textstorlek',
   com_nav_clear_all_chats: 'Rensa alla chattar',
   com_nav_confirm_clear: 'Bekräfta rensning',
   com_nav_close_sidebar: 'Stäng sidofält',
@@ -293,6 +310,8 @@ export default {
   com_nav_help_faq: 'Hjälp & Vanliga frågor',
   com_nav_settings: 'Inställningar',
   com_nav_search_placeholder: 'Sök meddelanden',
+  com_nav_info_bookmarks_rebuild:
+    'Om antalet bokmärken är felaktigt, vänligen återuppbygg informationen om bokmärkena. Antalet bokmärken kommer att omberäknas och data återställs till sitt korrekta tillstånd.',
   com_nav_setting_general: 'Allmänt',
   com_nav_setting_data: 'Datakontroller',
 };
@@ -514,6 +533,14 @@ export const comparisons = {
     english: 'Share link to chat',
     translated: 'Dela länk till chatt',
   },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Ett fel uppstod vid borttagningen av den delade länken.',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'Ett fel uppstod vid borttagningen av den delade länken.',
+  },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
     translated: 'Ett fel uppstod vid delning av chattlänken',
@@ -578,6 +605,62 @@ export const comparisons = {
   com_ui_more_options: {
     english: 'More',
     translated: 'Mer',
+  },
+  com_ui_bookmarks: {
+    english: 'Bookmarks',
+    translated: 'Bokmärken',
+  },
+  com_ui_bookmarks_rebuild: {
+    english: 'Rebuild',
+    translated: 'Återuppbygg',
+  },
+  com_ui_bookmarks_new: {
+    english: 'New Bookmark',
+    translated: 'Nytt Bokmärke',
+  },
+  com_ui_bookmark_delete_confirm: {
+    english: 'Are you sure you want to delete this bookmark?',
+    translated: 'Är du säker på att du vill ta bort detta bokmärke?',
+  },
+  com_ui_bookmarks_title: {
+    english: 'Title',
+    translated: 'Titel',
+  },
+  com_ui_bookmarks_count: {
+    english: 'Count',
+    translated: 'Antal',
+  },
+  com_ui_bookmarks_description: {
+    english: 'Description',
+    translated: 'Beskrivning',
+  },
+  com_ui_bookmarks_create_success: {
+    english: 'Bookmark created successfully',
+    translated: 'Bokmärke skapat framgångsrikt',
+  },
+  com_ui_bookmarks_update_success: {
+    english: 'Bookmark updated successfully',
+    translated: 'Bokmärke uppdaterat framgångsrikt',
+  },
+  com_ui_bookmarks_delete_success: {
+    english: 'Bookmark deleted successfully',
+    translated: 'Bokmrke raderat framgångsrikt',
+  },
+  com_ui_bookmarks_create_error: {
+    english: 'There was an error creating the bookmark',
+    translated: 'Ett fel uppstod vid skapandet av bokmärket',
+  },
+  com_ui_bookmarks_update_error: {
+    english: 'There was an error updating the bookmark',
+    translated: 'Ett fel uppstod vid uppdateringen av bokmärket',
+  },
+  com_ui_bookmarks_delete_error: {
+    english: 'There was an error deleting the bookmark',
+    translated: 'Ett fel uppstod vid raderingen av bokmärket',
+  },
+  com_ui_bookmarks_add_to_conversation: {
+    english: 'Add to current conversation',
+    translated: 'Lägg till i nuvarande konversation',
   },
   com_auth_error_login: {
     english:
@@ -1369,6 +1452,12 @@ export const comparisons = {
   com_nav_search_placeholder: {
     english: 'Search messages',
     translated: 'Sök meddelanden',
+  },
+  com_nav_info_bookmarks_rebuild: {
+    english:
+      'If the bookmark count is incorrect, please rebuild the bookmark information. The bookmark count will be recalculated and the data will be restored to its correct state.',
+    translated:
+      'Om antalet bokmärken är felaktigt, vänligen återuppbygg informationen om bokmärkena. Antalet bokmärken kommer att omberäknas och data återställs till sitt korrekta tillstånd.',
   },
   com_nav_setting_general: {
     english: 'General',

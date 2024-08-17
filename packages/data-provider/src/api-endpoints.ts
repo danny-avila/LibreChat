@@ -1,5 +1,6 @@
 import type { AssistantsEndpoint } from './schemas';
 
+export const health = () => '/health';
 export const user = () => '/api/user';
 
 export const balance = () => '/api/balance';
@@ -32,8 +33,10 @@ export const abortRequest = (endpoint: string) => `/api/ask/${endpoint}/abort`;
 
 export const conversationsRoot = '/api/convos';
 
-export const conversations = (pageNumber: string, isArchived?: boolean) =>
-  `${conversationsRoot}?pageNumber=${pageNumber}${isArchived ? '&isArchived=true' : ''}`;
+export const conversations = (pageNumber: string, isArchived?: boolean, tags?: string[]) =>
+  `${conversationsRoot}?pageNumber=${pageNumber}${isArchived ? '&isArchived=true' : ''}${tags
+    ?.map((tag) => `&tags=${tag}`)
+    .join('')}`;
 
 export const conversationById = (id: string) => `${conversationsRoot}/${id}`;
 
@@ -128,13 +131,17 @@ export const images = () => `${files()}/images`;
 
 export const avatar = () => `${images()}/avatar`;
 
-export const speechToText = () => `${files()}/stt`;
+export const speech = () => `${files()}/speech`;
 
-export const textToSpeech = () => `${files()}/tts`;
+export const speechToText = () => `${speech()}/stt`;
+
+export const textToSpeech = () => `${speech()}/tts`;
 
 export const textToSpeechManual = () => `${textToSpeech()}/manual`;
 
 export const textToSpeechVoices = () => `${textToSpeech()}/voices`;
+
+export const getCustomConfigSpeech = () => `${speech()}/config/get`;
 
 export const getPromptGroup = (_id: string) => `${prompts()}/groups/${_id}`;
 
@@ -177,8 +184,21 @@ export const deletePrompt = ({ _id, groupId }: { _id: string; groupId: string })
 
 export const getCategories = () => '/api/categories';
 
+export const getAllPromptGroups = () => `${prompts()}/all`;
+
 /* Roles */
 export const roles = () => '/api/roles';
 export const getRole = (roleName: string) => `${roles()}/${roleName.toLowerCase()}`;
 export const updatePromptPermissions = (roleName: string) =>
   `${roles()}/${roleName.toLowerCase()}/prompts`;
+
+/* Conversation Tags */
+export const conversationTags = (tag?: string) => `/api/tags${tag ? `/${tag}` : ''}`;
+
+export const conversationTagsList = (pageNumber: string, sort?: string, order?: string) =>
+  `${conversationTags()}/list?pageNumber=${pageNumber}${sort ? `&sort=${sort}` : ''}${
+    order ? `&order=${order}` : ''
+  }`;
+
+export const addTagToConversation = (conversationId: string) =>
+  `${conversationsRoot}/tags/${conversationId}`;

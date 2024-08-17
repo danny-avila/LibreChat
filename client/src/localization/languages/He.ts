@@ -5,6 +5,7 @@ export default {
   com_sidepanel_select_assistant: 'בחר סייען',
   com_sidepanel_assistant_builder: 'בניית סייען',
   com_sidepanel_attach_files: 'צרף קבצים',
+  com_sidepanel_conversation_tags: 'סימניות',
   com_assistants_knowledge: 'ידע',
   com_assistants_knowledge_info:
     'אם אתה מעלה קבצים תחת ידע, שיחות עם ה-סייען שלך עשויות לכלול תוכן מהקובץ.',
@@ -96,6 +97,8 @@ export default {
   com_ui_create_link: 'צור קישור',
   com_ui_share_link_to_chat: 'שתף קישור בצ\'אט',
   com_ui_share_error: 'אירעה שגיאה בעת שיתוף קישור הצ\'אט',
+  com_ui_share_retrieve_error: 'אירעה שגיאה בעת מחיקת הקישור המשותף.',
+  com_ui_share_delete_error: 'אירעה שגיאה בעת מחיקת הקישור המשותף.',
   com_ui_share_create_message: 'שמך וכל הודעה שתוסיף לאחר השיתוף יישארו פרטיים.',
   com_ui_share_created_message:
     'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
@@ -117,6 +120,20 @@ export default {
   _ui_preview: 'תצוגה מקדימה',
   com_ui_upload: 'העלה',
   com_ui_connect: 'התחבר',
+  com_ui_bookmarks: 'סימניות',
+  com_ui_bookmarks_rebuild: 'בנה מחדש',
+  com_ui_bookmarks_new: 'סימניה חדשה',
+  com_ui_bookmark_delete_confirm: 'האם אתה בטוח שברצונך למחוק את הסימניה הזו?',
+  com_ui_bookmarks_title: 'כותרת',
+  com_ui_bookmarks_count: 'ספירה',
+  com_ui_bookmarks_description: 'תיאור',
+  com_ui_bookmarks_create_success: 'הסימניה נוצרה בהצלחה',
+  com_ui_bookmarks_update_success: 'הסימניה עודכנה בהצלחה',
+  com_ui_bookmarks_delete_success: 'הסימניה נמחקה בהצלחה',
+  com_ui_bookmarks_create_error: 'אירעה שגיאה בעת יצירת הסימניה',
+  com_ui_bookmarks_update_error: 'אירעה שגיאה בעת עדכון הסימניה',
+  com_ui_bookmarks_delete_error: 'אירעה שגיאה בעת מחיקת הסימניה',
+  com_ui_bookmarks_add_to_conversation: 'הוסף לשיחה הנוכחית',
   com_auth_error_login: 'לא ניתן להתחבר עם המידע שסופק. אנא בדוק את האישורים שלך ונסה שוב.',
   com_auth_error_login_rl: 'יותר מדי ניסיונות כניסה בזמן קצר. בבקשה נסה שוב מאוחר יותר.',
   com_auth_error_login_ban: 'החשבון שלך נחסם באופן זמני עקב הפרות של השירות שלנו.',
@@ -368,6 +385,7 @@ export default {
   com_nav_theme_system: 'מערכת',
   com_nav_theme_dark: 'כהה',
   com_nav_theme_light: 'אור',
+  com_nav_font_size: 'גודל גופן',
   com_nav_user_name_display: 'הצג שם משתמש בהודעות',
   com_nav_save_drafts: 'שמיר את האפצה באותו מחשב',
   com_nav_clear_all_chats: 'נקה את כל השיחות',
@@ -390,6 +408,8 @@ export default {
   com_nav_help_faq: 'עזרה ושאלות נפוצות',
   com_nav_settings: 'הגדרות',
   com_nav_search_placeholder: 'חפש הודעות',
+  com_nav_info_bookmarks_rebuild:
+    'אם ספירת הסימניות שגויה, נא לבנות מחדש את המידע של הסמניות. הספירה תחושב מחדש והנתונים ישוחזרו למצב הנכון.',
   com_nav_setting_general: 'כללי',
   com_nav_setting_beta: 'תכונות ביטא',
   com_nav_setting_data: 'בקרות נתונים',
@@ -408,6 +428,10 @@ export const comparisons = {
   com_sidepanel_attach_files: {
     english: 'Attach Files',
     translated: 'צרף קבצים',
+  },
+  com_sidepanel_conversation_tags: {
+    english: 'Bookmarks',
+    translated: 'סימניות',
   },
   com_assistants_knowledge: {
     english: 'Knowledge',
@@ -759,6 +783,14 @@ export const comparisons = {
     english: 'Share link to chat',
     translated: 'שתף קישור בצ\'אט',
   },
+  com_ui_share_retrieve_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'אירעה שגיאה בעת מחיקת הקישור המשותף.',
+  },
+  com_ui_share_delete_error: {
+    english: 'There was an error deleting the shared link.',
+    translated: 'אירעה שגיאה בעת מחיקת הקישור המשותף.',
+  },
   com_ui_share_error: {
     english: 'There was an error sharing the chat link',
     translated: 'אירעה שגיאה בעת שיתוף קישור הצ\'אט',
@@ -831,6 +863,62 @@ export const comparisons = {
   com_ui_connect: {
     english: 'Connect',
     translated: 'התחבר',
+  },
+  com_ui_bookmarks: {
+    english: 'Bookmarks',
+    translated: 'סימניות',
+  },
+  com_ui_bookmarks_rebuild: {
+    english: 'Rebuild',
+    translated: 'בנה מחדש',
+  },
+  com_ui_bookmarks_new: {
+    english: 'New Bookmark',
+    translated: 'סימניה חדשה',
+  },
+  com_ui_bookmark_delete_confirm: {
+    english: 'Are you sure you want to delete this bookmark?',
+    translated: 'האם אתה בטוח שברצונך למחו את הסימניה הזו?',
+  },
+  com_ui_bookmarks_title: {
+    english: 'Title',
+    translated: 'כותרת',
+  },
+  com_ui_bookmarks_count: {
+    english: 'Count',
+    translated: 'ספירה',
+  },
+  com_ui_bookmarks_description: {
+    english: 'Description',
+    translated: 'תיאור',
+  },
+  com_ui_bookmarks_create_success: {
+    english: 'Bookmark created successfully',
+    translated: 'הסימניה נוצרה בהצלחה',
+  },
+  com_ui_bookmarks_update_success: {
+    english: 'Bookmark updated successfully',
+    translated: 'הסימניה עודכנה בהצלחה',
+  },
+  com_ui_bookmarks_delete_success: {
+    english: 'Bookmark deleted successfully',
+    translated: 'הסימניה נמחקה בהצלחה',
+  },
+  com_ui_bookmarks_create_error: {
+    english: 'There was an error creating the bookmark',
+    translated: 'אירעה שגיאה בעת יצירת הסימניה',
+  },
+  com_ui_bookmarks_update_error: {
+    english: 'There was an error updating the bookmark',
+    translated: 'אירעה שגיאה בעת עדכון הסימניה',
+  },
+  com_ui_bookmarks_delete_error: {
+    english: 'There was an error deleting the bookmark',
+    translated: 'אירעה שגיאה בעת מחיקת הסימניה',
+  },
+  com_ui_bookmarks_add_to_conversation: {
+    english: 'Add to current conversation',
+    translated: 'הוסף לשיחה הנוכחית',
   },
   com_auth_error_login: {
     english:
@@ -1847,6 +1935,12 @@ export const comparisons = {
   com_nav_search_placeholder: {
     english: 'Search messages',
     translated: 'חפש הודעות',
+  },
+  com_nav_info_bookmarks_rebuild: {
+    english:
+      'If the bookmark count is incorrect, please rebuild the bookmark information. The bookmark count will be recalculated and the data will be restored to its correct state.',
+    translated:
+      'אם ספירת הסימניות שגויה, נא לבנות מחדש את המידע של הסמניות. הספירה תחושב מחדש והנתונים ישוחזרו למצב הנכון.',
   },
   com_nav_setting_general: {
     english: 'General',

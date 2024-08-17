@@ -18,32 +18,53 @@ const staticAtoms = {
   showPopover: atom<boolean>({ key: 'showPopover', default: false }),
 };
 
-// Atoms with localStorage
 const localStorageAtoms = {
+  // General settings
   autoScroll: atomWithLocalStorage('autoScroll', false),
-  showCode: atomWithLocalStorage('showCode', false),
   hideSidePanel: atomWithLocalStorage('hideSidePanel', false),
-  modularChat: atomWithLocalStorage('modularChat', true),
-  LaTeXParsing: atomWithLocalStorage('LaTeXParsing', true),
-  UsernameDisplay: atomWithLocalStorage('UsernameDisplay', true),
-  TextToSpeech: atomWithLocalStorage('textToSpeech', true),
-  automaticPlayback: atomWithLocalStorage('automaticPlayback', false),
+  fontSize: atomWithLocalStorage('fontSize', 'text-base'),
+
+  // Messages settings
   enterToSend: atomWithLocalStorage('enterToSend', true),
-  SpeechToText: atomWithLocalStorage('speechToText', true),
-  conversationMode: atomWithLocalStorage('conversationMode', false),
-  advancedMode: atomWithLocalStorage('advancedMode', false),
-  autoSendText: atomWithLocalStorage('autoSendText', false),
-  autoTranscribeAudio: atomWithLocalStorage('autoTranscribeAudio', false),
-  decibelValue: atomWithLocalStorage('decibelValue', -45),
-  endpointSTT: atomWithLocalStorage('endpointSTT', 'browser'),
-  endpointTTS: atomWithLocalStorage('endpointTTS', 'browser'),
-  cacheTTS: atomWithLocalStorage('cacheTTS', true),
-  voice: atomWithLocalStorage('voice', ''),
+  chatDirection: atomWithLocalStorage('chatDirection', 'LTR'),
+  showCode: atomWithLocalStorage('showCode', false),
+  saveDrafts: atomWithLocalStorage('saveDrafts', true),
   forkSetting: atomWithLocalStorage('forkSetting', ''),
   splitAtTarget: atomWithLocalStorage('splitAtTarget', false),
+
   rememberForkOption: atomWithLocalStorage('rememberForkOption', true),
+
+  // Beta features settings
+  modularChat: atomWithLocalStorage('modularChat', true),
+  LaTeXParsing: atomWithLocalStorage('LaTeXParsing', true),
+
+  // Commands settings
+  atCommand: atomWithLocalStorage('atCommand', true),
+  plusCommand: atomWithLocalStorage('plusCommand', true),
+  slashCommand: atomWithLocalStorage('slashCommand', true),
+
+  // Speech settings
+  conversationMode: atomWithLocalStorage('conversationMode', false),
+  advancedMode: atomWithLocalStorage('advancedMode', false),
+
+  speechToText: atomWithLocalStorage('speechToText', true),
+  engineSTT: atomWithLocalStorage('engineSTT', 'browser'),
+  languageSTT: atomWithLocalStorage('languageSTT', ''),
+  autoTranscribeAudio: atomWithLocalStorage('autoTranscribeAudio', false),
+  decibelValue: atomWithLocalStorage('decibelValue', -45),
+  autoSendText: atomWithLocalStorage('autoSendText', -1),
+
+  textToSpeech: atomWithLocalStorage('textToSpeech', true),
+  engineTTS: atomWithLocalStorage('engineTTS', 'browser'),
+  voice: atomWithLocalStorage<string | undefined>('voice', undefined),
+  cloudBrowserVoices: atomWithLocalStorage('cloudBrowserVoices', false),
+  languageTTS: atomWithLocalStorage('languageTTS', ''),
+  automaticPlayback: atomWithLocalStorage('automaticPlayback', false),
   playbackRate: atomWithLocalStorage<number | null>('playbackRate', null),
-  saveDrafts: atomWithLocalStorage('saveDrafts', false),
+  cacheTTS: atomWithLocalStorage('cacheTTS', true),
+
+  // Account settings
+  UsernameDisplay: atomWithLocalStorage('UsernameDisplay', true),
 };
 
 export default { ...staticAtoms, ...localStorageAtoms };

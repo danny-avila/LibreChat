@@ -18,7 +18,7 @@ export default function NoPromptGroup() {
               navigate('/d/prompts');
             }}
           >
-            {localize('com_ui_back_to_var', localize('com_ui_prompts'))}
+            {localize('com_ui_back_to_prompts')}
           </Button>
         </div>
       </div>

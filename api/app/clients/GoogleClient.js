@@ -13,13 +13,20 @@ const {
   endpointSettings,
   EModelEndpoint,
   VisionModes,
+  Constants,
   AuthKeys,
 } = require('librechat-data-provider');
 const { encodeAndFormat } = require('~/server/services/Files/images');
-const { formatMessage, createContextHandlers } = require('./prompts');
 const { getModelMaxTokens } = require('~/utils');
-const BaseClient = require('./BaseClient');
+const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
+const {
+  formatMessage,
+  createContextHandlers,
+  titleInstruction,
+  truncateText,
+} = require('./prompts');
+const BaseClient = require('./BaseClient');
 
 const loc = 'us-central1';
 const publisher = 'google';
@@ -591,12 +598,16 @@ class GoogleClient extends BaseClient {
   createLLM(clientOptions) {
     const model = clientOptions.modelName ?? clientOptions.model;
     if (this.project_id && this.isTextModel) {
+      logger.debug('Creating Google VertexAI client');
       return new GoogleVertexAI(clientOptions);
     } else if (this.project_id && this.isChatModel) {
+      logger.debug('Creating Chat Google VertexAI client');
       return new ChatGoogleVertexAI(clientOptions);
     } else if (this.project_id) {
+      logger.debug('Creating VertexAI client');
       return new ChatVertexAI(clientOptions);
     } else if (model.includes('1.5')) {
+      logger.debug('Creating GenAI client');
       return new GenAI(this.apiKey).getGenerativeModel(
         {
           ...clientOptions,
@@ -606,12 +617,14 @@ class GoogleClient extends BaseClient {
       );
     }
 
+    logger.debug('Creating Chat Google Generative AI client');
     return new ChatGoogleGenerativeAI({ ...clientOptions, apiKey: this.apiKey });
   }
 
   async getCompletion(_payload, options = {}) {
-    const { onProgress, abortController } = options;
     const { parameters, instances } = _payload;
+    const { onProgress, abortController } = options;
+    const streamRate = this.options.streamRate ?? Constants.DEFAULT_STREAM_RATE;
     const { messages: _messages, context, examples: _examples } = instances?.[0] ?? {};
 
     let examples;
@@ -664,6 +677,102 @@ class GoogleClient extends BaseClient {
 
     const modelName = clientOptions.modelName ?? clientOptions.model ?? '';
     if (modelName?.includes('1.5') && !this.project_id) {
+      const client = model;
+      const requestOptions = {
+        contents: _payload,
+      };
+
+      if (this.options?.promptPrefix?.length) {
+        requestOptions.systemInstruction = {
+          parts: [
+            {
+              text: this.options.promptPrefix,
+            },
+          ],
+        };
+      }
+
+      requestOptions.safetySettings = _payload.safetySettings;
+
+      const delay = modelName.includes('flash') ? 8 : 14;
+      const result = await client.generateContentStream(requestOptions);
+      for await (const chunk of result.stream) {
+        const chunkText = chunk.text();
+        await this.generateTextStream(chunkText, onProgress, {
+          delay,
+        });
+        reply += chunkText;
+        await sleep(streamRate);
+      }
+      return reply;
+    }
+
+    const stream = await model.stream(messages, {
+      signal: abortController.signal,
+      timeout: 7000,
+      safetySettings: _payload.safetySettings,
+    });
+
+    let delay = this.options.streamRate || 8;
+
+    if (!this.options.streamRate) {
+      if (this.isGenerativeModel) {
+        delay = 12;
+      }
+      if (modelName.includes('flash')) {
+        delay = 5;
+      }
+    }
+
+    for await (const chunk of stream) {
+      const chunkText = chunk?.content ?? chunk;
+      await this.generateTextStream(chunkText, onProgress, {
+        delay,
+      });
+      reply += chunkText;
+    }
+
+    return reply;
+  }
+
+  /**
+   * Stripped-down logic for generating a title. This uses the non-streaming APIs, since the user does not see titles streaming
+   */
+  async titleChatCompletion(_payload, options = {}) {
+    const { abortController } = options;
+    const { parameters, instances } = _payload;
+    const { messages: _messages, examples: _examples } = instances?.[0] ?? {};
+
+    let clientOptions = { ...parameters, maxRetries: 2 };
+
+    logger.debug('Initialized title client options');
+
+    if (this.project_id) {
+      clientOptions['authOptions'] = {
+        credentials: {
+          ...this.serviceKey,
+        },
+        projectId: this.project_id,
+      };
+    }
+
+    if (!parameters) {
+      clientOptions = { ...clientOptions, ...this.modelOptions };
+    }
+
+    if (this.isGenerativeModel && !this.project_id) {
+      clientOptions.modelName = clientOptions.model;
+      delete clientOptions.model;
+    }
+
+    const model = this.createLLM(clientOptions);
+
+    let reply = '';
+    const messages = this.isTextModel ? _payload.trim() : _messages;
+
+    const modelName = clientOptions.modelName ?? clientOptions.model ?? '';
+    if (modelName?.includes('1.5') && !this.project_id) {
+      logger.debug('Identified titling model as 1.5 version');
       /** @type {GenerativeModel} */
       const client = model;
       const requestOptions = {
@@ -683,38 +792,64 @@ class GoogleClient extends BaseClient {
       const safetySettings = _payload.safetySettings;
       requestOptions.safetySettings = safetySettings;
 
-      const delay = modelName.includes('flash') ? 8 : 14;
-      const result = await client.generateContentStream(requestOptions);
-      for await (const chunk of result.stream) {
-        const chunkText = chunk.text();
-        await this.generateTextStream(chunkText, onProgress, {
-          delay,
-        });
-        reply += chunkText;
-      }
+      const result = await client.generateContent(requestOptions);
+
+      reply = result.response?.text();
+
+      return reply;
+    } else {
+      logger.debug('Beginning titling');
+      const safetySettings = _payload.safetySettings;
+
+      const titleResponse = await model.invoke(messages, {
+        signal: abortController.signal,
+        timeout: 7000,
+        safetySettings: safetySettings,
+      });
+
+      reply = titleResponse.content;
+
       return reply;
     }
+  }
 
-    const safetySettings = _payload.safetySettings;
-    const stream = await model.stream(messages, {
-      signal: abortController.signal,
-      timeout: 7000,
-      safetySettings: safetySettings,
-    });
+  async titleConvo({ text, responseText = '' }) {
+    let title = 'New Chat';
+    const convo = `||>User:
+"${truncateText(text)}"
+||>Response:
+"${JSON.stringify(truncateText(responseText))}"`;
 
-    let delay = this.isGenerativeModel ? 12 : 8;
-    if (modelName.includes('flash')) {
-      delay = 5;
+    let { prompt: payload } = await this.buildMessages([
+      {
+        text: `Please generate ${titleInstruction}
+
+    ${convo}
+    
+    ||>Title:`,
+        isCreatedByUser: true,
+        author: this.userLabel,
+      },
+    ]);
+
+    if (this.isVisionModel) {
+      logger.warn(
+        `Current vision model does not support titling without an attachment; falling back to default model ${settings.model.default}`,
+      );
+
+      payload.parameters = { ...payload.parameters, model: settings.model.default };
     }
-    for await (const chunk of stream) {
-      const chunkText = chunk?.content ?? chunk;
-      await this.generateTextStream(chunkText, onProgress, {
-        delay,
+
+    try {
+      title = await this.titleChatCompletion(payload, {
+        abortController: new AbortController(),
+        onProgress: () => {},
       });
-      reply += chunkText;
+    } catch (e) {
+      logger.error('[GoogleClient] There was an issue generating the title', e);
     }
-
-    return reply;
+    logger.debug(`Title response: ${title}`);
+    return title;
   }
 
   getSaveOptions() {
@@ -733,36 +868,34 @@ class GoogleClient extends BaseClient {
   }
 
   async sendCompletion(payload, opts = {}) {
-    const modelName = payload.parameters?.model;
-
-    if (modelName && modelName.toLowerCase().includes('gemini')) {
-      const safetySettings = [
-        {
-          category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-          threshold:
-            process.env.GOOGLE_SAFETY_SEXUALLY_EXPLICIT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
-        },
-        {
-          category: 'HARM_CATEGORY_HATE_SPEECH',
-          threshold: process.env.GOOGLE_SAFETY_HATE_SPEECH || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
-        },
-        {
-          category: 'HARM_CATEGORY_HARASSMENT',
-          threshold: process.env.GOOGLE_SAFETY_HARASSMENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
-        },
-        {
-          category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
-          threshold:
-            process.env.GOOGLE_SAFETY_DANGEROUS_CONTENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
-        },
-      ];
-
-      payload.safetySettings = safetySettings;
-    }
+    payload.safetySettings = this.getSafetySettings();
 
     let reply = '';
     reply = await this.getCompletion(payload, opts);
     return reply.trim();
+  }
+
+  getSafetySettings() {
+    return [
+      {
+        category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+        threshold:
+          process.env.GOOGLE_SAFETY_SEXUALLY_EXPLICIT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+      },
+      {
+        category: 'HARM_CATEGORY_HATE_SPEECH',
+        threshold: process.env.GOOGLE_SAFETY_HATE_SPEECH || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+      },
+      {
+        category: 'HARM_CATEGORY_HARASSMENT',
+        threshold: process.env.GOOGLE_SAFETY_HARASSMENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+      },
+      {
+        category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
+        threshold:
+          process.env.GOOGLE_SAFETY_DANGEROUS_CONTENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+      },
+    ];
   }
 
   /* TO-DO: Handle tokens with Google tokenization NOTE: these are required */

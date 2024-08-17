@@ -1,4 +1,5 @@
 import type { TMessageProps } from '~/common';
+import { cn } from '~/utils';
 
 type TSiblingSwitchProps = Pick<TMessageProps, 'siblingIdx' | 'siblingCount' | 'setSiblingIdx'>;
 
@@ -24,7 +25,10 @@ export default function SiblingSwitch({
   return siblingCount > 1 ? (
     <div className="visible flex items-center justify-center gap-1 self-center pt-0 text-xs">
       <button
-        className="disabled:text-gray-300 dark:text-white dark:disabled:text-gray-400"
+        className={cn(
+          'hover-button rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-500 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
+        )}
+        type="button"
         onClick={previous}
         disabled={siblingIdx == 0}
       >
@@ -35,7 +39,7 @@ export default function SiblingSwitch({
           viewBox="0 0 24 24"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className="h-3 w-3"
+          className="h-4 w-4"
           height="1em"
           width="1em"
           xmlns="http://www.w3.org/2000/svg"
@@ -47,7 +51,10 @@ export default function SiblingSwitch({
         {siblingIdx + 1} / {siblingCount}
       </span>
       <button
-        className="disabled:text-gray-300 dark:text-white dark:disabled:text-gray-400"
+        className={cn(
+          'hover-button rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-500 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
+        )}
+        type="button"
         onClick={next}
         disabled={siblingIdx == siblingCount - 1}
       >
@@ -58,7 +65,7 @@ export default function SiblingSwitch({
           viewBox="0 0 24 24"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className="h-3 w-3"
+          className="h-4 w-4"
           height="1em"
           width="1em"
           xmlns="http://www.w3.org/2000/svg"
