@@ -242,7 +242,7 @@ class AnthropicClient extends BaseClient {
    * @param {AnthropicStreamUsage} [params.usage]
    * @param {string} [params.model]
    * @param {string} [params.context='message']
-   * @returns {Promise<{ promptTokens: number, completionTokens: number } | undefined>}
+   * @returns {Promise<void>}
    */
   async recordTokenUsage({ promptTokens, completionTokens, usage, model, context = 'message' }) {
     if (usage != null && usage?.input_tokens != null) {
@@ -264,7 +264,7 @@ class AnthropicClient extends BaseClient {
         },
       );
 
-      return { promptTokens: input + write + read, completionTokens };
+      return;
     }
 
     await spendTokens(

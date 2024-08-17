@@ -68,7 +68,7 @@ class BaseClient {
    * If a correction to the token usage is needed, the method should return an object with the corrected token counts.
    * @param {number} promptTokens
    * @param {number} completionTokens
-   * @returns {Promise<void | undefined> | Promise<{ promptTokens: number, completionTokens: number }>}
+   * @returns {Promise<void>}
    */
   async recordTokenUsage({ promptTokens, completionTokens }) {
     logger.debug('`[BaseClient] recordTokenUsage` not implemented.', {
@@ -551,7 +551,7 @@ class BaseClient {
       let completionTokens;
 
       const usage = this.getStreamUsage != null ? this.getStreamUsage() : null;
-      if (usage != null) {
+      if (usage != null && Number(usage.output_tokens) > 0) {
         responseMessage.tokenCount = usage.output_tokens;
         completionTokens = responseMessage.tokenCount;
       } else {
@@ -559,16 +559,7 @@ class BaseClient {
         completionTokens = this.getTokenCount(completion);
       }
 
-      const correctedUsage = await this.recordTokenUsage({ promptTokens, completionTokens, usage });
-
-      if (correctedUsage?.promptTokens > 0 && correctedUsage?.completionTokens > 0) {
-        responseMessage.tokenCount = correctedUsage.completionTokens;
-        await this.userMessagePromise;
-        await this.updateMessageInDatabase({
-          messageId: userMessage.messageId,
-          tokenCount: correctedUsage.promptTokens,
-        });
-      }
+      await this.recordTokenUsage({ promptTokens, completionTokens, usage });
     }
 
     if (this.userMessagePromise) {
