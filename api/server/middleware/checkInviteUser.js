@@ -12,7 +12,7 @@ async function checkInviteUser(req, res, next) {
   try {
     const invite = await getInvite(token, req.body.email);
 
-    if (!invite) {
+    if (!invite || invite.error === true) {
       return res.status(400).json({ message: 'Invalid invite token' });
     }
 

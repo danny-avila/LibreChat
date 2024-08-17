@@ -61,7 +61,7 @@ module.exports = {
       return invite;
     } catch (error) {
       logger.error('[getInvite] Error getting invite', error);
-      return { message: 'Error getting invite' };
+      return { error: true, message: error.message };
     }
   },
 };
