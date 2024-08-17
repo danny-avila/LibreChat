@@ -27,7 +27,7 @@ const {
 } = require('./Message');
 const { getConvoTitle, getConvo, saveConvo, deleteConvos } = require('./Conversation');
 const { getPreset, getPresets, savePreset, deletePresets } = require('./Preset');
-const { createToken, findToken, deleteTokens } = require('./Token');
+const { createToken, findToken, updateToken, deleteTokens } = require('./Token');
 const Session = require('./Session');
 const Balance = require('./Balance');
 const User = require('./User');
@@ -70,6 +70,7 @@ module.exports = {
 
   createToken,
   findToken,
+  updateToken,
   deleteTokens,
 
   User,

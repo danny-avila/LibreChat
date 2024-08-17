@@ -22,7 +22,7 @@ const Registration: React.FC = () => {
   const password = watch('password');
 
   const [errorMessage, setErrorMessage] = useState<string>('');
-  const [isSubmitting, setIsSubmitting] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [countdown, setCountdown] = useState<number>(3);
 
   const location = useLocation();
@@ -51,6 +51,7 @@ const Registration: React.FC = () => {
     onError: (error: unknown) => {
       setIsSubmitting(false);
       if ((error as TError).response?.data?.message) {
+        console.log((error as TError).response);
         setErrorMessage((error as TError).response?.data?.message ?? '');
       }
     },
@@ -116,7 +117,7 @@ const Registration: React.FC = () => {
             aria-label="Registration form"
             method="POST"
             onSubmit={handleSubmit((data: TRegisterUser) =>
-              registerUser.mutate({ ...data, token }),
+              registerUser.mutate({ ...data, token: token ?? undefined }),
             )}
           >
             {renderInput('name', 'com_auth_full_name', 'text', {

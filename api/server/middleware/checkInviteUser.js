@@ -20,7 +20,7 @@ async function checkInviteUser(req, res, next) {
     req.invite = invite;
     next();
   } catch (error) {
-    return res.status(400).json({ message: error.message });
+    return res.status(429).json({ message: error.message });
   }
 }
 

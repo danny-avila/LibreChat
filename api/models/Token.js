@@ -70,7 +70,7 @@ function updateToken(query, updateData) {
  * @returns {Promise<Object>} The result of the delete operation.
  * @throws Will throw an error if the delete operation fails.
  */
-function deleteTokens(query) {
+async function deleteTokens(query) {
   return Token.deleteMany({
     $or: [{ userId: query.userId }, { token: query.token }, { email: query.email }],
   })
@@ -83,6 +83,7 @@ function deleteTokens(query) {
       throw error;
     });
 }
+
 module.exports = {
   createToken,
   findToken,
