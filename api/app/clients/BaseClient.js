@@ -550,9 +550,23 @@ class BaseClient {
     ) {
       let completionTokens;
 
-      /** @type {StreamUsage | null} */
+      /**
+       * Metadata about input/output costs for the current message.
+       *
+       * Stream usage should only be used for token calculation if files are
+       * being resent with every message (default behavior; or `false`, allow with no attachments),
+       * and the `promptPrefix` (custom instructions) is not set, as the legacy token
+       * estimations would be more accurate in that case.
+       *
+       * TODO: included system messages in the `orderedMessages` accounting, potentially as a
+       * separate message in the UI. ChatGPT does this through "hidden" system messages.
+       * @type {StreamUsage | null} */
       const usage =
-        this.getStreamUsage != null && this.calculateCurrentTokenCount != null
+        (this.options.resendFiles ||
+          (!this.options.resendFiles && !this.options.attachments?.length)) &&
+        !this.options.promptPrefix &&
+        this.getStreamUsage != null &&
+        this.calculateCurrentTokenCount != null
           ? this.getStreamUsage()
           : null;
 

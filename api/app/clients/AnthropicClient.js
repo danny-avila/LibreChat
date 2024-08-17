@@ -169,11 +169,15 @@ class AnthropicClient extends BaseClient {
       options.baseURL = this.options.reverseProxyUrl;
     }
 
-    if (requestOptions?.model && requestOptions.model.includes('claude-3-5-sonnet')) {
+    if (
+      this.supportsCacheControl &&
+      requestOptions?.model &&
+      requestOptions.model.includes('claude-3-5-sonnet')
+    ) {
       options.defaultHeaders = {
         'anthropic-beta': 'max-tokens-3-5-sonnet-2024-07-15,prompt-caching-2024-07-31',
       };
-    } else if (this.supportsCacheControl === true) {
+    } else if (this.supportsCacheControl) {
       options.defaultHeaders = {
         'anthropic-beta': 'prompt-caching-2024-07-31',
       };
@@ -727,7 +731,7 @@ class AnthropicClient extends BaseClient {
         {
           type: 'text',
           text: this.systemMessage,
-          cache_control: 'ephemeral',
+          cache_control: { type: 'ephemeral' },
         },
       ];
     } else if (this.systemMessage) {
