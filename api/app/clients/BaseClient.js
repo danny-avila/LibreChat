@@ -551,47 +551,16 @@ class BaseClient {
       let completionTokens;
 
       /**
-       * Metadata about input/output costs for the current message.
-       *
-       * Stream usage should only be used for token calculation if files are
-       * being resent with every message (default behavior; or `false`, allow with no attachments),
-       * and the `promptPrefix` (custom instructions) is not set, as the legacy token
-       * estimations would be more accurate in that case.
-       *
-       * TODO: included system messages in the `orderedMessages` accounting, potentially as a
-       * separate message in the UI. ChatGPT does this through "hidden" system messages.
+       * Metadata about input/output costs for the current message. The client
+       * should provide a function to get the current stream usage metadata; if not,
+       * use the legacy token estimations.
        * @type {StreamUsage | null} */
-      const usage =
-        (this.options.resendFiles ||
-          (!this.options.resendFiles && !this.options.attachments?.length)) &&
-        !this.options.promptPrefix &&
-        this.getStreamUsage != null &&
-        this.calculateCurrentTokenCount != null
-          ? this.getStreamUsage()
-          : null;
+      const usage = this.getStreamUsage != null ? this.getStreamUsage() : null;
 
-      if (usage != null && Number(usage.input_tokens) > 0 && Number(usage.output_tokens) > 0) {
+      if (usage != null && Number(usage.output_tokens) > 0) {
         responseMessage.tokenCount = usage.output_tokens;
         completionTokens = responseMessage.tokenCount;
-        const userMessageTokenCount = this.calculateCurrentTokenCount({
-          tokenCountMap,
-          currentMessageId: userMessage.messageId,
-          usage,
-        });
-        userMessage.tokenCount = userMessageTokenCount;
-        /* Note: `AskController` saves the user message, so we update the count of its `userMessage` reference */
-        if (typeof opts?.getReqData === 'function') {
-          opts.getReqData({
-            userMessage,
-          });
-        }
-        /* Note: we update the user message to be sure it gets the calculated token count;
-        though `AskController` saves the user message, EditController does not */
-        await this.userMessagePromise;
-        await this.updateMessageInDatabase({
-          messageId: userMessage.messageId,
-          tokenCount: userMessageTokenCount,
-        });
+        await this.updateUserMessageTokenCount({ usage, tokenCountMap, userMessage, opts });
       } else {
         responseMessage.tokenCount = this.getTokenCountForResponse(responseMessage);
         completionTokens = this.getTokenCount(completion);
@@ -616,6 +585,66 @@ class BaseClient {
     );
     delete responseMessage.tokenCount;
     return responseMessage;
+  }
+
+  /**
+   * Stream usage should only be used for user message token count re-calculation if:
+   * - The stream usage is available, with input tokens greater than 0,
+   * - the client provides a function to calculate the current token count,
+   * - files are being resent with every message (default behavior; or if `false`, with no attachments),
+   * - the `promptPrefix` (custom instructions) is not set.
+   *
+   * In these cases, the legacy token estimations would be more accurate.
+   *
+   * TODO: included system messages in the `orderedMessages` accounting, potentially as a
+   * separate message in the UI. ChatGPT does this through "hidden" system messages.
+   * @param {object} params
+   * @param {StreamUsage} params.usage
+   * @param {Record<string, number>} params.tokenCountMap
+   * @param {TMessage} params.userMessage
+   * @param {object} params.opts
+   */
+  async updateUserMessageTokenCount({ usage, tokenCountMap, userMessage, opts }) {
+    /** @type {boolean} */
+    const shouldUpdateCount =
+      this.calculateCurrentTokenCount != null &&
+      Number(usage.input_tokens) > 0 &&
+      (this.options.resendFiles ||
+        (!this.options.resendFiles && !this.options.attachments?.length)) &&
+      !this.options.promptPrefix;
+
+    if (!shouldUpdateCount) {
+      return;
+    }
+
+    const userMessageTokenCount = this.calculateCurrentTokenCount({
+      currentMessageId: userMessage.messageId,
+      tokenCountMap,
+      usage,
+    });
+
+    if (userMessageTokenCount === userMessage.tokenCount) {
+      return;
+    }
+
+    userMessage.tokenCount = userMessageTokenCount;
+    /*
+      Note: `AskController` saves the user message, so we update the count of its `userMessage` reference
+    */
+    if (typeof opts?.getReqData === 'function') {
+      opts.getReqData({
+        userMessage,
+      });
+    }
+    /*
+      Note: we update the user message to be sure it gets the calculated token count;
+      though `AskController` saves the user message, EditController does not
+    */
+    await this.userMessagePromise;
+    await this.updateMessageInDatabase({
+      messageId: userMessage.messageId,
+      tokenCount: userMessageTokenCount,
+    });
   }
 
   async loadHistory(conversationId, parentMessageId = null) {
