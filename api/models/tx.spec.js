@@ -1,4 +1,10 @@
-const { getValueKey, getMultiplier, defaultRate, tokenValues } = require('./tx');
+const {
+  getValueKey,
+  getMultiplier,
+  getCacheMultiplier,
+  defaultRate,
+  tokenValues,
+} = require('./tx');
 
 describe('getValueKey', () => {
   it('should return "16k" for model name containing "gpt-3.5-turbo-16k"', () => {
@@ -241,5 +247,78 @@ describe('AWS Bedrock Model Tests', () => {
       return multiplier === tokenValues[model].completion;
     });
     expect(results.every(Boolean)).toBe(true);
+  });
+});
+
+describe('getCacheMultiplier', () => {
+  it('should return the correct cache multiplier for a given valueKey and cacheType', () => {
+    expect(getCacheMultiplier({ valueKey: 'claude-3-5-sonnet', cacheType: 'write' })).toBe(3.75);
+    expect(getCacheMultiplier({ valueKey: 'claude-3-5-sonnet', cacheType: 'read' })).toBe(0.3);
+    expect(getCacheMultiplier({ valueKey: 'claude-3-haiku', cacheType: 'write' })).toBe(0.3);
+    expect(getCacheMultiplier({ valueKey: 'claude-3-haiku', cacheType: 'read' })).toBe(0.03);
+  });
+
+  it('should return null if cacheType is provided but not found in cacheTokenValues', () => {
+    expect(
+      getCacheMultiplier({ valueKey: 'claude-3-5-sonnet', cacheType: 'unknownType' }),
+    ).toBeNull();
+  });
+
+  it('should derive the valueKey from the model if not provided', () => {
+    expect(getCacheMultiplier({ cacheType: 'write', model: 'claude-3-5-sonnet-20240620' })).toBe(
+      3.75,
+    );
+    expect(getCacheMultiplier({ cacheType: 'read', model: 'claude-3-haiku-20240307' })).toBe(0.03);
+  });
+
+  it('should return null if only model or cacheType is missing', () => {
+    expect(getCacheMultiplier({ cacheType: 'write' })).toBeNull();
+    expect(getCacheMultiplier({ model: 'claude-3-5-sonnet' })).toBeNull();
+  });
+
+  it('should return null if derived valueKey does not match any known patterns', () => {
+    expect(getCacheMultiplier({ cacheType: 'write', model: 'gpt-4-some-other-info' })).toBeNull();
+  });
+
+  it('should handle endpointTokenConfig if provided', () => {
+    const endpointTokenConfig = {
+      'custom-model': {
+        write: 5,
+        read: 1,
+      },
+    };
+    expect(
+      getCacheMultiplier({ model: 'custom-model', cacheType: 'write', endpointTokenConfig }),
+    ).toBe(5);
+    expect(
+      getCacheMultiplier({ model: 'custom-model', cacheType: 'read', endpointTokenConfig }),
+    ).toBe(1);
+  });
+
+  it('should return null if model is not found in endpointTokenConfig', () => {
+    const endpointTokenConfig = {
+      'custom-model': {
+        write: 5,
+        read: 1,
+      },
+    };
+    expect(
+      getCacheMultiplier({ model: 'unknown-model', cacheType: 'write', endpointTokenConfig }),
+    ).toBeNull();
+  });
+
+  it('should handle models with "bedrock/" prefix', () => {
+    expect(
+      getCacheMultiplier({
+        model: 'bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0',
+        cacheType: 'write',
+      }),
+    ).toBe(3.75);
+    expect(
+      getCacheMultiplier({
+        model: 'bedrock/anthropic.claude-3-haiku-20240307-v1:0',
+        cacheType: 'read',
+      }),
+    ).toBe(0.03);
   });
 });
