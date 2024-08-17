@@ -46,7 +46,7 @@ const SearchContent = ({ message }: { message: TMessage }) => {
       )}
       dir="auto"
     >
-      <MarkdownLite content={message.text ?? ''} />
+      <MarkdownLite content={message.text || ''} />
     </div>
   );
 };

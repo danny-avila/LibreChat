@@ -21,7 +21,7 @@ export const getLatestText = (message?: TMessage | null, includeIndex?: boolean)
   if (message.content?.length) {
     for (let i = message.content.length - 1; i >= 0; i--) {
       const part = message.content[i];
-      if (part.type === ContentTypes.TEXT && part[ContentTypes.TEXT]?.value?.length > 0) {
+      if (part.type === ContentTypes.TEXT && part[ContentTypes.TEXT].value.length > 0) {
         const text = part[ContentTypes.TEXT].value;
         if (includeIndex) {
           return `${text}-${i}`;
@@ -45,10 +45,8 @@ export const getTextKey = (message?: TMessage | null, convoId?: string | null) =
 };
 
 export const scrollToEnd = () => {
-  setTimeout(() => {
-    const messagesEndElement = document.getElementById('messages-end');
-    if (messagesEndElement) {
-      messagesEndElement.scrollIntoView({ behavior: 'instant' });
-    }
-  }, 750);
+  const messagesEndElement = document.getElementById('messages-end');
+  if (messagesEndElement) {
+    messagesEndElement.scrollIntoView({ behavior: 'instant' });
+  }
 };

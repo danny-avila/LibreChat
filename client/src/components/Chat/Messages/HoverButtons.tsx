@@ -73,7 +73,15 @@ export default function HoverButtons({
 
   return (
     <div className="visible mt-0 flex justify-center gap-1 self-end text-gray-500 lg:justify-start">
-      {TextToSpeech && <MessageAudio index={index} message={message} isLast={isLast} />}
+      {TextToSpeech && (
+        <MessageAudio
+          index={index}
+          messageId={message.messageId}
+          content={message.content ?? message.text}
+          isLast={isLast}
+          className="hover-button rounded-md p-1 pl-0 text-gray-500 hover:bg-gray-100 hover:text-gray-500 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible"
+        />
+      )}
       {isEditableEndpoint && (
         <button
           className={cn(
@@ -128,7 +136,7 @@ export default function HoverButtons({
         forkingSupported={forkingSupported}
         latestMessage={latestMessage}
       />
-      {continueSupported ? (
+      {continueSupported === true ? (
         <button
           className={cn(
             'hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible',
