@@ -204,10 +204,17 @@ class AnthropicClient extends BaseClient {
    * @returns {number} The correct token count for the current message.
    */
   calculateCurrentTokenCount({ tokenCountMap, currentMessageId, usage }) {
-    const originalEstimate = tokenCountMap[currentMessageId];
+    const originalEstimate = tokenCountMap[currentMessageId] || 0;
+
+    if (!usage || typeof usage.input_tokens !== 'number') {
+      return originalEstimate;
+    }
 
     tokenCountMap[currentMessageId] = 0;
-    const totalTokensFromMap = Object.values(tokenCountMap).reduce((sum, count) => sum + count, 0);
+    const totalTokensFromMap = Object.values(tokenCountMap).reduce((sum, count) => {
+      const numCount = Number(count);
+      return sum + (isNaN(numCount) ? 0 : numCount);
+    }, 0);
     const totalInputTokens =
       (usage.input_tokens ?? 0) +
       (usage.cache_creation_input_tokens ?? 0) +
