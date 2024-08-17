@@ -1,9 +1,9 @@
 const {
+  defaultRate,
+  tokenValues,
   getValueKey,
   getMultiplier,
   getCacheMultiplier,
-  defaultRate,
-  tokenValues,
 } = require('./tx');
 
 describe('getValueKey', () => {
