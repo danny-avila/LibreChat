@@ -41,8 +41,20 @@ async function createToken(tokenData) {
  * @throws Will throw an error if the find operation fails.
  */
 function findToken(query) {
+  const conditions = [];
+
+  if (query.userId) {
+    conditions.push({ userId: query.userId });
+  }
+  if (query.token) {
+    conditions.push({ token: query.token });
+  }
+  if (query.email) {
+    conditions.push({ email: query.email });
+  }
+
   return Token.findOne({
-    $or: [{ userId: query.userId }, { token: query.token }, { email: query.email }],
+    $and: conditions,
   })
     .lean()
     .exec();
