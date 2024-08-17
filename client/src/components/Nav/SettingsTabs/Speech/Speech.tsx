@@ -1,12 +1,9 @@
+import { useRecoilState } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
+import { Lightbulb, Cog } from 'lucide-react';
 import { SettingsTabValues } from 'librechat-data-provider';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { useRecoilState } from 'recoil';
-import { Lightbulb, Cog } from 'lucide-react';
-import { useOnClickOutside, useMediaQuery } from '~/hooks';
-import store from '~/store';
-import { cn } from '~/utils';
-import ConversationModeSwitch from './ConversationModeSwitch';
+import { useGetCustomConfigSpeechQuery } from 'librechat-data-provider/react-query';
 import {
   CloudBrowserVoicesSwitch,
   AutomaticPlaybackSwitch,
@@ -24,7 +21,10 @@ import {
   EngineSTTDropdown,
   DecibelSelector,
 } from './STT';
-import { useGetCustomConfigSpeechQuery } from 'librechat-data-provider/react-query';
+import ConversationModeSwitch from './ConversationModeSwitch';
+import { useOnClickOutside, useMediaQuery } from '~/hooks';
+import { cn, logger } from '~/utils';
+import store from '~/store';
 
 function Speech() {
   const [confirmClear, setConfirmClear] = useState(false);
@@ -44,7 +44,7 @@ function Speech() {
   const [decibelValue, setDecibelValue] = useRecoilState(store.decibelValue);
   const [autoSendText, setAutoSendText] = useRecoilState(store.autoSendText);
   const [engineTTS, setEngineTTS] = useRecoilState<string>(store.engineTTS);
-  const [voice, setVoice] = useRecoilState<string>(store.voice);
+  const [voice, setVoice] = useRecoilState(store.voice);
   const [cloudBrowserVoices, setCloudBrowserVoices] = useRecoilState<boolean>(
     store.cloudBrowserVoices,
   );
@@ -53,7 +53,7 @@ function Speech() {
   const [playbackRate, setPlaybackRate] = useRecoilState(store.playbackRate);
 
   const updateSetting = useCallback(
-    (key, newValue) => {
+    (key: string, newValue: string | number) => {
       const settings = {
         sttExternal: { value: sttExternal, setFunc: setSttExternal },
         ttsExternal: { value: ttsExternal, setFunc: setTtsExternal },
@@ -75,7 +75,11 @@ function Speech() {
         playbackRate: { value: playbackRate, setFunc: setPlaybackRate },
       };
 
-      if (settings[key].value !== newValue || settings[key].value === newValue || !settings[key]) {
+      if (
+        (settings[key].value !== newValue || settings[key].value === newValue || !settings[key]) &&
+        settings[key].value === 'sttExternal' &&
+        settings[key].value === 'ttsExternal'
+      ) {
         return;
       }
 
@@ -131,8 +135,7 @@ function Speech() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
-  console.log(sttExternal);
-  console.log(ttsExternal);
+  logger.log({ sttExternal, ttsExternal });
 
   const contentRef = useRef(null);
   useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);

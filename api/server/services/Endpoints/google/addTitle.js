@@ -49,10 +49,14 @@ const addTitle = async (req, { text, response, client }) => {
 
   const title = await titleClient.titleConvo({ text, responseText: response?.text });
   await titleCache.set(key, title, 120000);
-  await saveConvo(req.user.id, {
-    conversationId: response.conversationId,
-    title,
-  });
+  await saveConvo(
+    req,
+    {
+      conversationId: response.conversationId,
+      title,
+    },
+    { context: 'api/server/services/Endpoints/google/addTitle.js' },
+  );
 };
 
 module.exports = addTitle;

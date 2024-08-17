@@ -8,6 +8,7 @@ const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { forkConversation } = require('~/server/utils/import/fork');
 const { importConversations } = require('~/server/utils/import');
 const { createImportLimiters } = require('~/server/middleware');
+const { updateTagsForConversation } = require('~/models/ConversationTag');
 const getLogStores = require('~/cache/getLogStores');
 const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
@@ -30,8 +31,14 @@ router.get('/', async (req, res) => {
     return res.status(400).json({ error: 'Invalid page size' });
   }
   const isArchived = req.query.isArchived === 'true';
+  let tags;
+  if (req.query.tags) {
+    tags = Array.isArray(req.query.tags) ? req.query.tags : [req.query.tags];
+  } else {
+    tags = undefined;
+  }
 
-  res.status(200).send(await getConvosByPage(req.user.id, pageNumber, pageSize, isArchived));
+  res.status(200).send(await getConvosByPage(req.user.id, pageNumber, pageSize, isArchived, tags));
 });
 
 router.get('/:conversationId', async (req, res) => {
@@ -104,7 +111,7 @@ router.post('/update', async (req, res) => {
   const update = req.body.arg;
 
   try {
-    const dbResponse = await saveConvo(req.user.id, update);
+    const dbResponse = await saveConvo(req, update, { context: 'POST /api/convos/update' });
     res.status(201).json(dbResponse);
   } catch (error) {
     logger.error('Error updating conversation', error);
@@ -164,6 +171,20 @@ router.post('/fork', async (req, res) => {
   } catch (error) {
     logger.error('Error forking conversation', error);
     res.status(500).send('Error forking conversation');
+  }
+});
+
+router.put('/tags/:conversationId', async (req, res) => {
+  try {
+    const conversationTags = await updateTagsForConversation(
+      req.user.id,
+      req.params.conversationId,
+      req.body.tags,
+    );
+    res.status(200).json(conversationTags);
+  } catch (error) {
+    logger.error('Error updating conversation tags', error);
+    res.status(500).send('Error updating conversation tags');
   }
 });
 

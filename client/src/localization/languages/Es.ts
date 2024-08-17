@@ -11,6 +11,7 @@ export default {
   com_sidepanel_hide_panel: 'Ocultar Panel',
   com_sidepanel_attach_files: 'Adjuntar Archivos',
   com_sidepanel_manage_files: 'Administrar Archivos',
+  com_sidepanel_conversation_tags: 'Marcadores',
   com_assistants_capabilities: 'Capacidades',
   com_assistants_knowledge: 'Conocimiento',
   com_assistants_knowledge_info:
@@ -170,6 +171,20 @@ export default {
     'La carga de "{0}" está tomando más tiempo del esperado. Espere mientras el archivo termina de indexarse para su recuperación.',
   com_ui_privacy_policy: 'Política de privacidad',
   com_ui_terms_of_service: 'Términos de servicio',
+  com_ui_bookmarks: 'Marcadores',
+  com_ui_bookmarks_rebuild: 'Reconstruir',
+  com_ui_bookmarks_new: 'Nuevo marcador',
+  com_ui_bookmark_delete_confirm: '¿Está seguro de que desea eliminar este marcador?',
+  com_ui_bookmarks_title: 'Título',
+  com_ui_bookmarks_count: 'Conteo',
+  com_ui_bookmarks_description: 'Descripción',
+  com_ui_bookmarks_create_success: 'Marcador creado con éxito',
+  com_ui_bookmarks_update_success: 'Marcador actualizado con éxito',
+  com_ui_bookmarks_delete_success: 'Marcador eliminado con éxito',
+  com_ui_bookmarks_create_error: 'Hubo un error al crear el marcador',
+  com_ui_bookmarks_update_error: 'Hubo un error al actualizar el marcador',
+  com_ui_bookmarks_delete_error: 'Hubo un error al eliminar el marcador',
+  com_ui_bookmarks_add_to_conversation: 'Agregar a la conversación actual',
   com_auth_error_login:
     'No se puede iniciar sesión con la información proporcionada. Verifique sus credenciales y vuelva a intentarlo.',
   com_auth_error_login_rl:
@@ -450,6 +465,7 @@ export default {
   com_nav_theme_system: 'Sistema',
   com_nav_theme_dark: 'Oscuro',
   com_nav_theme_light: 'Claro',
+  com_nav_font_size: 'Tamaño de fuente',
   com_nav_user_name_display: 'Mostrar nombre de usuario en los mensajes',
   com_nav_save_drafts: 'Guardar borradores localmente',
   com_nav_show_code: 'Mostrar siempre el código cuando se use el intérprete de código',
@@ -473,6 +489,8 @@ export default {
   com_nav_help_faq: 'Ayuda y preguntas frecuentes',
   com_nav_settings: 'Configuración',
   com_nav_search_placeholder: 'Buscar mensajes',
+  com_nav_info_bookmarks_rebuild:
+    'Si el conteo de marcadores es incorrecto, por favor reconstruya la información de los marcadores. El conteo de los marcadores se recalculará y los datos se restaurarán a su estado correcto.',
   com_nav_setting_general: 'General',
   com_nav_setting_beta: 'Funciones beta',
   com_nav_setting_data: 'Controles de datos',
@@ -630,6 +648,10 @@ export const comparisons = {
   com_sidepanel_manage_files: {
     english: 'Manage Files',
     translated: 'Administrar Archivos',
+  },
+  com_sidepanel_conversation_tags: {
+    english: 'Bookmarks',
+    translated: 'Marcadores',
   },
   com_assistants_capabilities: {
     english: 'Capabilities',
@@ -1225,6 +1247,62 @@ export const comparisons = {
   com_ui_terms_of_service: {
     english: 'Terms of service',
     translated: 'Términos de servicio',
+  },
+  com_ui_bookmarks: {
+    english: 'Bookmarks',
+    translated: 'Marcadores',
+  },
+  com_ui_bookmarks_rebuild: {
+    english: 'Rebuild',
+    translated: 'Reconstruir',
+  },
+  com_ui_bookmarks_new: {
+    english: 'New Bookmark',
+    translated: 'Nuevo marcador',
+  },
+  com_ui_bookmark_delete_confirm: {
+    english: 'Are you sure you want to delete this bookmark?',
+    translated: '¿Está seguro de que desea eliminar este marcador?',
+  },
+  com_ui_bookmarks_title: {
+    english: 'Title',
+    translated: 'Título',
+  },
+  com_ui_bookmarks_count: {
+    english: 'Count',
+    translated: 'Conteo',
+  },
+  com_ui_bookmarks_description: {
+    english: 'Description',
+    translated: 'Descripción',
+  },
+  com_ui_bookmarks_create_success: {
+    english: 'Bookmark created successfully',
+    translated: 'Marcador creado con éxito',
+  },
+  com_ui_bookmarks_update_success: {
+    english: 'Bookmark updated successfully',
+    translated: 'Marcador actualizado con éxito',
+  },
+  com_ui_bookmarks_delete_success: {
+    english: 'Bookmark deleted successfully',
+    translated: 'Marcador eliminado con éxito',
+  },
+  com_ui_bookmarks_create_error: {
+    english: 'There was an error creating the bookmark',
+    translated: 'Hubo un error al crear el marcador',
+  },
+  com_ui_bookmarks_update_error: {
+    english: 'There was an error updating the bookmark',
+    translated: 'Hubo un error al actualizar el marcador',
+  },
+  com_ui_bookmarks_delete_error: {
+    english: 'There was an error deleting the bookmark',
+    translated: 'Hubo un error al eliminar el marcador',
+  },
+  com_ui_bookmarks_add_to_conversation: {
+    english: 'Add to current conversation',
+    translated: 'Agregar a la conversación actual',
   },
   com_auth_error_login: {
     english:
@@ -2291,6 +2369,12 @@ export const comparisons = {
   com_nav_search_placeholder: {
     english: 'Search messages',
     translated: 'Buscar mensajes',
+  },
+  com_nav_info_bookmarks_rebuild: {
+    english:
+      'If the bookmark count is incorrect, please rebuild the bookmark information. The bookmark count will be recalculated and the data will be restored to its correct state.',
+    translated:
+      'Si el conteo de marcadores es incorrecto, por favor reconstruya la información de los marcadores. El conteo de los marcadores se recalculará y los datos se restaurarán a su estado correcto.',
   },
   com_nav_setting_general: {
     english: 'General',

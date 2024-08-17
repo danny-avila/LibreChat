@@ -8,7 +8,7 @@ import {
   useSetRecoilState,
   useRecoilCallback,
 } from 'recoil';
-import { LocalStorageKeys } from 'librechat-data-provider';
+import { LocalStorageKeys, Constants } from 'librechat-data-provider';
 import type { TMessage, TPreset, TConversation, TSubmission } from 'librechat-data-provider';
 import type { TOptionSettings, ExtendedFile } from '~/common';
 import { storeEndpointSettings, logger } from '~/utils';
@@ -27,6 +27,14 @@ const submissionKeysAtom = atom<(string | number)[]>({
 const latestMessageFamily = atomFamily<TMessage | null, string | number | null>({
   key: 'latestMessageByIndex',
   default: null,
+  effects: [
+    ({ onSet, node }) => {
+      onSet(async (newValue) => {
+        const key = Number(node.key.split(Constants.COMMON_DIVIDER)[1]);
+        logger.log('Recoil Effect: Setting latestMessage', { key, newValue });
+      });
+    },
+  ] as const,
 });
 
 const submissionByIndex = atomFamily<TSubmission | null, string | number>({
@@ -41,7 +49,7 @@ const latestMessageKeysSelector = selector<(string | number)[]>({
     return keys.filter((key) => get(latestMessageFamily(key)) !== null);
   },
   set: ({ set }, newKeys) => {
-    logger.log('setting latestMessageKeys', newKeys);
+    logger.log('setting latestMessageKeys', { newKeys });
     set(latestMessageKeysAtom, newKeys);
   },
 });
@@ -299,19 +307,22 @@ function useClearSubmissionState() {
   return clearAllSubmissions;
 }
 
-function useClearLatestMessages() {
+function useClearLatestMessages(context?: string) {
   const clearAllLatestMessages = useRecoilCallback(
     ({ reset, set, snapshot }) =>
       async (skipFirst?: boolean) => {
         const latestMessageKeys = await snapshot.getPromise(latestMessageKeysSelector);
-        logger.log('latestMessageKeys', latestMessageKeys);
+        logger.log('[clearAllLatestMessages] latestMessageKeys', latestMessageKeys);
+        if (context) {
+          logger.log(`[clearAllLatestMessages] context: ${context}`);
+        }
 
         for (const key of latestMessageKeys) {
           if (skipFirst && key == 0) {
             continue;
           }
 
-          logger.log('resetting latest message', key);
+          logger.log(`[clearAllLatestMessages] resetting latest message; key: ${key}`);
           reset(latestMessageFamily(key));
         }
 

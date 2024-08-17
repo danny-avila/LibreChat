@@ -19,10 +19,13 @@ export default {
   com_sidepanel_hide_panel: 'Hide Panel',
   com_sidepanel_attach_files: 'Attach Files',
   com_sidepanel_manage_files: 'Manage Files',
+  com_sidepanel_conversation_tags: 'Bookmarks',
   com_assistants_capabilities: 'Capabilities',
   com_assistants_file_search: 'File Search',
   com_assistants_file_search_info:
-    'Attaching vector stores for File Search is not yet supported. You can attach them from the Provider Playground or attach files to messages for file search on a thread basis.',
+    'File search enables the assistant with knowledge from files that you or your users upload. Once a file is uploaded, the assistant automatically decides when to retrieve content based on user requests. Attaching vector stores for File Search is not yet supported. You can attach them from the Provider Playground or attach files to messages for file search on a thread basis.',
+  com_assistants_code_interpreter_info:
+    'Code Interpreter enables the assistant to write and run code. This tool can process files with diverse data and formatting, and generate files such as graphs.',
   com_assistants_knowledge: 'Knowledge',
   com_assistants_knowledge_info:
     'If you upload files under Knowledge, conversations with your Assistant may include file contents.',
@@ -30,8 +33,7 @@ export default {
     'Assistant must be created, and Code Interpreter or Retrieval must be enabled and saved before uploading files as Knowledge.',
   com_assistants_image_vision: 'Image Vision',
   com_assistants_code_interpreter: 'Code Interpreter',
-  com_assistants_code_interpreter_files:
-    'The following files are only available for Code Interpreter:',
+  com_assistants_code_interpreter_files: 'Files below are for Code Interpreter only:',
   com_assistants_retrieval: 'Retrieval',
   com_assistants_search_name: 'Search assistants by name',
   com_assistants_tools: 'Tools',
@@ -218,6 +220,8 @@ export default {
   com_ui_import_conversation_file_type_error: 'Unsupported import type',
   com_ui_confirm_action: 'Confirm Action',
   com_ui_chat: 'Chat',
+  com_ui_chat_history: 'Chat History',
+  com_ui_controls: 'Controls',
   com_ui_dashboard: 'Dashboard',
   com_ui_chats: 'chats',
   com_ui_avatar: 'Avatar',
@@ -266,6 +270,10 @@ export default {
   com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete_conversation: 'Delete chat?',
   com_ui_delete_confirm: 'This will delete',
+  com_ui_delete_tool: 'Delete Tool',
+  com_ui_delete_tool_confirm: 'Are you sure you want to delete this tool?',
+  com_ui_delete_action: 'Delete Action',
+  com_ui_delete_action_confirm: 'Are you sure you want to delete this action?',
   com_ui_delete_confirm_prompt_version_var:
     'This will delete the selected version for "{0}." If no other versions exist, the prompt will be deleted.',
   com_ui_delete_assistant_confirm:
@@ -287,6 +295,22 @@ export default {
   com_ui_use_micrphone: 'Use microphone',
   com_ui_min_tags: 'Cannot remove more values, a minimum of {0} are required.',
   com_ui_max_tags: 'Maximum number allowed is {0}, using latest values.',
+  com_ui_bookmarks: 'Bookmarks',
+  com_ui_bookmarks_new: 'New Bookmark',
+  com_ui_bookmark_delete_confirm: 'Are you sure you want to delete this bookmark?',
+  com_ui_bookmarks_title: 'Title',
+  com_ui_bookmarks_count: 'Count',
+  com_ui_bookmarks_description: 'Description',
+  com_ui_bookmarks_create_success: 'Bookmark created successfully',
+  com_ui_bookmarks_update_success: 'Bookmark updated successfully',
+  com_ui_bookmarks_delete_success: 'Bookmark deleted successfully',
+  com_ui_bookmarks_create_error: 'There was an error creating the bookmark',
+  com_ui_bookmarks_update_error: 'There was an error updating the bookmark',
+  com_ui_bookmarks_delete_error: 'There was an error deleting the bookmark',
+  com_ui_bookmarks_add_to_conversation: 'Add to current conversation',
+  com_ui_bookmarks_filter: 'Filter bookmarks...',
+  com_ui_no_bookmarks: 'it seems like you have no bookmarks yet. Click on a chat and add a new one',
+  com_ui_no_conversation_id: 'No conversation ID found',
   com_auth_error_login:
     'Unable to login with the information provided. Please check your credentials and try again.',
   com_auth_error_login_rl:
@@ -391,7 +415,7 @@ export default {
   com_endpoint_google_topk:
     'Top-k changes how the model selects tokens for output. A top-k of 1 means the selected token is the most probable among all tokens in the model\'s vocabulary (also called greedy decoding), while a top-k of 3 means that the next token is selected from among the 3 most probable tokens (using temperature).',
   com_endpoint_google_maxoutputtokens:
-    ' 	Maximum number of tokens that can be generated in the response. Specify a lower value for shorter responses and a higher value for longer responses.',
+    'Maximum number of tokens that can be generated in the response. Specify a lower value for shorter responses and a higher value for longer responses. Note: models may stop before reaching this maximum.',
   com_endpoint_google_custom_name_placeholder: 'Set a custom name for Google',
   com_endpoint_prompt_prefix_placeholder: 'Set custom instructions or context. Ignored if empty.',
   com_endpoint_instructions_assistants_placeholder:
@@ -439,7 +463,7 @@ export default {
   com_endpoint_anthropic_topk:
     'Top-k changes how the model selects tokens for output. A top-k of 1 means the selected token is the most probable among all tokens in the model\'s vocabulary (also called greedy decoding), while a top-k of 3 means that the next token is selected from among the 3 most probable tokens (using temperature).',
   com_endpoint_anthropic_maxoutputtokens:
-    'Maximum number of tokens that can be generated in the response. Specify a lower value for shorter responses and a higher value for longer responses.',
+    'Maximum number of tokens that can be generated in the response. Specify a lower value for shorter responses and a higher value for longer responses. Note: models may stop before reaching this maximum.',
   com_endpoint_anthropic_custom_name_placeholder: 'Set a custom name for Anthropic',
   com_endpoint_frequency_penalty: 'Frequency Penalty',
   com_endpoint_presence_penalty: 'Presence Penalty',
@@ -532,6 +556,13 @@ export default {
   com_endpoint_config_key_google_service_account: 'Create a Service Account',
   com_endpoint_config_key_google_vertex_api_role:
     'Make sure to click \'Create and Continue\' to give at least the \'Vertex AI User\' role. Lastly, create a JSON key to import here.',
+  com_nav_account_settings: 'Account Settings',
+  com_nav_font_size: 'Message Font Size',
+  com_nav_font_size_xs: 'Extra Small',
+  com_nav_font_size_sm: 'Small',
+  com_nav_font_size_base: 'Medium',
+  com_nav_font_size_lg: 'Large',
+  com_nav_font_size_xl: 'Extra Large',
   com_nav_welcome_assistant: 'Please Select an Assistant',
   com_nav_welcome_message: 'How can I help you today?',
   com_nav_auto_scroll: 'Auto-Scroll to latest message on chat open',
@@ -562,6 +593,7 @@ export default {
   com_ui_drag_drop_file: 'Drag and drop a file here',
   com_ui_upload_image: 'Upload an image',
   com_ui_select_a_category: 'No category selected',
+  com_ui_clear_all: 'Clear all',
   com_nav_tool_dialog_description: 'Assistant must be saved to persist tool selections.',
   com_show_agent_settings: 'Show Agent Settings',
   com_show_completion_settings: 'Show Completion Settings',
@@ -636,8 +668,19 @@ export default {
   com_nav_audio_play_error: 'Error playing audio: {0}',
   com_nav_audio_process_error: 'Error processing audio: {0}',
   com_nav_long_audio_warning: 'Longer texts will take longer to process.',
+  com_nav_tts_init_error: 'Failed to initialize text-to-speech: {0}',
+  com_nav_tts_unsupported_error:
+    'Text-to-speech for the selected engine is not supported in this browser.',
+  com_nav_source_buffer_error: 'Error setting up audio playback. Please refresh the page.',
+  com_nav_media_source_init_error:
+    'Unable to prepare audio player. Please check your browser settings.',
+  com_nav_buffer_append_error: 'Problem with audio streaming. The playback may be interrupted.',
+  com_nav_speech_cancel_error: 'Unable to stop audio playback. You may need to refresh the page.',
+  com_nav_voices_fetch_error:
+    'Could not retrieve voice options. Please check your internet connection.',
   com_nav_engine: 'Engine',
   com_nav_browser: 'Browser',
+  com_nav_edge: 'Edge',
   com_nav_external: 'External',
   com_nav_delete_cache_storage: 'Delete TTS cache storage',
   com_nav_enable_cache_tts: 'Enable cache TTS',
@@ -659,6 +702,18 @@ export default {
     'This action will revoke and remove all the API keys that you have provided. You will need to re-enter these credentials to continue using those endpoints.',
   com_nav_info_delete_cache_storage:
     'This action will delete all cached TTS (Text-to-Speech) audio files stored on your device. Cached audio files are used to speed up playback of previously generated TTS audio, but they can consume storage space on your device.',
+  // Command Settings Tab
+  com_nav_commands: 'Commands',
+  com_nav_commands_tab: 'Command Settings',
+  com_nav_at_command: '@-Command',
+  com_nav_at_command_description:
+    'Toggle command "@" for switching endpoints, models, presets, etc.',
+  com_nav_plus_command: '+-Command',
+  com_nav_plus_command_description: 'Toggle command "+" for adding a multi-response setting',
+  com_nav_slash_command: '/-Command',
+  com_nav_slash_command_description: 'Toggle command "/" for selecting a prompt via keyboard',
+  com_nav_command_settings: 'Command Settings',
+  com_nav_command_settings_description: 'Customize which commands are available in the chat',
   com_nav_setting_general: 'General',
   com_nav_setting_chat: 'Chat',
   com_nav_setting_beta: 'Beta features',

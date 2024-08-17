@@ -33,12 +33,12 @@ export default function OptionsPopover({
     (_target) => {
       const target = _target as Element;
       if (
-        target?.id === 'presets-button' ||
-        (target?.parentNode instanceof Element && target.parentNode.id === 'presets-button')
+        target.id === 'presets-button' ||
+        (target.parentNode instanceof Element && target.parentNode.id === 'presets-button')
       ) {
         return false;
       }
-      const tagName = target?.tagName;
+      const tagName = target.tagName;
       return tagName === 'path' || tagName === 'svg' || tagName === 'circle';
     },
   );
@@ -66,7 +66,7 @@ export default function OptionsPopover({
               {presetsDisabled ? null : (
                 <Button
                   type="button"
-                  className="h-auto w-[150px] justify-start rounded-md border border-gray-300/50 bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-gray-100 hover:text-black focus:ring-1 focus:ring-green-500/90 dark:border-gray-500/50 dark:bg-transparent dark:text-white dark:hover:bg-gray-600 dark:focus:ring-white"
+                  className="h-auto w-[150px] justify-start rounded-md border border-gray-300/50 bg-transparent px-2 py-1 text-xs font-normal text-black hover:bg-gray-100 hover:text-black focus:ring-1 focus:ring-ring-primary dark:border-gray-500/50 dark:bg-transparent dark:text-white dark:hover:bg-gray-600 dark:focus:ring-white"
                   onClick={saveAsPreset}
                 >
                   <Save className="mr-1 w-[14px]" />
@@ -77,7 +77,7 @@ export default function OptionsPopover({
               <Button
                 type="button"
                 className={cn(
-                  'ml-auto h-auto bg-transparent px-3 py-2 text-xs font-medium font-normal text-black hover:bg-gray-100 hover:text-black dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white',
+                  'ml-auto h-auto bg-transparent px-3 py-2 text-xs font-normal text-black hover:bg-gray-100 hover:text-black dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white',
                   removeFocusOutlines,
                 )}
                 onClick={closePopover}

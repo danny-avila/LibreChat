@@ -150,11 +150,17 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       });
       res.end();
 
-      await saveMessage(req, { ...response, user });
+      await saveMessage(
+        req,
+        { ...response, user },
+        { context: 'api/server/controllers/AskController.js - response end' },
+      );
     }
 
     if (!client.skipSaveUserMessage) {
-      await saveMessage(req, userMessage);
+      await saveMessage(req, userMessage, {
+        context: 'api/server/controllers/AskController.js - don\'t skip saving user message',
+      });
     }
 
     if (addTitle && parentMessageId === Constants.NO_PARENT && newConvo) {

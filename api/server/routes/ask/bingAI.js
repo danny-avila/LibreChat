@@ -71,7 +71,7 @@ router.post('/', setHeaders, async (req, res) => {
 
   if (!overrideParentMessageId) {
     await saveMessage(req, { ...userMessage, user: req.user.id });
-    await saveConvo(req.user.id, {
+    await saveConvo(req, {
       ...userMessage,
       ...endpointOption,
       conversationId,
@@ -216,7 +216,7 @@ const ask = async ({
       conversationUpdate.invocationId = response.invocationId;
     }
 
-    await saveConvo(user, conversationUpdate);
+    await saveConvo(req, conversationUpdate);
     userMessage.messageId = newUserMessageId;
 
     // If response has parentMessageId, the fake userMessage.messageId should be updated to the real one.
@@ -245,7 +245,7 @@ const ask = async ({
         response: responseMessage,
       });
 
-      await saveConvo(user, {
+      await saveConvo(req, {
         conversationId: conversationId,
         title,
       });

@@ -12,7 +12,7 @@ import type {
   TModelsConfig,
   TEndpointsConfig,
 } from 'librechat-data-provider';
-import { buildDefaultConvo, getDefaultEndpoint, getEndpointField } from '~/utils';
+import { buildDefaultConvo, getDefaultEndpoint, getEndpointField, logger } from '~/utils';
 import store from '~/store';
 
 const useConversation = () => {
@@ -60,6 +60,10 @@ const useConversation = () => {
         setMessages(messages);
         setSubmission({} as TSubmission);
         resetLatestMessage();
+        logger.log(
+          '[useConversation] Switched to conversation and reset Latest Message',
+          conversation,
+        );
 
         if (conversation.conversationId === 'new' && !modelsData) {
           queryClient.invalidateQueries([QueryKeys.messages, 'new']);

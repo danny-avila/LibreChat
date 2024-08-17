@@ -74,6 +74,20 @@ export default {
   com_ui_unarchive: 'إلغاء الأرشفة',
   com_ui_unarchive_error: 'فشل في إلغاء الأرشفة',
   com_ui_more_options: 'المزيد',
+  com_ui_bookmarks: 'الإشارات المرجعية',
+  com_ui_bookmarks_rebuild: 'إعادة بناء',
+  com_ui_bookmarks_new: 'إشارة مرجعية جديدة',
+  com_ui_bookmark_delete_confirm: 'هل أنت متأكد أنك تريد حذف هذه الإشارة المرجعية؟',
+  com_ui_bookmarks_title: 'عنوان',
+  com_ui_bookmarks_count: 'العدد',
+  com_ui_bookmarks_description: 'وصف',
+  com_ui_bookmarks_create_success: 'تم إنشاء الإشارة المرجعية بنجاح',
+  com_ui_bookmarks_update_success: 'تم تحديث الإشارة المرجعية بنجاح',
+  com_ui_bookmarks_delete_success: 'تم حذف الإشارة المرجعية بنجاح',
+  com_ui_bookmarks_create_error: 'حدث خطأ أثناء إنشاء الإشارة المرجعية',
+  com_ui_bookmarks_update_error: 'حدث خطأ أثناء تحديث الإشارة المرجعية',
+  com_ui_bookmarks_delete_error: 'حدث خطأ أثناء حذف الإشارة المرجعية',
+  com_ui_bookmarks_add_to_conversation: 'أضف إلى المحادثة الحالية',
   com_auth_error_login:
     'تعذر تسجيل الدخول باستخدام المعلومات المقدمة. يرجى التحقق من بيانات الاعتماد الخاصة بك والمحاولة مرة أخرى.',
   com_auth_error_login_rl:
@@ -278,6 +292,7 @@ export default {
   com_nav_theme_system: 'النظام',
   com_nav_theme_dark: 'داكن',
   com_nav_theme_light: 'فاتح',
+  com_nav_font_size: 'حجم الخط',
   com_nav_clear_all_chats: 'مسح كل الدردشات',
   com_nav_confirm_clear: 'تأكيد المسح',
   com_nav_close_sidebar: 'إغلاق القائمة الجانبية',
@@ -297,6 +312,8 @@ export default {
   com_nav_help_faq: 'مساعدة & الأسئلة الشائعة',
   com_nav_settings: 'الإعدادات',
   com_nav_search_placeholder: 'بحث في الرسائل',
+  com_nav_info_bookmarks_rebuild:
+    'إذا كان عدد الإشارات المرجعية غير صحيح، يرجى إعادة بناء معلومات الإشارة المرجعية. سيتم إعادة حساب عدد الإشارات المرجعية وستتم استعادة البيانات إلى حالتها الصحيحة.',
   com_nav_setting_general: 'عام',
   com_nav_setting_data: 'تحكم في البيانات',
   /* The following are AI translated */
@@ -346,6 +363,7 @@ export default {
   com_sidepanel_hide_panel: 'إخفاء اللوحة',
   com_sidepanel_attach_files: 'إرفاق الملفات',
   com_sidepanel_manage_files: 'إدارة الملفات',
+  com_sidepanel_conversation_tags: 'الإشارات المرجعية',
   com_assistants_capabilities: 'قدرات',
   com_assistants_knowledge: 'المعرفة',
   com_assistants_completed_function: 'تم تشغيل {0}',
@@ -855,6 +873,62 @@ export const comparisons = {
   com_ui_more_options: {
     english: 'More',
     translated: 'المزيد',
+  },
+  com_ui_bookmarks: {
+    english: 'Bookmarks',
+    translated: 'الإشارات المرجعية',
+  },
+  com_ui_bookmarks_rebuild: {
+    english: 'Rebuild',
+    translated: 'إعادة بناء',
+  },
+  com_ui_bookmarks_new: {
+    english: 'New Bookmark',
+    translated: 'إشارة مرجعية جديدة',
+  },
+  com_ui_bookmark_delete_confirm: {
+    english: 'Are you sure you want to delete this bookmark?',
+    translated: 'هل أنت متأكد أنك تريد حذف هذه الإشارة المرجعية؟',
+  },
+  com_ui_bookmarks_title: {
+    english: 'Title',
+    translated: 'عنوان',
+  },
+  com_ui_bookmarks_count: {
+    english: 'Count',
+    translated: 'العدد',
+  },
+  com_ui_bookmarks_description: {
+    english: 'Description',
+    translated: 'وصف',
+  },
+  com_ui_bookmarks_create_success: {
+    english: 'Bookmark created successfully',
+    translated: 'تم إنشاء الإشارة المرجعية بنجاح',
+  },
+  com_ui_bookmarks_update_success: {
+    english: 'Bookmark updated successfully',
+    translated: 'تم تحديث الإشارة المرجعية بنجاح',
+  },
+  com_ui_bookmarks_delete_success: {
+    english: 'Bookmark deleted successfully',
+    translated: 'تم حذف الإشارة المرجعية بنجاح',
+  },
+  com_ui_bookmarks_create_error: {
+    english: 'There was an error creating the bookmark',
+    translated: 'حدث خطأ أثناء إنشاء الإشارة المرجعية',
+  },
+  com_ui_bookmarks_update_error: {
+    english: 'There was an error updating the bookmark',
+    translated: 'حدث خطأ أثناء تحديث الإشارة المرجعية',
+  },
+  com_ui_bookmarks_delete_error: {
+    english: 'There was an error deleting the bookmark',
+    translated: 'حدث خطأ أثناء حذف الإشارة المرجعية',
+  },
+  com_ui_bookmarks_add_to_conversation: {
+    english: 'Add to current conversation',
+    translated: 'أضف إلى المحادثة الحالية',
   },
   com_auth_error_login: {
     english:
@@ -1652,6 +1726,12 @@ export const comparisons = {
     english: 'Search messages',
     translated: 'بحث في الرسائل',
   },
+  com_nav_info_bookmarks_rebuild: {
+    english:
+      'If the bookmark count is incorrect, please rebuild the bookmark information. The bookmark count will be recalculated and the data will be restored to its correct state.',
+    translated:
+      'إذا كان عدد الإشارات المرجعية غير صحيح، يرجى إعادة بناء معلومات الإشارة المرجعية. سيتم إعادة حساب عدد الإشارات المرجعية وستتم استعادة البيانات إلى حالتها الصحيحة.',
+  },
   com_nav_setting_general: {
     english: 'General',
     translated: 'عام',
@@ -1831,6 +1911,10 @@ export const comparisons = {
   com_sidepanel_manage_files: {
     english: 'Manage Files',
     translated: 'إدارة الملفات',
+  },
+  com_sidepanel_conversation_tags: {
+    english: 'Bookmarks',
+    translated: 'الإشارات المرجعية',
   },
   com_assistants_capabilities: {
     english: 'Capabilities',

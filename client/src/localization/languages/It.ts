@@ -19,6 +19,7 @@ export default {
   com_sidepanel_hide_panel: 'Nascondi Pannello',
   com_sidepanel_attach_files: 'Allega File',
   com_sidepanel_manage_files: 'Gestisci File',
+  com_sidepanel_conversation_tags: 'Segnalibri',
   com_assistants_capabilities: 'Capacità',
   com_assistants_knowledge: 'Conoscenza',
   com_assistants_knowledge_info:
@@ -224,6 +225,20 @@ export default {
   com_ui_terms_of_service: 'Termini di servizio',
   com_ui_min_tags: 'Impossibile rimuovere altri valori, è richiesto un minimo di {0}.',
   com_ui_max_tags: 'Il numero massimo consentito è {0}, verranno utilizzati gli ultimi valori.',
+  com_ui_bookmarks: 'Segnalibri',
+  com_ui_bookmarks_rebuild: 'Ricostruisci',
+  com_ui_bookmarks_new: 'Nuovo Segnalibro',
+  com_ui_bookmark_delete_confirm: 'Sei sicuro di voler eliminare questo segnalibro?',
+  com_ui_bookmarks_title: 'Titolo',
+  com_ui_bookmarks_count: 'Conteggio',
+  com_ui_bookmarks_description: 'Descrizione',
+  com_ui_bookmarks_create_success: 'Segnalibro creato con successo',
+  com_ui_bookmarks_update_success: 'Segnalibro aggiornato con successo',
+  com_ui_bookmarks_delete_success: 'Segnalibro eliminato con successo',
+  com_ui_bookmarks_create_error: 'Si è verificato un errore durante la creazione del segnalibro',
+  com_ui_bookmarks_update_error: 'Si è verificato un errore durante l\'aggiornamento del segnalibro',
+  com_ui_bookmarks_delete_error: 'Si è verificato un errore durante l\'eliminazione del segnalibro',
+  com_ui_bookmarks_add_to_conversation: 'Aggiungi alla conversazione attuale',
   com_auth_error_login:
     'Impossibile eseguire l\'accesso con le informazioni fornite. Controlla le tue credenziali e riprova.',
   com_auth_error_login_rl:
@@ -535,6 +550,8 @@ export default {
   com_dialog_delete_warning: 'ATTENZIONE: Questo cancellerà permanentemente il tuo account.',
   com_dialog_delete_data_info: 'Tutti i tuoi dati verranno eliminati.',
   com_dialog_delete_help_center: 'Per più informazioni, visita il nostro centro assistenza.',
+  com_nav_info_bookmarks_rebuild:
+    'Se il conteggio dei segnalibri è errato, ricostruisci le informazioni sui segnalibri. Il conteggio dei segnalibri verrà ricalcolato e i dati verranno ripristinati al loro stato corretto.',
   com_nav_setting_general: 'Generale',
   com_nav_setting_beta: 'Funzioni Beta',
   com_nav_setting_data: 'Controlli dati',
@@ -661,6 +678,10 @@ export const comparisons = {
   com_sidepanel_manage_files: {
     english: 'Manage Files',
     translated: 'Gestisci File',
+  },
+  com_sidepanel_conversation_tags: {
+    english: 'Bookmarks',
+    translated: 'Segnalibri',
   },
   com_assistants_capabilities: {
     english: 'Capabilities',
@@ -1396,6 +1417,62 @@ export const comparisons = {
   com_ui_max_tags: {
     english: 'Maximum number allowed is {0}, using latest values.',
     translated: 'Il numero massimo consentito è {0}, verranno utilizzati gli ultimi valori.',
+  },
+  com_ui_bookmarks: {
+    english: 'Bookmarks',
+    translated: 'Segnalibri',
+  },
+  com_ui_bookmarks_rebuild: {
+    english: 'Rebuild',
+    translated: 'Ricostruisci',
+  },
+  com_ui_bookmarks_new: {
+    english: 'New Bookmark',
+    translated: 'Nuovo Segnalibro',
+  },
+  com_ui_bookmark_delete_confirm: {
+    english: 'Are you sure you want to delete this bookmark?',
+    translated: 'Sei sicuro di voler eliminare questo segnalibro?',
+  },
+  com_ui_bookmarks_title: {
+    english: 'Title',
+    translated: 'Titolo',
+  },
+  com_ui_bookmarks_count: {
+    english: 'Count',
+    translated: 'Conteggio',
+  },
+  com_ui_bookmarks_description: {
+    english: 'Description',
+    translated: 'Descrizione',
+  },
+  com_ui_bookmarks_create_success: {
+    english: 'Bookmark created successfully',
+    translated: 'Segnalibro creato con successo',
+  },
+  com_ui_bookmarks_update_success: {
+    english: 'Bookmark updated successfully',
+    translated: 'Segnalibro aggiornato con successo',
+  },
+  com_ui_bookmarks_delete_success: {
+    english: 'Bookmark deleted successfully',
+    translated: 'Segnalibro eliminato con successo',
+  },
+  com_ui_bookmarks_create_error: {
+    english: 'There was an error creating the bookmark',
+    translated: 'Si è verificato un errore durante la creazione del segnalibro',
+  },
+  com_ui_bookmarks_update_error: {
+    english: 'There was an error updating the bookmark',
+    translated: 'Si è verificato un errore durante l\'aggiornamento del segnalibro',
+  },
+  com_ui_bookmarks_delete_error: {
+    english: 'There was an error deleting the bookmark',
+    translated: 'Si è verificato un errore durante l\'eliminazione del segnalibro',
+  },
+  com_ui_bookmarks_add_to_conversation: {
+    english: 'Add to current conversation',
+    translated: 'Aggiungi alla conversazione attuale',
   },
   com_auth_error_login: {
     english:
@@ -2378,6 +2455,10 @@ export const comparisons = {
     english: 'Light',
     translated: 'Chiaro',
   },
+  com_nav_font_size: {
+    english: 'Font Size',
+    translate: 'Dimensione del font',
+  },
   com_nav_enter_to_send: {
     english: 'Press Enter to send messages',
     translated: 'Premi Invio per inviare messaggi',
@@ -2470,6 +2551,12 @@ export const comparisons = {
   com_nav_search_placeholder: {
     english: 'Search messages',
     translated: 'Cerca messaggi',
+  },
+  com_nav_info_bookmarks_rebuild: {
+    english:
+      'If the bookmark count is incorrect, please rebuild the bookmark information. The bookmark count will be recalculated and the data will be restored to its correct state.',
+    translated:
+      'Se il conteggio dei segnalibri è errato, ricostruisci le informazioni sui segnalibri. Il conteggio dei segnalibri verrà ricalcolato e i dati verranno ripristinati al loro stato corretto.',
   },
   com_nav_setting_general: {
     english: 'General',

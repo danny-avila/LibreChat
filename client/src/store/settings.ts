@@ -22,12 +22,13 @@ const localStorageAtoms = {
   // General settings
   autoScroll: atomWithLocalStorage('autoScroll', false),
   hideSidePanel: atomWithLocalStorage('hideSidePanel', false),
+  fontSize: atomWithLocalStorage('fontSize', 'text-base'),
 
   // Messages settings
   enterToSend: atomWithLocalStorage('enterToSend', true),
   chatDirection: atomWithLocalStorage('chatDirection', 'LTR'),
   showCode: atomWithLocalStorage('showCode', false),
-  saveDrafts: atomWithLocalStorage('saveDrafts', false),
+  saveDrafts: atomWithLocalStorage('saveDrafts', true),
   forkSetting: atomWithLocalStorage('forkSetting', ''),
   splitAtTarget: atomWithLocalStorage('splitAtTarget', false),
 
@@ -36,6 +37,11 @@ const localStorageAtoms = {
   // Beta features settings
   modularChat: atomWithLocalStorage('modularChat', true),
   LaTeXParsing: atomWithLocalStorage('LaTeXParsing', true),
+
+  // Commands settings
+  atCommand: atomWithLocalStorage('atCommand', true),
+  plusCommand: atomWithLocalStorage('plusCommand', true),
+  slashCommand: atomWithLocalStorage('slashCommand', true),
 
   // Speech settings
   conversationMode: atomWithLocalStorage('conversationMode', false),
@@ -50,7 +56,7 @@ const localStorageAtoms = {
 
   textToSpeech: atomWithLocalStorage('textToSpeech', true),
   engineTTS: atomWithLocalStorage('engineTTS', 'browser'),
-  voice: atomWithLocalStorage('voice', ''),
+  voice: atomWithLocalStorage<string | undefined>('voice', undefined),
   cloudBrowserVoices: atomWithLocalStorage('cloudBrowserVoices', false),
   languageTTS: atomWithLocalStorage('languageTTS', ''),
   automaticPlayback: atomWithLocalStorage('automaticPlayback', false),

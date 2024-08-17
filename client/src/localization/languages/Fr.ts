@@ -90,6 +90,20 @@ export default {
   com_ui_preview: 'Aperçu',
   com_ui_upload: 'Téléverser',
   com_ui_connect: 'Connecter',
+  com_ui_bookmarks: 'Signets',
+  com_ui_bookmarks_rebuild: 'Reconstruire',
+  com_ui_bookmarks_new: 'Nouveau signet',
+  com_ui_bookmark_delete_confirm: 'Êtes-vous sûr de vouloir supprimer ce signet?',
+  com_ui_bookmarks_title: 'Titre',
+  com_ui_bookmarks_count: 'Nombre',
+  com_ui_bookmarks_description: 'Description',
+  com_ui_bookmarks_create_success: 'Signet créé avec succès',
+  com_ui_bookmarks_update_success: 'Signet mis à jour avec succès',
+  com_ui_bookmarks_delete_success: 'Signet supprimé avec succès',
+  com_ui_bookmarks_create_error: 'Une erreur est survenue lors de la création du signet',
+  com_ui_bookmarks_update_error: 'Une erreur est survenue lors de la mise à jour du signet',
+  com_ui_bookmarks_delete_error: 'Une erreur est survenue lors de la suppression du signet',
+  com_ui_bookmarks_add_to_conversation: 'Ajouter à la conversation en cours',
   com_auth_error_login:
     'Impossible de se connecter avec les informations fournies. Veuillez vérifier vos identifiants et réessayer.',
   com_auth_error_login_rl:
@@ -342,6 +356,7 @@ export default {
   com_nav_theme_system: 'Système',
   com_nav_theme_dark: 'Sombre',
   com_nav_theme_light: 'Clair',
+  com_nav_font_size: 'Taille de police',
   com_nav_user_name_display: 'Afficher le nom d\'utilisateur dans les messages',
   com_nav_save_drafts: 'Enregistrer les brouillons localement',
   com_nav_clear_all_chats: 'Effacer toutes les conversations',
@@ -363,6 +378,8 @@ export default {
   com_nav_help_faq: 'Aide & FAQ',
   com_nav_settings: 'Paramètres',
   com_nav_search_placeholder: 'Rechercher des messages',
+  com_nav_info_bookmarks_rebuild:
+    'Si le nombre de signets est incorrect, veuillez reconstruire les informations des signets. Le nombre de signets sera recalculé et les données seront restaurées à leur état correct.',
   com_nav_setting_general: 'Général',
   com_nav_setting_beta: 'Fonctionnalités bêta',
   com_nav_setting_data: 'Contrôles des données',
@@ -449,6 +466,7 @@ export default {
   com_sidepanel_hide_panel: 'Masquer le panneau',
   com_sidepanel_attach_files: 'Joindre des fichiers',
   com_sidepanel_manage_files: 'Gérer les fichiers',
+  com_sidepanel_conversation_tags: 'Signets',
   com_assistants_capabilities: 'Capacités des assistants',
   com_assistants_knowledge: 'Connaissances',
   com_assistants_knowledge_info:
@@ -1029,6 +1047,62 @@ export const comparisons = {
   com_ui_connect: {
     english: 'Connect',
     translated: 'Connecter',
+  },
+  com_ui_bookmarks: {
+    english: 'Bookmarks',
+    translated: 'Signets',
+  },
+  com_ui_bookmarks_rebuild: {
+    english: 'Rebuild',
+    translated: 'Reconstruire',
+  },
+  com_ui_bookmarks_new: {
+    english: 'New Bookmark',
+    translated: 'Nouveau signet',
+  },
+  com_ui_bookmark_delete_confirm: {
+    english: 'Are you sure you want to delete this bookmark?',
+    translated: 'Êtes-vous sûr de vouloir supprimer ce signet?',
+  },
+  com_ui_bookmarks_title: {
+    english: 'Title',
+    translated: 'Titre',
+  },
+  com_ui_bookmarks_count: {
+    english: 'Count',
+    translated: 'Nombre',
+  },
+  com_ui_bookmarks_description: {
+    english: 'Description',
+    translated: 'Description',
+  },
+  com_ui_bookmarks_create_success: {
+    english: 'Bookmark created successfully',
+    translated: 'Signet créé avec succès',
+  },
+  com_ui_bookmarks_update_success: {
+    english: 'Bookmark updated successfully',
+    translated: 'Signet mis à jour avec succès',
+  },
+  com_ui_bookmarks_delete_success: {
+    english: 'Bookmark deleted successfully',
+    translated: 'Signet supprimé avec succès',
+  },
+  com_ui_bookmarks_create_error: {
+    english: 'There was an error creating the bookmark',
+    translated: 'Une erreur est survenue lors de la création du signet',
+  },
+  com_ui_bookmarks_update_error: {
+    english: 'There was an error updating the bookmark',
+    translated: 'Une erreur est survenue lors de la mise à jour du signet',
+  },
+  com_ui_bookmarks_delete_error: {
+    english: 'There was an error deleting the bookmark',
+    translated: 'Une erreur est survenue lors de la suppression du signet',
+  },
+  com_ui_bookmarks_add_to_conversation: {
+    english: 'Add to current conversation',
+    translated: 'Ajouter à la conversation en cours',
   },
   com_auth_error_login: {
     english:
@@ -1985,6 +2059,12 @@ export const comparisons = {
     english: 'Search messages',
     translated: 'Rechercher des messages',
   },
+  com_nav_info_bookmarks_rebuild: {
+    english:
+      'If the bookmark count is incorrect, please rebuild the bookmark information. The bookmark count will be recalculated and the data will be restored to its correct state.',
+    translated:
+      'Si le nombre de signets est incorrect, veuillez reconstruire les informations des signets. Le nombre de signets sera recalculé et les données seront restaurées à leur état correct.',
+  },
   com_nav_setting_general: {
     english: 'General',
     translated: 'Général',
@@ -2305,6 +2385,10 @@ export const comparisons = {
   com_sidepanel_manage_files: {
     english: 'Manage Files',
     translated: 'Gérer les fichiers',
+  },
+  com_sidepanel_conversation_tags: {
+    english: 'Bookmarks',
+    translated: 'Signets',
   },
   com_assistants_capabilities: {
     english: 'Capabilities',

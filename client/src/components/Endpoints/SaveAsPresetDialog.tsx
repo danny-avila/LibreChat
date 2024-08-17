@@ -9,7 +9,7 @@ import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 
 const SaveAsPresetDialog = ({ open, onOpenChange, preset }: TEditPresetProps) => {
-  const [title, setTitle] = useState<string>(preset?.title || 'My Preset');
+  const [title, setTitle] = useState<string>(preset.title || 'My Preset');
   const createPresetMutation = useCreatePresetMutation();
   const { showToast } = useToastContext();
   const localize = useLocalize();
@@ -42,7 +42,7 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }: TEditPresetProps) =>
   };
 
   useEffect(() => {
-    setTitle(preset?.title || localize('com_endpoint_my_preset'));
+    setTitle(preset.title || localize('com_endpoint_my_preset'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -59,7 +59,7 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }: TEditPresetProps) =>
                 {localize('com_endpoint_preset_name')}
               </Label>
               <Input
-                id="chatGpt"
+                id="preset-custom-name"
                 value={title || ''}
                 onChange={(e) => setTitle(e.target.value || '')}
                 placeholder="Set a custom name for this preset"

@@ -111,7 +111,7 @@ const ChatForm = ({ index = 0 }) => {
     () =>
       isAssistantsEndpoint(conversation?.endpoint) &&
       (!conversation?.assistant_id ||
-        !assistantMap?.[conversation?.endpoint ?? '']?.[conversation?.assistant_id ?? '']),
+        !assistantMap[conversation.endpoint ?? ''][conversation.assistant_id ?? '']),
     [conversation?.assistant_id, conversation?.endpoint, assistantMap],
   );
   const disableInputs = useMemo(

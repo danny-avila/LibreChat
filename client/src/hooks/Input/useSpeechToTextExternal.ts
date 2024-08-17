@@ -8,7 +8,8 @@ import useGetAudioSettings from './useGetAudioSettings';
 
 const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void) => {
   const { showToast } = useToastContext();
-  const { externalSpeechToText } = useGetAudioSettings();
+  const { speechToTextEndpoint } = useGetAudioSettings();
+  const isExternalSTTEnabled = speechToTextEndpoint === 'external';
   const [speechToText] = useRecoilState<boolean>(store.speechToText);
   const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
   const [autoSendText] = useRecoilState(store.autoSendText);
@@ -49,7 +50,9 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
 
   const cleanup = () => {
     if (mediaRecorderRef.current) {
-      mediaRecorderRef.current.removeEventListener('dataavailable', handleDataAvailable);
+      mediaRecorderRef.current.removeEventListener('dataavailable', (event: BlobEvent) => {
+        audioChunks.push(event.data);
+      });
       mediaRecorderRef.current.removeEventListener('stop', handleStop);
       mediaRecorderRef.current = null;
     }
@@ -69,14 +72,6 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
       audioStream.current = streamData ?? null;
     } catch (err) {
       setPermission(false);
-    }
-  };
-
-  const handleDataAvailable = (event: BlobEvent) => {
-    if (event.data.size > 0) {
-      audioChunks.push(event.data);
-    } else {
-      showToast({ message: 'No audio data available', status: 'warning' });
     }
   };
 
@@ -163,7 +158,9 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
       try {
         setAudioChunks([]);
         mediaRecorderRef.current = new MediaRecorder(audioStream.current);
-        mediaRecorderRef.current.addEventListener('dataavailable', handleDataAvailable);
+        mediaRecorderRef.current.addEventListener('dataavailable', (event: BlobEvent) => {
+          audioChunks.push(event.data);
+        });
         mediaRecorderRef.current.addEventListener('stop', handleStop);
         mediaRecorderRef.current.start(100);
         setIsAudioDetected(true);
@@ -230,7 +227,7 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
   };
 
   const handleKeyDown = async (e: KeyboardEvent) => {
-    if (e.shiftKey && e.altKey && e.code === 'KeyL' && !externalSpeechToText) {
+    if (e.shiftKey && e.altKey && e.code === 'KeyL' && isExternalSTTEnabled) {
       if (!window.MediaRecorder) {
         showToast({ message: 'MediaRecorder is not supported in this browser', status: 'error' });
         return;

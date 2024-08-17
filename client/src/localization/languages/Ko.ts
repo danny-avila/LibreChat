@@ -74,6 +74,20 @@ export default {
   com_ui_unarchive: '아카이브 해제',
   com_ui_unarchive_error: '대화 아카이브 해제 실패',
   com_ui_more_options: '더 보기',
+  com_ui_bookmarks: '북마크',
+  com_ui_bookmarks_rebuild: '재구축',
+  com_ui_bookmarks_new: '새 북마크',
+  com_ui_bookmark_delete_confirm: '이 북마크를 삭제하시겠습니까?',
+  com_ui_bookmarks_title: '제목',
+  com_ui_bookmarks_count: '개수',
+  com_ui_bookmarks_description: '설명',
+  com_ui_bookmarks_create_success: '북마크가 성공적으로 생성되었습니다',
+  com_ui_bookmarks_update_success: '북마크가 성공적으로 업데이트되었습니다',
+  com_ui_bookmarks_delete_success: '북마크가 성공적으로 삭제되었습니다',
+  com_ui_bookmarks_create_error: '북마크 생성 중 오류가 발생했습니다',
+  com_ui_bookmarks_update_error: '북마크 업데이트 중 오류가 발생했습니다',
+  com_ui_bookmarks_delete_error: '북마크 삭제 중 오류가 발생했습니다',
+  com_ui_bookmarks_add_to_conversation: '현재 대화에 추가',
   com_auth_error_login: '제공된 정보로 로그인할 수 없습니다. 자격 증명을 확인하고 다시 시도하세요.',
   com_auth_no_account: '계정이 없으신가요?',
   com_auth_sign_up: '가입하기',
@@ -259,6 +273,7 @@ export default {
   com_nav_theme_system: '시스템',
   com_nav_theme_dark: '다크',
   com_nav_theme_light: '라이트',
+  com_nav_font_size: '글꼴 크기',
   com_nav_clear_all_chats: '모든 채팅 지우기',
   com_nav_confirm_clear: '지우기 확인',
   com_nav_close_sidebar: '사이드바 닫기',
@@ -279,6 +294,8 @@ export default {
   com_nav_help_faq: '도움말 및 FAQ',
   com_nav_settings: '설정',
   com_nav_search_placeholder: '메시지 검색',
+  com_nav_info_bookmarks_rebuild:
+    '북마크 수가 정확하지 않은 경우 북마크 정보를 재구축하십시오. 북마크 수가 다시 계산되고 데이터가 올바른 상태로 복원됩니다.',
   com_nav_setting_general: '일반',
   com_nav_setting_data: '데이터 제어',
   /* The following are AI Translated */
@@ -328,6 +345,7 @@ export default {
   com_sidepanel_hide_panel: '패널 숨기기',
   com_sidepanel_attach_files: '파일 첨부',
   com_sidepanel_manage_files: '파일 관리',
+  com_sidepanel_conversation_tags: '북마크',
   com_assistants_capabilities: '기능',
   com_assistants_knowledge: '지식',
   com_assistants_knowledge_info:
@@ -853,6 +871,62 @@ export const comparisons = {
   com_ui_more_options: {
     english: 'More',
     translated: '더 보기',
+  },
+  com_ui_bookmarks: {
+    english: 'Bookmarks',
+    translated: '북마크',
+  },
+  com_ui_bookmarks_rebuild: {
+    english: 'Rebuild',
+    translated: '재구축',
+  },
+  com_ui_bookmarks_new: {
+    english: 'New Bookmark',
+    translated: '새 북마크',
+  },
+  com_ui_bookmark_delete_confirm: {
+    english: 'Are you sure you want to delete this bookmark?',
+    translated: '이 북마크를 삭제하시겠습니까?',
+  },
+  com_ui_bookmarks_title: {
+    english: 'Title',
+    translated: '제목',
+  },
+  com_ui_bookmarks_count: {
+    english: 'Count',
+    translated: '개수',
+  },
+  com_ui_bookmarks_description: {
+    english: 'Description',
+    translated: '설명',
+  },
+  com_ui_bookmarks_create_success: {
+    english: 'Bookmark created successfully',
+    translated: '북마크가 성공적으로 생성되었습니다',
+  },
+  com_ui_bookmarks_update_success: {
+    english: 'Bookmark updated successfully',
+    translated: '북마크가 성공적으로 업데이트되었습니다',
+  },
+  com_ui_bookmarks_delete_success: {
+    english: 'Bookmark deleted successfully',
+    translated: '북마크가 성공적으로 삭제되었습니다',
+  },
+  com_ui_bookmarks_create_error: {
+    english: 'There was an error creating the bookmark',
+    translated: '북마크 생성 중 오류가 발생했습니다',
+  },
+  com_ui_bookmarks_update_error: {
+    english: 'There was an error updating the bookmark',
+    translated: '북마 업데이트 중 오류가 발생했습니다',
+  },
+  com_ui_bookmarks_delete_error: {
+    english: 'There was an error deleting the bookmark',
+    translated: '북마크 삭제 중 오류가 발생했습니다',
+  },
+  com_ui_bookmarks_add_to_conversation: {
+    english: 'Add to current conversation',
+    translated: '현재 대화에 추가',
   },
   com_auth_error_login: {
     english:
@@ -1602,6 +1676,12 @@ export const comparisons = {
     english: 'Search messages',
     translated: '메시지 검색',
   },
+  com_nav_info_bookmarks_rebuild: {
+    english:
+      'If the bookmark count is incorrect, please rebuild the bookmark information. The bookmark count will be recalculated and the data will be restored to its correct state.',
+    translated:
+      '북마크 수가 정확하지 않은 경우 북마크 정보를 재구축하십시오. 북마크 수가 다시 계산되고 데이터가 올바른 상태로 복원됩니다.',
+  },
   com_nav_setting_general: {
     english: 'General',
     translated: '일반',
@@ -1781,6 +1861,10 @@ export const comparisons = {
   com_sidepanel_manage_files: {
     english: 'Manage Files',
     translated: '파일 관리',
+  },
+  com_sidepanel_conversation_tags: {
+    english: 'Bookmarks',
+    translated: '북마크',
   },
   com_assistants_capabilities: {
     english: 'Capabilities',

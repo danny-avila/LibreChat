@@ -13,7 +13,7 @@ const {
 } = require('~/server/middleware');
 const { sendMessage, createOnProgress, formatSteps, formatAction } = require('~/server/utils');
 const { initializeClient } = require('~/server/services/Endpoints/gptPlugins');
-const { saveMessage } = require('~/models');
+const { saveMessage, updateMessage } = require('~/models');
 const { getLogStores } = require('~/cache');
 const { validateTools } = require('~/app');
 const { logger } = require('~/config');
@@ -81,7 +81,14 @@ router.post(
     };
 
     const messageCache = getLogStores(CacheKeys.MESSAGES);
-    const throttledSetMessage = throttle(messageCache.set, 3000, { trailing: false });
+    const throttledCacheSet = throttle(
+      (text) => {
+        messageCache.set(responseMessageId, text, Time.FIVE_MINUTES);
+      },
+      3000,
+      { trailing: false },
+    );
+
     const {
       onProgress: progressCallback,
       sendIntermediateMessage,
@@ -92,22 +99,7 @@ router.post(
         if (plugin.loading === true) {
           plugin.loading = false;
         }
-
-        /*
-        {
-          messageId: responseMessageId,
-          sender,
-          conversationId,
-          parentMessageId: overrideParentMessageId || userMessageId,
-          text: partialText,
-          model: endpointOption.modelOptions.model,
-          unfinished: true,
-          isEdited: true,
-          error: false,
-          user,
-        }
-        */
-        throttledSetMessage(responseMessageId, partialText, Time.FIVE_MINUTES);
+        throttledCacheSet(partialText);
       },
     });
 
@@ -115,7 +107,11 @@ router.post(
       let { intermediateSteps: steps } = data;
       plugin.outputs = steps && steps[0].action ? formatSteps(steps) : 'An error occurred.';
       plugin.loading = false;
-      saveMessage(req, { ...userMessage, user });
+      saveMessage(
+        req,
+        { ...userMessage, user },
+        { context: 'api/server/routes/ask/gptPlugins.js - onChainEnd' },
+      );
       sendIntermediateMessage(res, {
         plugin,
         parentMessageId: userMessage.messageId,
@@ -146,7 +142,11 @@ router.post(
         plugin.inputs.push(formattedAction);
         plugin.latest = formattedAction.plugin;
         if (!start && !client.skipSaveUserMessage) {
-          saveMessage(req, { ...userMessage, user });
+          saveMessage(
+            req,
+            { ...userMessage, user },
+            { context: 'api/server/routes/ask/gptPlugins.js - onAgentAction' },
+          );
         }
         sendIntermediateMessage(res, {
           plugin,
@@ -184,8 +184,6 @@ router.post(
       }
 
       logger.debug('[/edit/gptPlugins] CLIENT RESPONSE', response);
-      response.plugin = { ...plugin, loading: false };
-      await saveMessage(req, { ...response, user });
 
       const { conversation = {} } = await client.responsePromise;
       conversation.title =
@@ -199,6 +197,13 @@ router.post(
         responseMessage: response,
       });
       res.end();
+
+      response.plugin = { ...plugin, loading: false };
+      await updateMessage(
+        req,
+        { ...response, user },
+        { context: 'api/server/routes/edit/gptPlugins.js' },
+      );
     } catch (error) {
       const partialText = getPartialText();
       handleAbortError(res, req, error, {

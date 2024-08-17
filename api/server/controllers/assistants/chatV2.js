@@ -246,6 +246,9 @@ const chatV2 = async (req, res) => {
       }
     };
 
+    /** @type {Promise<Run>|undefined} */
+    let userMessagePromise;
+
     const initializeThread = async () => {
       await getRequestFileIds();
 
@@ -288,7 +291,7 @@ const chatV2 = async (req, res) => {
       previousMessages.push(requestMessage);
 
       /* asynchronous */
-      saveUserMessage({ ...requestMessage, model });
+      userMessagePromise = saveUserMessage(req, { ...requestMessage, model });
 
       conversation = {
         conversationId,
@@ -449,7 +452,10 @@ const chatV2 = async (req, res) => {
     });
     res.end();
 
-    await saveAssistantMessage({ ...responseMessage, model });
+    if (userMessagePromise) {
+      await userMessagePromise;
+    }
+    await saveAssistantMessage(req, { ...responseMessage, model });
 
     if (parentMessageId === Constants.NO_PARENT && !_thread_id) {
       addTitle(req, {
