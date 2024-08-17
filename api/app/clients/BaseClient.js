@@ -54,10 +54,22 @@ class BaseClient {
     throw new Error('Subclasses attempted to call summarizeMessages without implementing it');
   }
 
-  async getTokenCountForResponse(response) {
-    logger.debug('`[BaseClient] recordTokenUsage` not implemented.', response);
+  /**
+   * Abstract method to get the token count for a message. Subclasses must implement this method.
+   * @param {Message} responseMessage
+   * @returns {number}
+   */
+  getTokenCountForResponse(responseMessage) {
+    logger.debug('`[BaseClient] recordTokenUsage` not implemented.', responseMessage);
   }
 
+  /**
+   * Abstract method to record token usage. Subclasses must implement this method.
+   * If a correction to the token usage is needed, the method should return an object with the corrected token counts.
+   * @param {number} promptTokens
+   * @param {number} completionTokens
+   * @returns {Promise<void | undefined> | Promise<{ promptTokens: number, completionTokens: number }>}
+   */
   async recordTokenUsage({ promptTokens, completionTokens }) {
     logger.debug('`[BaseClient] recordTokenUsage` not implemented.', {
       promptTokens,
@@ -536,13 +548,36 @@ class BaseClient {
       this.getTokenCountForResponse &&
       this.getTokenCount
     ) {
-      responseMessage.tokenCount = this.getTokenCountForResponse(responseMessage);
-      const completionTokens = this.getTokenCount(completion);
-      await this.recordTokenUsage({ promptTokens, completionTokens });
+      let completionTokens;
+
+      // Use existing output tokens if available
+      if (this.message_delta?.usage?.output_tokens) {
+        responseMessage.tokenCount = this.message_delta.usage.output_tokens;
+        completionTokens = responseMessage.tokenCount;
+      } else {
+        // Calculate token count if not available
+        responseMessage.tokenCount = this.getTokenCountForResponse(responseMessage);
+        completionTokens = this.getTokenCount(completion);
+      }
+
+      // Record token usage
+      const correctedUsage = await this.recordTokenUsage({ promptTokens, completionTokens });
+
+      // Update token counts if corrected usage is available
+      if (correctedUsage?.promptTokens > 0 && correctedUsage?.completionTokens > 0) {
+        responseMessage.tokenCount = correctedUsage.completionTokens;
+        await this.userMessagePromise;
+        await this.updateMessageInDatabase({
+          messageId: userMessage.messageId,
+          tokenCount: correctedUsage.promptTokens,
+        });
+      }
     }
+
     if (this.userMessagePromise) {
       await this.userMessagePromise;
     }
+
     this.responsePromise = this.saveMessageToDatabase(responseMessage, saveOptions, user);
     const messageCache = getLogStores(CacheKeys.MESSAGES);
     messageCache.set(
@@ -644,6 +679,10 @@ class BaseClient {
     return { message: savedMessage, conversation };
   }
 
+  /**
+   * Update a message in the database.
+   * @param {Partial<TMessage>} message
+   */
   async updateMessageInDatabase(message) {
     await updateMessage(this.options.req, message);
   }

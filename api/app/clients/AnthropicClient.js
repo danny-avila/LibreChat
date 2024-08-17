@@ -17,8 +17,8 @@ const {
   parseParamFromPrompt,
   createContextHandlers,
 } = require('./prompts');
+const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { getModelMaxTokens, matchModelName } = require('~/utils');
-const spendTokens = require('~/models/spendTokens');
 const { sleep } = require('~/server/utils');
 const BaseClient = require('./BaseClient');
 const { logger } = require('~/config');
@@ -33,7 +33,7 @@ function delayBeforeRetry(attempts, baseDelay = 1000) {
   return new Promise((resolve) => setTimeout(resolve, baseDelay * attempts));
 }
 
-const debugTypes = new Set(['message_start', 'message_delta']);
+const tokenEventTypes = new Set(['message_start', 'message_delta']);
 const { legacy } = anthropicSettings;
 
 class AnthropicClient extends BaseClient {
@@ -46,8 +46,12 @@ class AnthropicClient extends BaseClient {
       ? options.contextStrategy.toLowerCase()
       : 'discard';
     this.setOptions(options);
-    /** @type { string | undefined } */
+    /** @type {string | undefined} */
     this.systemMessage;
+    /** @type {AnthropicMessageStartEvent| undefined} */
+    this.message_start;
+    /** @type {AnthropicMessageDeltaEvent| undefined} */
+    this.message_delta;
   }
 
   setOptions(options) {
@@ -217,6 +221,28 @@ class AnthropicClient extends BaseClient {
   }
 
   async recordTokenUsage({ promptTokens, completionTokens, model, context = 'message' }) {
+    if (this.message_start && this.message_start.message?.usage) {
+      const input = this.message_start.message.usage.input_tokens ?? 0;
+      const write = this.message_start.message.usage.cache_creation_input_tokens ?? 0;
+      const read = this.message_start.message.usage.cache_read_input_tokens ?? 0;
+
+      await spendStructuredTokens(
+        {
+          context,
+          user: this.user,
+          conversationId: this.conversationId,
+          model: model ?? this.modelOptions.model,
+          endpointTokenConfig: this.options.endpointTokenConfig,
+        },
+        {
+          promptTokens: { input, write, read },
+          completionTokens,
+        },
+      );
+
+      return { promptTokens: input + write + read, completionTokens };
+    }
+
     await spendTokens(
       {
         context,
@@ -669,8 +695,9 @@ class AnthropicClient extends BaseClient {
           for await (const completion of response) {
             // Handle each completion as before
             const type = completion?.type ?? '';
-            if (debugTypes.has(type)) {
+            if (tokenEventTypes.has(type)) {
               logger.debug(`[AnthropicClient] ${type}`, completion);
+              this[type] = completion;
             }
             if (completion?.delta?.text) {
               handleChunk(completion.delta.text);
@@ -760,6 +787,8 @@ class AnthropicClient extends BaseClient {
    */
   async titleConvo({ text, responseText = '' }) {
     let title = 'New Chat';
+    this.message_delta = undefined;
+    this.message_start = undefined;
     const convo = `<initial_message>
   ${truncateText(text)}
   </initial_message>

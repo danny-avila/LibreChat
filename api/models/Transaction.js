@@ -1,12 +1,12 @@
 const mongoose = require('mongoose');
 const { isEnabled } = require('../server/utils/handleText');
 const transactionSchema = require('./schema/transaction');
-const { getMultiplier } = require('./tx');
+const { getMultiplier, getCacheMultiplier } = require('./tx');
 const { logger } = require('~/config');
 const Balance = require('./Balance');
 const cancelRate = 1.15;
 
-// Method to calculate and set the tokenValue for a transaction
+/** Method to calculate and set the tokenValue for a transaction */
 transactionSchema.methods.calculateTokenValue = function () {
   if (!this.valueKey || !this.tokenType) {
     this.tokenValue = this.rawAmount;
@@ -32,7 +32,6 @@ transactionSchema.statics.create = async function (txData) {
   transaction.endpointTokenConfig = txData.endpointTokenConfig;
   transaction.calculateTokenValue();
 
-  // Save the transaction
   await transaction.save();
 
   if (!isEnabled(process.env.CHECK_BALANCE)) {
@@ -58,6 +57,104 @@ transactionSchema.statics.create = async function (txData) {
     balance: balance.tokenCredits,
     [transaction.tokenType]: incrementValue,
   };
+};
+
+/**
+ * Static method to create a structured transaction and update the balance
+ * @param {txData} txData - Transaction data.
+ */
+transactionSchema.statics.createStructured = async function (txData) {
+  const Transaction = this;
+
+  const transaction = new Transaction({
+    ...txData,
+    endpointTokenConfig: txData.endpointTokenConfig,
+  });
+
+  transaction.calculateStructuredTokenValue();
+
+  await transaction.save();
+
+  if (!isEnabled(process.env.CHECK_BALANCE)) {
+    return transaction;
+  }
+
+  let balance = await Balance.findOne({ user: transaction.user }).lean();
+  let incrementValue = transaction.tokenValue;
+
+  if (balance && balance?.tokenCredits + incrementValue < 0) {
+    incrementValue = -balance.tokenCredits;
+  }
+
+  balance = await Balance.findOneAndUpdate(
+    { user: transaction.user },
+    { $inc: { tokenCredits: incrementValue } },
+    { upsert: true, new: true },
+  ).lean();
+
+  return {
+    rate: transaction.rate,
+    user: transaction.user.toString(),
+    balance: balance.tokenCredits,
+    [transaction.tokenType]: incrementValue,
+  };
+};
+
+/** Method to calculate token value for structured tokens */
+transactionSchema.methods.calculateStructuredTokenValue = function () {
+  if (!this.tokenType) {
+    this.tokenValue = this.rawAmount;
+    return;
+  }
+
+  const { model, endpointTokenConfig } = this;
+
+  if (this.tokenType === 'prompt') {
+    const inputMultiplier = getMultiplier({ tokenType: 'prompt', model, endpointTokenConfig });
+    const writeMultiplier =
+      getCacheMultiplier({ cacheType: 'write', model, endpointTokenConfig }) ?? inputMultiplier;
+    const readMultiplier =
+      getCacheMultiplier({ cacheType: 'read', model, endpointTokenConfig }) ?? inputMultiplier;
+
+    this.rateDetail = {
+      input: inputMultiplier,
+      write: writeMultiplier,
+      read: readMultiplier,
+    };
+
+    const totalTokens = (this.inputTokens || 0) + (this.writeTokens || 0) + (this.readTokens || 0);
+
+    if (totalTokens > 0) {
+      this.rate =
+        (inputMultiplier * (this.inputTokens || 0) +
+          writeMultiplier * (this.writeTokens || 0) +
+          readMultiplier * (this.readTokens || 0)) /
+        totalTokens;
+    } else {
+      this.rate = inputMultiplier; // Default to input rate if no tokens
+    }
+
+    this.tokenValue =
+      this.inputTokens * inputMultiplier +
+      (this.writeTokens || 0) * writeMultiplier +
+      (this.readTokens || 0) * readMultiplier;
+  } else {
+    const multiplier = Math.abs(
+      getMultiplier({ tokenType: this.tokenType, model, endpointTokenConfig }),
+    );
+    this.rate = multiplier;
+    this.tokenValue = this.rawAmount * multiplier;
+  }
+
+  if (this.context && this.tokenType === 'completion' && this.context === 'incomplete') {
+    this.tokenValue = Math.ceil(this.tokenValue * cancelRate);
+    this.rate *= cancelRate;
+    if (this.rateDetail) {
+      this.rateDetail = Object.fromEntries(
+        Object.entries(this.rateDetail).map(([k, v]) => [k, v * cancelRate]),
+      );
+    }
+  }
 };
 
 const Transaction = mongoose.model('Transaction', transactionSchema);

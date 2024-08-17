@@ -31,6 +31,16 @@
  * @typedef {import('@anthropic-ai/sdk').default.MessageParam} AnthropicMessage
  * @memberof typedefs
  */
+/**
+ * @exports AnthropicMessageStartEvent
+ * @typedef {import('@anthropic-ai/sdk').default.MessageStartEvent} AnthropicMessageStartEvent
+ * @memberof typedefs
+ */
+/**
+ * @exports AnthropicMessageDeltaEvent
+ * @typedef {import('@anthropic-ai/sdk').default.MessageDeltaEvent} AnthropicMessageDeltaEvent
+ * @memberof typedefs
+ */
 
 /**
  * @exports GenerativeModel
