@@ -8,7 +8,7 @@ import { Nav, MobileNav } from '~/components/Nav';
 
 export default function Root() {
   const { isAuthenticated } = useAuthContext();
-  const [navVisible, setNavVisible] = useState(() => {
+  const [navVisible, setNavVisible] = useState<boolean>(() => {
     const savedNavVisible = localStorage.getItem('navVisible');
     return savedNavVisible !== null ? JSON.parse(savedNavVisible) : true;
   });

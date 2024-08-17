@@ -3,6 +3,7 @@ import { isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
 import { useChatContext, useAddedChatContext } from '~/Providers';
 import { mainTextareaId } from '~/common';
+import { Button } from '~/components/ui';
 import { cn } from '~/utils';
 
 function AddMultiConvo({ className = '' }: { className?: string }) {
@@ -32,16 +33,15 @@ function AddMultiConvo({ className = '' }: { className?: string }) {
   }
 
   return (
-    <button
+    <Button
+      id="add-multi-conversation-button"
       aria-label="Add multi-conversation"
       onClick={clickHandler}
-      className={cn(
-        'group m-1.5 flex w-fit cursor-pointer items-center rounded text-sm hover:bg-border-medium focus-visible:bg-border-medium focus-visible:outline-offset-2',
-        className,
-      )}
+      variant="outline"
+      className={cn('h-10 w-10 p-0 transition-all duration-300 ease-in-out', className)}
     >
       <PlusCircle size={16} />
-    </button>
+    </Button>
   );
 }
 

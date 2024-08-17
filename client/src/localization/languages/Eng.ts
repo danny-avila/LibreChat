@@ -220,6 +220,8 @@ export default {
   com_ui_import_conversation_file_type_error: 'Unsupported import type',
   com_ui_confirm_action: 'Confirm Action',
   com_ui_chat: 'Chat',
+  com_ui_chat_history: 'Chat History',
+  com_ui_controls: 'Controls',
   com_ui_dashboard: 'Dashboard',
   com_ui_chats: 'chats',
   com_ui_avatar: 'Avatar',
@@ -308,6 +310,7 @@ export default {
   com_ui_bookmarks_add_to_conversation: 'Add to current conversation',
   com_ui_bookmarks_filter: 'Filter bookmarks...',
   com_ui_no_bookmarks: 'it seems like you have no bookmarks yet. Click on a chat and add a new one',
+  com_ui_no_conversation_id: 'No conversation ID found',
   com_auth_error_login:
     'Unable to login with the information provided. Please check your credentials and try again.',
   com_auth_error_login_rl:
@@ -553,6 +556,7 @@ export default {
   com_endpoint_config_key_google_service_account: 'Create a Service Account',
   com_endpoint_config_key_google_vertex_api_role:
     'Make sure to click \'Create and Continue\' to give at least the \'Vertex AI User\' role. Lastly, create a JSON key to import here.',
+  com_nav_account_settings: 'Account Settings',
   com_nav_font_size: 'Message Font Size',
   com_nav_font_size_xs: 'Extra Small',
   com_nav_font_size_sm: 'Small',
@@ -589,6 +593,7 @@ export default {
   com_ui_drag_drop_file: 'Drag and drop a file here',
   com_ui_upload_image: 'Upload an image',
   com_ui_select_a_category: 'No category selected',
+  com_ui_clear_all: 'Clear all',
   com_nav_tool_dialog_description: 'Assistant must be saved to persist tool selections.',
   com_show_agent_settings: 'Show Agent Settings',
   com_show_completion_settings: 'Show Completion Settings',
