@@ -140,7 +140,7 @@ export default function VariableForm({
               [rehypeKatex, { output: 'mathml' }],
               [rehypeHighlight, { ignoreMissing: true }],
             ]}
-            className="markdown prose dark:prose-invert light dark:text-gray-70 my-1 w-full break-words"
+            className="prose dark:prose-invert light dark:text-gray-70 my-1 break-words"
           >
             {generateHighlightedMarkdown()}
           </ReactMarkdown>
@@ -170,7 +170,7 @@ export default function VariableForm({
                       id={`fields.${index}.value`}
                       className={cn(
                         defaultTextProps,
-                        'w-full rounded px-3 py-2 focus:bg-surface-tertiary',
+                        'rounded px-3 py-2 focus:bg-surface-tertiary',
                       )}
                       placeholder={localize('com_ui_enter_var', field.config.variable)}
                       maxRows={8}

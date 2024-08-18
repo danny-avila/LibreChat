@@ -1,17 +1,41 @@
+import React, { useMemo } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeKatex from 'rehype-katex';
+import remarkMath from 'remark-math';
+import supersub from 'remark-supersub';
+import rehypeHighlight from 'rehype-highlight';
 import type { TPromptGroup } from 'librechat-data-provider';
 import CategoryIcon from './Groups/CategoryIcon';
 import PromptVariables from './PromptVariables';
 import Description from './Description';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useAuthContext } from '~/hooks';
 import Command from './Command';
+import { extractVariableInfo, replaceSpecialVars } from '~/utils';
 
-const PromptDetails = ({ group }: { group: TPromptGroup }) => {
+const PromptDetails = ({ group }: { group?: TPromptGroup }) => {
   const localize = useLocalize();
+  const { user } = useAuthContext();
+
+  const mainText = useMemo(() => {
+    const initialText = group?.productionPrompt?.prompt ?? '';
+    return replaceSpecialVars({ text: initialText, user });
+  }, [group?.productionPrompt?.prompt, user]);
+
+  const { allVariables } = useMemo(() => extractVariableInfo(mainText), [mainText]);
+
+  const highlightedMarkdown = useMemo(() => {
+    let tempText = mainText;
+    allVariables.forEach((variable) => {
+      const placeholder = `{{${variable}}}`;
+      tempText = tempText.replaceAll(placeholder, `**${placeholder}**`);
+    });
+    return tempText;
+  }, [mainText, allVariables]);
+
   if (!group) {
     return null;
   }
-
-  const promptText = group.productionPrompt?.prompt ?? '';
 
   return (
     <div>
@@ -34,10 +58,19 @@ const PromptDetails = ({ group }: { group: TPromptGroup }) => {
               {localize('com_ui_prompt_text')}
             </h2>
             <div className="group relative min-h-32 rounded-b-lg border border-gray-300 p-4 transition-all duration-150 dark:border-gray-600">
-              <span className="block break-words px-2 py-1 dark:text-gray-200">{promptText}</span>
+              <ReactMarkdown
+                remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
+                rehypePlugins={[
+                  [rehypeKatex, { output: 'mathml' }],
+                  [rehypeHighlight, { ignoreMissing: true }],
+                ]}
+                className="prose dark:prose-invert light dark:text-gray-70 my-1"
+              >
+                {highlightedMarkdown}
+              </ReactMarkdown>
             </div>
           </div>
-          <PromptVariables promptText={promptText} />
+          <PromptVariables promptText={mainText} />
           <Description initialValue={group.oneliner} disabled={true} />
           <Command initialValue={group.command} disabled={true} />
         </div>
