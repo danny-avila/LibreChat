@@ -28,7 +28,7 @@
   },
   "homepage": "https://librechat.ai",
   "dependencies": {
-    "@ariakit/react": "^0.4.5",
+    "@ariakit/react": "^0.4.8",
     "@dicebear/collection": "^7.0.4",
     "@dicebear/core": "^7.0.4",
     "@headlessui/react": "^2.1.2",
