@@ -9,31 +9,31 @@ function addCacheControl(messages) {
   }
 
   const updatedMessages = [...messages];
-  let userMessagesFound = 0;
+  let userMessagesModified = 0;
 
-  for (let i = updatedMessages.length - 1; i >= 0 && userMessagesFound < 2; i--) {
-    if (updatedMessages[i].role === 'user') {
-      if (typeof updatedMessages[i].content === 'string') {
-        updatedMessages[i] = {
-          ...updatedMessages[i],
-          content: [
-            {
-              type: 'text',
-              text: updatedMessages[i].content,
-              cache_control: { type: 'ephemeral' },
-            },
-          ],
-        };
-      } else if (Array.isArray(updatedMessages[i].content)) {
-        updatedMessages[i] = {
-          ...updatedMessages[i],
-          content: updatedMessages[i].content.map((item) => ({
-            ...item,
-            cache_control: { type: 'ephemeral' },
-          })),
-        };
+  for (let i = updatedMessages.length - 1; i >= 0 && userMessagesModified < 2; i--) {
+    const message = updatedMessages[i];
+    if (message.role !== 'user') {
+      continue;
+    }
+
+    if (typeof message.content === 'string') {
+      message.content = [
+        {
+          type: 'text',
+          text: message.content,
+          cache_control: { type: 'ephemeral' },
+        },
+      ];
+      userMessagesModified++;
+    } else if (Array.isArray(message.content)) {
+      for (let j = message.content.length - 1; j >= 0; j--) {
+        if (message.content[j].type === 'text') {
+          message.content[j].cache_control = { type: 'ephemeral' };
+          userMessagesModified++;
+          break;
+        }
       }
-      userMessagesFound++;
     }
   }
 
