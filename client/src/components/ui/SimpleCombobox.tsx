@@ -98,6 +98,7 @@ export default function ComboboxComponent({
                 <Ariakit.SelectItem
                   key={item.value}
                   value={`${item.value ?? ''}`}
+                  aria-label={`${item.label ?? item.value ?? ''}`}
                   className={cn(
                     'flex cursor-pointer items-center px-3 py-2 text-sm',
                     'text-text-primary hover:bg-surface-tertiary',
