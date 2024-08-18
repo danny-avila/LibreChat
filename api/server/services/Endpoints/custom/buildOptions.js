@@ -1,16 +1,18 @@
+const { removeNullishValues } = require('librechat-data-provider');
+
 const buildOptions = (endpoint, parsedBody, endpointType) => {
   const {
     chatGptLabel,
     promptPrefix,
     maxContextTokens,
-    resendFiles,
+    resendFiles = true,
     imageDetail,
     iconURL,
     greeting,
     spec,
-    ...rest
+    ...modelOptions
   } = parsedBody;
-  const endpointOption = {
+  const endpointOption = removeNullishValues({
     endpoint,
     endpointType,
     chatGptLabel,
@@ -21,10 +23,8 @@ const buildOptions = (endpoint, parsedBody, endpointType) => {
     greeting,
     spec,
     maxContextTokens,
-    modelOptions: {
-      ...rest,
-    },
-  };
+    modelOptions,
+  });
 
   return endpointOption;
 };
