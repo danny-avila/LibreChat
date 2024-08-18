@@ -51,14 +51,14 @@ export default function AssistantSwitcher({ isCollapsed }: SwitcherProps) {
   const assistantOptions = useMemo(() => {
     return assistants.map((assistant) => {
       return {
-        label: assistant.name ?? '',
+        label: (assistant.name as string | null) ?? '',
         value: assistant.id,
         icon: (
           <Icon
             isCreatedByUser={false}
             endpoint={endpoint}
-            assistantName={assistant.name ?? ''}
-            iconURL={(assistant.metadata?.avatar as string) ?? ''}
+            assistantName={(assistant.name as string | null) ?? ''}
+            iconURL={assistant.metadata?.avatar ?? ''}
           />
         ),
       };
@@ -83,7 +83,7 @@ export default function AssistantSwitcher({ isCollapsed }: SwitcherProps) {
           isCreatedByUser={false}
           endpoint={endpoint}
           assistantName={currentAssistant?.name ?? ''}
-          iconURL={(currentAssistant?.metadata?.avatar as string) ?? ''}
+          iconURL={currentAssistant?.metadata?.avatar ?? ''}
         />
       }
     />
