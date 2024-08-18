@@ -83,11 +83,13 @@ class AnthropicClient extends BaseClient {
       this.options = options;
     }
 
-    const modelOptions = this.options.modelOptions || {};
-    this.modelOptions = {
-      ...modelOptions,
-      model: modelOptions.model || anthropicSettings.model.default,
-    };
+    this.modelOptions = Object.assign(
+      {
+        model: anthropicSettings.model.default,
+      },
+      this.modelOptions,
+      this.options.modelOptions,
+    );
 
     const modelMatch = matchModelName(this.modelOptions.model, EModelEndpoint.anthropic);
     this.isClaude3 = modelMatch.startsWith('claude-3');

@@ -6,6 +6,7 @@ const {
   ImageDetail,
   EModelEndpoint,
   resolveHeaders,
+  openAISettings,
   ImageDetailCost,
   CohereConstants,
   getResponseSender,
@@ -85,26 +86,13 @@ class OpenAIClient extends BaseClient {
       this.apiKey = this.options.openaiApiKey;
     }
 
-    const modelOptions = this.options.modelOptions || {};
-
-    if (!this.modelOptions) {
-      this.modelOptions = {
-        ...modelOptions,
-        model: modelOptions.model || 'gpt-3.5-turbo',
-        temperature:
-          typeof modelOptions.temperature === 'undefined' ? 0.8 : modelOptions.temperature,
-        top_p: typeof modelOptions.top_p === 'undefined' ? 1 : modelOptions.top_p,
-        presence_penalty:
-          typeof modelOptions.presence_penalty === 'undefined' ? 1 : modelOptions.presence_penalty,
-        stop: modelOptions.stop,
-      };
-    } else {
-      // Update the modelOptions if it already exists
-      this.modelOptions = {
-        ...this.modelOptions,
-        ...modelOptions,
-      };
-    }
+    this.modelOptions = Object.assign(
+      {
+        model: openAISettings.model.default,
+      },
+      this.modelOptions,
+      this.options.modelOptions,
+    );
 
     this.defaultVisionModel = this.options.visionModel ?? 'gpt-4-vision-preview';
     if (typeof this.options.attachments?.then === 'function') {
