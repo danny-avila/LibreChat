@@ -19,16 +19,22 @@ const Token = mongoose.model('Token', tokenSchema);
  * @throws Will throw an error if token creation fails.
  */
 async function createToken(tokenData) {
-  const currentTime = new Date();
-  const expiresAt = new Date(currentTime.getTime() + tokenData.expiresIn * 1000);
+  try {
+    const currentTime = new Date();
+    const expiresAt = new Date(currentTime.getTime() + tokenData.expiresIn * 1000);
 
-  const newTokenData = {
-    ...tokenData,
-    createdAt: currentTime,
-    expiresAt,
-  };
+    const newTokenData = {
+      ...tokenData,
+      createdAt: currentTime,
+      expiresAt,
+    };
 
-  return new Token(newTokenData).save();
+    const newToken = new Token(newTokenData);
+    return await newToken.save();
+  } catch (error) {
+    logger.debug('An error occurred while creating token:', error);
+    throw error;
+  }
 }
 
 /**
@@ -40,24 +46,29 @@ async function createToken(tokenData) {
  * @returns {Promise<Object|null>} The matched Token document, or null if not found.
  * @throws Will throw an error if the find operation fails.
  */
-function findToken(query) {
-  const conditions = [];
+async function findToken(query) {
+  try {
+    const conditions = [];
 
-  if (query.userId) {
-    conditions.push({ userId: query.userId });
-  }
-  if (query.token) {
-    conditions.push({ token: query.token });
-  }
-  if (query.email) {
-    conditions.push({ email: query.email });
-  }
+    if (query.userId) {
+      conditions.push({ userId: query.userId });
+    }
+    if (query.token) {
+      conditions.push({ token: query.token });
+    }
+    if (query.email) {
+      conditions.push({ email: query.email });
+    }
 
-  return Token.findOne({
-    $and: conditions,
-  })
-    .lean()
-    .exec();
+    const token = await Token.findOne({
+      $and: conditions,
+    }).lean();
+
+    return token;
+  } catch (error) {
+    logger.debug('An error occurred while finding token:', error);
+    throw error;
+  }
 }
 
 /**
