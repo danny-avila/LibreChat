@@ -1,10 +1,10 @@
 import { useMemo } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import {
+  openAISettings,
   EModelEndpoint,
-  ImageDetail,
-  imageDetailNumeric,
   imageDetailValue,
+  imageDetailNumeric,
 } from 'librechat-data-provider';
 import type { TModelSelectProps, OnInputNumberChange } from '~/common';
 import {
@@ -240,7 +240,12 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               <Label htmlFor="temp-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_temperature')}{' '}
                 <small className="opacity-40">
-                  ({localize('com_endpoint_default_with_num', '1')})
+                  (
+                  {localize(
+                    'com_endpoint_default_with_num',
+                    openAISettings.temperature.default + '',
+                  )}
+                  )
                 </small>
               </Label>
               <InputNumber
@@ -249,9 +254,9 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                 disabled={readonly}
                 value={temperatureValue as number}
                 onChange={setTemperature as OnInputNumberChange}
-                max={2}
-                min={0}
-                step={0.01}
+                max={openAISettings.temperature.max}
+                min={openAISettings.temperature.min}
+                step={openAISettings.temperature.step}
                 controls={false}
                 className={cn(
                   defaultTextProps,
@@ -264,12 +269,12 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             </div>
             <Slider
               disabled={readonly}
-              value={[(temperatureValue as number) ?? 1]}
+              value={[temperatureValue ?? openAISettings.temperature.default]}
               onValueChange={(value) => setTemperature(value[0])}
-              doubleClickHandler={() => setTemperature(1)}
-              max={2}
-              min={0}
-              step={0.01}
+              doubleClickHandler={() => setTemperature(openAISettings.temperature.default)}
+              max={openAISettings.temperature.max}
+              min={openAISettings.temperature.min}
+              step={openAISettings.temperature.step}
               className="flex h-4 w-full"
             />
           </HoverCardTrigger>
@@ -280,16 +285,18 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             <div className="flex justify-between">
               <Label htmlFor="top-p-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_top_p')}{' '}
-                <small className="opacity-40">({localize('com_endpoint_default')}: 1)</small>
+                <small className="opacity-40">
+                  ({localize('com_endpoint_default_with_num', openAISettings.top_p.default + '')})
+                </small>
               </Label>
               <InputNumber
                 id="top-p-int"
                 disabled={readonly}
                 value={topPValue as number}
                 onChange={(value) => setTopP(Number(value))}
-                max={1}
-                min={0}
-                step={0.01}
+                max={openAISettings.top_p.max}
+                min={openAISettings.top_p.min}
+                step={openAISettings.top_p.step}
                 controls={false}
                 className={cn(
                   defaultTextProps,
@@ -302,12 +309,12 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             </div>
             <Slider
               disabled={readonly}
-              value={[(topPValue as number) ?? 1]}
+              value={[topPValue ?? openAISettings.top_p.default]}
               onValueChange={(value) => setTopP(value[0])}
-              doubleClickHandler={() => setTopP(1)}
-              max={1}
-              min={0}
-              step={0.01}
+              doubleClickHandler={() => setTopP(openAISettings.top_p.default)}
+              max={openAISettings.top_p.max}
+              min={openAISettings.top_p.min}
+              step={openAISettings.top_p.step}
               className="flex h-4 w-full"
             />
           </HoverCardTrigger>
@@ -319,16 +326,23 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             <div className="flex justify-between">
               <Label htmlFor="freq-penalty-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_frequency_penalty')}{' '}
-                <small className="opacity-40">({localize('com_endpoint_default')}: 0)</small>
+                <small className="opacity-40">
+                  (
+                  {localize(
+                    'com_endpoint_default_with_num',
+                    openAISettings.frequency_penalty.default + '',
+                  )}
+                  )
+                </small>
               </Label>
               <InputNumber
                 id="freq-penalty-int"
                 disabled={readonly}
                 value={freqPValue as number}
                 onChange={(value) => setFreqP(Number(value))}
-                max={2}
-                min={-2}
-                step={0.01}
+                max={openAISettings.frequency_penalty.max}
+                min={openAISettings.frequency_penalty.min}
+                step={openAISettings.frequency_penalty.step}
                 controls={false}
                 className={cn(
                   defaultTextProps,
@@ -341,12 +355,12 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             </div>
             <Slider
               disabled={readonly}
-              value={[(freqPValue as number) ?? 0]}
+              value={[freqPValue ?? openAISettings.frequency_penalty.default]}
               onValueChange={(value) => setFreqP(value[0])}
-              doubleClickHandler={() => setFreqP(0)}
-              max={2}
-              min={-2}
-              step={0.01}
+              doubleClickHandler={() => setFreqP(openAISettings.frequency_penalty.default)}
+              max={openAISettings.frequency_penalty.max}
+              min={openAISettings.frequency_penalty.min}
+              step={openAISettings.frequency_penalty.step}
               className="flex h-4 w-full"
             />
           </HoverCardTrigger>
@@ -358,16 +372,23 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             <div className="flex justify-between">
               <Label htmlFor="pres-penalty-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_presence_penalty')}{' '}
-                <small className="opacity-40">({localize('com_endpoint_default')}: 0)</small>
+                <small className="opacity-40">
+                  (
+                  {localize(
+                    'com_endpoint_default_with_num',
+                    openAISettings.presence_penalty.default + '',
+                  )}
+                  )
+                </small>
               </Label>
               <InputNumber
                 id="pres-penalty-int"
                 disabled={readonly}
                 value={presPValue as number}
                 onChange={(value) => setPresP(Number(value))}
-                max={2}
-                min={-2}
-                step={0.01}
+                max={openAISettings.presence_penalty.max}
+                min={openAISettings.presence_penalty.min}
+                step={openAISettings.presence_penalty.step}
                 controls={false}
                 className={cn(
                   defaultTextProps,
@@ -380,12 +401,12 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             </div>
             <Slider
               disabled={readonly}
-              value={[(presPValue as number) ?? 0]}
+              value={[presPValue ?? openAISettings.presence_penalty.default]}
               onValueChange={(value) => setPresP(value[0])}
-              doubleClickHandler={() => setPresP(0)}
-              max={2}
-              min={-2}
-              step={0.01}
+              doubleClickHandler={() => setPresP(openAISettings.presence_penalty.default)}
+              max={openAISettings.presence_penalty.max}
+              min={openAISettings.presence_penalty.min}
+              step={openAISettings.presence_penalty.step}
               className="flex h-4 w-full"
             />
           </HoverCardTrigger>
@@ -408,7 +429,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             <Input
               id="image-detail-value"
               disabled={true}
-              value={imageDetail ?? ImageDetail.auto}
+              value={imageDetail ?? openAISettings.imageDetail.default}
               className={cn(
                 defaultTextProps,
                 optionText,
@@ -422,7 +443,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               <HoverCardTrigger>
                 <Switch
                   id="resend-files"
-                  checked={resendFiles ?? true}
+                  checked={resendFiles ?? openAISettings.resendFiles.default}
                   onCheckedChange={(checked: boolean) => setResendFiles(checked)}
                   disabled={readonly}
                   className="flex"
@@ -436,13 +457,14 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                   id="image-detail-slider"
                   disabled={readonly}
                   value={[
-                    imageDetailNumeric[imageDetail ?? ''] ?? imageDetailNumeric[ImageDetail.auto],
+                    imageDetailNumeric[imageDetail ?? ''] ??
+                      imageDetailNumeric[openAISettings.imageDetail.default],
                   ]}
                   onValueChange={(value) => setImageDetail(imageDetailValue[value[0]])}
-                  doubleClickHandler={() => setImageDetail(ImageDetail.auto)}
-                  max={2}
-                  min={0}
-                  step={1}
+                  doubleClickHandler={() => setImageDetail(openAISettings.imageDetail.default)}
+                  max={openAISettings.imageDetail.max}
+                  min={openAISettings.imageDetail.min}
+                  step={openAISettings.imageDetail.step}
                 />
                 <OptionHover endpoint={optionEndpoint ?? ''} type="detail" side={ESide.Bottom} />
               </HoverCardTrigger>

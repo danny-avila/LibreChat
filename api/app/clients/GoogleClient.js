@@ -120,19 +120,7 @@ class GoogleClient extends BaseClient {
       .filter((ex) => ex)
       .filter((obj) => obj.input.content !== '' && obj.output.content !== '');
 
-    const modelOptions = this.options.modelOptions || {};
-    this.modelOptions = {
-      ...modelOptions,
-      // set some good defaults (check for undefined in some cases because they may be 0)
-      model: modelOptions.model || settings.model.default,
-      temperature:
-        typeof modelOptions.temperature === 'undefined'
-          ? settings.temperature.default
-          : modelOptions.temperature,
-      topP: typeof modelOptions.topP === 'undefined' ? settings.topP.default : modelOptions.topP,
-      topK: typeof modelOptions.topK === 'undefined' ? settings.topK.default : modelOptions.topK,
-      // stop: modelOptions.stop // no stop method for now
-    };
+    this.modelOptions = this.options.modelOptions || {};
 
     this.options.attachments?.then((attachments) => this.checkVisionRequest(attachments));
 
@@ -808,7 +796,7 @@ class GoogleClient extends BaseClient {
       });
 
       reply = titleResponse.content;
-
+      // TODO: RECORD TOKEN USAGE
       return reply;
     }
   }
