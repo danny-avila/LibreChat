@@ -69,8 +69,13 @@ function findToken(query) {
  * @returns {Promise<mongoose.Document|null>} The updated Token document, or null if not found.
  * @throws Will throw an error if the update operation fails.
  */
-function updateToken(query, updateData) {
-  return Token.findOneAndUpdate(query, updateData, { new: true }).exec();
+async function updateToken(query, updateData) {
+  try {
+    return await Token.findOneAndUpdate(query, updateData, { new: true });
+  } catch (error) {
+    logger.debug('An error occurred while updating token:', error);
+    throw error;
+  }
 }
 
 /**
@@ -83,17 +88,14 @@ function updateToken(query, updateData) {
  * @throws Will throw an error if the delete operation fails.
  */
 async function deleteTokens(query) {
-  return Token.deleteMany({
-    $or: [{ userId: query.userId }, { token: query.token }, { email: query.email }],
-  })
-    .exec()
-    .then((result) => {
-      return result;
-    })
-    .catch((error) => {
-      logger.debug('An error occurred while deleting tokens:', error);
-      throw error;
+  try {
+    return await Token.deleteMany({
+      $or: [{ userId: query.userId }, { token: query.token }, { email: query.email }],
     });
+  } catch (error) {
+    logger.debug('An error occurred while deleting tokens:', error);
+    throw error;
+  }
 }
 
 module.exports = {
