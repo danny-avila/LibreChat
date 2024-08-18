@@ -44,9 +44,12 @@ export const getTextKey = (message?: TMessage | null, convoId?: string | null) =
   }${message.conversationId ?? convoId}`;
 };
 
-export const scrollToEnd = () => {
+export const scrollToEnd = (callback?: () => void) => {
   const messagesEndElement = document.getElementById('messages-end');
   if (messagesEndElement) {
     messagesEndElement.scrollIntoView({ behavior: 'instant' });
+    if (callback) {
+      callback();
+    }
   }
 };

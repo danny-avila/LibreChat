@@ -1,10 +1,10 @@
 import { useMemo, useRef, useCallback } from 'react';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
+import type { SwitcherProps } from '~/common';
+import ControlCombobox from '~/components/ui/ControlCombobox';
 import MinimalIcon from '~/components/Endpoints/MinimalIcon';
 import { useSetIndexOptions, useLocalize } from '~/hooks';
-import type { SwitcherProps } from '~/common';
 import { useChatContext } from '~/Providers';
-import { Combobox } from '~/components/ui';
 import { mainTextareaId } from '~/common';
 
 export default function ModelSwitcher({ isCollapsed }: SwitcherProps) {
@@ -16,7 +16,10 @@ export default function ModelSwitcher({ isCollapsed }: SwitcherProps) {
 
   const { endpoint, model = null } = conversation ?? {};
   const models = useMemo(() => {
-    return modelsQuery?.data?.[endpoint ?? ''] ?? [];
+    return (modelsQuery.data?.[endpoint ?? ''] ?? []).map((model) => ({
+      label: model,
+      value: model,
+    }));
   }, [modelsQuery, endpoint]);
 
   const setModel = useCallback(
@@ -34,7 +37,8 @@ export default function ModelSwitcher({ isCollapsed }: SwitcherProps) {
   );
 
   return (
-    <Combobox
+    <ControlCombobox
+      displayValue={model ?? ''}
       selectPlaceholder={localize('com_ui_select_model')}
       searchPlaceholder={localize('com_ui_select_search_model')}
       isCollapsed={isCollapsed}
