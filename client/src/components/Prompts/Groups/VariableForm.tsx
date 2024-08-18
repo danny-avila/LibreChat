@@ -1,12 +1,18 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import supersub from 'remark-supersub';
+import rehypeKatex from 'rehype-katex';
+import ReactMarkdown from 'react-markdown';
+import rehypeHighlight from 'rehype-highlight';
 import { useForm, useFieldArray, Controller, useWatch } from 'react-hook-form';
 import type { TPromptGroup } from 'librechat-data-provider';
 import {
   cn,
-  extractVariableInfo,
   wrapVariable,
-  replaceSpecialVars,
   defaultTextProps,
+  replaceSpecialVars,
+  extractVariableInfo,
 } from '~/utils';
 import { useAuthContext, useLocalize, useSubmitMessage } from '~/hooks';
 import { TextareaAutosize, InputWithDropdown } from '~/components/ui';
@@ -99,31 +105,16 @@ export default function VariableForm({
     return null;
   }
 
-  const generateHighlightedText = () => {
+  const generateHighlightedMarkdown = () => {
     let tempText = mainText;
-    const parts: JSX.Element[] = [];
-
-    allVariables.forEach((variable, index) => {
+    allVariables.forEach((variable) => {
       const placeholder = `{{${variable}}}`;
-      const partsBeforePlaceholder = tempText.split(placeholder);
       const fieldIndex = variableIndexMap.get(variable) as string | number;
       const fieldValue = fieldValues[fieldIndex].value as string;
-      parts.push(
-        <span key={`before-${index}`}>{partsBeforePlaceholder[0]}</span>,
-        <span
-          key={`highlight-${index}`}
-          className="rounded bg-yellow-100 p-1 font-medium dark:text-gray-800"
-        >
-          {fieldValue !== '' ? fieldValue : placeholder}
-        </span>,
-      );
-
-      tempText = partsBeforePlaceholder.slice(1).join(placeholder);
+      const highlightText = fieldValue !== '' ? fieldValue : placeholder;
+      tempText = tempText.replaceAll(placeholder, `**${highlightText}**`);
     });
-
-    parts.push(<span key="last-part">{tempText}</span>);
-
-    return parts;
+    return tempText;
   };
 
   const onSubmit = (data: FormValues) => {
@@ -142,8 +133,17 @@ export default function VariableForm({
   return (
     <div className="container mx-auto p-1">
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-        <div className="mb-6 max-h-screen overflow-auto rounded-md p-4 md:max-h-80">
-          <p className="text-md whitespace-pre-wrap">{generateHighlightedText()}</p>
+        <div className="mb-6 max-h-screen overflow-auto rounded-md bg-gray-100 p-4 text-text-secondary dark:bg-gray-700/50 md:max-h-80">
+          <ReactMarkdown
+            remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
+            rehypePlugins={[
+              [rehypeKatex, { output: 'mathml' }],
+              [rehypeHighlight, { ignoreMissing: true }],
+            ]}
+            className="markdown prose dark:prose-invert light dark:text-gray-70 my-1 w-full break-words"
+          >
+            {generateHighlightedMarkdown()}
+          </ReactMarkdown>
         </div>
         <div className="space-y-4">
           {fields.map((field, index) => (
