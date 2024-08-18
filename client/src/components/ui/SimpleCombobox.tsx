@@ -1,9 +1,8 @@
 import * as Ariakit from '@ariakit/react';
 import { matchSorter } from 'match-sorter';
-import { startTransition, useMemo, useState } from 'react';
+import { startTransition, useMemo, useState, useEffect, useRef } from 'react';
 import { cn } from '~/utils';
 import type { OptionWithIcon } from '~/common';
-
 import { Search } from 'lucide-react';
 
 interface ComboboxComponentProps {
@@ -30,6 +29,8 @@ export default function ComboboxComponent({
   SelectIcon,
 }: ComboboxComponentProps) {
   const [searchValue, setSearchValue] = useState('');
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [buttonWidth, setButtonWidth] = useState<number | null>(null);
 
   const matches = useMemo(() => {
     return matchSorter(items, searchValue, {
@@ -37,6 +38,12 @@ export default function ComboboxComponent({
       baseSort: (a, b) => (a.index < b.index ? -1 : 1),
     });
   }, [searchValue, items]);
+
+  useEffect(() => {
+    if (buttonRef.current && !isCollapsed) {
+      setButtonWidth(buttonRef.current.offsetWidth);
+    }
+  }, [isCollapsed]);
 
   return (
     <div className="w-full">
@@ -51,28 +58,34 @@ export default function ComboboxComponent({
         <Ariakit.SelectProvider value={selectedValue} setValue={setValue}>
           <Ariakit.SelectLabel className="sr-only">{ariaLabel}</Ariakit.SelectLabel>
           <Ariakit.Select
+            ref={buttonRef}
             className={cn(
-              'flex w-full items-center gap-2 rounded-md bg-surface-secondary px-3 py-2 text-sm',
+              'flex items-center justify-center rounded-full bg-surface-secondary',
               'text-text-primary hover:bg-surface-tertiary',
               'border border-border-light',
-              isCollapsed ? 'h-10 w-10 justify-center p-0' : 'h-10',
+              isCollapsed ? 'h-9 w-9' : 'h-10 w-full rounded-md px-3 py-2 text-sm',
             )}
           >
             {SelectIcon != null && (
-              <div className="assistant-item overflow-hidden rounded-full">{SelectIcon}</div>
+              <div className="assistant-item flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
+                {SelectIcon}
+              </div>
             )}
-            <span className="flex-grow truncate text-left">
-              {displayValue ?? selectPlaceholder}
-            </span>
+            {!isCollapsed && (
+              <span className="flex-grow truncate text-left">
+                {displayValue ?? selectPlaceholder}
+              </span>
+            )}
           </Ariakit.Select>
           <Ariakit.SelectPopover
             gutter={4}
-            sameWidth
+            portal
             className="z-50 overflow-hidden rounded-md border border-border-light bg-surface-secondary shadow-lg"
+            style={{ width: buttonWidth ?? '300px' }}
           >
             <div className="p-2">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-primary" />
                 <Ariakit.Combobox
                   autoSelect
                   placeholder={searchPlaceholder}
@@ -80,7 +93,7 @@ export default function ComboboxComponent({
                 />
               </div>
             </div>
-            <Ariakit.ComboboxList className="max-h-[50vh] overflow-auto">
+            <Ariakit.ComboboxList className="max-h-60 overflow-auto">
               {matches.map((item) => (
                 <Ariakit.SelectItem
                   key={item.value}
@@ -93,7 +106,7 @@ export default function ComboboxComponent({
                   render={<Ariakit.ComboboxItem />}
                 >
                   {item.icon != null && (
-                    <div className="assistant-item mr-2 overflow-hidden rounded-full">
+                    <div className="assistant-item mr-2 flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
                       {item.icon}
                     </div>
                   )}
