@@ -5,7 +5,7 @@ import { cn } from '~/utils';
 import type { OptionWithIcon } from '~/common';
 import { Search } from 'lucide-react';
 
-interface ComboboxComponentProps {
+interface ControlComboboxProps {
   selectedValue: string;
   displayValue?: string;
   items: OptionWithIcon[];
@@ -17,7 +17,7 @@ interface ComboboxComponentProps {
   SelectIcon?: React.ReactNode;
 }
 
-export default function ComboboxComponent({
+export default function ControlCombobox({
   selectedValue,
   displayValue,
   items,
@@ -27,7 +27,7 @@ export default function ComboboxComponent({
   selectPlaceholder,
   isCollapsed,
   SelectIcon,
-}: ComboboxComponentProps) {
+}: ControlComboboxProps) {
   const [searchValue, setSearchValue] = useState('');
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [buttonWidth, setButtonWidth] = useState<number | null>(null);

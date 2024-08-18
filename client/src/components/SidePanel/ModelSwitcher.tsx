@@ -1,10 +1,10 @@
 import { useMemo, useRef, useCallback } from 'react';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
+import type { SwitcherProps } from '~/common';
+import ControlCombobox from '~/components/ui/ControlCombobox';
 import MinimalIcon from '~/components/Endpoints/MinimalIcon';
 import { useSetIndexOptions, useLocalize } from '~/hooks';
-import type { SwitcherProps } from '~/common';
 import { useChatContext } from '~/Providers';
-import SimpleCombobox from '~/components/ui/SimpleCombobox';
 import { mainTextareaId } from '~/common';
 
 export default function ModelSwitcher({ isCollapsed }: SwitcherProps) {
@@ -37,7 +37,7 @@ export default function ModelSwitcher({ isCollapsed }: SwitcherProps) {
   );
 
   return (
-    <SimpleCombobox
+    <ControlCombobox
       displayValue={model ?? ''}
       selectPlaceholder={localize('com_ui_select_model')}
       searchPlaceholder={localize('com_ui_select_search_model')}

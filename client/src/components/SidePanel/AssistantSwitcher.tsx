@@ -1,10 +1,10 @@
 import { useEffect, useMemo } from 'react';
-import SimpleCombobox from '~/components/ui/SimpleCombobox';
 import { isAssistantsEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import type { AssistantsEndpoint } from 'librechat-data-provider';
 import type { SwitcherProps, AssistantListItem } from '~/common';
 import { useSetIndexOptions, useSelectAssistant, useLocalize, useAssistantListMap } from '~/hooks';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
+import ControlCombobox from '~/components/ui/ControlCombobox';
 import Icon from '~/components/Endpoints/Icon';
 
 export default function AssistantSwitcher({ isCollapsed }: SwitcherProps) {
@@ -66,7 +66,7 @@ export default function AssistantSwitcher({ isCollapsed }: SwitcherProps) {
   }, [assistants, endpoint]);
 
   return (
-    <SimpleCombobox
+    <ControlCombobox
       selectedValue={currentAssistant?.id ?? ''}
       displayValue={
         assistants.find((assistant) => assistant.id === selectedAssistant)?.name ??
