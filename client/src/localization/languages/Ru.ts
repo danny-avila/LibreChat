@@ -86,14 +86,14 @@ export default {
   com_ui_delete_confirm: 'Будет удален следующий чат: ',
   com_ui_rename: 'Переименовать',
   com_ui_archive: 'Архивировать',
-  com_ui_archive_error: 'Nie udało się archiwizować rozmowy',
+  com_ui_archive_error: 'Не удалось заархивировать чат',
   com_ui_unarchive: 'разархивировать',
-  com_ui_unarchive_error: 'Nie udało się odtworzyć rozmowy z archiwum',
+  com_ui_unarchive_error: 'Не удалось восстановить чат из архива',
   com_ui_more_options: 'Еще',
   com_ui_bookmarks: 'Закладки',
   com_ui_bookmarks_rebuild: 'Перестроить',
   com_ui_bookmarks_new: 'Новая закладка',
-  com_ui_bookmark_delete_confirm: 'Вы уверены, что хотите удалить э��у закладку?',
+  com_ui_bookmark_delete_confirm: 'Вы уверены, что хотите удалить эту закладку?',
   com_ui_bookmarks_title: 'Заголовок',
   com_ui_bookmarks_count: 'Количество',
   com_ui_bookmarks_description: 'Описание',
@@ -248,7 +248,7 @@ export default {
   com_endpoint_preset_default_none: 'Активных пресетов по умолчанию нет.',
   com_endpoint_preset_title: 'Пресет',
   com_endpoint_preset_saved: 'Сохранено!',
-  com_endpoint_preset_default: 'теперь пресет По умолчаанию.',
+  com_endpoint_preset_default: 'теперь пресет "По умолчаанию".',
   com_endpoint_preset: 'пресет',
   com_endpoint_presets: 'пресеты',
   com_endpoint_preset_selected: 'Пресет Активирован!',
@@ -739,11 +739,11 @@ export const comparisons = {
   },
   com_ui_pay_per_call: {
     english: 'All AI conversations in one place. Pay per call and not per month',
-    translated: 'Все AI-разговоры в одном месте. Оплачивайте за вызовы, а не за месяц',
+    translated: 'Все AI-чаты в одном месте. Оплачивайте за запрос, а не за месяц',
   },
   com_ui_new_footer: {
     english: 'All AI conversations in one place.',
-    translated: 'Все AI-разговоры в одном месте.',
+    translated: 'Все AI-чаты в одном месте.',
   },
   com_ui_enter: {
     english: 'Enter',
@@ -929,15 +929,15 @@ export const comparisons = {
   },
   com_ui_archive_error: {
     english: 'Failed to archive conversation',
-    translated: 'Nie udało się archiwizować rozmowy',
+    translated: 'Не удалось заархивировать чат',
   },
   com_ui_unarchive: {
     english: 'Unarchive',
-    translated: 'разархивировать',
+    translated: 'Разархивировать',
   },
   com_ui_unarchive_error: {
     english: 'Failed to unarchive conversation',
-    translated: 'Nie udało się odtworzyć rozmowy z archiwum',
+    translated: 'Не удалось разархивировать чат',
   },
   com_ui_more_options: {
     english: 'More',
@@ -1820,7 +1820,7 @@ export const comparisons = {
   },
   com_nav_shared_links_name: {
     english: 'Name',
-    translated: 'Naam',
+    translated: 'Имя',
   },
   com_nav_shared_links_date_shared: {
     english: 'Date shared',
@@ -2754,7 +2754,7 @@ export const comparisons = {
   },
   com_nav_lang_traditionalchinese: {
     english: '繁體中文',
-    translated: 'Традиционный китайский',
+    translated: 'Китайский (Традиционный)',
   },
   com_nav_lang_arabic: {
     english: 'العربية',
