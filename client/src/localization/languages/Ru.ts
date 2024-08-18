@@ -567,7 +567,7 @@ export default {
   com_nav_welcome_assistant: 'Выберите ассистента',
   com_nav_plugin_install: 'Установить',
   com_nav_plugin_uninstall: 'Удалить',
-  com_nav_tool_add: 'Добавить',
+  com_ui_add: 'Добавить',
   com_nav_tool_remove: 'Удалить',
   com_nav_tool_dialog: 'Инструменты ассистента',
   com_nav_tool_dialog_description:
@@ -2656,7 +2656,7 @@ export const comparisons = {
     english: 'Uninstall',
     translated: 'Удалить',
   },
-  com_nav_tool_add: {
+  com_ui_add: {
     english: 'Add',
     translated: 'Добавить',
   },

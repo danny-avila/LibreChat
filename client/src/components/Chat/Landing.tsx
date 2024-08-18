@@ -6,6 +6,7 @@ import { useChatContext, useAssistantsMapContext } from '~/Providers';
 import ConvoIcon from '~/components/Endpoints/ConvoIcon';
 import { BirthdayIcon } from '~/components/svg';
 import { getIconEndpoint, cn } from '~/utils';
+import ConvoStarter from './ConvoStarter';
 import { useLocalize } from '~/hooks';
 
 export default function Landing({ Header }: { Header?: ReactNode }) {
@@ -35,6 +36,8 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
   const assistantName = assistant && assistant.name;
   const assistantDesc = assistant && assistant.description;
   const avatar = assistant && (assistant.metadata?.avatar as string);
+  const assistantConvoStarter = assistant && assistant.convoStarter;
+  const testText = ['1', '22', '333', '4444'];
 
   const containerClassName =
     'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black';
@@ -85,6 +88,11 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
                   : conversation?.greeting ?? localize('com_nav_welcome_message')}
               </h2>
             )}
+            <div className="flex justify-center gap-2">
+              {testText.slice(0, 4).map((text, index) => (
+                <ConvoStarter key={index} text={text} />
+              ))}
+            </div>
           </div>
         </div>
       </Tooltip>

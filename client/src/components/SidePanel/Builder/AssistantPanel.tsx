@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { Plus, X } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useForm, FormProvider, Controller, useWatch } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
@@ -12,13 +13,19 @@ import {
 } from 'librechat-data-provider';
 import type { FunctionTool, TConfig, TPlugin } from 'librechat-data-provider';
 import type { AssistantForm, AssistantPanelProps } from '~/common';
+import {
+  SelectDropDown,
+  Tooltip,
+  TooltipProvider,
+  TooltipTrigger,
+  TooltipContent,
+} from '~/components/ui';
 import { useCreateAssistantMutation, useUpdateAssistantMutation } from '~/data-provider';
 import { cn, cardStyle, defaultTextProps, removeFocusOutlines } from '~/utils';
 import { useAssistantsMapContext, useToastContext } from '~/Providers';
 import { useSelectAssistant, useLocalize } from '~/hooks';
 import { ToolSelectDialog } from '~/components/Tools';
 import CapabilitiesForm from './CapabilitiesForm';
-import { SelectDropDown } from '~/components/ui';
 import AssistantAvatar from './AssistantAvatar';
 import AssistantSelect from './AssistantSelect';
 import AssistantAction from './AssistantAction';
@@ -31,7 +38,7 @@ import { Panel } from '~/common';
 const labelClass = 'mb-2 text-token-text-primary block font-medium';
 const inputClass = cn(
   defaultTextProps,
-  'flex w-full px-3 py-2 dark:border-gray-800 dark:bg-gray-800',
+  'flex w-full px-3 py-2 dark:border-gray-800 dark:bg-gray-800 rounded-xl mb-2',
   removeFocusOutlines,
 );
 
@@ -315,6 +322,87 @@ export default function AssistantPanel({
                   placeholder={localize('com_assistants_instructions_placeholder')}
                   rows={3}
                 />
+              )}
+            />
+          </div>
+
+          {/* Conversation Starters */}
+          <div className="relative mb-6">
+            <label className={labelClass} htmlFor="conversation_starters">
+              {localize('com_assistants_conversation_starters')}
+            </label>
+            <Controller
+              name="conversation_starters"
+              control={control}
+              defaultValue={['']}
+              render={({ field }) => (
+                <div className="relative">
+                  <div className="mt-4 space-y-2">
+                    {Array.isArray(field.value) &&
+                      field.value.map((starter, index) => (
+                        <div key={index} className="relative">
+                          <input
+                            value={starter}
+                            max={512}
+                            className={inputClass}
+                            type="text"
+                            placeholder={localize(
+                              'com_assistants_conversation_starters_placeholder',
+                            )}
+                            onChange={(e) => {
+                              const newValues = [...field.value];
+                              newValues[index] = e.target.value;
+                              field.onChange(newValues);
+                            }}
+                          />
+                          {index === 0 ? (
+                            <button
+                              type="button"
+                              className="transition-color absolute right-1 top-1 flex size-7 items-center justify-center rounded-lg duration-200 hover:bg-surface-hover"
+                              onClick={() => {
+                                const newValues = [...field.value];
+                                if (newValues[0].trim() !== '') {
+                                  newValues.unshift('');
+                                  field.onChange(newValues);
+                                }
+                              }}
+                            >
+                              <TooltipProvider delayDuration={250}>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Plus className="size-4" />
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top" sideOffset={0}>
+                                    {localize('com_ui_add')}
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="transition-color absolute right-1 top-1 flex size-7 items-center justify-center rounded-lg duration-200 hover:bg-surface-hover"
+                              onClick={() => {
+                                const newValues = field.value.filter((_, i) => i !== index);
+                                field.onChange(newValues);
+                              }}
+                            >
+                              <TooltipProvider delayDuration={1000}>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <X className="icon-sm" />
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top" sideOffset={0}>
+                                    {localize('com_ui_delete')}
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                </div>
               )}
             />
           </div>

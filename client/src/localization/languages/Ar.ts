@@ -549,7 +549,7 @@ export default {
   com_nav_change_picture: 'تغيير الصورة',
   com_nav_plugin_install: 'تثبيت',
   com_nav_plugin_uninstall: 'إلغاء تثبيت',
-  com_nav_tool_add: 'إضافة',
+  com_ui_add: 'إضافة',
   com_nav_tool_remove: 'إزالة',
   com_nav_tool_dialog: 'أدوات المساعد',
   com_nav_tool_dialog_description: 'يجب حفظ المساعد لإبقاء اختيارات الأدوات.',
@@ -2594,7 +2594,7 @@ export const comparisons = {
     english: 'Uninstall',
     translated: 'إلغاء تثبيت',
   },
-  com_nav_tool_add: {
+  com_ui_add: {
     english: 'Add',
     translated: 'إضافة',
   },

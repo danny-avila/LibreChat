@@ -418,7 +418,7 @@ export default {
   com_ui_date_december: 'Décembre',
   com_ui_nothing_found: 'Aucun résultat trouvé',
   com_ui_go_to_conversation: 'Aller à la conversation',
-  com_nav_tool_add: 'Ajouter',
+  com_ui_add: 'Ajouter',
   com_nav_tool_remove: 'Supprimer',
   com_nav_tool_dialog: 'Outils de l\'assistant',
   com_nav_tool_dialog_description:
@@ -624,7 +624,7 @@ export default {
   com_ui_upload_invalid_var:
     'Fichier non valide pour le téléchargement. L\'image ne doit pas dépasser {0} Mo',
   com_ui_read_aloud: 'Lire à haute voix',
-  com_ui_add: 'Ajouter un modèle ou un préréglage pour une réponse supplémentaire',
+  com_ui_add_model_preset: 'Ajouter un modèle ou un préréglage pour une réponse supplémentaire',
   com_ui_loading: 'Chargement...',
   com_ui_all_proper: 'Tout',
   com_ui_chat: 'Discussion',
@@ -2208,7 +2208,7 @@ export const comparisons = {
     english: 'Go to conversation',
     translated: 'Aller à la conversation',
   },
-  com_nav_tool_add: {
+  com_ui_add: {
     english: 'Add',
     translated: 'Ajouter',
   },

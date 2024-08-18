@@ -72,6 +72,7 @@ export type Assistant = {
   description: string | null;
   file_ids: string[];
   instructions: string | null;
+  conversation_starters?: string[];
   metadata: Metadata | null;
   model: string;
   name: string | null;

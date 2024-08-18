@@ -522,7 +522,7 @@ export default {
   com_nav_change_picture: '更換圖片',
   com_nav_plugin_install: '安裝',
   com_nav_plugin_uninstall: '解除安裝',
-  com_nav_tool_add: '新增',
+  com_ui_add: '新增',
   com_nav_tool_remove: '移除',
   com_nav_tool_dialog: 'AI 工具',
   com_nav_tool_dialog_description: '必須儲存 Assistant 才能保留工具選擇。',
@@ -2563,7 +2563,7 @@ export const comparisons = {
     english: 'Uninstall',
     translated: '解除安裝',
   },
-  com_nav_tool_add: {
+  com_ui_add: {
     english: 'Add',
     translated: '新增',
   },

@@ -1155,7 +1155,7 @@ Write a prompt that is mindful of the nuances in the language with respect to it
   - **english**: Uninstall
   - **translated**: הסר התקנה
 
-- **com_nav_tool_add**:
+- **com_ui_add**:
   - **english**: Add
   - **translated**: הוסף
 
