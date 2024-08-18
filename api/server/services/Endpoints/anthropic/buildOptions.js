@@ -1,15 +1,18 @@
+const { removeNullishValues } = require('librechat-data-provider');
+
 const buildOptions = (endpoint, parsedBody) => {
   const {
     modelLabel,
     promptPrefix,
     maxContextTokens,
-    resendFiles,
+    resendFiles = true,
     iconURL,
     greeting,
     spec,
-    ...rest
+    ...modelOptions
   } = parsedBody;
-  const endpointOption = {
+
+  const endpointOption = removeNullishValues({
     endpoint,
     modelLabel,
     promptPrefix,
@@ -18,10 +21,8 @@ const buildOptions = (endpoint, parsedBody) => {
     greeting,
     spec,
     maxContextTokens,
-    modelOptions: {
-      ...rest,
-    },
-  };
+    modelOptions,
+  });
 
   return endpointOption;
 };
