@@ -1,5 +1,6 @@
 import * as React from 'react';
-import { cn } from '../../utils';
+import { Input } from '~/components/ui/Input';
+import { cn } from '~/utils';
 
 export type InputWithDropdownProps = React.InputHTMLAttributes<HTMLInputElement> & {
   options: string[];
@@ -79,22 +80,19 @@ const InputWithDropdown = React.forwardRef<HTMLInputElement, InputWithDropdownPr
     return (
       <div className="relative" ref={inputRef}>
         <div className="relative">
-          <input
+          <Input
             {...props}
             value={inputValue}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
             aria-haspopup="listbox"
             aria-controls="dropdown-list"
-            className={cn(
-              'flex h-10 w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 pr-10 text-sm placeholder:text-gray-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-50',
-              className ?? '',
-            )}
+            className={cn('bg-surface-secondary', className ?? '')}
             ref={ref}
           />
           <button
             type="button"
-            className="absolute inset-y-0 right-0 flex items-center px-2 text-gray-400 hover:text-gray-600"
+            className="text-tertiary hover:text-secondary absolute inset-y-0 right-0 flex items-center rounded-md px-2 focus:outline-none focus:ring-1 focus:ring-ring-primary"
             onClick={() => setIsOpen(!isOpen)}
             aria-label={isOpen ? 'Close dropdown' : 'Open dropdown'}
           >
@@ -118,7 +116,7 @@ const InputWithDropdown = React.forwardRef<HTMLInputElement, InputWithDropdownPr
           <ul
             id="dropdown-list"
             role="listbox"
-            className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md border border-gray-300 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800"
+            className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md border border-border-medium bg-surface-secondary shadow-lg focus:ring-1 focus:ring-inset focus:ring-ring-primary"
           >
             {options.map((option, index) => (
               <li
@@ -126,10 +124,11 @@ const InputWithDropdown = React.forwardRef<HTMLInputElement, InputWithDropdownPr
                 role="option"
                 aria-selected={index === highlightedIndex}
                 className={cn(
-                  'cursor-pointer px-3 py-2',
+                  'cursor-pointer rounded-md px-3 py-2',
+                  'focus:bg-surface-tertiary focus:outline-none focus:ring-1 focus:ring-inset focus:ring-ring-primary',
                   index === highlightedIndex
-                    ? 'bg-blue-100 dark:bg-blue-700'
-                    : 'hover:bg-gray-100 dark:hover:bg-gray-700',
+                    ? 'text-primary bg-surface-active'
+                    : 'text-secondary hover:bg-surface-tertiary',
                 )}
                 onClick={() => handleSelect(option)}
                 onKeyDown={(e) => {

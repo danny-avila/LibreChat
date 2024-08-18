@@ -1,11 +1,17 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { useForm, useFieldArray, Controller, useWatch } from 'react-hook-form';
 import type { TPromptGroup } from 'librechat-data-provider';
-import { extractVariableInfo, wrapVariable, replaceSpecialVars } from '~/utils';
+import {
+  cn,
+  extractVariableInfo,
+  wrapVariable,
+  replaceSpecialVars,
+  defaultTextProps,
+} from '~/utils';
 import { useAuthContext, useLocalize, useSubmitMessage } from '~/hooks';
-import { TextareaAutosize, Input, InputWithDropdown } from '~/components/ui';
+import { TextareaAutosize, InputWithDropdown } from '~/components/ui';
 
-type FieldType = 'text' | 'multiline' | 'select';
+type FieldType = 'text' | 'select';
 
 type FieldConfig = {
   variable: string;
@@ -48,7 +54,6 @@ const parseFieldConfig = (variable: string): FieldConfig => {
     if (options && options.includes('|')) {
       return { variable: name, type: 'select', options: options.split('|') };
     }
-    return { variable: name, type: options as FieldType };
   }
   return { variable: content, type: 'text' };
 };
@@ -74,7 +79,7 @@ export default function VariableForm({
   );
 
   const { submitPrompt } = useSubmitMessage();
-  const { control, handleSubmit, setValue } = useForm<FormValues>({
+  const { control, handleSubmit } = useForm<FormValues>({
     defaultValues: {
       fields: uniqueVariables.map((variable) => ({
         variable: wrapVariable(variable),
@@ -93,8 +98,6 @@ export default function VariableForm({
     control,
     name: 'fields',
   });
-
-  const [customOptions, setCustomOptions] = useState<{ [key: string]: string }>({});
 
   if (!uniqueVariables.length) {
     return null;
@@ -143,7 +146,7 @@ export default function VariableForm({
   return (
     <div className="container mx-auto p-1">
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-        <div className="mb-6 max-h-screen overflow-auto rounded-md bg-gray-100 p-4 dark:bg-gray-700/50 dark:text-gray-300 md:max-h-80">
+        <div className="mb-6 max-h-screen overflow-auto rounded-md p-4 md:max-h-80">
           <p className="text-md whitespace-pre-wrap">{generateHighlightedText()}</p>
         </div>
         <div className="space-y-4">
@@ -153,37 +156,30 @@ export default function VariableForm({
                 name={`fields.${index}.value`}
                 control={control}
                 render={({ field: inputField }) => {
-                  switch (field.config.type) {
-                    case 'multiline':
-                      return (
-                        <TextareaAutosize
-                          {...inputField}
-                          id={`fields.${index}.value`}
-                          className="w-full rounded border px-3 py-2"
-                          placeholder={`Enter ${field.config.variable}`}
-                          maxRows={8}
-                        />
-                      );
-                    case 'select':
-                      return (
-                        <InputWithDropdown
-                          {...inputField}
-                          id={`fields.${index}.value`}
-                          className="w-full rounded border px-3 py-2"
-                          placeholder={`Enter ${field.config.variable}`}
-                          options={field.config.options || []}
-                        />
-                      );
-                    default:
-                      return (
-                        <Input
-                          {...inputField}
-                          id={`fields.${index}.value`}
-                          className="w-full rounded border px-3 py-2"
-                          placeholder={`Enter ${field.config.variable}`}
-                        />
-                      );
+                  if (field.config.type === 'select') {
+                    return (
+                      <InputWithDropdown
+                        {...inputField}
+                        id={`fields.${index}.value`}
+                        className={cn(defaultTextProps, 'focus:bg-surface-tertiary')}
+                        placeholder={`Enter ${field.config.variable}`}
+                        options={field.config.options || []}
+                      />
+                    );
                   }
+
+                  return (
+                    <TextareaAutosize
+                      {...inputField}
+                      id={`fields.${index}.value`}
+                      className={cn(
+                        defaultTextProps,
+                        'w-full rounded px-3 py-2 focus:bg-surface-tertiary',
+                      )}
+                      placeholder={`Enter ${field.config.variable}`}
+                      maxRows={8}
+                    />
+                  );
                 }}
               />
             </div>
