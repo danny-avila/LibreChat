@@ -143,9 +143,13 @@ export default {
   com_ui_manage: 'Manage',
   com_ui_variables: 'Variables',
   com_ui_variables_info:
-    'Use double braces in your text to create variables, e.g. {{example variable}}, to later fill when using the prompt.',
-  com_ui_special_variables:
-    'Special variables: Use {{current_date}} for the current date, and {{current_user}} for your given account name.',
+    'Use double braces in your text to create variables, e.g. `{{example variable}}`, to later fill when using the prompt.',
+  com_ui_special_variables: 'Special variables:',
+  com_ui_special_variables_info:
+    'Use `{{current_date}}` for the current date, and `{{current_user}}` for your given account name.',
+  com_ui_dropdown_variables: 'Dropdown variables:',
+  com_ui_dropdown_variables_info:
+    'Create custom dropdown menus for your prompts: `{{variable_name:option1|option2|option3}}`',
   com_ui_showing: 'Showing',
   com_ui_of: 'of',
   com_ui_entries: 'Entries',

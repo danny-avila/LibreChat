@@ -1,12 +1,24 @@
-import { useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { Variable } from 'lucide-react';
-import { extractUniqueVariables, cn } from '~/utils';
+import ReactMarkdown from 'react-markdown';
+import { cn, extractUniqueVariables, handleDoubleClick } from '~/utils';
 import { Separator } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 
 const specialVariables = {
   current_date: true,
   current_user: true,
+};
+
+const code = ({ children }: { children: React.ReactNode }) => {
+  return (
+    <code
+      onDoubleClick={handleDoubleClick}
+      className="rounded-md bg-surface-primary-alt p-1 text-sm text-text-secondary"
+    >
+      {children}
+    </code>
+  );
 };
 
 const specialVariableClasses =
@@ -32,25 +44,50 @@ const PromptVariables = ({ promptText }: { promptText: string }) => {
               <label
                 className={cn(
                   'mr-1 rounded-full border border-border-medium px-2 text-text-secondary',
-                  specialVariables[variable.toLowerCase()] ? specialVariableClasses : '',
+                  specialVariables[variable.toLowerCase()] != null ? specialVariableClasses : '',
                 )}
                 key={index}
               >
-                {specialVariables[variable.toLowerCase()] ? variable.toLowerCase() : variable}
+                {specialVariables[variable.toLowerCase()] != null
+                  ? variable.toLowerCase()
+                  : variable}
               </label>
             ))}
           </div>
         ) : (
           <div className="flex h-7 items-center">
-            <span className="text-xs text-text-tertiary md:text-sm">
-              {localize('com_ui_variables_info')}
+            <span className="text-xs text-text-secondary md:text-sm">
+              <ReactMarkdown components={{ code }}>
+                {localize('com_ui_variables_info')}
+              </ReactMarkdown>
             </span>
           </div>
         )}
         <Separator className="my-3 bg-border-medium" />
-        <span className="text-xs text-text-tertiary md:text-sm">
-          {localize('com_ui_special_variables')}
-        </span>
+        <div className="flex flex-col space-y-4">
+          <div>
+            <span className="text-xs font-medium text-text-secondary md:text-sm">
+              {localize('com_ui_special_variables')}
+            </span>
+            {'\u00A0'}
+            <span className="text-xs text-text-secondary md:text-sm">
+              <ReactMarkdown components={{ code }}>
+                {localize('com_ui_special_variables_info')}
+              </ReactMarkdown>
+            </span>
+          </div>
+          <div>
+            <span className="text-xs font-medium text-text-secondary md:text-sm">
+              {localize('com_ui_dropdown_variables')}
+            </span>
+            {'\u00A0'}
+            <span className="text-xs text-text-secondary md:text-sm">
+              <ReactMarkdown components={{ code }}>
+                {localize('com_ui_dropdown_variables_info')}
+              </ReactMarkdown>
+            </span>
+          </div>
+        </div>
       </div>
     </div>
   );

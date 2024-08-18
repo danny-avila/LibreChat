@@ -8,7 +8,7 @@ import { useRecoilValue } from 'recoil';
 import ReactMarkdown from 'react-markdown';
 import type { PluggableList } from 'unified';
 import rehypeHighlight from 'rehype-highlight';
-import { cn, langSubset, validateIframe, processLaTeX } from '~/utils';
+import { cn, langSubset, validateIframe, processLaTeX, handleDoubleClick } from '~/utils';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
 import { useFileDownload } from '~/data-provider';
 import useLocalize from '~/hooks/useLocalize';
@@ -26,7 +26,11 @@ export const code = memo(({ inline, className, children }: TCodeProps) => {
   const lang = match && match[1];
 
   if (inline) {
-    return <code className={className}>{children}</code>;
+    return (
+      <code onDoubleClick={handleDoubleClick} className={className}>
+        {children}
+      </code>
+    );
   } else {
     return <CodeBlock lang={lang ?? 'text'} codeChildren={children} />;
   }
