@@ -6,6 +6,7 @@ const {
   ImageDetail,
   EModelEndpoint,
   resolveHeaders,
+  openAISettings,
   ImageDetailCost,
   CohereConstants,
   getResponseSender,
@@ -85,7 +86,13 @@ class OpenAIClient extends BaseClient {
       this.apiKey = this.options.openaiApiKey;
     }
 
-    this.modelOptions = Object.assign({}, this.modelOptions, this.options.modelOptions);
+    this.modelOptions = Object.assign(
+      {
+        model: openAISettings.model.default,
+      },
+      this.modelOptions,
+      this.options.modelOptions,
+    );
 
     this.defaultVisionModel = this.options.visionModel ?? 'gpt-4-vision-preview';
     if (typeof this.options.attachments?.then === 'function') {
