@@ -123,7 +123,7 @@ const verifyEmail = async (req) => {
     return new Error('User not found');
   }
 
-  deleteTokens({ token: emailVerificationData.token });
+  await deleteTokens({ token: emailVerificationData.token });
   logger.info(`[verifyEmail] Email verification successful. [Email: ${email}]`);
   return { message: 'Email verification was successful' };
 };
