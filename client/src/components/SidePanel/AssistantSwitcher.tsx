@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { Combobox } from '~/components/ui';
+import SimpleCombobox from '~/components/ui/SimpleCombobox';
 import { isAssistantsEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import type { AssistantsEndpoint } from 'librechat-data-provider';
 import type { SwitcherProps, AssistantListItem } from '~/common';
@@ -31,7 +31,7 @@ export default function AssistantSwitcher({ isCollapsed }: SwitcherProps) {
         localStorage.getItem(`${LocalStorageKeys.ASST_ID_PREFIX}${index}${endpoint}`) ??
         assistants[0]?.id ??
         '';
-      const assistant = assistantMap?.[endpoint ?? '']?.[assistant_id];
+      const assistant = assistantMap[endpoint ?? ''][assistant_id];
 
       if (!assistant) {
         return;
@@ -66,7 +66,7 @@ export default function AssistantSwitcher({ isCollapsed }: SwitcherProps) {
   }, [assistants, endpoint]);
 
   return (
-    <Combobox
+    <SimpleCombobox
       selectedValue={currentAssistant?.id ?? ''}
       displayValue={
         assistants.find((assistant) => assistant.id === selectedAssistant)?.name ??
