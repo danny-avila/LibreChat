@@ -46,7 +46,7 @@ export default function ComboboxComponent({
   }, [isCollapsed]);
 
   return (
-    <div className="w-full">
+    <div className="flex w-full items-center justify-center px-1">
       <Ariakit.ComboboxProvider
         resetValueOnHide
         setValue={(value) => {
@@ -60,10 +60,10 @@ export default function ComboboxComponent({
           <Ariakit.Select
             ref={buttonRef}
             className={cn(
-              'flex items-center justify-center rounded-full bg-surface-secondary',
+              'flex items-center justify-center gap-2 rounded-full bg-surface-secondary',
               'text-text-primary hover:bg-surface-tertiary',
               'border border-border-light',
-              isCollapsed ? 'h-9 w-9' : 'h-10 w-full rounded-md px-3 py-2 text-sm',
+              isCollapsed ? 'h-10 w-10' : 'h-10 w-full rounded-md px-3 py-2 text-sm',
             )}
           >
             {SelectIcon != null && (
@@ -81,7 +81,7 @@ export default function ComboboxComponent({
             gutter={4}
             portal
             className="z-50 overflow-hidden rounded-md border border-border-light bg-surface-secondary shadow-lg"
-            style={{ width: buttonWidth ?? '300px' }}
+            style={{ width: isCollapsed ? '300px' : buttonWidth ?? '300px' }}
           >
             <div className="p-2">
               <div className="relative">
@@ -93,7 +93,7 @@ export default function ComboboxComponent({
                 />
               </div>
             </div>
-            <Ariakit.ComboboxList className="max-h-60 overflow-auto">
+            <Ariakit.ComboboxList className="max-h-[50vh] overflow-auto">
               {matches.map((item) => (
                 <Ariakit.SelectItem
                   key={item.value}
