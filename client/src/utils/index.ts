@@ -71,3 +71,14 @@ export const defaultTextPropsLabel =
 export function capitalizeFirstLetter(string: string) {
   return string.charAt(0).toUpperCase() + string.slice(1);
 }
+
+export const handleDoubleClick: React.MouseEventHandler<HTMLElement> = (event) => {
+  const range = document.createRange();
+  range.selectNodeContents(event.target as Node);
+  const selection = window.getSelection();
+  if (!selection) {
+    return;
+  }
+  selection.removeAllRanges();
+  selection.addRange(range);
+};
