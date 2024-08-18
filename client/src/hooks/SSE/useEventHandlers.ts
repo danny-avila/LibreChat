@@ -1,7 +1,8 @@
 import { v4 } from 'uuid';
+import { useCallback } from 'react';
+import { useSetRecoilState } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback } from 'react';
 import {
   QueryKeys,
   Constants,
@@ -29,6 +30,7 @@ import useContentHandler from '~/hooks/SSE/useContentHandler';
 import type { TGenTitleMutation } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useLiveAnnouncer } from '~/Providers';
+import store from '~/store';
 
 type TSyncData = {
   sync: boolean;
@@ -65,6 +67,7 @@ export default function useEventHandlers({
   resetLatestMessage,
 }: EventHandlerParams) {
   const queryClient = useQueryClient();
+  const setAbortScroll = useSetRecoilState(store.abortScroll);
   const { announcePolite, announceAssertive } = useLiveAnnouncer();
 
   const { conversationId: paramId } = useParams();
@@ -306,15 +309,16 @@ export default function useEventHandlers({
         resetLatestMessage();
       }
 
-      scrollToEnd();
+      scrollToEnd(() => setAbortScroll(false));
     },
     [
       setMessages,
-      setConversation,
       queryClient,
+      setAbortScroll,
       isAddedRequest,
-      resetLatestMessage,
+      setConversation,
       announceAssertive,
+      resetLatestMessage,
     ],
   );
 
