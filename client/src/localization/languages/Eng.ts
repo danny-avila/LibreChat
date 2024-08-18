@@ -239,6 +239,7 @@ export default {
   com_ui_create_prompt: 'Create Prompt',
   com_ui_share: 'Share',
   com_ui_share_var: 'Share {0}',
+  com_ui_enter_var: 'Enter {0}',
   com_ui_copy_link: 'Copy link',
   com_ui_update_link: 'Update link',
   com_ui_create_link: 'Create link',

@@ -31,9 +31,6 @@ type FormValues = {
  * Simple text input:
  * {{variable_name}}
  *
- * Multiline text input:
- * {{variable_name:multiline}}
- *
  * Dropdown select with predefined options:
  * {{variable_name:option1|option2|option3}}
  *
@@ -41,7 +38,6 @@ type FormValues = {
  *
  * Examples:
  * {{name}} - Simple text input for a name
- * {{email:multiline}} - Multiline input for an email
  * {{tone:formal|casual|business casual}} - Dropdown for tone selection with custom input option
  *
  * Note: The order of variables in the prompt will be preserved in the input form.
@@ -162,7 +158,7 @@ export default function VariableForm({
                         {...inputField}
                         id={`fields.${index}.value`}
                         className={cn(defaultTextProps, 'focus:bg-surface-tertiary')}
-                        placeholder={`Enter ${field.config.variable}`}
+                        placeholder={localize('com_ui_enter_var', field.config.variable)}
                         options={field.config.options || []}
                       />
                     );
@@ -176,7 +172,7 @@ export default function VariableForm({
                         defaultTextProps,
                         'w-full rounded px-3 py-2 focus:bg-surface-tertiary',
                       )}
-                      placeholder={`Enter ${field.config.variable}`}
+                      placeholder={localize('com_ui_enter_var', field.config.variable)}
                       maxRows={8}
                     />
                   );
