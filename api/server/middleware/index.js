@@ -10,6 +10,7 @@ const requireLocalAuth = require('./requireLocalAuth');
 const canDeleteAccount = require('./canDeleteAccount');
 const requireLdapAuth = require('./requireLdapAuth');
 const abortMiddleware = require('./abortMiddleware');
+const checkInviteUser = require('./checkInviteUser');
 const requireJwtAuth = require('./requireJwtAuth');
 const validateModel = require('./validateModel');
 const moderateText = require('./moderateText');
@@ -33,6 +34,7 @@ module.exports = {
   moderateText,
   validateModel,
   requireJwtAuth,
+  checkInviteUser,
   requireLdapAuth,
   requireLocalAuth,
   canDeleteAccount,
