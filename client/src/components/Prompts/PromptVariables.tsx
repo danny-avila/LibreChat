@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
 import { Variable } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { cn, extractUniqueVariables, handleDoubleClick } from '~/utils';
+import { cn, extractUniqueVariables } from '~/utils';
+import { CodeVariableGfm } from './Markdown';
 import { Separator } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 
@@ -10,21 +11,16 @@ const specialVariables = {
   current_user: true,
 };
 
-const code = ({ children }: { children: React.ReactNode }) => {
-  return (
-    <code
-      onDoubleClick={handleDoubleClick}
-      className="rounded-md bg-surface-primary-alt p-1 text-sm text-text-secondary"
-    >
-      {children}
-    </code>
-  );
-};
-
 const specialVariableClasses =
   'bg-yellow-500/25 text-yellow-600 dark:border-yellow-500/50 dark:bg-transparent dark:text-yellow-500/90';
 
-const PromptVariables = ({ promptText }: { promptText: string }) => {
+const PromptVariables = ({
+  promptText,
+  showInfo = true,
+}: {
+  promptText: string;
+  showInfo?: boolean;
+}) => {
   const localize = useLocalize();
 
   const variables = useMemo(() => {
@@ -57,37 +53,39 @@ const PromptVariables = ({ promptText }: { promptText: string }) => {
         ) : (
           <div className="flex h-7 items-center">
             <span className="text-xs text-text-secondary md:text-sm">
-              <ReactMarkdown components={{ code }}>
+              <ReactMarkdown components={{ code: CodeVariableGfm }}>
                 {localize('com_ui_variables_info')}
               </ReactMarkdown>
             </span>
           </div>
         )}
         <Separator className="my-3 bg-border-medium" />
-        <div className="flex flex-col space-y-4">
-          <div>
-            <span className="text-xs font-medium text-text-secondary md:text-sm">
-              {localize('com_ui_special_variables')}
-            </span>
-            {'\u00A0'}
-            <span className="text-xs text-text-secondary md:text-sm">
-              <ReactMarkdown components={{ code }}>
-                {localize('com_ui_special_variables_info')}
-              </ReactMarkdown>
-            </span>
+        {showInfo && (
+          <div className="flex flex-col space-y-4">
+            <div>
+              <span className="text-xs font-medium text-text-secondary md:text-sm">
+                {localize('com_ui_special_variables')}
+              </span>
+              {'\u00A0'}
+              <span className="text-xs text-text-secondary md:text-sm">
+                <ReactMarkdown components={{ code: CodeVariableGfm }}>
+                  {localize('com_ui_special_variables_info')}
+                </ReactMarkdown>
+              </span>
+            </div>
+            <div>
+              <span className="text-xs font-medium text-text-secondary md:text-sm">
+                {localize('com_ui_dropdown_variables')}
+              </span>
+              {'\u00A0'}
+              <span className="text-xs text-text-secondary md:text-sm">
+                <ReactMarkdown components={{ code: CodeVariableGfm }}>
+                  {localize('com_ui_dropdown_variables_info')}
+                </ReactMarkdown>
+              </span>
+            </div>
           </div>
-          <div>
-            <span className="text-xs font-medium text-text-secondary md:text-sm">
-              {localize('com_ui_dropdown_variables')}
-            </span>
-            {'\u00A0'}
-            <span className="text-xs text-text-secondary md:text-sm">
-              <ReactMarkdown components={{ code }}>
-                {localize('com_ui_dropdown_variables_info')}
-              </ReactMarkdown>
-            </span>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

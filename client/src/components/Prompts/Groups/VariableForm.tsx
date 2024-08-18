@@ -16,6 +16,7 @@ import {
 } from '~/utils';
 import { useAuthContext, useLocalize, useSubmitMessage } from '~/hooks';
 import { TextareaAutosize, InputWithDropdown } from '~/components/ui';
+import { code } from '~/components/Chat/Messages/Content/Markdown';
 
 type FieldType = 'text' | 'select';
 
@@ -131,16 +132,17 @@ export default function VariableForm({
   };
 
   return (
-    <div className="container mx-auto p-1">
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-        <div className="mb-6 max-h-screen overflow-auto rounded-md bg-gray-100 p-4 text-text-secondary dark:bg-gray-700/50 md:max-h-80">
+    <div className="mx-auto p-1 md:container">
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <div className="mb-6 max-h-screen max-w-[90vw] overflow-auto rounded-md bg-gray-100 p-4 text-text-secondary dark:bg-gray-700/50 sm:max-w-full md:max-h-80">
           <ReactMarkdown
             remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
             rehypePlugins={[
               [rehypeKatex, { output: 'mathml' }],
               [rehypeHighlight, { ignoreMissing: true }],
             ]}
-            className="prose dark:prose-invert light dark:text-gray-70 my-1 break-words"
+            components={{ code }}
+            className="prose dark:prose-invert light dark:text-gray-70 my-1 max-h-[50vh] break-words"
           >
             {generateHighlightedMarkdown()}
           </ReactMarkdown>

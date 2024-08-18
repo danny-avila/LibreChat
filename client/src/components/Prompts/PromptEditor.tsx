@@ -10,8 +10,10 @@ import remarkMath from 'remark-math';
 import supersub from 'remark-supersub';
 import ReactMarkdown from 'react-markdown';
 import AlwaysMakeProd from '~/components/Prompts/Groups/AlwaysMakeProd';
+import { code } from '~/components/Chat/Messages/Content/Markdown';
 import { SaveIcon, CrossIcon } from '~/components/svg';
 import { TextareaAutosize } from '~/components/ui';
+import { PromptVariableGfm } from './Markdown';
 import { PromptsEditorMode } from '~/common';
 import { cn, langSubset } from '~/utils';
 import { useLocalize } from '~/hooks';
@@ -107,6 +109,7 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
               <ReactMarkdown
                 remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
                 rehypePlugins={rehypePlugins}
+                components={{ p: PromptVariableGfm, code }}
                 className="markdown prose dark:prose-invert light my-1 w-full break-words text-text-primary"
               >
                 {field.value}

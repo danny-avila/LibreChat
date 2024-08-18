@@ -21,7 +21,7 @@ type TCodeProps = {
   children: React.ReactNode;
 };
 
-export const code = memo(({ inline, className, children }: TCodeProps) => {
+export const code: React.ElementType = memo(({ inline, className, children }: TCodeProps) => {
   const match = /language-(\w+)/.exec(className ?? '');
   const lang = match && match[1];
 
