@@ -8,6 +8,9 @@ interface LiveAnnouncerProps {
   children: React.ReactNode;
 }
 
+const CHUNK_SIZE = 50;
+const MIN_ANNOUNCEMENT_DELAY = 100;
+
 const LiveAnnouncer: React.FC<LiveAnnouncerProps> = ({ children }) => {
   const [announcePoliteMessage, setAnnouncePoliteMessage] = useState('');
   const [politeMessageId, setPoliteMessageId] = useState('');
@@ -18,6 +21,7 @@ const LiveAnnouncer: React.FC<LiveAnnouncerProps> = ({ children }) => {
   const politeQueueRef = useRef<Array<{ message: string; id: string }>>([]);
   const isAnnouncingRef = useRef(false);
   const counterRef = useRef(0);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const generateUniqueId = (prefix: string) => {
     counterRef.current += 1;
@@ -26,13 +30,30 @@ const LiveAnnouncer: React.FC<LiveAnnouncerProps> = ({ children }) => {
 
   const processChunks = (text: string, processedTextRef: React.MutableRefObject<string>) => {
     const remainingText = text.slice(processedTextRef.current.length);
-    const separatorIndex = findLastSeparatorIndex(remainingText);
-    if (separatorIndex !== -1) {
-      const chunkText = remainingText.slice(0, separatorIndex + 1);
-      processedTextRef.current += chunkText;
-      return chunkText.trim();
+
+    if (remainingText.length < CHUNK_SIZE) {
+      return ''; // Not enough characters to process
     }
-    return '';
+
+    let separatorIndex = -1;
+    let startIndex = CHUNK_SIZE;
+
+    while (separatorIndex === -1 && startIndex <= remainingText.length) {
+      separatorIndex = findLastSeparatorIndex(remainingText.slice(startIndex));
+      if (separatorIndex !== -1) {
+        separatorIndex += startIndex; // Adjust the index to account for the starting position
+      } else {
+        startIndex += CHUNK_SIZE; // Move the starting position by another CHUNK_SIZE characters
+      }
+    }
+
+    if (separatorIndex === -1) {
+      return ''; // No separator found, wait for more text
+    }
+
+    const chunkText = remainingText.slice(0, separatorIndex + 1);
+    processedTextRef.current += chunkText;
+    return chunkText.trim();
   };
 
   const announceNextInQueue = useCallback(() => {
@@ -40,12 +61,23 @@ const LiveAnnouncer: React.FC<LiveAnnouncerProps> = ({ children }) => {
       isAnnouncingRef.current = true;
       const nextAnnouncement = politeQueueRef.current.shift();
       if (nextAnnouncement) {
-        setAnnouncePoliteMessage(nextAnnouncement.message);
-        setPoliteMessageId(nextAnnouncement.id);
+        setAnnouncePoliteMessage('');
+        setPoliteMessageId('');
+
+        // Force a re-render before setting the new message
         setTimeout(() => {
-          isAnnouncingRef.current = false;
-          announceNextInQueue();
-        }, 100);
+          setAnnouncePoliteMessage(nextAnnouncement.message);
+          setPoliteMessageId(nextAnnouncement.id);
+
+          if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+          }
+
+          timeoutRef.current = setTimeout(() => {
+            isAnnouncingRef.current = false;
+            announceNextInQueue();
+          }, MIN_ANNOUNCEMENT_DELAY);
+        }, 0);
       }
     }
   }, []);
@@ -90,6 +122,9 @@ const LiveAnnouncer: React.FC<LiveAnnouncerProps> = ({ children }) => {
     return () => {
       politeQueueRef.current = [];
       isAnnouncingRef.current = false;
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
     };
   }, []);
 

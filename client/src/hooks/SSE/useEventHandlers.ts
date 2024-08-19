@@ -338,7 +338,7 @@ export default function useEventHandlers({
 
       /* a11y announcements */
       announcePolite({
-        message: '',
+        message: responseMessage.text,
         isComplete: true,
       });
 
