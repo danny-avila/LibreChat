@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { SettingsTabValues } from 'librechat-data-provider';
+import CodeArtifacts from './CodeArtifacts';
 import LaTeXParsing from './LaTeXParsing';
 import ModularChat from './ModularChat';
 
@@ -17,6 +18,9 @@ function Beta() {
         </div>
         <div className="border-b border-border-medium pb-3 last-of-type:border-b-0">
           <LaTeXParsing />
+        </div>
+        <div className="border-b border-border-medium pb-3 last-of-type:border-b-0">
+          <CodeArtifacts />
         </div>
       </div>
     </Tabs.Content>
