@@ -142,7 +142,8 @@ function General() {
       }
 
       setLangcode(userLang);
-      Cookies.set('langcode', userLang, { expires: 365 });
+      Cookies.set('lang', userLang, { expires: 365 });
+      localStorage.setItem('lang', userLang);
       document.documentElement.lang = userLang;
     },
     [setLangcode],
