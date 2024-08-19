@@ -15,7 +15,7 @@ import {
   extractVariableInfo,
 } from '~/utils';
 import { useAuthContext, useLocalize, useSubmitMessage } from '~/hooks';
-import { TextareaAutosize, SimpleCombobox } from '~/components/ui';
+import { TextareaAutosize, InputCombobox } from '~/components/ui';
 import { code } from '~/components/Chat/Messages/Content/Markdown';
 
 type FieldType = 'text' | 'select';
@@ -163,7 +163,7 @@ export default function VariableForm({
                 render={({ field: { onChange, onBlur, value, ref } }) => {
                   if (field.config.type === 'select') {
                     return (
-                      <SimpleCombobox
+                      <InputCombobox
                         options={field.config.options || []}
                         placeholder={localize('com_ui_enter_var', field.config.variable)}
                         className={cn(

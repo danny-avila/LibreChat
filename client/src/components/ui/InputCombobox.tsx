@@ -14,7 +14,7 @@ type ComboboxProps = {
   onBlur: () => void;
 };
 
-export const SimpleCombobox: React.FC<ComboboxProps> = ({
+export const InputCombobox: React.FC<ComboboxProps> = ({
   label,
   labelClassName,
   placeholder = 'Select an option',
