@@ -51,11 +51,15 @@ type FormValues = {
  */
 
 const parseFieldConfig = (variable: string): FieldConfig => {
-  const content = variable;
+  const content = variable.trim();
   if (content.includes(':')) {
     const [name, options] = content.split(':');
     if (options && options.includes('|')) {
-      return { variable: name, type: 'select', options: options.split('|') };
+      return {
+        variable: name.trim(),
+        type: 'select',
+        options: options.split('|').map((opt) => opt.trim()),
+      };
     }
   }
   return { variable: content, type: 'text' };
@@ -121,10 +125,13 @@ export default function VariableForm({
   const onSubmit = (data: FormValues) => {
     let text = mainText;
     data.fields.forEach(({ variable, value }) => {
-      if (value) {
-        const regex = new RegExp(variable, 'g');
-        text = text.replace(regex, value);
+      if (!value) {
+        return;
       }
+
+      const escapedVariable = variable.replace(/[|\\{}()[\]^$+*?.]/g, '\\$&');
+      const regex = new RegExp(escapedVariable, 'g');
+      text = text.replace(regex, value);
     });
 
     submitPrompt(text);
