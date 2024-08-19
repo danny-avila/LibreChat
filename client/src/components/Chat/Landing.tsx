@@ -74,7 +74,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
                 <div className="text-center text-2xl font-medium dark:text-white">
                   {assistantName}
                 </div>
-                <div className="text-token-text-secondary max-w-md text-center text-xl font-normal ">
+                <div className="text-token-text-primary max-w-md text-center text-sm font-normal ">
                   {assistantDesc ? assistantDesc : localize('com_nav_welcome_message')}
                 </div>
                 {/* <div className="mt-1 flex items-center gap-1 text-token-text-tertiary">
@@ -88,7 +88,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
                   : conversation?.greeting ?? localize('com_nav_welcome_message')}
               </h2>
             )}
-            <div className="flex justify-center gap-2">
+            <div className="mt-8 flex flex-wrap justify-center gap-3 px-4">
               {testText.slice(0, 4).map((text, index) => (
                 <ConvoStarter key={index} text={text} />
               ))}
