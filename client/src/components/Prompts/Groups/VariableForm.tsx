@@ -15,7 +15,7 @@ import {
   extractVariableInfo,
 } from '~/utils';
 import { useAuthContext, useLocalize, useSubmitMessage } from '~/hooks';
-import { TextareaAutosize, InputWithDropdown } from '~/components/ui';
+import { TextareaAutosize, SimpleCombobox } from '~/components/ui';
 import { code } from '~/components/Chat/Messages/Content/Markdown';
 
 type FieldType = 'text' | 'select';
@@ -153,22 +153,29 @@ export default function VariableForm({
               <Controller
                 name={`fields.${index}.value`}
                 control={control}
-                render={({ field: inputField }) => {
+                render={({ field: { onChange, onBlur, value, ref } }) => {
                   if (field.config.type === 'select') {
                     return (
-                      <InputWithDropdown
-                        {...inputField}
-                        id={`fields.${index}.value`}
-                        className={cn(defaultTextProps, 'focus:bg-surface-tertiary')}
-                        placeholder={localize('com_ui_enter_var', field.config.variable)}
+                      <SimpleCombobox
                         options={field.config.options || []}
+                        placeholder={localize('com_ui_select_or_enter')}
+                        className={cn(
+                          defaultTextProps,
+                          'rounded px-3 py-2 focus:bg-surface-tertiary',
+                        )}
+                        value={value}
+                        onChange={onChange}
+                        onBlur={onBlur}
                       />
                     );
                   }
 
                   return (
                     <TextareaAutosize
-                      {...inputField}
+                      ref={ref}
+                      value={value}
+                      onChange={onChange}
+                      onBlur={onBlur}
                       id={`fields.${index}.value`}
                       className={cn(
                         defaultTextProps,
