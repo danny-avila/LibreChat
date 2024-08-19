@@ -8,6 +8,7 @@ type ComboboxProps = {
   placeholder?: string;
   options: OptionWithIcon[] | string[];
   className?: string;
+  labelClassName?: string;
   value: string;
   onChange: (value: string) => void;
   onBlur: () => void;
@@ -15,6 +16,7 @@ type ComboboxProps = {
 
 export const SimpleCombobox: React.FC<ComboboxProps> = ({
   label,
+  labelClassName,
   placeholder = 'Select an option',
   options,
   className,
@@ -27,6 +29,9 @@ export const SimpleCombobox: React.FC<ComboboxProps> = ({
   };
 
   const [inputValue, setInputValue] = React.useState(value);
+  const [isKeyboardFocus, setIsKeyboardFocus] = React.useState(false);
+  const inputRef = React.useRef<HTMLInputElement>(null);
+  const lastInteractionWasKeyboard = React.useRef(false);
 
   React.useEffect(() => {
     setInputValue(value);
@@ -37,34 +42,67 @@ export const SimpleCombobox: React.FC<ComboboxProps> = ({
     onChange(newValue);
   };
 
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Tab') {
+        lastInteractionWasKeyboard.current = true;
+      }
+    };
+
+    const handleMouseDown = () => {
+      lastInteractionWasKeyboard.current = false;
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('mousedown', handleMouseDown);
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('mousedown', handleMouseDown);
+    };
+  }, []);
+
   return (
     <Ariakit.ComboboxProvider value={inputValue} setValue={handleChange}>
       {label != null && (
         <Ariakit.ComboboxLabel
-          className={cn('mb-2 block text-sm font-medium text-text-primary', className)}
+          className={cn('mb-2 block text-sm font-medium text-text-primary', labelClassName ?? '')}
         >
           {label}
         </Ariakit.ComboboxLabel>
       )}
-      <Ariakit.Combobox
-        placeholder={placeholder}
-        className={cn(
-          'h-10 w-full rounded-md border border-border-medium bg-surface-primary px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring-primary',
-          'placeholder-text-secondary',
-          'hover:bg-surface-hover',
-          className,
-        )}
-        onChange={(event) => handleChange(event.target.value)}
-        onBlur={onBlur}
-      />
+      <div className={cn('relative', isKeyboardFocus ? 'rounded-md ring-2 ring-ring-primary' : '')}>
+        <Ariakit.Combobox
+          ref={inputRef}
+          placeholder={placeholder}
+          className={cn(
+            'h-10 w-full rounded-md border border-border-light bg-surface-primary px-3 py-2 text-sm',
+            'placeholder-text-secondary hover:bg-surface-hover',
+            'focus:outline-none',
+            className,
+          )}
+          onChange={(event) => handleChange(event.target.value)}
+          onBlur={() => {
+            setIsKeyboardFocus(false);
+            onBlur();
+          }}
+          onFocus={() => {
+            if (lastInteractionWasKeyboard.current) {
+              setIsKeyboardFocus(true);
+            }
+          }}
+          onMouseDown={() => {
+            lastInteractionWasKeyboard.current = false;
+            setIsKeyboardFocus(false);
+          }}
+        />
+      </div>
       <Ariakit.ComboboxPopover
         gutter={4}
         sameWidth
         className={cn(
           'z-50 max-h-60 w-full overflow-auto rounded-md bg-surface-primary p-1 shadow-lg',
-          'ring-1 ring-ring-primary ring-opacity-5 focus:outline-none',
           'animate-in fade-in-0 zoom-in-95',
-          'dark:bg-surface-primary dark:ring-opacity-10',
         )}
       >
         {options.map((option: string | OptionWithIcon, index: number) => (
@@ -72,8 +110,8 @@ export const SimpleCombobox: React.FC<ComboboxProps> = ({
             key={index}
             className={cn(
               'relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none',
-              'hover:bg-surface-hover hover:text-text-primary',
-              'data-[active-item]:bg-surface-active data-[active-item]:text-text-primary',
+              'cursor-pointer hover:bg-surface-tertiary hover:text-text-primary',
+              'data-[active-item]:bg-surface-tertiary data-[active-item]:text-text-primary',
             )}
             value={isOptionObject(option) ? `${option.value ?? ''}` : option}
           >
