@@ -19,7 +19,7 @@ const TermsAndConditionsModal = ({
 
   const handleAccept = async () => {
     try {
-      const response = await fetch('/api/user/accept-terms', {
+      const response = await fetch('/api/user/terms/accept', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -23,7 +23,7 @@ export default function Root() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      fetch('/api/user/terms-status', {
+      fetch('/api/user/terms', {
         credentials: 'include',
         headers: {
           Authorization: `Bearer ${token}`,
