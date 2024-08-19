@@ -39,6 +39,9 @@ const startServer = async () => {
   app.disable('x-powered-by');
   await AppService(app);
 
+  const indexPath = path.join(app.locals.paths.dist, 'index.html');
+  const indexHTML = fs.readFileSync(indexPath, 'utf8');
+
   app.get('/health', (_req, res) => res.status(200).send('OK'));
 
   // Middleware
@@ -106,19 +109,10 @@ const startServer = async () => {
   app.use('/api/tags', routes.tags);
 
   app.use((req, res) => {
-    // Check for preferred language in cookies, else check accept-language header
-    const preferredLanguage =
-      req.cookies.langcode || req.headers['accept-language']?.split(',')[0] || 'en-US';
-    const indexPath = path.join(app.locals.paths.dist, 'index.html');
-
-    fs.readFile(indexPath, 'utf8', (err, data) => {
-      if (err) {
-        console.error('Error reading index file:', err);
-        return res.status(500).send('Internal Server Error');
-      }
-      const updatedIndexHtml = data.replace(/lang="en-US"/g, `lang="${preferredLanguage}"`);
-      res.send(updatedIndexHtml);
-    });
+    // Replace lang attribute in index.html with lang from cookies or accept-language header
+    const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
+    const updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${lang}"`);
+    res.send(updatedIndexHtml);
   });
 
   app.listen(port, host, () => {
