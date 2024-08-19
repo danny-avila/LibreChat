@@ -36,7 +36,7 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
         _messages
           ?.filter((m) => m.messageId !== messageId)
           ?.map((msg) => ({ ...msg, thread_id })) ?? [];
-      const userMessage = messages[messages.length - 1];
+      const userMessage = messages[messages.length - 1] as TMessage | undefined;
 
       const { initialResponse } = submission;
 
@@ -44,7 +44,7 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
       if (!response) {
         response = {
           ...initialResponse,
-          parentMessageId: userMessage?.messageId,
+          parentMessageId: userMessage?.messageId ?? '',
           conversationId,
           messageId,
           thread_id,
@@ -55,7 +55,7 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
       // TODO: handle streaming for non-text
       const textPart: Text | string | undefined = data[ContentTypes.TEXT];
       const part: ContentPart =
-        textPart && typeof textPart === 'string' ? { value: textPart } : data[type];
+        textPart != null && typeof textPart === 'string' ? { value: textPart } : data[type];
 
       if (type === ContentTypes.IMAGE_FILE) {
         addFileToCache(queryClient, part as ImageFile & PartMetadata);
