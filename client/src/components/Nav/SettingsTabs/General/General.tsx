@@ -141,9 +141,11 @@ function General() {
         userLang = navigator.language || navigator.languages[0];
       }
 
+      requestAnimationFrame(() => {
+        document.documentElement.lang = userLang;
+      });
       setLangcode(userLang);
       Cookies.set('lang', userLang, { expires: 365 });
-      document.documentElement.lang = userLang;
     },
     [setLangcode],
   );
