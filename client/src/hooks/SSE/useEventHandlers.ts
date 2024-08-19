@@ -18,7 +18,7 @@ import type {
   ConversationData,
 } from 'librechat-data-provider';
 import type { SetterOrUpdater, Resetter } from 'recoil';
-import type { TResData, ConvoGenerator } from '~/common';
+import type { TResData, TFinalResData, ConvoGenerator } from '~/common';
 import {
   scrollToEnd,
   addConversation,
@@ -186,6 +186,11 @@ export default function useEventHandlers({
         },
       ]);
 
+      announceAssertive({
+        message: 'start',
+        id: `start-${Date.now()}`,
+      });
+
       let update = {} as TConversation;
       if (setConversation && !isAddedRequest) {
         setConversation((prevState) => {
@@ -236,10 +241,11 @@ export default function useEventHandlers({
       }
     },
     [
-      setMessages,
-      setConversation,
       queryClient,
+      setMessages,
       isAddedRequest,
+      setConversation,
+      announceAssertive,
       setShowStopButton,
       resetLatestMessage,
     ],
@@ -323,7 +329,7 @@ export default function useEventHandlers({
   );
 
   const finalHandler = useCallback(
-    (data: TResData, submission: TSubmission) => {
+    (data: TFinalResData, submission: TSubmission) => {
       const { requestMessage, responseMessage, conversation, runMessages } = data;
       const { messages, conversation: submissionConvo, isRegenerate = false } = submission;
 
@@ -331,14 +337,14 @@ export default function useEventHandlers({
       setCompleted((prev) => new Set(prev.add(submission.initialResponse.messageId)));
 
       const currentMessages = getMessages();
-      // Early return if messages are empty; i.e., the user navigated away
-      if (!currentMessages?.length) {
+      /* Early return if messages are empty; i.e., the user navigated away */
+      if (!currentMessages || currentMessages.length === 0) {
         return setIsSubmitting(false);
       }
 
       /* a11y announcements */
       announcePolite({
-        message: responseMessage.text,
+        message: responseMessage?.text ?? '',
         isComplete: true,
       });
 
@@ -349,12 +355,12 @@ export default function useEventHandlers({
         });
       }, 100);
 
-      // update the messages; if assistants endpoint, client doesn't receive responseMessage
+      /* Update messages; if assistants endpoint, client doesn't receive responseMessage */
       if (runMessages) {
         setMessages([...runMessages]);
       } else if (isRegenerate && responseMessage) {
         setMessages([...messages, responseMessage]);
-      } else if (responseMessage) {
+      } else if (requestMessage != null && responseMessage != null) {
         setMessages([...messages, requestMessage, responseMessage]);
       }
 
@@ -368,7 +374,7 @@ export default function useEventHandlers({
         });
       }
 
-      // refresh title
+      /* Refresh title */
       if (
         genTitle &&
         isNewConvo &&
@@ -380,14 +386,14 @@ export default function useEventHandlers({
         }, 2500);
       }
 
-      if (setConversation && !isAddedRequest) {
+      if (setConversation && isAddedRequest !== true) {
         setConversation((prevState) => {
           const update = {
             ...prevState,
             ...conversation,
           };
 
-          if (prevState?.model && prevState.model !== submissionConvo.model) {
+          if (prevState?.model != null && prevState.model !== submissionConvo.model) {
             update.model = prevState.model;
           }
 
@@ -421,14 +427,14 @@ export default function useEventHandlers({
 
       const parseErrorResponse = (data: TResData | Partial<TMessage>) => {
         const metadata = data['responseMessage'] ?? data;
-        const errorMessage = {
+        const errorMessage: Partial<TMessage> = {
           ...initialResponse,
           ...metadata,
           error: true,
           parentMessageId: userMessage.messageId,
         };
 
-        if (!errorMessage.messageId) {
+        if (errorMessage.messageId === undefined || errorMessage.messageId === '') {
           errorMessage.messageId = v4();
         }
 
@@ -514,7 +520,7 @@ export default function useEventHandlers({
 
         // Check if the response is JSON
         const contentType = response.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
+        if (contentType != null && contentType.includes('application/json')) {
           const data = await response.json();
           console.log(`[aborted] RESPONSE STATUS: ${response.status}`, data);
           if (response.status === 404) {

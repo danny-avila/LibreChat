@@ -461,17 +461,26 @@ export type NewConversationParams = {
 
 export type ConvoGenerator = (params: NewConversationParams) => void | TConversation;
 
-export type TResData = {
+export type TBaseResData = {
   plugin?: TResPlugin;
   final?: boolean;
   initial?: boolean;
   previousMessages?: TMessage[];
-  requestMessage: TMessage;
-  responseMessage: TMessage;
   conversation: TConversation;
   conversationId?: string;
   runMessages?: TMessage[];
 };
+
+export type TResData = TBaseResData & {
+  requestMessage: TMessage;
+  responseMessage: TMessage;
+};
+
+export type TFinalResData = TBaseResData & {
+  requestMessage?: TMessage;
+  responseMessage?: TMessage;
+};
+
 export type TVectorStore = {
   _id: string;
   object: 'vector_store';
