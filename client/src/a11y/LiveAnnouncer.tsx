@@ -1,7 +1,8 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { findLastSeparatorIndex } from 'librechat-data-provider';
 import type { AnnounceOptions } from '~/Providers/AnnouncerContext';
 import AnnouncerContext from '~/Providers/AnnouncerContext';
+import useLocalize from '~/hooks/useLocalize';
 import Announcer from './Announcer';
 
 interface LiveAnnouncerProps {
@@ -28,6 +29,8 @@ const LiveAnnouncer: React.FC<LiveAnnouncerProps> = ({ children }) => {
   const politeProcessedTextRef = useRef('');
   const queueRef = useRef<AnnouncementItem[]>([]);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const localize = useLocalize();
 
   const generateUniqueId = (prefix: string) => {
     counterRef.current += 1;
@@ -62,12 +65,17 @@ const LiveAnnouncer: React.FC<LiveAnnouncerProps> = ({ children }) => {
     return chunkText.trim();
   };
 
+  const events = useMemo(
+    () => ({ start: localize('com_a11y_start'), end: localize('com_a11y_end') }),
+    [localize],
+  );
+
   const announceNextInQueue = useCallback(() => {
     if (queueRef.current.length > 0 && !isAnnouncingRef.current) {
       isAnnouncingRef.current = true;
       const nextAnnouncement = queueRef.current.shift();
       if (nextAnnouncement) {
-        const { message, id, isAssertive } = nextAnnouncement;
+        const { message: _msg, id, isAssertive } = nextAnnouncement;
         const setMessage = isAssertive ? setAnnounceAssertiveMessage : setAnnouncePoliteMessage;
         const setMessageId = isAssertive ? setAssertiveMessageId : setPoliteMessageId;
 
@@ -76,6 +84,7 @@ const LiveAnnouncer: React.FC<LiveAnnouncerProps> = ({ children }) => {
 
         /* Force a re-render before setting the new message */
         setTimeout(() => {
+          const message = events[_msg] ?? _msg;
           setMessage(message);
           setMessageId(id);
 
@@ -90,7 +99,7 @@ const LiveAnnouncer: React.FC<LiveAnnouncerProps> = ({ children }) => {
         }, 0);
       }
     }
-  }, []);
+  }, [events]);
 
   const addToQueue = useCallback(
     (item: AnnouncementItem) => {

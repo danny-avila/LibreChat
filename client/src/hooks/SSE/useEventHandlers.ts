@@ -261,8 +261,8 @@ export default function useEventHandlers({
 
       const { conversationId, parentMessageId } = userMessage;
       announceAssertive({
-        message: 'The AI is generating a response.',
-        id: `ai-generating-${Date.now()}`,
+        message: 'start',
+        id: `start-${Date.now()}`,
       });
 
       let update = {} as TConversation;
@@ -344,8 +344,8 @@ export default function useEventHandlers({
 
       setTimeout(() => {
         announcePolite({
-          message: 'The AI has finished generating a response.',
-          id: `ai-finished-${Date.now()}`,
+          message: 'end',
+          id: `end-${Date.now()}`,
         });
       }, 100);
 
