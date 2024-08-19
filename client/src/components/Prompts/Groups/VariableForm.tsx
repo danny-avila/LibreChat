@@ -158,7 +158,7 @@ export default function VariableForm({
                     return (
                       <SimpleCombobox
                         options={field.config.options || []}
-                        placeholder={localize('com_ui_select_or_enter')}
+                        placeholder={localize('com_ui_enter_var', field.config.variable)}
                         className={cn(
                           defaultTextProps,
                           'rounded px-3 py-2 focus:bg-surface-tertiary',
