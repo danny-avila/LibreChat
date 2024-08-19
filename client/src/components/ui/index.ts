@@ -14,6 +14,7 @@ export * from './Prompt';
 export * from './QuestionMark';
 export * from './Slider';
 export * from './Separator';
+export * from './SimpleCombobox';
 export * from './Skeleton';
 export * from './Switch';
 export * from './Table';
