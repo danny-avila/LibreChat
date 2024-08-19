@@ -16,7 +16,7 @@ interface AnnouncementItem {
 }
 
 const CHUNK_SIZE = 50;
-const MIN_ANNOUNCEMENT_DELAY = 100;
+const MIN_ANNOUNCEMENT_DELAY = 400;
 
 const LiveAnnouncer: React.FC<LiveAnnouncerProps> = ({ children }) => {
   const [politeMessageId, setPoliteMessageId] = useState('');
