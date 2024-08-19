@@ -15,7 +15,7 @@ export default function AssistantConversationStarters({
   inputClass,
 }: AssistantConversationStartersProps) {
   const localize = useLocalize();
-  const MAX_STARTERS = 3;
+  const MAX_STARTERS = 4;
 
   const handleAddStarter = () => {
     const newValues = [...field.value];
