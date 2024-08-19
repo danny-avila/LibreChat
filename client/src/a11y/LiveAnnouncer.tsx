@@ -17,6 +17,8 @@ interface AnnouncementItem {
 
 const CHUNK_SIZE = 50;
 const MIN_ANNOUNCEMENT_DELAY = 400;
+/** Regex to remove *, `, and _ from message text */
+const replacementRegex = /[*`_]/g;
 
 const LiveAnnouncer: React.FC<LiveAnnouncerProps> = ({ children }) => {
   const [politeMessageId, setPoliteMessageId] = useState('');
@@ -65,7 +67,8 @@ const LiveAnnouncer: React.FC<LiveAnnouncerProps> = ({ children }) => {
     return chunkText.trim();
   };
 
-  const events = useMemo(
+  /** Localized event announcements, i.e., "the AI is replying, finished, etc." */
+  const events: Record<string, string | undefined> = useMemo(
     () => ({ start: localize('com_a11y_start'), end: localize('com_a11y_end') }),
     [localize],
   );
@@ -84,7 +87,7 @@ const LiveAnnouncer: React.FC<LiveAnnouncerProps> = ({ children }) => {
 
         /* Force a re-render before setting the new message */
         setTimeout(() => {
-          const message = events[_msg] ?? _msg;
+          const message = (events[_msg] ?? _msg).replace(replacementRegex, '');
           setMessage(message);
           setMessageId(id);
 
