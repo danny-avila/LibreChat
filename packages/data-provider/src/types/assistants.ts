@@ -88,6 +88,7 @@ export type AssistantCreateParams = {
   description?: string | null;
   file_ids?: string[];
   instructions?: string | null;
+  conversation_starters?: string[];
   metadata?: Metadata | null;
   name?: string | null;
   tools?: Array<FunctionTool | string>;
@@ -100,6 +101,7 @@ export type AssistantUpdateParams = {
   description?: string | null;
   file_ids?: string[];
   instructions?: string | null;
+  conversation_starters?: string[];
   metadata?: Metadata | null;
   name?: string | null;
   tools?: Array<FunctionTool | string>;

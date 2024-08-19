@@ -13,19 +13,14 @@ import {
 } from 'librechat-data-provider';
 import type { FunctionTool, TConfig, TPlugin } from 'librechat-data-provider';
 import type { AssistantForm, AssistantPanelProps } from '~/common';
-import {
-  SelectDropDown,
-  Tooltip,
-  TooltipProvider,
-  TooltipTrigger,
-  TooltipContent,
-} from '~/components/ui';
 import { useCreateAssistantMutation, useUpdateAssistantMutation } from '~/data-provider';
 import { cn, cardStyle, defaultTextProps, removeFocusOutlines } from '~/utils';
+import AssistantConversationStarters from './AssistantConversationStarters';
 import { useAssistantsMapContext, useToastContext } from '~/Providers';
 import { useSelectAssistant, useLocalize } from '~/hooks';
 import { ToolSelectDialog } from '~/components/Tools';
 import CapabilitiesForm from './CapabilitiesForm';
+import { SelectDropDown } from '~/components/ui';
 import AssistantAvatar from './AssistantAvatar';
 import AssistantSelect from './AssistantSelect';
 import AssistantAction from './AssistantAction';
@@ -336,73 +331,7 @@ export default function AssistantPanel({
               control={control}
               defaultValue={['']}
               render={({ field }) => (
-                <div className="relative">
-                  <div className="mt-4 space-y-2">
-                    {Array.isArray(field.value) &&
-                      field.value.map((starter, index) => (
-                        <div key={index} className="relative">
-                          <input
-                            value={starter}
-                            max={512}
-                            className={inputClass}
-                            type="text"
-                            placeholder={localize(
-                              'com_assistants_conversation_starters_placeholder',
-                            )}
-                            onChange={(e) => {
-                              const newValues = [...field.value];
-                              newValues[index] = e.target.value;
-                              field.onChange(newValues);
-                            }}
-                          />
-                          {index === 0 ? (
-                            <button
-                              type="button"
-                              className="transition-color absolute right-1 top-1 flex size-7 items-center justify-center rounded-lg duration-200 hover:bg-surface-hover"
-                              onClick={() => {
-                                const newValues = [...field.value];
-                                if (newValues[0].trim() !== '') {
-                                  newValues.unshift('');
-                                  field.onChange(newValues);
-                                }
-                              }}
-                            >
-                              <TooltipProvider delayDuration={250}>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Plus className="size-4" />
-                                  </TooltipTrigger>
-                                  <TooltipContent side="top" sideOffset={0}>
-                                    {localize('com_ui_add')}
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              className="transition-color absolute right-1 top-1 flex size-7 items-center justify-center rounded-lg duration-200 hover:bg-surface-hover"
-                              onClick={() => {
-                                const newValues = field.value.filter((_, i) => i !== index);
-                                field.onChange(newValues);
-                              }}
-                            >
-                              <TooltipProvider delayDuration={1000}>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <X className="icon-sm" />
-                                  </TooltipTrigger>
-                                  <TooltipContent side="top" sideOffset={0}>
-                                    {localize('com_ui_delete')}
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                  </div>
-                </div>
+                <AssistantConversationStarters field={field} inputClass={inputClass} />
               )}
             />
           </div>
