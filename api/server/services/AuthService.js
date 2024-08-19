@@ -280,9 +280,8 @@ const requestPasswordReset = async (req) => {
  * @returns
  */
 const resetPassword = async (userId, token, password) => {
-  let passwordResetToken = await createToken({
+  let passwordResetToken = await findToken({
     userId,
-    expiresIn: 900,
   });
 
   if (!passwordResetToken) {
@@ -311,7 +310,7 @@ const resetPassword = async (userId, token, password) => {
     });
   }
 
-  await passwordResetToken.deleteOne();
+  await deleteTokens({ token: passwordResetToken.token });
   logger.info(`[resetPassword] Password reset successful. [Email: ${user.email}]`);
   return { message: 'Password reset was successful' };
 };
