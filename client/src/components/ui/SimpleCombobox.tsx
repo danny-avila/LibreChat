@@ -28,10 +28,9 @@ export const SimpleCombobox: React.FC<ComboboxProps> = ({
     return option != null && typeof option === 'object' && 'value' in option;
   };
 
+  const [isOpen, setIsOpen] = React.useState(false);
   const [inputValue, setInputValue] = React.useState(value);
   const [isKeyboardFocus, setIsKeyboardFocus] = React.useState(false);
-  const inputRef = React.useRef<HTMLInputElement>(null);
-  const lastInteractionWasKeyboard = React.useRef(false);
 
   React.useEffect(() => {
     setInputValue(value);
@@ -41,26 +40,6 @@ export const SimpleCombobox: React.FC<ComboboxProps> = ({
     setInputValue(newValue);
     onChange(newValue);
   };
-
-  React.useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Tab') {
-        lastInteractionWasKeyboard.current = true;
-      }
-    };
-
-    const handleMouseDown = () => {
-      lastInteractionWasKeyboard.current = false;
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    document.addEventListener('mousedown', handleMouseDown);
-
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-      document.removeEventListener('mousedown', handleMouseDown);
-    };
-  }, []);
 
   return (
     <Ariakit.ComboboxProvider value={inputValue} setValue={handleChange}>
@@ -73,7 +52,6 @@ export const SimpleCombobox: React.FC<ComboboxProps> = ({
       )}
       <div className={cn('relative', isKeyboardFocus ? 'rounded-md ring-2 ring-ring-primary' : '')}>
         <Ariakit.Combobox
-          ref={inputRef}
           placeholder={placeholder}
           className={cn(
             'h-10 w-full rounded-md border border-border-light bg-surface-primary px-3 py-2 text-sm',
@@ -86,13 +64,11 @@ export const SimpleCombobox: React.FC<ComboboxProps> = ({
             setIsKeyboardFocus(false);
             onBlur();
           }}
-          onFocus={() => {
-            if (lastInteractionWasKeyboard.current) {
-              setIsKeyboardFocus(true);
-            }
+          onFocusVisible={() => {
+            setIsKeyboardFocus(true);
+            setIsOpen(true);
           }}
           onMouseDown={() => {
-            lastInteractionWasKeyboard.current = false;
             setIsKeyboardFocus(false);
           }}
         />
@@ -100,6 +76,8 @@ export const SimpleCombobox: React.FC<ComboboxProps> = ({
       <Ariakit.ComboboxPopover
         gutter={4}
         sameWidth
+        open={isOpen}
+        onClose={() => setIsOpen(false)}
         className={cn(
           'z-50 max-h-60 w-full overflow-auto rounded-md bg-surface-primary p-1 shadow-lg',
           'animate-in fade-in-0 zoom-in-95',
