@@ -2271,30 +2271,30 @@ button.scroll-convo {
 }
 
 .moon-rise {
-  animation: moonRise 4s ease-in-out infinite; /* 'forwards' mantém a lua na posição final após a animação */
-  transform-origin: 45% 50%; /* Ajuste dependendo da posição relativa do morro */
+  animation: moonRise 4s ease-in-out infinite;
+  transform-origin: 45% 50%;
 }
 
 @keyframes moveUp {
   0% {
-    transform: translateY(0.5px); /* Move um pouco para cima */
+    transform: translateY(0.5px);
     opacity: 0.8;
   }
   10% {
-    transform: translateY(0.5px); /* Move um pouco para cima */
+    transform: translateY(0.5px);
     opacity: 1;
   }
   20% {
-    transform: translateY(0px); /* Move um pouco para cima */
+    transform: translateY(0px);
     opacity: 1;
   }
   50% {
-    transform: translateY(0px); /* Move um pouco para cima */
+    transform: translateY(0px);
     opacity: 1;
   }
   60%,
   100% {
-    transform: translateY(0px); /* Move um pouco para cima */
+    transform: translateY(0px);
     opacity: 1;
   }
 }
@@ -2341,3 +2341,16 @@ button.scroll-convo {
   line-height: inherit;
 }
 
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid #000;
+  outline-offset: 2px;
+}
+
+.dark :focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
