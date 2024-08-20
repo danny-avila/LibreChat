@@ -312,3 +312,11 @@
 .chrome-scrollbar::-webkit-scrollbar-track {
   background-color: transparent;  /* Color of the tracking area */
 }
+
+.sp-preview-container {
+  @apply flex h-full w-full grow flex-col justify-center;
+}
+
+.sp-preview-iframe {
+  @apply grow;
+}
