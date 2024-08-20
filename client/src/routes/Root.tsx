@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
+import { useUserTermsQuery } from '~/data-provider';
 
 import type { ContextType } from '~/common';
 import { useAuthContext, useAssistantsMap, useFileMap, useSearch } from '~/hooks';
@@ -23,23 +24,15 @@ export default function Root() {
   const [showTerms, setShowTerms] = useState(false);
   const { data: config } = useGetStartupConfig();
 
+  const { data: termsData } = useUserTermsQuery({
+    enabled: isAuthenticated && !!config?.interface?.termsOfService?.modalAcceptance,
+  });
+
   useEffect(() => {
-    if (isAuthenticated && config?.interface?.termsOfService?.modalAcceptance) {
-      fetch('/api/user/terms', {
-        credentials: 'include',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
-        .then((response) => response.json())
-        .then((data) => {
-          setShowTerms(!data.termsAccepted);
-        })
-        .catch((error) => {
-          console.error('Error fetching terms acceptance status:', error);
-        });
+    if (termsData) {
+      setShowTerms(!termsData.termsAccepted);
     }
-  }, [isAuthenticated, token, config?.interface?.termsOfService?.modalAcceptance]);
+  }, [termsData]);
 
   const handleAcceptTerms = () => {
     setShowTerms(false);

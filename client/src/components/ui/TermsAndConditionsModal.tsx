@@ -1,8 +1,10 @@
 import { useLocalize } from '~/hooks';
-import { Dialog } from '~/components/ui';
+import { OGDialog } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { useAuthContext } from '~/hooks';
 import Markdown from '~/components/Chat/Messages/Content/Markdown';
+import { useToastContext } from '~/Providers';
+import { useAcceptTermsMutation } from '~/data-provider';
 
 const TermsAndConditionsModal = ({
   open,
@@ -21,29 +23,19 @@ const TermsAndConditionsModal = ({
   modalContent?: string;
 }) => {
   const localize = useLocalize();
-  const { token } = useAuthContext();
+  const { showToast } = useToastContext();
+  const acceptTermsMutation = useAcceptTermsMutation({
+    onSuccess: () => {
+      onAccept();
+      onOpenChange(false);
+    },
+    onError: () => {
+      showToast({ message: 'Failed to accept terms' });
+    },
+  });
 
-  const handleAccept = async () => {
-    try {
-      const response = await fetch('/api/user/terms/accept', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        credentials: 'include',
-      });
-
-      if (response.ok) {
-        onAccept();
-        onOpenChange(false);
-      } else {
-        const errorData = await response.json();
-        console.error('Failed to accept terms:', errorData.message);
-      }
-    } catch (error) {
-      console.error('Error accepting terms:', error);
-    }
+  const handleAccept = () => {
+    acceptTermsMutation.mutate();
   };
 
   const handleDecline = () => {
@@ -59,7 +51,7 @@ const TermsAndConditionsModal = ({
   };
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <OGDialog open={open} onOpenChange={handleOpenChange}>
       <DialogTemplate
         title={title ?? localize('com_ui_terms_and_conditions')}
         className="w-11/12 max-w-3xl sm:w-3/4 md:w-1/2 lg:w-2/5"
@@ -80,20 +72,20 @@ const TermsAndConditionsModal = ({
           <>
             <button
               onClick={handleDecline}
-              className="inline-flex h-10 items-center justify-center rounded-lg border-none bg-gray-500 px-4 py-2 text-sm text-white hover:bg-gray-600 dark:hover:bg-gray-600"
+              className="border-border-none bg-surface-500 dark:hover:bg-surface-600 inline-flex h-10 items-center justify-center rounded-lg px-4 py-2 text-sm text-white hover:bg-gray-600"
             >
               {localize('com_ui_decline')}
             </button>
             <button
               onClick={handleAccept}
-              className="inline-flex h-10 items-center justify-center rounded-lg border-none bg-green-500 px-4 py-2 text-sm text-white hover:bg-green-600 dark:hover:bg-green-600"
+              className="border-border-none bg-surface-500 inline-flex h-10 items-center justify-center rounded-lg px-4 py-2 text-sm text-white hover:bg-green-600 dark:hover:bg-green-600"
             >
               {localize('com_ui_accept')}
             </button>
           </>
         }
       />
-    </Dialog>
+    </OGDialog>
   );
 };
 
