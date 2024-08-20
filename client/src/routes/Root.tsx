@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
+import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 
 import type { ContextType } from '~/common';
 import { useAuthContext, useAssistantsMap, useFileMap, useSearch } from '~/hooks';
@@ -20,9 +21,10 @@ export default function Root() {
   const assistantsMap = useAssistantsMap({ isAuthenticated });
 
   const [showTerms, setShowTerms] = useState(false);
+  const { data: config } = useGetStartupConfig();
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && config?.interface?.termsOfService?.modalAcceptance) {
       fetch('/api/user/terms', {
         credentials: 'include',
         headers: {
@@ -37,7 +39,7 @@ export default function Root() {
           console.error('Error fetching terms acceptance status:', error);
         });
     }
-  }, [isAuthenticated, token]);
+  }, [isAuthenticated, token, config?.interface?.termsOfService?.modalAcceptance]);
 
   const handleAcceptTerms = () => {
     setShowTerms(false);
@@ -66,12 +68,16 @@ export default function Root() {
               </div>
             </div>
           </div>
-          <TermsAndConditionsModal
-            open={showTerms}
-            onOpenChange={setShowTerms}
-            onAccept={handleAcceptTerms}
-            onDecline={handleDeclineTerms}
-          />
+          {config?.interface?.termsOfService?.modalAcceptance && (
+            <TermsAndConditionsModal
+              open={showTerms}
+              onOpenChange={setShowTerms}
+              onAccept={handleAcceptTerms}
+              onDecline={handleDeclineTerms}
+              title={config.interface.termsOfService.modalTitle}
+              modalContent={config.interface.termsOfService.modalContent}
+            />
+          )}
         </AssistantsMapContext.Provider>
       </FileMapContext.Provider>
     </SearchContext.Provider>

@@ -104,6 +104,10 @@ export default {
   com_ui_bookmarks_update_error: 'Une erreur est survenue lors de la mise à jour du signet',
   com_ui_bookmarks_delete_error: 'Une erreur est survenue lors de la suppression du signet',
   com_ui_bookmarks_add_to_conversation: 'Ajouter à la conversation en cours',
+  com_ui_accept: 'J\'accepte',
+  com_ui_decline: 'Je n\'accepte pas',
+  com_ui_terms_and_conditions: 'Conditions d\'utilisation',
+  com_ui_no_terms_content: 'Aucun contenu de conditions d\'utilisation à afficher',
   com_auth_error_login:
     'Impossible de se connecter avec les informations fournies. Veuillez vérifier vos identifiants et réessayer.',
   com_auth_error_login_rl:

@@ -104,6 +104,10 @@ export default {
   com_ui_bookmarks_update_error: 'Произошла ошибка при обновлении закладки',
   com_ui_bookmarks_delete_error: 'Произошла ошибка при удалении закладки',
   com_ui_bookmarks_add_to_conversation: 'Добавить в текущий разговор',
+  com_ui_accept: 'Принимаю',
+  com_ui_decline: 'Не принимаю',
+  com_ui_terms_and_conditions: 'Условия использования',
+  com_ui_no_terms_content: 'Нет содержания условий использования для отображения',
   com_auth_error_login:
     'Не удалось войти с предоставленной информацией. Пожалуйста, проверьте ваши учетные данные и попробуйте снова.',
   com_auth_error_login_rl:
