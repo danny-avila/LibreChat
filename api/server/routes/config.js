@@ -52,7 +52,7 @@ async function verifyAssistantConfigurations(headers, cachedValue) {
   }
 
   // en caso de que no exista jwt, verificamos si existe en cache
-  if (cachedValue) {
+  if (cachedValue && (jwt === 'undefined' || jwt === '' || jwt === 'null')) {
     return cachedValue.userAssistantConfigPermission;
   }
 
