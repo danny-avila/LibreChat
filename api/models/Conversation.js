@@ -3,6 +3,20 @@ const { getMessages, deleteMessages } = require('./Message');
 const logger = require('~/config/winston');
 
 /**
+ * Searches for a conversation by conversationId and returns a lean document with only conversationId and user.
+ * @param {string} conversationId - The conversation's ID.
+ * @returns {Promise<{conversationId: string, user: string} | null>} The conversation object with selected fields or null if not found.
+ */
+const searchConversation = async (conversationId) => {
+  try {
+    return await Conversation.findOne({ conversationId }, 'conversationId user').lean();
+  } catch (error) {
+    logger.error('[searchConversation] Error searching conversation', error);
+    throw new Error('Error searching conversation');
+  }
+};
+
+/**
  * Retrieves a single conversation for a given user and conversation ID.
  * @param {string} user - The user's ID.
  * @param {string} conversationId - The conversation's ID.
@@ -19,6 +33,7 @@ const getConvo = async (user, conversationId) => {
 
 module.exports = {
   Conversation,
+  searchConversation,
   /**
    * Saves a conversation to the database.
    * @param {Object} req - The request object.
@@ -73,12 +88,15 @@ module.exports = {
       throw new Error('Failed to save conversations in bulk.');
     }
   },
-  getConvosByPage: async (user, pageNumber = 1, pageSize = 25, isArchived = false) => {
+  getConvosByPage: async (user, pageNumber = 1, pageSize = 25, isArchived = false, tags) => {
     const query = { user };
     if (isArchived) {
       query.isArchived = true;
     } else {
       query.$or = [{ isArchived: false }, { isArchived: { $exists: false } }];
+    }
+    if (Array.isArray(tags) && tags.length > 0) {
+      query.tags = { $in: tags };
     }
     try {
       const totalConvos = (await Conversation.countDocuments(query)) || 1;

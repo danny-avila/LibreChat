@@ -27,13 +27,14 @@ const PresetsMenu: FC = () => {
       <Trigger asChild>
         <button
           className={cn(
-            'pointer-cursor relative flex flex-col rounded-md border border-gray-100 bg-white text-left focus:outline-none focus:ring-0 focus:ring-offset-0 dark:border-gray-700 dark:bg-gray-800 sm:text-sm',
+            'pointer-cursor relative flex flex-col rounded-md border border-gray-100 bg-white text-left focus:ring-0 focus:ring-offset-0 dark:border-gray-700 dark:bg-gray-800 sm:text-sm',
             'hover:bg-gray-50 radix-state-open:bg-gray-50 dark:hover:bg-gray-700 dark:radix-state-open:bg-gray-700',
-            'z-50 flex h-[40px] min-w-4 flex-none items-center justify-center px-3 focus:ring-0 focus:ring-offset-0',
+            'z-50 flex h-[40px] min-w-4 flex-none items-center justify-center px-3',
           )}
           id="presets-button"
           data-testid="presets-button"
           title={localize('com_endpoint_examples')}
+          aria-label={localize('com_endpoint_examples')}
         >
           <BookCopy className="icon-sm" id="presets-button" />
         </button>

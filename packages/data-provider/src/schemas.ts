@@ -82,7 +82,7 @@ export const ImageVisionTool: FunctionTool = {
 };
 
 export const isImageVisionTool = (tool: FunctionTool | FunctionToolCall) =>
-  tool.type === 'function' && tool.function?.name === ImageVisionTool?.function?.name;
+  tool.type === 'function' && tool.function?.name === ImageVisionTool.function?.name;
 
 export const openAISettings = {
   model: {
@@ -123,6 +123,9 @@ export const openAISettings = {
   },
   imageDetail: {
     default: ImageDetail.auto,
+    min: 0,
+    max: 2,
+    step: 1,
   },
 };
 
@@ -371,6 +374,7 @@ export const tConversationSchema = z.object({
   updatedAt: z.string(),
   modelLabel: z.string().nullable().optional(),
   examples: z.array(tExampleSchema).optional(),
+  tags: z.array(z.string()).optional(),
   /* Prefer modelLabel over chatGptLabel */
   chatGptLabel: z.string().nullable().optional(),
   userLabel: z.string().optional(),
@@ -475,6 +479,17 @@ export const tSharedLinkSchema = z.object({
   updatedAt: z.string(),
 });
 export type TSharedLink = z.infer<typeof tSharedLinkSchema>;
+
+export const tConversationTagSchema = z.object({
+  user: z.string(),
+  tag: z.string(),
+  description: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  count: z.number(),
+  position: z.number(),
+});
+export type TConversationTag = z.infer<typeof tConversationTagSchema>;
 
 export const openAISchema = tConversationSchema
   .pick({
@@ -828,22 +843,22 @@ export const compactOpenAISchema = tConversationSchema
   })
   .transform((obj: Partial<TConversation>) => {
     const newObj: Partial<TConversation> = { ...obj };
-    if (newObj.temperature === 1) {
+    if (newObj.temperature === openAISettings.temperature.default) {
       delete newObj.temperature;
     }
-    if (newObj.top_p === 1) {
+    if (newObj.top_p === openAISettings.top_p.default) {
       delete newObj.top_p;
     }
-    if (newObj.presence_penalty === 0) {
+    if (newObj.presence_penalty === openAISettings.presence_penalty.default) {
       delete newObj.presence_penalty;
     }
-    if (newObj.frequency_penalty === 0) {
+    if (newObj.frequency_penalty === openAISettings.frequency_penalty.default) {
       delete newObj.frequency_penalty;
     }
-    if (newObj.resendFiles === true) {
+    if (newObj.resendFiles === openAISettings.resendFiles.default) {
       delete newObj.resendFiles;
     }
-    if (newObj.imageDetail === ImageDetail.auto) {
+    if (newObj.imageDetail === openAISettings.imageDetail.default) {
       delete newObj.imageDetail;
     }
 

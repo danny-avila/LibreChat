@@ -31,10 +31,10 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
   endpoint = getIconEndpoint({ endpointsConfig, iconURL, endpoint });
 
   const isAssistant = isAssistantsEndpoint(endpoint);
-  const assistant = isAssistant && assistantMap?.[endpoint]?.[assistant_id ?? ''];
-  const assistantName = (assistant && assistant?.name) || '';
-  const assistantDesc = (assistant && assistant?.description) || '';
-  const avatar = (assistant && (assistant?.metadata?.avatar as string)) || '';
+  const assistant = isAssistant ? assistantMap?.[endpoint][assistant_id ?? ''] : undefined;
+  const assistantName = assistant && assistant.name;
+  const assistantDesc = assistant && assistant.description;
+  const avatar = assistant && (assistant.metadata?.avatar as string);
 
   const containerClassName =
     'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black';
@@ -79,11 +79,11 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
             </div> */}
               </div>
             ) : (
-              <div className="mb-5 max-w-[75vh] px-12 text-center text-lg font-medium dark:text-white md:px-0 md:text-2xl">
+              <h2 className="mb-5 max-w-[75vh] px-12 text-center text-lg font-medium dark:text-white md:px-0 md:text-2xl">
                 {isAssistant
                   ? conversation?.greeting ?? localize('com_nav_welcome_assistant')
                   : conversation?.greeting ?? localize('com_nav_welcome_message')}
-              </div>
+              </h2>
             )}
           </div>
         </div>

@@ -11,7 +11,9 @@ export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'd
 
 export const defaultRetrievalModels = [
   'gpt-4o',
+  'chatgpt-4o-latest',
   'gpt-4o-2024-05-13',
+  'gpt-4o-2024-08-06',
   'gpt-4o-mini',
   'gpt-4o-mini-2024-07-18',
   'gpt-4-turbo-preview',
@@ -282,7 +284,7 @@ const ttsLocalaiSchema = z.object({
 const ttsSchema = z.object({
   openai: ttsOpenaiSchema.optional(),
   azureOpenAI: ttsAzureOpenAISchema.optional(),
-  elevenLabs: ttsElevenLabsSchema.optional(),
+  elevenlabs: ttsElevenLabsSchema.optional(),
   localai: ttsLocalaiSchema.optional(),
 });
 
@@ -513,6 +515,8 @@ export const alternateName = {
 };
 
 const sharedOpenAIModels = [
+  'gpt-4o-mini',
+  'gpt-4o',
   'gpt-3.5-turbo',
   'gpt-3.5-turbo-0125',
   'gpt-4-turbo',
@@ -532,7 +536,7 @@ const sharedOpenAIModels = [
 
 export const defaultModels = {
   [EModelEndpoint.azureAssistants]: sharedOpenAIModels,
-  [EModelEndpoint.assistants]: ['gpt-4o-mini', 'gpt-4o', ...sharedOpenAIModels],
+  [EModelEndpoint.assistants]: ['chatgpt-4o-latest', ...sharedOpenAIModels],
   [EModelEndpoint.google]: [
     'gemini-pro',
     'gemini-pro-vision',
@@ -561,8 +565,7 @@ export const defaultModels = {
     'claude-instant-1-100k',
   ],
   [EModelEndpoint.openAI]: [
-    'gpt-4o-mini',
-    'gpt-4o',
+    'chatgpt-4o-latest',
     ...sharedOpenAIModels,
     'gpt-4-vision-preview',
     'gpt-3.5-turbo-instruct-0914',
@@ -679,6 +682,7 @@ export enum InfiniteCollections {
  * Enum for time intervals
  */
 export enum Time {
+  ONE_HOUR = 3600000,
   THIRTY_MINUTES = 1800000,
   TEN_MINUTES = 600000,
   FIVE_MINUTES = 300000,
@@ -799,6 +803,10 @@ export enum ViolationTypes {
    * Verify Email Limit Violation.
    */
   VERIFY_EMAIL_LIMIT = 'verify_email_limit',
+  /**
+   * Verify Conversation Access violation.
+   */
+  CONVO_ACCESS = 'convo_access',
 }
 
 /**
@@ -895,6 +903,10 @@ export enum SettingsTabValues {
    * Tab for Account Settings
    */
   ACCOUNT = 'account',
+  /**
+   * Chat input commands
+   */
+  COMMANDS = 'commands',
 }
 
 export enum STTProviders {
@@ -930,7 +942,7 @@ export enum TTSProviders {
 /** Enum for app-wide constants */
 export enum Constants {
   /** Key for the app's version. */
-  VERSION = 'v0.7.4-rc1',
+  VERSION = 'v0.7.4',
   /** Key for the Custom Config's version (librechat.yaml). */
   CONFIG_VERSION = '1.1.5',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
@@ -947,6 +959,8 @@ export enum Constants {
   COMMANDS_MAX_LENGTH = 56,
   /** Default Stream Rate (ms) */
   DEFAULT_STREAM_RATE = 1,
+  /** Saved Tag */
+  SAVED_TAG = 'Saved',
 }
 
 export enum LocalStorageKeys {

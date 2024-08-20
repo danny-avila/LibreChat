@@ -33,8 +33,8 @@ const Slider = React.forwardRef<React.ElementRef<typeof SliderPrimitive.Root>, S
       id={id}
       {...props}
     >
-      <SliderPrimitive.Track className="relative h-1 w-full grow overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800">
-        <SliderPrimitive.Range className="absolute h-full bg-gray-400 dark:bg-gray-400" />
+      <SliderPrimitive.Track className="relative h-1 w-full grow overflow-hidden rounded-full bg-gray-200 dark:bg-gray-850">
+        <SliderPrimitive.Range className="absolute h-full bg-gray-850  dark:bg-white" />
       </SliderPrimitive.Track>
       <SliderPrimitive.Thumb
         onClick={
@@ -44,8 +44,7 @@ const Slider = React.forwardRef<React.ElementRef<typeof SliderPrimitive.Root>, S
           })
         }
         aria-label={props['aria-label']}
-        className="block h-4 w-4 cursor-pointer rounded-full border-2 border-gray-400 bg-white transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 dark:border-gray-200 dark:bg-gray-400 dark:focus:ring-gray-400 dark:focus:ring-offset-gray-800"
-        disabled={disabled}
+        className="block h-4 w-4 cursor-pointer rounded-full border border-border-medium-alt bg-white shadow ring-ring-primary transition-colors focus-visible:ring-1 focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50 dark:border-none"
       />
     </SliderPrimitive.Root>
   ),

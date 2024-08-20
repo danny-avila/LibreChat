@@ -36,6 +36,8 @@ export enum QueryKeys {
   categories = 'categories',
   randomPrompts = 'randomPrompts',
   roles = 'roles',
+  conversationTags = 'conversationTags',
+  health = 'health',
 }
 
 export enum MutationKeys {

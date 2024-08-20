@@ -7,16 +7,16 @@ import {
   Input,
   Label,
   Button,
-  Dialog,
+  OGDialog,
   DropdownMenu,
-  DialogTrigger,
+  OGDialogTrigger,
   DropdownMenuGroup,
   DropdownMenuContent,
   DropdownMenuTrigger,
+  DropdownMenuItem,
 } from '~/components/ui';
 import CategoryIcon from '~/components/Prompts/Groups/CategoryIcon';
-import DialogTemplate from '~/components/ui/DialogTemplate';
-import { RenameButton } from '~/components/Conversations';
+import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { useLocalize, useAuthContext } from '~/hooks';
 import { TrashIcon } from '~/components/svg';
 import { cn } from '~/utils/';
@@ -36,9 +36,9 @@ export default function DashGroupItem({
   const blurTimeoutRef = useRef<NodeJS.Timeout>();
   const [nameEditFlag, setNameEditFlag] = useState(false);
   const [nameInputField, setNameInputField] = useState(group.name);
-  const isOwner = useMemo(() => user?.id === group?.author, [user, group]);
+  const isOwner = useMemo(() => user?.id === group.author, [user, group]);
   const groupIsGlobal = useMemo(
-    () => instanceProjectId && group?.projectIds?.includes(instanceProjectId),
+    () => instanceProjectId && group.projectIds?.includes(instanceProjectId),
     [group, instanceProjectId],
   );
 
@@ -61,13 +61,29 @@ export default function DashGroupItem({
   };
 
   const saveRename = () => {
-    updateGroup.mutate({ payload: { name: nameInputField }, id: group?._id || '' });
+    updateGroup.mutate({ payload: { name: nameInputField }, id: group._id || '' });
   };
 
   const handleBlur = () => {
     blurTimeoutRef.current = setTimeout(() => {
       cancelRename();
     }, 100);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      navigate(`/d/prompts/${group._id}`, { replace: true });
+    }
+  };
+
+  const handleRename = (e: React.MouseEvent | React.KeyboardEvent) => {
+    e.stopPropagation();
+    setNameEditFlag(true);
+  };
+
+  const handleDelete = () => {
+    deletePromptGroupMutation.mutate({ id: group._id || '' });
   };
 
   return (
@@ -77,27 +93,30 @@ export default function DashGroupItem({
         params.promptId === group._id && 'bg-gray-100/50 dark:bg-gray-600 ',
       )}
       onClick={() => {
-        if (nameEditFlag) {
-          return;
+        if (!nameEditFlag) {
+          navigate(`/d/prompts/${group._id}`, { replace: true });
         }
-        navigate(`/d/prompts/${group._id}`, { replace: true });
       }}
+      onKeyDown={handleKeyDown}
+      role="button"
+      tabIndex={0}
+      aria-label={`${group.name} prompt group`}
     >
       <div className="flex w-full flex-row items-center justify-start truncate">
-        {/* <Checkbox /> */}
         <div className="relative flex w-full cursor-pointer flex-col gap-1 text-start align-top">
           {nameEditFlag ? (
             <>
               <div className="flex w-full gap-2">
+                <Label htmlFor="group-name-input" className="sr-only">
+                  {localize('com_ui_rename_group')}
+                </Label>
                 <Input
-                  defaultValue={nameInputField}
+                  id="group-name-input"
+                  value={nameInputField}
+                  tabIndex={0}
                   className="w-full"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                  }}
-                  onChange={(e) => {
-                    setNameInputField(e.target.value);
-                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => setNameInputField(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Escape') {
                       cancelRename();
@@ -106,17 +125,18 @@ export default function DashGroupItem({
                     }
                   }}
                   onBlur={handleBlur}
+                  aria-label={localize('com_ui_rename_group')}
                 />
-                <Button
-                  variant="subtle"
-                  className="w-min bg-green-500 text-white hover:bg-green-600 dark:bg-green-400 dark:hover:bg-green-500"
+                <button
+                  className="btn btn-primary"
                   onClick={(e) => {
                     e.stopPropagation();
                     saveRename();
                   }}
+                  aria-label={localize('com_ui_save')}
                 >
                   {localize('com_ui_save')}
-                </Button>
+                </button>
               </div>
               <div className="break-word line-clamp-3 text-balance text-sm text-gray-600 dark:text-gray-400">
                 {localize('com_ui_renaming_var', group.name)}
@@ -126,13 +146,22 @@ export default function DashGroupItem({
             <>
               <div className="flex w-full justify-between">
                 <div className="flex flex-row gap-2">
-                  <CategoryIcon category={group.category ?? ''} className="icon-md" />
+                  <CategoryIcon
+                    category={group.category ?? ''}
+                    className="icon-md"
+                    aria-hidden="true"
+                  />
                   <h3 className="break-word text-balance text-sm font-semibold text-gray-800 dark:text-gray-200">
                     {group.name}
                   </h3>
                 </div>
                 <div className="flex flex-row items-center gap-1">
-                  {groupIsGlobal && <EarthIcon className="icon-md text-green-400" />}
+                  {groupIsGlobal && (
+                    <EarthIcon
+                      className="icon-md text-green-400"
+                      aria-label={localize('com_ui_global_group')}
+                    />
+                  )}
                   {(isOwner || user?.role === SystemRoles.ADMIN) && (
                     <>
                       <DropdownMenu>
@@ -140,39 +169,36 @@ export default function DashGroupItem({
                           <Button
                             variant="outline"
                             className="h-7 w-7 p-0 hover:bg-gray-200 dark:bg-gray-800/50 dark:text-gray-400 dark:hover:border-gray-400 dark:focus:border-gray-500"
+                            aria-label={localize('com_ui_more_options')}
                           >
-                            <MenuIcon className="icon-md dark:text-gray-300" />
+                            <MenuIcon className="icon-md dark:text-gray-300" aria-hidden="true" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent className="mt-2 w-36 rounded-lg" collisionPadding={2}>
                           <DropdownMenuGroup>
-                            <RenameButton
-                              renaming={false}
-                              renameHandler={(e) => {
-                                e.stopPropagation();
-                                setNameEditFlag(true);
-                              }}
-                              appendLabel={true}
-                              className={cn('m-0 w-full p-2')}
-                            />
+                            <DropdownMenuItem onSelect={handleRename}>
+                              {localize('com_ui_rename')}
+                            </DropdownMenuItem>
                           </DropdownMenuGroup>
                         </DropdownMenuContent>
                       </DropdownMenu>
-                      <Dialog>
-                        <DialogTrigger asChild>
+                      <OGDialog>
+                        <OGDialogTrigger asChild>
                           <Button
                             variant="outline"
                             className={cn(
                               'h-7 w-7 p-0 hover:bg-gray-200  dark:bg-gray-800/50 dark:text-gray-400 dark:hover:border-gray-400 dark:focus:border-gray-500',
                             )}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            aria-label={localize('com_ui_delete_prompt')}
                           >
-                            <TrashIcon className="icon-md text-gray-600 dark:text-gray-300" />
+                            <TrashIcon
+                              className="icon-md text-gray-600 dark:text-gray-300"
+                              aria-hidden="true"
+                            />
                           </Button>
-                        </DialogTrigger>
-                        <DialogTemplate
+                        </OGDialogTrigger>
+                        <OGDialogTemplate
                           showCloseButton={false}
                           title={localize('com_ui_delete_prompt')}
                           className="max-w-[450px]"
@@ -181,7 +207,7 @@ export default function DashGroupItem({
                               <div className="flex w-full flex-col items-center gap-2">
                                 <div className="grid w-full items-center gap-2">
                                   <Label
-                                    htmlFor="chatGptLabel"
+                                    htmlFor="confirm-delete"
                                     className="text-left text-sm font-medium"
                                   >
                                     {localize('com_ui_delete_confirm')}{' '}
@@ -192,21 +218,19 @@ export default function DashGroupItem({
                             </>
                           }
                           selection={{
-                            selectHandler: () => {
-                              deletePromptGroupMutation.mutate({ id: group?._id || '' });
-                            },
+                            selectHandler: handleDelete,
                             selectClasses:
                               'bg-red-600 dark:bg-red-600 hover:bg-red-700 dark:hover:bg-red-800 text-white',
                             selectText: localize('com_ui_delete'),
                           }}
                         />
-                      </Dialog>
+                      </OGDialog>
                     </>
                   )}
                 </div>
               </div>
               <div className="ellipsis text-balance text-sm text-gray-600 dark:text-gray-400">
-                {group.oneliner ? group.oneliner : group?.productionPrompt?.prompt ?? ''}
+                {group.oneliner ? group.oneliner : group.productionPrompt?.prompt ?? ''}
               </div>
             </>
           )}

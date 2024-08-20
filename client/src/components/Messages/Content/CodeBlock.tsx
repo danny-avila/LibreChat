@@ -24,14 +24,18 @@ const CodeBar: React.FC<CodeBarProps> = React.memo(({ lang, codeRef, error, plug
   return (
     <div className="relative flex items-center rounded-tl-md rounded-tr-md bg-gray-700 px-4 py-2 font-sans text-xs text-gray-200 dark:bg-gray-700">
       <span className="">{lang}</span>
-      {plugin ? (
+      {plugin === true ? (
         <InfoIcon className="ml-auto flex h-4 w-4 gap-2 text-white/50" />
       ) : (
         <button
-          className={cn('ml-auto flex gap-2', error ? 'h-4 w-4 items-start text-white/50' : '')}
+          type="button"
+          className={cn(
+            'ml-auto flex gap-2',
+            error === true ? 'h-4 w-4 items-start text-white/50' : '',
+          )}
           onClick={async () => {
             const codeString = codeRef.current?.textContent;
-            if (codeString) {
+            if (codeString != null) {
               setIsCopied(true);
               copy(codeString, { format: 'text/plain' });
 
@@ -44,12 +48,12 @@ const CodeBar: React.FC<CodeBarProps> = React.memo(({ lang, codeRef, error, plug
           {isCopied ? (
             <>
               <CheckMark className="h-[18px] w-[18px]" />
-              {error ? '' : localize('com_ui_copied')}
+              {error === true ? '' : localize('com_ui_copied')}
             </>
           ) : (
             <>
               <Clipboard />
-              {error ? '' : localize('com_ui_copy_code')}
+              {error === true ? '' : localize('com_ui_copy_code')}
             </>
           )}
         </button>

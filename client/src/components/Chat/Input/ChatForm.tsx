@@ -38,8 +38,8 @@ const ChatForm = ({ index = 0 }) => {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const SpeechToText = useRecoilState<boolean>(store.speechToText);
-  const TextToSpeech = useRecoilState<boolean>(store.textToSpeech);
+  const SpeechToText = useRecoilValue(store.speechToText);
+  const TextToSpeech = useRecoilValue(store.textToSpeech);
   const automaticPlayback = useRecoilValue(store.automaticPlayback);
 
   const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
@@ -106,7 +106,7 @@ const ChatForm = ({ index = 0 }) => {
     () =>
       isAssistantsEndpoint(conversation?.endpoint) &&
       (!conversation?.assistant_id ||
-        !assistantMap?.[conversation?.endpoint ?? '']?.[conversation?.assistant_id ?? '']),
+        !assistantMap[conversation.endpoint ?? ''][conversation.assistant_id ?? '']),
     [conversation?.assistant_id, conversation?.endpoint, assistantMap],
   );
   const disableInputs = useMemo(

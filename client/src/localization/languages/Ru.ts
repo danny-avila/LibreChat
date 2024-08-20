@@ -86,10 +86,24 @@ export default {
   com_ui_delete_confirm: 'Будет удален следующий чат: ',
   com_ui_rename: 'Переименовать',
   com_ui_archive: 'Архивировать',
-  com_ui_archive_error: 'Nie udało się archiwizować rozmowy',
+  com_ui_archive_error: 'Не удалось заархивировать чат',
   com_ui_unarchive: 'разархивировать',
-  com_ui_unarchive_error: 'Nie udało się odtworzyć rozmowy z archiwum',
+  com_ui_unarchive_error: 'Не удалось восстановить чат из архива',
   com_ui_more_options: 'Еще',
+  com_ui_bookmarks: 'Закладки',
+  com_ui_bookmarks_rebuild: 'Перестроить',
+  com_ui_bookmarks_new: 'Новая закладка',
+  com_ui_bookmark_delete_confirm: 'Вы уверены, что хотите удалить эту закладку?',
+  com_ui_bookmarks_title: 'Заголовок',
+  com_ui_bookmarks_count: 'Количество',
+  com_ui_bookmarks_description: 'Описание',
+  com_ui_bookmarks_create_success: 'Закладка успешно создана',
+  com_ui_bookmarks_update_success: 'Закладка успешно обновлена',
+  com_ui_bookmarks_delete_success: 'Закладка успешно удалена',
+  com_ui_bookmarks_create_error: 'Произошла ошибка при создании закладки',
+  com_ui_bookmarks_update_error: 'Произошла ошибка при обновлении закладки',
+  com_ui_bookmarks_delete_error: 'Произошла ошибка при удалении закладки',
+  com_ui_bookmarks_add_to_conversation: 'Добавить в текущий разговор',
   com_auth_error_login:
     'Не удалось войти с предоставленной информацией. Пожалуйста, проверьте ваши учетные данные и попробуйте снова.',
   com_auth_error_login_rl:
@@ -234,7 +248,7 @@ export default {
   com_endpoint_preset_default_none: 'Активных пресетов по умолчанию нет.',
   com_endpoint_preset_title: 'Пресет',
   com_endpoint_preset_saved: 'Сохранено!',
-  com_endpoint_preset_default: 'теперь пресет По умолчаанию.',
+  com_endpoint_preset_default: 'теперь пресет "По умолчаанию".',
   com_endpoint_preset: 'пресет',
   com_endpoint_presets: 'пресеты',
   com_endpoint_preset_selected: 'Пресет Активирован!',
@@ -329,6 +343,7 @@ export default {
   com_nav_theme_system: 'Системная',
   com_nav_theme_dark: 'Темная',
   com_nav_theme_light: 'Светлая',
+  com_nav_font_size: 'Размер шрифта',
   com_nav_user_name_display: 'Отображать имя пользователя в сообщениях',
   com_nav_save_drafts: 'Сохранить черновики локально',
   com_nav_language: 'Локализация',
@@ -357,6 +372,8 @@ export default {
   com_nav_help_faq: 'Помощь и Вопросы',
   com_nav_settings: 'Настройки',
   com_nav_search_placeholder: 'Поиск сообщений',
+  com_nav_info_bookmarks_rebuild:
+    'Если количество закладок некорректно, пожалуйста, перестройте информацию о закладках. Количество закладок будет пересчитано, и данные будут восстановлены до правильного состояния.',
   com_nav_setting_general: 'Общие',
   com_nav_setting_beta: 'Бета-функции',
   com_nav_setting_data: 'Управление данными',
@@ -431,6 +448,7 @@ export default {
   com_files_number_selected: 'Выбрано {0} из {1} файл(а/ов)',
   com_sidepanel_parameters: 'Параметры',
   com_sidepanel_hide_panel: 'Скрыть панель',
+  com_sidepanel_conversation_tags: 'Закладки',
   com_assistants_capabilities: 'Возможности',
   com_assistants_image_vision: 'Анализ изображений',
   com_assistants_search_name: 'Поиск ассистентов по имени',
@@ -721,11 +739,11 @@ export const comparisons = {
   },
   com_ui_pay_per_call: {
     english: 'All AI conversations in one place. Pay per call and not per month',
-    translated: 'Все AI-разговоры в одном месте. Оплачивайте за вызовы, а не за месяц',
+    translated: 'Все AI-чаты в одном месте. Оплачивайте за запрос, а не за месяц',
   },
   com_ui_new_footer: {
     english: 'All AI conversations in one place.',
-    translated: 'Все AI-разговоры в одном месте.',
+    translated: 'Все AI-чаты в одном месте.',
   },
   com_ui_enter: {
     english: 'Enter',
@@ -911,19 +929,75 @@ export const comparisons = {
   },
   com_ui_archive_error: {
     english: 'Failed to archive conversation',
-    translated: 'Nie udało się archiwizować rozmowy',
+    translated: 'Не удалось заархивировать чат',
   },
   com_ui_unarchive: {
     english: 'Unarchive',
-    translated: 'разархивировать',
+    translated: 'Разархивировать',
   },
   com_ui_unarchive_error: {
     english: 'Failed to unarchive conversation',
-    translated: 'Nie udało się odtworzyć rozmowy z archiwum',
+    translated: 'Не удалось разархивировать чат',
   },
   com_ui_more_options: {
     english: 'More',
     translated: 'Еще',
+  },
+  com_ui_bookmarks: {
+    english: 'Bookmarks',
+    translated: 'Закладки',
+  },
+  com_ui_bookmarks_rebuild: {
+    english: 'Rebuild',
+    translated: 'Перестроить',
+  },
+  com_ui_bookmarks_new: {
+    english: 'New Bookmark',
+    translated: 'Новая закладка',
+  },
+  com_ui_bookmark_delete_confirm: {
+    english: 'Are you sure you want to delete this bookmark?',
+    translated: 'Вы уверены, что хотите удалить эу закладку?',
+  },
+  com_ui_bookmarks_title: {
+    english: 'Title',
+    translated: 'Заголовок',
+  },
+  com_ui_bookmarks_count: {
+    english: 'Count',
+    translated: 'Количество',
+  },
+  com_ui_bookmarks_description: {
+    english: 'Description',
+    translated: 'Описание',
+  },
+  com_ui_bookmarks_create_success: {
+    english: 'Bookmark created successfully',
+    translated: 'Закладка успешно создана',
+  },
+  com_ui_bookmarks_update_success: {
+    english: 'Bookmark updated successfully',
+    translated: 'Закладка успешно обновлена',
+  },
+  com_ui_bookmarks_delete_success: {
+    english: 'Bookmark deleted successfully',
+    translated: 'Закладка успешно удалена',
+  },
+  com_ui_bookmarks_create_error: {
+    english: 'There was an error creating the bookmark',
+    translated: 'Произошла ошибка при создании закладки',
+  },
+  com_ui_bookmarks_update_error: {
+    english: 'There was an error updating the bookmark',
+    translated: 'Произошла ошибка при обновлении закладки',
+  },
+  com_ui_bookmarks_delete_error: {
+    english: 'There was an error deleting the bookmark',
+    translated: 'Произошла ошибка при удалении закладки',
+  },
+  com_ui_bookmarks_add_to_conversation: {
+    english: 'Add to current conversation',
+    translated: 'Добавить в текущий разговор',
   },
   com_auth_error_login: {
     english:
@@ -1746,7 +1820,7 @@ export const comparisons = {
   },
   com_nav_shared_links_name: {
     english: 'Name',
-    translated: 'Naam',
+    translated: 'Имя',
   },
   com_nav_shared_links_date_shared: {
     english: 'Date shared',
@@ -1875,6 +1949,12 @@ export const comparisons = {
   com_nav_search_placeholder: {
     english: 'Search messages',
     translated: 'Поиск сообщений',
+  },
+  com_nav_info_bookmarks_rebuild: {
+    english:
+      'If the bookmark count is incorrect, please rebuild the bookmark information. The bookmark count will be recalculated and the data will be restored to its correct state.',
+    translated:
+      'Если количество закладок некорректно, пожалуйста, перестройте информацию о закладках. Количество закладок будет пересчитано, и данные будут восстановлены до правильного состояния.',
   },
   com_nav_setting_general: {
     english: 'General',
@@ -2142,6 +2222,10 @@ export const comparisons = {
   com_sidepanel_hide_panel: {
     english: 'Hide Panel',
     translated: 'Скрыть панель',
+  },
+  com_sidepanel_conversation_tags: {
+    english: 'Bookmarks',
+    translated: 'Закладки',
   },
   com_assistants_capabilities: {
     english: 'Capabilities',
@@ -2670,7 +2754,7 @@ export const comparisons = {
   },
   com_nav_lang_traditionalchinese: {
     english: '繁體中文',
-    translated: 'Традиционный китайский',
+    translated: 'Китайский (Традиционный)',
   },
   com_nav_lang_arabic: {
     english: 'العربية',

@@ -1,6 +1,6 @@
 {
   "name": "@librechat/backend",
-  "version": "0.7.4-rc1",
+  "version": "0.7.4",
   "description": "",
   "scripts": {
     "start": "echo 'please run this from the root directory'",
@@ -12,6 +12,7 @@
     "list-balances": "node ./list-balances.js",
     "user-stats": "node ./user-stats.js",
     "create-user": "node ./create-user.js",
+    "invite-user": "node ./invite-user.js",
     "ban-user": "node ./ban-user.js",
     "delete-user": "node ./delete-user.js"
   },
@@ -45,6 +46,7 @@
     "bcryptjs": "^2.4.3",
     "cheerio": "^1.0.0-rc.12",
     "cohere-ai": "^7.9.1",
+    "compression": "^1.7.4",
     "connect-redis": "^7.1.0",
     "cookie": "^0.5.0",
     "cors": "^2.8.5",
@@ -72,6 +74,7 @@
     "module-alias": "^2.2.3",
     "mongoose": "^7.1.1",
     "multer": "^1.4.5-lts.1",
+    "nanoid": "^3.3.7",
     "nodejs-gpt": "^1.37.4",
     "nodemailer": "^6.9.4",
     "ollama": "^0.5.0",

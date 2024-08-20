@@ -66,7 +66,7 @@ const OGDialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDi
         <OGDialogTitle>{title}</OGDialogTitle>
         {description && <OGDialogDescription className="">{description}</OGDialogDescription>}
       </OGDialogHeader>
-      <div className={cn('px-6', mainClassName)}>{main ? main : null}</div>
+      <div className={cn('px-0', mainClassName)}>{main ? main : null}</div>
       <OGDialogFooter className={footerClassName}>
         <div>{leftButtons ? leftButtons : null}</div>
         <div className="flex h-auto gap-3">

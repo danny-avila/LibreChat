@@ -53,6 +53,20 @@ export default {
   com_ui_unarchive: 'Przywróć z archiwum',
   com_ui_unarchive_error: 'Nie udało się odtworzyć rozmowy z archiwum',
   com_ui_more_options: 'Więcej',
+  com_ui_bookmarks: 'Zakładki',
+  com_ui_bookmarks_rebuild: 'Przebuduj',
+  com_ui_bookmarks_new: 'Nowa zakładka',
+  com_ui_bookmark_delete_confirm: 'Czy na pewno chcesz usunąć tę zakładkę?',
+  com_ui_bookmarks_title: 'Tytuł',
+  com_ui_bookmarks_count: 'Licznik',
+  com_ui_bookmarks_description: 'Opis',
+  com_ui_bookmarks_create_success: 'Zakładka została pomyślnie utworzona',
+  com_ui_bookmarks_update_success: 'Zakładka została pomyślnie zaktualizowana',
+  com_ui_bookmarks_delete_success: 'Zakładka została pomyślnie usunięta',
+  com_ui_bookmarks_create_error: 'Wystąpił błąd podczas tworzenia zakładki',
+  com_ui_bookmarks_update_error: 'Wystąpił błąd podczas aktualizacji zakładki',
+  com_ui_bookmarks_delete_error: 'Wystąpił błąd podczas usuwania zakładki',
+  com_ui_bookmarks_add_to_conversation: 'Dodaj do bieżącej rozmowy',
   com_auth_error_login:
     'Nie udało się zalogować przy użyciu podanych danych. Sprawdź swoje dane logowania i spróbuj ponownie.',
   com_auth_no_account: 'Nie masz konta?',
@@ -218,6 +232,7 @@ export default {
   com_nav_theme_system: 'Domyślny',
   com_nav_theme_dark: 'Ciemny',
   com_nav_theme_light: 'Jasny',
+  com_nav_font_size: 'Rozmiar czcionki',
   com_nav_clear: 'Wyczyść',
   com_nav_clear_all_chats: 'Usuń wszystkie konwersacje',
   com_nav_confirm_clear: 'Potwierdź usunięcie',
@@ -239,6 +254,8 @@ export default {
   com_nav_help_faq: 'Pomoc i często zadawane pytania',
   com_nav_settings: 'Ustawienia',
   com_nav_search_placeholder: 'Szukaj wiadomości',
+  com_nav_info_bookmarks_rebuild:
+    'Jeśli liczba zakładek jest nieprawidłowa, przebuduj informacje o zakładkach. Liczba zakładek zostanie ponownie obliczona, a dane przywrócone do prawidłowego stanu.',
   com_nav_setting_general: 'Ogólne',
   com_ui_import_conversation: 'Importuj',
   com_ui_import_conversation_info: 'Importuj konwersacje z pliku JSON',
@@ -423,6 +440,62 @@ export const comparisons = {
   com_ui_more_options: {
     english: 'More',
     translated: 'Więcej',
+  },
+  com_ui_bookmarks: {
+    english: 'Bookmarks',
+    translated: 'Zakładki',
+  },
+  com_ui_bookmarks_rebuild: {
+    english: 'Rebuild',
+    translated: 'Przebuduj',
+  },
+  com_ui_bookmarks_new: {
+    english: 'New Bookmark',
+    translated: 'Nowa zakładka',
+  },
+  com_ui_bookmark_delete_confirm: {
+    english: 'Are you sure you want to delete this bookmark?',
+    translated: 'Czy na pewno chcesz usunąć tę zakładkę?',
+  },
+  com_ui_bookmarks_title: {
+    english: 'Title',
+    translated: 'Tytuł',
+  },
+  com_ui_bookmarks_count: {
+    english: 'Count',
+    translated: 'Licznik',
+  },
+  com_ui_bookmarks_description: {
+    english: 'Description',
+    translated: 'Opis',
+  },
+  com_ui_bookmarks_create_success: {
+    english: 'Bookmark created successfully',
+    translated: 'Zakładka została pomyślnie utworzona',
+  },
+  com_ui_bookmarks_update_success: {
+    english: 'Bookmark updated successfully',
+    translated: 'Zakładka została pomyślnie zaktualizowana',
+  },
+  com_ui_bookmarks_delete_success: {
+    english: 'Bookmark deleted successfully',
+    translated: 'Zakładka została pomyślnie usunięta',
+  },
+  com_ui_bookmarks_create_error: {
+    english: 'There was an error creating the bookmark',
+    translated: 'Wystąpił błąd podczas tworzenia zakładki',
+  },
+  com_ui_bookmarks_update_error: {
+    english: 'There was an error updating the bookmark',
+    translated: 'Wystąpił błąd podczas aktualizacji zakładki',
+  },
+  com_ui_bookmarks_delete_error: {
+    english: 'There was an error deleting the bookmark',
+    translated: 'Wystąpił błąd podczas usuwania zakładki',
+  },
+  com_ui_bookmarks_add_to_conversation: {
+    english: 'Add to current conversation',
+    translated: 'Dodaj do bieżącej rozmowy',
   },
   com_auth_error_login: {
     english:
@@ -1088,6 +1161,12 @@ export const comparisons = {
   com_nav_search_placeholder: {
     english: 'Search messages',
     translated: 'Szukaj wiadomości',
+  },
+  com_nav_info_bookmarks_rebuild: {
+    english:
+      'If the bookmark count is incorrect, please rebuild the bookmark information. The bookmark count will be recalculated and the data will be restored to its correct state.',
+    translated:
+      'Jeśli liczba zakładek jest nieprawidłowa, przebuduj informacje o zakładkach. Liczba zakładek zostanie ponownie obliczona, a dane przywrócone do prawidłowego stanu.',
   },
   com_nav_setting_general: {
     english: 'General',
