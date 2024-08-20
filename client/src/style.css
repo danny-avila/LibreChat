@@ -1742,7 +1742,7 @@ button.scroll-convo {
     transform: scale3d(1.25, 1.25, 1);
   }
 }
-.result-thinking:empty:last-child:after {
+.submitting .result-thinking:empty:last-child:after {
   -webkit-font-smoothing: subpixel-antialiased;
   -webkit-animation: pulseSize 1.25s ease-in-out infinite;
   animation: pulseSize 1.25s ease-in-out infinite;
