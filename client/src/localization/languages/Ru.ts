@@ -2431,7 +2431,7 @@ export const comparisons = {
   },
   com_ui_fork_processing: {
     english: 'Forking conversation...',
-    translated: 'Разделение беседы...',
+    translated: 'Разветвление беседы...',
   },
   com_ui_fork_error: {
     english: 'There was an error forking the conversation',
@@ -2738,7 +2738,7 @@ export const comparisons = {
   },
   com_nav_lang_japanese: {
     english: '日本語',
-    translated: 'Язык',
+    translated: 'Японский',
   },
   com_nav_lang_swedish: {
     english: 'Svenska',
