@@ -144,7 +144,7 @@ const Markdown = memo(({ content = '', isEdited, showCursor, isLatestMessage }: 
     return (
       <div className="absolute">
         <p className="relative">
-          <span className="result-thinking" />
+          <span className={isLatestMessage ? 'result-thinking' : ''} />
         </p>
       </div>
     );
