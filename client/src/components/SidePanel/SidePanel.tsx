@@ -23,6 +23,7 @@ interface SidePanelProps {
   defaultCollapsed?: boolean;
   navCollapsedSize?: number;
   fullPanelCollapse?: boolean;
+  artifacts?: React.ReactNode;
   children: React.ReactNode;
 }
 
@@ -34,6 +35,7 @@ const SidePanel = ({
   defaultCollapsed = false,
   fullPanelCollapse = false,
   navCollapsedSize = 3,
+  artifacts,
   children,
 }: SidePanelProps) => {
   const localize = useLocalize();
@@ -133,6 +135,8 @@ const SidePanel = ({
     }
   }, [isCollapsed, newUser, setNewUser, navCollapsedSize]);
 
+  const minSizeMain = useMemo(() => (artifacts != null ? 15 : 30), [artifacts]);
+
   return (
     <>
       <TooltipProvider delayDuration={0}>
@@ -141,9 +145,17 @@ const SidePanel = ({
           onLayout={(sizes: number[]) => throttledSaveLayout(sizes)}
           className="transition-width relative h-full w-full flex-1 overflow-auto bg-white dark:bg-gray-800"
         >
-          <ResizablePanel defaultSize={defaultLayout[0]} minSize={30}>
+          <ResizablePanel defaultSize={defaultLayout[0]} minSize={minSizeMain}>
             {children}
           </ResizablePanel>
+          {artifacts != null && (
+            <>
+              <ResizableHandleAlt withHandle className="bg-border-light dark:text-white mx-4" />
+              <ResizablePanel defaultSize={defaultLayout[0]} minSize={minSizeMain}>
+                {artifacts}
+              </ResizablePanel>
+            </>
+          )}
           <TooltipProvider delayDuration={400}>
             <Tooltip>
               <div

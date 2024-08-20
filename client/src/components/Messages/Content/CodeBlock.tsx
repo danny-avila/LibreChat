@@ -75,7 +75,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
 
   return (
     <div className="w-full rounded-md bg-gray-900 text-xs text-white/80">
-      <CodeBar lang={lang} codeRef={codeRef} plugin={plugin === true} error={error} />
+      <CodeBar lang={lang} codeRef={codeRef} plugin={(plugin === true ?? false)} error={error} />
       <div className={cn(classProp, 'overflow-y-auto p-4')}>
         <code
           ref={codeRef}

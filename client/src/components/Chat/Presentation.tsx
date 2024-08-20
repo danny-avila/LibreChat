@@ -6,6 +6,7 @@ import type { ExtendedFile } from '~/common';
 import { useDragHelpers, useSetFilesToDelete } from '~/hooks';
 import DragDropOverlay from './Input/Files/DragDropOverlay';
 import { useDeleteFilesMutation } from '~/data-provider';
+import Artifacts from '~/components/Artifacts/Artifacts';
 import { SidePanel } from '~/components/SidePanel';
 import store from '~/store';
 
@@ -21,7 +22,9 @@ export default function Presentation({
   useSidePanel?: boolean;
 }) {
   const { data: startupConfig } = useGetStartupConfig();
+  const codeArtifacts = useRecoilValue(store.codeArtifacts);
   const hideSidePanel = useRecoilValue(store.hideSidePanel);
+  const codeBlockIds = useRecoilValue(store.codeBlockIdsState);
   const interfaceConfig = useMemo(
     () => startupConfig?.interface ?? defaultInterface,
     [startupConfig],
@@ -89,6 +92,7 @@ export default function Presentation({
           defaultLayout={defaultLayout}
           defaultCollapsed={defaultCollapsed}
           fullPanelCollapse={fullCollapse}
+          artifacts={codeArtifacts && codeBlockIds.length > 0 ? <Artifacts /> : null}
         >
           <main className="flex h-full flex-col" role="main">
             {children}
