@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useNavigate } from 'react-router-dom';
 
 import type { ContextType } from '~/common';
 import { useAuthContext, useAssistantsMap, useFileMap, useSearch } from '~/hooks';
@@ -8,7 +8,8 @@ import { Nav, MobileNav } from '~/components/Nav';
 import TermsAndConditionsModal from '~/components/ui/TermsAndConditionsModal';
 
 export default function Root() {
-  const { isAuthenticated } = useAuthContext();
+  const { isAuthenticated, logout } = useAuthContext();
+  const navigate = useNavigate();
   const [navVisible, setNavVisible] = useState<boolean>(() => {
     const savedNavVisible = localStorage.getItem('navVisible');
     return savedNavVisible !== null ? JSON.parse(savedNavVisible) : true;
@@ -25,6 +26,16 @@ export default function Root() {
       setShowTerms(true);
     }
   }, [isAuthenticated]);
+
+  const handleAcceptTerms = () => {
+    setShowTerms(false);
+  };
+
+  const handleDeclineTerms = () => {
+    setShowTerms(false);
+    logout();
+    navigate('/login');
+  };
 
   if (!isAuthenticated) {
     return null;
@@ -43,7 +54,9 @@ export default function Root() {
               </div>
             </div>
           </div>
-          {showTerms && <TermsAndConditionsModal onAccept={() => setShowTerms(false)} />}
+          {showTerms && (
+            <TermsAndConditionsModal onAccept={handleAcceptTerms} onDecline={handleDeclineTerms} />
+          )}
         </AssistantsMapContext.Provider>
       </FileMapContext.Provider>
     </SearchContext.Provider>

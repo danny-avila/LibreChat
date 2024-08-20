@@ -1,5 +1,5 @@
 import { useLocalize } from '~/hooks';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 
@@ -11,7 +11,11 @@ const TermsAndConditionsModal = ({
   onDecline: () => void;
 }) => {
   const localize = useLocalize();
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    setOpen(true);
+  }, []);
 
   const handleAccept = () => {
     setOpen(false);
@@ -23,12 +27,20 @@ const TermsAndConditionsModal = ({
     onDecline();
   };
 
+  const handleOpenChange = (isOpen: boolean) => {
+    setOpen(isOpen);
+    if (!isOpen) {
+      handleDecline();
+    }
+  };
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTemplate
         title={localize('com_ui_terms_and_conditions')}
         className="w-11/12 sm:w-3/4 md:w-1/2 lg:w-2/5"
         showCloseButton={false}
+        showCancelButton={false}
         main={
           <div className="max-h-[60vh] overflow-y-auto p-4 text-black dark:text-gray-50">
             <h1 className="mb-4 text-2xl font-bold">Terms of use &quot;42&quot;</h1>
@@ -144,14 +156,22 @@ const TermsAndConditionsModal = ({
             </p>
           </div>
         }
-        selection={{
-          selectHandler: handleAccept,
-          selectClasses: 'bg-green-500 hover:bg-green-600 dark:hover:bg-green-600 text-white',
-          selectText: localize('com_ui_accept'),
-          secondarySelectHandler: handleDecline,
-          secondarySelectClasses: 'bg-red-500 hover:bg-red-600 dark:hover:bg-red-600 text-white',
-          secondarySelectText: localize('com_ui_decline'),
-        }}
+        buttons={
+          <>
+            <button
+              onClick={handleDecline}
+              className="inline-flex h-10 items-center justify-center rounded-lg border-none bg-gray-500 px-4 py-2 text-sm text-white hover:bg-gray-600 dark:hover:bg-gray-600"
+            >
+              {localize('com_ui_decline')}
+            </button>
+            <button
+              onClick={handleAccept}
+              className="inline-flex h-10 items-center justify-center rounded-lg border-none bg-green-500 px-4 py-2 text-sm text-white hover:bg-green-600 dark:hover:bg-green-600"
+            >
+              {localize('com_ui_accept')}
+            </button>
+          </>
+        }
       />
     </Dialog>
   );
