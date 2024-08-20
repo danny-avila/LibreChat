@@ -20,7 +20,7 @@ export default function AutoSendTextSelector() {
       </div>
       <div className="flex items-center justify-between">
         <Slider
-          ariaLabel="Auto send text Slider"
+          aria-label="Auto send text Slider"
           value={[autoSendText ?? -1]}
           onValueChange={(value) => setAutoSendText(value[0])}
           doubleClickHandler={() => setAutoSendText(-1)}

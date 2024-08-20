@@ -74,7 +74,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               />
             </div>
             <Slider
-              ariaLabel="Temperature Slider"
+              aria-label="Temperature Slider"
               disabled={readonly}
               value={[temperature ?? 0]}
               onValueChange={(value: number[]) => setTemperature(value[0])}

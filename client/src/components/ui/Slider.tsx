@@ -2,10 +2,9 @@ import * as React from 'react';
 import * as SliderPrimitive from '@radix-ui/react-slider';
 import { useDoubleClick } from '@zattoo/use-double-click';
 import type { clickEvent } from '@zattoo/use-double-click';
-import { cn } from '../../utils';
+import { cn } from '~/utils';
 
 interface SliderProps extends React.ComponentPropsWithoutRef<typeof SliderPrimitive.Root> {
-  ariaLabel?: string;
   className?: string;
   doubleClickHandler?: (event: clickEvent) => void;
   disabled?: boolean;
@@ -19,19 +18,7 @@ interface SliderProps extends React.ComponentPropsWithoutRef<typeof SliderPrimit
 
 const Slider = React.forwardRef<React.ElementRef<typeof SliderPrimitive.Root>, SliderProps>(
   (
-    {
-      ariaLabel,
-      className,
-      disabled,
-      doubleClickHandler,
-      value,
-      onValueChange,
-      max,
-      min,
-      step,
-      id,
-      ...props
-    },
+    { className, disabled, doubleClickHandler, value, onValueChange, max, min, step, id, ...props },
     ref,
   ) => (
     <SliderPrimitive.Root
@@ -56,7 +43,7 @@ const Slider = React.forwardRef<React.ElementRef<typeof SliderPrimitive.Root>, S
             return;
           })
         }
-        aria-label={ariaLabel}
+        aria-label={props['aria-label']}
         className="block h-4 w-4 cursor-pointer rounded-full border-2 border-gray-400 bg-white transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 dark:border-gray-200 dark:bg-gray-400 dark:focus:ring-gray-400 dark:focus:ring-offset-gray-800"
         disabled={disabled}
       />

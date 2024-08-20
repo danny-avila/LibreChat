@@ -248,7 +248,7 @@ export default function Settings({
               />
             </div>
             <Slider
-              ariaLabel="Temperature Slider"
+              aria-label="Temperature Slider"
               disabled={readonly}
               value={[temperatureValue ?? 0.8]}
               onValueChange={(value) => setTemperature(value[0])}
@@ -289,7 +289,7 @@ export default function Settings({
               />
             </div>
             <Slider
-              ariaLabel="Top P Slider"
+              aria-label="Top P Slider"
               disabled={readonly}
               value={[topPValue ?? 1]}
               onValueChange={(value) => setTopP(value[0])}
@@ -331,7 +331,7 @@ export default function Settings({
               />
             </div>
             <Slider
-              ariaLabel="Frequency Penalty Slider"
+              aria-label="Frequency Penalty Slider"
               disabled={readonly}
               value={[freqPValue ?? 0]}
               onValueChange={(value) => setFreqP(value[0])}
@@ -373,7 +373,7 @@ export default function Settings({
               />
             </div>
             <Slider
-              ariaLabel="Presence Penalty Slider"
+              aria-label="Presence Penalty Slider"
               disabled={readonly}
               value={[presPValue ?? 0]}
               onValueChange={(value) => setPresP(value[0])}

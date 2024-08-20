@@ -19,7 +19,7 @@ export default function DecibelSelector() {
       </div>
       <div className="flex items-center justify-between">
         <Slider
-          ariaLabel="Decibel Slider"
+          aria-label="Decibel Slider"
           value={[decibelValue ?? -45]}
           onValueChange={(value) => setDecibelValue(value[0])}
           doubleClickHandler={() => setDecibelValue(-45)}

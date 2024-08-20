@@ -19,7 +19,7 @@ export default function DecibelSelector() {
       </div>
       <div className="flex items-center justify-between">
         <Slider
-          ariaLabel="Playback Rate Slider"
+          aria-label="Playback Rate Slider"
           value={[playbackRate ?? 1]}
           onValueChange={(value) => setPlaybackRate(value[0])}
           doubleClickHandler={() => setPlaybackRate(null)}

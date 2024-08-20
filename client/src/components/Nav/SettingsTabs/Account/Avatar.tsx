@@ -149,7 +149,7 @@ function Avatar() {
                   <div className="flex w-full items-center justify-center space-x-4">
                     <span className="text-sm">Zoom:</span>
                     <Slider
-                      ariaLabel="Zoom Slider"
+                      aria-label="Zoom Slider"
                       value={[scale]}
                       min={1}
                       max={5}
