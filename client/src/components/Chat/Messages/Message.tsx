@@ -36,16 +36,16 @@ export default function Message(props: TMessageProps) {
   } = useMessageProcess({ message: props.message });
   const { message, currentEditId, setCurrentEditId } = props;
 
-  if (!message) {
+  if (!message || typeof message !== 'object') {
     return null;
   }
 
-  const { children, messageId = null } = message ?? {};
+  const { children, messageId = null } = message;
 
   return (
     <>
       <MessageContainer handleScroll={handleScroll}>
-        {showSibling != null ? (
+        {showSibling ? (
           <div className="m-auto my-2 flex justify-center p-4 py-2 md:gap-6">
             <div className="flex w-full flex-row flex-wrap justify-between gap-1 md:max-w-5xl md:flex-nowrap md:gap-2 lg:max-w-5xl xl:max-w-6xl">
               <MessageRender
