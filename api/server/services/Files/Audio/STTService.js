@@ -4,6 +4,7 @@ const { extractEnvVariable, STTProviders } = require('librechat-data-provider');
 const getCustomConfig = require('~/server/services/Config/getCustomConfig');
 const { genAzureEndpoint } = require('~/utils');
 const { logger } = require('~/config');
+const FormData = require('form-data');
 
 /**
  * Service class for handling Speech-to-Text (STT) operations.
@@ -136,8 +137,10 @@ class STTService {
     }
 
     const formData = new FormData();
-    const audioBlob = new Blob([audioBuffer], { type: audioFile.mimetype });
-    formData.append('file', audioBlob, audioFile.originalname);
+    formData.append('file', audioBuffer, {
+      filename: audioFile.originalname,
+      contentType: audioFile.mimetype,
+    });
 
     const headers = {
       'Content-Type': 'multipart/form-data',
@@ -146,7 +149,7 @@ class STTService {
 
     [headers].forEach(this.removeUndefined);
 
-    return [url, formData, headers];
+    return [url, formData, { ...headers, ...formData.getHeaders() }];
   }
 
   /**
@@ -170,11 +173,6 @@ class STTService {
     audioReadStream.path = 'audio.wav';
 
     const [url, data, headers] = strategy.call(this, sttSchema, audioReadStream, audioFile);
-
-    if (!Readable.from && data instanceof FormData) {
-      const audioBlob = new Blob([audioBuffer], { type: audioFile.mimetype });
-      data.set('file', audioBlob, audioFile.originalname);
-    }
 
     try {
       const response = await axios.post(url, data, { headers });
