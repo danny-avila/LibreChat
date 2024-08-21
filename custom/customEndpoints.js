@@ -5,8 +5,7 @@ const bcrypt = require('bcryptjs');
 
 function verifyToken(req, res, next) {
   const token = req.headers.authorization;
-  const hardcodedToken =
-    'Bearer 779ee819-c6b9-4bed-8a30-cb373195977d-812b8a02-32da-4703-9658-519aa4577c74';
+  const hardcodedToken = `Bearer ${process.env.CUSTOM_ENDPOINT_TOKEN}`;
   if (token == hardcodedToken) {
     next();
   } else {
