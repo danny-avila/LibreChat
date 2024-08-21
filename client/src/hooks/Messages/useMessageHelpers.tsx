@@ -65,7 +65,7 @@ export default function useMessageHelpers(props: TMessageProps) {
   );
 
   const handleScroll = useCallback(
-    (event: TouchEvent | WheelEvent) => {
+    (event: unknown) => {
       throttle(() => {
         logger.log(
           'message_scrolling',

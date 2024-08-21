@@ -63,6 +63,8 @@ export type TSubmission = {
   endpointOption: TEndpointOption;
 };
 
+export type EventSubmission = Omit<TSubmission, 'initialResponse'> & { initialResponse: TMessage };
+
 export type TPluginAction = {
   pluginKey: string;
   action: 'install' | 'uninstall';

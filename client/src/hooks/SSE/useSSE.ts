@@ -9,7 +9,7 @@ import {
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import { useGetUserBalance, useGetStartupConfig } from 'librechat-data-provider/react-query';
-import type { TMessage, TSubmission } from 'librechat-data-provider';
+import type { TMessage, TSubmission, EventSubmission } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData } from '~/common';
 import { useGenTitleMutation } from '~/data-provider';
@@ -101,7 +101,7 @@ export default function useSSE(
 
       if (data.final != null) {
         const { plugins } = data;
-        finalHandler(data, { ...submission, plugins });
+        finalHandler(data, { ...submission, plugins } as EventSubmission);
         (startupConfig?.checkBalance ?? false) && balanceQuery.refetch();
         console.log('final', data);
       }
@@ -114,19 +114,19 @@ export default function useSSE(
           overrideParentMessageId: userMessage.overrideParentMessageId,
         };
 
-        createdHandler(data, { ...submission, userMessage });
+        createdHandler(data, { ...submission, userMessage } as EventSubmission);
       } else if (data.sync != null) {
         const runId = v4();
         setActiveRunId(runId);
         /* synchronize messages to Assistants API as well as with real DB ID's */
-        syncHandler(data, { ...submission, userMessage });
+        syncHandler(data, { ...submission, userMessage } as EventSubmission);
       } else if (data.type != null) {
         const { text, index } = data;
         if (text != null && index !== textIndex) {
           textIndex = index;
         }
 
-        contentHandler({ data, submission });
+        contentHandler({ data, submission: submission as EventSubmission });
       } else {
         const text = data.text ?? data.response;
         const { plugin, plugins } = data;
@@ -164,7 +164,7 @@ export default function useSSE(
       const conversationId = latestMessages?.[latestMessages.length - 1]?.conversationId;
       return await abortConversation(
         conversationId ?? userMessage.conversationId ?? submission.conversationId,
-        submission,
+        submission as EventSubmission,
         latestMessages,
       );
     };
@@ -182,7 +182,7 @@ export default function useSSE(
         setIsSubmitting(false);
       }
 
-      errorHandler({ data, submission: { ...submission, userMessage } });
+      errorHandler({ data, submission: { ...submission, userMessage } as EventSubmission });
     };
 
     setIsSubmitting(true);
