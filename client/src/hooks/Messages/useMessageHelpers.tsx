@@ -1,10 +1,10 @@
+import throttle from 'lodash/throttle';
 import { useEffect, useRef, useCallback, useMemo } from 'react';
 import { Constants, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
 import useCopyToClipboard from './useCopyToClipboard';
 import { getTextKey, logger } from '~/utils';
-
 export default function useMessageHelpers(props: TMessageProps) {
   const latestText = useRef<string | number>('');
   const { message, currentEditId, setCurrentEditId } = props;
@@ -64,13 +64,23 @@ export default function useMessageHelpers(props: TMessageProps) {
     [messageId, setCurrentEditId],
   );
 
-  const handleScroll = useCallback(() => {
-    if (isSubmitting) {
-      setAbortScroll(true);
-    } else {
-      setAbortScroll(false);
-    }
-  }, [isSubmitting, setAbortScroll]);
+  const handleScroll = useCallback(
+    (event: TouchEvent | WheelEvent) => {
+      throttle(() => {
+        logger.log(
+          'message_scrolling',
+          `useMessageHelpers: setting abort scroll to ${isSubmitting}, handleScroll event`,
+          event,
+        );
+        if (isSubmitting) {
+          setAbortScroll(true);
+        } else {
+          setAbortScroll(false);
+        }
+      }, 500)();
+    },
+    [isSubmitting, setAbortScroll],
+  );
 
   const assistant = useMemo(() => {
     if (!isAssistantsEndpoint(conversation?.endpoint)) {
