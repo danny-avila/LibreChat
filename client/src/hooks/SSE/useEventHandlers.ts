@@ -14,7 +14,7 @@ import {
 import type {
   TMessage,
   TConversation,
-  TSubmission,
+  EventSubmission,
   ConversationData,
 } from 'librechat-data-provider';
 import type { SetterOrUpdater, Resetter } from 'recoil';
@@ -76,7 +76,7 @@ export default function useEventHandlers({
   const contentHandler = useContentHandler({ setMessages, getMessages });
 
   const messageHandler = useCallback(
-    (data: string | undefined, submission: TSubmission) => {
+    (data: string | undefined, submission: EventSubmission) => {
       const {
         messages,
         userMessage,
@@ -122,7 +122,7 @@ export default function useEventHandlers({
   );
 
   const cancelHandler = useCallback(
-    (data: TResData, submission: TSubmission) => {
+    (data: TResData, submission: EventSubmission) => {
       const { requestMessage, responseMessage, conversation } = data;
       const { messages, isRegenerate = false } = submission;
 
@@ -171,7 +171,7 @@ export default function useEventHandlers({
   );
 
   const syncHandler = useCallback(
-    (data: TSyncData, submission: TSubmission) => {
+    (data: TSyncData, submission: EventSubmission) => {
       const { conversationId, thread_id, responseMessage, requestMessage } = data;
       const { initialResponse, messages: _messages, userMessage } = submission;
 
@@ -252,7 +252,7 @@ export default function useEventHandlers({
   );
 
   const createdHandler = useCallback(
-    (data: TResData, submission: TSubmission) => {
+    (data: TResData, submission: EventSubmission) => {
       const { messages, userMessage, isRegenerate = false } = submission;
       const initialResponse = {
         ...submission.initialResponse,
@@ -329,7 +329,7 @@ export default function useEventHandlers({
   );
 
   const finalHandler = useCallback(
-    (data: TFinalResData, submission: TSubmission) => {
+    (data: TFinalResData, submission: EventSubmission) => {
       const { requestMessage, responseMessage, conversation, runMessages } = data;
       const { messages, conversation: submissionConvo, isRegenerate = false } = submission;
 
@@ -418,7 +418,7 @@ export default function useEventHandlers({
   );
 
   const errorHandler = useCallback(
-    ({ data, submission }: { data?: TResData; submission: TSubmission }) => {
+    ({ data, submission }: { data?: TResData; submission: EventSubmission }) => {
       const { messages, userMessage, initialResponse } = submission;
 
       setCompleted((prev) => new Set(prev.add(initialResponse.messageId)));
@@ -500,7 +500,7 @@ export default function useEventHandlers({
   );
 
   const abortConversation = useCallback(
-    async (conversationId = '', submission: TSubmission, messages?: TMessage[]) => {
+    async (conversationId = '', submission: EventSubmission, messages?: TMessage[]) => {
       const runAbortKey = `${conversationId}:${messages?.[messages.length - 1]?.messageId ?? ''}`;
       console.log({ conversationId, submission, messages, runAbortKey });
       const { endpoint: _endpoint, endpointType } = submission.conversation || {};

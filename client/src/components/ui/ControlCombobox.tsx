@@ -1,6 +1,6 @@
 import * as Ariakit from '@ariakit/react';
 import { matchSorter } from 'match-sorter';
-import { startTransition, useMemo, useState, useEffect, useRef } from 'react';
+import { startTransition, useMemo, useState, useEffect, useRef, memo } from 'react';
 import { cn } from '~/utils';
 import type { OptionWithIcon } from '~/common';
 import { Search } from 'lucide-react';
@@ -17,7 +17,7 @@ interface ControlComboboxProps {
   SelectIcon?: React.ReactNode;
 }
 
-export default function ControlCombobox({
+function ControlCombobox({
   selectedValue,
   displayValue,
   items,
@@ -121,3 +121,5 @@ export default function ControlCombobox({
     </div>
   );
 }
+
+export default memo(ControlCombobox);
