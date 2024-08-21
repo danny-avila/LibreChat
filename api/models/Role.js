@@ -1,6 +1,14 @@
-const { SystemRoles, CacheKeys, roleDefaults } = require('librechat-data-provider');
+const {
+  SystemRoles,
+  CacheKeys,
+  roleDefaults,
+  PermissionTypes,
+  Permissions,
+  promptPermissionsSchema,
+} = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
 const Role = require('~/models/schema/roleSchema');
+const { logger } = require('~/config');
 
 /**
  * Retrieve a role by name and convert the found role document to a plain object.
@@ -62,6 +70,37 @@ const updateRoleByName = async function (roleName, updates) {
 };
 
 /**
+ * Updates the Prompt access for a specific role.
+ * @param {SystemRoles} roleName - The role to update the prompt access for.
+ * @param {boolean | undefined} [value] - The new value for the prompt access.
+ */
+async function updatePromptsAccess(roleName, value) {
+  if (typeof value === 'undefined') {
+    return;
+  }
+
+  try {
+    const parsedUpdates = promptPermissionsSchema.partial().parse({ [Permissions.USE]: value });
+    const role = await getRoleByName(roleName);
+    if (!role) {
+      return;
+    }
+
+    const mergedUpdates = {
+      [PermissionTypes.PROMPTS]: {
+        ...role[PermissionTypes.PROMPTS],
+        ...parsedUpdates,
+      },
+    };
+
+    await updateRoleByName(roleName, mergedUpdates);
+    logger.info(`Updated '${roleName}' role prompts 'USE' permission to: ${value}`);
+  } catch (error) {
+    logger.error('Failed to update USER role prompts USE permission:', error);
+  }
+}
+
+/**
  * Initialize default roles in the system.
  * Creates the default roles (ADMIN, USER) if they don't exist in the database.
  *
@@ -83,4 +122,5 @@ module.exports = {
   getRoleByName,
   initializeRoles,
   updateRoleByName,
+  updatePromptsAccess,
 };

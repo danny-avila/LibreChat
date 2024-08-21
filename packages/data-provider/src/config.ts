@@ -414,6 +414,7 @@ export const configSchema = z.object({
       parameters: z.boolean().optional(),
       sidePanel: z.boolean().optional(),
       presets: z.boolean().optional(),
+      prompts: z.boolean().optional(),
     })
     .default({
       endpointsMenu: true,
