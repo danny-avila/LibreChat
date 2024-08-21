@@ -1,3 +1,4 @@
+import throttle from 'lodash/throttle';
 import { useRecoilValue } from 'recoil';
 import { Constants } from 'librechat-data-provider';
 import { useEffect, useRef, useCallback, useMemo, useState } from 'react';
@@ -8,8 +9,8 @@ import store from '~/store';
 
 export default function useMessageProcess({ message }: { message?: TMessage | null }) {
   const latestText = useRef<string | number>('');
-  const hasNoChildren = useMemo(() => !message?.children?.length, [message]);
   const [siblingMessage, setSiblingMessage] = useState<TMessage | null>(null);
+  const hasNoChildren = useMemo(() => (message?.children?.length ?? 0) === 0, [message]);
 
   const {
     index,
@@ -44,12 +45,12 @@ export default function useMessageProcess({ message }: { message?: TMessage | nu
     const logInfo = {
       textKey,
       'latestText.current': latestText.current,
-      messageId: message?.messageId,
+      messageId: message.messageId,
       convoId,
     };
     if (
       textKey !== latestText.current ||
-      (convoId &&
+      (convoId != null &&
         latestText.current &&
         convoId !== latestText.current.split(Constants.COMMON_DIVIDER)[2])
     ) {
@@ -61,18 +62,28 @@ export default function useMessageProcess({ message }: { message?: TMessage | nu
     }
   }, [hasNoChildren, message, setLatestMessage, conversation?.conversationId]);
 
-  const handleScroll = useCallback(() => {
-    if (isSubmittingFamily) {
-      setAbortScroll(true);
-    } else {
-      setAbortScroll(false);
-    }
-  }, [isSubmittingFamily, setAbortScroll]);
+  const handleScroll = useCallback(
+    (event: unknown | TouchEvent | WheelEvent) => {
+      throttle(() => {
+        logger.log(
+          'message_scrolling',
+          `useMessageProcess: setting abort scroll to ${isSubmittingFamily}, handleScroll event`,
+          event,
+        );
+        if (isSubmittingFamily) {
+          setAbortScroll(true);
+        } else {
+          setAbortScroll(false);
+        }
+      }, 500)();
+    },
+    [isSubmittingFamily, setAbortScroll],
+  );
 
   const showSibling = useMemo(
     () =>
-      (hasNoChildren && latestMultiMessage && !latestMultiMessage?.children?.length) ||
-      siblingMessage,
+      (hasNoChildren && latestMultiMessage && (latestMultiMessage.children?.length ?? 0) === 0) ||
+      !!siblingMessage,
     [hasNoChildren, latestMultiMessage, siblingMessage],
   );
 
@@ -83,8 +94,8 @@ export default function useMessageProcess({ message }: { message?: TMessage | nu
       latestMultiMessage.conversationId === message?.conversationId
     ) {
       const newSibling = Object.assign({}, latestMultiMessage, {
-        parentMessageId: message?.parentMessageId,
-        depth: message?.depth,
+        parentMessageId: message.parentMessageId,
+        depth: message.depth,
       });
       setSiblingMessage(newSibling);
     }

@@ -37,6 +37,10 @@ const DropdownPopup: React.FC<DropdownProps> = ({
           <MenuButton
             onClick={handleButtonClick}
             className={`inline-flex items-center gap-2 rounded-md ${className}`}
+            /** This is set as `div` since triggers themselves are buttons;
+             * prevents React Warning: validateDOMNesting(...): <button> cannot appear as a descendant of <button>.
+             */
+            as="div"
           >
             {trigger}
           </MenuButton>
