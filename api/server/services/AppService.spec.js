@@ -23,6 +23,7 @@ jest.mock('./Files/Firebase/initialize', () => ({
 }));
 jest.mock('~/models/Role', () => ({
   initializeRoles: jest.fn(),
+  updatePromptsAccess: jest.fn(),
 }));
 jest.mock('./ToolService', () => ({
   loadAndFormatTools: jest.fn().mockReturnValue({
