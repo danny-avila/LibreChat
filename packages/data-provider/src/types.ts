@@ -494,3 +494,11 @@ export type TGetRandomPromptsRequest = {
 };
 
 export type TCustomConfigSpeechResponse = { [key: string]: string };
+
+export type TUserTermsResponse = {
+  termsAccepted: boolean;
+};
+
+export type TAcceptTermsResponse = {
+  success: boolean;
+};

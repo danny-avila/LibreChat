@@ -8,7 +8,7 @@ const maxAge = process.env.STATIC_CACHE_MAX_AGE || oneWeekInSeconds * 4;
 const staticCache = (staticPath) =>
   express.static(staticPath, {
     setHeaders: (res) => {
-      if (process.env.NODE_ENV.toLowerCase() !== 'production') {
+      if (process.env.NODE_ENV?.toLowerCase() !== 'production') {
         return;
       }
 

@@ -43,6 +43,13 @@ const BookmarkNavItems: FC<{
     return (
       <div className="flex flex-col">
         <BookmarkItem
+          tag={localize('com_ui_clear_all')}
+          data-testid="bookmark-item-clear"
+          handleSubmit={clear}
+          selected={false}
+          icon={<CrossCircledIcon className="size-4" />}
+        />
+        <BookmarkItem
           tag={localize('com_ui_no_bookmarks')}
           data-testid="bookmark-item-no-bookmarks"
           handleSubmit={() => Promise.resolve()}
