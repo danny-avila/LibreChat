@@ -45,7 +45,7 @@ const AppService = async (app) => {
 
   const socialLogins =
     config?.registration?.socialLogins ?? configDefaults?.registration?.socialLogins;
-  const interfaceConfig = loadDefaultInterface(config, configDefaults);
+  const interfaceConfig = await loadDefaultInterface(config, configDefaults);
 
   const defaultLocals = {
     paths,
