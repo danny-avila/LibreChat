@@ -1,0 +1,33 @@
+/* Custom file */
+
+/* Hide prompts and bookmarks sections from side panel */
+.sidenav
+  .bg-token-sidebar-surface-primary
+  > div:nth-child(1)
+  > div:nth-child(1)
+  > div:nth-child(1)
+  > div:nth-child(1)
+  > div:nth-child(1)
+  > div:nth-child(1),
+.sidenav
+  .bg-token-sidebar-surface-primary
+  > div:nth-child(1)
+  > div:nth-child(1)
+  > div:nth-child(1)
+  > div:nth-child(1)
+  > div:nth-child(1)
+  > div:nth-child(3) {
+  display: none !important;
+}
+
+/* Hide bookmarks button form chat list */
+#chat-history-nav .sticky > div:nth-child(2) {
+  display: none !important;
+}
+
+/* Hide bookmarks button above chat */
+.sticky.top-0.z-10.flex.h-14.w-full.items-center.justify-between.bg-white.p-2.font-semibold.dark\:bg-gray-800.dark\:text-white
+  > div:nth-child(1)
+  > div:nth-child(1) {
+  display: none !important;
+}

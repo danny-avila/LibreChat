@@ -122,6 +122,12 @@ const userSchema = mongoose.Schema(
       type: Date,
       expires: 604800, // 7 days in seconds
     },
+    // Added block START
+    assistantIds: {
+      type: Array,
+      default: [],
+    },
+    // Added block END
   },
   { timestamps: true },
 );

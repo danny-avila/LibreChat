@@ -2,7 +2,13 @@ import { useEffect, useMemo } from 'react';
 import { isAssistantsEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import type { AssistantsEndpoint } from 'librechat-data-provider';
 import type { SwitcherProps, AssistantListItem } from '~/common';
-import { useSetIndexOptions, useSelectAssistant, useLocalize, useAssistantListMap } from '~/hooks';
+import {
+  useSetIndexOptions,
+  useSelectAssistant,
+  useLocalize,
+  useAssistantListMap,
+  useAuthContext, // Edited line
+} from '~/hooks';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
 import ControlCombobox from '~/components/ui/ControlCombobox';
 import Icon from '~/components/Endpoints/Icon';
@@ -12,12 +18,21 @@ export default function AssistantSwitcher({ isCollapsed }: SwitcherProps) {
   const { setOption } = useSetIndexOptions();
   const { index, conversation } = useChatContext();
 
+  const { user } = useAuthContext(); // Added line
+
   /* `selectedAssistant` must be defined with `null` to cause re-render on update */
   const { assistant_id: selectedAssistant = null, endpoint } = conversation ?? {};
 
-  const assistantListMap = useAssistantListMap((res) =>
-    res.data.map(({ id, name, metadata }) => ({ id, name, metadata })),
-  );
+  // Edited block START
+  const assistantListMap = useAssistantListMap((res) => {
+    // @ts-ignore
+    const assistants = res.data.filter(({ id }) => user.assistantIds.includes(id));
+    return assistants.map(({ id, name, metadata }) => ({ id, name, metadata }));
+    // Original code:
+    // return res.data.map(({ id, name, metadata }) => ({ id, name, metadata }))
+  });
+  // Edited block END
+
   const assistants: Omit<AssistantListItem, 'model'>[] = useMemo(
     () => assistantListMap[endpoint ?? ''] ?? [],
     [endpoint, assistantListMap],
