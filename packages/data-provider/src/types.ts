@@ -58,7 +58,7 @@ export type TSubmission = {
   messages: TMessage[];
   isRegenerate?: boolean;
   conversationId?: string;
-  initialResponse: TMessage;
+  initialResponse?: TMessage;
   conversation: Partial<TConversation>;
   endpointOption: TEndpointOption;
 };

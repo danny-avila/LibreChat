@@ -9,7 +9,7 @@ import {
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import { useGetUserBalance, useGetStartupConfig } from 'librechat-data-provider/react-query';
-import type { TSubmission } from 'librechat-data-provider';
+import type { TMessage, TSubmission } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData } from '~/common';
 import { useGenTitleMutation } from '~/data-provider';
@@ -98,45 +98,45 @@ export default function useSSE(
     events.onmessage = (e: MessageEvent) => {
       const data = JSON.parse(e.data);
 
-      if (data.final) {
+      if (data.final != null) {
         const { plugins } = data;
         finalHandler(data, { ...submission, plugins });
-        startupConfig?.checkBalance && balanceQuery.refetch();
+        (startupConfig?.checkBalance ?? false) && balanceQuery.refetch();
         console.log('final', data);
       }
-      if (data.created) {
+      if (data.created != null) {
         const runId = v4();
         setActiveRunId(runId);
         userMessage = {
           ...userMessage,
           ...data.message,
-          overrideParentMessageId: userMessage?.overrideParentMessageId,
+          overrideParentMessageId: userMessage.overrideParentMessageId,
         };
 
         createdHandler(data, { ...submission, userMessage });
-      } else if (data.sync) {
+      } else if (data.sync != null) {
         const runId = v4();
         setActiveRunId(runId);
         /* synchronize messages to Assistants API as well as with real DB ID's */
         syncHandler(data, { ...submission, userMessage });
-      } else if (data.type) {
+      } else if (data.type != null) {
         const { text, index } = data;
-        if (text && index !== textIndex) {
+        if (text != null && index !== textIndex) {
           textIndex = index;
         }
 
         contentHandler({ data, submission });
       } else {
-        const text = data.text || data.response;
+        const text = data.text ?? data.response;
         const { plugin, plugins } = data;
 
         const initialResponse = {
-          ...submission.initialResponse,
+          ...(submission.initialResponse as TMessage),
           parentMessageId: data.parentMessageId,
           messageId: data.messageId,
         };
 
-        if (data.message) {
+        if (data.message != null) {
           messageHandler(text, { ...submission, plugin, plugins, userMessage, initialResponse });
         }
       }
@@ -145,7 +145,7 @@ export default function useSSE(
     events.onopen = () => console.log('connection is opened');
 
     events.oncancel = async () => {
-      const streamKey = submission?.initialResponse?.messageId;
+      const streamKey = (submission as TSubmission | null)?.['initialResponse']?.messageId;
       if (completed.has(streamKey)) {
         setIsSubmitting(false);
         setCompleted((prev) => {
@@ -157,9 +157,9 @@ export default function useSSE(
 
       setCompleted((prev) => new Set(prev.add(streamKey)));
       const latestMessages = getMessages();
-      const conversationId = latestMessages?.[latestMessages?.length - 1]?.conversationId;
+      const conversationId = latestMessages?.[latestMessages.length - 1]?.conversationId;
       return await abortConversation(
-        conversationId ?? userMessage?.conversationId ?? submission?.conversationId,
+        conversationId ?? userMessage.conversationId ?? submission.conversationId,
         submission,
         latestMessages,
       );
@@ -167,7 +167,7 @@ export default function useSSE(
 
     events.onerror = function (e: MessageEvent) {
       console.log('error in server stream.');
-      startupConfig?.checkBalance && balanceQuery.refetch();
+      (startupConfig?.checkBalance ?? false) && balanceQuery.refetch();
 
       let data: TResData | undefined = undefined;
       try {
