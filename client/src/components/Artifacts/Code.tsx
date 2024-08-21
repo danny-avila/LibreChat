@@ -145,7 +145,7 @@ export const CodeMarkdown = memo(({ content = '', showCursor, isLatestMessage }:
   return (
     <ReactMarkdown
       rehypePlugins={rehypePlugins}
-      linkTarget="_new"
+      // linkTarget="_new"
       components={{ code }
       }
     >

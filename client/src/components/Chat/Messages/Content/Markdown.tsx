@@ -7,9 +7,11 @@ import { useRecoilValue } from 'recoil';
 import { visit } from 'unist-util-visit';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
+import remarkDirective from 'remark-directive';
 import type { PluggableList, Pluggable } from 'unified';
 import { langSubset, preprocessLaTeX, handleDoubleClick } from '~/utils';
 import { CodeBlockArtifact, CodeMarkdown } from '~/components/Artifacts/Code';
+import { artifact, artifactPlugin } from '~/components/Artifacts/Artifact';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
 import { useFileDownload } from '~/data-provider';
 import { filenameMap } from '~/utils/artifacts';
@@ -123,6 +125,19 @@ export const p: React.ElementType = memo(({ children }: { children: React.ReactN
   return <p className="mb-2 whitespace-pre-wrap">{children}</p>;
 });
 
+export const div: React.ElementType = memo(({ node, ...props }) => {
+  if (props.className === 'artifact') {
+    return (
+      <div className="artifact">
+        <h3>{props['data-identifier']}</h3>
+        <p>Type: {props['data-type']}</p>
+        {props.children}
+      </div>
+    );
+  }
+  return <div {...props} />;
+});
+
 const cursor = ' ';
 
 type TContentProps = {
@@ -187,14 +202,19 @@ const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentPr
 
   return (
     <ReactMarkdown
-      remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
+      remarkPlugins={[
+        remarkDirective,
+        supersub, remarkGfm, [remarkMath, { singleDollarTextMath: true }],
+        artifactPlugin,
+      ]}
       rehypePlugins={rehypePlugins}
-      linkTarget="_new"
+      // linkTarget="_new"
       components={
         {
           code,
           a,
           p,
+          artifact,
         }
       }
     >
