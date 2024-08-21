@@ -38,6 +38,7 @@ export default function useSSE(
 
   const { token, isAuthenticated } = useAuthContext();
   const [completed, setCompleted] = useState(new Set());
+  const setAbortScroll = useSetRecoilState(store.abortScrollFamily(runIndex));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(runIndex));
 
   const {
@@ -142,7 +143,10 @@ export default function useSSE(
       }
     };
 
-    events.onopen = () => console.log('connection is opened');
+    events.onopen = () => {
+      setAbortScroll(false);
+      console.log('connection is opened');
+    };
 
     events.oncancel = async () => {
       const streamKey = (submission as TSubmission | null)?.['initialResponse']?.messageId;
