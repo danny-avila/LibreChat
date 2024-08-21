@@ -6,10 +6,10 @@ import type {
   Text,
   TMessage,
   ImageFile,
-  TSubmission,
   ContentPart,
   PartMetadata,
   TContentData,
+  EventSubmission,
   TMessageContentParts,
 } from 'librechat-data-provider';
 import { addFileToCache } from '~/utils';
@@ -21,7 +21,7 @@ type TUseContentHandler = {
 
 type TContentHandler = {
   data: TContentData;
-  submission: TSubmission;
+  submission: EventSubmission;
 };
 
 export default function useContentHandler({ setMessages, getMessages }: TUseContentHandler) {
@@ -43,7 +43,7 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
       let response = messageMap.get(messageId);
       if (!response) {
         response = {
-          ...initialResponse,
+          ...(initialResponse as TMessage),
           parentMessageId: userMessage?.messageId ?? '',
           conversationId,
           messageId,
