@@ -28,17 +28,17 @@ export default {
   com_ui_close: 'Закрыть',
   com_ui_model: 'Модель',
   com_ui_select_model: 'Выберите модель',
-  com_ui_use_prompt: 'Использовать промт',
+  com_ui_use_prompt: 'Использовать промпт',
   com_ui_prev: 'Предыдущий',
   com_ui_next: 'Следующий',
   com_ui_stop: 'Остановить генерацию',
-  com_ui_prompt_templates: 'Шаблоны промтов',
-  com_ui_hide_prompt_templates: 'Скрыть шаблоны промтов',
+  com_ui_prompt_templates: 'Шаблоны промптов',
+  com_ui_hide_prompt_templates: 'Скрыть шаблоны промптов',
   com_ui_showing: 'Показано',
   com_ui_of: 'из',
   com_ui_entries: 'записей',
-  com_ui_pay_per_call: 'Все AI-разговоры в одном месте. Оплачивайте за вызовы, а не за месяц',
-  com_ui_new_footer: 'Все AI-разговоры в одном месте.',
+  com_ui_pay_per_call: 'Все AI-чаты в одном месте. Оплачивайте за вызовы, а не за месяц',
+  com_ui_new_footer: 'Все AI-чаты в одном месте.',
   com_ui_enter: 'Ввести',
   com_ui_submit: 'Отправить',
   com_ui_upload_success: 'Файл успешно загружен',
@@ -199,7 +199,7 @@ export default {
   com_endpoint_prompt_prefix_placeholder:
     'Задайте пользовательские инструкции или контекст. Игнорируется, если пусто.',
   com_endpoint_custom_name: 'Кастомное имя',
-  com_endpoint_prompt_prefix: 'Префикс промта',
+  com_endpoint_prompt_prefix: 'Префикс промпта',
   com_endpoint_temperature: 'Температура',
   com_endpoint_default: 'по умолчанию',
   com_endpoint_top_p: 'Top P',
@@ -217,7 +217,7 @@ export default {
     'Число от -2.0 до 2.0. Положительные значения штрафуют новые токены на основе того, появляются ли они в тексте до сих пор, увеличивая вероятность модели говорить о новых темах.',
   com_endpoint_openai_custom_name_placeholder: 'Задайте кастомное имя для ChatGPT',
   com_endpoint_openai_prompt_prefix_placeholder:
-    'Задайте кастомные промты для включения в системное сообщение. По умолчанию: нет',
+    'Задайте кастомные промпты для включения в системное сообщение. По умолчанию: нет',
   com_endpoint_anthropic_temp:
     'Диапазон значений от 0 до 1. Используйте значение temp ближе к 0 для аналитических / множественного выбора и ближе к 1 для креативных и генеративных задач. Мы рекомендуем изменять это или Top P, но не оба значения одновременно.',
   com_endpoint_anthropic_topp:
@@ -365,14 +365,14 @@ export default {
   com_nav_user: 'ПОЛЬЗОВАТЕЛЬ',
   com_nav_archived_chats: 'Архивированные чаты',
   com_nav_archived_chats_manage: 'Управление',
-  com_nav_archived_chats_empty: 'У вас нет архивированных разговоров.',
+  com_nav_archived_chats_empty: 'У вас нет архивированных чатов.',
   com_nav_archive_all_chats: 'Архивировать все чаты',
   com_nav_archive_all: 'Архивировать все',
   com_nav_archive_name: 'Имя',
   com_nav_archive_created_at: 'Дата создания',
-  com_nav_clear_conversation: 'Удалить разговоры',
+  com_nav_clear_conversation: 'Удалить чаты',
   com_nav_clear_conversation_confirm_message:
-    'Вы уверены, что хотите удалить все разговоры? Это действие нельзя отменить.',
+    'Вы уверены, что хотите удалить все чаты? Это действие нельзя отменить.',
   com_nav_help_faq: 'Помощь и Вопросы',
   com_nav_settings: 'Настройки',
   com_nav_search_placeholder: 'Поиск сообщений',
@@ -383,7 +383,7 @@ export default {
   com_nav_setting_data: 'Управление данными',
   com_assistants_knowledge: 'База знаний',
   com_assistants_knowledge_info:
-    'Если вы загрузите файлы в раздел Знания, разговоры с вашим ассистентом могут включать содержимое файлов.',
+    'Если вы загрузите файлы в раздел Знания, чаты с вашим ассистентом могут включать содержимое файлов.',
   com_assistants_knowledge_disabled:
     'Ассистент должен быть сохранён, и Интерпретатор кода (Code Interpreter) или Поиск (Retrieval) должны быть включены и сохранены перед загрузкой файлов к Базе Знаний.',
   com_assistants_retrieval: 'Поиск (Retrieval)',
@@ -508,7 +508,7 @@ export default {
   com_ui_fork_info_remember:
     'Отметьте это, чтобы запомнить выбранные вами параметры для будущего использования, что позволит быстрее создавать ответвления бесед по вашим предпочтениям.',
   com_ui_fork_success: 'Разветвление беседы успешно выполнено',
-  com_ui_fork_processing: 'Разделение беседы...',
+  com_ui_fork_processing: 'Разветвление беседы...',
   com_ui_fork_error: 'Произошла ошибка при создании ответвления разговора',
   com_ui_fork_change_default: 'Изменить вариант ветвления по умолчанию',
   com_ui_fork_default: 'Использовать вариант по умолчанию',
@@ -567,13 +567,13 @@ export default {
   com_endpoint_assistant: 'Ассистент',
   com_endpoint_use_active_assistant: 'Использовать активного ассистента',
   com_endpoint_assistant_model: 'Модель ассистента',
-  com_endpoint_assistant_placeholder: 'Выберите Ассистента в правой боковой панели',
+  com_endpoint_assistant_placeholder: 'Выберите ассистента в правой боковой панели',
   com_nav_welcome_assistant: 'Выберите ассистента',
   com_nav_plugin_install: 'Установить',
   com_nav_plugin_uninstall: 'Удалить',
   com_nav_tool_add: 'Добавить',
   com_nav_tool_remove: 'Удалить',
-  com_nav_tool_dialog: 'Инструменты помощника',
+  com_nav_tool_dialog: 'Инструменты ассистента',
   com_nav_tool_dialog_description:
     'Ассистент должен быть сохранен для применения выбранных инструментов.',
   com_show_agent_settings: 'Настройки агента',
@@ -592,11 +592,11 @@ export default {
   com_nav_lang_polish: 'Польский',
   com_nav_lang_brazilian_portuguese: 'Португальский (Бразилия)',
   com_nav_lang_russian: 'Русский',
-  com_nav_lang_japanese: 'Язык',
+  com_nav_lang_japanese: 'Японский',
   com_nav_lang_swedish: 'Шведский',
   com_nav_lang_korean: 'Корейский',
   com_nav_lang_vietnamese: 'Вьетнамский',
-  com_nav_lang_traditionalchinese: 'Традиционный китайский',
+  com_nav_lang_traditionalchinese: 'Китайский (Традиционный)',
   com_nav_lang_arabic: 'Арабский',
   com_nav_lang_turkish: 'Турецкий',
   com_nav_lang_dutch: 'Голландский',
@@ -707,7 +707,7 @@ export const comparisons = {
   },
   com_ui_use_prompt: {
     english: 'Use prompt',
-    translated: 'Использовать промт',
+    translated: 'Использовать промпт',
   },
   com_ui_prev: {
     english: 'Prev',
@@ -723,11 +723,11 @@ export const comparisons = {
   },
   com_ui_prompt_templates: {
     english: 'Prompt Templates',
-    translated: 'Шаблоны промтов',
+    translated: 'Шаблоны промптов',
   },
   com_ui_hide_prompt_templates: {
     english: 'Hide Prompt Templates',
-    translated: 'Скрыть шаблоны промтов',
+    translated: 'Скрыть шаблоны промптов',
   },
   com_ui_showing: {
     english: 'Showing',
@@ -1333,7 +1333,7 @@ export const comparisons = {
   },
   com_endpoint_prompt_prefix: {
     english: 'Custom Instructions',
-    translated: 'Префикс промта',
+    translated: 'Префикс промпта',
   },
   com_endpoint_temperature: {
     english: 'Temperature',
@@ -1391,7 +1391,7 @@ export const comparisons = {
   },
   com_endpoint_openai_prompt_prefix_placeholder: {
     english: 'Set custom instructions to include in System Message. Default: none',
-    translated: 'Задайте кастомные промты для включения в системное сообщение. По умолчанию: нет',
+    translated: 'Задайте кастомные промпты для включения в системное сообщение. По умолчанию: нет',
   },
   com_endpoint_anthropic_temp: {
     english:
@@ -1812,7 +1812,7 @@ export const comparisons = {
   },
   com_nav_shared_links: {
     english: 'Shared links',
-    translated: 'Связываемые ссылки',
+    translated: 'Общие ссылки',
   },
   com_nav_shared_links_manage: {
     english: 'Manage',
@@ -1820,7 +1820,7 @@ export const comparisons = {
   },
   com_nav_shared_links_empty: {
     english: 'You have no shared links.',
-    translated: 'У вас нет связываемых ссылок.',
+    translated: 'У вас нет общих ссылок.',
   },
   com_nav_shared_links_name: {
     english: 'Name',
@@ -1936,11 +1936,11 @@ export const comparisons = {
   },
   com_nav_clear_conversation: {
     english: 'Clear conversations',
-    translated: 'Удалить разговоры',
+    translated: 'Удалить чаты',
   },
   com_nav_clear_conversation_confirm_message: {
     english: 'Are you sure you want to clear all conversations? This is irreversible.',
-    translated: 'Вы уверены, что хотите удалить все разговоры? Это действие нельзя отменить.',
+    translated: 'Вы уверены, что хотите удалить все чаты? Это действие нельзя отменить.',
   },
   com_nav_help_faq: {
     english: 'Help & FAQ',
@@ -1980,7 +1980,7 @@ export const comparisons = {
     english:
       'If you upload files under Knowledge, conversations with your Assistant may include file contents.',
     translated:
-      'Если вы загрузите файлы в раздел Знания, разговоры с вашим ассистентом могут включать содержимое файлов.',
+      'Если вы загрузите файлы в раздел Знания, чаты с вашим ассистентом могут включать содержимое файлов.',
   },
   com_assistants_knowledge_disabled: {
     english:
@@ -2435,7 +2435,7 @@ export const comparisons = {
   },
   com_ui_fork_processing: {
     english: 'Forking conversation...',
-    translated: 'Разделение беседы...',
+    translated: 'Разветвление беседы...',
   },
   com_ui_fork_error: {
     english: 'There was an error forking the conversation',
@@ -2742,7 +2742,7 @@ export const comparisons = {
   },
   com_nav_lang_japanese: {
     english: '日本語',
-    translated: 'Язык',
+    translated: 'Японский',
   },
   com_nav_lang_swedish: {
     english: 'Svenska',
