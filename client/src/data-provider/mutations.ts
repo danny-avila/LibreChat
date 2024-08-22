@@ -96,6 +96,7 @@ export const useUpdateConversationMutation = (
  */
 export const useTagConversationMutation = (
   conversationId: string,
+  options?: t.updateTagsInConvoOptions,
 ): UseMutationResult<t.TTagConversationResponse, unknown, t.TTagConversationRequest, unknown> => {
   const query = useConversationTagsQuery();
   const { updateTagsInConversation } = useUpdateTagsInConvo();
@@ -103,13 +104,17 @@ export const useTagConversationMutation = (
     (payload: t.TTagConversationRequest) =>
       dataService.addTagToConversation(conversationId, payload),
     {
-      onSuccess: (updatedTags) => {
+      onSuccess: (updatedTags, ...rest) => {
         // Because the logic for calculating the bookmark count is complex,
         // the client does not perform the calculation,
         // but instead refetch the data from the API.
         query.refetch();
         updateTagsInConversation(conversationId, updatedTags);
+
+        options?.onSuccess?.(updatedTags, ...rest);
       },
+      onError: options?.onError,
+      onMutate: options?.onMutate,
     },
   );
 };
@@ -817,7 +822,8 @@ export const useUpdateAssistantMutation = (
     ({ assistant_id, data }: { assistant_id: string; data: t.AssistantUpdateParams }) => {
       const { endpoint } = data;
       const endpointsConfig = queryClient.getQueryData<t.TEndpointsConfig>([QueryKeys.endpoints]);
-      const version = endpointsConfig?.[endpoint].version ?? defaultAssistantsVersion[endpoint];
+      const endpointConfig = endpointsConfig?.[endpoint];
+      const version = endpointConfig?.version ?? defaultAssistantsVersion[endpoint];
       return dataService.updateAssistant({
         data,
         version,
