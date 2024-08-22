@@ -22,6 +22,10 @@ export enum PermissionTypes {
    * Type for Prompt Permissions
    */
   PROMPTS = 'PROMPTS',
+  /**
+   * Type for Bookmarks Permissions
+   */
+  BOOKMARKS = 'BOOKMARKS',
 }
 
 /**
@@ -41,13 +45,19 @@ export const promptPermissionsSchema = z.object({
   [Permissions.SHARE]: z.boolean().default(false),
 });
 
+export const bookmarkPermissionsSchema = z.object({
+  [Permissions.USE]: z.boolean().default(true),
+});
+
 export const roleSchema = z.object({
   name: z.string(),
   [PermissionTypes.PROMPTS]: promptPermissionsSchema,
+  [PermissionTypes.BOOKMARKS]: bookmarkPermissionsSchema,
 });
 
 export type TRole = z.infer<typeof roleSchema>;
 export type TPromptPermissions = z.infer<typeof promptPermissionsSchema>;
+export type TBookmarkPermissions = z.infer<typeof bookmarkPermissionsSchema>;
 
 const defaultRolesSchema = z.object({
   [SystemRoles.ADMIN]: roleSchema.extend({
@@ -58,10 +68,14 @@ const defaultRolesSchema = z.object({
       [Permissions.CREATE]: z.boolean().default(true),
       [Permissions.SHARE]: z.boolean().default(true),
     }),
+    [PermissionTypes.BOOKMARKS]: bookmarkPermissionsSchema.extend({
+      [Permissions.USE]: z.boolean().default(true),
+    }),
   }),
   [SystemRoles.USER]: roleSchema.extend({
     name: z.literal(SystemRoles.USER),
     [PermissionTypes.PROMPTS]: promptPermissionsSchema,
+    [PermissionTypes.BOOKMARKS]: bookmarkPermissionsSchema,
   }),
 });
 
@@ -69,9 +83,11 @@ export const roleDefaults = defaultRolesSchema.parse({
   [SystemRoles.ADMIN]: {
     name: SystemRoles.ADMIN,
     [PermissionTypes.PROMPTS]: {},
+    [PermissionTypes.BOOKMARKS]: {},
   },
   [SystemRoles.USER]: {
     name: SystemRoles.USER,
     [PermissionTypes.PROMPTS]: {},
+    [PermissionTypes.BOOKMARKS]: {},
   },
 });
