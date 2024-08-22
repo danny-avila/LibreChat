@@ -1,8 +1,10 @@
 import { useState, type FC, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
-import { Constants } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
+import { Constants, QueryKeys } from 'librechat-data-provider';
 import { Menu, MenuButton, MenuItems } from '@headlessui/react';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
+import type { TConversationTag } from 'librechat-data-provider';
 import { useConversationTagsQuery, useTagConversationMutation } from '~/data-provider';
 import { BookmarkMenuItems } from './Bookmarks/BookmarkMenuItems';
 import { BookmarkContext } from '~/Providers/BookmarkContext';
@@ -15,18 +17,20 @@ import { cn, logger } from '~/utils';
 import store from '~/store';
 
 const BookmarkMenu: FC = () => {
+  const queryClient = useQueryClient();
   const { showToast } = useToastContext();
 
   const conversation = useRecoilValue(store.conversationByIndex(0)) || undefined;
   const conversationId = conversation?.conversationId ?? '';
-  const onSuccess = useBookmarkSuccess(conversationId);
-  const [tags, setTags] = useState<string[]>(conversation?.tags || []);
+  const updateConvoTags = useBookmarkSuccess(conversationId);
+
   const [open, setOpen] = useState(false);
+  const [tags, setTags] = useState<string[]>(conversation?.tags || []);
 
   const mutation = useTagConversationMutation(conversationId, {
     onSuccess: (newTags: string[]) => {
       setTags(newTags);
-      onSuccess(newTags);
+      updateConvoTags(newTags);
     },
     onError: () => {
       showToast({
@@ -56,13 +60,20 @@ const BookmarkMenu: FC = () => {
       }
 
       logger.log('tag_mutation', 'BookmarkMenu - handleSubmit: tags before setting', tags);
-      const newTags = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
+      const allTags =
+        queryClient.getQueryData<TConversationTag[]>([QueryKeys.conversationTags]) ?? [];
+      const existingTags = allTags.map((t) => t.tag);
+      const filteredTags = tags.filter((t) => existingTags.includes(t));
+      logger.log('tag_mutation', 'BookmarkMenu - handleSubmit: tags after filtering', filteredTags);
+      const newTags = filteredTags.includes(tag)
+        ? filteredTags.filter((t) => t !== tag)
+        : [...filteredTags, tag];
       logger.log('tag_mutation', 'BookmarkMenu - handleSubmit: tags after', newTags);
       mutation.mutate({
         tags: newTags,
       });
     },
-    [tags, conversationId, mutation, showToast],
+    [tags, conversationId, mutation, queryClient, showToast],
   );
 
   if (!isActiveConvo) {
