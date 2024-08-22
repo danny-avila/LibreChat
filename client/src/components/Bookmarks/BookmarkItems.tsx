@@ -3,7 +3,7 @@ import { useBookmarkContext } from '~/Providers/BookmarkContext';
 import BookmarkItem from './BookmarkItem';
 interface BookmarkItemsProps {
   tags: string[];
-  handleSubmit: (tag?: string) => Promise<void>;
+  handleSubmit: (tag?: string) => void;
   header: React.ReactNode;
 }
 
@@ -14,9 +14,9 @@ const BookmarkItems: FC<BookmarkItemsProps> = ({ tags, handleSubmit, header }) =
     <>
       {header}
       {bookmarks.length > 0 && <div className="my-1.5 h-px" role="none" />}
-      {bookmarks.map((bookmark) => (
+      {bookmarks.map((bookmark, i) => (
         <BookmarkItem
-          key={bookmark.tag}
+          key={`${bookmark._id ?? bookmark.tag}-${i}`}
           tag={bookmark.tag}
           selected={tags.includes(bookmark.tag)}
           handleSubmit={handleSubmit}

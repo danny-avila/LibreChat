@@ -17,7 +17,7 @@ const BookmarkPanel = () => {
       <BookmarkContext.Provider value={{ bookmarks: data || [] }}>
         <BookmarkTable />
         <div className="flex justify-between gap-2">
-          <BookmarkEditDialog open={open} setOpen={setOpen} />
+          <BookmarkEditDialog context="BookmarkPanel" open={open} setOpen={setOpen} />
           <Button variant="outline" className="w-full text-sm" onClick={() => setOpen(!open)}>
             <BookmarkPlusIcon className="mr-1 size-4" />
             <div className="break-all">{localize('com_ui_bookmarks_new')}</div>
