@@ -1,8 +1,10 @@
 import React, { useEffect } from 'react';
+import { QueryKeys } from 'librechat-data-provider';
 import { Controller, useForm } from 'react-hook-form';
+import { useQueryClient } from '@tanstack/react-query';
 import type {
-  TConversationTag,
   TConversation,
+  TConversationTag,
   TConversationTagRequest,
 } from 'librechat-data-provider';
 import { cn, removeFocusOutlines, defaultTextProps, logger } from '~/utils';
@@ -17,10 +19,19 @@ type TBookmarkFormProps = {
   bookmark?: TConversationTag;
   conversation?: TConversation;
   formRef: React.RefObject<HTMLFormElement>;
+  setOpen: React.Dispatch<React.SetStateAction<boolean>>;
   mutation: ReturnType<typeof useConversationTagMutation>;
 };
-const BookmarkForm = ({ tags, bookmark, mutation, conversation, formRef }: TBookmarkFormProps) => {
+const BookmarkForm = ({
+  tags,
+  bookmark,
+  mutation,
+  conversation,
+  setOpen,
+  formRef,
+}: TBookmarkFormProps) => {
   const localize = useLocalize();
+  const queryClient = useQueryClient();
   const { showToast } = useToastContext();
   const { bookmarks } = useBookmarkContext();
 
@@ -55,8 +66,16 @@ const BookmarkForm = ({ tags, bookmark, mutation, conversation, formRef }: TBook
     if (data.tag === bookmark?.tag && data.description === bookmark?.description) {
       return;
     }
-    // todo: check all other tags, too
     if (data.tag != null && (tags ?? []).includes(data.tag)) {
+      showToast({
+        message: localize('com_ui_bookmarks_create_exists'),
+        status: 'warning',
+      });
+      return;
+    }
+    const allTags =
+      queryClient.getQueryData<TConversationTag[]>([QueryKeys.conversationTags]) ?? [];
+    if (allTags.some((tag) => tag.tag === data.tag)) {
       showToast({
         message: localize('com_ui_bookmarks_create_exists'),
         status: 'warning',
@@ -65,6 +84,7 @@ const BookmarkForm = ({ tags, bookmark, mutation, conversation, formRef }: TBook
     }
 
     mutation.mutate(data);
+    setOpen(false);
   };
 
   return (
