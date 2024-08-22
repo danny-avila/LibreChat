@@ -9,7 +9,7 @@ import {
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import type { TEndpointsConfig } from 'librechat-data-provider';
 import { ResizableHandleAlt, ResizablePanel, ResizablePanelGroup } from '~/components/ui/Resizable';
-import { TooltipProvider, Tooltip } from '~/components/ui/Tooltip';
+import { TooltipProvider, Tooltip } from '~/components/ui';
 import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
 import { useMediaQuery, useLocalStorage, useLocalize } from '~/hooks';
 import NavToggle from '~/components/Nav/NavToggle';

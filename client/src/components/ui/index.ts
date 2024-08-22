@@ -23,6 +23,7 @@ export * from './Tag';
 export * from './Textarea';
 export * from './TextareaAutosize';
 export * from './Tooltip';
+export * from './TooltipTest';
 export { default as Combobox } from './Combobox';
 export { default as Dropdown } from './Dropdown';
 export { default as FileUpload } from './FileUpload';

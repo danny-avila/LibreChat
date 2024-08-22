@@ -2,9 +2,9 @@ import { useState } from 'react';
 import type { FC } from 'react';
 import type { TConversationTag } from 'librechat-data-provider';
 import BookmarkEditDialog from './BookmarkEditDialog';
+import { TooltipAnchor } from '~/components/ui';
 import { EditIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui';
 
 const EditBookmarkButton: FC<{
   bookmark: TConversationTag;
@@ -23,25 +23,16 @@ const EditBookmarkButton: FC<{
         open={open}
         setOpen={setOpen}
       />
-      <button
-        type="button"
-        className="transition-colors flex size-7 items-center justify-center rounded-lg duration-200 hover:bg-surface-hover"
+      <TooltipAnchor
+        description={localize('com_ui_edit')}
         tabIndex={tabIndex}
         onFocus={onFocus}
         onBlur={onBlur}
         onClick={() => setOpen(!open)}
+        className="flex size-7 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-hover"
       >
-        <TooltipProvider delayDuration={250}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <EditIcon />
-            </TooltipTrigger>
-            <TooltipContent side="top" sideOffset={0}>
-              {localize('com_ui_edit')}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      </button>
+        <EditIcon />
+      </TooltipAnchor>
     </>
   );
 };

@@ -2288,6 +2288,27 @@ button.scroll-convo {
   line-height: inherit;
 }
 
+.tooltip {
+  z-index: 50;
+  cursor: default;
+  border-radius: 0.275rem;
+  background-color: var(--bg-gray-600);
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+  font-size: 1rem;
+  line-height: 1.5rem;
+  color: black;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.25);
+}
+
+.tooltip:where(.dark, .dark *) {
+  background-color: var(--surface-primary);
+  color: white;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.35);
+}
+
 :focus {
   outline: none;
 }
