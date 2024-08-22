@@ -133,8 +133,9 @@ const BookmarkForm = ({ bookmark, mutation, conversation, formRef }: TBookmarkFo
               )}
             />
             <button
+              type="button"
               aria-label={localize('com_ui_bookmarks_add_to_conversation')}
-              className="form-check-label text-token-text-primary w-full cursor-pointer"
+              className="form-check-label w-full cursor-pointer text-text-primary"
               onClick={() =>
                 setValue('addToConversation', !(getValues('addToConversation') ?? false), {
                   shouldDirty: true,
