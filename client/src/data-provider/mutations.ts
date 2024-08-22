@@ -450,18 +450,20 @@ export const useDeleteConversationTagMutation = (
 ): UseMutationResult<t.TConversationTagResponse, unknown, string, void> => {
   const queryClient = useQueryClient();
   const deleteTagInAllConversations = useDeleteTagInConversations();
+
   const { onSuccess, ..._options } = options || {};
+
   return useMutation((tag: string) => dataService.deleteConversationTag(tag), {
-    onSuccess: (_data, vars, context) => {
+    onSuccess: (_data, tagToDelete, context) => {
       queryClient.setQueryData<t.TConversationTag[]>([QueryKeys.conversationTags], (data) => {
         if (!data) {
           return data;
         }
-        return data.filter((t) => t.tag !== vars);
+        return data.filter((t) => t.tag !== tagToDelete);
       });
 
-      deleteTagInAllConversations(vars);
-      onSuccess?.(_data, vars, context);
+      deleteTagInAllConversations(tagToDelete);
+      onSuccess?.(_data, tagToDelete, context);
     },
     ..._options,
   });
