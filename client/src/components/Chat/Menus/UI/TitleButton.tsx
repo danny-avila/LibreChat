@@ -16,7 +16,7 @@ export default function TitleButton({ primaryText = '', secondaryText = '' }) {
         onClick={() => setIsExpanded(!isExpanded)}
       >
         <div>
-          <span className="text-token-text-secondary"> {primaryText} </span>
+          <span className="text-text-primary"> {primaryText} </span>
           {!!secondaryText && <span className="text-token-text-secondary">{secondaryText}</span>}
         </div>
         <ChevronDown className="text-token-text-secondary size-4" />
