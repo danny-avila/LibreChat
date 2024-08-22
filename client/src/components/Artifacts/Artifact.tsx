@@ -1,8 +1,9 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { visit } from 'unist-util-visit';
 import { useSetRecoilState } from 'recoil';
 import { artifactsState, artifactIdsState } from '~/store/artifacts';
 import type { Pluggable } from 'unified';
+import throttle from 'lodash/throttle';
 
 export const artifactPlugin: Pluggable = () => {
   return (tree) => {
@@ -21,6 +22,12 @@ export function Artifact({ node, ...props }) {
   const setArtifacts = useSetRecoilState(artifactsState);
   const setArtifactIds = useSetRecoilState(artifactIdsState);
 
+  const throttledUpdateRef = useRef(
+    throttle((updateFn: () => void) => {
+      updateFn();
+    }, 25),
+  );
+
   const updateArtifact = useCallback(() => {
     const content =
       props.children && typeof props.children === 'string'
@@ -32,28 +39,30 @@ export function Artifact({ node, ...props }) {
     const identifier = props.identifier || 'no-identifier';
     const artifactKey = `${identifier}_${type}_${title}`.replace(/\s+/g, '_').toLowerCase();
 
-    setArtifacts((prevArtifacts) => {
-      if (prevArtifacts[artifactKey] && prevArtifacts[artifactKey].content === content) {
-        return prevArtifacts;
-      }
+    throttledUpdateRef.current(() => {
+      setArtifacts((prevArtifacts) => {
+        if (prevArtifacts[artifactKey] && prevArtifacts[artifactKey].content === content) {
+          return prevArtifacts;
+        }
 
-      return {
-        ...prevArtifacts,
-        [artifactKey]: {
-          id: artifactKey,
-          identifier,
-          title,
-          type,
-          content,
-        },
-      };
-    });
+        return {
+          ...prevArtifacts,
+          [artifactKey]: {
+            id: artifactKey,
+            identifier,
+            title,
+            type,
+            content,
+          },
+        };
+      });
 
-    setArtifactIds((prevIds) => {
-      if (!prevIds.includes(artifactKey)) {
-        return [...prevIds, artifactKey];
-      }
-      return prevIds;
+      setArtifactIds((prevIds) => {
+        if (!prevIds.includes(artifactKey)) {
+          return [...prevIds, artifactKey];
+        }
+        return prevIds;
+      });
     });
   }, [props, setArtifacts, setArtifactIds]);
 
