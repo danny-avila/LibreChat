@@ -311,6 +311,7 @@ export default {
   com_ui_bookmarks_create_success: 'Bookmark created successfully',
   com_ui_bookmarks_update_success: 'Bookmark updated successfully',
   com_ui_bookmarks_delete_success: 'Bookmark deleted successfully',
+  com_ui_bookmarks_create_exists: 'This bookmark already exists',
   com_ui_bookmarks_create_error: 'There was an error creating the bookmark',
   com_ui_bookmarks_update_error: 'There was an error updating the bookmark',
   com_ui_bookmarks_delete_error: 'There was an error deleting the bookmark',

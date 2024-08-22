@@ -1,12 +1,17 @@
-import React, { useRef, useState, Dispatch, SetStateAction } from 'react';
+import React, { useRef, Dispatch, SetStateAction } from 'react';
 import { TConversationTag, TConversation } from 'librechat-data-provider';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
-import { OGDialog, OGDialogClose } from '~/components/ui/';
+import { useConversationTagMutation } from '~/data-provider';
+import { NotificationSeverity } from '~/common';
+import { useToastContext } from '~/Providers';
+import { OGDialog } from '~/components/ui';
+import { Spinner } from '~/components/svg';
 import BookmarkForm from './BookmarkForm';
 import { useLocalize } from '~/hooks';
-import { Spinner } from '../svg';
+import { logger } from '~/utils';
 
 type BookmarkEditDialogProps = {
+  context: string;
   bookmark?: TConversationTag;
   conversation?: TConversation;
   tags?: string[];
@@ -16,6 +21,7 @@ type BookmarkEditDialogProps = {
 };
 
 const BookmarkEditDialog = ({
+  context,
   bookmark,
   conversation,
   tags,
@@ -24,8 +30,39 @@ const BookmarkEditDialog = ({
   setOpen,
 }: BookmarkEditDialogProps) => {
   const localize = useLocalize();
-  const [isLoading, setIsLoading] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
+
+  const { showToast } = useToastContext();
+  const mutation = useConversationTagMutation({
+    context,
+    tag: bookmark?.tag,
+    options: {
+      onSuccess: (_data, vars) => {
+        showToast({
+          message: bookmark
+            ? localize('com_ui_bookmarks_update_success')
+            : localize('com_ui_bookmarks_create_success'),
+        });
+        setOpen(false);
+        logger.log('tag_mutation', 'tags before setting', tags);
+        if (setTags && vars.addToConversation === true) {
+          const newTags = [...(tags || []), vars.tag].filter(
+            (tag) => tag !== undefined,
+          ) as string[];
+          setTags(newTags);
+          logger.log('tag_mutation', 'tags after', newTags);
+        }
+      },
+      onError: () => {
+        showToast({
+          message: bookmark
+            ? localize('com_ui_bookmarks_update_error')
+            : localize('com_ui_bookmarks_create_error'),
+          severity: NotificationSeverity.ERROR,
+        });
+      },
+    },
+  });
 
   const handleSubmitForm = () => {
     if (formRef.current) {
@@ -40,26 +77,23 @@ const BookmarkEditDialog = ({
         showCloseButton={false}
         main={
           <BookmarkForm
+            tags={tags}
+            setOpen={setOpen}
+            mutation={mutation}
             conversation={conversation}
-            onOpenChange={setOpen}
-            setIsLoading={setIsLoading}
             bookmark={bookmark}
             formRef={formRef}
-            setTags={setTags}
-            tags={tags}
           />
         }
         buttons={
-          <OGDialogClose asChild>
-            <button
-              type="submit"
-              disabled={isLoading}
-              onClick={handleSubmitForm}
-              className="btn rounded bg-green-500 font-bold text-white transition-all hover:bg-green-600"
-            >
-              {isLoading ? <Spinner /> : localize('com_ui_save')}
-            </button>
-          </OGDialogClose>
+          <button
+            type="submit"
+            disabled={mutation.isLoading}
+            onClick={handleSubmitForm}
+            className="btn rounded bg-green-500 font-bold text-white transition-all hover:bg-green-600"
+          >
+            {mutation.isLoading ? <Spinner /> : localize('com_ui_save')}
+          </button>
         }
       />
     </OGDialog>
