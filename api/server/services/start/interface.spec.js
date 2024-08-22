@@ -1,4 +1,4 @@
-const { SystemRoles } = require('librechat-data-provider');
+const { SystemRoles, Permissions } = require('librechat-data-provider');
 const { updatePromptsAccess } = require('~/models/Role');
 const { loadDefaultInterface } = require('./interface');
 
@@ -13,7 +13,7 @@ describe('loadDefaultInterface', () => {
 
     await loadDefaultInterface(config, configDefaults);
 
-    expect(updatePromptsAccess).toHaveBeenCalledWith(SystemRoles.USER, true);
+    expect(updatePromptsAccess).toHaveBeenCalledWith(SystemRoles.USER, { [Permissions.USE]: true });
   });
 
   it('should call updatePromptsAccess with false when prompts is false', async () => {
@@ -22,7 +22,9 @@ describe('loadDefaultInterface', () => {
 
     await loadDefaultInterface(config, configDefaults);
 
-    expect(updatePromptsAccess).toHaveBeenCalledWith(SystemRoles.USER, false);
+    expect(updatePromptsAccess).toHaveBeenCalledWith(SystemRoles.USER, {
+      [Permissions.USE]: false,
+    });
   });
 
   it('should call updatePromptsAccess with undefined when prompts is not specified in config', async () => {
@@ -31,7 +33,9 @@ describe('loadDefaultInterface', () => {
 
     await loadDefaultInterface(config, configDefaults);
 
-    expect(updatePromptsAccess).toHaveBeenCalledWith(SystemRoles.USER, undefined);
+    expect(updatePromptsAccess).toHaveBeenCalledWith(SystemRoles.USER, {
+      [Permissions.USE]: undefined,
+    });
   });
 
   it('should call updatePromptsAccess with undefined when prompts is explicitly undefined', async () => {
@@ -40,6 +44,8 @@ describe('loadDefaultInterface', () => {
 
     await loadDefaultInterface(config, configDefaults);
 
-    expect(updatePromptsAccess).toHaveBeenCalledWith(SystemRoles.USER, undefined);
+    expect(updatePromptsAccess).toHaveBeenCalledWith(SystemRoles.USER, {
+      [Permissions.USE]: undefined,
+    });
   });
 });
