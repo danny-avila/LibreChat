@@ -1,20 +1,13 @@
-import { useMemo, useState, MouseEvent } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { MessageSquare, Link as LinkIcon } from 'lucide-react';
 import type { SharedLinksResponse, TSharedLink } from 'librechat-data-provider';
 import { useDeleteSharedLinkMutation, useSharedLinksInfiniteQuery } from '~/data-provider';
 import { useAuthContext, useLocalize, useNavScrolling } from '~/hooks';
+import { Spinner, TooltipAnchor, TrashIcon } from '~/components';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
 import { cn } from '~/utils';
-import {
-  Spinner,
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-  TrashIcon,
-} from '~/components';
 
 function SharedLinkDeleteButton({
   shareId,
@@ -36,7 +29,7 @@ function SharedLinkDeleteButton({
     },
   });
 
-  const handleDelete = async (e: MouseEvent<HTMLButtonElement>) => {
+  const handleDelete = async (e: React.MouseEvent<HTMLDivElement>) => {
     e.preventDefault();
     if (mutation.isLoading) {
       return;
@@ -46,36 +39,25 @@ function SharedLinkDeleteButton({
     setIsDeleting(false);
   };
   return (
-    <TooltipProvider delayDuration={250}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button id="delete-shared-link" aria-label="Delete shared link" onClick={handleDelete}>
-            <TrashIcon />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="top" sideOffset={0}>
-          {localize('com_ui_delete')}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <TooltipAnchor
+      description={localize('com_ui_delete')}
+      id="delete-shared-link"
+      aria-label="Delete shared link"
+      onClick={handleDelete}
+    >
+      <TrashIcon className="size-4" />
+    </TooltipAnchor>
   );
 }
 function SourceChatButton({ conversationId }: { conversationId: string }) {
   const localize = useLocalize();
 
   return (
-    <TooltipProvider delayDuration={250}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Link to={`/c/${conversationId}`} target="_blank" rel="noreferrer">
-            <MessageSquare className="h-4 w-4 hover:text-gray-300" />
-          </Link>
-        </TooltipTrigger>
-        <TooltipContent side="top" sideOffset={0}>
-          {localize('com_nav_source_chat')}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <TooltipAnchor description={localize('com_nav_source_chat')}>
+      <Link to={`/c/${conversationId}`} target="_blank" rel="noreferrer">
+        <MessageSquare className="size-4 hover:text-gray-300" />
+      </Link>
+    </TooltipAnchor>
   );
 }
 
@@ -116,7 +98,7 @@ function ShareLinkRow({ sharedLink }: { sharedLink: TSharedLink }) {
             {sharedLink.conversationId && (
               <>
                 <SourceChatButton conversationId={sharedLink.conversationId} />
-                <div className={cn('h-4 w-4 cursor-pointer', !isDeleting && 'hover:text-gray-300')}>
+                <div className={cn('cursor-pointer', !isDeleting && 'hover:text-gray-300')}>
                   <SharedLinkDeleteButton
                     shareId={sharedLink.shareId}
                     setIsDeleting={setIsDeleting}
