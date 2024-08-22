@@ -1,5 +1,5 @@
-import { TooltipTrigger, TooltipContent } from '~/components/ui';
 import { useLocalize, useLocalStorage } from '~/hooks';
+import { TooltipAnchor } from '~/components/ui';
 import { cn } from '~/utils';
 
 export default function NavToggle({
@@ -15,7 +15,6 @@ export default function NavToggle({
   const transition = {
     transition: 'transform 0.3s ease, opacity 0.2s ease',
   };
-  const [newUser] = useLocalStorage('newUser', true);
 
   const rotationDegree = 15;
   const rotation = isHovering || !navVisible ? `${rotationDegree}deg` : '0deg';
@@ -33,7 +32,12 @@ export default function NavToggle({
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
     >
-      <TooltipTrigger asChild>
+      <TooltipAnchor
+        side={side === 'right' ? 'left' : 'right'}
+        description={
+          navVisible ? localize('com_nav_close_sidebar') : localize('com_nav_open_sidebar')
+        }
+      >
         <button
           onClick={onToggle}
           id={`toggle-${side}-nav`}
@@ -63,16 +67,9 @@ export default function NavToggle({
                 />
               </div>
             </div>
-            <TooltipContent
-              forceMount={newUser ? true : undefined}
-              side={side === 'right' ? 'left' : 'right'}
-              sideOffset={4}
-            >
-              {navVisible ? localize('com_nav_close_sidebar') : localize('com_nav_open_sidebar')}
-            </TooltipContent>
           </span>
         </button>
-      </TooltipTrigger>
+      </TooltipAnchor>
     </div>
   );
 }

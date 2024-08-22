@@ -2,9 +2,9 @@ import { useState } from 'react';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import type { NavLink, NavProps } from '~/common';
 import { Accordion, AccordionItem, AccordionContent } from '~/components/ui/Accordion';
-import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui';
 import { buttonVariants } from '~/components/ui/Button';
 import { cn, removeFocusOutlines } from '~/utils';
+import { TooltipAnchor } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 
 export default function Nav({ links, isCollapsed, resize, defaultActive }: NavProps) {
@@ -30,42 +30,41 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                 {links.map((link, index) => {
                   const variant = getVariant(link);
                   return isCollapsed ? (
-                    <Tooltip key={index} delayDuration={0}>
-                      <TooltipTrigger asChild>
-                        <button
-                          className={cn(
-                            buttonVariants({ variant, size: 'icon' }),
-                            removeFocusOutlines,
-                            'h-9 w-9',
-                            variant === 'default'
-                              ? 'dark:bg-muted dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-white'
-                              : '',
+                    <TooltipAnchor
+                      className="flex items-center gap-4"
+                      description={localize(link.title)}
+                      render={
+                        <>
+                          {localize(link.title)}
+                          {link.label && (
+                            <span className="text-muted-foreground ml-auto">{link.label}</span>
                           )}
-                          onClick={(e) => {
-                            if (link.onClick) {
-                              link.onClick(e);
-                              setActive('');
-                              return;
-                            }
-                            setActive(link.id);
-                            resize && resize(25);
-                          }}
-                        >
-                          <link.icon className="h-4 w-4" />
-                          <span className="sr-only">{link.title}</span>
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent
-                        side="left"
-                        sideOffset={10}
-                        className="flex items-center gap-4"
-                      >
-                        {localize(link.title)}
-                        {link.label && (
-                          <span className="text-muted-foreground ml-auto">{link.label}</span>
+                        </>
+                      }
+                    >
+                      <button
+                        className={cn(
+                          buttonVariants({ variant, size: 'icon' }),
+                          removeFocusOutlines,
+                          'h-9 w-9',
+                          variant === 'default'
+                            ? 'dark:bg-muted dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-white'
+                            : '',
                         )}
-                      </TooltipContent>
-                    </Tooltip>
+                        onClick={(e) => {
+                          if (link.onClick) {
+                            link.onClick(e);
+                            setActive('');
+                            return;
+                          }
+                          setActive(link.id);
+                          resize && resize(25);
+                        }}
+                      >
+                        <link.icon className="h-4 w-4" />
+                        <span className="sr-only">{link.title}</span>
+                      </button>
+                    </TooltipAnchor>
                   ) : (
                     <Accordion
                       key={index}
