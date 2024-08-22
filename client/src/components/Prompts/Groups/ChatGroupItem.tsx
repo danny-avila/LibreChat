@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, memo } from 'react';
 import { Menu as MenuIcon, Edit as EditIcon, EarthIcon, TextSearch } from 'lucide-react';
 import type { TPromptGroup } from 'librechat-data-provider';
 import {
@@ -14,7 +14,7 @@ import PreviewPrompt from '~/components/Prompts/PreviewPrompt';
 import ListCard from '~/components/Prompts/Groups/ListCard';
 import { detectVariables } from '~/utils';
 
-export default function ChatGroupItem({
+function ChatGroupItem({
   group,
   instanceProjectId,
 }: {
@@ -116,3 +116,5 @@ export default function ChatGroupItem({
     </>
   );
 }
+
+export default memo(ChatGroupItem);
