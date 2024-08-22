@@ -6,8 +6,8 @@ import { useLocalize } from '~/hooks';
 
 export const BookmarkMenuItems: FC<{
   tags: string[];
-  handleToggleOpen?: () => Promise<void>;
-  handleSubmit: (tag?: string) => Promise<void>;
+  handleToggleOpen?: () => void;
+  handleSubmit: (tag?: string) => void;
 }> = ({
   tags,
   handleSubmit,

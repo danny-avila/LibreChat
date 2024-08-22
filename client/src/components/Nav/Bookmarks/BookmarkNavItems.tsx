@@ -9,7 +9,7 @@ const BookmarkNavItems: FC<{
   conversation: TConversation;
   tags: string[];
   setTags: (tags: string[]) => void;
-}> = ({ conversation, tags, setTags }) => {
+}> = ({ conversation, tags = [], setTags }) => {
   const [currentConversation, setCurrentConversation] = useState<TConversation>();
   const { bookmarks } = useBookmarkContext();
   const localize = useLocalize();
@@ -24,19 +24,22 @@ const BookmarkNavItems: FC<{
     if (tags.some((selectedTag) => selectedTag === tag)) {
       return tags.filter((selectedTag) => selectedTag !== tag);
     } else {
-      return [...(tags || []), tag];
+      return [...tags, tag];
     }
   };
 
-  const handleSubmit = (tag: string) => {
+  const handleSubmit = (tag?: string) => {
+    if (tag === undefined) {
+      return;
+    }
     const updatedSelected = getUpdatedSelected(tag);
     setTags(updatedSelected);
-    return Promise.resolve();
+    return;
   };
 
   const clear = () => {
     setTags([]);
-    return Promise.resolve();
+    return;
   };
 
   if (bookmarks.length === 0) {

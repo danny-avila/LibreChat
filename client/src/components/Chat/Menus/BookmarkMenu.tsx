@@ -46,7 +46,7 @@ const BookmarkMenu: FC = () => {
   );
 
   const handleSubmit = useCallback(
-    async (tag?: string): Promise<void> => {
+    (tag?: string) => {
       if (tag === undefined || tag === '' || !conversationId) {
         showToast({
           message: 'Invalid tag or conversationId',
@@ -64,7 +64,7 @@ const BookmarkMenu: FC = () => {
   );
 
   if (!isActiveConvo) {
-    return <></>;
+    return null;
   }
 
   const renderButtonContent = () => {
@@ -77,10 +77,7 @@ const BookmarkMenu: FC = () => {
     return <BookmarkIcon className="icon-sm" aria-label="Bookmark" />;
   };
 
-  const handleToggleOpen = () => {
-    setOpen(!open);
-    return Promise.resolve();
-  };
+  const handleToggleOpen = () => setOpen(!open);
 
   return (
     <>
