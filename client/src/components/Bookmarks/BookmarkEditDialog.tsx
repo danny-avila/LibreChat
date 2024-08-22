@@ -3,9 +3,12 @@ import { TConversationTag, TConversation } from 'librechat-data-provider';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { useConversationTagMutation } from '~/data-provider';
 import { OGDialog, OGDialogClose } from '~/components/ui';
+import { useLocalize, useBookmarkSuccess } from '~/hooks';
+import { NotificationSeverity } from '~/common';
+import { useToastContext } from '~/Providers';
 import { Spinner } from '~/components/svg';
 import BookmarkForm from './BookmarkForm';
-import { useLocalize } from '~/hooks';
+import { logger } from '~/utils';
 
 type BookmarkEditDialogProps = {
   bookmark?: TConversationTag;
@@ -26,7 +29,34 @@ const BookmarkEditDialog = ({
 }: BookmarkEditDialogProps) => {
   const localize = useLocalize();
   const formRef = useRef<HTMLFormElement>(null);
-  const mutation = useConversationTagMutation(bookmark?.tag);
+  const onSuccess = useBookmarkSuccess(conversation?.conversationId ?? '');
+
+  const { showToast } = useToastContext();
+  const mutation = useConversationTagMutation(bookmark?.tag, {
+    onSuccess: (_data, vars) => {
+      showToast({
+        message: bookmark
+          ? localize('com_ui_bookmarks_update_success')
+          : localize('com_ui_bookmarks_create_success'),
+      });
+      setOpen(false);
+      logger.log('tag_mutation', 'tags before', tags);
+      if (setTags && vars.addToConversation === true) {
+        const newTags = [...(tags || []), vars.tag].filter((tag) => tag !== undefined) as string[];
+        setTags(newTags);
+        onSuccess(newTags);
+        logger.log('tag_mutation', 'tags after', newTags);
+      }
+    },
+    onError: () => {
+      showToast({
+        message: bookmark
+          ? localize('com_ui_bookmarks_update_error')
+          : localize('com_ui_bookmarks_create_error'),
+        severity: NotificationSeverity.ERROR,
+      });
+    },
+  });
 
   const handleSubmitForm = () => {
     if (formRef.current) {
@@ -43,11 +73,8 @@ const BookmarkEditDialog = ({
           <BookmarkForm
             mutation={mutation}
             conversation={conversation}
-            onOpenChange={setOpen}
             bookmark={bookmark}
             formRef={formRef}
-            setTags={setTags}
-            tags={tags}
           />
         }
         buttons={

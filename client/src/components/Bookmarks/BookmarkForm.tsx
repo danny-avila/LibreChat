@@ -5,37 +5,22 @@ import type {
   TConversation,
   TConversationTagRequest,
 } from 'librechat-data-provider';
-import { cn, removeFocusOutlines, defaultTextProps } from '~/utils/';
-import { Checkbox, Label, TextareaAutosize } from '~/components/ui/';
+import { cn, removeFocusOutlines, defaultTextProps } from '~/utils';
+import { Checkbox, Label, TextareaAutosize } from '~/components/ui';
 import { useBookmarkContext } from '~/Providers/BookmarkContext';
 import { useConversationTagMutation } from '~/data-provider';
-import { useLocalize, useBookmarkSuccess } from '~/hooks';
-import { NotificationSeverity } from '~/common';
-import { useToastContext } from '~/Providers';
+import { useLocalize } from '~/hooks';
 
 type TBookmarkFormProps = {
   bookmark?: TConversationTag;
   conversation?: TConversation;
-  onOpenChange: React.Dispatch<React.SetStateAction<boolean>>;
   formRef: React.RefObject<HTMLFormElement>;
-  tags?: string[];
-  setTags?: (tags: string[]) => void;
   mutation: ReturnType<typeof useConversationTagMutation>;
 };
-const BookmarkForm = ({
-  bookmark,
-  mutation,
-  conversation,
-  onOpenChange,
-  formRef,
-  tags,
-  setTags,
-}: TBookmarkFormProps) => {
+const BookmarkForm = ({ bookmark, mutation, conversation, formRef }: TBookmarkFormProps) => {
   const localize = useLocalize();
-  const { showToast } = useToastContext();
-  const { bookmarks } = useBookmarkContext();
 
-  const onSuccess = useBookmarkSuccess(conversation?.conversationId ?? '');
+  const { bookmarks } = useBookmarkContext();
 
   const {
     register,
@@ -68,31 +53,7 @@ const BookmarkForm = ({
       return;
     }
 
-    mutation.mutate(data, {
-      onSuccess: () => {
-        showToast({
-          message: bookmark
-            ? localize('com_ui_bookmarks_update_success')
-            : localize('com_ui_bookmarks_create_success'),
-        });
-        onOpenChange(false);
-        if (setTags && data.addToConversation === true) {
-          const newTags = [...(tags || []), data.tag].filter(
-            (tag) => tag !== undefined,
-          ) as string[];
-          setTags(newTags);
-          onSuccess(newTags);
-        }
-      },
-      onError: () => {
-        showToast({
-          message: bookmark
-            ? localize('com_ui_bookmarks_update_error')
-            : localize('com_ui_bookmarks_create_error'),
-          severity: NotificationSeverity.ERROR,
-        });
-      },
-    });
+    mutation.mutate(data);
   };
 
   return (

@@ -21,6 +21,7 @@ import {
   useSharedLinksInfiniteQuery,
 } from './queries';
 import {
+  logger,
   /* Shared Links */
   addSharedLink,
   deleteSharedLink,
@@ -301,11 +302,11 @@ export const useDeleteSharedLinkMutation = (
       });
       const current = queryClient.getQueryData<t.ConversationData>([QueryKeys.sharedLinks]);
       refetch({
-        refetchPage: (page, index) => index === (current?.pages.length || 1) - 1,
+        refetchPage: (page, index) => index === (current?.pages.length ?? 1) - 1,
       });
       onSuccess?.(_data, vars, context);
     },
-    ...(_options || {}),
+    ..._options,
   });
 };
 
@@ -319,29 +320,45 @@ export const useConversationTagMutation = (
   const { updateTagsInConversation, replaceTagsInAllConversations } = useUpdateTagsInConvo();
   return useMutation(
     (payload: t.TConversationTagRequest) =>
-      tag
+      tag != null
         ? dataService.updateConversationTag(tag, payload)
         : dataService.createConversationTag(payload),
     {
       onSuccess: (_data, vars) => {
-        queryClient.setQueryData<t.TConversationTag[]>([QueryKeys.conversationTags], (data) => {
-          if (!data) {
-            return [
-              {
-                count: 1,
-                position: 0,
-                tag: Constants.SAVED_TAG,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-              },
-            ] as t.TConversationTag[];
-          }
-          if (!tag) {
-            return [...data, _data].sort((a, b) => a.position - b.position);
-          }
-          return updateConversationTag(data, vars, _data, tag);
-        });
-        if (vars.addToConversation && vars.conversationId && _data.tag) {
+        queryClient.setQueryData<t.TConversationTag[]>(
+          [QueryKeys.conversationTags],
+          (queryData) => {
+            if (!queryData) {
+              return [
+                {
+                  count: 1,
+                  position: 0,
+                  tag: Constants.SAVED_TAG,
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                },
+              ] as t.TConversationTag[];
+            }
+            if (tag === undefined || !tag.length) {
+              // Check if the tag already exists
+              const existingTagIndex = queryData.findIndex((item) => item.tag === _data.tag);
+              if (existingTagIndex !== -1) {
+                logger.log('tag_mutation', '"Created" tag exists, updating', queryData, _data);
+                // If the tag exists, update it
+                const updatedData = [...queryData];
+                updatedData[existingTagIndex] = { ...updatedData[existingTagIndex], ..._data };
+                return updatedData.sort((a, b) => a.position - b.position);
+              } else {
+                // If the tag doesn't exist, add it
+                logger.log('tag_mutation', '"Created" tag is new, adding', queryData, _data);
+                return [...queryData, _data].sort((a, b) => a.position - b.position);
+              }
+            }
+            logger.log('tag_mutation', 'Updating tag', queryData, _data);
+            return updateConversationTag(queryData, vars, _data, tag);
+          },
+        );
+        if (vars.addToConversation === true && vars.conversationId != null && _data.tag) {
           const currentConvo = queryClient.getQueryData<t.TConversation>([
             QueryKeys.conversation,
             vars.conversationId,
@@ -352,11 +369,11 @@ export const useConversationTagMutation = (
           updateTagsInConversation(vars.conversationId, [...(currentConvo.tags || []), _data.tag]);
         }
         // Change the tag title to the new title
-        if (tag) {
+        if (tag != null) {
           replaceTagsInAllConversations(tag, _data.tag);
         }
       },
-      ...(_options || {}),
+      ..._options,
     },
   );
 };
