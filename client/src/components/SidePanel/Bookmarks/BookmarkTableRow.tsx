@@ -73,7 +73,7 @@ const BookmarkTableRow: React.FC<BookmarkTableRowProps> = ({ row, moveRow, posit
   return (
     <TableRow
       ref={ref}
-      className="cursor-move hover:bg-surface-secondary"
+      className="cursor-move hover:bg-surface-tertiary"
       style={{ opacity: isDragging ? 0.5 : 1 }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
