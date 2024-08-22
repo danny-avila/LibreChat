@@ -75,7 +75,7 @@ const conversationByIndex = atomFamily<TConversation | null, string | number>({
         const index = Number(node.key.split('__')[1]);
         if (newValue?.assistant_id) {
           localStorage.setItem(
-            `${LocalStorageKeys.ASST_ID_PREFIX}${index}${newValue?.endpoint}`,
+            `${LocalStorageKeys.ASST_ID_PREFIX}${index}${newValue.endpoint}`,
             newValue.assistant_id,
           );
         }
@@ -139,6 +139,17 @@ const showStopButtonByIndex = atomFamily<boolean, string | number>({
 const abortScrollFamily = atomFamily({
   key: 'abortScrollByIndex',
   default: false,
+  effects: [
+    ({ onSet, node }) => {
+      onSet(async (newValue) => {
+        const key = Number(node.key.split(Constants.COMMON_DIVIDER)[1]);
+        logger.log('message_scrolling', 'Recoil Effect: Setting abortScrollByIndex', {
+          key,
+          newValue,
+        });
+      });
+    },
+  ] as const,
 });
 
 const isSubmittingFamily = atomFamily({
