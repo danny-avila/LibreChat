@@ -8,7 +8,6 @@ const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { forkConversation } = require('~/server/utils/import/fork');
 const { importConversations } = require('~/server/utils/import');
 const { createImportLimiters } = require('~/server/middleware');
-const { updateTagsForConversation } = require('~/models/ConversationTag');
 const getLogStores = require('~/cache/getLogStores');
 const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
@@ -171,20 +170,6 @@ router.post('/fork', async (req, res) => {
   } catch (error) {
     logger.error('Error forking conversation', error);
     res.status(500).send('Error forking conversation');
-  }
-});
-
-router.put('/tags/:conversationId', async (req, res) => {
-  try {
-    const conversationTags = await updateTagsForConversation(
-      req.user.id,
-      req.params.conversationId,
-      req.body.tags,
-    );
-    res.status(200).json(conversationTags);
-  } catch (error) {
-    logger.error('Error updating conversation tags', error);
-    res.status(500).send('Error updating conversation tags');
   }
 });
 

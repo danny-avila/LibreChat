@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useState, useMemo, memo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import {
+  useLocalize,
+  useHasAccess,
   useMediaQuery,
   useAuthContext,
   useConversation,
   useLocalStorage,
   useNavScrolling,
   useConversations,
-  useLocalize,
 } from '~/hooks';
 import { useConversationsInfiniteQuery } from '~/data-provider';
 import { TooltipProvider, Tooltip } from '~/components/ui';
@@ -40,6 +42,11 @@ const Nav = ({
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
   const [isToggleHovering, setIsToggleHovering] = useState(false);
+
+  const hasAccessToBookmarks = useHasAccess({
+    permissionType: PermissionTypes.BOOKMARKS,
+    permission: Permissions.USE,
+  });
 
   const handleMouseEnter = useCallback(() => {
     setIsHovering(true);
@@ -168,7 +175,9 @@ const Nav = ({
                           {isSearchEnabled === true && (
                             <SearchBar clearSearch={clearSearch} isSmallScreen={isSmallScreen} />
                           )}
-                          <BookmarkNav tags={tags} setTags={setTags} />
+                          {hasAccessToBookmarks === true && (
+                            <BookmarkNav tags={tags} setTags={setTags} />
+                          )}
                         </div>
                       ) : (
                         <NewChat
