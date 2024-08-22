@@ -1,10 +1,11 @@
-import React, { useRef, useState, Dispatch, SetStateAction } from 'react';
+import React, { useRef, Dispatch, SetStateAction } from 'react';
 import { TConversationTag, TConversation } from 'librechat-data-provider';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
-import { OGDialog, OGDialogClose } from '~/components/ui/';
+import { useConversationTagMutation } from '~/data-provider';
+import { OGDialog, OGDialogClose } from '~/components/ui';
+import { Spinner } from '~/components/svg';
 import BookmarkForm from './BookmarkForm';
 import { useLocalize } from '~/hooks';
-import { Spinner } from '../svg';
 
 type BookmarkEditDialogProps = {
   bookmark?: TConversationTag;
@@ -24,8 +25,8 @@ const BookmarkEditDialog = ({
   setOpen,
 }: BookmarkEditDialogProps) => {
   const localize = useLocalize();
-  const [isLoading, setIsLoading] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
+  const mutation = useConversationTagMutation(bookmark?.tag);
 
   const handleSubmitForm = () => {
     if (formRef.current) {
@@ -40,9 +41,9 @@ const BookmarkEditDialog = ({
         showCloseButton={false}
         main={
           <BookmarkForm
+            mutation={mutation}
             conversation={conversation}
             onOpenChange={setOpen}
-            setIsLoading={setIsLoading}
             bookmark={bookmark}
             formRef={formRef}
             setTags={setTags}
@@ -53,11 +54,11 @@ const BookmarkEditDialog = ({
           <OGDialogClose asChild>
             <button
               type="submit"
-              disabled={isLoading}
+              disabled={mutation.isLoading}
               onClick={handleSubmitForm}
               className="btn rounded bg-green-500 font-bold text-white transition-all hover:bg-green-600"
             >
-              {isLoading ? <Spinner /> : localize('com_ui_save')}
+              {mutation.isLoading ? <Spinner /> : localize('com_ui_save')}
             </button>
           </OGDialogClose>
         }

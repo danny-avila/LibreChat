@@ -6,9 +6,9 @@ import type {
   TConversationTagRequest,
 } from 'librechat-data-provider';
 import { cn, removeFocusOutlines, defaultTextProps } from '~/utils/';
+import { Checkbox, Label, TextareaAutosize } from '~/components/ui/';
 import { useBookmarkContext } from '~/Providers/BookmarkContext';
 import { useConversationTagMutation } from '~/data-provider';
-import { Checkbox, Label, TextareaAutosize } from '~/components/ui/';
 import { useLocalize, useBookmarkSuccess } from '~/hooks';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
@@ -18,24 +18,24 @@ type TBookmarkFormProps = {
   conversation?: TConversation;
   onOpenChange: React.Dispatch<React.SetStateAction<boolean>>;
   formRef: React.RefObject<HTMLFormElement>;
-  setIsLoading: React.Dispatch<React.SetStateAction<boolean>>;
   tags?: string[];
   setTags?: (tags: string[]) => void;
+  mutation: ReturnType<typeof useConversationTagMutation>;
 };
 const BookmarkForm = ({
   bookmark,
+  mutation,
   conversation,
   onOpenChange,
   formRef,
-  setIsLoading,
   tags,
   setTags,
 }: TBookmarkFormProps) => {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { bookmarks } = useBookmarkContext();
-  const mutation = useConversationTagMutation(bookmark?.tag);
-  const onSuccess = useBookmarkSuccess(conversation?.conversationId || '');
+
+  const onSuccess = useBookmarkSuccess(conversation?.conversationId ?? '');
 
   const {
     register,
@@ -46,17 +46,17 @@ const BookmarkForm = ({
     formState: { errors },
   } = useForm<TConversationTagRequest>({
     defaultValues: {
-      tag: bookmark?.tag || '',
-      description: bookmark?.description || '',
-      conversationId: conversation?.conversationId || '',
+      tag: bookmark?.tag ?? '',
+      description: bookmark?.description ?? '',
+      conversationId: conversation?.conversationId ?? '',
       addToConversation: conversation ? true : false,
     },
   });
 
   useEffect(() => {
-    if (bookmark) {
-      setValue('tag', bookmark.tag || '');
-      setValue('description', bookmark.description || '');
+    if (bookmark && bookmark.tag) {
+      setValue('tag', bookmark.tag);
+      setValue('description', bookmark.description ?? '');
     }
   }, [bookmark, setValue]);
 
@@ -68,7 +68,6 @@ const BookmarkForm = ({
       return;
     }
 
-    setIsLoading(true);
     mutation.mutate(data, {
       onSuccess: () => {
         showToast({
@@ -76,9 +75,8 @@ const BookmarkForm = ({
             ? localize('com_ui_bookmarks_update_success')
             : localize('com_ui_bookmarks_create_success'),
         });
-        setIsLoading(false);
         onOpenChange(false);
-        if (setTags && data.addToConversation) {
+        if (setTags && data.addToConversation === true) {
           const newTags = [...(tags || []), data.tag].filter(
             (tag) => tag !== undefined,
           ) as string[];
@@ -93,7 +91,6 @@ const BookmarkForm = ({
             : localize('com_ui_bookmarks_create_error'),
           severity: NotificationSeverity.ERROR,
         });
-        setIsLoading(false);
       },
     });
   };
@@ -178,7 +175,7 @@ const BookmarkForm = ({
               aria-label={localize('com_ui_bookmarks_add_to_conversation')}
               className="form-check-label text-token-text-primary w-full cursor-pointer"
               onClick={() =>
-                setValue('addToConversation', !getValues('addToConversation'), {
+                setValue('addToConversation', !(getValues('addToConversation') ?? false), {
                   shouldDirty: true,
                 })
               }

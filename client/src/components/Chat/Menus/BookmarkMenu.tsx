@@ -23,7 +23,18 @@ const BookmarkMenu: FC = () => {
   const [tags, setTags] = useState<string[]>(conversation?.tags || []);
   const [open, setOpen] = useState(false);
 
-  const { mutateAsync, isLoading } = useTagConversationMutation(conversationId);
+  const mutation = useTagConversationMutation(conversationId, {
+    onSuccess: (newTags: string[]) => {
+      setTags(newTags);
+      onSuccess(newTags);
+    },
+    onError: () => {
+      showToast({
+        message: 'Error adding bookmark',
+        severity: NotificationSeverity.ERROR,
+      });
+    },
+  });
 
   const { data } = useConversationTagsQuery();
 
@@ -45,25 +56,11 @@ const BookmarkMenu: FC = () => {
       }
 
       const newTags = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
-      await mutateAsync(
-        {
-          tags: newTags,
-        },
-        {
-          onSuccess: (newTags: string[]) => {
-            setTags(newTags);
-            onSuccess(newTags);
-          },
-          onError: () => {
-            showToast({
-              message: 'Error adding bookmark',
-              severity: NotificationSeverity.ERROR,
-            });
-          },
-        },
-      );
+      mutation.mutate({
+        tags: newTags,
+      });
     },
-    [tags, conversationId, mutateAsync, setTags, onSuccess, showToast],
+    [tags, conversationId, mutation, showToast],
   );
 
   if (!isActiveConvo) {
@@ -71,7 +68,7 @@ const BookmarkMenu: FC = () => {
   }
 
   const renderButtonContent = () => {
-    if (isLoading) {
+    if (mutation.isLoading) {
       return <Spinner aria-label="Spinner" />;
     }
     if (tags.length > 0) {
