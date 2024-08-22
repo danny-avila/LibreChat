@@ -45,7 +45,7 @@ const BookmarkEditDialog = ({
             : localize('com_ui_bookmarks_create_success'),
         });
         setOpen(false);
-        logger.log('tag_mutation', 'tags before', tags);
+        logger.log('tag_mutation', 'tags before setting', tags);
         if (setTags && vars.addToConversation === true) {
           const newTags = [...(tags || []), vars.tag].filter(
             (tag) => tag !== undefined,
