@@ -11,6 +11,7 @@ import BookmarkForm from './BookmarkForm';
 import { logger } from '~/utils';
 
 type BookmarkEditDialogProps = {
+  context: string;
   bookmark?: TConversationTag;
   conversation?: TConversation;
   tags?: string[];
@@ -20,6 +21,7 @@ type BookmarkEditDialogProps = {
 };
 
 const BookmarkEditDialog = ({
+  context,
   bookmark,
   conversation,
   tags,
@@ -32,29 +34,35 @@ const BookmarkEditDialog = ({
   const onSuccess = useBookmarkSuccess(conversation?.conversationId ?? '');
 
   const { showToast } = useToastContext();
-  const mutation = useConversationTagMutation(bookmark?.tag, {
-    onSuccess: (_data, vars) => {
-      showToast({
-        message: bookmark
-          ? localize('com_ui_bookmarks_update_success')
-          : localize('com_ui_bookmarks_create_success'),
-      });
-      setOpen(false);
-      logger.log('tag_mutation', 'tags before', tags);
-      if (setTags && vars.addToConversation === true) {
-        const newTags = [...(tags || []), vars.tag].filter((tag) => tag !== undefined) as string[];
-        setTags(newTags);
-        onSuccess(newTags);
-        logger.log('tag_mutation', 'tags after', newTags);
-      }
-    },
-    onError: () => {
-      showToast({
-        message: bookmark
-          ? localize('com_ui_bookmarks_update_error')
-          : localize('com_ui_bookmarks_create_error'),
-        severity: NotificationSeverity.ERROR,
-      });
+  const mutation = useConversationTagMutation({
+    context,
+    tag: bookmark?.tag,
+    options: {
+      onSuccess: (_data, vars) => {
+        showToast({
+          message: bookmark
+            ? localize('com_ui_bookmarks_update_success')
+            : localize('com_ui_bookmarks_create_success'),
+        });
+        setOpen(false);
+        logger.log('tag_mutation', 'tags before', tags);
+        if (setTags && vars.addToConversation === true) {
+          const newTags = [...(tags || []), vars.tag].filter(
+            (tag) => tag !== undefined,
+          ) as string[];
+          setTags(newTags);
+          onSuccess(newTags);
+          logger.log('tag_mutation', 'tags after', newTags);
+        }
+      },
+      onError: () => {
+        showToast({
+          message: bookmark
+            ? localize('com_ui_bookmarks_update_error')
+            : localize('com_ui_bookmarks_create_error'),
+          severity: NotificationSeverity.ERROR,
+        });
+      },
     },
   });
 

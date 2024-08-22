@@ -24,7 +24,7 @@ const BookmarkTableRow: React.FC<BookmarkTableRowProps> = ({ row, moveRow, posit
   const [isHovered, setIsHovered] = useState(false);
   const ref = useRef<HTMLTableRowElement>(null);
 
-  const mutation = useConversationTagMutation(row.tag);
+  const mutation = useConversationTagMutation({ context: 'BookmarkTableRow', tag: row.tag });
   const localize = useLocalize();
   const { showToast } = useToastContext();
 

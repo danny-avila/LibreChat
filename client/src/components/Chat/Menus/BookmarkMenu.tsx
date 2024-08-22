@@ -110,6 +110,7 @@ const BookmarkMenu: FC = () => {
         )}
       </Menu>
       <BookmarkEditDialog
+        context="BookmarkMenu"
         conversation={conversation}
         tags={tags}
         setTags={setTags}

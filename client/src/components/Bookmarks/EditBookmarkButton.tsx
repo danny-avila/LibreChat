@@ -17,7 +17,12 @@ const EditBookmarkButton: FC<{
 
   return (
     <>
-      <BookmarkEditDialog bookmark={bookmark} open={open} setOpen={setOpen} />
+      <BookmarkEditDialog
+        context="EditBookmarkButton"
+        bookmark={bookmark}
+        open={open}
+        setOpen={setOpen}
+      />
       <button
         type="button"
         className="transition-color flex size-7 items-center justify-center rounded-lg duration-200 hover:bg-surface-hover"
