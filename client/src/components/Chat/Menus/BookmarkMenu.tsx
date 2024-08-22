@@ -11,7 +11,7 @@ import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
 import { useBookmarkSuccess } from '~/hooks';
 import { Spinner } from '~/components';
-import { cn } from '~/utils';
+import { cn, logger } from '~/utils';
 import store from '~/store';
 
 const BookmarkMenu: FC = () => {
@@ -55,7 +55,9 @@ const BookmarkMenu: FC = () => {
         return;
       }
 
+      logger.log('tag_mutation', 'BookmarkMenu - handleSubmit: tags before setting', tags);
       const newTags = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
+      logger.log('tag_mutation', 'BookmarkMenu - handleSubmit: tags after', newTags);
       mutation.mutate({
         tags: newTags,
       });
@@ -110,7 +112,7 @@ const BookmarkMenu: FC = () => {
         )}
       </Menu>
       <BookmarkEditDialog
-        context="BookmarkMenu"
+        context="BookmarkMenu - BookmarkEditDialog"
         conversation={conversation}
         tags={tags}
         setTags={setTags}
