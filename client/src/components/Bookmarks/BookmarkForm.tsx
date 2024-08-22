@@ -5,21 +5,23 @@ import type {
   TConversation,
   TConversationTagRequest,
 } from 'librechat-data-provider';
-import { cn, removeFocusOutlines, defaultTextProps } from '~/utils';
+import { cn, removeFocusOutlines, defaultTextProps, logger } from '~/utils';
 import { Checkbox, Label, TextareaAutosize } from '~/components/ui';
 import { useBookmarkContext } from '~/Providers/BookmarkContext';
 import { useConversationTagMutation } from '~/data-provider';
+import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 
 type TBookmarkFormProps = {
+  tags?: string[];
   bookmark?: TConversationTag;
   conversation?: TConversation;
   formRef: React.RefObject<HTMLFormElement>;
   mutation: ReturnType<typeof useConversationTagMutation>;
 };
-const BookmarkForm = ({ bookmark, mutation, conversation, formRef }: TBookmarkFormProps) => {
+const BookmarkForm = ({ tags, bookmark, mutation, conversation, formRef }: TBookmarkFormProps) => {
   const localize = useLocalize();
-
+  const { showToast } = useToastContext();
   const { bookmarks } = useBookmarkContext();
 
   const {
@@ -46,10 +48,19 @@ const BookmarkForm = ({ bookmark, mutation, conversation, formRef }: TBookmarkFo
   }, [bookmark, setValue]);
 
   const onSubmit = (data: TConversationTagRequest) => {
+    logger.log('tag_mutation', 'BookmarkForm - onSubmit: data', data);
     if (mutation.isLoading) {
       return;
     }
     if (data.tag === bookmark?.tag && data.description === bookmark?.description) {
+      return;
+    }
+    // todo: check all other tags, too
+    if (data.tag != null && (tags ?? []).includes(data.tag)) {
+      showToast({
+        message: localize('com_ui_bookmarks_create_exists'),
+        status: 'warning',
+      });
       return;
     }
 

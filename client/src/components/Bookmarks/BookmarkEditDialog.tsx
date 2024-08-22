@@ -77,6 +77,7 @@ const BookmarkEditDialog = ({
         showCloseButton={false}
         main={
           <BookmarkForm
+            tags={tags}
             mutation={mutation}
             conversation={conversation}
             bookmark={bookmark}
