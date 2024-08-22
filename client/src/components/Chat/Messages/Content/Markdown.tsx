@@ -10,7 +10,7 @@ import remarkDirective from 'remark-directive';
 import type { PluggableList, Pluggable } from 'unified';
 import { langSubset, preprocessLaTeX, handleDoubleClick } from '~/utils';
 import { CodeBlockArtifact, CodeMarkdown } from '~/components/Artifacts/Code';
-import { artifact, artifactPlugin } from '~/components/Artifacts/Artifact';
+import { Artifact as artifact, artifactPlugin } from '~/components/Artifacts/Artifact';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
 import { useFileDownload } from '~/data-provider';
 import useLocalize from '~/hooks/useLocalize';
@@ -156,11 +156,13 @@ const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentPr
   return (
     <ReactMarkdown
       remarkPlugins={[
-        /* @ts-ignore */
         remarkDirective,
+        /* @ts-ignore */
         supersub,
         remarkGfm,
+        /* @ts-ignore */
         [remarkMath, { singleDollarTextMath: true }],
+        /* @ts-ignore */
         artifactPlugin,
       ]}
       /* @ts-ignore */
