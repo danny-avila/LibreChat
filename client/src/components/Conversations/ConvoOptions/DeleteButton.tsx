@@ -13,7 +13,6 @@ type DeleteButtonProps = {
   conversationId: string;
   retainView: () => void;
   title: string;
-  className?: string;
   showDeleteDialog?: boolean;
   setShowDeleteDialog?: (value: boolean) => void;
 };
