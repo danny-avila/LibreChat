@@ -146,6 +146,7 @@ const deleteAssistant = async (req, res) => {
 const listAssistants = async (req, res) => {
   try {
     const body = await fetchAssistants({ req, res });
+    body.data = body.data.filter((assistant) => req.user.assistantIds.includes(assistant.id));
     res.json(body);
   } catch (error) {
     logger.error('[/assistants] Error listing assistants', error);
