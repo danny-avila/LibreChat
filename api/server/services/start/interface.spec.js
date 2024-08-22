@@ -4,6 +4,7 @@ const { loadDefaultInterface } = require('./interface');
 
 jest.mock('~/models/Role', () => ({
   updatePromptsAccess: jest.fn(),
+  updateBookmarksAccess: jest.fn(),
 }));
 
 describe('loadDefaultInterface', () => {
