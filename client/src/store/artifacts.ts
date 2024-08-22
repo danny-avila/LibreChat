@@ -1,26 +1,37 @@
-// client/src/store/artifacts.ts
 import { atom } from 'recoil';
-import type { CodeBlock } from '~/common';
+import { logger } from '~/utils';
+export interface Artifact {
+  identifier?: string;
+  title: string;
+  type: string;
+  content: string;
+}
 
-export const codeBlocksState = atom<Record<string, CodeBlock>>({
-  key: 'codeBlocksState',
+export const artifactsState = atom<Record<string, Artifact>>({
+  key: 'artifactsState',
   default: {},
   effects: [
     ({ onSet, node }) => {
       onSet(async (newValue) => {
-        console.log('Recoil Effect: Setting codeBlocksState', { key: node.key, newValue });
+        logger.log('artifacts', 'Recoil Effect: Setting artifactsState', {
+          key: node.key,
+          newValue,
+        });
       });
     },
   ] as const,
 });
 
-export const codeBlockIdsState = atom<string[]>({
-  key: 'codeBlockIdsState',
+export const artifactIdsState = atom<string[]>({
+  key: 'artifactIdsState',
   default: [],
   effects: [
     ({ onSet, node }) => {
       onSet(async (newValue) => {
-        console.log('Recoil Effect: Setting codeBlockIdsState', { key: node.key, newValue });
+        logger.log('artifacts', 'Recoil Effect: Setting artifactIdsState', {
+          key: node.key,
+          newValue,
+        });
       });
     },
   ] as const,

@@ -24,7 +24,7 @@ export default function Presentation({
   const { data: startupConfig } = useGetStartupConfig();
   const codeArtifacts = useRecoilValue(store.codeArtifacts);
   const hideSidePanel = useRecoilValue(store.hideSidePanel);
-  const codeBlockIds = useRecoilValue(store.codeBlockIdsState);
+  const codeBlockIds = useRecoilValue(store.artifactIdsState);
   const interfaceConfig = useMemo(
     () => startupConfig?.interface ?? defaultInterface,
     [startupConfig],
