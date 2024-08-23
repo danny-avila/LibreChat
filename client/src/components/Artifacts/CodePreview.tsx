@@ -1,12 +1,11 @@
+import type { Artifact } from '~/common';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
 import { getFileType } from '~/utils';
 
-const CodePreview = ({
-  code,
-}: {
-  code: string,
-  onDelete?: () => void;
-}) => {
+const CodePreview = ({ artifact }: { artifact: Artifact | null }) => {
+  if (!artifact) {
+    return null;
+  }
   const fileType = getFileType('text/x-');
 
   return (
@@ -16,7 +15,7 @@ const CodePreview = ({
           <div className="flex flex-row items-center gap-2">
             <FilePreview fileType={fileType} className="relative" />
             <div className="overflow-hidden">
-              <div className="truncate font-medium">{'Code Artifact'}</div>
+              <div className="truncate font-medium">{artifact.title}</div>
               <div className="truncate text-text-secondary">{fileType.title}</div>
             </div>
           </div>

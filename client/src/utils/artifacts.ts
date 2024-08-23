@@ -1,6 +1,20 @@
 import dedent from 'dedent';
 import type { CodeBlock } from '~/common';
 
+const artifactFilename = {
+  'application/vnd.react': 'App.tsx',
+  'text/html': 'index.html',
+  // 'css': 'css',
+  // 'javascript': 'js',
+  // 'typescript': 'ts',
+  // 'jsx': 'jsx',
+  // 'tsx': 'tsx',
+};
+
+export function getArtifactFilename(type: string): string {
+  return artifactFilename[type] ?? 'App.tsx';
+}
+
 export function getFileExtension(language: string): string {
   switch (language) {
     case 'javascript':
@@ -66,9 +80,7 @@ export const sharedProps = {
 } as const;
 
 export const sharedOptions = {
-  externalResources: [
-    'https://unpkg.com/@tailwindcss/ui/dist/tailwind-ui.min.css',
-  ],
+  externalResources: ['https://unpkg.com/@tailwindcss/ui/dist/tailwind-ui.min.css'],
 };
 
 export const sharedFiles = {
@@ -89,18 +101,20 @@ export const sharedFiles = {
 };
 
 export const filenameMap = {
-  'tsx': 'App',
-  'css': 'styles',
-  'html': 'index',
-  'jsx': 'App',
-  'js': 'App',
-  'ts': 'App',
-  'typescript': 'App',
-  'javascript': 'App',
+  tsx: 'App',
+  css: 'styles',
+  html: 'index',
+  jsx: 'App',
+  js: 'App',
+  ts: 'App',
+  typescript: 'App',
+  javascript: 'App',
 };
 
-export const mapCodeFiles = (codeBlockIds:string[], codeBlocks: Record<string, CodeBlock | undefined>) => {
-
+export const mapCodeFiles = (
+  codeBlockIds: string[],
+  codeBlocks: Record<string, CodeBlock | undefined>,
+) => {
   return codeBlockIds.reduce((acc, id) => {
     const block = codeBlocks[id];
     if (block) {

@@ -2,18 +2,22 @@ import React, { useMemo, useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
 import { Sandpack } from '@codesandbox/sandpack-react';
+import { removeNullishValues } from 'librechat-data-provider';
 import { SandpackPreview, SandpackProvider } from '@codesandbox/sandpack-react/unstyled';
-import { sharedOptions, sharedFiles, sharedProps } from '~/utils/artifacts';
+import { sharedOptions, sharedFiles, sharedProps, getArtifactFilename } from '~/utils/artifacts';
+import type { Artifact } from '~/common';
 import store from '~/store';
 
-export function CodeViewer({
+export function ArtifactPreview({
   showEditor = false,
-  content,
+  artifact,
 }: {
   showEditor?: boolean;
-  content: string;
+  artifact: Artifact;
 }) {
-  const files = { '/App.js': content };
+  const files = useMemo(() => {
+    return removeNullishValues({ [getArtifactFilename(artifact.type ?? '')]: artifact.content });
+  }, [artifact.type, artifact.content]);
 
   if (Object.keys(files).length === 0) {
     return null;
@@ -128,11 +132,11 @@ export default function Artifacts() {
           {/* Content */}
           <Tabs.Content value="code" className="flex-grow overflow-auto bg-surface-secondary">
             <pre className="h-full w-full overflow-auto rounded bg-surface-primary-alt p-2 text-sm">
-              <code>{currentArtifact.content}</code>
+              {currentArtifact.content}
             </pre>
           </Tabs.Content>
           <Tabs.Content value="preview" className="flex-grow overflow-auto bg-surface-secondary">
-            <CodeViewer content={currentArtifact.content} />
+            <ArtifactPreview artifact={currentArtifact} />
           </Tabs.Content>
 
           {/* Footer */}
