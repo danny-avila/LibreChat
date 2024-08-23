@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
 import { Sandpack } from '@codesandbox/sandpack-react';
@@ -64,11 +64,19 @@ export default function Artifacts() {
   const artifacts = useRecoilValue(store.artifactsState);
   const artifactIds = useRecoilValue(store.artifactIdsState);
 
+  const prevArtifactIdsLengthRef = useRef(artifactIds.length);
+  const [currentArtifactIndex, setCurrentArtifactIndex] = useState(artifactIds.length - 1);
+
   useEffect(() => {
     setIsVisible(true);
   }, []);
 
-  const [currentArtifactIndex, setCurrentArtifactIndex] = useState(artifactIds.length - 1);
+  useEffect(() => {
+    if (artifactIds.length !== prevArtifactIdsLengthRef.current) {
+      setCurrentArtifactIndex(artifactIds.length - 1);
+      prevArtifactIdsLengthRef.current = artifactIds.length;
+    }
+  }, [artifactIds]);
 
   const currentArtifact = useMemo(() => {
     if (artifactIds.length === 0) {
@@ -88,7 +96,7 @@ export default function Artifacts() {
     });
   };
 
-  if (!currentArtifact) {
+  if (currentArtifact === null) {
     return <div>No artifacts available.</div>;
   }
 

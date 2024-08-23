@@ -35,8 +35,8 @@ const extractContent = (
   return '';
 };
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function Artifact({
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   node,
   ...props
 }: Artifact & {
@@ -76,7 +76,7 @@ export function Artifact({
 
       setArtifacts((prevArtifacts) => {
         if (
-          (prevArtifacts as Record<string, Artifact | undefined>)[artifactKey] &&
+          (prevArtifacts as Record<string, Artifact | undefined>)[artifactKey] != null &&
           prevArtifacts[artifactKey].content === content
         ) {
           return prevArtifacts;
@@ -103,12 +103,7 @@ export function Artifact({
     updateArtifact();
   }, [updateArtifact]);
 
-  return (
-    <>
-      <CodePreview artifact={artifact} />
-      {/* {props.children} */}
-    </>
-  );
+  return <CodePreview artifact={artifact} />;
 }
 
 // <div className="artifact">
