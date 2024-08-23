@@ -133,9 +133,10 @@ describe('preprocessLaTeX', () => {
     expect(preprocessLaTeX(content)).toBe(expected);
   });
 
-  test('preserves LaTeX delimiters', () => {
+  test('converts LaTeX delimiters', () => {
     const content = 'Brackets \\[x^2\\] and parentheses \\(y^2\\)';
-    expect(preprocessLaTeX(content)).toBe(content);
+    const expected = 'Brackets $$x^2$$ and parentheses $y^2$';
+    expect(preprocessLaTeX(content)).toBe(expected);
   });
 
   test('escapes mhchem commands', () => {
