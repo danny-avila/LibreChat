@@ -8,7 +8,7 @@ import { useRecoilValue } from 'recoil';
 import ReactMarkdown from 'react-markdown';
 import type { PluggableList } from 'unified';
 import rehypeHighlight from 'rehype-highlight';
-import { cn, langSubset, validateIframe, processLaTeX, handleDoubleClick } from '~/utils';
+import { langSubset, validateIframe, preprocessLaTeX, handleDoubleClick } from '~/utils';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
 import { useFileDownload } from '~/data-provider';
 import useLocalize from '~/hooks/useLocalize';
@@ -123,7 +123,7 @@ const Markdown = memo(({ content = '', isEdited, showCursor, isLatestMessage }: 
   let currentContent = content;
   if (!isInitializing) {
     currentContent = currentContent.replace('z-index: 1;', '') || '';
-    currentContent = LaTeXParsing ? processLaTeX(currentContent) : currentContent;
+    currentContent = LaTeXParsing ? preprocessLaTeX(currentContent) : currentContent;
   }
 
   const rehypePlugins: PluggableList = [
