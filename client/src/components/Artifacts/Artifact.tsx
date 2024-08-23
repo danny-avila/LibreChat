@@ -1,7 +1,7 @@
 import React, { useEffect, useCallback, useRef, useState } from 'react';
 import throttle from 'lodash/throttle';
 import { visit } from 'unist-util-visit';
-import { useSetRecoilState } from 'recoil';
+import { useSetRecoilState, useRecoilValue } from 'recoil';
 import type { Pluggable } from 'unified';
 import type { Artifact } from '~/common';
 import { artifactsState, artifactIdsState } from '~/store/artifacts';
@@ -45,6 +45,7 @@ export function Artifact({
 }) {
   const setArtifacts = useSetRecoilState(artifactsState);
   const setArtifactIds = useSetRecoilState(artifactIdsState);
+  const currentArtifacts = useRecoilValue(artifactsState);
   const [artifact, setArtifact] = useState<Artifact | null>(null);
 
   const throttledUpdateRef = useRef(
@@ -66,18 +67,24 @@ export function Artifact({
     const artifactKey = `${identifier}_${type}_${title}`.replace(/\s+/g, '_').toLowerCase();
 
     throttledUpdateRef.current(() => {
-      const currentArtifact = {
+      const existingArtifact = currentArtifacts[artifactKey];
+      const order =
+        existingArtifact != null ? existingArtifact.order : Object.keys(currentArtifacts).length;
+
+      const currentArtifact: Artifact = {
         id: artifactKey,
         identifier,
         title,
         type,
         content,
+        order,
       };
 
       setArtifacts((prevArtifacts) => {
         if (
-          (prevArtifacts as Record<string, Artifact | undefined>)[artifactKey] != null &&
-          prevArtifacts[artifactKey].content === content
+          prevArtifacts[artifactKey] != null &&
+          prevArtifacts[artifactKey].content === content &&
+          prevArtifacts[artifactKey].order === order
         ) {
           return prevArtifacts;
         }
@@ -90,14 +97,24 @@ export function Artifact({
 
       setArtifactIds((prevIds) => {
         if (!prevIds.includes(artifactKey)) {
-          return [...prevIds, artifactKey];
+          const newIds = [...prevIds, artifactKey];
+          const definedIds = newIds.filter((id) => currentArtifacts[id] != null);
+          return definedIds.sort((a, b) => currentArtifacts[a].order - currentArtifacts[b].order);
         }
         return prevIds;
       });
 
       setArtifact(currentArtifact);
     });
-  }, [props.children, props.title, props.type, props.identifier, setArtifacts, setArtifactIds]);
+  }, [
+    props.children,
+    props.title,
+    props.type,
+    props.identifier,
+    setArtifacts,
+    setArtifactIds,
+    currentArtifacts,
+  ]);
 
   useEffect(() => {
     updateArtifact();
@@ -105,10 +122,3 @@ export function Artifact({
 
   return <CodePreview artifact={artifact} />;
 }
-
-// <div className="artifact">
-//   <b>{props.title ?? 'Untitled Artifact'}</b>
-//   <p>Type: {props.type ?? 'unknown'}</p>
-//   <p>Identifier: {props.identifier ?? 'No identifier'}</p>
-//   {props.children as React.ReactNode}
-// </div>
