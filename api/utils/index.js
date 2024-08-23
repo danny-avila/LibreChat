@@ -5,6 +5,7 @@ const deriveBaseURL = require('./deriveBaseURL');
 const logAxiosError = require('./logAxiosError');
 const extractBaseURL = require('./extractBaseURL');
 const findMessageContent = require('./findMessageContent');
+const intelequiaCountTokens = require('./intelequiaTokenCount');
 
 module.exports = {
   loadYaml,
@@ -14,4 +15,5 @@ module.exports = {
   logAxiosError,
   extractBaseURL,
   findMessageContent,
+  intelequiaCountTokens,
 };

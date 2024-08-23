@@ -29,8 +29,8 @@ COPY api/package*.json ./
 COPY api/ ./
 # Copy helper scripts
 COPY config/ ./
-COPY librechat.yaml /app
-COPY .env /app
+# COPY librechat.yaml /app
+# COPY .env /app
 # Copy data-provider to API's node_modules
 COPY --from=data-provider-build /app/packages/data-provider/ /app/api/node_modules/librechat-data-provider/
 RUN npm install --include prod; npm cache clean --force

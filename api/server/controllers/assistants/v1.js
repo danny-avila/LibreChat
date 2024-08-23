@@ -18,6 +18,15 @@ const createAssistant = async (req, res) => {
   try {
     const { openai } = await getOpenAIClient({ req, res });
 
+    global.appInsights.trackEvent({
+      name: 'AssistantCreated',
+      properties: {
+        userId: req.user.id,
+        userEmail: req.user.email,
+        assistantName: req.body.name,
+      },
+    });
+
     const { tools = [], endpoint, ...assistantData } = req.body;
     assistantData.tools = tools
       .map((tool) => {
@@ -87,6 +96,15 @@ const patchAssistant = async (req, res) => {
     const { openai } = await getOpenAIClient({ req, res });
     await validateAuthor({ req, openai });
 
+    global.appInsights.trackEvent({
+      name: 'AssistantUpdated',
+      properties: {
+        userId: req.user.id,
+        userEmail: req.user.email,
+        assistantName: req.body.name,
+      },
+    });
+
     const assistant_id = req.params.id;
     const { endpoint: _e, ...updateData } = req.body;
     updateData.tools = (updateData.tools ?? [])
@@ -123,6 +141,15 @@ const deleteAssistant = async (req, res) => {
   try {
     const { openai } = await getOpenAIClient({ req, res });
     await validateAuthor({ req, openai });
+
+    global.appInsights.trackEvent({
+      name: 'AssistantDeleted',
+      properties: {
+        userId: req.user.id,
+        userEmail: req.user.email,
+        assistantName: req.params.id,
+      },
+    });
 
     const assistant_id = req.params.id;
     const deletionStatus = await openai.beta.assistants.del(assistant_id);

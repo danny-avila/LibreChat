@@ -493,6 +493,16 @@ class BaseClient {
         });
       }
     }
+    global.appInsights.trackEvent({
+      name: 'AzureQuery',
+      properties: {
+        userId: user,
+        charactersLength: userMessage.text.length,
+        messageTokens: userMessage.tokenCount,
+        model: this.modelOptions.model,
+        conversationId: conversationId,
+      },
+    });
 
     if (
       isEnabled(process.env.CHECK_BALANCE) &&
@@ -511,9 +521,25 @@ class BaseClient {
         },
       });
     }
-
+    global.appInsights.trackEvent({
+      name: 'AzureAnswerStarted',
+      properties: {
+        userId: user,
+        model: this.modelOptions.model,
+      },
+    });
     const completion = await this.sendCompletion(payload, opts);
     this.abortController.requestCompleted = true;
+
+    global.appInsights.trackEvent({
+      name: 'AzureAnswerEnded',
+      properties: {
+        userId: user,
+        charactersLength: completion.length,
+        messageTokens: promptTokens,
+        model: this.modelOptions.model,
+      },
+    });
 
     const responseMessage = {
       messageId: responseMessageId,
