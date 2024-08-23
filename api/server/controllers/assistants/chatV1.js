@@ -28,7 +28,7 @@ const { getTransactions } = require('~/models/Transaction');
 const checkBalance = require('~/models/checkBalance');
 const { getConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
-const { getModelMaxTokens } = require('~/utils');
+const { getModelMaxTokens, intelequiaCountTokens } = require('~/utils');
 const { getOpenAIClient } = require('./helpers');
 const { logger } = require('~/config');
 
@@ -229,6 +229,18 @@ const chatV1 = async (req, res) => {
   };
 
   try {
+    const messageTokens = intelequiaCountTokens(text, model);
+    global.appInsights.trackEvent({
+      name: 'AzureAssistantsQuery',
+      properties: {
+        // userId: "",
+        charactersLength: text.length,
+        messageTokens: messageTokens.length,
+        model: model,
+        conversationId: conversationId,
+        assistantId: assistant_id,
+      },
+    });
     res.on('close', async () => {
       if (!completedRun) {
         await handleError(new Error('Request closed'));
@@ -462,6 +474,14 @@ const chatV1 = async (req, res) => {
     await Promise.all(promises);
 
     const sendInitialResponse = () => {
+      global.appInsights.trackEvent({
+        name: 'AzureAssistantsAnswerStarted',
+        properties: {
+          userId: req.user.id,
+          model: model,
+          assistantId: body.assistant_id,
+        },
+      });
       sendMessage(res, {
         sync: true,
         conversationId,
@@ -575,7 +595,16 @@ const chatV1 = async (req, res) => {
       model: assistant_id,
       endpoint,
     };
-
+    const responseTokens = intelequiaCountTokens(response.text, model);
+    global.appInsights.trackEvent({
+      name: 'AzureAssistantsAnswerEnded',
+      properties: {
+        userId: responseMessage.user,
+        charactersLength: response.text.length,
+        messageTokens: responseTokens.length,
+        model: model,
+      },
+    });
     sendMessage(res, {
       final: true,
       conversation,

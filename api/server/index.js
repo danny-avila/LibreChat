@@ -1,4 +1,17 @@
 require('dotenv').config();
+let appInsights = require('applicationinsights');
+appInsights
+  .setup(process.env.APPLICATIONINSIGHTS_CONNECTION_STRING)
+  .setAutoCollectConsole(true)
+  .setAutoCollectRequests(true)
+  .setAutoCollectPerformance(true, true)
+  .setAutoCollectExceptions(true)
+  .setAutoCollectDependencies(true)
+  .setDistributedTracingMode(appInsights.DistributedTracingModes.AI_AND_W3C)
+  .setSendLiveMetrics(true)
+  .start();
+global.appInsights = appInsights.defaultClient;
+
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
 const cors = require('cors');
@@ -17,7 +30,10 @@ const configureSocialLogins = require('./socialLogins');
 const AppService = require('./services/AppService');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
+const NodeCache = require('node-cache');
+// const { useAzureMonitor } = require("@azure/monitor-opentelemetry");
 
+global.myCache = new NodeCache();
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN } = process.env ?? {};
 
 const port = Number(PORT) || 3080;

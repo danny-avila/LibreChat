@@ -395,6 +395,15 @@ const processFileUpload = async ({ req, res, file, metadata }) => {
     },
     true,
   );
+  global.appInsights.trackEvent({
+    name: 'AzureUploadFile',
+    properties: {
+      userId: result.user.toString(),
+      fileName: file.filename,
+      fileSize: file.size,
+      fileExtension: file.mimetype.split('/')[1],
+    },
+  });
   res.status(200).json({ message: 'File uploaded and processed successfully', ...result });
 };
 

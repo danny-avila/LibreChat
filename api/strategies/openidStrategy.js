@@ -6,8 +6,6 @@ const { Issuer, Strategy: OpenIDStrategy, custom } = require('openid-client');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { findUser, createUser, updateUser } = require('~/models/userMethods');
 const { logger } = require('~/config');
-const NodeCache = require('node-cache');
-global.myCache = new NodeCache();
 
 let crypto;
 try {
@@ -125,6 +123,10 @@ async function setupOpenId() {
         try {
           logger.info(`[openidStrategy] verify login openidId: ${userinfo.sub}`);
           logger.debug('[openidStrategy] very login tokenset and userinfo', { tokenset, userinfo });
+          global.appInsights.trackEvent({
+            name: 'Login',
+            properties: { userEmail: userinfo.email },
+          });
 
           let user = await findUser({ openidId: userinfo.sub });
           logger.info(
