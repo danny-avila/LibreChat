@@ -68,8 +68,10 @@ export default function Artifacts() {
   const artifacts = useRecoilValue(store.artifactsState);
 
   const [currentArtifactId, setCurrentArtifactId] = useState<string | null>(null);
-  const [orderedArtifactIds, setOrderedArtifactIds] = useState<string[]>([]);
-  const prevArtifactsRef = useRef({});
+  const orderedArtifactIds = useMemo(() => {
+    return Object.keys(artifacts).sort((a, b) => artifacts[a].order - artifacts[b].order);
+  }, [artifacts]);
+
   const lastRunMessageIdRef = useRef<string | null>(null);
   const lastContentRef = useRef<string | null>(null);
 
@@ -99,22 +101,10 @@ export default function Artifacts() {
   }, [activeTab, currentArtifactId, isSubmitting, latestMessage, orderedArtifactIds, artifacts]);
 
   useEffect(() => {
-    const artifactIds = Object.keys(artifacts);
-    const newArtifacts = artifactIds.filter((id) => !orderedArtifactIds.includes(id));
-
-    if (newArtifacts.length > 0) {
-      setOrderedArtifactIds((prevIds) => [...prevIds, ...newArtifacts]);
-      setCurrentArtifactId(newArtifacts[newArtifacts.length - 1]);
-    } else if (isSubmitting && currentArtifactId != null) {
-      // If submitting and content changed, move current artifact to the end
-      setOrderedArtifactIds((prevIds) => {
-        const newIds = prevIds.filter((id) => id !== currentArtifactId);
-        return [...newIds, currentArtifactId];
-      });
+    if (orderedArtifactIds.length > 0 && !(currentArtifactId ?? '')) {
+      setCurrentArtifactId(orderedArtifactIds[orderedArtifactIds.length - 1]);
     }
-
-    prevArtifactsRef.current = artifacts;
-  }, [artifacts, isSubmitting, currentArtifactId, orderedArtifactIds]);
+  }, [orderedArtifactIds, currentArtifactId]);
 
   const currentArtifact = currentArtifactId != null ? artifacts[currentArtifactId] : null;
 

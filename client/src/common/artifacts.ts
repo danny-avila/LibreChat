@@ -6,6 +6,7 @@ export interface CodeBlock {
 
 export interface Artifact {
   id: string;
+  order: number;
   identifier?: string;
   language?: string;
   content?: string;
