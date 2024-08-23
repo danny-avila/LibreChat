@@ -93,7 +93,7 @@
     "rehype-raw": "^7.0.0",
     "remark-directive": "^3.0.0",
     "remark-gfm": "^4.0.0",
-    "remark-math": "^5.1.1",
+    "remark-math": "^6.0.0",
     "remark-supersub": "^1.0.0",
     "tailwind-merge": "^1.9.1",
     "tailwindcss-animate": "^1.0.5",
