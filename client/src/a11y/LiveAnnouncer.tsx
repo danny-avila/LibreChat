@@ -113,7 +113,7 @@ const LiveAnnouncer: React.FC<LiveAnnouncerProps> = ({ children }) => {
   const addToQueue = useCallback(
     (item: AnnouncementItem) => {
       if (item.isAssertive) {
-        // For assertive messages, clear the queue and announce immediately
+        /* For assertive messages, clear the queue and announce immediately */
         queueRef.current = [];
         const { message: _msg, isAssertive } = item;
         const message = (events[_msg] ?? _msg).replace(replacementRegex, '');
