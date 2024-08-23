@@ -1,18 +1,20 @@
+// client/src/a11y/Announcer.tsx
 import React from 'react';
-import MessageBlock from './MessageBlock';
 
 interface AnnouncerProps {
-  politeMessage: string;
-  politeMessageId: string;
-  assertiveMessage: string;
-  assertiveMessageId: string;
+  statusMessage: string;
+  responseMessage: string;
 }
 
-const Announcer: React.FC<AnnouncerProps> = ({ politeMessage, assertiveMessage }) => {
+const Announcer: React.FC<AnnouncerProps> = ({ statusMessage, responseMessage }) => {
   return (
-    <div>
-      <MessageBlock aria-live="assertive" aria-atomic="true" message={assertiveMessage} />
-      <MessageBlock aria-live="polite" aria-atomic="false" message={politeMessage} />
+    <div className="sr-only">
+      <div aria-live="assertive" aria-atomic="true">
+        {statusMessage}
+      </div>
+      <div aria-live="polite" aria-atomic="true">
+        {responseMessage}
+      </div>
     </div>
   );
 };
