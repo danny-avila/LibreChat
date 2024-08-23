@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
 import { Sandpack } from '@codesandbox/sandpack-react';
@@ -59,9 +59,14 @@ export function ArtifactPreview({
 }
 
 export default function Artifacts() {
+  const [isVisible, setIsVisible] = useState(false);
   const [activeTab, setActiveTab] = useState('code');
   const artifacts = useRecoilValue(store.artifactsState);
   const artifactIds = useRecoilValue(store.artifactIdsState);
+
+  useEffect(() => {
+    setIsVisible(true);
+  }, []);
 
   const [currentArtifactIndex, setCurrentArtifactIndex] = useState(artifactIds.length - 1);
 
@@ -92,7 +97,13 @@ export default function Artifacts() {
       {/* Main Parent */}
       <div className="flex h-full w-full items-center justify-center py-2">
         {/* Main Container */}
-        <div className="flex h-[97%] w-[97%] flex-col overflow-hidden rounded-xl border border-border-medium bg-surface-primary text-xl text-text-primary shadow-xl">
+        <div
+          className={`flex h-[97%] w-[97%] flex-col overflow-hidden rounded-xl border border-border-medium bg-surface-primary text-xl text-text-primary shadow-xl transition-all duration-300 ease-in-out ${
+            isVisible
+              ? 'translate-x-0 scale-100 opacity-100'
+              : 'translate-x-full scale-95 opacity-0'
+          }`}
+        >
           {/* Header */}
           <div className="flex items-center justify-between border-b border-border-medium bg-surface-primary-alt p-2">
             <div className="flex items-center">
