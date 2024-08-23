@@ -63,6 +63,20 @@ registration:
   # allowedDomains:
   # - "gmail.com"
 
+paymentPlans:
+  - name: 'Plus'
+    description: "Plus plan"
+    price: '$10/month'
+    stripePriceId: 'price_123'
+  - name: 'Pro'
+    description: "Pro plan"
+    price: '$20/month'
+    stripePriceId: 'price_456'
+  - name: 'Enterprise'
+    description: "Enterprise plan"
+    price: '$100/month'
+    stripePriceId: 'price_789'
+
 # speech:
 #   tts:
 #     openai:

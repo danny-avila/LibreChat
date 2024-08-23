@@ -38,6 +38,7 @@
     "frontend": "npm run build:data-provider && cd client && npm run build",
     "frontend:ci": "npm run build:data-provider && cd client && npm run build:ci",
     "frontend:dev": "cd client && npm run dev",
+    "stripe:listen": "stripe listen --forward-to localhost:3080/api/stripe/webhook",
     "e2e": "playwright test --config=e2e/playwright.config.local.ts",
     "e2e:headed": "playwright test --config=e2e/playwright.config.local.ts --headed",
     "e2e:a11y": "playwright test --config=e2e/playwright.config.a11y.ts --headed",

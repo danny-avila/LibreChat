@@ -443,6 +443,13 @@ export enum EImageOutputType {
   JPEG = 'jpeg',
 }
 
+const paymentPlanConfigSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  price: z.string(),
+  stripePriceId: z.string(),
+});
+
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().default(true),
@@ -503,6 +510,7 @@ export const configSchema = z.object({
   rateLimits: rateLimitSchema.optional(),
   fileConfig: fileConfigSchema.optional(),
   modelSpecs: specsConfigSchema.optional(),
+  paymentPlans: z.array(paymentPlanConfigSchema).optional(),
   endpoints: z
     .object({
       all: baseEndpointSchema.optional(),
