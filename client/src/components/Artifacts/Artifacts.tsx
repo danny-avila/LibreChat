@@ -12,7 +12,7 @@ import {
   getFileExtension,
   getArtifactFilename,
 } from '~/utils/artifacts';
-import { CodeMarkdown } from './Code';
+import { CodeMarkdown, CopyCodeButton } from './Code';
 import store from '~/store';
 
 export function ArtifactPreview({
@@ -167,7 +167,6 @@ export default function Artifacts() {
           <Tabs.Content value="preview" className="flex-grow overflow-auto bg-surface-secondary">
             <ArtifactPreview artifact={currentArtifact} />
           </Tabs.Content>
-
           {/* Footer */}
           <div className="flex items-center justify-between border-t border-border-medium bg-surface-primary-alt p-2 text-sm text-text-secondary">
             <div className="flex items-center">
@@ -198,18 +197,9 @@ export default function Artifacts() {
               </button>
             </div>
             <div className="flex items-center">
-              <button className="mr-2 text-text-secondary">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="16"
-                  height="16"
-                  fill="currentColor"
-                  viewBox="0 0 256 256"
-                >
-                  <path d="M200,32H163.74a47.92,47.92,0,0,0-71.48,0H56A16,16,0,0,0,40,48V216a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V48A16,16,0,0,0,200,32Zm-72,0a32,32,0,0,1,32,32H96A32,32,0,0,1,128,32Zm72,184H56V48H82.75A47.93,47.93,0,0,0,80,64v8a8,8,0,0,0,8,8h80a8,8,0,0,0,8-8V64a47.93,47.93,0,0,0-2.75-16H200Z" />
-                </svg>
-              </button>
-              <button className="mr-2 text-text-secondary">
+              <CopyCodeButton content={currentArtifact.content ?? ''} />
+              {/* Download Button */}
+              {/* <button className="mr-2 text-text-secondary">
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   width="16"
@@ -219,10 +209,11 @@ export default function Artifacts() {
                 >
                   <path d="M224,144v64a8,8,0,0,1-8,8H40a8,8,0,0,1-8-8V144a8,8,0,0,1,16,0v56H208V144a8,8,0,0,1,16,0Zm-101.66,5.66a8,8,0,0,0,11.32,0l40-40a8,8,0,0,0-11.32-11.32L136,124.69V32a8,8,0,0,0-16,0v92.69L93.66,98.34a8,8,0,0,0-11.32,11.32Z" />
                 </svg>
-              </button>
-              <button className="border-0.5 min-w-[4rem] whitespace-nowrap rounded-md border-border-medium bg-[radial-gradient(ellipse,_var(--tw-gradient-stops))] from-surface-active from-50% to-surface-active px-3 py-1 text-xs font-medium text-text-primary transition-colors hover:bg-surface-active hover:text-text-primary active:scale-[0.985] active:bg-surface-active">
+              </button> */}
+              {/* Publish button */}
+              {/* <button className="border-0.5 min-w-[4rem] whitespace-nowrap rounded-md border-border-medium bg-[radial-gradient(ellipse,_var(--tw-gradient-stops))] from-surface-active from-50% to-surface-active px-3 py-1 text-xs font-medium text-text-primary transition-colors hover:bg-surface-active hover:text-text-primary active:scale-[0.985] active:bg-surface-active">
                 Publish
-              </button>
+              </button> */}
             </div>
           </div>
         </div>
