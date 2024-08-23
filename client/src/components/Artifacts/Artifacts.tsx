@@ -68,6 +68,7 @@ export default function Artifacts() {
   const artifacts = useRecoilValue(store.artifactsState);
 
   const [currentArtifactId, setCurrentArtifactId] = useState<string | null>(null);
+  const [orderedArtifactIds, setOrderedArtifactIds] = useState<string[]>([]);
   const prevArtifactsRef = useRef({});
 
   useEffect(() => {
@@ -76,34 +77,33 @@ export default function Artifacts() {
 
   useEffect(() => {
     const artifactIds = Object.keys(artifacts);
-    const hasNewArtifact = artifactIds.length > Object.keys(prevArtifactsRef.current).length;
-    const latestArtifactId = artifactIds[artifactIds.length - 1];
+    const newArtifacts = artifactIds.filter((id) => !orderedArtifactIds.includes(id));
 
-    if (
-      hasNewArtifact ||
-      (isSubmitting && artifacts[latestArtifactId] !== prevArtifactsRef.current[latestArtifactId])
-    ) {
-      setCurrentArtifactId(latestArtifactId);
+    if (newArtifacts.length > 0) {
+      setOrderedArtifactIds((prevIds) => [...prevIds, ...newArtifacts]);
+      setCurrentArtifactId(newArtifacts[newArtifacts.length - 1]);
+    } else if (isSubmitting && currentArtifactId != null) {
+      // If submitting and content changed, move current artifact to the end
+      setOrderedArtifactIds((prevIds) => {
+        const newIds = prevIds.filter((id) => id !== currentArtifactId);
+        return [...newIds, currentArtifactId];
+      });
     }
 
     prevArtifactsRef.current = artifacts;
-  }, [artifacts, isSubmitting]);
+  }, [artifacts, isSubmitting, currentArtifactId, orderedArtifactIds]);
 
-  const artifactIds = Object.keys(artifacts);
   const currentArtifact = currentArtifactId != null ? artifacts[currentArtifactId] : null;
 
-  const currentIndex = useMemo(
-    () => artifactIds.indexOf(currentArtifactId ?? ''),
-    [artifactIds, currentArtifactId],
-  );
+  const currentIndex = orderedArtifactIds.indexOf(currentArtifactId ?? '');
   const cycleArtifact = (direction: 'next' | 'prev') => {
     let newIndex: number;
     if (direction === 'next') {
-      newIndex = (currentIndex + 1) % artifactIds.length;
+      newIndex = (currentIndex + 1) % orderedArtifactIds.length;
     } else {
-      newIndex = (currentIndex - 1 + artifactIds.length) % artifactIds.length;
+      newIndex = (currentIndex - 1 + orderedArtifactIds.length) % orderedArtifactIds.length;
     }
-    setCurrentArtifactId(artifactIds[newIndex]);
+    setCurrentArtifactId(orderedArtifactIds[newIndex]);
   };
 
   if (!currentArtifact) {
@@ -199,7 +199,9 @@ export default function Artifacts() {
                   <path d="M165.66,202.34a8,8,0,0,1-11.32,11.32l-80-80a8,8,0,0,1,0-11.32l80-80a8,8,0,0,1,11.32,11.32L91.31,128Z" />
                 </svg>
               </button>
-              <span className="text-xs">{`${currentIndex + 1} / ${artifactIds.length}`}</span>
+              <span className="text-xs">{`${currentIndex + 1} / ${
+                orderedArtifactIds.length
+              }`}</span>
               <button onClick={() => cycleArtifact('next')} className="ml-2 text-text-secondary">
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
