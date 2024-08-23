@@ -21,7 +21,7 @@ const CHUNK_SIZE = 200;
 /** Minimum delay between announcements */
 const MIN_ANNOUNCEMENT_DELAY = 1000;
 /** Delay before clearing the live region */
-const CLEAR_DELAY = 3000;
+const CLEAR_DELAY = 5000;
 /** Regex to remove *, `, and _ from message text */
 const replacementRegex = /[*`_]/g;
 
