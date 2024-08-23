@@ -56,6 +56,10 @@ export function Artifact({
   const updateArtifact = useCallback(() => {
     const content = extractContent(props.children);
 
+    if (!content || content.trim() === '') {
+      return;
+    }
+
     const title = props.title ?? 'Untitled Artifact';
     const type = props.type ?? 'unknown';
     const identifier = props.identifier ?? 'no-identifier';
