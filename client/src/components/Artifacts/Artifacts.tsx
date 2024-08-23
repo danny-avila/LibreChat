@@ -13,6 +13,8 @@ import {
   getArtifactFilename,
 } from '~/utils/artifacts';
 import { CodeMarkdown, CopyCodeButton } from './Code';
+import { useChatContext } from '~/Providers';
+import { cn } from '~/utils';
 import store from '~/store';
 
 export function ArtifactPreview({
@@ -59,44 +61,52 @@ export function ArtifactPreview({
 }
 
 export default function Artifacts() {
+  const { isSubmitting } = useChatContext();
+
   const [isVisible, setIsVisible] = useState(false);
   const [activeTab, setActiveTab] = useState('code');
   const artifacts = useRecoilValue(store.artifactsState);
-  const artifactIds = useRecoilValue(store.artifactIdsState);
 
-  const prevArtifactIdsLengthRef = useRef(artifactIds.length);
-  const [currentArtifactIndex, setCurrentArtifactIndex] = useState(artifactIds.length - 1);
+  const [currentArtifactId, setCurrentArtifactId] = useState<string | null>(null);
+  const prevArtifactsRef = useRef({});
 
   useEffect(() => {
     setIsVisible(true);
   }, []);
 
   useEffect(() => {
-    if (artifactIds.length !== prevArtifactIdsLengthRef.current) {
-      setCurrentArtifactIndex(artifactIds.length - 1);
-      prevArtifactIdsLengthRef.current = artifactIds.length;
-    }
-  }, [artifactIds]);
+    const artifactIds = Object.keys(artifacts);
+    const hasNewArtifact = artifactIds.length > Object.keys(prevArtifactsRef.current).length;
+    const latestArtifactId = artifactIds[artifactIds.length - 1];
 
-  const currentArtifact = useMemo(() => {
-    if (artifactIds.length === 0) {
-      return null;
+    if (
+      hasNewArtifact ||
+      (isSubmitting && artifacts[latestArtifactId] !== prevArtifactsRef.current[latestArtifactId])
+    ) {
+      setCurrentArtifactId(latestArtifactId);
     }
-    const currentId = artifactIds[currentArtifactIndex];
-    return artifacts[currentId];
-  }, [artifacts, artifactIds, currentArtifactIndex]);
 
+    prevArtifactsRef.current = artifacts;
+  }, [artifacts, isSubmitting]);
+
+  const artifactIds = Object.keys(artifacts);
+  const currentArtifact = currentArtifactId != null ? artifacts[currentArtifactId] : null;
+
+  const currentIndex = useMemo(
+    () => artifactIds.indexOf(currentArtifactId ?? ''),
+    [artifactIds, currentArtifactId],
+  );
   const cycleArtifact = (direction: 'next' | 'prev') => {
-    setCurrentArtifactIndex((prevIndex) => {
-      if (direction === 'next') {
-        return (prevIndex + 1) % artifactIds.length;
-      } else {
-        return (prevIndex - 1 + artifactIds.length) % artifactIds.length;
-      }
-    });
+    let newIndex: number;
+    if (direction === 'next') {
+      newIndex = (currentIndex + 1) % artifactIds.length;
+    } else {
+      newIndex = (currentIndex - 1 + artifactIds.length) % artifactIds.length;
+    }
+    setCurrentArtifactId(artifactIds[newIndex]);
   };
 
-  if (currentArtifact === null) {
+  if (!currentArtifact) {
     return <div>No artifacts available.</div>;
   }
 
@@ -157,8 +167,16 @@ export default function Artifacts() {
             </div>
           </div>
           {/* Content */}
-          <Tabs.Content value="code" className="flex-grow overflow-auto bg-gray-900">
+          <Tabs.Content
+            value="code"
+            className={cn(
+              'flex-grow overflow-auto bg-gray-900',
+              isSubmitting ? 'submitting' : '',
+              isSubmitting && (currentArtifact.content?.length ?? 0) > 0 ? 'result-streaming' : '',
+            )}
+          >
             <CodeMarkdown
+              showCursor={isSubmitting}
               content={`\`\`\`${getFileExtension(currentArtifact.type)}\n${
                 currentArtifact.content ?? ''
               }\`\`\``}
@@ -181,9 +199,7 @@ export default function Artifacts() {
                   <path d="M165.66,202.34a8,8,0,0,1-11.32,11.32l-80-80a8,8,0,0,1,0-11.32l80-80a8,8,0,0,1,11.32,11.32L91.31,128Z" />
                 </svg>
               </button>
-              <span className="text-xs">{`${currentArtifactIndex + 1} / ${
-                artifactIds.length
-              }`}</span>
+              <span className="text-xs">{`${currentIndex + 1} / ${artifactIds.length}`}</span>
               <button onClick={() => cycleArtifact('next')} className="ml-2 text-text-secondary">
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
