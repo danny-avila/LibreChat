@@ -23,11 +23,13 @@ type TCodeProps = {
   children: React.ReactNode;
 };
 
-export const code: React.ElementType = memo(({ inline, className, children }: TCodeProps) => {
+export const code: React.ElementType = memo(({ className, children }: TCodeProps) => {
   const match = /language-(\w+)/.exec(className ?? '');
   const lang = match && match[1];
 
-  if (inline) {
+  if (lang === 'math') {
+    return children;
+  } else if (typeof children === 'string' && children.split('\n').length === 1) {
     return (
       <code onDoubleClick={handleDoubleClick} className={className}>
         {children}
@@ -156,12 +158,12 @@ const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentPr
   return (
     <ReactMarkdown
       remarkPlugins={[
-        remarkDirective,
         /* @ts-ignore */
         supersub,
         remarkGfm,
         /* @ts-ignore */
         [remarkMath, { singleDollarTextMath: true }],
+        remarkDirective,
         /* @ts-ignore */
         artifactPlugin,
       ]}
