@@ -286,6 +286,8 @@ export default {
   com_auth_here: 'QUI',
   com_auth_to_reset_your_password: 'per reimpostare la tua password.',
   com_auth_reset_password_link_sent: 'Email inviata',
+  com_auth_reset_password_if_email_exists:
+    'Se esiste un account con questa email, è stata inviata una mail con le istruzioni per la reimpostazione della password. Assicurati di controllare la cartella spam.',
   com_auth_reset_password_email_sent:
     'Ti è stata inviata un\'email con ulteriori istruzioni per reimpostare la tua password.',
   com_auth_error_reset_password:
