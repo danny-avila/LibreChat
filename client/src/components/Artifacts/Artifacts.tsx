@@ -61,7 +61,7 @@ export function ArtifactPreview({
 }
 
 export default function Artifacts() {
-  const { isSubmitting } = useChatContext();
+  const { isSubmitting, latestMessage } = useChatContext();
 
   const [isVisible, setIsVisible] = useState(false);
   const [activeTab, setActiveTab] = useState('code');
@@ -70,10 +70,33 @@ export default function Artifacts() {
   const [currentArtifactId, setCurrentArtifactId] = useState<string | null>(null);
   const [orderedArtifactIds, setOrderedArtifactIds] = useState<string[]>([]);
   const prevArtifactsRef = useRef({});
+  const lastRunMessageIdRef = useRef<string | null>(null);
+  const lastContentRef = useRef<string | null>(null);
 
   useEffect(() => {
     setIsVisible(true);
   }, []);
+
+  useEffect(() => {
+    if (latestMessage?.messageId !== lastRunMessageIdRef.current) {
+      const currentArtifact = currentArtifactId != null ? artifacts[currentArtifactId] : null;
+      const currentContent = currentArtifact?.content ?? null;
+
+      if (
+        isSubmitting &&
+        currentArtifactId != null &&
+        activeTab !== 'code' &&
+        currentContent !== lastContentRef.current
+      ) {
+        setActiveTab('code');
+        lastContentRef.current = currentContent;
+      } else if (!isSubmitting && currentArtifactId == null && orderedArtifactIds.length > 0) {
+        setCurrentArtifactId(orderedArtifactIds[0]);
+      }
+
+      lastRunMessageIdRef.current = latestMessage?.messageId ?? null;
+    }
+  }, [activeTab, currentArtifactId, isSubmitting, latestMessage, orderedArtifactIds, artifacts]);
 
   useEffect(() => {
     const artifactIds = Object.keys(artifacts);
