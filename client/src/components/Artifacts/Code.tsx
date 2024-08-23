@@ -1,8 +1,12 @@
-import React, { useRef, RefObject, memo } from 'react';
+import React, { useRef, RefObject, memo, useState } from 'react';
 import rehypeKatex from 'rehype-katex';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
+import copy from 'copy-to-clipboard';
 import { handleDoubleClick, cn, langSubset } from '~/utils';
+import Clipboard from '~/components/svg/Clipboard';
+import CheckMark from '~/components/svg/CheckMark';
+import useLocalize from '~/hooks/useLocalize';
 
 type CodeBarProps = {
   lang: string;
@@ -80,3 +84,24 @@ export const CodeMarkdown = memo(
     );
   },
 );
+
+export const CopyCodeButton: React.FC<{ content: string }> = ({ content }) => {
+  const localize = useLocalize();
+  const [isCopied, setIsCopied] = useState(false);
+
+  const handleCopy = () => {
+    copy(content, { format: 'text/plain' });
+    setIsCopied(true);
+    setTimeout(() => setIsCopied(false), 3000);
+  };
+
+  return (
+    <button
+      className="mr-2 text-text-secondary"
+      onClick={handleCopy}
+      aria-label={isCopied ? localize('com_ui_copied') : localize('com_ui_copy_code')}
+    >
+      {isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard />}
+    </button>
+  );
+};
