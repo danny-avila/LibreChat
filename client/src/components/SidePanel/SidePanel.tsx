@@ -150,7 +150,7 @@ const SidePanel = ({
           </ResizablePanel>
           {artifacts != null && (
             <>
-              <ResizableHandleAlt withHandle className="bg-border-light dark:text-white mx-4" />
+              <ResizableHandleAlt withHandle className="ml-3 bg-border-medium dark:text-white" />
               <ResizablePanel defaultSize={defaultLayout[0]} minSize={minSizeMain}>
                 {artifacts}
               </ResizablePanel>
