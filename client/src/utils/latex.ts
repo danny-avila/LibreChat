@@ -78,23 +78,6 @@ export function preprocessLaTeX(content: string): string {
   return content;
 }
 
-export function escapeDollarNumber(text: string) {
-  let escapedText = '';
-
-  for (let i = 0; i < text.length; i += 1) {
-    let char = text[i];
-    const nextChar = text[i + 1] || ' ';
-
-    if (char === '$' && nextChar >= '0' && nextChar <= '9') {
-      char = '\\$';
-    }
-
-    escapedText += char;
-  }
-
-  return escapedText;
-}
-
 export function escapeBrackets(text: string): string {
   const pattern = /(```[\S\s]*?```|`.*?`)|\\\[([\S\s]*?[^\\])\\]|\\\((.*?)\\\)/g;
   return text.replace(
