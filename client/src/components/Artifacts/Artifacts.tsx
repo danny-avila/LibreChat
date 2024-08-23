@@ -4,8 +4,15 @@ import * as Tabs from '@radix-ui/react-tabs';
 import { Sandpack } from '@codesandbox/sandpack-react';
 import { removeNullishValues } from 'librechat-data-provider';
 import { SandpackPreview, SandpackProvider } from '@codesandbox/sandpack-react/unstyled';
-import { sharedOptions, sharedFiles, sharedProps, getArtifactFilename } from '~/utils/artifacts';
 import type { Artifact } from '~/common';
+import {
+  sharedFiles,
+  sharedProps,
+  sharedOptions,
+  getFileExtension,
+  getArtifactFilename,
+} from '~/utils/artifacts';
+import { CodeMarkdown } from './Code';
 import store from '~/store';
 
 export function ArtifactPreview({
@@ -53,8 +60,8 @@ export function ArtifactPreview({
 
 export default function Artifacts() {
   const [activeTab, setActiveTab] = useState('code');
-  const artifactIds = useRecoilValue(store.artifactIdsState);
   const artifacts = useRecoilValue(store.artifactsState);
+  const artifactIds = useRecoilValue(store.artifactIdsState);
 
   const [currentArtifactIndex, setCurrentArtifactIndex] = useState(artifactIds.length - 1);
 
@@ -82,7 +89,9 @@ export default function Artifacts() {
 
   return (
     <Tabs.Root value={activeTab} onValueChange={setActiveTab} asChild>
+      {/* Main Parent */}
       <div className="flex h-full w-full items-center justify-center py-2">
+        {/* Main Container */}
         <div className="flex h-[97%] w-[97%] flex-col overflow-hidden rounded-xl border border-border-medium bg-surface-primary text-xl text-text-primary shadow-xl">
           {/* Header */}
           <div className="flex items-center justify-between border-b border-border-medium bg-surface-primary-alt p-2">
@@ -128,12 +137,13 @@ export default function Artifacts() {
               </button>
             </div>
           </div>
-
           {/* Content */}
-          <Tabs.Content value="code" className="flex-grow overflow-auto bg-surface-secondary">
-            <pre className="h-full w-full overflow-auto rounded bg-surface-primary-alt p-2 text-sm">
-              {currentArtifact.content}
-            </pre>
+          <Tabs.Content value="code" className="flex-grow overflow-auto bg-gray-900">
+            <CodeMarkdown
+              content={`\`\`\`${getFileExtension(currentArtifact.type)}\n${
+                currentArtifact.content ?? ''
+              }\`\`\``}
+            />
           </Tabs.Content>
           <Tabs.Content value="preview" className="flex-grow overflow-auto bg-surface-secondary">
             <ArtifactPreview artifact={currentArtifact} />

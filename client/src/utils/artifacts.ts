@@ -15,20 +15,20 @@ export function getArtifactFilename(type: string): string {
   return artifactFilename[type] ?? 'App.tsx';
 }
 
-export function getFileExtension(language: string): string {
+export function getFileExtension(language?: string): string {
   switch (language) {
-    case 'javascript':
-      return 'jsx';
-    case 'typescript':
+    case 'application/vnd.react':
       return 'tsx';
-    case 'jsx':
-      return 'jsx';
-    case 'tsx':
-      return 'tsx';
-    case 'html':
+    case 'text/html':
       return 'html';
-    case 'css':
-      return 'css';
+    // case 'jsx':
+    //   return 'jsx';
+    // case 'tsx':
+    //   return 'tsx';
+    // case 'html':
+    //   return 'html';
+    // case 'css':
+    //   return 'css';
     default:
       return 'txt';
   }
@@ -98,29 +98,4 @@ export const sharedFiles = {
       </body>
     </html>
   `,
-};
-
-export const filenameMap = {
-  tsx: 'App',
-  css: 'styles',
-  html: 'index',
-  jsx: 'App',
-  js: 'App',
-  ts: 'App',
-  typescript: 'App',
-  javascript: 'App',
-};
-
-export const mapCodeFiles = (
-  codeBlockIds: string[],
-  codeBlocks: Record<string, CodeBlock | undefined>,
-) => {
-  return codeBlockIds.reduce((acc, id) => {
-    const block = codeBlocks[id];
-    if (block) {
-      const fileName = `${filenameMap[block.language]}.${getFileExtension(block.language)}`;
-      acc[fileName] = typeof block.content === 'string' ? block.content : '';
-    }
-    return acc;
-  }, {} as Record<string, string>);
 };
