@@ -55,7 +55,6 @@ export function Artifact({
 
   const updateArtifact = useCallback(() => {
     const content = extractContent(props.children);
-    console.log('Content:', content);
 
     const title = props.title ?? 'Untitled Artifact';
     const type = props.type ?? 'unknown';
@@ -94,8 +93,6 @@ export function Artifact({
 
       setArtifact(currentArtifact);
     });
-
-    console.log('Artifact updated:', artifactKey);
   }, [props.children, props.title, props.type, props.identifier, setArtifacts, setArtifactIds]);
 
   useEffect(() => {
