@@ -40,3 +40,21 @@ export const processLaTeX = (_content: string) => {
   // Restore code blocks
   return restoreCodeBlocks(processedContent, codeBlocks);
 };
+
+/**
+ * Replaces block-level LaTeX delimiters \[ \] with $$ $$,
+ * inline LaTeX delimiters \( \) with $ $.
+ *
+ * Source: https://github.com/remarkjs/react-markdown/issues/785#issuecomment-1966495891
+ * */
+export const preprocessLaTeX = (content: string) => {
+  const blockProcessedContent = content.replace(
+    /\\\[(.*?)\\\]/gs,
+    (_, equation) => `$$${equation}$$`,
+  );
+  const inlineProcessedContent = blockProcessedContent.replace(
+    /\\\((.*?)\\\)/gs,
+    (_, equation) => `$${equation}$`,
+  );
+  return inlineProcessedContent;
+};
