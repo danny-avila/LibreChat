@@ -107,7 +107,7 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
               />
             ) : (
               <ReactMarkdown
-                remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
+                remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
                 rehypePlugins={rehypePlugins}
                 components={{ p: PromptVariableGfm, code }}
                 className="markdown prose dark:prose-invert light my-1 w-full break-words text-text-primary"

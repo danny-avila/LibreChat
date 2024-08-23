@@ -50,7 +50,7 @@ const PromptDetails = ({ group }: { group?: TPromptGroup }) => {
             </h2>
             <div className="group relative min-h-32 rounded-b-lg border border-gray-300 p-4 transition-all duration-150 dark:border-gray-600 sm:max-w-full">
               <ReactMarkdown
-                remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
+                remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
                 rehypePlugins={[
                   [rehypeKatex, { output: 'mathml' }],
                   [rehypeHighlight, { ignoreMissing: true }],
