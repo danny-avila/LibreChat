@@ -36,6 +36,9 @@
 <a href="https://template.cloud.sealos.io/deploy?templateName=librechat">
   <img src="https://raw.githubusercontent.com/labring-actions/templates/main/Deploy-on-Sealos.svg" alt="Deploy on Sealos" height="30">
 </a>
+<a href="https://elest.io/open-source/librechat">
+  <img src="https://elest.io/images/logos/deploy-to-elestio-btn.png" alt="Deploy to Elestio" height="30">
+</a>
 </p>
 
 # 📃 Features
