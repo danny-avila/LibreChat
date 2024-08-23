@@ -102,6 +102,7 @@
     ]
   },
   "dependencies": {
+    "applicationinsights": "^3.2.2",
     "node-cache": "^5.1.2"
   }
 }
