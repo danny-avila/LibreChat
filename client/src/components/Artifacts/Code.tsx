@@ -35,7 +35,7 @@ const CodeBar: React.FC<CodeBarProps> = React.memo(({ lang, codeRef }) => {
       <span className="">{lang}</span>
       <button
         type="button"
-        className='ml-auto flex gap-2'
+        className="ml-auto flex gap-2"
         onClick={async () => {
           const codeString = codeRef.current?.textContent;
           if (codeString != null) {
@@ -64,40 +64,17 @@ const CodeBar: React.FC<CodeBarProps> = React.memo(({ lang, codeRef }) => {
   );
 });
 
-const CodeBlock: React.FC<CodeBlockProps> = ({
-  lang,
-  codeChildren,
-  classProp = '',
-}) => {
+const CodeBlock: React.FC<CodeBlockProps> = ({ lang, codeChildren, classProp = '' }) => {
   const codeRef = useRef<HTMLElement>(null);
   return (
     <div className="w-full rounded-md bg-gray-900 text-xs text-white/80">
       <CodeBar lang={lang} codeRef={codeRef} />
       <div className={cn(classProp, 'overflow-y-auto p-4')}>
-        <code
-          ref={codeRef}
-          className={`hljs language-${lang} !whitespace-pre`}
-        >
+        <code ref={codeRef} className={`hljs language-${lang} !whitespace-pre`}>
           {codeChildren}
         </code>
       </div>
     </div>
-  );
-};
-
-export const CodeBlockArtifact: React.FC<CodeBlockArtifactProps> = ({ lang, codeString: content }) => {
-  const debouncedUpdateCodeBlock = useDebounceCodeBlock();
-
-  useEffect(() => {
-    debouncedUpdateCodeBlock({
-      id: `${lang}-${Date.now()}`,
-      language: lang,
-      content,
-    });
-  }, [lang, content, debouncedUpdateCodeBlock]);
-
-  return (
-    <CodePreview code={content} />
   );
 };
 
@@ -123,33 +100,37 @@ export const code: React.ElementType = memo(({ inline, className, children }: TC
 });
 
 const cursor = ' ';
-export const CodeMarkdown = memo(({ content = '', showCursor, isLatestMessage }: {
-  content: string;
-  showCursor?: boolean;
-  isLatestMessage: boolean;
-}) => {
+export const CodeMarkdown = memo(
+  ({
+    content = '',
+    showCursor,
+    isLatestMessage,
+  }: {
+    content: string;
+    showCursor?: boolean;
+    isLatestMessage: boolean;
+  }) => {
+    const currentContent = content;
+    const rehypePlugins: PluggableList = [
+      [rehypeKatex, { output: 'mathml' }],
+      [
+        rehypeHighlight,
+        {
+          detect: true,
+          ignoreMissing: true,
+          subset: langSubset,
+        },
+      ],
+    ];
 
-  const currentContent = content;
-  const rehypePlugins: PluggableList = [
-    [rehypeKatex, { output: 'mathml' }],
-    [
-      rehypeHighlight,
-      {
-        detect: true,
-        ignoreMissing: true,
-        subset: langSubset,
-      },
-    ],
-  ];
-
-  return (
-    <ReactMarkdown
-      rehypePlugins={rehypePlugins}
-      // linkTarget="_new"
-      components={{ code }
-      }
-    >
-      {isLatestMessage && showCursor === true ? currentContent + cursor : currentContent}
-    </ReactMarkdown>
-  );
-});
+    return (
+      <ReactMarkdown
+        rehypePlugins={rehypePlugins}
+        // linkTarget="_new"
+        components={{ code }}
+      >
+        {isLatestMessage && showCursor === true ? currentContent + cursor : currentContent}
+      </ReactMarkdown>
+    );
+  },
+);

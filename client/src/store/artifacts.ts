@@ -1,11 +1,6 @@
 import { atom } from 'recoil';
 import { logger } from '~/utils';
-export interface Artifact {
-  identifier?: string;
-  title: string;
-  type: string;
-  content: string;
-}
+import type { Artifact } from '~/common';
 
 export const artifactsState = atom<Record<string, Artifact>>({
   key: 'artifactsState',

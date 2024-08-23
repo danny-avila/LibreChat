@@ -10,7 +10,7 @@ import remarkDirective from 'remark-directive';
 import type { PluggableList, Pluggable } from 'unified';
 import { langSubset, preprocessLaTeX, handleDoubleClick } from '~/utils';
 import { CodeBlockArtifact, CodeMarkdown } from '~/components/Artifacts/Code';
-import { Artifact as artifact, artifactPlugin } from '~/components/Artifacts/Artifact';
+import { Artifact, artifactPlugin } from '~/components/Artifacts/Artifact';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
 import { useFileDownload } from '~/data-provider';
 import useLocalize from '~/hooks/useLocalize';
@@ -173,7 +173,7 @@ const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentPr
           code,
           a,
           p,
-          artifact,
+          artifact: Artifact,
         } as {
           [nodeType: string]: React.ElementType;
         }
