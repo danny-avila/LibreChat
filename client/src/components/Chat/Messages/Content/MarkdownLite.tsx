@@ -24,7 +24,7 @@ const MarkdownLite = memo(({ content = '' }: { content?: string }) => {
 
   return (
     <ReactMarkdown
-      remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
+      remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
       rehypePlugins={rehypePlugins}
       linkTarget="_new"
       components={
