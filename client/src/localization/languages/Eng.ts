@@ -3,6 +3,7 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets present in this file
 
 export default {
+  com_ui_artifacts_toggle: 'Toggle Artifacts Mode',
   com_ui_artifact_click: 'Click to open',
   com_a11y_start: 'The AI is replying.',
   com_a11y_end: 'The AI has finished their reply.',
