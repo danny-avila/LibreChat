@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { isEnabled } = require('../server/utils/handleText');
+const { isEnabled } = require('~/server/utils/handleText');
 const transactionSchema = require('./schema/transaction');
 const { getMultiplier, getCacheMultiplier } = require('./tx');
 const { logger } = require('~/config');
@@ -122,27 +122,31 @@ transactionSchema.methods.calculateStructuredTokenValue = function () {
       read: readMultiplier,
     };
 
-    const totalTokens = (this.inputTokens || 0) + (this.writeTokens || 0) + (this.readTokens || 0);
+    const totalTokens =
+      Math.abs(this.inputTokens || 0) +
+      Math.abs(this.writeTokens || 0) +
+      Math.abs(this.readTokens || 0);
 
     if (totalTokens > 0) {
       this.rate =
-        (inputMultiplier * (this.inputTokens || 0) +
-          writeMultiplier * (this.writeTokens || 0) +
-          readMultiplier * (this.readTokens || 0)) /
+        (Math.abs(inputMultiplier * (this.inputTokens || 0)) +
+          Math.abs(writeMultiplier * (this.writeTokens || 0)) +
+          Math.abs(readMultiplier * (this.readTokens || 0))) /
         totalTokens;
     } else {
-      this.rate = inputMultiplier; // Default to input rate if no tokens
+      this.rate = Math.abs(inputMultiplier); // Default to input rate if no tokens
     }
 
     this.tokenValue =
-      this.inputTokens * inputMultiplier +
+      (this.inputTokens || 0) * inputMultiplier +
       (this.writeTokens || 0) * writeMultiplier +
       (this.readTokens || 0) * readMultiplier;
+
+    // Update rawAmount to reflect the total number of tokens
+    this.rawAmount = totalTokens;
   } else {
-    const multiplier = Math.abs(
-      getMultiplier({ tokenType: this.tokenType, model, endpointTokenConfig }),
-    );
-    this.rate = multiplier;
+    const multiplier = getMultiplier({ tokenType: this.tokenType, model, endpointTokenConfig });
+    this.rate = Math.abs(multiplier);
     this.tokenValue = this.rawAmount * multiplier;
   }
 

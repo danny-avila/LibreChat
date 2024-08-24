@@ -102,14 +102,12 @@ const spendStructuredTokens = async (txData, tokenUsage) => {
   try {
     if (promptTokens) {
       const { input = 0, write = 0, read = 0 } = promptTokens;
-      const promptAmount = input + write + read;
       prompt = await Transaction.createStructured({
         ...txData,
         tokenType: 'prompt',
-        rawAmount: -promptAmount,
-        inputTokens: input,
-        writeTokens: write,
-        readTokens: read,
+        inputTokens: -input,
+        writeTokens: -write,
+        readTokens: -read,
       });
     }
 
