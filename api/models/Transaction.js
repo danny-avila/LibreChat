@@ -151,16 +151,6 @@ transactionSchema.methods.calculateStructuredTokenValue = function () {
     this.rawAmount = -Math.abs(this.rawAmount);
   }
 
-  console.log('Token breakdown in calculateStructuredTokenValue:');
-  console.log('Token Type:', this.tokenType);
-  console.log('Input tokens:', this.inputTokens);
-  console.log('Write tokens:', this.writeTokens);
-  console.log('Read tokens:', this.readTokens);
-  console.log('Completion tokens:', this.rawAmount);
-  console.log('Total tokens (rawAmount):', this.rawAmount);
-  console.log('Token Value:', this.tokenValue);
-  console.log('Rate:', this.rate);
-
   if (this.context && this.tokenType === 'completion' && this.context === 'incomplete') {
     this.tokenValue = Math.ceil(this.tokenValue * cancelRate);
     this.rate *= cancelRate;
