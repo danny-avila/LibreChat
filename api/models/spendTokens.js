@@ -32,35 +32,34 @@ const spendTokens = async (txData, tokenUsage) => {
   );
   let prompt, completion;
   try {
-    if (promptTokens >= 0) {
+    if (promptTokens !== undefined) {
       prompt = await Transaction.create({
         ...txData,
         tokenType: 'prompt',
-        rawAmount: -promptTokens,
+        rawAmount: -Math.max(promptTokens, 0),
       });
     }
 
-    if (!completionTokens && isNaN(completionTokens)) {
-      logger.debug('[spendTokens] !completionTokens', { prompt, completion });
-      return;
+    if (completionTokens !== undefined) {
+      completion = await Transaction.create({
+        ...txData,
+        tokenType: 'completion',
+        rawAmount: -Math.max(completionTokens, 0),
+      });
     }
 
-    completion = await Transaction.create({
-      ...txData,
-      tokenType: 'completion',
-      rawAmount: -completionTokens,
-    });
-
-    prompt &&
-      completion &&
+    if (prompt || completion) {
       logger.debug('[spendTokens] Transaction data record against balance:', {
         user: txData.user,
-        prompt: prompt.prompt,
-        promptRate: prompt.rate,
-        completion: completion.completion,
-        completionRate: completion.rate,
-        balance: completion.balance,
+        prompt: prompt?.prompt,
+        promptRate: prompt?.rate,
+        completion: completion?.completion,
+        completionRate: completion?.rate,
+        balance: completion?.balance ?? prompt?.balance,
       });
+    } else {
+      logger.debug('[spendTokens] No transactions incurred against balance');
+    }
   } catch (err) {
     logger.error('[spendTokens]', err);
   }
@@ -102,14 +101,12 @@ const spendStructuredTokens = async (txData, tokenUsage) => {
   try {
     if (promptTokens) {
       const { input = 0, write = 0, read = 0 } = promptTokens;
-      const promptAmount = input + write + read;
       prompt = await Transaction.createStructured({
         ...txData,
         tokenType: 'prompt',
-        rawAmount: -promptAmount,
-        inputTokens: input,
-        writeTokens: write,
-        readTokens: read,
+        inputTokens: -input,
+        writeTokens: -write,
+        readTokens: -read,
       });
     }
 
@@ -121,19 +118,23 @@ const spendStructuredTokens = async (txData, tokenUsage) => {
       });
     }
 
-    prompt &&
-      completion &&
+    if (prompt || completion) {
       logger.debug('[spendStructuredTokens] Transaction data record against balance:', {
         user: txData.user,
-        prompt: prompt.tokenValue,
-        promptRate: prompt.rate,
-        completion: completion.tokenValue,
-        completionRate: completion.rate,
-        balance: completion.balance,
+        prompt: prompt?.prompt,
+        promptRate: prompt?.rate,
+        completion: completion?.completion,
+        completionRate: completion?.rate,
+        balance: completion?.balance ?? prompt?.balance,
       });
+    } else {
+      logger.debug('[spendStructuredTokens] No transactions incurred against balance');
+    }
   } catch (err) {
     logger.error('[spendStructuredTokens]', err);
   }
+
+  return { prompt, completion };
 };
 
 module.exports = { spendTokens, spendStructuredTokens };
