@@ -69,7 +69,9 @@ export default function Artifacts() {
 
   const [currentArtifactId, setCurrentArtifactId] = useState<string | null>(null);
   const orderedArtifactIds = useMemo(() => {
-    return Object.keys(artifacts).sort((a, b) => artifacts[a].order - artifacts[b].order);
+    return Object.keys(artifacts).sort(
+      (a, b) => artifacts[a].lastUpdateTime - artifacts[b].lastUpdateTime,
+    );
   }, [artifacts]);
 
   const lastRunMessageIdRef = useRef<string | null>(null);
@@ -78,6 +80,14 @@ export default function Artifacts() {
   useEffect(() => {
     setIsVisible(true);
   }, []);
+
+  useEffect(() => {
+    if (orderedArtifactIds.length > 0) {
+      const latestArtifactId = orderedArtifactIds[orderedArtifactIds.length - 1];
+      setCurrentArtifactId(latestArtifactId);
+      setActiveTab('code');
+    }
+  }, [orderedArtifactIds]);
 
   useEffect(() => {
     if (latestMessage?.messageId !== lastRunMessageIdRef.current) {
@@ -92,19 +102,11 @@ export default function Artifacts() {
       ) {
         setActiveTab('code');
         lastContentRef.current = currentContent;
-      } else if (!isSubmitting && currentArtifactId == null && orderedArtifactIds.length > 0) {
-        setCurrentArtifactId(orderedArtifactIds[0]);
       }
 
       lastRunMessageIdRef.current = latestMessage?.messageId ?? null;
     }
-  }, [activeTab, currentArtifactId, isSubmitting, latestMessage, orderedArtifactIds, artifacts]);
-
-  useEffect(() => {
-    if (orderedArtifactIds.length > 0 && !(currentArtifactId ?? '')) {
-      setCurrentArtifactId(orderedArtifactIds[orderedArtifactIds.length - 1]);
-    }
-  }, [orderedArtifactIds, currentArtifactId]);
+  }, [activeTab, currentArtifactId, isSubmitting, latestMessage, artifacts]);
 
   const currentArtifact = currentArtifactId != null ? artifacts[currentArtifactId] : null;
 
