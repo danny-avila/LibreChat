@@ -1,4 +1,5 @@
 const { removeNullishValues } = require('librechat-data-provider');
+const artifactsPrompt = require('~/app/clients/prompts/artifacts');
 
 const buildOptions = (endpoint, parsedBody) => {
   const {
@@ -9,6 +10,7 @@ const buildOptions = (endpoint, parsedBody) => {
     iconURL,
     greeting,
     spec,
+    artifacts,
     ...modelOptions
   } = parsedBody;
   const endpointOption = removeNullishValues({
@@ -22,6 +24,10 @@ const buildOptions = (endpoint, parsedBody) => {
     spec,
     modelOptions,
   });
+
+  if (artifacts === 'default') {
+    endpointOption.promptPrefix = `${promptPrefix ?? ''}\n${artifactsPrompt}`.trim();
+  }
 
   return endpointOption;
 };
