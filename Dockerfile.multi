@@ -4,6 +4,10 @@
 # Base for all builds
 FROM node:20-alpine AS base
 WORKDIR /app
+RUN apk --no-cache add curl
+RUN npm config set fetch-retry-maxtimeout 600000 && \
+    npm config set fetch-retries 5 && \
+    npm config set fetch-retry-mintimeout 15000
 COPY package*.json ./
 COPY packages/data-provider/package*.json ./packages/data-provider/
 COPY client/package*.json ./client/
