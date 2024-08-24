@@ -4,10 +4,10 @@ import type { ReactNode } from 'react';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
 import ConvoIcon from '~/components/Endpoints/ConvoIcon';
+import { useLocalize, useSubmitMessage } from '~/hooks';
 import { BirthdayIcon } from '~/components/svg';
 import { getIconEndpoint, cn } from '~/utils';
 import ConvoStarter from './ConvoStarter';
-import { useLocalize } from '~/hooks';
 
 export default function Landing({ Header }: { Header?: ReactNode }) {
   const { conversation } = useChatContext();
@@ -33,19 +33,22 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
 
   const isAssistant = isAssistantsEndpoint(endpoint);
   const assistant = isAssistant ? assistantMap?.[endpoint][assistant_id ?? ''] : undefined;
-  const assistantName = assistant && assistant.name;
-  const assistantDesc = assistant && assistant.description;
-  const avatar = assistant && (assistant.metadata?.avatar as string);
-  const conversation_starters = assistant && assistant.conversation_starters;
+  const assistantName = assistant?.name ?? '';
+  const assistantDesc = assistant?.description ?? '';
+  const avatar = (assistant?.metadata?.avatar as string) ?? '';
+  const conversation_starters = assistant?.conversation_starters ?? [];
 
   const containerClassName =
     'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black';
+
+  const { submitMessage } = useSubmitMessage();
+  const sendConversationStarter = (text: string) => submitMessage({ text });
 
   return (
     <TooltipProvider delayDuration={50}>
       <Tooltip>
         <div className="relative h-full">
-          <div className="absolute left-0 right-0">{Header && Header}</div>
+          <div className="absolute left-0 right-0">{Header ? Header : null}</div>
           <div className="flex h-full flex-col items-center justify-center">
             <div className={cn('relative h-12 w-12', assistantName && avatar ? 'mb-0' : 'mb-3')}>
               <ConvoIcon
@@ -57,7 +60,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
                 className="h-2/3 w-2/3"
                 size={41}
               />
-              {!!startupConfig?.showBirthdayIcon && (
+              {startupConfig?.showBirthdayIcon ? (
                 <div>
                   <TooltipTrigger>
                     <BirthdayIcon className="absolute bottom-8 right-2.5" />
@@ -66,7 +69,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
                     {localize('com_ui_happy_birthday')}
                   </TooltipContent>
                 </div>
-              )}
+              ) : null}
             </div>
             {assistantName ? (
               <div className="flex flex-col items-center gap-0 p-2">
@@ -88,10 +91,16 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
               </h2>
             )}
             <div className="mt-8 flex flex-wrap justify-center gap-3 px-4">
-              {conversation_starters &&
+              {conversation_starters.length > 0 &&
                 conversation_starters
                   .slice(0, 4)
-                  .map((text, index) => <ConvoStarter key={index} text={text} />)}
+                  .map((text, index) => (
+                    <ConvoStarter
+                      key={index}
+                      text={text}
+                      onClick={() => sendConversationStarter(text)}
+                    />
+                  ))}
             </div>
           </div>
         </div>

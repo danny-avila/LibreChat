@@ -13,13 +13,14 @@ interface AssistantConversationStartersProps {
   labelClass: string;
 }
 
+export const MAX_STARTERS = 4;
+
 const AssistantConversationStarters: React.FC<AssistantConversationStartersProps> = ({
   field,
   inputClass,
   labelClass,
 }) => {
   const localize = useLocalize();
-  const MAX_STARTERS = 4;
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const nodeRef = useRef(null);
 
@@ -75,7 +76,7 @@ const AssistantConversationStarters: React.FC<AssistantConversationStartersProps
                   <TooltipTrigger asChild>
                     <button
                       type="button"
-                      className="transition-colors flex size-7 items-center justify-center rounded-lg duration-200 hover:bg-surface-hover"
+                      className="flex size-7 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-hover"
                       onClick={handleAddStarter}
                     >
                       <Plus className="size-4" />
@@ -119,7 +120,7 @@ const AssistantConversationStarters: React.FC<AssistantConversationStartersProps
                 <TooltipTrigger asChild>
                   <button
                     type="button"
-                    className="transition-colors absolute right-1 top-1 flex size-7 items-center justify-center rounded-lg duration-200 hover:bg-surface-hover"
+                    className="absolute right-1 top-1 flex size-7 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-hover"
                     onClick={() => {
                       const newValues = field.value.filter((_, i) => i !== index);
                       field.onChange(newValues);
