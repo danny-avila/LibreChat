@@ -47,8 +47,7 @@ export default function AssistantConversationStarters({
               placeholder={localize('com_assistants_conversation_starters_placeholder')}
               onChange={(e) => {
                 const newValues = [e.target.value];
-                const filteredValues = newValues.filter((value) => value.trim() !== '');
-                field.onChange(filteredValues);
+                field.onChange(newValues);
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
@@ -75,72 +74,69 @@ export default function AssistantConversationStarters({
             </TooltipProvider>
           </div>
         )}
-        {Array.isArray(field.value) &&
-          field.value.map((starter, index) => (
-            <div key={index} className="relative">
-              <input
-                ref={(el) => (inputRefs.current[index] = el)}
-                value={starter}
-                maxLength={64}
-                className={inputClass}
-                type="text"
-                placeholder={localize('com_assistants_conversation_starters_placeholder')}
-                onChange={(e) => {
-                  const newValues = [...field.value];
-                  newValues[index] = e.target.value;
-                  const filteredValues = newValues.filter((value) => value.trim() !== '');
-                  field.onChange(filteredValues);
-                }}
-                onKeyDown={(e) => {
-                  if (index === 0 && e.key === 'Enter') {
-                    e.preventDefault();
-                    handleAddStarter();
-                  } else if (e.key === 'Backspace' && starter.trim() === '') {
-                    e.preventDefault();
-                  }
-                }}
-              />
-              {index === 0 && field.value.length < MAX_STARTERS ? (
-                <TooltipProvider delayDuration={1000}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        className="transition-color absolute right-1 top-1 flex size-7 items-center justify-center rounded-lg duration-200 hover:bg-surface-hover"
-                        onClick={handleAddStarter}
-                      >
-                        <Plus className="size-4" />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" sideOffset={0}>
-                      {localize('com_ui_add')}
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              ) : (
-                <TooltipProvider delayDuration={1000}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        className="transition-color absolute right-1 top-1 flex size-7 items-center justify-center rounded-lg duration-200 hover:bg-surface-hover"
-                        onClick={() => {
-                          const newValues = field.value.filter((_, i) => i !== index);
-                          const filteredValues = newValues.filter((value) => value.trim() !== '');
-                          field.onChange(filteredValues);
-                        }}
-                      >
-                        <X className="size-4" />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" sideOffset={0}>
-                      {localize('com_ui_delete')}
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              )}
-            </div>
-          ))}
+        {field.value.map((starter, index) => (
+          <div key={index} className="relative">
+            <input
+              ref={(el) => (inputRefs.current[index] = el)}
+              value={starter}
+              maxLength={64}
+              className={inputClass}
+              type="text"
+              placeholder={localize('com_assistants_conversation_starters_placeholder')}
+              onChange={(e) => {
+                const newValues = [...field.value];
+                newValues[index] = e.target.value;
+                field.onChange(newValues);
+              }}
+              onKeyDown={(e) => {
+                if (index === 0 && e.key === 'Enter') {
+                  e.preventDefault();
+                  handleAddStarter();
+                } else if (e.key === 'Backspace' && starter.trim() === '') {
+                  e.preventDefault();
+                }
+              }}
+            />
+            {index === 0 && field.value.length < MAX_STARTERS ? (
+              <TooltipProvider delayDuration={1000}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="transition-color absolute right-1 top-1 flex size-7 items-center justify-center rounded-lg duration-200 hover:bg-surface-hover"
+                      onClick={handleAddStarter}
+                    >
+                      <Plus className="size-4" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" sideOffset={0}>
+                    {localize('com_ui_add')}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : (
+              <TooltipProvider delayDuration={1000}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="transition-color absolute right-1 top-1 flex size-7 items-center justify-center rounded-lg duration-200 hover:bg-surface-hover"
+                      onClick={() => {
+                        const newValues = field.value.filter((_, i) => i !== index);
+                        field.onChange(newValues);
+                      }}
+                    >
+                      <X className="size-4" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" sideOffset={0}>
+                    {localize('com_ui_delete')}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );
