@@ -61,11 +61,12 @@ export function ArtifactPreview({
 }
 
 export default function Artifacts() {
-  const { isSubmitting, latestMessage } = useChatContext();
+  const { isSubmitting, latestMessage, conversation } = useChatContext();
+  const conversationId = useMemo(() => conversation?.conversationId ?? null, [conversation]);
 
   const [isVisible, setIsVisible] = useState(false);
   const [activeTab, setActiveTab] = useState('preview');
-  const artifacts = useRecoilValue(store.artifactsState);
+  const [artifacts, setArtifacts] = useRecoilState(store.artifactsState);
   const [currentArtifactId, setCurrentArtifactId] = useRecoilState(store.currentArtifactId);
 
   const orderedArtifactIds = useMemo(() => {

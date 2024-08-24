@@ -22,9 +22,9 @@ export default function Presentation({
   useSidePanel?: boolean;
 }) {
   const { data: startupConfig } = useGetStartupConfig();
+  const artifacts = useRecoilValue(store.artifactsState);
   const codeArtifacts = useRecoilValue(store.codeArtifacts);
   const hideSidePanel = useRecoilValue(store.hideSidePanel);
-  const codeBlockIds = useRecoilValue(store.artifactIdsState);
   const interfaceConfig = useMemo(
     () => startupConfig?.interface ?? defaultInterface,
     [startupConfig],
@@ -95,7 +95,9 @@ export default function Presentation({
           defaultLayout={defaultLayout}
           defaultCollapsed={defaultCollapsed}
           fullPanelCollapse={fullCollapse}
-          artifacts={codeArtifacts && codeBlockIds.length > 0 ? <Artifacts /> : null}
+          artifacts={
+            codeArtifacts != null && Object.keys(artifacts).length > 0 ? <Artifacts /> : null
+          }
         >
           <main className="flex h-full flex-col" role="main">
             {children}
