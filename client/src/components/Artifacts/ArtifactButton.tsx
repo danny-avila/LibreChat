@@ -14,29 +14,25 @@ const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
   const fileType = getFileType('artifact');
 
   return (
-    <>
-      <div className="group relative inline-block rounded-xl text-sm text-text-primary">
-        <button
-          type="button"
-          onClick={() => setArtifactId(artifact.id)}
-          className="relative overflow-hidden rounded-xl border border-border-medium transition-all duration-300 hover:border-border-xheavy hover:shadow-lg"
-        >
-          <div className="w-60 bg-surface-tertiary p-2 ">
-            <div className="flex flex-row items-center gap-2">
-              <FilePreview fileType={fileType} className="relative" />
-              <div className="overflow-hidden text-left">
-                <div className="truncate font-medium">{artifact.title}</div>
-                <div className="truncate text-text-secondary">
-                  {localize('com_ui_artifact_click')}
-                </div>
+    <div className="group relative my-4 rounded-xl text-sm text-text-primary">
+      <button
+        type="button"
+        onClick={() => setArtifactId(artifact.id)}
+        className="relative overflow-hidden rounded-xl border border-border-medium transition-all duration-300 hover:border-border-xheavy hover:shadow-lg"
+      >
+        <div className="w-60 bg-surface-tertiary p-2 ">
+          <div className="flex flex-row items-center gap-2">
+            <FilePreview fileType={fileType} className="relative" />
+            <div className="overflow-hidden text-left">
+              <div className="truncate font-medium">{artifact.title}</div>
+              <div className="truncate text-text-secondary">
+                {localize('com_ui_artifact_click')}
               </div>
             </div>
           </div>
-        </button>
-      </div>
-      {/* new line*/}
-      <br />
-    </>
+        </div>
+      </button>
+    </div>
   );
 };
 
