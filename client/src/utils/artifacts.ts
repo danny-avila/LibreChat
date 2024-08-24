@@ -1,9 +1,24 @@
 import dedent from 'dedent';
+import type {
+  SandpackProviderProps,
+  SandpackPredefinedTemplate,
+} from '@codesandbox/sandpack-react';
 // import * as shadcnComponents from '~/utils/shadcn';
 
 const artifactFilename = {
   'application/vnd.react': 'App.tsx',
   'text/html': 'index.html',
+  // 'css': 'css',
+  // 'javascript': 'js',
+  // 'typescript': 'ts',
+  // 'jsx': 'jsx',
+  // 'tsx': 'tsx',
+};
+
+const artifactTemplate: Record<string, SandpackPredefinedTemplate | undefined> = {
+  'text/html': 'static',
+  'application/vnd.react': 'react-ts',
+  'application/vnd.code-html': 'static',
   // 'css': 'css',
   // 'javascript': 'js',
   // 'typescript': 'ts',
@@ -34,8 +49,13 @@ export function getFileExtension(language?: string): string {
   }
 }
 
-export const sharedProps = {
-  template: 'react-ts',
+export function getTemplate(type: string, language?: string): SandpackPredefinedTemplate {
+  return (
+    artifactTemplate[`${type}${(language?.length ?? 0) > 0 ? `-${language}` : ''}`] ?? 'react-ts'
+  );
+}
+
+export const sharedProps: Partial<SandpackProviderProps> = {
   customSetup: {
     dependencies: {
       'lucide-react': '^0.394.0',
@@ -78,7 +98,7 @@ export const sharedProps = {
   },
 } as const;
 
-export const sharedOptions = {
+export const sharedOptions: SandpackProviderProps['options'] = {
   externalResources: ['https://unpkg.com/@tailwindcss/ui/dist/tailwind-ui.min.css'],
 };
 
