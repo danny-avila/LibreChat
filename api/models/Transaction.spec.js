@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const Balance = require('./Balance');
 const { Transaction } = require('./Transaction');
-const { spendStructuredTokens } = require('./spendTokens');
+const { spendTokens, spendStructuredTokens } = require('./spendTokens');
 const { getMultiplier, getCacheMultiplier } = require('./tx');
 
 let mongoServer;
@@ -20,6 +20,166 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await mongoose.connection.dropDatabase();
+});
+
+describe('Regular Token Spending Tests', () => {
+  test('Balance should decrease when spending tokens with spendTokens', async () => {
+    // Arrange
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 10000000; // $10.00
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'gpt-3.5-turbo';
+    const txData = {
+      user: userId,
+      conversationId: 'test-conversation-id',
+      model,
+      context: 'test',
+      endpointTokenConfig: null,
+    };
+
+    const tokenUsage = {
+      promptTokens: 100,
+      completionTokens: 50,
+    };
+
+    // Act
+    process.env.CHECK_BALANCE = 'true';
+    await spendTokens(txData, tokenUsage);
+
+    // Assert
+    const updatedBalance = await Balance.findOne({ user: userId });
+    const transactions = await Transaction.find({ user: userId });
+
+    console.log('Initial Balance:', initialBalance);
+    console.log('Updated Balance:', updatedBalance.tokenCredits);
+    console.log('Transactions:', transactions);
+
+    const promptMultiplier = getMultiplier({ model, tokenType: 'prompt' });
+    const completionMultiplier = getMultiplier({ model, tokenType: 'completion' });
+
+    const expectedPromptCost = tokenUsage.promptTokens * promptMultiplier;
+    const expectedCompletionCost = tokenUsage.completionTokens * completionMultiplier;
+    const expectedTotalCost = expectedPromptCost + expectedCompletionCost;
+    const expectedBalance = initialBalance - expectedTotalCost;
+
+    expect(updatedBalance.tokenCredits).toBeLessThan(initialBalance);
+    expect(updatedBalance.tokenCredits).toBeCloseTo(expectedBalance, 0);
+
+    expect(transactions).toHaveLength(2);
+
+    const promptTransaction = transactions.find((t) => t.tokenType === 'prompt');
+    const completionTransaction = transactions.find((t) => t.tokenType === 'completion');
+
+    expect(promptTransaction.rawAmount).toBe(-tokenUsage.promptTokens);
+    expect(completionTransaction.rawAmount).toBe(-tokenUsage.completionTokens);
+
+    expect(promptTransaction.tokenValue).toBeCloseTo(-expectedPromptCost, 0);
+    expect(completionTransaction.tokenValue).toBeCloseTo(-expectedCompletionCost, 0);
+
+    console.log('Expected Total Cost:', expectedTotalCost);
+    console.log('Actual Balance Decrease:', initialBalance - updatedBalance.tokenCredits);
+  });
+
+  test('spendTokens should handle zero completion tokens', async () => {
+    // Arrange
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 10000000; // $10.00
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'gpt-3.5-turbo';
+    const txData = {
+      user: userId,
+      conversationId: 'test-conversation-id',
+      model,
+      context: 'test',
+      endpointTokenConfig: null,
+    };
+
+    const tokenUsage = {
+      promptTokens: 100,
+      completionTokens: 0,
+    };
+
+    // Act
+    process.env.CHECK_BALANCE = 'true';
+    await spendTokens(txData, tokenUsage);
+
+    // Assert
+    const updatedBalance = await Balance.findOne({ user: userId });
+    const transactions = await Transaction.find({ user: userId });
+
+    expect(transactions).toHaveLength(2);
+
+    const promptTransaction = transactions.find((t) => t.tokenType === 'prompt');
+    const completionTransaction = transactions.find((t) => t.tokenType === 'completion');
+
+    expect(promptTransaction.rawAmount).toBe(-tokenUsage.promptTokens);
+    expect(completionTransaction.rawAmount).toEqual(-0); // Changed to toEqual and -0
+
+    const promptMultiplier = getMultiplier({ model, tokenType: 'prompt' });
+    const expectedCost = tokenUsage.promptTokens * promptMultiplier;
+    expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
+
+    console.log('Initial Balance:', initialBalance);
+    console.log('Updated Balance:', updatedBalance.tokenCredits);
+    console.log('Transactions:', transactions);
+    console.log('Expected Cost:', expectedCost);
+  });
+
+  test('spendTokens should handle undefined token counts', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 10000000; // $10.00
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'gpt-3.5-turbo';
+    const txData = {
+      user: userId,
+      conversationId: 'test-conversation-id',
+      model,
+      context: 'test',
+      endpointTokenConfig: null,
+    };
+
+    const tokenUsage = {};
+
+    await spendTokens(txData, tokenUsage);
+
+    const transactions = await Transaction.find({ user: userId });
+    expect(transactions).toHaveLength(0);
+
+    const updatedBalance = await Balance.findOne({ user: userId });
+    expect(updatedBalance.tokenCredits).toBe(initialBalance);
+  });
+
+  test('spendTokens should handle only prompt tokens', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 10000000; // $10.00
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'gpt-3.5-turbo';
+    const txData = {
+      user: userId,
+      conversationId: 'test-conversation-id',
+      model,
+      context: 'test',
+      endpointTokenConfig: null,
+    };
+
+    const tokenUsage = { promptTokens: 100 };
+
+    await spendTokens(txData, tokenUsage);
+
+    const transactions = await Transaction.find({ user: userId });
+    expect(transactions).toHaveLength(1);
+    expect(transactions[0].tokenType).toBe('prompt');
+    expect(transactions[0].rawAmount).toBe(-100);
+
+    const promptMultiplier = getMultiplier({ model, tokenType: 'prompt' });
+    const expectedCost = 100 * promptMultiplier;
+    const updatedBalance = await Balance.findOne({ user: userId });
+    expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
+  });
 });
 
 describe('Structured Token Spending Tests', () => {

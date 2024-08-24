@@ -32,35 +32,34 @@ const spendTokens = async (txData, tokenUsage) => {
   );
   let prompt, completion;
   try {
-    if (promptTokens >= 0) {
+    if (promptTokens !== undefined) {
       prompt = await Transaction.create({
         ...txData,
         tokenType: 'prompt',
-        rawAmount: -promptTokens,
+        rawAmount: -Math.max(promptTokens, 0),
       });
     }
 
-    if (!completionTokens && isNaN(completionTokens)) {
-      logger.debug('[spendTokens] !completionTokens', { prompt, completion });
-      return;
+    if (completionTokens !== undefined) {
+      completion = await Transaction.create({
+        ...txData,
+        tokenType: 'completion',
+        rawAmount: -Math.max(completionTokens, 0),
+      });
     }
 
-    completion = await Transaction.create({
-      ...txData,
-      tokenType: 'completion',
-      rawAmount: -completionTokens,
-    });
-
-    prompt &&
-      completion &&
+    if (prompt || completion) {
       logger.debug('[spendTokens] Transaction data record against balance:', {
         user: txData.user,
-        prompt: prompt.prompt,
-        promptRate: prompt.rate,
-        completion: completion.completion,
-        completionRate: completion.rate,
-        balance: completion.balance,
+        prompt: prompt?.prompt,
+        promptRate: prompt?.rate,
+        completion: completion?.completion,
+        completionRate: completion?.rate,
+        balance: completion?.balance ?? prompt?.balance,
       });
+    } else {
+      logger.debug('[spendTokens] No transactions created');
+    }
   } catch (err) {
     logger.error('[spendTokens]', err);
   }
