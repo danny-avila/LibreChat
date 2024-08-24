@@ -29,7 +29,6 @@ const mockStartupConfig: TStartupConfig = {
   emailEnabled: false,
   checkBalance: false,
   showBirthdayIcon: false,
-  helpAndFaqURL: '',
 };
 
 const setup = ({

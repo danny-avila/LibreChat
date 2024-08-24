@@ -1,9 +1,9 @@
 import { useRecoilValue } from 'recoil';
 import { useEffect, useMemo } from 'react';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
-import { FileSources, LocalStorageKeys, getConfigDefaults } from 'librechat-data-provider';
+import { FileSources, LocalStorageKeys, getConfigDefaults, SystemRoles } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
-import { useDragHelpers, useSetFilesToDelete } from '~/hooks';
+import { useDragHelpers, useSetFilesToDelete, useAuthContext } from '~/hooks';
 import DragDropOverlay from './Input/Files/DragDropOverlay';
 import { useDeleteFilesMutation } from '~/data-provider';
 import { SidePanel } from '~/components/SidePanel';
@@ -20,6 +20,7 @@ export default function Presentation({
   panel?: React.ReactNode;
   useSidePanel?: boolean;
 }) {
+  const { user } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
   const hideSidePanel = useRecoilValue(store.hideSidePanel);
   const interfaceConfig = useMemo(
@@ -79,7 +80,9 @@ export default function Presentation({
     </div>
   );
 
-  if (useSidePanel && !hideSidePanel && interfaceConfig.sidePanel === true) {
+  const isAdmin = user?.role === SystemRoles.ADMIN
+
+  if (isAdmin && useSidePanel && !hideSidePanel && interfaceConfig.sidePanel === true) {
     return (
       <div
         ref={drop}

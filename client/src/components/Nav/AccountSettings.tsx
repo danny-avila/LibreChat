@@ -14,6 +14,7 @@ import NavLink from './NavLink';
 import Logout from './Logout';
 import { cn } from '~/utils/';
 import store from '~/store';
+import { SystemRoles } from 'librechat-data-provider';
 
 function AccountSettings() {
   const localize = useLocalize();
@@ -85,13 +86,13 @@ function AccountSettings() {
                 {startupConfig?.checkBalance === true &&
                   balanceQuery.data != null &&
                   !isNaN(parseFloat(balanceQuery.data)) && (
-                  <>
-                    <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm">
-                      {`Balance: ${parseFloat(balanceQuery.data).toFixed(2)}`}
-                    </div>
-                    <div className="my-1.5 h-px border-b border-border-medium" role="none" />
-                  </>
-                )}
+                    <>
+                      <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm">
+                        {`Balance: ${parseFloat(balanceQuery.data).toFixed(2)}`}
+                      </div>
+                      <div className="my-1.5 h-px border-b border-border-medium" role="none" />
+                    </>
+                  )}
                 <MenuItem>
                   {({ focus }) => (
                     <NavLink
@@ -102,28 +103,18 @@ function AccountSettings() {
                     />
                   )}
                 </MenuItem>
-                {startupConfig?.helpAndFaqURL !== '/' && (
-                  <MenuItem>
+                {
+                  user?.role === SystemRoles.ADMIN ? <MenuItem>
                     {({ focus }) => (
                       <NavLink
                         className={focus ? 'bg-surface-hover' : ''}
-                        svg={() => <LinkIcon />}
-                        text={localize('com_nav_help_faq')}
-                        clickHandler={() => window.open(startupConfig?.helpAndFaqURL, '_blank')}
+                        svg={() => <GearIcon className="icon-md" />}
+                        text={localize('com_nav_settings')}
+                        clickHandler={() => setShowSettings(true)}
                       />
                     )}
-                  </MenuItem>
-                )}
-                <MenuItem>
-                  {({ focus }) => (
-                    <NavLink
-                      className={focus ? 'bg-surface-hover' : ''}
-                      svg={() => <GearIcon className="icon-md" />}
-                      text={localize('com_nav_settings')}
-                      clickHandler={() => setShowSettings(true)}
-                    />
-                  )}
-                </MenuItem>
+                  </MenuItem> : null
+                }
                 <div className="my-1.5 h-px border-b border-border-medium" role="none" />
                 <MenuItem>
                   {({ focus }) => <Logout className={focus ? 'bg-surface-hover' : ''} />}
