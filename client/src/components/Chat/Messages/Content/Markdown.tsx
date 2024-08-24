@@ -8,6 +8,7 @@ import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkDirective from 'remark-directive';
 import type { PluggableList, Pluggable } from 'unified';
+import type { Pluggable } from 'unified';
 import { langSubset, preprocessLaTeX, handleDoubleClick } from '~/utils';
 import { CodeBlockArtifact, CodeMarkdown } from '~/components/Artifacts/Code';
 import { Artifact, artifactPlugin } from '~/components/Artifacts/Artifact';
@@ -124,6 +125,7 @@ const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentPr
   const artifactIdRef = useRef<string | null>(null);
   const codeBlocksRef = useRef<number | null>(null);
   const LaTeXParsing = useRecoilValue<boolean>(store.LaTeXParsing);
+  const codeArtifacts = useRecoilValue<boolean>(store.codeArtifacts);
 
   const isInitializing = content === '';
 
@@ -155,18 +157,20 @@ const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentPr
     );
   }
 
+  const remarkPlugins: Pluggable[] = codeArtifacts
+    ? [
+      supersub,
+      remarkGfm,
+      [remarkMath, { singleDollarTextMath: true }],
+      remarkDirective,
+      artifactPlugin,
+    ]
+    : [supersub, remarkGfm, [remarkMath, { singleDollarTextMath: true }]];
+
   return (
     <ReactMarkdown
-      remarkPlugins={[
-        /* @ts-ignore */
-        supersub,
-        remarkGfm,
-        /* @ts-ignore */
-        [remarkMath, { singleDollarTextMath: true }],
-        remarkDirective,
-        /* @ts-ignore */
-        artifactPlugin,
-      ]}
+      /** @ts-ignore */
+      remarkPlugins={remarkPlugins}
       /* @ts-ignore */
       rehypePlugins={rehypePlugins}
       // linkTarget="_new"
