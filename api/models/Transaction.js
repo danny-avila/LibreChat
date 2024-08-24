@@ -122,33 +122,44 @@ transactionSchema.methods.calculateStructuredTokenValue = function () {
       read: readMultiplier,
     };
 
-    const totalTokens =
+    const totalPromptTokens =
       Math.abs(this.inputTokens || 0) +
       Math.abs(this.writeTokens || 0) +
       Math.abs(this.readTokens || 0);
 
-    if (totalTokens > 0) {
+    if (totalPromptTokens > 0) {
       this.rate =
         (Math.abs(inputMultiplier * (this.inputTokens || 0)) +
           Math.abs(writeMultiplier * (this.writeTokens || 0)) +
           Math.abs(readMultiplier * (this.readTokens || 0))) /
-        totalTokens;
+        totalPromptTokens;
     } else {
       this.rate = Math.abs(inputMultiplier); // Default to input rate if no tokens
     }
 
-    this.tokenValue =
-      (this.inputTokens || 0) * inputMultiplier +
-      (this.writeTokens || 0) * writeMultiplier +
-      (this.readTokens || 0) * readMultiplier;
+    this.tokenValue = -(
+      Math.abs(this.inputTokens || 0) * inputMultiplier +
+      Math.abs(this.writeTokens || 0) * writeMultiplier +
+      Math.abs(this.readTokens || 0) * readMultiplier
+    );
 
-    // Update rawAmount to reflect the total number of tokens
-    this.rawAmount = totalTokens;
-  } else {
+    this.rawAmount = -totalPromptTokens;
+  } else if (this.tokenType === 'completion') {
     const multiplier = getMultiplier({ tokenType: this.tokenType, model, endpointTokenConfig });
     this.rate = Math.abs(multiplier);
-    this.tokenValue = this.rawAmount * multiplier;
+    this.tokenValue = -Math.abs(this.rawAmount) * multiplier;
+    this.rawAmount = -Math.abs(this.rawAmount);
   }
+
+  console.log('Token breakdown in calculateStructuredTokenValue:');
+  console.log('Token Type:', this.tokenType);
+  console.log('Input tokens:', this.inputTokens);
+  console.log('Write tokens:', this.writeTokens);
+  console.log('Read tokens:', this.readTokens);
+  console.log('Completion tokens:', this.rawAmount);
+  console.log('Total tokens (rawAmount):', this.rawAmount);
+  console.log('Token Value:', this.tokenValue);
+  console.log('Rate:', this.rate);
 
   if (this.context && this.tokenType === 'completion' && this.context === 'incomplete') {
     this.tokenValue = Math.ceil(this.tokenValue * cancelRate);
