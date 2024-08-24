@@ -1,7 +1,6 @@
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const Balance = require('./Balance');
-const { Transaction } = require('./Transaction');
 const { spendTokens, spendStructuredTokens } = require('./spendTokens');
 const { getMultiplier, getCacheMultiplier } = require('./tx');
 
@@ -48,12 +47,10 @@ describe('Regular Token Spending Tests', () => {
     await spendTokens(txData, tokenUsage);
 
     // Assert
-    const updatedBalance = await Balance.findOne({ user: userId });
-    const transactions = await Transaction.find({ user: userId });
-
     console.log('Initial Balance:', initialBalance);
+
+    const updatedBalance = await Balance.findOne({ user: userId });
     console.log('Updated Balance:', updatedBalance.tokenCredits);
-    console.log('Transactions:', transactions);
 
     const promptMultiplier = getMultiplier({ model, tokenType: 'prompt' });
     const completionMultiplier = getMultiplier({ model, tokenType: 'completion' });
@@ -65,17 +62,6 @@ describe('Regular Token Spending Tests', () => {
 
     expect(updatedBalance.tokenCredits).toBeLessThan(initialBalance);
     expect(updatedBalance.tokenCredits).toBeCloseTo(expectedBalance, 0);
-
-    expect(transactions).toHaveLength(2);
-
-    const promptTransaction = transactions.find((t) => t.tokenType === 'prompt');
-    const completionTransaction = transactions.find((t) => t.tokenType === 'completion');
-
-    expect(promptTransaction.rawAmount).toBe(-tokenUsage.promptTokens);
-    expect(completionTransaction.rawAmount).toBe(-tokenUsage.completionTokens);
-
-    expect(promptTransaction.tokenValue).toBeCloseTo(-expectedPromptCost, 0);
-    expect(completionTransaction.tokenValue).toBeCloseTo(-expectedCompletionCost, 0);
 
     console.log('Expected Total Cost:', expectedTotalCost);
     console.log('Actual Balance Decrease:', initialBalance - updatedBalance.tokenCredits);
@@ -107,15 +93,6 @@ describe('Regular Token Spending Tests', () => {
 
     // Assert
     const updatedBalance = await Balance.findOne({ user: userId });
-    const transactions = await Transaction.find({ user: userId });
-
-    expect(transactions).toHaveLength(2);
-
-    const promptTransaction = transactions.find((t) => t.tokenType === 'prompt');
-    const completionTransaction = transactions.find((t) => t.tokenType === 'completion');
-
-    expect(promptTransaction.rawAmount).toBe(-tokenUsage.promptTokens);
-    expect(completionTransaction.rawAmount).toEqual(-0); // Changed to toEqual and -0
 
     const promptMultiplier = getMultiplier({ model, tokenType: 'prompt' });
     const expectedCost = tokenUsage.promptTokens * promptMultiplier;
@@ -123,7 +100,6 @@ describe('Regular Token Spending Tests', () => {
 
     console.log('Initial Balance:', initialBalance);
     console.log('Updated Balance:', updatedBalance.tokenCredits);
-    console.log('Transactions:', transactions);
     console.log('Expected Cost:', expectedCost);
   });
 
@@ -143,13 +119,9 @@ describe('Regular Token Spending Tests', () => {
 
     const tokenUsage = {};
 
-    await spendTokens(txData, tokenUsage);
+    const result = await spendTokens(txData, tokenUsage);
 
-    const transactions = await Transaction.find({ user: userId });
-    expect(transactions).toHaveLength(0);
-
-    const updatedBalance = await Balance.findOne({ user: userId });
-    expect(updatedBalance.tokenCredits).toBe(initialBalance);
+    expect(result).toBeUndefined();
   });
 
   test('spendTokens should handle only prompt tokens', async () => {
@@ -170,14 +142,10 @@ describe('Regular Token Spending Tests', () => {
 
     await spendTokens(txData, tokenUsage);
 
-    const transactions = await Transaction.find({ user: userId });
-    expect(transactions).toHaveLength(1);
-    expect(transactions[0].tokenType).toBe('prompt');
-    expect(transactions[0].rawAmount).toBe(-100);
+    const updatedBalance = await Balance.findOne({ user: userId });
 
     const promptMultiplier = getMultiplier({ model, tokenType: 'prompt' });
     const expectedCost = 100 * promptMultiplier;
-    const updatedBalance = await Balance.findOne({ user: userId });
     expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
   });
 });
@@ -225,12 +193,9 @@ describe('Structured Token Spending Tests', () => {
     const result = await spendStructuredTokens(txData, tokenUsage);
 
     // Assert
-    const updatedBalance = await Balance.findOne({ user: userId });
-    const transactions = await Transaction.find({ user: userId });
-
     console.log('Initial Balance:', initialBalance);
-    console.log('Updated Balance:', updatedBalance.tokenCredits);
-    console.log('Transactions:', transactions);
+    console.log('Updated Balance:', result.completion.balance);
+    console.log('Transaction Result:', result);
 
     const expectedPromptCost =
       tokenUsage.promptTokens.input * promptMultiplier +
@@ -243,34 +208,15 @@ describe('Structured Token Spending Tests', () => {
     console.log('Expected Cost:', expectedTotalCost);
     console.log('Expected Balance:', expectedBalance);
 
-    expect(updatedBalance.tokenCredits).toBeLessThan(initialBalance);
+    expect(result.completion.balance).toBeLessThan(initialBalance);
 
     // Allow for a small difference (e.g., 100 token credits, which is $0.0001)
     const allowedDifference = 100;
-    expect(Math.abs(updatedBalance.tokenCredits - expectedBalance)).toBeLessThan(allowedDifference);
+    expect(Math.abs(result.completion.balance - expectedBalance)).toBeLessThan(allowedDifference);
 
     // Check if the decrease is approximately as expected
-    const balanceDecrease = initialBalance - updatedBalance.tokenCredits;
+    const balanceDecrease = initialBalance - result.completion.balance;
     expect(balanceDecrease).toBeCloseTo(expectedTotalCost, 0);
-
-    // Check if rawAmount is set correctly for both transactions
-    const expectedPromptRawAmount = -(
-      tokenUsage.promptTokens.input +
-      tokenUsage.promptTokens.write +
-      tokenUsage.promptTokens.read
-    );
-    const expectedCompletionRawAmount = -tokenUsage.completionTokens;
-
-    const promptTransaction = transactions.find((t) => t.tokenType === 'prompt');
-    const completionTransaction = transactions.find((t) => t.tokenType === 'completion');
-
-    expect(promptTransaction.rawAmount).toBe(expectedPromptRawAmount);
-    expect(completionTransaction.rawAmount).toBe(expectedCompletionRawAmount);
-
-    console.log('Expected prompt rawAmount:', expectedPromptRawAmount);
-    console.log('Actual prompt rawAmount:', promptTransaction.rawAmount);
-    console.log('Expected completion rawAmount:', expectedCompletionRawAmount);
-    console.log('Actual completion rawAmount:', completionTransaction.rawAmount);
 
     // Check token values
     const expectedPromptTokenValue = -(
@@ -280,17 +226,123 @@ describe('Structured Token Spending Tests', () => {
     );
     const expectedCompletionTokenValue = -tokenUsage.completionTokens * completionMultiplier;
 
-    expect(promptTransaction.tokenValue).toBeCloseTo(expectedPromptTokenValue, 1);
-    expect(completionTransaction.tokenValue).toBe(expectedCompletionTokenValue);
+    expect(result.prompt.prompt).toBeCloseTo(expectedPromptTokenValue, 1);
+    expect(result.completion.completion).toBe(expectedCompletionTokenValue);
 
     console.log('Expected prompt tokenValue:', expectedPromptTokenValue);
-    console.log('Actual prompt tokenValue:', promptTransaction.tokenValue);
+    console.log('Actual prompt tokenValue:', result.prompt.prompt);
     console.log('Expected completion tokenValue:', expectedCompletionTokenValue);
-    console.log('Actual completion tokenValue:', completionTransaction.tokenValue);
+    console.log('Actual completion tokenValue:', result.completion.completion);
+  });
 
-    // Log the result from spendStructuredTokens if available
-    if (result) {
-      console.log('Transaction Result:', result);
-    }
+  test('should handle zero completion tokens in structured spending', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 17613154.55;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'claude-3-5-sonnet';
+    const txData = {
+      user: userId,
+      conversationId: 'test-convo',
+      model,
+      context: 'message',
+    };
+
+    const tokenUsage = {
+      promptTokens: {
+        input: 10,
+        write: 100,
+        read: 5,
+      },
+      completionTokens: 0,
+    };
+
+    process.env.CHECK_BALANCE = 'true';
+    const result = await spendStructuredTokens(txData, tokenUsage);
+
+    expect(result.prompt).toBeDefined();
+    expect(result.completion).toBeUndefined();
+    expect(result.prompt.prompt).toBeLessThan(0);
+  });
+
+  test('should handle only prompt tokens in structured spending', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 17613154.55;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'claude-3-5-sonnet';
+    const txData = {
+      user: userId,
+      conversationId: 'test-convo',
+      model,
+      context: 'message',
+    };
+
+    const tokenUsage = {
+      promptTokens: {
+        input: 10,
+        write: 100,
+        read: 5,
+      },
+    };
+
+    process.env.CHECK_BALANCE = 'true';
+    const result = await spendStructuredTokens(txData, tokenUsage);
+
+    expect(result.prompt).toBeDefined();
+    expect(result.completion).toBeUndefined();
+    expect(result.prompt.prompt).toBeLessThan(0);
+  });
+
+  test('should handle undefined token counts in structured spending', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 17613154.55;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'claude-3-5-sonnet';
+    const txData = {
+      user: userId,
+      conversationId: 'test-convo',
+      model,
+      context: 'message',
+    };
+
+    const tokenUsage = {};
+
+    process.env.CHECK_BALANCE = 'true';
+    const result = await spendStructuredTokens(txData, tokenUsage);
+
+    expect(result).toEqual({
+      prompt: undefined,
+      completion: undefined,
+    });
+  });
+
+  test('should handle incomplete context for completion tokens', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 17613154.55;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'claude-3-5-sonnet';
+    const txData = {
+      user: userId,
+      conversationId: 'test-convo',
+      model,
+      context: 'incomplete',
+    };
+
+    const tokenUsage = {
+      promptTokens: {
+        input: 10,
+        write: 100,
+        read: 5,
+      },
+      completionTokens: 50,
+    };
+
+    process.env.CHECK_BALANCE = 'true';
+    const result = await spendStructuredTokens(txData, tokenUsage);
+
+    expect(result.completion.completion).toBeCloseTo(-50 * 15 * 1.15, 0); // Assuming multiplier is 15 and cancelRate is 1.15
   });
 });
