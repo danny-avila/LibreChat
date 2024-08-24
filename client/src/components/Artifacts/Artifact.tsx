@@ -4,7 +4,7 @@ import { visit } from 'unist-util-visit';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
 import type { Pluggable } from 'unified';
 import type { Artifact } from '~/common';
-import { artifactsState, artifactIdsState } from '~/store/artifacts';
+import { artifactsState } from '~/store/artifacts';
 import ArtifactButton from './ArtifactButton';
 import { logger } from '~/utils';
 
@@ -45,7 +45,6 @@ export function Artifact({
   node: unknown;
 }) {
   const setArtifacts = useSetRecoilState(artifactsState);
-  const setArtifactIds = useSetRecoilState(artifactIdsState);
   const currentArtifacts = useRecoilValue(artifactsState);
   const [artifact, setArtifact] = useState<Artifact | null>(null);
 
@@ -91,28 +90,9 @@ export function Artifact({
         };
       });
 
-      setArtifactIds((prevIds) => {
-        if (!prevIds.includes(artifactKey)) {
-          const newIds = [...prevIds, artifactKey];
-          const definedIds = newIds.filter((id) => currentArtifacts[id] != null);
-          return definedIds.sort(
-            (a, b) => currentArtifacts[b].lastUpdateTime - currentArtifacts[a].lastUpdateTime,
-          );
-        }
-        return prevIds;
-      });
-
       setArtifact(currentArtifact);
     });
-  }, [
-    props.children,
-    props.title,
-    props.type,
-    props.identifier,
-    setArtifacts,
-    setArtifactIds,
-    currentArtifacts,
-  ]);
+  }, [props.type, props.title, setArtifacts, props.children, props.identifier]);
 
   useEffect(() => {
     updateArtifact();
