@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef, memo } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { Sandpack } from '@codesandbox/sandpack-react';
 import { removeNullishValues } from 'librechat-data-provider';
@@ -8,6 +8,7 @@ import type { Artifact } from '~/common';
 import {
   sharedFiles,
   sharedProps,
+  getTemplate,
   sharedOptions,
   getFileExtension,
   getArtifactFilename,
@@ -17,7 +18,7 @@ import { useChatContext } from '~/Providers';
 import { cn } from '~/utils';
 import store from '~/store';
 
-export function ArtifactPreview({
+const ArtifactPreview = memo(function ({
   showEditor = false,
   artifact,
 }: {
@@ -27,6 +28,11 @@ export function ArtifactPreview({
   const files = useMemo(() => {
     return removeNullishValues({ [getArtifactFilename(artifact.type ?? '')]: artifact.content });
   }, [artifact.type, artifact.content]);
+
+  const template = useMemo(
+    () => getTemplate(artifact.type ?? '', artifact.language),
+    [artifact.type, artifact.language],
+  );
 
   if (Object.keys(files).length === 0) {
     return null;
@@ -45,6 +51,7 @@ export function ArtifactPreview({
         ...sharedFiles,
       }}
       {...sharedProps}
+      template={template}
     />
   ) : (
     <SandpackProvider
@@ -54,11 +61,12 @@ export function ArtifactPreview({
       }}
       options={{ ...sharedOptions }}
       {...sharedProps}
+      template={template}
     >
       <SandpackPreview showOpenInCodeSandbox={false} showRefreshButton={false} tabIndex={0} />
     </SandpackProvider>
   );
-}
+});
 
 export default function Artifacts() {
   const { isSubmitting, latestMessage, conversation } = useChatContext();
