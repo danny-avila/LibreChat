@@ -76,7 +76,7 @@ transactionSchema.statics.createStructured = async function (txData) {
   await transaction.save();
 
   if (!isEnabled(process.env.CHECK_BALANCE)) {
-    return transaction;
+    return;
   }
 
   let balance = await Balance.findOne({ user: transaction.user }).lean();

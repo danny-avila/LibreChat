@@ -58,7 +58,7 @@ const spendTokens = async (txData, tokenUsage) => {
         balance: completion?.balance ?? prompt?.balance,
       });
     } else {
-      logger.debug('[spendTokens] No transactions created');
+      logger.debug('[spendTokens] No transactions incurred against balance');
     }
   } catch (err) {
     logger.error('[spendTokens]', err);
@@ -128,7 +128,7 @@ const spendStructuredTokens = async (txData, tokenUsage) => {
         balance: completion?.balance ?? prompt?.balance,
       });
     } else {
-      logger.debug('[spendStructuredTokens] No transactions created');
+      logger.debug('[spendStructuredTokens] No transactions incurred against balance');
     }
   } catch (err) {
     logger.error('[spendStructuredTokens]', err);
