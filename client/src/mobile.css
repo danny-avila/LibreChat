@@ -317,6 +317,14 @@
   @apply flex h-full w-full grow flex-col justify-center;
 }
 
+.sp-preview {
+  @apply flex h-full w-full grow flex-col justify-center;
+}
+
 .sp-preview-iframe {
   @apply grow;
+}
+
+.sp-wrapper {
+  @apply flex h-full w-full grow flex-col justify-center;
 }
