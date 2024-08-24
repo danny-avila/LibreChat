@@ -27,6 +27,12 @@ const codeFile = {
   title: 'Code',
 };
 
+const artifact = {
+  paths: CodePaths,
+  fill: '#2D305C',
+  title: 'Code',
+};
+
 export const fileTypes = {
   /* Category matches */
   file: {
@@ -41,6 +47,7 @@ export const fileTypes = {
   csv: spreadsheet,
   pdf: textDocument,
   'text/x-': codeFile,
+  artifact: artifact,
 
   /* Exact matches */
   // 'application/json':,
