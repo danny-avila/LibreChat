@@ -5,7 +5,7 @@ import { useSetRecoilState, useRecoilValue } from 'recoil';
 import type { Pluggable } from 'unified';
 import type { Artifact } from '~/common';
 import { artifactsState, artifactIdsState } from '~/store/artifacts';
-import CodePreview from './CodePreview';
+import ArtifactButton from './ArtifactButton';
 import { logger } from '~/utils';
 
 export const artifactPlugin: Pluggable = () => {
@@ -118,5 +118,5 @@ export function Artifact({
     updateArtifact();
   }, [updateArtifact]);
 
-  return <CodePreview artifact={artifact} />;
+  return <ArtifactButton artifact={artifact} />;
 }

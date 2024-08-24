@@ -5,7 +5,7 @@ import { useLocalize } from '~/hooks';
 import { getFileType } from '~/utils';
 import store from '~/store';
 
-const CodePreview = ({ artifact }: { artifact: Artifact | null }) => {
+const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
   const localize = useLocalize();
   const setArtifactId = useSetRecoilState(store.currentArtifactId);
   if (artifact === null || artifact === undefined) {
@@ -36,4 +36,4 @@ const CodePreview = ({ artifact }: { artifact: Artifact | null }) => {
   );
 };
 
-export default CodePreview;
+export default ArtifactButton;
