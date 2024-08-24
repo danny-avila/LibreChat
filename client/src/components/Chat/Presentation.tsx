@@ -96,7 +96,7 @@ export default function Presentation({
           defaultCollapsed={defaultCollapsed}
           fullPanelCollapse={fullCollapse}
           artifacts={
-            codeArtifacts != null && Object.keys(artifacts ?? {}).length > 0 ? <Artifacts /> : null
+            codeArtifacts === true && Object.keys(artifacts ?? {}).length > 0 ? <Artifacts /> : null
           }
         >
           <main className="flex h-full flex-col" role="main">

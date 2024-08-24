@@ -1,8 +1,8 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { useRecoilState } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
 import { Sandpack } from '@codesandbox/sandpack-react';
-import { removeNullishValues, Constants } from 'librechat-data-provider';
+import { removeNullishValues } from 'librechat-data-provider';
+import { useRecoilState, useRecoilValue, useResetRecoilState } from 'recoil';
 import { SandpackPreview, SandpackProvider } from '@codesandbox/sandpack-react/unstyled';
 import type { Artifact } from '~/common';
 import {
@@ -62,12 +62,13 @@ export function ArtifactPreview({
 
 export default function Artifacts() {
   const { isSubmitting, latestMessage, conversation } = useChatContext();
-  const conversationId = useMemo(() => conversation?.conversationId ?? '', [conversation]);
 
   const [isVisible, setIsVisible] = useState(false);
   const [activeTab, setActiveTab] = useState('preview');
-  const [artifacts, setArtifacts] = useRecoilState(store.artifactsState);
+  const artifacts = useRecoilValue(store.artifactsState);
   const [currentArtifactId, setCurrentArtifactId] = useRecoilState(store.currentArtifactId);
+  const resetArtifacts = useResetRecoilState(store.artifactsState);
+  const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
 
   const orderedArtifactIds = useMemo(() => {
     return Object.keys(artifacts ?? {}).sort(
@@ -78,17 +79,32 @@ export default function Artifacts() {
   const lastRunMessageIdRef = useRef<string | null>(null);
   const lastContentRef = useRef<string | null>(null);
 
+  // Use a ref to keep track of the previous conversation ID
+  const prevConversationIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const resetState = () => {
+      resetArtifacts();
+      resetCurrentArtifactId();
+      prevConversationIdRef.current = conversation?.conversationId ?? null;
+      lastRunMessageIdRef.current = null;
+      lastContentRef.current = null;
+    };
+    if (
+      conversation &&
+      conversation.conversationId !== prevConversationIdRef.current &&
+      prevConversationIdRef.current != null
+    ) {
+      resetState();
+    } else if (conversation && conversation.conversationId === 'new') {
+      resetState();
+    }
+    prevConversationIdRef.current = conversation?.conversationId ?? null;
+  }, [conversation, resetArtifacts, resetCurrentArtifactId]);
+
   useEffect(() => {
     setIsVisible(true);
   }, []);
-
-  useEffect(() => {
-    if (!conversationId || conversationId === '' || conversationId === Constants.NEW_CONVO) {
-      setArtifacts(null);
-      setCurrentArtifactId(null);
-      return;
-    }
-  }, [conversationId, setArtifacts, setCurrentArtifactId]);
 
   useEffect(() => {
     if (orderedArtifactIds.length > 0) {
@@ -205,7 +221,7 @@ export default function Artifacts() {
               }\`\`\``}
             />
           </Tabs.Content>
-          <Tabs.Content value="preview" className="flex-grow overflow-auto bg-surface-secondary">
+          <Tabs.Content value="preview" className="flex-grow overflow-auto bg-white">
             <ArtifactPreview artifact={currentArtifact} />
           </Tabs.Content>
           {/* Footer */}
