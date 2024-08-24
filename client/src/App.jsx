@@ -5,7 +5,12 @@ import * as RadixToast from '@radix-ui/react-toast';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-query';
-import { ScreenshotProvider, ThemeProvider, useApiErrorBoundary } from './hooks';
+import {
+  ScreenshotProvider,
+  ThemeProvider,
+  useApiErrorBoundary,
+  useColorStrippingCopy,
+} from './hooks';
 import { ToastProvider } from './Providers';
 import Toast from './components/ui/Toast';
 import { LiveAnnouncer } from '~/a11y';
@@ -13,7 +18,7 @@ import { router } from './routes';
 
 const App = () => {
   const { setError } = useApiErrorBoundary();
-
+  useColorStrippingCopy();
   const queryClient = new QueryClient({
     queryCache: new QueryCache({
       onError: (error) => {
