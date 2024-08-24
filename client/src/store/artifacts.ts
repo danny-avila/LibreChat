@@ -31,3 +31,18 @@ export const artifactIdsState = atom<string[]>({
     },
   ] as const,
 });
+
+export const currentArtifactId = atom<string | null>({
+  key: 'currentArtifactId',
+  default: null,
+  effects: [
+    ({ onSet, node }) => {
+      onSet(async (newValue) => {
+        logger.log('artifacts', 'Recoil Effect: Setting currentArtifactId', {
+          key: node.key,
+          newValue,
+        });
+      });
+    },
+  ] as const,
+});

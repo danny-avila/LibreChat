@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { useRecoilValue } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
 import { Sandpack } from '@codesandbox/sandpack-react';
+import { useRecoilValue, useRecoilState } from 'recoil';
 import { removeNullishValues } from 'librechat-data-provider';
 import { SandpackPreview, SandpackProvider } from '@codesandbox/sandpack-react/unstyled';
 import type { Artifact } from '~/common';
@@ -64,10 +64,10 @@ export default function Artifacts() {
   const { isSubmitting, latestMessage } = useChatContext();
 
   const [isVisible, setIsVisible] = useState(false);
-  const [activeTab, setActiveTab] = useState('code');
+  const [activeTab, setActiveTab] = useState('preview');
   const artifacts = useRecoilValue(store.artifactsState);
+  const [currentArtifactId, setCurrentArtifactId] = useRecoilState(store.currentArtifactId);
 
-  const [currentArtifactId, setCurrentArtifactId] = useState<string | null>(null);
   const orderedArtifactIds = useMemo(() => {
     return Object.keys(artifacts).sort(
       (a, b) => artifacts[a].lastUpdateTime - artifacts[b].lastUpdateTime,
@@ -86,7 +86,7 @@ export default function Artifacts() {
       const latestArtifactId = orderedArtifactIds[orderedArtifactIds.length - 1];
       setCurrentArtifactId(latestArtifactId);
     }
-  }, [orderedArtifactIds]);
+  }, [setCurrentArtifactId, orderedArtifactIds]);
 
   useEffect(() => {
     if (isSubmitting && orderedArtifactIds.length > 0) {
@@ -99,7 +99,7 @@ export default function Artifacts() {
         lastContentRef.current = latestArtifact.content ?? null;
       }
     }
-  }, [isSubmitting, orderedArtifactIds, artifacts]);
+  }, [setCurrentArtifactId, isSubmitting, orderedArtifactIds, artifacts]);
 
   useEffect(() => {
     if (latestMessage?.messageId !== lastRunMessageIdRef.current) {
