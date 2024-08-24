@@ -85,28 +85,27 @@ export default function Artifacts() {
     if (orderedArtifactIds.length > 0) {
       const latestArtifactId = orderedArtifactIds[orderedArtifactIds.length - 1];
       setCurrentArtifactId(latestArtifactId);
-      setActiveTab('code');
     }
   }, [orderedArtifactIds]);
 
   useEffect(() => {
-    if (latestMessage?.messageId !== lastRunMessageIdRef.current) {
-      const currentArtifact = currentArtifactId != null ? artifacts[currentArtifactId] : null;
-      const currentContent = currentArtifact?.content ?? null;
+    if (isSubmitting && orderedArtifactIds.length > 0) {
+      const latestArtifactId = orderedArtifactIds[orderedArtifactIds.length - 1];
+      const latestArtifact = artifacts[latestArtifactId];
 
-      if (
-        isSubmitting &&
-        currentArtifactId != null &&
-        activeTab !== 'code' &&
-        currentContent !== lastContentRef.current
-      ) {
+      if (latestArtifact.content !== lastContentRef.current) {
+        setCurrentArtifactId(latestArtifactId);
         setActiveTab('code');
-        lastContentRef.current = currentContent;
+        lastContentRef.current = latestArtifact.content ?? null;
       }
+    }
+  }, [isSubmitting, orderedArtifactIds, artifacts]);
 
+  useEffect(() => {
+    if (latestMessage?.messageId !== lastRunMessageIdRef.current) {
       lastRunMessageIdRef.current = latestMessage?.messageId ?? null;
     }
-  }, [activeTab, currentArtifactId, isSubmitting, latestMessage, artifacts]);
+  }, [latestMessage]);
 
   const currentArtifact = currentArtifactId != null ? artifacts[currentArtifactId] : null;
 
