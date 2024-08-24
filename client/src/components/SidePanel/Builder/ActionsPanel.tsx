@@ -40,7 +40,7 @@ export default function ActionsPanel({
     },
     onError(error) {
       showToast({
-        message: (error as Error)?.message ?? localize('com_assistants_delete_actions_error'),
+        message: (error as Error).message ?? localize('com_assistants_delete_actions_error'),
         status: 'error',
       });
     },
@@ -69,7 +69,7 @@ export default function ActionsPanel({
   const type = watch('type');
 
   useEffect(() => {
-    if (action?.metadata?.auth) {
+    if (action?.metadata.auth) {
       reset({
         type: action.metadata.auth.type || AuthTypeEnum.None,
         saved_auth_fields: false,
@@ -159,7 +159,7 @@ export default function ActionsPanel({
                       });
                     },
                     selectClasses:
-                      'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 transition-colors duration-200 text-white',
+                      'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 transition-color duration-200 text-white',
                     selectText: localize('com_ui_delete'),
                   }}
                 />

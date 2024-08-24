@@ -246,7 +246,7 @@ export default function AssistantPanel({
             </button>
           )}
         </div>
-        <div className="h-auto bg-white px-4 pb-8 pt-3 dark:bg-transparent">
+        <div className="bg-surface-50 h-auto px-4 pb-8 pt-3 dark:bg-transparent">
           {/* Avatar & Name */}
           <div className="mb-4">
             <AssistantAvatar
