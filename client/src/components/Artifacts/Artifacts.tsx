@@ -1,8 +1,8 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
+import { useRecoilState } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
 import { Sandpack } from '@codesandbox/sandpack-react';
-import { useRecoilValue, useRecoilState } from 'recoil';
-import { removeNullishValues } from 'librechat-data-provider';
+import { removeNullishValues, Constants } from 'librechat-data-provider';
 import { SandpackPreview, SandpackProvider } from '@codesandbox/sandpack-react/unstyled';
 import type { Artifact } from '~/common';
 import {
@@ -55,14 +55,14 @@ export function ArtifactPreview({
       options={{ ...sharedOptions }}
       {...sharedProps}
     >
-      <SandpackPreview showOpenInCodeSandbox={false} showRefreshButton={false} />
+      <SandpackPreview showOpenInCodeSandbox={false} showRefreshButton={false} tabIndex={0} />
     </SandpackProvider>
   );
 }
 
 export default function Artifacts() {
   const { isSubmitting, latestMessage, conversation } = useChatContext();
-  const conversationId = useMemo(() => conversation?.conversationId ?? null, [conversation]);
+  const conversationId = useMemo(() => conversation?.conversationId ?? '', [conversation]);
 
   const [isVisible, setIsVisible] = useState(false);
   const [activeTab, setActiveTab] = useState('preview');
@@ -70,8 +70,8 @@ export default function Artifacts() {
   const [currentArtifactId, setCurrentArtifactId] = useRecoilState(store.currentArtifactId);
 
   const orderedArtifactIds = useMemo(() => {
-    return Object.keys(artifacts).sort(
-      (a, b) => artifacts[a].lastUpdateTime - artifacts[b].lastUpdateTime,
+    return Object.keys(artifacts ?? {}).sort(
+      (a, b) => (artifacts?.[a]?.lastUpdateTime ?? 0) - (artifacts?.[b]?.lastUpdateTime ?? 0),
     );
   }, [artifacts]);
 
@@ -83,6 +83,14 @@ export default function Artifacts() {
   }, []);
 
   useEffect(() => {
+    if (!conversationId || conversationId === '' || conversationId === Constants.NEW_CONVO) {
+      setArtifacts(null);
+      setCurrentArtifactId(null);
+      return;
+    }
+  }, [conversationId, setArtifacts, setCurrentArtifactId]);
+
+  useEffect(() => {
     if (orderedArtifactIds.length > 0) {
       const latestArtifactId = orderedArtifactIds[orderedArtifactIds.length - 1];
       setCurrentArtifactId(latestArtifactId);
@@ -92,12 +100,12 @@ export default function Artifacts() {
   useEffect(() => {
     if (isSubmitting && orderedArtifactIds.length > 0) {
       const latestArtifactId = orderedArtifactIds[orderedArtifactIds.length - 1];
-      const latestArtifact = artifacts[latestArtifactId];
+      const latestArtifact = artifacts?.[latestArtifactId];
 
-      if (latestArtifact.content !== lastContentRef.current) {
+      if (latestArtifact?.content !== lastContentRef.current) {
         setCurrentArtifactId(latestArtifactId);
         setActiveTab('code');
-        lastContentRef.current = latestArtifact.content ?? null;
+        lastContentRef.current = latestArtifact?.content ?? null;
       }
     }
   }, [setCurrentArtifactId, isSubmitting, orderedArtifactIds, artifacts]);
@@ -108,7 +116,7 @@ export default function Artifacts() {
     }
   }, [latestMessage]);
 
-  const currentArtifact = currentArtifactId != null ? artifacts[currentArtifactId] : null;
+  const currentArtifact = currentArtifactId != null ? artifacts?.[currentArtifactId] : null;
 
   const currentIndex = orderedArtifactIds.indexOf(currentArtifactId ?? '');
   const cycleArtifact = (direction: 'next' | 'prev') => {
@@ -122,7 +130,7 @@ export default function Artifacts() {
   };
 
   if (!currentArtifact) {
-    return <div>No artifacts available.</div>;
+    return null;
   }
 
   return (
