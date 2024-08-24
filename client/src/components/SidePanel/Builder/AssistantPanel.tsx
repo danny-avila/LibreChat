@@ -67,6 +67,8 @@ export default function AssistantPanel({
   const assistant = useWatch({ control, name: 'assistant' });
   const functions = useWatch({ control, name: 'functions' });
   const assistant_id = useWatch({ control, name: 'id' });
+  const conversation_starters = useWatch({ control, name: 'conversation_starters' });
+  console.log({ conversation_starters, assistant });
 
   const activeModel = useMemo(() => {
     return assistantMap?.[endpoint]?.[assistant_id]?.model;
@@ -165,6 +167,7 @@ export default function AssistantPanel({
       name,
       description,
       instructions,
+      conversation_starters,
       model,
       // file_ids, // TODO: add file handling here
     } = data;
@@ -176,6 +179,7 @@ export default function AssistantPanel({
           name,
           description,
           instructions,
+          conversation_starters,
           model,
           tools,
           endpoint,
@@ -188,6 +192,7 @@ export default function AssistantPanel({
       name,
       description,
       instructions,
+      conversation_starters,
       model,
       tools,
       endpoint,
@@ -323,15 +328,17 @@ export default function AssistantPanel({
 
           {/* Conversation Starters */}
           <div className="relative mb-6">
-            <label className={labelClass} htmlFor="conversation_starters">
-              {localize('com_assistants_conversation_starters')}
-            </label>
+            {/* the label of convoStarters is in the component */}
             <Controller
               name="conversation_starters"
               control={control}
               defaultValue={['']}
               render={({ field }) => (
-                <AssistantConversationStarters field={field} inputClass={inputClass} />
+                <AssistantConversationStarters
+                  field={field}
+                  inputClass={inputClass}
+                  labelClass={labelClass}
+                />
               )}
             />
           </div>

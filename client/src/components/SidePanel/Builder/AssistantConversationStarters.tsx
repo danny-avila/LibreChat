@@ -1,7 +1,8 @@
+import React, { useRef, useEffect } from 'react';
 import { Plus, X } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui';
 import { useLocalize } from '~/hooks';
-import { useRef, useEffect } from 'react';
+import { Transition } from 'react-transition-group';
 
 interface AssistantConversationStartersProps {
   field: {
@@ -9,15 +10,18 @@ interface AssistantConversationStartersProps {
     onChange: (value: string[]) => void;
   };
   inputClass: string;
+  labelClass: string;
 }
 
-export default function AssistantConversationStarters({
+const AssistantConversationStarters: React.FC<AssistantConversationStartersProps> = ({
   field,
   inputClass,
-}: AssistantConversationStartersProps) {
+  labelClass,
+}) => {
   const localize = useLocalize();
   const MAX_STARTERS = 4;
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const nodeRef = useRef(null);
 
   const handleAddStarter = () => {
     const newValues = [...field.value];
@@ -33,47 +37,60 @@ export default function AssistantConversationStarters({
     }
   }, [field.value.length]);
 
+  const defaultStyle = {
+    transition: 'opacity 200ms ease-in-out',
+    opacity: 0,
+  };
+
+  const transitionStyles = {
+    entering: { opacity: 1 },
+    entered: { opacity: 1 },
+    exiting: { opacity: 0 },
+    exited: { opacity: 0 },
+  };
+
   return (
     <div className="relative">
+      <div className="flex items-center justify-between">
+        <label className={labelClass} htmlFor="conversation_starters">
+          {localize('com_assistants_conversation_starters')}
+        </label>
+        <Transition
+          nodeRef={nodeRef}
+          in={field.value.length < MAX_STARTERS}
+          timeout={200}
+          unmountOnExit
+        >
+          {(state: string) => (
+            <div
+              ref={nodeRef}
+              style={{
+                ...defaultStyle,
+                ...transitionStyles[state as keyof typeof transitionStyles],
+                transition: state === 'entering' ? 'none' : defaultStyle.transition,
+              }}
+            >
+              <TooltipProvider delayDuration={1000}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="transition-colors flex size-7 items-center justify-center rounded-lg duration-200 hover:bg-surface-hover"
+                      onClick={handleAddStarter}
+                    >
+                      <Plus className="size-4" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" sideOffset={0}>
+                    {localize('com_ui_add')}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+          )}
+        </Transition>
+      </div>
       <div className="mt-4 space-y-2">
-        {Array.isArray(field.value) && field.value.length === 0 && (
-          <div className="relative">
-            <input
-              ref={(el) => (inputRefs.current[0] = el)}
-              value=""
-              maxLength={64}
-              className={inputClass}
-              type="text"
-              placeholder={localize('com_assistants_conversation_starters_placeholder')}
-              onChange={(e) => {
-                const newValues = [e.target.value];
-                field.onChange(newValues);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  handleAddStarter();
-                }
-              }}
-            />
-            <TooltipProvider delayDuration={1000}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    className="transition-color absolute right-1 top-1 flex size-7 items-center justify-center rounded-lg duration-200 hover:bg-surface-hover"
-                    onClick={handleAddStarter}
-                  >
-                    <Plus className="size-4" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="top" sideOffset={0}>
-                  {localize('com_ui_add')}
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </div>
-        )}
         {field.value.map((starter, index) => (
           <div key={index} className="relative">
             <input
@@ -97,47 +114,30 @@ export default function AssistantConversationStarters({
                 }
               }}
             />
-            {index === 0 && field.value.length < MAX_STARTERS ? (
-              <TooltipProvider delayDuration={1000}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      className="transition-color absolute right-1 top-1 flex size-7 items-center justify-center rounded-lg duration-200 hover:bg-surface-hover"
-                      onClick={handleAddStarter}
-                    >
-                      <Plus className="size-4" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" sideOffset={0}>
-                    {localize('com_ui_add')}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            ) : (
-              <TooltipProvider delayDuration={1000}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      className="transition-color absolute right-1 top-1 flex size-7 items-center justify-center rounded-lg duration-200 hover:bg-surface-hover"
-                      onClick={() => {
-                        const newValues = field.value.filter((_, i) => i !== index);
-                        field.onChange(newValues);
-                      }}
-                    >
-                      <X className="size-4" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" sideOffset={0}>
-                    {localize('com_ui_delete')}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
+            <TooltipProvider delayDuration={1000}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className="transition-colors absolute right-1 top-1 flex size-7 items-center justify-center rounded-lg duration-200 hover:bg-surface-hover"
+                    onClick={() => {
+                      const newValues = field.value.filter((_, i) => i !== index);
+                      field.onChange(newValues);
+                    }}
+                  >
+                    <X className="size-4" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top" sideOffset={0}>
+                  {localize('com_ui_delete')}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
         ))}
       </div>
     </div>
   );
-}
+};
+
+export default AssistantConversationStarters;

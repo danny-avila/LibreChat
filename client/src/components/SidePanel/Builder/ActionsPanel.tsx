@@ -159,7 +159,7 @@ export default function ActionsPanel({
                       });
                     },
                     selectClasses:
-                      'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 transition-color duration-200 text-white',
+                      'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 transition-colors duration-200 text-white',
                     selectText: localize('com_ui_delete'),
                   }}
                 />

@@ -28,7 +28,7 @@ export default function AssistantAction({
         {isHovering && (
           <button
             type="button"
-            className="transition-color flex h-9 w-9 min-w-9 items-center justify-center rounded-lg duration-200 hover:bg-gray-200 dark:hover:bg-gray-700"
+            className="transition-colors flex h-9 w-9 min-w-9 items-center justify-center rounded-lg duration-200 hover:bg-gray-200 dark:hover:bg-gray-700"
           >
             <GearIcon className="icon-sm" />
           </button>

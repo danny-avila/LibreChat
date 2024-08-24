@@ -36,8 +36,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
   const assistantName = assistant && assistant.name;
   const assistantDesc = assistant && assistant.description;
   const avatar = assistant && (assistant.metadata?.avatar as string);
-  const assistantConvoStarter = assistant && assistant.convoStarter;
-  const testText = ['1', '22', '333', '4444'];
+  const conversation_starters = assistant && assistant.conversation_starters;
 
   const containerClassName =
     'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black';
@@ -89,9 +88,10 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
               </h2>
             )}
             <div className="mt-8 flex flex-wrap justify-center gap-3 px-4">
-              {testText.slice(0, 4).map((text, index) => (
-                <ConvoStarter key={index} text={text} />
-              ))}
+              {conversation_starters &&
+                conversation_starters
+                  .slice(0, 4)
+                  .map((text, index) => <ConvoStarter key={index} text={text} />)}
             </div>
           </div>
         </div>

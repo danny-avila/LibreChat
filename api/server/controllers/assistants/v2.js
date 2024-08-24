@@ -16,7 +16,9 @@ const createAssistant = async (req, res) => {
     /** @type {{ openai: OpenAIClient }} */
     const { openai } = await getOpenAIClient({ req, res });
 
-    const { tools = [], endpoint, ...assistantData } = req.body;
+    const { tools = [], endpoint, conversation_starters, ...assistantData } = req.body;
+    delete assistantData.conversation_starters;
+
     assistantData.tools = tools
       .map((tool) => {
         if (typeof tool !== 'string') {
@@ -39,10 +41,18 @@ const createAssistant = async (req, res) => {
     };
 
     const assistant = await openai.beta.assistants.create(assistantData);
-    const promise = updateAssistantDoc({ assistant_id: assistant.id }, { user: req.user.id });
+
+    const createData = { user: req.user.id };
+    if (conversation_starters) {
+      createData.conversation_starters = conversation_starters;
+    }
+
+    const promise = await updateAssistantDoc({ assistant_id: assistant.id }, createData);
+
     if (azureModelIdentifier) {
       assistant.model = azureModelIdentifier;
     }
+
     await promise;
     logger.debug('/assistants/', assistant);
     res.status(201).json(assistant);
@@ -64,6 +74,15 @@ const createAssistant = async (req, res) => {
 const updateAssistant = async ({ req, openai, assistant_id, updateData }) => {
   await validateAuthor({ req, openai });
   const tools = [];
+
+  if (updateData?.conversation_starters) {
+    await updateAssistantDoc(
+      { assistant_id: assistant_id },
+      { conversation_starters: updateData.conversation_starters },
+    );
+
+    delete updateData.conversation_starters;
+  }
 
   let hasFileSearch = false;
   for (const tool of updateData.tools ?? []) {

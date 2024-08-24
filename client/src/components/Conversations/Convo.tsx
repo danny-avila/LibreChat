@@ -149,10 +149,10 @@ export default function Conversation({
           />
           <div className="flex gap-1">
             <button onClick={cancelRename}>
-              <X className="transition-color h-4 w-4 duration-200 ease-in-out hover:opacity-70" />
+              <X className="transition-colors h-4 w-4 duration-200 ease-in-out hover:opacity-70" />
             </button>
             <button onClick={onRename}>
-              <Check className="transition-color h-4 w-4 duration-200 ease-in-out hover:opacity-70" />
+              <Check className="transition-colors h-4 w-4 duration-200 ease-in-out hover:opacity-70" />
             </button>
           </div>
         </div>
