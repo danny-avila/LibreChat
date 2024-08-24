@@ -1,159 +1,23 @@
-import React, { useMemo, useState, useEffect, useRef, memo } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
-import { Sandpack } from '@codesandbox/sandpack-react';
-import { removeNullishValues } from 'librechat-data-provider';
-import { useRecoilState, useRecoilValue, useResetRecoilState } from 'recoil';
-import { SandpackPreview, SandpackProvider } from '@codesandbox/sandpack-react/unstyled';
-import type { Artifact } from '~/common';
-import {
-  sharedFiles,
-  sharedProps,
-  getTemplate,
-  sharedOptions,
-  getFileExtension,
-  getArtifactFilename,
-} from '~/utils/artifacts';
+import { getFileExtension } from '~/utils/artifacts';
+import useArtifacts from '~/hooks/Artifacts/useArtifacts';
 import { CodeMarkdown, CopyCodeButton } from './Code';
-import { useChatContext } from '~/Providers';
+import { ArtifactPreview } from './ArtifactPreview';
 import { cn } from '~/utils';
-import store from '~/store';
-
-const ArtifactPreview = memo(function ({
-  showEditor = false,
-  artifact,
-}: {
-  showEditor?: boolean;
-  artifact: Artifact;
-}) {
-  const files = useMemo(() => {
-    return removeNullishValues({ [getArtifactFilename(artifact.type ?? '')]: artifact.content });
-  }, [artifact.type, artifact.content]);
-
-  const template = useMemo(
-    () => getTemplate(artifact.type ?? '', artifact.language),
-    [artifact.type, artifact.language],
-  );
-
-  if (Object.keys(files).length === 0) {
-    return null;
-  }
-
-  return showEditor ? (
-    <Sandpack
-      options={{
-        showNavigator: true,
-        editorHeight: '80vh',
-        showTabs: true,
-        ...sharedOptions,
-      }}
-      files={{
-        ...files,
-        ...sharedFiles,
-      }}
-      {...sharedProps}
-      template={template}
-    />
-  ) : (
-    <SandpackProvider
-      files={{
-        ...files,
-        ...sharedFiles,
-      }}
-      options={{ ...sharedOptions }}
-      {...sharedProps}
-      template={template}
-    >
-      <SandpackPreview showOpenInCodeSandbox={false} showRefreshButton={false} tabIndex={0} />
-    </SandpackProvider>
-  );
-});
 
 export default function Artifacts() {
-  const { isSubmitting, latestMessage, conversation } = useChatContext();
+  const {
+    isVisible,
+    activeTab,
+    setActiveTab,
+    isSubmitting,
+    currentIndex,
+    cycleArtifact,
+    currentArtifact,
+    orderedArtifactIds,
+  } = useArtifacts();
 
-  const [isVisible, setIsVisible] = useState(false);
-  const [activeTab, setActiveTab] = useState('preview');
-  const artifacts = useRecoilValue(store.artifactsState);
-  const [currentArtifactId, setCurrentArtifactId] = useRecoilState(store.currentArtifactId);
-  const resetArtifacts = useResetRecoilState(store.artifactsState);
-  const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
-
-  const orderedArtifactIds = useMemo(() => {
-    return Object.keys(artifacts ?? {}).sort(
-      (a, b) => (artifacts?.[a]?.lastUpdateTime ?? 0) - (artifacts?.[b]?.lastUpdateTime ?? 0),
-    );
-  }, [artifacts]);
-
-  const lastRunMessageIdRef = useRef<string | null>(null);
-  const lastContentRef = useRef<string | null>(null);
-
-  // Use a ref to keep track of the previous conversation ID
-  const prevConversationIdRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    const resetState = () => {
-      resetArtifacts();
-      resetCurrentArtifactId();
-      prevConversationIdRef.current = conversation?.conversationId ?? null;
-      lastRunMessageIdRef.current = null;
-      lastContentRef.current = null;
-    };
-    if (
-      conversation &&
-      conversation.conversationId !== prevConversationIdRef.current &&
-      prevConversationIdRef.current != null
-    ) {
-      resetState();
-    } else if (conversation && conversation.conversationId === 'new') {
-      resetState();
-    }
-    prevConversationIdRef.current = conversation?.conversationId ?? null;
-  }, [conversation, resetArtifacts, resetCurrentArtifactId]);
-
-  useEffect(() => {
-    setIsVisible(true);
-  }, []);
-
-  useEffect(() => {
-    if (orderedArtifactIds.length > 0) {
-      const latestArtifactId = orderedArtifactIds[orderedArtifactIds.length - 1];
-      setCurrentArtifactId(latestArtifactId);
-    }
-  }, [setCurrentArtifactId, orderedArtifactIds]);
-
-  useEffect(() => {
-    if (isSubmitting && orderedArtifactIds.length > 0) {
-      const latestArtifactId = orderedArtifactIds[orderedArtifactIds.length - 1];
-      const latestArtifact = artifacts?.[latestArtifactId];
-
-      if (latestArtifact?.content !== lastContentRef.current) {
-        setCurrentArtifactId(latestArtifactId);
-        setActiveTab('code');
-        lastContentRef.current = latestArtifact?.content ?? null;
-      }
-    }
-  }, [setCurrentArtifactId, isSubmitting, orderedArtifactIds, artifacts]);
-
-  useEffect(() => {
-    if (latestMessage?.messageId !== lastRunMessageIdRef.current) {
-      lastRunMessageIdRef.current = latestMessage?.messageId ?? null;
-    }
-  }, [latestMessage]);
-
-  const currentArtifact = currentArtifactId != null ? artifacts?.[currentArtifactId] : null;
-
-  const currentIndex = orderedArtifactIds.indexOf(currentArtifactId ?? '');
-  const cycleArtifact = (direction: 'next' | 'prev') => {
-    let newIndex: number;
-    if (direction === 'next') {
-      newIndex = (currentIndex + 1) % orderedArtifactIds.length;
-    } else {
-      newIndex = (currentIndex - 1 + orderedArtifactIds.length) % orderedArtifactIds.length;
-    }
-    setCurrentArtifactId(orderedArtifactIds[newIndex]);
-  };
-
-  if (!currentArtifact) {
+  if (currentArtifact === null || currentArtifact === undefined) {
     return null;
   }
 
@@ -228,6 +92,7 @@ export default function Artifacts() {
                 currentArtifact.content ?? ''
               }\`\`\``}
             />
+            {/* hidden div to scroll to could go here */}
           </Tabs.Content>
           <Tabs.Content value="preview" className="flex-grow overflow-auto bg-white">
             <ArtifactPreview artifact={currentArtifact} />
