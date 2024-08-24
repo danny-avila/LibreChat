@@ -22,7 +22,7 @@ export default function CodeArtifactsSwitch({
   return (
     <div className="flex items-center justify-between">
       <div className="flex items-center space-x-2">
-        <div>{localize('com_nav_code_artifacts')}</div>
+        <div>{localize('com_ui_artifacts_toggle')}</div>
         <HoverCardSettings side="bottom" text="com_nav_info_code_artifacts" />
       </div>
       <Switch
