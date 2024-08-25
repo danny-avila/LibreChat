@@ -1,7 +1,7 @@
 import * as Tabs from '@radix-ui/react-tabs';
-import { getFileExtension } from '~/utils/artifacts';
 import useArtifacts from '~/hooks/Artifacts/useArtifacts';
 import { CodeMarkdown, CopyCodeButton } from './Code';
+import { getFileExtension } from '~/utils/artifacts';
 import { ArtifactPreview } from './ArtifactPreview';
 import { cn } from '~/utils';
 
@@ -10,7 +10,6 @@ export default function Artifacts() {
     isVisible,
     activeTab,
     setActiveTab,
-    isSubmitting,
     currentIndex,
     cycleArtifact,
     currentArtifact,
@@ -80,19 +79,13 @@ export default function Artifacts() {
           {/* Content */}
           <Tabs.Content
             value="code"
-            className={cn(
-              'flex-grow overflow-auto bg-gray-900',
-              isSubmitting ? 'submitting' : '',
-              isSubmitting && (currentArtifact.content?.length ?? 0) > 0 ? 'result-streaming' : '',
-            )}
+            className={cn('flex-grow overflow-x-auto overflow-y-scroll bg-gray-900 p-4')}
           >
             <CodeMarkdown
-              showCursor={isSubmitting}
               content={`\`\`\`${getFileExtension(currentArtifact.type)}\n${
                 currentArtifact.content ?? ''
               }\`\`\``}
             />
-            {/* hidden div to scroll to could go here */}
           </Tabs.Content>
           <Tabs.Content value="preview" className="flex-grow overflow-auto bg-white">
             <ArtifactPreview artifact={currentArtifact} />

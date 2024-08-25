@@ -1,35 +1,12 @@
-import React, { useRef, RefObject, memo, useState } from 'react';
+import React, { memo, useState } from 'react';
 import rehypeKatex from 'rehype-katex';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import copy from 'copy-to-clipboard';
-import { handleDoubleClick, cn, langSubset } from '~/utils';
+import { handleDoubleClick, langSubset } from '~/utils';
 import Clipboard from '~/components/svg/Clipboard';
 import CheckMark from '~/components/svg/CheckMark';
 import useLocalize from '~/hooks/useLocalize';
-
-type CodeBarProps = {
-  lang: string;
-  codeRef: RefObject<HTMLElement>;
-};
-
-type CodeBlockProps = Pick<CodeBarProps, 'lang'> & {
-  codeChildren: React.ReactNode;
-  classProp?: string;
-};
-
-const CodeBlock: React.FC<CodeBlockProps> = ({ lang, codeChildren, classProp = '' }) => {
-  const codeRef = useRef<HTMLElement>(null);
-  return (
-    <div className="w-full rounded-md bg-gray-900 text-xs text-white/80">
-      <div className={cn(classProp, 'overflow-y-auto p-4')}>
-        <code ref={codeRef} className={`hljs language-${lang} !whitespace-pre`}>
-          {codeChildren}
-        </code>
-      </div>
-    </div>
-  );
-};
 
 type TCodeProps = {
   inline: boolean;
@@ -49,41 +26,38 @@ export const code: React.ElementType = memo(({ inline, className, children }: TC
     );
   }
 
-  return <CodeBlock lang={lang ?? 'text'} codeChildren={children} />;
+  return <code className={`hljs language-${lang} !whitespace-pre`}>{children}</code>;
 });
 
-const cursor = ' ';
-export const CodeMarkdown = memo(
-  ({ content = '', showCursor }: { content: string; showCursor?: boolean }) => {
-    const currentContent = content;
-    const rehypePlugins = [
-      [rehypeKatex, { output: 'mathml' }],
-      [
-        rehypeHighlight,
-        {
-          detect: true,
-          ignoreMissing: true,
-          subset: langSubset,
-        },
-      ],
-    ];
+export const CodeMarkdown = memo(({ content = '' }: { content: string }) => {
+  const currentContent = content;
+  const rehypePlugins = [
+    [rehypeKatex, { output: 'mathml' }],
+    [
+      rehypeHighlight,
+      {
+        detect: true,
+        ignoreMissing: true,
+        subset: langSubset,
+      },
+    ],
+  ];
 
-    return (
-      <ReactMarkdown
-        /* @ts-ignore */
-        rehypePlugins={rehypePlugins}
-        // linkTarget="_new"
-        components={
-          { code } as {
-            [key: string]: React.ElementType;
-          }
+  return (
+    <ReactMarkdown
+      /* @ts-ignore */
+      rehypePlugins={rehypePlugins}
+      // linkTarget="_new"
+      components={
+        { code } as {
+          [key: string]: React.ElementType;
         }
-      >
-        {showCursor === true ? currentContent + cursor : currentContent}
-      </ReactMarkdown>
-    );
-  },
-);
+      }
+    >
+      {currentContent}
+    </ReactMarkdown>
+  );
+});
 
 export const CopyCodeButton: React.FC<{ content: string }> = ({ content }) => {
   const localize = useLocalize();
