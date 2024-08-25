@@ -17,6 +17,7 @@ const knownEndpointAssets = {
   [KnownEndpoints.perplexity]: '/assets/perplexity.png',
   [KnownEndpoints.shuttleai]: '/assets/shuttleai.png',
   [KnownEndpoints['together.ai']]: '/assets/together.png',
+  [KnownEndpoints.unify]: '/assets/unify.webp',
 };
 
 const knownEndpointClasses = {

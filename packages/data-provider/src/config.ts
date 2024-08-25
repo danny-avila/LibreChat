@@ -485,6 +485,7 @@ export enum KnownEndpoints {
   perplexity = 'perplexity',
   shuttleai = 'shuttleai',
   'together.ai' = 'together.ai',
+  unify = 'unify',
 }
 
 export enum FetchTokenConfig {
