@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import mermaid from 'mermaid';
 import { TransformWrapper, TransformComponent, ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 import { Button } from '~/components/ui/Button';
@@ -11,6 +11,7 @@ interface MermaidDiagramProps {
 const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content }) => {
   const mermaidRef = useRef<HTMLDivElement>(null);
   const transformRef = useRef<ReactZoomPanPinchRef>(null);
+  const [isRendered, setIsRendered] = useState(false);
 
   useEffect(() => {
     mermaid.initialize({
@@ -35,6 +36,7 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content }) => {
         try {
           const { svg } = await mermaid.render('mermaid-diagram', content);
           mermaidRef.current.innerHTML = svg;
+          setIsRendered(true);
         } catch (error) {
           console.error('Mermaid rendering error:', error);
           mermaidRef.current.innerHTML = 'Error rendering diagram';
@@ -44,6 +46,18 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content }) => {
 
     renderDiagram();
   }, [content]);
+
+  useEffect(() => {
+    if (isRendered && transformRef.current) {
+      const { centerView, zoomToElement } = transformRef.current;
+      // Center the view
+      centerView();
+      // Zoom to fit the diagram
+      if (mermaidRef.current) {
+        zoomToElement(mermaidRef.current);
+      }
+    }
+  }, [isRendered]);
 
   const handlePanning = () => {
     if (transformRef.current) {
@@ -74,7 +88,7 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content }) => {
         }
 
         if (newX !== positionX || newY !== positionY) {
-          instance.setTransformState(newX, newY, scale);
+          instance.setTransformState(scale, newX, newY);
         }
       }
     }
@@ -89,6 +103,7 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content }) => {
         maxScale={4}
         limitToBounds={false}
         centerOnInit={true}
+        initialPositionY={0}
         wheel={{ step: 0.1 }}
         panning={{ velocityDisabled: true }}
         alignmentAnimation={{ disabled: true }}
