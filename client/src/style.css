@@ -1838,12 +1838,6 @@ button.scroll-convo {
 }
 
 /* Ordered Listing */
-.prose :where(ol):not(:where([class~='not-prose'] *)) {
-  list-style-type: decimal;
-  margin-bottom: 1.25em;
-  margin-top: 0;
-  padding-left: 1.625em;
-}
 .prose :where(ol[type='A']):not(:where([class~='not-prose'] *)) {
   list-style-type: upper-alpha;
 }
@@ -1870,13 +1864,6 @@ button.scroll-convo {
 }
 .prose :where(ol[type='1']):not(:where([class~='not-prose'] *)) {
   list-style-type: decimal;
-}
-.prose :where(ol > li):not(:where([class~='not-prose'] *))::marker {
-  color: var(--tw-prose-counters);
-  font-weight: 400;
-}
-.prose :where(ol > li):not(:where([class~='not-prose'] *)) {
-  padding-left: 0.375em;
 }
 .prose :where(.prose > ol > li > :first-child):not(:where([class~='not-prose'] *)) {
   margin-top: 0;
@@ -1919,99 +1906,81 @@ button.scroll-convo {
   margin-bottom: 1.3333333em;
 }
 
-/* Base styles for .prose lists */
-.prose :where(ul):not(:where([class~='not-prose'] *)),
-.prose :where(ol):not(:where([class~='not-prose'] *)) {
-  margin-bottom: 1em;
+/* Base styles for lists */
+.prose ol, .prose ul,
+.markdown ol, .markdown ul {
+  list-style-position: outside;
   margin-top: 1em;
-  padding-left: 1.25em;
+  margin-bottom: 1em;
+  padding-left: 1.625em;
 }
 
-.prose :where(ul):not(:where([class~='not-prose'] *)) {
-  list-style-type: disc;
-}
-
-.prose :where(ol):not(:where([class~='not-prose'] *)) {
-  list-style-type: decimal;
-}
-
-.prose :where(ul > li):not(:where([class~='not-prose'] *)),
-.prose :where(ol > li):not(:where([class~='not-prose'] *)) {
+.prose li,
+.markdown li {
   margin-bottom: 0.5em;
+  margin-top: 0.5em;
+}
+
+/* Ordered lists */
+.prose ol,
+.markdown ol {
+  list-style-type: decimal;
+  counter-reset: list-counter;
+}
+
+.prose ol > li,
+.markdown ol > li {
+  position: relative;
   padding-left: 0.375em;
 }
 
-/* Markdown-specific list styles */
-.markdown ul,
-.markdown ol {
-  padding-left: 1.25em;
-  margin-bottom: 1em;
-  margin-top: 1em;
-  list-style-position: outside;
+.prose ol > li::marker,
+.markdown ol > li::marker {
+  color: var(--tw-prose-counters);
+  font-weight: 400;
 }
 
-.markdown ul li,
-.markdown ol li {
-  position: relative;
-  margin-bottom: 0.5em;
-}
-
+/* Unordered lists */
+.prose ul,
 .markdown ul {
   list-style-type: disc;
 }
 
-.markdown ol {
-  list-style-type: decimal;
+.prose ul > li,
+.markdown ul > li {
+  padding-left: 0.375em;
 }
 
-/* Nested list styles */
-.markdown ul ul,
-.markdown ol ul {
-  list-style-type: circle;
+.prose ul > li::marker,
+.markdown ul > li::marker {
+  color: var(--tw-prose-bullets);
 }
 
-.markdown ol ol,
-.markdown ul ol {
-  list-style-type: lower-alpha;
+/* Nested lists */
+.prose ol ol, .prose ul ul, .prose ul ol, .prose ol ul,
+.markdown ol ol, .markdown ul ul, .markdown ul ol, .markdown ol ul {
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
 }
 
-.markdown li > ul,
-.markdown li > ol,
-.markdown .prose ol > li ol,
-.markdown .prose ol > li ul,
-.markdown .prose ul > li ol,
-.markdown .prose ul > li ul {
-  margin-top: 0.5em;
-  margin-bottom: 0.5em;
+/* Remove extra spacing */
+.prose > ul > li > *:first-child,
+.prose > ol > li > *:first-child,
+.markdown > ul > li > *:first-child,
+.markdown > ol > li > *:first-child {
+  margin-top: 1.25em;
 }
 
-/* Additional .prose styles */
-.markdown .prose ol,
-.markdown .prose ul {
-  list-style-position: outside;
-  margin-top: 1em;
-  margin-bottom: 1em;
-  padding-left: 1.25em;
+.prose > ul > li > *:last-child,
+.prose > ol > li > *:last-child,
+.markdown > ul > li > *:last-child,
+.markdown > ol > li > *:last-child {
+  margin-bottom: 1.25em;
 }
 
-.markdown .prose ol > li,
-.markdown .prose ul > li {
-  margin-bottom: 0.5em;
-  position: relative;
-}
-
-/* Adjustments for nested lists */
-.markdown .prose ol > li ol,
-.markdown .prose ol > li ul,
-.markdown .prose ul > li ol,
-.markdown .prose ul > li ul {
-  margin-top: 0.5em;
-  margin-bottom: 0.5em;
-}
-
-/* Ensure filled bullet points */
-.markdown ul li::marker,
-.prose :where(ul > li):not(:where([class~='not-prose'] *))::marker {
+/* Ensure proper marker color */
+.prose li::marker,
+.markdown li::marker {
   color: currentColor;
 }
 
