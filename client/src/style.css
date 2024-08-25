@@ -1940,6 +1940,17 @@ button.scroll-convo {
   font-weight: 400;
 }
 
+/* Nested ordered lists */
+.prose ol ol,
+.markdown ol ol {
+  list-style-type: lower-alpha;
+}
+
+.prose ol ol ol,
+.markdown ol ol ol {
+  list-style-type: lower-roman;
+}
+
 /* Unordered lists */
 .prose ul,
 .markdown ul {
@@ -1954,6 +1965,17 @@ button.scroll-convo {
 .prose ul > li::marker,
 .markdown ul > li::marker {
   color: var(--tw-prose-bullets);
+}
+
+/* Nested unordered lists */
+.prose ul ul,
+.markdown ul ul {
+  list-style-type: circle;
+}
+
+.prose ul ul ul,
+.markdown ul ul ul {
+  list-style-type: square;
 }
 
 /* Nested lists */
