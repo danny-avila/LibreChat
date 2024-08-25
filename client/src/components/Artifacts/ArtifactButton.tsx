@@ -24,7 +24,7 @@ const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
         }}
         className="relative overflow-hidden rounded-xl border border-border-medium transition-all duration-300 hover:border-border-xheavy hover:shadow-lg"
       >
-        <div className="w-60 bg-surface-tertiary p-2 ">
+        <div className="w-fit bg-surface-tertiary p-2 ">
           <div className="flex flex-row items-center gap-2">
             <FilePreview fileType={fileType} className="relative" />
             <div className="overflow-hidden text-left">
