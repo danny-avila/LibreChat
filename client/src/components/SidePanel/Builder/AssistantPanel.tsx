@@ -110,6 +110,7 @@ export default function AssistantPanel({
       });
     },
   });
+
   const create = useCreateAssistantMutation({
     onSuccess: (data) => {
       setCurrentAssistantId(data.id);
@@ -328,7 +329,7 @@ export default function AssistantPanel({
 
           {/* Conversation Starters */}
           <div className="relative mb-6">
-            {/* the label of convoStarters is in the component */}
+            {/* the label of conversation starters is in the component */}
             <Controller
               name="conversation_starters"
               control={control}

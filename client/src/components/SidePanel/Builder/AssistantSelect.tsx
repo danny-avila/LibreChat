@@ -25,7 +25,14 @@ import { useLocalize, useLocalStorage } from '~/hooks';
 import { useFileMapContext } from '~/Providers';
 import { cn } from '~/utils';
 
-const keys = new Set(['name', 'id', 'description', 'instructions', 'model']);
+const keys = new Set([
+  'name',
+  'id',
+  'description',
+  'instructions',
+  'conversation_starters',
+  'model',
+]);
 
 export default function AssistantSelect({
   reset,
@@ -57,10 +64,10 @@ export default function AssistantSelect({
           endpoint === EModelEndpoint.assistants ? FileSources.openai : FileSources.azure;
         const assistant = {
           ..._assistant,
-          label: _assistant?.name ?? '',
+          label: _assistant.name ?? '',
           value: _assistant.id,
-          files: _assistant?.file_ids ? ([] as Array<[string, ExtendedFile]>) : undefined,
-          code_files: _assistant?.tool_resources?.code_interpreter?.file_ids
+          files: _assistant.file_ids ? ([] as Array<[string, ExtendedFile]>) : undefined,
+          code_files: _assistant.tool_resources?.code_interpreter?.file_ids
             ? ([] as Array<[string, ExtendedFile]>)
             : undefined,
         };
@@ -104,7 +111,7 @@ export default function AssistantSelect({
         }
 
         if (assistant.code_files && _assistant.tool_resources?.code_interpreter?.file_ids) {
-          _assistant.tool_resources?.code_interpreter?.file_ids?.forEach((file_id) =>
+          _assistant.tool_resources.code_interpreter.file_ids.forEach((file_id) =>
             handleFile(file_id, assistant.code_files),
           );
         }
@@ -122,14 +129,14 @@ export default function AssistantSelect({
         setCurrentAssistantId(undefined);
         return reset({
           ...defaultAssistantFormValues,
-          model: lastSelectedModels?.[endpoint] ?? '',
+          model: lastSelectedModels[endpoint] ?? '',
         });
       }
 
       const update = {
         ...assistant,
-        label: assistant?.name ?? '',
-        value: assistant?.id ?? '',
+        label: assistant.name ?? '',
+        value: assistant.id ?? '',
       };
 
       const actions: Actions = {
@@ -138,9 +145,9 @@ export default function AssistantSelect({
         [Capabilities.retrieval]: false,
       };
 
-      assistant?.tools
-        ?.filter((tool) => tool.type !== 'function' || isImageVisionTool(tool))
-        ?.map((tool) => tool?.function?.name || tool.type)
+      assistant.tools
+        .filter((tool) => tool.type !== 'function' || isImageVisionTool(tool))
+        .map((tool) => tool.function?.name || tool.type)
         .forEach((tool) => {
           if (tool === Tools.file_search) {
             actions[Capabilities.retrieval] = true;
@@ -149,9 +156,9 @@ export default function AssistantSelect({
         });
 
       const functions =
-        assistant?.tools
-          ?.filter((tool) => tool.type === 'function' && !isImageVisionTool(tool))
-          ?.map((tool) => tool.function?.name ?? '') ?? [];
+        assistant.tools
+          .filter((tool) => tool.type === 'function' && !isImageVisionTool(tool))
+          .map((tool) => tool.function?.name ?? '') ?? [];
 
       const formValues: Partial<AssistantForm & Actions> = {
         functions,
@@ -172,7 +179,7 @@ export default function AssistantSelect({
       });
 
       reset(formValues);
-      setCurrentAssistantId(assistant?.id);
+      setCurrentAssistantId(assistant.id);
     },
     [assistants.data, reset, setCurrentAssistantId, createMutation, endpoint, lastSelectedModels],
   );
