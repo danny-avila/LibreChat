@@ -32,6 +32,7 @@ const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
           </div>
         </div>
       </button>
+      <br />
     </div>
   );
 };
