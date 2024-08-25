@@ -1,14 +1,15 @@
-import React, { useEffect, useRef, useState } from 'react';
+import dedent from 'dedent';
+
+const mermaid = dedent(`import React, { useEffect, useRef, useState } from 'react';
 import mermaid from 'mermaid';
 import { TransformWrapper, TransformComponent, ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
-// import { Button } from '/components/ui/Button'; // Live component
-import { Button } from '~/components/ui/Button';
 import { ZoomIn, ZoomOut, RefreshCw } from 'lucide-react';
+import { Button } from './button'; // Live component
 
 interface MermaidDiagramProps {
   content: string;
 }
-
+/** NOTE: This component is for testing purposes only, we stringify this for live rendering */
 const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content }) => {
   const mermaidRef = useRef<HTMLDivElement>(null);
   const transformRef = useRef<ReactZoomPanPinchRef>(null);
@@ -18,7 +19,6 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content }) => {
     mermaid.initialize({
       startOnLoad: false,
       theme: 'base',
-      securityLevel: 'sandbox',
       themeVariables: {
         background: '#282C34',
         primaryColor: '#333842',
@@ -182,4 +182,21 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content }) => {
   );
 };
 
-export default MermaidDiagram;
+export default MermaidDiagram`);
+
+const wrapMermaidDiagram = (content: string) => {
+  return dedent(`import React from 'react';
+import MermaidDiagram from '/components/ui/MermaidDiagram';
+
+export default App = () => (
+  <MermaidDiagram content={\`${content}\`} />
+);
+`);
+};
+
+export const getMermaidFiles = (content: string) => {
+  return {
+    'App.tsx': wrapMermaidDiagram(content),
+    '/components/ui/MermaidDiagram.tsx': mermaid,
+  };
+};

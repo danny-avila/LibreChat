@@ -5,8 +5,8 @@ import { SandpackPreview, SandpackProvider } from '@codesandbox/sandpack-react/u
 import type { SandpackPreviewRef } from '@codesandbox/sandpack-react/unstyled';
 import type { Artifact } from '~/common';
 import {
+  getProps,
   sharedFiles,
-  sharedProps,
   getTemplate,
   sharedOptions,
   getArtifactFilename,
@@ -30,6 +30,8 @@ export const ArtifactPreview = memo(function ({
     () => getTemplate(artifact.type ?? '', artifact.language),
     [artifact.type, artifact.language],
   );
+
+  const sharedProps = useMemo(() => getProps(artifact.type ?? ''), [artifact.type]);
 
   if (artifact.type === 'application/vnd.mermaid') {
     return <Mermaid content={artifact.content ?? ''} />;

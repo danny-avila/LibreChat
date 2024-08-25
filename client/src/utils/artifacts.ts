@@ -6,6 +6,7 @@ import type {
 import * as shadcnComponents from '~/utils/shadcn';
 
 const artifactFilename = {
+  'application/vnd.mermaid': 'App.tsx',
   'application/vnd.react': 'App.tsx',
   'text/html': 'index.html',
   // 'css': 'css',
@@ -18,6 +19,7 @@ const artifactFilename = {
 const artifactTemplate: Record<string, SandpackPredefinedTemplate | undefined> = {
   'text/html': 'static',
   'application/vnd.react': 'react-ts',
+  'application/vnd.mermaid': 'react-ts',
   'application/vnd.code-html': 'static',
   // 'css': 'css',
   // 'javascript': 'js',
@@ -34,6 +36,8 @@ export function getFileExtension(language?: string): string {
   switch (language) {
     case 'application/vnd.react':
       return 'tsx';
+    case 'application/vnd.mermaid':
+      return 'mermaid';
     case 'text/html':
       return 'html';
     // case 'jsx':
@@ -55,48 +59,67 @@ export function getTemplate(type: string, language?: string): SandpackPredefined
   );
 }
 
-export const sharedProps: Partial<SandpackProviderProps> = {
-  customSetup: {
-    dependencies: {
-      'lucide-react': '^0.394.0',
-      'react-router-dom': '^6.11.2',
-      'class-variance-authority': '^0.6.0',
-      clsx: '^1.2.1',
-      'date-fns': '^3.3.1',
-      'tailwind-merge': '^1.9.1',
-      'tailwindcss-animate': '^1.0.5',
-      recharts: '2.12.7',
-      '@radix-ui/react-accordion': '^1.1.2',
-      '@radix-ui/react-alert-dialog': '^1.0.2',
-      '@radix-ui/react-aspect-ratio': '^1.1.0',
-      '@radix-ui/react-avatar': '^1.1.0',
-      '@radix-ui/react-checkbox': '^1.0.3',
-      '@radix-ui/react-collapsible': '^1.0.3',
-      '@radix-ui/react-dialog': '^1.0.2',
-      '@radix-ui/react-dropdown-menu': '^2.1.1',
-      '@radix-ui/react-hover-card': '^1.0.5',
-      '@radix-ui/react-label': '^2.0.0',
-      '@radix-ui/react-menubar': '^1.1.1',
-      '@radix-ui/react-navigation-menu': '^1.2.0',
-      '@radix-ui/react-popover': '^1.0.7',
-      '@radix-ui/react-progress': '^1.1.0',
-      '@radix-ui/react-radio-group': '^1.1.3',
-      '@radix-ui/react-select': '^2.0.0',
-      '@radix-ui/react-separator': '^1.0.3',
-      '@radix-ui/react-slider': '^1.1.1',
-      '@radix-ui/react-switch': '^1.0.3',
-      '@radix-ui/react-tabs': '^1.0.3',
-      '@radix-ui/react-toast': '^1.1.5',
-      '@radix-ui/react-tooltip': '^1.0.6',
-      '@radix-ui/react-slot': '^1.1.0',
-      '@radix-ui/react-toggle': '^1.1.0',
-      '@radix-ui/react-toggle-group': '^1.1.0',
-      'embla-carousel-react': '^8.2.0',
-      'react-day-picker': '^9.0.8',
-      vaul: '^0.9.1',
+const standardDependencies = {
+  'lucide-react': '^0.394.0',
+  'react-router-dom': '^6.11.2',
+  'class-variance-authority': '^0.6.0',
+  clsx: '^1.2.1',
+  'date-fns': '^3.3.1',
+  'tailwind-merge': '^1.9.1',
+  'tailwindcss-animate': '^1.0.5',
+  recharts: '2.12.7',
+  '@radix-ui/react-accordion': '^1.1.2',
+  '@radix-ui/react-alert-dialog': '^1.0.2',
+  '@radix-ui/react-aspect-ratio': '^1.1.0',
+  '@radix-ui/react-avatar': '^1.1.0',
+  '@radix-ui/react-checkbox': '^1.0.3',
+  '@radix-ui/react-collapsible': '^1.0.3',
+  '@radix-ui/react-dialog': '^1.0.2',
+  '@radix-ui/react-dropdown-menu': '^2.1.1',
+  '@radix-ui/react-hover-card': '^1.0.5',
+  '@radix-ui/react-label': '^2.0.0',
+  '@radix-ui/react-menubar': '^1.1.1',
+  '@radix-ui/react-navigation-menu': '^1.2.0',
+  '@radix-ui/react-popover': '^1.0.7',
+  '@radix-ui/react-progress': '^1.1.0',
+  '@radix-ui/react-radio-group': '^1.1.3',
+  '@radix-ui/react-select': '^2.0.0',
+  '@radix-ui/react-separator': '^1.0.3',
+  '@radix-ui/react-slider': '^1.1.1',
+  '@radix-ui/react-switch': '^1.0.3',
+  '@radix-ui/react-tabs': '^1.0.3',
+  '@radix-ui/react-toast': '^1.1.5',
+  '@radix-ui/react-tooltip': '^1.0.6',
+  '@radix-ui/react-slot': '^1.1.0',
+  '@radix-ui/react-toggle': '^1.1.0',
+  '@radix-ui/react-toggle-group': '^1.1.0',
+  'embla-carousel-react': '^8.2.0',
+  'react-day-picker': '^9.0.8',
+  vaul: '^0.9.1',
+};
+
+const dependenciesMap = {
+  // 'application/vnd.mermaid': {
+  //   mermaid: '^11.0.2',
+  //   'react-zoom-pan-pinch': '^3.6.1',
+  //   ...standardDependencies,
+  // },
+  'application/vnd.mermaid': {},
+  'application/vnd.react': standardDependencies,
+  'text/html': standardDependencies,
+};
+
+export function getDependencies(type: string): Record<string, string> {
+  return dependenciesMap[type] ?? standardDependencies;
+}
+
+export function getProps(type: string): Partial<SandpackProviderProps> {
+  return {
+    customSetup: {
+      dependencies: getDependencies(type),
     },
-  },
-} as const;
+  };
+}
 
 export const sharedOptions: SandpackProviderProps['options'] = {
   externalResources: ['https://unpkg.com/@tailwindcss/ui/dist/tailwind-ui.min.css'],
