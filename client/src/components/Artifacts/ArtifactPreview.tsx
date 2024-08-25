@@ -11,6 +11,7 @@ import {
   sharedOptions,
   getArtifactFilename,
 } from '~/utils/artifacts';
+import Mermaid from './Mermaid';
 
 export const ArtifactPreview = memo(function ({
   showEditor = false,
@@ -29,6 +30,10 @@ export const ArtifactPreview = memo(function ({
     () => getTemplate(artifact.type ?? '', artifact.language),
     [artifact.type, artifact.language],
   );
+
+  if (artifact.type === 'application/vnd.mermaid') {
+    return <Mermaid content={artifact.content ?? ''} />;
+  }
 
   if (Object.keys(files).length === 0) {
     return null;
