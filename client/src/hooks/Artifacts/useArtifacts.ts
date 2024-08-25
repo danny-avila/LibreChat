@@ -8,7 +8,6 @@ import store from '~/store';
 export default function useArtifacts() {
   const { isSubmitting, latestMessage, conversation } = useChatContext();
 
-  const [isVisible, setIsVisible] = useState(false);
   const [activeTab, setActiveTab] = useState('preview');
   const artifacts = useRecoilValue(store.artifactsState);
   const [currentArtifactId, setCurrentArtifactId] = useRecoilState(store.currentArtifactId);
@@ -47,10 +46,6 @@ export default function useArtifacts() {
     }
     prevConversationIdRef.current = conversation?.conversationId ?? null;
   }, [conversation, resetArtifacts, resetCurrentArtifactId]);
-
-  useEffect(() => {
-    setIsVisible(true);
-  }, []);
 
   useEffect(() => {
     if (orderedArtifactIds.length > 0) {
@@ -110,14 +105,12 @@ export default function useArtifacts() {
   };
 
   return {
-    isVisible,
-    setIsVisible,
     activeTab,
     setActiveTab,
-    currentArtifact,
     currentIndex,
-    cycleArtifact,
     isSubmitting,
+    cycleArtifact,
+    currentArtifact,
     orderedArtifactIds,
   };
 }

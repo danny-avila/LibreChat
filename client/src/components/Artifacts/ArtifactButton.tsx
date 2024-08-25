@@ -7,6 +7,7 @@ import store from '~/store';
 
 const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
   const localize = useLocalize();
+  const setVisible = useSetRecoilState(store.artifactsVisible);
   const setArtifactId = useSetRecoilState(store.currentArtifactId);
   if (artifact === null || artifact === undefined) {
     return null;
@@ -17,7 +18,10 @@ const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
     <div className="group relative my-4 rounded-xl text-sm text-text-primary">
       <button
         type="button"
-        onClick={() => setArtifactId(artifact.id)}
+        onClick={() => {
+          setArtifactId(artifact.id);
+          setVisible(true);
+        }}
         className="relative overflow-hidden rounded-xl border border-border-medium transition-all duration-300 hover:border-border-xheavy hover:shadow-lg"
       >
         <div className="w-60 bg-surface-tertiary p-2 ">
