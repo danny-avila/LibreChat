@@ -1,4 +1,7 @@
+import { useRef, useState } from 'react';
+import { RefreshCw } from 'lucide-react';
 import * as Tabs from '@radix-ui/react-tabs';
+import { SandpackPreviewRef } from '@codesandbox/sandpack-react';
 import useArtifacts from '~/hooks/Artifacts/useArtifacts';
 import { CodeMarkdown, CopyCodeButton } from './Code';
 import { getFileExtension } from '~/utils/artifacts';
@@ -6,6 +9,9 @@ import { ArtifactPreview } from './ArtifactPreview';
 import { cn } from '~/utils';
 
 export default function Artifacts() {
+  const previewRef = useRef<SandpackPreviewRef>();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
   const {
     isVisible,
     activeTab,
@@ -20,6 +26,15 @@ export default function Artifacts() {
   if (currentArtifact === null || currentArtifact === undefined) {
     return null;
   }
+
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    const client = previewRef.current?.getClient();
+    if (client != null) {
+      client.dispatch({ type: 'refresh' });
+    }
+    setTimeout(() => setIsRefreshing(false), 750);
+  };
 
   return (
     <Tabs.Root value={activeTab} onValueChange={setActiveTab} asChild>
@@ -50,6 +65,22 @@ export default function Artifacts() {
               <h3 className="truncate text-sm text-text-primary">{currentArtifact.title}</h3>
             </div>
             <div className="flex items-center">
+              {/* Refresh button */}
+              {activeTab === 'preview' && (
+                <button
+                  className={`mr-2 text-text-secondary transition-transform duration-500 ease-in-out ${
+                    isRefreshing ? 'rotate-180' : ''
+                  }`}
+                  onClick={handleRefresh}
+                  disabled={isRefreshing}
+                  aria-label="Refresh"
+                >
+                  <RefreshCw
+                    size={16}
+                    className={`transform ${isRefreshing ? 'animate-spin' : ''}`}
+                  />
+                </button>
+              )}
               <Tabs.List className="mr-2 inline-flex h-7 rounded-full border border-border-medium bg-surface-tertiary">
                 <Tabs.Trigger
                   value="preview"
@@ -90,7 +121,10 @@ export default function Artifacts() {
             />
           </Tabs.Content>
           <Tabs.Content value="preview" className="flex-grow overflow-auto bg-white">
-            <ArtifactPreview artifact={currentArtifact} />
+            <ArtifactPreview
+              artifact={currentArtifact}
+              previewRef={previewRef as React.MutableRefObject<SandpackPreviewRef>}
+            />
           </Tabs.Content>
           {/* Footer */}
           <div className="flex items-center justify-between border-t border-border-medium bg-surface-primary-alt p-2 text-sm text-text-secondary">
