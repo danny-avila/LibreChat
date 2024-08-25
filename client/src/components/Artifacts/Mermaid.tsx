@@ -47,15 +47,17 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content }) => {
     renderDiagram();
   }, [content]);
 
-  useEffect(() => {
-    if (isRendered && transformRef.current) {
+  const centerAndFitDiagram = () => {
+    if (transformRef.current && mermaidRef.current) {
       const { centerView, zoomToElement } = transformRef.current;
-      // Center the view
-      centerView();
-      // Zoom to fit the diagram
-      if (mermaidRef.current) {
-        zoomToElement(mermaidRef.current);
-      }
+      zoomToElement(mermaidRef.current as HTMLElement);
+      centerView(1, 0);
+    }
+  };
+
+  useEffect(() => {
+    if (isRendered) {
+      centerAndFitDiagram();
     }
   }, [isRendered]);
 
@@ -109,7 +111,7 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content }) => {
         alignmentAnimation={{ disabled: true }}
         onPanning={handlePanning}
       >
-        {({ zoomIn, zoomOut, resetTransform }) => (
+        {({ zoomIn, zoomOut }) => (
           <>
             <TransformComponent
               wrapperStyle={{ width: '100%', height: '100%', overflow: 'hidden' }}
@@ -126,7 +128,7 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content }) => {
               <Button onClick={() => zoomOut(0.1)} variant="outline" size="icon">
                 <ZoomOut className="h-4 w-4" />
               </Button>
-              <Button onClick={() => resetTransform()} variant="outline" size="icon">
+              <Button onClick={centerAndFitDiagram} variant="outline" size="icon">
                 <RefreshCw className="h-4 w-4" />
               </Button>
             </div>
