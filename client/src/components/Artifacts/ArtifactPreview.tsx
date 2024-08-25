@@ -2,6 +2,7 @@ import React, { useMemo, memo } from 'react';
 import { Sandpack } from '@codesandbox/sandpack-react';
 import { removeNullishValues } from 'librechat-data-provider';
 import { SandpackPreview, SandpackProvider } from '@codesandbox/sandpack-react/unstyled';
+import type { SandpackPreviewRef } from '@codesandbox/sandpack-react/unstyled';
 import type { Artifact } from '~/common';
 import {
   sharedFiles,
@@ -14,9 +15,11 @@ import {
 export const ArtifactPreview = memo(function ({
   showEditor = false,
   artifact,
+  previewRef,
 }: {
   showEditor?: boolean;
   artifact: Artifact;
+  previewRef: React.MutableRefObject<SandpackPreviewRef>;
 }) {
   const files = useMemo(() => {
     return removeNullishValues({ [getArtifactFilename(artifact.type ?? '')]: artifact.content });
@@ -56,7 +59,12 @@ export const ArtifactPreview = memo(function ({
       {...sharedProps}
       template={template}
     >
-      <SandpackPreview showOpenInCodeSandbox={false} showRefreshButton={false} tabIndex={0} />
+      <SandpackPreview
+        showOpenInCodeSandbox={false}
+        showRefreshButton={false}
+        tabIndex={0}
+        ref={previewRef}
+      />
     </SandpackProvider>
   );
 });
