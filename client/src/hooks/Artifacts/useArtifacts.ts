@@ -1,6 +1,8 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
+import { Constants } from 'librechat-data-provider';
 import { useRecoilState, useRecoilValue, useResetRecoilState } from 'recoil';
 import { useChatContext } from '~/Providers';
+import { getLatestText } from '~/utils';
 import store from '~/store';
 
 export default function useArtifacts() {
@@ -21,9 +23,8 @@ export default function useArtifacts() {
 
   const lastRunMessageIdRef = useRef<string | null>(null);
   const lastContentRef = useRef<string | null>(null);
-
-  // Use a ref to keep track of the previous conversation ID
   const prevConversationIdRef = useRef<string | null>(null);
+  const hasEnclosedArtifactRef = useRef<boolean>(false);
 
   useEffect(() => {
     const resetState = () => {
@@ -32,6 +33,7 @@ export default function useArtifacts() {
       prevConversationIdRef.current = conversation?.conversationId ?? null;
       lastRunMessageIdRef.current = null;
       lastContentRef.current = null;
+      hasEnclosedArtifactRef.current = false;
     };
     if (
       conversation &&
@@ -39,7 +41,7 @@ export default function useArtifacts() {
       prevConversationIdRef.current != null
     ) {
       resetState();
-    } else if (conversation && conversation.conversationId === 'new') {
+    } else if (conversation && conversation.conversationId === Constants.NEW_CONVO) {
       resetState();
     }
     prevConversationIdRef.current = conversation?.conversationId ?? null;
@@ -57,21 +59,33 @@ export default function useArtifacts() {
   }, [setCurrentArtifactId, orderedArtifactIds]);
 
   useEffect(() => {
-    if (isSubmitting && orderedArtifactIds.length > 0) {
+    if (isSubmitting && orderedArtifactIds.length > 0 && latestMessage) {
       const latestArtifactId = orderedArtifactIds[orderedArtifactIds.length - 1];
       const latestArtifact = artifacts?.[latestArtifactId];
 
       if (latestArtifact?.content !== lastContentRef.current) {
         setCurrentArtifactId(latestArtifactId);
-        setActiveTab('code');
         lastContentRef.current = latestArtifact?.content ?? null;
+
+        const latestMessageText = getLatestText(latestMessage);
+        const hasEnclosedArtifact = /:::artifact[\s\S]*?(```|:::)\s*$/.test(
+          latestMessageText.trim(),
+        );
+
+        if (hasEnclosedArtifact && !hasEnclosedArtifactRef.current) {
+          setActiveTab('preview');
+          hasEnclosedArtifactRef.current = true;
+        } else {
+          setActiveTab('code');
+        }
       }
     }
-  }, [setCurrentArtifactId, isSubmitting, orderedArtifactIds, artifacts]);
+  }, [setCurrentArtifactId, isSubmitting, orderedArtifactIds, artifacts, latestMessage]);
 
   useEffect(() => {
     if (latestMessage?.messageId !== lastRunMessageIdRef.current) {
       lastRunMessageIdRef.current = latestMessage?.messageId ?? null;
+      hasEnclosedArtifactRef.current = false;
     }
   }, [latestMessage]);
 
