@@ -6,13 +6,13 @@ import { getLatestText } from '~/utils';
 import store from '~/store';
 
 export default function useArtifacts() {
+  const [activeTab, setActiveTab] = useState('preview');
   const { isSubmitting, latestMessage, conversation } = useChatContext();
 
-  const [activeTab, setActiveTab] = useState('preview');
   const artifacts = useRecoilValue(store.artifactsState);
-  const [currentArtifactId, setCurrentArtifactId] = useRecoilState(store.currentArtifactId);
   const resetArtifacts = useResetRecoilState(store.artifactsState);
   const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
+  const [currentArtifactId, setCurrentArtifactId] = useRecoilState(store.currentArtifactId);
 
   const orderedArtifactIds = useMemo(() => {
     return Object.keys(artifacts ?? {}).sort(
@@ -20,11 +20,11 @@ export default function useArtifacts() {
     );
   }, [artifacts]);
 
-  const lastRunMessageIdRef = useRef<string | null>(null);
   const lastContentRef = useRef<string | null>(null);
-  const prevConversationIdRef = useRef<string | null>(null);
   const hasEnclosedArtifactRef = useRef<boolean>(false);
   const hasAutoSwitchedToCodeRef = useRef<boolean>(false);
+  const lastRunMessageIdRef = useRef<string | null>(null);
+  const prevConversationIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     const resetState = () => {
