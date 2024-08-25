@@ -1,5 +1,6 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { RefreshCw } from 'lucide-react';
+import { useSetRecoilState } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
 import { SandpackPreviewRef } from '@codesandbox/sandpack-react';
 import useArtifacts from '~/hooks/Artifacts/useArtifacts';
@@ -7,13 +8,19 @@ import { CodeMarkdown, CopyCodeButton } from './Code';
 import { getFileExtension } from '~/utils/artifacts';
 import { ArtifactPreview } from './ArtifactPreview';
 import { cn } from '~/utils';
+import store from '~/store';
 
 export default function Artifacts() {
   const previewRef = useRef<SandpackPreviewRef>();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
+  const setArtifactsVisible = useSetRecoilState(store.artifactsVisible);
+
+  useEffect(() => {
+    setIsVisible(true);
+  }, []);
 
   const {
-    isVisible,
     activeTab,
     isSubmitting,
     setActiveTab,
@@ -51,7 +58,13 @@ export default function Artifacts() {
           {/* Header */}
           <div className="flex items-center justify-between border-b border-border-medium bg-surface-primary-alt p-2">
             <div className="flex items-center">
-              <button className="mr-2 text-text-secondary" onClick={() => cycleArtifact('prev')}>
+              <button
+                className="mr-2 text-text-secondary"
+                onClick={() => {
+                  setIsVisible(false);
+                  setTimeout(() => setArtifactsVisible(false), 300);
+                }}
+              >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   width="16"
@@ -95,7 +108,13 @@ export default function Artifacts() {
                   Code
                 </Tabs.Trigger>
               </Tabs.List>
-              <button className="text-text-secondary">
+              <button
+                className="text-text-secondary"
+                onClick={() => {
+                  setIsVisible(false);
+                  setTimeout(() => setArtifactsVisible(false), 300);
+                }}
+              >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   width="16"
