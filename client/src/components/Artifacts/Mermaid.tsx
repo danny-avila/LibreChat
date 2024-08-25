@@ -16,17 +16,37 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content }) => {
   useEffect(() => {
     mermaid.initialize({
       startOnLoad: false,
-      theme: 'dark',
+      theme: 'base',
       themeVariables: {
-        darkMode: true,
-        background: '#282a36',
-        primaryColor: '#ff79c6',
-        secondaryColor: '#bd93f9',
-        tertiaryColor: '#50fa7b',
-        primaryTextColor: '#f8f8f2',
-        secondaryTextColor: '#6272a4',
-        lineColor: '#ff79c6',
+        background: '#282C34',
+        primaryColor: '#333842',
+        secondaryColor: '#333842',
+        tertiaryColor: '#333842',
+        primaryTextColor: '#ABB2BF',
+        secondaryTextColor: '#ABB2BF',
+        lineColor: '#636D83',
         fontSize: '16px',
+        nodeBorder: '#636D83',
+        mainBkg: '#333842',
+        altBackground: '#282C34',
+        textColor: '#ABB2BF',
+        edgeLabelBackground: '#282C34',
+        clusterBkg: '#333842',
+        clusterBorder: '#636D83',
+        labelBoxBkgColor: '#333842',
+        labelBoxBorderColor: '#636D83',
+        labelTextColor: '#ABB2BF',
+      },
+      flowchart: {
+        curve: 'basis',
+        nodeSpacing: 50,
+        rankSpacing: 50,
+        diagramPadding: 8,
+        htmlLabels: true,
+        useMaxWidth: true,
+        defaultRenderer: 'dagre-d3',
+        padding: 15,
+        wrappingWidth: 200,
       },
     });
 
@@ -36,6 +56,28 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content }) => {
         try {
           const { svg } = await mermaid.render('mermaid-diagram', content);
           mermaidRef.current.innerHTML = svg;
+          // Apply additional styles to SVG elements
+          const svgElement = mermaidRef.current.querySelector('svg');
+          if (svgElement) {
+            svgElement.style.width = '100%';
+            svgElement.style.height = '100%';
+            // Increase line thickness
+            const pathElements = svgElement.querySelectorAll('path');
+            pathElements.forEach((path) => {
+              path.style.strokeWidth = '1.5px';
+            });
+            // Adjust borders for specific elements
+            const rectElements = svgElement.querySelectorAll('rect');
+            rectElements.forEach((rect) => {
+              const parent = rect.parentElement;
+              if (parent && parent.classList.contains('node')) {
+                rect.style.stroke = '#636D83';
+                rect.style.strokeWidth = '1px';
+              } else {
+                rect.style.stroke = 'none';
+              }
+            });
+          }
           setIsRendered(true);
         } catch (error) {
           console.error('Mermaid rendering error:', error);
@@ -97,7 +139,7 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content }) => {
   };
 
   return (
-    <div className="relative h-full w-full cursor-move bg-[#282a36] p-5">
+    <div className="relative h-full w-full cursor-move bg-[#282C34] p-5">
       <TransformWrapper
         ref={transformRef}
         initialScale={1}
