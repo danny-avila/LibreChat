@@ -145,13 +145,13 @@ const SidePanel = ({
           onLayout={(sizes: number[]) => throttledSaveLayout(sizes)}
           className="transition-width relative h-full w-full flex-1 overflow-auto bg-white dark:bg-gray-800"
         >
-          <ResizablePanel defaultSize={defaultLayout[0]} minSize={minSizeMain}>
+          <ResizablePanel defaultSize={defaultLayout[0]} minSize={minSizeMain} order={1}>
             {children}
           </ResizablePanel>
           {artifacts != null && (
             <>
               <ResizableHandleAlt withHandle className="ml-3 bg-border-medium dark:text-white" />
-              <ResizablePanel defaultSize={defaultLayout[0]} minSize={minSizeMain}>
+              <ResizablePanel defaultSize={defaultLayout[0]} minSize={minSizeMain} order={2}>
                 {artifacts}
               </ResizablePanel>
             </>
@@ -186,6 +186,7 @@ const SidePanel = ({
           <ResizablePanel
             tagName="nav"
             id="controls-nav"
+            order={artifacts != null ? 3 : 2}
             aria-label={localize('com_ui_controls')}
             role="region"
             collapsedSize={collapsedSize}
