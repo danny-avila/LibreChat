@@ -1,7 +1,7 @@
 import React, { useEffect, useCallback, useRef, useState } from 'react';
 import throttle from 'lodash/throttle';
 import { visit } from 'unist-util-visit';
-import { useSetRecoilState, useRecoilValue } from 'recoil';
+import { useSetRecoilState } from 'recoil';
 import type { Pluggable } from 'unified';
 import type { Artifact } from '~/common';
 import { artifactsState } from '~/store/artifacts';
@@ -45,7 +45,6 @@ export function Artifact({
   node: unknown;
 }) {
   const setArtifacts = useSetRecoilState(artifactsState);
-  const currentArtifacts = useRecoilValue(artifactsState);
   const [artifact, setArtifact] = useState<Artifact | null>(null);
 
   const throttledUpdateRef = useRef(
