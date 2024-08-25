@@ -639,12 +639,6 @@ pre {
 .prose :where(thead th strong):not(:where([class~='not-prose'] *)) {
   color: inherit;
 }
-.prose :where(ul):not(:where([class~='not-prose'] *)) {
-  list-style-type: disc;
-  margin-bottom: 0.1em;
-  margin-top: 0.1em;
-  padding-left: 1.625em;
-}
 .prose :where(ul > li):not(:where([class~='not-prose'] *))::marker {
   color: var(--tw-prose-bullets);
 }
@@ -1255,20 +1249,6 @@ html {
   height: 100%;
 }
 
-.markdown ul li {
-  display: block;
-  margin: 0;
-  position: relative;
-}
-
-.markdown ul li:before {
-  content: '•';
-  font-size: 0.875rem;
-  line-height: 1.25rem;
-  margin-left: -1rem;
-  position: absolute;
-}
-
 .markdown {
   max-width: none;
   font-size: var(--markdown-font-size, var(--font-size-base));
@@ -1315,13 +1295,6 @@ html {
   border-color: rgba(142, 142, 160, var(--tw-border-opacity));
   border-left-width: 2px;
   line-height: 1rem;
-  padding-left: 1rem;
-}
-
-/* .markdown ol, */
-.markdown ul {
-  display: flex;
-  flex-direction: column;
   padding-left: 1rem;
 }
 
@@ -1539,18 +1512,6 @@ html {
   height: 100%;
 }
 
-.markdown ul li {
-  display: block;
-  margin: 0;
-  position: relative;
-}
-.markdown ul li:before {
-  content: '•';
-  font-size: calc(var(--markdown-font-size) * 0.875);
-  line-height: calc(var(--markdown-font-size) * 1.25);
-  margin-left: -1rem;
-  position: absolute;
-}
 .markdown {
   max-width: none;
 }
@@ -1815,7 +1776,9 @@ button.scroll-convo {
 }
 
 .result-streaming > :not(ol):not(ul):not(pre):last-child:after,
-.result-streaming > pre:last-child code:after {
+.result-streaming > pre:last-child code:after,
+.result-streaming > ol:last-child > li:last-child:after,
+.result-streaming > ul:last-child > li:last-child:after {
   display: inline-block;
   content: '⬤';
   width: 12px;
@@ -1829,103 +1792,9 @@ button.scroll-convo {
 }
 
 @supports (selector(:has(*))) {
-  .result-streaming > ol:last-child > li:last-child > ol:last-child > li:last-child:after,
-  .result-streaming
-    > ol:last-child
-    > li:last-child
-    > ol:last-child
-    > li:last-child
-    > ol:last-child
-    > li:last-child:after,
-  .result-streaming
-    > ol:last-child
-    > li:last-child
-    > ol:last-child
-    > li:last-child
-    > ul:last-child
-    > li:last-child:after,
-  .result-streaming > ol:last-child > li:last-child > ul:last-child > li:last-child:after,
-  .result-streaming
-    > ol:last-child
-    > li:last-child
-    > ul:last-child
-    > li:last-child
-    > ol:last-child
-    > li:last-child:after,
-  .result-streaming
-    > ol:last-child
-    > li:last-child
-    > ul:last-child
-    > li:last-child
-    > ul:last-child
-    > li:last-child:after,
-  .result-streaming > ul:last-child > li:last-child > ol:last-child > li:last-child:after,
-  .result-streaming
-    > ul:last-child
-    > li:last-child
-    > ol:last-child
-    > li:last-child
-    > ol:last-child
-    > li:last-child:after,
-  .result-streaming
-    > ul:last-child
-    > li:last-child
-    > ol:last-child
-    > li:last-child
-    > ul:last-child
-    > li:last-child:after,
-  .result-streaming > ul:last-child > li:last-child > ul:last-child > li:last-child:after,
-  .result-streaming
-    > ul:last-child
-    > li:last-child
-    > ul:last-child
-    > li:last-child
-    > ol:last-child
-    > li:last-child:after,
-  .result-streaming
-    > ul:last-child
-    > li:last-child
-    > ul:last-child
-    > li:last-child
-    > ul:last-child
-    > li:last-child:after,
-  .result-streaming > ul:last-child > li:last-child[*|\:not-has\(]:after {
-    content: '⬤';
-    font-family: system-ui, Inter, Söhne Circle, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell,
-      Noto Sans, sans-serif;
-    line-height: normal;
-    margin-left: 0.25rem;
-    vertical-align: middle;
-    font-size: 0.5rem;
-    display: inline-block;
-    width: 12px;
-    height: 12px;
-  }
-  .result-streaming > ul:last-child > li:last-child:not(:has(* > li)):after {
-    content: '⬤';
-    font-family: system-ui, Inter, Söhne Circle, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell,
-      Noto Sans, sans-serif;
-    line-height: normal;
-    margin-left: 0.25rem;
-    vertical-align: middle;
-    font-size: 0.5rem;
-    display: inline-block;
-    width: 12px;
-    height: 12px;
-  }
-  .result-streaming > ol:last-child > li:last-child[*|\:not-has\(]:after {
-    content: '⬤';
-    font-family: system-ui, Inter, Söhne Circle, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell,
-      Noto Sans, sans-serif;
-    line-height: normal;
-    margin-left: 0.25rem;
-    vertical-align: middle;
-    font-size: 0.5rem;
-    display: inline-block;
-    width: 12px;
-    height: 12px;
-  }
-  .result-streaming > ol:last-child > li:last-child:not(:has(* > li)):after {
+  .result-streaming > :not(ol):not(ul):last-child:after,
+  .result-streaming > ol:last-child > li:last-child:not(:has(ol)):not(:has(ul)):after,
+  .result-streaming > ul:last-child > li:last-child:not(:has(ol)):not(:has(ul)):after {
     content: '⬤';
     font-family: system-ui, Inter, Söhne Circle, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell,
       Noto Sans, sans-serif;
@@ -1939,6 +1808,7 @@ button.scroll-convo {
   }
 }
 @supports not (selector(:has(*))) {
+  .result-streaming > :not(ol):not(ul):last-child:after,
   .result-streaming > ol:last-child > li:last-child:after,
   .result-streaming > ul:last-child > li:last-child:after {
     content: '⬤';
@@ -2049,92 +1919,100 @@ button.scroll-convo {
   margin-bottom: 1.3333333em;
 }
 
-.markdown .prose ol,
-.markdown .prose p,
-.markdown .prose ul {
-  margin-bottom: 1rem;
+/* Base styles for .prose lists */
+.prose :where(ul):not(:where([class~='not-prose'] *)),
+.prose :where(ol):not(:where([class~='not-prose'] *)) {
+  margin-bottom: 1em;
+  margin-top: 1em;
+  padding-left: 1.25em;
 }
-.markdown .prose ol:last-child,
-.markdown .prose p:last-child,
-.markdown .prose ul:last-child {
-  margin-bottom: 0;
+
+.prose :where(ul):not(:where([class~='not-prose'] *)) {
+  list-style-type: disc;
 }
-.markdown .prose p {
-  margin-bottom: 1rem;
-  margin-top: 1rem;
-  line-height: calc(
-    28px * var(--markdown-font-size, var(--font-size-base)) / var(--font-size-base)
-  );
+
+.prose :where(ol):not(:where([class~='not-prose'] *)) {
+  list-style-type: decimal;
 }
-.markdown .prose ol,
-.markdown .prose ul {
-  display: contents;
-  list-style-position: inside;
-  list-style-type: none;
-  margin-top: 0;
+
+.prose :where(ul > li):not(:where([class~='not-prose'] *)),
+.prose :where(ol > li):not(:where([class~='not-prose'] *)) {
+  margin-bottom: 0.5em;
+  padding-left: 0.375em;
 }
-.markdown .prose ol > li,
-.markdown .prose ul > li {
-  margin-bottom: 0;
-  margin-top: 0;
+
+/* Markdown-specific list styles */
+.markdown ul,
+.markdown ol {
+  padding-left: 1.25em;
+  margin-bottom: 1em;
+  margin-top: 1em;
+  list-style-position: outside;
+}
+
+.markdown ul li,
+.markdown ol li {
   position: relative;
+  margin-bottom: 0.5em;
 }
-.markdown .prose ol > li[\:has\(\.title-citation\)],
-.markdown .prose ul > li[\:has\(\.title-citation\)] {
-  margin-bottom: 0.75rem;
+
+.markdown ul {
+  list-style-type: disc;
 }
-.markdown .prose ol > li:has(.title-citation),
-.markdown .prose ul > li:has(.title-citation) {
-  margin-bottom: 0.75rem;
+
+.markdown ol {
+  list-style-type: decimal;
 }
-.markdown .prose ol > li[\:has\(\.title-citation\)]:last-child,
-.markdown .prose ul > li[\:has\(\.title-citation\)]:last-child {
-  margin-bottom: 0;
+
+/* Nested list styles */
+.markdown ul ul,
+.markdown ol ul {
+  list-style-type: circle;
 }
-.markdown .prose ol > li:has(.title-citation):last-child,
-.markdown .prose ul > li:has(.title-citation):last-child {
-  margin-bottom: 0;
+
+.markdown ol ol,
+.markdown ul ol {
+  list-style-type: lower-alpha;
 }
-.markdown .prose ol > li:before,
-.markdown .prose ul > li:before {
-  left: 0;
-  position: absolute;
-}
-.markdown .prose ol > li button,
-.markdown .prose ol > li > a,
-.markdown .prose ul > li button,
-.markdown .prose ul > li > a {
-  margin-bottom: 0;
-  margin-top: 0;
-}
-.markdown .prose ol > li p,
-.markdown .prose ul > li p {
-  margin-bottom: 0.5rem;
-  margin-top: 0;
-}
+
+.markdown li > ul,
+.markdown li > ol,
 .markdown .prose ol > li ol,
 .markdown .prose ol > li ul,
 .markdown .prose ul > li ol,
 .markdown .prose ul > li ul {
-  display: block;
-  margin-bottom: 0;
-  margin-left: 1rem;
-  margin-top: 0;
-  padding: 0;
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
 }
-.markdown .prose ol {
-  counter-reset: list-counter;
+
+/* Additional .prose styles */
+.markdown .prose ol,
+.markdown .prose ul {
+  list-style-position: outside;
+  margin-top: 1em;
+  margin-bottom: 1em;
+  padding-left: 1.25em;
 }
-.markdown .prose ol > li {
-  counter-increment: list-counter;
-  padding-left: 2rem;
-}
-.markdown .prose ol > li:before {
-  color: var(--text-secondary);
-  content: counter(list-counter) '.';
-}
+
+.markdown .prose ol > li,
 .markdown .prose ul > li {
-  padding-left: 1.5rem;
+  margin-bottom: 0.5em;
+  position: relative;
+}
+
+/* Adjustments for nested lists */
+.markdown .prose ol > li ol,
+.markdown .prose ol > li ul,
+.markdown .prose ul > li ol,
+.markdown .prose ul > li ul {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+/* Ensure filled bullet points */
+.markdown ul li::marker,
+.prose :where(ul > li):not(:where([class~='not-prose'] *))::marker {
+  color: currentColor;
 }
 
 /* Keyframes */
