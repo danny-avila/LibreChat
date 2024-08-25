@@ -25,6 +25,7 @@ export default function useArtifacts() {
   const lastContentRef = useRef<string | null>(null);
   const prevConversationIdRef = useRef<string | null>(null);
   const hasEnclosedArtifactRef = useRef<boolean>(false);
+  const hasAutoSwitchedToCodeRef = useRef<boolean>(false);
 
   useEffect(() => {
     const resetState = () => {
@@ -75,8 +76,13 @@ export default function useArtifacts() {
         if (hasEnclosedArtifact && !hasEnclosedArtifactRef.current) {
           setActiveTab('preview');
           hasEnclosedArtifactRef.current = true;
-        } else {
-          setActiveTab('code');
+          hasAutoSwitchedToCodeRef.current = false;
+        } else if (!hasEnclosedArtifactRef.current && !hasAutoSwitchedToCodeRef.current) {
+          const artifactStartContent = latestArtifact?.content?.slice(0, 50) ?? '';
+          if (artifactStartContent.length > 0 && latestMessageText.includes(artifactStartContent)) {
+            setActiveTab('code');
+            hasAutoSwitchedToCodeRef.current = true;
+          }
         }
       }
     }
@@ -86,6 +92,7 @@ export default function useArtifacts() {
     if (latestMessage?.messageId !== lastRunMessageIdRef.current) {
       lastRunMessageIdRef.current = latestMessage?.messageId ?? null;
       hasEnclosedArtifactRef.current = false;
+      hasAutoSwitchedToCodeRef.current = false;
     }
   }, [latestMessage]);
 
