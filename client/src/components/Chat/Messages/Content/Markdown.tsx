@@ -9,10 +9,11 @@ import rehypeHighlight from 'rehype-highlight';
 import remarkDirective from 'remark-directive';
 import type { PluggableList, Pluggable } from 'unified';
 import type { Pluggable } from 'unified';
-import { langSubset, preprocessLaTeX, handleDoubleClick } from '~/utils';
 import { CodeBlockArtifact, CodeMarkdown } from '~/components/Artifacts/Code';
 import { Artifact, artifactPlugin } from '~/components/Artifacts/Artifact';
+import { langSubset, preprocessLaTeX, handleDoubleClick } from '~/utils';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
+import { preprocessCodeArtifacts } from '~/utils/artifacts';
 import { useFileDownload } from '~/data-provider';
 import useLocalize from '~/hooks/useLocalize';
 import { useToastContext } from '~/Providers';
@@ -133,6 +134,7 @@ const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentPr
   if (!isInitializing) {
     currentContent = currentContent.replace('z-index: 1;', '') || '';
     currentContent = LaTeXParsing ? preprocessLaTeX(currentContent) : currentContent;
+    currentContent = codeArtifacts ? preprocessCodeArtifacts(currentContent) : currentContent;
   }
 
   const rehypePlugins = [
