@@ -67,8 +67,6 @@ export default function AssistantPanel({
   const assistant = useWatch({ control, name: 'assistant' });
   const functions = useWatch({ control, name: 'functions' });
   const assistant_id = useWatch({ control, name: 'id' });
-  const conversation_starters = useWatch({ control, name: 'conversation_starters' });
-  console.log({ conversation_starters, assistant });
 
   const activeModel = useMemo(() => {
     return assistantMap?.[endpoint]?.[assistant_id]?.model;
