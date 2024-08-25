@@ -30,6 +30,24 @@ interface SidePanelProps {
 const defaultMinSize = 20;
 const defaultInterface = getConfigDefaults().interface;
 
+const normalizeLayout = (layout: number[]) => {
+  const sum = layout.reduce((acc, size) => acc + size, 0);
+  if (Math.abs(sum - 100) < 0.01) {
+    return layout.map((size) => Number(size.toFixed(2)));
+  }
+
+  const factor = 100 / sum;
+  const normalizedLayout = layout.map((size) => Number((size * factor).toFixed(2)));
+
+  const adjustedSum = normalizedLayout.reduce(
+    (acc, size, index) => (index === layout.length - 1 ? acc : acc + size),
+    0,
+  );
+  normalizedLayout[normalizedLayout.length - 1] = Number((100 - adjustedSum).toFixed(2));
+
+  return normalizedLayout;
+};
+
 const SidePanel = ({
   defaultLayout = [97, 3],
   defaultCollapsed = false,
@@ -66,11 +84,11 @@ const SidePanel = ({
 
   const assistants = useMemo(() => endpointsConfig?.[endpoint ?? ''], [endpoint, endpointsConfig]);
   const userProvidesKey = useMemo(
-    () => !!endpointsConfig?.[endpoint ?? '']?.userProvide,
+    () => !!(endpointsConfig?.[endpoint ?? '']?.userProvide ?? false),
     [endpointsConfig, endpoint],
   );
   const keyProvided = useMemo(
-    () => (userProvidesKey ? !!keyExpiry.expiresAt : true),
+    () => (userProvidesKey ? !!(keyExpiry.expiresAt ?? '') : true),
     [keyExpiry.expiresAt, userProvidesKey],
   );
 
@@ -91,10 +109,26 @@ const SidePanel = ({
     interfaceConfig,
   });
 
+  const calculateLayout = useCallback(() => {
+    if (!artifacts) {
+      const navSize = defaultLayout.length === 2 ? defaultLayout[1] : defaultLayout[2];
+      return [100 - navSize, navSize];
+    } else {
+      const navSize = Math.max(minSize, navCollapsedSize);
+      const remainingSpace = 100 - navSize;
+      const newMainSize = Math.floor(remainingSpace / 2);
+      const artifactsSize = remainingSpace - newMainSize;
+      return [newMainSize, artifactsSize, navSize];
+    }
+  }, [artifacts, defaultLayout, minSize, navCollapsedSize]);
+
+  const currentLayout = useMemo(() => normalizeLayout(calculateLayout()), [calculateLayout]);
+
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const throttledSaveLayout = useCallback(
     throttle((sizes: number[]) => {
-      localStorage.setItem('react-resizable-panels:layout', JSON.stringify(sizes));
+      const normalizedSizes = normalizeLayout(sizes);
+      localStorage.setItem('react-resizable-panels:layout', JSON.stringify(normalizedSizes));
     }, 350),
     [],
   );
@@ -142,16 +176,26 @@ const SidePanel = ({
       <TooltipProvider delayDuration={0}>
         <ResizablePanelGroup
           direction="horizontal"
-          onLayout={(sizes: number[]) => throttledSaveLayout(sizes)}
+          onLayout={(sizes) => throttledSaveLayout(sizes)}
           className="transition-width relative h-full w-full flex-1 overflow-auto bg-white dark:bg-gray-800"
         >
-          <ResizablePanel defaultSize={defaultLayout[0]} minSize={minSizeMain} order={1}>
+          <ResizablePanel
+            defaultSize={currentLayout[0]}
+            minSize={minSizeMain}
+            order={1}
+            id="messages-view"
+          >
             {children}
           </ResizablePanel>
           {artifacts != null && (
             <>
               <ResizableHandleAlt withHandle className="ml-3 bg-border-medium dark:text-white" />
-              <ResizablePanel defaultSize={defaultLayout[0]} minSize={minSizeMain} order={2}>
+              <ResizablePanel
+                defaultSize={currentLayout[1]}
+                minSize={minSizeMain}
+                order={2}
+                id="artifacts-panel"
+              >
                 {artifacts}
               </ResizablePanel>
             </>
@@ -190,7 +234,7 @@ const SidePanel = ({
             aria-label={localize('com_ui_controls')}
             role="region"
             collapsedSize={collapsedSize}
-            defaultSize={defaultLayout[1]}
+            defaultSize={currentLayout[currentLayout.length - 1]}
             collapsible={true}
             minSize={minSize}
             maxSize={40}
