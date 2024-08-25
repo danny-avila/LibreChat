@@ -45,6 +45,41 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content }) => {
     renderDiagram();
   }, [content]);
 
+  const handlePanning = () => {
+    if (transformRef.current) {
+      const { state, instance } = transformRef.current;
+      const { scale, positionX, positionY } = state;
+      const { wrapperComponent, contentComponent } = instance;
+
+      if (wrapperComponent && contentComponent) {
+        const wrapperRect = wrapperComponent.getBoundingClientRect();
+        const contentRect = contentComponent.getBoundingClientRect();
+        const maxX = wrapperRect.width - contentRect.width * scale;
+        const maxY = wrapperRect.height - contentRect.height * scale;
+
+        let newX = positionX;
+        let newY = positionY;
+
+        if (newX > 0) {
+          newX = 0;
+        }
+        if (newY > 0) {
+          newY = 0;
+        }
+        if (newX < maxX) {
+          newX = maxX;
+        }
+        if (newY < maxY) {
+          newY = maxY;
+        }
+
+        if (newX !== positionX || newY !== positionY) {
+          instance.setTransformState(newX, newY, scale);
+        }
+      }
+    }
+  };
+
   return (
     <div className="relative h-full w-full cursor-move bg-[#282a36] p-5">
       <TransformWrapper
@@ -57,38 +92,7 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content }) => {
         wheel={{ step: 0.1 }}
         panning={{ velocityDisabled: true }}
         alignmentAnimation={{ disabled: true }}
-        onPanning={(ref) => {
-          const { state, instance } = ref;
-          const { scale, positionX, positionY } = state;
-          const { wrapperComponent, contentComponent } = instance;
-
-          if (wrapperComponent && contentComponent) {
-            const wrapperRect = wrapperComponent.getBoundingClientRect();
-            const contentRect = contentComponent.getBoundingClientRect();
-            const maxX = wrapperRect.width - contentRect.width * scale;
-            const maxY = wrapperRect.height - contentRect.height * scale;
-
-            let newX = positionX;
-            let newY = positionY;
-
-            if (newX > 0) {
-              newX = 0;
-            }
-            if (newY > 0) {
-              newY = 0;
-            }
-            if (newX < maxX) {
-              newX = maxX;
-            }
-            if (newY < maxY) {
-              newY = maxY;
-            }
-
-            if (newX !== positionX || newY !== positionY) {
-              ref.instance.setTransform(newX, newY, scale);
-            }
-          }
-        }}
+        onPanning={handlePanning}
       >
         {({ zoomIn, zoomOut, resetTransform }) => (
           <>
