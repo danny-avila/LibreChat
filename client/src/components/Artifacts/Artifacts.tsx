@@ -9,6 +9,7 @@ export default function Artifacts() {
   const {
     isVisible,
     activeTab,
+    isSubmitting,
     setActiveTab,
     currentIndex,
     cycleArtifact,
@@ -85,6 +86,7 @@ export default function Artifacts() {
               content={`\`\`\`${getFileExtension(currentArtifact.type)}\n${
                 currentArtifact.content ?? ''
               }\`\`\``}
+              isSubmitting={isSubmitting}
             />
           </Tabs.Content>
           <Tabs.Content value="preview" className="flex-grow overflow-auto bg-white">
