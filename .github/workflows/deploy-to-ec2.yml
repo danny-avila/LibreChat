@@ -14,12 +14,16 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Build and push Docker image
-      env:
-        IMAGE_TAG: ${{ github.sha }}
-      run: |
-        docker buildx build --platform linux/amd64 -t vectorchat:$IMAGE_TAG .
-        docker save vectorchat:$IMAGE_TAG > vectorchat.tar
+    - name: Build and load Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        load: true
+        tags: vectorchat:${{ github.sha }}
+        platforms: linux/amd64
+
+    - name: Save Docker image
+      run: docker save vectorchat:${{ github.sha }} > vectorchat.tar
 
     - name: Copy Docker image to EC2
       env:
