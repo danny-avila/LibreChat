@@ -413,8 +413,8 @@ export const configSchema = z.object({
       modelSelect: z.boolean().optional(),
       parameters: z.boolean().optional(),
       sidePanel: z.boolean().optional(),
-      bookmarks: z.boolean().default(true).optional(),
-      presets: z.boolean().default(true).optional(),
+      bookmarks: z.boolean().optional(),
+      presets: z.boolean().optional(),
       prompts: z.boolean().optional(),
     })
     .default({
@@ -423,6 +423,8 @@ export const configSchema = z.object({
       parameters: true,
       sidePanel: true,
       presets: true,
+      bookmarks: true,
+      prompts: true,
     }),
   fileStrategy: fileSourceSchema.default(FileSources.local),
   registration: z
