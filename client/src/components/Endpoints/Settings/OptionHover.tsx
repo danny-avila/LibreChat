@@ -26,6 +26,7 @@ const types = {
     topk: 'com_endpoint_anthropic_topk',
     maxoutputtokens: 'com_endpoint_anthropic_maxoutputtokens',
     resend: openAI.resend,
+    promptcache: 'com_endpoint_anthropic_prompt_cache',
   },
   google: {
     temp: 'com_endpoint_google_temp',
@@ -44,7 +45,7 @@ const types = {
 
 function OptionHover({ endpoint, type, side }: TOptionHoverProps) {
   const localize = useLocalize();
-  const text = types?.[endpoint]?.[type];
+  const text = types[endpoint]?.[type];
   if (!text) {
     return null;
   }
