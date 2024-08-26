@@ -22,6 +22,7 @@ const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
 const { logger } = require('~/config');
+const User = require('~/models/User');
 
 const processFiles = async (files) => {
   const promises = [];
@@ -395,10 +396,14 @@ const processFileUpload = async ({ req, res, file, metadata }) => {
     },
     true,
   );
+  const userId = result.user.toString();
+  const { email } = await User.findOne({ userId }).lean();
+
   global.appInsights.trackEvent({
     name: 'AzureUploadFile',
     properties: {
-      userId: result.user.toString(),
+      userId: userId,
+      userEmail: email,
       fileName: file.filename,
       fileSize: file.size,
       fileExtension: file.mimetype.split('/')[1],

@@ -233,7 +233,8 @@ const chatV1 = async (req, res) => {
     global.appInsights.trackEvent({
       name: 'AzureAssistantsQuery',
       properties: {
-        // userId: "",
+        userId: req.user.id,
+        userEmail: req.user.email,
         charactersLength: text.length,
         messageTokens: messageTokens.length,
         model: model,
@@ -478,10 +479,12 @@ const chatV1 = async (req, res) => {
         name: 'AzureAssistantsAnswerStarted',
         properties: {
           userId: req.user.id,
+          userEmail: req.user.email,
           model: model,
           assistantId: body.assistant_id,
         },
       });
+      global.appInsights.flush();
       sendMessage(res, {
         sync: true,
         conversationId,
@@ -599,7 +602,8 @@ const chatV1 = async (req, res) => {
     global.appInsights.trackEvent({
       name: 'AzureAssistantsAnswerEnded',
       properties: {
-        userId: responseMessage.user,
+        userId: req.user.id,
+        userEmail: req.user.email,
         charactersLength: response.text.length,
         messageTokens: responseTokens.length,
         model: model,
