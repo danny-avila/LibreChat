@@ -472,6 +472,9 @@ export default {
     'Top-k changes how the model selects tokens for output. A top-k of 1 means the selected token is the most probable among all tokens in the model\'s vocabulary (also called greedy decoding), while a top-k of 3 means that the next token is selected from among the 3 most probable tokens (using temperature).',
   com_endpoint_anthropic_maxoutputtokens:
     'Maximum number of tokens that can be generated in the response. Specify a lower value for shorter responses and a higher value for longer responses. Note: models may stop before reaching this maximum.',
+  com_endpoint_anthropic_prompt_cache:
+    'Prompt caching allows reusing large context or instructions across API calls, reducing costs and latency',
+  com_endpoint_prompt_cache: 'Use Prompt Caching',
   com_endpoint_anthropic_custom_name_placeholder: 'Set a custom name for Anthropic',
   com_endpoint_frequency_penalty: 'Frequency Penalty',
   com_endpoint_presence_penalty: 'Presence Penalty',

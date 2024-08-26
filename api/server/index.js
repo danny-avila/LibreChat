@@ -16,9 +16,9 @@ const validateImageRequest = require('./middleware/validateImageRequest');
 const errorController = require('./controllers/ErrorController');
 const configureSocialLogins = require('./socialLogins');
 const AppService = require('./services/AppService');
+const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
-const staticCache = require('./utils/staticCache');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION } = process.env ?? {};
 
@@ -51,7 +51,7 @@ const startServer = async () => {
   app.set('trust proxy', 1); /* trust first proxy */
   app.use(cors());
 
-  if (DISABLE_COMPRESSION !== 'true') {
+  if (!isEnabled(DISABLE_COMPRESSION)) {
     app.use(compression());
   }
 

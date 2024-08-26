@@ -423,6 +423,8 @@ export const configSchema = z.object({
       parameters: true,
       sidePanel: true,
       presets: true,
+      bookmarks: true,
+      prompts: true,
     }),
   fileStrategy: fileSourceSchema.default(FileSources.local),
   registration: z
