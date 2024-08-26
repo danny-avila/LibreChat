@@ -23,8 +23,10 @@ export const ArtifactPreview = memo(function ({
   previewRef: React.MutableRefObject<SandpackPreviewRef>;
 }) {
   const files = useMemo(() => {
-    return removeNullishValues({ [getArtifactFilename(artifact.type ?? '')]: artifact.content });
-  }, [artifact.type, artifact.content]);
+    return removeNullishValues({
+      [getArtifactFilename(artifact.type ?? '', artifact.language)]: artifact.content,
+    });
+  }, [artifact.type, artifact.content, artifact.language]);
 
   const template = useMemo(
     () => getTemplate(artifact.type ?? '', artifact.language),

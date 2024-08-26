@@ -9,6 +9,8 @@ const artifactFilename = {
   'application/vnd.mermaid': 'App.tsx',
   'application/vnd.react': 'App.tsx',
   'text/html': 'index.html',
+  'application/vnd.code-html': 'index.html',
+  default: 'index.html',
   // 'css': 'css',
   // 'javascript': 'js',
   // 'typescript': 'ts',
@@ -16,21 +18,21 @@ const artifactFilename = {
   // 'tsx': 'tsx',
 };
 
-const artifactTemplate: Record<string, SandpackPredefinedTemplate | undefined> = {
+const artifactTemplate: Record<
+  keyof typeof artifactFilename,
+  SandpackPredefinedTemplate | undefined
+> = {
   'text/html': 'static',
   'application/vnd.react': 'react-ts',
   'application/vnd.mermaid': 'react-ts',
   'application/vnd.code-html': 'static',
+  default: 'static',
   // 'css': 'css',
   // 'javascript': 'js',
   // 'typescript': 'ts',
   // 'jsx': 'jsx',
   // 'tsx': 'tsx',
 };
-
-export function getArtifactFilename(type: string): string {
-  return artifactFilename[type] ?? 'App.tsx';
-}
 
 export function getFileExtension(language?: string): string {
   switch (language) {
@@ -53,10 +55,14 @@ export function getFileExtension(language?: string): string {
   }
 }
 
+export function getArtifactFilename(type: string, language?: string): string {
+  const key = `${type}${(language?.length ?? 0) > 0 ? `-${language}` : ''}`;
+  return artifactFilename[key] ?? artifactFilename.default;
+}
+
 export function getTemplate(type: string, language?: string): SandpackPredefinedTemplate {
-  return (
-    artifactTemplate[`${type}${(language?.length ?? 0) > 0 ? `-${language}` : ''}`] ?? 'react-ts'
-  );
+  const key = `${type}${(language?.length ?? 0) > 0 ? `-${language}` : ''}`;
+  return artifactTemplate[key] ?? (artifactTemplate.default as SandpackPredefinedTemplate);
 }
 
 const standardDependencies = {
@@ -98,7 +104,7 @@ const standardDependencies = {
   vaul: '^0.9.1',
 };
 
-const dependenciesMap = {
+const dependenciesMap: Record<keyof typeof artifactFilename, object> = {
   // 'application/vnd.mermaid': {
   //   mermaid: '^11.0.2',
   //   'react-zoom-pan-pinch': '^3.6.1',
@@ -107,6 +113,8 @@ const dependenciesMap = {
   'application/vnd.mermaid': {},
   'application/vnd.react': standardDependencies,
   'text/html': standardDependencies,
+  'application/vnd.code-html': standardDependencies,
+  default: standardDependencies,
 };
 
 export function getDependencies(type: string): Record<string, string> {
