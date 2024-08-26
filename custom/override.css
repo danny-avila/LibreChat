@@ -32,10 +32,10 @@
   display: none !important;
 }
 
-/* Hide bookmarks on mobile left sidebar */
+/* Hide bookmarks on mobile left sidebar
 #chat-history-nav > div:nth-child(1) > div:nth-child(1) {
   display: none !important;
-}
+} */
 
 /* Login page logo */
 #root > .relative.flex.min-h-screen.flex-col > .mt-12.h-24.w-full.bg-cover::before {
