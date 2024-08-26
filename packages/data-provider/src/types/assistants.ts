@@ -101,7 +101,7 @@ export type AssistantUpdateParams = {
   description?: string | null;
   file_ids?: string[];
   instructions?: string | null;
-  conversation_starters?: string[];
+  conversation_starters?: string[] | null;
   metadata?: Metadata | null;
   name?: string | null;
   tools?: Array<FunctionTool | string>;

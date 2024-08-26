@@ -168,10 +168,20 @@ export default function AssistantSelect({
       };
 
       Object.entries(assistant).forEach(([name, value]) => {
-        if (typeof value === 'number') {
+        if (!keys.has(name)) {
           return;
         }
-        if (keys.has(name)) {
+
+        if (
+          name === 'conversation_starters' &&
+          Array.isArray(value) &&
+          value.every((item) => typeof item === 'string')
+        ) {
+          formValues[name] = value;
+          return;
+        }
+
+        if (typeof value !== 'number' && typeof value !== 'object') {
           formValues[name] = value;
         }
       });

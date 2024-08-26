@@ -1,5 +1,4 @@
 import { useState, useMemo } from 'react';
-import { Plus, X } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useForm, FormProvider, Controller, useWatch } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
@@ -151,7 +150,6 @@ export default function AssistantPanel({
       return functionName;
     });
 
-    console.log(data);
     if (data.code_interpreter) {
       tools.push({ type: Tools.code_interpreter });
     }
@@ -250,7 +248,7 @@ export default function AssistantPanel({
           <div className="mb-4">
             <AssistantAvatar
               createMutation={create}
-              assistant_id={assistant_id ?? null}
+              assistant_id={assistant_id}
               metadata={assistant['metadata'] ?? null}
               endpoint={endpoint}
               version={version}
@@ -277,7 +275,7 @@ export default function AssistantPanel({
               name="id"
               control={control}
               render={({ field }) => (
-                <p className="h-3 text-xs italic text-text-secondary">{field.value ?? ''}</p>
+                <p className="h-3 text-xs italic text-text-secondary">{field.value}</p>
               )}
             />
           </div>

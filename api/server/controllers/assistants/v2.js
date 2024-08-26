@@ -74,12 +74,14 @@ const createAssistant = async (req, res) => {
 const updateAssistant = async ({ req, openai, assistant_id, updateData }) => {
   await validateAuthor({ req, openai });
   const tools = [];
+  let conversation_starters = null;
 
   if (updateData?.conversation_starters) {
-    await updateAssistantDoc(
+    const conversationStartersUpdate = await updateAssistantDoc(
       { assistant_id: assistant_id },
       { conversation_starters: updateData.conversation_starters },
     );
+    conversation_starters = conversationStartersUpdate.conversation_starters;
 
     delete updateData.conversation_starters;
   }
@@ -127,7 +129,13 @@ const updateAssistant = async ({ req, openai, assistant_id, updateData }) => {
     updateData.model = openai.locals.azureOptions.azureOpenAIApiDeploymentName;
   }
 
-  return await openai.beta.assistants.update(assistant_id, updateData);
+  const assistant = await openai.beta.assistants.update(assistant_id, updateData);
+
+  if (conversation_starters) {
+    assistant.conversation_starters = conversation_starters;
+  }
+
+  return assistant;
 };
 
 /**
