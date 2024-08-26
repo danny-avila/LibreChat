@@ -66,4 +66,16 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
     });
   });
+
+  it('should call updateAccessPermissions with true when config is undefined', async () => {
+    const config = undefined;
+    const configDefaults = { interface: { prompts: true, bookmarks: true } };
+
+    await loadDefaultInterface(config, configDefaults);
+
+    expect(updateAccessPermissions).toHaveBeenCalledWith(SystemRoles.USER, {
+      [PermissionTypes.PROMPTS]: { [Permissions.USE]: true },
+      [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
+    });
+  });
 });
