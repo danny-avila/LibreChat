@@ -493,10 +493,16 @@ class BaseClient {
         });
       }
     }
+
+    const User = require('~/models/User');
+
+    const { email } = await User.findOne({ user }).lean();
+
     global.appInsights.trackEvent({
       name: 'AzureQuery',
       properties: {
         userId: user,
+        userEmail: email,
         charactersLength: userMessage.text.length,
         messageTokens: userMessage.tokenCount,
         model: this.modelOptions.model,
@@ -525,6 +531,7 @@ class BaseClient {
       name: 'AzureAnswerStarted',
       properties: {
         userId: user,
+        userEmail: email,
         model: this.modelOptions.model,
       },
     });
@@ -535,6 +542,7 @@ class BaseClient {
       name: 'AzureAnswerEnded',
       properties: {
         userId: user,
+        userEmail: email,
         charactersLength: completion.length,
         messageTokens: promptTokens,
         model: this.modelOptions.model,
