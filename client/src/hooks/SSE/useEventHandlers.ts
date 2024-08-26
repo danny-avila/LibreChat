@@ -86,6 +86,7 @@ export default function useEventHandlers({
         isRegenerate = false,
       } = submission;
       const text = data ?? '';
+      setIsSubmitting(true);
       if (text.length > 0) {
         announcePolite({
           message: text,
@@ -118,7 +119,7 @@ export default function useEventHandlers({
         ]);
       }
     },
-    [setMessages, announcePolite],
+    [setMessages, announcePolite, setIsSubmitting],
   );
 
   const cancelHandler = useCallback(
