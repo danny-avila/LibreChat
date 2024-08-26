@@ -206,7 +206,7 @@ describe('AnthropicClient', () => {
       const modelOptions = {
         model: 'claude-3-5-sonnet-20240307',
       };
-      client.setOptions({ modelOptions });
+      client.setOptions({ modelOptions, promptCache: true });
       const anthropicClient = client.getClient(modelOptions);
       expect(anthropicClient._options.defaultHeaders).toBeDefined();
       expect(anthropicClient._options.defaultHeaders).toHaveProperty('anthropic-beta');
@@ -220,7 +220,7 @@ describe('AnthropicClient', () => {
       const modelOptions = {
         model: 'claude-3-haiku-2028',
       };
-      client.setOptions({ modelOptions });
+      client.setOptions({ modelOptions, promptCache: true });
       const anthropicClient = client.getClient(modelOptions);
       expect(anthropicClient._options.defaultHeaders).toBeDefined();
       expect(anthropicClient._options.defaultHeaders).toHaveProperty('anthropic-beta');

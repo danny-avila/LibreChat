@@ -94,7 +94,8 @@ class AnthropicClient extends BaseClient {
     const modelMatch = matchModelName(this.modelOptions.model, EModelEndpoint.anthropic);
     this.isClaude3 = modelMatch.startsWith('claude-3');
     this.isLegacyOutput = !modelMatch.startsWith('claude-3-5-sonnet');
-    this.supportsCacheControl = this.checkPromptCacheSupport(modelMatch);
+    this.supportsCacheControl =
+      this.options.promptCache && this.checkPromptCacheSupport(modelMatch);
 
     if (
       this.isLegacyOutput &&
@@ -821,6 +822,7 @@ class AnthropicClient extends BaseClient {
       maxContextTokens: this.options.maxContextTokens,
       promptPrefix: this.options.promptPrefix,
       modelLabel: this.options.modelLabel,
+      promptCache: this.options.promptCache,
       resendFiles: this.options.resendFiles,
       iconURL: this.options.iconURL,
       greeting: this.options.greeting,

@@ -86,6 +86,7 @@ export default function useEventHandlers({
         isRegenerate = false,
       } = submission;
       const text = data ?? '';
+      setIsSubmitting(true);
       if (text.length > 0) {
         announcePolite({
           message: text,
@@ -118,7 +119,7 @@ export default function useEventHandlers({
         ]);
       }
     },
-    [setMessages, announcePolite],
+    [setMessages, announcePolite, setIsSubmitting],
   );
 
   const cancelHandler = useCallback(
@@ -387,6 +388,10 @@ export default function useEventHandlers({
       }
 
       if (setConversation && isAddedRequest !== true) {
+        if (window.location.pathname === '/c/new') {
+          window.history.pushState({}, '', '/c/' + conversation.conversationId);
+        }
+
         setConversation((prevState) => {
           const update = {
             ...prevState,

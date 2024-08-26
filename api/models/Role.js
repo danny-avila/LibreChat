@@ -76,45 +76,56 @@ const permissionSchemas = {
 };
 
 /**
- * Updates access permissions for a specific role and permission type.
+ * Updates access permissions for a specific role and multiple permission types.
  * @param {SystemRoles} roleName - The role to update.
- * @param {PermissionTypes} permissionType - The type of permission to update.
- * @param {Object.<Permissions, boolean>} permissions - Permissions to update and their values.
+ * @param {Object.<PermissionTypes, Object.<Permissions, boolean>>} permissionsUpdate - Permissions to update and their values.
  */
-async function updateAccessPermissions(roleName, permissionType, _permissions) {
-  const permissions = removeNullishValues(_permissions);
-  if (Object.keys(permissions).length === 0) {
+async function updateAccessPermissions(roleName, permissionsUpdate) {
+  const updates = {};
+  for (const [permissionType, permissions] of Object.entries(permissionsUpdate)) {
+    if (permissionSchemas[permissionType]) {
+      updates[permissionType] = removeNullishValues(permissions);
+    }
+  }
+
+  if (Object.keys(updates).length === 0) {
     return;
   }
 
   try {
     const role = await getRoleByName(roleName);
-    if (!role || !permissionSchemas[permissionType]) {
+    if (!role) {
       return;
     }
 
-    await updateRoleByName(roleName, {
-      [permissionType]: {
-        ...role[permissionType],
-        ...permissionSchemas[permissionType].partial().parse(permissions),
-      },
-    });
+    const updatedPermissions = {};
+    let hasChanges = false;
 
-    Object.entries(permissions).forEach(([permission, value]) =>
-      logger.info(
-        `Updated '${roleName}' role ${permissionType} '${permission}' permission to: ${value}`,
-      ),
-    );
+    for (const [permissionType, permissions] of Object.entries(updates)) {
+      const currentPermissions = role[permissionType] || {};
+      updatedPermissions[permissionType] = { ...currentPermissions };
+
+      for (const [permission, value] of Object.entries(permissions)) {
+        if (currentPermissions[permission] !== value) {
+          updatedPermissions[permissionType][permission] = value;
+          hasChanges = true;
+          logger.info(
+            `Updating '${roleName}' role ${permissionType} '${permission}' permission from ${currentPermissions[permission]} to: ${value}`,
+          );
+        }
+      }
+    }
+
+    if (hasChanges) {
+      await updateRoleByName(roleName, updatedPermissions);
+      logger.info(`Updated '${roleName}' role permissions`);
+    } else {
+      logger.info(`No changes needed for '${roleName}' role permissions`);
+    }
   } catch (error) {
-    logger.error(`Failed to update ${roleName} role ${permissionType} permissions:`, error);
+    logger.error(`Failed to update ${roleName} role permissions:`, error);
   }
 }
-
-const updatePromptsAccess = (roleName, permissions) =>
-  updateAccessPermissions(roleName, PermissionTypes.PROMPTS, permissions);
-
-const updateBookmarksAccess = (roleName, permissions) =>
-  updateAccessPermissions(roleName, PermissionTypes.BOOKMARKS, permissions);
 
 /**
  * Initialize default roles in the system.
@@ -138,6 +149,5 @@ module.exports = {
   getRoleByName,
   initializeRoles,
   updateRoleByName,
-  updatePromptsAccess,
-  updateBookmarksAccess,
+  updateAccessPermissions,
 };

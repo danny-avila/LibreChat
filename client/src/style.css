@@ -1776,9 +1776,7 @@ button.scroll-convo {
 }
 
 .result-streaming > :not(ol):not(ul):not(pre):last-child:after,
-.result-streaming > pre:last-child code:after,
-.result-streaming > ol:last-child > li:last-child:after,
-.result-streaming > ul:last-child > li:last-child:after {
+.result-streaming > pre:last-child code:after {
   display: inline-block;
   content: '⬤';
   width: 12px;
@@ -1792,9 +1790,7 @@ button.scroll-convo {
 }
 
 @supports (selector(:has(*))) {
-  .result-streaming > :not(ol):not(ul):last-child:after,
-  .result-streaming > ol:last-child > li:last-child:not(:has(ol)):not(:has(ul)):after,
-  .result-streaming > ul:last-child > li:last-child:not(:has(ol)):not(:has(ul)):after {
+  .result-streaming > :is(ul, ol):last-child > li:last-child:not(:has(> :is(ul, ol, pre))):after {
     content: '⬤';
     font-family: system-ui, Inter, Söhne Circle, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell,
       Noto Sans, sans-serif;
@@ -1807,8 +1803,8 @@ button.scroll-convo {
     height: 12px;
   }
 }
+
 @supports not (selector(:has(*))) {
-  .result-streaming > :not(ol):not(ul):last-child:after,
   .result-streaming > ol:last-child > li:last-child:after,
   .result-streaming > ul:last-child > li:last-child:after {
     content: '⬤';
@@ -1822,6 +1818,21 @@ button.scroll-convo {
     width: 12px;
     height: 12px;
   }
+
+  .result-streaming > ol:last-child > li:last-child > :is(ul, ol, pre) ~ :after,
+  .result-streaming > ul:last-child > li:last-child > :is(ul, ol, pre) ~ :after {
+    display: none;
+  }
+
+  .result-streaming > ol:last-child > li:last-child > pre:last-child code:after,
+  .result-streaming > ul:last-child > li:last-child > pre:last-child code:after {
+    display: inline-block;
+  }
+}
+
+/* Remove cursors when streaming is complete */
+.result-streaming:not(.submitting) :is(ul, ol) li:after {
+  display: none !important;
 }
 
 .webkit-dark-styles,
@@ -1907,8 +1918,10 @@ button.scroll-convo {
 }
 
 /* Base styles for lists */
-.prose ol, .prose ul,
-.markdown ol, .markdown ul {
+.prose ol,
+.prose ul,
+.markdown ol,
+.markdown ul {
   list-style-position: outside;
   margin-top: 1em;
   margin-bottom: 1em;
@@ -1979,8 +1992,14 @@ button.scroll-convo {
 }
 
 /* Nested lists */
-.prose ol ol, .prose ul ul, .prose ul ol, .prose ol ul,
-.markdown ol ol, .markdown ul ul, .markdown ul ol, .markdown ol ul {
+.prose ol ol,
+.prose ul ul,
+.prose ul ol,
+.prose ol ul,
+.markdown ol ol,
+.markdown ul ul,
+.markdown ul ol,
+.markdown ol ul {
   margin-top: 0.75em;
   margin-bottom: 0.75em;
 }
