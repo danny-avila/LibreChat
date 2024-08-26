@@ -5,13 +5,14 @@ import { SandpackPreview, SandpackProvider } from '@codesandbox/sandpack-react/u
 import type { SandpackPreviewRef } from '@codesandbox/sandpack-react/unstyled';
 import type { Artifact } from '~/common';
 import {
+  getKey,
   getProps,
   sharedFiles,
   getTemplate,
   sharedOptions,
   getArtifactFilename,
 } from '~/utils/artifacts';
-import Mermaid from './Mermaid';
+import { getMermaidFiles } from '~/utils/mermaid';
 
 export const ArtifactPreview = memo(function ({
   showEditor = false,
@@ -23,6 +24,9 @@ export const ArtifactPreview = memo(function ({
   previewRef: React.MutableRefObject<SandpackPreviewRef>;
 }) {
   const files = useMemo(() => {
+    if (getKey(artifact.type ?? '', artifact.language).includes('mermaid')) {
+      return getMermaidFiles(artifact.content ?? '');
+    }
     return removeNullishValues({
       [getArtifactFilename(artifact.type ?? '', artifact.language)]: artifact.content,
     });
@@ -34,10 +38,6 @@ export const ArtifactPreview = memo(function ({
   );
 
   const sharedProps = useMemo(() => getProps(artifact.type ?? ''), [artifact.type]);
-
-  if (artifact.type === 'application/vnd.mermaid') {
-    return <Mermaid content={artifact.content ?? ''} />;
-  }
 
   if (Object.keys(files).length === 0) {
     return null;

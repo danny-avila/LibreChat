@@ -9,6 +9,7 @@ interface MermaidDiagramProps {
   content: string;
 }
 
+/** Note: this is just for testing purposes, don't actually use this component */
 const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content }) => {
   const mermaidRef = useRef<HTMLDivElement>(null);
   const transformRef = useRef<ReactZoomPanPinchRef>(null);
@@ -29,11 +30,11 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content }) => {
         lineColor: '#636D83',
         fontSize: '16px',
         nodeBorder: '#636D83',
-        mainBkg: '#333842',
+        mainBkg: '#282C34',
         altBackground: '#282C34',
         textColor: '#ABB2BF',
         edgeLabelBackground: '#282C34',
-        clusterBkg: '#333842',
+        clusterBkg: '#282C34',
         clusterBorder: '#636D83',
         labelBoxBkgColor: '#333842',
         labelBoxBorderColor: '#636D83',
@@ -106,7 +107,10 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content }) => {
 
   const handlePanning = () => {
     if (transformRef.current) {
-      const { state, instance } = transformRef.current;
+      const { state, instance } = (transformRef.current as ReactZoomPanPinchRef | undefined) ?? {};
+      if (!state || !instance) {
+        return;
+      }
       const { scale, positionX, positionY } = state;
       const { wrapperComponent, contentComponent } = instance;
 
@@ -140,7 +144,7 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content }) => {
   };
 
   return (
-    <div className="relative h-full w-full cursor-move bg-[#282C34] p-5">
+    <div className="relative h-screen w-screen cursor-move bg-[#282C34] p-5">
       <TransformWrapper
         ref={transformRef}
         initialScale={1}

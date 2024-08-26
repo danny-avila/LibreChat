@@ -55,13 +55,17 @@ export function getFileExtension(language?: string): string {
   }
 }
 
+export function getKey(type: string, language?: string): string {
+  return `${type}${(language?.length ?? 0) > 0 ? `-${language}` : ''}`;
+}
+
 export function getArtifactFilename(type: string, language?: string): string {
-  const key = `${type}${(language?.length ?? 0) > 0 ? `-${language}` : ''}`;
+  const key = getKey(type, language);
   return artifactFilename[key] ?? artifactFilename.default;
 }
 
 export function getTemplate(type: string, language?: string): SandpackPredefinedTemplate {
-  const key = `${type}${(language?.length ?? 0) > 0 ? `-${language}` : ''}`;
+  const key = getKey(type, language);
   return artifactTemplate[key] ?? (artifactTemplate.default as SandpackPredefinedTemplate);
 }
 
@@ -104,13 +108,16 @@ const standardDependencies = {
   vaul: '^0.9.1',
 };
 
+const mermaidDependencies = Object.assign(
+  {
+    mermaid: '^11.0.2',
+    'react-zoom-pan-pinch': '^3.6.1',
+  },
+  standardDependencies,
+);
+
 const dependenciesMap: Record<keyof typeof artifactFilename, object> = {
-  // 'application/vnd.mermaid': {
-  //   mermaid: '^11.0.2',
-  //   'react-zoom-pan-pinch': '^3.6.1',
-  //   ...standardDependencies,
-  // },
-  'application/vnd.mermaid': {},
+  'application/vnd.mermaid': mermaidDependencies,
   'application/vnd.react': standardDependencies,
   'text/html': standardDependencies,
   'application/vnd.code-html': standardDependencies,

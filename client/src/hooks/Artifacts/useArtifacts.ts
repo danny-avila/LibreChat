@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect, useRef } from 'react';
 import { Constants } from 'librechat-data-provider';
 import { useRecoilState, useRecoilValue, useResetRecoilState } from 'recoil';
 import { useChatContext } from '~/Providers';
+import { getKey } from '~/utils/artifacts';
 import { getLatestText } from '~/utils';
 import store from '~/store';
 
@@ -104,8 +105,17 @@ export default function useArtifacts() {
     setCurrentArtifactId(orderedArtifactIds[newIndex]);
   };
 
+  const isMermaid = useMemo(() => {
+    if (currentArtifact?.type == null) {
+      return false;
+    }
+    const key = getKey(currentArtifact.type, currentArtifact.language);
+    return key.includes('mermaid');
+  }, [currentArtifact?.type, currentArtifact?.language]);
+
   return {
     activeTab,
+    isMermaid,
     setActiveTab,
     currentIndex,
     isSubmitting,

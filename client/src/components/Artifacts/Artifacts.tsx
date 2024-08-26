@@ -22,6 +22,7 @@ export default function Artifacts() {
 
   const {
     activeTab,
+    isMermaid,
     isSubmitting,
     setActiveTab,
     currentIndex,
@@ -139,7 +140,10 @@ export default function Artifacts() {
               isSubmitting={isSubmitting}
             />
           </Tabs.Content>
-          <Tabs.Content value="preview" className="flex-grow overflow-auto bg-white">
+          <Tabs.Content
+            value="preview"
+            className={cn('flex-grow overflow-auto', isMermaid ? 'bg-[#282C34]' : 'bg-white')}
+          >
             <ArtifactPreview
               artifact={currentArtifact}
               previewRef={previewRef as React.MutableRefObject<SandpackPreviewRef>}
