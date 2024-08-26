@@ -388,6 +388,10 @@ export default function useEventHandlers({
       }
 
       if (setConversation && isAddedRequest !== true) {
+        if (window.location.pathname === '/c/new') {
+          window.history.pushState({}, '', '/c/' + conversation.conversationId);
+        }
+
         setConversation((prevState) => {
           const update = {
             ...prevState,
