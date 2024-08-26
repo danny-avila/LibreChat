@@ -978,12 +978,6 @@ export enum LocalStorageKeys {
   FILES_DRAFT = 'filesDraft_',
   /** Key for last Selected Prompt Category */
   LAST_PROMPT_CATEGORY = 'lastPromptCategory',
-  /** Key for apps logo in login */
-  APP_LOGO = 'appLogo',
-  /** Key for apps favicon for 32 px */
-  APP_FAVICON_32 = 'appFavicon32',
-  /** Key for apps favicon for 16 px */
-  APP_FAVICON_16 = 'appFavicon16',
   /** Key for user permission at assistant config panel */
   USER_ASSISTANT_CONFIG_PERMISSION = 'userAssistantConfigPermission',
 }

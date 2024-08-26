@@ -34,21 +34,9 @@
       type="module"
       src="/src/main.jsx"
     ></script>
-    <script>
-      document.addEventListener('DOMContentLoaded', function() {
-        const faviconUrl32 = localStorage.getItem('favicon32');
-        const faviconUrl16 = localStorage.getItem('favicon16');
-
-        if (faviconUrl) {
-          document.getElementById('favicon32').href = faviconUrl32;
-          document.getElementById('favicon16').href = faviconUrl16;
-        }
-      });
-    </script>
   </head>
   <body>
     <div id="root"></div>
-
     <script
       type="module"
       src="/src/main.jsx"
