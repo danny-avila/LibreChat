@@ -30,16 +30,6 @@ export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: b
   useEffect(() => {
     document.title = startupConfig?.appTitle || 'Intelewriter';
 
-    const favicon32 = document.getElementById('favicon32');
-    const favicon16 = document.getElementById('favicon16');
-
-    if (favicon32 && favicon16) {
-      favicon32.setAttribute('href', startupConfig?.favicon32 || '');
-      favicon16.setAttribute('href', startupConfig?.favicon16 || '');
-      localStorage.setItem('favicon32', startupConfig?.favicon32 || '');
-      localStorage.setItem('favicon16', startupConfig?.favicon16 || '');
-    }
-
     localStorage.setItem(
       'userAssistantConfigPermission',
       '' + startupConfig?.userAssistantConfigPermission,

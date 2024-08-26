@@ -60,6 +60,7 @@ export default defineConfig({
         enabled: false, // enable/disable registering SW in development mode
       },
       workbox: {
+        cleanupOutdatedCaches: true, // Add this line to clean up outdated caches
         globPatterns: ['assets/**/*.{png,jpg,svg,ico}', '**/*.{js,css,html,ico,woff2}'],
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
       },
@@ -72,12 +73,12 @@ export default defineConfig({
         theme_color: '#009688',
         icons: [
           {
-            src: '#',
+            src: '/assets/favicon-32x32.png',
             sizes: '32x32',
             type: 'image/png',
           },
           {
-            src: '#',
+            src: '/assets/favicon-16x16.png',
             sizes: '16x16',
             type: 'image/png',
           },

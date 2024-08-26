@@ -125,9 +125,6 @@ router.get('/', async function (req, res) {
       payload.customFooter = process.env.CUSTOM_FOOTER;
     }
 
-    payload.favicon32 = process.env.FAVICON_URL_32;
-    payload.favicon16 = process.env.FAVICON_URL_16;
-    payload.logo = process.env.LOGO_URL;
     payload.userAssistantConfigPermission = await verifyAssistantConfigurations(
       req.rawHeaders,
       cachedStartupConfig,
