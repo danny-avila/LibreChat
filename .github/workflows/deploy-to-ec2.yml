@@ -1,0 +1,49 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Build and push Docker image
+      env:
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker buildx build --platform linux/amd64 -t vectorchat:$IMAGE_TAG .
+        docker save vectorchat:$IMAGE_TAG > vectorchat.tar
+
+    - name: Copy Docker image to EC2
+      env:
+        EC2_SSH_KEY: ${{ secrets.AWS_EC2_SSH_KEY }}
+        EC2_USERNAME: ${{ secrets.AWS_EC2_USERNAME }}
+        EC2_HOST: ${{ secrets.AWS_EC2_HOST }}
+      run: |
+        echo "$EC2_SSH_KEY" > vector-chat.pem
+        chmod 600 vector-chat.pem
+        scp -i vector-chat.pem -o StrictHostKeyChecking=no vectorchat.tar $EC2_USERNAME@$EC2_HOST:~/
+
+    - name: Deploy on EC2
+      env:
+        EC2_SSH_KEY: ${{ secrets.AWS_EC2_SSH_KEY }}
+        EC2_USERNAME: ${{ secrets.AWS_EC2_USERNAME }}
+        EC2_HOST: ${{ secrets.AWS_EC2_HOST }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        echo "$EC2_SSH_KEY" > vector-chat.pem
+        chmod 600 vector-chat.pem
+        ssh -i vector-chat.pem -o StrictHostKeyChecking=no $EC2_USERNAME@$EC2_HOST << EOF
+          docker load < vectorchat.tar
+          docker stop vectorchat-container || true
+          docker rm vectorchat-container || true
+          docker run -d --name vectorchat-container -p 80:3080 vectorchat:$IMAGE_TAG
+          rm vectorchat.tar
+        EOF
