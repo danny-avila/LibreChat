@@ -37,7 +37,7 @@ const CodeBar: React.FC<CodeBarProps> = React.memo(({ lang, codeRef, error, plug
             const codeString = codeRef.current?.textContent;
             if (codeString != null) {
               setIsCopied(true);
-              copy(codeString, { format: 'text/plain' });
+              copy(codeString.trim(), { format: 'text/plain' });
 
               setTimeout(() => {
                 setIsCopied(false);
@@ -70,16 +70,17 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
   error,
 }) => {
   const codeRef = useRef<HTMLElement>(null);
-  const language = plugin || error ? 'json' : lang;
+  const isNonCode = !!(plugin === true || error === true);
+  const language = isNonCode ? 'json' : lang;
 
   return (
     <div className="w-full rounded-md bg-gray-900 text-xs text-white/80">
-      <CodeBar lang={lang} codeRef={codeRef} plugin={!!plugin} error={error} />
+      <CodeBar lang={lang} codeRef={codeRef} plugin={plugin === true} error={error} />
       <div className={cn(classProp, 'overflow-y-auto p-4')}>
         <code
           ref={codeRef}
           className={cn(
-            plugin || error ? '!whitespace-pre-wrap' : `hljs language-${language} !whitespace-pre`,
+            isNonCode ? '!whitespace-pre-wrap' : `hljs language-${language} !whitespace-pre`,
           )}
         >
           {codeChildren}
