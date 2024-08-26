@@ -106,6 +106,3 @@ uploads/
 
 # owner
 release/
-
-# custom build
-docker-compose.substitute.yml
