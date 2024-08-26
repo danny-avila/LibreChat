@@ -61,7 +61,7 @@ export default function DashGroupItem({
   };
 
   const saveRename = () => {
-    updateGroup.mutate({ payload: { name: nameInputField }, id: group._id || '' });
+    updateGroup.mutate({ payload: { name: nameInputField }, id: group._id ?? '' });
   };
 
   const handleBlur = () => {
@@ -77,13 +77,13 @@ export default function DashGroupItem({
     }
   };
 
-  const handleRename = (e: React.MouseEvent | React.KeyboardEvent) => {
+  const handleRename = (e: Event) => {
     e.stopPropagation();
     setNameEditFlag(true);
   };
 
   const handleDelete = () => {
-    deletePromptGroupMutation.mutate({ id: group._id || '' });
+    deletePromptGroupMutation.mutate({ id: group._id ?? '' });
   };
 
   return (
@@ -156,7 +156,7 @@ export default function DashGroupItem({
                   </h3>
                 </div>
                 <div className="flex flex-row items-center gap-1">
-                  {groupIsGlobal && (
+                  {groupIsGlobal === true && (
                     <EarthIcon
                       className="icon-md text-green-400"
                       aria-label={localize('com_ui_global_group')}
@@ -230,7 +230,7 @@ export default function DashGroupItem({
                 </div>
               </div>
               <div className="ellipsis text-balance text-sm text-gray-600 dark:text-gray-400">
-                {group.oneliner ? group.oneliner : group.productionPrompt?.prompt ?? ''}
+                {group.oneliner ?? '' ? group.oneliner : group.productionPrompt?.prompt ?? ''}
               </div>
             </>
           )}
