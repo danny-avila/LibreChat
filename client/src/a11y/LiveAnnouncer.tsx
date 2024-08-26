@@ -1,3 +1,4 @@
+// client/src/a11y/LiveAnnouncer.tsx
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { findLastSeparatorIndex } from 'librechat-data-provider';
 import type { AnnounceOptions } from '~/Providers/AnnouncerContext';
@@ -15,30 +16,35 @@ interface AnnouncementItem {
   isAssertive: boolean;
 }
 
-const CHUNK_SIZE = 50;
-const MIN_ANNOUNCEMENT_DELAY = 400;
+/** Chunk size for processing text */
+const CHUNK_SIZE = 200;
+/** Minimum delay between announcements */
+const MIN_ANNOUNCEMENT_DELAY = 1000;
+/** Delay before clearing the live region */
+const CLEAR_DELAY = 5000;
 /** Regex to remove *, `, and _ from message text */
 const replacementRegex = /[*`_]/g;
 
 const LiveAnnouncer: React.FC<LiveAnnouncerProps> = ({ children }) => {
-  const [politeMessageId, setPoliteMessageId] = useState('');
-  const [assertiveMessageId, setAssertiveMessageId] = useState('');
-  const [announcePoliteMessage, setAnnouncePoliteMessage] = useState('');
-  const [announceAssertiveMessage, setAnnounceAssertiveMessage] = useState('');
+  const [statusMessage, setStatusMessage] = useState('');
+  const [responseMessage, setResponseMessage] = useState('');
 
   const counterRef = useRef(0);
   const isAnnouncingRef = useRef(false);
   const politeProcessedTextRef = useRef('');
   const queueRef = useRef<AnnouncementItem[]>([]);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastAnnouncementTimeRef = useRef(0);
 
   const localize = useLocalize();
 
+  /** Generates a unique ID for announcement messages */
   const generateUniqueId = (prefix: string) => {
     counterRef.current += 1;
     return `${prefix}-${counterRef.current}`;
   };
 
+  /** Processes the text in chunks and returns a chunk of text */
   const processChunks = (text: string, processedTextRef: React.MutableRefObject<string>) => {
     const remainingText = text.slice(processedTextRef.current.length);
 
@@ -73,59 +79,76 @@ const LiveAnnouncer: React.FC<LiveAnnouncerProps> = ({ children }) => {
     [localize],
   );
 
-  const announceNextInQueue = useCallback(() => {
-    if (queueRef.current.length > 0 && !isAnnouncingRef.current) {
-      isAnnouncingRef.current = true;
-      const nextAnnouncement = queueRef.current.shift();
-      if (nextAnnouncement) {
-        const { message: _msg, id, isAssertive } = nextAnnouncement;
-        const setMessage = isAssertive ? setAnnounceAssertiveMessage : setAnnouncePoliteMessage;
-        const setMessageId = isAssertive ? setAssertiveMessageId : setPoliteMessageId;
+  const announceMessage = useCallback(
+    (message: string, isAssertive: boolean) => {
+      const setMessage = isAssertive ? setStatusMessage : setResponseMessage;
+      setMessage(message);
 
-        setMessage('');
-        setMessageId('');
-
-        /* Force a re-render before setting the new message */
-        setTimeout(() => {
-          const message = (events[_msg] ?? _msg).replace(replacementRegex, '');
-          setMessage(message);
-          setMessageId(id);
-
-          if (timeoutRef.current) {
-            clearTimeout(timeoutRef.current);
-          }
-
-          timeoutRef.current = setTimeout(() => {
-            isAnnouncingRef.current = false;
-            announceNextInQueue();
-          }, MIN_ANNOUNCEMENT_DELAY);
-        }, 0);
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
       }
-    }
-  }, [events]);
+
+      lastAnnouncementTimeRef.current = Date.now();
+      isAnnouncingRef.current = true;
+
+      timeoutRef.current = setTimeout(
+        () => {
+          isAnnouncingRef.current = false;
+          setMessage(''); // Clear the message after a delay
+          if (queueRef.current.length > 0) {
+            const nextAnnouncement = queueRef.current.shift();
+            if (nextAnnouncement) {
+              const { message: _msg, isAssertive } = nextAnnouncement;
+              const nextMessage = (events[_msg] ?? _msg).replace(replacementRegex, '');
+              announceMessage(nextMessage, isAssertive);
+            }
+          }
+        },
+        isAssertive ? MIN_ANNOUNCEMENT_DELAY : CLEAR_DELAY,
+      );
+    },
+    [events],
+  );
 
   const addToQueue = useCallback(
     (item: AnnouncementItem) => {
-      queueRef.current.push(item);
-      announceNextInQueue();
+      if (item.isAssertive) {
+        /* For assertive messages, clear the queue and announce immediately */
+        queueRef.current = [];
+        const { message: _msg, isAssertive } = item;
+        const message = (events[_msg] ?? _msg).replace(replacementRegex, '');
+        announceMessage(message, isAssertive);
+      } else {
+        queueRef.current.push(item);
+        if (!isAnnouncingRef.current) {
+          const nextAnnouncement = queueRef.current.shift();
+          if (nextAnnouncement) {
+            const { message: _msg, isAssertive } = nextAnnouncement;
+            const message = (events[_msg] ?? _msg).replace(replacementRegex, '');
+            announceMessage(message, isAssertive);
+          }
+        }
+      }
     },
-    [announceNextInQueue],
+    [events, announceMessage],
   );
 
+  /** Announces a polite message */
   const announcePolite = useCallback(
     ({ message, id, isStream = false, isComplete = false }: AnnounceOptions) => {
       const announcementId = id ?? generateUniqueId('polite');
-      if (isStream) {
+      if (isStream || isComplete) {
         const chunk = processChunks(message, politeProcessedTextRef);
         if (chunk) {
           addToQueue({ message: chunk, id: announcementId, isAssertive: false });
         }
-      } else if (isComplete) {
-        const remainingText = message.slice(politeProcessedTextRef.current.length);
-        if (remainingText.trim()) {
-          addToQueue({ message: remainingText.trim(), id: announcementId, isAssertive: false });
+        if (isComplete) {
+          const remainingText = message.slice(politeProcessedTextRef.current.length);
+          if (remainingText.trim()) {
+            addToQueue({ message: remainingText.trim(), id: announcementId, isAssertive: false });
+          }
+          politeProcessedTextRef.current = '';
         }
-        politeProcessedTextRef.current = '';
       } else {
         addToQueue({ message, id: announcementId, isAssertive: false });
         politeProcessedTextRef.current = '';
@@ -134,6 +157,7 @@ const LiveAnnouncer: React.FC<LiveAnnouncerProps> = ({ children }) => {
     [addToQueue],
   );
 
+  /** Announces an assertive message */
   const announceAssertive = useCallback(
     ({ message, id }: AnnounceOptions) => {
       const announcementId = id ?? generateUniqueId('assertive');
@@ -160,12 +184,7 @@ const LiveAnnouncer: React.FC<LiveAnnouncerProps> = ({ children }) => {
   return (
     <AnnouncerContext.Provider value={contextValue}>
       {children}
-      <Announcer
-        assertiveMessage={announceAssertiveMessage}
-        assertiveMessageId={assertiveMessageId}
-        politeMessage={announcePoliteMessage}
-        politeMessageId={politeMessageId}
-      />
+      <Announcer statusMessage={statusMessage} responseMessage={responseMessage} />
     </AnnouncerContext.Provider>
   );
 };

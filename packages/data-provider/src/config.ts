@@ -413,6 +413,7 @@ export const configSchema = z.object({
       modelSelect: z.boolean().optional(),
       parameters: z.boolean().optional(),
       sidePanel: z.boolean().optional(),
+      bookmarks: z.boolean().optional(),
       presets: z.boolean().optional(),
       prompts: z.boolean().optional(),
     })
@@ -474,6 +475,7 @@ export enum KnownEndpoints {
   apipie = 'apipie',
   cohere = 'cohere',
   fireworks = 'fireworks',
+  deepseek = 'deepseek',
   groq = 'groq',
   huggingface = 'huggingface',
   mistral = 'mistral',
@@ -483,6 +485,7 @@ export enum KnownEndpoints {
   perplexity = 'perplexity',
   shuttleai = 'shuttleai',
   'together.ai' = 'together.ai',
+  unify = 'unify',
 }
 
 export enum FetchTokenConfig {
