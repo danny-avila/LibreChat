@@ -1,5 +1,10 @@
-const { SystemRoles, Permissions, removeNullishValues } = require('librechat-data-provider');
-const { updatePromptsAccess, updateBookmarksAccess } = require('~/models/Role');
+const {
+  SystemRoles,
+  Permissions,
+  PermissionTypes,
+  removeNullishValues,
+} = require('librechat-data-provider');
+const { updateAccessPermissions } = require('~/models/Role');
 const { logger } = require('~/config');
 
 /**
@@ -28,8 +33,10 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
     prompts: interfaceConfig?.prompts ?? defaults.prompts,
   });
 
-  await updatePromptsAccess(roleName, { [Permissions.USE]: loadedInterface.prompts });
-  await updateBookmarksAccess(roleName, { [Permissions.USE]: loadedInterface.bookmarks });
+  await updateAccessPermissions(roleName, {
+    [PermissionTypes.PROMPTS]: { [Permissions.USE]: loadedInterface.prompts },
+    [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: loadedInterface.bookmarks },
+  });
 
   let i = 0;
   const logSettings = () => {
