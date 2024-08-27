@@ -127,7 +127,7 @@ function Speech() {
   );
 
   useEffect(() => {
-    if (data && data.message !== 'No custom configuration found') {
+    if (data && data.message !== 'not_found') {
       Object.entries(data).forEach(([key, value]) => {
         updateSetting(key, value);
       });

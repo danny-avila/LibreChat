@@ -19,7 +19,7 @@ async function getCustomConfigSpeech(req, res) {
 
     if (!customConfig) {
       return res.status(200).send({
-        message: 'No custom configuration found',
+        message: 'not_found',
       });
     }
 
