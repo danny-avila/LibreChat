@@ -9,7 +9,7 @@ type MenuItemProps = {
   tag: string | React.ReactNode;
   selected: boolean;
   count?: number;
-  handleSubmit: (tag?: string) => Promise<void>;
+  handleSubmit: (tag?: string) => void;
   icon?: React.ReactNode;
 };
 
@@ -17,12 +17,12 @@ const BookmarkItem: FC<MenuItemProps> = ({ tag, selected, handleSubmit, icon, ..
   const [isLoading, setIsLoading] = useState(false);
   const clickHandler = async () => {
     if (tag === 'New Bookmark') {
-      await handleSubmit();
+      handleSubmit();
       return;
     }
 
     setIsLoading(true);
-    await handleSubmit(tag as string);
+    handleSubmit(tag as string);
     setIsLoading(false);
   };
 
@@ -32,7 +32,7 @@ const BookmarkItem: FC<MenuItemProps> = ({ tag, selected, handleSubmit, icon, ..
   };
 
   const renderIcon = () => {
-    if (icon) {
+    if (icon != null) {
       return icon;
     }
     if (isLoading) {

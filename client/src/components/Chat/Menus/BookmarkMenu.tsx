@@ -1,8 +1,10 @@
 import { useState, type FC, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
-import { Constants } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
+import { Constants, QueryKeys } from 'librechat-data-provider';
 import { Menu, MenuButton, MenuItems } from '@headlessui/react';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
+import type { TConversationTag } from 'librechat-data-provider';
 import { useConversationTagsQuery, useTagConversationMutation } from '~/data-provider';
 import { BookmarkMenuItems } from './Bookmarks/BookmarkMenuItems';
 import { BookmarkContext } from '~/Providers/BookmarkContext';
@@ -11,19 +13,32 @@ import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
 import { useBookmarkSuccess } from '~/hooks';
 import { Spinner } from '~/components';
-import { cn } from '~/utils';
+import { cn, logger } from '~/utils';
 import store from '~/store';
 
 const BookmarkMenu: FC = () => {
+  const queryClient = useQueryClient();
   const { showToast } = useToastContext();
 
   const conversation = useRecoilValue(store.conversationByIndex(0)) || undefined;
   const conversationId = conversation?.conversationId ?? '';
-  const onSuccess = useBookmarkSuccess(conversationId);
-  const [tags, setTags] = useState<string[]>(conversation?.tags || []);
-  const [open, setOpen] = useState(false);
+  const updateConvoTags = useBookmarkSuccess(conversationId);
 
-  const { mutateAsync, isLoading } = useTagConversationMutation(conversationId);
+  const [open, setOpen] = useState(false);
+  const [tags, setTags] = useState<string[]>(conversation?.tags || []);
+
+  const mutation = useTagConversationMutation(conversationId, {
+    onSuccess: (newTags: string[]) => {
+      setTags(newTags);
+      updateConvoTags(newTags);
+    },
+    onError: () => {
+      showToast({
+        message: 'Error adding bookmark',
+        severity: NotificationSeverity.ERROR,
+      });
+    },
+  });
 
   const { data } = useConversationTagsQuery();
 
@@ -35,7 +50,7 @@ const BookmarkMenu: FC = () => {
   );
 
   const handleSubmit = useCallback(
-    async (tag?: string): Promise<void> => {
+    (tag?: string) => {
       if (tag === undefined || tag === '' || !conversationId) {
         showToast({
           message: 'Invalid tag or conversationId',
@@ -44,34 +59,29 @@ const BookmarkMenu: FC = () => {
         return;
       }
 
-      const newTags = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
-      await mutateAsync(
-        {
-          tags: newTags,
-        },
-        {
-          onSuccess: (newTags: string[]) => {
-            setTags(newTags);
-            onSuccess(newTags);
-          },
-          onError: () => {
-            showToast({
-              message: 'Error adding bookmark',
-              severity: NotificationSeverity.ERROR,
-            });
-          },
-        },
-      );
+      logger.log('tag_mutation', 'BookmarkMenu - handleSubmit: tags before setting', tags);
+      const allTags =
+        queryClient.getQueryData<TConversationTag[]>([QueryKeys.conversationTags]) ?? [];
+      const existingTags = allTags.map((t) => t.tag);
+      const filteredTags = tags.filter((t) => existingTags.includes(t));
+      logger.log('tag_mutation', 'BookmarkMenu - handleSubmit: tags after filtering', filteredTags);
+      const newTags = filteredTags.includes(tag)
+        ? filteredTags.filter((t) => t !== tag)
+        : [...filteredTags, tag];
+      logger.log('tag_mutation', 'BookmarkMenu - handleSubmit: tags after', newTags);
+      mutation.mutate({
+        tags: newTags,
+      });
     },
-    [tags, conversationId, mutateAsync, setTags, onSuccess, showToast],
+    [tags, conversationId, mutation, queryClient, showToast],
   );
 
   if (!isActiveConvo) {
-    return <></>;
+    return null;
   }
 
   const renderButtonContent = () => {
-    if (isLoading) {
+    if (mutation.isLoading) {
       return <Spinner aria-label="Spinner" />;
     }
     if (tags.length > 0) {
@@ -80,10 +90,7 @@ const BookmarkMenu: FC = () => {
     return <BookmarkIcon className="icon-sm" aria-label="Bookmark" />;
   };
 
-  const handleToggleOpen = () => {
-    setOpen(!open);
-    return Promise.resolve();
-  };
+  const handleToggleOpen = () => setOpen(!open);
 
   return (
     <>
@@ -116,6 +123,7 @@ const BookmarkMenu: FC = () => {
         )}
       </Menu>
       <BookmarkEditDialog
+        context="BookmarkMenu - BookmarkEditDialog"
         conversation={conversation}
         tags={tags}
         setTags={setTags}

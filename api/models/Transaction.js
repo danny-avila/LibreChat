@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { isEnabled } = require('../server/utils/handleText');
+const { isEnabled } = require('~/server/utils/handleText');
 const transactionSchema = require('./schema/transaction');
 const { getMultiplier, getCacheMultiplier } = require('./tx');
 const { logger } = require('~/config');
@@ -76,7 +76,7 @@ transactionSchema.statics.createStructured = async function (txData) {
   await transaction.save();
 
   if (!isEnabled(process.env.CHECK_BALANCE)) {
-    return transaction;
+    return;
   }
 
   let balance = await Balance.findOne({ user: transaction.user }).lean();
@@ -122,28 +122,33 @@ transactionSchema.methods.calculateStructuredTokenValue = function () {
       read: readMultiplier,
     };
 
-    const totalTokens = (this.inputTokens || 0) + (this.writeTokens || 0) + (this.readTokens || 0);
+    const totalPromptTokens =
+      Math.abs(this.inputTokens || 0) +
+      Math.abs(this.writeTokens || 0) +
+      Math.abs(this.readTokens || 0);
 
-    if (totalTokens > 0) {
+    if (totalPromptTokens > 0) {
       this.rate =
-        (inputMultiplier * (this.inputTokens || 0) +
-          writeMultiplier * (this.writeTokens || 0) +
-          readMultiplier * (this.readTokens || 0)) /
-        totalTokens;
+        (Math.abs(inputMultiplier * (this.inputTokens || 0)) +
+          Math.abs(writeMultiplier * (this.writeTokens || 0)) +
+          Math.abs(readMultiplier * (this.readTokens || 0))) /
+        totalPromptTokens;
     } else {
-      this.rate = inputMultiplier; // Default to input rate if no tokens
+      this.rate = Math.abs(inputMultiplier); // Default to input rate if no tokens
     }
 
-    this.tokenValue =
-      this.inputTokens * inputMultiplier +
-      (this.writeTokens || 0) * writeMultiplier +
-      (this.readTokens || 0) * readMultiplier;
-  } else {
-    const multiplier = Math.abs(
-      getMultiplier({ tokenType: this.tokenType, model, endpointTokenConfig }),
+    this.tokenValue = -(
+      Math.abs(this.inputTokens || 0) * inputMultiplier +
+      Math.abs(this.writeTokens || 0) * writeMultiplier +
+      Math.abs(this.readTokens || 0) * readMultiplier
     );
-    this.rate = multiplier;
-    this.tokenValue = this.rawAmount * multiplier;
+
+    this.rawAmount = -totalPromptTokens;
+  } else if (this.tokenType === 'completion') {
+    const multiplier = getMultiplier({ tokenType: this.tokenType, model, endpointTokenConfig });
+    this.rate = Math.abs(multiplier);
+    this.tokenValue = -Math.abs(this.rawAmount) * multiplier;
+    this.rawAmount = -Math.abs(this.rawAmount);
   }
 
   if (this.context && this.tokenType === 'completion' && this.context === 'incomplete') {

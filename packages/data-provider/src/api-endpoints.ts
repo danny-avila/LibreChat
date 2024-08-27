@@ -201,7 +201,7 @@ export const conversationTagsList = (pageNumber: string, sort?: string, order?: 
   }`;
 
 export const addTagToConversation = (conversationId: string) =>
-  `${conversationsRoot}/tags/${conversationId}`;
+  `${conversationTags()}/convo/${conversationId}`;
 
 export const userTerms = () => '/api/user/terms';
 export const acceptUserTerms = () => '/api/user/terms/accept';

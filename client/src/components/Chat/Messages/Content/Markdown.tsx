@@ -1,6 +1,5 @@
 import React, { memo, useMemo } from 'react';
 import remarkGfm from 'remark-gfm';
-import rehypeRaw from 'rehype-raw';
 import remarkMath from 'remark-math';
 import supersub from 'remark-supersub';
 import rehypeKatex from 'rehype-katex';
@@ -8,7 +7,7 @@ import { useRecoilValue } from 'recoil';
 import ReactMarkdown from 'react-markdown';
 import type { PluggableList } from 'unified';
 import rehypeHighlight from 'rehype-highlight';
-import { cn, langSubset, validateIframe, processLaTeX, handleDoubleClick } from '~/utils';
+import { langSubset, preprocessLaTeX, handleDoubleClick } from '~/utils';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
 import { useFileDownload } from '~/data-provider';
 import useLocalize from '~/hooks/useLocalize';
@@ -123,7 +122,7 @@ const Markdown = memo(({ content = '', isEdited, showCursor, isLatestMessage }: 
   let currentContent = content;
   if (!isInitializing) {
     currentContent = currentContent.replace('z-index: 1;', '') || '';
-    currentContent = LaTeXParsing ? processLaTeX(currentContent) : currentContent;
+    currentContent = LaTeXParsing ? preprocessLaTeX(currentContent) : currentContent;
   }
 
   const rehypePlugins: PluggableList = [
@@ -136,11 +135,9 @@ const Markdown = memo(({ content = '', isEdited, showCursor, isLatestMessage }: 
         subset: langSubset,
       },
     ],
-    [rehypeRaw],
   ];
 
   if (isInitializing) {
-    rehypePlugins.pop();
     return (
       <div className="absolute">
         <p className="relative">
@@ -150,12 +147,7 @@ const Markdown = memo(({ content = '', isEdited, showCursor, isLatestMessage }: 
     );
   }
 
-  let isValidIframe: string | boolean | null = false;
-  if (isEdited !== true) {
-    isValidIframe = validateIframe(currentContent);
-  }
-
-  if (isEdited === true || (!isLatestMessage && !isValidIframe)) {
+  if (isEdited === true || !isLatestMessage) {
     rehypePlugins.pop();
   }
 
