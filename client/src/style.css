@@ -1945,10 +1945,12 @@ button.scroll-convo {
 .markdown ol > li {
   position: relative;
   padding-left: 0.375em;
+  counter-increment: list-counter;
 }
 
 .prose ol > li::marker,
 .markdown ol > li::marker {
+  content: counter(list-counter) ". ";
   color: var(--tw-prose-counters);
   font-weight: 400;
 }
@@ -1957,11 +1959,33 @@ button.scroll-convo {
 .prose ol ol,
 .markdown ol ol {
   list-style-type: lower-alpha;
+  counter-reset: list-counter-alpha;
+}
+
+.prose ol ol > li,
+.markdown ol ol > li {
+  counter-increment: list-counter-alpha;
+}
+
+.prose ol ol > li::marker,
+.markdown ol ol > li::marker {
+  content: counter(list-counter-alpha, lower-alpha) ". ";
 }
 
 .prose ol ol ol,
 .markdown ol ol ol {
   list-style-type: lower-roman;
+  counter-reset: list-counter-roman;
+}
+
+.prose ol ol ol > li,
+.markdown ol ol ol > li {
+  counter-increment: list-counter-roman;
+}
+
+.prose ol ol ol > li::marker,
+.markdown ol ol ol > li::marker {
+  content: counter(list-counter-roman, lower-roman) ". ";
 }
 
 /* Unordered lists */
@@ -2023,6 +2047,28 @@ button.scroll-convo {
 .prose li::marker,
 .markdown li::marker {
   color: currentColor;
+}
+
+/* Reset counter for new sections */
+.prose h1 + ol,
+.prose h2 + ol,
+.prose h3 + ol,
+.prose h4 + ol,
+.prose h5 + ol,
+.prose h6 + ol,
+.markdown h1 + ol,
+.markdown h2 + ol,
+.markdown h3 + ol,
+.markdown h4 + ol,
+.markdown h5 + ol,
+.markdown h6 + ol {
+  counter-reset: list-counter;
+}
+
+/* Reset counter after unordered lists */
+.prose ul + ol,
+.markdown ul + ol {
+  counter-reset: list-counter;
 }
 
 /* Keyframes */

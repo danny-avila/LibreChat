@@ -109,12 +109,11 @@ const cursor = ' ';
 
 type TContentProps = {
   content: string;
-  isEdited?: boolean;
   showCursor?: boolean;
   isLatestMessage: boolean;
 };
 
-const Markdown = memo(({ content = '', isEdited, showCursor, isLatestMessage }: TContentProps) => {
+const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentProps) => {
   const LaTeXParsing = useRecoilValue<boolean>(store.LaTeXParsing);
 
   const isInitializing = content === '';
@@ -145,10 +144,6 @@ const Markdown = memo(({ content = '', isEdited, showCursor, isLatestMessage }: 
         </p>
       </div>
     );
-  }
-
-  if (isEdited === true || !isLatestMessage) {
-    rehypePlugins.pop();
   }
 
   return (

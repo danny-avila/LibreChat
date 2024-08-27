@@ -41,12 +41,7 @@ const DisplayMessage = ({ text, isCreatedByUser = false, message, showCursor }: 
       )}
     >
       {!isCreatedByUser ? (
-        <Markdown
-          content={text}
-          isEdited={message.isEdited}
-          showCursor={showCursorState}
-          isLatestMessage={isLatestMessage}
-        />
+        <Markdown content={text} showCursor={showCursorState} isLatestMessage={isLatestMessage} />
       ) : (
         <>{text}</>
       )}
