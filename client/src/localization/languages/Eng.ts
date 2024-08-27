@@ -3,7 +3,15 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets present in this file
 
 export default {
+  com_ui_artifacts: 'Artifacts',
   com_ui_artifacts_toggle: 'Toggle Artifacts Mode',
+  com_nav_info_code_artifacts: 'Enables the display of experimental code artifacts in the chat',
+  com_ui_include_shadcnui: 'Include shadcn/ui components instructions',
+  com_nav_info_include_shadcnui:
+    'When enabled, instructions for using shadcn/ui components will be included. shadcn/ui is a collection of re-usable components built using Radix UI and Tailwind CSS. For more information, visit: https://ui.shadcn.com/',
+  com_ui_custom_prompt_mode: 'Custom Prompt Mode',
+  com_nav_info_custom_prompt_mode:
+    'When enabled, the default artifacts system prompt will not be included. All artifact-generating instructions must be provided manually in this mode.',
   com_ui_artifact_click: 'Click to open',
   com_a11y_start: 'The AI is replying.',
   com_a11y_end: 'The AI has finished their reply.',

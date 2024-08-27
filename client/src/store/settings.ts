@@ -38,6 +38,8 @@ const localStorageAtoms = {
   modularChat: atomWithLocalStorage('modularChat', true),
   LaTeXParsing: atomWithLocalStorage('LaTeXParsing', true),
   codeArtifacts: atomWithLocalStorage('codeArtifacts', false),
+  includeShadcnui: atomWithLocalStorage('includeShadcnui', false),
+  customPromptMode: atomWithLocalStorage('customPromptMode', false),
 
   // Commands settings
   atCommand: atomWithLocalStorage('atCommand', true),

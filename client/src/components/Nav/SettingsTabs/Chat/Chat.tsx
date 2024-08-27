@@ -6,6 +6,8 @@ import SendMessageKeyEnter from './EnterToSend';
 import ShowCodeSwitch from './ShowCodeSwitch';
 import { ForkSettings } from './ForkSettings';
 import ChatDirection from './ChatDirection';
+import LaTeXParsing from './LaTeXParsing';
+import ModularChat from './ModularChat';
 import SaveDraft from './SaveDraft';
 
 function Chat() {
@@ -28,6 +30,12 @@ function Chat() {
           <SaveDraft />
         </div>
         <ForkSettings />
+        <div className="border-b border-border-medium pb-3 last-of-type:border-b-0">
+          <ModularChat />
+        </div>
+        <div className="border-b border-border-medium pb-3 last-of-type:border-b-0">
+          <LaTeXParsing />
+        </div>
       </div>
     </Tabs.Content>
   );
