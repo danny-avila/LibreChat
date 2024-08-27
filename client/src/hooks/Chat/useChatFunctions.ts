@@ -19,6 +19,7 @@ import type { SetterOrUpdater } from 'recoil';
 import type { TAskFunction, ExtendedFile } from '~/common';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
+import { getArtifactsMode } from '~/utils/artifacts';
 import { getEndpointField, logger } from '~/utils';
 import useUserKey from '~/hooks/Input/useUserKey';
 import store from '~/store';
@@ -47,7 +48,9 @@ export default function useChatFunctions({
   setSubmission: SetterOrUpdater<TSubmission | null>;
   setLatestMessage?: SetterOrUpdater<TMessage | null>;
 }) {
-  const artifacts = useRecoilValue(store.codeArtifacts);
+  const codeArtifacts = useRecoilValue(store.codeArtifacts);
+  const includeShadcnui = useRecoilValue(store.includeShadcnui);
+  const customPromptMode = useRecoilValue(store.customPromptMode);
   const resetLatestMultiMessage = useResetRecoilState(store.latestMessageFamily(index + 1));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const setFilesToDelete = useSetFilesToDelete();
@@ -153,7 +156,7 @@ export default function useChatFunctions({
       key: getExpiry(),
       modelDisplayLabel,
       overrideUserMessageId,
-      artifacts: artifacts === true ? 'default' : undefined,
+      artifacts: getArtifactsMode({ codeArtifacts, includeShadcnui, customPromptMode }),
     } as TEndpointOption;
     const responseSender = getSender({ model: conversation?.model, ...endpointOption });
 

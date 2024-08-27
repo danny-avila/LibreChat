@@ -1,9 +1,29 @@
 import dedent from 'dedent';
+import { ArtifactModes } from 'librechat-data-provider';
 import type {
   SandpackProviderProps,
   SandpackPredefinedTemplate,
 } from '@codesandbox/sandpack-react';
 import * as shadcnComponents from '~/utils/shadcn';
+
+export const getArtifactsMode = ({
+  codeArtifacts,
+  includeShadcnui,
+  customPromptMode,
+}: {
+  codeArtifacts: boolean;
+  includeShadcnui: boolean;
+  customPromptMode: boolean;
+}): ArtifactModes | undefined => {
+  if (!codeArtifacts) {
+    return undefined;
+  } else if (customPromptMode) {
+    return ArtifactModes.CUSTOM;
+  } else if (includeShadcnui) {
+    return ArtifactModes.SHADCNUI;
+  }
+  return ArtifactModes.DEFAULT;
+};
 
 const artifactFilename = {
   'application/vnd.mermaid': 'App.tsx',
