@@ -4,7 +4,7 @@ import { Switch } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
-export default function ArtifactsSettings() {
+export default function CodeArtifacts() {
   const [codeArtifacts, setCodeArtifacts] = useRecoilState<boolean>(store.codeArtifacts);
   const [includeShadcnui, setIncludeShadcnui] = useRecoilState<boolean>(store.includeShadcnui);
   const [customPromptMode, setCustomPromptMode] = useRecoilState<boolean>(store.customPromptMode);
@@ -24,6 +24,9 @@ export default function ArtifactsSettings() {
 
   const handleCustomPromptModeChange = (value: boolean) => {
     setCustomPromptMode(value);
+    if (value) {
+      setIncludeShadcnui(false);
+    }
   };
 
   return (
@@ -43,7 +46,7 @@ export default function ArtifactsSettings() {
           checked={includeShadcnui}
           onCheckedChange={handleIncludeShadcnuiChange}
           hoverCardText="com_nav_info_include_shadcnui"
-          disabled={!codeArtifacts}
+          disabled={!codeArtifacts || customPromptMode}
         />
         <SwitchItem
           id="customPromptMode"
