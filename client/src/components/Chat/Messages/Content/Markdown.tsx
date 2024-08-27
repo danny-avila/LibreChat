@@ -120,8 +120,6 @@ type TContentProps = {
 };
 
 const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentProps) => {
-  const artifactIdRef = useRef<string | null>(null);
-  const codeBlocksRef = useRef<number | null>(null);
   const LaTeXParsing = useRecoilValue<boolean>(store.LaTeXParsing);
   const codeArtifacts = useRecoilValue<boolean>(store.codeArtifacts);
 
