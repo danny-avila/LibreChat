@@ -9,6 +9,7 @@ import useAvatar from '~/hooks/Messages/useAvatar';
 import { LinkIcon, GearIcon } from '~/components';
 import { UserIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
+import Management from './Management';
 import Settings from './Settings';
 import NavLink from './NavLink';
 import Logout from './Logout';
@@ -23,6 +24,7 @@ function AccountSettings() {
   const balanceQuery = useGetUserBalance({
     enabled: !!isAuthenticated && startupConfig?.checkBalance,
   });
+  const [showManagement, setShowManagement] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showFiles, setShowFiles] = useRecoilState(store.showFiles);
 
@@ -115,6 +117,18 @@ function AccountSettings() {
                     )}
                   </MenuItem> : null
                 }
+                {
+                  user?.role === SystemRoles.ADMIN ? <MenuItem>
+                    {({ focus }) => (
+                      <NavLink
+                        className={focus ? 'bg-surface-hover' : ''}
+                        svg={() => <GearIcon className="icon-md" />}
+                        text={localize('com_nav_management')}
+                        clickHandler={() => setShowSettings(true)}
+                      />
+                    )}
+                  </MenuItem> : null
+                }
                 <div className="my-1.5 h-px border-b border-border-medium" role="none" />
                 <MenuItem>
                   {({ focus }) => <Logout className={focus ? 'bg-surface-hover' : ''} />}
@@ -126,6 +140,7 @@ function AccountSettings() {
       </Menu>
       {showFiles && <FilesView open={showFiles} onOpenChange={setShowFiles} />}
       {showSettings && <Settings open={showSettings} onOpenChange={setShowSettings} />}
+      {showManagement && <Management open={showManagement} onOpenChange={setShowManagement} />}
     </>
   );
 }
