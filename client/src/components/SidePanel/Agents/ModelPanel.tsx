@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
-import { Controller, useFormContext } from 'react-hook-form';
 import { ChevronLeft } from 'lucide-react';
+import { Controller, useFormContext } from 'react-hook-form';
 import type { AgentForm, AgentModelPanelProps } from '~/common';
 import { SelectDropDown, ModelParameters } from '~/components/ui';
 import { cn, cardStyle } from '~/utils';
@@ -54,7 +54,7 @@ export default function ModelPanel({
           </button>
         </div>
 
-        <div className="mb-2 mt-2 text-xl font-medium">{localize('com_ui_model_settings')}</div>
+        <div className="mb-2 mt-2 text-xl font-medium">{localize('com_ui_model_parameters')}</div>
       </div>
       {/* Endpoint aka Provider for Agents */}
       <div className="mb-4">

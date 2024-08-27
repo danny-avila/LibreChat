@@ -1,10 +1,10 @@
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useRef } from 'react';
 import { Capabilities, defaultAgentFormValues } from 'librechat-data-provider';
+import type { AgentCapabilities, AgentForm, TAgentOption } from '~/common';
 import type { Agent, AgentCreateParams } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type { UseFormReset } from 'react-hook-form';
-import type { AgentCapabilities, AgentForm, TAgentOption } from '~/common';
 import { cn, createDropdownSetter, createProviderOption, processAgentOption } from '~/utils';
 import { useListAgentsQuery, useGetAgentByIdQuery } from '~/data-provider';
 import SelectDropDown from '~/components/ui/SelectDropDown';
@@ -44,8 +44,8 @@ export default function AgentSelect({
       const update = {
         ...fullAgent,
         provider: createProviderOption(fullAgent.provider),
-        label: fullAgent?.name ?? '',
-        value: fullAgent?.id ?? '',
+        label: fullAgent.name ?? '',
+        value: fullAgent.id ?? '',
       };
 
       const actions: AgentCapabilities = {
@@ -61,15 +61,20 @@ export default function AgentSelect({
         tools: update.tools ?? [],
       };
 
+      console.log('FullAgent', fullAgent);
+
       Object.entries(fullAgent).forEach(([name, value]) => {
-        if (typeof value === 'number') {
-          return;
-        } else if (typeof value === 'object') {
+        if (name === 'model_parameters') {
+          formValues[name] = value;
+          console.log('ModelPara', value);
           return;
         }
-        if (name === 'provider') {
-          formValues[name] = createProviderOption(value);
-        } else if (keys.has(name)) {
+
+        if (!keys.has(name)) {
+          return;
+        }
+
+        if (typeof value !== 'number' && typeof value !== 'object') {
           formValues[name] = value;
         }
       });
@@ -82,7 +87,7 @@ export default function AgentSelect({
   const onSelect = useCallback(
     (selectedId: string) => {
       const agentExists = !!(selectedId
-        ? agents?.find((agent) => agent.id === selectedId)
+        ? agents.find((agent) => agent.id === selectedId)
         : undefined);
 
       createMutation.reset();

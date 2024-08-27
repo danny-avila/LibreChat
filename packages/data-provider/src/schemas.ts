@@ -85,6 +85,7 @@ export const defaultAgentFormValues = {
   description: '',
   instructions: '',
   model: '',
+  model_parameters: {},
   tools: [],
   provider: {},
   code_interpreter: false,
@@ -106,7 +107,7 @@ export const ImageVisionTool: FunctionTool = {
 };
 
 export const isImageVisionTool = (tool: FunctionTool | FunctionToolCall) =>
-  tool.type === 'function' && tool.function?.name === ImageVisionTool?.function?.name;
+  tool.type === 'function' && tool.function?.name === ImageVisionTool.function?.name;
 
 export const openAISettings = {
   model: {
