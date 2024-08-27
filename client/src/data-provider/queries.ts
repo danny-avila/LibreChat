@@ -562,3 +562,14 @@ export const useGetRandomPrompts = (
     },
   );
 };
+
+export const useGetAccounts = <TData = TFile[] | boolean>(
+  config?: UseQueryOptions<TFile[], unknown, TData>,
+): QueryObserverResult<TData, unknown> => {
+  return useQuery<TFile[], unknown, TData>([QueryKeys.account], () => dataService.getAccounts(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    ...config,
+  });
+};

@@ -21,6 +21,7 @@ export enum QueryKeys {
   assistant = 'assistant',
   endpointsConfigOverride = 'endpointsConfigOverride',
   files = 'files',
+  account = 'account',
   fileConfig = 'fileConfig',
   tools = 'tools',
   actions = 'actions',
@@ -54,4 +55,5 @@ export enum MutationKeys {
   deleteAction = 'deleteAction',
   deleteUser = 'deleteUser',
   updateRole = 'updateRole',
+  getAccounts = 'getAccounts',
 }
