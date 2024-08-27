@@ -446,11 +446,6 @@ export default {
   com_nav_clear_conversation_confirm_message: '请是否清空所有对话？该操作无法撤销',
   com_nav_help_faq: '帮助',
   com_nav_settings: '设置',
-  com_nav_management: '管理',
-  com_nav_management_account: '账号管理',
-  com_nav_management_balance: '余额',
-  com_nav_management_sensitive_words: '敏感词',
-  com_nav_management_statistics: '统计',
   com_nav_search_placeholder: '搜索对话及对话内容',
   com_nav_info_bookmarks_rebuild:
     '如果书签计数不正确，请重新构建书签信息。书签计数将被重新计算，数据将恢复到其正确状态。',
@@ -2287,10 +2282,6 @@ export const comparisons = {
   com_nav_settings: {
     english: 'Settings',
     translated: '设置',
-  },
-  com_nav_management: {
-    english: 'Management',
-    translated: '管理',
   },
   com_nav_search_placeholder: {
     english: 'Search messages',

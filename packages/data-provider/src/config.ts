@@ -915,28 +915,6 @@ export enum SettingsTabValues {
   COMMANDS = 'commands',
 }
 
-/**
- * Tab values for Management Dialog
- */
-export enum ManagementTabValues {
-  /**
-   * Tab for account Management
-   */
-  ACCOUNT = 'account',
-  /**
-   * Tab for balance Management
-   */
-  BALANCE = 'balance',
-  /**
-   * Tab for SensitiveWords Management
-   */
-  SENSITIVE_WORDS = 'sensitive_words',
-  /**
-   * Tab for statics Management
-   */
-  STATISTICS = 'statistics',
-}
-
 export enum STTProviders {
   /**
    * Provider for OpenAI STT

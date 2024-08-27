@@ -140,3 +140,31 @@ For new features, components, or extensions, please open an issue and discuss be
 <a href="https://github.com/danny-avila/LibreChat/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=danny-avila/LibreChat" />
 </a>
+
+
+
+# 本地开发
+
+环境要求
+
+- git
+- Node.js
+- Mongodb
+
+## 安装依赖
+
+`npm ci`
+`npm run build:data-provider`
+
+## 启动后端
+
+`npm run backend:dev`
+
+访问 http://localhost:3080/
+
+## 在开发模式下运行前端
+
+`npm run frontend:dev`
+
+访问 http://localhost:3090/
+

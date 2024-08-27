@@ -106,28 +106,28 @@ function AccountSettings() {
                   )}
                 </MenuItem>
                 {
-                  user?.role === SystemRoles.ADMIN ? <MenuItem>
-                    {({ focus }) => (
-                      <NavLink
-                        className={focus ? 'bg-surface-hover' : ''}
-                        svg={() => <GearIcon className="icon-md" />}
-                        text={localize('com_nav_settings')}
-                        clickHandler={() => setShowSettings(true)}
-                      />
-                    )}
-                  </MenuItem> : null
-                }
-                {
-                  user?.role === SystemRoles.ADMIN ? <MenuItem>
-                    {({ focus }) => (
-                      <NavLink
-                        className={focus ? 'bg-surface-hover' : ''}
-                        svg={() => <GearIcon className="icon-md" />}
-                        text={localize('com_nav_management')}
-                        clickHandler={() => setShowSettings(true)}
-                      />
-                    )}
-                  </MenuItem> : null
+                  user?.role === SystemRoles.ADMIN ? <>
+                    <MenuItem>
+                      {({ focus }) => (
+                        <NavLink
+                          className={focus ? 'bg-surface-hover' : ''}
+                          svg={() => <GearIcon className="icon-md" />}
+                          text={localize('com_nav_settings')}
+                          clickHandler={() => setShowSettings(true)}
+                        />
+                      )}
+                    </MenuItem>
+                    <MenuItem>
+                      {({ focus }) => (
+                        <NavLink
+                          className={focus ? 'bg-surface-hover' : ''}
+                          svg={() => <GearIcon className="icon-md" />}
+                          text='管理'
+                          clickHandler={() => setShowManagement(true)}
+                        />
+                      )}
+                    </MenuItem>
+                  </> : null
                 }
                 <div className="my-1.5 h-px border-b border-border-medium" role="none" />
                 <MenuItem>
