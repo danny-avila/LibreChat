@@ -50,6 +50,7 @@
     "connect-redis": "^7.1.0",
     "cookie": "^0.5.0",
     "cors": "^2.8.5",
+    "dedent": "^1.5.3",
     "dotenv": "^16.0.3",
     "express": "^4.18.2",
     "express-mongo-sanitize": "^2.2.0",

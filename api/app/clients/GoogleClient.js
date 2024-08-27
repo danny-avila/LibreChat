@@ -390,8 +390,13 @@ class GoogleClient extends BaseClient {
       parameters: this.modelOptions,
     };
 
-    if (this.options.promptPrefix) {
-      payload.instances[0].context = this.options.promptPrefix;
+    let promptPrefix = (this.options.promptPrefix ?? '').trim();
+    if (typeof this.options.artifactsPrompt === 'string' && this.options.artifactsPrompt) {
+      promptPrefix = `${promptPrefix ?? ''}\n${this.options.artifactsPrompt}`.trim();
+    }
+
+    if (promptPrefix) {
+      payload.instances[0].context = promptPrefix;
     }
 
     if (this.options.examples.length > 0) {
@@ -445,7 +450,10 @@ class GoogleClient extends BaseClient {
       identityPrefix = `${identityPrefix}\nYou are ${this.options.modelLabel}`;
     }
 
-    let promptPrefix = (this.options.promptPrefix || '').trim();
+    let promptPrefix = (this.options.promptPrefix ?? '').trim();
+    if (typeof this.options.artifactsPrompt === 'string' && this.options.artifactsPrompt) {
+      promptPrefix = `${promptPrefix ?? ''}\n${this.options.artifactsPrompt}`.trim();
+    }
     if (promptPrefix) {
       // If the prompt prefix doesn't end with the end token, add it.
       if (!promptPrefix.endsWith(`${this.endToken}`)) {
@@ -670,11 +678,16 @@ class GoogleClient extends BaseClient {
         contents: _payload,
       };
 
+      let promptPrefix = (this.options.promptPrefix ?? '').trim();
+      if (typeof this.options.artifactsPrompt === 'string' && this.options.artifactsPrompt) {
+        promptPrefix = `${promptPrefix ?? ''}\n${this.options.artifactsPrompt}`.trim();
+      }
+
       if (this.options?.promptPrefix?.length) {
         requestOptions.systemInstruction = {
           parts: [
             {
-              text: this.options.promptPrefix,
+              text: promptPrefix,
             },
           ],
         };
@@ -767,11 +780,16 @@ class GoogleClient extends BaseClient {
         contents: _payload,
       };
 
+      let promptPrefix = (this.options.promptPrefix ?? '').trim();
+      if (typeof this.options.artifactsPrompt === 'string' && this.options.artifactsPrompt) {
+        promptPrefix = `${promptPrefix ?? ''}\n${this.options.artifactsPrompt}`.trim();
+      }
+
       if (this.options?.promptPrefix?.length) {
         requestOptions.systemInstruction = {
           parts: [
             {
-              text: this.options.promptPrefix,
+              text: promptPrefix,
             },
           ],
         };
@@ -842,6 +860,7 @@ class GoogleClient extends BaseClient {
 
   getSaveOptions() {
     return {
+      artifacts: this.options.artifacts,
       promptPrefix: this.options.promptPrefix,
       modelLabel: this.options.modelLabel,
       iconURL: this.options.iconURL,
