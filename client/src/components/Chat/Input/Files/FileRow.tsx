@@ -11,6 +11,8 @@ export default function FileRow({
   setFiles,
   setFilesLoading,
   assistant_id,
+  // TODO: Agent file handling
+  agent_id,
   tool_resource,
   fileFilter,
   isRTL,
@@ -21,6 +23,7 @@ export default function FileRow({
   setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
   fileFilter?: (file: ExtendedFile) => boolean;
   assistant_id?: string;
+  agent_id?: string;
   tool_resource?: EToolResources;
   isRTL?: boolean;
   Wrapper?: React.FC<{ children: React.ReactNode }>;

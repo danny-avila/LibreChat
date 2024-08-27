@@ -45,5 +45,7 @@ module.exports = {
       AZURE_ASSISTANTS_BASE_URL,
       EModelEndpoint.azureAssistants,
     ),
+    /* key will be part of separate config */
+    [EModelEndpoint.agents]: generateConfig(EModelEndpoint.agents),
   },
 };

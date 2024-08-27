@@ -9,6 +9,36 @@
  */
 
 /**
+ * @exports ServerRequest
+ * @typedef {import('express').Request} ServerRequest
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ServerResponse
+ * @typedef {import('express').Response} ServerResponse
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ClientCallbacks
+ * @typedef {import('@librechat/agentus').ClientCallbacks} ClientCallbacks
+ * @memberof typedefs
+ */
+
+/**
+ * @exports StreamEventData
+ * @typedef {import('@librechat/agentus').StreamEventData} StreamEventData
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ToolEndData
+ * @typedef {import('@librechat/agentus').ToolEndData} ToolEndData
+ * @memberof typedefs
+ */
+
+/**
  * @exports Ollama
  * @typedef {import('ollama').Ollama} Ollama
  * @memberof typedefs
@@ -703,6 +733,36 @@
 /**
  * @exports TAssistantEndpoint
  * @typedef {import('librechat-data-provider').TAssistantEndpoint} TAssistantEndpoint
+ * @memberof typedefs
+ */
+
+/**
+ * @exports Agent
+ * @typedef {import('librechat-data-provider').Agent} Agent
+ * @memberof typedefs
+ */
+
+/**
+ * @exports AgentCreateParams
+ * @typedef {import('librechat-data-provider').AgentCreateParams} AgentCreateParams
+ * @memberof typedefs
+ */
+
+/**
+ * @exports AgentUpdateParams
+ * @typedef {import('librechat-data-provider').AgentUpdateParams} AgentUpdateParams
+ * @memberof typedefs
+ */
+
+/**
+ * @exports AgentListParams
+ * @typedef {import('librechat-data-provider').AgentListParams} AgentListParams
+ * @memberof typedefs
+ */
+
+/**
+ * @exports AgentListResponse
+ * @typedef {import('librechat-data-provider').AgentListResponse} AgentListResponse
  * @memberof typedefs
  */
 

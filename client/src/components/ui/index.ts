@@ -29,5 +29,6 @@ export { default as DelayedRender } from './DelayedRender';
 export { default as ThemeSelector } from './ThemeSelector';
 export { default as SelectDropDown } from './SelectDropDown';
 export { default as MultiSelectPop } from './MultiSelectPop';
+export { default as ModelParameters } from './ModelParameters';
 export { default as SelectDropDownPop } from './SelectDropDownPop';
 export { default as MultiSelectDropDown } from './MultiSelectDropDown';

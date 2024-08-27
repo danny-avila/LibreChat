@@ -185,6 +185,48 @@ export const assistantEndpointSchema = baseEndpointSchema.merge(
 
 export type TAssistantEndpoint = z.infer<typeof assistantEndpointSchema>;
 
+export const agentsEndpointSChema = baseEndpointSchema.merge(
+  baseEndpointSchema.merge(
+    z.object({
+      /* assistants specific */
+      disableBuilder: z.boolean().optional(),
+      pollIntervalMs: z.number().optional(),
+      timeoutMs: z.number().optional(),
+      version: z.union([z.string(), z.number()]).default(2),
+      supportedIds: z.array(z.string()).min(1).optional(),
+      excludedIds: z.array(z.string()).min(1).optional(),
+      privateAssistants: z.boolean().optional(),
+      retrievalModels: z.array(z.string()).min(1).optional().default(defaultRetrievalModels),
+      capabilities: z
+        .array(z.nativeEnum(Capabilities))
+        .optional()
+        .default([
+          Capabilities.code_interpreter,
+          Capabilities.image_vision,
+          Capabilities.retrieval,
+          Capabilities.actions,
+          Capabilities.tools,
+        ]),
+      /* general */
+      apiKey: z.string().optional(),
+      baseURL: z.string().optional(),
+      models: z
+        .object({
+          default: z.array(z.string()).min(1),
+          fetch: z.boolean().optional(),
+          userIdQuery: z.boolean().optional(),
+        })
+        .optional(),
+      titleConvo: z.boolean().optional(),
+      titleMethod: z.union([z.literal('completion'), z.literal('functions')]).optional(),
+      titleModel: z.string().optional(),
+      headers: z.record(z.any()).optional(),
+    }),
+  ),
+);
+
+export type TAgentsEndpoint = z.infer<typeof agentsEndpointSChema>;
+
 export const endpointSchema = baseEndpointSchema.merge(
   z.object({
     name: z.string().refine((value) => !eModelEndpointSchema.safeParse(value).success, {
@@ -448,6 +490,7 @@ export const configSchema = z.object({
       [EModelEndpoint.azureOpenAI]: azureEndpointSchema.optional(),
       [EModelEndpoint.azureAssistants]: assistantEndpointSchema.optional(),
       [EModelEndpoint.assistants]: assistantEndpointSchema.optional(),
+      [EModelEndpoint.agents]: agentsEndpointSChema.optional(),
       [EModelEndpoint.custom]: z.array(endpointSchema.partial()).optional(),
     })
     .strict()
@@ -492,6 +535,7 @@ export const defaultEndpoints: EModelEndpoint[] = [
   EModelEndpoint.assistants,
   EModelEndpoint.azureAssistants,
   EModelEndpoint.azureOpenAI,
+  EModelEndpoint.agents,
   EModelEndpoint.bingAI,
   EModelEndpoint.chatGPTBrowser,
   EModelEndpoint.gptPlugins,
@@ -503,6 +547,7 @@ export const defaultEndpoints: EModelEndpoint[] = [
 export const alternateName = {
   [EModelEndpoint.openAI]: 'OpenAI',
   [EModelEndpoint.assistants]: 'Assistants',
+  [EModelEndpoint.agents]: 'Agents',
   [EModelEndpoint.azureAssistants]: 'Azure Assistants',
   [EModelEndpoint.azureOpenAI]: 'Azure OpenAI',
   [EModelEndpoint.bingAI]: 'Bing',
@@ -534,6 +579,7 @@ const sharedOpenAIModels = [
 export const defaultModels = {
   [EModelEndpoint.azureAssistants]: sharedOpenAIModels,
   [EModelEndpoint.assistants]: ['gpt-4o-mini', 'gpt-4o', ...sharedOpenAIModels],
+  [EModelEndpoint.agents]: sharedOpenAIModels, // TODO: Add agent models (agentsModels)
   [EModelEndpoint.google]: [
     'gemini-pro',
     'gemini-pro-vision',
@@ -581,6 +627,7 @@ export const initialModelsConfig: TModelsConfig = {
   initial: [],
   [EModelEndpoint.openAI]: openAIModels,
   [EModelEndpoint.assistants]: openAIModels.filter(fitlerAssistantModels),
+  [EModelEndpoint.agents]: openAIModels, // TODO: Add agent models (agentsModels)
   [EModelEndpoint.gptPlugins]: openAIModels,
   [EModelEndpoint.azureOpenAI]: openAIModels,
   [EModelEndpoint.bingAI]: ['BingAI', 'Sydney'],
@@ -600,6 +647,7 @@ export const EndpointURLs: { [key in EModelEndpoint]: string } = {
   [EModelEndpoint.chatGPTBrowser]: `/api/ask/${EModelEndpoint.chatGPTBrowser}`,
   [EModelEndpoint.azureAssistants]: '/api/assistants/v1/chat',
   [EModelEndpoint.assistants]: '/api/assistants/v2/chat',
+  [EModelEndpoint.agents]: '/api/agents/chat',
 };
 
 export const modularEndpoints = new Set<EModelEndpoint | string>([
@@ -617,6 +665,7 @@ export const supportsBalanceCheck = {
   [EModelEndpoint.anthropic]: true,
   [EModelEndpoint.gptPlugins]: true,
   [EModelEndpoint.assistants]: true,
+  [EModelEndpoint.agents]: true,
   [EModelEndpoint.azureAssistants]: true,
   [EModelEndpoint.azureOpenAI]: true,
 };
@@ -978,6 +1027,8 @@ export enum LocalStorageKeys {
   FILES_TO_DELETE = 'filesToDelete',
   /** Prefix key for the last selected assistant ID by index */
   ASST_ID_PREFIX = 'assistant_id__',
+  /** Prefix key for the last selected agent ID by index */
+  AGENT_ID_PREFIX = 'agent_id__',
   /** Key for the last selected fork setting */
   FORK_SETTING = 'forkSetting',
   /** Key for remembering the last selected option, instead of manually selecting */
@@ -1033,3 +1084,9 @@ export enum SystemCategories {
   NO_CATEGORY = 'sys__no__category__sys',
   SHARED_PROMPTS = 'sys__shared__prompts__sys',
 }
+
+export const providerEndpointMap = {
+  [EModelEndpoint.openAI]: EModelEndpoint.openAI,
+  [EModelEndpoint.azureOpenAI]: EModelEndpoint.openAI,
+  [EModelEndpoint.anthropic]: EModelEndpoint.anthropic,
+};

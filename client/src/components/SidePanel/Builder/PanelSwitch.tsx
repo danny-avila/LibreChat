@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { defaultAssistantsVersion } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { Action, AssistantsEndpoint, TEndpointsConfig } from 'librechat-data-provider';
+import type { ActionsEndpoint } from '~/common';
 import { useGetActionsQuery } from '~/data-provider';
 import AssistantPanel from './AssistantPanel';
 import { useChatContext } from '~/Providers';
@@ -17,7 +18,7 @@ export default function PanelSwitch() {
   );
 
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
-  const { data: actions = [] } = useGetActionsQuery(conversation?.endpoint as AssistantsEndpoint);
+  const { data: actions = [] } = useGetActionsQuery(conversation?.endpoint as ActionsEndpoint);
 
   const assistantsConfig = useMemo(
     () => endpointsConfig?.[conversation?.endpoint ?? ''],

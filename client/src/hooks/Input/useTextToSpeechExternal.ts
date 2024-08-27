@@ -47,7 +47,7 @@ function useTextToSpeechExternal(messageId: string, isLast: boolean, index = 0) 
 
     playPromise().catch((error: Error) => {
       if (
-        error?.message &&
+        error.message &&
         error.message.includes('The play() request was interrupted by a call to pause()')
       ) {
         console.log('Play request was interrupted by a call to pause()');

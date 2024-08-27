@@ -2,13 +2,7 @@ import { useState } from 'react';
 import type { Action } from 'librechat-data-provider';
 import GearIcon from '~/components/svg/GearIcon';
 
-export default function AssistantAction({
-  action,
-  onClick,
-}: {
-  action: Action;
-  onClick: () => void;
-}) {
+export default function Action({ action, onClick }: { action: Action; onClick: () => void }) {
   const [isHovering, setIsHovering] = useState(false);
 
   return (

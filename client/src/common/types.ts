@@ -1,4 +1,5 @@
 import React from 'react';
+import { UseFormReturn } from 'react-hook-form';
 import { FileSources } from 'librechat-data-provider';
 import type * as InputNumberPrimitive from 'rc-input-number';
 import type { ColumnDef } from '@tanstack/react-table';
@@ -6,6 +7,7 @@ import type { SetterOrUpdater } from 'recoil';
 import type {
   TRole,
   TUser,
+  Agent,
   Action,
   TPreset,
   TPlugin,
@@ -18,6 +20,7 @@ import type {
   TConversation,
   TStartupConfig,
   EModelEndpoint,
+  TEndpointsConfig,
   AssistantsEndpoint,
   AuthorizationTypeEnum,
   TSetOption as SetOption,
@@ -53,6 +56,12 @@ export type AssistantListItem = {
   model: string;
 };
 
+export type AgentListItem = {
+  id: string;
+  name: string;
+  avatar: Agent['avatar'];
+};
+
 export type TPluginMap = Record<string, TPlugin>;
 
 export type GenericSetter<T> = (value: T | ((currentValue: T) => T)) => void;
@@ -79,9 +88,12 @@ export type IconMapProps = {
   context?: 'landing' | 'menu-item' | 'nav' | 'message';
   endpoint?: string | null;
   assistantName?: string;
+  agentName?: string;
   avatar?: string;
   size?: number;
 };
+
+export type AgentIconMapProps = IconMapProps & { agentName: string };
 
 export type NavLink = {
   title: string;
@@ -109,6 +121,7 @@ interface ColumnMeta {
 export enum Panel {
   builder = 'builder',
   actions = 'actions',
+  model = 'model',
 }
 
 export type FileSetter =
@@ -143,6 +156,24 @@ export type AssistantPanelProps = {
   setAction: React.Dispatch<React.SetStateAction<Action | undefined>>;
   setCurrentAssistantId: React.Dispatch<React.SetStateAction<string | undefined>>;
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
+};
+
+export type AgentPanelProps = {
+  index?: number;
+  agent_id?: string;
+  activePanel?: string;
+  action?: Action;
+  actions?: Action[];
+  setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
+  setAction: React.Dispatch<React.SetStateAction<Action | undefined>>;
+  endpointsConfig?: TEndpointsConfig;
+  setCurrentAgentId: React.Dispatch<React.SetStateAction<string | undefined>>;
+};
+
+export type AgentModelPanelProps = {
+  setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
+  providers: Option[];
+  models: Record<string, string[]>;
 };
 
 export type AugmentedColumnDef<TData, TValue> = ColumnDef<TData, TValue> & ColumnMeta;
@@ -366,6 +397,7 @@ export type IconProps = Pick<TMessage, 'isCreatedByUser' | 'model'> &
     endpoint?: EModelEndpoint | string | null;
     endpointType?: EModelEndpoint | null;
     assistantName?: string;
+    agentName?: string;
     error?: boolean;
   };
 
@@ -375,6 +407,7 @@ export type Option = Record<string, unknown> & {
 };
 
 export type OptionWithIcon = Option & { icon?: React.ReactNode };
+export type DropdownValueSetter = (value: string | Option | OptionWithIcon) => void;
 export type MentionOption = OptionWithIcon & {
   type: string;
   value: string;

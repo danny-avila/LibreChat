@@ -1,5 +1,7 @@
 import type { OpenAPIV3 } from 'openapi-types';
-import type { AssistantsEndpoint } from 'src/schemas';
+import type { AssistantsEndpoint, AgentProvider } from 'src/schemas';
+import type { ContentTypes } from './runs';
+import type { Agents } from './agents';
 import type { TFile } from './files';
 
 export type Schema = OpenAPIV3.SchemaObject & { description?: string };
@@ -66,6 +68,8 @@ export interface FileSearchResource {
   vector_store_ids?: Array<string>;
 }
 
+/* Assistant types */
+
 export type Assistant = {
   id: string;
   created_at: number;
@@ -131,6 +135,89 @@ export type File = {
   filename: string;
   object: string;
   purpose: 'fine-tune' | 'fine-tune-results' | 'assistants' | 'assistants_output';
+};
+
+/* Agent types */
+
+export type AgentModelParameters = {
+  temperature: number | null;
+  max_context_tokens: number | null;
+  max_output_tokens: number | null;
+  top_p: number | null;
+  frequency_penalty: number | null;
+  presence_penalty: number | null;
+};
+
+export type Agent = {
+  id: string;
+  name: string | null;
+  description: string | null;
+  created_at: number;
+  avatar: AgentAvatar | null;
+  file_ids: string[];
+  instructions: string | null;
+  tools?: string[];
+  tool_kwargs?: Record<string, unknown>;
+  tool_resources?: ToolResources;
+  metadata?: Record<string, unknown>;
+  provider: AgentProvider;
+  model: string | null;
+  model_parameters: AgentModelParameters;
+  object: string;
+};
+
+export type TAgentsMap = Record<string, Agent>;
+
+export type AgentCreateParams = {
+  name?: string | null;
+  description?: string | null;
+  avatar?: AgentAvatar | null;
+  file_ids?: string[];
+  instructions?: string | null;
+  tools?: Array<FunctionTool | string>;
+  provider: AgentProvider;
+  model: string | null;
+  model_parameters: AgentModelParameters;
+};
+
+export type AgentUpdateParams = {
+  name?: string | null;
+  description?: string | null;
+  avatar?: AgentAvatar | null;
+  file_ids?: string[];
+  instructions?: string | null;
+  tools?: Array<FunctionTool | string>;
+  tool_resources?: ToolResources;
+  provider?: AgentProvider;
+  model: string | null;
+  model_parameters: AgentModelParameters;
+};
+
+export type AgentListParams = {
+  limit?: number;
+  before?: string | null;
+  after?: string | null;
+  order?: 'asc' | 'desc';
+  provider?: AgentProvider;
+};
+
+export type AgentListResponse = {
+  object: string;
+  data: Agent[];
+  first_id: string;
+  last_id: string;
+  has_more: boolean;
+};
+
+export type AgentFile = {
+  file_id: string;
+  id?: string;
+  temp_file_id?: string;
+  bytes: number;
+  created_at: number;
+  filename: string;
+  object: string;
+  purpose: 'fine-tune' | 'fine-tune-results' | 'agents' | 'agents_output';
 };
 
 /**
@@ -245,25 +332,6 @@ export enum AnnotationTypes {
   FILE_PATH = 'file_path',
 }
 
-export enum ContentTypes {
-  TEXT = 'text',
-  TOOL_CALL = 'tool_call',
-  IMAGE_FILE = 'image_file',
-  ERROR = 'error',
-}
-
-export enum StepTypes {
-  TOOL_CALLS = 'tool_calls',
-  MESSAGE_CREATION = 'message_creation',
-}
-
-export enum ToolCallTypes {
-  FUNCTION = 'function',
-  RETRIEVAL = 'retrieval',
-  FILE_SEARCH = 'file_search',
-  CODE_INTERPRETER = 'code_interpreter',
-}
-
 export enum StepStatus {
   IN_PROGRESS = 'in_progress',
   CANCELLED = 'cancelled',
@@ -302,6 +370,7 @@ export type ContentPart = (
   | RetrievalToolCall
   | FileSearchToolCall
   | FunctionToolCall
+  | Agents.AgentToolCall
   | ImageFile
   | Text
 ) &
@@ -309,13 +378,20 @@ export type ContentPart = (
 
 export type TMessageContentParts =
   | { type: ContentTypes.ERROR; text: Text & PartMetadata }
-  | { type: ContentTypes.TEXT; text: Text & PartMetadata }
+  | { type: ContentTypes.TEXT; text: string | (Text & PartMetadata) }
   | {
       type: ContentTypes.TOOL_CALL;
-      tool_call: (CodeToolCall | RetrievalToolCall | FileSearchToolCall | FunctionToolCall) &
+      tool_call: (
+        | CodeToolCall
+        | RetrievalToolCall
+        | FileSearchToolCall
+        | FunctionToolCall
+        | Agents.AgentToolCall
+      ) &
         PartMetadata;
     }
-  | { type: ContentTypes.IMAGE_FILE; image_file: ImageFile & PartMetadata };
+  | { type: ContentTypes.IMAGE_FILE; image_file: ImageFile & PartMetadata }
+  | Agents.MessageContentImageUrl;
 
 export type StreamContentData = TMessageContentParts & {
   /** The index of the current content part */
@@ -375,14 +451,15 @@ export type ActionMetadata = {
   oauth_client_secret?: string;
 };
 
+/* Assistant types */
+
 export type Action = {
   action_id: string;
-  assistant_id: string;
   type?: string;
   settings?: Record<string, unknown>;
   metadata: ActionMetadata;
   version: number | string;
-};
+} & ({ assistant_id: string; agent_id?: never } | { assistant_id?: never; agent_id: string });
 
 export type AssistantAvatar = {
   filepath: string;
@@ -398,6 +475,13 @@ export type AssistantDocument = {
   actions?: string[];
   createdAt?: Date;
   updatedAt?: Date;
+};
+
+/* Agent types */
+
+export type AgentAvatar = {
+  filepath: string;
+  source: string;
 };
 
 export enum FilePurpose {

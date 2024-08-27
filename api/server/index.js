@@ -99,6 +99,7 @@ const startServer = async () => {
   app.use('/images/', validateImageRequest, routes.staticRoute);
   app.use('/api/share', routes.share);
   app.use('/api/roles', routes.roles);
+  app.use('/api/agents', routes.agents);
 
   app.use('/api/tags', routes.tags);
   app.use((req, res) => {

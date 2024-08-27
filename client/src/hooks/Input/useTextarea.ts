@@ -52,7 +52,7 @@ export default function useTextarea({
 
   const assistant =
     isAssistantsEndpoint(endpoint) && assistantMap?.[endpoint ?? '']?.[assistant_id ?? ''];
-  const assistantName = (assistant && assistant?.name) || '';
+  const assistantName = (assistant && assistant.name) || '';
 
   useEffect(() => {
     if (activePrompt && textAreaRef.current) {
@@ -172,7 +172,7 @@ export default function useTextarea({
         !enterToSend &&
         !isCtrlEnter &&
         textAreaRef.current &&
-        !isComposing?.current
+        !isComposing.current
       ) {
         e.preventDefault();
         insertTextAtCursor(textAreaRef.current, '\n');
@@ -180,7 +180,7 @@ export default function useTextarea({
         return;
       }
 
-      if ((isNonShiftEnter || isCtrlEnter) && !isComposing?.current) {
+      if ((isNonShiftEnter || isCtrlEnter) && !isComposing.current) {
         const globalAudio = document.getElementById(globalAudioId) as HTMLAudioElement;
         if (globalAudio) {
           console.log('Unmuting global audio');

@@ -1,5 +1,6 @@
 export { default as ToastProvider } from './ToastContext';
 export { default as AssistantsProvider } from './AssistantsContext';
+export { default as AgentsProvider } from './AgentsContext';
 export * from './ChatContext';
 export * from './ShareContext';
 export * from './ToastContext';
@@ -10,4 +11,6 @@ export * from './ChatFormContext';
 export * from './BookmarkContext';
 export * from './DashboardContext';
 export * from './AssistantsContext';
+export * from './AgentsContext';
 export * from './AssistantsMapContext';
+export * from './AgentsMapContext';

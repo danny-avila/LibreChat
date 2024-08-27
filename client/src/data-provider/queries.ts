@@ -1,6 +1,7 @@
 import {
   QueryKeys,
   dataService,
+  EModelEndpoint,
   defaultOrderQuery,
   defaultAssistantsVersion,
 } from 'librechat-data-provider';
@@ -24,6 +25,9 @@ import type {
   AssistantListParams,
   AssistantListResponse,
   AssistantDocument,
+  Agent,
+  AgentListParams,
+  AgentListResponse,
   TEndpointsConfig,
   TCheckUserKeyResponse,
   SharedLinkListParams,
@@ -217,7 +221,7 @@ export const useConversationTagsQuery = (
  * Hook for getting all available tools for Assistants
  */
 export const useAvailableToolsQuery = (
-  endpoint: t.AssistantsEndpoint,
+  endpoint: t.AssistantsEndpoint | EModelEndpoint.agents,
 ): QueryObserverResult<TPlugin[]> => {
   const queryClient = useQueryClient();
   const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
@@ -225,10 +229,11 @@ export const useAvailableToolsQuery = (
   const userProvidesKey = !!endpointsConfig?.[endpoint]?.userProvide;
   const keyProvided = userProvidesKey ? !!keyExpiry?.expiresAt : true;
   const enabled = !!endpointsConfig?.[endpoint] && keyProvided;
-  const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
+  const version: string | number | undefined =
+    endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
   return useQuery<TPlugin[]>(
     [QueryKeys.tools],
-    () => dataService.getAvailableTools(version, endpoint),
+    () => dataService.getAvailableTools(endpoint, version),
     {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
@@ -342,7 +347,7 @@ export const useGetAssistantByIdQuery = (
  * Hook for retrieving user's saved Assistant Actions
  */
 export const useGetActionsQuery = <TData = Action[]>(
-  endpoint: t.AssistantsEndpoint,
+  endpoint: t.AssistantsEndpoint | EModelEndpoint.agents,
   config?: UseQueryOptions<Action[], unknown, TData>,
 ): QueryObserverResult<TData> => {
   const queryClient = useQueryClient();
@@ -350,24 +355,18 @@ export const useGetActionsQuery = <TData = Action[]>(
   const keyExpiry = queryClient.getQueryData<TCheckUserKeyResponse>([QueryKeys.name, endpoint]);
   const userProvidesKey = !!endpointsConfig?.[endpoint]?.userProvide;
   const keyProvided = userProvidesKey ? !!keyExpiry?.expiresAt : true;
-  const enabled = !!endpointsConfig?.[endpoint] && keyProvided;
-  const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
-  return useQuery<Action[], unknown, TData>(
-    [QueryKeys.actions],
-    () =>
-      dataService.getActions({
-        endpoint,
-        version,
-      }),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      ...config,
-      enabled: config?.enabled !== undefined ? config?.enabled && enabled : enabled,
-    },
-  );
+  const enabled =
+    (!!endpointsConfig?.[endpoint] && keyProvided) || endpoint === EModelEndpoint.agents;
+
+  return useQuery<Action[], unknown, TData>([QueryKeys.actions], () => dataService.getActions(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    ...config,
+    enabled: config?.enabled !== undefined ? config?.enabled && enabled : enabled,
+  });
 };
+
 /**
  * Hook for retrieving user's saved Assistant Documents (metadata saved to Database)
  */
@@ -432,6 +431,78 @@ export const useFileDownload = (userId?: string, file_id?: string): QueryObserve
   );
 };
 
+/**
+ * AGENTS
+ */
+
+/**
+ * Hook for getting all available tools for A
+ */
+export const useAvailableAgentToolsQuery = (): QueryObserverResult<TPlugin[]> => {
+  const queryClient = useQueryClient();
+  const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
+
+  const enabled = !!endpointsConfig?.[EModelEndpoint.agents];
+  return useQuery<TPlugin[]>([QueryKeys.tools], () => dataService.getAvailableAgentTools(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    enabled,
+  });
+};
+
+/**
+ * Hook for listing all Agents, with optional parameters provided for pagination and sorting
+ */
+export const useListAgentsQuery = <TData = AgentListResponse>(
+  params: AgentListParams = defaultOrderQuery,
+  config?: UseQueryOptions<AgentListResponse, unknown, TData>,
+): QueryObserverResult<TData> => {
+  const queryClient = useQueryClient();
+  const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
+
+  const enabled = !!endpointsConfig?.[EModelEndpoint.agents];
+  return useQuery<AgentListResponse, unknown, TData>(
+    [QueryKeys.agents, params],
+    () => dataService.listAgents(params),
+    {
+      // Example selector to sort them by created_at
+      // select: (res) => {
+      //   return res.data.sort((a, b) => a.created_at - b.created_at);
+      // },
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: false,
+      ...config,
+      enabled: config?.enabled !== undefined ? config?.enabled && enabled : enabled,
+    },
+  );
+};
+
+/**
+ * Hook for retrieving details about a single agent
+ */
+export const useGetAgentByIdQuery = (
+  agent_id: string,
+  config?: UseQueryOptions<Agent>,
+): QueryObserverResult<Agent> => {
+  return useQuery<Agent>(
+    [QueryKeys.agent, agent_id],
+    () =>
+      dataService.getAgentById({
+        agent_id,
+      }),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: false,
+      ...config,
+    },
+  );
+};
+
 /** STT/TTS */
 
 /* Text to speech voices */
@@ -440,7 +511,7 @@ export const useVoicesQuery = (): UseQueryResult<t.VoiceResponse> => {
 };
 
 /* Custom config speech */
-export const useCustomConfigSpeechQuery = (): UseQueryResult<t.getCustomConfigSpeechResponse> => {
+export const useCustomConfigSpeechQuery = (): UseQueryResult<t.TCustomConfigSpeechResponse> => {
   return useQuery([QueryKeys.customConfigSpeech], () => dataService.getCustomConfigSpeech());
 };
 

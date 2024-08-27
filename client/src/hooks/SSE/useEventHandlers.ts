@@ -18,6 +18,7 @@ import type {
 } from 'librechat-data-provider';
 import type { SetterOrUpdater, Resetter } from 'recoil';
 import type { TResData, ConvoGenerator } from '~/common';
+import type { TGenTitleMutation } from '~/data-provider';
 import {
   scrollToEnd,
   addConversation,
@@ -26,7 +27,7 @@ import {
   getConversationById,
 } from '~/utils';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
-import type { TGenTitleMutation } from '~/data-provider';
+import useStepHandler from '~/hooks/SSE/useStepHandler';
 import { useAuthContext } from '~/hooks/AuthContext';
 
 type TSyncData = {
@@ -69,6 +70,7 @@ export default function useEventHandlers({
   const { token } = useAuthContext();
 
   const contentHandler = useContentHandler({ setMessages, getMessages });
+  const stepHandler = useStepHandler({ setMessages, getMessages });
 
   const messageHandler = useCallback(
     (data: string, submission: TSubmission) => {
@@ -136,7 +138,7 @@ export default function useEventHandlers({
       }
 
       // refresh title
-      if (genTitle && isNewConvo && requestMessage?.parentMessageId === Constants.NO_PARENT) {
+      if (genTitle && isNewConvo && requestMessage.parentMessageId === Constants.NO_PARENT) {
         setTimeout(() => {
           genTitle.mutate({ conversationId: convoUpdate.conversationId as string });
         }, 2500);
@@ -238,8 +240,8 @@ export default function useEventHandlers({
       const { messages, userMessage, isRegenerate = false } = submission;
       const initialResponse = {
         ...submission.initialResponse,
-        parentMessageId: userMessage?.messageId,
-        messageId: userMessage?.messageId + '_',
+        parentMessageId: userMessage.messageId,
+        messageId: userMessage.messageId + '_',
       };
       if (isRegenerate) {
         setMessages([...messages, initialResponse]);
@@ -253,7 +255,7 @@ export default function useEventHandlers({
       if (setConversation && !isAddedRequest) {
         setConversation((prevState) => {
           let title = prevState?.title;
-          const parentId = isRegenerate ? userMessage?.overrideParentMessageId : parentMessageId;
+          const parentId = isRegenerate ? userMessage.overrideParentMessageId : parentMessageId;
           if (parentId !== Constants.NO_PARENT && title?.toLowerCase()?.includes('new chat')) {
             const convos = queryClient.getQueryData<ConversationData>([QueryKeys.allConversations]);
             const cachedConvo = getConversationById(convos, conversationId);
@@ -304,7 +306,7 @@ export default function useEventHandlers({
       const { messages, conversation: submissionConvo, isRegenerate = false } = submission;
 
       setShowStopButton(false);
-      setCompleted((prev) => new Set(prev.add(submission?.initialResponse?.messageId)));
+      setCompleted((prev) => new Set(prev.add(submission.initialResponse.messageId)));
 
       const currentMessages = getMessages();
       // Early return if messages are empty; i.e., the user navigated away
@@ -379,7 +381,7 @@ export default function useEventHandlers({
 
       setCompleted((prev) => new Set(prev.add(initialResponse.messageId)));
 
-      const conversationId = userMessage?.conversationId ?? submission?.conversationId;
+      const conversationId = userMessage.conversationId ?? submission.conversationId;
 
       const parseErrorResponse = (data: TResData | Partial<TMessage>) => {
         const metadata = data['responseMessage'] ?? data;
@@ -387,7 +389,7 @@ export default function useEventHandlers({
           ...initialResponse,
           ...metadata,
           error: true,
-          parentMessageId: userMessage?.messageId,
+          parentMessageId: userMessage.messageId,
         };
 
         if (!errorMessage.messageId) {
@@ -408,7 +410,7 @@ export default function useEventHandlers({
         if (newConversation) {
           newConversation({
             template: { conversationId: convoId },
-            preset: tPresetSchema.parse(submission?.conversation),
+            preset: tPresetSchema.parse(submission.conversation),
           });
         }
         setIsSubmitting(false);
@@ -422,7 +424,7 @@ export default function useEventHandlers({
         if (newConversation) {
           newConversation({
             template: { conversationId: convoId },
-            preset: tPresetSchema.parse(submission?.conversation),
+            preset: tPresetSchema.parse(submission.conversation),
           });
         }
         setIsSubmitting(false);
@@ -438,14 +440,14 @@ export default function useEventHandlers({
       const errorResponse = tMessageSchema.parse({
         ...data,
         error: true,
-        parentMessageId: userMessage?.messageId,
+        parentMessageId: userMessage.messageId,
       });
 
       setMessages([...messages, userMessage, errorResponse]);
       if (data.conversationId && paramId === 'new' && newConversation) {
         newConversation({
           template: { conversationId: data.conversationId },
-          preset: tPresetSchema.parse(submission?.conversation),
+          preset: tPresetSchema.parse(submission.conversation),
         });
       }
 
@@ -459,7 +461,7 @@ export default function useEventHandlers({
     async (conversationId = '', submission: TSubmission, messages?: TMessage[]) => {
       const runAbortKey = `${conversationId}:${messages?.[messages.length - 1]?.messageId ?? ''}`;
       console.log({ conversationId, submission, messages, runAbortKey });
-      const { endpoint: _endpoint, endpointType } = submission?.conversation || {};
+      const { endpoint: _endpoint, endpointType } = submission.conversation || {};
       const endpoint = endpointType ?? _endpoint;
       try {
         const response = await fetch(`${EndpointURLs[endpoint ?? '']}/abort`, {
@@ -513,7 +515,7 @@ export default function useEventHandlers({
         console.error(error);
         const convoId = conversationId ?? v4();
         const text =
-          submission.initialResponse?.text?.length > 45 ? submission.initialResponse?.text : '';
+          submission.initialResponse.text.length > 45 ? submission.initialResponse.text : '';
         const errorMessage = {
           ...submission,
           ...submission.initialResponse,
@@ -526,7 +528,7 @@ export default function useEventHandlers({
         if (newConversation) {
           newConversation({
             template: { conversationId: convoId },
-            preset: tPresetSchema.parse(submission?.conversation),
+            preset: tPresetSchema.parse(submission.conversation),
           });
         }
         setIsSubmitting(false);
@@ -536,6 +538,7 @@ export default function useEventHandlers({
   );
 
   return {
+    stepHandler,
     syncHandler,
     finalHandler,
     errorHandler,

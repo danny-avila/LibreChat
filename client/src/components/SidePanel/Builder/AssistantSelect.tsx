@@ -22,8 +22,8 @@ import type {
 import SelectDropDown from '~/components/ui/SelectDropDown';
 import { useListAssistantsQuery } from '~/data-provider';
 import { useLocalize, useLocalStorage } from '~/hooks';
+import { cn, createDropdownSetter } from '~/utils';
 import { useFileMapContext } from '~/Providers';
-import { cn } from '~/utils';
 
 const keys = new Set(['name', 'id', 'description', 'instructions', 'model']);
 
@@ -202,7 +202,7 @@ export default function AssistantSelect({
   return (
     <SelectDropDown
       value={!value ? createAssistant : value}
-      setValue={onSelect}
+      setValue={createDropdownSetter(onSelect)}
       availableValues={
         assistants.data ?? [
           {

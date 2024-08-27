@@ -21,12 +21,12 @@ import CapabilitiesForm from './CapabilitiesForm';
 import { SelectDropDown } from '~/components/ui';
 import AssistantAvatar from './AssistantAvatar';
 import AssistantSelect from './AssistantSelect';
-import AssistantAction from './AssistantAction';
 import ContextButton from './ContextButton';
 import AssistantTool from './AssistantTool';
 import { Spinner } from '~/components/svg';
 import Knowledge from './Knowledge';
 import { Panel } from '~/common';
+import Action from './Action';
 
 const labelClass = 'mb-2 text-token-text-primary block font-medium';
 const inputClass = cn(
@@ -310,7 +310,7 @@ export default function AssistantPanel({
                   {...field}
                   value={field.value ?? ''}
                   {...{ max: 32768 }}
-                  className={cn(inputClass, 'min-h-[100px] resize-none resize-y')}
+                  className={cn(inputClass, 'min-h-[100px] resize-y')}
                   id="instructions"
                   placeholder={localize('com_assistants_instructions_placeholder')}
                   rows={3}
@@ -382,9 +382,7 @@ export default function AssistantPanel({
               {actions
                 .filter((action) => action.assistant_id === assistant_id)
                 .map((action, i) => {
-                  return (
-                    <AssistantAction key={i} action={action} onClick={() => setAction(action)} />
-                  );
+                  return <Action key={i} action={action} onClick={() => setAction(action)} />;
                 })}
               <div className="flex space-x-2">
                 {toolsEnabled && (
@@ -442,7 +440,7 @@ export default function AssistantPanel({
         <ToolSelectDialog
           isOpen={showToolDialog}
           setIsOpen={setShowToolDialog}
-          assistant_id={assistant_id}
+          toolsFormKey="functions"
           endpoint={endpoint}
         />
       </form>

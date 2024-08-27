@@ -28,6 +28,12 @@ class BaseClient {
     this.userMessagePromise;
     /** @type {ClientDatabaseSavePromise} */
     this.responsePromise;
+    /** @type {string} */
+    this.user;
+    /** @type {string} */
+    this.conversationId;
+    /** @type {string} */
+    this.responseMessageId;
   }
 
   setOptions() {
@@ -142,6 +148,8 @@ class BaseClient {
       head = responseMessageId;
       this.currentMessages[this.currentMessages.length - 1].messageId = head;
     }
+
+    this.responseMessageId = responseMessageId;
 
     return {
       ...opts,
@@ -329,7 +337,12 @@ class BaseClient {
     };
   }
 
-  async handleContextStrategy({ instructions, orderedMessages, formattedMessages }) {
+  async handleContextStrategy({
+    instructions,
+    orderedMessages,
+    formattedMessages,
+    buildTokenMap = true,
+  }) {
     let _instructions;
     let tokenCount;
 
@@ -398,19 +411,23 @@ class BaseClient {
       maxContextTokens: this.maxContextTokens,
     });
 
-    let tokenCountMap = orderedWithInstructions.reduce((map, message, index) => {
-      const { messageId } = message;
-      if (!messageId) {
+    /** @type {Record<string, number> | undefined} */
+    let tokenCountMap;
+    if (buildTokenMap) {
+      tokenCountMap = orderedWithInstructions.reduce((map, message, index) => {
+        const { messageId } = message;
+        if (!messageId) {
+          return map;
+        }
+
+        if (shouldSummarize && index === summaryIndex && !usePrevSummary) {
+          map.summaryMessage = { ...summaryMessage, messageId, tokenCount: summaryTokenCount };
+        }
+
+        map[messageId] = orderedWithInstructions[index].tokenCount;
         return map;
-      }
-
-      if (shouldSummarize && index === summaryIndex && !usePrevSummary) {
-        map.summaryMessage = { ...summaryMessage, messageId, tokenCount: summaryTokenCount };
-      }
-
-      map[messageId] = orderedWithInstructions[index].tokenCount;
-      return map;
-    }, {});
+      }, {});
+    }
 
     const promptTokens = this.maxContextTokens - remainingContextTokens;
 
@@ -523,12 +540,18 @@ class BaseClient {
       isEdited,
       model: this.modelOptions.model,
       sender: this.sender,
-      text: addSpaceIfNeeded(generation) + completion,
       promptTokens,
       iconURL: this.options.iconURL,
       endpoint: this.options.endpoint,
       ...(this.metadata ?? {}),
     };
+
+    if (typeof completion === 'string') {
+      responseMessage.text = addSpaceIfNeeded(generation) + completion;
+    } else if (completion) {
+      responseMessage.text = '';
+      responseMessage.content = completion;
+    }
 
     if (
       tokenCountMap &&
@@ -767,8 +790,12 @@ class BaseClient {
 
           processValue(nestedValue);
         }
-      } else {
+      } else if (typeof value === 'string') {
         numTokens += this.getTokenCount(value);
+      } else if (typeof value === 'number') {
+        numTokens += this.getTokenCount(value.toString());
+      } else if (typeof value === 'boolean') {
+        numTokens += this.getTokenCount(value.toString());
       }
     };
 

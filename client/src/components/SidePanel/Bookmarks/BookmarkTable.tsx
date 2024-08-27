@@ -16,7 +16,7 @@ const BookmarkTable = () => {
   useEffect(() => {
     setRows(
       bookmarks
-        ?.map((item) => ({ id: item.tag, ...item }))
+        .map((item) => ({ id: item.tag, ...item }))
         .sort((a, b) => a.position - b.position) || [],
     );
   }, [bookmarks]);

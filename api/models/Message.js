@@ -35,82 +35,34 @@ const idSchema = z.string().uuid();
  * @throws {Error} If there is an error in saving the message.
  */
 async function saveMessage(req, params, metadata) {
+  if (!req?.user?.id) {
+    throw new Error('User not authenticated');
+  }
+
+  const validConvoId = idSchema.safeParse(params.conversationId);
+  if (!validConvoId.success) {
+    logger.warn(`Invalid conversation ID: ${params.conversationId}`);
+    logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
+    logger.info(`---Invalid conversation ID Params: ${JSON.stringify(params, null, 2)}`);
+    return;
+  }
+
   try {
-    if (!req || !req.user || !req.user.id) {
-      throw new Error('User not authenticated');
-    }
-
-    const {
-      text,
-      error,
-      model,
-      files,
-      plugin,
-      sender,
-      plugins,
-      iconURL,
-      endpoint,
-      isEdited,
-      messageId,
-      unfinished,
-      tokenCount,
-      newMessageId,
-      finish_reason,
-      conversationId,
-      parentMessageId,
-      isCreatedByUser,
-    } = params;
-
-    const validConvoId = idSchema.safeParse(conversationId);
-    if (!validConvoId.success) {
-      logger.warn(`Invalid conversation ID: ${conversationId}`);
-      if (metadata && metadata?.context) {
-        logger.info(`---\`saveMessage\` context: ${metadata.context}`);
-      }
-
-      logger.info(`---Invalid conversation ID Params:
-
-${JSON.stringify(params, null, 2)}
-
-`);
-      return;
-    }
-
     const update = {
+      ...params,
       user: req.user.id,
-      iconURL,
-      endpoint,
-      messageId: newMessageId || messageId,
-      conversationId,
-      parentMessageId,
-      sender,
-      text,
-      isCreatedByUser,
-      isEdited,
-      finish_reason,
-      error,
-      unfinished,
-      tokenCount,
-      plugin,
-      plugins,
-      model,
+      messageId: params.newMessageId || params.messageId,
     };
-
-    if (files) {
-      update.files = files;
-    }
-
-    const message = await Message.findOneAndUpdate({ messageId, user: req.user.id }, update, {
-      upsert: true,
-      new: true,
-    });
+    const message = await Message.findOneAndUpdate(
+      { messageId: params.messageId, user: req.user.id },
+      update,
+      { upsert: true, new: true },
+    );
 
     return message.toObject();
   } catch (err) {
     logger.error('Error saving message:', err);
-    if (metadata && metadata?.context) {
-      logger.info(`---\`saveMessage\` context: ${metadata.context}`);
-    }
+    logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
     throw err;
   }
 }

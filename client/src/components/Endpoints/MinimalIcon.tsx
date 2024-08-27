@@ -1,4 +1,5 @@
 import { EModelEndpoint } from 'librechat-data-provider';
+import { BrainCircuit } from 'lucide-react';
 import UnknownIcon from '~/components/Chat/Menus/Endpoints/UnknownIcon';
 import {
   AzureMinimalIcon,
@@ -46,6 +47,7 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
     [EModelEndpoint.chatGPTBrowser]: { icon: <LightningIcon />, name: 'ChatGPT' },
     [EModelEndpoint.assistants]: { icon: <Sparkles className="icon-sm" />, name: 'Assistant' },
     [EModelEndpoint.azureAssistants]: { icon: <Sparkles className="icon-sm" />, name: 'Assistant' },
+    [EModelEndpoint.agents]: { icon: <BrainCircuit className="icon-sm" />, name: 'Agent' },
     default: {
       icon: (
         <UnknownIcon

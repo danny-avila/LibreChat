@@ -21,13 +21,22 @@ export const getLatestText = (message?: TMessage | null, includeIndex?: boolean)
   if (message.content?.length) {
     for (let i = message.content.length - 1; i >= 0; i--) {
       const part = message.content[i];
-      if (part.type === ContentTypes.TEXT && part[ContentTypes.TEXT]?.value?.length > 0) {
-        const text = part[ContentTypes.TEXT].value;
+      if (!part) {
+        continue;
+      }
+      if (part.type && part.type === ContentTypes.TEXT && part[ContentTypes.TEXT]) {
+        const textPart = part[ContentTypes.TEXT];
+        const text = typeof textPart === 'string' ? textPart : textPart.value;
+        if (!text) {
+          continue;
+        }
         if (includeIndex) {
           return `${text}-${i}`;
         } else {
           return text;
         }
+      } else {
+        continue;
       }
     }
   }

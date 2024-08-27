@@ -5,6 +5,7 @@ import {
   /* @ts-ignore */
   SSE,
   createPayload,
+  isAgentsEndpoint,
   removeNullishValues,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
@@ -50,6 +51,7 @@ export default function useSSE(
   } = chatHelpers;
 
   const {
+    stepHandler,
     syncHandler,
     finalHandler,
     errorHandler,
@@ -84,7 +86,7 @@ export default function useSSE(
 
     const payloadData = createPayload(submission);
     let { payload } = payloadData;
-    if (isAssistantsEndpoint(payload.endpoint)) {
+    if (isAssistantsEndpoint(payload.endpoint) || isAgentsEndpoint(payload.endpoint)) {
       payload = removeNullishValues(payload);
     }
 
@@ -103,8 +105,8 @@ export default function useSSE(
         finalHandler(data, { ...submission, plugins });
         startupConfig?.checkBalance && balanceQuery.refetch();
         console.log('final', data);
-      }
-      if (data.created) {
+        return;
+      } else if (data.created) {
         const runId = v4();
         setActiveRunId(runId);
         userMessage = {
@@ -114,6 +116,8 @@ export default function useSSE(
         };
 
         createdHandler(data, { ...submission, userMessage });
+      } else if (data.event) {
+        stepHandler(data);
       } else if (data.sync) {
         const runId = v4();
         setActiveRunId(runId);

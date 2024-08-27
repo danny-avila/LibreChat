@@ -79,6 +79,9 @@ const conversationByIndex = atomFamily<TConversation | null, string | number>({
             newValue.assistant_id,
           );
         }
+        if (newValue?.agent_id) {
+          localStorage.setItem(`${LocalStorageKeys.AGENT_ID_PREFIX}${index}`, newValue.agent_id);
+        }
         if (newValue?.spec) {
           localStorage.setItem(LocalStorageKeys.LAST_SPEC, newValue.spec);
         }

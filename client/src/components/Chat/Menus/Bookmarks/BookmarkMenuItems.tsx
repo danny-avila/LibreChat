@@ -16,7 +16,7 @@ export const BookmarkMenuItems: FC<{
   const { showToast } = useToastContext();
   const localize = useLocalize();
 
-  const conversationId = conversation?.conversationId ?? '';
+  const conversationId = conversation.conversationId ?? '';
   const onSuccess = useBookmarkSuccess(conversationId);
 
   const { mutateAsync } = useTagConversationMutation(conversationId);

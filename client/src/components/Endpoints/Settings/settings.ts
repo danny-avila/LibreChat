@@ -10,6 +10,7 @@ import OpenAISettings from './OpenAI';
 const settings: { [key: string]: FC<TModelSelectProps> } = {
   [EModelEndpoint.assistants]: AssistantsSettings,
   [EModelEndpoint.azureAssistants]: AssistantsSettings,
+  [EModelEndpoint.agents]: OpenAISettings,
   [EModelEndpoint.openAI]: OpenAISettings,
   [EModelEndpoint.custom]: OpenAISettings,
   [EModelEndpoint.azureOpenAI]: OpenAISettings,

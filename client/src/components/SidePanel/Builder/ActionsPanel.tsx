@@ -5,6 +5,7 @@ import {
   AuthorizationTypeEnum,
   TokenExchangeMethodEnum,
 } from 'librechat-data-provider';
+import { ChevronLeft } from 'lucide-react';
 import type { AssistantPanelProps, ActionAuthForm } from '~/common';
 import { useAssistantsMapContext, useToastContext } from '~/Providers';
 import { Dialog, DialogTrigger, OGDialog, OGDialogTrigger, Label } from '~/components/ui';
@@ -101,22 +102,7 @@ export default function ActionsPanel({
                 }}
               >
                 <div className="flex w-full items-center justify-center gap-2">
-                  <svg
-                    width="24"
-                    height="24"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="icon-md"
-                  >
-                    <path
-                      d="M15 5L8 12L15 19"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    ></path>
-                  </svg>
+                  <ChevronLeft />
                 </div>
               </button>
             </div>

@@ -106,7 +106,7 @@ const ChatForm = ({ index = 0 }) => {
     () =>
       isAssistantsEndpoint(conversation?.endpoint) &&
       (!conversation?.assistant_id ||
-        !assistantMap[conversation.endpoint ?? ''][conversation.assistant_id ?? '']),
+        !assistantMap?.[conversation.endpoint ?? ''][conversation.assistant_id ?? '']),
     [conversation?.assistant_id, conversation?.endpoint, assistantMap],
   );
   const disableInputs = useMemo(
@@ -162,6 +162,7 @@ const ChatForm = ({ index = 0 }) => {
             {endpoint && (
               <TextareaAutosize
                 {...registerProps}
+                // eslint-disable-next-line jsx-a11y/no-autofocus
                 autoFocus
                 ref={(e) => {
                   ref(e);
