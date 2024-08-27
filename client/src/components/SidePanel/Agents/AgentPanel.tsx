@@ -99,8 +99,6 @@ export default function AgentPanel({
 
   const onSubmit = useCallback(
     (data: AgentForm) => {
-      console.log(data);
-
       const tools = data.tools ?? [];
 
       if (data.code_interpreter) {

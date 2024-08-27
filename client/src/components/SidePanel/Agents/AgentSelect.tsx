@@ -61,12 +61,9 @@ export default function AgentSelect({
         tools: update.tools ?? [],
       };
 
-      console.log('FullAgent', fullAgent);
-
       Object.entries(fullAgent).forEach(([name, value]) => {
         if (name === 'model_parameters') {
           formValues[name] = value;
-          console.log('ModelPara', value);
           return;
         }
 
