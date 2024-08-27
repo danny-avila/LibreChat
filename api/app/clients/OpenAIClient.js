@@ -401,6 +401,7 @@ class OpenAIClient extends BaseClient {
 
   getSaveOptions() {
     return {
+      artifacts: this.options.artifacts,
       maxContextTokens: this.options.maxContextTokens,
       chatGptLabel: this.options.chatGptLabel,
       promptPrefix: this.options.promptPrefix,
@@ -463,6 +464,9 @@ class OpenAIClient extends BaseClient {
     let promptTokens;
 
     promptPrefix = (promptPrefix || this.options.promptPrefix || '').trim();
+    if (typeof this.options.artifactsPrompt === 'string' && this.options.artifactsPrompt) {
+      promptPrefix = `${promptPrefix ?? ''}\n${this.options.artifactsPrompt}`.trim();
+    }
 
     if (this.options.attachments) {
       const attachments = await this.options.attachments;

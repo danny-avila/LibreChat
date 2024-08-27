@@ -2,6 +2,8 @@
 export * from './azure';
 export * from './config';
 export * from './file-config';
+/* artifacts  */
+export * from './artifacts';
 /* schema helpers  */
 export * from './parsers';
 /* custom/dynamic configurations  */
