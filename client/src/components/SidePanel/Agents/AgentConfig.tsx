@@ -79,7 +79,7 @@ export default function AgentConfig({
       const error = err as Error;
       showToast({
         message: `${localize('com_agents_update_error')}${
-          error?.message ? ` ${localize('com_ui_error')}: ${error?.message}` : ''
+          error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
         }`,
         status: 'error',
       });
@@ -99,7 +99,7 @@ export default function AgentConfig({
       const error = err as Error;
       showToast({
         message: `${localize('com_agents_create_error')}${
-          error?.message ? ` ${localize('com_ui_error')}: ${error?.message}` : ''
+          error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
         }`,
         status: 'error',
       });
@@ -144,6 +144,18 @@ export default function AgentConfig({
     });
     Icon = icons[iconKey];
   }
+
+  const renderSaveButton = () => {
+    if (create.isLoading || update.isLoading) {
+      return <Spinner className="icon-md" aria-hidden="true" />;
+    }
+
+    if (agent_id) {
+      return localize('com_ui_save');
+    }
+
+    return localize('com_ui_create');
+  };
 
   return (
     <>
@@ -339,13 +351,7 @@ export default function AgentConfig({
             disabled={create.isLoading || update.isLoading}
             aria-busy={create.isLoading || update.isLoading}
           >
-            {create.isLoading || update.isLoading ? (
-              <Spinner className="icon-md" aria-hidden="true" />
-            ) : agent_id ? (
-              localize('com_ui_save')
-            ) : (
-              localize('com_ui_create')
-            )}
+            {renderSaveButton()}
           </button>
         </div>
       </div>
