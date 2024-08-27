@@ -84,12 +84,7 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
         )}
       >
         {!isCreatedByUser ? (
-          <Markdown
-            content={text}
-            isEdited={message.isEdited}
-            showCursor={showCursorState}
-            isLatestMessage={isLatestMessage}
-          />
+          <Markdown content={text} showCursor={showCursorState} isLatestMessage={isLatestMessage} />
         ) : (
           <>{text}</>
         )}
