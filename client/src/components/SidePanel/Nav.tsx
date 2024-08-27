@@ -33,14 +33,7 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                     <TooltipAnchor
                       className="flex items-center gap-4"
                       description={localize(link.title)}
-                      render={
-                        <>
-                          {localize(link.title)}
-                          {link.label && (
-                            <span className="text-muted-foreground ml-auto">{link.label}</span>
-                          )}
-                        </>
-                      }
+                      side="left"
                     >
                       <button
                         className={cn(
@@ -48,7 +41,7 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                           removeFocusOutlines,
                           'h-9 w-9',
                           variant === 'default'
-                            ? 'dark:bg-muted dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-white'
+                            ? 'dark:bg-muted dark:text-muted-foreground dark:hover:bg-muted bg-surface-terniary dark:hover:text-white'
                             : '',
                         )}
                         onClick={(e) => {
