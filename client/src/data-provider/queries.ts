@@ -20,6 +20,8 @@ import type {
   FileConfig,
   ConversationListResponse,
   ConversationListParams,
+  GetUsersResponse,
+  GetUsersParams,
   Assistant,
   AssistantListParams,
   AssistantListResponse,
@@ -563,13 +565,6 @@ export const useGetRandomPrompts = (
   );
 };
 
-export const useGetAccounts = <TData = TFile[] | boolean>(
-  config?: UseQueryOptions<TFile[], unknown, TData>,
-): QueryObserverResult<TData, unknown> => {
-  return useQuery<TFile[], unknown, TData>([QueryKeys.account], () => dataService.getAccounts(), {
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
-    ...config,
-  });
+export const useGerUsersQuery = (params?: GetUsersParams): UseQueryResult<unknown> => {
+  return useQuery([QueryKeys.users], () => dataService.getUsers(params));
 };

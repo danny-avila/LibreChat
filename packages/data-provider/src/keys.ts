@@ -8,6 +8,7 @@ export enum QueryKeys {
   conversation = 'conversation',
   searchEnabled = 'searchEnabled',
   user = 'user',
+  users = 'users',
   name = 'name', // user key name
   models = 'models',
   balance = 'balance',
@@ -21,7 +22,6 @@ export enum QueryKeys {
   assistant = 'assistant',
   endpointsConfigOverride = 'endpointsConfigOverride',
   files = 'files',
-  account = 'account',
   fileConfig = 'fileConfig',
   tools = 'tools',
   actions = 'actions',
@@ -55,5 +55,5 @@ export enum MutationKeys {
   deleteAction = 'deleteAction',
   deleteUser = 'deleteUser',
   updateRole = 'updateRole',
-  getAccounts = 'getAccounts',
+  getAllUsers = 'getAllUsers',
 }

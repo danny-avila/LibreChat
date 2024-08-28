@@ -72,3 +72,18 @@ export type AllPromptGroupsFilterRequest = {
 export type AllPromptGroupsResponse = t.TPromptGroup[];
 
 export type ConversationTagsResponse = TConversationTag[];
+
+
+// Parameters for listing users (e.g., for pagination)
+export type GetUsersParams = {
+  limit?: number;
+  pageNumber: string;
+};
+
+// Type for the response from the getUsers list API
+export type GetUsersResponse = {
+  list: t.TUser[];
+  pageNumber: string;
+  pageSize: string | number;
+  pages: string | number;
+};

@@ -153,6 +153,29 @@ const comparePassword = async (user, candidatePassword) => {
   });
 };
 
+/**
+ * get users.
+ *
+ * @param {string} pageNumber
+ * @param {string} pageSize
+ * @returns {Promise<MongoUser[]>} .
+ */
+const getUsersByPage = async function (pageNumber = 1, pageSize = 25) {
+  try {
+    const totalUser = (await User.countDocuments({})) || 1;
+    const totalPages = Math.ceil(totalUser / pageSize);
+    const users = await User.find({})
+      .sort({ updatedAt: -1 })
+      .skip((pageNumber - 1) * pageSize)
+      .limit(pageSize)
+      .lean();
+    return { list: users, pages: totalPages, pageNumber, pageSize };
+  } catch (error) {
+    logger.error('[getUsersByPage] Error getting users', error);
+    return { message: 'Error getting users' };
+  }
+};
+
 module.exports = {
   comparePassword,
   deleteUserById,
@@ -162,4 +185,5 @@ module.exports = {
   createUser,
   updateUser,
   findUser,
+  getUsersByPage,
 };

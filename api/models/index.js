@@ -7,6 +7,7 @@ const {
   createUser,
   countUsers,
   findUser,
+  getUsersByPage,
 } = require('./userMethods');
 const {
   findFileById,
@@ -42,6 +43,7 @@ module.exports = {
   createUser,
   countUsers,
   findUser,
+  getUsersByPage,
 
   findFileById,
   createFile,

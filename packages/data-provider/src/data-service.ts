@@ -29,8 +29,8 @@ export function deleteUser(): Promise<s.TPreset> {
   return request.delete(endpoints.deleteUser());
 }
 
-export function getAllUsers(): Promise<r.TRole> {
-  return request.get(endpoints.allUser());
+export const getUsers = (params?: q.ConversationListParams): Promise<q.GetUsersResponse> => {
+  return request.get(endpoints.getUsers());
 }
 
 export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage[]> {

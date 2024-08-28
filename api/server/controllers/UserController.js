@@ -7,7 +7,9 @@ const {
   deletePresets,
   deleteMessages,
   deleteUserById,
+  getUsersByPage,
 } = require('~/models');
+
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
 const { updateUserPluginsService, deleteUserKey } = require('~/server/services/UserService');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
@@ -18,6 +20,24 @@ const { logger } = require('~/config');
 
 const getUserController = async (req, res) => {
   res.status(200).send(req.user);
+};
+
+const getUsersController = async (req, res) => {
+  let pageNumber = req.query.pageNumber || 1;
+  pageNumber = parseInt(pageNumber, 10);
+
+  if (isNaN(pageNumber) || pageNumber < 1) {
+    return res.status(400).json({ error: 'Invalid page number' });
+  }
+
+  let pageSize = req.query.pageSize || 25;
+  pageSize = parseInt(pageSize, 10);
+
+  if (isNaN(pageSize) || pageSize < 1) {
+    return res.status(400).json({ error: 'Invalid page size' });
+  }
+
+  res.status(200).send(await getUsersByPage(pageNumber, pageSize));
 };
 
 const deleteUserFiles = async (req) => {
@@ -135,6 +155,7 @@ const resendVerificationController = async (req, res) => {
 
 module.exports = {
   getUserController,
+  getUsersController,
   deleteUserController,
   verifyEmailController,
   updateUserPluginsController,
