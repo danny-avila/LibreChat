@@ -61,6 +61,11 @@ export default function Account() {
               <TableHead
                 className="align-start sticky top-0 rounded-t border-b border-black/10 bg-white px-2 py-1 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-700 dark:text-gray-100 sm:px-4 sm:py-2"
               >
+                Balance
+              </TableHead>
+              <TableHead
+                className="align-start sticky top-0 rounded-t border-b border-black/10 bg-white px-2 py-1 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-700 dark:text-gray-100 sm:px-4 sm:py-2"
+              >
                 Created At
               </TableHead>
               <TableHead
@@ -96,9 +101,19 @@ export default function Account() {
                   <TableCell
                     className="align-start overflow-x-auto px-2 py-1 text-xs sm:px-4 sm:py-2 sm:text-sm [tr[data-disabled=true]_&]:opacity-50"
                   >
+                    {row.tokenCredits}
+                  </TableCell>
+                  <TableCell
+                    className="align-start overflow-x-auto px-2 py-1 text-xs sm:px-4 sm:py-2 sm:text-sm [tr[data-disabled=true]_&]:opacity-50"
+                  >
                     {row.createdAt}
                   </TableCell>
 
+                  <TableCell
+                    className="align-start overflow-x-auto px-2 py-1 text-xs sm:px-4 sm:py-2 sm:text-sm [tr[data-disabled=true]_&]:opacity-50"
+                  >
+                    <Button className='bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 text-white'>删除</Button>
+                  </TableCell>
                 </TableRow>
               ))
             ) : (

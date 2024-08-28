@@ -162,19 +162,59 @@ const comparePassword = async (user, candidatePassword) => {
  */
 const getUsersByPage = async function (pageNumber = 1, pageSize = 25, searchKey = '') {
   try {
-    const totalUser = (await User.countDocuments({})) || 1;
-    const totalPages = Math.ceil(totalUser / pageSize);
-    const regex = new RegExp(searchKey, 'i');
-    const users = await User.find({
+    const totalUser = await User.countDocuments({
       $or: [
-        { username: { $regex: regex } },
-        { name: { $regex: regex } },
+        { name: { $regex: searchKey, $options: 'i' } },
+        { username: { $regex: searchKey, $options: 'i' } },
+        { email: { $regex: searchKey, $options: 'i' } },
       ],
-    })
-      .sort({ updatedAt: -1 })
-      .skip((pageNumber - 1) * pageSize)
-      .limit(pageSize)
-      .lean();
+    });
+
+    const totalPages = Math.ceil(totalUser / pageSize);
+
+    const users = await User.aggregate([
+      {
+        $match: {
+          $or: [
+            { name: { $regex: searchKey, $options: 'i' } },
+            { username: { $regex: searchKey, $options: 'i' } },
+            { email: { $regex: searchKey, $options: 'i' } },
+          ],
+        },
+      },
+      {
+        $lookup: {
+          from: 'balances',
+          localField: '_id',
+          foreignField: 'user',
+          as: 'users',
+        },
+      },
+      {
+        $unwind: {
+          path: '$users',
+          preserveNullAndEmptyArrays: true, // 如果用户没有 balance 信息，仍然返回用户
+        },
+      },
+      {
+        $project: {
+          name: 1,
+          username: 1,
+          email: 1,
+          role: 1,
+          provider: 1,
+          createdAt: 1,
+          tokenCredits: '$users.tokenCredits',
+        },
+      },
+      {
+        $skip: (pageNumber - 1) * pageSize,
+      },
+      {
+        $limit: pageSize,
+      },
+    ]);
+
     return { list: users, pages: totalPages, pageNumber, pageSize, count: totalUser };
   } catch (error) {
     logger.error('[getUsersByPage] Error getting users', error);
