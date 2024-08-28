@@ -24,6 +24,8 @@ export default function Account() {
     searchKey: '',
   });
 
+  console.log(pages);
+
   const handlePreviousPage = () => {
     if (currentPage > 1) {
       setCurrentPage((prev) => prev - 1);
@@ -120,7 +122,7 @@ export default function Account() {
           variant="outline"
           size="sm"
           onClick={() => handlePreviousPage()}
-        // disabled={!table.getCanPreviousPage()}
+          disabled={currentPage === 1}
         >
           上一页
         </Button>
@@ -129,7 +131,7 @@ export default function Account() {
           variant="outline"
           size="sm"
           onClick={() => handleNextPage()}
-        // disabled={!table.getCanNextPage()}
+          disabled={currentPage === pages}
         >
           下一页
         </Button>
