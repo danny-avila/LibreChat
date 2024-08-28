@@ -55,7 +55,7 @@ export default defineConfig({
     nodePolyfills(),
     VitePWA({
       injectRegister: 'auto', // 'auto' | 'manual' | 'disabled'
-      registerType: 'prompt', // 'prompt' | 'auto' | 'disabled'
+      registerType: 'autoUpdate', // 'prompt' | 'autoUpdate'
       devOptions: {
         enabled: false, // enable/disable registering SW in development mode
       },
@@ -118,6 +118,9 @@ export default defineConfig({
             return 'vendor';
           }
         },
+        entryFileNames: 'assets/[name].[hash].js',
+        chunkFileNames: 'assets/[name].[hash].js',
+        assetFileNames: 'assets/[name].[hash].[ext]',
       },
       /**
        * Ignore "use client" waning since we are not using SSR
