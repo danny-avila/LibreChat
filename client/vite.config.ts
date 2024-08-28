@@ -4,6 +4,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 import { defineConfig, createLogger } from 'vite';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import type { Plugin } from 'vite';
+import ClosePlugin from './vite-plugin-close.ts'
 
 const logger = createLogger();
 const originalWarning = logger.warn;
@@ -51,6 +52,7 @@ export default defineConfig({
   envDir: '../',
   envPrefix: ['VITE_', 'SCRIPT_', 'DOMAIN_', 'ALLOW_'],
   plugins: [
+    ClosePlugin(),
     react(),
     nodePolyfills(),
     VitePWA({
