@@ -34,41 +34,38 @@ export default function NavToggle({
     >
       <TooltipAnchor
         side={side === 'right' ? 'left' : 'right'}
+        aria-label={`toggle-${side === 'left' ? 'chat-history' : 'controls'}-nav`}
+        id={`toggle-${side}-nav`}
+        onClick={onToggle}
         description={
           navVisible ? localize('com_nav_close_sidebar') : localize('com_nav_open_sidebar')
         }
       >
-        <button
-          onClick={onToggle}
-          id={`toggle-${side}-nav`}
-          aria-label={`toggle-${side === 'left' ? 'chat-history' : 'controls'}-nav`}
-        >
-          <span className="" data-state="closed">
-            <div
-              className="flex h-[72px] w-8 items-center justify-center"
-              style={{ ...transition, opacity: isHovering ? 1 : 0.25 }}
-            >
-              <div className="flex h-6 w-6 flex-col items-center">
-                {/* Top bar */}
-                <div
-                  className="h-3 w-1 rounded-full bg-black dark:bg-white"
-                  style={{
-                    ...transition,
-                    transform: `translateY(0.15rem) rotate(${topBarRotation}) translateZ(0px)`,
-                  }}
-                />
-                {/* Bottom bar */}
-                <div
-                  className="h-3 w-1 rounded-full bg-black dark:bg-white"
-                  style={{
-                    ...transition,
-                    transform: `translateY(-0.15rem) rotate(${bottomBarRotation}) translateZ(0px)`,
-                  }}
-                />
-              </div>
+        <span className="" data-state="closed">
+          <div
+            className="flex h-[72px] w-8 items-center justify-center"
+            style={{ ...transition, opacity: isHovering ? 1 : 0.25 }}
+          >
+            <div className="flex h-6 w-6 flex-col items-center">
+              {/* Top bar */}
+              <div
+                className="h-3 w-1 rounded-full bg-black dark:bg-white"
+                style={{
+                  ...transition,
+                  transform: `translateY(0.15rem) rotate(${topBarRotation}) translateZ(0px)`,
+                }}
+              />
+              {/* Bottom bar */}
+              <div
+                className="h-3 w-1 rounded-full bg-black dark:bg-white"
+                style={{
+                  ...transition,
+                  transform: `translateY(-0.15rem) rotate(${bottomBarRotation}) translateZ(0px)`,
+                }}
+              />
             </div>
-          </span>
-        </button>
+          </div>
+        </span>
       </TooltipAnchor>
     </div>
   );
