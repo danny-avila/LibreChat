@@ -50,7 +50,7 @@ const getUserKey = async ({ userId, name }) => {
       }),
     );
   }
-  return decrypt(keyValue.value);
+  return await decrypt(keyValue.value);
 };
 
 /**
@@ -109,7 +109,7 @@ const getUserKeyExpiry = async ({ userId, name }) => {
  *              after encrypting the provided value. It sets the provided expiry date for the key.
  */
 const updateUserKey = async ({ userId, name, value, expiresAt = null }) => {
-  const encryptedValue = encrypt(value);
+  const encryptedValue = await encrypt(value);
   let updateObject = {
     userId,
     name,

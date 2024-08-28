@@ -276,6 +276,7 @@ export default {
   com_nav_theme_system: '跟隨系統設定',
   com_nav_theme_dark: '深色',
   com_nav_theme_light: '淺色',
+  com_nav_font_size: '字體大小',
   com_nav_clear_all_chats: '清除所有對話',
   com_nav_confirm_clear: '確認清除',
   com_nav_close_sidebar: '關閉側邊選單',

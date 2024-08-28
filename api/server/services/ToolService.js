@@ -215,10 +215,11 @@ async function processRequiredActions(client, requiredActions) {
     }
     let tool = ToolMap[currentAction.tool] ?? ActionToolMap[currentAction.tool];
 
-    const functionList = global.myCache.get("functions");
-    
-    if(functionList.some(f => f.name == currentAction.tool)) 
-      tool = ToolMap["azure-ai-functions"]
+    const functionList = global.myCache.get('functions');
+
+    if (functionList.some((f) => f.name == currentAction.tool)) {
+      tool = ToolMap['azure-ai-functions'];
+    }
 
     const handleToolOutput = async (output) => {
       requiredActions[i].output = output;
@@ -340,7 +341,7 @@ async function processRequiredActions(client, requiredActions) {
         continue;
       }
 
-      tool = createActionTool({ action: actionSet, requestBuilder });
+      tool = await createActionTool({ action: actionSet, requestBuilder });
       isActionTool = !!tool;
       ActionToolMap[currentAction.tool] = tool;
     }

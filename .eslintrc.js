@@ -12,6 +12,7 @@ module.exports = {
     'plugin:react-hooks/recommended',
     'plugin:jest/recommended',
     'prettier',
+    'plugin:jsx-a11y/recommended',
   ],
   ignorePatterns: [
     'client/dist/**/*',
@@ -32,7 +33,7 @@ module.exports = {
       jsx: true,
     },
   },
-  plugins: ['react', 'react-hooks', '@typescript-eslint', 'import'],
+  plugins: ['react', 'react-hooks', '@typescript-eslint', 'import', 'jsx-a11y'],
   rules: {
     'react/react-in-jsx-scope': 'off',
     '@typescript-eslint/ban-ts-comment': ['error', { 'ts-ignore': 'allow' }],
@@ -65,6 +66,7 @@ module.exports = {
     'no-restricted-syntax': 'off',
     'react/prop-types': ['off'],
     'react/display-name': ['off'],
+    'no-nested-ternary': 'error',
     'no-unused-vars': ['error', { varsIgnorePattern: '^_' }],
     quotes: ['error', 'single'],
   },
@@ -118,6 +120,8 @@ module.exports = {
       ],
       rules: {
         '@typescript-eslint/no-explicit-any': 'error',
+        '@typescript-eslint/no-unnecessary-condition': 'warn',
+        '@typescript-eslint/strict-boolean-expressions': 'warn',
       },
     },
     {

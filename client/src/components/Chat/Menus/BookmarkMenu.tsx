@@ -1,133 +1,136 @@
-import { useEffect, useState, type FC } from 'react';
+import { useState, type FC, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
-import { useLocation } from 'react-router-dom';
-import { TConversation } from 'librechat-data-provider';
-import { Content, Portal, Root, Trigger } from '@radix-ui/react-popover';
+import { useQueryClient } from '@tanstack/react-query';
+import { Constants, QueryKeys } from 'librechat-data-provider';
+import { Menu, MenuButton, MenuItems } from '@headlessui/react';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
+import type { TConversationTag } from 'librechat-data-provider';
 import { useConversationTagsQuery, useTagConversationMutation } from '~/data-provider';
 import { BookmarkMenuItems } from './Bookmarks/BookmarkMenuItems';
 import { BookmarkContext } from '~/Providers/BookmarkContext';
+import { BookmarkEditDialog } from '~/components/Bookmarks';
+import { NotificationSeverity } from '~/common';
+import { useToastContext } from '~/Providers';
+import { useBookmarkSuccess } from '~/hooks';
 import { Spinner } from '~/components';
-import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
+import { cn, logger } from '~/utils';
 import store from '~/store';
 
-const SAVED_TAG = 'Saved';
 const BookmarkMenu: FC = () => {
-  const localize = useLocalize();
-  const location = useLocation();
+  const queryClient = useQueryClient();
+  const { showToast } = useToastContext();
 
-  const activeConvo = useRecoilValue(store.conversationByIndex(0));
+  const conversation = useRecoilValue(store.conversationByIndex(0)) || undefined;
+  const conversationId = conversation?.conversationId ?? '';
+  const updateConvoTags = useBookmarkSuccess(conversationId);
 
-  const globalConvo = useRecoilValue(store.conversation) ?? ({} as TConversation);
-  const [tags, setTags] = useState<string[]>();
+  const [open, setOpen] = useState(false);
+  const [tags, setTags] = useState<string[]>(conversation?.tags || []);
 
-  const [open, setIsOpen] = useState(false);
-  const [conversation, setConversation] = useState<TConversation>();
-
-  let thisConversation: TConversation | null | undefined;
-  if (location.state?.from?.pathname.includes('/chat')) {
-    thisConversation = globalConvo;
-  } else {
-    thisConversation = activeConvo;
-  }
-
-  const { mutateAsync, isLoading } = useTagConversationMutation(
-    thisConversation?.conversationId ?? '',
-  );
+  const mutation = useTagConversationMutation(conversationId, {
+    onSuccess: (newTags: string[]) => {
+      setTags(newTags);
+      updateConvoTags(newTags);
+    },
+    onError: () => {
+      showToast({
+        message: 'Error adding bookmark',
+        severity: NotificationSeverity.ERROR,
+      });
+    },
+  });
 
   const { data } = useConversationTagsQuery();
-  useEffect(() => {
-    if (
-      (!conversation && thisConversation) ||
-      (conversation &&
-        thisConversation &&
-        conversation.conversationId !== thisConversation.conversationId)
-    ) {
-      setConversation(thisConversation);
-      setTags(thisConversation.tags ?? []);
-    }
-    if (tags === undefined && conversation) {
-      setTags(conversation.tags ?? []);
-    }
-  }, [thisConversation, conversation, tags]);
 
-  const isActiveConvo =
-    thisConversation &&
-    thisConversation.conversationId &&
-    thisConversation.conversationId !== 'new' &&
-    thisConversation.conversationId !== 'search';
+  const isActiveConvo = Boolean(
+    conversation &&
+      conversationId &&
+      conversationId !== Constants.NEW_CONVO &&
+      conversationId !== 'search',
+  );
+
+  const handleSubmit = useCallback(
+    (tag?: string) => {
+      if (tag === undefined || tag === '' || !conversationId) {
+        showToast({
+          message: 'Invalid tag or conversationId',
+          severity: NotificationSeverity.ERROR,
+        });
+        return;
+      }
+
+      logger.log('tag_mutation', 'BookmarkMenu - handleSubmit: tags before setting', tags);
+      const allTags =
+        queryClient.getQueryData<TConversationTag[]>([QueryKeys.conversationTags]) ?? [];
+      const existingTags = allTags.map((t) => t.tag);
+      const filteredTags = tags.filter((t) => existingTags.includes(t));
+      logger.log('tag_mutation', 'BookmarkMenu - handleSubmit: tags after filtering', filteredTags);
+      const newTags = filteredTags.includes(tag)
+        ? filteredTags.filter((t) => t !== tag)
+        : [...filteredTags, tag];
+      logger.log('tag_mutation', 'BookmarkMenu - handleSubmit: tags after', newTags);
+      mutation.mutate({
+        tags: newTags,
+      });
+    },
+    [tags, conversationId, mutation, queryClient, showToast],
+  );
 
   if (!isActiveConvo) {
-    return <></>;
+    return null;
   }
 
-  const onOpenChange = async (open: boolean) => {
-    if (!open) {
-      setIsOpen(open);
-      return;
+  const renderButtonContent = () => {
+    if (mutation.isLoading) {
+      return <Spinner aria-label="Spinner" />;
     }
-    if (open && tags && tags.length > 0) {
-      setIsOpen(open);
-    } else {
-      if (thisConversation && thisConversation.conversationId) {
-        await mutateAsync({
-          conversationId: thisConversation.conversationId,
-          tags: [SAVED_TAG],
-        });
-        setTags([SAVED_TAG]);
-        setConversation({ ...thisConversation, tags: [SAVED_TAG] });
-      }
+    if (tags.length > 0) {
+      return <BookmarkFilledIcon className="icon-sm" aria-label="Filled Bookmark" />;
     }
+    return <BookmarkIcon className="icon-sm" aria-label="Bookmark" />;
   };
 
+  const handleToggleOpen = () => setOpen(!open);
+
   return (
-    <Root open={open} onOpenChange={onOpenChange}>
-      <Trigger asChild>
-        <button
-          className={cn(
-            'pointer-cursor relative flex flex-col rounded-md border border-gray-100 bg-white text-left focus:outline-none focus:ring-0 focus:ring-offset-0 dark:border-gray-700 dark:bg-gray-800 sm:text-sm',
-            'hover:bg-gray-50 radix-state-open:bg-gray-50 dark:hover:bg-gray-700 dark:radix-state-open:bg-gray-700',
-            'z-50 flex h-[40px] min-w-4 flex-none items-center justify-center px-3 focus:ring-0 focus:ring-offset-0',
-          )}
-          title={localize('com_ui_bookmarks')}
-        >
-          {isLoading ? (
-            <Spinner />
-          ) : tags && tags.length > 0 ? (
-            <BookmarkFilledIcon className="icon-sm" />
-          ) : (
-            <BookmarkIcon className="icon-sm" />
-          )}
-        </button>
-      </Trigger>
-      <Portal>
-        <Content
-          className={cn(
-            'grid w-full',
-            'mt-2 min-w-[240px] overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-700 dark:text-white',
-            'max-h-[500px]',
-          )}
-          side="bottom"
-          align="start"
-        >
-          {data && conversation && (
-            // Display all bookmarks registered by the user and highlight the tags of the currently selected conversation
-            <BookmarkContext.Provider value={{ bookmarks: data }}>
-              <BookmarkMenuItems
-                // Currently selected conversation
-                conversation={conversation}
-                setConversation={setConversation}
-                // Tags in the conversation
-                tags={tags ?? []}
-                // Update tags in the conversation
-                setTags={setTags}
-              />
-            </BookmarkContext.Provider>
-          )}
-        </Content>
-      </Portal>
-    </Root>
+    <>
+      <Menu as="div" className="group relative">
+        {({ open }) => (
+          <>
+            <MenuButton
+              aria-label="Add bookmarks"
+              className={cn(
+                'mt-text-sm flex size-10 items-center justify-center gap-2 rounded-lg border border-border-light text-sm transition-colors duration-200 hover:bg-surface-hover',
+                open ? 'bg-surface-hover' : '',
+              )}
+              data-testid="bookmark-menu"
+            >
+              {renderButtonContent()}
+            </MenuButton>
+            <MenuItems
+              anchor="bottom start"
+              className="overflow-hidden rounded-lg bg-header-primary p-1.5 shadow-lg outline-none"
+            >
+              <BookmarkContext.Provider value={{ bookmarks: data || [] }}>
+                <BookmarkMenuItems
+                  handleToggleOpen={handleToggleOpen}
+                  tags={tags}
+                  handleSubmit={handleSubmit}
+                />
+              </BookmarkContext.Provider>
+            </MenuItems>
+          </>
+        )}
+      </Menu>
+      <BookmarkEditDialog
+        context="BookmarkMenu - BookmarkEditDialog"
+        conversation={conversation}
+        tags={tags}
+        setTags={setTags}
+        open={open}
+        setOpen={setOpen}
+      />
+    </>
   );
 };
 

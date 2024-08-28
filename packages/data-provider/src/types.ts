@@ -26,6 +26,7 @@ export type TEndpointOption = {
   endpointType?: EModelEndpoint;
   modelDisplayLabel?: string;
   resendFiles?: boolean;
+  promptCache?: boolean;
   maxContextTokens?: number;
   imageDetail?: ImageDetail;
   model?: string | null;
@@ -50,6 +51,7 @@ export type TPayload = Partial<TMessage> &
   };
 
 export type TSubmission = {
+  artifacts?: string;
   plugin?: TResPlugin;
   plugins?: TResPlugin[];
   userMessage: TMessage;
@@ -58,10 +60,12 @@ export type TSubmission = {
   messages: TMessage[];
   isRegenerate?: boolean;
   conversationId?: string;
-  initialResponse: TMessage;
+  initialResponse?: TMessage;
   conversation: Partial<TConversation>;
   endpointOption: TEndpointOption;
 };
+
+export type EventSubmission = Omit<TSubmission, 'initialResponse'> & { initialResponse: TMessage };
 
 export type TPluginAction = {
   pluginKey: string;
@@ -185,7 +189,6 @@ export type TConversationTagResponse = TConversationTag;
 
 // type for tagging conversation
 export type TTagConversationRequest = {
-  conversationId: string;
   tags: string[];
 };
 export type TTagConversationResponse = string[];
@@ -255,6 +258,7 @@ export type TRegisterUser = {
   username: string;
   password: string;
   confirm_password?: string;
+  token?: string;
 };
 
 export type TLoginUser = {

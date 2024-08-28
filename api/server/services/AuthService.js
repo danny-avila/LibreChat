@@ -1,5 +1,5 @@
-const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
+const { webcrypto } = require('node:crypto');
 const { SystemRoles, errorsToString } = require('librechat-data-provider');
 const {
   findUser,
@@ -10,11 +10,11 @@ const {
   generateToken,
   deleteUserById,
 } = require('~/models/userMethods');
+const { createToken, findToken, deleteTokens, Session } = require('~/models');
 const { sendEmail, checkEmailConfig } = require('~/server/utils');
 const { registerSchema } = require('~/strategies/validators');
+const { hashToken } = require('~/server/utils/crypto');
 const isDomainAllowed = require('./isDomainAllowed');
-const Token = require('~/models/schema/tokenSchema');
-const Session = require('~/models/Session');
 const { logger } = require('~/config');
 
 const domains = {
@@ -34,7 +34,7 @@ const genericVerificationMessage = 'Please check your email to verify your email
  */
 const logoutUser = async (userId, refreshToken) => {
   try {
-    const hash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+    const hash = await hashToken(refreshToken);
 
     // Find the session with the matching user and refreshTokenHash
     const session = await Session.findOne({ user: userId, refreshTokenHash: hash });
@@ -54,13 +54,22 @@ const logoutUser = async (userId, refreshToken) => {
 };
 
 /**
+ * Creates Token and corresponding Hash for verification
+ * @returns {[string, string]}
+ */
+const createTokenHash = () => {
+  const token = Buffer.from(webcrypto.getRandomValues(new Uint8Array(32))).toString('hex');
+  const hash = bcrypt.hashSync(token, 10);
+  return [token, hash];
+};
+
+/**
  * Send Verification Email
  * @param {Partial<MongoUser> & { _id: ObjectId, email: string, name: string}} user
  * @returns {Promise<void>}
  */
 const sendVerificationEmail = async (user) => {
-  let verifyToken = crypto.randomBytes(32).toString('hex');
-  const hash = bcrypt.hashSync(verifyToken, 10);
+  const [verifyToken, hash] = createTokenHash();
 
   const verificationLink = `${
     domains.client
@@ -77,12 +86,13 @@ const sendVerificationEmail = async (user) => {
     template: 'verifyEmail.handlebars',
   });
 
-  await new Token({
+  await createToken({
     userId: user._id,
     email: user.email,
     token: hash,
     createdAt: Date.now(),
-  }).save();
+    expiresIn: 900,
+  });
 
   logger.info(`[sendVerificationEmail] Verification link issued. [Email: ${user.email}]`);
 };
@@ -93,7 +103,7 @@ const sendVerificationEmail = async (user) => {
  */
 const verifyEmail = async (req) => {
   const { email, token } = req.body;
-  let emailVerificationData = await Token.findOne({ email: decodeURIComponent(email) });
+  let emailVerificationData = await findToken({ email: decodeURIComponent(email) });
 
   if (!emailVerificationData) {
     logger.warn(`[verifyEmail] [No email verification data found] [Email: ${email}]`);
@@ -113,7 +123,7 @@ const verifyEmail = async (req) => {
     return new Error('User not found');
   }
 
-  await emailVerificationData.deleteOne();
+  await deleteTokens({ token: emailVerificationData.token });
   logger.info(`[verifyEmail] Email verification successful. [Email: ${email}]`);
   return { message: 'Email verification was successful' };
 };
@@ -221,19 +231,16 @@ const requestPasswordReset = async (req) => {
     };
   }
 
-  let token = await Token.findOne({ userId: user._id });
-  if (token) {
-    await token.deleteOne();
-  }
+  await deleteTokens({ userId: user._id });
 
-  let resetToken = crypto.randomBytes(32).toString('hex');
-  const hash = bcrypt.hashSync(resetToken, 10);
+  const [resetToken, hash] = createTokenHash();
 
-  await new Token({
+  await createToken({
     userId: user._id,
     token: hash,
     createdAt: Date.now(),
-  }).save();
+    expiresIn: 900,
+  });
 
   const link = `${domains.client}/reset-password?token=${resetToken}&userId=${user._id}`;
 
@@ -273,7 +280,9 @@ const requestPasswordReset = async (req) => {
  * @returns
  */
 const resetPassword = async (userId, token, password) => {
-  let passwordResetToken = await Token.findOne({ userId });
+  let passwordResetToken = await findToken({
+    userId,
+  });
 
   if (!passwordResetToken) {
     return new Error('Invalid or expired password reset token');
@@ -301,7 +310,7 @@ const resetPassword = async (userId, token, password) => {
     });
   }
 
-  await passwordResetToken.deleteOne();
+  await deleteTokens({ token: passwordResetToken.token });
   logger.info(`[resetPassword] Password reset successful. [Email: ${user.email}]`);
   return { message: 'Password reset was successful' };
 };
@@ -357,7 +366,7 @@ const setAuthTokens = async (userId, res, sessionId = null) => {
 const resendVerificationEmail = async (req) => {
   try {
     const { email } = req.body;
-    await Token.deleteMany({ email });
+    await deleteTokens(email);
     const user = await findUser({ email }, 'email _id name');
 
     if (!user) {
@@ -365,8 +374,7 @@ const resendVerificationEmail = async (req) => {
       return { status: 200, message: genericVerificationMessage };
     }
 
-    let verifyToken = crypto.randomBytes(32).toString('hex');
-    const hash = bcrypt.hashSync(verifyToken, 10);
+    const [verifyToken, hash] = createTokenHash();
 
     const verificationLink = `${
       domains.client
@@ -384,12 +392,13 @@ const resendVerificationEmail = async (req) => {
       template: 'verifyEmail.handlebars',
     });
 
-    await new Token({
+    await createToken({
       userId: user._id,
       email: user.email,
       token: hash,
       createdAt: Date.now(),
-    }).save();
+      expiresIn: 900,
+    });
 
     logger.info(`[resendVerificationEmail] Verification link issued. [Email: ${user.email}]`);
 

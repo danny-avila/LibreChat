@@ -74,6 +74,10 @@ const conversationPreset = {
   resendImages: {
     type: Boolean,
   },
+  /* Anthropic only */
+  promptCache: {
+    type: Boolean,
+  },
   // files
   resendFiles: {
     type: Boolean,

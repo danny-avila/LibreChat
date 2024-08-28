@@ -7,7 +7,7 @@ import {
   parseCompactConvo,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import { useSetRecoilState, useResetRecoilState } from 'recoil';
+import { useSetRecoilState, useResetRecoilState, useRecoilValue } from 'recoil';
 import type {
   TMessage,
   TSubmission,
@@ -19,6 +19,7 @@ import type { SetterOrUpdater } from 'recoil';
 import type { TAskFunction, ExtendedFile } from '~/common';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
+import { getArtifactsMode } from '~/utils/artifacts';
 import { getEndpointField, logger } from '~/utils';
 import useUserKey from '~/hooks/Input/useUserKey';
 import store from '~/store';
@@ -47,6 +48,9 @@ export default function useChatFunctions({
   setSubmission: SetterOrUpdater<TSubmission | null>;
   setLatestMessage?: SetterOrUpdater<TMessage | null>;
 }) {
+  const codeArtifacts = useRecoilValue(store.codeArtifacts);
+  const includeShadcnui = useRecoilValue(store.includeShadcnui);
+  const customPromptMode = useRecoilValue(store.customPromptMode);
   const resetLatestMultiMessage = useResetRecoilState(store.latestMessageFamily(index + 1));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const setFilesToDelete = useSetFilesToDelete();
@@ -123,7 +127,7 @@ export default function useChatFunctions({
       conversationId = null;
     }
 
-    const parentMessage = currentMessages?.find(
+    const parentMessage = currentMessages.find(
       (msg) => msg.messageId === latestMessage?.parentMessageId,
     );
 
@@ -152,6 +156,7 @@ export default function useChatFunctions({
       key: getExpiry(),
       modelDisplayLabel,
       overrideUserMessageId,
+      artifacts: getArtifactsMode({ codeArtifacts, includeShadcnui, customPromptMode }),
     } as TEndpointOption;
     const responseSender = getSender({ model: conversation?.model, ...endpointOption });
 
@@ -249,9 +254,9 @@ export default function useChatFunctions({
     if (index === 0 && setLatestMessage) {
       setLatestMessage(initialResponse);
     }
+
     setSubmission(submission);
-    logger.log('Submission:');
-    logger.dir(submission, { depth: null });
+    logger.dir('message_stream', submission, { depth: null });
   };
 
   const regenerate = ({ parentMessageId }) => {

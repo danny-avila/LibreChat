@@ -1,4 +1,4 @@
-// v0.7.3
+// v0.7.5-rc1
 module.exports = {
   tailwindConfig: './client/tailwind.config.cjs',
   printWidth: 100,

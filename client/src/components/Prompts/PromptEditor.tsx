@@ -1,15 +1,25 @@
 import { useMemo, memo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { EditIcon } from 'lucide-react';
+import type { PluggableList } from 'unified';
+import rehypeHighlight from 'rehype-highlight';
 import { Controller, useFormContext, useFormState } from 'react-hook-form';
+import remarkGfm from 'remark-gfm';
+import rehypeKatex from 'rehype-katex';
+import remarkMath from 'remark-math';
+import supersub from 'remark-supersub';
+import ReactMarkdown from 'react-markdown';
 import AlwaysMakeProd from '~/components/Prompts/Groups/AlwaysMakeProd';
+import { code } from '~/components/Chat/Messages/Content/Markdown';
 import { SaveIcon, CrossIcon } from '~/components/svg';
 import { TextareaAutosize } from '~/components/ui';
+import { PromptVariableGfm } from './Markdown';
+import { PromptsEditorMode } from '~/common';
+import { cn, langSubset } from '~/utils';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 import store from '~/store';
 
-const { PromptsEditorMode, promptsEditorMode } = store;
+const { promptsEditorMode } = store;
 
 type Props = {
   name: string;
@@ -22,17 +32,30 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
   const { control } = useFormContext();
   const editorMode = useRecoilValue(promptsEditorMode);
   const { dirtyFields } = useFormState({ control: control });
+  const { prompt } = dirtyFields as { prompt?: string };
 
   const EditorIcon = useMemo(() => {
-    if (isEditing && !dirtyFields.prompt) {
+    if (isEditing && prompt?.length == null) {
       return CrossIcon;
     }
     return isEditing ? SaveIcon : EditIcon;
-  }, [isEditing, dirtyFields.prompt]);
+  }, [isEditing, prompt]);
+
+  const rehypePlugins: PluggableList = [
+    [rehypeKatex, { output: 'mathml' }],
+    [
+      rehypeHighlight,
+      {
+        detect: true,
+        ignoreMissing: true,
+        subset: langSubset,
+      },
+    ],
+  ];
 
   return (
     <div>
-      <h2 className="flex items-center justify-between rounded-t-lg border border-gray-300 py-2 pl-4 text-base font-semibold dark:border-gray-600 dark:text-gray-200">
+      <h2 className="flex items-center justify-between rounded-t-lg border border-border-medium py-2 pl-4 text-base font-semibold text-text-primary">
         {localize('com_ui_prompt_text')}
         <div className="flex flex-row gap-6">
           {editorMode === PromptsEditorMode.ADVANCED && (
@@ -42,21 +65,28 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
             <EditorIcon
               className={cn(
                 'icon-lg',
-                isEditing ? 'p-[0.05rem]' : 'text-gray-400 hover:text-gray-600',
+                isEditing ? 'p-[0.05rem]' : 'text-secondary-alt hover:text-text-primary',
               )}
             />
           </button>
         </div>
       </h2>
       <div
+        role="button"
         className={cn(
-          'group relative min-h-32 rounded-b-lg border border-gray-300 p-4 transition-all duration-150 hover:opacity-90 dark:border-gray-600',
-          { 'cursor-pointer hover:bg-gray-100/50 dark:hover:bg-gray-100/10': !isEditing },
+          'min-h-[8rem] w-full rounded-b-lg border border-border-medium p-4 transition-all duration-150',
+          { 'bg-surface-secondary-alt cursor-pointer hover:bg-surface-tertiary': !isEditing },
         )}
         onClick={() => !isEditing && setIsEditing(true)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            !isEditing && setIsEditing(true);
+          }
+        }}
+        tabIndex={0}
       >
         {!isEditing && (
-          <EditIcon className="icon-xl absolute inset-0 m-auto hidden opacity-25 group-hover:block dark:text-gray-200" />
+          <EditIcon className="icon-xl absolute inset-0 m-auto hidden text-text-primary opacity-25 group-hover:block" />
         )}
         <Controller
           name={name}
@@ -65,12 +95,25 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
             isEditing ? (
               <TextareaAutosize
                 {...field}
-                className="w-full rounded border border-gray-300 bg-transparent px-2 py-1 focus:outline-none dark:border-gray-600 dark:text-gray-200"
+                className="w-full rounded border border-border-medium bg-transparent px-2 py-1 text-text-primary focus:outline-none"
                 minRows={3}
                 onBlur={() => setIsEditing(false)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setIsEditing(false);
+                  }
+                }}
               />
             ) : (
-              <pre className="block break-words px-2 py-1 dark:text-gray-200">{field.value}</pre>
+              <ReactMarkdown
+                remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
+                rehypePlugins={rehypePlugins}
+                components={{ p: PromptVariableGfm, code }}
+                className="markdown prose dark:prose-invert light my-1 w-full break-words text-text-primary"
+              >
+                {field.value}
+              </ReactMarkdown>
             )
           }
         />

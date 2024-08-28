@@ -289,6 +289,7 @@ export default {
   com_nav_theme_system: 'System',
   com_nav_theme_dark: 'Mörkt',
   com_nav_theme_light: 'Ljust',
+  com_nav_font_size: 'Textstorlek',
   com_nav_clear_all_chats: 'Rensa alla chattar',
   com_nav_confirm_clear: 'Bekräfta rensning',
   com_nav_close_sidebar: 'Stäng sidofält',

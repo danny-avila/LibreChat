@@ -40,14 +40,19 @@ export default function useSideNavLinks({
     permissionType: PermissionTypes.PROMPTS,
     permission: Permissions.USE,
   });
+  const hasAccessToBookmarks = useHasAccess({
+    permissionType: PermissionTypes.BOOKMARKS,
+    permission: Permissions.USE,
+  });
 
   const Links = useMemo(() => {
     const links: NavLink[] = [];
 
     let permission = false;
 
-    if (localStorage.getItem('userAssistantConfigPermission') == undefined)
-    {permission = startupConfig?.userAssistantConfigPermission || false;}
+    if (localStorage.getItem('userAssistantConfigPermission') == undefined) {
+      permission = startupConfig?.userAssistantConfigPermission || false;
+    }
 
     if (localStorage.getItem('userAssistantConfigPermission') == 'true') {
       permission = true;
@@ -88,13 +93,15 @@ export default function useSideNavLinks({
       Component: FilesPanel,
     });
 
-    links.push({
-      title: 'com_sidepanel_conversation_tags',
-      label: '',
-      icon: Bookmark,
-      id: 'bookmarks',
-      Component: BookmarkPanel,
-    });
+    if (hasAccessToBookmarks) {
+      links.push({
+        title: 'com_sidepanel_conversation_tags',
+        label: '',
+        icon: Bookmark,
+        id: 'bookmarks',
+        Component: BookmarkPanel,
+      });
+    }
 
     links.push({
       title: 'com_sidepanel_hide_panel',

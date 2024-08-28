@@ -266,7 +266,7 @@ export const useListAssistantsQuery = <TData = AssistantListResponse>(
       refetchOnMount: false,
       retry: false,
       ...config,
-      enabled: config?.enabled !== undefined ? config?.enabled && enabled : enabled,
+      enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled,
     },
   );
 };
@@ -333,7 +333,7 @@ export const useGetAssistantByIdQuery = (
       retry: false,
       ...config,
       // Query will not execute until the assistant_id exists
-      enabled: config?.enabled !== undefined ? config?.enabled && enabled : enabled,
+      enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled,
     },
   );
 };
@@ -364,7 +364,7 @@ export const useGetActionsQuery = <TData = Action[]>(
       refetchOnReconnect: false,
       refetchOnMount: false,
       ...config,
-      enabled: config?.enabled !== undefined ? config?.enabled && enabled : enabled,
+      enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled,
     },
   );
 };
@@ -394,7 +394,7 @@ export const useGetAssistantDocsQuery = (
       refetchOnReconnect: false,
       refetchOnMount: false,
       ...config,
-      enabled: config?.enabled !== undefined ? config?.enabled && enabled : enabled,
+      enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled,
     },
   );
 };
@@ -440,7 +440,7 @@ export const useVoicesQuery = (): UseQueryResult<t.VoiceResponse> => {
 };
 
 /* Custom config speech */
-export const useCustomConfigSpeechQuery = (): UseQueryResult<t.getCustomConfigSpeechResponse> => {
+export const useCustomConfigSpeechQuery = () => {
   return useQuery([QueryKeys.customConfigSpeech], () => dataService.getCustomConfigSpeech());
 };
 
@@ -488,7 +488,7 @@ export const useGetPromptGroup = (
       refetchOnMount: false,
       retry: false,
       ...config,
-      enabled: config?.enabled !== undefined ? config?.enabled : true,
+      enabled: config?.enabled !== undefined ? config.enabled : true,
     },
   );
 };
@@ -506,7 +506,7 @@ export const useGetPrompts = (
       refetchOnMount: false,
       retry: false,
       ...config,
-      enabled: config?.enabled !== undefined ? config?.enabled : true,
+      enabled: config?.enabled !== undefined ? config.enabled : true,
     },
   );
 };
@@ -540,7 +540,7 @@ export const useGetCategories = <TData = t.TGetCategoriesResponse>(
       refetchOnMount: false,
       retry: false,
       ...config,
-      enabled: config?.enabled !== undefined ? config?.enabled : true,
+      enabled: config?.enabled !== undefined ? config.enabled : true,
     },
   );
 };
@@ -558,7 +558,7 @@ export const useGetRandomPrompts = (
       refetchOnMount: false,
       retry: false,
       ...config,
-      enabled: config?.enabled !== undefined ? config?.enabled : true,
+      enabled: config?.enabled !== undefined ? config.enabled : true,
     },
   );
 };

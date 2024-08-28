@@ -1,12 +1,4 @@
 const {
-  getMessages,
-  saveMessage,
-  recordMessage,
-  updateMessage,
-  deleteMessagesSince,
-  deleteMessages,
-} = require('./Message');
-const {
   comparePassword,
   deleteUserById,
   generateToken,
@@ -16,8 +8,6 @@ const {
   countUsers,
   findUser,
 } = require('./userMethods');
-const { getConvoTitle, getConvo, saveConvo, deleteConvos } = require('./Conversation');
-const { getPreset, getPresets, savePreset, deletePresets } = require('./Preset');
 const {
   findFileById,
   createFile,
@@ -27,25 +17,39 @@ const {
   getFiles,
   updateFileUsage,
 } = require('./File');
-const Key = require('./Key');
-const User = require('./User');
+const {
+  getMessages,
+  saveMessage,
+  recordMessage,
+  updateMessage,
+  deleteMessagesSince,
+  deleteMessages,
+} = require('./Message');
+const { getConvoTitle, getConvo, saveConvo, deleteConvos } = require('./Conversation');
+const { getPreset, getPresets, savePreset, deletePresets } = require('./Preset');
+const { createToken, findToken, updateToken, deleteTokens } = require('./Token');
 const Session = require('./Session');
 const Balance = require('./Balance');
+const User = require('./User');
+const Key = require('./Key');
 
 module.exports = {
-  User,
-  Key,
-  Session,
-  Balance,
-
   comparePassword,
   deleteUserById,
   generateToken,
   getUserById,
-  countUsers,
-  createUser,
   updateUser,
+  createUser,
+  countUsers,
   findUser,
+
+  findFileById,
+  createFile,
+  updateFile,
+  deleteFile,
+  deleteFiles,
+  getFiles,
+  updateFileUsage,
 
   getMessages,
   saveMessage,
@@ -64,11 +68,13 @@ module.exports = {
   savePreset,
   deletePresets,
 
-  findFileById,
-  createFile,
-  updateFile,
-  deleteFile,
-  deleteFiles,
-  getFiles,
-  updateFileUsage,
+  createToken,
+  findToken,
+  updateToken,
+  deleteTokens,
+
+  User,
+  Key,
+  Session,
+  Balance,
 };
