@@ -31,32 +31,28 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                   const variant = getVariant(link);
                   return isCollapsed ? (
                     <TooltipAnchor
-                      className="flex items-center gap-4"
+                      className={cn(
+                        buttonVariants({ variant, size: 'icon' }),
+                        removeFocusOutlines,
+                        'h-9 w-9 cursor-pointer',
+                        variant === 'default'
+                          ? 'dark:bg-muted dark:text-muted-foreground dark:hover:bg-muted bg-surface-terniary dark:hover:text-white'
+                          : '',
+                      )}
+                      onClick={(e) => {
+                        if (link.onClick) {
+                          link.onClick(e);
+                          setActive('');
+                          return;
+                        }
+                        setActive(link.id);
+                        resize && resize(25);
+                      }}
                       description={localize(link.title)}
                       side="left"
                     >
-                      <button
-                        className={cn(
-                          buttonVariants({ variant, size: 'icon' }),
-                          removeFocusOutlines,
-                          'h-9 w-9',
-                          variant === 'default'
-                            ? 'dark:bg-muted dark:text-muted-foreground dark:hover:bg-muted bg-surface-terniary dark:hover:text-white'
-                            : '',
-                        )}
-                        onClick={(e) => {
-                          if (link.onClick) {
-                            link.onClick(e);
-                            setActive('');
-                            return;
-                          }
-                          setActive(link.id);
-                          resize && resize(25);
-                        }}
-                      >
-                        <link.icon className="h-4 w-4" />
-                        <span className="sr-only">{link.title}</span>
-                      </button>
+                      <link.icon className="h-4 w-4" />
+                      <span className="sr-only">{link.title}</span>
                     </TooltipAnchor>
                   ) : (
                     <Accordion
