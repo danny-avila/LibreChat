@@ -175,7 +175,7 @@ const getUsersByPage = async function (pageNumber = 1, pageSize = 25, searchKey 
       .skip((pageNumber - 1) * pageSize)
       .limit(pageSize)
       .lean();
-    return { list: users, pages: totalPages, pageNumber, pageSize };
+    return { list: users, pages: totalPages, pageNumber, pageSize, count: totalUser };
   } catch (error) {
     logger.error('[getUsersByPage] Error getting users', error);
     return { message: 'Error getting users' };

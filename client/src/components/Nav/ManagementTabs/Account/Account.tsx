@@ -18,7 +18,7 @@ export default function Account() {
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 25; // 每页的用户数
 
-  const { data: { list: users = [], pages = 0 } = {} } = useGerUsersQuery({
+  const { data: { list: users = [], pages = 0 } = {}, count: totalUsers = 0 } = useGerUsersQuery({
     pageNumber: currentPage,
     pageSize: pageSize,
     searchKey: '',
@@ -114,7 +114,7 @@ export default function Account() {
       <div className="ml-4 mr-4 mt-4 flex h-auto items-center justify-end space-x-2 py-4 sm:ml-0 sm:mr-0 sm:h-0">
         <div className="text-muted-foreground ml-2 flex-1 text-sm">
           {
-            `共${10}个用户`
+            `共${totalUsers}个用户`
           }
         </div>
         <Button

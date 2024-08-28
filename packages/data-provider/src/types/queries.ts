@@ -86,4 +86,5 @@ export type GetUsersResponse = {
   pageNumber: string | number;
   pageSize: string | number;
   pages: string | number;
+  count: string | number;
 };
