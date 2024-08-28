@@ -29,9 +29,12 @@ export function deleteUser(): Promise<s.TPreset> {
   return request.delete(endpoints.deleteUser());
 }
 
-export const getUsers = (params?: q.ConversationListParams): Promise<q.GetUsersResponse> => {
-  return request.get(endpoints.getUsers());
-}
+export const getUsers = (params: q.GetUsersParams): Promise<q.GetUsersResponse> => {
+  const pageNumber = params.pageNumber;
+  const pageSize = params.pageSize;
+  const searchKey = params.searchKey;
+  return request.get(endpoints.getUsers(pageNumber, pageSize, searchKey));
+};
 
 export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage[]> {
   if (conversationId === 'new') {

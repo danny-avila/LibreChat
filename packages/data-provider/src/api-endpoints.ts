@@ -9,7 +9,8 @@ export const userPlugins = () => '/api/user/plugins';
 
 export const deleteUser = () => '/api/user/delete';
 
-export const getUsers = () => '/api/user/list';
+export const getUsers = (pageNumber: number, pageSize: number, searchKey: string) =>
+  `/api/user/list?pageNumber=${pageNumber}&pageSize=${pageSize}&searchKey=${searchKey}`;
 
 export const messages = (conversationId: string, messageId?: string) =>
   `/api/messages/${conversationId}${messageId ? `/${messageId}` : ''}`;

@@ -1,7 +1,7 @@
 const bcrypt = require('bcryptjs');
 const signPayload = require('~/server/services/signPayload');
 const User = require('./User');
-
+const { logger } = require('~/config');
 /**
  * Retrieve a user by ID and convert the found user document to a plain object.
  *
@@ -160,11 +160,17 @@ const comparePassword = async (user, candidatePassword) => {
  * @param {string} pageSize
  * @returns {Promise<MongoUser[]>} .
  */
-const getUsersByPage = async function (pageNumber = 1, pageSize = 25) {
+const getUsersByPage = async function (pageNumber = 1, pageSize = 25, searchKey = '') {
   try {
     const totalUser = (await User.countDocuments({})) || 1;
     const totalPages = Math.ceil(totalUser / pageSize);
-    const users = await User.find({})
+    const regex = new RegExp(searchKey, 'i');
+    const users = await User.find({
+      $or: [
+        { username: { $regex: regex } },
+        { name: { $regex: regex } },
+      ],
+    })
       .sort({ updatedAt: -1 })
       .skip((pageNumber - 1) * pageSize)
       .limit(pageSize)

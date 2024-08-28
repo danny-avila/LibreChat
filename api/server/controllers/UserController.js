@@ -37,7 +37,9 @@ const getUsersController = async (req, res) => {
     return res.status(400).json({ error: 'Invalid page size' });
   }
 
-  res.status(200).send(await getUsersByPage(pageNumber, pageSize));
+  let searchKey = req.query.searchKey;
+
+  res.status(200).send(await getUsersByPage(pageNumber, pageSize, searchKey));
 };
 
 const deleteUserFiles = async (req) => {

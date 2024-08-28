@@ -565,6 +565,6 @@ export const useGetRandomPrompts = (
   );
 };
 
-export const useGerUsersQuery = (params?: GetUsersParams): UseQueryResult<unknown> => {
+export const useGerUsersQuery = (params: GetUsersParams): UseQueryResult<GetUsersResponse> => {
   return useQuery([QueryKeys.users], () => dataService.getUsers(params));
 };

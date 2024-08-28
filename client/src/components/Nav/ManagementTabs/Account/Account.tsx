@@ -1,7 +1,6 @@
 
-import { useGerUsersInfiniteQuery } from '~/data-provider';
-import { useAuthContext } from '~/hooks';
-import type { TUser } from 'librechat-data-provider';
+import React, { useState } from 'react';
+import { useGerUsersQuery } from '~/data-provider';
 import {
   Button,
   Input,
@@ -11,35 +10,30 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  Switch
+  Switch,
 } from '~/components/ui';
 
 export default function Account() {
-  const { isAuthenticated } = useAuthContext();
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, refetch } =
-    useGerUsersQuery(
-      {
-        pageNumber: 1,
-        pageSize: 30,
-      },
-    );
-  console.log('data', data);
-  console.log('fetchNextPage', fetchNextPage);
-  console.log('hasNextPage', hasNextPage);
-  console.log('isFetchingNextPage', isFetchingNextPage);
 
-  let users: TUser[] = []
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 25; // 每页的用户数
 
-  const toggleUserStatus = (value: boolean) => {
-    console.log('切换用户状态', value);
-  }
+  const { data: { list: users = [], pages = 0 } = {} } = useGerUsersQuery({
+    pageNumber: currentPage,
+    pageSize: pageSize,
+    searchKey: '',
+  });
 
   const handlePreviousPage = () => {
-    console.log('上一页');
-  }
+    if (currentPage > 1) {
+      setCurrentPage((prev) => prev - 1);
+    }
+  };
   const handleNextPage = () => {
-    console.log('下一页');
-  }
+    if (currentPage < Number(pages)) {
+      setCurrentPage((prev) => prev + 1);
+    }
+  };
 
   return (
     <>
@@ -84,9 +78,13 @@ export default function Account() {
                   <TableCell
                     className="align-start overflow-x-auto px-2 py-1 text-xs sm:px-4 sm:py-2 sm:text-sm [tr[data-disabled=true]_&]:opacity-50"
                   >
+                    {row.name}
+                  </TableCell>
+                  <TableCell
+                    className="align-start overflow-x-auto px-2 py-1 text-xs sm:px-4 sm:py-2 sm:text-sm [tr[data-disabled=true]_&]:opacity-50"
+                  >
                     {row.username}
                   </TableCell>
-
                   <TableCell
                     className="align-start overflow-x-auto px-2 py-1 text-xs sm:px-4 sm:py-2 sm:text-sm [tr[data-disabled=true]_&]:opacity-50"
                   >
@@ -99,15 +97,6 @@ export default function Account() {
                     {row.createdAt}
                   </TableCell>
 
-                  <TableCell
-                    className="align-start overflow-x-auto px-2 py-1 text-xs sm:px-4 sm:py-2 sm:text-sm [tr[data-disabled=true]_&]:opacity-50"
-                  >
-                    <Switch
-                      checked={row.status === 1 ?? true}
-                      onCheckedChange={(checked: boolean) => toggleUserStatus(checked)}
-                      className="flex"
-                    />
-                  </TableCell>
                 </TableRow>
               ))
             ) : (
