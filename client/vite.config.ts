@@ -52,7 +52,6 @@ export default defineConfig({
   envDir: '../',
   envPrefix: ['VITE_', 'SCRIPT_', 'DOMAIN_', 'ALLOW_'],
   plugins: [
-    ClosePlugin(),
     react(),
     nodePolyfills(),
     VitePWA({
@@ -98,6 +97,7 @@ export default defineConfig({
       },
     }),
     sourcemapExclude({ excludeNodeModules: true }),
+    ClosePlugin(),
   ],
   publicDir: './public',
   build: {
