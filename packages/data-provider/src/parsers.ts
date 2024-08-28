@@ -71,7 +71,7 @@ export function getEnabledEndpoints() {
   if (endpointsEnv) {
     enabledEndpoints = endpointsEnv
       .split(',')
-      .filter((endpoint) => endpoint?.trim())
+      .filter((endpoint) => endpoint.trim())
       .map((endpoint) => endpoint.trim());
   }
   return enabledEndpoints;
@@ -362,4 +362,17 @@ export function parseTextParts(contentParts: a.TMessageContentParts[]): string {
   }
 
   return result;
+}
+
+export const SEPARATORS = ['.', '?', '!', '۔', '。', '‥', ';', '¡', '¿', '\n', '```'];
+
+export function findLastSeparatorIndex(text: string, separators = SEPARATORS): number {
+  let lastIndex = -1;
+  for (const separator of separators) {
+    const index = text.lastIndexOf(separator);
+    if (index > lastIndex) {
+      lastIndex = index;
+    }
+  }
+  return lastIndex;
 }

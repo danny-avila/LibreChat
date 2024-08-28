@@ -16,9 +16,9 @@ const validateImageRequest = require('./middleware/validateImageRequest');
 const errorController = require('./controllers/ErrorController');
 const configureSocialLogins = require('./socialLogins');
 const AppService = require('./services/AppService');
+const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
-const staticCache = require('./utils/staticCache');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION } = process.env ?? {};
 
@@ -39,7 +39,7 @@ const startServer = async () => {
 
   app.get('/health', (_req, res) => res.status(200).send('OK'));
 
-  // Middleware
+  /* Middleware */
   app.use(noIndex);
   app.use(errorController);
   app.use(express.json({ limit: '3mb' }));
@@ -48,10 +48,10 @@ const startServer = async () => {
   app.use(staticCache(app.locals.paths.dist));
   app.use(staticCache(app.locals.paths.fonts));
   app.use(staticCache(app.locals.paths.assets));
-  app.set('trust proxy', 1); // trust first proxy
+  app.set('trust proxy', 1); /* trust first proxy */
   app.use(cors());
 
-  if (DISABLE_COMPRESSION !== 'true') {
+  if (!isEnabled(DISABLE_COMPRESSION)) {
     app.use(compression());
   }
 
@@ -61,12 +61,12 @@ const startServer = async () => {
     );
   }
 
-  // OAUTH
+  /* OAUTH */
   app.use(passport.initialize());
   passport.use(await jwtLogin());
   passport.use(passportLogin());
 
-  // LDAP Auth
+  /* LDAP Auth */
   if (process.env.LDAP_URL && process.env.LDAP_USER_SEARCH_BASE) {
     passport.use(ldapLogin);
   }
@@ -76,7 +76,7 @@ const startServer = async () => {
   }
 
   app.use('/oauth', routes.oauth);
-  // API Endpoints
+  /* API Endpoints */
   app.use('/api/auth', routes.auth);
   app.use('/api/keys', routes.keys);
   app.use('/api/user', routes.user);

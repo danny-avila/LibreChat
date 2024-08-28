@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState, useMemo, memo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import {
+  useLocalize,
+  useHasAccess,
   useMediaQuery,
   useAuthContext,
   useConversation,
@@ -14,16 +17,23 @@ import { useConversationsInfiniteQuery } from '~/data-provider';
 import { TooltipProvider, Tooltip } from '~/components/ui';
 import { Conversations } from '~/components/Conversations';
 import BookmarkNav from './Bookmarks/BookmarkNav';
+import AccountSettings from './AccountSettings';
 import { useSearchContext } from '~/Providers';
 import { Spinner } from '~/components/svg';
 import SearchBar from './SearchBar';
 import NavToggle from './NavToggle';
-import NavLinks from './NavLinks';
 import NewChat from './NewChat';
 import { cn } from '~/utils';
 import store from '~/store';
 
-const Nav = ({ navVisible, setNavVisible }) => {
+const Nav = ({
+  navVisible,
+  setNavVisible,
+}: {
+  navVisible: boolean;
+  setNavVisible: React.Dispatch<React.SetStateAction<boolean>>;
+}) => {
+  const localize = useLocalize();
   const { conversationId } = useParams();
   const { isAuthenticated } = useAuthContext();
 
@@ -32,6 +42,11 @@ const Nav = ({ navVisible, setNavVisible }) => {
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
   const [isToggleHovering, setIsToggleHovering] = useState(false);
+
+  const hasAccessToBookmarks = useHasAccess({
+    permissionType: PermissionTypes.BOOKMARKS,
+    permission: Permissions.USE,
+  });
 
   const handleMouseEnter = useCallback(() => {
     setIsHovering(true);
@@ -76,9 +91,11 @@ const Nav = ({ navVisible, setNavVisible }) => {
   }, [tags]);
   const { containerRef, moveToTop } = useNavScrolling<ConversationListResponse>({
     setShowLoading,
-    hasNextPage: searchQuery ? searchQueryRes.hasNextPage : hasNextPage,
-    fetchNextPage: searchQuery ? searchQueryRes.fetchNextPage : fetchNextPage,
-    isFetchingNextPage: searchQuery ? searchQueryRes.isFetchingNextPage : isFetchingNextPage,
+    hasNextPage: searchQuery ? searchQueryRes?.hasNextPage : hasNextPage,
+    fetchNextPage: searchQuery ? searchQueryRes?.fetchNextPage : fetchNextPage,
+    isFetchingNextPage: searchQuery
+      ? searchQueryRes?.isFetchingNextPage ?? false
+      : isFetchingNextPage,
   });
 
   const conversations = useMemo(
@@ -118,7 +135,7 @@ const Nav = ({ navVisible, setNavVisible }) => {
         <div
           data-testid="nav"
           className={
-            'nav active max-w-[320px] flex-shrink-0 overflow-x-hidden bg-gray-50 dark:bg-gray-850 md:max-w-[260px]'
+            'nav active max-w-[320px] flex-shrink-0 overflow-x-hidden bg-surface-primary-alt md:max-w-[260px]'
           }
           style={{
             width: navVisible ? navWidth : '0px',
@@ -141,7 +158,7 @@ const Nav = ({ navVisible, setNavVisible }) => {
                 >
                   <nav
                     id="chat-history-nav"
-                    aria-label="chat-history-nav"
+                    aria-label={localize('com_ui_chat_history')}
                     className="flex h-full w-full flex-col px-3 pb-3.5"
                   >
                     <div
@@ -153,27 +170,44 @@ const Nav = ({ navVisible, setNavVisible }) => {
                       onMouseLeave={handleMouseLeave}
                       ref={containerRef}
                     >
-                      <NewChat
-                        toggleNav={itemToggleNav}
-                        subHeaders={
-                          <>
-                            {isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
+                      {isSmallScreen == true ? (
+                        <div className="pt-3.5">
+                          {isSearchEnabled === true && (
+                            <SearchBar clearSearch={clearSearch} isSmallScreen={isSmallScreen} />
+                          )}
+                          {hasAccessToBookmarks === true && (
                             <BookmarkNav tags={tags} setTags={setTags} />
-                          </>
-                        }
-                      />
+                          )}
+                        </div>
+                      ) : (
+                        <NewChat
+                          toggleNav={itemToggleNav}
+                          subHeaders={
+                            <>
+                              {isSearchEnabled === true && (
+                                <SearchBar
+                                  clearSearch={clearSearch}
+                                  isSmallScreen={isSmallScreen}
+                                />
+                              )}
+                              {hasAccessToBookmarks === true && (
+                                <BookmarkNav tags={tags} setTags={setTags} />
+                              )}
+                            </>
+                          }
+                        />
+                      )}
+
                       <Conversations
                         conversations={conversations}
                         moveToTop={moveToTop}
                         toggleNav={itemToggleNav}
                       />
                       {(isFetchingNextPage || showLoading) && (
-                        <Spinner
-                          className={cn('m-1 mx-auto mb-4 h-4 w-4 text-black dark:text-white')}
-                        />
+                        <Spinner className={cn('m-1 mx-auto mb-4 h-4 w-4 text-text-primary')} />
                       )}
                     </div>
-                    <NavLinks />
+                    <AccountSettings />
                   </nav>
                 </div>
               </div>

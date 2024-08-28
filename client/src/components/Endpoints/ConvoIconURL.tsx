@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import type { TPreset } from 'librechat-data-provider';
 import type { IconMapProps } from '~/common';
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
@@ -45,7 +45,7 @@ const ConvoIconURL: React.FC<ConvoIconURLProps> = ({
     },
   ) => React.JSX.Element;
 
-  const isURL = iconURL && (iconURL.includes('http') || iconURL.startsWith('/images/'));
+  const isURL = !!(iconURL && (iconURL.includes('http') || iconURL.startsWith('/images/')));
 
   if (!isURL) {
     Icon = icons[iconURL] ?? icons.unknown;
@@ -82,4 +82,4 @@ const ConvoIconURL: React.FC<ConvoIconURLProps> = ({
   );
 };
 
-export default ConvoIconURL;
+export default memo(ConvoIconURL);

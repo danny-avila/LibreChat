@@ -8,6 +8,12 @@ const roleSchema = new mongoose.Schema({
     unique: true,
     index: true,
   },
+  [PermissionTypes.BOOKMARKS]: {
+    [Permissions.USE]: {
+      type: Boolean,
+      default: true,
+    },
+  },
   [PermissionTypes.PROMPTS]: {
     [Permissions.SHARED_GLOBAL]: {
       type: Boolean,

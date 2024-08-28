@@ -3,6 +3,19 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets present in this file
 
 export default {
+  com_ui_artifacts: 'Artifacts',
+  com_ui_artifacts_toggle: 'Toggle Artifacts UI',
+  com_nav_info_code_artifacts:
+    'Enables the display of experimental code artifacts next to the chat',
+  com_ui_include_shadcnui: 'Include shadcn/ui components instructions',
+  com_nav_info_include_shadcnui:
+    'When enabled, instructions for using shadcn/ui components will be included. shadcn/ui is a collection of re-usable components built using Radix UI and Tailwind CSS. Note: these are lengthy instructions, you should only enable if informing the LLM of the correct imports and components is important to you. For more information about these components, visit: https://ui.shadcn.com/',
+  com_ui_custom_prompt_mode: 'Custom Prompt Mode',
+  com_nav_info_custom_prompt_mode:
+    'When enabled, the default artifacts system prompt will not be included. All artifact-generating instructions must be provided manually in this mode.',
+  com_ui_artifact_click: 'Click to open',
+  com_a11y_start: 'The AI is replying.',
+  com_a11y_end: 'The AI has finished their reply.',
   com_error_moderation:
     'It appears that the content submitted has been flagged by our moderation system for not aligning with our community guidelines. We\'re unable to proceed with this specific topic. If you have any other questions or topics you\'d like to explore, please edit your message, or create a new conversation.',
   com_error_no_user_key: 'No key found. Please provide a key and try again.',
@@ -156,9 +169,13 @@ export default {
   com_ui_manage: 'Manage',
   com_ui_variables: 'Variables',
   com_ui_variables_info:
-    'Use double braces in your text to create variables, e.g. {{example variable}}, to later fill when using the prompt.',
-  com_ui_special_variables:
-    'Special variables: Use {{current_date}} for the current date, and {{current_user}} for your given account name.',
+    'Use double braces in your text to create variables, e.g. `{{example variable}}`, to later fill when using the prompt.',
+  com_ui_special_variables: 'Special variables:',
+  com_ui_special_variables_info:
+    'Use `{{current_date}}` for the current date, and `{{current_user}}` for your given account name.',
+  com_ui_dropdown_variables: 'Dropdown variables:',
+  com_ui_dropdown_variables_info:
+    'Create custom dropdown menus for your prompts: `{{variable_name:option1|option2|option3}}`',
   com_ui_showing: 'Showing',
   com_ui_of: 'of',
   com_ui_entries: 'Entries',
@@ -233,6 +250,8 @@ export default {
   com_ui_import_conversation_file_type_error: 'Unsupported import type',
   com_ui_confirm_action: 'Confirm Action',
   com_ui_chat: 'Chat',
+  com_ui_chat_history: 'Chat History',
+  com_ui_controls: 'Controls',
   com_ui_dashboard: 'Dashboard',
   com_ui_chats: 'chats',
   com_ui_avatar: 'Avatar',
@@ -255,6 +274,7 @@ export default {
   com_ui_create_prompt: 'Create Prompt',
   com_ui_share: 'Share',
   com_ui_share_var: 'Share {0}',
+  com_ui_enter_var: 'Enter {0}',
   com_ui_copy_link: 'Copy link',
   com_ui_update_link: 'Update link',
   com_ui_create_link: 'Create link',
@@ -320,12 +340,14 @@ export default {
   com_ui_bookmarks_create_success: 'Bookmark created successfully',
   com_ui_bookmarks_update_success: 'Bookmark updated successfully',
   com_ui_bookmarks_delete_success: 'Bookmark deleted successfully',
+  com_ui_bookmarks_create_exists: 'This bookmark already exists',
   com_ui_bookmarks_create_error: 'There was an error creating the bookmark',
   com_ui_bookmarks_update_error: 'There was an error updating the bookmark',
   com_ui_bookmarks_delete_error: 'There was an error deleting the bookmark',
   com_ui_bookmarks_add_to_conversation: 'Add to current conversation',
   com_ui_bookmarks_filter: 'Filter bookmarks...',
   com_ui_no_bookmarks: 'it seems like you have no bookmarks yet. Click on a chat and add a new one',
+  com_ui_no_conversation_id: 'No conversation ID found',
   com_auth_error_login:
     'Unable to login with the information provided. Please check your credentials and try again.',
   com_auth_error_login_rl:
@@ -479,6 +501,9 @@ export default {
     'Top-k changes how the model selects tokens for output. A top-k of 1 means the selected token is the most probable among all tokens in the model\'s vocabulary (also called greedy decoding), while a top-k of 3 means that the next token is selected from among the 3 most probable tokens (using temperature).',
   com_endpoint_anthropic_maxoutputtokens:
     'Maximum number of tokens that can be generated in the response. Specify a lower value for shorter responses and a higher value for longer responses. Note: models may stop before reaching this maximum.',
+  com_endpoint_anthropic_prompt_cache:
+    'Prompt caching allows reusing large context or instructions across API calls, reducing costs and latency',
+  com_endpoint_prompt_cache: 'Use Prompt Caching',
   com_endpoint_anthropic_custom_name_placeholder: 'Set a custom name for Anthropic',
   com_endpoint_frequency_penalty: 'Frequency Penalty',
   com_endpoint_presence_penalty: 'Presence Penalty',
@@ -571,6 +596,7 @@ export default {
   com_endpoint_config_key_google_service_account: 'Create a Service Account',
   com_endpoint_config_key_google_vertex_api_role:
     'Make sure to click \'Create and Continue\' to give at least the \'Vertex AI User\' role. Lastly, create a JSON key to import here.',
+  com_nav_account_settings: 'Account Settings',
   com_nav_font_size: 'Message Font Size',
   com_nav_font_size_xs: 'Extra Small',
   com_nav_font_size_sm: 'Small',
@@ -607,6 +633,7 @@ export default {
   com_ui_drag_drop_file: 'Drag and drop a file here',
   com_ui_upload_image: 'Upload an image',
   com_ui_select_a_category: 'No category selected',
+  com_ui_clear_all: 'Clear all',
   com_nav_tool_dialog_description: 'Assistant must be saved to persist tool selections.',
   com_show_agent_settings: 'Show Agent Settings',
   com_show_completion_settings: 'Show Completion Settings',
@@ -682,6 +709,8 @@ export default {
   com_nav_audio_process_error: 'Error processing audio: {0}',
   com_nav_long_audio_warning: 'Longer texts will take longer to process.',
   com_nav_tts_init_error: 'Failed to initialize text-to-speech: {0}',
+  com_nav_tts_unsupported_error:
+    'Text-to-speech for the selected engine is not supported in this browser.',
   com_nav_source_buffer_error: 'Error setting up audio playback. Please refresh the page.',
   com_nav_media_source_init_error:
     'Unable to prepare audio player. Please check your browser settings.',

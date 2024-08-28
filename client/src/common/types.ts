@@ -22,6 +22,7 @@ import type {
   EModelEndpoint,
   TEndpointsConfig,
   AssistantsEndpoint,
+  TMessageContentParts,
   AuthorizationTypeEnum,
   TSetOption as SetOption,
   TokenExchangeMethodEnum,
@@ -32,6 +33,17 @@ import type { LucideIcon } from 'lucide-react';
 export enum PromptsEditorMode {
   SIMPLE = 'simple',
   ADVANCED = 'advanced',
+}
+
+export enum STTEndpoints {
+  browser = 'browser',
+  external = 'external',
+}
+
+export enum TTSEndpoints {
+  browser = 'browser',
+  edge = 'edge',
+  external = 'external',
 }
 
 export type AudioChunk = {
@@ -112,10 +124,12 @@ export interface NavProps {
   defaultActive?: string;
 }
 
-interface ColumnMeta {
-  meta: {
-    size: number | string;
-  };
+export interface DataColumnMeta {
+  meta:
+    | {
+        size: number | string;
+      }
+    | undefined;
 }
 
 export enum Panel {
@@ -176,7 +190,7 @@ export type AgentModelPanelProps = {
   models: Record<string, string[]>;
 };
 
-export type AugmentedColumnDef<TData, TValue> = ColumnDef<TData, TValue> & ColumnMeta;
+export type AugmentedColumnDef<TData, TValue> = ColumnDef<TData, TValue> & DataColumnMeta;
 
 export type TSetOption = SetOption;
 
@@ -406,6 +420,19 @@ export type Option = Record<string, unknown> & {
   value: string | number | null;
 };
 
+export type VoiceOption = {
+  value: string;
+  label: string;
+};
+
+export type TMessageAudio = {
+  messageId?: string;
+  content?: TMessageContentParts[] | string;
+  className?: string;
+  isLast: boolean;
+  index: number;
+};
+
 export type OptionWithIcon = Option & { icon?: React.ReactNode };
 export type DropdownValueSetter = (value: string | Option | OptionWithIcon) => void;
 export type MentionOption = OptionWithIcon & {
@@ -467,17 +494,26 @@ export type NewConversationParams = {
 
 export type ConvoGenerator = (params: NewConversationParams) => void | TConversation;
 
-export type TResData = {
+export type TBaseResData = {
   plugin?: TResPlugin;
   final?: boolean;
   initial?: boolean;
   previousMessages?: TMessage[];
-  requestMessage: TMessage;
-  responseMessage: TMessage;
   conversation: TConversation;
   conversationId?: string;
   runMessages?: TMessage[];
 };
+
+export type TResData = TBaseResData & {
+  requestMessage: TMessage;
+  responseMessage: TMessage;
+};
+
+export type TFinalResData = TBaseResData & {
+  requestMessage?: TMessage;
+  responseMessage?: TMessage;
+};
+
 export type TVectorStore = {
   _id: string;
   object: 'vector_store';

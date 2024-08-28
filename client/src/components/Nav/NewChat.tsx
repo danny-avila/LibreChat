@@ -37,7 +37,7 @@ const NewChatButtonIcon = ({ conversation }: { conversation: TConversation | nul
       {iconURL && iconURL.includes('http') ? (
         <ConvoIconURL preset={conversation} endpointIconURL={iconURL} context="nav" />
       ) : (
-        <div className="shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black dark:bg-white">
+        <div className="shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black">
           {endpoint && Icon && (
             <Icon
               size={41}
@@ -82,14 +82,14 @@ export default function NewChat({
   return (
     <TooltipProvider delayDuration={250}>
       <Tooltip>
-        <div className="sticky left-0 right-0 top-0 z-20 bg-gray-50 pt-3.5 dark:bg-gray-850">
+        <div className="sticky left-0 right-0 top-0 z-20 bg-surface-primary-alt pt-3.5">
           <div className="pb-0.5 last:pb-0" style={{ transform: 'none' }}>
             <a
               href="/"
               tabIndex={0}
               data-testid="nav-new-chat"
               onClick={clickHandler}
-              className="group flex h-10 items-center gap-2 rounded-lg px-2 font-medium hover:bg-gray-200 dark:hover:bg-gray-700"
+              className="group flex h-10 items-center gap-2 rounded-lg px-2 font-medium transition-colors duration-200 hover:bg-surface-hover"
               aria-label={localize('com_ui_new_chat')}
             >
               <NewChatButtonIcon conversation={conversation} />
@@ -104,7 +104,7 @@ export default function NewChat({
                       aria-label="nav-new-chat-btn"
                       className="text-token-text-primary"
                     >
-                      <NewChatIcon className="h-[18px] w-[18px]" />
+                      <NewChatIcon className="size-5" />
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="right" sideOffset={20}>
@@ -114,7 +114,7 @@ export default function NewChat({
               </div>
             </a>
           </div>
-          {subHeaders ? subHeaders : null}
+          {subHeaders != null ? subHeaders : null}
         </div>
       </Tooltip>
     </TooltipProvider>

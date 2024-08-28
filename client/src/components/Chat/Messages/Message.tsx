@@ -6,7 +6,13 @@ import MessageRender from './ui/MessageRender';
 import MultiMessage from './MultiMessage';
 
 const MessageContainer = React.memo(
-  ({ handleScroll, children }: { handleScroll: () => void; children: React.ReactNode }) => {
+  ({
+    handleScroll,
+    children,
+  }: {
+    handleScroll: (event?: unknown) => void;
+    children: React.ReactNode;
+  }) => {
     return (
       <div
         className="text-token-text-primary w-full border-0 bg-transparent dark:border-0 dark:bg-transparent"
@@ -30,11 +36,11 @@ export default function Message(props: TMessageProps) {
   } = useMessageProcess({ message: props.message });
   const { message, currentEditId, setCurrentEditId } = props;
 
-  if (!message) {
+  if (!message || typeof message !== 'object') {
     return null;
   }
 
-  const { children, messageId = null } = message ?? {};
+  const { children, messageId = null } = message;
 
   return (
     <>

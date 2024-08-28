@@ -13,4 +13,5 @@ export * from './DashboardContext';
 export * from './AssistantsContext';
 export * from './AgentsContext';
 export * from './AssistantsMapContext';
+export * from './AnnouncerContext';
 export * from './AgentsMapContext';

@@ -164,8 +164,8 @@ async function updateMessageText(req, { messageId, text }) {
  *
  * @async
  * @function updateMessage
- * @param {Object} message - The message object containing update data.
  * @param {Object} req - The request object.
+ * @param {Object} message - The message object containing update data.
  * @param {string} message.messageId - The unique identifier for the message.
  * @param {string} [message.text] - The new text content of the message.
  * @param {Object[]} [message.files] - The files associated with the message.

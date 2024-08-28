@@ -1,10 +1,10 @@
 import { useEffect, useMemo } from 'react';
-import { Combobox } from '~/components/ui';
 import { isAssistantsEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import type { AssistantsEndpoint } from 'librechat-data-provider';
 import type { SwitcherProps, AssistantListItem } from '~/common';
 import { useSetIndexOptions, useSelectAssistant, useLocalize, useAssistantListMap } from '~/hooks';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
+import ControlCombobox from '~/components/ui/ControlCombobox';
 import Icon from '~/components/Endpoints/Icon';
 
 export default function AssistantSwitcher({ isCollapsed }: SwitcherProps) {
@@ -31,7 +31,7 @@ export default function AssistantSwitcher({ isCollapsed }: SwitcherProps) {
         localStorage.getItem(`${LocalStorageKeys.ASST_ID_PREFIX}${index}${endpoint}`) ??
         assistants[0]?.id ??
         '';
-      const assistant = assistantMap?.[endpoint ?? '']?.[assistant_id];
+      const assistant = assistantMap[endpoint ?? ''][assistant_id];
 
       if (!assistant) {
         return;
@@ -51,14 +51,14 @@ export default function AssistantSwitcher({ isCollapsed }: SwitcherProps) {
   const assistantOptions = useMemo(() => {
     return assistants.map((assistant) => {
       return {
-        label: assistant.name ?? '',
+        label: (assistant.name as string | null) ?? '',
         value: assistant.id,
         icon: (
           <Icon
             isCreatedByUser={false}
             endpoint={endpoint}
-            assistantName={assistant.name ?? ''}
-            iconURL={(assistant.metadata?.avatar as string) ?? ''}
+            assistantName={(assistant.name as string | null) ?? ''}
+            iconURL={assistant.metadata?.avatar ?? ''}
           />
         ),
       };
@@ -66,7 +66,7 @@ export default function AssistantSwitcher({ isCollapsed }: SwitcherProps) {
   }, [assistants, endpoint]);
 
   return (
-    <Combobox
+    <ControlCombobox
       selectedValue={currentAssistant?.id ?? ''}
       displayValue={
         assistants.find((assistant) => assistant.id === selectedAssistant)?.name ??
@@ -83,7 +83,7 @@ export default function AssistantSwitcher({ isCollapsed }: SwitcherProps) {
           isCreatedByUser={false}
           endpoint={endpoint}
           assistantName={currentAssistant?.name ?? ''}
-          iconURL={(currentAssistant?.metadata?.avatar as string) ?? ''}
+          iconURL={currentAssistant?.metadata?.avatar ?? ''}
         />
       }
     />

@@ -11,6 +11,7 @@ export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'd
 
 export const defaultRetrievalModels = [
   'gpt-4o',
+  'chatgpt-4o-latest',
   'gpt-4o-2024-05-13',
   'gpt-4o-2024-08-06',
   'gpt-4o-mini',
@@ -454,7 +455,9 @@ export const configSchema = z.object({
       modelSelect: z.boolean().optional(),
       parameters: z.boolean().optional(),
       sidePanel: z.boolean().optional(),
+      bookmarks: z.boolean().optional(),
       presets: z.boolean().optional(),
+      prompts: z.boolean().optional(),
     })
     .default({
       endpointsMenu: true,
@@ -462,6 +465,8 @@ export const configSchema = z.object({
       parameters: true,
       sidePanel: true,
       presets: true,
+      bookmarks: true,
+      prompts: true,
     }),
   fileStrategy: fileSourceSchema.default(FileSources.local),
   registration: z
@@ -515,6 +520,7 @@ export enum KnownEndpoints {
   apipie = 'apipie',
   cohere = 'cohere',
   fireworks = 'fireworks',
+  deepseek = 'deepseek',
   groq = 'groq',
   huggingface = 'huggingface',
   mistral = 'mistral',
@@ -524,6 +530,7 @@ export enum KnownEndpoints {
   perplexity = 'perplexity',
   shuttleai = 'shuttleai',
   'together.ai' = 'together.ai',
+  unify = 'unify',
 }
 
 export enum FetchTokenConfig {
@@ -559,6 +566,8 @@ export const alternateName = {
 };
 
 const sharedOpenAIModels = [
+  'gpt-4o-mini',
+  'gpt-4o',
   'gpt-3.5-turbo',
   'gpt-3.5-turbo-0125',
   'gpt-4-turbo',
@@ -578,7 +587,7 @@ const sharedOpenAIModels = [
 
 export const defaultModels = {
   [EModelEndpoint.azureAssistants]: sharedOpenAIModels,
-  [EModelEndpoint.assistants]: ['gpt-4o-mini', 'gpt-4o', ...sharedOpenAIModels],
+  [EModelEndpoint.assistants]: ['chatgpt-4o-latest', ...sharedOpenAIModels],
   [EModelEndpoint.agents]: sharedOpenAIModels, // TODO: Add agent models (agentsModels)
   [EModelEndpoint.google]: [
     'gemini-pro',
@@ -608,8 +617,7 @@ export const defaultModels = {
     'claude-instant-1-100k',
   ],
   [EModelEndpoint.openAI]: [
-    'gpt-4o-mini',
-    'gpt-4o',
+    'chatgpt-4o-latest',
     ...sharedOpenAIModels,
     'gpt-4-vision-preview',
     'gpt-3.5-turbo-instruct-0914',
@@ -989,9 +997,9 @@ export enum TTSProviders {
 /** Enum for app-wide constants */
 export enum Constants {
   /** Key for the app's version. */
-  VERSION = 'v0.7.4-rc1',
+  VERSION = 'v0.7.5-rc1',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.1.5',
+  CONFIG_VERSION = '1.1.6',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value for the initial conversationId before a request is sent */

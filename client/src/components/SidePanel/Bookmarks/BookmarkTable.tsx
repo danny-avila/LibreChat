@@ -5,6 +5,15 @@ import { BookmarkContext, useBookmarkContext } from '~/Providers/BookmarkContext
 import BookmarkTableRow from './BookmarkTableRow';
 import { useLocalize } from '~/hooks';
 
+const removeDuplicates = (bookmarks: TConversationTag[]) => {
+  const seen = new Set();
+  return bookmarks.filter((bookmark) => {
+    const duplicate = seen.has(bookmark._id);
+    seen.add(bookmark._id);
+    return !duplicate;
+  });
+};
+
 const BookmarkTable = () => {
   const localize = useLocalize();
   const [rows, setRows] = useState<ConversationTagsResponse>([]);
@@ -12,13 +21,10 @@ const BookmarkTable = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const pageSize = 10;
 
-  const { bookmarks } = useBookmarkContext();
+  const { bookmarks = [] } = useBookmarkContext();
   useEffect(() => {
-    setRows(
-      bookmarks
-        .map((item) => ({ id: item.tag, ...item }))
-        .sort((a, b) => a.position - b.position) || [],
-    );
+    const _bookmarks = removeDuplicates(bookmarks).sort((a, b) => a.position - b.position);
+    setRows(_bookmarks);
   }, [bookmarks]);
 
   const moveRow = useCallback((dragIndex: number, hoverIndex: number) => {
@@ -32,17 +38,16 @@ const BookmarkTable = () => {
 
   const renderRow = useCallback(
     (row: TConversationTag) => {
-      return <BookmarkTableRow key={row.tag} moveRow={moveRow} row={row} position={row.position} />;
+      return <BookmarkTableRow key={row._id} moveRow={moveRow} row={row} position={row.position} />;
     },
     [moveRow],
   );
 
-  const filteredRows = rows.filter((row) =>
-    row.tag.toLowerCase().includes(searchQuery.toLowerCase()),
+  const filteredRows = rows.filter(
+    (row) => row.tag && row.tag.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   const currentRows = filteredRows.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
-
   return (
     <BookmarkContext.Provider value={{ bookmarks }}>
       <div className="flex items-center gap-4 py-4">
@@ -50,17 +55,17 @@ const BookmarkTable = () => {
           placeholder={localize('com_ui_bookmarks_filter')}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full dark:border-gray-700"
+          className="w-full border-border-light placeholder:text-text-secondary"
         />
       </div>
-      <div className="overflow-y-auto rounded-md border border-black/10 dark:border-white/10">
+      <div className="overflow-y-auto rounded-md border border-border-light">
         <Table className="table-fixed border-separate border-spacing-0">
           <TableHeader>
             <TableRow>
-              <TableCell className="w-full px-3 py-3.5 pl-6 dark:bg-gray-700">
+              <TableCell className="w-full bg-header-primary px-3 py-3.5 pl-6">
                 <div>{localize('com_ui_bookmarks_title')}</div>
               </TableCell>
-              <TableCell className="w-full px-3 py-3.5 dark:bg-gray-700 sm:pl-6">
+              <TableCell className="w-full bg-header-primary px-3 py-3.5 sm:pl-6">
                 <div>{localize('com_ui_bookmarks_count')}</div>
               </TableCell>
             </TableRow>
@@ -69,7 +74,7 @@ const BookmarkTable = () => {
         </Table>
       </div>
       <div className="flex items-center justify-between py-4">
-        <div className="pl-1 text-gray-400">
+        <div className="pl-1 text-text-secondary">
           {localize('com_ui_showing')} {pageIndex * pageSize + 1} -{' '}
           {Math.min((pageIndex + 1) * pageSize, filteredRows.length)} {localize('com_ui_of')}{' '}
           {filteredRows.length}

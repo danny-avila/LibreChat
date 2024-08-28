@@ -1,25 +1,18 @@
-import { useRecoilState } from 'recoil';
+import { useMemo } from 'react';
+import { useRecoilValue } from 'recoil';
 import store from '~/store';
 
-export enum STTEndpoints {
-  browser = 'browser',
-  external = 'external',
-}
-
-export enum TTSEndpoints {
-  browser = 'browser',
-  edge = 'edge',
-  external = 'external',
-}
-
 const useGetAudioSettings = () => {
-  const [engineSTT] = useRecoilState<string>(store.engineSTT);
-  const [engineTTS] = useRecoilState<string>(store.engineTTS);
+  const engineSTT = useRecoilValue<string>(store.engineSTT);
+  const engineTTS = useRecoilValue<string>(store.engineTTS);
 
-  const speechToTextEndpoint: STTEndpoints = engineSTT as STTEndpoints;
-  const textToSpeechEndpoint: TTSEndpoints = engineTTS as TTSEndpoints;
+  const speechToTextEndpoint = engineSTT;
+  const textToSpeechEndpoint = engineTTS;
 
-  return { speechToTextEndpoint, textToSpeechEndpoint };
+  return useMemo(
+    () => ({ speechToTextEndpoint, textToSpeechEndpoint }),
+    [speechToTextEndpoint, textToSpeechEndpoint],
+  );
 };
 
 export default useGetAudioSettings;

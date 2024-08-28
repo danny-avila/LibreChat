@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react';
 import { MessageCircle, ArchiveRestore } from 'lucide-react';
 import { useConversationsInfiniteQuery } from '~/data-provider';
 import { useAuthContext, useLocalize, useNavScrolling } from '~/hooks';
-import ArchiveButton from '~/components/Conversations/ArchiveButton';
-import DeleteButton from '~/components/Conversations/DeleteButton';
+import ArchiveButton from '~/components/Conversations/ConvoOptions/ArchiveButton';
+import DeleteButton from '~/components/Conversations/ConvoOptions/DeleteButton';
 import { Spinner } from '~/components/svg';
 import { cn } from '~/utils';
 import { ConversationListResponse } from 'librechat-data-provider';
@@ -90,10 +90,7 @@ export default function ArchivedChatsTable({ className }: { className?: string }
                           <DeleteButton
                             conversationId={conversation.conversationId}
                             retainView={moveToTop}
-                            renaming={false}
-                            title={conversation.title}
-                            appendLabel={false}
-                            className="group ml-4 flex w-full cursor-pointer items-center items-center gap-2 rounded text-sm hover:bg-gray-200 focus-visible:bg-gray-200 focus-visible:outline-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-600 dark:focus-visible:bg-gray-600"
+                            title={conversation.title ?? ''}
                           />
                         </div>
                       </>

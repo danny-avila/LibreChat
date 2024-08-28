@@ -2,7 +2,7 @@ import { ContentTypes, Constants } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 
 export const getLengthAndLastTenChars = (str?: string): string => {
-  if (!str) {
+  if (typeof str !== 'string' || str.length === 0) {
     return '0';
   }
 
@@ -18,19 +18,15 @@ export const getLatestText = (message?: TMessage | null, includeIndex?: boolean)
   if (message.text) {
     return message.text;
   }
-  if (message.content?.length) {
+  if (message.content && message.content.length > 0) {
     for (let i = message.content.length - 1; i >= 0; i--) {
       const part = message.content[i];
-      if (!part) {
-        continue;
-      }
-      if (part.type && part.type === ContentTypes.TEXT && part[ContentTypes.TEXT]) {
-        const textPart = part[ContentTypes.TEXT];
-        const text = typeof textPart === 'string' ? textPart : textPart.value;
-        if (!text) {
-          continue;
-        }
-        if (includeIndex) {
+      if (
+        part.type === ContentTypes.TEXT &&
+        ((part[ContentTypes.TEXT].value as string | undefined)?.length ?? 0) > 0
+      ) {
+        const text = part[ContentTypes.TEXT].value;
+        if (includeIndex === true) {
           return `${text}-${i}`;
         } else {
           return text;
@@ -48,14 +44,19 @@ export const getTextKey = (message?: TMessage | null, convoId?: string | null) =
     return '';
   }
   const text = getLatestText(message, true);
-  return `${message.messageId ?? ''}${Constants.COMMON_DIVIDER}${getLengthAndLastTenChars(text)}${
+  return `${(message.messageId as string | null) ?? ''}${
     Constants.COMMON_DIVIDER
-  }${message.conversationId ?? convoId}`;
+  }${getLengthAndLastTenChars(text)}${Constants.COMMON_DIVIDER}${
+    message.conversationId ?? convoId
+  }`;
 };
 
-export const scrollToEnd = () => {
+export const scrollToEnd = (callback?: () => void) => {
   const messagesEndElement = document.getElementById('messages-end');
   if (messagesEndElement) {
     messagesEndElement.scrollIntoView({ behavior: 'instant' });
+    if (callback) {
+      callback();
+    }
   }
 };

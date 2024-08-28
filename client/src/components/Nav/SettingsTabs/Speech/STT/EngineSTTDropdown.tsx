@@ -14,10 +14,10 @@ const EngineSTTDropdown: React.FC<EngineSTTDropdownProps> = ({ external }) => {
 
   const endpointOptions = external
     ? [
-      { value: 'browser', display: localize('com_nav_browser') },
-      { value: 'external', display: localize('com_nav_external') },
+      { value: 'browser', label: localize('com_nav_browser') },
+      { value: 'external', label: localize('com_nav_external') },
     ]
-    : [{ value: 'browser', display: localize('com_nav_browser') }];
+    : [{ value: 'browser', label: localize('com_nav_browser') }];
 
   const handleSelect = (value: string) => {
     setEngineSTT(value);

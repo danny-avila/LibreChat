@@ -271,7 +271,7 @@ export default function AssistantPanel({
               name="id"
               control={control}
               render={({ field }) => (
-                <p className="h-3 text-xs italic text-gray-600">{field.value ?? ''}</p>
+                <p className="h-3 text-xs italic text-text-secondary">{field.value ?? ''}</p>
               )}
             />
           </div>

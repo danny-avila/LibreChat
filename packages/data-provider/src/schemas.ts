@@ -148,6 +148,9 @@ export const openAISettings = {
   },
   imageDetail: {
     default: ImageDetail.auto,
+    min: 0,
+    max: 2,
+    step: 1,
   },
 };
 
@@ -192,6 +195,9 @@ export const anthropicSettings = {
     max: 1,
     step: 0.01,
     default: 1,
+  },
+  promptCache: {
+    default: true,
   },
   maxOutputTokens: {
     min: 1,
@@ -448,6 +454,10 @@ export const tConversationSchema = z.object({
   maxOutputTokens: z.number().optional(),
   maxContextTokens: coerceNumber.optional(),
   max_tokens: coerceNumber.optional(),
+  /* Anthropic */
+  promptCache: z.boolean().optional(),
+  /* artifacts */
+  artifacts: z.string().optional(),
   /* google */
   context: z.string().nullable().optional(),
   examples: z.array(tExampleSchema).optional(),
@@ -555,6 +565,7 @@ export const tSharedLinkSchema = z.object({
 export type TSharedLink = z.infer<typeof tSharedLinkSchema>;
 
 export const tConversationTagSchema = z.object({
+  _id: z.string(),
   user: z.string(),
   tag: z.string(),
   description: z.string().optional(),
@@ -576,6 +587,7 @@ export const openAISchema = tConversationSchema
     presence_penalty: true,
     frequency_penalty: true,
     resendFiles: true,
+    artifacts: true,
     imageDetail: true,
     stop: true,
     iconURL: true,
@@ -637,6 +649,7 @@ export const googleSchema = tConversationSchema
     examples: true,
     temperature: true,
     maxOutputTokens: true,
+    artifacts: true,
     topP: true,
     topK: true,
     iconURL: true,
@@ -721,6 +734,8 @@ export const anthropicSchema = tConversationSchema
     topP: true,
     topK: true,
     resendFiles: true,
+    promptCache: true,
+    artifacts: true,
     iconURL: true,
     greeting: true,
     spec: true,
@@ -737,6 +752,10 @@ export const anthropicSchema = tConversationSchema
       maxOutputTokens: obj.maxOutputTokens ?? anthropicSettings.maxOutputTokens.reset(model),
       topP: obj.topP ?? anthropicSettings.topP.default,
       topK: obj.topK ?? anthropicSettings.topK.default,
+      promptCache:
+        typeof obj.promptCache === 'boolean'
+          ? obj.promptCache
+          : anthropicSettings.promptCache.default,
       resendFiles:
         typeof obj.resendFiles === 'boolean'
           ? obj.resendFiles
@@ -756,6 +775,7 @@ export const anthropicSchema = tConversationSchema
     topP: anthropicSettings.topP.default,
     topK: anthropicSettings.topK.default,
     resendFiles: anthropicSettings.resendFiles.default,
+    promptCache: anthropicSettings.promptCache.default,
     iconURL: undefined,
     greeting: undefined,
     spec: undefined,
@@ -781,6 +801,7 @@ export const gptPluginsSchema = tConversationSchema
     chatGptLabel: true,
     promptPrefix: true,
     temperature: true,
+    artifacts: true,
     top_p: true,
     presence_penalty: true,
     frequency_penalty: true,
@@ -858,6 +879,7 @@ export const assistantSchema = tConversationSchema
     model: true,
     assistant_id: true,
     instructions: true,
+    artifacts: true,
     promptPrefix: true,
     iconURL: true,
     greeting: true,
@@ -889,6 +911,7 @@ export const compactAssistantSchema = tConversationSchema
     assistant_id: true,
     instructions: true,
     promptPrefix: true,
+    artifacts: true,
     iconURL: true,
     greeting: true,
     spec: true,
@@ -972,6 +995,7 @@ export const compactOpenAISchema = tConversationSchema
     presence_penalty: true,
     frequency_penalty: true,
     resendFiles: true,
+    artifacts: true,
     imageDetail: true,
     stop: true,
     iconURL: true,
@@ -982,22 +1006,22 @@ export const compactOpenAISchema = tConversationSchema
   })
   .transform((obj: Partial<TConversation>) => {
     const newObj: Partial<TConversation> = { ...obj };
-    if (newObj.temperature === 1) {
+    if (newObj.temperature === openAISettings.temperature.default) {
       delete newObj.temperature;
     }
-    if (newObj.top_p === 1) {
+    if (newObj.top_p === openAISettings.top_p.default) {
       delete newObj.top_p;
     }
-    if (newObj.presence_penalty === 0) {
+    if (newObj.presence_penalty === openAISettings.presence_penalty.default) {
       delete newObj.presence_penalty;
     }
-    if (newObj.frequency_penalty === 0) {
+    if (newObj.frequency_penalty === openAISettings.frequency_penalty.default) {
       delete newObj.frequency_penalty;
     }
-    if (newObj.resendFiles === true) {
+    if (newObj.resendFiles === openAISettings.resendFiles.default) {
       delete newObj.resendFiles;
     }
-    if (newObj.imageDetail === ImageDetail.auto) {
+    if (newObj.imageDetail === openAISettings.imageDetail.default) {
       delete newObj.imageDetail;
     }
 
@@ -1013,6 +1037,7 @@ export const compactGoogleSchema = tConversationSchema
     examples: true,
     temperature: true,
     maxOutputTokens: true,
+    artifacts: true,
     topP: true,
     topK: true,
     iconURL: true,
@@ -1049,6 +1074,8 @@ export const compactAnthropicSchema = tConversationSchema
     topP: true,
     topK: true,
     resendFiles: true,
+    promptCache: true,
+    artifacts: true,
     iconURL: true,
     greeting: true,
     spec: true,
@@ -1070,6 +1097,9 @@ export const compactAnthropicSchema = tConversationSchema
     }
     if (newObj.resendFiles === anthropicSettings.resendFiles.default) {
       delete newObj.resendFiles;
+    }
+    if (newObj.promptCache === anthropicSettings.promptCache.default) {
+      delete newObj.promptCache;
     }
 
     return removeNullishValues(newObj);
