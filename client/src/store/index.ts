@@ -1,3 +1,4 @@
+import * as artifacts from './artifacts';
 import conversation from './conversation';
 import conversations from './conversations';
 import families from './families';
@@ -13,6 +14,7 @@ import lang from './language';
 import settings from './settings';
 
 export default {
+  ...artifacts,
   ...families,
   ...conversation,
   ...conversations,

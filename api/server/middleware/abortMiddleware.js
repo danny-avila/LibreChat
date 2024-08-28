@@ -2,9 +2,9 @@ const { isAssistantsEndpoint } = require('librechat-data-provider');
 const { sendMessage, sendError, countTokens, isEnabled } = require('~/server/utils');
 const { truncateText, smartTruncateText } = require('~/app/clients/prompts');
 const clearPendingReq = require('~/cache/clearPendingReq');
+const { spendTokens } = require('~/models/spendTokens');
 const abortControllers = require('./abortControllers');
 const { saveMessage, getConvo } = require('~/models');
-const spendTokens = require('~/models/spendTokens');
 const { abortRun } = require('./abortRun');
 const { logger } = require('~/config');
 

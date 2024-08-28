@@ -356,6 +356,7 @@ export default {
   com_nav_theme_system: 'Système',
   com_nav_theme_dark: 'Sombre',
   com_nav_theme_light: 'Clair',
+  com_nav_font_size: 'Taille de police',
   com_nav_user_name_display: 'Afficher le nom d\'utilisateur dans les messages',
   com_nav_save_drafts: 'Enregistrer les brouillons localement',
   com_nav_clear_all_chats: 'Effacer toutes les conversations',

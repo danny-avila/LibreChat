@@ -212,8 +212,8 @@ async function updateMessageText(req, { messageId, text }) {
  *
  * @async
  * @function updateMessage
- * @param {Object} message - The message object containing update data.
  * @param {Object} req - The request object.
+ * @param {Object} message - The message object containing update data.
  * @param {string} message.messageId - The unique identifier for the message.
  * @param {string} [message.text] - The new text content of the message.
  * @param {Object[]} [message.files] - The files associated with the message.
@@ -317,7 +317,7 @@ async function getMessages(filter, select) {
  * @async
  * @function deleteMessages
  * @param {Object} filter - The filter criteria to find messages to delete.
- * @returns {Promise<Number>} The number of deleted messages.
+ * @returns {Promise<Object>} The metadata with count of deleted messages.
  * @throws {Error} If there is an error in deleting messages.
  */
 async function deleteMessages(filter) {

@@ -35,7 +35,7 @@ const clearPendingReq = async ({ userId, cache: _cache }) => {
     return;
   }
 
-  const key = `${USE_REDIS ? namespace : ''}:${userId ?? ''}`;
+  const key = `${isEnabled(USE_REDIS) ? namespace : ''}:${userId ?? ''}`;
   const currentReq = +((await cache.get(key)) ?? 0);
 
   if (currentReq && currentReq >= 1) {

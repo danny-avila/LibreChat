@@ -1,12 +1,13 @@
-import { useSetRecoilState, useRecoilValue } from 'recoil';
 import { useState, useRef, useEffect, useMemo, memo, useCallback } from 'react';
+import { useSetRecoilState, useRecoilValue } from 'recoil';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
 import type { PromptOption } from '~/common';
 import { removeCharIfLast, mapPromptGroups, detectVariables } from '~/utils';
 import VariableDialog from '~/components/Prompts/Groups/VariableDialog';
 import CategoryIcon from '~/components/Prompts/Groups/CategoryIcon';
+import { useLocalize, useCombobox, useHasAccess } from '~/hooks';
 import { useGetAllPromptGroups } from '~/data-provider';
-import { useLocalize, useCombobox } from '~/hooks';
 import { Spinner } from '~/components/svg';
 import MentionItem from './MentionItem';
 import store from '~/store';
@@ -51,8 +52,13 @@ function PromptsCommand({
   submitPrompt: (textPrompt: string) => void;
 }) {
   const localize = useLocalize();
+  const hasAccess = useHasAccess({
+    permissionType: PermissionTypes.PROMPTS,
+    permission: Permissions.USE,
+  });
 
   const { data, isLoading } = useGetAllPromptGroups(undefined, {
+    enabled: hasAccess,
     select: (data) => {
       const mappedArray = data.map((group) => ({
         id: group._id,
@@ -60,7 +66,7 @@ function PromptsCommand({
         label: `${group.command ? `/${group.command} - ` : ''}${group.name}: ${
           group.oneliner?.length ? group.oneliner : group.productionPrompt?.prompt ?? ''
         }`,
-        icon: <CategoryIcon category={group.category ?? ''} />,
+        icon: <CategoryIcon category={group.category ?? ''} className="h-5 w-5" />,
       }));
 
       const promptsMap = mapPromptGroups(data);
@@ -108,7 +114,7 @@ function PromptsCommand({
       }
 
       const group = promptsMap[mention.id];
-      const hasVariables = detectVariables(group?.productionPrompt?.prompt ?? '');
+      const hasVariables = detectVariables(group.productionPrompt?.prompt ?? '');
       if (group && hasVariables) {
         if (e && e.key === 'Tab') {
           e.preventDefault();
@@ -144,6 +150,10 @@ function PromptsCommand({
     currentActiveItem?.scrollIntoView({ behavior: 'instant', block: 'nearest' });
   }, [activeIndex]);
 
+  if (!hasAccess) {
+    return null;
+  }
+
   return (
     <PopoverContainer
       index={index}
@@ -154,6 +164,8 @@ function PromptsCommand({
       <div className="absolute bottom-16 z-10 w-full space-y-2">
         <div className="popover border-token-border-light rounded-2xl border bg-surface-tertiary-alt p-2 shadow-lg">
           <input
+            // The user expects focus to transition to the input field when the popover is opened
+            // eslint-disable-next-line jsx-a11y/no-autofocus
             autoFocus
             ref={inputRef}
             placeholder={localize('com_ui_command_usage_placeholder')}
@@ -204,6 +216,7 @@ function PromptsCommand({
                 return (matches as PromptOption[]).map((mention, index) => (
                   <MentionItem
                     index={index}
+                    type="prompt"
                     key={`${mention.value}-${index}`}
                     onClick={() => {
                       if (timeoutRef.current) {

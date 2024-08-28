@@ -465,6 +465,7 @@ export default {
   com_nav_theme_system: 'Sistema',
   com_nav_theme_dark: 'Oscuro',
   com_nav_theme_light: 'Claro',
+  com_nav_font_size: 'Tamaño de fuente',
   com_nav_user_name_display: 'Mostrar nombre de usuario en los mensajes',
   com_nav_save_drafts: 'Guardar borradores localmente',
   com_nav_show_code: 'Mostrar siempre el código cuando se use el intérprete de código',

@@ -105,6 +105,12 @@ export type CreateSharedLinkOptions = MutationOptions<
   types.TSharedLink,
   Partial<types.TSharedLink>
 >;
+
+export type updateTagsInConvoOptions = MutationOptions<
+  types.TTagConversationResponse,
+  types.TTagConversationRequest
+>;
+
 export type UpdateSharedLinkOptions = MutationOptions<
   types.TSharedLink,
   Partial<types.TSharedLink>

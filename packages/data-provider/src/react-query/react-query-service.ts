@@ -74,21 +74,6 @@ export const useGetSharedMessages = (
   );
 };
 
-export const useGetConversationTags = (
-  config?: UseQueryOptions<t.TConversationTagsResponse>,
-): QueryObserverResult<t.TConversationTagsResponse> => {
-  return useQuery<t.TConversationTagsResponse>(
-    [QueryKeys.conversationTags],
-    () => dataService.getConversationTags(),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      ...config,
-    },
-  );
-};
-
 export const useGetUserBalance = (
   config?: UseQueryOptions<string>,
 ): QueryObserverResult<string> => {

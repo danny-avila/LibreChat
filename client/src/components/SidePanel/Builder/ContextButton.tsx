@@ -15,7 +15,7 @@ export default function ContextButton({
   createMutation,
   endpoint,
 }: {
-  activeModel: string;
+  activeModel?: string;
   assistant_id: string;
   setCurrentAssistantId: React.Dispatch<React.SetStateAction<string | undefined>>;
   createMutation: UseMutationResult<Assistant, Error, AssistantCreateParams>;
@@ -38,7 +38,7 @@ export default function ContextButton({
         status: 'success',
       });
 
-      if (createMutation.data?.id) {
+      if (createMutation.data?.id !== undefined) {
         console.log('[deleteAssistant] resetting createMutation');
         createMutation.reset();
       }
@@ -52,7 +52,7 @@ export default function ContextButton({
         return setOption('assistant_id')(firstAssistant.id);
       }
 
-      const currentAssistant = updatedList?.find(
+      const currentAssistant = updatedList.find(
         (assistant) => assistant.id === conversation?.assistant_id,
       );
 
@@ -72,6 +72,10 @@ export default function ContextButton({
   });
 
   if (!assistant_id) {
+    return null;
+  }
+
+  if (activeModel?.length === 0 || activeModel === undefined) {
     return null;
   }
 

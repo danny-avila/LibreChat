@@ -17,6 +17,7 @@ import {
   useAutoSave,
   useRequiresKey,
   useHandleKeyUp,
+  useQueryParams,
   useSubmitMessage,
 } from '~/hooks';
 import { TextareaAutosize } from '~/components/ui';
@@ -37,9 +38,10 @@ import store from '~/store';
 const ChatForm = ({ index = 0 }) => {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
+  useQueryParams({ textAreaRef });
 
-  const SpeechToText = useRecoilState<boolean>(store.speechToText);
-  const TextToSpeech = useRecoilState<boolean>(store.textToSpeech);
+  const SpeechToText = useRecoilValue(store.speechToText);
+  const TextToSpeech = useRecoilValue(store.textToSpeech);
   const automaticPlayback = useRecoilValue(store.automaticPlayback);
 
   const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
@@ -61,7 +63,7 @@ const ChatForm = ({ index = 0 }) => {
   const { handlePaste, handleKeyDown, handleCompositionStart, handleCompositionEnd } = useTextarea({
     textAreaRef,
     submitButtonRef,
-    disabled: !!requiresKey,
+    disabled: !!(requiresKey ?? false),
   });
 
   const {
@@ -105,12 +107,12 @@ const ChatForm = ({ index = 0 }) => {
   const invalidAssistant = useMemo(
     () =>
       isAssistantsEndpoint(conversation?.endpoint) &&
-      (!conversation?.assistant_id ||
-        !assistantMap?.[conversation?.endpoint ?? '']?.[conversation?.assistant_id ?? '']),
+      (!(conversation?.assistant_id ?? '') ||
+        !assistantMap?.[conversation?.endpoint ?? ''][conversation?.assistant_id ?? '']),
     [conversation?.assistant_id, conversation?.endpoint, assistantMap],
   );
   const disableInputs = useMemo(
-    () => !!(requiresKey || invalidAssistant),
+    () => !!((requiresKey ?? false) || invalidAssistant),
     [requiresKey, invalidAssistant],
   );
 
@@ -162,6 +164,8 @@ const ChatForm = ({ index = 0 }) => {
             {endpoint && (
               <TextareaAutosize
                 {...registerProps}
+                // TODO: remove autofocus due to a11y issues
+                // eslint-disable-next-line jsx-a11y/no-autofocus
                 autoFocus
                 ref={(e) => {
                   ref(e);

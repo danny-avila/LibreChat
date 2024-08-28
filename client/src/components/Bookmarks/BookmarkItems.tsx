@@ -1,30 +1,29 @@
 import type { FC } from 'react';
 import { useBookmarkContext } from '~/Providers/BookmarkContext';
 import BookmarkItem from './BookmarkItem';
-
-const BookmarkItems: FC<{
+interface BookmarkItemsProps {
   tags: string[];
-  handleSubmit: (tag: string) => Promise<void>;
+  handleSubmit: (tag?: string) => void;
   header: React.ReactNode;
-  highlightSelected?: boolean;
-}> = ({ tags, handleSubmit, header, highlightSelected }) => {
+}
+
+const BookmarkItems: FC<BookmarkItemsProps> = ({ tags, handleSubmit, header }) => {
   const { bookmarks } = useBookmarkContext();
+
   return (
     <>
       {header}
-      <div className="my-1.5 h-px bg-black/10 dark:bg-white/10" role="none" />
-      {bookmarks.length > 0 &&
-        bookmarks.map((bookmark) => (
-          <BookmarkItem
-            key={bookmark.tag}
-            tag={bookmark.tag}
-            selected={tags.includes(bookmark.tag)}
-            count={bookmark.count}
-            handleSubmit={handleSubmit}
-            highlightSelected={highlightSelected}
-          />
-        ))}
+      {bookmarks.length > 0 && <div className="my-1.5 h-px" role="none" />}
+      {bookmarks.map((bookmark, i) => (
+        <BookmarkItem
+          key={`${bookmark._id ?? bookmark.tag}-${i}`}
+          tag={bookmark.tag}
+          selected={tags.includes(bookmark.tag)}
+          handleSubmit={handleSubmit}
+        />
+      ))}
     </>
   );
 };
+
 export default BookmarkItems;

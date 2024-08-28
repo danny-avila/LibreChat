@@ -568,6 +568,7 @@ export default {
   com_nav_user_name_display: 'Mesajlarda kullanıcı adını görüntüle',
   com_nav_save_drafts: 'Taslakları yerel olarak kaydet',
   com_nav_show_code: 'Kod yorumlayıcı kullanırken her zaman kodu göster',
+  com_nav_font_size: 'Yazı Boyutu',
   com_nav_clear_all_chats: 'Tüm sohbetleri temizle',
   com_nav_confirm_clear: 'Temizlemeyi Onayla',
   com_nav_close_sidebar: 'Yan paneli kapat',

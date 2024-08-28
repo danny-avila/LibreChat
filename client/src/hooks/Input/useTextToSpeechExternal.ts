@@ -1,9 +1,8 @@
 import { useRecoilValue } from 'recoil';
 import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
-import { useTextToSpeechMutation } from '~/data-provider';
-import useAudioRef from '~/hooks/Audio/useAudioRef';
+import { useTextToSpeechMutation, useVoicesQuery } from '~/data-provider';
+import { useToastContext } from '~/Providers/ToastContext';
 import useLocalize from '~/hooks/useLocalize';
-import { useToastContext } from '~/Providers';
 import store from '~/store';
 
 const createFormData = (text: string, voice: string) => {
@@ -13,7 +12,21 @@ const createFormData = (text: string, voice: string) => {
   return formData;
 };
 
-function useTextToSpeechExternal(messageId: string, isLast: boolean, index = 0) {
+type TUseTTSExternal = {
+  setIsSpeaking: React.Dispatch<React.SetStateAction<boolean>>;
+  audioRef: React.MutableRefObject<HTMLAudioElement | null>;
+  messageId?: string;
+  isLast: boolean;
+  index?: number;
+};
+
+function useTextToSpeechExternal({
+  setIsSpeaking,
+  audioRef,
+  messageId,
+  isLast,
+  index = 0,
+}: TUseTTSExternal) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const voice = useRecoilValue(store.voice);
@@ -21,8 +34,7 @@ function useTextToSpeechExternal(messageId: string, isLast: boolean, index = 0) 
   const playbackRate = useRecoilValue(store.playbackRate);
 
   const [downloadFile, setDownloadFile] = useState(false);
-  const [isLocalSpeaking, setIsSpeaking] = useState(false);
-  const { audioRef } = useAudioRef({ setIsPlaying: setIsSpeaking });
+
   const promiseAudioRef = useRef<HTMLAudioElement | null>(null);
 
   /* Global Audio Variables */
@@ -37,7 +49,7 @@ function useTextToSpeechExternal(messageId: string, isLast: boolean, index = 0) 
   const playAudioPromise = (blobUrl: string) => {
     const newAudio = new Audio(blobUrl);
     const initializeAudio = () => {
-      if (playbackRate && playbackRate !== 1 && playbackRate > 0) {
+      if (playbackRate != null && playbackRate !== 1 && playbackRate > 0) {
         newAudio.playbackRate = playbackRate;
       }
     };
@@ -47,7 +59,7 @@ function useTextToSpeechExternal(messageId: string, isLast: boolean, index = 0) 
 
     playPromise().catch((error: Error) => {
       if (
-        error?.message &&
+        error.message &&
         error.message.includes('The play() request was interrupted by a call to pause()')
       ) {
         console.log('Play request was interrupted by a call to pause()');
@@ -92,7 +104,7 @@ function useTextToSpeechExternal(messageId: string, isLast: boolean, index = 0) 
 
         if (cacheTTS && inputText) {
           const cache = await caches.open('tts-responses');
-          const request = new Request(inputText!);
+          const request = new Request(inputText);
           const response = new Response(audioBlob);
           cache.put(request, response);
         }
@@ -118,7 +130,7 @@ function useTextToSpeechExternal(messageId: string, isLast: boolean, index = 0) 
   });
 
   const startMutation = (text: string, download: boolean) => {
-    const formData = createFormData(text, voice);
+    const formData = createFormData(text, voice ?? '');
     setDownloadFile(download);
     processAudio(formData);
   };
@@ -174,11 +186,15 @@ function useTextToSpeechExternal(messageId: string, isLast: boolean, index = 0) 
     return isProcessing || (isLast && globalIsFetching && !globalIsPlaying);
   }, [isProcessing, globalIsFetching, globalIsPlaying, isLast]);
 
-  const isSpeaking = useMemo(() => {
-    return isLocalSpeaking || (isLast && globalIsPlaying);
-  }, [isLocalSpeaking, globalIsPlaying, isLast]);
+  const { data: voicesData = [] } = useVoicesQuery();
 
-  return { generateSpeechExternal, cancelSpeech, isLoading, isSpeaking, audioRef };
+  return {
+    generateSpeechExternal,
+    cancelSpeech,
+    isLoading,
+    audioRef,
+    voices: voicesData,
+  };
 }
 
 export default useTextToSpeechExternal;

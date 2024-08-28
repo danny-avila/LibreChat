@@ -54,6 +54,7 @@ const chatV1 = async (req, res) => {
     promptPrefix,
     assistant_id,
     instructions,
+    endpointOption,
     thread_id: _thread_id,
     messageId: _messageId,
     conversationId: convoId,
@@ -296,7 +297,7 @@ const chatV1 = async (req, res) => {
     const { openai: _openai, client } = await getOpenAIClient({
       req,
       res,
-      endpointOption: req.body.endpointOption,
+      endpointOption,
       initAppClient: true,
     });
 
@@ -325,6 +326,12 @@ const chatV1 = async (req, res) => {
       body.additional_instructions = promptPrefix;
     }
 
+    if (typeof endpointOption.artifactsPrompt === 'string' && endpointOption.artifactsPrompt) {
+      body.additional_instructions = `${body.additional_instructions ?? ''}\n${
+        endpointOption.artifactsPrompt
+      }`.trim();
+    }
+
     if (instructions) {
       body.instructions = instructions;
     }
@@ -346,12 +353,12 @@ const chatV1 = async (req, res) => {
     };
 
     const addVisionPrompt = async () => {
-      if (!req.body.endpointOption.attachments) {
+      if (!endpointOption.attachments) {
         return;
       }
 
       /** @type {MongoFile[]} */
-      const attachments = await req.body.endpointOption.attachments;
+      const attachments = await endpointOption.attachments;
       if (attachments && attachments.every((attachment) => checkOpenAIStorage(attachment.source))) {
         return;
       }
