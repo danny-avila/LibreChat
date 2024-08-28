@@ -1,4 +1,5 @@
 const { nanoid } = require('nanoid');
+const { FileContext } = require('librechat-data-provider');
 const {
   getAgent,
   createAgent,
@@ -6,6 +7,9 @@ const {
   deleteAgent,
   getListAgents,
 } = require('~/models/Agent');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { uploadImageBuffer } = require('~/server/services/Files/process');
+const { deleteFileByFilter } = require('~/models/File');
 const { logger } = require('~/config');
 
 /**
@@ -137,7 +141,7 @@ const getListAgentsHandler = async (req, res) => {
  * @param {string} req.params.agent_id - The ID of the agent.
  * @param {Express.Multer.File} req.file - The avatar image file.
  * @param {object} req.body - Request body
- * @param {string} [req.body.metadata] - Optional metadata for the agent's avatar.
+ * @param {string} [req.body.avatar] - Optional avatar for the agent's avatar.
  * @returns {Object} 200 - success response - application/json
  */
 const uploadAgentAvatarHandler = async (req, res) => {
@@ -147,60 +151,46 @@ const uploadAgentAvatarHandler = async (req, res) => {
       return res.status(400).json({ message: 'Agent ID is required' });
     }
 
-    return res.status(200).json({ message: 'uploadAgentAvatar controller needs to be updated!' });
+    let { avatar: _avatar = '{}' } = req.body;
 
-    // let { metadata: _metadata = '{}' } = req.body;
-    //
-    // await validateAuthor({ req, openai });
+    const image = await uploadImageBuffer({
+      req,
+      context: FileContext.avatar,
+      metadata: {
+        buffer: req.file.buffer,
+      },
+    });
 
-    // const image = await uploadImageBuffer({
-    //   req,
-    //   context: FileContext.avatar,
-    //   metadata: {
-    //     buffer: req.file.buffer,
-    //   },
-    // });
+    try {
+      _avatar = JSON.parse(_avatar);
+    } catch (error) {
+      logger.error('[/avatar/:agent_id] Error parsing avatar', error);
+      _avatar = {};
+    }
 
-    // try {
-    //   _metadata = JSON.parse(_metadata);
-    // } catch (error) {
-    //   logger.error('[/avatar/:agent_id] Error parsing metadata', error);
-    //   _metadata = {};
-    // }
+    if (_avatar && _avatar.source) {
+      const { deleteFile } = getStrategyFunctions(_avatar.source);
+      try {
+        await deleteFile(req, { filepath: _avatar.filepath });
+        await deleteFileByFilter({ filepath: _avatar.filepath });
+      } catch (error) {
+        logger.error('[/avatar/:agent_id] Error deleting old avatar', error);
+      }
+    }
 
-    // if (_metadata.avatar && _metadata.avatar_source) {
-    //   const { deleteFile } = getStrategyFunctions(_metadata.avatar_source);
-    //   try {
-    //     await deleteFile(req, { filepath: _metadata.avatar });
-    //     await deleteFileByFilter({ filepath: _metadata.avatar });
-    //   } catch (error) {
-    //     logger.error('[/avatar/:agent_id] Error deleting old avatar', error);
-    //   }
-    // }
+    const promises = [];
 
-    // const metadata = {
-    //   ..._metadata,
-    //   avatar: image.filepath,
-    //   avatar_source: req.app.locals.fileStrategy,
-    // };
+    const data = {
+      avatar: {
+        filepath: image.filepath,
+        source: req.app.locals.fileStrategy,
+      },
+    };
 
-    // const promises = [];
-    // promises.push(
-    //   updateAgentDoc(
-    //     { agent_id },
-    //     {
-    //       avatar: {
-    //         filepath: image.filepath,
-    //         source: req.app.locals.fileStrategy,
-    //       },
-    //       user: req.user.id,
-    //     },
-    //   ),
-    // );
-    // promises.push(openai.beta.agents.update(agent_id, { metadata }));
+    promises.push(await updateAgent({ id: agent_id, author: req.user.id }, data));
 
-    // const resolved = await Promise.all(promises);
-    // res.status(201).json(resolved[1]);
+    const resolved = await Promise.all(promises);
+    res.status(201).json(resolved[0]);
   } catch (error) {
     const message = 'An error occurred while updating the Agent Avatar';
     logger.error(message, error);

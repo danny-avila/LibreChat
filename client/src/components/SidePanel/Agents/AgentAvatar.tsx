@@ -9,24 +9,24 @@ import {
 } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type {
-  Metadata,
   Agent,
+  AgentAvatar,
   AgentCreateParams,
   AgentListResponse,
 } from 'librechat-data-provider';
 import { useUploadAgentAvatarMutation, useGetFileConfig } from '~/data-provider';
-import { AgentAvatar, NoImage, AvatarMenu } from './Images';
+import { AgentAvatarRender, NoImage, AvatarMenu } from './Images';
 import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import { formatBytes } from '~/utils';
 
 function Avatar({
   agent_id,
-  metadata,
+  avatar,
   createMutation,
 }: {
   agent_id: string | null;
-  metadata: null | Metadata;
+  avatar: null | AgentAvatar;
   createMutation: UseMutationResult<Agent, Error, AgentCreateParams>;
 }) {
   const queryClient = useQueryClient();
@@ -54,7 +54,7 @@ function Avatar({
       }
 
       setInput(null);
-      setPreviewUrl(data.metadata?.avatar as string | null);
+      setPreviewUrl(data?.avatar?.filepath as string | null);
 
       const res = queryClient.getQueryData<AgentListResponse>([
         QueryKeys.agents,
@@ -103,8 +103,10 @@ function Avatar({
   }, [input]);
 
   useEffect(() => {
-    setPreviewUrl((metadata?.avatar as string | undefined) ?? null);
-  }, [metadata]);
+    if (avatar) {
+      setPreviewUrl((avatar.filepath as string | undefined) ?? null);
+    }
+  }, [avatar]);
 
   useEffect(() => {
     /** Experimental: Condition to prime avatar upload before Agent Creation
@@ -127,14 +129,13 @@ function Avatar({
     }
 
     if (sharedUploadCondition && createMutation.data.id) {
-      console.log('[AgentAvatar] Uploading Avatar after Agent Creation');
 
       const formData = new FormData();
       formData.append('file', input, input.name);
       formData.append('agent_id', createMutation.data.id);
 
-      if (typeof createMutation.data?.metadata === 'object') {
-        formData.append('metadata', JSON.stringify(createMutation.data?.metadata));
+      if (typeof createMutation.data?.avatar === 'object') {
+        formData.append('avatar', JSON.stringify(createMutation.data?.avatar));
       }
 
       uploadAvatar({
@@ -150,7 +151,6 @@ function Avatar({
 
     if (fileConfig.avatarSizeLimit && file && file.size <= fileConfig.avatarSizeLimit) {
       if (!file) {
-        console.error('No file selected');
         return;
       }
 
@@ -159,7 +159,6 @@ function Avatar({
 
       if (!agent_id) {
         // wait for successful form submission before uploading avatar
-        console.log('[AgentAvatar] No agent_id, will wait until form submission + upload');
         return;
       }
 
@@ -167,8 +166,8 @@ function Avatar({
       formData.append('file', file, file.name);
       formData.append('agent_id', agent_id);
 
-      if (typeof metadata === 'object') {
-        formData.append('metadata', JSON.stringify(metadata));
+      if (typeof avatar === 'object') {
+        formData.append('avatar', JSON.stringify(avatar));
       }
 
       uploadAvatar({
@@ -191,7 +190,7 @@ function Avatar({
       <div className="flex w-full items-center justify-center gap-4">
         <Popover.Trigger asChild>
           <button type="button" className="h-20 w-20">
-            {previewUrl ? <AgentAvatar url={previewUrl} progress={progress} /> : <NoImage />}
+            {previewUrl ? <AgentAvatarRender url={previewUrl} progress={progress} /> : <NoImage />}
           </button>
         </Popover.Trigger>
       </div>

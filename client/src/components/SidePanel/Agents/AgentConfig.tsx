@@ -165,7 +165,7 @@ export default function AgentConfig({
           <AgentAvatar
             createMutation={create}
             agent_id={agent_id}
-            metadata={agent?.['metadata'] ?? null}
+            avatar={agent?.['avatar'] ?? null}
           />
           <label className={labelClass} htmlFor="name">
             {localize('com_ui_name')}
