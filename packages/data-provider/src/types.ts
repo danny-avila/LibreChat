@@ -51,6 +51,7 @@ export type TPayload = Partial<TMessage> &
   };
 
 export type TSubmission = {
+  artifacts?: string;
   plugin?: TResPlugin;
   plugins?: TResPlugin[];
   userMessage: TMessage;

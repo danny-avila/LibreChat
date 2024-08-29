@@ -6,6 +6,7 @@ import type { ExtendedFile } from '~/common';
 import { useDragHelpers, useSetFilesToDelete, useAuthContext } from '~/hooks';
 import DragDropOverlay from './Input/Files/DragDropOverlay';
 import { useDeleteFilesMutation } from '~/data-provider';
+import Artifacts from '~/components/Artifacts/Artifacts';
 import { SidePanel } from '~/components/SidePanel';
 import store from '~/store';
 
@@ -22,7 +23,11 @@ export default function Presentation({
 }) {
   const { user } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
+  const artifacts = useRecoilValue(store.artifactsState);
+  const codeArtifacts = useRecoilValue(store.codeArtifacts);
   const hideSidePanel = useRecoilValue(store.hideSidePanel);
+  const artifactsVisible = useRecoilValue(store.artifactsVisible);
+
   const interfaceConfig = useMemo(
     () => startupConfig?.interface ?? defaultInterface,
     [startupConfig],
@@ -45,12 +50,15 @@ export default function Presentation({
     const filesToDelete = localStorage.getItem(LocalStorageKeys.FILES_TO_DELETE);
     const map = JSON.parse(filesToDelete ?? '{}') as Record<string, ExtendedFile>;
     const files = Object.values(map)
-      .filter((file) => file.filepath && file.source && !file.embedded && file.temp_file_id)
+      .filter(
+        (file) =>
+          file.filepath != null && file.source && !(file.embedded ?? false) && file.temp_file_id,
+      )
       .map((file) => ({
         file_id: file.file_id,
         filepath: file.filepath as string,
         source: file.source as FileSources,
-        embedded: !!file.embedded,
+        embedded: !!(file.embedded ?? false),
       }));
 
     if (files.length === 0) {
@@ -92,6 +100,13 @@ export default function Presentation({
           defaultLayout={defaultLayout}
           defaultCollapsed={defaultCollapsed}
           fullPanelCollapse={fullCollapse}
+          artifacts={
+            artifactsVisible === true &&
+            codeArtifacts === true &&
+            Object.keys(artifacts ?? {}).length > 0 ? (
+                <Artifacts />
+              ) : null
+          }
         >
           <main className="flex h-full flex-col" role="main">
             {children}
@@ -105,7 +120,7 @@ export default function Presentation({
   return (
     <div ref={drop} className="relative flex w-full grow overflow-hidden bg-white dark:bg-gray-800">
       {layout()}
-      {panel && panel}
+      {panel != null && panel}
     </div>
   );
 }

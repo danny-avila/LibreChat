@@ -1,4 +1,5 @@
 const getCustomConfig = require('~/server/services/Config/getCustomConfig');
+const { logger } = require('~/config');
 
 /**
  * This function retrieves the speechTab settings from the custom configuration
@@ -15,6 +16,13 @@ const getCustomConfig = require('~/server/services/Config/getCustomConfig');
 async function getCustomConfigSpeech(req, res) {
   try {
     const customConfig = await getCustomConfig();
+
+    if (!customConfig) {
+      return res.status(200).send({
+        message: 'not_found',
+      });
+    }
+
     const sttExternal = !!customConfig.speech?.stt;
     const ttsExternal = !!customConfig.speech?.tts;
     let settings = {
@@ -22,7 +30,7 @@ async function getCustomConfigSpeech(req, res) {
       ttsExternal,
     };
 
-    if (!customConfig || !customConfig.speech?.speechTab) {
+    if (!customConfig.speech?.speechTab) {
       return res.status(200).send(settings);
     }
 
@@ -50,7 +58,7 @@ async function getCustomConfigSpeech(req, res) {
 
     return res.status(200).send(settings);
   } catch (error) {
-    console.error('Failed to get custom config speech settings:', error);
+    logger.error('Failed to get custom config speech settings:', error);
     res.status(500).send('Internal Server Error');
   }
 }

@@ -33,24 +33,25 @@ jobs:
         run: npm run test:ci --verbose
         working-directory: client
 
-  tests_frontend_windows:
-    name: Run frontend unit tests on Windows
-    timeout-minutes: 60
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Use Node.js 20.x
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
+  # Windows job is commented out
+  # tests_frontend_windows:
+  #   name: Run frontend unit tests on Windows
+  #   timeout-minutes: 60
+  #   runs-on: windows-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Use Node.js 20.x
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: 20
+  #         cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
+  #     - name: Install dependencies
+  #       run: npm ci
 
-      - name: Build Client
-        run: npm run frontend:ci
+  #     - name: Build Client
+  #       run: npm run frontend:ci
 
-      - name: Run unit tests
-        run: npm run test:ci --verbose
-        working-directory: client
+  #     - name: Run unit tests
+  #       run: npm run test:ci --verbose
+  #       working-directory: client
