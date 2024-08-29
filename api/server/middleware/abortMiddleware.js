@@ -1,4 +1,4 @@
-const { isAssistantsEndpoint } = require('librechat-data-provider');
+const { isAssistantsEndpoint, ErrorTypes } = require('librechat-data-provider');
 const { sendMessage, sendError, countTokens, isEnabled } = require('~/server/utils');
 const { truncateText, smartTruncateText } = require('~/app/clients/prompts');
 const clearPendingReq = require('~/cache/clearPendingReq');
@@ -165,9 +165,19 @@ const handleAbortError = async (res, req, error, data) => {
     );
   }
 
-  const errorText = error?.message?.includes('"type"')
-    ? error.message
-    : 'An error occurred while processing your request. Please contact the Admin.';
+  let errorText;
+
+  let errorKey = 0;
+  if (error?.message?.includes('"type"')) {
+    errorText = error.message;
+  } else if (
+    error?.message?.includes('Prompt token count of') &&
+    error.message.includes('exceeds')
+  ) {
+    errorText = `{ "code": "${ErrorTypes.PROMPT_LENGTH}", "message": "The prompt token count exceeded the limit. Please try again with a shorter prompt or move part of the prompt to a text file and attach it to chat." }`;
+  } else {
+    errorText = 'An error occurred while processing your request. Please contact the Admin.';
+  }
 
   const respondWithError = async (partialText) => {
     let options = {
@@ -178,6 +188,7 @@ const handleAbortError = async (res, req, error, data) => {
       text: errorText,
       shouldSaveMessage: true,
       user: req.user.id,
+      code: errorKey,
     };
 
     if (partialText) {

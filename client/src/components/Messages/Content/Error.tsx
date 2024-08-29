@@ -42,6 +42,7 @@ const errorMessages = {
     const { expiredAt, endpoint } = json;
     return localize('com_error_expired_user_key', endpoint, expiredAt);
   },
+  [ErrorTypes.PROMPT_LENGTH]: 'com_error_prompt_length',
   [ViolationTypes.BAN]:
     'Your account has been temporarily banned due to violations of our service.',
   invalid_api_key:
@@ -87,9 +88,9 @@ const errorMessages = {
 const Error = ({ text }: { text: string }) => {
   const localize = useLocalize();
   const jsonString = extractJson(text);
+
   const errorMessage = text.length > 512 && !jsonString ? text.slice(0, 512) + '...' : text;
   const defaultResponse = `Something went wrong. Here's the specific error message we encountered: ${errorMessage}`;
-
   if (!isJson(jsonString)) {
     return defaultResponse;
   }
