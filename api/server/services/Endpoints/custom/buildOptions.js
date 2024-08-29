@@ -1,4 +1,5 @@
 const { removeNullishValues } = require('librechat-data-provider');
+const generateArtifactsPrompt = require('~/app/clients/prompts/artifacts');
 
 const buildOptions = (endpoint, parsedBody, endpointType) => {
   const {
@@ -10,6 +11,7 @@ const buildOptions = (endpoint, parsedBody, endpointType) => {
     iconURL,
     greeting,
     spec,
+    artifacts,
     ...modelOptions
   } = parsedBody;
   const endpointOption = removeNullishValues({
@@ -25,6 +27,10 @@ const buildOptions = (endpoint, parsedBody, endpointType) => {
     maxContextTokens,
     modelOptions,
   });
+
+  if (typeof artifacts === 'string') {
+    endpointOption.artifactsPrompt = generateArtifactsPrompt({ endpoint, artifacts });
+  }
 
   return endpointOption;
 };

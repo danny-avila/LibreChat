@@ -53,6 +53,7 @@ const chatV2 = async (req, res) => {
     promptPrefix,
     assistant_id,
     instructions,
+    endpointOption,
     thread_id: _thread_id,
     messageId: _messageId,
     conversationId: convoId,
@@ -160,7 +161,7 @@ const chatV2 = async (req, res) => {
     const { openai: _openai, client } = await getOpenAIClient({
       req,
       res,
-      endpointOption: req.body.endpointOption,
+      endpointOption,
       initAppClient: true,
     });
 
@@ -192,6 +193,10 @@ const chatV2 = async (req, res) => {
 
     if (promptPrefix) {
       body.additional_instructions = promptPrefix;
+    }
+
+    if (typeof endpointOption.artifactsPrompt === 'string' && endpointOption.artifactsPrompt) {
+      body.additional_instructions = `${body.additional_instructions ?? ''}\n${endpointOption.artifactsPrompt}`.trim();
     }
 
     if (instructions) {
