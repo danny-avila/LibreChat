@@ -100,9 +100,9 @@ const Nav = ({
 
   const conversations = useMemo(
     () =>
-      (searchQuery ? searchQueryRes.data : data)?.pages.flatMap((page) => page.conversations) ||
+      (searchQuery ? searchQueryRes?.data : data)?.pages.flatMap((page) => page.conversations) ||
       [],
-    [data, searchQuery, searchQueryRes.data],
+    [data, searchQuery, searchQueryRes?.data],
   );
 
   const clearSearch = () => {
