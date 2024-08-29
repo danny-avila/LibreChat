@@ -9,6 +9,8 @@ export const userPlugins = () => '/api/user/plugins';
 
 export const deleteUser = () => '/api/user/delete';
 
+export const deleteUserByEmail = () => '/api/user/deleteByEmail';
+
 export const getUsers = (pageNumber: number, pageSize: number, searchKey: string) =>
   `/api/user/list?pageNumber=${pageNumber}&pageSize=${pageSize}&searchKey=${searchKey}`;
 

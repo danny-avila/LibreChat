@@ -775,6 +775,18 @@ export const useDeleteUserMutation = (
   });
 };
 
+export const useDeleteUserByEmailMutation = (
+  options?: t.MutationOptions<boolean, string>,
+): UseMutationResult<boolean, unknown, string, unknown> => {
+  return useMutation([MutationKeys.deleteUserByEmail], {
+    mutationFn: (email: string) => dataService.deleteUserByEmail(email),
+    ...(options || {}),
+    onSuccess: (...args) => {
+      options?.onSuccess?.(...args);
+    },
+  });
+};
+
 /* Speech to text */
 export const useSpeechToTextMutation = (
   options?: t.SpeechToTextOptions,

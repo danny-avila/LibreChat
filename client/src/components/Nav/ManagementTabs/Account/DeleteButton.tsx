@@ -1,8 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { QueryKeys } from 'librechat-data-provider';
-import { useQueryClient } from '@tanstack/react-query';
 import type { TMessage } from 'librechat-data-provider';
-import { useDeleteConversationMutation } from '~/data-provider';
+import { useDeleteUserByEmailMutation } from '~/data-provider';
 import {
   OGDialog,
   OGDialogTrigger,
@@ -15,11 +14,14 @@ import {
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { TrashIcon } from '~/components/svg';
 import type { TUser } from 'librechat-data-provider';
+import { useToastContext } from '~/Providers';
+
 type DeleteButtonProps = {
-  user: TUser;
+  user: TUser | null;
   className?: string;
   showDeleteDialog?: boolean;
   setShowDeleteDialog?: (value: boolean) => void;
+  onConfirm: () => void;
 };
 
 export default function DeleteButton({
@@ -27,25 +29,27 @@ export default function DeleteButton({
   className = '',
   showDeleteDialog,
   setShowDeleteDialog,
+  onConfirm,
 }: DeleteButtonProps) {
-  // const localize = useLocalize();
-  // const queryClient = useQueryClient();
+
+  const { showToast } = useToastContext();
   const [open, setOpen] = useState(false);
-  // const deleteConvoMutation = useDeleteConversationMutation({
-  //   onSuccess: () => {
-  //     console.log('删除成功！');
-  //   },
-  // });
 
-  // const confirmDelete = useCallback(() => {
-  //   const messages = queryClient.getQueryData<TMessage[]>([QueryKeys.messages, conversationId]);
-  //   const thread_id = messages?.[messages.length - 1]?.thread_id;
-
-  //   deleteConvoMutation.mutate({ conversationId, thread_id, source: 'button' });
-  // }, [conversationId, deleteConvoMutation, queryClient]);
+  const { mutate: deleteUserByEmail, isLoading: isDeleting } = useDeleteUserByEmailMutation({
+    onSuccess: (data) => {
+      showToast({ message: '删除用户成功！' });
+      onConfirm();
+    },
+    onError: (error) => {
+      console.error('Error:', error);
+      showToast({ message: '删除用户失败！', status: 'error' });
+    },
+  });
 
   const confirmDelete = useCallback(() => {
-    console.log('删除用户');
+    if (user) {
+      deleteUserByEmail(user.email);
+    }
   }, [user]);
 
   const dialogContent = (
@@ -58,7 +62,7 @@ export default function DeleteButton({
           <div className="flex w-full flex-col items-center gap-2">
             <div className="grid w-full items-center gap-2">
               <Label htmlFor="dialog-confirm-delete" className="text-left text-sm font-medium">
-                确定要删除用户: <strong>{user.name}</strong>？其关联数据会被全部清空！
+                确定要删除用户: <strong>{user?.name}</strong>？其关联数据会被全部清空！
               </Label>
             </div>
           </div>

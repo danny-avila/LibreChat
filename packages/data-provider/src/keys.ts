@@ -56,4 +56,5 @@ export enum MutationKeys {
   deleteUser = 'deleteUser',
   updateRole = 'updateRole',
   getAllUsers = 'getAllUsers',
+  deleteUserByEmail = 'deleteUserByEmail',
 }

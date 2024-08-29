@@ -29,6 +29,12 @@ export function deleteUser(): Promise<s.TPreset> {
   return request.delete(endpoints.deleteUser());
 }
 
+export function deleteUserByEmail(email: string): Promise<boolean> {
+  return request.post(endpoints.deleteUserByEmail(), {
+    email,
+  });
+}
+
 export const getUsers = (params: q.GetUsersParams): Promise<q.GetUsersResponse> => {
   const pageNumber = params.pageNumber;
   const pageSize = params.pageSize;

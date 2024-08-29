@@ -8,6 +8,7 @@ const {
   deleteMessages,
   deleteUserById,
   getUsersByPage,
+  findUser,
 } = require('~/models');
 
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
@@ -127,6 +128,40 @@ const deleteUserController = async (req, res) => {
   }
 };
 
+const deleteUserByEmailController = async (req, res) => {
+  const email = req.body.email;
+  console.log('当前用户', req.user);
+  console.log('删除用户', req.body);
+  // 查找根据id查找用户
+  const user = await findUser({ email });
+  if (user) {
+    console.log('找到用户', user);
+    try {
+      await deleteMessages({ user: user._id }); // delete user messages
+      await Session.deleteMany({ user: user._id }); // delete user sessions
+      await Transaction.deleteMany({ user: user._id }); // delete user transactions
+      await deleteUserKey({ userId: user.id, all: true }); // delete user keys
+      await Balance.deleteMany({ user: user._id }); // delete user balances
+      await deletePresets(user._id); // delete user presets
+      /* TODO: Delete Assistant Threads */
+      await deleteConvos(user._id); // delete user convos
+      await deleteUserPluginAuth(user._id, null, true); // delete user plugin auth
+      await deleteUserById(user._id); // delete user
+      await deleteAllSharedLinks(user._id); // delete user shared links
+      // await deleteUserFiles(req); // delete user files
+      await deleteFiles(null, user._id); // delete database files in case of orphaned files from previous steps
+      /* TODO: queue job for cleaning actions and assistants of non-existant users */
+      logger.info(`User deleted account. Email: ${user.email} ID: ${user._id}`);
+      res.status(200).send(true);
+    } catch (err) {
+      logger.error('[deleteUserController]', err);
+      return res.status(500).json(false);
+    }
+  } else {
+    res.status(500).json(false);
+  }
+};
+
 const verifyEmailController = async (req, res) => {
   try {
     const verifyEmailService = await verifyEmail(req);
@@ -162,4 +197,5 @@ module.exports = {
   verifyEmailController,
   updateUserPluginsController,
   resendVerificationController,
+  deleteUserByEmailController,
 };

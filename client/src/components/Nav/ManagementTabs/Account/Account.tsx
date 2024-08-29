@@ -14,20 +14,21 @@ import {
 } from '~/components/ui';
 import DeleteButton from './DeleteButton';
 
+import { formatDate } from '~/utils';
+import { TUser } from 'librechat-data-provider';
+
 export default function Account() {
 
   const [currentPage, setCurrentPage] = useState(1);
-  const [currentUser, setCurrentUser] = useState({});
+  const [currentUser, setCurrentUser] = useState<TUser | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const pageSize = 25; // 每页的用户数
 
-  const { data: { list: users = [], pages = 0, count: totalUsers = 0 } = {} } = useGerUsersQuery({
+  const { data: { list: users = [], pages = 0, count: totalUsers = 0 } = {}, refetch } = useGerUsersQuery({
     pageNumber: currentPage,
     pageSize: pageSize,
     searchKey: '',
   });
-
-  console.log(pages);
 
   const handlePreviousPage = () => {
     if (currentPage > 1) {
@@ -40,10 +41,14 @@ export default function Account() {
     }
   };
 
-  const haldleDeleteUser = (user) => {
+  const haldlePreDeleteUser = (user) => {
     console.log('delete', user);
     setCurrentUser(user);
     setShowDeleteDialog(true);
+  };
+
+  const handleUserDeleted = (userId: string) => {
+    refetch();
   };
 
   return (
@@ -115,13 +120,13 @@ export default function Account() {
                   <TableCell
                     className="align-start overflow-x-auto px-2 py-1 text-xs sm:px-4 sm:py-2 sm:text-sm [tr[data-disabled=true]_&]:opacity-50"
                   >
-                    {row.createdAt}
+                    {formatDate(row.createdAt)}
                   </TableCell>
 
                   <TableCell
                     className="align-start overflow-x-auto px-2 py-1 text-xs sm:px-4 sm:py-2 sm:text-sm [tr[data-disabled=true]_&]:opacity-50"
                   >
-                    <Button onClick={() => haldleDeleteUser(row)} className='bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 text-white'>删除</Button>
+                    <Button onClick={() => haldlePreDeleteUser(row)} className='bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 text-white'>删除</Button>
                   </TableCell>
                 </TableRow>
               ))
@@ -166,6 +171,7 @@ export default function Account() {
           user={currentUser}
           showDeleteDialog={showDeleteDialog}
           setShowDeleteDialog={setShowDeleteDialog}
+          onConfirm={handleUserDeleted}
         />
       )}
     </>
