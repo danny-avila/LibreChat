@@ -1,8 +1,8 @@
-const { GraphEvents, ToolEndHandler, ChatModelStreamHandler } = require('@librechat/agentus');
+const { GraphEvents, ToolEndHandler, ChatModelStreamHandler } = require('@librechat/agents');
 
-/** @typedef {import('@librechat/agentus').EventHandler} EventHandler */
-/** @typedef {import('@librechat/agentus').ChatModelStreamHandler} ChatModelStreamHandler */
-/** @typedef {import('@librechat/agentus').GraphEvents} GraphEvents */
+/** @typedef {import('@librechat/agents').EventHandler} EventHandler */
+/** @typedef {import('@librechat/agents').ChatModelStreamHandler} ChatModelStreamHandler */
+/** @typedef {import('@librechat/agents').GraphEvents} GraphEvents */
 
 /**
  * Sends message data in Server Sent Events format.

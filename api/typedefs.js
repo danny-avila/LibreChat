@@ -22,19 +22,19 @@
 
 /**
  * @exports ClientCallbacks
- * @typedef {import('@librechat/agentus').ClientCallbacks} ClientCallbacks
+ * @typedef {import('@librechat/agents').ClientCallbacks} ClientCallbacks
  * @memberof typedefs
  */
 
 /**
  * @exports StreamEventData
- * @typedef {import('@librechat/agentus').StreamEventData} StreamEventData
+ * @typedef {import('@librechat/agents').StreamEventData} StreamEventData
  * @memberof typedefs
  */
 
 /**
  * @exports ToolEndData
- * @typedef {import('@librechat/agentus').ToolEndData} ToolEndData
+ * @typedef {import('@librechat/agents').ToolEndData} ToolEndData
  * @memberof typedefs
  */
 

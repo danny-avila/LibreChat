@@ -7,7 +7,7 @@
 // validateVisionModel,
 // mapModelToAzureConfig,
 // } = require('librechat-data-provider');
-const { Callback } = require('@librechat/agentus');
+const { Callback } = require('@librechat/agents');
 const {
   EModelEndpoint,
   providerEndpointMap,

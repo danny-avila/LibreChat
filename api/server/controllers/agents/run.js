@@ -1,13 +1,13 @@
-const { Run } = require('@librechat/agentus');
+const { Run } = require('@librechat/agents');
 const { providerEndpointMap } = require('librechat-data-provider');
 
 /**
- * @typedef {import('@librechat/agentus').t} t
- * @typedef {import('@librechat/agentus').StreamEventData} StreamEventData
- * @typedef {import('@librechat/agentus').ClientOptions} ClientOptions
- * @typedef {import('@librechat/agentus').EventHandler} EventHandler
- * @typedef {import('@librechat/agentus').GraphEvents} GraphEvents
- * @typedef {import('@librechat/agentus').IState} IState
+ * @typedef {import('@librechat/agents').t} t
+ * @typedef {import('@librechat/agents').StreamEventData} StreamEventData
+ * @typedef {import('@librechat/agents').ClientOptions} ClientOptions
+ * @typedef {import('@librechat/agents').EventHandler} EventHandler
+ * @typedef {import('@librechat/agents').GraphEvents} GraphEvents
+ * @typedef {import('@librechat/agents').IState} IState
  */
 
 /**
