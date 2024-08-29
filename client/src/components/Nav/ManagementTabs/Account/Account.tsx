@@ -12,13 +12,16 @@ import {
   TableRow,
   Switch,
 } from '~/components/ui';
+import DeleteButton from './DeleteButton';
 
 export default function Account() {
 
   const [currentPage, setCurrentPage] = useState(1);
+  const [currentUser, setCurrentUser] = useState({});
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const pageSize = 25; // 每页的用户数
 
-  const { data: { list: users = [], pages = 0 } = {}, count: totalUsers = 0 } = useGerUsersQuery({
+  const { data: { list: users = [], pages = 0, count: totalUsers = 0 } = {} } = useGerUsersQuery({
     pageNumber: currentPage,
     pageSize: pageSize,
     searchKey: '',
@@ -37,9 +40,15 @@ export default function Account() {
     }
   };
 
+  const haldleDeleteUser = (user) => {
+    console.log('delete', user);
+    setCurrentUser(user);
+    setShowDeleteDialog(true);
+  };
+
   return (
     <>
-      <div className="relative max-h-[25rem] min-h-0 overflow-y-auto rounded-md border border-black/10 pb-4 dark:border-white/10 sm:min-h-[28rem]">
+      <div className="relative max-h-[25rem] min-h-0 overflow-y-auto rounded-md border border-black/10 pb-4 dark:border-white/10">
         <Table className="w-full min-w-[600px] border-separate border-spacing-0">
           <TableHeader>
             <TableRow>
@@ -112,7 +121,7 @@ export default function Account() {
                   <TableCell
                     className="align-start overflow-x-auto px-2 py-1 text-xs sm:px-4 sm:py-2 sm:text-sm [tr[data-disabled=true]_&]:opacity-50"
                   >
-                    <Button className='bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 text-white'>删除</Button>
+                    <Button onClick={() => haldleDeleteUser(row)} className='bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 text-white'>删除</Button>
                   </TableCell>
                 </TableRow>
               ))
@@ -151,6 +160,14 @@ export default function Account() {
           下一页
         </Button>
       </div>
+
+      {showDeleteDialog && (
+        <DeleteButton
+          user={currentUser}
+          showDeleteDialog={showDeleteDialog}
+          setShowDeleteDialog={setShowDeleteDialog}
+        />
+      )}
     </>
   );
 }

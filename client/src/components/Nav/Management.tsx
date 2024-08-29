@@ -41,7 +41,7 @@ export default function Management({ open, onOpenChange }) {
                 <UserIcon />
                 用户
               </Tabs.Trigger>
-              <Tabs.Trigger
+              {/* <Tabs.Trigger
                 tabIndex={0}
                 className={cn(
                   'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-active',
@@ -54,15 +54,15 @@ export default function Management({ open, onOpenChange }) {
               >
                 <DataIcon />
                 余额
-              </Tabs.Trigger>
+              </Tabs.Trigger> */}
             </Tabs.List>
             <div className="max-h-[373px] overflow-auto sm:w-full sm:max-w-none md:pr-0.5 md:pt-0.5">
               <Tabs.Content value="account">
                 <Account />
               </Tabs.Content>
-              <Tabs.Content value="balance">
+              {/* <Tabs.Content value="balance">
                 <Balance />
-              </Tabs.Content>
+              </Tabs.Content> */}
             </div>
           </Tabs.Root>
           <div className="mt-5 sm:mt-4" />

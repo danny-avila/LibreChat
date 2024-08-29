@@ -162,25 +162,22 @@ const comparePassword = async (user, candidatePassword) => {
  */
 const getUsersByPage = async function (pageNumber = 1, pageSize = 25, searchKey = '') {
   try {
-    const totalUser = await User.countDocuments({
+
+    const filter = {
       $or: [
         { name: { $regex: searchKey, $options: 'i' } },
         { username: { $regex: searchKey, $options: 'i' } },
         { email: { $regex: searchKey, $options: 'i' } },
       ],
-    });
+    };
+
+    const totalUser = await User.countDocuments(filter);
 
     const totalPages = Math.ceil(totalUser / pageSize);
 
     const users = await User.aggregate([
       {
-        $match: {
-          $or: [
-            { name: { $regex: searchKey, $options: 'i' } },
-            { username: { $regex: searchKey, $options: 'i' } },
-            { email: { $regex: searchKey, $options: 'i' } },
-          ],
-        },
+        $match: filter,
       },
       {
         $lookup: {
@@ -204,7 +201,7 @@ const getUsersByPage = async function (pageNumber = 1, pageSize = 25, searchKey 
           role: 1,
           provider: 1,
           createdAt: 1,
-          tokenCredits: '$users.tokenCredits',
+          tokenCredits: { $ifNull: ['$users.tokenCredits', 0] },
         },
       },
       {
