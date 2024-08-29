@@ -29,6 +29,10 @@ const DisplayMessage = ({ text, isCreatedByUser = false, message, showCursor }: 
     () => message.messageId === latestMessage?.messageId,
     [message.messageId, latestMessage?.messageId],
   );
+
+  // Note: for testing purposes
+  // isSubmitting && isLatestMessage && logger.log('message_stream', { text, isCreatedByUser, isSubmitting, showCursorState });
+
   return (
     <div
       className={cn(
@@ -53,7 +57,7 @@ export default function Part({
   isSubmitting,
   message,
 }: {
-  part: TMessageContentParts;
+  part: TMessageContentParts | undefined;
   isSubmitting: boolean;
   showCursor: boolean;
   message: TMessage;
@@ -66,7 +70,7 @@ export default function Part({
     return <ErrorMessage message={message} text={part[ContentTypes.TEXT].value} className="my-2" />;
   } else if (part.type === ContentTypes.TEXT) {
     const text = typeof part.text === 'string' ? part.text : part.text.value;
-    if (!text) {
+    if (typeof text !== 'string') {
       return null;
     }
     return (

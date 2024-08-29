@@ -159,6 +159,17 @@ const abortScrollFamily = atomFamily({
 const isSubmittingFamily = atomFamily({
   key: 'isSubmittingByIndex',
   default: false,
+  effects: [
+    ({ onSet, node }) => {
+      onSet(async (newValue) => {
+        const key = Number(node.key.split(Constants.COMMON_DIVIDER)[1]);
+        logger.log('message_stream', 'Recoil Effect: Setting isSubmittingByIndex', {
+          key,
+          newValue,
+        });
+      });
+    },
+  ],
 });
 
 const optionSettingsFamily = atomFamily<TOptionSettings, string | number>({
