@@ -195,6 +195,7 @@ const getUsersByPage = async function (pageNumber = 1, pageSize = 25, searchKey 
       },
       {
         $project: {
+          id: '$_id',
           name: 1,
           username: 1,
           email: 1,

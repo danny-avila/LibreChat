@@ -494,3 +494,8 @@ export type TGetRandomPromptsRequest = {
 };
 
 export type TCustomConfigSpeechResponse = { [key: string]: string };
+
+export type TUpdateBalance = {
+  id: string;
+  balance: number;
+};

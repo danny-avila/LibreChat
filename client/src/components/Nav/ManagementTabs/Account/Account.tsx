@@ -13,7 +13,8 @@ import {
   Switch,
 } from '~/components/ui';
 import DeleteButton from './DeleteButton';
-
+import EditBalance from './EditBalance';
+import { NewChatIcon } from '~/components/svg';
 import { formatDate } from '~/utils';
 import { TUser } from 'librechat-data-provider';
 
@@ -22,6 +23,7 @@ export default function Account() {
   const [currentPage, setCurrentPage] = useState(1);
   const [currentUser, setCurrentUser] = useState<TUser | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showBalanceDialog, setShowBalanceDialog] = useState(false);
   const pageSize = 25; // 每页的用户数
 
   const { data: { list: users = [], pages = 0, count: totalUsers = 0 } = {}, refetch } = useGerUsersQuery({
@@ -42,12 +44,16 @@ export default function Account() {
   };
 
   const haldlePreDeleteUser = (user) => {
-    console.log('delete', user);
     setCurrentUser(user);
     setShowDeleteDialog(true);
   };
 
-  const handleUserDeleted = (userId: string) => {
+  const handlePreEditBalance = (user) => {
+    setCurrentUser(user);
+    setShowBalanceDialog(true);
+  };
+
+  const handleRefreshList = () => {
     refetch();
   };
 
@@ -115,7 +121,15 @@ export default function Account() {
                   <TableCell
                     className="align-start overflow-x-auto px-2 py-1 text-xs sm:px-4 sm:py-2 sm:text-sm [tr[data-disabled=true]_&]:opacity-50"
                   >
-                    {row.tokenCredits}
+
+                    <button
+                      className="text-token-text-primary flex"
+                      onClick={() => handlePreEditBalance(row)}
+                    >
+                      {row.tokenCredits}
+                      <NewChatIcon className="size-5" />
+                    </button>
+
                   </TableCell>
                   <TableCell
                     className="align-start overflow-x-auto px-2 py-1 text-xs sm:px-4 sm:py-2 sm:text-sm [tr[data-disabled=true]_&]:opacity-50"
@@ -171,7 +185,15 @@ export default function Account() {
           user={currentUser}
           showDeleteDialog={showDeleteDialog}
           setShowDeleteDialog={setShowDeleteDialog}
-          onConfirm={handleUserDeleted}
+          onConfirm={handleRefreshList}
+        />
+      )}
+      {showBalanceDialog && (
+        <EditBalance
+          user={currentUser}
+          showBalanceDialog={showBalanceDialog}
+          setShowBalanceDialog={setShowBalanceDialog}
+          onConfirm={handleRefreshList}
         />
       )}
     </>

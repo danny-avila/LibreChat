@@ -35,6 +35,13 @@ export function deleteUserByEmail(email: string): Promise<boolean> {
   });
 }
 
+export function updateBalance(payload: t.TUpdateBalance): Promise<boolean> {
+  return request.post(endpoints.updateBalance(), {
+    id: payload.id,
+    balance: payload.balance,
+  });
+}
+
 export const getUsers = (params: q.GetUsersParams): Promise<q.GetUsersResponse> => {
   const pageNumber = params.pageNumber;
   const pageSize = params.pageSize;

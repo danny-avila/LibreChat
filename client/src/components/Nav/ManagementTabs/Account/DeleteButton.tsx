@@ -1,6 +1,4 @@
 import React, { useCallback, useState } from 'react';
-import { QueryKeys } from 'librechat-data-provider';
-import type { TMessage } from 'librechat-data-provider';
 import { useDeleteUserByEmailMutation } from '~/data-provider';
 import {
   OGDialog,
@@ -33,10 +31,9 @@ export default function DeleteButton({
 }: DeleteButtonProps) {
 
   const { showToast } = useToastContext();
-  const [open, setOpen] = useState(false);
 
   const { mutate: deleteUserByEmail, isLoading: isDeleting } = useDeleteUserByEmailMutation({
-    onSuccess: (data) => {
+    onSuccess: () => {
       showToast({ message: '删除用户成功！' });
       onConfirm();
     },
@@ -77,31 +74,10 @@ export default function DeleteButton({
     />
   );
 
-  if (showDeleteDialog !== undefined && setShowDeleteDialog !== undefined) {
-    return (
-      <OGDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        {dialogContent}
-      </OGDialog>
-    );
-  }
-
   return (
-    <OGDialog open={open} onOpenChange={setOpen}>
-      <TooltipProvider delayDuration={250}>
-        <Tooltip>
-          <OGDialogTrigger asChild>
-            <TooltipTrigger asChild>
-              <button>
-                <TrashIcon className="h-5 w-5" />
-              </button>
-            </TooltipTrigger>
-          </OGDialogTrigger>
-          <TooltipContent side="top" sideOffset={0} className={className}>
-            确定
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+    <OGDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
       {dialogContent}
     </OGDialog>
   );
+
 }

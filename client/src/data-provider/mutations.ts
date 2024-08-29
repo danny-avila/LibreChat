@@ -775,18 +775,6 @@ export const useDeleteUserMutation = (
   });
 };
 
-export const useDeleteUserByEmailMutation = (
-  options?: t.MutationOptions<boolean, string>,
-): UseMutationResult<boolean, unknown, string, unknown> => {
-  return useMutation([MutationKeys.deleteUserByEmail], {
-    mutationFn: (email: string) => dataService.deleteUserByEmail(email),
-    ...(options || {}),
-    onSuccess: (...args) => {
-      options?.onSuccess?.(...args);
-    },
-  });
-};
-
 /* Speech to text */
 export const useSpeechToTextMutation = (
   options?: t.SpeechToTextOptions,
@@ -1120,5 +1108,29 @@ export const useResendVerificationEmail = (
     mutationFn: (variables: t.TResendVerificationEmail) =>
       dataService.resendVerificationEmail(variables),
     ...(options || {}),
+  });
+};
+
+export const useDeleteUserByEmailMutation = (
+  options?: t.MutationOptions<boolean, string>,
+): UseMutationResult<boolean, unknown, string, unknown> => {
+  return useMutation([MutationKeys.deleteUserByEmail], {
+    mutationFn: (email: string) => dataService.deleteUserByEmail(email),
+    ...(options || {}),
+    onSuccess: (...args) => {
+      options?.onSuccess?.(...args);
+    },
+  });
+};
+
+export const useUpdateBalanceMutation = (
+  options?: t.MutationOptions<boolean, t.TUpdateBalance>,
+): UseMutationResult<boolean, unknown, t.TUpdateBalance, unknown> => {
+  return useMutation([MutationKeys.updateBalance], {
+    mutationFn: (payload: t.TUpdateBalance) => dataService.updateBalance(payload),
+    ...(options || {}),
+    onSuccess: (...args) => {
+      options?.onSuccess?.(...args);
+    },
   });
 };
