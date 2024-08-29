@@ -107,6 +107,7 @@
   },
   "dependencies": {
     "applicationinsights": "^3.2.2",
-    "node-cache": "^5.1.2"
+    "node-cache": "^5.1.2",
+    "sharp": "^0.32.6"
   }
 }

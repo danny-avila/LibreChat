@@ -4,6 +4,7 @@ function getModelTokenEncoder(model) {
   const o200k_base = ['gpt-4o'];
   const cl100k_base = [
     'gpt-4',
+    'gpt4',
     'gpt-3.5-turbo',
     'gpt-3.5',
     'gpt-35-turbo',
