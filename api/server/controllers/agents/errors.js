@@ -1,7 +1,7 @@
 // errorHandler.js
 const { logger } = require('~/config');
 const getLogStores = require('~/cache/getLogStores');
-const { CacheKeys, ViolationTypes, ContentTypes } = require('librechat-data-provider');
+const { CacheKeys, ViolationTypes } = require('librechat-data-provider');
 const { recordUsage } = require('~/server/services/Threads');
 const { getConvo } = require('~/models/Conversation');
 const { sendResponse } = require('~/server/utils');
@@ -128,14 +128,13 @@ const createErrorHandler = ({ req, res, getContext, originPath = '/assistants/ch
 
     let finalEvent;
     try {
-
-      const errorContentPart = {
-        text: {
-          value:
-            error?.message ?? 'There was an error processing your request. Please try again later.',
-        },
-        type: ContentTypes.ERROR,
-      };
+      // const errorContentPart = {
+      //   text: {
+      //     value:
+      //       error?.message ?? 'There was an error processing your request. Please try again later.',
+      //   },
+      //   type: ContentTypes.ERROR,
+      // };
 
       finalEvent = {
         final: true,
