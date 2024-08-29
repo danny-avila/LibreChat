@@ -1,10 +1,11 @@
 const {
-  SystemRoles,
   CacheKeys,
+  SystemRoles,
   roleDefaults,
   PermissionTypes,
-  Permissions,
+  removeNullishValues,
   promptPermissionsSchema,
+  bookmarkPermissionsSchema,
 } = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
 const Role = require('~/models/schema/roleSchema');
@@ -69,34 +70,60 @@ const updateRoleByName = async function (roleName, updates) {
   }
 };
 
+const permissionSchemas = {
+  [PermissionTypes.PROMPTS]: promptPermissionsSchema,
+  [PermissionTypes.BOOKMARKS]: bookmarkPermissionsSchema,
+};
+
 /**
- * Updates the Prompt access for a specific role.
- * @param {SystemRoles} roleName - The role to update the prompt access for.
- * @param {boolean | undefined} [value] - The new value for the prompt access.
+ * Updates access permissions for a specific role and multiple permission types.
+ * @param {SystemRoles} roleName - The role to update.
+ * @param {Object.<PermissionTypes, Object.<Permissions, boolean>>} permissionsUpdate - Permissions to update and their values.
  */
-async function updatePromptsAccess(roleName, value) {
-  if (typeof value === 'undefined') {
+async function updateAccessPermissions(roleName, permissionsUpdate) {
+  const updates = {};
+  for (const [permissionType, permissions] of Object.entries(permissionsUpdate)) {
+    if (permissionSchemas[permissionType]) {
+      updates[permissionType] = removeNullishValues(permissions);
+    }
+  }
+
+  if (Object.keys(updates).length === 0) {
     return;
   }
 
   try {
-    const parsedUpdates = promptPermissionsSchema.partial().parse({ [Permissions.USE]: value });
     const role = await getRoleByName(roleName);
     if (!role) {
       return;
     }
 
-    const mergedUpdates = {
-      [PermissionTypes.PROMPTS]: {
-        ...role[PermissionTypes.PROMPTS],
-        ...parsedUpdates,
-      },
-    };
+    const updatedPermissions = {};
+    let hasChanges = false;
 
-    await updateRoleByName(roleName, mergedUpdates);
-    logger.info(`Updated '${roleName}' role prompts 'USE' permission to: ${value}`);
+    for (const [permissionType, permissions] of Object.entries(updates)) {
+      const currentPermissions = role[permissionType] || {};
+      updatedPermissions[permissionType] = { ...currentPermissions };
+
+      for (const [permission, value] of Object.entries(permissions)) {
+        if (currentPermissions[permission] !== value) {
+          updatedPermissions[permissionType][permission] = value;
+          hasChanges = true;
+          logger.info(
+            `Updating '${roleName}' role ${permissionType} '${permission}' permission from ${currentPermissions[permission]} to: ${value}`,
+          );
+        }
+      }
+    }
+
+    if (hasChanges) {
+      await updateRoleByName(roleName, updatedPermissions);
+      logger.info(`Updated '${roleName}' role permissions`);
+    } else {
+      logger.info(`No changes needed for '${roleName}' role permissions`);
+    }
   } catch (error) {
-    logger.error('Failed to update USER role prompts USE permission:', error);
+    logger.error(`Failed to update ${roleName} role permissions:`, error);
   }
 }
 
@@ -122,5 +149,5 @@ module.exports = {
   getRoleByName,
   initializeRoles,
   updateRoleByName,
-  updatePromptsAccess,
+  updateAccessPermissions,
 };

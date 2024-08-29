@@ -2,6 +2,7 @@ import {
   atom,
   selector,
   atomFamily,
+  DefaultValue,
   selectorFamily,
   useRecoilState,
   useRecoilValue,
@@ -325,6 +326,31 @@ function useClearLatestMessages(context?: string) {
   return clearAllLatestMessages;
 }
 
+const updateConversationSelector = selectorFamily({
+  key: 'updateConversationSelector',
+  get: () => () => null as Partial<TConversation> | null,
+  set:
+    (conversationId: string) =>
+      ({ set, get }, newPartialConversation) => {
+        if (newPartialConversation instanceof DefaultValue) {
+          return;
+        }
+
+        const keys = get(conversationKeysAtom);
+        keys.forEach((key) => {
+          set(conversationByIndex(key), (prevConversation) => {
+            if (prevConversation && prevConversation.conversationId === conversationId) {
+              return {
+                ...prevConversation,
+                ...newPartialConversation,
+              };
+            }
+            return prevConversation;
+          });
+        });
+      },
+});
+
 export default {
   conversationByIndex,
   filesByIndex,
@@ -354,4 +380,5 @@ export default {
   useClearSubmissionState,
   useClearLatestMessages,
   showPromptsPopoverFamily,
+  updateConversationSelector,
 };

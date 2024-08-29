@@ -29,6 +29,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
     maxOutputTokens,
     maxContextTokens,
     resendFiles,
+    promptCache,
   } = conversation ?? {};
   const [setMaxContextTokens, maxContextTokensValue] = useDebouncedInput<number | null | undefined>(
     {
@@ -47,6 +48,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
   const setTopP = setOption('topP');
   const setTopK = setOption('topK');
   const setResendFiles = setOption('resendFiles');
+  const setPromptCache = setOption('promptCache');
 
   const setModel = (newModel: string) => {
     const modelSetter = setOption('model');
@@ -188,7 +190,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               className="flex h-4 w-full"
             />
           </HoverCardTrigger>
-          <OptionHover endpoint={conversation?.endpoint ?? ''} type="temp" side={ESide.Left} />
+          <OptionHover endpoint={conversation.endpoint ?? ''} type="temp" side={ESide.Left} />
         </HoverCard>
         <HoverCard openDelay={300}>
           <HoverCardTrigger className="grid w-full items-center gap-2">
@@ -228,7 +230,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               className="flex h-4 w-full"
             />
           </HoverCardTrigger>
-          <OptionHover endpoint={conversation?.endpoint ?? ''} type="topp" side={ESide.Left} />
+          <OptionHover endpoint={conversation.endpoint ?? ''} type="topp" side={ESide.Left} />
         </HoverCard>
 
         <HoverCard openDelay={300}>
@@ -269,7 +271,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               className="flex h-4 w-full"
             />
           </HoverCardTrigger>
-          <OptionHover endpoint={conversation?.endpoint ?? ''} type="topk" side={ESide.Left} />
+          <OptionHover endpoint={conversation.endpoint ?? ''} type="topk" side={ESide.Left} />
         </HoverCard>
         <HoverCard openDelay={300}>
           <HoverCardTrigger className="grid w-full items-center gap-2">
@@ -310,7 +312,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             />
           </HoverCardTrigger>
           <OptionHover
-            endpoint={conversation?.endpoint ?? ''}
+            endpoint={conversation.endpoint ?? ''}
             type="maxoutputtokens"
             side={ESide.Left}
           />
@@ -329,8 +331,29 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                 className="flex"
               />
               <OptionHover
-                endpoint={conversation?.endpoint ?? ''}
+                endpoint={conversation.endpoint ?? ''}
                 type="resend"
+                side={ESide.Bottom}
+              />
+            </div>
+          </HoverCardTrigger>
+        </HoverCard>
+        <HoverCard openDelay={500}>
+          <HoverCardTrigger className="grid w-full">
+            <div className="flex justify-between">
+              <Label htmlFor="prompt-cache" className="text-left text-sm font-medium">
+                {localize('com_endpoint_prompt_cache')}{' '}
+              </Label>
+              <Switch
+                id="prompt-cache"
+                checked={promptCache ?? true}
+                onCheckedChange={(checked: boolean) => setPromptCache(checked)}
+                disabled={readonly}
+                className="flex"
+              />
+              <OptionHover
+                endpoint={conversation.endpoint ?? ''}
+                type="promptcache"
                 side={ESide.Bottom}
               />
             </div>

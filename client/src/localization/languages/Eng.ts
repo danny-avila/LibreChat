@@ -3,6 +3,17 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets present in this file
 
 export default {
+  com_ui_artifacts: 'Artifacts',
+  com_ui_artifacts_toggle: 'Toggle Artifacts UI',
+  com_nav_info_code_artifacts:
+    'Enables the display of experimental code artifacts next to the chat',
+  com_ui_include_shadcnui: 'Include shadcn/ui components instructions',
+  com_nav_info_include_shadcnui:
+    'When enabled, instructions for using shadcn/ui components will be included. shadcn/ui is a collection of re-usable components built using Radix UI and Tailwind CSS. Note: these are lengthy instructions, you should only enable if informing the LLM of the correct imports and components is important to you. For more information about these components, visit: https://ui.shadcn.com/',
+  com_ui_custom_prompt_mode: 'Custom Prompt Mode',
+  com_nav_info_custom_prompt_mode:
+    'When enabled, the default artifacts system prompt will not be included. All artifact-generating instructions must be provided manually in this mode.',
+  com_ui_artifact_click: 'Click to open',
   com_a11y_start: 'The AI is replying.',
   com_a11y_end: 'The AI has finished their reply.',
   com_error_moderation:
@@ -311,6 +322,7 @@ export default {
   com_ui_bookmarks_create_success: 'Bookmark created successfully',
   com_ui_bookmarks_update_success: 'Bookmark updated successfully',
   com_ui_bookmarks_delete_success: 'Bookmark deleted successfully',
+  com_ui_bookmarks_create_exists: 'This bookmark already exists',
   com_ui_bookmarks_create_error: 'There was an error creating the bookmark',
   com_ui_bookmarks_update_error: 'There was an error updating the bookmark',
   com_ui_bookmarks_delete_error: 'There was an error deleting the bookmark',
@@ -471,6 +483,9 @@ export default {
     'Top-k changes how the model selects tokens for output. A top-k of 1 means the selected token is the most probable among all tokens in the model\'s vocabulary (also called greedy decoding), while a top-k of 3 means that the next token is selected from among the 3 most probable tokens (using temperature).',
   com_endpoint_anthropic_maxoutputtokens:
     'Maximum number of tokens that can be generated in the response. Specify a lower value for shorter responses and a higher value for longer responses. Note: models may stop before reaching this maximum.',
+  com_endpoint_anthropic_prompt_cache:
+    'Prompt caching allows reusing large context or instructions across API calls, reducing costs and latency',
+  com_endpoint_prompt_cache: 'Use Prompt Caching',
   com_endpoint_anthropic_custom_name_placeholder: 'Set a custom name for Anthropic',
   com_endpoint_frequency_penalty: 'Frequency Penalty',
   com_endpoint_presence_penalty: 'Presence Penalty',

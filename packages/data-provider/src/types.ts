@@ -26,6 +26,7 @@ export type TEndpointOption = {
   endpointType?: EModelEndpoint;
   modelDisplayLabel?: string;
   resendFiles?: boolean;
+  promptCache?: boolean;
   maxContextTokens?: number;
   imageDetail?: ImageDetail;
   model?: string | null;
@@ -50,6 +51,7 @@ export type TPayload = Partial<TMessage> &
   };
 
 export type TSubmission = {
+  artifacts?: string;
   plugin?: TResPlugin;
   plugins?: TResPlugin[];
   userMessage: TMessage;
