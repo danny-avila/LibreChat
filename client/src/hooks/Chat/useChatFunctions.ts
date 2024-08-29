@@ -116,7 +116,7 @@ export default function useChatFunctions({
     // this is not a real messageId, it is used as placeholder before real messageId returned
     text = text.trim();
     const intermediateId = overrideUserMessageId ?? v4();
-    parentMessageId = parentMessageId || latestMessage?.messageId || Constants.NO_PARENT;
+    parentMessageId = parentMessageId ?? latestMessage?.messageId ?? Constants.NO_PARENT;
 
     logChatRequest({
       index,
@@ -160,7 +160,7 @@ export default function useChatFunctions({
         endpointType,
         overrideConvoId,
         overrideUserMessageId,
-      artifacts: getArtifactsMode({ codeArtifacts, includeShadcnui, customPromptMode }),
+        artifacts: getArtifactsMode({ codeArtifacts, includeShadcnui, customPromptMode }),
       },
       convo,
     ) as TEndpointOption;
@@ -191,7 +191,7 @@ export default function useChatFunctions({
       currentMsg.files = Array.from(files.values()).map((file) => ({
         file_id: file.file_id,
         filepath: file.filepath,
-        type: file.type || '', // Ensure type is not undefined
+        type: file.type ?? '', // Ensure type is not undefined
         height: file.height,
         width: file.width,
       }));

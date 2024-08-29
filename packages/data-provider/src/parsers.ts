@@ -66,7 +66,7 @@ export function getEnabledEndpoints() {
     EModelEndpoint.anthropic,
   ];
 
-  const endpointsEnv = process.env.ENDPOINTS || '';
+  const endpointsEnv = process.env.ENDPOINTS ?? '';
   let enabledEndpoints = defaultEndpoints;
   if (endpointsEnv) {
     enabledEndpoints = endpointsEnv
@@ -130,7 +130,7 @@ export const envVarRegex = /^\${(.+)}$/;
 export function extractEnvVariable(value: string) {
   const envVarMatch = value.match(envVarRegex);
   if (envVarMatch) {
-    return process.env[envVarMatch[1]] || value;
+    return process.env[envVarMatch[1]] ?? value;
   }
   return value;
 }
