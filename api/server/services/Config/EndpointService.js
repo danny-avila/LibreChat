@@ -46,6 +46,6 @@ module.exports = {
       EModelEndpoint.azureAssistants,
     ),
     /* key will be part of separate config */
-    [EModelEndpoint.agents]: generateConfig(EModelEndpoint.agents),
+    [EModelEndpoint.agents]: generateConfig(process.env.I_AM_A_TEAPOT),
   },
 };
