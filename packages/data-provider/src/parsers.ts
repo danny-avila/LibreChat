@@ -130,7 +130,8 @@ export const envVarRegex = /^\${(.+)}$/;
 export function extractEnvVariable(value: string) {
   const envVarMatch = value.match(envVarRegex);
   if (envVarMatch) {
-    return process.env[envVarMatch[1]] ?? value;
+    // eslint-disable-next-line @typescript-eslint/strict-boolean-expressions
+    return process.env[envVarMatch[1]] || value;
   }
   return value;
 }
