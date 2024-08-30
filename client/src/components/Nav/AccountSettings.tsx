@@ -6,7 +6,7 @@ import { useGetUserBalance, useGetStartupConfig } from 'librechat-data-provider/
 import FilesView from '~/components/Chat/Input/Files/FilesView';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useAvatar from '~/hooks/Messages/useAvatar';
-import { LinkIcon, GearIcon } from '~/components';
+import { GearIcon } from '~/components';
 import { UserIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 import Management from './Management';
@@ -121,7 +121,7 @@ function AccountSettings() {
                       {({ focus }) => (
                         <NavLink
                           className={focus ? 'bg-surface-hover' : ''}
-                          svg={() => <GearIcon className="icon-md" />}
+                          svg={() => <UserIcon />}
                           text='管理'
                           clickHandler={() => setShowManagement(true)}
                         />
