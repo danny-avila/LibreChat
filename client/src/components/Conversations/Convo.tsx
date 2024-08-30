@@ -1,11 +1,11 @@
-import { useRecoilValue } from 'recoil';
-import { useParams } from 'react-router-dom';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-
+import { useRecoilValue } from 'recoil';
+import { Check, X } from 'lucide-react';
+import { useParams } from 'react-router-dom';
 import { Constants } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
-import { Check, X } from 'lucide-react';
 import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
+import type { TConversation } from 'librechat-data-provider';
 import { useConversations, useNavigateToConvo, useMediaQuery } from '~/hooks';
 import { useUpdateConversationMutation } from '~/data-provider';
 import EndpointIcon from '~/components/Endpoints/EndpointIcon';
@@ -17,7 +17,19 @@ import store from '~/store';
 
 type KeyEvent = KeyboardEvent<HTMLInputElement>;
 
-export default function Conversation({ conversation, retainView, toggleNav, isLatestConvo }) {
+type ConversationProps = {
+  conversation: TConversation;
+  retainView: () => void;
+  toggleNav: () => void;
+  isLatestConvo: boolean;
+};
+
+export default function Conversation({
+  conversation,
+  retainView,
+  toggleNav,
+  isLatestConvo,
+}: ConversationProps) {
   const params = useParams();
   const currentConvoId = useMemo(() => params.conversationId, [params.conversationId]);
   const updateConvoMutation = useUpdateConversationMutation(currentConvoId ?? '');
@@ -33,7 +45,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
   const [isPopoverActive, setIsPopoverActive] = useState(false);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
-  const clickHandler = async (event: React.MouseEvent<HTMLAnchorElement>) => {
+  const clickHandler = async (event: MouseEvent<HTMLAnchorElement>) => {
     if (event.button === 0 && (event.ctrlKey || event.metaKey)) {
       toggleNav();
       return;
@@ -47,12 +59,17 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
     toggleNav();
 
     // set document title
-    document.title = title;
+    if (typeof title === 'string' && title.length > 0) {
+      document.title = title;
+    }
     /* Note: Latest Message should not be reset if existing convo */
-    navigateWithLastTools(conversation, !conversationId || conversationId === Constants.NEW_CONVO);
+    navigateWithLastTools(
+      conversation,
+      !(conversationId ?? '') || conversationId === Constants.NEW_CONVO,
+    );
   };
 
-  const renameHandler = (e: MouseEvent<HTMLButtonElement>) => {
+  const renameHandler: (e: MouseEvent<HTMLButtonElement>) => void = () => {
     setIsPopoverActive(false);
     setTitleInput(title);
     setRenaming(true);
@@ -70,8 +87,12 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
     if (titleInput === title) {
       return;
     }
+    if (typeof conversationId !== 'string' || conversationId === '') {
+      return;
+    }
+
     updateConvoMutation.mutate(
-      { conversationId, title: titleInput },
+      { conversationId, title: titleInput ?? '' },
       {
         onSuccess: () => refreshConversations(),
         onError: () => {
@@ -101,14 +122,17 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
     setRenaming(false);
   };
 
-  const isActiveConvo =
+  const isActiveConvo: boolean =
     currentConvoId === conversationId ||
-    (isLatestConvo && currentConvoId === 'new' && activeConvos[0] && activeConvos[0] !== 'new');
+    (isLatestConvo &&
+      currentConvoId === 'new' &&
+      activeConvos[0] != null &&
+      activeConvos[0] !== 'new');
 
   return (
     <div
       className={cn(
-        'group relative mt-2 flex h-9 items-center rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700',
+        'group relative mt-2 flex h-9 w-full items-center rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700',
         isActiveConvo ? 'bg-gray-200 dark:bg-gray-700' : '',
         isSmallScreen ? 'h-12' : '',
       )}
@@ -119,7 +143,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
             ref={inputRef}
             type="text"
             className="w-full rounded bg-transparent p-0.5 text-sm leading-tight outline-none"
-            value={titleInput}
+            value={titleInput ?? ''}
             onChange={(e) => setTitleInput(e.target.value)}
             onKeyDown={handleKeyDown}
           />
@@ -141,7 +165,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
             'flex grow cursor-pointer items-center gap-2 overflow-hidden whitespace-nowrap break-all rounded-lg px-2 py-2',
             isActiveConvo ? 'bg-gray-200 dark:bg-gray-700' : '',
           )}
-          title={title}
+          title={title ?? ''}
         >
           <EndpointIcon
             conversation={conversation}
@@ -149,16 +173,9 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
             size={20}
             context="menu-item"
           />
-          {!renaming && (
-            <div className="relative line-clamp-1 flex-1 grow overflow-hidden">{title}</div>
-          )}
+          <div className="relative line-clamp-1 flex-1 grow overflow-hidden">{title}</div>
           {isActiveConvo ? (
-            <div
-              className={cn(
-                'absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-gradient-to-l',
-                !renaming ? 'from-gray-200 from-40% to-transparent dark:from-gray-700' : '',
-              )}
-            />
+            <div className="absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-gradient-to-l" />
           ) : (
             <div className="absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-gradient-to-l from-gray-50 from-0% to-transparent group-hover:from-gray-200 group-hover:from-40% dark:from-gray-850 dark:group-hover:from-gray-700" />
           )}
@@ -167,7 +184,9 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
       <div
         className={cn(
           'mr-2',
-          isPopoverActive || isActiveConvo ? 'flex' : 'hidden group-hover:flex',
+          isPopoverActive || isActiveConvo
+            ? 'flex'
+            : 'hidden group-focus-within:flex group-hover:flex',
         )}
       >
         <ConvoOptions
