@@ -1,10 +1,10 @@
-const { Readable } = require('stream');
 const axios = require('axios');
+const FormData = require('form-data');
+const { Readable } = require('stream');
 const { extractEnvVariable, STTProviders } = require('librechat-data-provider');
 const getCustomConfig = require('~/server/services/Config/getCustomConfig');
 const { genAzureEndpoint } = require('~/utils');
 const { logger } = require('~/config');
-const FormData = require('form-data');
 
 /**
  * Service class for handling Speech-to-Text (STT) operations.
