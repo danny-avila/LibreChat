@@ -80,6 +80,8 @@ export const logout = () => '/api/auth/logout';
 
 export const register = () => '/api/auth/register';
 
+export const createUser = () => '/api/auth/createUser';
+
 export const loginFacebook = () => '/api/auth/facebook';
 
 export const loginGoogle = () => '/api/auth/google';

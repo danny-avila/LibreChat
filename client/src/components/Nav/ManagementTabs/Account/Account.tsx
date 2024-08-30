@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useGerUsersQuery } from '~/data-provider';
 import {
   Button,
@@ -10,10 +10,11 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  Switch,
 } from '~/components/ui';
-import DeleteButton from './DeleteButton';
+
 import EditBalance from './EditBalance';
+import CreatUser from './CreatUser';
+import DeleteButton from './DeleteButton';
 import { NewChatIcon } from '~/components/svg';
 import { formatDate } from '~/utils';
 import { TUser } from 'librechat-data-provider';
@@ -21,16 +22,21 @@ import { TUser } from 'librechat-data-provider';
 export default function Account() {
 
   const [currentPage, setCurrentPage] = useState(1);
-  const [currentUser, setCurrentUser] = useState<TUser | null>(null);
+  const [currentUser, setCurrentUser] = useState<TUser | undefined>(undefined);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showBalanceDialog, setShowBalanceDialog] = useState(false);
-  const pageSize = 25; // 每页的用户数
+  const [showCreatUserDialog, setShowCreatUserDialog] = useState(false);
+  const pageSize = 10; // 每页的用户数
 
   const { data: { list: users = [], pages = 0, count: totalUsers = 0 } = {}, refetch } = useGerUsersQuery({
     pageNumber: currentPage,
     pageSize: pageSize,
     searchKey: '',
   });
+
+  useEffect(() => {
+    refetch();
+  }, [currentPage, refetch]);
 
   const handlePreviousPage = () => {
     if (currentPage > 1) {
@@ -53,13 +59,18 @@ export default function Account() {
     setShowBalanceDialog(true);
   };
 
+  const handlePreCreatUser = (user?: TUser) => {
+    setCurrentUser(user);
+    setShowCreatUserDialog(true);
+  };
+
   const handleRefreshList = () => {
     refetch();
   };
 
   return (
     <>
-      <div className="relative max-h-[25rem] min-h-0 overflow-y-auto rounded-md border border-black/10 pb-4 dark:border-white/10">
+      <div className="relative max-h-[25rem] min-h-[600px] overflow-y-auto rounded-md border border-black/10 pb-4 dark:border-white/10">
         <Table className="w-full min-w-[600px] border-separate border-spacing-0">
           <TableHeader>
             <TableRow>
@@ -159,6 +170,14 @@ export default function Account() {
           {
             `共${totalUsers}个用户`
           }
+          <Button
+            className="select-none border-border-medium ml-4"
+            variant="outline"
+            size="sm"
+            onClick={() => handlePreCreatUser()}
+          >
+            创建新用户
+          </Button>
         </div>
         <Button
           className="select-none border-border-medium"
@@ -183,16 +202,23 @@ export default function Account() {
       {showDeleteDialog && (
         <DeleteButton
           user={currentUser}
-          showDeleteDialog={showDeleteDialog}
-          setShowDeleteDialog={setShowDeleteDialog}
+          showDialog={showDeleteDialog}
+          setShowDialog={setShowDeleteDialog}
           onConfirm={handleRefreshList}
         />
       )}
       {showBalanceDialog && (
         <EditBalance
           user={currentUser}
-          showBalanceDialog={showBalanceDialog}
-          setShowBalanceDialog={setShowBalanceDialog}
+          showDialog={showBalanceDialog}
+          setShowDialog={setShowBalanceDialog}
+          onConfirm={handleRefreshList}
+        />
+      )}
+      {showCreatUserDialog && (
+        <CreatUser
+          showDialog={showCreatUserDialog}
+          setShowDialog={setShowCreatUserDialog}
           onConfirm={handleRefreshList}
         />
       )}

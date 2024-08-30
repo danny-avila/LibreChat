@@ -42,6 +42,11 @@ router.post(
   registrationController,
 );
 router.post(
+  '/createUser',
+  checkBan,
+  registrationController,
+);
+router.post(
   '/requestPasswordReset',
   resetPasswordLimiter,
   checkBan,

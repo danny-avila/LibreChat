@@ -1,34 +1,27 @@
-import React, { useCallback, useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useUpdateBalanceMutation } from '~/data-provider';
 import {
   OGDialog,
-  OGDialogTrigger,
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
   Input,
 } from '~/components/ui';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
-import { TrashIcon } from '~/components/svg';
 import type { TUser } from 'librechat-data-provider';
 import { useToastContext } from '~/Providers';
 
-type DeleteButtonProps = {
-  user: TUser | null;
+type EditBalanceProps = {
+  user?: TUser;
   className?: string;
-  showBalanceDialog?: boolean;
-  setShowBalanceDialog?: (value: boolean) => void;
+  showDialog?: boolean;
+  setShowDialog?: (value: boolean) => void;
   onConfirm: () => void;
 };
 
-export default function DeleteButton({
+export default function EditBalance({
   user,
-  className = '',
-  showBalanceDialog,
-  setShowBalanceDialog,
+  showDialog,
+  setShowDialog,
   onConfirm,
-}: DeleteButtonProps) {
+}: EditBalanceProps) {
 
   const { showToast } = useToastContext();
   const [newBalance, setNewBalance] = useState('');
@@ -41,11 +34,10 @@ export default function DeleteButton({
   }, [user]);
 
   const handleBalanceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    console.log('balance变化', e.target.value);
     setNewBalance(e.target.value);
   };
 
-  const { mutate: updateBalance, isLoading: isDeleting } = useUpdateBalanceMutation({
+  const { mutate: updateBalance, isLoading: isLoading } = useUpdateBalanceMutation({
     onSuccess: () => {
       showToast({ message: '更新余额成功！' });
       onConfirm();
@@ -57,7 +49,7 @@ export default function DeleteButton({
   });
 
   const handleConfirm = () => {
-    if (user) {
+    if (user && !isLoading) {
       console.log(user);
       const newValue = Number(newBalance);
       if (user.tokenCredits !== undefined && user.tokenCredits !== newValue) {
@@ -99,7 +91,7 @@ export default function DeleteButton({
   );
 
   return (
-    <OGDialog open={showBalanceDialog} onOpenChange={setShowBalanceDialog}>
+    <OGDialog open={showDialog} onOpenChange={setShowDialog}>
       {dialogContent}
     </OGDialog>
   );

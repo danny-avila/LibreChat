@@ -56,7 +56,7 @@ export default function Management({ open, onOpenChange }) {
                 余额
               </Tabs.Trigger> */}
             </Tabs.List>
-            <div className="max-h-[373px] overflow-auto sm:w-full sm:max-w-none md:pr-0.5 md:pt-0.5">
+            <div className="overflow-auto sm:w-full sm:max-w-none md:pr-0.5 md:pt-0.5">
               <Tabs.Content value="account">
                 <Account />
               </Tabs.Content>

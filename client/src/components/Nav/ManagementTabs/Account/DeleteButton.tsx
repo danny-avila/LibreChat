@@ -1,32 +1,24 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback } from 'react';
 import { useDeleteUserByEmailMutation } from '~/data-provider';
 import {
   OGDialog,
-  OGDialogTrigger,
   Label,
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
 } from '~/components/ui';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
-import { TrashIcon } from '~/components/svg';
 import type { TUser } from 'librechat-data-provider';
 import { useToastContext } from '~/Providers';
 
 type DeleteButtonProps = {
-  user: TUser | null;
-  className?: string;
-  showDeleteDialog?: boolean;
-  setShowDeleteDialog?: (value: boolean) => void;
+  user?: TUser;
+  showDialog?: boolean;
+  setShowDialog?: (value: boolean) => void;
   onConfirm: () => void;
 };
 
 export default function DeleteButton({
   user,
-  className = '',
-  showDeleteDialog,
-  setShowDeleteDialog,
+  showDialog,
+  setShowDialog,
   onConfirm,
 }: DeleteButtonProps) {
 
@@ -44,7 +36,7 @@ export default function DeleteButton({
   });
 
   const confirmDelete = useCallback(() => {
-    if (user) {
+    if (user && !isDeleting) {
       deleteUserByEmail(user.email);
     }
   }, [user]);
@@ -75,7 +67,7 @@ export default function DeleteButton({
   );
 
   return (
-    <OGDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+    <OGDialog open={showDialog} onOpenChange={setShowDialog}>
       {dialogContent}
     </OGDialog>
   );

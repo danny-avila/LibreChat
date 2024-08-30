@@ -71,9 +71,7 @@ const createTokenHash = () => {
 const sendVerificationEmail = async (user) => {
   const [verifyToken, hash] = createTokenHash();
 
-  const verificationLink = `${
-    domains.client
-  }/verify?token=${verifyToken}&email=${encodeURIComponent(user.email)}`;
+  const verificationLink = `${domains.client}/verify?token=${verifyToken}&email=${encodeURIComponent(user.email)}`;
   await sendEmail({
     email: user.email,
     subject: 'Verify your email',
@@ -159,10 +157,7 @@ const registerUser = async (user, additionalData = {}) => {
         { name: 'Request params:', value: user },
         { name: 'Existing user:', value: existingUser },
       );
-
-      // Sleep for 1 second
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      return { status: 200, message: genericVerificationMessage };
+      return { status: 403, message: `The Email ${email} is in use!` };
     }
 
     if (!(await isDomainAllowed(email))) {
@@ -376,9 +371,7 @@ const resendVerificationEmail = async (req) => {
 
     const [verifyToken, hash] = createTokenHash();
 
-    const verificationLink = `${
-      domains.client
-    }/verify?token=${verifyToken}&email=${encodeURIComponent(user.email)}`;
+    const verificationLink = `${domains.client}/verify?token=${verifyToken}&email=${encodeURIComponent(user.email)}`;
 
     await sendEmail({
       email: user.email,

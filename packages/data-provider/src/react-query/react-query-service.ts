@@ -323,6 +323,19 @@ export const useRegisterUserMutation = (
   });
 };
 
+export const useCreateUserMutation = (
+  options?: m.RegistrationOptions,
+): UseMutationResult<t.TError, unknown, t.TRegisterUser, unknown> => {
+  return useMutation((payload: t.TRegisterUser) => dataService.createUser(payload), {
+    ...options,
+    onSuccess: (...args) => {
+      if (options?.onSuccess) {
+        options.onSuccess(...args);
+      }
+    },
+  });
+};
+
 export const useRefreshTokenMutation = (): UseMutationResult<
   t.TRefreshTokenResponse,
   unknown,
