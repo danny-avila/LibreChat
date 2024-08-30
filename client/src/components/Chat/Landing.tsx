@@ -76,7 +76,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
                 <div className="text-center text-2xl font-medium dark:text-white">
                   {assistantName}
                 </div>
-                <div className="text-token-text-primary max-w-md text-center text-sm font-normal ">
+                <div className="max-w-md text-center text-sm font-normal text-text-primary ">
                   {assistantDesc ? assistantDesc : localize('com_nav_welcome_message')}
                 </div>
                 {/* <div className="mt-1 flex items-center gap-1 text-token-text-tertiary">
