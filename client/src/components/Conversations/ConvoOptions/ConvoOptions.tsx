@@ -76,7 +76,7 @@ export default function ConvoOptions({
         className={`${
           isActiveConvo === true
             ? 'opacity-100'
-            : 'opacity-0 focus:opacity-100 group-hover:opacity-100 data-[open]:opacity-100'
+            : 'opacity-0 focus:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[open]:opacity-100'
         }`}
       />
       {showShareDialog && (

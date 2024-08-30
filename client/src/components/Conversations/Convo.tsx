@@ -45,7 +45,7 @@ export default function Conversation({
   const [isPopoverActive, setIsPopoverActive] = useState(false);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
-  const clickHandler = async (event: React.MouseEvent<HTMLAnchorElement>) => {
+  const clickHandler = async (event: MouseEvent<HTMLAnchorElement>) => {
     if (event.button === 0 && (event.ctrlKey || event.metaKey)) {
       toggleNav();
       return;
@@ -132,7 +132,7 @@ export default function Conversation({
   return (
     <div
       className={cn(
-        'group relative mt-2 flex h-9 items-center rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700',
+        'group relative mt-2 flex h-9 w-full items-center rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700',
         isActiveConvo ? 'bg-gray-200 dark:bg-gray-700' : '',
         isSmallScreen ? 'h-12' : '',
       )}
@@ -184,7 +184,9 @@ export default function Conversation({
       <div
         className={cn(
           'mr-2',
-          isPopoverActive || isActiveConvo ? 'flex' : 'hidden group-hover:flex',
+          isPopoverActive || isActiveConvo
+            ? 'flex'
+            : 'hidden group-focus-within:flex group-hover:flex',
         )}
       >
         <ConvoOptions
