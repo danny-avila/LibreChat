@@ -1,9 +1,10 @@
-import { useState } from 'react';
-import { Upload, Share2 } from 'lucide-react';
+import { useState, useId } from 'react';
 import { useRecoilValue } from 'recoil';
+import * as Ariakit from '@ariakit/react';
+import { Upload, Share2 } from 'lucide-react';
 import { ShareButton } from '~/components/Conversations/ConvoOptions';
-import { Button, DropdownPopup } from '~/components/ui';
 import { useMediaQuery, useLocalize } from '~/hooks';
+import { DropdownPopup } from '~/components/ui';
 import { ExportModal } from '../Nav';
 import store from '~/store';
 
@@ -13,11 +14,13 @@ export default function ExportAndShareMenu({
   isSharedButtonEnabled: boolean;
 }) {
   const localize = useLocalize();
-  const conversation = useRecoilValue(store.conversationByIndex(0));
-  const [isPopoverActive, setIsPopoverActive] = useState(false);
   const [showExports, setShowExports] = useState(false);
+  const [isPopoverActive, setIsPopoverActive] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
+
+  const menuId = useId();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  const conversation = useRecoilValue(store.conversationByIndex(0));
 
   const exportable =
     conversation &&
@@ -60,20 +63,19 @@ export default function ExportAndShareMenu({
   return (
     <>
       <DropdownPopup
+        menuId={menuId}
         isOpen={isPopoverActive}
         setIsOpen={setIsPopoverActive}
         trigger={
-          <Button
+          <Ariakit.MenuButton
             id="export-menu-button"
             aria-label="Export options"
-            variant="outline"
-            className="mr-4 h-10 w-10 p-0 transition-all duration-300 ease-in-out"
+            className="mr-4 inline-flex h-10 w-10 items-center justify-center rounded-md border border-border-light bg-transparent p-0 text-sm font-medium transition-all duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
           >
             <Upload className="icon-md dark:text-gray-300" aria-hidden="true" focusable="false" />
-          </Button>
+          </Ariakit.MenuButton>
         }
         items={dropdownItems}
-        anchor="bottom end"
         className={isSmallScreen ? '' : 'absolute right-0 top-0 mt-2'}
       />
       {showShareDialog && conversation.conversationId != null && (
