@@ -119,7 +119,7 @@ export default function AgentConfig({
 
   // Provider Icon logic
 
-  const providerValue = typeof provider === 'string' ? undefined : provider?.value;
+  const providerValue = typeof provider === 'string' ? provider : provider?.value;
   let endpointType: EModelEndpoint | undefined;
   let endpointIconURL: string | undefined;
   let iconKey: string | undefined;

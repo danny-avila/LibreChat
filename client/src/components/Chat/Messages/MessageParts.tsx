@@ -20,6 +20,7 @@ export default function Message(props: TMessageProps) {
     ask,
     edit,
     index,
+    agent,
     isLast,
     enterEdit,
     assistant,
@@ -61,7 +62,12 @@ export default function Message(props: TMessageProps) {
               <div>
                 <div className="pt-0.5">
                   <div className="shadow-stroke flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-                    <Icon message={message} conversation={conversation} assistant={assistant} />
+                    <Icon
+                      message={message}
+                      conversation={conversation}
+                      assistant={assistant}
+                      agent={agent}
+                    />
                   </div>
                 </div>
               </div>
@@ -72,11 +78,7 @@ export default function Message(props: TMessageProps) {
                 isCreatedByUser === true ? '' : 'agent-turn',
               )}
             >
-              <div className={cn('select-none font-semibold', fontSize)}>
-                {isCreatedByUser === true
-                  ? localize('com_user_message')
-                  : (assistant && assistant.name) ?? localize('com_ui_assistant')}
-              </div>
+              <div className={cn('select-none font-semibold', fontSize)}>{name}</div>
               <div className="flex-col gap-1 md:gap-3">
                 <div className="flex max-w-full flex-grow flex-col gap-0">
                   <ContentParts

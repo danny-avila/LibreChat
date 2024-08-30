@@ -231,6 +231,7 @@ export default function useChatFunctions({
         },
       ];
     } else if (endpoint === EModelEndpoint.agents) {
+      initialResponse.model = conversation?.agent_id ?? '';
       initialResponse.text = '';
       initialResponse.content = [
         {

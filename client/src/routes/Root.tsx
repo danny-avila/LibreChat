@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 
 import type { ContextType } from '~/common';
-import { useAuthContext, useAssistantsMap, useFileMap, useSearch } from '~/hooks';
-import { AssistantsMapContext, FileMapContext, SearchContext } from '~/Providers';
+import { AgentsMapContext, AssistantsMapContext, FileMapContext, SearchContext } from '~/Providers';
+import { useAuthContext, useAssistantsMap, useAgentsMap, useFileMap, useSearch } from '~/hooks';
 import { Nav, MobileNav } from '~/components/Nav';
 
 export default function Root() {
@@ -16,6 +16,7 @@ export default function Root() {
   const search = useSearch({ isAuthenticated });
   const fileMap = useFileMap({ isAuthenticated });
   const assistantsMap = useAssistantsMap({ isAuthenticated });
+  const agentsMap = useAgentsMap({ isAuthenticated });
 
   if (!isAuthenticated) {
     return null;
@@ -25,15 +26,17 @@ export default function Root() {
     <SearchContext.Provider value={search}>
       <FileMapContext.Provider value={fileMap}>
         <AssistantsMapContext.Provider value={assistantsMap}>
-          <div className="flex h-dvh">
-            <div className="relative z-0 flex h-full w-full overflow-hidden">
-              <Nav navVisible={navVisible} setNavVisible={setNavVisible} />
-              <div className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden">
-                <MobileNav setNavVisible={setNavVisible} />
-                <Outlet context={{ navVisible, setNavVisible } satisfies ContextType} />
+          <AgentsMapContext.Provider value={agentsMap}>
+            <div className="flex h-dvh">
+              <div className="relative z-0 flex h-full w-full overflow-hidden">
+                <Nav navVisible={navVisible} setNavVisible={setNavVisible} />
+                <div className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden">
+                  <MobileNav setNavVisible={setNavVisible} />
+                  <Outlet context={{ navVisible, setNavVisible } satisfies ContextType} />
+                </div>
               </div>
             </div>
-          </div>
+          </AgentsMapContext.Provider>
         </AssistantsMapContext.Provider>
       </FileMapContext.Provider>
     </SearchContext.Provider>

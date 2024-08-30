@@ -40,8 +40,6 @@ export const AgentAvatarRender = ({
     transition: 'stroke-dashoffset 0.3s linear',
   };
 
-  console.log(url);
-
   return (
     <div>
       <div className="relative h-20 w-20 overflow-hidden rounded-full">
