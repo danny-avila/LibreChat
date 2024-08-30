@@ -110,8 +110,7 @@ const patchAssistant = async (req, res) => {
     updateData.tools = (updateData.tools ?? [])
       .map((tool) => {
         if (typeof tool !== 'string') {
-          // if(tool.type === 'retrieval' && _e === 'azureAssistants')
-          //   tool.type = 'file_search'
+          if (tool.type === 'retrieval' && _e === 'azureAssistants') {tool.type = 'file_search';}
 
           return tool;
         }
