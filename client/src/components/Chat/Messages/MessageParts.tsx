@@ -38,6 +38,16 @@ export default function Message(props: TMessageProps) {
     return null;
   }
 
+  let name = '';
+
+  if (isCreatedByUser === true) {
+    name = localize('com_user_message');
+  } else if (assistant) {
+    name = assistant.name ?? localize('com_ui_assistant');
+  } else if (agent) {
+    name = agent.name ?? localize('com_ui_agent');
+  }
+
   return (
     <>
       <div

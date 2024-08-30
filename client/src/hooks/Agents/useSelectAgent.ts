@@ -3,15 +3,15 @@ import { useQueryClient } from '@tanstack/react-query';
 import { EModelEndpoint, isAgentsEndpoint, Constants, QueryKeys } from 'librechat-data-provider';
 import type { TConversation, TPreset, Agent } from 'librechat-data-provider';
 import useDefaultConvo from '~/hooks/Conversations/useDefaultConvo';
+import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
 import { useGetAgentByIdQuery } from '~/data-provider';
 import { useChatContext } from '~/Providers/ChatContext';
-import useAgentsMap from './useAgentsMap';
 
 export default function useSelectAgent() {
   const queryClient = useQueryClient();
   const getDefaultConversation = useDefaultConvo();
   const { conversation, newConversation } = useChatContext();
-  const { data: agentsMap } = useAgentsMap({ isAuthenticated: true });
+  const agentsMap = useAgentsMapContext();
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(
     conversation?.agent_id ?? null,
   );

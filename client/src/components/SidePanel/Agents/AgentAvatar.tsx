@@ -47,21 +47,21 @@ function Avatar({
       setProgress(0.4);
     },
     onSuccess: (data, vars) => {
-      if (!vars.postCreation) {
+      if (vars.postCreation === false) {
         showToast({ message: localize('com_ui_upload_success') });
       } else if (lastSeenCreatedId.current !== createMutation.data?.id) {
         lastSeenCreatedId.current = createMutation.data?.id ?? '';
       }
 
       setInput(null);
-      setPreviewUrl(data?.avatar?.filepath as string | null);
+      setPreviewUrl(data.avatar?.filepath as string | null);
 
       const res = queryClient.getQueryData<AgentListResponse>([
         QueryKeys.agents,
         defaultOrderQuery,
       ]);
 
-      if (!res?.data || !res) {
+      if (!res?.data) {
         return;
       }
 
@@ -122,20 +122,19 @@ function Avatar({
       createMutation.isSuccess &&
       input &&
       previewUrl &&
-      previewUrl?.includes('base64')
+      previewUrl.includes('base64')
     );
-    if (sharedUploadCondition && lastSeenCreatedId.current === createMutation.data?.id) {
+    if (sharedUploadCondition && lastSeenCreatedId.current === createMutation.data.id) {
       return;
     }
 
     if (sharedUploadCondition && createMutation.data.id) {
-
       const formData = new FormData();
       formData.append('file', input, input.name);
       formData.append('agent_id', createMutation.data.id);
 
-      if (typeof createMutation.data?.avatar === 'object') {
-        formData.append('avatar', JSON.stringify(createMutation.data?.avatar));
+      if (typeof createMutation.data.avatar === 'object') {
+        formData.append('avatar', JSON.stringify(createMutation.data.avatar));
       }
 
       uploadAvatar({
@@ -150,15 +149,10 @@ function Avatar({
     const file = event.target.files?.[0];
 
     if (fileConfig.avatarSizeLimit && file && file.size <= fileConfig.avatarSizeLimit) {
-      if (!file) {
-        return;
-      }
-
       setInput(file);
       setMenuOpen(false);
 
       if (!agent_id) {
-        // wait for successful form submission before uploading avatar
         return;
       }
 

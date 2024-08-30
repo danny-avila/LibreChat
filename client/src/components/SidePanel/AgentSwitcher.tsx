@@ -2,9 +2,9 @@ import { useEffect, useMemo } from 'react';
 import { EModelEndpoint, isAgentsEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import type { Agent } from 'librechat-data-provider';
 import type { SwitcherProps, OptionWithIcon } from '~/common';
-import { useSetIndexOptions, useSelectAgent, useAgentsMap, useLocalize } from '~/hooks';
+import { useSetIndexOptions, useSelectAgent, useLocalize } from '~/hooks';
+import { useChatContext, useAgentsMapContext } from '~/Providers';
 import Icon from '~/components/Endpoints/Icon';
-import { useChatContext } from '~/Providers';
 import { Combobox } from '~/components/ui';
 
 export default function AgentSwitcher({ isCollapsed }: SwitcherProps) {
@@ -13,50 +13,59 @@ export default function AgentSwitcher({ isCollapsed }: SwitcherProps) {
   const { index, conversation } = useChatContext();
   const { agent_id: selectedAgentId = null, endpoint } = conversation ?? {};
 
-  const { data: agentsMap } = useAgentsMap({ isAuthenticated: true });
+  const agentsMapResult = useAgentsMapContext();
+
+  const agentsMap = useMemo(() => {
+    return agentsMapResult ?? {};
+  }, [agentsMapResult]);
+
   const { onSelect } = useSelectAgent();
 
-  const agents = useMemo(() => {
-    return Object.values(agentsMap ?? {});
+  const agents: Agent[] = useMemo(() => {
+    return Object.values(agentsMap) as Agent[];
   }, [agentsMap]);
 
   useEffect(() => {
-    if (!selectedAgentId && agents.length && agentsMap) {
-      const agent_id =
-        localStorage.getItem(`${LocalStorageKeys.AGENT_ID_PREFIX}${index}`) ?? agents[0]?.id ?? '';
+    if (selectedAgentId == null && agents.length > 0) {
+      let agent_id = localStorage.getItem(`${LocalStorageKeys.AGENT_ID_PREFIX}${index}`);
+      if (agent_id == null) {
+        agent_id = agents[0].id;
+      }
       const agent = agentsMap[agent_id];
 
-      if (agent && isAgentsEndpoint(endpoint)) {
+      if (agent !== undefined && isAgentsEndpoint(endpoint as string)) {
         setOption('model')('');
         setOption('agent_id')(agent_id);
       }
     }
   }, [index, agents, selectedAgentId, agentsMap, endpoint, setOption]);
 
-  const currentAgent = agentsMap?.[selectedAgentId ?? ''];
+  const currentAgent = agentsMap[selectedAgentId ?? ''];
 
   const agentOptions: OptionWithIcon[] = useMemo(
     () =>
-      agents.map((agent: Agent) => ({
-        label: agent.name ?? '',
-        value: agent.id,
-        icon: (
-          <Icon
-            isCreatedByUser={false}
-            endpoint={EModelEndpoint.agents}
-            agentName={agent.name ?? ''}
-            iconURL={(agent?.avatar as unknown as string) ?? ''}
-          />
-        ),
-      })),
+      agents.map((agent: Agent) => {
+        return {
+          label: agent.name ?? '',
+          value: agent.id,
+          icon: (
+            <Icon
+              isCreatedByUser={false}
+              endpoint={EModelEndpoint.agents}
+              agentName={agent.name ?? ''}
+              iconURL={agent.avatar?.filepath}
+            />
+          ),
+        };
+      }),
     [agents],
   );
 
   return (
     <Combobox
-      selectedValue={currentAgent?.id ?? ''}
+      selectedValue={currentAgent.id ?? ''}
       displayValue={
-        agents.find((agent) => agent.id === selectedAgentId)?.name ??
+        agents.find((agent: Agent) => agent.id === selectedAgentId)?.name ??
         localize('com_sidepanel_select_agent')
       }
       selectPlaceholder={localize('com_sidepanel_select_agent')}
@@ -69,8 +78,8 @@ export default function AgentSwitcher({ isCollapsed }: SwitcherProps) {
         <Icon
           isCreatedByUser={false}
           endpoint={endpoint}
-          agentName={currentAgent?.name ?? ''}
-          iconURL={(currentAgent?.avatar as unknown as string) ?? ''}
+          agentName={currentAgent.name ?? ''}
+          iconURL={currentAgent.avatar?.filepath ?? ''}
         />
       }
     />
