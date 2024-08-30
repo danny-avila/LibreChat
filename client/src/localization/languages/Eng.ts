@@ -14,7 +14,8 @@ export default {
   com_nav_info_custom_prompt_mode:
     'When enabled, the default artifacts system prompt will not be included. All artifact-generating instructions must be provided manually in this mode.',
   com_ui_artifact_click: 'Click to open',
-  com_a11y_start: 'The AI is replying.',
+  com_a11y_start: 'The AI has started their reply.',
+  com_a11y_ai_composing: 'The AI is still composing.',
   com_a11y_end: 'The AI has finished their reply.',
   com_error_moderation:
     'It appears that the content submitted has been flagged by our moderation system for not aligning with our community guidelines. We\'re unable to proceed with this specific topic. If you have any other questions or topics you\'d like to explore, please edit your message, or create a new conversation.',
