@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useId } from 'react';
 import { Ellipsis, Share2, Archive, Pen, Trash } from 'lucide-react';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { Button } from '~/components/ui';
@@ -57,6 +57,8 @@ export default function ConvoOptions({
     },
   ];
 
+  const menuId = useId();
+
   return (
     <>
       <DropdownPopup
@@ -65,7 +67,10 @@ export default function ConvoOptions({
         trigger={
           <Button
             id="conversation-menu-button"
-            aria-label="conversation-menu-button"
+            aria-label={localize('com_nav_convo_menu_options')}
+            aria-haspopup="menu"
+            aria-expanded={isPopoverActive}
+            aria-controls={menuId}
             variant="link"
             className="z-10 h-7 w-7 border-none p-0 transition-all duration-200 ease-in-out"
           >
@@ -73,6 +78,7 @@ export default function ConvoOptions({
           </Button>
         }
         items={dropdownItems}
+        menuId={menuId}
         className={`${
           isActiveConvo === true
             ? 'opacity-100'

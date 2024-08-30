@@ -15,7 +15,8 @@ interface DropdownProps {
   isOpen: boolean;
   setIsOpen: (isOpen: boolean) => void;
   className?: string;
-  anchor?: string;
+  anchor?: { x: string; y: string };
+  menuId: string;
 }
 
 const DropdownPopup: React.FC<DropdownProps> = ({
@@ -25,6 +26,7 @@ const DropdownPopup: React.FC<DropdownProps> = ({
   setIsOpen,
   className,
   anchor = { x: 'bottom', y: 'start' },
+  menuId,
 }) => {
   const handleButtonClick = () => {
     setIsOpen(!isOpen);
@@ -58,35 +60,41 @@ const DropdownPopup: React.FC<DropdownProps> = ({
               {open && (
                 <MenuItems
                   static
+                  id={menuId}
                   // @ts-ignore
                   anchor={anchor}
                   className="mt-2 overflow-hidden rounded-lg bg-header-primary p-1.5 shadow-lg outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
                 >
-                  <div>
+                  <div role="menu">
                     {items
                       .filter((item) => item.show !== false)
                       .map((item, index) =>
                         item.separate ? (
-                          <div key={index} className="my-1 h-px bg-white/10" />
+                          <div key={index} className="my-1 h-px bg-white/10" role="separator" />
                         ) : (
                           <MenuItem key={index}>
-                            <button
-                              onClick={item.onClick}
-                              className="group flex w-full gap-2 rounded-lg p-2.5 text-sm text-text-primary transition-colors duration-200 data-[focus]:bg-surface-hover"
-                              disabled={item.disabled}
-                            >
-                              {item.icon && (
-                                <span className="mr-2 h-5 w-5" aria-hidden="true">
-                                  {item.icon}
-                                </span>
-                              )}
-                              {item.label}
-                              {item.kbd && (
-                                <kbd className="ml-auto hidden font-sans text-xs text-black/50 group-data-[focus]:inline dark:text-white/50">
-                                  ⌘{item.kbd}
-                                </kbd>
-                              )}
-                            </button>
+                            {({ focus }) => (
+                              <button
+                                onClick={item.onClick}
+                                className={`group flex w-full gap-2 rounded-lg p-2.5 text-sm text-text-primary transition-colors duration-200 ${
+                                  focus ? 'bg-surface-hover' : ''
+                                }`}
+                                disabled={item.disabled}
+                                role="menuitem"
+                              >
+                                {item.icon && (
+                                  <span className="mr-2 h-5 w-5" aria-hidden="true">
+                                    {item.icon}
+                                  </span>
+                                )}
+                                {item.label}
+                                {item.kbd && (
+                                  <kbd className="ml-auto hidden font-sans text-xs text-black/50 group-data-[focus]:inline dark:text-white/50">
+                                    ⌘{item.kbd}
+                                  </kbd>
+                                )}
+                              </button>
+                            )}
                           </MenuItem>
                         ),
                       )}
