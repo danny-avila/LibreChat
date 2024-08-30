@@ -843,7 +843,7 @@ export enum ErrorTypes {
   /**
    * Prompt exceeds max length
    */
-  CONTEXT_LENGTH = 'CONTEXT_LENGTH',
+  INPUT_LENGTH = 'INPUT_LENGTH',
 }
 
 /**

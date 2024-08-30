@@ -390,7 +390,7 @@ class BaseClient {
     const latestMessage = orderedWithInstructions[orderedWithInstructions.length - 1];
     if (payload.length === 0 && !shouldSummarize && latestMessage) {
       const info = `${latestMessage.tokenCount} / ${this.maxContextTokens}`;
-      const errorMessage = `{ "type": "${ErrorTypes.CONTEXT_LENGTH}", "info": "${info}" }`;
+      const errorMessage = `{ "type": "${ErrorTypes.INPUT_LENGTH}", "info": "${info}" }`;
       logger.warn(`Prompt token count exceeds max token count (${info}).`);
       throw new Error(errorMessage);
     }

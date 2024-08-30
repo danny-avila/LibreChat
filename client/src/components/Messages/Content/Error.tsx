@@ -33,7 +33,7 @@ type TExpiredKey = {
   endpoint: string;
 };
 
-type TContextLength = {
+type TInputLength = {
   info: string;
 };
 
@@ -46,9 +46,9 @@ const errorMessages = {
     const { expiredAt, endpoint } = json;
     return localize('com_error_expired_user_key', endpoint, expiredAt);
   },
-  [ErrorTypes.CONTEXT_LENGTH]: (json: TContextLength, localize: LocalizeFunction) => {
+  [ErrorTypes.INPUT_LENGTH]: (json: TInputLength, localize: LocalizeFunction) => {
     const { info } = json;
-    return localize('com_error_context_length', info);
+    return localize('com_error_input_length', info);
   },
   [ViolationTypes.BAN]:
     'Your account has been temporarily banned due to violations of our service.',
