@@ -1,4 +1,4 @@
-import { EModelEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, isAssistantsEndpoint, Constants } from 'librechat-data-provider';
 import { useGetEndpointsQuery, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { ReactNode } from 'react';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
@@ -35,7 +35,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
   const assistant = isAssistant ? assistantMap?.[endpoint][assistant_id ?? ''] : undefined;
   const assistantName = assistant?.name ?? '';
   const assistantDesc = assistant?.description ?? '';
-  const avatar = (assistant?.metadata?.avatar as string) ?? '';
+  const avatar = assistant?.metadata?.avatar ?? '';
   const conversation_starters = assistant?.conversation_starters ?? [];
 
   const containerClassName =
@@ -48,7 +48,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
     <TooltipProvider delayDuration={50}>
       <Tooltip>
         <div className="relative h-full">
-          <div className="absolute left-0 right-0">{Header ? Header : null}</div>
+          <div className="absolute left-0 right-0">{Header != null ? Header : null}</div>
           <div className="flex h-full flex-col items-center justify-center">
             <div className={cn('relative h-12 w-12', assistantName && avatar ? 'mb-0' : 'mb-3')}>
               <ConvoIcon
@@ -60,7 +60,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
                 className="h-2/3 w-2/3"
                 size={41}
               />
-              {startupConfig?.showBirthdayIcon ? (
+              {startupConfig?.showBirthdayIcon === true ? (
                 <div>
                   <TooltipTrigger>
                     <BirthdayIcon className="absolute bottom-8 right-2.5" />
@@ -93,7 +93,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
             <div className="mt-8 flex flex-wrap justify-center gap-3 px-4">
               {conversation_starters.length > 0 &&
                 conversation_starters
-                  .slice(0, 4)
+                  .slice(0, Constants.MAX_CONVO_STARTERS)
                   .map((text, index) => (
                     <ConvoStarter
                       key={index}
