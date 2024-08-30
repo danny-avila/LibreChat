@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef } from 'react';
 import { Plus, X } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui';
 import { useLocalize } from '~/hooks';
@@ -31,12 +31,6 @@ const AssistantConversationStarters: React.FC<AssistantConversationStartersProps
       field.onChange(newValues);
     }
   };
-
-  useEffect(() => {
-    if (inputRefs.current[0]) {
-      inputRefs.current[0].focus();
-    }
-  }, [field.value.length]);
 
   const defaultStyle = {
     transition: 'opacity 200ms ease-in-out',
