@@ -1,12 +1,13 @@
 import { useState, useId } from 'react';
+import * as Ariakit from '@ariakit/react';
 import { Ellipsis, Share2, Archive, Pen, Trash } from 'lucide-react';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
-import { Button } from '~/components/ui';
 import { useArchiveHandler } from './ArchiveButton';
 import { DropdownPopup } from '~/components/ui';
 import DeleteButton from './DeleteButton';
 import ShareButton from './ShareButton';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 
 export default function ConvoOptions({
   conversation,
@@ -65,25 +66,21 @@ export default function ConvoOptions({
         isOpen={isPopoverActive}
         setIsOpen={setIsPopoverActive}
         trigger={
-          <Button
+          <Ariakit.MenuButton
             id="conversation-menu-button"
             aria-label={localize('com_nav_convo_menu_options')}
-            aria-haspopup="menu"
-            aria-expanded={isPopoverActive}
-            aria-controls={menuId}
-            variant="link"
-            className="z-10 h-7 w-7 border-none p-0 transition-all duration-200 ease-in-out"
+            className={cn(
+              'z-50 inline-flex h-7 w-7 items-center justify-center gap-2 rounded-md border-none p-0 text-sm font-medium transition-all duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
+              isActiveConvo === true
+                ? 'opacity-100'
+                : 'opacity-0 focus:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[open]:opacity-100',
+            )}
           >
             <Ellipsis className="icon-md text-text-secondary" />
-          </Button>
+          </Ariakit.MenuButton>
         }
         items={dropdownItems}
         menuId={menuId}
-        className={`${
-          isActiveConvo === true
-            ? 'opacity-100'
-            : 'opacity-0 focus:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[open]:opacity-100'
-        }`}
       />
       {showShareDialog && (
         <ShareButton
