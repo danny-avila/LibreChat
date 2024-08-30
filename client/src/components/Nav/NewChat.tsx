@@ -38,7 +38,7 @@ const NewChatButtonIcon = ({ conversation }: { conversation: TConversation | nul
         <ConvoIconURL preset={conversation} endpointIconURL={iconURL} context="nav" />
       ) : (
         <div className="shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black">
-          {endpoint && Icon && (
+          {endpoint && Icon != null && (
             <Icon
               size={41}
               context="nav"
@@ -93,7 +93,7 @@ export default function NewChat({
               aria-label={localize('com_ui_new_chat')}
             >
               <NewChatButtonIcon conversation={conversation} />
-              <div className="text-token-text-primary grow overflow-hidden text-ellipsis whitespace-nowrap text-sm">
+              <div className="grow overflow-hidden text-ellipsis whitespace-nowrap text-sm text-text-primary">
                 {localize('com_ui_new_chat')}
               </div>
               <div className="flex gap-3">
@@ -102,7 +102,7 @@ export default function NewChat({
                     <button
                       id="nav-new-chat-btn"
                       aria-label="nav-new-chat-btn"
-                      className="text-token-text-primary"
+                      className="text-text-primary"
                     >
                       <NewChatIcon className="size-5" />
                     </button>
