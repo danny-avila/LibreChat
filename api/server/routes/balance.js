@@ -5,10 +5,10 @@ const {
   balanceUpdateController,
   getBalanceByEmailController,
 } = require('../controllers/Balance');
-const { requireJwtAuth } = require('../middleware/');
+const { requireJwtAuth, checkAdmin } = require('../middleware/');
 
 router.get('/', requireJwtAuth, balanceController);
 router.post('/getByEmail', requireJwtAuth, getBalanceByEmailController);
-router.post('/update', requireJwtAuth, balanceUpdateController);
+router.post('/update', requireJwtAuth, checkAdmin, balanceUpdateController);
 
 module.exports = router;

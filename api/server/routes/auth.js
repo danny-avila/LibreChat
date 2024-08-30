@@ -10,6 +10,7 @@ const { logoutController } = require('~/server/controllers/auth/LogoutController
 const {
   checkBan,
   loginLimiter,
+  checkAdmin,
   requireJwtAuth,
   checkInviteUser,
   registerLimiter,
@@ -44,6 +45,7 @@ router.post(
 router.post(
   '/createUser',
   checkBan,
+  checkAdmin,
   registrationController,
 );
 router.post(

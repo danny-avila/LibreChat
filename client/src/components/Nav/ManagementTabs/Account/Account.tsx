@@ -17,25 +17,34 @@ import DeleteButton from './DeleteButton';
 import { NewChatIcon } from '~/components/svg';
 import { formatDate } from '~/utils';
 import { TUser } from 'librechat-data-provider';
+import useLocalize from '~/hooks/useLocalize';
 
 export default function Account() {
+
+  const localize = useLocalize();
 
   const [currentPage, setCurrentPage] = useState(1);
   const [currentUser, setCurrentUser] = useState<TUser | undefined>(undefined);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showBalanceDialog, setShowBalanceDialog] = useState(false);
   const [showCreatUserDialog, setShowCreatUserDialog] = useState(false);
+  const [searchKey, setSearchKey] = useState('');
   const pageSize = 10; // 每页的用户数
 
   const { data: { list: users = [], pages = 0, count: totalUsers = 0 } = {}, refetch } = useGerUsersQuery({
     pageNumber: currentPage,
     pageSize: pageSize,
-    searchKey: '',
+    searchKey: searchKey,
   });
 
   useEffect(() => {
     refetch();
-  }, [currentPage, refetch]);
+  }, [currentPage, searchKey, refetch]);
+
+  const handleSearchKeyChange = (e) => {
+    setCurrentPage(1);
+    setSearchKey(e.target.value);
+  };
 
   const handlePreviousPage = () => {
     if (currentPage > 1) {
@@ -69,7 +78,24 @@ export default function Account() {
 
   return (
     <>
+      <div className='flex items-center'>
+        <Input
+          placeholder='请输入用户名或邮箱筛选'
+          value={(searchKey as string | undefined) ?? ''}
+          onChange={handleSearchKeyChange}
+          className="max-w-sm mb-5 mt-5 mr-5 border-border-medium placeholder:text-text-secondary"
+        />
+
+        <Button
+          className="transform select-none border-border-medium ml-4"
+          variant="outline"
+          onClick={() => handlePreCreatUser()}
+        >
+          + 创建新用户
+        </Button>
+      </div>
       <div className="relative max-h-[25rem] min-h-[630px] overflow-y-auto rounded-md border border-black/10 pb-4 dark:border-white/10">
+
         <Table className="w-full min-w-[600px] border-separate border-spacing-0">
           <TableHeader>
             <TableRow>
@@ -141,7 +167,7 @@ export default function Account() {
                       className="text-token-text-primary flex"
                       onClick={() => handlePreEditBalance(row)}
                     >
-                      <div className='min-w-[100px] text-left'> {row.tokenCredits}</div>
+                      <div className='min-w-[150px] text-left'> {row.tokenCredits}</div>
                       <NewChatIcon className="size-5" />
                     </button>
 
@@ -165,9 +191,9 @@ export default function Account() {
                 </TableRow>
               ))
             ) : (
-              <TableRow className='flex items-center'>
-                <TableCell colSpan={users.length} className="h-24 items-center">
-                  暂无数据
+              <TableRow>
+                <TableCell colSpan={7} className="h-24 text-center">
+                  {localize('com_files_no_results')}
                 </TableCell>
               </TableRow>
             )}
@@ -179,14 +205,6 @@ export default function Account() {
           {
             `共${totalUsers}个用户`
           }
-          <Button
-            className="select-none border-border-medium ml-4"
-            variant="outline"
-            size="sm"
-            onClick={() => handlePreCreatUser()}
-          >
-            创建新用户
-          </Button>
         </div>
         <Button
           className="select-none border-border-medium"
