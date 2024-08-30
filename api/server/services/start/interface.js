@@ -1,17 +1,26 @@
+const {
+  SystemRoles,
+  Permissions,
+  PermissionTypes,
+  removeNullishValues,
+} = require('librechat-data-provider');
+const { updateAccessPermissions } = require('~/models/Role');
 const { logger } = require('~/config');
 
 /**
  * Loads the default interface object.
  * @param {TCustomConfig | undefined} config - The loaded custom configuration.
  * @param {TConfigDefaults} configDefaults - The custom configuration default values.
- * @returns {TCustomConfig['interface']} The default interface object.
+ * @param {SystemRoles} [roleName] - The role to load the default interface for, defaults to `'USER'`.
+ * @returns {Promise<TCustomConfig['interface']>} The default interface object.
  */
-function loadDefaultInterface(config, configDefaults) {
+async function loadDefaultInterface(config, configDefaults, roleName = SystemRoles.USER) {
   const { interface: interfaceConfig } = config ?? {};
   const { interface: defaults } = configDefaults;
   const hasModelSpecs = config?.modelSpecs?.list?.length > 0;
 
-  const loadedInterface = {
+  /** @type {TCustomConfig['interface']} */
+  const loadedInterface = removeNullishValues({
     endpointsMenu:
       interfaceConfig?.endpointsMenu ?? (hasModelSpecs ? false : defaults.endpointsMenu),
     modelSelect: interfaceConfig?.modelSelect ?? (hasModelSpecs ? false : defaults.modelSelect),
@@ -20,7 +29,14 @@ function loadDefaultInterface(config, configDefaults) {
     sidePanel: interfaceConfig?.sidePanel ?? defaults.sidePanel,
     privacyPolicy: interfaceConfig?.privacyPolicy ?? defaults.privacyPolicy,
     termsOfService: interfaceConfig?.termsOfService ?? defaults.termsOfService,
-  };
+    bookmarks: interfaceConfig?.bookmarks ?? defaults.bookmarks,
+    prompts: interfaceConfig?.prompts ?? defaults.prompts,
+  });
+
+  await updateAccessPermissions(roleName, {
+    [PermissionTypes.PROMPTS]: { [Permissions.USE]: loadedInterface.prompts },
+    [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: loadedInterface.bookmarks },
+  });
 
   let i = 0;
   const logSettings = () => {

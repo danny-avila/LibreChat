@@ -33,12 +33,15 @@ const SocialButton = ({ id, enabled, serverDomain, oauthPath, Icon, label }) => 
     // Define Tailwind CSS classes based on state
     const baseStyles = 'border border-solid border-gray-300 dark:border-gray-600 transition-colors';
 
-    const pressedStyles = 'bg-blue-200 border-blue-200 dark:bg-blue-900 dark:border-blue-600';
-    const hoverStyles = 'bg-gray-100 dark:bg-gray-700';
+    let dynamicStyles = '';
 
-    return `${baseStyles} ${
-      isPressed && activeButton === id ? pressedStyles : isHovered ? hoverStyles : ''
-    }`;
+    if (isPressed && activeButton === id) {
+      dynamicStyles = 'bg-blue-200 border-blue-200 dark:bg-blue-900 dark:border-blue-600';
+    } else if (isHovered) {
+      dynamicStyles = 'bg-gray-100 dark:bg-gray-700';
+    }
+
+    return `${baseStyles} ${dynamicStyles}`;
   };
 
   return (

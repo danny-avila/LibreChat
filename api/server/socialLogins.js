@@ -9,6 +9,7 @@ const {
   discordLogin,
   facebookLogin,
 } = require('~/strategies');
+const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
 
 /**
@@ -40,7 +41,7 @@ const configureSocialLogins = (app) => {
       resave: false,
       saveUninitialized: false,
     };
-    if (process.env.USE_REDIS) {
+    if (isEnabled(process.env.USE_REDIS)) {
       const client = new Redis(process.env.REDIS_URI);
       client
         .on('error', (err) => logger.error('ioredis error:', err))

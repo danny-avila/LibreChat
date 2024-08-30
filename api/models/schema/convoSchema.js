@@ -61,6 +61,7 @@ if (process.env.MEILI_HOST && process.env.MEILI_MASTER_KEY) {
 }
 
 convoSchema.index({ createdAt: 1, updatedAt: 1 });
+convoSchema.index({ conversationId: 1, user: 1 }, { unique: true });
 
 const Conversation = mongoose.models.Conversation || mongoose.model('Conversation', convoSchema);
 

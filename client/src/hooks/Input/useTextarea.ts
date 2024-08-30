@@ -8,6 +8,7 @@ import { forceResize, insertTextAtCursor, getAssistantName } from '~/utils';
 import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import useFileHandling from '~/hooks/Files/useFileHandling';
+import { useInteractionHealthCheck } from '~/data-provider';
 import { useChatContext } from '~/Providers/ChatContext';
 import useLocalize from '~/hooks/useLocalize';
 import { globalAudioId } from '~/common';
@@ -29,6 +30,7 @@ export default function useTextarea({
   const isComposing = useRef(false);
   const { handleFiles } = useFileHandling();
   const assistantMap = useAssistantsMapContext();
+  const checkHealth = useInteractionHealthCheck();
   const enterToSend = useRecoilValue(store.enterToSend);
 
   const {
@@ -152,6 +154,8 @@ export default function useTextarea({
         return;
       }
 
+      checkHealth();
+
       const isNonShiftEnter = e.key === 'Enter' && !e.shiftKey;
       const isCtrlEnter = e.key === 'Enter' && e.ctrlKey;
 
@@ -185,7 +189,7 @@ export default function useTextarea({
         submitButtonRef.current?.click();
       }
     },
-    [isSubmitting, filesLoading, enterToSend, textAreaRef, submitButtonRef],
+    [isSubmitting, checkHealth, filesLoading, enterToSend, textAreaRef, submitButtonRef],
   );
 
   const handleCompositionStart = () => {

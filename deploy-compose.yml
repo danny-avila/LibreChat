@@ -31,10 +31,7 @@ services:
       - ./logs:/app/api/logs
       - ./librechat.yaml:/app/api/librechat.yaml
   client:
-    build:
-      context: .
-      dockerfile: Dockerfile.multi
-      target: prod-stage
+    image: nginx:1.27.0-alpine
     container_name: LibreChat-NGINX
     ports:
       - ${GPT_PORT_80:-2080}:80

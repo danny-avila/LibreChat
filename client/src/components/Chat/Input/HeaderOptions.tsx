@@ -84,13 +84,13 @@ export default function HeaderOptions({
               )}
               {!noSettings[endpoint] && interfaceConfig?.parameters && (
                 <Button
+                  aria-label="Settings/parameters"
+                  id="parameters-button"
+                  data-testid="parameters-button"
                   type="button"
-                  className={cn(
-                    cardStyle,
-                    'z-50 flex h-[40px] min-w-4 flex-none items-center justify-center px-3 focus:ring-0 focus:ring-offset-0',
-                    'hover:bg-gray-50 radix-state-open:bg-gray-50 dark:hover:bg-gray-700 dark:radix-state-open:bg-gray-700',
-                  )}
+                  variant="outline"
                   onClick={triggerAdvancedMode}
+                  className="flex h-[40px] min-w-4 px-3 radix-state-open:bg-surface-hover"
                 >
                   <Settings2 className="w-4 text-gray-600 dark:text-white" />
                 </Button>
@@ -100,7 +100,7 @@ export default function HeaderOptions({
               <OptionsPopover
                 visible={showPopover}
                 saveAsPreset={saveAsPreset}
-                presetsDisabled={!interfaceConfig?.presets}
+                presetsDisabled={!interfaceConfig.presets}
                 PopoverButtons={<PopoverButtons />}
                 closePopover={() => setShowPopover(false)}
               >

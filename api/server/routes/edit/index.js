@@ -13,6 +13,7 @@ const {
   messageIpLimiter,
   concurrentLimiter,
   messageUserLimiter,
+  validateConvoAccess,
 } = require('~/server/middleware');
 
 const { LIMIT_CONCURRENT_MESSAGES, LIMIT_MESSAGE_IP, LIMIT_MESSAGE_USER } = process.env ?? {};
@@ -34,6 +35,8 @@ if (isEnabled(LIMIT_MESSAGE_IP)) {
 if (isEnabled(LIMIT_MESSAGE_USER)) {
   router.use(messageUserLimiter);
 }
+
+router.use(validateConvoAccess);
 
 router.use([`/${EModelEndpoint.azureOpenAI}`, `/${EModelEndpoint.openAI}`], openAI);
 router.use(`/${EModelEndpoint.gptPlugins}`, gptPlugins);

@@ -42,6 +42,7 @@ class PluginsClient extends OpenAIClient {
 
   getSaveOptions() {
     return {
+      artifacts: this.options.artifacts,
       chatGptLabel: this.options.chatGptLabel,
       promptPrefix: this.options.promptPrefix,
       tools: this.options.tools,
@@ -145,16 +146,22 @@ class PluginsClient extends OpenAIClient {
 
     // initialize agent
     const initializer = this.functionsAgent ? initializeFunctionsAgent : initializeCustomAgent;
+
+    let customInstructions = (this.options.promptPrefix ?? '').trim();
+    if (typeof this.options.artifactsPrompt === 'string' && this.options.artifactsPrompt) {
+      customInstructions = `${customInstructions ?? ''}\n${this.options.artifactsPrompt}`.trim();
+    }
+
     this.executor = await initializer({
       model,
       signal,
       pastMessages,
       tools: this.tools,
+      customInstructions,
       verbose: this.options.debug,
       returnIntermediateSteps: true,
       customName: this.options.chatGptLabel,
       currentDateString: this.currentDateString,
-      customInstructions: this.options.promptPrefix,
       callbackManager: CallbackManager.fromHandlers({
         async handleAgentAction(action, runId) {
           handleAction(action, runId, onAgentAction);

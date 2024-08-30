@@ -4,6 +4,7 @@ require('module-alias')({ base: path.resolve(__dirname, '..') });
 const cors = require('cors');
 const axios = require('axios');
 const express = require('express');
+const compression = require('compression');
 const passport = require('passport');
 const mongoSanitize = require('express-mongo-sanitize');
 const { jwtLogin, passportLogin } = require('~/strategies');
@@ -15,10 +16,11 @@ const validateImageRequest = require('./middleware/validateImageRequest');
 const errorController = require('./controllers/ErrorController');
 const configureSocialLogins = require('./socialLogins');
 const AppService = require('./services/AppService');
+const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
 
-const { PORT, HOST, ALLOW_SOCIAL_LOGIN } = process.env ?? {};
+const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION } = process.env ?? {};
 
 const port = Number(PORT) || 3080;
 const host = HOST || 'localhost';
@@ -37,17 +39,21 @@ const startServer = async () => {
 
   app.get('/health', (_req, res) => res.status(200).send('OK'));
 
-  // Middleware
+  /* Middleware */
   app.use(noIndex);
   app.use(errorController);
   app.use(express.json({ limit: '3mb' }));
   app.use(mongoSanitize());
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
-  app.use(express.static(app.locals.paths.dist));
-  app.use(express.static(app.locals.paths.fonts));
-  app.use(express.static(app.locals.paths.assets));
-  app.set('trust proxy', 1); // trust first proxy
+  app.use(staticCache(app.locals.paths.dist));
+  app.use(staticCache(app.locals.paths.fonts));
+  app.use(staticCache(app.locals.paths.assets));
+  app.set('trust proxy', 1); /* trust first proxy */
   app.use(cors());
+
+  if (!isEnabled(DISABLE_COMPRESSION)) {
+    app.use(compression());
+  }
 
   if (!ALLOW_SOCIAL_LOGIN) {
     console.warn(
@@ -55,12 +61,12 @@ const startServer = async () => {
     );
   }
 
-  // OAUTH
+  /* OAUTH */
   app.use(passport.initialize());
   passport.use(await jwtLogin());
   passport.use(passportLogin());
 
-  // LDAP Auth
+  /* LDAP Auth */
   if (process.env.LDAP_URL && process.env.LDAP_USER_SEARCH_BASE) {
     passport.use(ldapLogin);
   }
@@ -70,7 +76,7 @@ const startServer = async () => {
   }
 
   app.use('/oauth', routes.oauth);
-  // API Endpoints
+  /* API Endpoints */
   app.use('/api/auth', routes.auth);
   app.use('/api/keys', routes.keys);
   app.use('/api/user', routes.user);

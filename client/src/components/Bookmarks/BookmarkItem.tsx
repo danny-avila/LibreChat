@@ -1,74 +1,68 @@
 import { useState } from 'react';
+import { MenuItem } from '@headlessui/react';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
 import type { FC } from 'react';
 import { Spinner } from '~/components/svg';
 import { cn } from '~/utils';
 
 type MenuItemProps = {
-  tag: string;
+  tag: string | React.ReactNode;
   selected: boolean;
   count?: number;
-  handleSubmit: (tag: string) => Promise<void>;
+  handleSubmit: (tag?: string) => void;
   icon?: React.ReactNode;
-  highlightSelected?: boolean;
 };
 
-const BookmarkItem: FC<MenuItemProps> = ({
-  tag,
-  selected,
-  count,
-  handleSubmit,
-  icon,
-  highlightSelected,
-  ...rest
-}) => {
+const BookmarkItem: FC<MenuItemProps> = ({ tag, selected, handleSubmit, icon, ...rest }) => {
   const [isLoading, setIsLoading] = useState(false);
   const clickHandler = async () => {
+    if (tag === 'New Bookmark') {
+      handleSubmit();
+      return;
+    }
+
     setIsLoading(true);
-    await handleSubmit(tag);
+    handleSubmit(tag as string);
     setIsLoading(false);
   };
+
+  const breakWordStyle: React.CSSProperties = {
+    wordBreak: 'break-word',
+    overflowWrap: 'anywhere',
+  };
+
+  const renderIcon = () => {
+    if (icon != null) {
+      return icon;
+    }
+    if (isLoading) {
+      return <Spinner className="size-4" />;
+    }
+    if (selected) {
+      return <BookmarkFilledIcon className="size-4" />;
+    }
+    return <BookmarkIcon className="size-4" />;
+  };
+
   return (
-    <div
-      role="menuitem"
+    <MenuItem
+      aria-label={tag as string}
       className={cn(
-        'group m-1.5 flex cursor-pointer gap-2 rounded px-2 py-2.5 !pr-3 text-sm !opacity-100 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50',
-        'hover:bg-black/5 dark:hover:bg-white/5',
-        highlightSelected && selected && 'bg-black/5 dark:bg-white/5',
+        'group flex w-full gap-2 rounded-lg p-2.5 text-sm text-text-primary transition-colors duration-200',
+        selected ? 'bg-surface-hover' : 'data-[focus]:bg-surface-hover',
       )}
-      tabIndex={-1}
       {...rest}
+      as="button"
       onClick={clickHandler}
     >
       <div className="flex grow items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          {icon ? (
-            icon
-          ) : isLoading ? (
-            <Spinner className="size-4" />
-          ) : selected ? (
-            <BookmarkFilledIcon className="size-4" />
-          ) : (
-            <BookmarkIcon className="size-4" />
-          )}
-          <div className="break-all">{tag}</div>
+          {renderIcon()}
+          <div style={breakWordStyle}>{tag}</div>
         </div>
-
-        {count !== undefined && (
-          <div className="flex items-center justify-end">
-            <span
-              className={cn(
-                'ml-auto w-9 min-w-max whitespace-nowrap rounded-md bg-white px-2.5 py-0.5 text-center text-xs font-medium leading-5 text-gray-600',
-                'dark:bg-gray-800 dark:text-white',
-              )}
-              aria-hidden="true"
-            >
-              {count}
-            </span>
-          </div>
-        )}
       </div>
-    </div>
+    </MenuItem>
   );
 };
+
 export default BookmarkItem;

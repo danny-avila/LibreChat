@@ -1,5 +1,6 @@
 import type { AssistantsEndpoint } from './schemas';
 
+export const health = () => '/health';
 export const user = () => '/api/user';
 
 export const balance = () => '/api/balance';
@@ -200,4 +201,4 @@ export const conversationTagsList = (pageNumber: string, sort?: string, order?: 
   }`;
 
 export const addTagToConversation = (conversationId: string) =>
-  `${conversationsRoot}/tags/${conversationId}`;
+  `${conversationTags()}/convo/${conversationId}`;

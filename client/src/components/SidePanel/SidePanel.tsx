@@ -11,8 +11,7 @@ import type { TEndpointsConfig } from 'librechat-data-provider';
 import { ResizableHandleAlt, ResizablePanel, ResizablePanelGroup } from '~/components/ui/Resizable';
 import { TooltipProvider, Tooltip } from '~/components/ui/Tooltip';
 import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
-import { useMediaQuery, useLocalStorage } from '~/hooks';
-import BookmarkPanel from './Bookmarks/BookmarkPanel';
+import { useMediaQuery, useLocalStorage, useLocalize } from '~/hooks';
 import NavToggle from '~/components/Nav/NavToggle';
 import { useChatContext } from '~/Providers';
 import Switcher from './Switcher';
@@ -24,19 +23,40 @@ interface SidePanelProps {
   defaultCollapsed?: boolean;
   navCollapsedSize?: number;
   fullPanelCollapse?: boolean;
+  artifacts?: React.ReactNode;
   children: React.ReactNode;
 }
 
 const defaultMinSize = 20;
 const defaultInterface = getConfigDefaults().interface;
 
+const normalizeLayout = (layout: number[]) => {
+  const sum = layout.reduce((acc, size) => acc + size, 0);
+  if (Math.abs(sum - 100) < 0.01) {
+    return layout.map((size) => Number(size.toFixed(2)));
+  }
+
+  const factor = 100 / sum;
+  const normalizedLayout = layout.map((size) => Number((size * factor).toFixed(2)));
+
+  const adjustedSum = normalizedLayout.reduce(
+    (acc, size, index) => (index === layout.length - 1 ? acc : acc + size),
+    0,
+  );
+  normalizedLayout[normalizedLayout.length - 1] = Number((100 - adjustedSum).toFixed(2));
+
+  return normalizedLayout;
+};
+
 const SidePanel = ({
   defaultLayout = [97, 3],
   defaultCollapsed = false,
   fullPanelCollapse = false,
   navCollapsedSize = 3,
+  artifacts,
   children,
 }: SidePanelProps) => {
+  const localize = useLocalize();
   const [isHovering, setIsHovering] = useState(false);
   const [minSize, setMinSize] = useState(defaultMinSize);
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
@@ -59,17 +79,17 @@ const SidePanel = ({
 
   const defaultActive = useMemo(() => {
     const activePanel = localStorage.getItem('side:active-panel');
-    return activePanel ? activePanel : undefined;
+    return typeof activePanel === 'string' ? activePanel : undefined;
   }, []);
 
   const assistants = useMemo(() => endpointsConfig?.[endpoint ?? ''], [endpoint, endpointsConfig]);
   const userProvidesKey = useMemo(
-    () => !!endpointsConfig?.[endpoint ?? '']?.userProvide,
+    () => !!(endpointsConfig?.[endpoint ?? '']?.userProvide ?? false),
     [endpointsConfig, endpoint],
   );
   const keyProvided = useMemo(
-    () => (userProvidesKey ? !!keyExpiry?.expiresAt : true),
-    [keyExpiry?.expiresAt, userProvidesKey],
+    () => (userProvidesKey ? !!(keyExpiry.expiresAt ?? '') : true),
+    [keyExpiry.expiresAt, userProvidesKey],
   );
 
   const hidePanel = useCallback(() => {
@@ -80,11 +100,6 @@ const SidePanel = ({
     localStorage.setItem('fullPanelCollapse', 'true');
     panelRef.current?.collapse();
   }, []);
-  const [showBookmarks, setShowBookmarks] = useState(false);
-  const manageBookmarks = useCallback((e) => {
-    e.preventDefault();
-    setShowBookmarks((prev) => !prev);
-  }, []);
 
   const Links = useSideNavLinks({
     hidePanel,
@@ -92,13 +107,28 @@ const SidePanel = ({
     keyProvided,
     endpoint,
     interfaceConfig,
-    manageBookmarks,
   });
+
+  const calculateLayout = useCallback(() => {
+    if (!artifacts) {
+      const navSize = defaultLayout.length === 2 ? defaultLayout[1] : defaultLayout[2];
+      return [100 - navSize, navSize];
+    } else {
+      const navSize = Math.max(minSize, navCollapsedSize);
+      const remainingSpace = 100 - navSize;
+      const newMainSize = Math.floor(remainingSpace / 2);
+      const artifactsSize = remainingSpace - newMainSize;
+      return [newMainSize, artifactsSize, navSize];
+    }
+  }, [artifacts, defaultLayout, minSize, navCollapsedSize]);
+
+  const currentLayout = useMemo(() => normalizeLayout(calculateLayout()), [calculateLayout]);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const throttledSaveLayout = useCallback(
     throttle((sizes: number[]) => {
-      localStorage.setItem('react-resizable-panels:layout', JSON.stringify(sizes));
+      const normalizedSizes = normalizeLayout(sizes);
+      localStorage.setItem('react-resizable-panels:layout', JSON.stringify(normalizedSizes));
     }, 350),
     [],
   );
@@ -139,18 +169,37 @@ const SidePanel = ({
     }
   }, [isCollapsed, newUser, setNewUser, navCollapsedSize]);
 
+  const minSizeMain = useMemo(() => (artifacts != null ? 15 : 30), [artifacts]);
+
   return (
     <>
-      {showBookmarks && <BookmarkPanel open={showBookmarks} onOpenChange={setShowBookmarks} />}
       <TooltipProvider delayDuration={0}>
         <ResizablePanelGroup
           direction="horizontal"
-          onLayout={(sizes: number[]) => throttledSaveLayout(sizes)}
+          onLayout={(sizes) => throttledSaveLayout(sizes)}
           className="transition-width relative h-full w-full flex-1 overflow-auto bg-white dark:bg-gray-800"
         >
-          <ResizablePanel defaultSize={defaultLayout[0]} minSize={30}>
+          <ResizablePanel
+            defaultSize={currentLayout[0]}
+            minSize={minSizeMain}
+            order={1}
+            id="messages-view"
+          >
             {children}
           </ResizablePanel>
+          {artifacts != null && (
+            <>
+              <ResizableHandleAlt withHandle className="ml-3 bg-border-medium dark:text-white" />
+              <ResizablePanel
+                defaultSize={currentLayout[1]}
+                minSize={minSizeMain}
+                order={2}
+                id="artifacts-panel"
+              >
+                {artifacts}
+              </ResizablePanel>
+            </>
+          )}
           <TooltipProvider delayDuration={400}>
             <Tooltip>
               <div
@@ -179,8 +228,13 @@ const SidePanel = ({
             <ResizableHandleAlt withHandle className="bg-transparent dark:text-white" />
           )}
           <ResizablePanel
+            tagName="nav"
+            id="controls-nav"
+            order={artifacts != null ? 3 : 2}
+            aria-label={localize('com_ui_controls')}
+            role="region"
             collapsedSize={collapsedSize}
-            defaultSize={defaultLayout[1]}
+            defaultSize={currentLayout[currentLayout.length - 1]}
             collapsible={true}
             minSize={minSize}
             maxSize={40}
@@ -229,8 +283,9 @@ const SidePanel = ({
           </ResizablePanel>
         </ResizablePanelGroup>
       </TooltipProvider>
-      <div
-        className={`nav-mask${!isCollapsed ? 'active' : ''}`}
+      <button
+        aria-label="Close right side panel"
+        className={`nav-mask ${!isCollapsed ? 'active' : ''}`}
         onClick={() => {
           setIsCollapsed(() => {
             localStorage.setItem('fullPanelCollapse', 'true');

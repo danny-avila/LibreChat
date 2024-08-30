@@ -294,6 +294,7 @@ export default {
   com_nav_theme_system: 'Hệ thống',
   com_nav_theme_dark: 'Tối',
   com_nav_theme_light: 'Sáng',
+  com_nav_font_size: 'Cỡ chữ',
   com_nav_clear_all_chats: 'Xóa tất cả cuộc trò chuyện',
   com_nav_confirm_clear: 'Xác nhận xóa',
   com_nav_close_sidebar: 'Đóng thanh bên',
