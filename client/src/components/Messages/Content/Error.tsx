@@ -33,6 +33,10 @@ type TExpiredKey = {
   endpoint: string;
 };
 
+type TContextLength = {
+  info: string;
+};
+
 const errorMessages = {
   [ErrorTypes.MODERATION]: 'com_error_moderation',
   [ErrorTypes.NO_USER_KEY]: 'com_error_no_user_key',
@@ -41,6 +45,10 @@ const errorMessages = {
   [ErrorTypes.EXPIRED_USER_KEY]: (json: TExpiredKey, localize: LocalizeFunction) => {
     const { expiredAt, endpoint } = json;
     return localize('com_error_expired_user_key', endpoint, expiredAt);
+  },
+  [ErrorTypes.CONTEXT_LENGTH]: (json: TContextLength, localize: LocalizeFunction) => {
+    const { info } = json;
+    return localize('com_error_context_length', info);
   },
   [ViolationTypes.BAN]:
     'Your account has been temporarily banned due to violations of our service.',

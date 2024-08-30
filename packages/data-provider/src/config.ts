@@ -839,6 +839,11 @@ export enum ErrorTypes {
    * Moderation error
    */
   MODERATION = 'moderation',
+
+  /**
+   * Prompt exceeds max length
+   */
+  CONTEXT_LENGTH = 'CONTEXT_LENGTH',
 }
 
 /**
