@@ -9,6 +9,14 @@ async function balanceController(req, res) {
   res.status(200).send('' + balance);
 }
 
+async function getBalanceByEmailController(req, res) {
+  const { email } = req.body;
+  const record = await Balance.findOne({ email: email }, 'tokenCredits').lean();
+
+  const balance = record ? record.tokenCredits : 0;
+  res.status(200).send('' + balance);
+}
+
 async function balanceUpdateController(req, res) {
   const { id, balance } = req.body;
   console.log('update balance', req.body);
@@ -31,4 +39,5 @@ async function balanceUpdateController(req, res) {
 module.exports = {
   balanceController,
   balanceUpdateController,
+  getBalanceByEmailController,
 };
