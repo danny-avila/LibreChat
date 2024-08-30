@@ -50,52 +50,16 @@ const AssistantConversationStarters: React.FC<AssistantConversationStartersProps
 
   return (
     <div className="relative">
-      <div className="flex items-center justify-between">
-        <label className={labelClass} htmlFor="conversation_starters">
-          {localize('com_assistants_conversation_starters')}
-        </label>
-        <Transition
-          nodeRef={nodeRef}
-          in={field.value.length < Constants.MAX_CONVO_STARTERS}
-          timeout={200}
-          unmountOnExit
-        >
-          {(state: string) => (
-            <div
-              ref={nodeRef}
-              style={{
-                ...defaultStyle,
-                ...transitionStyles[state as keyof typeof transitionStyles],
-                transition: state === 'entering' ? 'none' : defaultStyle.transition,
-              }}
-            >
-              <TooltipProvider delayDuration={1000}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      className="flex size-7 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-hover"
-                      onClick={handleAddStarter}
-                    >
-                      <Plus className="size-4" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" sideOffset={0}>
-                    {localize('com_ui_add')}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
-          )}
-        </Transition>
-      </div>
+      <label className={labelClass} htmlFor="conversation_starters">
+        {localize('com_assistants_conversation_starters')}
+      </label>
       <div className="mt-4 space-y-2">
         <div className="relative">
           <input
             ref={(el) => (inputRefs.current[0] = el)}
             value={newStarter}
             maxLength={64}
-            className={inputClass}
+            className={`${inputClass} pr-10`}
             type="text"
             placeholder={localize('com_assistants_conversation_starters_placeholder')}
             onChange={(e) => setNewStarter(e.target.value)}
@@ -106,6 +70,41 @@ const AssistantConversationStarters: React.FC<AssistantConversationStartersProps
               }
             }}
           />
+          <Transition
+            nodeRef={nodeRef}
+            in={field.value.length < Constants.MAX_CONVO_STARTERS}
+            timeout={200}
+            unmountOnExit
+          >
+            {(state: string) => (
+              <div
+                ref={nodeRef}
+                style={{
+                  ...defaultStyle,
+                  ...transitionStyles[state as keyof typeof transitionStyles],
+                  transition: state === 'entering' ? 'none' : defaultStyle.transition,
+                }}
+                className="absolute right-1 top-1"
+              >
+                <TooltipProvider delayDuration={1000}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex size-7 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-hover"
+                        onClick={handleAddStarter}
+                      >
+                        <Plus className="size-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" sideOffset={0}>
+                      {localize('com_ui_add')}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+            )}
+          </Transition>
         </div>
         {field.value.map((starter, index) => (
           <div key={index} className="relative">
