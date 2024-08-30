@@ -1,6 +1,7 @@
 import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom';
 import {
   Login,
+  TOTP,
   Registration,
   RequestPasswordReset,
   ResetPassword,
@@ -43,6 +44,10 @@ export const router = createBrowserRouter([
       {
         path: 'reset-password',
         element: <ResetPassword />,
+      },
+      {
+        path: 'totp',
+        element: <TOTP />,
       },
     ],
   },
