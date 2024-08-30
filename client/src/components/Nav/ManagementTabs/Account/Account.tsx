@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from '~/components/ui';
-
+import { useLocalize } from '~/hooks';
 import EditBalance from './EditBalance';
 import CreatUser from './CreatUser';
 import DeleteButton from './DeleteButton';
@@ -21,6 +21,7 @@ import { TUser } from 'librechat-data-provider';
 
 export default function Account() {
 
+  const localize = useLocalize();
   const [currentPage, setCurrentPage] = useState(1);
   const [currentUser, setCurrentUser] = useState<TUser | undefined>(undefined);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -70,24 +71,24 @@ export default function Account() {
 
   return (
     <>
-      <div className="relative max-h-[25rem] min-h-[600px] overflow-y-auto rounded-md border border-black/10 pb-4 dark:border-white/10">
+      <div className="relative max-h-[25rem] min-h-[630px] overflow-y-auto rounded-md border border-black/10 pb-4 dark:border-white/10">
         <Table className="w-full min-w-[600px] border-separate border-spacing-0">
           <TableHeader>
             <TableRow>
               <TableHead
                 className="align-start sticky top-0 rounded-t border-b border-black/10 bg-white px-2 py-1 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-700 dark:text-gray-100 sm:px-4 sm:py-2"
               >
-                Name
+                {localize('com_auth_full_name')}
               </TableHead>
               <TableHead
                 className="align-start sticky top-0 rounded-t border-b border-black/10 bg-white px-2 py-1 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-700 dark:text-gray-100 sm:px-4 sm:py-2"
               >
-                Username
+                {localize('com_auth_username')}
               </TableHead>
               <TableHead
                 className="align-start sticky top-0 rounded-t border-b border-black/10 bg-white px-2 py-1 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-700 dark:text-gray-100 sm:px-4 sm:py-2"
               >
-                Email
+                {localize('com_auth_email')}
               </TableHead>
               <TableHead
                 className="align-start sticky top-0 rounded-t border-b border-black/10 bg-white px-2 py-1 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-700 dark:text-gray-100 sm:px-4 sm:py-2"
@@ -97,12 +98,12 @@ export default function Account() {
               <TableHead
                 className="align-start sticky top-0 rounded-t border-b border-black/10 bg-white px-2 py-1 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-700 dark:text-gray-100 sm:px-4 sm:py-2"
               >
-                Created At
+                {localize('com_auth_email')}
               </TableHead>
               <TableHead
                 className="align-start sticky top-0 rounded-t border-b border-black/10 bg-white px-2 py-1 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-700 dark:text-gray-100 sm:px-4 sm:py-2"
               >
-                Operate
+                操作
               </TableHead>
             </TableRow>
           </TableHeader>
@@ -137,7 +138,7 @@ export default function Account() {
                       className="text-token-text-primary flex"
                       onClick={() => handlePreEditBalance(row)}
                     >
-                      {row.tokenCredits}
+                      <div className='min-w-[100px] text-left'> {row.tokenCredits}</div>
                       <NewChatIcon className="size-5" />
                     </button>
 

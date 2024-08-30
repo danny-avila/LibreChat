@@ -60,7 +60,7 @@ export default function DeleteButton({
       selection={{
         selectHandler: confirmDelete,
         selectClasses:
-          'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 text-white',
+          'rounded-md bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-550 focus:bg-green-550 focus:outline-none disabled:cursor-not-allowed disabled:hover:bg-green-500',
         selectText: '删除',
       }}
     />
