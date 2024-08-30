@@ -14,26 +14,28 @@ import { cn } from '~/utils';
 
 const categoryIconMap: Record<string, React.ElementType> = {
   misc: BoxIcon,
-  roleplay: Dices,
-  write: PenLineIcon,
-  idea: LightbulbIcon,
-  shop: ShoppingBagIcon,
+  operations: Dices,
+  marketing: PenLineIcon,
+  techops: LightbulbIcon,
+  commercial: ShoppingBagIcon,
   finance: LineChartIcon,
   code: TerminalSquareIcon,
-  travel: PlaneTakeoffIcon,
-  teach_or_explain: GraduationCapIcon,
+  product: PlaneTakeoffIcon,
+  people_ops: GraduationCapIcon,
 };
 
+
+
 const categoryColorMap: Record<string, string> = {
-  code: 'text-red-500',
+  operations: 'text-red-500',
   misc: 'text-blue-300',
-  shop: 'text-purple-400',
-  idea: 'text-yellow-300',
-  write: 'text-purple-400',
-  travel: 'text-yellow-300',
-  finance: 'text-orange-400',
-  roleplay: 'text-orange-400',
-  teach_or_explain: 'text-blue-300',
+  marketing: 'text-purple-400',
+  techops: 'text-yellow-300',
+  commercial: 'text-purple-400',
+  finance: 'text-yellow-300',
+  code: 'text-orange-400',
+  product: 'text-orange-400',
+  people_ops: 'text-blue-300',
 };
 
 export default function CategoryIcon({

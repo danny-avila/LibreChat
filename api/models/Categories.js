@@ -6,24 +6,24 @@ const options = [
     value: '',
   },
   {
-    label: 'idea',
-    value: 'idea',
+    label: 'operations',
+    value: 'operations',
   },
   {
-    label: 'travel',
-    value: 'travel',
+    label: 'marketing',
+    value: 'marketing',
   },
   {
-    label: 'teach_or_explain',
-    value: 'teach_or_explain',
+    label: 'techops',
+    value: 'techops',
   },
   {
-    label: 'write',
-    value: 'write',
+    label: 'commercial',
+    value: 'commercial',
   },
   {
-    label: 'shop',
-    value: 'shop',
+    label: 'finance',
+    value: 'finance',
   },
   {
     label: 'code',
@@ -34,12 +34,12 @@ const options = [
     value: 'misc',
   },
   {
-    label: 'roleplay',
-    value: 'roleplay',
+    label: 'product',
+    value: 'product',
   },
   {
-    label: 'finance',
-    value: 'finance',
+    label: 'people_ops',
+    value: 'people_ops',
   },
 ];
 
