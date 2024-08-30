@@ -3,9 +3,7 @@ import React from 'react';
 
 export interface AnnounceOptions {
   message: string;
-  id?: string;
-  isStream?: boolean;
-  isComplete?: boolean;
+  isStatus?: boolean;
 }
 
 interface AnnouncerContextType {
