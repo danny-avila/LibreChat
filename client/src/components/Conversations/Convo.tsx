@@ -59,7 +59,7 @@ export default function Conversation({
     toggleNav();
 
     // set document title
-    if (typeof title === 'string') {
+    if (typeof title === 'string' && title.length > 0) {
       document.title = title;
     }
     /* Note: Latest Message should not be reset if existing convo */
