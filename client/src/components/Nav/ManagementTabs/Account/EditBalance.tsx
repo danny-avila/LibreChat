@@ -24,17 +24,22 @@ export default function EditBalance({
 }: EditBalanceProps) {
 
   const { showToast } = useToastContext();
-  const [newBalance, setNewBalance] = useState('');
+  const [newBalance, setNewBalance] = useState(0);
+  const [equivalence, setEquivalence] = useState(0); // 等值美元
 
   useEffect(() => {
     console.log(user);
     if (user) {
-      setNewBalance(user.tokenCredits !== undefined ? user.tokenCredits.toString() : '');
+      const credits = user.tokenCredits || 0;
+      setNewBalance(credits);
+      setEquivalence(credits / 100000);
     }
   }, [user]);
 
   const handleBalanceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setNewBalance(e.target.value);
+    const number = Number(e.target.value);
+    setNewBalance(number);
+    setEquivalence(number / 100000);
   };
 
   const { mutate: updateBalance, isLoading: isLoading } = useUpdateBalanceMutation({
@@ -72,11 +77,15 @@ export default function EditBalance({
         <>
           <div className="flex w-full flex-col items-center gap-2">
             <div className="grid w-full items-center gap-2">
-              <Input
-                value={(newBalance as string | undefined) ?? ''}
-                onChange={handleBalanceChange}
-                className='flex h-10 max-h-10 w-full resize-none px-3 py-2'
-              />
+              <div className=' items-center'>
+                <Input
+                  value={(newBalance as number | undefined) ?? ''}
+                  onChange={handleBalanceChange}
+                  className='flex h-10 max-h-10 resize-none px-3 py-2'
+                />
+                <div className='min-w-[120px] pt-3'> ≈ {equivalence}美元</div>
+              </div>
+              <div className='text-red pt-6'>注意： 1000 个积分 = 0.001 美元</div>
             </div>
           </div>
         </>

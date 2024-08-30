@@ -11,7 +11,6 @@ import {
   TableHeader,
   TableRow,
 } from '~/components/ui';
-import { useLocalize } from '~/hooks';
 import EditBalance from './EditBalance';
 import CreatUser from './CreatUser';
 import DeleteButton from './DeleteButton';
@@ -21,7 +20,6 @@ import { TUser } from 'librechat-data-provider';
 
 export default function Account() {
 
-  const localize = useLocalize();
   const [currentPage, setCurrentPage] = useState(1);
   const [currentUser, setCurrentUser] = useState<TUser | undefined>(undefined);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -78,22 +76,27 @@ export default function Account() {
               <TableHead
                 className="align-start sticky top-0 rounded-t border-b border-black/10 bg-white px-2 py-1 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-700 dark:text-gray-100 sm:px-4 sm:py-2"
               >
-                {localize('com_auth_full_name')}
+                姓名
               </TableHead>
               <TableHead
                 className="align-start sticky top-0 rounded-t border-b border-black/10 bg-white px-2 py-1 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-700 dark:text-gray-100 sm:px-4 sm:py-2"
               >
-                {localize('com_auth_username')}
+                用户名
               </TableHead>
               <TableHead
                 className="align-start sticky top-0 rounded-t border-b border-black/10 bg-white px-2 py-1 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-700 dark:text-gray-100 sm:px-4 sm:py-2"
               >
-                {localize('com_auth_email')}
+                邮箱
               </TableHead>
               <TableHead
                 className="align-start sticky top-0 rounded-t border-b border-black/10 bg-white px-2 py-1 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-700 dark:text-gray-100 sm:px-4 sm:py-2"
               >
                 Balance
+              </TableHead>
+              <TableHead
+                className="align-start sticky top-0 rounded-t border-b border-black/10 bg-white px-2 py-1 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-700 dark:text-gray-100 sm:px-4 sm:py-2"
+              >
+                角色
               </TableHead>
               <TableHead
                 className="align-start sticky top-0 rounded-t border-b border-black/10 bg-white px-2 py-1 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-700 dark:text-gray-100 sm:px-4 sm:py-2"
@@ -142,6 +145,11 @@ export default function Account() {
                       <NewChatIcon className="size-5" />
                     </button>
 
+                  </TableCell>
+                  <TableCell
+                    className="align-start overflow-x-auto px-2 py-1 text-xs sm:px-4 sm:py-2 sm:text-sm [tr[data-disabled=true]_&]:opacity-50"
+                  >
+                    {row.role === 'ADMIN' ? '管理员' : '普通用户'}
                   </TableCell>
                   <TableCell
                     className="align-start overflow-x-auto px-2 py-1 text-xs sm:px-4 sm:py-2 sm:text-sm [tr[data-disabled=true]_&]:opacity-50"
