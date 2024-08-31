@@ -3,6 +3,7 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets present in this file
 
 export default {
+  com_nav_convo_menu_options: 'Conversation Menu Options',
   com_ui_artifacts: 'Artifacts',
   com_ui_artifacts_toggle: 'Toggle Artifacts UI',
   com_nav_info_code_artifacts:
@@ -24,6 +25,8 @@ export default {
   com_error_invalid_user_key: 'Invalid key provided. Please provide a valid key and try again.',
   com_error_expired_user_key:
     'Provided key for {0} expired at {1}. Please provide a new key and try again.',
+  com_error_input_length:
+    'The latest message token count is too long, exceeding the token limit ({0} respectively). Please shorten your message, adjust the max context size from the conversation parameters, or fork the conversation to continue.',
   com_files_no_results: 'No results.',
   com_files_filter: 'Filter files...',
   com_files_number_selected: '{0} of {1} file(s) selected',
