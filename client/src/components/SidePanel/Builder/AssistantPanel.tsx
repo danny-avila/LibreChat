@@ -141,7 +141,7 @@ export default function AssistantPanel({
         return functionName;
       } else {
         const assistant = assistantMap?.[endpoint]?.[assistant_id];
-        const tool = assistant?.tools.find((tool) => tool.function?.name === functionName);
+        const tool = assistant?.tools?.find((tool) => tool.function?.name === functionName);
         if (assistant && tool) {
           return tool;
         }
@@ -329,7 +329,7 @@ export default function AssistantPanel({
             <Controller
               name="conversation_starters"
               control={control}
-              defaultValue={['']}
+              defaultValue={[]}
               render={({ field }) => (
                 <AssistantConversationStarters
                   field={field}
