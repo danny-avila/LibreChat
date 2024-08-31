@@ -216,7 +216,7 @@ export default {
   com_ui_fork_from_message: 'Wähle eine Abzweigungsoption',
   com_ui_mention:
     'Erwähne einen Endpunkt, Assistenten oder eine Voreinstellung, um schnell dorthin zu wechseln',
-  com_ui_add: 'Ein KI-Modell oder eine Voreinstellung für eine zusätzliche Antwort hinzufügen',
+  com_ui_add_model_preset: 'Ein KI-Modell oder eine Voreinstellung für eine zusätzliche Antwort hinzufügen',
   com_ui_regenerate: 'Neu generieren',
   com_ui_continue: 'Fortfahren',
   com_ui_edit: 'Bearbeiten',
@@ -592,7 +592,7 @@ export default {
   com_nav_plugin_store: 'Plugin-Store',
   com_nav_plugin_install: 'Installieren',
   com_nav_plugin_uninstall: 'Deinstallieren',
-  com_nav_tool_add: 'Hinzufügen',
+  com_ui_add: 'Hinzufügen',
   com_nav_tool_remove: 'Entfernen',
   com_nav_tool_dialog: 'Assistenten-Werkzeuge',
   com_ui_misc: 'Sonstiges',
@@ -2283,7 +2283,7 @@ export const comparisons = {
     english: 'Uninstall',
     translated: 'Deinstallieren',
   },
-  com_nav_tool_add: {
+  com_ui_add: {
     english: 'Add',
     translated: 'Hinzufügen',
   },

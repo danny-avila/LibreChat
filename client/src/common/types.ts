@@ -18,6 +18,7 @@ import type {
   TConversation,
   TStartupConfig,
   EModelEndpoint,
+  ActionMetadata,
   AssistantsEndpoint,
   TMessageContentParts,
   AuthorizationTypeEnum,
@@ -146,9 +147,13 @@ export type ActionAuthForm = {
   token_exchange_method: TokenExchangeMethodEnum;
 };
 
+export type ActionWithNullableMetadata = Omit<Action, 'metadata'> & {
+  metadata: ActionMetadata | null;
+};
+
 export type AssistantPanelProps = {
   index?: number;
-  action?: Action;
+  action?: ActionWithNullableMetadata;
   actions?: Action[];
   assistant_id?: string;
   activePanel?: string;

@@ -249,8 +249,8 @@ export const useListAssistantsQuery = <TData = AssistantListResponse>(
   const queryClient = useQueryClient();
   const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
   const keyExpiry = queryClient.getQueryData<TCheckUserKeyResponse>([QueryKeys.name, endpoint]);
-  const userProvidesKey = !!endpointsConfig?.[endpoint]?.userProvide;
-  const keyProvided = userProvidesKey ? !!keyExpiry?.expiresAt : true;
+  const userProvidesKey = !!(endpointsConfig?.[endpoint]?.userProvide ?? false);
+  const keyProvided = userProvidesKey ? !!(keyExpiry?.expiresAt ?? '') : true;
   const enabled = !!endpointsConfig?.[endpoint] && keyProvided;
   const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
   return useQuery<AssistantListResponse, unknown, TData>(
@@ -368,22 +368,24 @@ export const useGetActionsQuery = <TData = Action[]>(
     },
   );
 };
+
 /**
  * Hook for retrieving user's saved Assistant Documents (metadata saved to Database)
  */
-export const useGetAssistantDocsQuery = (
-  endpoint: t.AssistantsEndpoint,
-  config?: UseQueryOptions<AssistantDocument[]>,
-): QueryObserverResult<AssistantDocument[], unknown> => {
+export const useGetAssistantDocsQuery = <TData = AssistantDocument[]>(
+  endpoint: t.AssistantsEndpoint | string,
+  config?: UseQueryOptions<AssistantDocument[], unknown, TData>,
+): QueryObserverResult<TData> => {
   const queryClient = useQueryClient();
   const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
   const keyExpiry = queryClient.getQueryData<TCheckUserKeyResponse>([QueryKeys.name, endpoint]);
-  const userProvidesKey = !!endpointsConfig?.[endpoint]?.userProvide;
-  const keyProvided = userProvidesKey ? !!keyExpiry?.expiresAt : true;
+  const userProvidesKey = !!(endpointsConfig?.[endpoint]?.userProvide ?? false);
+  const keyProvided = userProvidesKey ? !!(keyExpiry?.expiresAt ?? '') : true;
   const enabled = !!endpointsConfig?.[endpoint] && keyProvided;
   const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
-  return useQuery<AssistantDocument[]>(
-    [QueryKeys.assistantDocs],
+
+  return useQuery<AssistantDocument[], unknown, TData>(
+    [QueryKeys.assistantDocs, endpoint],
     () =>
       dataService.getAssistantDocs({
         endpoint,

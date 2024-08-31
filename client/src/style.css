@@ -1172,7 +1172,7 @@ button {
 .btn-neutral {
   --tw-bg-opacity: 1;
   --tw-text-opacity: 1;
-  background-color: rgba(255, 255, 255, var(--tw-bg-opacity));
+  background-color: var(--surface-secondary);
   border-color: rgba(0, 0, 0, 0.1);
   border-width: 1px;
   color: rgba(64, 65, 79, var(--tw-text-opacity));

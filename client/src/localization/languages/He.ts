@@ -354,7 +354,7 @@ export default {
   com_nav_plugin_store: 'חנות פלאגין',
   com_nav_plugin_install: 'התקן',
   com_nav_plugin_uninstall: 'הסר התקנה',
-  com_nav_tool_add: 'הוסף',
+  com_ui_add: 'הוסף',
   com_nav_tool_remove: 'הסר',
   com_nav_tool_dialog: 'כלי סייען',
   com_nav_tool_dialog_description: 'יש לשמור את האסיסטנט כדי להמשיך בבחירת הכלים.',
@@ -1728,7 +1728,7 @@ export const comparisons = {
     english: 'Uninstall',
     translated: 'הסר התקנה',
   },
-  com_nav_tool_add: {
+  com_ui_add: {
     english: 'Add',
     translated: 'הוסף',
   },

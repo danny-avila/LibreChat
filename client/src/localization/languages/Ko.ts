@@ -544,7 +544,7 @@ export default {
   com_nav_change_picture: '프로필 사진 변경',
   com_nav_plugin_install: '플러그인 설치',
   com_nav_plugin_uninstall: '플러그인 제거',
-  com_nav_tool_add: '추가',
+  com_ui_add: '추가',
   com_nav_tool_remove: '제거',
   com_nav_tool_dialog: '어시스턴트 도구',
   com_nav_tool_dialog_description: 'Assistant를 저장해야 도구 선택이 유지됩니다.',
@@ -2595,7 +2595,7 @@ export const comparisons = {
     english: 'Uninstall',
     translated: '플러그인 제거',
   },
-  com_nav_tool_add: {
+  com_ui_add: {
     english: 'Add',
     translated: '추가',
   },

@@ -40,7 +40,8 @@ export default function ActionsPanel({
     },
     onError(error) {
       showToast({
-        message: (error as Error)?.message ?? localize('com_assistants_delete_actions_error'),
+        message:
+          (error as Error | undefined)?.message ?? localize('com_assistants_delete_actions_error'),
         status: 'error',
       });
     },
@@ -127,7 +128,7 @@ export default function ActionsPanel({
                   <div className="absolute right-0 top-6">
                     <button
                       type="button"
-                      disabled={!assistant_id || !action.action_id}
+                      disabled={!(assistant_id ?? '') || !action.action_id}
                       className="btn btn-neutral border-token-border-light relative h-9 rounded-lg font-medium"
                     >
                       <TrashIcon className="text-red-500" />
@@ -145,16 +146,17 @@ export default function ActionsPanel({
                   }
                   selection={{
                     selectHandler: () => {
-                      if (!assistant_id) {
+                      const currentId = assistant_id ?? '';
+                      if (!currentId) {
                         return showToast({
                           message: 'No assistant_id found, is the assistant created?',
                           status: 'error',
                         });
                       }
                       deleteAction.mutate({
-                        model: assistantMap[endpoint][assistant_id].model,
+                        model: assistantMap?.[endpoint][currentId].model ?? '',
                         action_id: action.action_id,
-                        assistant_id,
+                        assistant_id: currentId,
                         endpoint,
                       });
                     },
