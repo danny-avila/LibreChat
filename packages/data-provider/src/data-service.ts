@@ -1,13 +1,14 @@
 import type { AxiosResponse } from 'axios';
-import * as f from './types/files';
-import * as q from './types/queries';
-import * as m from './types/mutations';
-import * as a from './types/assistants';
-import * as r from './roles';
-import * as t from './types';
-import * as s from './schemas';
-import request from './request';
+import type * as t from './types';
 import * as endpoints from './api-endpoints';
+import * as a from './types/assistants';
+import * as m from './types/mutations';
+import * as q from './types/queries';
+import * as f from './types/files';
+import * as config from './config';
+import request from './request';
+import * as s from './schemas';
+import * as r from './roles';
 
 export function abortRequestWithMessage(
   endpoint: string,
@@ -274,16 +275,24 @@ export function getAssistantDocs({
 /* Tools */
 
 export const getAvailableTools = (
-  version: number | string,
-  endpoint: s.AssistantsEndpoint,
+  _endpoint: s.AssistantsEndpoint | s.EModelEndpoint.agents,
+  version?: number | string,
 ): Promise<s.TPlugin[]> => {
-  return request.get(
-    endpoints.assistants({
+  let path = '';
+  if (s.isAssistantsEndpoint(_endpoint)) {
+    const endpoint = _endpoint as s.AssistantsEndpoint;
+    path = endpoints.assistants({
       path: 'tools',
-      endpoint,
-      version,
-    }),
-  );
+      endpoint: endpoint,
+      version: version ?? config.defaultAssistantsVersion[endpoint],
+    });
+  } else {
+    path = endpoints.agents({
+      path: 'tools',
+    });
+  }
+
+  return request.get(path);
 };
 
 /* Files */
@@ -303,6 +312,123 @@ export const uploadImage = (data: FormData): Promise<f.TFileUpload> => {
 export const uploadFile = (data: FormData): Promise<f.TFileUpload> => {
   return request.postMultiPart(endpoints.files(), data);
 };
+
+/* actions */
+
+export const updateAction = (data: m.UpdateActionVariables): Promise<m.UpdateActionResponse> => {
+  const { assistant_id, version, ...body } = data;
+  return request.post(
+    endpoints.assistants({
+      path: `actions/${assistant_id}`,
+      version,
+    }),
+    body,
+  );
+};
+
+export function getActions(): Promise<a.Action[]> {
+  return request.get(
+    endpoints.agents({
+      path: 'actions',
+    }),
+  );
+}
+
+export const deleteAction = async ({
+  assistant_id,
+  action_id,
+  model,
+  version,
+  endpoint,
+}: m.DeleteActionVariables & { version: number | string }): Promise<void> =>
+  request.delete(
+    endpoints.assistants({
+      path: `actions/${assistant_id}/${action_id}/${model}`,
+      version,
+      endpoint,
+    }),
+  );
+
+/**
+ * Agents
+ */
+
+export const createAgent = ({ ...data }: a.AgentCreateParams): Promise<a.Agent> => {
+  return request.post(endpoints.agents({}), data);
+};
+
+export const getAgentById = ({ agent_id }: { agent_id: string }): Promise<a.Agent> => {
+  return request.get(
+    endpoints.agents({
+      path: agent_id,
+    }),
+  );
+};
+
+export const updateAgent = ({
+  agent_id,
+  data,
+}: {
+  agent_id: string;
+  data: a.AgentUpdateParams;
+}): Promise<a.Agent> => {
+  return request.patch(
+    endpoints.agents({
+      path: agent_id,
+    }),
+    data,
+  );
+};
+
+export const deleteAgent = ({ agent_id }: m.DeleteAgentBody): Promise<void> => {
+  return request.delete(
+    endpoints.agents({
+      path: agent_id,
+    }),
+  );
+};
+
+export const listAgents = (params: a.AgentListParams): Promise<a.AgentListResponse> => {
+  return request.get(
+    endpoints.agents({
+      options: params,
+    }),
+  );
+};
+
+/* Tools */
+
+export const getAvailableAgentTools = (): Promise<s.TPlugin[]> => {
+  return request.get(
+    endpoints.agents({
+      path: 'tools',
+    }),
+  );
+};
+
+/* Actions */
+
+export const updateAgentAction = (
+  data: m.UpdateAgentActionVariables,
+): Promise<m.UpdateAgentActionResponse> => {
+  const { agent_id, ...body } = data;
+  return request.post(
+    endpoints.agents({
+      path: `actions/${agent_id}`,
+    }),
+    body,
+  );
+};
+
+export const deleteAgentAction = async ({
+  agent_id,
+  action_id,
+}: m.DeleteAgentActionVariables): Promise<void> =>
+  request.delete(
+    endpoints.agents({
+      path: `actions/${agent_id}/${action_id}`,
+    }),
+  );
 
 /**
  * Imports a conversations file.
@@ -329,6 +455,15 @@ export const uploadAssistantAvatar = (data: m.AssistantAvatarVariables): Promise
   );
 };
 
+export const uploadAgentAvatar = (data: m.AgentAvatarVariables): Promise<a.Agent> => {
+  return request.postMultiPart(
+    endpoints.agents({
+      path: `avatar/${data.agent_id}`,
+    }),
+    data.formData,
+  );
+};
+
 export const getFileDownload = async (userId: string, file_id: string): Promise<AxiosResponse> => {
   return request.getResponse(`${endpoints.files()}/download/${userId}/${file_id}`, {
     responseType: 'blob',
@@ -347,6 +482,8 @@ export const deleteFiles = async (
     data: { files, assistant_id, tool_resource },
   });
 
+/* Speech */
+
 export const speechToText = (data: FormData): Promise<f.SpeechToTextResponse> => {
   return request.postMultiPart(endpoints.speechToText(), data);
 };
@@ -362,50 +499,6 @@ export const getVoices = (): Promise<f.VoiceResponse> => {
 export const getCustomConfigSpeech = (): Promise<t.TCustomConfigSpeechResponse> => {
   return request.get(endpoints.getCustomConfigSpeech());
 };
-
-/* actions */
-
-export const updateAction = (data: m.UpdateActionVariables): Promise<m.UpdateActionResponse> => {
-  const { assistant_id, version, ...body } = data;
-  return request.post(
-    endpoints.assistants({
-      path: `actions/${assistant_id}`,
-      version,
-    }),
-    body,
-  );
-};
-
-export function getActions({
-  endpoint,
-  version,
-}: {
-  endpoint: s.AssistantsEndpoint;
-  version: number | string;
-}): Promise<a.Action[]> {
-  return request.get(
-    endpoints.assistants({
-      path: 'actions',
-      version,
-      endpoint,
-    }),
-  );
-}
-
-export const deleteAction = async ({
-  assistant_id,
-  action_id,
-  model,
-  version,
-  endpoint,
-}: m.DeleteActionVariables & { version: number | string }): Promise<void> =>
-  request.delete(
-    endpoints.assistants({
-      path: `actions/${assistant_id}/${action_id}/${model}`,
-      version,
-      endpoint,
-    }),
-  );
 
 /* conversations */
 

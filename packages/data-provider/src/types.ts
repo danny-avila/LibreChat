@@ -78,6 +78,7 @@ export type GroupedConversations = [key: string, TConversation[]][];
 
 export type TUpdateUserPlugins = {
   isAssistantTool?: boolean;
+  isAgentTool?: boolean;
   pluginKey: string;
   action: string;
   auth?: unknown;

@@ -28,7 +28,7 @@ any) => {
             return (
               <Part
                 key={`display-${messageId}-${idx}`}
-                showCursor={showCursor && isSubmitting}
+                showCursor={showCursor === true && isSubmitting}
                 isSubmitting={isSubmitting}
                 part={part}
                 {...props}

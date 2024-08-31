@@ -1,5 +1,5 @@
-const { v4 } = require('uuid');
 const express = require('express');
+const { nanoid } = require('nanoid');
 const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
 const { actionDelimiter, EModelEndpoint } = require('librechat-data-provider');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
@@ -8,20 +8,6 @@ const { updateAssistantDoc, getAssistant } = require('~/models/Assistant');
 const { logger } = require('~/config');
 
 const router = express.Router();
-
-/**
- * Retrieves all user's actions
- * @route GET /actions/
- * @param {string} req.params.id - Assistant identifier.
- * @returns {Action[]} 200 - success response - application/json
- */
-router.get('/', async (req, res) => {
-  try {
-    res.json(await getActions());
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
 
 /**
  * Adds or updates actions for a specific assistant.
@@ -51,7 +37,7 @@ router.post('/:assistant_id', async (req, res) => {
       return res.status(400).json({ message: 'No domain provided' });
     }
 
-    const action_id = _action_id ?? v4();
+    const action_id = _action_id ?? nanoid();
     const initialPromises = [];
 
     const { openai } = await getOpenAIClient({ req, res });
@@ -177,6 +163,10 @@ router.delete('/:assistant_id/:action_id/:model', async (req, res) => {
     });
 
     domain = await domainParser(req, domain, true);
+
+    if (!domain) {
+      return res.status(400).json({ message: 'No domain provided' });
+    }
 
     const updatedTools = tools.filter(
       (tool) => !(tool.function && tool.function.name.includes(domain)),

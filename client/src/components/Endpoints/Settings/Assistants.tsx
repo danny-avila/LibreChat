@@ -2,8 +2,14 @@ import { useState, useMemo, useEffect } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import type { Assistant, TPreset } from 'librechat-data-provider';
 import type { TModelSelectProps, Option } from '~/common';
+import {
+  cn,
+  defaultTextProps,
+  removeFocusRings,
+  mapAssistants,
+  createDropdownSetter,
+} from '~/utils';
 import { Label, HoverCard, SelectDropDown, HoverCardTrigger } from '~/components/ui';
-import { cn, defaultTextProps, removeFocusRings, mapAssistants } from '~/utils';
 import { useLocalize, useDebouncedInput, useAssistantListMap } from '~/hooks';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
@@ -113,7 +119,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
         <div className="grid w-full items-center gap-2">
           <SelectDropDown
             value={model ?? ''}
-            setValue={setModel}
+            setValue={createDropdownSetter(setModel)}
             availableValues={modelOptions}
             disabled={readonly}
             className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusRings)}
@@ -128,7 +134,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               <SelectDropDown
                 title={localize('com_endpoint_assistant')}
                 value={assistantValue}
-                setValue={setAssistant}
+                setValue={createDropdownSetter(setAssistant)}
                 availableValues={assistants as Option[]}
                 disabled={readonly}
                 className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusRings)}

@@ -1,5 +1,5 @@
 import { Plus } from 'lucide-react';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   Tools,
   FileSources,
@@ -13,9 +13,9 @@ import type { UseFormReset } from 'react-hook-form';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type {
   Assistant,
-  AssistantCreateParams,
   AssistantDocument,
   AssistantsEndpoint,
+  AssistantCreateParams,
 } from 'librechat-data-provider';
 import type {
   Actions,
@@ -24,11 +24,11 @@ import type {
   TAssistantOption,
   LastSelectedModels,
 } from '~/common';
-import { useListAssistantsQuery, useGetAssistantDocsQuery } from '~/data-provider';
 import SelectDropDown from '~/components/ui/SelectDropDown';
+import { useListAssistantsQuery } from '~/data-provider';
 import { useLocalize, useLocalStorage } from '~/hooks';
+import { cn, createDropdownSetter } from '~/utils';
 import { useFileMapContext } from '~/Providers';
-import { cn } from '~/utils';
 
 const keys = new Set([
   'name',
@@ -43,6 +43,7 @@ export default function AssistantSelect({
   reset,
   value,
   endpoint,
+  documentsMap,
   selectedAssistant,
   setCurrentAssistantId,
   createMutation,
@@ -51,6 +52,7 @@ export default function AssistantSelect({
   value: TAssistantOption;
   endpoint: AssistantsEndpoint;
   selectedAssistant: string | null;
+  documentsMap: Map<string, AssistantDocument> | null;
   setCurrentAssistantId: React.Dispatch<React.SetStateAction<string | undefined>>;
   createMutation: UseMutationResult<Assistant, Error, AssistantCreateParams>;
 }) {
@@ -62,14 +64,7 @@ export default function AssistantSelect({
     {} as LastSelectedModels,
   );
 
-  const { data: documentsMap = new Map<string, AssistantDocument>() } = useGetAssistantDocsQuery(
-    endpoint,
-    {
-      select: (data) => new Map(data.map((dbA) => [dbA.assistant_id, dbA])),
-    },
-  );
-
-  const assistants = useListAssistantsQuery(endpoint, undefined, {
+  const query = useListAssistantsQuery(endpoint, undefined, {
     select: (res) =>
       res.data.map((_assistant) => {
         const source =
@@ -128,7 +123,7 @@ export default function AssistantSelect({
           );
         }
 
-        const assistantDoc = documentsMap.get(_assistant.id);
+        const assistantDoc = documentsMap?.get(_assistant.id);
         /* If no user updates, use the latest assistant docs */
         if (assistantDoc && !assistant.conversation_starters) {
           assistant.conversation_starters = assistantDoc.conversation_starters;
@@ -140,7 +135,7 @@ export default function AssistantSelect({
 
   const onSelect = useCallback(
     (value: string) => {
-      const assistant = assistants.data?.find((assistant) => assistant.id === value);
+      const assistant = query.data?.find((assistant) => assistant.id === value);
 
       createMutation.reset();
       if (!assistant) {
@@ -206,7 +201,7 @@ export default function AssistantSelect({
       reset(formValues);
       setCurrentAssistantId(assistant.id);
     },
-    [assistants.data, reset, setCurrentAssistantId, createMutation, endpoint, lastSelectedModels],
+    [query.data, reset, setCurrentAssistantId, createMutation, endpoint, lastSelectedModels],
   );
 
   useEffect(() => {
@@ -216,7 +211,7 @@ export default function AssistantSelect({
       return;
     }
 
-    if (selectedAssistant !== '' && selectedAssistant != null && assistants.data) {
+    if (selectedAssistant !== '' && selectedAssistant != null && query.data) {
       timerId = setTimeout(() => {
         lastSelectedAssistant.current = selectedAssistant;
         onSelect(selectedAssistant);
@@ -228,15 +223,15 @@ export default function AssistantSelect({
         clearTimeout(timerId);
       }
     };
-  }, [selectedAssistant, assistants.data, onSelect]);
+  }, [selectedAssistant, query.data, onSelect]);
 
   const createAssistant = localize('com_ui_create') + ' ' + localize('com_ui_assistant');
   return (
     <SelectDropDown
       value={!value ? createAssistant : value}
-      setValue={onSelect}
+      setValue={createDropdownSetter(onSelect)}
       availableValues={
-        assistants.data ?? [
+        query.data ?? [
           {
             label: 'Loading...',
             value: '',

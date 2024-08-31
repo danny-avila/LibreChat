@@ -1,4 +1,9 @@
-import { parseConvo, EModelEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import {
+  parseConvo,
+  EModelEndpoint,
+  isAssistantsEndpoint,
+  isAgentsEndpoint,
+} from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
 import getLocalStorageItems from './getLocalStorageItems';
 
@@ -67,6 +72,11 @@ const buildDefaultConvo = ({
   // Ensures assistant_id is always defined
   if (isAssistantsEndpoint(endpoint) && !defaultConvo.assistant_id && convo.assistant_id) {
     defaultConvo.assistant_id = convo.assistant_id;
+  }
+
+  // Ensures agent_id is always defined
+  if (isAgentsEndpoint(endpoint) && !defaultConvo.agent_id && convo.agent_id) {
+    defaultConvo.agent_id = convo.agent_id;
   }
 
   defaultConvo.tools = lastConversationSetup?.tools ?? lastSelectedTools ?? defaultConvo.tools;

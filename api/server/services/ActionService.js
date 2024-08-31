@@ -6,6 +6,7 @@ const {
   isImageVisionTool,
   actionDomainSeparator,
 } = require('librechat-data-provider');
+const { tool } = require('@langchain/core/tools');
 const { encryptV2, decryptV2 } = require('~/server/utils/crypto');
 const { getActions, deleteActions } = require('~/models/Action');
 const { deleteAssistant } = require('~/models/Assistant');
@@ -101,7 +102,8 @@ async function domainParser(req, domain, inverse = false) {
  *
  * @param {Object} searchParams - The parameters for loading action sets.
  * @param {string} searchParams.user - The user identifier.
- * @param {string} searchParams.assistant_id - The assistant identifier.
+ * @param {string} [searchParams.agent_id]- The agent identifier.
+ * @param {string} [searchParams.assistant_id]- The assistant identifier.
  * @returns {Promise<Action[] | null>} A promise that resolves to an array of actions or `null` if no match.
  */
 async function loadActionSets(searchParams) {
@@ -114,10 +116,14 @@ async function loadActionSets(searchParams) {
  * @param {Object} params - The parameters for loading action sets.
  * @param {Action} params.action - The action set. Necessary for decrypting authentication values.
  * @param {ActionRequest} params.requestBuilder - The ActionRequest builder class to execute the API call.
- * @returns { { _call: (toolInput: Object) => unknown} } An object with `_call` method to execute the tool input.
+ * @param {string | undefined} [params.name] - The name of the tool.
+ * @param {string | undefined} [params.description] - The description for the tool.
+ * @param {import('zod').ZodTypeAny | undefined} [params.zodSchema] - The Zod schema for tool input validation/definition
+ * @returns { Promsie<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
  */
-async function createActionTool({ action, requestBuilder }) {
+async function createActionTool({ action, requestBuilder, zodSchema, name, description }) {
   action.metadata = await decryptMetadata(action.metadata);
+  /** @type {(toolInput: Object | string) => Promise<unknown>} */
   const _call = async (toolInput) => {
     try {
       requestBuilder.setParams(toolInput);
@@ -141,6 +147,14 @@ async function createActionTool({ action, requestBuilder }) {
       return `API call to ${action.metadata.domain} failed.`;
     }
   };
+
+  if (name) {
+    return tool(_call, {
+      name,
+      description: description || '',
+      schema: zodSchema,
+    });
+  }
 
   return {
     _call,
@@ -180,7 +194,7 @@ async function encryptMetadata(metadata) {
  * Decrypts sensitive metadata values for an action.
  *
  * @param {ActionMetadata} metadata - The action metadata to decrypt.
- * @returns {ActionMetadata} The updated action metadata with decrypted values.
+ * @returns {Promise<ActionMetadata>} The updated action metadata with decrypted values.
  */
 async function decryptMetadata(metadata) {
   const decryptedMetadata = { ...metadata };

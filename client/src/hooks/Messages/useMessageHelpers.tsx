@@ -1,10 +1,11 @@
 import throttle from 'lodash/throttle';
 import { useEffect, useRef, useCallback, useMemo } from 'react';
-import { Constants, isAssistantsEndpoint } from 'librechat-data-provider';
+import { Constants, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
-import { useChatContext, useAssistantsMapContext } from '~/Providers';
+import { useChatContext, useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
 import useCopyToClipboard from './useCopyToClipboard';
 import { getTextKey, logger } from '~/utils';
+
 export default function useMessageHelpers(props: TMessageProps) {
   const latestText = useRef<string | number>('');
   const { message, currentEditId, setCurrentEditId } = props;
@@ -21,6 +22,7 @@ export default function useMessageHelpers(props: TMessageProps) {
     setLatestMessage,
   } = useChatContext();
   const assistantMap = useAssistantsMapContext();
+  const agentMap = useAgentsMapContext();
 
   const { text, content, children, messageId = null, isCreatedByUser } = message ?? {};
   const edit = messageId === currentEditId;
@@ -93,6 +95,16 @@ export default function useMessageHelpers(props: TMessageProps) {
     return assistantMap?.[endpointKey] ? assistantMap[endpointKey][modelKey] : undefined;
   }, [conversation?.endpoint, message?.model, assistantMap]);
 
+  const agent = useMemo(() => {
+    if (!isAgentsEndpoint(conversation?.endpoint)) {
+      return undefined;
+    }
+
+    const modelKey = message?.model ?? '';
+
+    return agentMap ? agentMap[modelKey] : undefined;
+  }, [agentMap, conversation?.endpoint]);
+
   const regenerateMessage = () => {
     if ((isSubmitting && isCreatedByUser === true) || !message) {
       return;
@@ -106,6 +118,7 @@ export default function useMessageHelpers(props: TMessageProps) {
   return {
     ask,
     edit,
+    agent,
     index,
     isLast,
     assistant,

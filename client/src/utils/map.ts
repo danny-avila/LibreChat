@@ -1,4 +1,4 @@
-import type { TFile, Assistant, TPlugin } from 'librechat-data-provider';
+import type { TFile, Assistant, Agent, TPlugin } from 'librechat-data-provider';
 import type { TPluginMap } from '~/common';
 
 /** Maps Files by `file_id` for quick lookup */
@@ -21,6 +21,17 @@ export function mapAssistants(assistants: Assistant[]) {
   }
 
   return assistantMap;
+}
+
+/** Maps Agents by `id` for quick lookup */
+export function mapAgents(agents: Agent[]) {
+  const agentMap = {} as Record<string, Agent>;
+
+  for (const agent of agents) {
+    agentMap[agent.id] = agent;
+  }
+
+  return agentMap;
 }
 
 /** Maps Plugins by `pluginKey` for quick lookup */

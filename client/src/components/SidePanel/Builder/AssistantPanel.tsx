@@ -22,12 +22,12 @@ import CapabilitiesForm from './CapabilitiesForm';
 import { SelectDropDown } from '~/components/ui';
 import AssistantAvatar from './AssistantAvatar';
 import AssistantSelect from './AssistantSelect';
-import AssistantAction from './AssistantAction';
 import ContextButton from './ContextButton';
 import AssistantTool from './AssistantTool';
 import { Spinner } from '~/components/svg';
 import Knowledge from './Knowledge';
 import { Panel } from '~/common';
+import Action from './Action';
 
 const labelClass = 'mb-2 text-token-text-primary block font-medium';
 const inputClass = cn(
@@ -42,6 +42,7 @@ export default function AssistantPanel({
   endpoint,
   actions = [],
   setActivePanel,
+  documentsMap,
   assistant_id: current_assistant_id,
   setCurrentAssistantId,
   assistantsConfig,
@@ -222,6 +223,7 @@ export default function AssistantPanel({
                 reset={reset}
                 value={field.value}
                 endpoint={endpoint}
+                documentsMap={documentsMap}
                 setCurrentAssistantId={setCurrentAssistantId}
                 selectedAssistant={current_assistant_id ?? null}
                 createMutation={create}
@@ -373,7 +375,7 @@ export default function AssistantPanel({
             />
           </div>
           {/* Knowledge */}
-          {(codeEnabled || retrievalEnabled) && version == 1 && (
+          {(codeEnabled === true || retrievalEnabled === true) && version == 1 && (
             <Knowledge assistant_id={assistant_id} files={files} endpoint={endpoint} />
           )}
           {/* Capabilities */}
@@ -387,9 +389,9 @@ export default function AssistantPanel({
           {/* Tools */}
           <div className="mb-6">
             <label className={labelClass}>
-              {`${toolsEnabled ? localize('com_assistants_tools') : ''}
-              ${toolsEnabled && actionsEnabled ? ' + ' : ''}
-              ${actionsEnabled ? localize('com_assistants_actions') : ''}`}
+              {`${toolsEnabled === true ? localize('com_assistants_tools') : ''}
+              ${toolsEnabled === true && actionsEnabled === true ? ' + ' : ''}
+              ${actionsEnabled === true ? localize('com_assistants_actions') : ''}`}
             </label>
             <div className="space-y-2">
               {functions.map((func, i) => (
@@ -403,12 +405,10 @@ export default function AssistantPanel({
               {actions
                 .filter((action) => action.assistant_id === assistant_id)
                 .map((action, i) => {
-                  return (
-                    <AssistantAction key={i} action={action} onClick={() => setAction(action)} />
-                  );
+                  return <Action key={i} action={action} onClick={() => setAction(action)} />;
                 })}
               <div className="flex space-x-2">
-                {toolsEnabled && (
+                {toolsEnabled === true && (
                   <button
                     type="button"
                     onClick={() => setShowToolDialog(true)}
@@ -419,7 +419,7 @@ export default function AssistantPanel({
                     </div>
                   </button>
                 )}
-                {actionsEnabled && (
+                {actionsEnabled === true && (
                   <button
                     type="button"
                     disabled={!assistant_id}
@@ -463,7 +463,7 @@ export default function AssistantPanel({
         <ToolSelectDialog
           isOpen={showToolDialog}
           setIsOpen={setShowToolDialog}
-          assistant_id={assistant_id}
+          toolsFormKey="functions"
           endpoint={endpoint}
         />
       </form>
