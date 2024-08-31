@@ -1,8 +1,10 @@
+import { useMemo } from 'react';
 import { EModelEndpoint, isAssistantsEndpoint, Constants } from 'librechat-data-provider';
 import { useGetEndpointsQuery, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { ReactNode } from 'react';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
+import { useGetAssistantDocsQuery } from '~/data-provider';
 import ConvoIcon from '~/components/Endpoints/ConvoIcon';
 import { useLocalize, useSubmitMessage } from '~/hooks';
 import { BirthdayIcon } from '~/components/svg';
@@ -30,13 +32,24 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
 
   const iconURL = conversation?.iconURL;
   endpoint = getIconEndpoint({ endpointsConfig, iconURL, endpoint });
+  const { data: documentsMap = new Map() } = useGetAssistantDocsQuery(endpoint, {
+    select: (data) => new Map(data.map((dbA) => [dbA.assistant_id, dbA])),
+  });
 
   const isAssistant = isAssistantsEndpoint(endpoint);
   const assistant = isAssistant ? assistantMap?.[endpoint][assistant_id ?? ''] : undefined;
   const assistantName = assistant?.name ?? '';
   const assistantDesc = assistant?.description ?? '';
   const avatar = assistant?.metadata?.avatar ?? '';
-  const conversation_starters = assistant?.conversation_starters ?? [];
+  const conversation_starters = useMemo(() => {
+    /* The user made updates, use client-side cache,  */
+    if (assistant?.conversation_starters) {
+      return assistant.conversation_starters;
+    }
+    /* If none in cache, we use the latest assistant docs */
+    const assistantDocs = documentsMap.get(assistant_id ?? '');
+    return assistantDocs?.conversation_starters ?? [];
+  }, [documentsMap, assistant_id, assistant?.conversation_starters]);
 
   const containerClassName =
     'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black';

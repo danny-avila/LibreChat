@@ -164,7 +164,7 @@ export default function AssistantPanel({
       name,
       description,
       instructions,
-      conversation_starters,
+      conversation_starters: starters,
       model,
       // file_ids, // TODO: add file handling here
     } = data;
@@ -176,7 +176,7 @@ export default function AssistantPanel({
           name,
           description,
           instructions,
-          conversation_starters,
+          conversation_starters: starters.filter((starter) => starter.trim() !== ''),
           model,
           tools,
           endpoint,
@@ -189,7 +189,7 @@ export default function AssistantPanel({
       name,
       description,
       instructions,
-      conversation_starters,
+      conversation_starters: starters.filter((starter) => starter.trim() !== ''),
       model,
       tools,
       endpoint,

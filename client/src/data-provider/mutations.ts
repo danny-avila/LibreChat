@@ -832,6 +832,28 @@ export const useCreateAssistantMutation = (
           return options?.onSuccess?.(newAssistant, variables, context);
         }
 
+        queryClient.setQueryData<t.AssistantDocument[]>(
+          [QueryKeys.assistantDocs, variables.endpoint],
+          (prev) => {
+            if (!prev) {
+              return prev;
+            }
+            prev.map((doc) => {
+              if (doc.assistant_id === newAssistant.id) {
+                return {
+                  ...doc,
+                  name: newAssistant.name,
+                  file_ids: newAssistant.file_ids,
+                  avatar: newAssistant.metadata?.avatar,
+                  description: newAssistant.description,
+                  conversation_starters: newAssistant.conversation_starters,
+                };
+              }
+              return doc;
+            });
+          },
+        );
+
         const currentAssistants = [newAssistant, ...JSON.parse(JSON.stringify(listRes.data))];
 
         queryClient.setQueryData<t.AssistantListResponse>(
@@ -883,6 +905,28 @@ export const useUpdateAssistantMutation = (
         if (!listRes) {
           return options?.onSuccess?.(updatedAssistant, variables, context);
         }
+
+        queryClient.setQueryData<t.AssistantDocument[]>(
+          [QueryKeys.assistantDocs, variables.data.endpoint],
+          (prev) => {
+            if (!prev) {
+              return prev;
+            }
+            prev.map((doc) => {
+              if (doc.assistant_id === variables.assistant_id) {
+                return {
+                  ...doc,
+                  name: updatedAssistant.name,
+                  file_ids: updatedAssistant.file_ids,
+                  avatar: updatedAssistant.metadata?.avatar,
+                  description: updatedAssistant.description,
+                  conversation_starters: updatedAssistant.conversation_starters,
+                };
+              }
+              return doc;
+            });
+          },
+        );
 
         queryClient.setQueryData<t.AssistantListResponse>(
           [QueryKeys.assistants, variables.data.endpoint, defaultOrderQuery],

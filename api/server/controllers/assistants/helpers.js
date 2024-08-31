@@ -9,7 +9,6 @@ const {
   initializeClient: initAzureClient,
 } = require('~/server/services/Endpoints/azureAssistants');
 const { initializeClient } = require('~/server/services/Endpoints/assistants');
-const { getAssistants } = require('~/models/Assistant');
 const { getLogStores } = require('~/cache');
 
 /**
@@ -56,6 +55,17 @@ const _listAssistants = async ({ req, res, version, query }) => {
   return openai.beta.assistants.list(query);
 };
 
+/**
+ * Fetches all assistants based on provided query params, until `has_more` is `false`.
+ *
+ * @async
+ * @param {object} params - The parameters object.
+ * @param {object} params.req - The request object, used for initializing the client.
+ * @param {object} params.res - The response object, used for initializing the client.
+ * @param {string} params.version - The API version to use.
+ * @param {Omit<AssistantListParams, 'endpoint'>} params.query - The query parameters to list assistants (e.g., limit, order).
+ * @returns {Promise<Array<Assistant & AssistantDocument>>} A promise that resolves to the response from the `openai.beta.assistants.list` method call.
+ */
 const listAllAssistants = async ({ req, res, version, query }) => {
   /** @type {{ openai: OpenAIClient }} */
   const { openai } = await getOpenAIClient({ req, res, version });
@@ -88,22 +98,10 @@ const listAllAssistants = async ({ req, res, version, query }) => {
     }
   }
 
-  // Fetch the list of assistants from the database
-  const dbAssistants = await getAssistants();
-
-  // Map the conversation_starters array from the database to the assistants
-  const mappedAssistants = allAssistants.map((assistant) => {
-    const dbAssistant = dbAssistants.find((dbA) => dbA.assistant_id === assistant.id);
-    if (dbAssistant && dbAssistant.conversation_starters) {
-      assistant.conversation_starters = dbAssistant.conversation_starters;
-    }
-    return assistant;
-  });
-
   return {
-    data: mappedAssistants,
+    data: allAssistants,
     body: {
-      data: mappedAssistants,
+      data: allAssistants,
       has_more: false,
       first_id,
       last_id,
