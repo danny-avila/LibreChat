@@ -169,7 +169,7 @@ export type Agent = {
   object: string;
 };
 
-export type TAgentsMap = Record<string, Agent>;
+export type TAgentsMap = Record<string, Agent | undefined>;
 
 export type AgentCreateParams = {
   name?: string | null;

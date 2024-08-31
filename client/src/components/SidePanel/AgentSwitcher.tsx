@@ -33,7 +33,7 @@ export default function AgentSwitcher({ isCollapsed }: SwitcherProps) {
       }
       const agent = agentsMap[agent_id];
 
-      if (agent !== undefined && isAgentsEndpoint(endpoint as string)) {
+      if (agent !== undefined && isAgentsEndpoint(endpoint as string) === true) {
         setOption('model')('');
         setOption('agent_id')(agent_id);
       }
@@ -63,7 +63,7 @@ export default function AgentSwitcher({ isCollapsed }: SwitcherProps) {
 
   return (
     <Combobox
-      selectedValue={currentAgent.id ?? ''}
+      selectedValue={currentAgent?.id ?? ''}
       displayValue={
         agents.find((agent: Agent) => agent.id === selectedAgentId)?.name ??
         localize('com_sidepanel_select_agent')
@@ -78,8 +78,8 @@ export default function AgentSwitcher({ isCollapsed }: SwitcherProps) {
         <Icon
           isCreatedByUser={false}
           endpoint={endpoint}
-          agentName={currentAgent.name ?? ''}
-          iconURL={currentAgent.avatar?.filepath ?? ''}
+          agentName={currentAgent?.name ?? ''}
+          iconURL={currentAgent?.avatar?.filepath ?? ''}
         />
       }
     />
