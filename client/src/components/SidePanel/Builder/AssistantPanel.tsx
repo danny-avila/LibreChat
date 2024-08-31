@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useForm, FormProvider, Controller, useWatch } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
@@ -375,7 +375,7 @@ export default function AssistantPanel({
             />
           </div>
           {/* Knowledge */}
-          {(codeEnabled || retrievalEnabled) && version == 1 && (
+          {(codeEnabled === true || retrievalEnabled === true) && version == 1 && (
             <Knowledge assistant_id={assistant_id} files={files} endpoint={endpoint} />
           )}
           {/* Capabilities */}
@@ -389,9 +389,9 @@ export default function AssistantPanel({
           {/* Tools */}
           <div className="mb-6">
             <label className={labelClass}>
-              {`${toolsEnabled ? localize('com_assistants_tools') : ''}
-              ${toolsEnabled && actionsEnabled ? ' + ' : ''}
-              ${actionsEnabled ? localize('com_assistants_actions') : ''}`}
+              {`${toolsEnabled === true ? localize('com_assistants_tools') : ''}
+              ${toolsEnabled === true && actionsEnabled === true ? ' + ' : ''}
+              ${actionsEnabled === true ? localize('com_assistants_actions') : ''}`}
             </label>
             <div className="space-y-2">
               {functions.map((func, i) => (
@@ -408,7 +408,7 @@ export default function AssistantPanel({
                   return <Action key={i} action={action} onClick={() => setAction(action)} />;
                 })}
               <div className="flex space-x-2">
-                {toolsEnabled && (
+                {toolsEnabled === true && (
                   <button
                     type="button"
                     onClick={() => setShowToolDialog(true)}
@@ -419,7 +419,7 @@ export default function AssistantPanel({
                     </div>
                   </button>
                 )}
-                {actionsEnabled && (
+                {actionsEnabled === true && (
                   <button
                     type="button"
                     disabled={!assistant_id}
