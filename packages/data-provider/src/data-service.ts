@@ -255,14 +255,17 @@ export function getAssistantDocs({
   endpoint,
   version,
 }: {
-  endpoint: s.AssistantsEndpoint;
+  endpoint: s.AssistantsEndpoint | string;
   version: number | string;
 }): Promise<a.AssistantDocument[]> {
+  if (!s.isAssistantsEndpoint(endpoint)) {
+    return Promise.resolve([]);
+  }
   return request.get(
     endpoints.assistants({
       path: 'documents',
       version,
-      endpoint,
+      endpoint: endpoint as s.AssistantsEndpoint,
     }),
   );
 }
