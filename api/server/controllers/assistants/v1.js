@@ -160,7 +160,16 @@ const listAssistants = async (req, res) => {
  */
 const getAssistantDocuments = async (req, res) => {
   try {
-    res.json(await getAssistants({ user: req.user.id }));
+    const docs = await getAssistants(
+      { user: req.user.id },
+      {
+        assistant_id: 1,
+        conversation_starters: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    );
+    res.json(docs);
   } catch (error) {
     logger.error('[/assistants/documents] Error listing assistant documents', error);
     res.status(500).json({ error: error.message });

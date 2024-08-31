@@ -33,10 +33,17 @@ const getAssistant = async (searchParams) => await Assistant.findOne(searchParam
  * Retrieves all assistants that match the given search parameters.
  *
  * @param {Object} searchParams - The search parameters to find matching assistants.
- * @returns {Promise<Array<AssistantDocument>>} A promise that resolves to an array of action documents as plain objects.
+ * @param {Object} [select] - Optional. Specifies which document fields to include or exclude.
+ * @returns {Promise<Array<AssistantDocument>>} A promise that resolves to an array of assistant documents as plain objects.
  */
-const getAssistants = async (searchParams) => {
-  return await Assistant.find(searchParams).lean();
+const getAssistants = async (searchParams, select = null) => {
+  let query = Assistant.find(searchParams);
+
+  if (select) {
+    query = query.select(select);
+  }
+
+  return await query.lean();
 };
 
 /**

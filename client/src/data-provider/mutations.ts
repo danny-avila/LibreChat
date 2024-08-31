@@ -842,10 +842,6 @@ export const useCreateAssistantMutation = (
               if (doc.assistant_id === newAssistant.id) {
                 return {
                   ...doc,
-                  name: newAssistant.name,
-                  file_ids: newAssistant.file_ids,
-                  avatar: newAssistant.metadata?.avatar,
-                  description: newAssistant.description,
                   conversation_starters: newAssistant.conversation_starters,
                 };
               }
@@ -916,10 +912,6 @@ export const useUpdateAssistantMutation = (
               if (doc.assistant_id === variables.assistant_id) {
                 return {
                   ...doc,
-                  name: updatedAssistant.name,
-                  file_ids: updatedAssistant.file_ids,
-                  avatar: updatedAssistant.metadata?.avatar,
-                  description: updatedAssistant.description,
                   conversation_starters: updatedAssistant.conversation_starters,
                 };
               }
