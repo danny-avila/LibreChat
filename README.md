@@ -45,6 +45,8 @@
   - OpenAI, Azure OpenAI, BingAI, ChatGPT, Google Vertex AI, Anthropic (Claude), Plugins, Assistants API (including Azure Assistants)
 - ✅ Compatible across both **[Remote & Local AI services](https://www.librechat.ai/docs/configuration/librechat_yaml/ai_endpoints):**
   - groq, Ollama, Cohere, Mistral AI, Apple MLX, koboldcpp, OpenRouter, together.ai, Perplexity, ShuttleAI, and more
+- 🪄 Generative UI with [Code Artifacts](https://youtu.be/GfTj7O4gmd0?si=WJbdnemZpJzBrJo3)
+   - Create React, HTML code, and Mermaid diagrams right in chat
 - 💾 Create, Save, & Share Custom Presets
 - 🔀 Switch between AI Endpoints and Presets, mid-chat
 - 🔄 Edit, Resubmit, and Continue Messages with Conversation branching

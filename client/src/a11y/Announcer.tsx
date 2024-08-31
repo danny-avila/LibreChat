@@ -3,17 +3,17 @@ import React from 'react';
 
 interface AnnouncerProps {
   statusMessage: string;
-  responseMessage: string;
+  logMessage: string;
 }
 
-const Announcer: React.FC<AnnouncerProps> = ({ statusMessage, responseMessage }) => {
+const Announcer: React.FC<AnnouncerProps> = ({ statusMessage, logMessage }) => {
   return (
     <div className="sr-only">
-      <div aria-live="assertive" aria-atomic="true">
+      <div aria-live="polite" aria-atomic="true">
         {statusMessage}
       </div>
       <div aria-live="polite" aria-atomic="true">
-        {responseMessage}
+        {logMessage}
       </div>
     </div>
   );

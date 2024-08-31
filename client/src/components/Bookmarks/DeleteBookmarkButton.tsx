@@ -46,7 +46,7 @@ const DeleteBookmarkButton: FC<{
         </Label>
       }
       confirm={confirmDelete}
-      className="transition-color flex size-7 items-center justify-center rounded-lg duration-200 hover:bg-surface-hover"
+      className="transition-colors flex size-7 items-center justify-center rounded-lg duration-200 hover:bg-surface-hover"
       icon={<TrashIcon className="size-4" />}
       tabIndex={tabIndex}
       onFocus={onFocus}

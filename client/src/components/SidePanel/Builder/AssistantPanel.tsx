@@ -14,6 +14,7 @@ import type { FunctionTool, TConfig, TPlugin } from 'librechat-data-provider';
 import type { AssistantForm, AssistantPanelProps } from '~/common';
 import { useCreateAssistantMutation, useUpdateAssistantMutation } from '~/data-provider';
 import { cn, cardStyle, defaultTextProps, removeFocusOutlines } from '~/utils';
+import AssistantConversationStarters from './AssistantConversationStarters';
 import { useAssistantsMapContext, useToastContext } from '~/Providers';
 import { useSelectAssistant, useLocalize } from '~/hooks';
 import { ToolSelectDialog } from '~/components/Tools';
@@ -31,7 +32,7 @@ import Action from './Action';
 const labelClass = 'mb-2 text-token-text-primary block font-medium';
 const inputClass = cn(
   defaultTextProps,
-  'flex w-full px-3 py-2 dark:border-gray-800 dark:bg-gray-800',
+  'flex w-full px-3 py-2 dark:border-gray-800 dark:bg-gray-800 rounded-xl mb-2',
   removeFocusOutlines,
 );
 
@@ -106,6 +107,7 @@ export default function AssistantPanel({
       });
     },
   });
+
   const create = useCreateAssistantMutation({
     onSuccess: (data) => {
       setCurrentAssistantId(data.id);
@@ -139,7 +141,7 @@ export default function AssistantPanel({
         return functionName;
       } else {
         const assistant = assistantMap?.[endpoint]?.[assistant_id];
-        const tool = assistant?.tools.find((tool) => tool.function?.name === functionName);
+        const tool = assistant?.tools?.find((tool) => tool.function?.name === functionName);
         if (assistant && tool) {
           return tool;
         }
@@ -148,7 +150,6 @@ export default function AssistantPanel({
       return functionName;
     });
 
-    console.log(data);
     if (data.code_interpreter) {
       tools.push({ type: Tools.code_interpreter });
     }
@@ -163,6 +164,7 @@ export default function AssistantPanel({
       name,
       description,
       instructions,
+      conversation_starters: starters,
       model,
       // file_ids, // TODO: add file handling here
     } = data;
@@ -174,6 +176,7 @@ export default function AssistantPanel({
           name,
           description,
           instructions,
+          conversation_starters: starters.filter((starter) => starter.trim() !== ''),
           model,
           tools,
           endpoint,
@@ -186,6 +189,7 @@ export default function AssistantPanel({
       name,
       description,
       instructions,
+      conversation_starters: starters.filter((starter) => starter.trim() !== ''),
       model,
       tools,
       endpoint,
@@ -239,12 +243,12 @@ export default function AssistantPanel({
             </button>
           )}
         </div>
-        <div className="h-auto bg-white px-4 pb-8 pt-3 dark:bg-transparent">
+        <div className="bg-surface-50 h-auto px-4 pb-8 pt-3 dark:bg-transparent">
           {/* Avatar & Name */}
           <div className="mb-4">
             <AssistantAvatar
               createMutation={create}
-              assistant_id={assistant_id ?? null}
+              assistant_id={assistant_id}
               metadata={assistant['metadata'] ?? null}
               endpoint={endpoint}
               version={version}
@@ -271,7 +275,7 @@ export default function AssistantPanel({
               name="id"
               control={control}
               render={({ field }) => (
-                <p className="h-3 text-xs italic text-text-secondary">{field.value ?? ''}</p>
+                <p className="h-3 text-xs italic text-text-secondary">{field.value}</p>
               )}
             />
           </div>
@@ -314,6 +318,23 @@ export default function AssistantPanel({
                   id="instructions"
                   placeholder={localize('com_assistants_instructions_placeholder')}
                   rows={3}
+                />
+              )}
+            />
+          </div>
+
+          {/* Conversation Starters */}
+          <div className="relative mb-6">
+            {/* the label of conversation starters is in the component */}
+            <Controller
+              name="conversation_starters"
+              control={control}
+              defaultValue={[]}
+              render={({ field }) => (
+                <AssistantConversationStarters
+                  field={field}
+                  inputClass={inputClass}
+                  labelClass={labelClass}
                 />
               )}
             />

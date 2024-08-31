@@ -425,7 +425,7 @@ export default {
   com_nav_plugin_store: 'Loja de plugins',
   com_nav_plugin_install: 'Instalar',
   com_nav_plugin_uninstall: 'Desinstalar',
-  com_nav_tool_add: 'Adicionar',
+  com_ui_add: 'Adicionar',
   com_nav_tool_remove: 'Remover',
   com_nav_tool_dialog: 'Ferramentas do Assistente',
   com_nav_tool_dialog_description:
@@ -2021,7 +2021,7 @@ export const comparisons = {
     english: 'Uninstall',
     translated: 'Desinstalar',
   },
-  com_nav_tool_add: {
+  com_ui_add: {
     english: 'Add',
     translated: 'Adicionar',
   },

@@ -392,7 +392,7 @@ export default {
   com_nav_plugin_store: '插件商店',
   com_nav_plugin_install: '安装',
   com_nav_plugin_uninstall: '卸载',
-  com_nav_tool_add: '添加',
+  com_ui_add: '添加',
   com_nav_tool_remove: '移除',
   com_nav_tool_dialog: '助手工具',
   com_nav_tool_dialog_description: '必须保存助手才能保留工具选择。',
@@ -2071,7 +2071,7 @@ export const comparisons = {
     english: 'Uninstall',
     translated: '卸载',
   },
-  com_nav_tool_add: {
+  com_ui_add: {
     english: 'Add',
     translated: '添加',
   },

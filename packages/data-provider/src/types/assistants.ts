@@ -74,13 +74,14 @@ export type Assistant = {
   id: string;
   created_at: number;
   description: string | null;
-  file_ids: string[];
+  file_ids?: string[];
   instructions: string | null;
+  conversation_starters?: string[];
   metadata: Metadata | null;
   model: string;
   name: string | null;
   object: string;
-  tools: FunctionTool[];
+  tools?: FunctionTool[];
   tool_resources?: ToolResources;
 };
 
@@ -91,6 +92,7 @@ export type AssistantCreateParams = {
   description?: string | null;
   file_ids?: string[];
   instructions?: string | null;
+  conversation_starters?: string[];
   metadata?: Metadata | null;
   name?: string | null;
   tools?: Array<FunctionTool | string>;
@@ -103,6 +105,7 @@ export type AssistantUpdateParams = {
   description?: string | null;
   file_ids?: string[];
   instructions?: string | null;
+  conversation_starters?: string[] | null;
   metadata?: Metadata | null;
   name?: string | null;
   tools?: Array<FunctionTool | string>;
@@ -469,6 +472,7 @@ export type AssistantAvatar = {
 export type AssistantDocument = {
   user: string;
   assistant_id: string;
+  conversation_starters?: string[];
   avatar?: AssistantAvatar;
   access_level?: number;
   file_ids?: string[];

@@ -13,7 +13,7 @@ import type {
   ValidationResult,
   AssistantsEndpoint,
 } from 'librechat-data-provider';
-import type { ActionAuthForm } from '~/common';
+import type { ActionAuthForm, ActionWithNullableMetadata } from '~/common';
 import type { Spec } from './ActionsTable';
 import { useAssistantsMapContext, useToastContext } from '~/Providers';
 import { ActionsTable, columns } from './ActionsTable';
@@ -37,7 +37,7 @@ export default function ActionsInput({
   version,
   setAction,
 }: {
-  action?: Action;
+  action?: ActionWithNullableMetadata;
   assistant_id?: string;
   endpoint: AssistantsEndpoint;
   version: number | string;
@@ -62,12 +62,13 @@ export default function ActionsInput({
   const [functions, setFunctions] = useState<FunctionTool[] | null>(null);
 
   useEffect(() => {
-    if (!action?.metadata.raw_spec) {
+    const rawSpec = action?.metadata?.raw_spec ?? '';
+    if (!rawSpec) {
       return;
     }
-    setInputValue(action.metadata.raw_spec);
-    debouncedValidation(action.metadata.raw_spec, handleResult);
-  }, [action?.metadata.raw_spec]);
+    setInputValue(rawSpec);
+    debouncedValidation(rawSpec, handleResult);
+  }, [action?.metadata?.raw_spec]);
 
   useEffect(() => {
     if (!validationResult || !validationResult.status || !validationResult.spec) {
@@ -100,7 +101,8 @@ export default function ActionsInput({
     },
     onError(error) {
       showToast({
-        message: (error as Error).message ?? localize('com_assistants_update_actions_error'),
+        message:
+          (error as Error | undefined)?.message ?? localize('com_assistants_update_actions_error'),
         status: 'error',
       });
     },
@@ -108,7 +110,8 @@ export default function ActionsInput({
 
   const saveAction = handleSubmit((authFormData) => {
     console.log('authFormData', authFormData);
-    if (!assistant_id) {
+    const currentAssistantId = assistant_id ?? '';
+    if (!currentAssistantId) {
       // alert user?
       return;
     }
@@ -121,7 +124,10 @@ export default function ActionsInput({
       return;
     }
 
-    let { metadata = {} } = action ?? {};
+    let { metadata } = action ?? {};
+    if (!metadata) {
+      metadata = {};
+    }
     const action_id = action?.action_id;
     metadata.raw_spec = inputValue;
     const parsedUrl = new URL(data[0].domain);
@@ -177,10 +183,10 @@ export default function ActionsInput({
       action_id,
       metadata,
       functions,
-      assistant_id,
+      assistant_id: currentAssistantId,
       endpoint,
       version,
-      model: assistantMap?.[endpoint][assistant_id].model ?? '',
+      model: assistantMap?.[endpoint][currentAssistantId].model ?? '',
     });
   });
 

@@ -888,6 +888,11 @@ export enum ErrorTypes {
    * Moderation error
    */
   MODERATION = 'moderation',
+
+  /**
+   * Prompt exceeds max length
+   */
+  INPUT_LENGTH = 'INPUT_LENGTH',
 }
 
 /**
@@ -1016,6 +1021,8 @@ export enum Constants {
   DEFAULT_STREAM_RATE = 1,
   /** Saved Tag */
   SAVED_TAG = 'Saved',
+  /** Max number of Conversation starters for Agents/Assistants */
+  MAX_CONVO_STARTERS = 4,
 }
 
 export enum LocalStorageKeys {

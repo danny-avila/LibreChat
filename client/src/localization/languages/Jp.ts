@@ -431,7 +431,7 @@ export default {
   com_nav_plugin_store: 'プラグインストア',
   com_nav_plugin_install: 'インストール',
   com_nav_plugin_uninstall: 'アンインストール',
-  com_nav_tool_add: '追加',
+  com_ui_add: '追加',
   com_nav_tool_dialog: 'アシスタントツール',
   com_nav_tool_dialog_description:
     'ツールの選択を維持するには、アシスタントを保存する必要があります。',
@@ -2165,7 +2165,7 @@ export const comparisons = {
     english: 'Uninstall',
     translated: 'アンインストール',
   },
-  com_nav_tool_add: {
+  com_ui_add: {
     english: 'Add',
     translated: '追加',
   },
