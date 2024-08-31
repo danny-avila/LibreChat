@@ -832,23 +832,20 @@ export const useCreateAssistantMutation = (
           return options?.onSuccess?.(newAssistant, variables, context);
         }
 
-        queryClient.setQueryData<t.AssistantDocument[]>(
-          [QueryKeys.assistantDocs, variables.endpoint],
-          (prev) => {
-            if (!prev) {
-              return prev;
+        queryClient.setQueryData<t.AssistantDocument[]>([QueryKeys.assistantDocs], (prev) => {
+          if (!prev) {
+            return prev;
+          }
+          prev.map((doc) => {
+            if (doc.assistant_id === newAssistant.id) {
+              return {
+                ...doc,
+                conversation_starters: newAssistant.conversation_starters,
+              };
             }
-            prev.map((doc) => {
-              if (doc.assistant_id === newAssistant.id) {
-                return {
-                  ...doc,
-                  conversation_starters: newAssistant.conversation_starters,
-                };
-              }
-              return doc;
-            });
-          },
-        );
+            return doc;
+          });
+        });
 
         const currentAssistants = [newAssistant, ...JSON.parse(JSON.stringify(listRes.data))];
 
@@ -902,23 +899,20 @@ export const useUpdateAssistantMutation = (
           return options?.onSuccess?.(updatedAssistant, variables, context);
         }
 
-        queryClient.setQueryData<t.AssistantDocument[]>(
-          [QueryKeys.assistantDocs, variables.data.endpoint],
-          (prev) => {
-            if (!prev) {
-              return prev;
+        queryClient.setQueryData<t.AssistantDocument[]>([QueryKeys.assistantDocs], (prev) => {
+          if (!prev) {
+            return prev;
+          }
+          prev.map((doc) => {
+            if (doc.assistant_id === variables.assistant_id) {
+              return {
+                ...doc,
+                conversation_starters: updatedAssistant.conversation_starters,
+              };
             }
-            prev.map((doc) => {
-              if (doc.assistant_id === variables.assistant_id) {
-                return {
-                  ...doc,
-                  conversation_starters: updatedAssistant.conversation_starters,
-                };
-              }
-              return doc;
-            });
-          },
-        );
+            return doc;
+          });
+        });
 
         queryClient.setQueryData<t.AssistantListResponse>(
           [QueryKeys.assistants, variables.data.endpoint, defaultOrderQuery],

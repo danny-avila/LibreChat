@@ -18,7 +18,9 @@ const createAssistant = async (req, res) => {
   try {
     const { openai } = await getOpenAIClient({ req, res });
 
-    const { tools = [], endpoint, ...assistantData } = req.body;
+    const { tools = [], endpoint, conversation_starters, ...assistantData } = req.body;
+    delete assistantData.conversation_starters;
+
     assistantData.tools = tools
       .map((tool) => {
         if (typeof tool !== 'string') {
@@ -41,10 +43,18 @@ const createAssistant = async (req, res) => {
     };
 
     const assistant = await openai.beta.assistants.create(assistantData);
-    const promise = updateAssistantDoc({ assistant_id: assistant.id }, { user: req.user.id });
+
+    const createData = { user: req.user.id };
+    if (conversation_starters) {
+      createData.conversation_starters = conversation_starters;
+    }
+
+    const promise = updateAssistantDoc({ assistant_id: assistant.id }, createData);
+
     if (azureModelIdentifier) {
       assistant.model = azureModelIdentifier;
     }
+
     await promise;
     logger.debug('/assistants/', assistant);
     res.status(201).json(assistant);
@@ -88,7 +98,7 @@ const patchAssistant = async (req, res) => {
     await validateAuthor({ req, openai });
 
     const assistant_id = req.params.id;
-    const { endpoint: _e, ...updateData } = req.body;
+    const { endpoint: _e, conversation_starters, ...updateData } = req.body;
     updateData.tools = (updateData.tools ?? [])
       .map((tool) => {
         if (typeof tool !== 'string') {
@@ -104,6 +114,15 @@ const patchAssistant = async (req, res) => {
     }
 
     const updatedAssistant = await openai.beta.assistants.update(assistant_id, updateData);
+
+    if (conversation_starters !== undefined) {
+      const conversationStartersUpdate = await updateAssistantDoc(
+        { assistant_id },
+        { conversation_starters },
+      );
+      updatedAssistant.conversation_starters = conversationStartersUpdate.conversation_starters;
+    }
+
     res.json(updatedAssistant);
   } catch (error) {
     logger.error('[/assistants/:id] Error updating assistant', error);
@@ -161,7 +180,7 @@ const listAssistants = async (req, res) => {
 const getAssistantDocuments = async (req, res) => {
   try {
     const docs = await getAssistants(
-      { user: req.user.id },
+      {},
       {
         assistant_id: 1,
         conversation_starters: 1,
