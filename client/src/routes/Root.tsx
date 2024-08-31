@@ -1,14 +1,18 @@
-import { useState } from 'react';
-import { Outlet } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Outlet, useNavigate } from 'react-router-dom';
+import { useGetStartupConfig } from 'librechat-data-provider/react-query';
+import { useUserTermsQuery } from '~/data-provider';
 
 import type { ContextType } from '~/common';
 import { useAuthContext, useAssistantsMap, useFileMap, useSearch } from '~/hooks';
 import { AssistantsMapContext, FileMapContext, SearchContext } from '~/Providers';
 import { Nav, MobileNav } from '~/components/Nav';
+import TermsAndConditionsModal from '~/components/ui/TermsAndConditionsModal';
 
 export default function Root() {
-  const { isAuthenticated } = useAuthContext();
-  const [navVisible, setNavVisible] = useState<boolean>(() => {
+  const { isAuthenticated, logout, token } = useAuthContext();
+  const navigate = useNavigate();
+  const [navVisible, setNavVisible] = useState(() => {
     const savedNavVisible = localStorage.getItem('navVisible');
     return savedNavVisible !== null ? JSON.parse(savedNavVisible) : true;
   });
@@ -16,6 +20,29 @@ export default function Root() {
   const search = useSearch({ isAuthenticated });
   const fileMap = useFileMap({ isAuthenticated });
   const assistantsMap = useAssistantsMap({ isAuthenticated });
+
+  const [showTerms, setShowTerms] = useState(false);
+  const { data: config } = useGetStartupConfig();
+
+  const { data: termsData } = useUserTermsQuery({
+    enabled: isAuthenticated && !!config?.interface?.termsOfService?.modalAcceptance,
+  });
+
+  useEffect(() => {
+    if (termsData) {
+      setShowTerms(!termsData.termsAccepted);
+    }
+  }, [termsData]);
+
+  const handleAcceptTerms = () => {
+    setShowTerms(false);
+  };
+
+  const handleDeclineTerms = () => {
+    setShowTerms(false);
+    logout();
+    navigate('/login');
+  };
 
   if (!isAuthenticated) {
     return null;
@@ -34,6 +61,16 @@ export default function Root() {
               </div>
             </div>
           </div>
+          {config?.interface?.termsOfService?.modalAcceptance && (
+            <TermsAndConditionsModal
+              open={showTerms}
+              onOpenChange={setShowTerms}
+              onAccept={handleAcceptTerms}
+              onDecline={handleDeclineTerms}
+              title={config.interface.termsOfService.modalTitle}
+              modalContent={config.interface.termsOfService.modalContent}
+            />
+          )}
         </AssistantsMapContext.Provider>
       </FileMapContext.Provider>
     </SearchContext.Provider>
