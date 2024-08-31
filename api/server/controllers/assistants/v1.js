@@ -173,21 +173,56 @@ const listAssistants = async (req, res) => {
 };
 
 /**
+ * Filter assistants based on configuration.
+ *
+ * @param {object} params - The parameters object.
+ * @param {string} params.userId -  The user ID to filter private assistants.
+ * @param {AssistantDocument[]} params.assistants - The list of assistants to filter.
+ * @param {Partial<TAssistantEndpoint>} [params.assistantsConfig] -  The assistant configuration.
+ * @returns {AssistantDocument[]} - The filtered list of assistants.
+ */
+function filterAssistantDocs({ documents, userId, assistantsConfig = {} }) {
+  const { supportedIds, excludedIds, privateAssistants } = assistantsConfig;
+  const removeUserId = (doc) => {
+    const { user: _u, ...document } = doc;
+    return document;
+  };
+
+  if (privateAssistants) {
+    return documents.filter((doc) => userId === doc.user.toString()).map(removeUserId);
+  } else if (supportedIds?.length) {
+    return documents.filter((doc) => supportedIds.includes(doc.assistant_id)).map(removeUserId);
+  } else if (excludedIds?.length) {
+    return documents.filter((doc) => !excludedIds.includes(doc.assistant_id)).map(removeUserId);
+  }
+  return documents.map(removeUserId);
+}
+
+/**
  * Returns a list of the user's assistant documents (metadata saved to database).
  * @route GET /assistants/documents
  * @returns {AssistantDocument[]} 200 - success response - application/json
  */
 const getAssistantDocuments = async (req, res) => {
   try {
-    const docs = await getAssistants(
+    const endpoint = req.query;
+    const assistantsConfig = req.app.locals[endpoint];
+    const documents = await getAssistants(
       {},
       {
+        user: 1,
         assistant_id: 1,
         conversation_starters: 1,
         createdAt: 1,
         updatedAt: 1,
       },
     );
+
+    const docs = filterAssistantDocs({
+      documents,
+      userId: req.user.id,
+      assistantsConfig,
+    });
     res.json(docs);
   } catch (error) {
     logger.error('[/assistants/documents] Error listing assistant documents', error);

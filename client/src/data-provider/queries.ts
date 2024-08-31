@@ -385,7 +385,7 @@ export const useGetAssistantDocsQuery = <TData = AssistantDocument[]>(
   const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
 
   return useQuery<AssistantDocument[], unknown, TData>(
-    [QueryKeys.assistantDocs],
+    [QueryKeys.assistantDocs, endpoint],
     () =>
       dataService.getAssistantDocs({
         endpoint,

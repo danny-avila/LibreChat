@@ -265,6 +265,7 @@ export function getAssistantDocs({
     endpoints.assistants({
       path: 'documents',
       version,
+      options: { endpoint },
       endpoint: endpoint as s.AssistantsEndpoint,
     }),
   );
