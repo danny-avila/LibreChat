@@ -1,5 +1,4 @@
 import React from 'react';
-import { UseFormReturn } from 'react-hook-form';
 import { FileSources } from 'librechat-data-provider';
 import type * as InputNumberPrimitive from 'rc-input-number';
 import type { ColumnDef } from '@tanstack/react-table';
@@ -22,6 +21,7 @@ import type {
   EModelEndpoint,
   TEndpointsConfig,
   ActionMetadata,
+  AssistantDocument,
   AssistantsEndpoint,
   TMessageContentParts,
   AuthorizationTypeEnum,
@@ -172,6 +172,7 @@ export type AssistantPanelProps = {
   activePanel?: string;
   endpoint: AssistantsEndpoint;
   version: number | string;
+  documentsMap: Map<string, AssistantDocument> | null;
   setAction: React.Dispatch<React.SetStateAction<Action | undefined>>;
   setCurrentAssistantId: React.Dispatch<React.SetStateAction<string | undefined>>;
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useForm, FormProvider, Controller, useWatch } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
@@ -42,6 +42,7 @@ export default function AssistantPanel({
   endpoint,
   actions = [],
   setActivePanel,
+  documentsMap,
   assistant_id: current_assistant_id,
   setCurrentAssistantId,
   assistantsConfig,
@@ -222,6 +223,7 @@ export default function AssistantPanel({
                 reset={reset}
                 value={field.value}
                 endpoint={endpoint}
+                documentsMap={documentsMap}
                 setCurrentAssistantId={setCurrentAssistantId}
                 selectedAssistant={current_assistant_id ?? null}
                 createMutation={create}
