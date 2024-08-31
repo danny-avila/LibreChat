@@ -54,6 +54,7 @@ const AssistantConversationStarters: React.FC<AssistantConversationStartersProps
         {localize('com_assistants_conversation_starters')}
       </label>
       <div className="mt-4 space-y-2">
+        {/* Persistent starter, used for creating only */}
         <div className="relative">
           <input
             ref={(el) => (inputRefs.current[0] = el)}
@@ -111,9 +112,14 @@ const AssistantConversationStarters: React.FC<AssistantConversationStartersProps
             <input
               ref={(el) => (inputRefs.current[index + 1] = el)}
               value={starter}
-              readOnly
+              onChange={(e) => {
+                const newValue = [...field.value];
+                newValue[index] = e.target.value;
+                field.onChange(newValue);
+              }}
               className={`${inputClass} pr-10`}
               type="text"
+              maxLength={64}
             />
             <TooltipProvider delayDuration={1000}>
               <Tooltip>
