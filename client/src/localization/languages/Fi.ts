@@ -295,8 +295,7 @@ export default {
   com_ui_bookmarks: 'Kirjanmerkit',
   com_ui_bookmarks_rebuild: 'Uudelleenkokoa',
   com_ui_bookmarks_new: 'Uusi kirjanmerkki',
-  com_ui_bookmark_delete_confirm:
-      'Oletko varma, että haluat poistaa tämän kirjanmerkin?',
+  com_ui_bookmark_delete_confirm: 'Oletko varma, että haluat poistaa tämän kirjanmerkin?',
   com_ui_bookmarks_title: 'Otsikko',
   com_ui_bookmarks_count: 'Määrä',
   com_ui_bookmarks_description: 'Kuvaus',
@@ -307,6 +306,10 @@ export default {
   com_ui_bookmarks_update_error: 'Virhe kirjanmerkin päivittämisessä',
   com_ui_bookmarks_delete_error: 'Virhe kirjanmerkin poistamisessa',
   com_ui_bookmarks_add_to_conversation: 'Lisää nykyiseen keskusteluun',
+  com_ui_accept: 'Hyväksyn',
+  com_ui_decline: 'En hyväksy',
+  com_ui_terms_and_conditions: 'Käyttöehdot',
+  com_ui_no_terms_content: 'Ei käyttöehtoja näytettäväksi',
   com_auth_error_login:
     'Kirjautuminen annetuilla tiedoilla ei onnistunut. Tarkista kirjautumistiedot, ja yritä uudestaan.',
   com_auth_error_login_rl:
@@ -402,7 +405,8 @@ export default {
   com_endpoint_token_count: 'Token-määrä',
   com_endpoint_output: 'Tulos',
   com_endpoint_context_tokens: 'Konteksti-tokenien maksimimäärä',
-  com_endpoint_context_info: 'Kontekstia varten käytettävien tokeneiden maksimimäärä. Käytä tätä pyyntökohtaisten token-määrien hallinnointiin. Jos tätä ei määritetä, käytössä ovat järjestelmän oletusarvot perustuen tiedossa olevien mallien konteksti-ikkunoiden kokoon. Korkeamman arvon asettaminen voi aiheuttaa virheitä tai korkeamman token-hinnan.',
+  com_endpoint_context_info:
+    'Kontekstia varten käytettävien tokeneiden maksimimäärä. Käytä tätä pyyntökohtaisten token-määrien hallinnointiin. Jos tätä ei määritetä, käytössä ovat järjestelmän oletusarvot perustuen tiedossa olevien mallien konteksti-ikkunoiden kokoon. Korkeamman arvon asettaminen voi aiheuttaa virheitä tai korkeamman token-hinnan.',
   com_endpoint_google_temp:
     'Korkeampi arvo = satunnaisempi; matalampi arvo = keskittyneempi ja deterministisempi. Suosittelemme, että muokkaat tätä tai Top P:tä, mutta ei molempia.',
   com_endpoint_google_topp:

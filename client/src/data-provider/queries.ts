@@ -32,6 +32,8 @@ import type {
   TCheckUserKeyResponse,
   SharedLinkListParams,
   SharedLinksResponse,
+  TUserTermsResponse,
+  TAcceptTermsResponse,
 } from 'librechat-data-provider';
 import { findPageForConversation, addFileToCache } from '~/utils';
 
@@ -476,7 +478,7 @@ export const useListAgentsQuery = <TData = AgentListResponse>(
       refetchOnMount: false,
       retry: false,
       ...config,
-      enabled: config?.enabled !== undefined ? config?.enabled && enabled : enabled,
+      enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled,
     },
   );
 };
@@ -633,4 +635,15 @@ export const useGetRandomPrompts = (
       enabled: config?.enabled !== undefined ? config.enabled : true,
     },
   );
+};
+
+export const useUserTermsQuery = (
+  config?: UseQueryOptions<t.TUserTermsResponse>,
+): QueryObserverResult<t.TUserTermsResponse> => {
+  return useQuery<t.TUserTermsResponse>([QueryKeys.userTerms], () => dataService.getUserTerms(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    ...config,
+  });
 };

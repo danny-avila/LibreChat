@@ -674,3 +674,11 @@ export function rebuildConversationTags(): Promise<t.TConversationTagsResponse> 
 export function healthCheck(): Promise<string> {
   return request.get(endpoints.health());
 }
+
+export function getUserTerms(): Promise<t.TUserTermsResponse> {
+  return request.get(endpoints.userTerms());
+}
+
+export function acceptTerms(): Promise<t.TAcceptTermsResponse> {
+  return request.post(endpoints.acceptUserTerms());
+}

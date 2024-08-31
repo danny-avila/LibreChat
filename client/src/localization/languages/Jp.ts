@@ -196,6 +196,10 @@ export default {
   com_ui_bookmarks_update_error: 'ブックマークの更新中にエラーが発生しました',
   com_ui_bookmarks_delete_error: 'ブックマークの削除中にエラーが発生しました',
   com_ui_bookmarks_add_to_conversation: '現在の会話に追加',
+  com_ui_accept: '同意します',
+  com_ui_decline: '同意しません',
+  com_ui_terms_and_conditions: '利用規約',
+  com_ui_no_terms_content: '利用規約の内容がありません',
   com_auth_error_login:
     '入力された情報ではログインできませんでした。認証情報を確認した上で再度お試しください。',
   com_auth_error_login_rl:
