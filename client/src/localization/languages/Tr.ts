@@ -264,6 +264,10 @@ export default {
   com_ui_bookmarks_update_error: 'Yer imi güncellenirken bir hata oluştu',
   com_ui_bookmarks_delete_error: 'Yer imi silinirken bir hata oluştu',
   com_ui_bookmarks_add_to_conversation: 'Mevcut sohbete ekle',
+  com_ui_accept: 'Kabul ediyorum',
+  com_ui_decline: 'Kabul etmiyorum',
+  com_ui_terms_and_conditions: 'Şartlar ve koşullar',
+  com_ui_no_terms_content: 'Şartlar ve koşullar için içerik bulunmuyor',
   com_auth_error_login:
     'Sağlanan bilgilerle giriş yapılamıyor. Lütfen kimlik bilgilerinizi kontrol edin ve tekrar deneyin.',
   com_auth_error_login_rl:

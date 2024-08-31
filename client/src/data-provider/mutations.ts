@@ -1128,3 +1128,19 @@ export const useResendVerificationEmail = (
     ...(options || {}),
   });
 };
+
+export const useAcceptTermsMutation = (
+  options?: t.AcceptTermsMutationOptions,
+): UseMutationResult<t.TAcceptTermsResponse, unknown, void, unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation(() => dataService.acceptTerms(), {
+    onSuccess: (data, variables, context) => {
+      queryClient.setQueryData<t.TUserTermsResponse>([QueryKeys.userTerms], {
+        termsAccepted: true,
+      });
+      options?.onSuccess?.(data, variables, context);
+    },
+    onError: options?.onError,
+    onMutate: options?.onMutate,
+  });
+};

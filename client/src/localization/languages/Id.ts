@@ -102,6 +102,10 @@ export default {
   com_ui_bookmarks_update_error: 'Terjadi kesalahan saat memperbarui penanda',
   com_ui_bookmarks_delete_error: 'Terjadi kesalahan saat menghapus penanda',
   com_ui_bookmarks_add_to_conversation: 'Tambahkan ke percakapan saat ini',
+  com_ui_accept: 'Saya menerima',
+  com_ui_decline: 'Saya tidak menerima',
+  com_ui_terms_and_conditions: 'Syarat dan Ketentuan',
+  com_ui_no_terms_content: 'Tidak ada konten syarat dan ketentuan untuk ditampilkan',
   com_auth_error_login:
     'Tidak dapat masuk dengan informasi yang diberikan. Silakan periksa kredensial Anda dan coba lagi.',
   com_auth_error_login_rl:

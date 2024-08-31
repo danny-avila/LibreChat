@@ -326,6 +326,10 @@ export default {
   com_ui_bookmarks_delete_error: 'Beim Löschen des Lesezeichens ist ein Fehler aufgetreten',
   com_ui_bookmarks_add_to_conversation: 'Zur aktuellen Konversation hinzufügen',
   com_ui_bookmarks_filter: 'Lesezeichen filtern...',
+  com_ui_accept: 'Ich akzeptiere',
+  com_ui_decline: 'Ich akzeptiere nicht',
+  com_ui_terms_and_conditions: 'Allgemeine Geschäftsbedingungen',
+  com_ui_no_terms_content: 'Keine Inhalte der Allgemeinen Geschäftsbedingungen zum Anzeigen',
   com_auth_error_login:
     'Anmeldung mit den angegebenen Informationen nicht möglich. Bitte überprüfe deine Anmeldedaten und versuche es erneut.',
   com_auth_error_login_rl:
