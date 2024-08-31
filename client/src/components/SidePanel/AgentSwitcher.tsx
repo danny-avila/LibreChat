@@ -4,8 +4,8 @@ import type { Agent } from 'librechat-data-provider';
 import type { SwitcherProps, OptionWithIcon } from '~/common';
 import { useSetIndexOptions, useSelectAgent, useLocalize } from '~/hooks';
 import { useChatContext, useAgentsMapContext } from '~/Providers';
+import ControlCombobox from '~/components/ui/ControlCombobox';
 import Icon from '~/components/Endpoints/Icon';
-import { Combobox } from '~/components/ui';
 
 export default function AgentSwitcher({ isCollapsed }: SwitcherProps) {
   const localize = useLocalize();
@@ -62,7 +62,7 @@ export default function AgentSwitcher({ isCollapsed }: SwitcherProps) {
   );
 
   return (
-    <Combobox
+    <ControlCombobox
       selectedValue={currentAgent?.id ?? ''}
       displayValue={
         agents.find((agent: Agent) => agent.id === selectedAgentId)?.name ??
