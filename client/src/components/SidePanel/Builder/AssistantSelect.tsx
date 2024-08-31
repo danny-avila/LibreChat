@@ -57,7 +57,7 @@ export default function AssistantSelect({
   const localize = useLocalize();
   const fileMap = useFileMapContext();
   const lastSelectedAssistant = useRef<string | null>(null);
-  const [lastSelectedModels] = useLocalStorage<LastSelectedModels>(
+  const [lastSelectedModels] = useLocalStorage<LastSelectedModels | undefined>(
     LocalStorageKeys.LAST_MODEL,
     {} as LastSelectedModels,
   );
@@ -147,7 +147,7 @@ export default function AssistantSelect({
         setCurrentAssistantId(undefined);
         return reset({
           ...defaultAssistantFormValues,
-          model: lastSelectedModels[endpoint] ?? '',
+          model: lastSelectedModels?.[endpoint] ?? '',
         });
       }
 
