@@ -41,12 +41,23 @@ const AssistantConversationStarters: React.FC<AssistantConversationStartersProps
     opacity: 0,
   };
 
+  const triggerShake = (element: HTMLElement) => {
+    element.classList.remove('shake');
+    void element.offsetWidth;
+    element.classList.add('shake');
+    setTimeout(() => {
+      element.classList.remove('shake');
+    }, 200);
+  };
+
   const transitionStyles = {
     entering: { opacity: 1 },
     entered: { opacity: 1 },
     exiting: { opacity: 0 },
     exited: { opacity: 0 },
   };
+
+  const hasReachedMax = field.value.length >= Constants.MAX_CONVO_STARTERS;
 
   return (
     <div className="relative">
@@ -62,12 +73,20 @@ const AssistantConversationStarters: React.FC<AssistantConversationStartersProps
             maxLength={64}
             className={`${inputClass} pr-10`}
             type="text"
-            placeholder={localize('com_assistants_conversation_starters_placeholder')}
+            placeholder={
+              hasReachedMax
+                ? localize('com_assistants_max_starters_reached')
+                : localize('com_assistants_conversation_starters_placeholder')
+            }
             onChange={(e) => setNewStarter(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
-                handleAddStarter();
+                if (hasReachedMax) {
+                  triggerShake(e.currentTarget);
+                } else {
+                  handleAddStarter();
+                }
               }
             }}
           />
@@ -94,12 +113,15 @@ const AssistantConversationStarters: React.FC<AssistantConversationStartersProps
                         type="button"
                         className="flex size-7 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-hover"
                         onClick={handleAddStarter}
+                        disabled={hasReachedMax}
                       >
                         <Plus className="size-4" />
                       </button>
                     </TooltipTrigger>
                     <TooltipContent side="top" sideOffset={0}>
-                      {localize('com_ui_add')}
+                      {hasReachedMax
+                        ? localize('com_assistants_max_starters_reached')
+                        : localize('com_ui_add')}
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
