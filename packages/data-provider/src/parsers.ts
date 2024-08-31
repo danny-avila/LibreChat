@@ -31,6 +31,7 @@ type EndpointSchema =
   | typeof chatGPTBrowserSchema
   | typeof gptPluginsSchema
   | typeof assistantSchema
+  | typeof compactAgentsSchema
   | typeof compactAgentsSchema;
 
 const endpointSchemas: Record<EModelEndpoint, EndpointSchema> = {
@@ -45,6 +46,7 @@ const endpointSchemas: Record<EModelEndpoint, EndpointSchema> = {
   [EModelEndpoint.assistants]: assistantSchema,
   [EModelEndpoint.azureAssistants]: assistantSchema,
   [EModelEndpoint.agents]: compactAgentsSchema,
+  [EModelEndpoint.bedrock]: compactAgentsSchema,
 };
 
 // const schemaCreators: Record<EModelEndpoint, (customSchema: DefaultSchemaValues) => EndpointSchema> = {
@@ -64,6 +66,7 @@ export function getEnabledEndpoints() {
     EModelEndpoint.chatGPTBrowser,
     EModelEndpoint.gptPlugins,
     EModelEndpoint.anthropic,
+    EModelEndpoint.bedrock,
   ];
 
   const endpointsEnv = process.env.ENDPOINTS ?? '';
@@ -231,6 +234,8 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
       return 'GPT-3.5';
     } else if (model && model.includes('gpt-4')) {
       return 'GPT-4';
+    } else if (model && model.includes('gpt-4o')) {
+      return 'GPT-4o';
     } else if (model && model.includes('mistral')) {
       return 'Mistral';
     }
@@ -238,7 +243,7 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
   }
 
   if (endpoint === EModelEndpoint.bingAI) {
-    return jailbreak ? 'Sydney' : 'BingAI';
+    return jailbreak === true ? 'Sydney' : 'BingAI';
   }
 
   if (endpoint === EModelEndpoint.anthropic) {
@@ -296,6 +301,7 @@ const compactEndpointSchemas: Record<string, CompactEndpointSchema> = {
   [EModelEndpoint.azureAssistants]: compactAssistantSchema,
   [EModelEndpoint.agents]: compactAgentsSchema,
   [EModelEndpoint.google]: compactGoogleSchema,
+  [EModelEndpoint.bedrock]: compactAgentsSchema,
   /* BingAI needs all fields */
   [EModelEndpoint.bingAI]: bingAISchema,
   [EModelEndpoint.anthropic]: compactAnthropicSchema,

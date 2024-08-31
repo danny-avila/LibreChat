@@ -500,6 +500,7 @@ export const configSchema = z.object({
       [EModelEndpoint.assistants]: assistantEndpointSchema.optional(),
       [EModelEndpoint.agents]: agentsEndpointSChema.optional(),
       [EModelEndpoint.custom]: z.array(endpointSchema.partial()).optional(),
+      [EModelEndpoint.bedrock]: baseEndpointSchema.optional(),
     })
     .strict()
     .refine((data) => Object.keys(data).length > 0, {
@@ -552,6 +553,7 @@ export const defaultEndpoints: EModelEndpoint[] = [
   EModelEndpoint.google,
   EModelEndpoint.anthropic,
   EModelEndpoint.custom,
+  EModelEndpoint.bedrock,
 ];
 
 export const alternateName = {
@@ -566,6 +568,7 @@ export const alternateName = {
   [EModelEndpoint.google]: 'Google',
   [EModelEndpoint.anthropic]: 'Anthropic',
   [EModelEndpoint.custom]: 'Custom',
+  [EModelEndpoint.bedrock]: 'Bedrock',
 };
 
 const sharedOpenAIModels = [
@@ -588,6 +591,20 @@ const sharedOpenAIModels = [
   'gpt-3.5-turbo-0613',
 ];
 
+const sharedAnthropicModels = [
+  'claude-3-5-sonnet-20240620',
+  'claude-3-opus-20240229',
+  'claude-3-sonnet-20240229',
+  'claude-3-haiku-20240307',
+  'claude-2.1',
+  'claude-2',
+  'claude-1.2',
+  'claude-1',
+  'claude-1-100k',
+  'claude-instant-1',
+  'claude-instant-1-100k',
+];
+
 export const defaultModels = {
   [EModelEndpoint.azureAssistants]: sharedOpenAIModels,
   [EModelEndpoint.assistants]: ['chatgpt-4o-latest', ...sharedOpenAIModels],
@@ -606,19 +623,7 @@ export const defaultModels = {
     'code-bison',
     'code-bison-32k',
   ],
-  [EModelEndpoint.anthropic]: [
-    'claude-3-5-sonnet-20240620',
-    'claude-3-opus-20240229',
-    'claude-3-sonnet-20240229',
-    'claude-3-haiku-20240307',
-    'claude-2.1',
-    'claude-2',
-    'claude-1.2',
-    'claude-1',
-    'claude-1-100k',
-    'claude-instant-1',
-    'claude-instant-1-100k',
-  ],
+  [EModelEndpoint.anthropic]: sharedAnthropicModels,
   [EModelEndpoint.openAI]: [
     'chatgpt-4o-latest',
     ...sharedOpenAIModels,
@@ -626,6 +631,7 @@ export const defaultModels = {
     'gpt-3.5-turbo-instruct-0914',
     'gpt-3.5-turbo-instruct',
   ],
+  [EModelEndpoint.bedrock]: sharedAnthropicModels,
 };
 
 const fitlerAssistantModels = (str: string) => {
@@ -645,6 +651,7 @@ export const initialModelsConfig: TModelsConfig = {
   [EModelEndpoint.chatGPTBrowser]: ['text-davinci-002-render-sha'],
   [EModelEndpoint.google]: defaultModels[EModelEndpoint.google],
   [EModelEndpoint.anthropic]: defaultModels[EModelEndpoint.anthropic],
+  [EModelEndpoint.bedrock]: defaultModels[EModelEndpoint.bedrock],
 };
 
 export const EndpointURLs: { [key in EModelEndpoint]: string } = {
@@ -658,7 +665,8 @@ export const EndpointURLs: { [key in EModelEndpoint]: string } = {
   [EModelEndpoint.chatGPTBrowser]: `/api/ask/${EModelEndpoint.chatGPTBrowser}`,
   [EModelEndpoint.azureAssistants]: '/api/assistants/v1/chat',
   [EModelEndpoint.assistants]: '/api/assistants/v2/chat',
-  [EModelEndpoint.agents]: '/api/agents/chat',
+  [EModelEndpoint.agents]: `/api/${EModelEndpoint.agents}/chat`,
+  [EModelEndpoint.bedrock]: `/api/${EModelEndpoint.bedrock}/chat`,
 };
 
 export const modularEndpoints = new Set<EModelEndpoint | string>([
@@ -668,6 +676,8 @@ export const modularEndpoints = new Set<EModelEndpoint | string>([
   EModelEndpoint.openAI,
   EModelEndpoint.azureOpenAI,
   EModelEndpoint.custom,
+  EModelEndpoint.agents,
+  EModelEndpoint.bedrock,
 ]);
 
 export const supportsBalanceCheck = {
@@ -679,6 +689,7 @@ export const supportsBalanceCheck = {
   [EModelEndpoint.agents]: true,
   [EModelEndpoint.azureAssistants]: true,
   [EModelEndpoint.azureOpenAI]: true,
+  [EModelEndpoint.bedrock]: true,
 };
 
 export const visionModels = [

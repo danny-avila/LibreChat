@@ -25,6 +25,7 @@ export enum EModelEndpoint {
   azureAssistants = 'azureAssistants',
   agents = 'agents',
   custom = 'custom',
+  bedrock = 'bedrock',
 }
 
 export type AssistantsEndpoint = EModelEndpoint.assistants | EModelEndpoint.azureAssistants;
@@ -295,6 +296,7 @@ export const endpointSettings = {
   [EModelEndpoint.google]: googleSettings,
   [EModelEndpoint.anthropic]: anthropicSettings,
   [EModelEndpoint.agents]: agentsSettings,
+  [EModelEndpoint.bedrock]: agentsSettings,
 };
 
 const google = endpointSettings[EModelEndpoint.google];
@@ -618,7 +620,7 @@ export const openAISchema = tConversationSchema
       max_tokens: obj.max_tokens ?? undefined,
     };
 
-    if (obj.modelLabel) {
+    if (obj.modelLabel != null && obj.modelLabel !== '') {
       result.modelLabel = null;
     }
 
@@ -836,7 +838,7 @@ export const gptPluginsSchema = tConversationSchema
       maxContextTokens: obj.maxContextTokens ?? undefined,
     };
 
-    if (obj.modelLabel) {
+    if (obj.modelLabel != null && obj.modelLabel !== '') {
       result.modelLabel = null;
     }
 
