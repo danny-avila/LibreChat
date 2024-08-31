@@ -2,22 +2,24 @@ import type { ZodIssue } from 'zod';
 import type * as a from './types/assistants';
 import type * as s from './schemas';
 import type * as t from './types';
-import { ContentTypes } from './types/assistants';
+import { ContentTypes } from './types/runs';
 import {
-  EModelEndpoint,
   openAISchema,
   googleSchema,
   bingAISchema,
+  EModelEndpoint,
   anthropicSchema,
-  chatGPTBrowserSchema,
-  gptPluginsSchema,
   assistantSchema,
+  gptPluginsSchema,
+  // agentsSchema,
+  compactAgentsSchema,
   compactOpenAISchema,
   compactGoogleSchema,
-  compactAnthropicSchema,
   compactChatGPTSchema,
+  chatGPTBrowserSchema,
   compactPluginsSchema,
   compactAssistantSchema,
+  compactAnthropicSchema,
 } from './schemas';
 import { alternateName } from './config';
 
@@ -28,7 +30,8 @@ type EndpointSchema =
   | typeof anthropicSchema
   | typeof chatGPTBrowserSchema
   | typeof gptPluginsSchema
-  | typeof assistantSchema;
+  | typeof assistantSchema
+  | typeof compactAgentsSchema;
 
 const endpointSchemas: Record<EModelEndpoint, EndpointSchema> = {
   [EModelEndpoint.openAI]: openAISchema,
@@ -41,6 +44,7 @@ const endpointSchemas: Record<EModelEndpoint, EndpointSchema> = {
   [EModelEndpoint.gptPlugins]: gptPluginsSchema,
   [EModelEndpoint.assistants]: assistantSchema,
   [EModelEndpoint.azureAssistants]: assistantSchema,
+  [EModelEndpoint.agents]: compactAgentsSchema,
 };
 
 // const schemaCreators: Record<EModelEndpoint, (customSchema: DefaultSchemaValues) => EndpointSchema> = {
@@ -51,6 +55,7 @@ const endpointSchemas: Record<EModelEndpoint, EndpointSchema> = {
 export function getEnabledEndpoints() {
   const defaultEndpoints: string[] = [
     EModelEndpoint.openAI,
+    EModelEndpoint.agents,
     EModelEndpoint.assistants,
     EModelEndpoint.azureAssistants,
     EModelEndpoint.azureOpenAI,
@@ -61,7 +66,7 @@ export function getEnabledEndpoints() {
     EModelEndpoint.anthropic,
   ];
 
-  const endpointsEnv = process.env.ENDPOINTS || '';
+  const endpointsEnv = process.env.ENDPOINTS ?? '';
   let enabledEndpoints = defaultEndpoints;
   if (endpointsEnv) {
     enabledEndpoints = endpointsEnv
@@ -125,6 +130,7 @@ export const envVarRegex = /^\${(.+)}$/;
 export function extractEnvVariable(value: string) {
   const envVarMatch = value.match(envVarRegex);
   if (envVarMatch) {
+    // eslint-disable-next-line @typescript-eslint/strict-boolean-expressions
     return process.env[envVarMatch[1]] || value;
   }
   return value;
@@ -152,6 +158,15 @@ export function getFirstDefinedValue(possibleValues: string[]) {
     }
   }
   return returnValue;
+}
+
+export function getNonEmptyValue(possibleValues: string[]) {
+  for (const value of possibleValues) {
+    if (value && value.trim() !== '') {
+      return value;
+    }
+  }
+  return undefined;
 }
 
 export type TPossibleValues = {
@@ -266,6 +281,7 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
 type CompactEndpointSchema =
   | typeof compactOpenAISchema
   | typeof compactAssistantSchema
+  | typeof compactAgentsSchema
   | typeof compactGoogleSchema
   | typeof bingAISchema
   | typeof compactAnthropicSchema
@@ -278,6 +294,7 @@ const compactEndpointSchemas: Record<string, CompactEndpointSchema> = {
   [EModelEndpoint.custom]: compactOpenAISchema,
   [EModelEndpoint.assistants]: compactAssistantSchema,
   [EModelEndpoint.azureAssistants]: compactAssistantSchema,
+  [EModelEndpoint.agents]: compactAgentsSchema,
   [EModelEndpoint.google]: compactGoogleSchema,
   /* BingAI needs all fields */
   [EModelEndpoint.bingAI]: bingAISchema,
@@ -331,7 +348,7 @@ export function parseTextParts(contentParts: a.TMessageContentParts[]): string {
 
   for (const part of contentParts) {
     if (part.type === ContentTypes.TEXT) {
-      const textValue = part.text.value;
+      const textValue = typeof part.text === 'string' ? part.text : part.text.value;
 
       if (
         result.length > 0 &&

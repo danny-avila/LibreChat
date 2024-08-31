@@ -31,6 +31,8 @@ export const getLatestText = (message?: TMessage | null, includeIndex?: boolean)
         } else {
           return text;
         }
+      } else {
+        continue;
       }
     }
   }

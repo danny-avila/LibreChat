@@ -216,7 +216,8 @@ export default {
   com_ui_fork_from_message: 'Wähle eine Abzweigungsoption',
   com_ui_mention:
     'Erwähne einen Endpunkt, Assistenten oder eine Voreinstellung, um schnell dorthin zu wechseln',
-  com_ui_add_model_preset: 'Ein KI-Modell oder eine Voreinstellung für eine zusätzliche Antwort hinzufügen',
+  com_ui_add_model_preset:
+    'Ein KI-Modell oder eine Voreinstellung für eine zusätzliche Antwort hinzufügen',
   com_ui_regenerate: 'Neu generieren',
   com_ui_continue: 'Fortfahren',
   com_ui_edit: 'Bearbeiten',

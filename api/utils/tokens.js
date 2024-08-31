@@ -68,6 +68,7 @@ const aggregateModels = { ...openAIModels, ...googleModels, ...anthropicModels, 
 const maxTokensMap = {
   [EModelEndpoint.azureOpenAI]: openAIModels,
   [EModelEndpoint.openAI]: aggregateModels,
+  [EModelEndpoint.agents]: aggregateModels,
   [EModelEndpoint.custom]: aggregateModels,
   [EModelEndpoint.google]: googleModels,
   [EModelEndpoint.anthropic]: anthropicModels,
