@@ -832,24 +832,6 @@ export const useCreateAssistantMutation = (
           return options?.onSuccess?.(newAssistant, variables, context);
         }
 
-        queryClient.setQueryData<t.AssistantDocument[]>(
-          [QueryKeys.assistantDocs, variables.endpoint],
-          (prev) => {
-            if (!prev) {
-              return prev;
-            }
-            prev.map((doc) => {
-              if (doc.assistant_id === newAssistant.id) {
-                return {
-                  ...doc,
-                  conversation_starters: newAssistant.conversation_starters,
-                };
-              }
-              return doc;
-            });
-          },
-        );
-
         const currentAssistants = [newAssistant, ...JSON.parse(JSON.stringify(listRes.data))];
 
         queryClient.setQueryData<t.AssistantListResponse>(

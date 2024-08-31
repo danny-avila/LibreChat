@@ -47,13 +47,16 @@ const createAssistant = async (req, res) => {
       createData.conversation_starters = conversation_starters;
     }
 
-    const promise = await updateAssistantDoc({ assistant_id: assistant.id }, createData);
+    const document = await updateAssistantDoc({ assistant_id: assistant.id }, createData);
 
     if (azureModelIdentifier) {
       assistant.model = azureModelIdentifier;
     }
 
-    await promise;
+    if (document.conversation_starters) {
+      assistant.conversation_starters = document.conversation_starters;
+    }
+
     logger.debug('/assistants/', assistant);
     res.status(201).json(assistant);
   } catch (error) {
