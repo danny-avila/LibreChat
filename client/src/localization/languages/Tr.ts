@@ -530,7 +530,7 @@ export default {
   com_nav_plugin_store: 'Eklenti mağazası',
   com_nav_plugin_install: 'Yükle',
   com_nav_plugin_uninstall: 'Kaldır',
-  com_nav_tool_add: 'Ekle',
+  com_ui_add: 'Ekle',
   com_nav_tool_remove: 'Kaldır',
   com_nav_tool_dialog: 'Asistan Araçları',
   com_nav_tool_dialog_description: 'Araç seçimlerinin kalıcı olması için asistan kaydedilmelidir.',

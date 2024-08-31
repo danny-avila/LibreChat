@@ -483,7 +483,7 @@ export default {
   com_nav_plugin_store: 'Store plugin',
   com_nav_plugin_install: 'Installa',
   com_nav_plugin_uninstall: 'Disinstalla',
-  com_nav_tool_add: 'Aggiungi',
+  com_ui_add: 'Aggiungi',
   com_nav_tool_remove: 'Rimuovi',
   com_nav_tool_dialog: 'Strumenti Assistente',
   com_nav_tool_dialog_description:
@@ -2326,7 +2326,7 @@ export const comparisons = {
     english: 'Uninstall',
     translated: 'Disinstalla',
   },
-  com_nav_tool_add: {
+  com_ui_add: {
     english: 'Add',
     translated: 'Aggiungi',
   },

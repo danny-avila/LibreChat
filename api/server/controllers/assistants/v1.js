@@ -18,7 +18,9 @@ const createAssistant = async (req, res) => {
   try {
     const { openai } = await getOpenAIClient({ req, res });
 
-    const { tools = [], endpoint, ...assistantData } = req.body;
+    const { tools = [], endpoint, conversation_starters, ...assistantData } = req.body;
+    delete assistantData.conversation_starters;
+
     assistantData.tools = tools
       .map((tool) => {
         if (typeof tool !== 'string') {
@@ -41,11 +43,22 @@ const createAssistant = async (req, res) => {
     };
 
     const assistant = await openai.beta.assistants.create(assistantData);
-    const promise = updateAssistantDoc({ assistant_id: assistant.id }, { user: req.user.id });
+
+    const createData = { user: req.user.id };
+    if (conversation_starters) {
+      createData.conversation_starters = conversation_starters;
+    }
+
+    const document = await updateAssistantDoc({ assistant_id: assistant.id }, createData);
+
     if (azureModelIdentifier) {
       assistant.model = azureModelIdentifier;
     }
-    await promise;
+
+    if (document.conversation_starters) {
+      assistant.conversation_starters = document.conversation_starters;
+    }
+
     logger.debug('/assistants/', assistant);
     res.status(201).json(assistant);
   } catch (error) {
@@ -88,7 +101,7 @@ const patchAssistant = async (req, res) => {
     await validateAuthor({ req, openai });
 
     const assistant_id = req.params.id;
-    const { endpoint: _e, ...updateData } = req.body;
+    const { endpoint: _e, conversation_starters, ...updateData } = req.body;
     updateData.tools = (updateData.tools ?? [])
       .map((tool) => {
         if (typeof tool !== 'string') {
@@ -104,6 +117,15 @@ const patchAssistant = async (req, res) => {
     }
 
     const updatedAssistant = await openai.beta.assistants.update(assistant_id, updateData);
+
+    if (conversation_starters !== undefined) {
+      const conversationStartersUpdate = await updateAssistantDoc(
+        { assistant_id },
+        { conversation_starters },
+      );
+      updatedAssistant.conversation_starters = conversationStartersUpdate.conversation_starters;
+    }
+
     res.json(updatedAssistant);
   } catch (error) {
     logger.error('[/assistants/:id] Error updating assistant', error);
@@ -154,13 +176,57 @@ const listAssistants = async (req, res) => {
 };
 
 /**
+ * Filter assistants based on configuration.
+ *
+ * @param {object} params - The parameters object.
+ * @param {string} params.userId -  The user ID to filter private assistants.
+ * @param {AssistantDocument[]} params.assistants - The list of assistants to filter.
+ * @param {Partial<TAssistantEndpoint>} [params.assistantsConfig] -  The assistant configuration.
+ * @returns {AssistantDocument[]} - The filtered list of assistants.
+ */
+function filterAssistantDocs({ documents, userId, assistantsConfig = {} }) {
+  const { supportedIds, excludedIds, privateAssistants } = assistantsConfig;
+  const removeUserId = (doc) => {
+    const { user: _u, ...document } = doc;
+    return document;
+  };
+
+  if (privateAssistants) {
+    return documents.filter((doc) => userId === doc.user.toString()).map(removeUserId);
+  } else if (supportedIds?.length) {
+    return documents.filter((doc) => supportedIds.includes(doc.assistant_id)).map(removeUserId);
+  } else if (excludedIds?.length) {
+    return documents.filter((doc) => !excludedIds.includes(doc.assistant_id)).map(removeUserId);
+  }
+  return documents.map(removeUserId);
+}
+
+/**
  * Returns a list of the user's assistant documents (metadata saved to database).
  * @route GET /assistants/documents
  * @returns {AssistantDocument[]} 200 - success response - application/json
  */
 const getAssistantDocuments = async (req, res) => {
   try {
-    res.json(await getAssistants({ user: req.user.id }));
+    const endpoint = req.query;
+    const assistantsConfig = req.app.locals[endpoint];
+    const documents = await getAssistants(
+      {},
+      {
+        user: 1,
+        assistant_id: 1,
+        conversation_starters: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    );
+
+    const docs = filterAssistantDocs({
+      documents,
+      userId: req.user.id,
+      assistantsConfig,
+    });
+    res.json(docs);
   } catch (error) {
     logger.error('[/assistants/documents] Error listing assistant documents', error);
     res.status(500).json({ error: error.message });
