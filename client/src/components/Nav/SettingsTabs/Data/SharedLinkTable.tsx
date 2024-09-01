@@ -49,17 +49,6 @@ function SharedLinkDeleteButton({
     </TooltipAnchor>
   );
 }
-function SourceChatButton({ conversationId }: { conversationId: string }) {
-  const localize = useLocalize();
-
-  return (
-    <TooltipAnchor description={localize('com_nav_source_chat')}>
-      <Link to={`/c/${conversationId}`} target="_blank" rel="noreferrer">
-        <MessageSquare className="size-4 hover:text-gray-300" />
-      </Link>
-    </TooltipAnchor>
-  );
-}
 
 function ShareLinkRow({ sharedLink }: { sharedLink: TSharedLink }) {
   const [isDeleting, setIsDeleting] = useState(false);
@@ -96,15 +85,12 @@ function ShareLinkRow({ sharedLink }: { sharedLink: TSharedLink }) {
             )}
           >
             {sharedLink.conversationId && (
-              <>
-                <SourceChatButton conversationId={sharedLink.conversationId} />
-                <div className={cn('cursor-pointer', !isDeleting && 'hover:text-gray-300')}>
-                  <SharedLinkDeleteButton
-                    shareId={sharedLink.shareId}
-                    setIsDeleting={setIsDeleting}
-                  />
-                </div>
-              </>
+              <div className={cn('cursor-pointer', !isDeleting && 'hover:text-gray-300')}>
+                <SharedLinkDeleteButton
+                  shareId={sharedLink.shareId}
+                  setIsDeleting={setIsDeleting}
+                />
+              </div>
             )}
           </div>
         </div>
