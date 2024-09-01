@@ -27,6 +27,12 @@
  */
 
 /**
+ * @exports BedrockClientOptions
+ * @typedef {import('@librechat/agents').BedrockConverseClientOptions} BedrockClientOptions
+ * @memberof typedefs
+ */
+
+/**
  * @exports StreamEventData
  * @typedef {import('@librechat/agents').StreamEventData} StreamEventData
  * @memberof typedefs

@@ -5,6 +5,7 @@ const assistants = require('~/server/services/Endpoints/assistants');
 const gptPlugins = require('~/server/services/Endpoints/gptPlugins');
 const { processFiles } = require('~/server/services/Files/process');
 const anthropic = require('~/server/services/Endpoints/anthropic');
+const bedrock = require('~/server/services/Endpoints/bedrock');
 const openAI = require('~/server/services/Endpoints/openAI');
 const agents = require('~/server/services/Endpoints/agents');
 const custom = require('~/server/services/Endpoints/custom');
@@ -17,6 +18,7 @@ const buildFunction = {
   [EModelEndpoint.google]: google.buildOptions,
   [EModelEndpoint.custom]: custom.buildOptions,
   [EModelEndpoint.agents]: agents.buildOptions,
+  [EModelEndpoint.bedrock]: bedrock.buildOptions,
   [EModelEndpoint.azureOpenAI]: openAI.buildOptions,
   [EModelEndpoint.anthropic]: anthropic.buildOptions,
   [EModelEndpoint.gptPlugins]: gptPlugins.buildOptions,

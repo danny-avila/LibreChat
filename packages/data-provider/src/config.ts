@@ -1116,6 +1116,7 @@ export enum SystemCategories {
 
 export const providerEndpointMap = {
   [EModelEndpoint.openAI]: EModelEndpoint.openAI,
+  [EModelEndpoint.bedrock]: EModelEndpoint.bedrock,
   [EModelEndpoint.azureOpenAI]: EModelEndpoint.openAI,
   [EModelEndpoint.anthropic]: EModelEndpoint.anthropic,
 };

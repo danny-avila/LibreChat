@@ -22,7 +22,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
 
   const sender = getResponseSender({
     ...endpointOption,
-    model: endpointOption.modelOptions.model,
+    model: endpointOption.model_parameters.model,
     modelDisplayLabel,
   });
   const newConvo = !conversationId;

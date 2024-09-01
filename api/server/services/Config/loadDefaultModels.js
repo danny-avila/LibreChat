@@ -38,6 +38,8 @@ async function loadDefaultModels(req) {
     [EModelEndpoint.chatGPTBrowser]: chatGPTBrowser,
     [EModelEndpoint.assistants]: assistants,
     [EModelEndpoint.azureAssistants]: azureAssistants,
+    /* TODO: remove this, only for testing */
+    [EModelEndpoint.bedrock]: ['anthropic.claude-3-sonnet-20240229-v1:0'],
   };
 }
 

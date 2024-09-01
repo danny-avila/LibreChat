@@ -72,6 +72,7 @@ const maxTokensMap = {
   [EModelEndpoint.custom]: aggregateModels,
   [EModelEndpoint.google]: googleModels,
   [EModelEndpoint.anthropic]: anthropicModels,
+  [EModelEndpoint.bedrock]: aggregateModels,
 };
 
 /**
