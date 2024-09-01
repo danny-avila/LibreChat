@@ -108,6 +108,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     toolMap,
     modelOptions,
     eventHandlers,
+    endpoint: EModelEndpoint.agents,
     configOptions: options.configOptions,
     maxContextTokens:
       agent.max_context_tokens ??

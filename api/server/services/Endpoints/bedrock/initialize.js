@@ -47,6 +47,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     modelOptions,
     eventHandlers,
     maxContextTokens,
+    endpoint: EModelEndpoint.bedrock,
     configOptions: options.configOptions,
   });
   return { client };
