@@ -190,7 +190,7 @@ export const parseConvo = ({
   // TODO: POC for default schema
   // defaultSchema?: Partial<EndpointSchema>,
 }) => {
-  let schema = endpointSchemas[endpoint];
+  let schema = endpointSchemas[endpoint] as EndpointSchema | undefined;
 
   if (!schema && !endpointType) {
     throw new Error(`Unknown endpoint: ${endpoint}`);
@@ -202,14 +202,14 @@ export const parseConvo = ({
   //   schema = schemaCreators[endpoint](defaultSchema);
   // }
 
-  const convo = schema.parse(conversation) as s.TConversation;
+  const convo = schema?.parse(conversation) as s.TConversation | undefined;
   const { models, secondaryModels } = possibleValues ?? {};
 
   if (models && convo) {
     convo.model = getFirstDefinedValue(models) ?? convo.model;
   }
 
-  if (secondaryModels && convo.agentOptions) {
+  if (secondaryModels && convo?.agentOptions) {
     convo.agentOptions.model = getFirstDefinedValue(secondaryModels) ?? convo.agentOptions.model;
   }
 
@@ -217,9 +217,17 @@ export const parseConvo = ({
 };
 
 export const getResponseSender = (endpointOption: t.TEndpointOption): string => {
-  const { model, endpoint, endpointType, modelDisplayLabel, chatGptLabel, modelLabel, jailbreak } =
-    endpointOption;
+  const {
+    model: _m,
+    endpoint,
+    endpointType,
+    modelDisplayLabel,
+    chatGptLabel,
+    modelLabel,
+    jailbreak,
+  } = endpointOption;
 
+  const model = _m ?? '';
   if (
     [
       EModelEndpoint.openAI,
@@ -232,14 +240,14 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
       return chatGptLabel;
     } else if (model && model.includes('gpt-3')) {
       return 'GPT-3.5';
-    } else if (model && model.includes('gpt-4')) {
-      return 'GPT-4';
     } else if (model && model.includes('gpt-4o')) {
       return 'GPT-4o';
+    } else if (model && model.includes('gpt-4')) {
+      return 'GPT-4';
     } else if (model && model.includes('mistral')) {
       return 'Mistral';
     }
-    return alternateName[endpoint] ?? 'ChatGPT';
+    return (alternateName[endpoint] as string | undefined) ?? 'ChatGPT';
   }
 
   if (endpoint === EModelEndpoint.bingAI) {
@@ -248,6 +256,10 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
 
   if (endpoint === EModelEndpoint.anthropic) {
     return modelLabel ?? 'Claude';
+  }
+
+  if (endpoint === EModelEndpoint.bedrock) {
+    return modelLabel ?? alternateName[endpoint];
   }
 
   if (endpoint === EModelEndpoint.google) {
@@ -271,6 +283,8 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
       return 'Mistral';
     } else if (model && model.includes('gpt-3')) {
       return 'GPT-3.5';
+    } else if (model && model.includes('gpt-4o')) {
+      return 'GPT-4o';
     } else if (model && model.includes('gpt-4')) {
       return 'GPT-4';
     } else if (modelDisplayLabel) {

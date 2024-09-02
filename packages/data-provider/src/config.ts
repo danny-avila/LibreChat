@@ -568,7 +568,7 @@ export const alternateName = {
   [EModelEndpoint.google]: 'Google',
   [EModelEndpoint.anthropic]: 'Anthropic',
   [EModelEndpoint.custom]: 'Custom',
-  [EModelEndpoint.bedrock]: 'Bedrock',
+  [EModelEndpoint.bedrock]: 'AWS Bedrock',
 };
 
 const sharedOpenAIModels = [
