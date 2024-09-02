@@ -82,6 +82,8 @@ const useTTSEdge = (props?: TUseTextToSpeech) => {
       const messageContent = content ?? '';
       const parsedMessage =
         typeof messageContent === 'string' ? messageContent : parseTextParts(messageContent);
+      console.log('parsedMessage', parsedMessage);
+
       generateSpeech(parsedMessage);
     }
   };
