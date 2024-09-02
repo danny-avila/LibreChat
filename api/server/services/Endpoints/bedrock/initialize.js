@@ -1,3 +1,4 @@
+const { createContentAggregator } = require('@librechat/agents');
 const { EModelEndpoint, providerEndpointMap } = require('librechat-data-provider');
 const { getDefaultHandlers } = require('~/server/controllers/agents/callbacks');
 // const { loadAgentTools } = require('~/server/services/ToolService');
@@ -10,8 +11,8 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     throw new Error('Endpoint option not provided');
   }
 
-  // TODO: use endpointOption to determine options/modelOptions
-  const eventHandlers = getDefaultHandlers({ res });
+  const { contentParts, aggregateContent } = createContentAggregator();
+  const eventHandlers = getDefaultHandlers({ res, aggregateContent });
 
   // const tools = [createTavilySearchTool()];
 
@@ -45,6 +46,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     // tools,
     // toolMap,
     modelOptions,
+    contentParts,
     eventHandlers,
     maxContextTokens,
     endpoint: EModelEndpoint.bedrock,

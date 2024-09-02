@@ -2,6 +2,7 @@ const { GraphEvents, ToolEndHandler, ChatModelStreamHandler } = require('@librec
 
 /** @typedef {import('@librechat/agents').EventHandler} EventHandler */
 /** @typedef {import('@librechat/agents').ChatModelStreamHandler} ChatModelStreamHandler */
+/** @typedef {import('@librechat/agents').ContentAggregatorResult['aggregateContent']} ContentAggregator */
 /** @typedef {import('@librechat/agents').GraphEvents} GraphEvents */
 
 /**
@@ -20,13 +21,17 @@ const sendEvent = (res, event) => {
 
 /**
  * Get default handlers for stream events.
- * @param {{ res?: ServerResponse }} options - The options object.
+ * @param {Object} options - The options object.
+ * @param {ServerResponse} options.res - The options object.
+ * @param {ContentAggregator} options.aggregateContent - The options object.
  * @returns {Record<string, t.EventHandler>} The default handlers.
  * @throws {Error} If the request is not found.
  */
-function getDefaultHandlers({ res }) {
-  if (!res) {
-    throw new Error('Request not found');
+function getDefaultHandlers({ res, aggregateContent }) {
+  if (!res || !aggregateContent) {
+    throw new Error(
+      `[getDefaultHandlers] Missing required options: res: ${!res}, aggregateContent: ${!aggregateContent}`,
+    );
   }
   const handlers = {
     // [GraphEvents.CHAT_MODEL_END]: new ModelEndHandler(),
@@ -40,6 +45,7 @@ function getDefaultHandlers({ res }) {
        */
       handle: (event, data) => {
         sendEvent(res, { event, data });
+        aggregateContent({ event, data });
       },
     },
     [GraphEvents.ON_RUN_STEP_DELTA]: {
@@ -50,6 +56,7 @@ function getDefaultHandlers({ res }) {
        */
       handle: (event, data) => {
         sendEvent(res, { event, data });
+        aggregateContent({ event, data });
       },
     },
     [GraphEvents.ON_RUN_STEP_COMPLETED]: {
@@ -60,6 +67,7 @@ function getDefaultHandlers({ res }) {
        */
       handle: (event, data) => {
         sendEvent(res, { event, data });
+        aggregateContent({ event, data });
       },
     },
     [GraphEvents.ON_MESSAGE_DELTA]: {
@@ -70,6 +78,7 @@ function getDefaultHandlers({ res }) {
        */
       handle: (event, data) => {
         sendEvent(res, { event, data });
+        aggregateContent({ event, data });
       },
     },
   };

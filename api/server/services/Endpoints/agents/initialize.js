@@ -11,6 +11,7 @@
 
 const { z } = require('zod');
 const { tool } = require('@langchain/core/tools');
+const { createContentAggregator } = require('@librechat/agents');
 const { EModelEndpoint, providerEndpointMap } = require('librechat-data-provider');
 const { getDefaultHandlers } = require('~/server/controllers/agents/callbacks');
 // for testing purposes
@@ -53,7 +54,8 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   }
 
   // TODO: use endpointOption to determine options/modelOptions
-  const eventHandlers = getDefaultHandlers({ res });
+  const { contentParts, aggregateContent } = createContentAggregator();
+  const eventHandlers = getDefaultHandlers({ res, aggregateContent });
 
   // const tools = [createTavilySearchTool()];
   // const tools = [_getWeather];
@@ -106,6 +108,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     agent,
     tools,
     toolMap,
+    contentParts,
     modelOptions,
     eventHandlers,
     endpoint: EModelEndpoint.agents,
