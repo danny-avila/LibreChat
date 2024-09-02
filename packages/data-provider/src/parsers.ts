@@ -12,6 +12,7 @@ import {
   assistantSchema,
   gptPluginsSchema,
   // agentsSchema,
+  bedrockInputSchema,
   compactAgentsSchema,
   compactOpenAISchema,
   compactGoogleSchema,
@@ -32,7 +33,7 @@ type EndpointSchema =
   | typeof gptPluginsSchema
   | typeof assistantSchema
   | typeof compactAgentsSchema
-  | typeof compactAgentsSchema;
+  | typeof bedrockInputSchema;
 
 const endpointSchemas: Record<EModelEndpoint, EndpointSchema> = {
   [EModelEndpoint.openAI]: openAISchema,
@@ -46,7 +47,7 @@ const endpointSchemas: Record<EModelEndpoint, EndpointSchema> = {
   [EModelEndpoint.assistants]: assistantSchema,
   [EModelEndpoint.azureAssistants]: assistantSchema,
   [EModelEndpoint.agents]: compactAgentsSchema,
-  [EModelEndpoint.bedrock]: compactAgentsSchema,
+  [EModelEndpoint.bedrock]: bedrockInputSchema,
 };
 
 // const schemaCreators: Record<EModelEndpoint, (customSchema: DefaultSchemaValues) => EndpointSchema> = {
@@ -305,6 +306,7 @@ type CompactEndpointSchema =
   | typeof bingAISchema
   | typeof compactAnthropicSchema
   | typeof compactChatGPTSchema
+  | typeof bedrockInputSchema
   | typeof compactPluginsSchema;
 
 const compactEndpointSchemas: Record<string, CompactEndpointSchema> = {
@@ -315,7 +317,7 @@ const compactEndpointSchemas: Record<string, CompactEndpointSchema> = {
   [EModelEndpoint.azureAssistants]: compactAssistantSchema,
   [EModelEndpoint.agents]: compactAgentsSchema,
   [EModelEndpoint.google]: compactGoogleSchema,
-  [EModelEndpoint.bedrock]: compactAgentsSchema,
+  [EModelEndpoint.bedrock]: bedrockInputSchema,
   /* BingAI needs all fields */
   [EModelEndpoint.bingAI]: bingAISchema,
   [EModelEndpoint.anthropic]: compactAnthropicSchema,

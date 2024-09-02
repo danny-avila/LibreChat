@@ -435,6 +435,25 @@ export const coerceNumber = z.union([z.number(), z.string()]).transform((val) =>
   return val;
 });
 
+type DocumentTypeValue =
+  | null
+  | boolean
+  | number
+  | string
+  | DocumentTypeValue[]
+  | { [key: string]: DocumentTypeValue };
+
+const DocumentType: z.ZodType<DocumentTypeValue> = z.lazy(() =>
+  z.union([
+    z.null(),
+    z.boolean(),
+    z.number(),
+    z.string(),
+    z.array(z.lazy(() => DocumentType)),
+    z.record(z.lazy(() => DocumentType)),
+  ]),
+);
+
 export const tConversationSchema = z.object({
   conversationId: z.string().nullable(),
   endpoint: eModelEndpointSchema.nullable(),
@@ -477,6 +496,9 @@ export const tConversationSchema = z.object({
   assistant_id: z.string().optional(),
   /* agents */
   agent_id: z.string().optional(),
+  /* AWS Bedrock */
+  maxTokens: z.number().optional(),
+  additionalModelRequestFields: DocumentType.optional(),
   /* assistant + agents */
   instructions: z.string().optional(),
   additional_instructions: z.string().optional(),
@@ -975,19 +997,6 @@ export const agentsSchema = tConversationSchema
     maxContextTokens: undefined,
   }));
 
-export const compactAgentsSchema = tConversationSchema
-  .pick({
-    model: true,
-    agent_id: true,
-    instructions: true,
-    promptPrefix: true,
-    iconURL: true,
-    greeting: true,
-    spec: true,
-  })
-  .transform(removeNullishValues)
-  .catch(() => ({}));
-
 export const compactOpenAISchema = tConversationSchema
   .pick({
     model: true,
@@ -1172,3 +1181,38 @@ export const compactPluginsSchema = tConversationSchema
     return removeNullishValues(newObj);
   })
   .catch(() => ({}));
+
+export const compactAgentsSchema = tConversationSchema
+  .pick({
+    model: true,
+    agent_id: true,
+    instructions: true,
+    additional_instructions: true,
+    iconURL: true,
+    greeting: true,
+    spec: true,
+  })
+  .transform(removeNullishValues)
+  .catch(() => ({}));
+
+export const bedrockInputSchema = tConversationSchema
+  .pick({
+    /* LibreChat parameters */
+    instructions: true,
+    additional_instructions: true,
+    iconURL: true,
+    greeting: true,
+    spec: true,
+    maxOutputTokens: true,
+    /* shared parameters */
+    additionalModelRequestFields: true,
+    model: true,
+    maxTokens: true,
+    temperature: true,
+    topP: true,
+    stop: true,
+  })
+  .transform(removeNullishValues)
+  .catch(() => ({}));
+
+export type BedrockConverseInput = z.infer<typeof bedrockInputSchema>;

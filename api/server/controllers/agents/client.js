@@ -8,7 +8,12 @@
 // mapModelToAzureConfig,
 // } = require('librechat-data-provider');
 const { Callback } = require('@librechat/agents');
-const { providerEndpointMap, removeNullishValues } = require('librechat-data-provider');
+const {
+  providerEndpointMap,
+  removeNullishValues,
+  EModelEndpoint,
+  parseCompactConvo,
+} = require('librechat-data-provider');
 const {
   extractBaseURL,
   // constructAzureURL,
@@ -26,6 +31,10 @@ const { createRun } = require('./run');
 const { logger } = require('~/config');
 
 /** @typedef {import('@librechat/agents').MessageContentComplex} MessageContentComplex */
+
+const providerSchemas = {
+  [EModelEndpoint.bedrock]: true,
+};
 
 class AgentClient extends BaseClient {
   constructor(options = {}) {
@@ -119,6 +128,26 @@ class AgentClient extends BaseClient {
   }
 
   getSaveOptions() {
+    const hasSchema = providerSchemas[this.options.endpoint];
+    let runOptions =
+      this.options.endpoint === EModelEndpoint.agents
+        ? {
+          model: undefined,
+          // TODO:
+          // would need to be override settings; otherwise, model needs to be undefined
+          // model: this.override.model,
+          // instructions: this.override.instructions,
+          // additional_instructions: this.override.additional_instructions,
+        }
+        : {};
+
+    if (hasSchema) {
+      runOptions = parseCompactConvo({
+        endpoint: this.options.endpoint,
+        conversation: this.modelOptions,
+      });
+    }
+
     return removeNullishValues(
       Object.assign(
         {
@@ -129,15 +158,8 @@ class AgentClient extends BaseClient {
           imageDetail: this.options.imageDetail,
           spec: this.options.spec,
         },
-        this.modelOptions,
-        {
-          model: undefined,
-          // TODO:
-          // would need to be override settings; otherwise, model needs to be undefined
-          // model: this.override.model,
-          // instructions: this.override.instructions,
-          // additional_instructions: this.override.additional_instructions,
-        },
+        // TODO: PARSE OPTIONS BY PROVIDER, MAY CONTAIN SENSITIVE DATA
+        runOptions,
       ),
     );
   }
