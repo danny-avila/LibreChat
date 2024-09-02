@@ -1,10 +1,9 @@
 import dedent from 'dedent';
-import { ArtifactModes } from 'librechat-data-provider';
+import { ArtifactModes, shadcnComponents } from 'librechat-data-provider';
 import type {
   SandpackProviderProps,
   SandpackPredefinedTemplate,
 } from '@codesandbox/sandpack-react';
-import * as shadcnComponents from '~/utils/shadcn';
 
 export const getArtifactsMode = ({
   codeArtifacts,
