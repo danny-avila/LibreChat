@@ -46,6 +46,13 @@ class AgentClient extends BaseClient {
     this.options = Object.assign({ endpoint: options.endpoint }, clientOptions);
   }
 
+  /**
+   * Returns the aggregated content parts for the current run.
+   * @returns {MessageContentComplex[]} */
+  getContentParts() {
+    return this.contentParts;
+  }
+
   setOptions(options) {
     logger.info('[api/server/controllers/agents/client.js] setOptions', options);
   }
@@ -437,11 +444,18 @@ class AgentClient extends BaseClient {
       });
       logger.info(this.contentParts, { depth: null });
     } catch (err) {
-      logger.error(
-        '[api/server/controllers/agents/client.js #chatCompletion] Unhandled error type',
+      if (!abortController.signal.aborted) {
+        logger.error(
+          '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error type',
+          err,
+        );
+        throw err;
+      }
+
+      logger.warn(
+        '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted',
         err,
       );
-      throw err;
     }
   }
 

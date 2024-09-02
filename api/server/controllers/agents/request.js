@@ -46,6 +46,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
   };
 
   try {
+    /** @type {{ client: TAgentClient }} */
     const { client } = await initializeClient({ req, res, endpointOption });
 
     const getAbortData = () => ({
@@ -54,8 +55,8 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       promptTokens,
       conversationId,
       userMessagePromise,
-      // text: getPartialText(),
       messageId: responseMessageId,
+      content: client.getContentParts(),
       parentMessageId: overrideParentMessageId ?? userMessageId,
     });
 
