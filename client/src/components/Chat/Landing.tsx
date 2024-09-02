@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { EModelEndpoint, isAssistantsEndpoint, Constants } from 'librechat-data-provider';
 import { useGetEndpointsQuery, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { ReactNode } from 'react';
@@ -56,6 +57,23 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
 
   const { submitMessage } = useSubmitMessage();
   const sendConversationStarter = (text: string) => submitMessage({ text });
+  const asMarkdown = (content) => (
+    <ReactMarkdown
+      components={{
+        a: (props) => {
+          const { ['node']: _, href, children, ...otherProps } = props;
+          return (
+            <a className="underline" href={href} target="_blank" rel="noreferrer" {...otherProps}>
+              {children}
+            </a>
+          );
+        },
+        p: ({ node, ...props }) => <span {...props} />,
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  );
 
   return (
     <TooltipProvider delayDuration={50}>
@@ -97,11 +115,13 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
             </div> */}
               </div>
             ) : (
-              <h2 className="mb-5 max-w-[75vh] px-12 text-center text-lg font-medium dark:text-white md:px-0 md:text-2xl">
-                {isAssistant
-                  ? conversation?.greeting ?? localize('com_nav_welcome_assistant')
-                  : conversation?.greeting ?? localize('com_nav_welcome_message')}
-              </h2>
+              <div className="mb-5 max-w-[75vh] px-12 text-center text-lg font-medium dark:text-white md:px-0 md:text-2xl">
+                {asMarkdown(
+                  isAssistant
+                    ? conversation?.greeting ?? localize('com_nav_welcome_assistant')
+                    : conversation?.greeting ?? localize('com_nav_welcome_message'),
+                )}
+              </div>
             )}
             <div className="mt-8 flex flex-wrap justify-center gap-3 px-4">
               {conversation_starters.length > 0 &&
