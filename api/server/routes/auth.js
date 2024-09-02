@@ -44,6 +44,7 @@ router.post(
 );
 router.post(
   '/createUser',
+  requireJwtAuth,
   checkBan,
   checkAdmin,
   registrationController,
