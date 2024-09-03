@@ -45,7 +45,7 @@ const DisplayMessage = ({ text, isCreatedByUser = false, message, showCursor }: 
       {!isCreatedByUser ? (
         <Markdown content={text} showCursor={showCursorState} isLatestMessage={isLatestMessage} />
       ) : (
-        <>{text}</>
+        <Markdown content={text} />
       )}
     </div>
   );

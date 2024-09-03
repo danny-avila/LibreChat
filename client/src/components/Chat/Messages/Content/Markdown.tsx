@@ -116,7 +116,7 @@ const cursor = ' ';
 type TContentProps = {
   content: string;
   showCursor?: boolean;
-  isLatestMessage: boolean;
+  isLatestMessage?: boolean;
 };
 
 const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentProps) => {

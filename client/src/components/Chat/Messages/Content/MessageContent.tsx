@@ -86,7 +86,7 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
         {!isCreatedByUser ? (
           <Markdown content={text} showCursor={showCursorState} isLatestMessage={isLatestMessage} />
         ) : (
-          <>{text}</>
+          <Markdown content={text} />
         )}
       </div>
     </Container>
