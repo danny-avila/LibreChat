@@ -17,8 +17,10 @@ import store from '~/store';
 
 export default function HeaderOptions({
   interfaceConfig,
+  isAdmin,
 }: {
   interfaceConfig?: Partial<TInterfaceConfig>;
+  isAdmin?: boolean;
 }) {
   const [saveAsDialogShow, setSaveAsDialogShow] = useState<boolean>(false);
   const [showPluginStoreDialog, setShowPluginStoreDialog] = useRecoilState(
@@ -82,7 +84,7 @@ export default function HeaderOptions({
                   popover={true}
                 />
               )}
-              {!noSettings[endpoint] && interfaceConfig?.parameters && (
+              {!noSettings[endpoint] && interfaceConfig?.parameters && isAdmin && (
                 <Button
                   aria-label="Settings/parameters"
                   id="parameters-button"
