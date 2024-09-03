@@ -6,8 +6,6 @@ const { isEnabled } = require('~/server/utils');
 const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
 
-const { GLOBAL_PROJECT_NAME } = Constants;
-
 const router = express.Router();
 const emailLoginEnabled =
   process.env.ALLOW_EMAIL_LOGIN === undefined || isEnabled(process.env.ALLOW_EMAIL_LOGIN);
@@ -34,7 +32,7 @@ router.get('/', async function (req, res) {
     return today.getMonth() === 1 && today.getDate() === 11;
   };
 
-  const instanceProject = await getProjectByName(GLOBAL_PROJECT_NAME, '_id');
+  const instanceProject = await getProjectByName(Constants.GLOBAL_PROJECT_NAME, '_id');
 
   const ldap = getLdapConfig();
 

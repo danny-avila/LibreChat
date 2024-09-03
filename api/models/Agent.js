@@ -1,4 +1,11 @@
 const mongoose = require('mongoose');
+const { GLOBAL_PROJECT_NAME } = require('librechat-data-provider').Constants;
+const {
+  getProjectByName,
+  addAgentIdsToProject,
+  removeAgentIdsFromProject,
+  removeAgentFromAllProjects,
+} = require('./Project');
 const agentSchema = require('./schema/agent');
 
 const Agent = mongoose.model('agent', agentSchema);
@@ -48,7 +55,11 @@ const updateAgent = async (searchParameter, updateData, session = null) => {
  * @returns {Promise<void>} Resolves when the agent has been successfully deleted.
  */
 const deleteAgent = async (searchParameter) => {
-  return await Agent.findOneAndDelete(searchParameter);
+  const agent = await Agent.findOneAndDelete(searchParameter);
+  if (agent) {
+    await removeAgentFromAllProjects(agent.id);
+  }
+  return agent;
 };
 
 /**
@@ -58,11 +69,24 @@ const deleteAgent = async (searchParameter) => {
  * @returns {Promise<Object>} A promise that resolves to an object containing the agents data and pagination info.
  */
 const getListAgents = async (searchParameter) => {
-  const agents = await Agent.find(searchParameter, {
+  const { author, ...otherParams } = searchParameter;
+
+  let query = {
+    $or: [{ author }, { projectIds: { $exists: true, $ne: [], $not: { $size: 0 } } }],
+    ...otherParams,
+  };
+
+  const globalProject = await getProjectByName(GLOBAL_PROJECT_NAME, 'agentIds');
+  if (globalProject && globalProject.agentIds.length > 0) {
+    query.$or.push({ _id: { $in: globalProject.agentIds } });
+  }
+
+  const agents = await Agent.find(query, {
     id: 1,
     name: 1,
     avatar: 1,
   }).lean();
+
   const hasMore = agents.length > 0;
   const firstId = agents.length > 0 ? agents[0].id : null;
   const lastId = agents.length > 0 ? agents[agents.length - 1].id : null;
@@ -75,10 +99,45 @@ const getListAgents = async (searchParameter) => {
   };
 };
 
+/**
+ * Updates the projects associated with an agent, adding and removing project IDs as specified.
+ * This function also updates the corresponding projects to include or exclude the agent ID.
+ *
+ * @param {string} agentId - The ID of the agent to update.
+ * @param {string[]} [projectIds] - Array of project IDs to add to the agent.
+ * @param {string[]} [removeProjectIds] - Array of project IDs to remove from the agent.
+ * @returns {Promise<MongoAgent>} The updated agent document.
+ * @throws {Error} If there's an error updating the agent or projects.
+ */
+const updateAgentProjects = async (agentId, projectIds, removeProjectIds) => {
+  const updateOps = {};
+
+  if (removeProjectIds && removeProjectIds.length > 0) {
+    for (const projectId of removeProjectIds) {
+      await removeAgentIdsFromProject(projectId, [agentId]);
+    }
+    updateOps.$pull = { projectIds: { $in: removeProjectIds } };
+  }
+
+  if (projectIds && projectIds.length > 0) {
+    for (const projectId of projectIds) {
+      await addAgentIdsToProject(projectId, [agentId]);
+    }
+    updateOps.$addToSet = { projectIds: { $each: projectIds } };
+  }
+
+  if (Object.keys(updateOps).length === 0) {
+    return await Agent.findById(agentId).lean();
+  }
+
+  return await Agent.findByIdAndUpdate(agentId, updateOps, { new: true, lean: true });
+};
+
 module.exports = {
   createAgent,
   getAgent,
   updateAgent,
   deleteAgent,
   getListAgents,
+  updateAgentProjects,
 };

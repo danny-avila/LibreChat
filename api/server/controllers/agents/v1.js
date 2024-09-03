@@ -9,6 +9,7 @@ const {
 } = require('~/models/Agent');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { uploadImageBuffer } = require('~/server/services/Files/process');
+const { updateAgentProjects } = require('~/models/Agent');
 const { deleteFileByFilter } = require('~/models/File');
 const { logger } = require('~/config');
 
@@ -82,7 +83,14 @@ const getAgentHandler = async (req, res) => {
 const updateAgentHandler = async (req, res) => {
   try {
     const id = req.params.id;
-    const updatedAgent = await updateAgent({ id, author: req.user.id }, req.body);
+    const { projectIds, removeProjectIds, ...updateData } = req.body;
+
+    const updatedAgent = await updateAgent({ id, author: req.user.id }, updateData);
+
+    if (projectIds || removeProjectIds) {
+      await updateAgentProjects(id, projectIds, removeProjectIds);
+    }
+
     return res.json(updatedAgent);
   } catch (error) {
     logger.error('[/Agents/:id] Error updating Agent', error);
