@@ -96,7 +96,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   }
 
   // TODO: pass-in override settings that are specific to current run
-  endpointOption.modelOptions.model = agent.model;
+  endpointOption.model_parameters.model = agent.model;
   const options = await getOptions({
     req,
     res,
