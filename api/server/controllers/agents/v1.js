@@ -131,9 +131,9 @@ const deleteAgentHandler = async (req, res) => {
  */
 const getListAgentsHandler = async (req, res) => {
   try {
-    const { user } = req.query;
-    const filter = user ? { author: user } : {};
-    const data = await getListAgents(filter);
+    const data = await getListAgents({
+      author: req.user.id,
+    });
     return res.json(data);
   } catch (error) {
     logger.error('[/Agents] Error listing Agents', error);

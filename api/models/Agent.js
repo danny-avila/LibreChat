@@ -71,14 +71,13 @@ const deleteAgent = async (searchParameter) => {
 const getListAgents = async (searchParameter) => {
   const { author, ...otherParams } = searchParameter;
 
-  let query = {
-    $or: [{ author }, { projectIds: { $exists: true, $ne: [], $not: { $size: 0 } } }],
-    ...otherParams,
-  };
+  let query = Object.assign({ author }, otherParams);
 
-  const globalProject = await getProjectByName(GLOBAL_PROJECT_NAME, 'agentIds');
-  if (globalProject && globalProject.agentIds.length > 0) {
-    query.$or.push({ _id: { $in: globalProject.agentIds } });
+  const globalProject = await getProjectByName(GLOBAL_PROJECT_NAME, ['agentIds']);
+  if (globalProject && (globalProject.agentIds?.length ?? 0) > 0) {
+    const globalQuery = { id: { $in: globalProject.agentIds }, ...otherParams };
+    delete globalQuery.author;
+    query = { $or: [globalQuery, query] };
   }
 
   const agents = await Agent.find(query, {
