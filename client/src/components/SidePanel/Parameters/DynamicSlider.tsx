@@ -141,6 +141,7 @@ function DynamicSlider({
                 max={max}
                 min={range ? range.min : 0}
                 step={range ? range.step ?? 1 : 1}
+                trackClassName="bg-surface-hover"
                 className="flex h-4 w-full"
               />
             )}
