@@ -71,7 +71,7 @@ class BaseClient {
    * @returns {string}
    */
   getResponseModel() {
-    if (this.options.agent.id && isAgentsEndpoint(this.options.endpoint)) {
+    if (isAgentsEndpoint(this.options.endpoint) && this.options.agent && this.options.agent.id) {
       return this.options.agent.id;
     }
 
