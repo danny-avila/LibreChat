@@ -1,6 +1,12 @@
 import { useCallback, useRef } from 'react';
 import { StepTypes, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
-import type { Agents, PartMetadata, TMessage, TMessageContentParts } from 'librechat-data-provider';
+import type {
+  Agents,
+  PartMetadata,
+  TMessage,
+  TMessageContentParts,
+  EventSubmission,
+} from 'librechat-data-provider';
 import { getNonEmptyValue } from 'librechat-data-provider';
 
 type TUseStepHandler = {
@@ -96,8 +102,9 @@ export default function useStepHandler({ setMessages, getMessages }: TUseStepHan
   };
 
   return useCallback(
-    ({ event, data }: TStepEvent) => {
+    ({ event, data }: TStepEvent, submission: EventSubmission) => {
       const messages = getMessages() || [];
+      const { userMessage } = submission;
 
       if (event === 'on_run_step') {
         const runStep = data as Agents.RunStep;
@@ -112,12 +119,11 @@ export default function useStepHandler({ setMessages, getMessages }: TUseStepHan
 
         if (!response) {
           const responseMessage = messages[messages.length - 1] as TMessage;
-          const userMessage = messages[messages.length - 2] as TMessage | null;
 
           response = {
             ...responseMessage,
-            parentMessageId: userMessage?.messageId ?? '',
-            conversationId: userMessage?.conversationId ?? '',
+            parentMessageId: userMessage.messageId,
+            conversationId: userMessage.conversationId,
             messageId: responseMessageId,
             content: [],
           };
