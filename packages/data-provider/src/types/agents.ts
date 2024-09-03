@@ -180,8 +180,8 @@ export namespace Agents {
     tool_calls: AgentToolCall[];
   };
   export type ToolCallDelta = {
-    type: StepTypes.TOOL_CALLS;
-    tool_calls: ToolCallChunk[];
+    type: StepTypes.TOOL_CALLS | string;
+    tool_calls?: ToolCallChunk[];
   };
   export type AgentToolCall = FunctionToolCall | ToolCall;
   export interface ExtendedMessageContent {
