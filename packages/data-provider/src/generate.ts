@@ -69,8 +69,6 @@ export interface SettingDefinition {
 export type DynamicSettingProps = Partial<SettingDefinition> & {
   readonly?: boolean;
   settingKey: string;
-  setOption: TSetOption;
-  conversation: TConversation | TPreset | null;
   defaultValue?: number | boolean | string | string[];
   className?: string;
   inputClassName?: string;

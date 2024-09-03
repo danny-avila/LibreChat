@@ -1,55 +1,33 @@
 // client/src/components/SidePanel/Parameters/DynamicInput.tsx
-import { OptionTypes } from 'librechat-data-provider';
-import type { DynamicSettingProps } from 'librechat-data-provider';
-import { useLocalize, useDebouncedInput, useParameterEffects } from '~/hooks';
+import React from 'react';
+import { Controller, useFormContext } from 'react-hook-form';
+import { useLocalize } from '~/hooks';
 import { Label, Input, HoverCard, HoverCardTrigger } from '~/components/ui';
 import { cn, defaultTextProps } from '~/utils';
-import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
+import type { DynamicSettingProps } from 'librechat-data-provider';
 
 function DynamicInput({
-  label,
+  label = '',
   settingKey,
   defaultValue,
-  description,
+  description = '',
   columnSpan,
-  setOption,
-  optionType,
-  placeholder,
+  placeholder = '',
   readonly = false,
   showDefault = true,
   labelCode,
   descriptionCode,
   placeholderCode,
-  conversation,
 }: DynamicSettingProps) {
   const localize = useLocalize();
-  const { preset } = useChatContext();
-
-  const [setInputValue, inputValue] = useDebouncedInput<string | null>({
-    optionKey: optionType !== OptionTypes.Custom ? settingKey : undefined,
-    initialValue:
-      optionType !== OptionTypes.Custom
-        ? (conversation?.[settingKey] as string)
-        : (defaultValue as string),
-    setter: () => ({}),
-    setOption,
-  });
-
-  useParameterEffects({
-    preset,
-    settingKey,
-    defaultValue: typeof defaultValue === 'undefined' ? '' : defaultValue,
-    conversation,
-    inputValue,
-    setInputValue,
-  });
+  const { control } = useFormContext();
 
   return (
     <div
       className={`flex flex-col items-center justify-start gap-6 ${
-        columnSpan ? `col-span-${columnSpan}` : 'col-span-full'
+        columnSpan != null ? `col-span-${columnSpan}` : 'col-span-full'
       }`}
     >
       <HoverCard openDelay={300}>
@@ -59,30 +37,40 @@ function DynamicInput({
               htmlFor={`${settingKey}-dynamic-input`}
               className="text-left text-sm font-medium"
             >
-              {labelCode ? localize(label ?? '') || label : label ?? settingKey}{' '}
+              {labelCode === true ? localize(label) ?? label : label || settingKey}{' '}
               {showDefault && (
                 <small className="opacity-40">
-                  (
-                  {typeof defaultValue === 'undefined' || !(defaultValue as string)?.length
+                  {typeof defaultValue === 'undefined' ||
+                  !((defaultValue as string | undefined)?.length ?? 0)
                     ? localize('com_endpoint_default_blank')
                     : `${localize('com_endpoint_default')}: ${defaultValue}`}
-                  )
                 </small>
               )}
             </Label>
           </div>
-          <Input
-            id={`${settingKey}-dynamic-input`}
-            disabled={readonly}
-            value={inputValue ?? ''}
-            onChange={setInputValue}
-            placeholder={placeholderCode ? localize(placeholder ?? '') || placeholder : placeholder}
-            className={cn(defaultTextProps, 'flex h-10 max-h-10 w-full resize-none px-3 py-2')}
+          <Controller
+            name={settingKey}
+            control={control}
+            defaultValue={defaultValue as string}
+            render={({ field }) => (
+              <Input
+                id={`${settingKey}-dynamic-input`}
+                disabled={readonly}
+                value={field.value ?? ''}
+                onChange={(e) => field.onChange(e.target.value)}
+                placeholder={
+                  placeholderCode === true ? localize(placeholder) ?? placeholder : placeholder
+                }
+                className={cn(defaultTextProps, 'flex h-10 max-h-10 w-full resize-none px-3 py-2')}
+              />
+            )}
           />
         </HoverCardTrigger>
         {description && (
           <OptionHover
-            description={descriptionCode ? localize(description) || description : description}
+            description={
+              descriptionCode === true ? localize(description) ?? description : description
+            }
             side={ESide.Left}
           />
         )}

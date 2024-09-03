@@ -1,53 +1,35 @@
 // client/src/components/SidePanel/Parameters/DynamicTags.tsx
-import { useState, useMemo, useCallback, useRef } from 'react';
-import { OptionTypes } from 'librechat-data-provider';
-import type { DynamicSettingProps } from 'librechat-data-provider';
+import React, { useState, useCallback, useRef } from 'react';
+import { Controller, useFormContext } from 'react-hook-form';
 import { Label, Input, HoverCard, HoverCardTrigger, Tag } from '~/components/ui';
-import { useChatContext, useToastContext } from '~/Providers';
-import { useLocalize, useParameterEffects } from '~/hooks';
+import { useToastContext } from '~/Providers';
+import { useLocalize } from '~/hooks';
 import { cn, defaultTextProps } from '~/utils';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
+import type { DynamicSettingProps } from 'librechat-data-provider';
 
 function DynamicTags({
-  label,
+  label = '',
   settingKey,
   defaultValue = [],
-  description,
+  description = '',
   columnSpan,
-  setOption,
-  optionType,
-  placeholder,
+  placeholder = '',
   readonly = false,
   showDefault = true,
   labelCode,
   descriptionCode,
   placeholderCode,
   descriptionSide = ESide.Left,
-  conversation,
   minTags,
   maxTags,
 }: DynamicSettingProps) {
   const localize = useLocalize();
-  const { preset } = useChatContext();
   const { showToast } = useToastContext();
+  const { control } = useFormContext();
   const inputRef = useRef<HTMLInputElement>(null);
   const [tagText, setTagText] = useState<string>('');
-  const [tags, setTags] = useState<string[] | undefined>(
-    (defaultValue as string[] | undefined) ?? [],
-  );
-
-  const updateState = useCallback(
-    (update: string[]) => {
-      if (optionType === OptionTypes.Custom) {
-        // TODO: custom logic, add to payload but not to conversation
-        setTags(update);
-        return;
-      }
-      setOption(settingKey)(update);
-    },
-    [optionType, setOption, settingKey],
-  );
 
   const onTagClick = useCallback(() => {
     if (inputRef.current) {
@@ -55,69 +37,10 @@ function DynamicTags({
     }
   }, [inputRef]);
 
-  const currentTags: string[] | undefined = useMemo(() => {
-    if (optionType === OptionTypes.Custom) {
-      // TODO: custom logic, add to payload but not to conversation
-      return tags;
-    }
-
-    if (!conversation?.[settingKey]) {
-      return defaultValue ?? [];
-    }
-
-    return conversation?.[settingKey];
-  }, [conversation, defaultValue, optionType, settingKey, tags]);
-
-  const onTagRemove = useCallback(
-    (indexToRemove: number) => {
-      if (!currentTags) {
-        return;
-      }
-
-      if (minTags && currentTags.length <= minTags) {
-        showToast({
-          message: localize('com_ui_min_tags', minTags + ''),
-          status: 'warning',
-        });
-        return;
-      }
-      const update = currentTags.filter((_, index) => index !== indexToRemove);
-      updateState(update);
-    },
-    [localize, minTags, currentTags, showToast, updateState],
-  );
-
-  const onTagAdd = useCallback(() => {
-    if (!tagText) {
-      return;
-    }
-
-    let update = [...(currentTags ?? []), tagText];
-    if (maxTags && update.length > maxTags) {
-      showToast({
-        message: localize('com_ui_max_tags', maxTags + ''),
-        status: 'warning',
-      });
-      update = update.slice(-maxTags);
-    }
-    updateState(update);
-    setTagText('');
-  }, [tagText, currentTags, updateState, maxTags, showToast, localize]);
-
-  useParameterEffects({
-    preset,
-    settingKey,
-    defaultValue: typeof defaultValue === 'undefined' ? [] : defaultValue,
-    inputValue: tags,
-    setInputValue: setTags,
-    preventDelayedUpdate: true,
-    conversation,
-  });
-
   return (
     <div
       className={`flex flex-col items-center justify-start gap-6 ${
-        columnSpan ? `col-span-${columnSpan}` : 'col-span-full'
+        columnSpan != null ? `col-span-${columnSpan}` : 'col-span-full'
       }`}
     >
       <HoverCard openDelay={300}>
@@ -127,61 +50,86 @@ function DynamicTags({
               htmlFor={`${settingKey}-dynamic-input`}
               className="text-left text-sm font-medium"
             >
-              {labelCode ? localize(label ?? '') || label : label ?? settingKey}{' '}
+              {labelCode === true ? localize(label) ?? label : label || settingKey}{' '}
               {showDefault && (
                 <small className="opacity-40">
-                  (
-                  {typeof defaultValue === 'undefined' || !(defaultValue as string)?.length
+                  {typeof defaultValue === 'undefined' ||
+                  !((defaultValue as string[] | undefined)?.length ?? 0)
                     ? localize('com_endpoint_default_blank')
-                    : `${localize('com_endpoint_default')}: ${defaultValue}`}
-                  )
+                    : `${localize('com_endpoint_default')}: ${(defaultValue as string[]).join(
+                      ', ',
+                    )}`}
                 </small>
               )}
             </Label>
           </div>
-          <div>
-            <div className="bg-muted mb-2 flex flex-wrap gap-1 break-all rounded-lg">
-              {currentTags?.map((tag: string, index: number) => (
-                <Tag
-                  key={`${tag}-${index}`}
-                  label={tag}
-                  onClick={onTagClick}
-                  onRemove={() => {
-                    onTagRemove(index);
-                    if (inputRef.current) {
-                      inputRef.current.focus();
+          <Controller
+            name={settingKey}
+            control={control}
+            defaultValue={defaultValue as string[]}
+            render={({ field }) => (
+              <div>
+                <div className="bg-muted mb-2 flex flex-wrap gap-1 break-all rounded-lg">
+                  {field.value?.map((tag: string, index: number) => (
+                    <Tag
+                      key={`${tag}-${index}`}
+                      label={tag}
+                      onClick={onTagClick}
+                      onRemove={() => {
+                        if (minTags != null && field.value.length <= minTags) {
+                          showToast({
+                            message: localize('com_ui_min_tags', minTags + ''),
+                            status: 'warning',
+                          });
+                          return;
+                        }
+                        const newTags = field.value.filter((_, i) => i !== index);
+                        field.onChange(newTags);
+                        if (inputRef.current) {
+                          inputRef.current.focus();
+                        }
+                      }}
+                    />
+                  ))}
+                  <Input
+                    ref={inputRef}
+                    id={`${settingKey}-dynamic-input`}
+                    disabled={readonly}
+                    value={tagText}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Backspace' && !tagText && field.value.length > 0) {
+                        const newTags = field.value.slice(0, -1);
+                        field.onChange(newTags);
+                      }
+                      if (e.key === 'Enter' && tagText) {
+                        const newTags = [...field.value, tagText];
+                        if (maxTags != null && newTags.length > maxTags) {
+                          showToast({
+                            message: localize('com_ui_max_tags', maxTags + ''),
+                            status: 'warning',
+                          });
+                          return;
+                        }
+                        field.onChange(newTags);
+                        setTagText('');
+                      }
+                    }}
+                    onChange={(e) => setTagText(e.target.value)}
+                    placeholder={
+                      placeholderCode === true ? localize(placeholder) ?? placeholder : placeholder
                     }
-                  }}
-                />
-              ))}
-              <Input
-                ref={inputRef}
-                id={`${settingKey}-dynamic-input`}
-                disabled={readonly}
-                value={tagText}
-                onKeyDown={(e) => {
-                  if (!currentTags) {
-                    return;
-                  }
-                  if (e.key === 'Backspace' && !tagText) {
-                    onTagRemove(currentTags.length - 1);
-                  }
-                  if (e.key === 'Enter') {
-                    onTagAdd();
-                  }
-                }}
-                onChange={(e) => setTagText(e.target.value)}
-                placeholder={
-                  placeholderCode ? localize(placeholder ?? '') || placeholder : placeholder
-                }
-                className={cn(defaultTextProps, 'flex h-10 max-h-10 px-3 py-2')}
-              />
-            </div>
-          </div>
+                    className={cn(defaultTextProps, 'flex h-10 max-h-10 px-3 py-2')}
+                  />
+                </div>
+              </div>
+            )}
+          />
         </HoverCardTrigger>
         {description && (
           <OptionHover
-            description={descriptionCode ? localize(description) || description : description}
+            description={
+              descriptionCode === true ? localize(description) ?? description : description
+            }
             side={descriptionSide as ESide}
           />
         )}

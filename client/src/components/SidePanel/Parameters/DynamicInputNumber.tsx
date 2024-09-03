@@ -1,59 +1,37 @@
-import { OptionTypes } from 'librechat-data-provider';
-import type { DynamicSettingProps } from 'librechat-data-provider';
-import type { ValueType } from '@rc-component/mini-decimal';
+// client/src/components/SidePanel/Parameters/DynamicInputNumber.tsx
+import React from 'react';
+import { Controller, useFormContext } from 'react-hook-form';
 import { Label, HoverCard, InputNumber, HoverCardTrigger } from '~/components/ui';
-import { useLocalize, useDebouncedInput, useParameterEffects } from '~/hooks';
+import { useLocalize } from '~/hooks';
 import { cn, defaultTextProps, optionText } from '~/utils';
 import { ESide } from '~/common';
-import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
+import type { DynamicSettingProps } from 'librechat-data-provider';
 
 function DynamicInputNumber({
-  label,
+  label = '',
   settingKey,
   defaultValue,
-  description,
+  description = '',
   columnSpan,
-  setOption,
-  optionType,
   readonly = false,
   showDefault = true,
   labelCode,
   descriptionCode,
   placeholderCode,
-  placeholder,
-  conversation,
+  placeholder = '',
   range,
   className = '',
   inputClassName = '',
 }: DynamicSettingProps) {
   const localize = useLocalize();
-  const { preset } = useChatContext();
-
-  const [setInputValue, inputValue] = useDebouncedInput<ValueType | null>({
-    optionKey: optionType !== OptionTypes.Custom ? settingKey : undefined,
-    initialValue:
-      optionType !== OptionTypes.Custom
-        ? (conversation?.[settingKey] as number)
-        : (defaultValue as number),
-    setter: () => ({}),
-    setOption,
-  });
-
-  useParameterEffects({
-    preset,
-    settingKey,
-    defaultValue: typeof defaultValue === 'undefined' ? '' : defaultValue,
-    conversation,
-    inputValue,
-    setInputValue,
-  });
+  const { control } = useFormContext();
 
   return (
     <div
       className={cn(
         'flex flex-col items-center justify-start gap-6',
-        columnSpan ? `col-span-${columnSpan}` : 'col-span-full',
+        columnSpan != null ? `col-span-${columnSpan}` : 'col-span-full',
         className,
       )}
     >
@@ -64,39 +42,46 @@ function DynamicInputNumber({
               htmlFor={`${settingKey}-dynamic-setting`}
               className="text-left text-sm font-medium"
             >
-              {labelCode ? localize(label ?? '') || label : label ?? settingKey}{' '}
+              {labelCode === true ? localize(label) ?? label : label || settingKey}{' '}
               {showDefault && (
                 <small className="opacity-40">
                   ({localize('com_endpoint_default')}: {defaultValue})
                 </small>
               )}
             </Label>
-            <InputNumber
-              id={`${settingKey}-dynamic-setting-input-number`}
-              disabled={readonly}
-              value={inputValue}
-              onChange={setInputValue}
-              min={range?.min}
-              max={range?.max}
-              step={range?.step}
-              placeholder={
-                placeholderCode ? localize(placeholder ?? '') || placeholder : placeholder
-              }
-              controls={false}
-              className={cn(
-                defaultTextProps,
-                cn(
-                  optionText,
-                  'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
-                ),
-                inputClassName,
+            <Controller
+              name={settingKey}
+              control={control}
+              defaultValue={defaultValue as number}
+              render={({ field }) => (
+                <InputNumber
+                  id={`${settingKey}-dynamic-setting-input-number`}
+                  disabled={readonly}
+                  value={field.value}
+                  onChange={(value) => field.onChange(value)}
+                  min={range?.min}
+                  max={range?.max}
+                  step={range?.step}
+                  placeholder={
+                    placeholderCode === true ? localize(placeholder) ?? placeholder : placeholder
+                  }
+                  controls={false}
+                  className={cn(
+                    defaultTextProps,
+                    optionText,
+                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                    inputClassName,
+                  )}
+                />
               )}
             />
           </div>
         </HoverCardTrigger>
         {description && (
           <OptionHover
-            description={descriptionCode ? localize(description) || description : description}
+            description={
+              descriptionCode === true ? localize(description) ?? description : description
+            }
             side={ESide.Left}
           />
         )}
