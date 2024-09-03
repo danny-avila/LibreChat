@@ -41,7 +41,7 @@ router.post('/:agent_id', async (req, res) => {
       return res.status(400).json({ message: 'No functions provided' });
     }
 
-    let metadata = encryptMetadata(_metadata);
+    let metadata = await encryptMetadata(_metadata);
 
     let { domain } = metadata;
     domain = await domainParser(req, domain, true);
