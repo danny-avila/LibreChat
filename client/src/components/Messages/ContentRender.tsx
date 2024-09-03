@@ -35,9 +35,10 @@ const ContentRender = memo(
     isSubmittingFamily,
   }: ContentRenderProps) => {
     const {
-      ask,
+      // ask,
       edit,
       index,
+      agent,
       assistant,
       enterEdit,
       conversation,
@@ -54,6 +55,8 @@ const ContentRender = memo(
       isMultiMessage,
       setCurrentEditId,
     });
+
+    console.log('ContentRender', { agent, conversation, msg });
 
     const fontSize = useRecoilValue(store.fontSize);
     const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
@@ -108,7 +111,12 @@ const ContentRender = memo(
           <div>
             <div className="pt-0.5">
               <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-                <Icon message={msg} conversation={conversation} assistant={assistant} />
+                <Icon
+                  message={msg}
+                  conversation={conversation}
+                  assistant={assistant}
+                  agent={agent}
+                />
               </div>
             </div>
           </div>
