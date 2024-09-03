@@ -67,13 +67,13 @@ function DynamicSlider({
   return (
     <div
       className={cn(
-        'flex flex-col items-center justify-start gap-6',
+        'flex flex-col items-center justify-start gap-2',
         columnSpan != null ? `col-span-${columnSpan}` : 'col-span-full',
       )}
     >
       <HoverCard openDelay={300}>
         <HoverCardTrigger className="grid w-full items-center gap-2">
-          <div className="flex justify-between">
+          <div className="flex w-full items-center justify-between">
             <Label
               htmlFor={`${settingKey}-dynamic-setting`}
               className="text-left text-sm font-medium"
@@ -120,24 +120,31 @@ function DynamicSlider({
                       )}
                     />
                   )}
-                  <Slider
-                    id={`${settingKey}-dynamic-setting-slider`}
-                    disabled={readonly}
-                    value={[
-                      isEnum ? enumToNumeric[field.value as string] ?? 0 : (field.value as number),
-                    ]}
-                    onValueChange={(value) =>
-                      field.onChange(isEnum ? valueToEnumOption[value[0]] : value[0])
-                    }
-                    max={max}
-                    min={range ? range.min : 0}
-                    step={range ? range.step ?? 1 : 1}
-                    className="flex h-4 w-full"
-                  />
                 </>
               )}
             />
           </div>
+          <Controller
+            name={settingKey}
+            control={control}
+            defaultValue={defaultValue as number | string}
+            render={({ field }) => (
+              <Slider
+                id={`${settingKey}-dynamic-setting-slider`}
+                disabled={readonly}
+                value={[
+                  isEnum ? enumToNumeric[field.value as string] ?? 0 : (field.value as number),
+                ]}
+                onValueChange={(value) =>
+                  field.onChange(isEnum ? valueToEnumOption[value[0]] : value[0])
+                }
+                max={max}
+                min={range ? range.min : 0}
+                step={range ? range.step ?? 1 : 1}
+                className="flex h-4 w-full"
+              />
+            )}
+          />
         </HoverCardTrigger>
         {description && (
           <OptionHover

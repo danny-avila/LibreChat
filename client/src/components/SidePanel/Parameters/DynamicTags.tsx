@@ -101,6 +101,10 @@ function DynamicTags({
                         const newTags = field.value.slice(0, -1);
                         field.onChange(newTags);
                       }
+                      if (e.key === 'Enter') {
+                        e.stopPropagation();
+                        e.preventDefault();
+                      }
                       if (e.key === 'Enter' && tagText) {
                         const newTags = [...field.value, tagText];
                         if (maxTags != null && newTags.length > maxTags) {
