@@ -31,7 +31,7 @@ const SharePrompt = ({ group, disabled }: { group?: TPromptGroup; disabled: bool
   const { data: startupConfig = {} as TStartupConfig, isFetching } = useGetStartupConfig();
   const { instanceProjectId } = startupConfig;
   const groupIsGlobal = useMemo(
-    () => !!group?.projectIds?.includes(instanceProjectId),
+    () => !!(group?.projectIds ?? []).includes(instanceProjectId),
     [group, instanceProjectId],
   );
 
@@ -57,7 +57,8 @@ const SharePrompt = ({ group, disabled }: { group?: TPromptGroup; disabled: bool
   }
 
   const onSubmit = (data: FormValues) => {
-    if (!group._id || !instanceProjectId) {
+    const groupId = group._id ?? '';
+    if (!groupId || !instanceProjectId) {
       return;
     }
 
@@ -70,7 +71,7 @@ const SharePrompt = ({ group, disabled }: { group?: TPromptGroup; disabled: bool
     }
 
     updateGroup.mutate({
-      id: group._id,
+      id: groupId,
       payload,
     });
   };
