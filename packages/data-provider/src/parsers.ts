@@ -232,8 +232,9 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
   if (
     [
       EModelEndpoint.openAI,
-      EModelEndpoint.azureOpenAI,
+      EModelEndpoint.bedrock,
       EModelEndpoint.gptPlugins,
+      EModelEndpoint.azureOpenAI,
       EModelEndpoint.chatGPTBrowser,
     ].includes(endpoint)
   ) {

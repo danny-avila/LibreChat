@@ -1,5 +1,9 @@
 const { createContentAggregator } = require('@librechat/agents');
-const { EModelEndpoint, providerEndpointMap } = require('librechat-data-provider');
+const {
+  EModelEndpoint,
+  providerEndpointMap,
+  getResponseSender,
+} = require('librechat-data-provider');
 const { getDefaultHandlers } = require('~/server/controllers/agents/callbacks');
 // const { loadAgentTools } = require('~/server/services/ToolService');
 const getOptions = require('~/server/services/Endpoints/bedrock/options');
@@ -40,9 +44,15 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     agent.max_context_tokens ??
     getModelMaxTokens(modelOptions.model, providerEndpointMap[agent.provider]);
 
+  const sender = getResponseSender({
+    ...endpointOption,
+    model: endpointOption.model_parameters.model,
+  });
+
   const client = new AgentClient({
     req,
     agent,
+    sender,
     // tools,
     // toolMap,
     modelOptions,

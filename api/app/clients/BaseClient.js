@@ -217,6 +217,7 @@ class BaseClient {
         userMessage,
         conversationId,
         responseMessageId,
+        sender: this.sender,
       });
     }
 

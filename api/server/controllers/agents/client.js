@@ -38,7 +38,7 @@ const providerSchemas = {
 
 class AgentClient extends BaseClient {
   constructor(options = {}) {
-    super(options);
+    super(null, options);
 
     /** @type {'discard' | 'summarize'} */
     this.contextStrategy = 'discard';

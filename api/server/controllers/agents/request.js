@@ -1,4 +1,4 @@
-const { Constants, getResponseSender } = require('librechat-data-provider');
+const { Constants } = require('librechat-data-provider');
 const { createAbortController, handleAbortError } = require('~/server/middleware');
 const { sendMessage } = require('~/server/utils');
 const { saveMessage } = require('~/models');
@@ -9,22 +9,17 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     text,
     endpointOption,
     conversationId,
-    modelDisplayLabel,
     parentMessageId = null,
     overrideParentMessageId = null,
   } = req.body;
 
+  let sender;
   let userMessage;
-  let userMessagePromise;
   let promptTokens;
   let userMessageId;
   let responseMessageId;
+  let userMessagePromise;
 
-  const sender = getResponseSender({
-    ...endpointOption,
-    model: endpointOption.model_parameters.model,
-    modelDisplayLabel,
-  });
   const newConvo = !conversationId;
   const user = req.user.id;
 
@@ -39,6 +34,8 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
         responseMessageId = data[key];
       } else if (key === 'promptTokens') {
         promptTokens = data[key];
+      } else if (key === 'sender') {
+        sender = data[key];
       } else if (!conversationId && key === 'conversationId') {
         conversationId = data[key];
       }

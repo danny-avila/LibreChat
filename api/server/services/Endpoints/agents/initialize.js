@@ -12,7 +12,11 @@
 const { z } = require('zod');
 const { tool } = require('@langchain/core/tools');
 const { createContentAggregator } = require('@librechat/agents');
-const { EModelEndpoint, providerEndpointMap } = require('librechat-data-provider');
+const {
+  EModelEndpoint,
+  providerEndpointMap,
+  getResponseSender,
+} = require('librechat-data-provider');
 const { getDefaultHandlers } = require('~/server/controllers/agents/callbacks');
 // for testing purposes
 // const createTavilySearchTool = require('~/app/clients/tools/structured/TavilySearch');
@@ -103,10 +107,16 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   });
   modelOptions = Object.assign(modelOptions, options.llmConfig);
 
+  const sender = getResponseSender({
+    ...endpointOption,
+    model: endpointOption.model_parameters.model,
+  });
+
   const client = new AgentClient({
     req,
     agent,
     tools,
+    sender,
     toolMap,
     contentParts,
     modelOptions,
