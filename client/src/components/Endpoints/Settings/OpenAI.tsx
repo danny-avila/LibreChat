@@ -19,8 +19,8 @@ import {
 } from '~/components/ui';
 import { cn, defaultTextProps, optionText, removeFocusOutlines, removeFocusRings } from '~/utils';
 import OptionHoverAlt from '~/components/SidePanel/Parameters/OptionHover';
-import { DynamicTags } from '~/components/SidePanel/Parameters';
 import { useLocalize, useDebouncedInput } from '~/hooks';
+import DynamicTags from './DynamicTags';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
 
