@@ -15,7 +15,9 @@ export const ErrorMessage = ({
   text,
   message,
   className = '',
-}: Pick<TDisplayProps, 'text' | 'className' | 'message'>) => {
+}: Pick<TDisplayProps, 'text' | 'className'> & {
+  message?: TMessage;
+}) => {
   const localize = useLocalize();
   if (text === 'Error connecting to server, try refreshing the page.') {
     console.log('error message', message);

@@ -4,81 +4,43 @@ import {
   imageGenTools,
   isImageVisionTool,
 } from 'librechat-data-provider';
-import { useMemo } from 'react';
-import type { TMessageContentParts, TMessage } from 'librechat-data-provider';
-import type { TDisplayProps } from '~/common';
+import { memo } from 'react';
+import type { TMessageContentParts } from 'librechat-data-provider';
 import { ErrorMessage } from './MessageContent';
-import { useChatContext } from '~/Providers';
 import RetrievalCall from './RetrievalCall';
 import CodeAnalyze from './CodeAnalyze';
 import Container from './Container';
 import ToolCall from './ToolCall';
-import Markdown from './Markdown';
 import ImageGen from './ImageGen';
-import { cn } from '~/utils';
+import Text from './Parts/Text';
 import Image from './Image';
 
-// Display Message Component
-const DisplayMessage = ({ text, isCreatedByUser = false, message, showCursor }: TDisplayProps) => {
-  const { isSubmitting, latestMessage } = useChatContext();
-  const showCursorState = useMemo(
-    () => showCursor === true && isSubmitting,
-    [showCursor, isSubmitting],
-  );
-  const isLatestMessage = useMemo(
-    () => message.messageId === latestMessage?.messageId,
-    [message.messageId, latestMessage?.messageId],
-  );
-
-  // Note: for testing purposes
-  // isSubmitting && isLatestMessage && logger.log('message_stream', { text, isCreatedByUser, isSubmitting, showCursorState });
-
-  return (
-    <div
-      className={cn(
-        isSubmitting ? 'submitting' : '',
-        showCursorState && !!text.length ? 'result-streaming' : '',
-        'markdown prose message-content dark:prose-invert light w-full break-words',
-        isCreatedByUser ? 'whitespace-pre-wrap dark:text-gray-20' : 'dark:text-gray-70',
-      )}
-    >
-      {!isCreatedByUser ? (
-        <Markdown content={text} showCursor={showCursorState} isLatestMessage={isLatestMessage} />
-      ) : (
-        <>{text}</>
-      )}
-    </div>
-  );
-};
-
-export default function Part({
-  part,
-  showCursor,
-  isSubmitting,
-  message,
-}: {
-  part: TMessageContentParts | undefined;
+type PartProps = {
+  part?: TMessageContentParts;
   isSubmitting: boolean;
   showCursor: boolean;
-  message: TMessage;
-}) {
+  messageId: string;
+  isCreatedByUser: boolean;
+};
+
+const Part = memo(({ part, isSubmitting, showCursor, messageId, isCreatedByUser }: PartProps) => {
   if (!part) {
     return null;
   }
 
   if (part.type === ContentTypes.ERROR) {
-    return <ErrorMessage message={message} text={part[ContentTypes.TEXT].value} className="my-2" />;
+    return <ErrorMessage text={part[ContentTypes.TEXT].value} className="my-2" />;
   } else if (part.type === ContentTypes.TEXT) {
     const text = typeof part.text === 'string' ? part.text : part.text.value;
     if (typeof text !== 'string') {
       return null;
     }
     return (
-      <Container message={message}>
-        <DisplayMessage
+      <Container>
+        <Text
           text={text}
-          isCreatedByUser={message.isCreatedByUser}
-          message={message}
+          isCreatedByUser={isCreatedByUser}
+          messageId={messageId}
           showCursor={showCursor}
         />
       </Container>
@@ -132,11 +94,11 @@ export default function Part({
       if (isImageVisionTool(toolCall)) {
         if (isSubmitting && showCursor) {
           return (
-            <Container message={message}>
-              <DisplayMessage
+            <Container>
+              <Text
                 text={''}
-                isCreatedByUser={message.isCreatedByUser}
-                message={message}
+                isCreatedByUser={isCreatedByUser}
+                messageId={messageId}
                 showCursor={showCursor}
               />
             </Container>
@@ -174,4 +136,6 @@ export default function Part({
   }
 
   return null;
-}
+});
+
+export default Part;
