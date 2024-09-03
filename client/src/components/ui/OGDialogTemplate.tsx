@@ -71,7 +71,7 @@ const OGDialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDi
         <div>{leftButtons ? leftButtons : null}</div>
         <div className="flex h-auto gap-3">
           {showCancelButton && (
-            <OGDialogClose className="btn btn-neutral border-token-border-light relative rounded-lg text-sm">
+            <OGDialogClose className="btn btn-neutral border-token-border-light relative rounded-lg text-sm focus:outline-none focus:ring focus:border-blue-500">
               {Cancel}
             </OGDialogClose>
           )}
