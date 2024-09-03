@@ -1,5 +1,8 @@
 const { model } = require('mongoose');
+const { Constants } = require('librechat-data-provider');
 const projectSchema = require('~/models/schema/projectSchema');
+
+const { GLOBAL_PROJECT_NAME } = Constants;
 
 const Project = model('Project', projectSchema);
 
@@ -33,7 +36,7 @@ const getProjectByName = async function (projectName, fieldsToSelect = null) {
   const update = { $setOnInsert: { name: projectName } };
   const options = {
     new: true,
-    upsert: projectName === 'instance',
+    upsert: projectName === GLOBAL_PROJECT_NAME,
     lean: true,
     select: fieldsToSelect,
   };

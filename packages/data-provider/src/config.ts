@@ -1037,6 +1037,8 @@ export enum Constants {
   SAVED_TAG = 'Saved',
   /** Max number of Conversation starters for Agents/Assistants */
   MAX_CONVO_STARTERS = 4,
+  /** Global/instance Project Name */
+  GLOBAL_PROJECT_NAME = 'instance',
 }
 
 export enum LocalStorageKeys {

@@ -1,5 +1,5 @@
 const { ObjectId } = require('mongodb');
-const { SystemRoles, SystemCategories } = require('librechat-data-provider');
+const { SystemRoles, SystemCategories, Constants } = require('librechat-data-provider');
 const {
   getProjectByName,
   addGroupIdsToProject,
@@ -8,6 +8,8 @@ const {
 } = require('./Project');
 const { Prompt, PromptGroup } = require('./schema/promptSchema');
 const { logger } = require('~/config');
+
+const { GLOBAL_PROJECT_NAME } = Constants;
 
 /**
  * Create a pipeline for the aggregation to get prompt groups
@@ -123,7 +125,7 @@ const getAllPromptGroups = async (req, filter) => {
     let combinedQuery = query;
 
     if (searchShared) {
-      const project = await getProjectByName('instance', 'promptGroupIds');
+      const project = await getProjectByName(GLOBAL_PROJECT_NAME, 'promptGroupIds');
       if (project && project.promptGroupIds.length > 0) {
         const projectQuery = { _id: { $in: project.promptGroupIds }, ...query };
         delete projectQuery.author;
@@ -177,7 +179,7 @@ const getPromptGroups = async (req, filter) => {
 
     if (searchShared) {
       // const projects = req.user.projects || []; // TODO: handle multiple projects
-      const project = await getProjectByName('instance', 'promptGroupIds');
+      const project = await getProjectByName(GLOBAL_PROJECT_NAME, 'promptGroupIds');
       if (project && project.promptGroupIds.length > 0) {
         const projectQuery = { _id: { $in: project.promptGroupIds }, ...query };
         delete projectQuery.author;

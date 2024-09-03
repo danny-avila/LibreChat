@@ -1,10 +1,12 @@
 const express = require('express');
-const { CacheKeys, defaultSocialLogins } = require('librechat-data-provider');
+const { CacheKeys, defaultSocialLogins, Constants } = require('librechat-data-provider');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
 const { getProjectByName } = require('~/models/Project');
 const { isEnabled } = require('~/server/utils');
 const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
+
+const { GLOBAL_PROJECT_NAME } = Constants;
 
 const router = express.Router();
 const emailLoginEnabled =
@@ -32,7 +34,7 @@ router.get('/', async function (req, res) {
     return today.getMonth() === 1 && today.getDate() === 11;
   };
 
-  const instanceProject = await getProjectByName('instance', '_id');
+  const instanceProject = await getProjectByName(GLOBAL_PROJECT_NAME, '_id');
 
   const ldap = getLdapConfig();
 
