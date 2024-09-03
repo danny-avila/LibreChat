@@ -87,7 +87,7 @@ const SharePrompt = ({ group, disabled }: { group?: TPromptGroup; disabled: bool
           <Share2Icon className="cursor-pointer text-white " />
         </Button>
       </OGDialogTrigger>
-      <OGDialogContent className="bg-white dark:border-gray-700 dark:bg-gray-850 dark:text-gray-300">
+      <OGDialogContent className="border-border-light bg-surface-primary-alt text-text-secondary">
         <OGDialogTitle>{localize('com_ui_share_var', `"${group.name}"`)}</OGDialogTitle>
         <form className="p-2" onSubmit={handleSubmit(onSubmit)}>
           <div className="mb-4 flex items-center justify-between gap-2 py-4">
