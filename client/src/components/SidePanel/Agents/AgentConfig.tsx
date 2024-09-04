@@ -11,8 +11,8 @@ import Action from '~/components/SidePanel/Builder/Action';
 import { useLocalize } from '~/hooks';
 import { ToolSelectDialog } from '~/components/Tools';
 import { useToastContext } from '~/Providers';
-import ContextButton from './ContextButton';
 import { Spinner } from '~/components/svg';
+import DeleteButton from './DeleteButton';
 import AgentAvatar from './AgentAvatar';
 import AgentTool from './AgentTool';
 import { Panel } from '~/common';
@@ -57,14 +57,14 @@ export default function AgentConfig({
     () => agentsConfig?.capabilities?.includes(Capabilities.actions),
     [agentsConfig],
   );
-  const retrievalEnabled = useMemo(
-    () => agentsConfig?.capabilities?.includes(Capabilities.retrieval),
-    [agentsConfig],
-  );
-  const codeEnabled = useMemo(
-    () => agentsConfig?.capabilities?.includes(Capabilities.code_interpreter),
-    [agentsConfig],
-  );
+  // const retrievalEnabled = useMemo(
+  //   () => agentsConfig?.capabilities?.includes(Capabilities.retrieval),
+  //   [agentsConfig],
+  // );
+  // const codeEnabled = useMemo(
+  //   () => agentsConfig?.capabilities?.includes(Capabilities.code_interpreter),
+  //   [agentsConfig],
+  // );
 
   /* Mutations */
   const update = useUpdateAgentMutation({
@@ -275,16 +275,16 @@ export default function AgentConfig({
                   />
                 </div>
               )}
-              <span>{model ? model : localize('com_ui_select_model')}</span>
+              <span>{model != null ? model : localize('com_ui_select_model')}</span>
             </div>
           </button>
         </div>
         {/* Agent Tools & Actions */}
         <div className="mb-6">
           <label className={labelClass}>
-            {`${toolsEnabled ? localize('com_assistants_tools') : ''}
-              ${toolsEnabled && actionsEnabled ? ' + ' : ''}
-              ${actionsEnabled ? localize('com_assistants_actions') : ''}`}
+            {`${toolsEnabled === true ? localize('com_assistants_tools') : ''}
+              ${toolsEnabled === true && actionsEnabled === true ? ' + ' : ''}
+              ${actionsEnabled === true ? localize('com_assistants_actions') : ''}`}
           </label>
           <div className="space-y-2">
             {tools?.map((func, i) => (
@@ -338,7 +338,7 @@ export default function AgentConfig({
         </div>
         {/* Context Button */}
         <div className="flex items-center justify-end gap-2">
-          <ContextButton
+          <DeleteButton
             agent_id={agent_id}
             setCurrentAgentId={setCurrentAgentId}
             createMutation={create}

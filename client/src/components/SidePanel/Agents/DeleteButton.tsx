@@ -8,7 +8,7 @@ import { useDeleteAgentMutation } from '~/data-provider';
 import { cn, removeFocusOutlines } from '~/utils/';
 import { TrashIcon } from '~/components/svg';
 
-export default function ContextButton({
+export default function DeleteButton({
   agent_id,
   setCurrentAgentId,
   createMutation,
@@ -49,7 +49,7 @@ export default function ContextButton({
         return setOption('agent_id')(firstAgent.id);
       }
 
-      const currentAgent = updatedList?.find((agent) => agent.id === conversation?.agent_id);
+      const currentAgent = updatedList.find((agent) => agent.id === conversation?.agent_id);
 
       if (currentAgent) {
         setCurrentAgentId(currentAgent.id);
