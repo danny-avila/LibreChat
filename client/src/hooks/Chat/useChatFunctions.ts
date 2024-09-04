@@ -241,6 +241,7 @@ export default function useChatFunctions({
           },
         },
       ];
+      setShowStopButton(true);
     } else {
       setShowStopButton(true);
     }
