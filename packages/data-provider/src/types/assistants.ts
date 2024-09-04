@@ -381,7 +381,7 @@ export type ContentPart = (
 
 export type TMessageContentParts =
   | { type: ContentTypes.ERROR; text: Text & PartMetadata }
-  | { type: ContentTypes.TEXT; text: string; tool_call_ids?: string[] | (Text & PartMetadata) }
+  | { type: ContentTypes.TEXT; text: string | (Text & PartMetadata); tool_call_ids?: string[] }
   | {
       type: ContentTypes.TOOL_CALL;
       tool_call: (

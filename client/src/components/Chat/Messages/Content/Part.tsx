@@ -31,7 +31,7 @@ const Part = memo(({ part, isSubmitting, showCursor, messageId, isCreatedByUser 
   if (part.type === ContentTypes.ERROR) {
     return <ErrorMessage text={part[ContentTypes.TEXT].value} className="my-2" />;
   } else if (part.type === ContentTypes.TEXT) {
-    const text = typeof part.text === 'string' ? part.text : (part.text as { value: string }).value;
+    const text = typeof part.text === 'string' ? part.text : part.text.value;
 
     if (typeof text !== 'string') {
       return null;
