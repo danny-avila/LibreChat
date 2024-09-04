@@ -1,4 +1,4 @@
-const { Run } = require('@librechat/agents');
+const { Run, Providers } = require('@librechat/agents');
 const { providerEndpointMap } = require('librechat-data-provider');
 
 /**
@@ -43,15 +43,22 @@ async function createRun({
     modelOptions,
   );
 
+  const graphConfig = {
+    runId,
+    llmConfig,
+    tools,
+    toolMap,
+    instructions: agent.instructions,
+    additional_instructions: agent.additional_instructions,
+  };
+
+  if (agent.provider === Providers.ANTHROPIC) {
+    graphConfig.streamBuffer = 3000;
+    graphConfig.streamRate = 30;
+  }
+
   return Run.create({
-    graphConfig: {
-      runId,
-      llmConfig,
-      tools,
-      toolMap,
-      instructions: agent.instructions,
-      additional_instructions: agent.additional_instructions,
-    },
+    graphConfig,
     customHandlers,
   });
 }
