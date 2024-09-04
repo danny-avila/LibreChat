@@ -14,6 +14,7 @@ import { useToastContext } from '~/Providers';
 import { Spinner } from '~/components/svg';
 import DeleteButton from './DeleteButton';
 import AgentAvatar from './AgentAvatar';
+import ShareAgent from './ShareAgent';
 import AgentTool from './AgentTool';
 import { Panel } from '~/common';
 
@@ -190,7 +191,7 @@ export default function AgentConfig({
             name="id"
             control={control}
             render={({ field }) => (
-              <p className="h-3 text-xs italic text-gray-600" aria-live="polite">
+              <p className="h-3 text-xs italic text-text-secondary" aria-live="polite">
                 {field.value}
               </p>
             )}
@@ -342,6 +343,11 @@ export default function AgentConfig({
             agent_id={agent_id}
             setCurrentAgentId={setCurrentAgentId}
             createMutation={create}
+          />
+          <ShareAgent
+            agent_id={agent_id}
+            agentName={agent?.name ?? ''}
+            projectIds={agent?.projectIds ?? []}
           />
           {/* Submit Button */}
           <button

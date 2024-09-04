@@ -16,7 +16,7 @@ const keys = new Set(Object.keys(defaultAgentFormValues));
 export default function AgentSelect({
   reset,
   value: currentAgentValue,
-  selectedAgentId,
+  selectedAgentId = null,
   setCurrentAgentId,
   createMutation,
 }: {
@@ -31,12 +31,12 @@ export default function AgentSelect({
   // const fileMap = useFileMapContext();
   const lastSelectedAgent = useRef<string | null>(null);
 
-  const { data: agents = [] } = useListAgentsQuery(undefined, {
+  const { data: agents = null } = useListAgentsQuery(undefined, {
     select: (res) => res.data.map((agent) => processAgentOption(agent /*, fileMap */)),
   });
 
   const agentQuery = useGetAgentByIdQuery(selectedAgentId ?? '', {
-    enabled: !!selectedAgentId,
+    enabled: !!(selectedAgentId ?? ''),
   });
 
   const resetAgentForm = useCallback(
@@ -45,7 +45,7 @@ export default function AgentSelect({
         ...fullAgent,
         provider: createProviderOption(fullAgent.provider),
         label: fullAgent.name ?? '',
-        value: fullAgent.id ?? '',
+        value: fullAgent.id || '',
       };
 
       const actions: AgentCapabilities = {
@@ -84,7 +84,7 @@ export default function AgentSelect({
   const onSelect = useCallback(
     (selectedId: string) => {
       const agentExists = !!(selectedId
-        ? agents.find((agent) => agent.id === selectedId)
+        ? (agents ?? []).find((agent) => agent.id === selectedId)
         : undefined);
 
       createMutation.reset();
@@ -120,7 +120,7 @@ export default function AgentSelect({
       return;
     }
 
-    if (selectedAgentId && agents) {
+    if (selectedAgentId != null && selectedAgentId !== '' && agents) {
       timerId = setTimeout(() => {
         lastSelectedAgent.current = selectedAgentId;
         onSelect(selectedAgentId);
@@ -136,8 +136,8 @@ export default function AgentSelect({
 
   const createAgent = localize('com_ui_create') + ' ' + localize('com_ui_agent');
   const hasAgentValue = !!(typeof currentAgentValue === 'object'
-    ? currentAgentValue.value
-    : currentAgentValue);
+    ? currentAgentValue.value != null && currentAgentValue.value !== ''
+    : typeof currentAgentValue !== 'undefined');
   return (
     <SelectDropDown
       value={!hasAgentValue ? createAgent : (currentAgentValue as TAgentOption)}

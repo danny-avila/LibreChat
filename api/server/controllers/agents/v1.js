@@ -101,10 +101,13 @@ const updateAgentHandler = async (req, res) => {
     const id = req.params.id;
     const { projectIds, removeProjectIds, ...updateData } = req.body;
 
-    const updatedAgent = await updateAgent({ id, author: req.user.id }, updateData);
+    let updatedAgent;
+    if (Object.keys(updateData).length > 0) {
+      updatedAgent = await updateAgent({ id, author: req.user.id }, updateData);
+    }
 
     if (projectIds || removeProjectIds) {
-      await updateAgentProjects(id, projectIds, removeProjectIds);
+      updatedAgent = await updateAgentProjects(id, projectIds, removeProjectIds);
     }
 
     return res.json(updatedAgent);

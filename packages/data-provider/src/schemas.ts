@@ -90,6 +90,7 @@ export const defaultAgentFormValues = {
   model_parameters: {},
   tools: [],
   provider: {},
+  projectIds: [],
   code_interpreter: false,
   image_vision: false,
   retrieval: false,

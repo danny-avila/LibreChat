@@ -160,6 +160,7 @@ export type Agent = {
   file_ids: string[];
   instructions: string | null;
   tools?: string[];
+  projectIds?: string[];
   tool_kwargs?: Record<string, unknown>;
   tool_resources?: ToolResources;
   metadata?: Record<string, unknown>;
@@ -192,8 +193,10 @@ export type AgentUpdateParams = {
   tools?: Array<FunctionTool | string>;
   tool_resources?: ToolResources;
   provider?: AgentProvider;
-  model: string | null;
-  model_parameters: AgentModelParameters;
+  model?: string | null;
+  model_parameters?: AgentModelParameters;
+  projectIds?: string[];
+  removeProjectIds?: string[];
 };
 
 export type AgentListParams = {

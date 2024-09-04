@@ -31,18 +31,17 @@ const createAgent = async (agentData) => {
 const getAgent = async (searchParameter) => await Agent.findOne(searchParameter).lean();
 
 /**
- * Update an agent with new data without overwriting existing properties,
- * or create a new agent if it doesn't exist, within a transaction session if provided.
+ * Update an agent with new data without overwriting existing
+ *  properties, or create a new agent if it doesn't exist.
  *
  * @param {Object} searchParameter - The search parameters to find the agent to update.
  * @param {string} searchParameter.id - The ID of the agent to update.
- * @param {string} searchParameter.author - The user ID of the agent's author.
+ * @param {string} [searchParameter.author] - The user ID of the agent's author.
  * @param {Object} updateData - An object containing the properties to update.
- * @param {mongoose.ClientSession} [session] - The transaction session to use (optional).
  * @returns {Promise<Agent>} The updated or newly created agent document as a plain object.
  */
-const updateAgent = async (searchParameter, updateData, session = null) => {
-  const options = { new: true, upsert: true, session };
+const updateAgent = async (searchParameter, updateData) => {
+  const options = { new: true, upsert: true };
   return await Agent.findOneAndUpdate(searchParameter, updateData, options).lean();
 };
 
@@ -51,7 +50,7 @@ const updateAgent = async (searchParameter, updateData, session = null) => {
  *
  * @param {Object} searchParameter - The search parameters to find the agent to delete.
  * @param {string} searchParameter.id - The ID of the agent to delete.
- * @param {string} searchParameter.author - The user ID of the agent's author.
+ * @param {string} [searchParameter.author] - The user ID of the agent's author.
  * @returns {Promise<void>} Resolves when the agent has been successfully deleted.
  */
 const deleteAgent = async (searchParameter) => {
@@ -126,10 +125,10 @@ const updateAgentProjects = async (agentId, projectIds, removeProjectIds) => {
   }
 
   if (Object.keys(updateOps).length === 0) {
-    return await Agent.findById(agentId).lean();
+    return await getAgent({ id: agentId });
   }
 
-  return await Agent.findByIdAndUpdate(agentId, updateOps, { new: true, lean: true });
+  return await updateAgent({ id: agentId }, updateOps);
 };
 
 module.exports = {
