@@ -10,6 +10,7 @@ export namespace Agents {
   export type MessageContentText = {
     type: ContentTypes.TEXT;
     text: string;
+    tool_call_ids?: string[];
   };
 
   export type MessageContentImageUrl = {

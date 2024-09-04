@@ -19,6 +19,8 @@ type TStepEvent = {
   data: Agents.MessageDeltaEvent | Agents.RunStep | Agents.ToolEndEvent;
 };
 
+type MessageDeltaUpdate = { type: ContentTypes.TEXT; text: string; tool_call_ids?: string[] };
+
 type AllContentTypes =
   | ContentTypes.TEXT
   | ContentTypes.TOOL_CALL
@@ -55,11 +57,16 @@ export default function useStepHandler({ setMessages, getMessages }: TUseStepHan
       ContentTypes.TEXT in contentPart &&
       typeof contentPart.text === 'string'
     ) {
-      const currentContent = updatedContent[index] as { type: ContentTypes.TEXT; text: string };
-      updatedContent[index] = {
+      const currentContent = updatedContent[index] as MessageDeltaUpdate;
+      const update: MessageDeltaUpdate = {
         type: ContentTypes.TEXT,
         text: (currentContent.text || '') + contentPart.text,
       };
+
+      if (contentPart.tool_call_ids != null) {
+        update.tool_call_ids = contentPart.tool_call_ids;
+      }
+      updatedContent[index] = update;
     } else if (contentType === ContentTypes.IMAGE_URL && 'image_url' in contentPart) {
       const currentContent = updatedContent[index] as {
         type: ContentTypes.IMAGE_URL;
