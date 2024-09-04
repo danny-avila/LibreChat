@@ -56,8 +56,6 @@ const ContentRender = memo(
       setCurrentEditId,
     });
 
-    console.log('ContentRender', { agent, conversation, msg });
-
     const fontSize = useRecoilValue(store.fontSize);
     const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
     // const { isCreatedByUser, error, unfinished } = msg ?? {};
