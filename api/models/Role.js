@@ -4,6 +4,7 @@ const {
   roleDefaults,
   PermissionTypes,
   removeNullishValues,
+  agentPermissionsSchema,
   promptPermissionsSchema,
   bookmarkPermissionsSchema,
 } = require('librechat-data-provider');
@@ -71,6 +72,7 @@ const updateRoleByName = async function (roleName, updates) {
 };
 
 const permissionSchemas = {
+  [PermissionTypes.AGENTS]: agentPermissionsSchema,
   [PermissionTypes.PROMPTS]: promptPermissionsSchema,
   [PermissionTypes.BOOKMARKS]: bookmarkPermissionsSchema,
 };
