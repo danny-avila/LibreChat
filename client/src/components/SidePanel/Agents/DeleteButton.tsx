@@ -4,8 +4,8 @@ import { OGDialog, OGDialogTrigger, Label } from '~/components/ui';
 import { useChatContext, useToastContext } from '~/Providers';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { useLocalize, useSetIndexOptions } from '~/hooks';
+import { cn, removeFocusOutlines, logger } from '~/utils';
 import { useDeleteAgentMutation } from '~/data-provider';
-import { cn, removeFocusOutlines } from '~/utils/';
 import { TrashIcon } from '~/components/svg';
 
 export default function DeleteButton({
@@ -34,8 +34,8 @@ export default function DeleteButton({
         status: 'success',
       });
 
-      if (createMutation.data?.id) {
-        console.log('[deleteAgent] resetting createMutation');
+      if (createMutation.data?.id ?? '') {
+        logger.log('agents', 'resetting createMutation');
         createMutation.reset();
       }
 
