@@ -148,11 +148,11 @@ export default function Conversation({
             onKeyDown={handleKeyDown}
           />
           <div className="flex gap-1">
-            <button onClick={cancelRename}>
-              <X className="transition-colors h-4 w-4 duration-200 ease-in-out hover:opacity-70" />
+            <button onClick={cancelRename} aria-label='cancel new name'>
+              <X aria-hidden={true} className="transition-colors h-4 w-4 duration-200 ease-in-out hover:opacity-70" />
             </button>
-            <button onClick={onRename}>
-              <Check className="transition-colors h-4 w-4 duration-200 ease-in-out hover:opacity-70" />
+            <button onClick={onRename} aria-label='submit new name'>
+              <Check aria-hidden={true} className="transition-colors h-4 w-4 duration-200 ease-in-out hover:opacity-70" />
             </button>
           </div>
         </div>
