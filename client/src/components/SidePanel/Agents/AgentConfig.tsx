@@ -221,12 +221,11 @@ export default function AgentConfig({
         {/* Instructions */}
         <div className="mb-6">
           <label className={labelClass} htmlFor="instructions">
-            {localize('com_ui_instructions')} <span className="text-red-500">*</span>
+            {localize('com_ui_instructions')}
           </label>
           <Controller
             name="instructions"
             control={control}
-            rules={{ required: true, minLength: 1 }}
             render={({ field, fieldState: { error } }) => (
               <>
                 <textarea
