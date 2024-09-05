@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
 import { ComponentTypes } from 'librechat-data-provider';
 import type { DynamicSettingProps, SettingsConfiguration } from 'librechat-data-provider';
@@ -165,17 +165,6 @@ export default function Parameters() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     }, {} as Record<string, any>),
   });
-
-  const {
-    formState: { isDirty },
-  } = methods;
-
-  useEffect(() => {
-    if (isDirty) {
-      console.log('The form has been edited');
-      // You can perform any action here when the form becomes dirty
-    }
-  }, [isDirty]);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const onSubmit = (data: Record<string, any>) => {
