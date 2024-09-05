@@ -186,7 +186,7 @@ export const parseConvo = ({
 }: {
   endpoint: EModelEndpoint;
   endpointType?: EModelEndpoint;
-  conversation: Partial<s.TConversation | s.TPreset>;
+  conversation: Partial<s.TConversation | s.TPreset> | null;
   possibleValues?: TPossibleValues;
   // TODO: POC for default schema
   // defaultSchema?: Partial<EndpointSchema>,
