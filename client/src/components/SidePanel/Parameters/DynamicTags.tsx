@@ -10,19 +10,19 @@ import OptionHover from './OptionHover';
 import { ESide } from '~/common';
 
 function DynamicTags({
-  label,
+  label = '',
   settingKey,
   defaultValue = [],
-  description,
+  description = '',
   columnSpan,
   setOption,
   optionType,
-  placeholder,
+  placeholder = '',
   readonly = false,
   showDefault = true,
-  labelCode,
-  descriptionCode,
-  placeholderCode,
+  labelCode = false,
+  descriptionCode = false,
+  placeholderCode = false,
   descriptionSide = ESide.Left,
   conversation,
   minTags,
@@ -74,7 +74,7 @@ function DynamicTags({
         return;
       }
 
-      if (minTags && currentTags.length <= minTags) {
+      if (minTags != null && currentTags.length <= minTags) {
         showToast({
           message: localize('com_ui_min_tags', minTags + ''),
           status: 'warning',
@@ -93,7 +93,7 @@ function DynamicTags({
     }
 
     let update = [...(currentTags ?? []), tagText];
-    if (maxTags && update.length > maxTags) {
+    if (maxTags != null && update.length > maxTags) {
       showToast({
         message: localize('com_ui_max_tags', maxTags + ''),
         status: 'warning',
@@ -117,7 +117,7 @@ function DynamicTags({
   return (
     <div
       className={`flex flex-col items-center justify-start gap-6 ${
-        columnSpan ? `col-span-${columnSpan}` : 'col-span-full'
+        columnSpan != null ? `col-span-${columnSpan}` : 'col-span-full'
       }`}
     >
       <HoverCard openDelay={300}>
@@ -127,7 +127,7 @@ function DynamicTags({
               htmlFor={`${settingKey}-dynamic-input`}
               className="text-left text-sm font-medium"
             >
-              {labelCode ? localize(label ?? '') || label : label ?? settingKey}{' '}
+              {labelCode ? localize(label) ?? label : label || settingKey}{' '}
               {showDefault && (
                 <small className="opacity-40">
                   (
@@ -171,9 +171,7 @@ function DynamicTags({
                   }
                 }}
                 onChange={(e) => setTagText(e.target.value)}
-                placeholder={
-                  placeholderCode ? localize(placeholder ?? '') || placeholder : placeholder
-                }
+                placeholder={placeholderCode ? localize(placeholder) ?? placeholder : placeholder}
                 className={cn(defaultTextProps, 'flex h-10 max-h-10 px-3 py-2')}
               />
             </div>
@@ -181,7 +179,7 @@ function DynamicTags({
         </HoverCardTrigger>
         {description && (
           <OptionHover
-            description={descriptionCode ? localize(description) || description : description}
+            description={descriptionCode ? localize(description) ?? description : description}
             side={descriptionSide as ESide}
           />
         )}

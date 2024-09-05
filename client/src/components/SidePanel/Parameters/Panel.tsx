@@ -165,88 +165,27 @@ export default function Parameters() {
   const { conversation } = useChatContext();
   const { setOption } = useSetIndexOptions();
 
-  const temperature = settingsConfiguration.find(
-    (setting) => setting.key === 'temperature',
-  ) as SettingDefinition;
-  const TempComponent = componentMapping[temperature.component];
-  const { key: temp, default: tempDefault, ...tempSettings } = temperature;
-
-  const imageDetail = settingsConfiguration.find(
-    (setting) => setting.key === 'imageDetail',
-  ) as SettingDefinition;
-  const DetailComponent = componentMapping[imageDetail.component];
-  const { key: detail, default: detailDefault, ...detailSettings } = imageDetail;
-
-  const resendFiles = settingsConfiguration.find(
-    (setting) => setting.key === 'resendFiles',
-  ) as SettingDefinition;
-  const Switch = componentMapping[resendFiles.component];
-  const { key: switchKey, default: switchDefault, ...switchSettings } = resendFiles;
-
-  const promptPrefix = settingsConfiguration.find(
-    (setting) => setting.key === 'promptPrefix',
-  ) as SettingDefinition;
-  const Textarea = componentMapping[promptPrefix.component];
-  const { key: textareaKey, default: textareaDefault, ...textareaSettings } = promptPrefix;
-
-  const chatGptLabel = settingsConfiguration.find(
-    (setting) => setting.key === 'chatGptLabel',
-  ) as SettingDefinition;
-  const Input = componentMapping[chatGptLabel.component];
-  const { key: inputKey, default: inputDefault, ...inputSettings } = chatGptLabel;
-
-  const stop = settingsConfiguration.find((setting) => setting.key === 'stop') as SettingDefinition;
-  const Tags = componentMapping[stop.component];
-  const { key: stopKey, default: stopDefault, ...stopSettings } = stop;
-
   return (
     <div className="h-auto max-w-full overflow-x-hidden p-3">
       <div className="grid grid-cols-4 gap-6">
         {' '}
         {/* This is the parent element containing all settings */}
         {/* Below is an example of an applied dynamic setting, each be contained by a div with the column span specified */}
-        <Input
-          settingKey={inputKey}
-          defaultValue={inputDefault}
-          {...inputSettings}
-          setOption={setOption}
-          conversation={conversation}
-        />
-        <Textarea
-          settingKey={textareaKey}
-          defaultValue={textareaDefault}
-          {...textareaSettings}
-          setOption={setOption}
-          conversation={conversation}
-        />
-        <TempComponent
-          settingKey={temp}
-          defaultValue={tempDefault}
-          {...tempSettings}
-          setOption={setOption}
-          conversation={conversation}
-        />
-        <Switch
-          settingKey={switchKey}
-          defaultValue={switchDefault}
-          {...switchSettings}
-          setOption={setOption}
-          conversation={conversation}
-        />
-        <DetailComponent
-          settingKey={detail}
-          defaultValue={detailDefault}
-          {...detailSettings}
-          setOption={setOption}
-          conversation={conversation}
-        />
-        <Tags
-          settingKey={stopKey}
-          defaultValue={stopDefault}
-          {...stopSettings}
-          setOption={setOption}
-          conversation={conversation}
-        />
+        {settingsConfiguration.map((setting) => {
+          const Component = componentMapping[setting.component];
+          const { key, default: defaultValue, ...rest } = setting;
+
+          return (
+            <Component
+              key={key}
+              settingKey={key}
+              defaultValue={defaultValue}
+              {...rest}
+              setOption={setOption}
+              conversation={conversation}
+            />
+          );
+        })}
       </div>
     </div>
   );

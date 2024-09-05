@@ -8,17 +8,17 @@ import OptionHover from './OptionHover';
 import { ESide } from '~/common';
 
 function DynamicSwitch({
-  label,
+  label = '',
   settingKey,
   defaultValue,
-  description,
+  description = '',
   columnSpan,
   setOption,
   optionType,
   readonly = false,
   showDefault = true,
-  labelCode,
-  descriptionCode,
+  labelCode = false,
+  descriptionCode = false,
   conversation,
 }: DynamicSettingProps) {
   const localize = useLocalize();
@@ -55,7 +55,7 @@ function DynamicSwitch({
   return (
     <div
       className={`flex flex-col items-center justify-start gap-6 ${
-        columnSpan ? `col-span-${columnSpan}` : 'col-span-full'
+        columnSpan != null ? `col-span-${columnSpan}` : 'col-span-full'
       }`}
     >
       <HoverCard openDelay={300}>
@@ -65,10 +65,11 @@ function DynamicSwitch({
               htmlFor={`${settingKey}-dynamic-switch`}
               className="text-left text-sm font-medium"
             >
-              {labelCode ? localize(label ?? '') || label : label ?? settingKey}{' '}
+              {labelCode ? localize(label) ?? label : label || settingKey}{' '}
               {showDefault && (
                 <small className="opacity-40">
-                  ({localize('com_endpoint_default')}: {defaultValue ? 'com_ui_on' : 'com_ui_off'})
+                  ({localize('com_endpoint_default')}:{' '}
+                  {defaultValue != null ? 'com_ui_on' : 'com_ui_off'})
                 </small>
               )}
             </Label>
@@ -83,7 +84,7 @@ function DynamicSwitch({
         </HoverCardTrigger>
         {description && (
           <OptionHover
-            description={descriptionCode ? localize(description) || description : description}
+            description={descriptionCode ? localize(description) ?? description : description}
             side={ESide.Left}
           />
         )}

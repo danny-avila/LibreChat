@@ -9,10 +9,10 @@ import { ESide } from '~/common';
 import { cn } from '~/utils';
 
 function DynamicDropdown({
-  label,
+  label = '',
   settingKey,
   defaultValue,
-  description,
+  description = '',
   columnSpan,
   setOption,
   optionType,
@@ -20,8 +20,8 @@ function DynamicDropdown({
   // type: _type,
   readonly = false,
   showDefault = true,
-  labelCode,
-  descriptionCode,
+  labelCode = false,
+  descriptionCode = false,
   conversation,
 }: DynamicSettingProps) {
   const localize = useLocalize();
@@ -64,7 +64,7 @@ function DynamicDropdown({
     <div
       className={cn(
         'flex flex-col items-center justify-start gap-6',
-        columnSpan ? `col-span-${columnSpan}` : 'col-span-full',
+        columnSpan != null ? `col-span-${columnSpan}` : 'col-span-full',
       )}
     >
       <HoverCard openDelay={300}>
@@ -74,7 +74,7 @@ function DynamicDropdown({
               htmlFor={`${settingKey}-dynamic-dropdown`}
               className="text-left text-sm font-medium"
             >
-              {labelCode ? localize(label ?? '') || label : label ?? settingKey}
+              {labelCode ? localize(label) ?? label : label || settingKey}
               {showDefault && (
                 <small className="opacity-40">
                   ({localize('com_endpoint_default')}: {defaultValue})
@@ -95,7 +95,7 @@ function DynamicDropdown({
         </HoverCardTrigger>
         {description && (
           <OptionHover
-            description={descriptionCode ? localize(description) || description : description}
+            description={descriptionCode ? localize(description) ?? description : description}
             side={ESide.Left}
           />
         )}

@@ -9,11 +9,11 @@ import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
 
 function DynamicSlider({
-  label,
+  label = '',
   settingKey,
   defaultValue,
   range,
-  description,
+  description = '',
   columnSpan,
   setOption,
   optionType,
@@ -21,8 +21,8 @@ function DynamicSlider({
   readonly = false,
   showDefault = true,
   includeInput = true,
-  labelCode,
-  descriptionCode,
+  labelCode = false,
+  descriptionCode = false,
   conversation,
 }: DynamicSettingProps) {
   const localize = useLocalize();
@@ -32,7 +32,7 @@ function DynamicSlider({
     [options, range],
   );
 
-  const [setInputValue, inputValue] = useDebouncedInput<string | number>({
+  const [setInputValue, inputValue, setLocalValue] = useDebouncedInput<string | number>({
     optionKey: optionType !== OptionTypes.Custom ? settingKey : undefined,
     initialValue: optionType !== OptionTypes.Custom ? conversation?.[settingKey] : defaultValue,
     setter: () => ({}),
@@ -46,7 +46,7 @@ function DynamicSlider({
     defaultValue,
     conversation,
     inputValue,
-    setInputValue,
+    setInputValue: setLocalValue,
     preventDelayedUpdate: isEnum,
   });
 
@@ -118,7 +118,7 @@ function DynamicSlider({
               htmlFor={`${settingKey}-dynamic-setting`}
               className="text-left text-sm font-medium"
             >
-              {labelCode ? localize(label ?? '') || label : label ?? settingKey}{' '}
+              {labelCode ? localize(label) ?? label : label || settingKey}{' '}
               {showDefault && (
                 <small className="opacity-40">
                   ({localize('com_endpoint_default')}: {defaultValue})
@@ -178,7 +178,7 @@ function DynamicSlider({
         </HoverCardTrigger>
         {description && (
           <OptionHover
-            description={descriptionCode ? localize(description) || description : description}
+            description={descriptionCode ? localize(description) ?? description : description}
             side={ESide.Left}
           />
         )}
