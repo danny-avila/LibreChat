@@ -5,7 +5,12 @@ import {
   useGetEndpointsQuery,
 } from 'librechat-data-provider/react-query';
 import { useNavigate } from 'react-router-dom';
-import { FileSources, LocalStorageKeys, isAssistantsEndpoint } from 'librechat-data-provider';
+import {
+  FileSources,
+  LocalStorageKeys,
+  isAssistantsEndpoint,
+  paramEndpoints,
+} from 'librechat-data-provider';
 import { useRecoilState, useRecoilValue, useSetRecoilState, useRecoilCallback } from 'recoil';
 import type {
   TPreset,
@@ -163,7 +168,7 @@ const useNewConvo = (index = 0) => {
 
   const newConversation = useCallback(
     ({
-      template = {},
+      template: _template = {},
       preset: _preset,
       modelsData,
       buildDefault = true,
@@ -178,6 +183,14 @@ const useNewConvo = (index = 0) => {
       keepAddedConvos?: boolean;
     } = {}) => {
       pauseGlobalAudio();
+
+      const templateConvoId = _template.conversationId ?? '';
+      const isParamEndpoint =
+        paramEndpoints.has(_template.endpoint ?? '') || paramEndpoints.has(_preset?.endpoint ?? '');
+      const template =
+        isParamEndpoint && templateConvoId && templateConvoId === 'new'
+          ? { endpoint: _template.endpoint }
+          : _template;
 
       const conversation = {
         conversationId: 'new',

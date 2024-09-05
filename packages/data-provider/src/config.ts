@@ -680,6 +680,11 @@ export const modularEndpoints = new Set<EModelEndpoint | string>([
   EModelEndpoint.bedrock,
 ]);
 
+export const paramEndpoints = new Set<EModelEndpoint | string>([
+  EModelEndpoint.agents,
+  EModelEndpoint.bedrock,
+]);
+
 export const supportsBalanceCheck = {
   [EModelEndpoint.custom]: true,
   [EModelEndpoint.openAI]: true,
