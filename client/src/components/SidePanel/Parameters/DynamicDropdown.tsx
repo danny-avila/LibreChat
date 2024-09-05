@@ -1,27 +1,60 @@
-// client/src/components/SidePanel/Parameters/DynamicDropdown.tsx
-import React from 'react';
-import { Controller, useFormContext } from 'react-hook-form';
+import { useMemo, useState } from 'react';
+import { OptionTypes } from 'librechat-data-provider';
+import type { DynamicSettingProps } from 'librechat-data-provider';
 import { Label, HoverCard, HoverCardTrigger, SelectDropDown } from '~/components/ui';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useParameterEffects } from '~/hooks';
+import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
 import { cn } from '~/utils';
-import type { DynamicSettingProps } from 'librechat-data-provider';
 
 function DynamicDropdown({
-  label = '',
+  label,
   settingKey,
   defaultValue,
-  description = '',
+  description,
   columnSpan,
+  setOption,
+  optionType,
   options,
+  // type: _type,
   readonly = false,
   showDefault = true,
   labelCode,
   descriptionCode,
+  conversation,
 }: DynamicSettingProps) {
   const localize = useLocalize();
-  const { control } = useFormContext();
+  const { preset } = useChatContext();
+  const [inputValue, setInputValue] = useState<string | null>(null);
+
+  const selectedValue = useMemo(() => {
+    if (optionType === OptionTypes.Custom) {
+      // TODO: custom logic, add to payload but not to conversation
+      return inputValue;
+    }
+
+    return conversation?.[settingKey] ?? defaultValue;
+  }, [conversation, defaultValue, optionType, settingKey, inputValue]);
+
+  const handleChange = (value: string) => {
+    if (optionType === OptionTypes.Custom) {
+      // TODO: custom logic, add to payload but not to conversation
+      setInputValue(value);
+      return;
+    }
+    setOption(settingKey)(value);
+  };
+
+  useParameterEffects({
+    preset,
+    settingKey,
+    defaultValue,
+    conversation,
+    inputValue,
+    setInputValue,
+    preventDelayedUpdate: true,
+  });
 
   if (!options || options.length === 0) {
     return null;
@@ -31,7 +64,7 @@ function DynamicDropdown({
     <div
       className={cn(
         'flex flex-col items-center justify-start gap-6',
-        columnSpan != null ? `col-span-${columnSpan}` : 'col-span-full',
+        columnSpan ? `col-span-${columnSpan}` : 'col-span-full',
       )}
     >
       <HoverCard openDelay={300}>
@@ -41,7 +74,7 @@ function DynamicDropdown({
               htmlFor={`${settingKey}-dynamic-dropdown`}
               className="text-left text-sm font-medium"
             >
-              {labelCode === true ? localize(label) ?? label : label || settingKey}
+              {labelCode ? localize(label ?? '') || label : label ?? settingKey}
               {showDefault && (
                 <small className="opacity-40">
                   ({localize('com_endpoint_default')}: {defaultValue})
@@ -49,29 +82,20 @@ function DynamicDropdown({
               )}
             </Label>
           </div>
-          <Controller
-            name={settingKey}
-            control={control}
-            defaultValue={defaultValue as string}
-            render={({ field }) => (
-              <SelectDropDown
-                showLabel={false}
-                emptyTitle={true}
-                disabled={readonly}
-                value={field.value}
-                setValue={field.onChange}
-                availableValues={options}
-                containerClassName="w-full"
-                id={`${settingKey}-dynamic-dropdown`}
-              />
-            )}
+          <SelectDropDown
+            showLabel={false}
+            emptyTitle={true}
+            disabled={readonly}
+            value={selectedValue}
+            setValue={handleChange}
+            availableValues={options}
+            containerClassName="w-full"
+            id={`${settingKey}-dynamic-dropdown`}
           />
         </HoverCardTrigger>
         {description && (
           <OptionHover
-            description={
-              descriptionCode === true ? localize(description) ?? description : description
-            }
+            description={descriptionCode ? localize(description) || description : description}
             side={ESide.Left}
           />
         )}

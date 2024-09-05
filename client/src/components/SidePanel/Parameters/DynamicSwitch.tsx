@@ -1,30 +1,61 @@
-// client/src/components/SidePanel/Parameters/DynamicSwitch.tsx
-import React from 'react';
-import { Controller, useFormContext } from 'react-hook-form';
+import { useState, useMemo } from 'react';
+import { OptionTypes } from 'librechat-data-provider';
+import type { DynamicSettingProps } from 'librechat-data-provider';
 import { Label, Switch, HoverCard, HoverCardTrigger } from '~/components/ui';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useParameterEffects } from '~/hooks';
+import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
-import type { DynamicSettingProps } from 'librechat-data-provider';
 
 function DynamicSwitch({
-  label = '',
+  label,
   settingKey,
   defaultValue,
-  description = '',
+  description,
   columnSpan,
+  setOption,
+  optionType,
   readonly = false,
   showDefault = true,
   labelCode,
   descriptionCode,
+  conversation,
 }: DynamicSettingProps) {
   const localize = useLocalize();
-  const { control } = useFormContext();
+  const { preset } = useChatContext();
+  const [inputValue, setInputValue] = useState<boolean>(!!(defaultValue as boolean | undefined));
+  useParameterEffects({
+    preset,
+    settingKey,
+    defaultValue,
+    conversation,
+    inputValue,
+    setInputValue,
+    preventDelayedUpdate: true,
+  });
+
+  const selectedValue = useMemo(() => {
+    if (optionType === OptionTypes.Custom) {
+      // TODO: custom logic, add to payload but not to conversation
+      return inputValue;
+    }
+
+    return conversation?.[settingKey] ?? defaultValue;
+  }, [conversation, defaultValue, optionType, settingKey, inputValue]);
+
+  const handleCheckedChange = (checked: boolean) => {
+    if (optionType === OptionTypes.Custom) {
+      // TODO: custom logic, add to payload but not to conversation
+      setInputValue(checked);
+      return;
+    }
+    setOption(settingKey)(checked);
+  };
 
   return (
     <div
       className={`flex flex-col items-center justify-start gap-6 ${
-        columnSpan != null ? `col-span-${columnSpan}` : 'col-span-full'
+        columnSpan ? `col-span-${columnSpan}` : 'col-span-full'
       }`}
     >
       <HoverCard openDelay={300}>
@@ -34,35 +65,25 @@ function DynamicSwitch({
               htmlFor={`${settingKey}-dynamic-switch`}
               className="text-left text-sm font-medium"
             >
-              {labelCode === true ? localize(label) ?? label : label || settingKey}{' '}
+              {labelCode ? localize(label ?? '') || label : label ?? settingKey}{' '}
               {showDefault && (
                 <small className="opacity-40">
-                  ({localize('com_endpoint_default')}:{' '}
-                  {defaultValue != null ? localize('com_ui_on') : localize('com_ui_off')})
+                  ({localize('com_endpoint_default')}: {defaultValue ? 'com_ui_on' : 'com_ui_off'})
                 </small>
               )}
             </Label>
           </div>
-          <Controller
-            name={settingKey}
-            control={control}
-            defaultValue={defaultValue as boolean}
-            render={({ field }) => (
-              <Switch
-                id={`${settingKey}-dynamic-switch`}
-                checked={field.value}
-                onCheckedChange={field.onChange}
-                disabled={readonly}
-                className="flex"
-              />
-            )}
+          <Switch
+            id={`${settingKey}-dynamic-switch`}
+            checked={selectedValue}
+            onCheckedChange={handleCheckedChange}
+            disabled={readonly}
+            className="flex"
           />
         </HoverCardTrigger>
         {description && (
           <OptionHover
-            description={
-              descriptionCode === true ? localize(description) ?? description : description
-            }
+            description={descriptionCode ? localize(description) || description : description}
             side={ESide.Left}
           />
         )}

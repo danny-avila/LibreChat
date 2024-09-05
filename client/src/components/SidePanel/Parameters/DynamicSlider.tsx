@@ -1,41 +1,70 @@
-// client/src/components/SidePanel/Parameters/DynamicSlider.tsx
-import React, { useMemo } from 'react';
-import { Controller, useFormContext } from 'react-hook-form';
-import { Label, Slider, HoverCard, Input, InputNumber, HoverCardTrigger } from '~/components/ui';
-import { useLocalize } from '~/hooks';
-import { cn, defaultTextProps, optionText } from '~/utils';
-import { ESide } from '~/common';
-import OptionHover from './OptionHover';
+import { useMemo, useCallback } from 'react';
+import { OptionTypes } from 'librechat-data-provider';
 import type { DynamicSettingProps } from 'librechat-data-provider';
+import { Label, Slider, HoverCard, Input, InputNumber, HoverCardTrigger } from '~/components/ui';
+import { useLocalize, useDebouncedInput, useParameterEffects } from '~/hooks';
+import { cn, defaultTextProps, optionText } from '~/utils';
+import { ESide, defaultDebouncedDelay } from '~/common';
+import { useChatContext } from '~/Providers';
+import OptionHover from './OptionHover';
 
 function DynamicSlider({
-  label = '',
+  label,
   settingKey,
   defaultValue,
   range,
-  description = '',
+  description,
   columnSpan,
+  setOption,
+  optionType,
   options,
   readonly = false,
   showDefault = true,
   includeInput = true,
   labelCode,
   descriptionCode,
+  conversation,
 }: DynamicSettingProps) {
   const localize = useLocalize();
-  const { control } = useFormContext();
-
+  const { preset } = useChatContext();
   const isEnum = useMemo(
     () => (!range && options && options.length > 0) ?? false,
     [options, range],
   );
+
+  const [setInputValue, inputValue] = useDebouncedInput<string | number>({
+    optionKey: optionType !== OptionTypes.Custom ? settingKey : undefined,
+    initialValue: optionType !== OptionTypes.Custom ? conversation?.[settingKey] : defaultValue,
+    setter: () => ({}),
+    setOption,
+    delay: isEnum ? 0 : defaultDebouncedDelay,
+  });
+
+  useParameterEffects({
+    preset,
+    settingKey,
+    defaultValue,
+    conversation,
+    inputValue,
+    setInputValue,
+    preventDelayedUpdate: isEnum,
+  });
+
+  const selectedValue = useMemo(() => {
+    if (isEnum) {
+      return conversation?.[settingKey] ?? defaultValue;
+    }
+    // TODO: custom logic, add to payload but not to conversation
+
+    return inputValue;
+  }, [conversation, defaultValue, settingKey, inputValue, isEnum]);
 
   const enumToNumeric = useMemo(() => {
     if (isEnum && options) {
       return options.reduce((acc, mapping, index) => {
         acc[mapping] = index;
         return acc;
-      }, {} as Record<string, number | undefined>);
+      }, {} as Record<string, number>);
     }
     return {};
   }, [isEnum, options]);
@@ -49,6 +78,17 @@ function DynamicSlider({
     }
     return {};
   }, [isEnum, options]);
+
+  const handleValueChange = useCallback(
+    (value: number) => {
+      if (isEnum) {
+        setInputValue(valueToEnumOption[value]);
+      } else {
+        setInputValue(value);
+      }
+    },
+    [isEnum, setInputValue, valueToEnumOption],
+  );
 
   const max = useMemo(() => {
     if (isEnum && options) {
@@ -78,80 +118,67 @@ function DynamicSlider({
               htmlFor={`${settingKey}-dynamic-setting`}
               className="text-left text-sm font-medium"
             >
-              {labelCode === true ? localize(label) ?? label : label || settingKey}{' '}
+              {labelCode ? localize(label ?? '') || label : label ?? settingKey}{' '}
               {showDefault && (
                 <small className="opacity-40">
                   ({localize('com_endpoint_default')}: {defaultValue})
                 </small>
               )}
             </Label>
-            <Controller
-              name={settingKey}
-              control={control}
-              defaultValue={defaultValue as number | string}
-              render={({ field }) => (
-                <>
-                  {includeInput && !isEnum ? (
-                    <InputNumber
-                      id={`${settingKey}-dynamic-setting-input-number`}
-                      disabled={readonly}
-                      value={field.value as number}
-                      onChange={(value) => field.onChange(Number(value))}
-                      max={range ? range.max : (options?.length ?? 0) - 1}
-                      min={range ? range.min : 0}
-                      step={range ? range.step ?? 1 : 1}
-                      controls={false}
-                      className={cn(
-                        defaultTextProps,
-                        optionText,
-                        'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-border-light',
-                      )}
-                    />
-                  ) : (
-                    <Input
-                      id={`${settingKey}-dynamic-setting-input`}
-                      disabled={readonly}
-                      value={field.value as string}
-                      onChange={() => ({})}
-                      className={cn(
-                        defaultTextProps,
-                        optionText,
-                        'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-border-light',
-                      )}
-                    />
-                  )}
-                </>
-              )}
-            />
-          </div>
-          <Controller
-            name={settingKey}
-            control={control}
-            defaultValue={defaultValue as number | string}
-            render={({ field }) => (
-              <Slider
-                id={`${settingKey}-dynamic-setting-slider`}
+            {includeInput && !isEnum ? (
+              <InputNumber
+                id={`${settingKey}-dynamic-setting-input-number`}
                 disabled={readonly}
-                value={[
-                  isEnum ? enumToNumeric[field.value as string] ?? 0 : (field.value as number),
-                ]}
-                onValueChange={(value) =>
-                  field.onChange(isEnum ? valueToEnumOption[value[0]] : value[0])
-                }
-                max={max}
+                value={inputValue ?? defaultValue}
+                onChange={(value) => setInputValue(Number(value))}
+                max={range ? range.max : (options?.length ?? 0) - 1}
                 min={range ? range.min : 0}
                 step={range ? range.step ?? 1 : 1}
-                trackClassName="bg-surface-hover"
-                className="flex h-4 w-full"
+                controls={false}
+                className={cn(
+                  defaultTextProps,
+                  cn(
+                    optionText,
+                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                  ),
+                )}
+              />
+            ) : (
+              <Input
+                id={`${settingKey}-dynamic-setting-input`}
+                disabled={readonly}
+                value={selectedValue ?? defaultValue}
+                onChange={() => ({})}
+                className={cn(
+                  defaultTextProps,
+                  cn(
+                    optionText,
+                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                  ),
+                )}
               />
             )}
+          </div>
+          <Slider
+            id={`${settingKey}-dynamic-setting-slider`}
+            disabled={readonly}
+            value={[
+              isEnum
+                ? enumToNumeric[(selectedValue as number) ?? '']
+                : (inputValue as number) ?? (defaultValue as number),
+            ]}
+            onValueChange={(value) => handleValueChange(value[0])}
+            doubleClickHandler={() => setInputValue(defaultValue as string | number)}
+            max={max}
+            min={range ? range.min : 0}
+            step={range ? range.step ?? 1 : 1}
+            className="flex h-4 w-full"
+            trackClassName="bg-surface-hover"
           />
         </HoverCardTrigger>
         {description && (
           <OptionHover
-            description={
-              descriptionCode === true ? localize(description) ?? description : description
-            }
+            description={descriptionCode ? localize(description) || description : description}
             side={ESide.Left}
           />
         )}
