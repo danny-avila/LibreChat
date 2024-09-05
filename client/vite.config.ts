@@ -65,17 +65,17 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
       },
       manifest: {
-        name: 'LibreChat',
-        short_name: 'LibreChat',
+        name: 'Intelewriter',
+        short_name: 'Intelewriter',
         start_url: '/',
         display: 'standalone',
         background_color: '#000000',
         theme_color: '#009688',
         icons: [
           {
-            src: '/assets/favicon-32x32.png',
+            src: '/assets/favicon-32x32.ico',
             sizes: '32x32',
-            type: 'image/png',
+            type: 'image/x-icon',
           },
           {
             src: '/assets/favicon-16x16.png',
