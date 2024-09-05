@@ -14,6 +14,7 @@ import { useToastContext } from '~/Providers';
 import { ConvoOptions } from './ConvoOptions';
 import { cn } from '~/utils';
 import store from '~/store';
+import { useLocalize } from '~/hooks'
 
 type KeyEvent = KeyboardEvent<HTMLInputElement>;
 
@@ -44,6 +45,7 @@ export default function Conversation({
   const [renaming, setRenaming] = useState(false);
   const [isPopoverActive, setIsPopoverActive] = useState(false);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  const localize = useLocalize();
 
   const clickHandler = async (event: MouseEvent<HTMLAnchorElement>) => {
     if (event.button === 0 && (event.ctrlKey || event.metaKey)) {
@@ -146,6 +148,7 @@ export default function Conversation({
             value={titleInput ?? ''}
             onChange={(e) => setTitleInput(e.target.value)}
             onKeyDown={handleKeyDown}
+            aria-label={`${localize('com_ui_rename')} ${localize('com_ui_chat')}`}
           />
           <div className="flex gap-1">
             <button onClick={cancelRename} aria-label='cancel new name'>
