@@ -18,4 +18,3 @@ librechat.yml
 
 # Ignore all hidden files
 .*
-build.sh
