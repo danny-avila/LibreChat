@@ -190,7 +190,7 @@ const SidePanel = ({
           >
             {children}
           </ResizablePanel>
-          {artifacts != null && (
+          {/* {artifacts != null && (
             <>
               <ResizableHandleAlt withHandle className="ml-3 bg-border-medium dark:text-white" />
               <ResizablePanel
@@ -202,8 +202,8 @@ const SidePanel = ({
                 {artifacts}
               </ResizablePanel>
             </>
-          )}
-          <TooltipProvider delayDuration={400}>
+          )} */}
+          {/* <TooltipProvider delayDuration={400}>
             <Tooltip>
               <div
                 onMouseEnter={() => setIsHovering(true)}
@@ -226,11 +226,11 @@ const SidePanel = ({
                 />
               </div>
             </Tooltip>
-          </TooltipProvider>
-          {(!isCollapsed || minSize > 0) && !isSmallScreen && !fullCollapse && (
+          </TooltipProvider> */}
+          {/* {(!isCollapsed || minSize > 0) && !isSmallScreen && !fullCollapse && (
             <ResizableHandleAlt withHandle className="bg-transparent dark:text-white" />
-          )}
-          <ResizablePanel
+          )} */}
+          {/* <ResizablePanel
             tagName="nav"
             id="controls-nav"
             order={artifacts != null ? 3 : 2}
@@ -283,10 +283,10 @@ const SidePanel = ({
               defaultActive={defaultActive}
               links={Links}
             />
-          </ResizablePanel>
+          </ResizablePanel> */}
         </ResizablePanelGroup>
       </TooltipProvider>
-      <button
+      {/* <button
         aria-label="Close right side panel"
         className={`nav-mask ${!isCollapsed ? 'active' : ''}`}
         onClick={() => {
@@ -299,7 +299,7 @@ const SidePanel = ({
           });
           panelRef.current?.collapse();
         }}
-      />
+      /> */}
     </>
   );
 };

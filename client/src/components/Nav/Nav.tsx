@@ -190,9 +190,9 @@ const Nav = ({
                                   isSmallScreen={isSmallScreen}
                                 />
                               )}
-                              {hasAccessToBookmarks === true && (
+                              {/* {hasAccessToBookmarks === true && (
                                 <BookmarkNav tags={tags} setTags={setTags} />
-                              )}
+                              )} */}
                             </>
                           }
                         />
