@@ -76,7 +76,7 @@ export default function ConvoOptions({
                 : 'opacity-0 focus:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[open]:opacity-100',
             )}
           >
-            <Ellipsis className="icon-md text-text-secondary" />
+            <Ellipsis className="icon-md text-text-secondary" aria-hidden={true}/>
           </Ariakit.MenuButton>
         }
         items={dropdownItems}

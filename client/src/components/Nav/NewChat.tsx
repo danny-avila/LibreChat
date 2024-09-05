@@ -101,7 +101,7 @@ export default function NewChat({
                   <TooltipTrigger asChild>
                     <button
                       id="nav-new-chat-btn"
-                      aria-label="nav-new-chat-btn"
+                      aria-label={localize('com_ui_new_chat')}
                       className="text-text-primary"
                     >
                       <NewChatIcon className="size-5" />
