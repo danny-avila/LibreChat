@@ -83,6 +83,7 @@ const getListAgents = async (searchParameter) => {
     id: 1,
     name: 1,
     avatar: 1,
+    projectIds: 1,
   }).lean();
 
   const hasMore = agents.length > 0;

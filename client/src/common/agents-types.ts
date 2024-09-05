@@ -1,8 +1,8 @@
 import { Capabilities } from 'librechat-data-provider';
 import type { Agent, AgentProvider, AgentModelParameters } from 'librechat-data-provider';
-import type { Option, ExtendedFile } from './types';
+import type { OptionWithIcon, ExtendedFile } from './types';
 
-export type TAgentOption = Option &
+export type TAgentOption = OptionWithIcon &
   Agent & {
     files?: Array<[string, ExtendedFile]>;
     code_files?: Array<[string, ExtendedFile]>;
@@ -23,5 +23,5 @@ export type AgentForm = {
   model: string | null;
   model_parameters: AgentModelParameters;
   tools?: string[];
-  provider?: AgentProvider | Option;
+  provider?: AgentProvider | OptionWithIcon;
 } & AgentCapabilities;

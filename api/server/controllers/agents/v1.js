@@ -80,6 +80,10 @@ const getAgentHandler = async (req, res) => {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
+    if (agent.author !== author) {
+      delete agent.author;
+    }
+
     return res.status(200).json(agent);
   } catch (error) {
     logger.error('[/Agents/:id] Error retrieving agent', error);
