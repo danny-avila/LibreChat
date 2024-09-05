@@ -76,18 +76,18 @@ export default function useSideNavLinks({
       });
     }
 
-    // if (
-    //   isAgentsEndpoint(endpoint) ||
-    //   (endpoint === EModelEndpoint.bedrock && interfaceConfig.parameters === true && keyProvided)
-    // ) {
-    //   links.push({
-    //     title: 'com_sidepanel_parameters',
-    //     label: '',
-    //     icon: Settings2,
-    //     id: 'parameters',
-    //     Component: Parameters,
-    //   });
-    // }
+    if (
+      isAgentsEndpoint(endpoint) ||
+      (endpoint === EModelEndpoint.bedrock && interfaceConfig.parameters === true && keyProvided)
+    ) {
+      links.push({
+        title: 'com_sidepanel_parameters',
+        label: '',
+        icon: Settings2,
+        id: 'parameters',
+        Component: Parameters,
+      });
+    }
 
     if (hasAccessToPrompts) {
       links.push({
