@@ -73,9 +73,9 @@ export default defineConfig({
         theme_color: '#009688',
         icons: [
           {
-            src: '/assets/favicon-32x32.ico',
+            src: '/assets/favicon-32x32.png',
             sizes: '32x32',
-            type: 'image/x-icon',
+            type: 'image/png',
           },
           {
             src: '/assets/favicon-16x16.png',
@@ -83,10 +83,9 @@ export default defineConfig({
             type: 'image/png',
           },
           {
-            src: '/assets/maskable-icon.png',
-            sizes: '512x512',
+            src: '/assets/icon-80x80.png',
+            sizes: '80x80',
             type: 'image/png',
-            purpose: 'maskable',
           },
         ],
       },
