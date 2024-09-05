@@ -30,7 +30,8 @@ export enum EModelEndpoint {
 
 export type AssistantsEndpoint = EModelEndpoint.assistants | EModelEndpoint.azureAssistants;
 
-export const isAssistantsEndpoint = (endpoint?: AssistantsEndpoint | null | string): boolean => {
+export const isAssistantsEndpoint = (_endpoint?: AssistantsEndpoint | null | string): boolean => {
+  const endpoint = _endpoint ?? '';
   if (!endpoint) {
     return false;
   }
@@ -39,7 +40,8 @@ export const isAssistantsEndpoint = (endpoint?: AssistantsEndpoint | null | stri
 
 export type AgentProvider = Exclude<keyof typeof EModelEndpoint, EModelEndpoint.agents> | string;
 
-export const isAgentsEndpoint = (endpoint?: EModelEndpoint.agents | null | string): boolean => {
+export const isAgentsEndpoint = (_endpoint?: EModelEndpoint.agents | null | string): boolean => {
+  const endpoint = _endpoint ?? '';
   if (!endpoint) {
     return false;
   }
@@ -888,16 +890,17 @@ export const gptPluginsSchema = tConversationSchema
     maxContextTokens: undefined,
   }));
 
-export function removeNullishValues<T extends object>(obj: T): T {
+export function removeNullishValues<T extends Record<string, unknown>>(obj: T): Partial<T> {
   const newObj: Partial<T> = { ...obj };
 
   (Object.keys(newObj) as Array<keyof T>).forEach((key) => {
-    if (newObj[key] === undefined || newObj[key] === null || newObj[key] === '') {
+    const value = newObj[key];
+    if (value === undefined || value === null || value === '') {
       delete newObj[key];
     }
   });
 
-  return newObj as T;
+  return newObj;
 }
 
 export const assistantSchema = tConversationSchema
