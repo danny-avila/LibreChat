@@ -186,7 +186,9 @@ const useNewConvo = (index = 0) => {
 
       const templateConvoId = _template.conversationId ?? '';
       const isParamEndpoint =
-        paramEndpoints.has(_template.endpoint ?? '') || paramEndpoints.has(_preset?.endpoint ?? '');
+        paramEndpoints.has(_template.endpoint ?? '') ||
+        paramEndpoints.has(_preset?.endpoint ?? '') ||
+        paramEndpoints.has(_template.endpointType ?? '');
       const template =
         isParamEndpoint && templateConvoId && templateConvoId === 'new'
           ? { endpoint: _template.endpoint }
