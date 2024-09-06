@@ -9,7 +9,7 @@ import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 
 const SaveAsPresetDialog = ({ open, onOpenChange, preset }: TEditPresetProps) => {
-  const [title, setTitle] = useState<string>(preset.title || 'My Preset');
+  const [title, setTitle] = useState<string>(preset.title ?? 'My Preset');
   const createPresetMutation = useCreatePresetMutation();
   const { showToast } = useToastContext();
   const localize = useLocalize();
@@ -22,15 +22,15 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }: TEditPresetProps) =>
       },
     });
 
-    const toastTitle = _preset.title
-      ? `\`${_preset.title}\``
-      : localize('com_endpoint_preset_title');
+    const toastTitle =
+      _preset.title ?? '' ? `\`${_preset.title}\`` : localize('com_endpoint_preset_title');
 
     createPresetMutation.mutate(_preset, {
       onSuccess: () => {
         showToast({
           message: `${toastTitle} ${localize('com_endpoint_preset_saved')}`,
         });
+        onOpenChange(false);
       },
       onError: () => {
         showToast({
@@ -42,9 +42,16 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }: TEditPresetProps) =>
   };
 
   useEffect(() => {
-    setTitle(preset.title || localize('com_endpoint_my_preset'));
+    setTitle(preset.title ?? localize('com_endpoint_my_preset'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      submitPreset();
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -55,14 +62,16 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }: TEditPresetProps) =>
         main={
           <div className="flex w-full flex-col items-center gap-2">
             <div className="grid w-full items-center gap-2">
-              <Label htmlFor="dialog-preset-name" className="text-left text-sm font-medium">
+              <Label htmlFor="preset-custom-name" className="text-left text-sm font-medium">
                 {localize('com_endpoint_preset_name')}
               </Label>
               <Input
                 id="preset-custom-name"
                 value={title || ''}
                 onChange={(e) => setTitle(e.target.value || '')}
-                placeholder="Set a custom name for this preset"
+                onKeyDown={handleKeyDown}
+                placeholder={localize('com_endpoint_preset_custom_name_placeholder')}
+                aria-label={localize('com_endpoint_preset_name')}
                 className={cn(
                   defaultTextProps,
                   'flex h-10 max-h-10 w-full resize-none border-gray-100 px-3 py-2 dark:border-gray-600',
