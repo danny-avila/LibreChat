@@ -727,7 +727,7 @@ export default {
     '无法获取语音选项。请检查您的网络连接。',
   com_nav_engine: '引擎',
   com_nav_browser: '浏览器',
-  com_nav_edge: 'Edge',
+  com_nav_edge: '边缘端',
   com_nav_external: '外部',
   com_nav_delete_cache_storage: '删除 TTS 缓存存储',
   com_nav_enable_cache_tts: '启用 TTS 缓存',
