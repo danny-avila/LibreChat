@@ -78,6 +78,9 @@ const conversationPreset = {
   promptCache: {
     type: Boolean,
   },
+  system: {
+    type: String,
+  },
   // files
   resendFiles: {
     type: Boolean,

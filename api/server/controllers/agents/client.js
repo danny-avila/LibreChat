@@ -12,7 +12,7 @@ const {
   providerEndpointMap,
   removeNullishValues,
   EModelEndpoint,
-  parseCompactConvo,
+  bedrockOutputParser,
 } = require('librechat-data-provider');
 const {
   extractBaseURL,
@@ -32,8 +32,12 @@ const { logger } = require('~/config');
 
 /** @typedef {import('@librechat/agents').MessageContentComplex} MessageContentComplex */
 
-const providerSchemas = {
-  [EModelEndpoint.bedrock]: true,
+// const providerSchemas = {
+// [EModelEndpoint.bedrock]: true,
+// };
+
+const providerParsers = {
+  [EModelEndpoint.bedrock]: bedrockOutputParser,
 };
 
 class AgentClient extends BaseClient {
@@ -128,7 +132,7 @@ class AgentClient extends BaseClient {
   }
 
   getSaveOptions() {
-    const hasSchema = providerSchemas[this.options.endpoint];
+    const parseOptions = providerParsers[this.options.endpoint];
     let runOptions =
       this.options.endpoint === EModelEndpoint.agents
         ? {
@@ -141,16 +145,14 @@ class AgentClient extends BaseClient {
         }
         : {};
 
-    if (hasSchema) {
-      runOptions = parseCompactConvo({
-        endpoint: this.options.endpoint,
-        conversation: this.modelOptions,
-      });
+    if (parseOptions) {
+      runOptions = parseOptions(this.modelOptions);
     }
 
     return removeNullishValues(
       Object.assign(
         {
+          endpoint: this.options.endpoint,
           agent_id: this.options.agent.id,
           modelLabel: this.options.modelLabel,
           maxContextTokens: this.options.maxContextTokens,
