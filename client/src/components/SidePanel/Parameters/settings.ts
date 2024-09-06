@@ -3,6 +3,19 @@ import type { SettingsConfiguration, SettingDefinition } from 'librechat-data-pr
 
 // Base definitions
 const baseDefinitions: Record<string, Partial<SettingDefinition>> = {
+  model: {
+    key: 'model',
+    label: 'com_ui_model',
+    labelCode: true,
+    type: 'string',
+    component: 'dropdown',
+    optionType: 'model',
+    selectPlaceholder: 'com_ui_select_model',
+    searchPlaceholder: 'com_ui_select_search_model',
+    searchPlaceholderCode: true,
+    selectPlaceholderCode: true,
+    columnSpan: 4,
+  },
   temperature: {
     key: 'temperature',
     label: 'com_endpoint_temperature',
@@ -216,9 +229,92 @@ const bedrockMeta: SettingsConfiguration = [
   librechat.resendFiles,
 ];
 
+const bedrockAnthropicCol1: SettingsConfiguration = [
+  baseDefinitions.model as SettingDefinition,
+  librechat.modelLabel,
+  anthropic.system,
+  anthropic.stop,
+];
+
+const bedrockAnthropicCol2: SettingsConfiguration = [
+  librechat.maxContextTokens,
+  anthropic.maxTokens,
+  anthropic.temperature,
+  anthropic.topP,
+  anthropic.topK,
+  librechat.resendFiles,
+];
+
+const bedrockMistralCol1: SettingsConfiguration = [
+  baseDefinitions.model as SettingDefinition,
+  librechat.modelLabel,
+  librechat.promptPrefix,
+];
+
+const bedrockMistralCol2: SettingsConfiguration = [
+  librechat.maxContextTokens,
+  anthropic.maxTokens,
+  mistral.temperature,
+  mistral.topP,
+  librechat.resendFiles,
+];
+
+const bedrockCohereCol1: SettingsConfiguration = [
+  baseDefinitions.model as SettingDefinition,
+  librechat.modelLabel,
+  librechat.promptPrefix,
+];
+
+const bedrockCohereCol2: SettingsConfiguration = [
+  librechat.maxContextTokens,
+  anthropic.maxTokens,
+  cohere.temperature,
+  cohere.topP,
+  librechat.resendFiles,
+];
+
+const bedrockMetaCol1: SettingsConfiguration = [
+  baseDefinitions.model as SettingDefinition,
+  librechat.modelLabel,
+  librechat.promptPrefix,
+];
+
+const bedrockMetaCol2: SettingsConfiguration = [
+  librechat.maxContextTokens,
+  meta.temperature,
+  meta.topP,
+  librechat.resendFiles,
+];
+
 export const settings: Record<string, SettingsConfiguration | undefined> = {
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Anthropic}`]: bedrockAnthropic,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.MistralAI}`]: bedrockMistral,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Cohere}`]: bedrockCohere,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Meta}`]: bedrockMeta,
+};
+
+export const presetSettings: Record<
+  string,
+  | {
+      col1: SettingsConfiguration;
+      col2: SettingsConfiguration;
+    }
+  | undefined
+> = {
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.Anthropic}`]: {
+    col1: bedrockAnthropicCol1,
+    col2: bedrockAnthropicCol2,
+  },
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.MistralAI}`]: {
+    col1: bedrockMistralCol1,
+    col2: bedrockMistralCol2,
+  },
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.Cohere}`]: {
+    col1: bedrockCohereCol1,
+    col2: bedrockCohereCol2,
+  },
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.Meta}`]: {
+    col1: bedrockMetaCol1,
+    col2: bedrockMetaCol2,
+  },
 };

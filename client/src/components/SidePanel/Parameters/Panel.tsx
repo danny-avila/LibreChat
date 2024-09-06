@@ -1,36 +1,27 @@
 import React, { useMemo, useState, useCallback } from 'react';
-import { getSettingsKeys, ComponentTypes, tPresetUpdateSchema } from 'librechat-data-provider';
-import type { DynamicSettingProps, TPreset } from 'librechat-data-provider';
+import { useGetModelsQuery } from 'librechat-data-provider/react-query';
+import { getSettingsKeys, tPresetUpdateSchema } from 'librechat-data-provider';
+import type { TPreset } from 'librechat-data-provider';
 import { SaveAsPresetDialog } from '~/components/Endpoints';
 import { useSetIndexOptions, useLocalize } from '~/hooks';
+import { componentMapping } from './components';
 import { useChatContext } from '~/Providers';
 import { settings } from './settings';
-import {
-  DynamicDropdown,
-  DynamicCheckbox,
-  DynamicTextarea,
-  DynamicSlider,
-  DynamicSwitch,
-  DynamicInput,
-  DynamicTags,
-} from './';
-
-const componentMapping: Record<ComponentTypes, React.ComponentType<DynamicSettingProps>> = {
-  [ComponentTypes.Slider]: DynamicSlider,
-  [ComponentTypes.Dropdown]: DynamicDropdown,
-  [ComponentTypes.Switch]: DynamicSwitch,
-  [ComponentTypes.Textarea]: DynamicTextarea,
-  [ComponentTypes.Input]: DynamicInput,
-  [ComponentTypes.Checkbox]: DynamicCheckbox,
-  [ComponentTypes.Tags]: DynamicTags,
-};
 
 export default function Parameters() {
+  const modelsQuery = useGetModelsQuery();
   const { conversation } = useChatContext();
   const { setOption } = useSetIndexOptions();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [preset, setPreset] = useState<TPreset | null>(null);
   const localize = useLocalize();
+
+  const models = useMemo(() => {
+    return (modelsQuery.data?.[conversation?.endpoint ?? ''] ?? []).map((model) => ({
+      label: model,
+      value: model,
+    }));
+  }, [modelsQuery, conversation?.endpoint]);
 
   const parameters = useMemo(() => {
     const [combinedKey, endpointKey] = getSettingsKeys(

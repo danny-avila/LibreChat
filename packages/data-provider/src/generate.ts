@@ -13,9 +13,17 @@ export type ComponentType =
   | 'checkbox'
   | 'switch'
   | 'dropdown'
+  | 'combobox'
   | 'tags';
 
 export type OptionType = 'conversation' | 'model' | 'custom';
+
+export type Option = Record<string, unknown> & {
+  label?: string;
+  value: string | number | null;
+};
+
+export type OptionWithIcon = Option & { icon?: React.ReactNode };
 
 export enum ComponentTypes {
   Input = 'input',
@@ -24,6 +32,7 @@ export enum ComponentTypes {
   Checkbox = 'checkbox',
   Switch = 'switch',
   Dropdown = 'dropdown',
+  Combobox = 'combobox',
   Tags = 'tags',
 }
 
@@ -64,6 +73,11 @@ export interface SettingDefinition {
   maxTags?: number; // Specific to tags component
   includeInput?: boolean; // Specific to slider component
   descriptionSide?: 'top' | 'right' | 'bottom' | 'left';
+  items?: OptionWithIcon[]; // Specific to combobox component
+  searchPlaceholder?: string; // Specific to combobox component
+  selectPlaceholder?: string; // Specific to combobox component
+  searchPlaceholderCode?: boolean; // Specific to combobox component
+  selectPlaceholderCode?: boolean; // Specific to combobox component
 }
 
 export type DynamicSettingProps = Partial<SettingDefinition> & {
@@ -190,6 +204,7 @@ const minColumns = 1;
 const maxColumns = 4;
 const minSliderOptions = 2;
 const minDropdownOptions = 2;
+const minComboboxOptions = 2;
 
 /**
  * Validates the provided setting using the constraints unique to each component type.
@@ -380,6 +395,19 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
       }
       if (!setting.default && setting.options && setting.options.length > 0) {
         setting.default = setting.options[0]; // Default to first option if not specified
+      }
+    }
+
+    if (setting.component === ComponentTypes.Combobox) {
+      if (!setting.options || setting.options.length < minComboboxOptions) {
+        errors.push({
+          code: ZodIssueCode.custom,
+          message: `Combobox component for setting ${setting.key} requires at least ${minComboboxOptions} options.`,
+          path: ['options'],
+        });
+      }
+      if (!setting.default && setting.options && setting.options.length > 0) {
+        setting.default = setting.options[0];
       }
     }
 

@@ -1,4 +1,5 @@
 export { default as DynamicInputNumber } from './DynamicInputNumber';
+export { default as DynamicCombobox } from './DynamicCombobox';
 export { default as DynamicDropdown } from './DynamicDropdown';
 export { default as DynamicCheckbox } from './DynamicCheckbox';
 export { default as DynamicTextarea } from './DynamicTextarea';
