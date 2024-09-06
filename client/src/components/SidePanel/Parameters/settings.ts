@@ -1,6 +1,39 @@
 import { EModelEndpoint, BedrockProviders } from 'librechat-data-provider';
 import type { SettingsConfiguration, SettingDefinition } from 'librechat-data-provider';
 
+// Base definitions
+const baseDefinitions: Record<string, Partial<SettingDefinition>> = {
+  temperature: {
+    key: 'temperature',
+    label: 'com_endpoint_temperature',
+    labelCode: true,
+    description: 'com_endpoint_openai_temp',
+    descriptionCode: true,
+    type: 'number',
+    component: 'slider',
+    optionType: 'model',
+    columnSpan: 4,
+  },
+  topP: {
+    key: 'topP',
+    label: 'com_endpoint_top_p',
+    labelCode: true,
+    description: 'com_endpoint_anthropic_topp',
+    descriptionCode: true,
+    type: 'number',
+    component: 'slider',
+    optionType: 'model',
+    columnSpan: 4,
+  },
+};
+
+const createDefinition = (
+  base: Partial<SettingDefinition>,
+  overrides: Partial<SettingDefinition>,
+): SettingDefinition => {
+  return { ...base, ...overrides } as SettingDefinition;
+};
+
 const librechat: Record<string, SettingDefinition> = {
   modelLabel: {
     key: 'modelLabel',
@@ -18,7 +51,6 @@ const librechat: Record<string, SettingDefinition> = {
     label: 'com_endpoint_context_tokens',
     labelCode: true,
     type: 'number',
-    // default: '',
     component: 'input',
     placeholder: 'com_endpoint_context_info',
     placeholderCode: true,
@@ -48,7 +80,6 @@ const librechat: Record<string, SettingDefinition> = {
     placeholder: 'com_endpoint_openai_prompt_prefix_placeholder',
     placeholderCode: true,
     optionType: 'model',
-    // columnSpan: 2,
   },
 };
 
@@ -63,56 +94,26 @@ const anthropic: Record<string, SettingDefinition> = {
     placeholder: 'com_endpoint_openai_prompt_prefix_placeholder',
     placeholderCode: true,
     optionType: 'model',
-    // columnSpan: 2,
   },
   maxTokens: {
     key: 'maxTokens',
     label: 'com_endpoint_max_output_tokens',
     labelCode: true,
     type: 'number',
-    // default: '',
     component: 'input',
     placeholder: 'com_endpoint_anthropic_maxoutputtokens',
     placeholderCode: true,
     optionType: 'model',
     columnSpan: 2,
   },
-  temperature: {
-    key: 'temperature',
-    label: 'com_endpoint_temperature',
-    labelCode: true,
-    description: 'com_endpoint_openai_temp',
-    descriptionCode: true,
-    type: 'number',
+  temperature: createDefinition(baseDefinitions.temperature, {
     default: 1,
-    range: {
-      min: 0,
-      max: 1,
-      step: 0.01,
-    },
-    component: 'slider',
-    optionType: 'model',
-    columnSpan: 4,
-    // includeInput: false,
-  },
-  topP: {
-    key: 'topP',
-    label: 'com_endpoint_top_p',
-    labelCode: true,
-    description: 'com_endpoint_anthropic_topp',
-    descriptionCode: true,
-    type: 'number',
+    range: { min: 0, max: 1, step: 0.01 },
+  }),
+  topP: createDefinition(baseDefinitions.topP, {
     default: 0.999,
-    range: {
-      min: 0,
-      max: 1,
-      step: 0.01,
-    },
-    component: 'slider',
-    optionType: 'model',
-    columnSpan: 4,
-    // includeInput: false,
-  },
+    range: { min: 0, max: 1, step: 0.01 },
+  }),
   topK: {
     key: 'topK',
     label: 'com_endpoint_top_k',
@@ -120,15 +121,10 @@ const anthropic: Record<string, SettingDefinition> = {
     description: 'com_endpoint_anthropic_topk',
     descriptionCode: true,
     type: 'number',
-    range: {
-      min: 0,
-      max: 500,
-      step: 1,
-    },
+    range: { min: 0, max: 500, step: 1 },
     component: 'slider',
     optionType: 'model',
     columnSpan: 4,
-    // includeInput: false,
   },
   stop: {
     key: 'stop',
@@ -142,126 +138,41 @@ const anthropic: Record<string, SettingDefinition> = {
     default: [],
     component: 'tags',
     optionType: 'conversation',
-    // columnSpan: 4,
     minTags: 0,
     maxTags: 4,
   },
 };
 
 const mistral: Record<string, SettingDefinition> = {
-  temperature: {
-    key: 'temperature',
-    label: 'com_endpoint_temperature',
-    labelCode: true,
-    description: 'com_endpoint_openai_temp',
-    descriptionCode: true,
-    type: 'number',
+  temperature: createDefinition(baseDefinitions.temperature, {
     default: 0.7,
-    range: {
-      min: 0,
-      max: 1,
-      step: 0.01,
-    },
-    component: 'slider',
-    optionType: 'model',
-    columnSpan: 4,
-    // includeInput: false,
-  },
-  topP: {
-    key: 'topP',
-    label: 'com_endpoint_top_p',
-    labelCode: true,
-    description: 'com_endpoint_anthropic_topp',
-    descriptionCode: true,
-    type: 'number',
-    range: {
-      min: 0,
-      max: 1,
-      step: 0.01,
-    },
-    component: 'slider',
-    optionType: 'model',
-    columnSpan: 4,
-    // includeInput: false,
-  },
+    range: { min: 0, max: 1, step: 0.01 },
+  }),
+  topP: createDefinition(baseDefinitions.topP, {
+    range: { min: 0, max: 1, step: 0.01 },
+  }),
 };
 
 const cohere: Record<string, SettingDefinition> = {
-  temperature: {
-    key: 'temperature',
-    label: 'com_endpoint_temperature',
-    labelCode: true,
-    description: 'com_endpoint_openai_temp',
-    descriptionCode: true,
-    type: 'number',
+  temperature: createDefinition(baseDefinitions.temperature, {
     default: 0.3,
-    range: {
-      min: 0,
-      max: 1,
-      step: 0.01,
-    },
-    component: 'slider',
-    optionType: 'model',
-    columnSpan: 4,
-    // includeInput: false,
-  },
-  topP: {
-    key: 'topP',
-    label: 'com_endpoint_top_p',
-    labelCode: true,
-    description: 'com_endpoint_anthropic_topp',
-    descriptionCode: true,
-    type: 'number',
+    range: { min: 0, max: 1, step: 0.01 },
+  }),
+  topP: createDefinition(baseDefinitions.topP, {
     default: 0.75,
-    range: {
-      min: 0.01,
-      max: 0.99,
-      step: 0.01,
-    },
-    component: 'slider',
-    optionType: 'model',
-    columnSpan: 4,
-    // includeInput: false,
-  },
+    range: { min: 0.01, max: 0.99, step: 0.01 },
+  }),
 };
 
 const meta: Record<string, SettingDefinition> = {
-  temperature: {
-    key: 'temperature',
-    label: 'com_endpoint_temperature',
-    labelCode: true,
-    description: 'com_endpoint_openai_temp',
-    descriptionCode: true,
-    type: 'number',
+  temperature: createDefinition(baseDefinitions.temperature, {
     default: 0.5,
-    range: {
-      min: 0,
-      max: 1,
-      step: 0.01,
-    },
-    component: 'slider',
-    optionType: 'model',
-    columnSpan: 4,
-    // includeInput: false,
-  },
-  topP: {
-    key: 'topP',
-    label: 'com_endpoint_top_p',
-    labelCode: true,
-    description: 'com_endpoint_anthropic_topp',
-    descriptionCode: true,
-    type: 'number',
+    range: { min: 0, max: 1, step: 0.01 },
+  }),
+  topP: createDefinition(baseDefinitions.topP, {
     default: 0.9,
-    range: {
-      min: 0,
-      max: 1,
-      step: 0.01,
-    },
-    component: 'slider',
-    optionType: 'model',
-    columnSpan: 4,
-    // includeInput: false,
-  },
+    range: { min: 0, max: 1, step: 0.01 },
+  }),
 };
 
 const bedrockAnthropic: SettingsConfiguration = [
@@ -306,7 +217,6 @@ const bedrockMeta: SettingsConfiguration = [
 ];
 
 export const settings: Record<string, SettingsConfiguration | undefined> = {
-  // [EModelEndpoint.bedrock]: bedrock,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Anthropic}`]: bedrockAnthropic,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.MistralAI}`]: bedrockMistral,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Cohere}`]: bedrockCohere,
