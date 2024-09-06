@@ -155,8 +155,9 @@ export default {
   com_ui_variables: 'Variablen',
   com_ui_variables_info:
     'Verwende doppelte geschweifte Klammern in Ihrem Text, um Variablen zu erstellen, z.B. {{Beispielvariable}}, die du später beim Verwenden des Prompts ausfüllen kannst.',
-  com_ui_special_variables:
-    'Spezielle Variablen: Verwende {{current_date}} für das aktuelle Datum und {{current_user}} für deinen angegebenen Kontonamen.',
+  com_ui_special_variables: 'Spezielle Variablen:',
+  com_ui_special_variables_info:
+      'Verwende `{{current_date}}` für das aktuelle Datum und `{{current_user}}` für deinen angegebenen Kontonamen.',
   com_ui_showing: 'Anzeige von',
   com_ui_of: 'von',
   com_ui_entries: 'Einträgen',
@@ -227,7 +228,7 @@ export default {
   com_ui_all_proper: 'Alle',
   com_ui_clear: 'Löschen',
   com_ui_revoke: 'Widerrufen',
-  com_ui_revoke_info: 'Alle vom Benutzer angegebenen API-Keys widerrufen',
+  com_ui_revoke_info: 'Benutzer-API-Keys widerrufen',
   com_ui_import_conversation: 'Importieren',
   com_ui_nothing_found: 'Nichts gefunden',
   com_ui_go_to_conversation: 'Zur Konversation gehen',
@@ -415,7 +416,7 @@ export default {
   com_endpoint_bing_system_message_placeholder:
     'WARNUNG: Missbrauch dieser Funktion kann zu einer SPERRE für die Nutzung von Bing führen! Klicke auf \'Systemnachricht\' für vollständige Anweisungen und die Standardnachricht, wenn ausgelassen, was die \'Sydney\'-Voreinstellung ist, die als sicher gilt.',
   com_endpoint_system_message: 'Systemnachricht',
-  com_endpoint_message: 'Nachricht',
+  com_endpoint_message: 'Nachricht an',
   com_endpoint_message_not_appendable: 'Bearbeite deine Nachricht oder generiere neu.',
   com_endpoint_default_blank: 'Standard: leer',
   com_endpoint_default_false: 'Standard: falsch',
@@ -586,7 +587,7 @@ export default {
   com_nav_welcome_assistant: 'Bitte wähle einen Assistenten aus',
   com_nav_welcome_message: 'Wie kann ich dir heute helfen?',
   com_nav_auto_scroll: 'Automatisch zur neuesten Nachricht scrollen, wenn der Chat geöffnet wird',
-  com_nav_hide_panel: 'Rechtes Seitenpanel ausblenden',
+  com_nav_hide_panel: 'Rechte Seitenleiste verstecken',
   com_nav_modular_chat: 'Ermöglicht das Wechseln der Endpunkte mitten im Gespräch',
   com_nav_latex_parsing: 'LaTeX in Nachrichten parsen (kann die Leistung beeinflussen)',
   com_nav_text_to_speech: 'Text zu Sprache',
@@ -612,7 +613,7 @@ export default {
   com_ui_select_file: 'Datei auswählen',
   com_ui_drag_drop_file: 'Datei hier hinziehen und ablegen',
   com_ui_upload_image: 'Ein Bild hochladen',
-  com_ui_select_a_category: 'Keine Kategorie ausgewählt',
+  com_ui_select_a_category: 'Kategorie wählen',
   com_nav_tool_dialog_description:
     'Assistent muss gespeichert werden, um Werkzeugauswahlen zu speichern.',
   com_show_agent_settings: 'Agenteneinstellungen anzeigen',
@@ -723,6 +724,43 @@ export default {
   com_nav_setting_speech: 'Sprache',
   com_nav_language: 'Sprache',
   com_nav_lang_auto: 'Automatisch erkennen',
+  com_ui_clear_all: 'Auswahl löschen',
+  com_ui_dropdown_variables: 'Dropdown-Variablen:',
+  com_ui_dropdown_variables_info:
+  'Erstellen Sie benutzerdefinierte Dropdown-Menüs für Ihre Eingabeaufforderungen: `{{variable_name:option1|option2|option3}}`',
+  com_nav_at_command_description:
+  'Schaltet den Befehl "@" zum Wechseln von Endpunkten, Modellen, Voreinstellungen usw. um.',
+com_nav_plus_command: '+-Befehl',
+com_nav_plus_command_description: 'Schaltet den Befehl "+" zum Hinzufügen einer Mehrfachantwort-Einstellung um',
+com_nav_slash_command: '/-Befehl',
+com_nav_slash_command_description: 'Schaltet den Befehl "/" zur Auswahl einer Eingabeaufforderung über die Tastatur um',
+com_nav_command_settings: 'Befehlseinstellungen',
+com_nav_convo_menu_options: 'Optionen des Gesprächsmenüs',
+com_ui_artifacts: 'Artefakte',
+com_ui_artifacts_toggle: 'Artefakte-Funktion einschalten',
+com_nav_info_code_artifacts:
+  'Aktiviert die Anzeige experimenteller Code-Artefakte neben dem Chat',
+com_ui_include_shadcnui: 'Anweisungen für shadcn/ui-Komponenten einschließen',
+com_nav_info_include_shadcnui:
+  'Wenn aktiviert, werden Anweisungen zur Verwendung von shadcn/ui-Komponenten eingeschlossen. shadcn/ui ist eine Sammlung wiederverwendbarer Komponenten, die mit Radix UI und Tailwind CSS erstellt wurden. Hinweis: Dies sind umfangreiche Anweisungen, die Sie nur aktivieren sollten, wenn es Ihnen wichtig ist, das KI-Modell über die korrekten Importe und Komponenten zu informieren. Weitere Informationen zu diesen Komponenten finden Sie unter: https://ui.shadcn.com/',
+com_ui_custom_prompt_mode: 'Benutzerdefinierter Promptmodus für Artefakte',
+com_nav_info_custom_prompt_mode:
+  'Wenn aktiviert, wird die Standard-Systemaufforderung für Artefakte nicht eingeschlossen. Alle Anweisungen zur Erzeugung von Artefakten müssen in diesem Modus manuell bereitgestellt werden.',
+com_ui_artifact_click: 'Zum Öffnen klicken',
+com_a11y_start: 'Die KI hat mit ihrer Antwort begonnen.',
+com_a11y_ai_composing: 'Die KI erstellt noch ihre Antwort.',
+com_a11y_end: 'Die KI hat ihre Antwort beendet.',
+com_nav_commands: 'Befehle',
+com_nav_commands_tab: 'Befehlseinstellungen',
+com_nav_at_command: '@-Befehl',
+com_nav_at_command_description:
+  'Schaltet den Befehl "@" zum Wechseln von Endpunkten, Modellen, Voreinstellungen usw. um.',
+com_nav_plus_command: '+-Befehl',
+com_nav_plus_command_description: 'Schaltet den Befehl "+" zum Hinzufügen einer Mehrfachantwort-Einstellung um',
+com_nav_slash_command: '/-Befehl',
+com_nav_slash_command_description: 'Schaltet den Befehl "/" zur Auswahl einer Eingabeaufforderung über die Tastatur um',
+com_nav_command_settings: 'Tastaturbefehl-Einstellungen',
+com_nav_command_settings_description: 'Passen Sie an, welche Tastaturbefehle im Chat verfügbar sind',
 };
 
 export const comparisons = {
