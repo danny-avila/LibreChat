@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { RefreshCw } from 'lucide-react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { SandpackPreviewRef } from '@codesandbox/sandpack-react';
@@ -8,6 +8,7 @@ import { CodeMarkdown, CopyCodeButton } from '../Artifacts/Code';
 import { getFileExtension } from '~/utils/artifacts';
 import { ArtifactPreview } from '../Artifacts/ArtifactPreview';
 import { cn } from '~/utils';
+import store from '~/store';
 
 interface SharedArtifactsProps {
   isOpen: boolean;
@@ -16,19 +17,22 @@ interface SharedArtifactsProps {
 
 const SharedArtifacts: React.FC<SharedArtifactsProps> = ({ isOpen, onClose }) => {
   const artifacts = useRecoilValue(artifactsState);
+  const currentArtifactId = useRecoilValue(store.currentArtifactId);
+  const setCurrentArtifactId = useSetRecoilState(store.currentArtifactId);
   const previewRef = useRef<SandpackPreviewRef>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('preview');
-  const [currentIndex, setCurrentIndex] = useState(0);
 
   const orderedArtifactIds = artifacts ? Object.keys(artifacts) : [];
-  const currentArtifact = artifacts && orderedArtifactIds[currentIndex] ? artifacts[orderedArtifactIds[currentIndex]] : null;
+  const currentArtifact = artifacts && currentArtifactId ? artifacts[currentArtifactId] : null;
+  const currentIndex = orderedArtifactIds.indexOf(currentArtifactId ?? '');
 
   useEffect(() => {
-    if (isOpen && orderedArtifactIds.length > 0) {
-      setCurrentIndex(0);
+    if (isOpen && orderedArtifactIds.length > 0 && !currentArtifactId) {
+      // If no artifact is selected, select the first one
+      setCurrentArtifactId(orderedArtifactIds[0]);
     }
-  }, [isOpen, orderedArtifactIds]);
+  }, [isOpen, orderedArtifactIds, currentArtifactId, setCurrentArtifactId]);
 
   if (!artifacts || Object.keys(artifacts).length === 0) {
     return null;
@@ -44,15 +48,13 @@ const SharedArtifacts: React.FC<SharedArtifactsProps> = ({ isOpen, onClose }) =>
   };
 
   const cycleArtifact = (direction: 'prev' | 'next') => {
+    let newIndex;
     if (direction === 'prev') {
-      setCurrentIndex((prevIndex) =>
-        prevIndex > 0 ? prevIndex - 1 : orderedArtifactIds.length - 1
-      );
+      newIndex = currentIndex > 0 ? currentIndex - 1 : orderedArtifactIds.length - 1;
     } else {
-      setCurrentIndex((prevIndex) =>
-        prevIndex < orderedArtifactIds.length - 1 ? prevIndex + 1 : 0
-      );
+      newIndex = currentIndex < orderedArtifactIds.length - 1 ? currentIndex + 1 : 0;
     }
+    setCurrentArtifactId(orderedArtifactIds[newIndex]);
   };
 
   const isMermaid = currentArtifact?.type === 'mermaid';

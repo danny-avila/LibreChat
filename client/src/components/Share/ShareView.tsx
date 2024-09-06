@@ -33,6 +33,9 @@ function SharedView() {
   useDocumentTitle(docTitle);
 
   useEffect(() => {
+    // Ensure artifact panel is initially closed
+    setIsArtifactPanelOpen(false);
+
     // Reset artifact panel state when component unmounts
     return () => {
       setIsArtifactPanelOpen(false);
