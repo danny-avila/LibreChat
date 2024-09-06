@@ -1,4 +1,4 @@
-import { EModelEndpoint, BedrockProviders, Constants } from 'librechat-data-provider';
+import { EModelEndpoint, BedrockProviders } from 'librechat-data-provider';
 import type { SettingsConfiguration, SettingDefinition } from 'librechat-data-provider';
 
 const librechat: Record<string, SettingDefinition> = {
@@ -37,6 +37,18 @@ const librechat: Record<string, SettingDefinition> = {
     optionType: 'conversation',
     showDefault: false,
     columnSpan: 2,
+  },
+  promptPrefix: {
+    key: 'promptPrefix',
+    label: 'com_endpoint_prompt_prefix',
+    labelCode: true,
+    type: 'string',
+    default: '',
+    component: 'textarea',
+    placeholder: 'com_endpoint_openai_prompt_prefix_placeholder',
+    placeholderCode: true,
+    optionType: 'model',
+    // columnSpan: 2,
   },
 };
 
@@ -136,7 +148,123 @@ const anthropic: Record<string, SettingDefinition> = {
   },
 };
 
-const anthropicBedrock: SettingsConfiguration = [
+const mistral: Record<string, SettingDefinition> = {
+  temperature: {
+    key: 'temperature',
+    label: 'com_endpoint_temperature',
+    labelCode: true,
+    description: 'com_endpoint_openai_temp',
+    descriptionCode: true,
+    type: 'number',
+    default: 0.7,
+    range: {
+      min: 0,
+      max: 1,
+      step: 0.01,
+    },
+    component: 'slider',
+    optionType: 'model',
+    columnSpan: 4,
+    // includeInput: false,
+  },
+  topP: {
+    key: 'topP',
+    label: 'com_endpoint_top_p',
+    labelCode: true,
+    description: 'com_endpoint_anthropic_topp',
+    descriptionCode: true,
+    type: 'number',
+    range: {
+      min: 0,
+      max: 1,
+      step: 0.01,
+    },
+    component: 'slider',
+    optionType: 'model',
+    columnSpan: 4,
+    // includeInput: false,
+  },
+};
+
+const cohere: Record<string, SettingDefinition> = {
+  temperature: {
+    key: 'temperature',
+    label: 'com_endpoint_temperature',
+    labelCode: true,
+    description: 'com_endpoint_openai_temp',
+    descriptionCode: true,
+    type: 'number',
+    default: 0.3,
+    range: {
+      min: 0,
+      max: 1,
+      step: 0.01,
+    },
+    component: 'slider',
+    optionType: 'model',
+    columnSpan: 4,
+    // includeInput: false,
+  },
+  topP: {
+    key: 'topP',
+    label: 'com_endpoint_top_p',
+    labelCode: true,
+    description: 'com_endpoint_anthropic_topp',
+    descriptionCode: true,
+    type: 'number',
+    default: 0.75,
+    range: {
+      min: 0.01,
+      max: 0.99,
+      step: 0.01,
+    },
+    component: 'slider',
+    optionType: 'model',
+    columnSpan: 4,
+    // includeInput: false,
+  },
+};
+
+const meta: Record<string, SettingDefinition> = {
+  temperature: {
+    key: 'temperature',
+    label: 'com_endpoint_temperature',
+    labelCode: true,
+    description: 'com_endpoint_openai_temp',
+    descriptionCode: true,
+    type: 'number',
+    default: 0.5,
+    range: {
+      min: 0,
+      max: 1,
+      step: 0.01,
+    },
+    component: 'slider',
+    optionType: 'model',
+    columnSpan: 4,
+    // includeInput: false,
+  },
+  topP: {
+    key: 'topP',
+    label: 'com_endpoint_top_p',
+    labelCode: true,
+    description: 'com_endpoint_anthropic_topp',
+    descriptionCode: true,
+    type: 'number',
+    default: 0.9,
+    range: {
+      min: 0,
+      max: 1,
+      step: 0.01,
+    },
+    component: 'slider',
+    optionType: 'model',
+    columnSpan: 4,
+    // includeInput: false,
+  },
+};
+
+const bedrockAnthropic: SettingsConfiguration = [
   librechat.modelLabel,
   anthropic.system,
   librechat.maxContextTokens,
@@ -148,8 +276,39 @@ const anthropicBedrock: SettingsConfiguration = [
   librechat.resendFiles,
 ];
 
+const bedrockMistral: SettingsConfiguration = [
+  librechat.modelLabel,
+  librechat.promptPrefix,
+  librechat.maxContextTokens,
+  anthropic.maxTokens,
+  mistral.temperature,
+  mistral.topP,
+  librechat.resendFiles,
+];
+
+const bedrockCohere: SettingsConfiguration = [
+  librechat.modelLabel,
+  librechat.promptPrefix,
+  librechat.maxContextTokens,
+  anthropic.maxTokens,
+  cohere.temperature,
+  cohere.topP,
+  librechat.resendFiles,
+];
+
+const bedrockMeta: SettingsConfiguration = [
+  librechat.modelLabel,
+  librechat.promptPrefix,
+  librechat.maxContextTokens,
+  meta.temperature,
+  meta.topP,
+  librechat.resendFiles,
+];
+
 export const settings: Record<string, SettingsConfiguration | undefined> = {
   // [EModelEndpoint.bedrock]: bedrock,
-  [`${EModelEndpoint.bedrock}${Constants.COMMON_DIVIDER}${BedrockProviders.Anthropic}`]:
-    anthropicBedrock,
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.Anthropic}`]: bedrockAnthropic,
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.MistralAI}`]: bedrockMistral,
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.Cohere}`]: bedrockCohere,
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.Meta}`]: bedrockMeta,
 };

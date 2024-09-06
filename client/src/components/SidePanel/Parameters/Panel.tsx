@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { getModelKey, ComponentTypes, Constants } from 'librechat-data-provider';
+import { getSettingsKeys, ComponentTypes } from 'librechat-data-provider';
 import type { DynamicSettingProps } from 'librechat-data-provider';
 import { useSetIndexOptions } from '~/hooks';
 import { useChatContext } from '~/Providers';
@@ -29,9 +29,10 @@ export default function Parameters() {
   const { setOption } = useSetIndexOptions();
 
   const parameters = useMemo(() => {
-    const endpointKey = conversation?.endpoint ?? '';
-    const modelKey = getModelKey(endpointKey, conversation?.model ?? '');
-    const combinedKey = `${endpointKey}${Constants.COMMON_DIVIDER}${modelKey}`;
+    const [combinedKey, endpointKey] = getSettingsKeys(
+      conversation?.endpoint ?? '',
+      conversation?.model ?? '',
+    );
     return settings[combinedKey] ?? settings[endpointKey];
   }, [conversation]);
 

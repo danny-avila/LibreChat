@@ -12,7 +12,6 @@ import {
   assistantSchema,
   gptPluginsSchema,
   // agentsSchema,
-  bedrockInputSchema,
   compactAgentsSchema,
   compactOpenAISchema,
   compactGoogleSchema,
@@ -22,6 +21,7 @@ import {
   compactAssistantSchema,
   compactAnthropicSchema,
 } from './schemas';
+import { bedrockInputSchema } from './bedrock';
 import { alternateName } from './config';
 
 type EndpointSchema =

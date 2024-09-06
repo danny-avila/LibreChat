@@ -29,7 +29,7 @@ const buildOptions = (endpoint, parsedBody) => {
     iconURL,
     greeting,
     spec,
-    instructions: promptPrefix,
+    promptPrefix,
     maxContextTokens,
     model_parameters: parsedParams,
   });

@@ -24,7 +24,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   const agent = {
     id: EModelEndpoint.bedrock,
     name: endpointOption.name,
-    instructions: endpointOption.instructions,
+    instructions: endpointOption.promptPrefix,
     provider: EModelEndpoint.bedrock,
     model: endpointOption.model_parameters.model,
     model_parameters: endpointOption.model_parameters,
