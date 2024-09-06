@@ -12,7 +12,6 @@ import PopoverButtons from './PopoverButtons';
 import { useSetIndexOptions } from '~/hooks';
 import { useChatContext } from '~/Providers';
 import { Button } from '~/components/ui';
-import { cn, cardStyle } from '~/utils/';
 import store from '~/store';
 
 export default function HeaderOptions({
@@ -29,10 +28,10 @@ export default function HeaderOptions({
     useChatContext();
   const { setOption } = useSetIndexOptions();
 
-  const { endpoint, conversationId, jailbreak } = conversation ?? {};
+  const { endpoint, conversationId, jailbreak = false } = conversation ?? {};
 
   const altConditions: { [key: string]: boolean } = {
-    bingAI: !!(latestMessage && conversation?.jailbreak && endpoint === 'bingAI'),
+    bingAI: !!(latestMessage && jailbreak && endpoint === 'bingAI'),
   };
 
   const altSettings: { [key: string]: () => void } = {
@@ -74,7 +73,7 @@ export default function HeaderOptions({
         <div className="my-auto lg:max-w-2xl xl:max-w-3xl">
           <span className="flex w-full flex-col items-center justify-center gap-0 md:order-none md:m-auto md:gap-2">
             <div className="z-[61] flex w-full items-center justify-center gap-2">
-              {interfaceConfig?.modelSelect && (
+              {interfaceConfig?.modelSelect === true && (
                 <ModelSelect
                   conversation={conversation}
                   setOption={setOption}
@@ -82,7 +81,7 @@ export default function HeaderOptions({
                   popover={true}
                 />
               )}
-              {!noSettings[endpoint] && interfaceConfig?.parameters && (
+              {!noSettings[endpoint] && interfaceConfig?.parameters === true && (
                 <Button
                   aria-label="Settings/parameters"
                   id="parameters-button"
@@ -96,11 +95,11 @@ export default function HeaderOptions({
                 </Button>
               )}
             </div>
-            {interfaceConfig?.parameters && (
+            {interfaceConfig?.parameters === true && (
               <OptionsPopover
                 visible={showPopover}
                 saveAsPreset={saveAsPreset}
-                presetsDisabled={!interfaceConfig.presets}
+                presetsDisabled={!(interfaceConfig.presets ?? false)}
                 PopoverButtons={<PopoverButtons />}
                 closePopover={() => setShowPopover(false)}
               >
@@ -114,7 +113,7 @@ export default function HeaderOptions({
                 </div>
               </OptionsPopover>
             )}
-            {interfaceConfig?.presets && (
+            {interfaceConfig?.presets === true && (
               <SaveAsPresetDialog
                 open={saveAsDialogShow}
                 onOpenChange={setSaveAsDialogShow}
@@ -125,7 +124,7 @@ export default function HeaderOptions({
                 }
               />
             )}
-            {interfaceConfig?.parameters && (
+            {interfaceConfig?.parameters === true && (
               <PluginStoreDialog
                 isOpen={showPluginStoreDialog}
                 setIsOpen={setShowPluginStoreDialog}
