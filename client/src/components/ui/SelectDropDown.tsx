@@ -39,6 +39,19 @@ type SelectDropDownProps = {
   showOptionIcon?: boolean;
 };
 
+function getOptionText(option: string | Option | OptionWithIcon): string {
+  if (typeof option === 'string') {
+    return option;
+  }
+  if ('label' in option) {
+    return option.label ?? '';
+  }
+  if ('value' in option) {
+    return (option.value ?? '') + '';
+  }
+  return '';
+}
+
 function SelectDropDown({
   title: _title,
   value,
@@ -82,11 +95,14 @@ function SelectDropDown({
   const [filteredValues, searchRender] = useMultiSearch<string[] | Option[]>({
     availableOptions: availableValues,
     placeholder: searchPlaceholder,
-    getTextKeyOverride: (option) => ((option as Option).label ?? '').toUpperCase(),
+    getTextKeyOverride: (option) => getOptionText(option).toUpperCase(),
     className: searchClassName,
+    disabled,
   });
-  const hasSearchRender = Boolean(searchRender);
+  const hasSearchRender = searchRender != null;
   const options = hasSearchRender ? filteredValues : availableValues;
+
+  console.log({ hasSearchRender, options });
   const renderIcon = showOptionIcon && value != null && (value as OptionWithIcon).icon != null;
 
   return (
@@ -213,7 +229,7 @@ function SelectDropDown({
                         className={({ active }) =>
                           cn(
                             'group relative flex h-[42px] cursor-pointer select-none items-center overflow-hidden pl-3 pr-9 text-gray-800 hover:bg-gray-20 dark:text-white dark:hover:bg-gray-600',
-                            active ? 'bg-surface-tertiary' : '',
+                            active ? 'bg-surface-active text-text-primary' : '',
                             optionsClass ?? '',
                           )
                         }
