@@ -1,7 +1,8 @@
-import { useMemo } from 'react';
-import { getSettingsKeys, ComponentTypes } from 'librechat-data-provider';
-import type { DynamicSettingProps } from 'librechat-data-provider';
-import { useSetIndexOptions } from '~/hooks';
+import React, { useMemo, useState, useCallback } from 'react';
+import { getSettingsKeys, ComponentTypes, tPresetUpdateSchema } from 'librechat-data-provider';
+import type { DynamicSettingProps, TPreset } from 'librechat-data-provider';
+import { SaveAsPresetDialog } from '~/components/Endpoints';
+import { useSetIndexOptions, useLocalize } from '~/hooks';
 import { useChatContext } from '~/Providers';
 import { settings } from './settings';
 import {
@@ -27,6 +28,9 @@ const componentMapping: Record<ComponentTypes, React.ComponentType<DynamicSettin
 export default function Parameters() {
   const { conversation } = useChatContext();
   const { setOption } = useSetIndexOptions();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [preset, setPreset] = useState<TPreset | null>(null);
+  const localize = useLocalize();
 
   const parameters = useMemo(() => {
     const [combinedKey, endpointKey] = getSettingsKeys(
@@ -34,6 +38,14 @@ export default function Parameters() {
       conversation?.model ?? '',
     );
     return settings[combinedKey] ?? settings[endpointKey];
+  }, [conversation]);
+
+  const openDialog = useCallback(() => {
+    const newPreset = tPresetUpdateSchema.parse({
+      ...conversation,
+    }) as TPreset;
+    setPreset(newPreset);
+    setIsDialogOpen(true);
   }, [conversation]);
 
   if (!parameters) {
@@ -62,6 +74,18 @@ export default function Parameters() {
           );
         })}
       </div>
+      <div className="mt-6 flex justify-center">
+        <button
+          onClick={openDialog}
+          className="btn btn-primary focus:shadow-outline flex w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"
+          type="button"
+        >
+          {localize('com_endpoint_save_as_preset')}
+        </button>
+      </div>
+      {preset && (
+        <SaveAsPresetDialog open={isDialogOpen} onOpenChange={setIsDialogOpen} preset={preset} />
+      )}
     </div>
   );
 }
