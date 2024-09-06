@@ -63,9 +63,9 @@ const SharedArtifacts: React.FC<SharedArtifactsProps> = ({ isOpen, onClose }) =>
     <Tabs.Root value={activeTab} onValueChange={setActiveTab} asChild>
       <div
         className={cn(
-          'fixed right-0 top-0 z-50 h-[calc(100%-1rem)] w-[calc(50%-0.5rem)] overflow-hidden bg-surface-secondary shadow-lg transition-transform duration-300 ease-in-out',
+          'fixed right-0 top-0 z-50 h-[calc(100%-1rem)] w-[calc(50%-0.5rem)] overflow-hidden bg-surface-secondary shadow-lg transition-all duration-300 ease-in-out',
           'mt-2 mr-2 mb-2 rounded-lg',
-          isOpen ? 'translate-x-0' : 'translate-x-full'
+          isOpen ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0 pointer-events-none'
         )}
       >
         <div className="flex h-full flex-col rounded-lg">
