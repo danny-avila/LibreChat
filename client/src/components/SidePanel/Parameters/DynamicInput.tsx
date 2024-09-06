@@ -18,7 +18,7 @@ function DynamicInput({
   optionType,
   placeholder = '',
   readonly = false,
-  showDefault = true,
+  showDefault = false,
   labelCode = false,
   descriptionCode = false,
   placeholderCode = false,

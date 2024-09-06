@@ -19,7 +19,7 @@ function DynamicDropdown({
   options,
   // type: _type,
   readonly = false,
-  showDefault = true,
+  showDefault = false,
   labelCode = false,
   descriptionCode = false,
   conversation,

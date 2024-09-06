@@ -16,7 +16,7 @@ function DynamicSwitch({
   setOption,
   optionType,
   readonly = false,
-  showDefault = true,
+  showDefault = false,
   labelCode = false,
   descriptionCode = false,
   conversation,

@@ -17,7 +17,7 @@ function DynamicInputNumber({
   setOption,
   optionType,
   readonly = false,
-  showDefault = true,
+  showDefault = false,
   labelCode = false,
   descriptionCode = false,
   placeholderCode = false,

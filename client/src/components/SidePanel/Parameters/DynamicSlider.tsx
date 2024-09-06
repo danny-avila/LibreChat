@@ -19,7 +19,7 @@ function DynamicSlider({
   optionType,
   options,
   readonly = false,
-  showDefault = true,
+  showDefault = false,
   includeInput = true,
   labelCode = false,
   descriptionCode = false,
