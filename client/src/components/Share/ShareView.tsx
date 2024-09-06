@@ -81,7 +81,6 @@ function SharedView() {
           'relative flex w-full grow overflow-hidden dark:bg-surface-secondary transition-all duration-300 ease-in-out',
           isArtifactPanelOpen ? 'pr-[calc(50%-0.5rem)]' : ''
         )}
-        style={{ paddingBottom: '50px' }}
       >
         <div
           className={cn(
@@ -92,7 +91,11 @@ function SharedView() {
         >
           <div className="flex h-full flex-col text-text-primary" role="presentation">
             {content}
-            <div className="w-full border-t-0 pl-0 pt-2 md:w-[calc(100%-.5rem)] md:border-t-0 md:border-transparent md:pl-0 md:pt-0 md:dark:border-transparent">
+            <div className={cn(
+              'w-full border-t-0 pl-0 pt-2 md:w-[calc(100%-.5rem)] md:border-t-0 md:border-transparent md:pl-0 md:pt-0 md:dark:border-transparent',
+              'transition-opacity duration-300 ease-in-out',
+              isArtifactPanelOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'
+            )}>
               <Footer className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-center gap-2 bg-gradient-to-t from-surface-secondary to-transparent px-2 pb-2 pt-8 text-xs text-text-secondary md:px-[60px]" />
             </div>
           </div>
