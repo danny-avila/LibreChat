@@ -518,7 +518,7 @@ export const tConversationSchema = z.object({
   /* agents */
   agent_id: z.string().optional(),
   /* AWS Bedrock */
-  maxTokens: z.number().optional(),
+  maxTokens: coerceNumber.optional(),
   additionalModelRequestFields: DocumentType.optional(),
   /* assistant + agents */
   instructions: z.string().optional(),
