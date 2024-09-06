@@ -21,6 +21,7 @@ function SharedView() {
   const dataTree = data && buildTree({ messages: data.messages });
   const messagesTree = dataTree?.length === 0 ? null : dataTree ?? null;
   const [isArtifactPanelOpen, setIsArtifactPanelOpen] = useRecoilState(store.artifactsVisible);
+  const [codeArtifacts, setCodeArtifacts] = useRecoilState<boolean>(store.codeArtifacts);
 
   // configure document title
   let docTitle = '';
@@ -36,11 +37,18 @@ function SharedView() {
     // Ensure artifact panel is initially closed
     setIsArtifactPanelOpen(false);
 
-    // Reset artifact panel state when component unmounts
+    // Store the initial codeArtifacts value
+    const initialCodeArtifacts = codeArtifacts;
+
+    // Set codeArtifacts to true for shared link page
+    setCodeArtifacts(true);
+
+    // Reset artifact panel state and codeArtifacts when component unmounts
     return () => {
       setIsArtifactPanelOpen(false);
+      setCodeArtifacts(initialCodeArtifacts);
     };
-  }, [setIsArtifactPanelOpen]);
+  }, [setIsArtifactPanelOpen, codeArtifacts, setCodeArtifacts]);
 
   let content: JSX.Element;
   if (isLoading) {
