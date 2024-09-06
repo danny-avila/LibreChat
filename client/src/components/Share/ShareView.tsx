@@ -77,13 +77,17 @@ function SharedView() {
   return (
     <ShareContext.Provider value={{ isSharedConvo: true }}>
       <main
-        className="relative flex w-full grow overflow-hidden dark:bg-surface-secondary"
+        className={cn(
+          'relative flex w-full grow overflow-hidden dark:bg-surface-secondary transition-all duration-300 ease-in-out',
+          isArtifactPanelOpen ? 'pr-[calc(50%-0.5rem)]' : ''
+        )}
         style={{ paddingBottom: '50px' }}
       >
         <div
           className={cn(
-            'transition-width relative flex h-full flex-1 flex-col items-stretch overflow-hidden pt-0 dark:bg-surface-secondary',
-            isArtifactPanelOpen ? 'w-[calc(100%-384px)]' : 'w-full'
+            'transition-all duration-300 ease-in-out',
+            'relative flex h-full flex-1 flex-col items-stretch overflow-hidden pt-0 dark:bg-surface-secondary',
+            isArtifactPanelOpen ? 'w-1/2 ml-2' : 'w-full'
           )}
         >
           <div className="flex h-full flex-col text-text-primary" role="presentation">

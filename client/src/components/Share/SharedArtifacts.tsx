@@ -63,13 +63,14 @@ const SharedArtifacts: React.FC<SharedArtifactsProps> = ({ isOpen, onClose }) =>
     <Tabs.Root value={activeTab} onValueChange={setActiveTab} asChild>
       <div
         className={cn(
-          'fixed right-0 top-0 z-50 h-full w-96 overflow-hidden bg-surface-secondary shadow-lg transition-transform duration-300 ease-in-out',
+          'fixed right-0 top-0 z-50 h-[calc(100%-1rem)] w-[calc(50%-0.5rem)] overflow-hidden bg-surface-secondary shadow-lg transition-transform duration-300 ease-in-out',
+          'mt-2 mr-2 mb-2 rounded-lg',
           isOpen ? 'translate-x-0' : 'translate-x-full'
         )}
       >
-        <div className="flex h-full flex-col">
+        <div className="flex h-full flex-col rounded-lg">
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-border-medium bg-surface-primary-alt p-2">
+          <div className="flex items-center justify-between rounded-t-lg border-b border-border-medium bg-surface-primary-alt p-2">
             <div className="flex items-center">
               <h3 className="truncate text-sm text-text-primary">{currentArtifact?.title}</h3>
             </div>
@@ -142,7 +143,7 @@ const SharedArtifacts: React.FC<SharedArtifactsProps> = ({ isOpen, onClose }) =>
             )}
           </Tabs.Content>
           {/* Footer */}
-          <div className="flex items-center justify-between border-t border-border-medium bg-surface-primary-alt p-2 text-sm text-text-secondary">
+          <div className="flex items-center justify-between rounded-b-lg border-t border-border-medium bg-surface-primary-alt p-2 text-sm text-text-secondary">
             <div className="flex items-center">
               <button onClick={() => cycleArtifact('prev')} className="mr-2 text-text-secondary">
                 <svg
