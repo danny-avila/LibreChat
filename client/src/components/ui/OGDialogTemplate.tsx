@@ -24,6 +24,7 @@ type DialogTemplateProps = {
   leftButtons?: ReactNode;
   selection?: SelectionProps;
   className?: string;
+  overlayClassName?: string;
   headerClassName?: string;
   mainClassName?: string;
   footerClassName?: string;
@@ -40,11 +41,12 @@ const OGDialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDi
     selection,
     className,
     leftButtons,
-    description,
+    description = '',
     mainClassName,
     headerClassName,
     footerClassName,
     showCloseButton,
+    overlayClassName,
     showCancelButton = true,
   } = props;
   const { selectHandler, selectClasses, selectText } = selection || {};
@@ -54,11 +56,12 @@ const OGDialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDi
     'bg-gray-800 text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-200 dark:text-gray-800 dark:hover:bg-gray-200';
   return (
     <OGDialogContent
+      overlayClassName={overlayClassName}
       showCloseButton={showCloseButton}
       ref={ref}
       className={cn(
         'bg-white dark:border-gray-700 dark:bg-gray-850 dark:text-gray-300',
-        className || '',
+        className ?? '',
       )}
       onClick={(e) => e.stopPropagation()}
     >
@@ -66,21 +69,21 @@ const OGDialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDi
         <OGDialogTitle>{title}</OGDialogTitle>
         {description && <OGDialogDescription className="">{description}</OGDialogDescription>}
       </OGDialogHeader>
-      <div className={cn('px-0', mainClassName)}>{main ? main : null}</div>
+      <div className={cn('px-0', mainClassName)}>{main != null ? main : null}</div>
       <OGDialogFooter className={footerClassName}>
-        <div>{leftButtons ? leftButtons : null}</div>
+        <div>{leftButtons != null ? leftButtons : null}</div>
         <div className="flex h-auto gap-3">
           {showCancelButton && (
             <OGDialogClose className="btn btn-neutral border-token-border-light relative rounded-lg text-sm">
               {Cancel}
             </OGDialogClose>
           )}
-          {buttons ? buttons : null}
+          {buttons != null ? buttons : null}
           {selection ? (
             <OGDialogClose
               onClick={selectHandler}
               className={`${
-                selectClasses || defaultSelect
+                selectClasses ?? defaultSelect
               } inline-flex h-10 items-center justify-center rounded-lg border-none px-4 py-2 text-sm`}
             >
               {selectText}
