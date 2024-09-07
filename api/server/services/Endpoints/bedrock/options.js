@@ -7,7 +7,7 @@ const getOptions = async ({ req, endpointOption }) => {
     BEDROCK_AWS_SECRET_ACCESS_KEY,
     BEDROCK_AWS_ACCESS_KEY_ID,
     BEDROCK_REVERSE_PROXY,
-    BEDROCK_AWS_REGION,
+    BEDROCK_AWS_DEFAULT_REGION,
     PROXY,
   } = process.env;
   const expiresAt = req.body.key;
@@ -47,7 +47,7 @@ const getOptions = async ({ req, endpointOption }) => {
     {
       credentials,
       model: endpointOption.model,
-      region: BEDROCK_AWS_REGION,
+      region: BEDROCK_AWS_DEFAULT_REGION,
       streaming: true,
       streamUsage: true,
     },
