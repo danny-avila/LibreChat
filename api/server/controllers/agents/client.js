@@ -433,6 +433,7 @@ class AgentClient extends BaseClient {
       // const streamRate = this.options.streamRate ?? Constants.DEFAULT_STREAM_RATE;
 
       const run = await createRun({
+        req: this.options.req,
         agent: this.options.agent,
         tools: this.options.tools,
         toolMap: this.options.toolMap,

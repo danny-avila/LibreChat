@@ -14,17 +14,19 @@ const { providerEndpointMap } = require('librechat-data-provider');
  * Creates a new Run instance with custom handlers and configuration.
  *
  * @param {Object} options - The options for creating the Run instance.
+ * @param {ServerRequest} options.req - The server request.
+ * @param {string | undefined} [options.runId] - Optional run ID; otherwise, a new run ID will be generated.
  * @param {Agent} options.agent - The agent for this run.
  * @param {StructuredTool[] | undefined} [options.tools] - The tools to use in the run.
  * @param {Record<string, StructuredTool[]> | undefined} [options.toolMap] - The tool map for the run.
  * @param {Record<GraphEvents, EventHandler> | undefined} [options.customHandlers] - Custom event handlers.
- * @param {string | undefined} [options.runId] - Optional run ID; otherwise, a new run ID will be generated.
  * @param {ClientOptions} [options.modelOptions] - Optional model to use; if not provided, it will use the default from modelMap.
  * @param {boolean} [options.streaming=true] - Whether to use streaming.
  * @param {boolean} [options.streamUsage=true] - Whether to stream usage information.
  * @returns {Promise<Run<IState>>} A promise that resolves to a new Run instance.
  */
 async function createRun({
+  req,
   runId,
   tools,
   agent,
@@ -52,9 +54,13 @@ async function createRun({
     additional_instructions: agent.additional_instructions,
   };
 
+  // TEMPORARY FOR TESTING
   if (agent.provider === Providers.ANTHROPIC) {
-    graphConfig.streamBuffer = 3000;
-    graphConfig.streamRate = 30;
+    graphConfig.streamBuffer = 2000;
+  }
+
+  if (req.app.locals[agent.provider]) {
+    graphConfig.streamRate = req.app.locals[agent.provider].streamRate;
   }
 
   return Run.create({
