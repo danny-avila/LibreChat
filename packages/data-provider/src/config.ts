@@ -187,43 +187,41 @@ export const assistantEndpointSchema = baseEndpointSchema.merge(
 export type TAssistantEndpoint = z.infer<typeof assistantEndpointSchema>;
 
 export const agentsEndpointSChema = baseEndpointSchema.merge(
-  baseEndpointSchema.merge(
-    z.object({
-      /* assistants specific */
-      disableBuilder: z.boolean().optional(),
-      pollIntervalMs: z.number().optional(),
-      timeoutMs: z.number().optional(),
-      version: z.union([z.string(), z.number()]).default(2),
-      supportedIds: z.array(z.string()).min(1).optional(),
-      excludedIds: z.array(z.string()).min(1).optional(),
-      privateAssistants: z.boolean().optional(),
-      retrievalModels: z.array(z.string()).min(1).optional().default(defaultRetrievalModels),
-      capabilities: z
-        .array(z.nativeEnum(Capabilities))
-        .optional()
-        .default([
-          Capabilities.code_interpreter,
-          Capabilities.image_vision,
-          Capabilities.retrieval,
-          Capabilities.actions,
-          Capabilities.tools,
-        ]),
-      /* general */
-      apiKey: z.string().optional(),
-      baseURL: z.string().optional(),
-      models: z
-        .object({
-          default: z.array(z.string()).min(1),
-          fetch: z.boolean().optional(),
-          userIdQuery: z.boolean().optional(),
-        })
-        .optional(),
-      titleConvo: z.boolean().optional(),
-      titleMethod: z.union([z.literal('completion'), z.literal('functions')]).optional(),
-      titleModel: z.string().optional(),
-      headers: z.record(z.any()).optional(),
-    }),
-  ),
+  z.object({
+    /* assistants specific */
+    disableBuilder: z.boolean().optional(),
+    pollIntervalMs: z.number().optional(),
+    timeoutMs: z.number().optional(),
+    version: z.union([z.string(), z.number()]).default(2),
+    supportedIds: z.array(z.string()).min(1).optional(),
+    excludedIds: z.array(z.string()).min(1).optional(),
+    privateAssistants: z.boolean().optional(),
+    retrievalModels: z.array(z.string()).min(1).optional().default(defaultRetrievalModels),
+    capabilities: z
+      .array(z.nativeEnum(Capabilities))
+      .optional()
+      .default([
+        Capabilities.code_interpreter,
+        Capabilities.image_vision,
+        Capabilities.retrieval,
+        Capabilities.actions,
+        Capabilities.tools,
+      ]),
+    /* general */
+    apiKey: z.string().optional(),
+    baseURL: z.string().optional(),
+    models: z
+      .object({
+        default: z.array(z.string()).min(1),
+        fetch: z.boolean().optional(),
+        userIdQuery: z.boolean().optional(),
+      })
+      .optional(),
+    titleConvo: z.boolean().optional(),
+    titleMethod: z.union([z.literal('completion'), z.literal('functions')]).optional(),
+    titleModel: z.string().optional(),
+    headers: z.record(z.any()).optional(),
+  }),
 );
 
 export type TAgentsEndpoint = z.infer<typeof agentsEndpointSChema>;
@@ -1067,7 +1065,7 @@ export enum Constants {
   /** Key for the app's version. */
   VERSION = 'v0.7.5-rc1',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.1.6',
+  CONFIG_VERSION = '1.1.7',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value for the initial conversationId before a request is sent */
