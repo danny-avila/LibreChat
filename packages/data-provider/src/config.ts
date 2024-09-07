@@ -142,6 +142,7 @@ export const defaultAssistantsVersion = {
 
 export const baseEndpointSchema = z.object({
   streamRate: z.number().optional(),
+  baseURL: z.string().optional(),
 });
 
 export type TBaseEndpoint = z.infer<typeof baseEndpointSchema>;
@@ -169,7 +170,6 @@ export const assistantEndpointSchema = baseEndpointSchema.merge(
       ]),
     /* general */
     apiKey: z.string().optional(),
-    baseURL: z.string().optional(),
     models: z
       .object({
         default: z.array(z.string()).min(1),
@@ -209,7 +209,6 @@ export const agentsEndpointSChema = baseEndpointSchema.merge(
       ]),
     /* general */
     apiKey: z.string().optional(),
-    baseURL: z.string().optional(),
     models: z
       .object({
         default: z.array(z.string()).min(1),
