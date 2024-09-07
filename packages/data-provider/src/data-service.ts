@@ -682,3 +682,7 @@ export function getUserTerms(): Promise<t.TUserTermsResponse> {
 export function acceptTerms(): Promise<t.TAcceptTermsResponse> {
   return request.post(endpoints.acceptUserTerms());
 }
+
+export function getBanner(): Promise<t.TBannerResponse> {
+  return request.get(endpoints.banner());
+}
