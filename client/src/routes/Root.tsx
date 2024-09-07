@@ -8,6 +8,7 @@ import { AgentsMapContext, AssistantsMapContext, FileMapContext, SearchContext }
 import { useAuthContext, useAssistantsMap, useAgentsMap, useFileMap, useSearch } from '~/hooks';
 import { Nav, MobileNav } from '~/components/Nav';
 import TermsAndConditionsModal from '~/components/ui/TermsAndConditionsModal';
+import { Banner } from '~/components/Banners';
 
 export default function Root() {
   const { isAuthenticated, logout, token } = useAuthContext();
@@ -54,6 +55,7 @@ export default function Root() {
       <FileMapContext.Provider value={fileMap}>
         <AssistantsMapContext.Provider value={assistantsMap}>
           <AgentsMapContext.Provider value={agentsMap}>
+            <Banner />
             <div className="flex h-dvh">
               <div className="relative z-0 flex h-full w-full overflow-hidden">
                 <Nav navVisible={navVisible} setNavVisible={setNavVisible} />
