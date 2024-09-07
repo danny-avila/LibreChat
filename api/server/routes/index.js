@@ -23,6 +23,7 @@ const edit = require('./edit');
 const keys = require('./keys');
 const user = require('./user');
 const ask = require('./ask');
+const banner = require('./banner');
 
 module.exports = {
   ask,
@@ -50,4 +51,5 @@ module.exports = {
   assistants,
   categories,
   staticRoute,
+  banner,
 };
