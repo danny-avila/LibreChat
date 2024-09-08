@@ -19,18 +19,20 @@ export const Banner = () => {
   };
 
   return (
-    <div className="relative bg-black px-4 py-3 text-white">
-      <div className="container mx-auto">
-        <div className="flex items-center justify-between md:justify-center">
-          <p className="text-sm" dangerouslySetInnerHTML={{ __html: banner.message }}></p>
-          <button
-            onClick={onClick}
-            className="text-white transition-colors duration-200 hover:text-gray-300 md:absolute md:right-4"
-          >
-            <XIcon className="h-5 w-5" />
-          </button>
-        </div>
-      </div>
+    <div className="sticky top-0 z-20 flex items-center bg-neutral-900 from-gray-700 to-gray-900 px-2 py-1 text-slate-50 dark:bg-gradient-to-r dark:text-white md:relative">
+      <div
+        className="w-full truncate px-4 text-center text-sm"
+        dangerouslySetInnerHTML={{ __html: banner.message }}
+      ></div>
+
+      <button
+        type="button"
+        aria-label="Dismiss banner"
+        className="h-8 w-8 opacity-80 hover:opacity-100"
+        onClick={onClick}
+      >
+        <XIcon className="mx-auto h-4 w-4" />
+      </button>
     </div>
   );
 };
