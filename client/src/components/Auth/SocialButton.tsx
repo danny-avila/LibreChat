@@ -6,7 +6,7 @@ const SocialButton = ({ id, enabled, serverDomain, oauthPath, Icon, label, autoR
   const [activeButton, setActiveButton] = useState(null);
 
   if (autoRedirect && typeof window !== 'undefined') {
-        window.location.href = `${serverDomain}/oauth/${oauthPath}`;
+//        window.location.href = `${serverDomain}/oauth/${oauthPath}`;
   }
 
   if (!enabled) {
