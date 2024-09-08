@@ -20,6 +20,7 @@ const {
   // genAzureChatCompletion,
 } = require('~/utils');
 const {
+  // truncateText,
   formatMessage,
   formatAgentMessages,
   createContextHandlers,
@@ -429,8 +430,6 @@ class AgentClient extends BaseClient {
       //     modelOptions,
       //   });
       // }
-
-      // const streamRate = this.options.streamRate ?? Constants.DEFAULT_STREAM_RATE;
 
       const run = await createRun({
         req: this.options.req,

@@ -1,5 +1,5 @@
 const { Run, Providers } = require('@librechat/agents');
-const { providerEndpointMap } = require('librechat-data-provider');
+const { providerEndpointMap, Constants } = require('librechat-data-provider');
 
 /**
  * @typedef {import('@librechat/agents').t} t
@@ -59,8 +59,14 @@ async function createRun({
     graphConfig.streamBuffer = 2000;
   }
 
-  if (req.app.locals[agent.provider]) {
-    graphConfig.streamRate = req.app.locals[agent.provider].streamRate;
+  /** @type {number} */
+  const streamRate =
+    req.app.locals.all?.streamRate ??
+    req.app.locals[agent.provider]?.streamRate ??
+    Constants.DEFAULT_STREAM_RATE;
+
+  if (streamRate) {
+    graphConfig.streamRate = streamRate;
   }
 
   return Run.create({
