@@ -5,6 +5,10 @@ const SocialButton = ({ id, enabled, serverDomain, oauthPath, Icon, label, autoR
   const [isPressed, setIsPressed] = useState(false);
   const [activeButton, setActiveButton] = useState(null);
 
+  if (autoRedirect && typeof window !== 'undefined') {
+        window.location.href = `${serverDomain}/oauth/${oauthPath}`;
+  }
+
   if (!enabled) {
     return null;
   }
@@ -43,29 +47,23 @@ const SocialButton = ({ id, enabled, serverDomain, oauthPath, Icon, label, autoR
 
     return `${baseStyles} ${dynamicStyles}`;
   };
-  if (autoRedirect) {
-    return (<script>
-      window.location.href=`${serverDomain}/oauth/${oauthPath}`;
-    </script>)
-  }
-  else 
-    return (
-      <div className="mt-2 flex gap-x-2">
-        <a
-          aria-label={`${label}`}
-          className={`${getButtonStyles()} flex w-full items-center space-x-3 rounded-md px-5 py-3 text-black transition-colors dark:text-white`}
-          href={`${serverDomain}/oauth/${oauthPath}`}
-          data-testid={id}
-          onMouseEnter={handleMouseEnter}
-          onMouseLeave={handleMouseLeave}
-          onMouseDown={handleMouseDown}
-          onMouseUp={handleMouseUp}
-        >
-          <Icon />
-          <p>{label}</p>
-        </a>
-      </div>
-    );
+  return (
+    <div className="mt-2 flex gap-x-2">
+      <a
+        aria-label={`${label}`}
+        className={`${getButtonStyles()} flex w-full items-center space-x-3 rounded-md px-5 py-3 text-black transition-colors dark:text-white`}
+        href={`${serverDomain}/oauth/${oauthPath}`}
+        data-testid={id}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        onMouseDown={handleMouseDown}
+        onMouseUp={handleMouseUp}
+      >
+        <Icon />
+        <p>{label}</p>
+      </a>
+    </div>
+  );
 };
 
 export default SocialButton;
