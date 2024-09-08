@@ -19,6 +19,7 @@ function DynamicCombobox({
   optionType,
   options: _options,
   items: _items,
+  showLabel = true,
   showDefault = false,
   labelCode = false,
   descriptionCode = false,
@@ -86,21 +87,23 @@ function DynamicCombobox({
     >
       <HoverCard openDelay={300}>
         <HoverCardTrigger className="grid w-full items-center gap-2">
-          <div className="flex w-full justify-between">
-            <Label
-              htmlFor={`${settingKey}-dynamic-combobox`}
-              className="text-left text-sm font-medium"
-            >
-              {labelCode ? localize(label) ?? label : label || settingKey}
-              {showDefault && (
-                <small className="opacity-40">
-                  ({localize('com_endpoint_default')}: {defaultValue})
-                </small>
-              )}
-            </Label>
-          </div>
+          {showLabel === true && (
+            <div className="flex w-full justify-between">
+              <Label
+                htmlFor={`${settingKey}-dynamic-combobox`}
+                className="text-left text-sm font-medium"
+              >
+                {labelCode ? localize(label) ?? label : label || settingKey}
+                {showDefault && (
+                  <small className="opacity-40">
+                    ({localize('com_endpoint_default')}: {defaultValue})
+                  </small>
+                )}
+              </Label>
+            </div>
+          )}
           <ControlCombobox
-            displayValue={selectedValue ?? ''}
+            displayValue={selectedValue}
             selectPlaceholder={
               selectPlaceholderCode === true ? localize(selectPlaceholder) : selectPlaceholder
             }

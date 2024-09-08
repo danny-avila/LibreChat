@@ -147,6 +147,12 @@ export const baseEndpointSchema = z.object({
 
 export type TBaseEndpoint = z.infer<typeof baseEndpointSchema>;
 
+export const bedrockEndpointSchema = baseEndpointSchema.merge(
+  z.object({
+    availableRegions: z.array(z.string()).optional(),
+  }),
+);
+
 export const assistantEndpointSchema = baseEndpointSchema.merge(
   z.object({
     /* assistants specific */

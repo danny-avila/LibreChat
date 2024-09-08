@@ -19,9 +19,12 @@ function DynamicDropdown({
   options,
   // type: _type,
   readonly = false,
+  showLabel = true,
   showDefault = false,
   labelCode = false,
   descriptionCode = false,
+  placeholder = '',
+  placeholderCode = false,
   conversation,
 }: DynamicSettingProps) {
   const localize = useLocalize();
@@ -69,19 +72,21 @@ function DynamicDropdown({
     >
       <HoverCard openDelay={300}>
         <HoverCardTrigger className="grid w-full items-center gap-2">
-          <div className="flex w-full justify-between">
-            <Label
-              htmlFor={`${settingKey}-dynamic-dropdown`}
-              className="text-left text-sm font-medium"
-            >
-              {labelCode ? localize(label) ?? label : label || settingKey}
-              {showDefault && (
-                <small className="opacity-40">
-                  ({localize('com_endpoint_default')}: {defaultValue})
-                </small>
-              )}
-            </Label>
-          </div>
+          {showLabel === true && (
+            <div className="flex w-full justify-between">
+              <Label
+                htmlFor={`${settingKey}-dynamic-dropdown`}
+                className="text-left text-sm font-medium"
+              >
+                {labelCode ? localize(label) ?? label : label || settingKey}
+                {showDefault && (
+                  <small className="opacity-40">
+                    ({localize('com_endpoint_default')}: {defaultValue})
+                  </small>
+                )}
+              </Label>
+            </div>
+          )}
           <SelectDropDown
             showLabel={false}
             emptyTitle={true}
@@ -91,6 +96,7 @@ function DynamicDropdown({
             availableValues={options}
             containerClassName="w-full"
             id={`${settingKey}-dynamic-dropdown`}
+            placeholder={placeholderCode ? localize(placeholder) ?? placeholder : placeholder}
           />
         </HoverCardTrigger>
         {description && (

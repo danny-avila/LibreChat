@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useCallback } from 'react';
-import { useGetModelsQuery } from 'librechat-data-provider/react-query';
+import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import { getSettingsKeys, tPresetUpdateSchema } from 'librechat-data-provider';
 import type { TPreset } from 'librechat-data-provider';
 import { SaveAsPresetDialog } from '~/components/Endpoints';
@@ -9,19 +9,18 @@ import { useChatContext } from '~/Providers';
 import { settings } from './settings';
 
 export default function Parameters() {
-  const modelsQuery = useGetModelsQuery();
+  const localize = useLocalize();
   const { conversation } = useChatContext();
   const { setOption } = useSetIndexOptions();
+
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [preset, setPreset] = useState<TPreset | null>(null);
-  const localize = useLocalize();
 
-  const models = useMemo(() => {
-    return (modelsQuery.data?.[conversation?.endpoint ?? ''] ?? []).map((model) => ({
-      label: model,
-      value: model,
-    }));
-  }, [modelsQuery, conversation?.endpoint]);
+  const { data: endpointsConfig } = useGetEndpointsQuery();
+
+  const bedrockRegions = useMemo(() => {
+    return endpointsConfig?.[conversation?.endpoint ?? '']?.availableRegions ?? [];
+  }, [endpointsConfig, conversation?.endpoint]);
 
   const parameters = useMemo(() => {
     const [combinedKey, endpointKey] = getSettingsKeys(
@@ -52,6 +51,10 @@ export default function Parameters() {
         {parameters.map((setting) => {
           const Component = componentMapping[setting.component];
           const { key, default: defaultValue, ...rest } = setting;
+
+          if (key === 'region' && bedrockRegions.length) {
+            rest.options = bedrockRegions;
+          }
 
           return (
             <Component

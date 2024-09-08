@@ -40,6 +40,22 @@ const baseDefinitions: Record<string, Partial<SettingDefinition>> = {
   },
 };
 
+const bedrock: Record<string, SettingDefinition> = {
+  region: {
+    key: 'region',
+    type: 'string',
+    label: 'com_ui_region',
+    labelCode: true,
+    component: 'combobox',
+    optionType: 'conversation',
+    selectPlaceholder: 'com_ui_select_region',
+    searchPlaceholder: 'com_ui_select_search_region',
+    searchPlaceholderCode: true,
+    selectPlaceholderCode: true,
+    columnSpan: 2,
+  },
+};
+
 const createDefinition = (
   base: Partial<SettingDefinition>,
   overrides: Partial<SettingDefinition>,
@@ -197,6 +213,7 @@ const bedrockAnthropic: SettingsConfiguration = [
   anthropic.topP,
   anthropic.topK,
   anthropic.stop,
+  bedrock.region,
   librechat.resendFiles,
 ];
 
@@ -207,6 +224,7 @@ const bedrockMistral: SettingsConfiguration = [
   anthropic.maxTokens,
   mistral.temperature,
   mistral.topP,
+  bedrock.region,
   librechat.resendFiles,
 ];
 
@@ -217,6 +235,7 @@ const bedrockCohere: SettingsConfiguration = [
   anthropic.maxTokens,
   cohere.temperature,
   cohere.topP,
+  bedrock.region,
   librechat.resendFiles,
 ];
 
@@ -226,6 +245,7 @@ const bedrockMeta: SettingsConfiguration = [
   librechat.maxContextTokens,
   meta.temperature,
   meta.topP,
+  bedrock.region,
   librechat.resendFiles,
 ];
 
@@ -242,6 +262,7 @@ const bedrockAnthropicCol2: SettingsConfiguration = [
   anthropic.temperature,
   anthropic.topP,
   anthropic.topK,
+  bedrock.region,
   librechat.resendFiles,
 ];
 
@@ -256,6 +277,7 @@ const bedrockMistralCol2: SettingsConfiguration = [
   anthropic.maxTokens,
   mistral.temperature,
   mistral.topP,
+  bedrock.region,
   librechat.resendFiles,
 ];
 
@@ -270,6 +292,7 @@ const bedrockCohereCol2: SettingsConfiguration = [
   anthropic.maxTokens,
   cohere.temperature,
   cohere.topP,
+  bedrock.region,
   librechat.resendFiles,
 ];
 
@@ -283,6 +306,7 @@ const bedrockMetaCol2: SettingsConfiguration = [
   librechat.maxContextTokens,
   meta.temperature,
   meta.topP,
+  bedrock.region,
   librechat.resendFiles,
 ];
 

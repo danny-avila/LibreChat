@@ -13,6 +13,7 @@ export const bedrockInputSchema = s.tConversationSchema
     maxOutputTokens: true,
     maxContextTokens: true,
     /* Bedrock params; optionType: 'model' */
+    region: true,
     system: true,
     model: true,
     maxTokens: true,
@@ -40,6 +41,7 @@ export const bedrockInputParser = s.tConversationSchema
     maxOutputTokens: true,
     maxContextTokens: true,
     /* Bedrock params; optionType: 'model' */
+    region: true,
     model: true,
     maxTokens: true,
     temperature: true,
@@ -60,6 +62,7 @@ export const bedrockInputParser = s.tConversationSchema
       'spec',
       'maxOutputTokens',
       'additionalModelRequestFields',
+      'region',
       'model',
       'maxTokens',
       'temperature',

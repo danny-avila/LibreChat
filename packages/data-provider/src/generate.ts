@@ -54,6 +54,7 @@ export interface SettingDefinition {
   description?: string;
   type: 'number' | 'boolean' | 'string' | 'enum' | 'array';
   default?: number | boolean | string | string[];
+  showLabel?: boolean;
   showDefault?: boolean;
   options?: string[];
   range?: SettingRange;
