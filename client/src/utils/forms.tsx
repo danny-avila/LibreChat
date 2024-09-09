@@ -1,3 +1,4 @@
+import { EarthIcon } from 'lucide-react';
 import { alternateName } from 'librechat-data-provider';
 import type { Agent, TFile } from 'librechat-data-provider';
 import type { DropdownValueSetter, TAgentOption } from '~/common';
@@ -39,14 +40,22 @@ export const createProviderOption = (provider: string) => ({
 type FileTuple = [string, Partial<TFile>];
 type FileList = Array<FileTuple>;
 
-export const processAgentOption = (
-  _agent?: Agent,
-  fileMap?: Record<string, TFile>,
-): TAgentOption => {
+export const processAgentOption = ({
+  agent: _agent,
+  fileMap,
+  instanceProjectId,
+}: {
+  agent?: Agent;
+  fileMap?: Record<string, TFile | undefined>;
+  instanceProjectId?: string;
+}): TAgentOption => {
+  const isGlobal =
+    (instanceProjectId != null && _agent?.projectIds?.includes(instanceProjectId)) ?? false;
   const agent: TAgentOption = {
     ...(_agent ?? ({} as Agent)),
     label: _agent?.name ?? '',
     value: _agent?.id ?? '',
+    icon: isGlobal ? <EarthIcon className="icon-md text-green-400" /> : null,
     // files: _agent?.file_ids ? ([] as FileList) : undefined,
     // code_files: _agent?.tool_resources?.code_interpreter?.file_ids
     //   ? ([] as FileList)
@@ -58,7 +67,7 @@ export const processAgentOption = (
   }
 
   const handleFile = (file_id: string, list?: FileList) => {
-    const file = fileMap?.[file_id];
+    const file = fileMap[file_id];
     if (file) {
       list?.push([file_id, file]);
     } else {
@@ -82,7 +91,7 @@ export const processAgentOption = (
   }
 
   if (agent.code_files && _agent?.tool_resources?.code_interpreter?.file_ids) {
-    _agent.tool_resources?.code_interpreter?.file_ids?.forEach((file_id) =>
+    _agent.tool_resources.code_interpreter.file_ids.forEach((file_id) =>
       handleFile(file_id, agent.code_files),
     );
   }

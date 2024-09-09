@@ -25,11 +25,37 @@ export enum EModelEndpoint {
   azureAssistants = 'azureAssistants',
   agents = 'agents',
   custom = 'custom',
+  bedrock = 'bedrock',
 }
+
+export enum BedrockProviders {
+  AI21 = 'ai21',
+  Amazon = 'amazon',
+  Anthropic = 'anthropic',
+  Cohere = 'cohere',
+  Meta = 'meta',
+  MistralAI = 'mistral',
+  StabilityAI = 'stability',
+}
+
+export const getModelKey = (endpoint: EModelEndpoint | string, model: string) => {
+  if (endpoint === EModelEndpoint.bedrock) {
+    return model.split('.')[0] as BedrockProviders;
+  }
+  return model;
+};
+
+export const getSettingsKeys = (endpoint: EModelEndpoint | string, model: string) => {
+  const endpointKey = endpoint;
+  const modelKey = getModelKey(endpointKey, model);
+  const combinedKey = `${endpointKey}-${modelKey}`;
+  return [combinedKey, endpointKey];
+};
 
 export type AssistantsEndpoint = EModelEndpoint.assistants | EModelEndpoint.azureAssistants;
 
-export const isAssistantsEndpoint = (endpoint?: AssistantsEndpoint | null | string): boolean => {
+export const isAssistantsEndpoint = (_endpoint?: AssistantsEndpoint | null | string): boolean => {
+  const endpoint = _endpoint ?? '';
   if (!endpoint) {
     return false;
   }
@@ -38,7 +64,8 @@ export const isAssistantsEndpoint = (endpoint?: AssistantsEndpoint | null | stri
 
 export type AgentProvider = Exclude<keyof typeof EModelEndpoint, EModelEndpoint.agents> | string;
 
-export const isAgentsEndpoint = (endpoint?: EModelEndpoint.agents | null | string): boolean => {
+export const isAgentsEndpoint = (_endpoint?: EModelEndpoint.agents | null | string): boolean => {
+  const endpoint = _endpoint ?? '';
   if (!endpoint) {
     return false;
   }
@@ -89,6 +116,7 @@ export const defaultAgentFormValues = {
   model_parameters: {},
   tools: [],
   provider: {},
+  projectIds: [],
   code_interpreter: false,
   image_vision: false,
   retrieval: false,
@@ -295,6 +323,7 @@ export const endpointSettings = {
   [EModelEndpoint.google]: googleSettings,
   [EModelEndpoint.anthropic]: anthropicSettings,
   [EModelEndpoint.agents]: agentsSettings,
+  [EModelEndpoint.bedrock]: agentsSettings,
 };
 
 const google = endpointSettings[EModelEndpoint.google];
@@ -433,6 +462,25 @@ export const coerceNumber = z.union([z.number(), z.string()]).transform((val) =>
   return val;
 });
 
+type DocumentTypeValue =
+  | null
+  | boolean
+  | number
+  | string
+  | DocumentTypeValue[]
+  | { [key: string]: DocumentTypeValue };
+
+const DocumentType: z.ZodType<DocumentTypeValue> = z.lazy(() =>
+  z.union([
+    z.null(),
+    z.boolean(),
+    z.number(),
+    z.string(),
+    z.array(z.lazy(() => DocumentType)),
+    z.record(z.lazy(() => DocumentType)),
+  ]),
+);
+
 export const tConversationSchema = z.object({
   conversationId: z.string().nullable(),
   endpoint: eModelEndpointSchema.nullable(),
@@ -457,6 +505,7 @@ export const tConversationSchema = z.object({
   max_tokens: coerceNumber.optional(),
   /* Anthropic */
   promptCache: z.boolean().optional(),
+  system: z.string().optional(),
   /* artifacts */
   artifacts: z.string().optional(),
   /* google */
@@ -475,6 +524,10 @@ export const tConversationSchema = z.object({
   assistant_id: z.string().optional(),
   /* agents */
   agent_id: z.string().optional(),
+  /* AWS Bedrock */
+  region: z.string().optional(),
+  maxTokens: coerceNumber.optional(),
+  additionalModelRequestFields: DocumentType.optional(),
   /* assistant + agents */
   instructions: z.string().optional(),
   additional_instructions: z.string().optional(),
@@ -618,7 +671,7 @@ export const openAISchema = tConversationSchema
       max_tokens: obj.max_tokens ?? undefined,
     };
 
-    if (obj.modelLabel) {
+    if (obj.modelLabel != null && obj.modelLabel !== '') {
       result.modelLabel = null;
     }
 
@@ -836,7 +889,7 @@ export const gptPluginsSchema = tConversationSchema
       maxContextTokens: obj.maxContextTokens ?? undefined,
     };
 
-    if (obj.modelLabel) {
+    if (obj.modelLabel != null && obj.modelLabel !== '') {
       result.modelLabel = null;
     }
 
@@ -863,16 +916,17 @@ export const gptPluginsSchema = tConversationSchema
     maxContextTokens: undefined,
   }));
 
-export function removeNullishValues<T extends object>(obj: T): T {
+export function removeNullishValues<T extends Record<string, unknown>>(obj: T): Partial<T> {
   const newObj: Partial<T> = { ...obj };
 
   (Object.keys(newObj) as Array<keyof T>).forEach((key) => {
-    if (newObj[key] === undefined || newObj[key] === null || newObj[key] === '') {
+    const value = newObj[key];
+    if (value === undefined || value === null || value === '') {
       delete newObj[key];
     }
   });
 
-  return newObj as T;
+  return newObj;
 }
 
 export const assistantSchema = tConversationSchema
@@ -972,19 +1026,6 @@ export const agentsSchema = tConversationSchema
     greeting: undefined,
     maxContextTokens: undefined,
   }));
-
-export const compactAgentsSchema = tConversationSchema
-  .pick({
-    model: true,
-    agent_id: true,
-    instructions: true,
-    promptPrefix: true,
-    iconURL: true,
-    greeting: true,
-    spec: true,
-  })
-  .transform(removeNullishValues)
-  .catch(() => ({}));
 
 export const compactOpenAISchema = tConversationSchema
   .pick({
@@ -1169,4 +1210,17 @@ export const compactPluginsSchema = tConversationSchema
 
     return removeNullishValues(newObj);
   })
+  .catch(() => ({}));
+
+export const compactAgentsSchema = tConversationSchema
+  .pick({
+    model: true,
+    agent_id: true,
+    instructions: true,
+    additional_instructions: true,
+    iconURL: true,
+    greeting: true,
+    spec: true,
+  })
+  .transform(removeNullishValues)
   .catch(() => ({}));

@@ -5,17 +5,16 @@ const Assistant = mongoose.model('assistant', assistantSchema);
 
 /**
  * Update an assistant with new data without overwriting existing properties,
- * or create a new assistant if it doesn't exist, within a transaction session if provided.
+ * or create a new assistant if it doesn't exist.
  *
  * @param {Object} searchParams - The search parameters to find the assistant to update.
  * @param {string} searchParams.assistant_id - The ID of the assistant to update.
  * @param {string} searchParams.user - The user ID of the assistant's author.
  * @param {Object} updateData - An object containing the properties to update.
- * @param {mongoose.ClientSession} [session] - The transaction session to use (optional).
  * @returns {Promise<AssistantDocument>} The updated or newly created assistant document as a plain object.
  */
-const updateAssistantDoc = async (searchParams, updateData, session = null) => {
-  const options = { new: true, upsert: true, session };
+const updateAssistantDoc = async (searchParams, updateData) => {
+  const options = { new: true, upsert: true };
   return await Assistant.findOneAndUpdate(searchParams, updateData, options).lean();
 };
 

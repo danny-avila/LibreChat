@@ -1,51 +1,34 @@
-import { Suspense } from 'react';
+import { memo } from 'react';
 import type { TMessageContentParts } from 'librechat-data-provider';
-import { UnfinishedMessage } from './MessageContent';
-import { DelayedRender } from '~/components/ui';
 import Part from './Part';
 
-const ContentParts = ({
-  error,
-  unfinished,
-  isSubmitting,
-  isLast,
-  content,
-  ...props
-}: // eslint-disable-next-line @typescript-eslint/no-explicit-any
-any) => {
-  if (error) {
-    // return <ErrorMessage text={text} />;
-  } else {
-    const { message } = props;
-    const { messageId } = message;
+type ContentPartsProps = {
+  content: Array<TMessageContentParts | undefined>;
+  messageId: string;
+  isCreatedByUser: boolean;
+  isLast: boolean;
+  isSubmitting: boolean;
+};
 
+const ContentParts = memo(
+  ({ content, messageId, isCreatedByUser, isLast, isSubmitting }: ContentPartsProps) => {
     return (
       <>
         {content
-          .filter((part: TMessageContentParts | undefined) => part)
-          .map((part: TMessageContentParts | undefined, idx: number) => {
-            const showCursor = idx === content.length - 1 && isLast;
-            return (
-              <Part
-                key={`display-${messageId}-${idx}`}
-                showCursor={showCursor === true && isSubmitting}
-                isSubmitting={isSubmitting}
-                part={part}
-                {...props}
-              />
-            );
-          })}
-        {/* Temporarily remove this */}
-        {/* {!isSubmitting && unfinished && (
-          <Suspense>
-            <DelayedRender delay={250}>
-              <UnfinishedMessage message={message} key={`unfinished-${messageId}`} />
-            </DelayedRender>
-          </Suspense>
-        )} */}
+          .filter((part) => part)
+          .map((part, idx) => (
+            <Part
+              key={`display-${messageId}-${idx}`}
+              part={part}
+              isSubmitting={isSubmitting}
+              showCursor={idx === content.length - 1 && isLast}
+              messageId={messageId}
+              isCreatedByUser={isCreatedByUser}
+            />
+          ))}
       </>
     );
-  }
-};
+  },
+);
 
 export default ContentParts;

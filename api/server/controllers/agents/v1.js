@@ -1,5 +1,5 @@
 const { nanoid } = require('nanoid');
-const { FileContext } = require('librechat-data-provider');
+const { FileContext, Constants } = require('librechat-data-provider');
 const {
   getAgent,
   createAgent,
@@ -9,6 +9,8 @@ const {
 } = require('~/models/Agent');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { uploadImageBuffer } = require('~/server/services/Files/process');
+const { getProjectByName } = require('~/models/Project');
+const { updateAgentProjects } = require('~/models/Agent');
 const { deleteFileByFilter } = require('~/models/File');
 const { logger } = require('~/config');
 
@@ -53,16 +55,35 @@ const createAgentHandler = async (req, res) => {
  * @param {object} req - Express Request
  * @param {object} req.params - Request params
  * @param {string} req.params.id - Agent identifier.
- * @returns {Agent} 200 - success response - application/json
+ * @param {object} req.user - Authenticated user information
+ * @param {string} req.user.id - User ID
+ * @returns {Promise<Agent>} 200 - success response - application/json
  * @returns {Error} 404 - Agent not found
  */
 const getAgentHandler = async (req, res) => {
   try {
     const id = req.params.id;
-    const agent = await getAgent({ id });
+    const author = req.user.id;
+
+    let query = { id, author };
+
+    const globalProject = await getProjectByName(Constants.GLOBAL_PROJECT_NAME, ['agentIds']);
+    if (globalProject && (globalProject.agentIds?.length ?? 0) > 0) {
+      query = {
+        $or: [{ id, $in: globalProject.agentIds }, query],
+      };
+    }
+
+    const agent = await getAgent(query);
+
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
     }
+
+    if (agent.author !== author) {
+      delete agent.author;
+    }
+
     return res.status(200).json(agent);
   } catch (error) {
     logger.error('[/Agents/:id] Error retrieving agent', error);
@@ -82,7 +103,17 @@ const getAgentHandler = async (req, res) => {
 const updateAgentHandler = async (req, res) => {
   try {
     const id = req.params.id;
-    const updatedAgent = await updateAgent({ id, author: req.user.id }, req.body);
+    const { projectIds, removeProjectIds, ...updateData } = req.body;
+
+    let updatedAgent;
+    if (Object.keys(updateData).length > 0) {
+      updatedAgent = await updateAgent({ id, author: req.user.id }, updateData);
+    }
+
+    if (projectIds || removeProjectIds) {
+      updatedAgent = await updateAgentProjects(id, projectIds, removeProjectIds);
+    }
+
     return res.json(updatedAgent);
   } catch (error) {
     logger.error('[/Agents/:id] Error updating Agent', error);
@@ -119,13 +150,13 @@ const deleteAgentHandler = async (req, res) => {
  * @param {object} req - Express Request
  * @param {object} req.query - Request query
  * @param {string} [req.query.user] - The user ID of the agent's author.
- * @returns {AgentListResponse} 200 - success response - application/json
+ * @returns {Promise<AgentListResponse>} 200 - success response - application/json
  */
 const getListAgentsHandler = async (req, res) => {
   try {
-    const { user } = req.query;
-    const filter = user ? { author: user } : {};
-    const data = await getListAgents(filter);
+    const data = await getListAgents({
+      author: req.user.id,
+    });
     return res.json(data);
   } catch (error) {
     logger.error('[/Agents] Error listing Agents', error);

@@ -1,4 +1,4 @@
-import { EModelEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, isAssistantsEndpoint, alternateName } from 'librechat-data-provider';
 import UnknownIcon from '~/components/Chat/Menus/Endpoints/UnknownIcon';
 import { BrainCircuit } from 'lucide-react';
 import {
@@ -7,6 +7,7 @@ import {
   PaLMIcon,
   CodeyIcon,
   GeminiIcon,
+  BedrockIcon,
   AssistantIcon,
   AnthropicIcon,
   AzureMinimalIcon,
@@ -16,11 +17,31 @@ import {
 import { IconProps } from '~/common';
 import { cn } from '~/utils';
 
+function getGoogleIcon(model: string | null | undefined, size: number) {
+  if (model?.toLowerCase().includes('code') === true) {
+    return <CodeyIcon size={size * 0.75} />;
+  } else if (model?.toLowerCase().includes('gemini') === true) {
+    return <GeminiIcon size={size * 0.7} />;
+  } else {
+    return <PaLMIcon size={size * 0.7} />;
+  }
+}
+
+function getGoogleModelName(model: string | null | undefined) {
+  if (model?.toLowerCase().includes('code') === true) {
+    return 'Codey';
+  } else if (model?.toLowerCase().includes('gemini') === true) {
+    return 'Gemini';
+  } else {
+    return 'PaLM2';
+  }
+}
+
 const MessageEndpointIcon: React.FC<IconProps> = (props) => {
   const {
     error,
     button,
-    iconURL,
+    iconURL = '',
     endpoint,
     jailbreak,
     size = 30,
@@ -30,7 +51,7 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
   } = props;
 
   const assistantsIcon = {
-    icon: props.iconURL ? (
+    icon: iconURL ? (
       <div className="relative flex h-6 w-6 items-center justify-center">
         <div
           title={assistantName}
@@ -42,7 +63,7 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
         >
           <img
             className="shadow-stroke h-full w-full object-cover"
-            src={props.iconURL}
+            src={iconURL}
             alt={assistantName}
             style={{ height: '80', width: '80' }}
           />
@@ -59,7 +80,7 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
   };
 
   const agentsIcon = {
-    icon: props.iconURL ? (
+    icon: iconURL ? (
       <div className="relative flex h-6 w-6 items-center justify-center">
         <div
           title={agentName}
@@ -71,7 +92,7 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
         >
           <img
             className="shadow-stroke h-full w-full object-cover"
-            src={props.iconURL}
+            src={iconURL}
             alt={agentName}
             style={{ height: '80', width: '80' }}
           />
@@ -104,42 +125,38 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
     },
     [EModelEndpoint.gptPlugins]: {
       icon: <Plugin size={size * 0.7} />,
-      bg: `rgba(69, 89, 164, ${button ? 0.75 : 1})`,
+      bg: `rgba(69, 89, 164, ${button === true ? 0.75 : 1})`,
       name: 'Plugins',
     },
     [EModelEndpoint.google]: {
-      icon: model?.toLowerCase()?.includes('code') ? (
-        <CodeyIcon size={size * 0.75} />
-      ) : model?.toLowerCase()?.includes('gemini') ? (
-        <GeminiIcon size={size * 0.7} />
-      ) : (
-        <PaLMIcon size={size * 0.7} />
-      ),
-      name: model?.toLowerCase()?.includes('code')
-        ? 'Codey'
-        : model?.toLowerCase()?.includes('gemini')
-          ? 'Gemini'
-          : 'PaLM2',
+      icon: getGoogleIcon(model, size),
+      name: getGoogleModelName(model),
     },
     [EModelEndpoint.anthropic]: {
       icon: <AnthropicIcon size={size * 0.5555555555555556} />,
       bg: '#d09a74',
       name: 'Claude',
     },
+    [EModelEndpoint.bedrock]: {
+      icon: <BedrockIcon className="icon-xl text-white" />,
+      bg: '#268672',
+      name: alternateName[EModelEndpoint.bedrock],
+    },
     [EModelEndpoint.bingAI]: {
-      icon: jailbreak ? (
-        <img src="/assets/bingai-jb.png" alt="Bing Icon" />
-      ) : (
-        <img src="/assets/bingai.png" alt="Sydney Icon" />
-      ),
-      name: jailbreak ? 'Sydney' : 'BingAI',
+      icon:
+        jailbreak === true ? (
+          <img src="/assets/bingai-jb.png" alt="Bing Icon" />
+        ) : (
+          <img src="/assets/bingai.png" alt="Sydney Icon" />
+        ),
+      name: jailbreak === true ? 'Sydney' : 'BingAI',
     },
     [EModelEndpoint.chatGPTBrowser]: {
       icon: <GPTIcon size={size * 0.5555555555555556} />,
       bg:
         typeof model === 'string' && model.toLowerCase().includes('gpt-4')
           ? '#AB68FF'
-          : `rgba(0, 163, 255, ${button ? 0.75 : 1})`,
+          : `rgba(0, 163, 255, ${button === true ? 0.75 : 1})`,
       name: 'ChatGPT',
     },
     [EModelEndpoint.custom]: {
@@ -152,7 +169,7 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
         <div className="h-6 w-6">
           <div className="overflow-hidden rounded-full">
             <UnknownIcon
-              iconURL={props.iconURL}
+              iconURL={iconURL}
               endpoint={endpoint ?? ''}
               className="h-full w-full object-contain"
               context="message"
@@ -185,11 +202,11 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
       }}
       className={cn(
         'relative flex h-9 w-9 items-center justify-center rounded-sm p-1 text-white',
-        props.className || '',
+        props.className ?? '',
       )}
     >
       {icon}
-      {error && (
+      {error === true && (
         <span className="absolute right-0 top-[20px] -mr-2 flex h-3 w-3 items-center justify-center rounded-full border border-white bg-red-500 text-[10px] text-white">
           !
         </span>

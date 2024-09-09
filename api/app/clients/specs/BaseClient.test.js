@@ -565,11 +565,13 @@ describe('BaseClient', () => {
       const getReqData = jest.fn();
       const opts = { getReqData };
       const response = await TestClient.sendMessage('Hello, world!', opts);
-      expect(getReqData).toHaveBeenCalledWith({
-        userMessage: expect.objectContaining({ text: 'Hello, world!' }),
-        conversationId: response.conversationId,
-        responseMessageId: response.messageId,
-      });
+      expect(getReqData).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userMessage: expect.objectContaining({ text: 'Hello, world!' }),
+          conversationId: response.conversationId,
+          responseMessageId: response.messageId,
+        }),
+      );
     });
 
     test('onStart is called with the correct arguments', async () => {

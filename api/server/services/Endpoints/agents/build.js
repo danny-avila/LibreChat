@@ -2,7 +2,7 @@ const { getAgent } = require('~/models/Agent');
 const { logger } = require('~/config');
 
 const buildOptions = (req, endpoint, parsedBody) => {
-  const { agent_id, instructions, spec, ...rest } = parsedBody;
+  const { agent_id, instructions, spec, ...model_parameters } = parsedBody;
 
   const agentPromise = getAgent({
     id: agent_id,
@@ -19,9 +19,7 @@ const buildOptions = (req, endpoint, parsedBody) => {
     agent_id,
     instructions,
     spec,
-    modelOptions: {
-      ...rest,
-    },
+    model_parameters,
   };
 
   return endpointOption;

@@ -1,10 +1,29 @@
 const multer = require('multer');
 const express = require('express');
+const { PermissionTypes, Permissions } = require('librechat-data-provider');
+const { requireJwtAuth, generateCheckAccess } = require('~/server/middleware');
 const v1 = require('~/server/controllers/agents/v1');
 const actions = require('./actions');
 
 const upload = multer();
 const router = express.Router();
+
+const checkAgentAccess = generateCheckAccess(PermissionTypes.AGENTS, [Permissions.USE]);
+const checkAgentCreate = generateCheckAccess(PermissionTypes.AGENTS, [
+  Permissions.USE,
+  Permissions.CREATE,
+]);
+
+const checkGlobalAgentShare = generateCheckAccess(
+  PermissionTypes.AGENTS,
+  [Permissions.USE, Permissions.CREATE],
+  {
+    [Permissions.SHARED_GLOBAL]: ['projectIds', 'removeProjectIds'],
+  },
+);
+
+router.use(requireJwtAuth);
+router.use(checkAgentAccess);
 
 /**
  * Agent actions route.
@@ -27,7 +46,7 @@ router.use('/tools', (req, res) => {
  * @param {AgentCreateParams} req.body - The agent creation parameters.
  * @returns {Agent} 201 - Success response - application/json
  */
-router.post('/', v1.createAgent);
+router.post('/', checkAgentCreate, v1.createAgent);
 
 /**
  * Retrieves an agent.
@@ -35,7 +54,7 @@ router.post('/', v1.createAgent);
  * @param {string} req.params.id - Agent identifier.
  * @returns {Agent} 200 - Success response - application/json
  */
-router.get('/:id', v1.getAgent);
+router.get('/:id', checkAgentAccess, v1.getAgent);
 
 /**
  * Updates an agent.
@@ -44,7 +63,7 @@ router.get('/:id', v1.getAgent);
  * @param {AgentUpdateParams} req.body - The agent update parameters.
  * @returns {Agent} 200 - Success response - application/json
  */
-router.patch('/:id', v1.updateAgent);
+router.patch('/:id', checkGlobalAgentShare, v1.updateAgent);
 
 /**
  * Deletes an agent.
@@ -52,7 +71,7 @@ router.patch('/:id', v1.updateAgent);
  * @param {string} req.params.id - Agent identifier.
  * @returns {Agent} 200 - success response - application/json
  */
-router.delete('/:id', v1.deleteAgent);
+router.delete('/:id', checkAgentCreate, v1.deleteAgent);
 
 /**
  * Returns a list of agents.
@@ -60,9 +79,7 @@ router.delete('/:id', v1.deleteAgent);
  * @param {AgentListParams} req.query - The agent list parameters for pagination and sorting.
  * @returns {AgentListResponse} 200 - success response - application/json
  */
-router.get('/', v1.getListAgents);
-
-// TODO: handle private agents
+router.get('/', checkAgentAccess, v1.getListAgents);
 
 /**
  * Uploads and updates an avatar for a specific agent.
@@ -72,6 +89,6 @@ router.get('/', v1.getListAgents);
  * @param {string} [req.body.metadata] - Optional metadata for the agent's avatar.
  * @returns {Object} 200 - success response - application/json
  */
-router.post('/avatar/:agent_id', upload.single('file'), v1.uploadAgentAvatar);
+router.post('/avatar/:agent_id', checkAgentAccess, upload.single('file'), v1.uploadAgentAvatar);
 
 module.exports = router;

@@ -11,6 +11,7 @@ import {
   CustomMinimalIcon,
   AssistantIcon,
   LightningIcon,
+  BedrockIcon,
   Sparkles,
 } from '~/components/svg';
 import UnknownIcon from './UnknownIcon';
@@ -52,6 +53,10 @@ const AgentAvatar = ({ className = '', agentName, avatar, size }: AgentIconMapPr
   return <BrainCircuit className={cn(agentName === '' ? 'icon-2xl' : '', className)} />;
 };
 
+const Bedrock = ({ className = '' }: IconMapProps) => {
+  return <BedrockIcon className={cn(className, 'h-full w-full')} />;
+};
+
 export const icons = {
   [EModelEndpoint.azureOpenAI]: AzureMinimalIcon,
   [EModelEndpoint.openAI]: GPTIcon,
@@ -64,5 +69,6 @@ export const icons = {
   [EModelEndpoint.assistants]: AssistantAvatar,
   [EModelEndpoint.azureAssistants]: AssistantAvatar,
   [EModelEndpoint.agents]: AgentAvatar,
+  [EModelEndpoint.bedrock]: Bedrock,
   unknown: UnknownIcon,
 };

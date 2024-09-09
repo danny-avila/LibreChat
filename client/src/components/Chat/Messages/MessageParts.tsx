@@ -1,4 +1,5 @@
 import { useRecoilValue } from 'recoil';
+import type { TMessageContentParts } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import Icon from '~/components/Chat/Messages/MessageIcon';
 import { useMessageHelpers, useLocalize } from '~/hooks';
@@ -17,7 +18,6 @@ export default function Message(props: TMessageProps) {
     props;
 
   const {
-    ask,
     edit,
     index,
     agent,
@@ -33,7 +33,7 @@ export default function Message(props: TMessageProps) {
     regenerateMessage,
   } = useMessageHelpers(props);
   const fontSize = useRecoilValue(store.fontSize);
-  const { content, children, messageId = null, isCreatedByUser, error, unfinished } = message ?? {};
+  const { children, messageId = null, isCreatedByUser } = message ?? {};
 
   if (!message) {
     return null;
@@ -82,24 +82,11 @@ export default function Message(props: TMessageProps) {
               <div className="flex-col gap-1 md:gap-3">
                 <div className="flex max-w-full flex-grow flex-col gap-0">
                   <ContentParts
-                    ask={ask}
-                    edit={edit}
+                    content={message.content as Array<TMessageContentParts | undefined>}
+                    messageId={message.messageId}
+                    isCreatedByUser={message.isCreatedByUser}
                     isLast={isLast}
-                    content={content ?? []}
-                    message={message}
-                    messageId={messageId}
-                    enterEdit={enterEdit}
-                    error={!!(error ?? false)}
                     isSubmitting={isSubmitting}
-                    unfinished={unfinished ?? false}
-                    isCreatedByUser={isCreatedByUser ?? true}
-                    siblingIdx={siblingIdx ?? 0}
-                    setSiblingIdx={
-                      setSiblingIdx ??
-                      (() => {
-                        return;
-                      })
-                    }
                   />
                 </div>
               </div>

@@ -10,10 +10,11 @@ export namespace Agents {
   export type MessageContentText = {
     type: ContentTypes.TEXT;
     text: string;
+    tool_call_ids?: string[];
   };
 
   export type MessageContentImageUrl = {
-    type: 'image_url';
+    type: ContentTypes.IMAGE_URL;
     image_url: string | { url: string; detail?: ImageDetail };
   };
 
@@ -21,7 +22,7 @@ export namespace Agents {
     | MessageContentText
     | MessageContentImageUrl
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    | (Record<string, any> & { type?: ContentTypes | 'image_url' | 'text_delta' | string })
+    | (Record<string, any> & { type?: ContentTypes | string })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     | (Record<string, any> & { type?: never });
 
@@ -38,7 +39,7 @@ export namespace Agents {
 
     /** The arguments to the tool call */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    args: string | Record<string, any>;
+    args?: string | Record<string, any>;
 
     /** If provided, an identifier associated with the tool call */
     id?: string;
@@ -50,14 +51,14 @@ export namespace Agents {
     /** The Step Id of the Tool Call */
     id: string;
     /** The Completed Tool Call */
-    tool_call: ToolCall;
+    tool_call?: ToolCall;
     /** The content index of the tool call */
     index: number;
   };
 
   export type ToolCallContent = {
     type: ContentTypes.TOOL_CALL;
-    tool_call: ToolCall;
+    tool_call?: ToolCall;
   };
 
   /**
@@ -180,8 +181,8 @@ export namespace Agents {
     tool_calls: AgentToolCall[];
   };
   export type ToolCallDelta = {
-    type: StepTypes.TOOL_CALLS;
-    tool_calls: ToolCallChunk[];
+    type: StepTypes.TOOL_CALLS | string;
+    tool_calls?: ToolCallChunk[];
   };
   export type AgentToolCall = FunctionToolCall | ToolCall;
   export interface ExtendedMessageContent {
@@ -215,5 +216,5 @@ export namespace Agents {
      */
     content?: MessageContentComplex[];
   }
-  export type ContentType = ContentTypes.TEXT | 'image_url' | string;
+  export type ContentType = ContentTypes.TEXT | ContentTypes.IMAGE_URL | string;
 }

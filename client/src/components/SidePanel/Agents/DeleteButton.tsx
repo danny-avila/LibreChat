@@ -4,11 +4,11 @@ import { OGDialog, OGDialogTrigger, Label } from '~/components/ui';
 import { useChatContext, useToastContext } from '~/Providers';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { useLocalize, useSetIndexOptions } from '~/hooks';
+import { cn, removeFocusOutlines, logger } from '~/utils';
 import { useDeleteAgentMutation } from '~/data-provider';
-import { cn, removeFocusOutlines } from '~/utils/';
 import { TrashIcon } from '~/components/svg';
 
-export default function ContextButton({
+export default function DeleteButton({
   agent_id,
   setCurrentAgentId,
   createMutation,
@@ -34,8 +34,8 @@ export default function ContextButton({
         status: 'success',
       });
 
-      if (createMutation.data?.id) {
-        console.log('[deleteAgent] resetting createMutation');
+      if (createMutation.data?.id ?? '') {
+        logger.log('agents', 'resetting createMutation');
         createMutation.reset();
       }
 
@@ -49,7 +49,7 @@ export default function ContextButton({
         return setOption('agent_id')(firstAgent.id);
       }
 
-      const currentAgent = updatedList?.find((agent) => agent.id === conversation?.agent_id);
+      const currentAgent = updatedList.find((agent) => agent.id === conversation?.agent_id);
 
       if (currentAgent) {
         setCurrentAgentId(currentAgent.id);
@@ -78,6 +78,7 @@ export default function ContextButton({
             'btn btn-neutral border-token-border-light relative h-9 rounded-lg font-medium',
             removeFocusOutlines,
           )}
+          aria-label={localize('com_ui_delete') + ' ' + localize('com_ui_agent')}
           type="button"
         >
           <div className="flex w-full items-center justify-center gap-2 text-red-500">
