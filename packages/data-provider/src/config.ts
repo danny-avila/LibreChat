@@ -610,30 +610,17 @@ const sharedAnthropicModels = [
 ];
 
 export const bedrockModels = [
-  'ai21.jamba-instruct-v1:0',
-  'ai21.j2-mid-v1',
-  'ai21.j2-ultra-v1',
-  'amazon.titan-text-express-v1',
-  'amazon.titan-text-lite-v1',
-  'amazon.titan-text-premier-v1:0',
-  'amazon.titan-embed-text-v1',
-  'amazon.titan-embed-text-v2:0',
-  'amazon.titan-embed-image-v1',
-  'amazon.titan-image-generator-v1',
-  'amazon.titan-image-generator-v2:0',
-  'anthropic.claude-v2',
-  'anthropic.claude-v2:1',
-  'anthropic.claude-3-sonnet-20240229-v1:0',
   'anthropic.claude-3-5-sonnet-20240620-v1:0',
   'anthropic.claude-3-haiku-20240307-v1:0',
   'anthropic.claude-3-opus-20240229-v1:0',
+  'anthropic.claude-3-sonnet-20240229-v1:0',
+  'anthropic.claude-v2',
+  'anthropic.claude-v2:1',
   'anthropic.claude-instant-v1',
   'cohere.command-text-v14',
   'cohere.command-light-text-v14',
   'cohere.command-r-v1:0',
   'cohere.command-r-plus-v1:0',
-  'cohere.embed-english-v3',
-  'cohere.embed-multilingual-v3',
   'meta.llama2-13b-chat-v1',
   'meta.llama2-70b-chat-v1',
   'meta.llama3-8b-instruct-v1:0',
@@ -646,11 +633,12 @@ export const bedrockModels = [
   'mistral.mistral-large-2402-v1:0',
   'mistral.mistral-large-2407-v1:0',
   'mistral.mistral-small-2402-v1:0',
-  'stability.stable-diffusion-xl-v0',
-  'stability.stable-diffusion-xl-v1',
-  'stability.sd3-large-v1:0',
-  'stability.stable-image-ultra-v1:0',
-  'stability.stable-image-core-v1:0',
+  'ai21.jamba-instruct-v1:0',
+  // 'ai21.j2-mid-v1', // no streaming
+  // 'ai21.j2-ultra-v1', no conversation history
+  'amazon.titan-text-lite-v1',
+  'amazon.titan-text-express-v1',
+  'amazon.titan-text-premier-v1:0',
 ];
 
 export const defaultModels = {

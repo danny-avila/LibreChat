@@ -509,19 +509,24 @@ class AgentClient extends BaseClient {
       throw new Error('Run not initialized');
     }
     const { handleLLMEnd, collected: _collected } = createMetadataAggregator();
-    const titleResult = await this.run.generateTitle({
-      inputText: text,
-      contentParts: this.contentParts,
-      chainOptions: {
-        callbacks: [
-          {
-            handleLLMEnd,
-          },
-        ],
-      },
-    });
+    try {
+      const titleResult = await this.run.generateTitle({
+        inputText: text,
+        contentParts: this.contentParts,
+        chainOptions: {
+          callbacks: [
+            {
+              handleLLMEnd,
+            },
+          ],
+        },
+      });
 
-    return titleResult.title;
+      return titleResult.title;
+    } catch (err) {
+      logger.error('[api/server/controllers/agents/client.js #titleConvo] Error', err);
+      return;
+    }
   }
 
   getEncoding() {

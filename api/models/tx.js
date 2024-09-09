@@ -27,8 +27,10 @@ const bedrockValues = {
   'cohere.command-r-plus-v1:0': { prompt: 3.0, completion: 15.0 },
   'ai21.j2-mid-v1': { prompt: 12.5, completion: 12.5 },
   'ai21.j2-ultra-v1': { prompt: 18.8, completion: 18.8 },
+  'ai21.jamba-instruct-v1:0': { prompt: 0.5, completion: 0.7 },
   'amazon.titan-text-lite-v1': { prompt: 0.15, completion: 0.2 },
   'amazon.titan-text-express-v1': { prompt: 0.2, completion: 0.6 },
+  'amazon.titan-text-premier-v1:0': { prompt: 0.5, completion: 1.5 },
 };
 
 for (const [key, value] of Object.entries(bedrockValues)) {

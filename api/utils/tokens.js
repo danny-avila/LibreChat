@@ -76,7 +76,27 @@ const metaModels = {
   'llama-3-1': 127500,
 };
 
-const bedrockModels = { ...anthropicModels, ...mistralModels, ...cohereModels, ...metaModels };
+const ai21Models = {
+  'j2-mid': 8182, // -10 from max
+  'j2-ultra': 8182, // -10 from max
+  'jamba-instruct': 255500, // -500 from max
+};
+
+const amazonModels = {
+  'titan-text-lite': 4000,
+  'titan-text-express': 8000,
+  'titan-text-premier': 31500, // -500 from max
+};
+
+const bedrockModels = {
+  ...anthropicModels,
+  ...mistralModels,
+  ...cohereModels,
+  ...metaModels,
+  ...ai21Models,
+  ...amazonModels,
+};
+
 const aggregateModels = { ...openAIModels, ...googleModels, ...bedrockModels };
 
 const maxTokensMap = {
