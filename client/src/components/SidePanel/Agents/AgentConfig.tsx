@@ -11,9 +11,10 @@ import Action from '~/components/SidePanel/Builder/Action';
 import { useLocalize } from '~/hooks';
 import { ToolSelectDialog } from '~/components/Tools';
 import { useToastContext } from '~/Providers';
-import ContextButton from './ContextButton';
 import { Spinner } from '~/components/svg';
+import DeleteButton from './DeleteButton';
 import AgentAvatar from './AgentAvatar';
+import ShareAgent from './ShareAgent';
 import AgentTool from './AgentTool';
 import { Panel } from '~/common';
 
@@ -57,14 +58,14 @@ export default function AgentConfig({
     () => agentsConfig?.capabilities?.includes(Capabilities.actions),
     [agentsConfig],
   );
-  const retrievalEnabled = useMemo(
-    () => agentsConfig?.capabilities?.includes(Capabilities.retrieval),
-    [agentsConfig],
-  );
-  const codeEnabled = useMemo(
-    () => agentsConfig?.capabilities?.includes(Capabilities.code_interpreter),
-    [agentsConfig],
-  );
+  // const retrievalEnabled = useMemo(
+  //   () => agentsConfig?.capabilities?.includes(Capabilities.retrieval),
+  //   [agentsConfig],
+  // );
+  // const codeEnabled = useMemo(
+  //   () => agentsConfig?.capabilities?.includes(Capabilities.code_interpreter),
+  //   [agentsConfig],
+  // );
 
   /* Mutations */
   const update = useUpdateAgentMutation({
@@ -190,7 +191,7 @@ export default function AgentConfig({
             name="id"
             control={control}
             render={({ field }) => (
-              <p className="h-3 text-xs italic text-gray-600" aria-live="polite">
+              <p className="h-3 text-xs italic text-text-secondary" aria-live="polite">
                 {field.value}
               </p>
             )}
@@ -221,12 +222,11 @@ export default function AgentConfig({
         {/* Instructions */}
         <div className="mb-6">
           <label className={labelClass} htmlFor="instructions">
-            {localize('com_ui_instructions')} <span className="text-red-500">*</span>
+            {localize('com_ui_instructions')}
           </label>
           <Controller
             name="instructions"
             control={control}
-            rules={{ required: true, minLength: 1 }}
             render={({ field, fieldState: { error } }) => (
               <>
                 <textarea
@@ -276,16 +276,16 @@ export default function AgentConfig({
                   />
                 </div>
               )}
-              <span>{model ? model : localize('com_ui_select_model')}</span>
+              <span>{model != null ? model : localize('com_ui_select_model')}</span>
             </div>
           </button>
         </div>
         {/* Agent Tools & Actions */}
         <div className="mb-6">
           <label className={labelClass}>
-            {`${toolsEnabled ? localize('com_assistants_tools') : ''}
-              ${toolsEnabled && actionsEnabled ? ' + ' : ''}
-              ${actionsEnabled ? localize('com_assistants_actions') : ''}`}
+            {`${toolsEnabled === true ? localize('com_assistants_tools') : ''}
+              ${toolsEnabled === true && actionsEnabled === true ? ' + ' : ''}
+              ${actionsEnabled === true ? localize('com_assistants_actions') : ''}`}
           </label>
           <div className="space-y-2">
             {tools?.map((func, i) => (
@@ -339,10 +339,15 @@ export default function AgentConfig({
         </div>
         {/* Context Button */}
         <div className="flex items-center justify-end gap-2">
-          <ContextButton
+          <DeleteButton
             agent_id={agent_id}
             setCurrentAgentId={setCurrentAgentId}
             createMutation={create}
+          />
+          <ShareAgent
+            agent_id={agent_id}
+            agentName={agent?.name ?? ''}
+            projectIds={agent?.projectIds ?? []}
           />
           {/* Submit Button */}
           <button

@@ -74,6 +74,7 @@ const conversationByIndex = atomFamily<TConversation | null, string | number>({
     ({ onSet, node }) => {
       onSet(async (newValue) => {
         const index = Number(node.key.split('__')[1]);
+        logger.log('conversation', 'Setting conversation:', { index, newValue });
         if (newValue?.assistant_id) {
           localStorage.setItem(
             `${LocalStorageKeys.ASST_ID_PREFIX}${index}${newValue.endpoint}`,

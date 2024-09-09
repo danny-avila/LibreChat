@@ -1,4 +1,4 @@
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, alternateName } from 'librechat-data-provider';
 import { BrainCircuit } from 'lucide-react';
 import UnknownIcon from '~/components/Chat/Menus/Endpoints/UnknownIcon';
 import {
@@ -10,6 +10,7 @@ import {
   GoogleMinimalIcon,
   CustomMinimalIcon,
   AnthropicIcon,
+  BedrockIcon,
   Sparkles,
 } from '~/components/svg';
 import { cn } from '~/utils';
@@ -27,17 +28,17 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
   const endpointIcons = {
     [EModelEndpoint.azureOpenAI]: {
       icon: <AzureMinimalIcon className={iconClassName} />,
-      name: props.chatGptLabel || 'ChatGPT',
+      name: props.chatGptLabel ?? 'ChatGPT',
     },
     [EModelEndpoint.openAI]: {
       icon: <OpenAIMinimalIcon className={iconClassName} />,
-      name: props.chatGptLabel || 'ChatGPT',
+      name: props.chatGptLabel ?? 'ChatGPT',
     },
     [EModelEndpoint.gptPlugins]: { icon: <MinimalPlugin />, name: 'Plugins' },
-    [EModelEndpoint.google]: { icon: <GoogleMinimalIcon />, name: props.modelLabel || 'Google' },
+    [EModelEndpoint.google]: { icon: <GoogleMinimalIcon />, name: props.modelLabel ?? 'Google' },
     [EModelEndpoint.anthropic]: {
       icon: <AnthropicIcon className="icon-md shrink-0 dark:text-white" />,
-      name: props.modelLabel || 'Claude',
+      name: props.modelLabel ?? 'Claude',
     },
     [EModelEndpoint.custom]: {
       icon: <CustomMinimalIcon />,
@@ -47,7 +48,14 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
     [EModelEndpoint.chatGPTBrowser]: { icon: <LightningIcon />, name: 'ChatGPT' },
     [EModelEndpoint.assistants]: { icon: <Sparkles className="icon-sm" />, name: 'Assistant' },
     [EModelEndpoint.azureAssistants]: { icon: <Sparkles className="icon-sm" />, name: 'Assistant' },
-    [EModelEndpoint.agents]: { icon: <BrainCircuit className="icon-sm" />, name: 'Agent' },
+    [EModelEndpoint.agents]: {
+      icon: <BrainCircuit className="icon-sm" />,
+      name: props.modelLabel ?? alternateName[EModelEndpoint.agents],
+    },
+    [EModelEndpoint.bedrock]: {
+      icon: <BedrockIcon className="icon-xl text-text-primary" />,
+      name: props.modelLabel ?? alternateName[EModelEndpoint.bedrock],
+    },
     default: {
       icon: (
         <UnknownIcon
@@ -76,11 +84,11 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
       }}
       className={cn(
         'relative flex items-center justify-center rounded-sm text-black dark:text-white',
-        props.className || '',
+        props.className ?? '',
       )}
     >
       {icon}
-      {error && (
+      {error === true && (
         <span className="absolute right-0 top-[20px] -mr-2 flex h-4 w-4 items-center justify-center rounded-full border border-white bg-red-500 text-[10px] text-black dark:text-white">
           !
         </span>

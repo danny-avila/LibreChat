@@ -103,7 +103,7 @@ export default function useMessageHelpers(props: TMessageProps) {
     const modelKey = message?.model ?? '';
 
     return agentMap ? agentMap[modelKey] : undefined;
-  }, [agentMap, conversation?.endpoint]);
+  }, [agentMap, conversation?.endpoint, message?.model]);
 
   const regenerateMessage = () => {
     if ((isSubmitting && isCreatedByUser === true) || !message) {

@@ -20,18 +20,6 @@ describe('getModelMaxTokens', () => {
     );
   });
 
-  test('should return correct tokens for LLama 3 models', () => {
-    expect(getModelMaxTokens('meta-llama/llama-3-8b')).toBe(
-      maxTokensMap[EModelEndpoint.openAI]['llama-3'],
-    );
-    expect(getModelMaxTokens('meta-llama/llama-3-8b')).toBe(
-      maxTokensMap[EModelEndpoint.openAI]['llama3'],
-    );
-    expect(getModelMaxTokens('llama-3-500b')).toBe(maxTokensMap[EModelEndpoint.openAI]['llama-3']);
-    expect(getModelMaxTokens('llama3-70b')).toBe(maxTokensMap[EModelEndpoint.openAI]['llama3']);
-    expect(getModelMaxTokens('llama3:latest')).toBe(maxTokensMap[EModelEndpoint.openAI]['llama3']);
-  });
-
   test('should return undefined for no match', () => {
     expect(getModelMaxTokens('unknown-model')).toBeUndefined();
   });

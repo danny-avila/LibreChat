@@ -25,6 +25,7 @@ type SelectDropDownProps = {
   showAbove?: boolean;
   showLabel?: boolean;
   iconSide?: 'left' | 'right';
+  optionIconSide?: 'left' | 'right';
   renderOption?: () => React.ReactNode;
   containerClassName?: string;
   currentValueClass?: string;
@@ -38,17 +39,30 @@ type SelectDropDownProps = {
   showOptionIcon?: boolean;
 };
 
+function getOptionText(option: string | Option | OptionWithIcon): string {
+  if (typeof option === 'string') {
+    return option;
+  }
+  if ('label' in option) {
+    return option.label ?? '';
+  }
+  if ('value' in option) {
+    return (option.value ?? '') + '';
+  }
+  return '';
+}
+
 function SelectDropDown({
   title: _title,
   value,
   disabled,
   setValue,
-  tabIndex,
   availableValues,
   showAbove = false,
   showLabel = true,
   emptyTitle = false,
   iconSide = 'right',
+  optionIconSide = 'left',
   placeholder,
   containerClassName,
   optionsListClass,
@@ -59,7 +73,7 @@ function SelectDropDown({
   renderOption,
   searchClassName,
   searchPlaceholder,
-  showOptionIcon,
+  showOptionIcon = false,
 }: SelectDropDownProps) {
   const localize = useLocalize();
   const transitionProps = { className: 'top-full mt-3' };
@@ -71,7 +85,7 @@ function SelectDropDown({
 
   if (emptyTitle) {
     title = '';
-  } else if (!title) {
+  } else if (!(title ?? '')) {
     title = localize('com_ui_model');
   }
 
@@ -81,11 +95,15 @@ function SelectDropDown({
   const [filteredValues, searchRender] = useMultiSearch<string[] | Option[]>({
     availableOptions: availableValues,
     placeholder: searchPlaceholder,
-    getTextKeyOverride: (option) => ((option as Option)?.label || '').toUpperCase(),
+    getTextKeyOverride: (option) => getOptionText(option).toUpperCase(),
     className: searchClassName,
+    disabled,
   });
-  const hasSearchRender = Boolean(searchRender);
+  const hasSearchRender = searchRender != null;
   const options = hasSearchRender ? filteredValues : availableValues;
+
+  console.log({ hasSearchRender, options });
+  const renderIcon = showOptionIcon && value != null && (value as OptionWithIcon).icon != null;
 
   return (
     <div className={cn('flex items-center justify-center gap-2 ', containerClassName ?? '')}>
@@ -121,20 +139,27 @@ function SelectDropDown({
                     {!showLabel && !emptyTitle && (
                       <span className="text-xs text-gray-700 dark:text-gray-500">{title}:</span>
                     )}
-                    {showOptionIcon && value && (value as OptionWithIcon)?.icon && (
+                    {renderIcon && optionIconSide !== 'right' && (
                       <span className="icon-md flex items-center">
                         {(value as OptionWithIcon).icon}
                       </span>
                     )}
-                    {value ? (
-                      typeof value !== 'string' ? (
-                        value?.label ?? ''
-                      ) : (
-                        value
-                      )
-                    ) : (
-                      <span className="text-gray-500 dark:text-gray-400">{placeholder}</span>
+                    {renderIcon && (
+                      <span className="icon-md absolute right-0 mr-8 flex items-center">
+                        {(value as OptionWithIcon).icon}
+                      </span>
                     )}
+                    {(() => {
+                      if (!value) {
+                        return <span className="text-text-secondary">{placeholder}</span>;
+                      }
+
+                      if (typeof value !== 'string') {
+                        return value.label ?? '';
+                      }
+
+                      return value;
+                    })()}
                   </span>
                 </span>
                 <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
@@ -188,10 +213,10 @@ function SelectDropDown({
                     }
 
                     const currentLabel =
-                      typeof option === 'string' ? option : option?.label ?? option?.value ?? '';
-                    const currentValue = typeof option === 'string' ? option : option?.value ?? '';
+                      typeof option === 'string' ? option : option.label ?? option.value ?? '';
+                    const currentValue = typeof option === 'string' ? option : option.value ?? '';
                     const currentIcon =
-                      typeof option === 'string' ? null : (option?.icon as React.ReactNode) ?? null;
+                      typeof option === 'string' ? null : (option.icon as React.ReactNode) ?? null;
                     let activeValue: string | number | null | Option = value;
                     if (typeof activeValue !== 'string') {
                       activeValue = activeValue?.value ?? '';
@@ -204,7 +229,7 @@ function SelectDropDown({
                         className={({ active }) =>
                           cn(
                             'group relative flex h-[42px] cursor-pointer select-none items-center overflow-hidden pl-3 pr-9 text-gray-800 hover:bg-gray-20 dark:text-white dark:hover:bg-gray-600',
-                            active ? 'bg-surface-tertiary' : '',
+                            active ? 'bg-surface-active text-text-primary' : '',
                             optionsClass ?? '',
                           )
                         }
@@ -217,7 +242,16 @@ function SelectDropDown({
                               iconSide === 'left' ? 'ml-4' : '',
                             )}
                           >
-                            {currentIcon && <span className="mr-1">{currentIcon}</span>}
+                            {currentIcon != null && (
+                              <span
+                                className={cn(
+                                  'mr-1',
+                                  optionIconSide === 'right' ? 'absolute right-0 pr-2' : '',
+                                )}
+                              >
+                                {currentIcon}
+                              </span>
+                            )}
                             {currentLabel}
                           </span>
                           {currentValue === activeValue && (

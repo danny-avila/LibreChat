@@ -5,6 +5,21 @@ const { extractBaseURL, inputSchema, processModelData, logAxiosError } = require
 const { OllamaClient } = require('~/app/clients/OllamaClient');
 const getLogStores = require('~/cache/getLogStores');
 
+/**
+ * Splits a string by commas and trims each resulting value.
+ * @param {string} input - The input string to split.
+ * @returns {string[]} An array of trimmed values.
+ */
+const splitAndTrim = (input) => {
+  if (!input || typeof input !== 'string') {
+    return [];
+  }
+  return input
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+};
+
 const { openAIApiKey, userProvidedOpenAI } = require('./Config/EndpointService').config;
 
 /**
@@ -194,7 +209,7 @@ const getOpenAIModels = async (opts) => {
   }
 
   if (process.env[key]) {
-    models = String(process.env[key]).split(',');
+    models = splitAndTrim(process.env[key]);
     return models;
   }
 
@@ -208,7 +223,7 @@ const getOpenAIModels = async (opts) => {
 const getChatGPTBrowserModels = () => {
   let models = ['text-davinci-002-render-sha', 'gpt-4'];
   if (process.env.CHATGPT_MODELS) {
-    models = String(process.env.CHATGPT_MODELS).split(',');
+    models = splitAndTrim(process.env.CHATGPT_MODELS);
   }
 
   return models;
@@ -217,7 +232,7 @@ const getChatGPTBrowserModels = () => {
 const getAnthropicModels = () => {
   let models = defaultModels[EModelEndpoint.anthropic];
   if (process.env.ANTHROPIC_MODELS) {
-    models = String(process.env.ANTHROPIC_MODELS).split(',');
+    models = splitAndTrim(process.env.ANTHROPIC_MODELS);
   }
 
   return models;
@@ -226,7 +241,16 @@ const getAnthropicModels = () => {
 const getGoogleModels = () => {
   let models = defaultModels[EModelEndpoint.google];
   if (process.env.GOOGLE_MODELS) {
-    models = String(process.env.GOOGLE_MODELS).split(',');
+    models = splitAndTrim(process.env.GOOGLE_MODELS);
+  }
+
+  return models;
+};
+
+const getBedrockModels = () => {
+  let models = defaultModels[EModelEndpoint.bedrock];
+  if (process.env.BEDROCK_AWS_MODELS) {
+    models = splitAndTrim(process.env.BEDROCK_AWS_MODELS);
   }
 
   return models;
@@ -234,7 +258,9 @@ const getGoogleModels = () => {
 
 module.exports = {
   fetchModels,
+  splitAndTrim,
   getOpenAIModels,
+  getBedrockModels,
   getChatGPTBrowserModels,
   getAnthropicModels,
   getGoogleModels,

@@ -1,8 +1,13 @@
 import { useRecoilValue } from 'recoil';
 import { useCallback, useMemo } from 'react';
-import { isAssistantsEndpoint } from 'librechat-data-provider';
+import { isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
-import { useChatContext, useAddedChatContext, useAssistantsMapContext } from '~/Providers';
+import {
+  useChatContext,
+  useAddedChatContext,
+  useAssistantsMapContext,
+  useAgentsMapContext,
+} from '~/Providers';
 import useCopyToClipboard from './useCopyToClipboard';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useLocalize from '~/hooks/useLocalize';
@@ -35,6 +40,8 @@ export default function useMessageActions(props: TMessageActions) {
     () => (isMultiMessage === true ? addedConvo : rootConvo),
     [isMultiMessage, addedConvo, rootConvo],
   );
+
+  const agentMap = useAgentsMapContext();
   const assistantMap = useAssistantsMapContext();
 
   const { text, content, messageId = null, isCreatedByUser } = message ?? {};
@@ -56,6 +63,26 @@ export default function useMessageActions(props: TMessageActions) {
     return assistantMap?.[endpointKey] ? assistantMap[endpointKey][modelKey] : undefined;
   }, [conversation?.endpoint, message?.model, assistantMap]);
 
+  const agent = useMemo(() => {
+    if (!isAgentsEndpoint(conversation?.endpoint)) {
+      return undefined;
+    }
+
+    if (!agentMap) {
+      return undefined;
+    }
+
+    const modelKey = message?.model ?? '';
+    if (modelKey) {
+      return agentMap[modelKey];
+    }
+
+    const agentId = conversation?.agent_id ?? '';
+    if (agentId) {
+      return agentMap[agentId];
+    }
+  }, [agentMap, conversation?.agent_id, conversation?.endpoint, message?.model]);
+
   const isSubmitting = useMemo(
     () => (isMultiMessage === true ? isSubmittingAdditional : isSubmittingRoot),
     [isMultiMessage, isSubmittingAdditional, isSubmittingRoot],
@@ -74,17 +101,20 @@ export default function useMessageActions(props: TMessageActions) {
   const messageLabel = useMemo(() => {
     if (message?.isCreatedByUser === true) {
       return UsernameDisplay ? (user?.name ?? '') || user?.username : localize('com_user_message');
+    } else if (agent) {
+      return agent.name ?? 'Assistant';
     } else if (assistant) {
       return assistant.name ?? 'Assistant';
     } else {
       return message?.sender;
     }
-  }, [message, assistant, UsernameDisplay, user, localize]);
+  }, [message, agent, assistant, UsernameDisplay, user, localize]);
 
   return {
     ask,
     edit,
     index,
+    agent,
     assistant,
     enterEdit,
     conversation,

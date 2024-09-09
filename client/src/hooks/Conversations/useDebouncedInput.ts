@@ -41,7 +41,7 @@ function useDebouncedInput<T = unknown>({
       const newValue: T =
         typeof e !== 'object'
           ? e
-          : ((e as React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>)?.target
+          : ((e as React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>).target
             .value as unknown as T);
       setValue(newValue);
       setDebouncedOption(newValue);

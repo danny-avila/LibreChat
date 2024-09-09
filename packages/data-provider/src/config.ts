@@ -142,9 +142,18 @@ export const defaultAssistantsVersion = {
 
 export const baseEndpointSchema = z.object({
   streamRate: z.number().optional(),
+  baseURL: z.string().optional(),
+  titlePrompt: z.string().optional(),
+  titleModel: z.string().optional(),
 });
 
 export type TBaseEndpoint = z.infer<typeof baseEndpointSchema>;
+
+export const bedrockEndpointSchema = baseEndpointSchema.merge(
+  z.object({
+    availableRegions: z.array(z.string()).optional(),
+  }),
+);
 
 export const assistantEndpointSchema = baseEndpointSchema.merge(
   z.object({
@@ -169,7 +178,6 @@ export const assistantEndpointSchema = baseEndpointSchema.merge(
       ]),
     /* general */
     apiKey: z.string().optional(),
-    baseURL: z.string().optional(),
     models: z
       .object({
         default: z.array(z.string()).min(1),
@@ -179,7 +187,6 @@ export const assistantEndpointSchema = baseEndpointSchema.merge(
       .optional(),
     titleConvo: z.boolean().optional(),
     titleMethod: z.union([z.literal('completion'), z.literal('functions')]).optional(),
-    titleModel: z.string().optional(),
     headers: z.record(z.any()).optional(),
   }),
 );
@@ -187,43 +194,39 @@ export const assistantEndpointSchema = baseEndpointSchema.merge(
 export type TAssistantEndpoint = z.infer<typeof assistantEndpointSchema>;
 
 export const agentsEndpointSChema = baseEndpointSchema.merge(
-  baseEndpointSchema.merge(
-    z.object({
-      /* assistants specific */
-      disableBuilder: z.boolean().optional(),
-      pollIntervalMs: z.number().optional(),
-      timeoutMs: z.number().optional(),
-      version: z.union([z.string(), z.number()]).default(2),
-      supportedIds: z.array(z.string()).min(1).optional(),
-      excludedIds: z.array(z.string()).min(1).optional(),
-      privateAssistants: z.boolean().optional(),
-      retrievalModels: z.array(z.string()).min(1).optional().default(defaultRetrievalModels),
-      capabilities: z
-        .array(z.nativeEnum(Capabilities))
-        .optional()
-        .default([
-          Capabilities.code_interpreter,
-          Capabilities.image_vision,
-          Capabilities.retrieval,
-          Capabilities.actions,
-          Capabilities.tools,
-        ]),
-      /* general */
-      apiKey: z.string().optional(),
-      baseURL: z.string().optional(),
-      models: z
-        .object({
-          default: z.array(z.string()).min(1),
-          fetch: z.boolean().optional(),
-          userIdQuery: z.boolean().optional(),
-        })
-        .optional(),
-      titleConvo: z.boolean().optional(),
-      titleMethod: z.union([z.literal('completion'), z.literal('functions')]).optional(),
-      titleModel: z.string().optional(),
-      headers: z.record(z.any()).optional(),
-    }),
-  ),
+  z.object({
+    /* assistants specific */
+    disableBuilder: z.boolean().optional(),
+    pollIntervalMs: z.number().optional(),
+    timeoutMs: z.number().optional(),
+    version: z.union([z.string(), z.number()]).default(2),
+    supportedIds: z.array(z.string()).min(1).optional(),
+    excludedIds: z.array(z.string()).min(1).optional(),
+    privateAssistants: z.boolean().optional(),
+    retrievalModels: z.array(z.string()).min(1).optional().default(defaultRetrievalModels),
+    capabilities: z
+      .array(z.nativeEnum(Capabilities))
+      .optional()
+      .default([
+        Capabilities.code_interpreter,
+        Capabilities.image_vision,
+        Capabilities.retrieval,
+        Capabilities.actions,
+        Capabilities.tools,
+      ]),
+    /* general */
+    apiKey: z.string().optional(),
+    models: z
+      .object({
+        default: z.array(z.string()).min(1),
+        fetch: z.boolean().optional(),
+        userIdQuery: z.boolean().optional(),
+      })
+      .optional(),
+    titleConvo: z.boolean().optional(),
+    titleMethod: z.union([z.literal('completion'), z.literal('functions')]).optional(),
+    headers: z.record(z.any()).optional(),
+  }),
 );
 
 export type TAgentsEndpoint = z.infer<typeof agentsEndpointSChema>;
@@ -244,7 +247,6 @@ export const endpointSchema = baseEndpointSchema.merge(
     }),
     titleConvo: z.boolean().optional(),
     titleMethod: z.union([z.literal('completion'), z.literal('functions')]).optional(),
-    titleModel: z.string().optional(),
     summarize: z.boolean().optional(),
     summaryModel: z.string().optional(),
     forcePrompt: z.boolean().optional(),
@@ -500,6 +502,7 @@ export const configSchema = z.object({
       [EModelEndpoint.assistants]: assistantEndpointSchema.optional(),
       [EModelEndpoint.agents]: agentsEndpointSChema.optional(),
       [EModelEndpoint.custom]: z.array(endpointSchema.partial()).optional(),
+      [EModelEndpoint.bedrock]: baseEndpointSchema.optional(),
     })
     .strict()
     .refine((data) => Object.keys(data).length > 0, {
@@ -552,6 +555,7 @@ export const defaultEndpoints: EModelEndpoint[] = [
   EModelEndpoint.google,
   EModelEndpoint.anthropic,
   EModelEndpoint.custom,
+  EModelEndpoint.bedrock,
 ];
 
 export const alternateName = {
@@ -566,6 +570,7 @@ export const alternateName = {
   [EModelEndpoint.google]: 'Google',
   [EModelEndpoint.anthropic]: 'Anthropic',
   [EModelEndpoint.custom]: 'Custom',
+  [EModelEndpoint.bedrock]: 'AWS Bedrock',
 };
 
 const sharedOpenAIModels = [
@@ -588,6 +593,52 @@ const sharedOpenAIModels = [
   'gpt-3.5-turbo-0613',
 ];
 
+const sharedAnthropicModels = [
+  'claude-3-5-sonnet-20240620',
+  'claude-3-opus-20240229',
+  'claude-3-sonnet-20240229',
+  'claude-3-haiku-20240307',
+  'claude-2.1',
+  'claude-2',
+  'claude-1.2',
+  'claude-1',
+  'claude-1-100k',
+  'claude-instant-1',
+  'claude-instant-1-100k',
+];
+
+export const bedrockModels = [
+  'anthropic.claude-3-5-sonnet-20240620-v1:0',
+  'anthropic.claude-3-haiku-20240307-v1:0',
+  'anthropic.claude-3-opus-20240229-v1:0',
+  'anthropic.claude-3-sonnet-20240229-v1:0',
+  'anthropic.claude-v2',
+  'anthropic.claude-v2:1',
+  'anthropic.claude-instant-v1',
+  'cohere.command-text-v14',
+  'cohere.command-light-text-v14',
+  'cohere.command-r-v1:0',
+  'cohere.command-r-plus-v1:0',
+  'meta.llama2-13b-chat-v1',
+  'meta.llama2-70b-chat-v1',
+  'meta.llama3-8b-instruct-v1:0',
+  'meta.llama3-70b-instruct-v1:0',
+  'meta.llama3-1-8b-instruct-v1:0',
+  'meta.llama3-1-70b-instruct-v1:0',
+  'meta.llama3-1-405b-instruct-v1:0',
+  'mistral.mistral-7b-instruct-v0:2',
+  'mistral.mixtral-8x7b-instruct-v0:1',
+  'mistral.mistral-large-2402-v1:0',
+  'mistral.mistral-large-2407-v1:0',
+  'mistral.mistral-small-2402-v1:0',
+  'ai21.jamba-instruct-v1:0',
+  // 'ai21.j2-mid-v1', // no streaming
+  // 'ai21.j2-ultra-v1', no conversation history
+  'amazon.titan-text-lite-v1',
+  'amazon.titan-text-express-v1',
+  'amazon.titan-text-premier-v1:0',
+];
+
 export const defaultModels = {
   [EModelEndpoint.azureAssistants]: sharedOpenAIModels,
   [EModelEndpoint.assistants]: ['chatgpt-4o-latest', ...sharedOpenAIModels],
@@ -606,19 +657,7 @@ export const defaultModels = {
     'code-bison',
     'code-bison-32k',
   ],
-  [EModelEndpoint.anthropic]: [
-    'claude-3-5-sonnet-20240620',
-    'claude-3-opus-20240229',
-    'claude-3-sonnet-20240229',
-    'claude-3-haiku-20240307',
-    'claude-2.1',
-    'claude-2',
-    'claude-1.2',
-    'claude-1',
-    'claude-1-100k',
-    'claude-instant-1',
-    'claude-instant-1-100k',
-  ],
+  [EModelEndpoint.anthropic]: sharedAnthropicModels,
   [EModelEndpoint.openAI]: [
     'chatgpt-4o-latest',
     ...sharedOpenAIModels,
@@ -626,6 +665,7 @@ export const defaultModels = {
     'gpt-3.5-turbo-instruct-0914',
     'gpt-3.5-turbo-instruct',
   ],
+  [EModelEndpoint.bedrock]: bedrockModels,
 };
 
 const fitlerAssistantModels = (str: string) => {
@@ -645,6 +685,7 @@ export const initialModelsConfig: TModelsConfig = {
   [EModelEndpoint.chatGPTBrowser]: ['text-davinci-002-render-sha'],
   [EModelEndpoint.google]: defaultModels[EModelEndpoint.google],
   [EModelEndpoint.anthropic]: defaultModels[EModelEndpoint.anthropic],
+  [EModelEndpoint.bedrock]: defaultModels[EModelEndpoint.bedrock],
 };
 
 export const EndpointURLs: { [key in EModelEndpoint]: string } = {
@@ -658,7 +699,8 @@ export const EndpointURLs: { [key in EModelEndpoint]: string } = {
   [EModelEndpoint.chatGPTBrowser]: `/api/ask/${EModelEndpoint.chatGPTBrowser}`,
   [EModelEndpoint.azureAssistants]: '/api/assistants/v1/chat',
   [EModelEndpoint.assistants]: '/api/assistants/v2/chat',
-  [EModelEndpoint.agents]: '/api/agents/chat',
+  [EModelEndpoint.agents]: `/api/${EModelEndpoint.agents}/chat`,
+  [EModelEndpoint.bedrock]: `/api/${EModelEndpoint.bedrock}/chat`,
 };
 
 export const modularEndpoints = new Set<EModelEndpoint | string>([
@@ -668,6 +710,13 @@ export const modularEndpoints = new Set<EModelEndpoint | string>([
   EModelEndpoint.openAI,
   EModelEndpoint.azureOpenAI,
   EModelEndpoint.custom,
+  EModelEndpoint.agents,
+  EModelEndpoint.bedrock,
+]);
+
+export const paramEndpoints = new Set<EModelEndpoint | string>([
+  EModelEndpoint.agents,
+  EModelEndpoint.bedrock,
 ]);
 
 export const supportsBalanceCheck = {
@@ -679,6 +728,7 @@ export const supportsBalanceCheck = {
   [EModelEndpoint.agents]: true,
   [EModelEndpoint.azureAssistants]: true,
   [EModelEndpoint.azureOpenAI]: true,
+  [EModelEndpoint.bedrock]: true,
 };
 
 export const visionModels = [
@@ -1007,7 +1057,7 @@ export enum Constants {
   /** Key for the app's version. */
   VERSION = 'v0.7.5-rc1',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.1.6',
+  CONFIG_VERSION = '1.1.7',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value for the initial conversationId before a request is sent */
@@ -1026,6 +1076,8 @@ export enum Constants {
   SAVED_TAG = 'Saved',
   /** Max number of Conversation starters for Agents/Assistants */
   MAX_CONVO_STARTERS = 4,
+  /** Global/instance Project Name */
+  GLOBAL_PROJECT_NAME = 'instance',
 }
 
 export enum LocalStorageKeys {
@@ -1105,6 +1157,7 @@ export enum SystemCategories {
 
 export const providerEndpointMap = {
   [EModelEndpoint.openAI]: EModelEndpoint.openAI,
+  [EModelEndpoint.bedrock]: EModelEndpoint.bedrock,
   [EModelEndpoint.azureOpenAI]: EModelEndpoint.openAI,
   [EModelEndpoint.anthropic]: EModelEndpoint.anthropic,
 };

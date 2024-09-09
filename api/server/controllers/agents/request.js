@@ -1,4 +1,4 @@
-const { Constants, getResponseSender } = require('librechat-data-provider');
+const { Constants } = require('librechat-data-provider');
 const { createAbortController, handleAbortError } = require('~/server/middleware');
 const { sendMessage } = require('~/server/utils');
 const { saveMessage } = require('~/models');
@@ -9,22 +9,17 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     text,
     endpointOption,
     conversationId,
-    modelDisplayLabel,
     parentMessageId = null,
     overrideParentMessageId = null,
   } = req.body;
 
+  let sender;
   let userMessage;
-  let userMessagePromise;
   let promptTokens;
   let userMessageId;
   let responseMessageId;
+  let userMessagePromise;
 
-  const sender = getResponseSender({
-    ...endpointOption,
-    model: endpointOption.modelOptions.model,
-    modelDisplayLabel,
-  });
   const newConvo = !conversationId;
   const user = req.user.id;
 
@@ -39,6 +34,8 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
         responseMessageId = data[key];
       } else if (key === 'promptTokens') {
         promptTokens = data[key];
+      } else if (key === 'sender') {
+        sender = data[key];
       } else if (!conversationId && key === 'conversationId') {
         conversationId = data[key];
       }
@@ -46,6 +43,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
   };
 
   try {
+    /** @type {{ client: TAgentClient }} */
     const { client } = await initializeClient({ req, res, endpointOption });
 
     const getAbortData = () => ({
@@ -54,8 +52,8 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       promptTokens,
       conversationId,
       userMessagePromise,
-      // text: getPartialText(),
       messageId: responseMessageId,
+      content: client.getContentParts(),
       parentMessageId: overrideParentMessageId ?? userMessageId,
     });
 
@@ -90,11 +88,6 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     };
 
     let response = await client.sendMessage(text, messageOptions);
-
-    if (overrideParentMessageId) {
-      response.parentMessageId = overrideParentMessageId;
-    }
-
     response.endpoint = endpointOption.endpoint;
 
     const { conversation = {} } = await client.responsePromise;
@@ -103,7 +96,6 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
 
     if (client.options.attachments) {
       userMessage.files = client.options.attachments;
-      conversation.model = endpointOption.modelOptions.model;
       delete userMessage.image_urls;
     }
 
