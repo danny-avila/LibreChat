@@ -25,6 +25,10 @@ const openAIModels = {
 
 const mistralModels = {
   'mistral-': 31990, // -10 from max
+  'mistral-7b': 31990, // -10 from max
+  'mistral-small': 31990, // -10 from max
+  'mixtral-8x7b': 31990, // -10 from max
+  'mistral-large-2402': 127500,
   'mistral-large-2407': 127500,
 };
 
@@ -56,6 +60,7 @@ const googleModels = {
 
 const anthropicModels = {
   'claude-': 100000,
+  'claude-instant': 100000,
   'claude-2': 100000,
   'claude-2.1': 200000,
   'claude-3-haiku': 200000,
@@ -66,26 +71,25 @@ const anthropicModels = {
 };
 
 const metaModels = {
-  llama2: 4000,
-  'llama-2': 4000,
-  'llama-3': 8000,
-  llama3: 8000,
-  'llama3.1': 127500,
-  'llama3-1': 127500,
-  'llama-3.1': 127500,
-  'llama-3-1': 127500,
+  'llama2-13b': 4000,
+  'llama2-70b': 4000,
+  'llama3-8b': 8000,
+  'llama3-70b': 8000,
+  'llama3-1-8b': 127500,
+  'llama3-1-70b': 127500,
+  'llama3-1-405b': 127500,
 };
 
 const ai21Models = {
-  'j2-mid': 8182, // -10 from max
-  'j2-ultra': 8182, // -10 from max
-  'jamba-instruct': 255500, // -500 from max
+  'ai21.j2-mid-v1': 8182, // -10 from max
+  'ai21.j2-ultra-v1': 8182, // -10 from max
+  'ai21.jamba-instruct-v1:0': 255500, // -500 from max
 };
 
 const amazonModels = {
-  'titan-text-lite': 4000,
-  'titan-text-express': 8000,
-  'titan-text-premier': 31500, // -500 from max
+  'amazon.titan-text-lite-v1': 4000,
+  'amazon.titan-text-express-v1': 8000,
+  'amazon.titan-text-premier-v1:0': 31500, // -500 from max
 };
 
 const bedrockModels = {

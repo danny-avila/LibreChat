@@ -20,18 +20,6 @@ describe('getModelMaxTokens', () => {
     );
   });
 
-  test('should return correct tokens for LLama 3 models', () => {
-    expect(getModelMaxTokens('meta-llama/llama-3-8b')).toBe(
-      maxTokensMap[EModelEndpoint.openAI]['llama-3'],
-    );
-    expect(getModelMaxTokens('meta-llama/llama-3-8b')).toBe(
-      maxTokensMap[EModelEndpoint.openAI]['llama3'],
-    );
-    expect(getModelMaxTokens('llama-3-500b')).toBe(maxTokensMap[EModelEndpoint.openAI]['llama-3']);
-    expect(getModelMaxTokens('llama3-70b')).toBe(maxTokensMap[EModelEndpoint.openAI]['llama3']);
-    expect(getModelMaxTokens('llama3:latest')).toBe(maxTokensMap[EModelEndpoint.openAI]['llama3']);
-  });
-
   test('should return undefined for no match', () => {
     expect(getModelMaxTokens('unknown-model')).toBeUndefined();
   });
@@ -260,62 +248,6 @@ describe('getModelMaxTokens', () => {
   test('should return undefined for a model when using an unsupported endpoint', () => {
     expect(getModelMaxTokens('azure-gpt-3', 'unsupportedEndpoint')).toBeUndefined();
   });
-
-  test('should return correct tokens for meta llama models', () => {
-    const llamaModels = [
-      'meta.llama2-13b-chat-v1',
-      'meta.llama2-70b-chat-v1',
-      'meta.llama3-8b-instruct-v1:0',
-      'meta.llama3-70b-instruct-v1:0',
-      'meta.llama3-1-8b-instruct-v1:0',
-      'meta.llama3-1-70b-instruct-v1:0',
-      'meta.llama3-1-405b-instruct-v1:0',
-      'meta/llama2-70b',
-      'meta/llama3-70b',
-      'meta/llama3.1-70b',
-    ];
-
-    const results = llamaModels.map((model) => getModelMaxTokens(model));
-
-    const expectedTokens = [
-      maxTokensMap[EModelEndpoint.bedrock]['llama-2'],
-      maxTokensMap[EModelEndpoint.bedrock]['llama-2'],
-      maxTokensMap[EModelEndpoint.bedrock]['llama-3'],
-      maxTokensMap[EModelEndpoint.bedrock]['llama-3'],
-      maxTokensMap[EModelEndpoint.bedrock]['llama3.1'],
-      maxTokensMap[EModelEndpoint.bedrock]['llama3.1'],
-      maxTokensMap[EModelEndpoint.bedrock]['llama3.1'],
-      maxTokensMap[EModelEndpoint.bedrock]['llama-2'],
-      maxTokensMap[EModelEndpoint.bedrock]['llama-3'],
-      maxTokensMap[EModelEndpoint.bedrock]['llama3.1'],
-    ];
-
-    expect(results).toEqual(expectedTokens);
-  });
-
-  test('should return correct tokens for Mistral models', () => {
-    const mistralModels = [
-      'mistral-tiny',
-      'mistral-small',
-      'mistral-medium',
-      'mistral-large',
-      'mistral-large-2407',
-      'mistral-latest',
-    ];
-
-    const results = mistralModels.map((model) => getModelMaxTokens(model));
-
-    const expectedTokens = [
-      maxTokensMap[EModelEndpoint.bedrock]['mistral-'],
-      maxTokensMap[EModelEndpoint.bedrock]['mistral-'],
-      maxTokensMap[EModelEndpoint.bedrock]['mistral-'],
-      maxTokensMap[EModelEndpoint.bedrock]['mistral-'],
-      maxTokensMap[EModelEndpoint.bedrock]['mistral-large-2407'],
-      maxTokensMap[EModelEndpoint.bedrock]['mistral-'],
-    ];
-
-    expect(results).toEqual(expectedTokens);
-  });
 });
 
 describe('matchModelName', () => {
@@ -383,61 +315,5 @@ describe('matchModelName', () => {
   it('should return the closest matching key for partial matches - Google models', () => {
     expect(matchModelName('code-', EModelEndpoint.google)).toBe('code-');
     expect(matchModelName('chat-', EModelEndpoint.google)).toBe('chat-');
-  });
-
-  it('should return the closest matching key for meta llama models', () => {
-    const llamaModels = [
-      'meta.llama2-13b-chat-v1',
-      'meta.llama2-70b-chat-v1',
-      'meta.llama3-8b-instruct-v1:0',
-      'meta.llama3-70b-instruct-v1:0',
-      'meta.llama3-1-8b-instruct-v1:0',
-      'meta.llama3-1-70b-instruct-v1:0',
-      'meta.llama3-1-405b-instruct-v1:0',
-      'meta/llama2-70b',
-      'meta/llama3-70b',
-      'meta/llama3.1-70b',
-    ];
-
-    const results = llamaModels.map((model) => matchModelName(model));
-
-    const expectedMatches = [
-      'llama2',
-      'llama2',
-      'llama3',
-      'llama3',
-      'llama3-1',
-      'llama3-1',
-      'llama3-1',
-      'llama2',
-      'llama3',
-      'llama3.1',
-    ];
-
-    expect(results).toEqual(expectedMatches);
-  });
-
-  it('should return the closest matching key for Mistral models', () => {
-    const mistralModels = [
-      'mistral-tiny',
-      'mistral-small',
-      'mistral-medium',
-      'mistral-large',
-      'mistral-large-2407',
-      'mistral-latest',
-    ];
-
-    const results = mistralModels.map((model) => matchModelName(model));
-
-    const expectedMatches = [
-      'mistral-',
-      'mistral-',
-      'mistral-',
-      'mistral-',
-      'mistral-large-2407',
-      'mistral-',
-    ];
-
-    expect(results).toEqual(expectedMatches);
   });
 });

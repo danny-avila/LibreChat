@@ -15,8 +15,10 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     throw new Error('Endpoint option not provided');
   }
 
+  /** @type {Array<UsageMetadata>} */
+  const collectedUsage = [];
   const { contentParts, aggregateContent } = createContentAggregator();
-  const eventHandlers = getDefaultHandlers({ res, aggregateContent });
+  const eventHandlers = getDefaultHandlers({ res, aggregateContent, collectedUsage });
 
   // const tools = [createTavilySearchTool()];
 
@@ -58,6 +60,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     modelOptions,
     contentParts,
     eventHandlers,
+    collectedUsage,
     maxContextTokens,
     endpoint: EModelEndpoint.bedrock,
     configOptions: options.configOptions,
