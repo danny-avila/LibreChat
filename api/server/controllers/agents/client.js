@@ -9,6 +9,7 @@
 // } = require('librechat-data-provider');
 const { Callback, createMetadataAggregator } = require('@librechat/agents');
 const {
+  Constants,
   EModelEndpoint,
   bedrockOutputParser,
   providerEndpointMap,
@@ -332,12 +333,18 @@ class AgentClient extends BaseClient {
     return this.contentParts;
   }
 
-  async recordCollectedUsage({ context = 'message', collectedUsage = this.collectedUsage }) {
+  /**
+   * @param {Object} params
+   * @param {string} [params.model]
+   * @param {string} [params.context='message']
+   * @param {UsageMetadata[]} [params.collectedUsage=this.collectedUsage]
+   */
+  async recordCollectedUsage({ model, context = 'message', collectedUsage = this.collectedUsage }) {
     for (const usage of collectedUsage) {
       await spendTokens(
         {
           context,
-          model: this.modelOptions.model,
+          model: model ?? this.modelOptions.model,
           conversationId: this.conversationId,
           user: this.user ?? this.options.req.user?.id,
           endpointTokenConfig: this.options.endpointTokenConfig,
@@ -525,10 +532,20 @@ class AgentClient extends BaseClient {
       throw new Error('Run not initialized');
     }
     const { handleLLMEnd, collected: collectedMetadata } = createMetadataAggregator();
+    const clientOptions = {};
+    const providerConfig = this.options.req.app.locals[this.options.agent.provider];
+    if (
+      providerConfig &&
+      providerConfig.titleModel &&
+      providerConfig.titleModel !== Constants.CURRENT_MODEL
+    ) {
+      clientOptions.model = providerConfig.titleModel;
+    }
     try {
       const titleResult = await this.run.generateTitle({
         inputText: text,
         contentParts: this.contentParts,
+        clientOptions,
         chainOptions: {
           callbacks: [
             {
@@ -555,7 +572,11 @@ class AgentClient extends BaseClient {
         };
       });
 
-      this.recordCollectedUsage({ context: 'title', collectedUsage }).catch((err) => {
+      this.recordCollectedUsage({
+        model: clientOptions.model,
+        context: 'title',
+        collectedUsage,
+      }).catch((err) => {
         logger.error(
           '[api/server/controllers/agents/client.js #titleConvo] Error recording collected usage',
           err,
