@@ -117,8 +117,8 @@ export default function useSSE(
         };
 
         createdHandler(data, { ...submission, userMessage } as EventSubmission);
-      } else if (data.event) {
-        stepHandler(data);
+      } else if (data.event != null) {
+        stepHandler(data, { ...submission, userMessage } as EventSubmission);
       } else if (data.sync != null) {
         const runId = v4();
         setActiveRunId(runId);

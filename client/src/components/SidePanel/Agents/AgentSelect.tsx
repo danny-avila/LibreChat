@@ -1,10 +1,11 @@
-import { Plus } from 'lucide-react';
+import { Plus, EarthIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef } from 'react';
+import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { Capabilities, defaultAgentFormValues } from 'librechat-data-provider';
-import type { AgentCapabilities, AgentForm, TAgentOption } from '~/common';
 import type { Agent, AgentCreateParams } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type { UseFormReset } from 'react-hook-form';
+import type { AgentCapabilities, AgentForm, TAgentOption } from '~/common';
 import { cn, createDropdownSetter, createProviderOption, processAgentOption } from '~/utils';
 import { useListAgentsQuery, useGetAgentByIdQuery } from '~/data-provider';
 import SelectDropDown from '~/components/ui/SelectDropDown';
@@ -16,7 +17,7 @@ const keys = new Set(Object.keys(defaultAgentFormValues));
 export default function AgentSelect({
   reset,
   value: currentAgentValue,
-  selectedAgentId,
+  selectedAgentId = null,
   setCurrentAgentId,
   createMutation,
 }: {
@@ -31,21 +32,33 @@ export default function AgentSelect({
   // const fileMap = useFileMapContext();
   const lastSelectedAgent = useRef<string | null>(null);
 
-  const { data: agents = [] } = useListAgentsQuery(undefined, {
-    select: (res) => res.data.map((agent) => processAgentOption(agent /*, fileMap */)),
+  const { data: startupConfig } = useGetStartupConfig();
+  const { data: agents = null } = useListAgentsQuery(undefined, {
+    select: (res) =>
+      res.data.map((agent) =>
+        processAgentOption({
+          agent,
+          instanceProjectId: startupConfig?.instanceProjectId,
+          /* fileMap */
+        }),
+      ),
   });
 
   const agentQuery = useGetAgentByIdQuery(selectedAgentId ?? '', {
-    enabled: !!selectedAgentId,
+    enabled: !!(selectedAgentId ?? ''),
   });
 
   const resetAgentForm = useCallback(
     (fullAgent: Agent) => {
+      const { instanceProjectId } = startupConfig ?? {};
+      const isGlobal =
+        (instanceProjectId != null && fullAgent.projectIds?.includes(instanceProjectId)) ?? false;
       const update = {
         ...fullAgent,
         provider: createProviderOption(fullAgent.provider),
         label: fullAgent.name ?? '',
-        value: fullAgent.id ?? '',
+        value: fullAgent.id || '',
+        icon: isGlobal ? <EarthIcon className={'icon-lg text-green-400'} /> : null,
       };
 
       const actions: AgentCapabilities = {
@@ -84,7 +97,7 @@ export default function AgentSelect({
   const onSelect = useCallback(
     (selectedId: string) => {
       const agentExists = !!(selectedId
-        ? agents.find((agent) => agent.id === selectedId)
+        ? (agents ?? []).find((agent) => agent.id === selectedId)
         : undefined);
 
       createMutation.reset();
@@ -120,7 +133,7 @@ export default function AgentSelect({
       return;
     }
 
-    if (selectedAgentId && agents) {
+    if (selectedAgentId != null && selectedAgentId !== '' && agents) {
       timerId = setTimeout(() => {
         lastSelectedAgent.current = selectedAgentId;
         onSelect(selectedAgentId);
@@ -136,8 +149,9 @@ export default function AgentSelect({
 
   const createAgent = localize('com_ui_create') + ' ' + localize('com_ui_agent');
   const hasAgentValue = !!(typeof currentAgentValue === 'object'
-    ? currentAgentValue.value
-    : currentAgentValue);
+    ? currentAgentValue.value != null && currentAgentValue.value !== ''
+    : typeof currentAgentValue !== 'undefined');
+
   return (
     <SelectDropDown
       value={!hasAgentValue ? createAgent : (currentAgentValue as TAgentOption)}
@@ -151,9 +165,11 @@ export default function AgentSelect({
         ]
       }
       iconSide="left"
+      optionIconSide="right"
       showAbove={false}
       showLabel={false}
       emptyTitle={true}
+      showOptionIcon={true}
       containerClassName="flex-grow"
       searchClassName="dark:from-gray-850"
       searchPlaceholder={localize('com_agents_search_name')}

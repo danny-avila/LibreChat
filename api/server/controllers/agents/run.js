@@ -1,4 +1,4 @@
-const { Run } = require('@librechat/agents');
+const { Run, Providers } = require('@librechat/agents');
 const { providerEndpointMap } = require('librechat-data-provider');
 
 /**
@@ -14,11 +14,12 @@ const { providerEndpointMap } = require('librechat-data-provider');
  * Creates a new Run instance with custom handlers and configuration.
  *
  * @param {Object} options - The options for creating the Run instance.
+ * @param {ServerRequest} [options.req] - The server request.
+ * @param {string | undefined} [options.runId] - Optional run ID; otherwise, a new run ID will be generated.
  * @param {Agent} options.agent - The agent for this run.
  * @param {StructuredTool[] | undefined} [options.tools] - The tools to use in the run.
  * @param {Record<string, StructuredTool[]> | undefined} [options.toolMap] - The tool map for the run.
  * @param {Record<GraphEvents, EventHandler> | undefined} [options.customHandlers] - Custom event handlers.
- * @param {string | undefined} [options.runId] - Optional run ID; otherwise, a new run ID will be generated.
  * @param {ClientOptions} [options.modelOptions] - Optional model to use; if not provided, it will use the default from modelMap.
  * @param {boolean} [options.streaming=true] - Whether to use streaming.
  * @param {boolean} [options.streamUsage=true] - Whether to stream usage information.
@@ -43,15 +44,22 @@ async function createRun({
     modelOptions,
   );
 
+  const graphConfig = {
+    runId,
+    llmConfig,
+    tools,
+    toolMap,
+    instructions: agent.instructions,
+    additional_instructions: agent.additional_instructions,
+  };
+
+  // TEMPORARY FOR TESTING
+  if (agent.provider === Providers.ANTHROPIC) {
+    graphConfig.streamBuffer = 2000;
+  }
+
   return Run.create({
-    graphConfig: {
-      runId,
-      llmConfig,
-      tools,
-      toolMap,
-      instructions: agent.instructions,
-      additional_instructions: agent.additional_instructions,
-    },
+    graphConfig,
     customHandlers,
   });
 }

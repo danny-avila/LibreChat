@@ -2,20 +2,26 @@ import * as React from 'react';
 import * as SliderPrimitive from '@radix-ui/react-slider';
 import { useDoubleClick } from '@zattoo/use-double-click';
 import type { clickEvent } from '@zattoo/use-double-click';
-import { cn } from '../../utils';
+import { cn } from '~/utils';
 
 interface SliderProps extends React.ComponentPropsWithoutRef<typeof SliderPrimitive.Root> {
   doubleClickHandler?: clickEvent;
+  trackClassName?: string;
 }
 
 const Slider = React.forwardRef<React.ElementRef<typeof SliderPrimitive.Root>, SliderProps>(
-  ({ className, doubleClickHandler, ...props }, ref) => (
+  (
+    { className, trackClassName = 'bg-gray-200 dark:bg-gray-850', doubleClickHandler, ...props },
+    ref,
+  ) => (
     <SliderPrimitive.Root
       ref={ref}
       className={cn('relative flex w-full touch-none select-none items-center', className ?? '')}
       {...props}
     >
-      <SliderPrimitive.Track className="relative h-1 w-full grow overflow-hidden rounded-full bg-gray-200 dark:bg-gray-850">
+      <SliderPrimitive.Track
+        className={cn('relative h-1 w-full grow overflow-hidden rounded-full', trackClassName)}
+      >
         <SliderPrimitive.Range className="absolute h-full bg-gray-850  dark:bg-white" />
       </SliderPrimitive.Track>
       <SliderPrimitive.Thumb

@@ -1,15 +1,11 @@
 import { useMemo } from 'react';
+import { MessageSquareQuote, ArrowRightToLine, Settings2, Bookmark } from 'lucide-react';
 import {
-  ArrowRightToLine,
-  MessageSquareQuote,
-  Bookmark,
-  // Settings2,
-} from 'lucide-react';
-import {
-  EModelEndpoint,
   isAssistantsEndpoint,
   isAgentsEndpoint,
   PermissionTypes,
+  paramEndpoints,
+  EModelEndpoint,
   Permissions,
 } from 'librechat-data-provider';
 import type { TConfig, TInterfaceConfig } from 'librechat-data-provider';
@@ -18,7 +14,7 @@ import BookmarkPanel from '~/components/SidePanel/Bookmarks/BookmarkPanel';
 import PanelSwitch from '~/components/SidePanel/Builder/PanelSwitch';
 import AgentPanelSwitch from '~/components/SidePanel/Agents/AgentPanelSwitch';
 import PromptsAccordion from '~/components/Prompts/PromptsAccordion';
-// import Parameters from '~/components/SidePanel/Parameters/Panel';
+import Parameters from '~/components/SidePanel/Parameters/Panel';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
 import { Blocks, AttachmentIcon } from '~/components/svg';
 import { useHasAccess } from '~/hooks';
@@ -54,7 +50,7 @@ export default function useSideNavLinks({
       assistants &&
       assistants.disableBuilder !== true &&
       keyProvided &&
-      interfaceConfig.parameters
+      interfaceConfig.parameters === true
     ) {
       links.push({
         title: 'com_sidepanel_assistant_builder',
@@ -70,7 +66,7 @@ export default function useSideNavLinks({
       agents &&
       // agents.disableBuilder !== true &&
       keyProvided &&
-      interfaceConfig.parameters
+      interfaceConfig.parameters === true
     ) {
       links.push({
         title: 'com_sidepanel_agent_builder',
@@ -88,6 +84,16 @@ export default function useSideNavLinks({
         icon: MessageSquareQuote,
         id: 'prompts',
         Component: PromptsAccordion,
+      });
+    }
+
+    if (interfaceConfig.parameters === true && paramEndpoints.has(endpoint ?? '') && keyProvided) {
+      links.push({
+        title: 'com_sidepanel_parameters',
+        label: '',
+        icon: Settings2,
+        id: 'parameters',
+        Component: Parameters,
       });
     }
 
@@ -119,13 +125,14 @@ export default function useSideNavLinks({
 
     return links;
   }, [
-    assistants,
-    agents,
-    keyProvided,
-    hidePanel,
-    endpoint,
     interfaceConfig.parameters,
+    keyProvided,
+    assistants,
+    endpoint,
+    agents,
     hasAccessToPrompts,
+    hasAccessToBookmarks,
+    hidePanel,
   ]);
 
   return Links;

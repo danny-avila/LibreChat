@@ -21,6 +21,11 @@ const projectSchema = new Schema(
       ref: 'PromptGroup',
       default: [],
     },
+    agentIds: {
+      type: [String],
+      ref: 'Agent',
+      default: [],
+    },
   },
   {
     timestamps: true,

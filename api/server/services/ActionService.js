@@ -165,7 +165,7 @@ async function createActionTool({ action, requestBuilder, zodSchema, name, descr
  * Encrypts sensitive metadata values for an action.
  *
  * @param {ActionMetadata} metadata - The action metadata to encrypt.
- * @returns {ActionMetadata} The updated action metadata with encrypted values.
+ * @returns {Promise<ActionMetadata>} The updated action metadata with encrypted values.
  */
 async function encryptMetadata(metadata) {
   const encryptedMetadata = { ...metadata };

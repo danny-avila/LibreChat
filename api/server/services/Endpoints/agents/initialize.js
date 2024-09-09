@@ -11,7 +11,12 @@
 
 const { z } = require('zod');
 const { tool } = require('@langchain/core/tools');
-const { EModelEndpoint, providerEndpointMap } = require('librechat-data-provider');
+const { createContentAggregator } = require('@librechat/agents');
+const {
+  EModelEndpoint,
+  providerEndpointMap,
+  getResponseSender,
+} = require('librechat-data-provider');
 const { getDefaultHandlers } = require('~/server/controllers/agents/callbacks');
 // for testing purposes
 // const createTavilySearchTool = require('~/app/clients/tools/structured/TavilySearch');
@@ -53,7 +58,8 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   }
 
   // TODO: use endpointOption to determine options/modelOptions
-  const eventHandlers = getDefaultHandlers({ res });
+  const { contentParts, aggregateContent } = createContentAggregator();
+  const eventHandlers = getDefaultHandlers({ res, aggregateContent });
 
   // const tools = [createTavilySearchTool()];
   // const tools = [_getWeather];
@@ -90,7 +96,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   }
 
   // TODO: pass-in override settings that are specific to current run
-  endpointOption.modelOptions.model = agent.model;
+  endpointOption.model_parameters.model = agent.model;
   const options = await getOptions({
     req,
     res,
@@ -101,13 +107,21 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   });
   modelOptions = Object.assign(modelOptions, options.llmConfig);
 
+  const sender = getResponseSender({
+    ...endpointOption,
+    model: endpointOption.model_parameters.model,
+  });
+
   const client = new AgentClient({
     req,
     agent,
     tools,
+    sender,
     toolMap,
+    contentParts,
     modelOptions,
     eventHandlers,
+    endpoint: EModelEndpoint.agents,
     configOptions: options.configOptions,
     maxContextTokens:
       agent.max_context_tokens ??

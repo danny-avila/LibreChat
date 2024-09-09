@@ -1,5 +1,5 @@
 const express = require('express');
-const { CacheKeys, defaultSocialLogins } = require('librechat-data-provider');
+const { CacheKeys, defaultSocialLogins, Constants } = require('librechat-data-provider');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
 const { getProjectByName } = require('~/models/Project');
 const { isEnabled } = require('~/server/utils');
@@ -32,7 +32,7 @@ router.get('/', async function (req, res) {
     return today.getMonth() === 1 && today.getDate() === 11;
   };
 
-  const instanceProject = await getProjectByName('instance', '_id');
+  const instanceProject = await getProjectByName(Constants.GLOBAL_PROJECT_NAME, '_id');
 
   const ldap = getLdapConfig();
 

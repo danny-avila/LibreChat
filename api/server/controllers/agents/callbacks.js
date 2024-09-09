@@ -1,7 +1,10 @@
 const { GraphEvents, ToolEndHandler, ChatModelStreamHandler } = require('@librechat/agents');
 
+/** @typedef {import('@librechat/agents').Graph} Graph */
 /** @typedef {import('@librechat/agents').EventHandler} EventHandler */
+/** @typedef {import('@librechat/agents').ModelEndData} ModelEndData */
 /** @typedef {import('@librechat/agents').ChatModelStreamHandler} ChatModelStreamHandler */
+/** @typedef {import('@librechat/agents').ContentAggregatorResult['aggregateContent']} ContentAggregator */
 /** @typedef {import('@librechat/agents').GraphEvents} GraphEvents */
 
 /**
@@ -18,18 +21,55 @@ const sendEvent = (res, event) => {
   res.write(`event: message\ndata: ${JSON.stringify(event)}\n\n`);
 };
 
+class ModelEndHandler {
+  /**
+   * @param {Array<UsageMetadata>} collectedUsage
+   */
+  constructor(collectedUsage) {
+    if (!Array.isArray(collectedUsage)) {
+      throw new Error('collectedUsage must be an array');
+    }
+    this.collectedUsage = collectedUsage;
+  }
+
+  /**
+   * @param {string} event
+   * @param {ModelEndData | undefined} data
+   * @param {Record<string, unknown> | undefined} metadata
+   * @param {Graph} graph
+   * @returns
+   */
+  handle(event, data, metadata, graph) {
+    if (!graph || !metadata) {
+      console.warn(`Graph or metadata not found in ${event} event`);
+      return;
+    }
+
+    const usage = data?.output?.usage_metadata;
+
+    if (usage) {
+      this.collectedUsage.push(usage);
+    }
+  }
+}
+
 /**
  * Get default handlers for stream events.
- * @param {{ res?: ServerResponse }} options - The options object.
+ * @param {Object} options - The options object.
+ * @param {ServerResponse} options.res - The options object.
+ * @param {ContentAggregator} options.aggregateContent - The options object.
+ * @param {Array<UsageMetadata>} options.collectedUsage - The list of collected usage metadata.
  * @returns {Record<string, t.EventHandler>} The default handlers.
  * @throws {Error} If the request is not found.
  */
-function getDefaultHandlers({ res }) {
-  if (!res) {
-    throw new Error('Request not found');
+function getDefaultHandlers({ res, aggregateContent, collectedUsage }) {
+  if (!res || !aggregateContent) {
+    throw new Error(
+      `[getDefaultHandlers] Missing required options: res: ${!res}, aggregateContent: ${!aggregateContent}`,
+    );
   }
   const handlers = {
-    // [GraphEvents.CHAT_MODEL_END]: new ModelEndHandler(),
+    [GraphEvents.CHAT_MODEL_END]: new ModelEndHandler(collectedUsage),
     [GraphEvents.TOOL_END]: new ToolEndHandler(),
     [GraphEvents.CHAT_MODEL_STREAM]: new ChatModelStreamHandler(),
     [GraphEvents.ON_RUN_STEP]: {
@@ -40,6 +80,7 @@ function getDefaultHandlers({ res }) {
        */
       handle: (event, data) => {
         sendEvent(res, { event, data });
+        aggregateContent({ event, data });
       },
     },
     [GraphEvents.ON_RUN_STEP_DELTA]: {
@@ -50,6 +91,7 @@ function getDefaultHandlers({ res }) {
        */
       handle: (event, data) => {
         sendEvent(res, { event, data });
+        aggregateContent({ event, data });
       },
     },
     [GraphEvents.ON_RUN_STEP_COMPLETED]: {
@@ -60,6 +102,7 @@ function getDefaultHandlers({ res }) {
        */
       handle: (event, data) => {
         sendEvent(res, { event, data });
+        aggregateContent({ event, data });
       },
     },
     [GraphEvents.ON_MESSAGE_DELTA]: {
@@ -70,6 +113,7 @@ function getDefaultHandlers({ res }) {
        */
       handle: (event, data) => {
         sendEvent(res, { event, data });
+        aggregateContent({ event, data });
       },
     },
   };

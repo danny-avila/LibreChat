@@ -57,6 +57,11 @@ const agentSchema = mongoose.Schema(
       ref: 'User',
       required: true,
     },
+    projectIds: {
+      type: [mongoose.Schema.Types.ObjectId],
+      ref: 'Project',
+      index: true,
+    },
   },
   {
     timestamps: true,

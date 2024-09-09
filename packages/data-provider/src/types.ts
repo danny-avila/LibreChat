@@ -222,6 +222,7 @@ export type TConfig = {
   type?: EModelEndpoint;
   azure?: boolean;
   availableTools?: [];
+  availableRegions?: string[];
   plugins?: Record<string, string>;
   name?: string;
   iconURL?: string;

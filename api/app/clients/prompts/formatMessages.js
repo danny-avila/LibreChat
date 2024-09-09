@@ -170,7 +170,15 @@ const formatAgentMessages = (payload) => {
         }
 
         // Note: `tool_calls` list is defined when constructed by `AIMessage` class, and outputs should be excluded from it
-        const { output, ...tool_call } = part.tool_call;
+        const { output, args: _args, ...tool_call } = part.tool_call;
+        // TODO: investigate; args as dictionary may need to be provider-or-tool-specific
+        let args = _args;
+        try {
+          args = JSON.parse(args);
+        } catch (e) {
+          // failed to parse, leave as is
+        }
+        tool_call.args = args;
         lastAIMessage.tool_calls.push(tool_call);
 
         // Add the corresponding ToolMessage

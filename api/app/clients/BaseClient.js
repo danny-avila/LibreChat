@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const fetch = require('node-fetch');
 const {
   supportsBalanceCheck,
+  isAgentsEndpoint,
   ErrorTypes,
   Constants,
   CacheKeys,
@@ -64,6 +65,17 @@ class BaseClient {
 
   async summarizeMessages() {
     throw new Error('Subclasses attempted to call summarizeMessages without implementing it');
+  }
+
+  /**
+   * @returns {string}
+   */
+  getResponseModel() {
+    if (isAgentsEndpoint(this.options.endpoint) && this.options.agent && this.options.agent.id) {
+      return this.options.agent.id;
+    }
+
+    return this.modelOptions.model;
   }
 
   /**
@@ -217,6 +229,7 @@ class BaseClient {
         userMessage,
         conversationId,
         responseMessageId,
+        sender: this.sender,
       });
     }
 
@@ -557,7 +570,7 @@ class BaseClient {
       parentMessageId: userMessage.messageId,
       isCreatedByUser: false,
       isEdited,
-      model: this.modelOptions.model,
+      model: this.getResponseModel(),
       sender: this.sender,
       promptTokens,
       iconURL: this.options.iconURL,
