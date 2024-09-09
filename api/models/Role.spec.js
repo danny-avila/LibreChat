@@ -199,6 +199,75 @@ describe('updateAccessPermissions', () => {
       SHARED_GLOBAL: true,
     });
   });
+
+  it('should update MULTI_CONVO permissions', async () => {
+    await new Role({
+      name: SystemRoles.USER,
+      [PermissionTypes.MULTI_CONVO]: {
+        USE: false,
+      },
+    }).save();
+
+    await updateAccessPermissions(SystemRoles.USER, {
+      [PermissionTypes.MULTI_CONVO]: {
+        USE: true,
+      },
+    });
+
+    const updatedRole = await Role.findOne({ name: SystemRoles.USER }).lean();
+    expect(updatedRole[PermissionTypes.MULTI_CONVO]).toEqual({
+      USE: true,
+    });
+  });
+
+  it('should update MULTI_CONVO permissions along with other permission types', async () => {
+    await new Role({
+      name: SystemRoles.USER,
+      [PermissionTypes.PROMPTS]: {
+        CREATE: true,
+        USE: true,
+        SHARED_GLOBAL: false,
+      },
+      [PermissionTypes.MULTI_CONVO]: {
+        USE: false,
+      },
+    }).save();
+
+    await updateAccessPermissions(SystemRoles.USER, {
+      [PermissionTypes.PROMPTS]: { SHARED_GLOBAL: true },
+      [PermissionTypes.MULTI_CONVO]: { USE: true },
+    });
+
+    const updatedRole = await Role.findOne({ name: SystemRoles.USER }).lean();
+    expect(updatedRole[PermissionTypes.PROMPTS]).toEqual({
+      CREATE: true,
+      USE: true,
+      SHARED_GLOBAL: true,
+    });
+    expect(updatedRole[PermissionTypes.MULTI_CONVO]).toEqual({
+      USE: true,
+    });
+  });
+
+  it('should not update MULTI_CONVO permissions when no changes are needed', async () => {
+    await new Role({
+      name: SystemRoles.USER,
+      [PermissionTypes.MULTI_CONVO]: {
+        USE: true,
+      },
+    }).save();
+
+    await updateAccessPermissions(SystemRoles.USER, {
+      [PermissionTypes.MULTI_CONVO]: {
+        USE: true,
+      },
+    });
+
+    const updatedRole = await Role.findOne({ name: SystemRoles.USER }).lean();
+    expect(updatedRole[PermissionTypes.MULTI_CONVO]).toEqual({
+      USE: true,
+    });
+  });
 });
 
 describe('initializeRoles', () => {
@@ -312,5 +381,40 @@ describe('initializeRoles', () => {
     expect(adminRole[PermissionTypes.AGENTS].CREATE).toBeDefined();
     expect(adminRole[PermissionTypes.AGENTS].USE).toBeDefined();
     expect(adminRole[PermissionTypes.AGENTS].SHARED_GLOBAL).toBeDefined();
+  });
+
+  it('should include MULTI_CONVO permissions when creating default roles', async () => {
+    await initializeRoles();
+
+    const adminRole = await Role.findOne({ name: SystemRoles.ADMIN }).lean();
+    const userRole = await Role.findOne({ name: SystemRoles.USER }).lean();
+
+    expect(adminRole[PermissionTypes.MULTI_CONVO]).toBeDefined();
+    expect(userRole[PermissionTypes.MULTI_CONVO]).toBeDefined();
+
+    // Check if MULTI_CONVO permissions match defaults
+    expect(adminRole[PermissionTypes.MULTI_CONVO].USE).toBe(
+      roleDefaults[SystemRoles.ADMIN][PermissionTypes.MULTI_CONVO].USE,
+    );
+    expect(userRole[PermissionTypes.MULTI_CONVO].USE).toBe(
+      roleDefaults[SystemRoles.USER][PermissionTypes.MULTI_CONVO].USE,
+    );
+  });
+
+  it('should add MULTI_CONVO permissions to existing roles without them', async () => {
+    const partialUserRole = {
+      name: SystemRoles.USER,
+      [PermissionTypes.PROMPTS]: roleDefaults[SystemRoles.USER][PermissionTypes.PROMPTS],
+      [PermissionTypes.BOOKMARKS]: roleDefaults[SystemRoles.USER][PermissionTypes.BOOKMARKS],
+    };
+
+    await new Role(partialUserRole).save();
+
+    await initializeRoles();
+
+    const userRole = await Role.findOne({ name: SystemRoles.USER }).lean();
+
+    expect(userRole[PermissionTypes.MULTI_CONVO]).toBeDefined();
+    expect(userRole[PermissionTypes.MULTI_CONVO].USE).toBeDefined();
   });
 });

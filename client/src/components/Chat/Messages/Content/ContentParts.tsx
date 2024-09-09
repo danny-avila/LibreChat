@@ -3,7 +3,7 @@ import type { TMessageContentParts } from 'librechat-data-provider';
 import Part from './Part';
 
 type ContentPartsProps = {
-  content: Array<TMessageContentParts | undefined>;
+  content: Array<TMessageContentParts | undefined> | undefined;
   messageId: string;
   isCreatedByUser: boolean;
   isLast: boolean;
@@ -12,6 +12,9 @@ type ContentPartsProps = {
 
 const ContentParts = memo(
   ({ content, messageId, isCreatedByUser, isLast, isSubmitting }: ContentPartsProps) => {
+    if (!content) {
+      return null;
+    }
     return (
       <>
         {content

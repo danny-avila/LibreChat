@@ -303,13 +303,16 @@ export type TInterfaceConfig = {
     openNewTab?: boolean;
     modalAcceptance?: boolean;
     modalTitle?: string;
-    modalContent?: string;
+    modalContent?: string | string[];
   };
   endpointsMenu: boolean;
   modelSelect: boolean;
   parameters: boolean;
   sidePanel: boolean;
   presets: boolean;
+  multiConvo: boolean;
+  bookmarks: boolean;
+  prompts: boolean;
 };
 
 export type TStartupConfig = {

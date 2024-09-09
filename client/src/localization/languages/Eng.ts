@@ -753,6 +753,9 @@ export default {
   com_nav_info_delete_cache_storage:
     'This action will delete all cached TTS (Text-to-Speech) audio files stored on your device. Cached audio files are used to speed up playback of previously generated TTS audio, but they can consume storage space on your device.',
   // Command Settings Tab
+  com_nav_chat_commands: 'Chat Commands',
+  com_nav_chat_commands_info:
+    'These commands are activated by typing specific characters at the beginning of your message. Each command is triggered by its designated prefix. You can disable them if you frequently use these characters to start messages.',
   com_nav_commands: 'Commands',
   com_nav_commands_tab: 'Command Settings',
   com_nav_at_command: '@-Command',
