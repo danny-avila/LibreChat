@@ -239,7 +239,7 @@ const bedrockCohere: SettingsConfiguration = [
   librechat.resendFiles,
 ];
 
-const bedrockMeta: SettingsConfiguration = [
+const bedrockGeneral: SettingsConfiguration = [
   librechat.modelLabel,
   librechat.promptPrefix,
   librechat.maxContextTokens,
@@ -296,13 +296,13 @@ const bedrockCohereCol2: SettingsConfiguration = [
   librechat.resendFiles,
 ];
 
-const bedrockMetaCol1: SettingsConfiguration = [
+const bedrockGeneralCol1: SettingsConfiguration = [
   baseDefinitions.model as SettingDefinition,
   librechat.modelLabel,
   librechat.promptPrefix,
 ];
 
-const bedrockMetaCol2: SettingsConfiguration = [
+const bedrockGeneralCol2: SettingsConfiguration = [
   librechat.maxContextTokens,
   meta.temperature,
   meta.topP,
@@ -314,7 +314,9 @@ export const settings: Record<string, SettingsConfiguration | undefined> = {
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Anthropic}`]: bedrockAnthropic,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.MistralAI}`]: bedrockMistral,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Cohere}`]: bedrockCohere,
-  [`${EModelEndpoint.bedrock}-${BedrockProviders.Meta}`]: bedrockMeta,
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.Meta}`]: bedrockGeneral,
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.AI21}`]: bedrockGeneral,
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.Amazon}`]: bedrockGeneral,
 };
 
 export const presetSettings: Record<
@@ -338,7 +340,15 @@ export const presetSettings: Record<
     col2: bedrockCohereCol2,
   },
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Meta}`]: {
-    col1: bedrockMetaCol1,
-    col2: bedrockMetaCol2,
+    col1: bedrockGeneralCol1,
+    col2: bedrockGeneralCol2,
+  },
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.AI21}`]: {
+    col1: bedrockGeneralCol1,
+    col2: bedrockGeneralCol2,
+  },
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.Amazon}`]: {
+    col1: bedrockGeneralCol1,
+    col2: bedrockGeneralCol2,
   },
 };
