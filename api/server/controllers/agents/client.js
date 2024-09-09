@@ -7,7 +7,7 @@
 // validateVisionModel,
 // mapModelToAzureConfig,
 // } = require('librechat-data-provider');
-const { Callback } = require('@librechat/agents');
+const { Callback, createMetadataAggregator } = require('@librechat/agents');
 const {
   EModelEndpoint,
   bedrockOutputParser,
@@ -20,11 +20,11 @@ const {
   // genAzureChatCompletion,
 } = require('~/utils');
 const {
-  // truncateText,
   formatMessage,
   formatAgentMessages,
   createContextHandlers,
 } = require('~/app/clients/prompts');
+const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const Tokenizer = require('~/server/services/Tokenizer');
 const BaseClient = require('~/app/clients/BaseClient');
 // const { sleep } = require('~/server/utils');
@@ -50,6 +50,9 @@ class AgentClient extends BaseClient {
 
     /** @deprecated @type {true} - Is a Chat Completion Request */
     this.isChatCompletion = true;
+
+    /** @type {AgentRun} */
+    this.run;
 
     const { maxContextTokens, modelOptions = {}, ...clientOptions } = options;
 
@@ -172,6 +175,16 @@ class AgentClient extends BaseClient {
       instructions: opts.instructions,
       additional_instructions: opts.additional_instructions,
     };
+  }
+
+  async addImageURLs(message, attachments) {
+    const { files, image_urls } = await encodeAndFormat(
+      this.options.req,
+      attachments,
+      this.options.agent.provider,
+    );
+    message.image_urls = image_urls.length ? image_urls : undefined;
+    return files;
   }
 
   async buildMessages(
@@ -456,6 +469,8 @@ class AgentClient extends BaseClient {
         throw new Error('Failed to create run');
       }
 
+      this.run = run;
+
       const messages = formatAgentMessages(payload);
       await run.processStream({ messages }, config, {
         [Callback.TOOL_ERROR]: (graph, error, toolId) => {
@@ -481,6 +496,32 @@ class AgentClient extends BaseClient {
         err,
       );
     }
+  }
+
+  /**
+   *
+   * @param {Object} params
+   * @param {string} params.text
+   * @param {string} params.conversationId
+   */
+  async titleConvo({ text }) {
+    if (!this.run) {
+      throw new Error('Run not initialized');
+    }
+    const { handleLLMEnd, collected: _collected } = createMetadataAggregator();
+    const titleResult = await this.run.generateTitle({
+      inputText: text,
+      contentParts: this.contentParts,
+      chainOptions: {
+        callbacks: [
+          {
+            handleLLMEnd,
+          },
+        ],
+      },
+    });
+
+    return titleResult.title;
   }
 
   getEncoding() {

@@ -96,7 +96,6 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
 
     if (client.options.attachments) {
       userMessage.files = client.options.attachments;
-      conversation.model = endpointOption.modelOptions.model;
       delete userMessage.image_urls;
     }
 

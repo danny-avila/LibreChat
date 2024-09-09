@@ -23,7 +23,7 @@ const addTitle = async (req, { text, response, client }) => {
 
   const title = await client.titleConvo({
     text,
-    responseText: response?.text,
+    responseText: response?.text ?? '',
     conversationId: response.conversationId,
   });
   await titleCache.set(key, title, 120000);

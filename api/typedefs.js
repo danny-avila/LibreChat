@@ -21,6 +21,18 @@
  */
 
 /**
+ * @exports AgentRun
+ * @typedef {import('@librechat/agents').Run} AgentRun
+ * @memberof typedefs
+ */
+
+/**
+ * @exports IState
+ * @typedef {import('@librechat/agents').IState} IState
+ * @memberof typedefs
+ */
+
+/**
  * @exports ClientCallbacks
  * @typedef {import('@librechat/agents').ClientCallbacks} ClientCallbacks
  * @memberof typedefs
