@@ -1,5 +1,5 @@
 const { Run, Providers } = require('@librechat/agents');
-const { providerEndpointMap, Constants } = require('librechat-data-provider');
+const { providerEndpointMap } = require('librechat-data-provider');
 
 /**
  * @typedef {import('@librechat/agents').t} t
@@ -14,7 +14,7 @@ const { providerEndpointMap, Constants } = require('librechat-data-provider');
  * Creates a new Run instance with custom handlers and configuration.
  *
  * @param {Object} options - The options for creating the Run instance.
- * @param {ServerRequest} options.req - The server request.
+ * @param {ServerRequest} [options.req] - The server request.
  * @param {string | undefined} [options.runId] - Optional run ID; otherwise, a new run ID will be generated.
  * @param {Agent} options.agent - The agent for this run.
  * @param {StructuredTool[] | undefined} [options.tools] - The tools to use in the run.
@@ -26,7 +26,6 @@ const { providerEndpointMap, Constants } = require('librechat-data-provider');
  * @returns {Promise<Run<IState>>} A promise that resolves to a new Run instance.
  */
 async function createRun({
-  req,
   runId,
   tools,
   agent,
@@ -57,16 +56,6 @@ async function createRun({
   // TEMPORARY FOR TESTING
   if (agent.provider === Providers.ANTHROPIC) {
     graphConfig.streamBuffer = 2000;
-  }
-
-  /** @type {number} */
-  const streamRate =
-    req.app.locals.all?.streamRate ??
-    req.app.locals[agent.provider]?.streamRate ??
-    Constants.DEFAULT_STREAM_RATE;
-
-  if (streamRate) {
-    graphConfig.streamRate = streamRate;
   }
 
   return Run.create({

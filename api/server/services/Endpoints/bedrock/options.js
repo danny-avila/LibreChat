@@ -1,6 +1,12 @@
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { EModelEndpoint, AuthType, removeNullishValues } = require('librechat-data-provider');
+const {
+  EModelEndpoint,
+  Constants,
+  AuthType,
+  removeNullishValues,
+} = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
+const { sleep } = require('~/server/utils');
 
 const getOptions = async ({ req, endpointOption }) => {
   const {
@@ -28,21 +34,23 @@ const getOptions = async ({ req, endpointOption }) => {
     checkUserKeyExpiry(expiresAt, EModelEndpoint.bedrock);
   }
 
-  const clientOptions = {};
+  /** @type {number} */
+  let streamRate = Constants.DEFAULT_STREAM_RATE;
 
   /** @type {undefined | TBaseEndpoint} */
   const bedrockConfig = req.app.locals[EModelEndpoint.bedrock];
 
-  if (bedrockConfig) {
-    clientOptions.streamRate = bedrockConfig.streamRate;
+  if (bedrockConfig && bedrockConfig.streamRate) {
+    streamRate = bedrockConfig.streamRate;
   }
 
   /** @type {undefined | TBaseEndpoint} */
   const allConfig = req.app.locals.all;
-  if (allConfig) {
-    clientOptions.streamRate = allConfig.streamRate;
+  if (allConfig && allConfig.streamRate) {
+    streamRate = allConfig.streamRate;
   }
 
+  /** @type {import('@librechat/agents').BedrockConverseClientOptions} */
   const requestOptions = Object.assign(
     {
       credentials,
@@ -50,6 +58,16 @@ const getOptions = async ({ req, endpointOption }) => {
       region: BEDROCK_AWS_DEFAULT_REGION,
       streaming: true,
       streamUsage: true,
+      callbacks: [
+        {
+          handleLLMNewToken: async () => {
+            if (!streamRate) {
+              return;
+            }
+            await sleep(streamRate);
+          },
+        },
+      ],
     },
     endpointOption.model_parameters,
   );
