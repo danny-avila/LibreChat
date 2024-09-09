@@ -481,7 +481,6 @@ class AgentClient extends BaseClient {
           );
         },
       });
-      logger.debug(this.contentParts, { depth: null });
     } catch (err) {
       if (!abortController.signal.aborted) {
         logger.error(
