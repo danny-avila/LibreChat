@@ -4,6 +4,7 @@ import {
   isAssistantsEndpoint,
   isAgentsEndpoint,
   PermissionTypes,
+  paramEndpoints,
   EModelEndpoint,
   Permissions,
 } from 'librechat-data-provider';
@@ -76,19 +77,6 @@ export default function useSideNavLinks({
       });
     }
 
-    if (
-      isAgentsEndpoint(endpoint) ||
-      (endpoint === EModelEndpoint.bedrock && interfaceConfig.parameters === true && keyProvided)
-    ) {
-      links.push({
-        title: 'com_sidepanel_parameters',
-        label: '',
-        icon: Settings2,
-        id: 'parameters',
-        Component: Parameters,
-      });
-    }
-
     if (hasAccessToPrompts) {
       links.push({
         title: 'com_ui_prompts',
@@ -96,6 +84,16 @@ export default function useSideNavLinks({
         icon: MessageSquareQuote,
         id: 'prompts',
         Component: PromptsAccordion,
+      });
+    }
+
+    if (interfaceConfig.parameters === true && paramEndpoints.has(endpoint ?? '') && keyProvided) {
+      links.push({
+        title: 'com_sidepanel_parameters',
+        label: '',
+        icon: Settings2,
+        id: 'parameters',
+        Component: Parameters,
       });
     }
 

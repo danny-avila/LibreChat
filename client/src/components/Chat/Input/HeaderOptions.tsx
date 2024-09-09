@@ -2,7 +2,7 @@ import { useRecoilState } from 'recoil';
 import { Settings2 } from 'lucide-react';
 import { Root, Anchor } from '@radix-ui/react-popover';
 import { useState, useEffect, useMemo } from 'react';
-import { tPresetUpdateSchema, EModelEndpoint } from 'librechat-data-provider';
+import { tPresetUpdateSchema, EModelEndpoint, paramEndpoints } from 'librechat-data-provider';
 import type { TPreset, TInterfaceConfig } from 'librechat-data-provider';
 import { EndpointSettings, SaveAsPresetDialog, AlternativeSettings } from '~/components/Endpoints';
 import { ModelSelect } from '~/components/Input/ModelSelect';
@@ -81,7 +81,9 @@ export default function HeaderOptions({
                   popover={true}
                 />
               )}
-              {!noSettings[endpoint] && interfaceConfig?.parameters === true && (
+              {!noSettings[endpoint] &&
+                interfaceConfig?.parameters === true &&
+                !paramEndpoints.has(endpoint) && (
                 <Button
                   aria-label="Settings/parameters"
                   id="parameters-button"
@@ -95,7 +97,7 @@ export default function HeaderOptions({
                 </Button>
               )}
             </div>
-            {interfaceConfig?.parameters === true && (
+            {interfaceConfig?.parameters === true && !paramEndpoints.has(endpoint) && (
               <OptionsPopover
                 visible={showPopover}
                 saveAsPreset={saveAsPreset}
