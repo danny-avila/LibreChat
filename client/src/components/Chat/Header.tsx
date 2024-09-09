@@ -26,6 +26,11 @@ export default function Header() {
     permission: Permissions.USE,
   });
 
+  const hasAccessToMultiConvo = useHasAccess({
+    permissionType: PermissionTypes.MULTI_CONVO,
+    permission: Permissions.USE,
+  });
+
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
   return (
@@ -38,7 +43,7 @@ export default function Header() {
           {<HeaderOptions interfaceConfig={interfaceConfig} />}
           {interfaceConfig.presets === true && <PresetsMenu />}
           {hasAccessToBookmarks === true && <BookmarkMenu />}
-          <AddMultiConvo />
+          {hasAccessToMultiConvo === true && <AddMultiConvo />}
           {isSmallScreen && (
             <ExportAndShareMenu
               isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}

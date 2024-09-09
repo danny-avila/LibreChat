@@ -31,11 +31,13 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
     termsOfService: interfaceConfig?.termsOfService ?? defaults.termsOfService,
     bookmarks: interfaceConfig?.bookmarks ?? defaults.bookmarks,
     prompts: interfaceConfig?.prompts ?? defaults.prompts,
+    multiConvo: interfaceConfig?.multiConvo ?? defaults.multiConvo,
   });
 
   await updateAccessPermissions(roleName, {
     [PermissionTypes.PROMPTS]: { [Permissions.USE]: loadedInterface.prompts },
     [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: loadedInterface.bookmarks },
+    [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: loadedInterface.multiConvo },
   });
 
   let i = 0;
