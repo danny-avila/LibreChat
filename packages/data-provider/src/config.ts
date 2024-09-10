@@ -1060,7 +1060,7 @@ export enum TTSProviders {
 /** Enum for app-wide constants */
 export enum Constants {
   /** Key for the app's version. */
-  VERSION = 'v0.7.5-rc1',
+  VERSION = 'v0.7.5-rc2',
   /** Key for the Custom Config's version (librechat.yaml). */
   CONFIG_VERSION = '1.1.7',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
@@ -1107,7 +1107,7 @@ export enum LocalStorageKeys {
   /** Key for the last selected fork setting */
   FORK_SETTING = 'forkSetting',
   /** Key for remembering the last selected option, instead of manually selecting */
-  REMEMBER_FORK_OPTION = 'rememberForkOption',
+  REMEMBER_FORK_OPTION = 'rememberDefaultFork',
   /** Key for remembering the split at target fork option modifier */
   FORK_SPLIT_AT_TARGET = 'splitAtTarget',
   /** Key for saving text drafts */

@@ -40,6 +40,26 @@ export const getLatestText = (message?: TMessage | null, includeIndex?: boolean)
   return '';
 };
 
+export const getAllContentText = (message?: TMessage | null): string => {
+  if (!message) {
+    return '';
+  }
+
+  if (message.text) {
+    return message.text;
+  }
+
+  if (message.content && message.content.length > 0) {
+    return message.content
+      .filter((part) => part.type === ContentTypes.TEXT)
+      .map((part) => (typeof part.text === 'string' ? part.text : part.text.value) ?? '')
+      .filter((text) => text.length > 0)
+      .join('\n');
+  }
+
+  return '';
+};
+
 export const getTextKey = (message?: TMessage | null, convoId?: string | null) => {
   if (!message) {
     return '';
