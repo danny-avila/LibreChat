@@ -39,6 +39,11 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
     [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: loadedInterface.bookmarks },
     [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: loadedInterface.multiConvo },
   });
+  await updateAccessPermissions(SystemRoles.ADMIN, {
+    [PermissionTypes.PROMPTS]: { [Permissions.USE]: loadedInterface.prompts },
+    [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: loadedInterface.bookmarks },
+    [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: loadedInterface.multiConvo },
+  });
 
   let i = 0;
   const logSettings = () => {
