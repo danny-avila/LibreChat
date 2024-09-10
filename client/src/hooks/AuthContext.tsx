@@ -35,7 +35,10 @@ const AuthContextProvider = ({
   const [error, setError] = useState<string | undefined>(undefined);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const { data: userRole = null } = useGetRole(SystemRoles.USER, {
-    enabled: !!(isAuthenticated && user?.role),
+    enabled: !!(isAuthenticated && (user?.role ?? '')),
+  });
+  const { data: adminRole = null } = useGetRole(SystemRoles.ADMIN, {
+    enabled: !!(isAuthenticated && user?.role === SystemRoles.ADMIN),
   });
 
   const navigate = useNavigate();
@@ -130,7 +133,7 @@ const AuthContextProvider = ({
     if (userQuery.data) {
       setUser(userQuery.data);
     } else if (userQuery.isError) {
-      doSetError((userQuery?.error as Error).message);
+      doSetError((userQuery.error as Error).message);
       navigate('/login', { replace: true });
     }
     if (error && isAuthenticated) {
@@ -179,11 +182,12 @@ const AuthContextProvider = ({
       setError,
       roles: {
         [SystemRoles.USER]: userRole,
+        [SystemRoles.ADMIN]: adminRole,
       },
       isAuthenticated,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [user, error, isAuthenticated, token, userRole],
+    [user, error, isAuthenticated, token, userRole, adminRole],
   );
 
   return <AuthContext.Provider value={memoedValue}>{children}</AuthContext.Provider>;

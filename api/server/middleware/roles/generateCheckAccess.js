@@ -1,4 +1,3 @@
-const { SystemRoles } = require('librechat-data-provider');
 const { getRoleByName } = require('~/models/Role');
 
 /**
@@ -15,10 +14,6 @@ const generateCheckAccess = (permissionType, permissions, bodyProps = {}) => {
       const { user } = req;
       if (!user) {
         return res.status(401).json({ message: 'Authorization required' });
-      }
-
-      if (user.role === SystemRoles.ADMIN) {
-        return next();
       }
 
       const role = await getRoleByName(user.role);

@@ -1,5 +1,5 @@
 import { useMemo, useCallback } from 'react';
-import { SystemRoles, PermissionTypes, Permissions } from 'librechat-data-provider';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 
 const useHasAccess = ({
@@ -13,9 +13,7 @@ const useHasAccess = ({
 
   const checkAccess = useCallback(
     ({ user, permissionType, permission }) => {
-      if (isAuthenticated && user?.role === SystemRoles.ADMIN) {
-        return true;
-      } else if (isAuthenticated && user?.role != null && roles && roles[user.role]) {
+      if (isAuthenticated && user?.role != null && roles && roles[user.role]) {
         return roles[user.role]?.[permissionType]?.[permission] === true;
       }
       return false;
