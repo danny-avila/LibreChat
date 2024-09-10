@@ -3,6 +3,7 @@ const fetch = require('node-fetch');
 const {
   supportsBalanceCheck,
   isAgentsEndpoint,
+  paramEndpoints,
   ErrorTypes,
   Constants,
   CacheKeys,
@@ -561,6 +562,7 @@ class BaseClient {
       });
     }
 
+    /** @type {string|string[]|undefined} */
     const completion = await this.sendCompletion(payload, opts);
     this.abortController.requestCompleted = true;
 
@@ -580,9 +582,11 @@ class BaseClient {
 
     if (typeof completion === 'string') {
       responseMessage.text = addSpaceIfNeeded(generation) + completion;
-    } else if (completion) {
+    } else if (Array.isArray(completion) && paramEndpoints.has(this.options.endpoint)) {
       responseMessage.text = '';
       responseMessage.content = completion;
+    } else if (Array.isArray(completion)) {
+      responseMessage.text = addSpaceIfNeeded(generation) + completion.join('');
     }
 
     if (

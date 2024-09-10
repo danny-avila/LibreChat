@@ -943,11 +943,14 @@ export enum ErrorTypes {
    * Moderation error
    */
   MODERATION = 'moderation',
-
   /**
    * Prompt exceeds max length
    */
   INPUT_LENGTH = 'INPUT_LENGTH',
+  /**
+   * Invalid request error, API rejected request
+   */
+  INVALID_REQUEST = 'invalid_request_error',
 }
 
 /**
