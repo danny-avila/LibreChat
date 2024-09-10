@@ -342,6 +342,7 @@ export type TText = Pick<TInitialProps, 'text'> & { className?: string };
 export type TEditProps = Pick<TInitialProps, 'isSubmitting'> &
   Omit<TAdditionalProps, 'isCreatedByUser' | 'siblingIdx'> & {
     text?: string;
+    index?: number;
     siblingIdx: number | null;
   };
 export type TDisplayProps = TText &
