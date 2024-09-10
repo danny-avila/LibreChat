@@ -10,7 +10,7 @@ import SaveDraft from './SaveDraft';
 
 function Chat() {
   return (
-    <div className="flex flex-col gap-3 text-sm text-black dark:text-gray-50">
+    <div className="flex flex-col gap-3 p-1 text-sm text-text-primary">
       <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
         <FontSizeSelector />
       </div>

@@ -19,7 +19,7 @@ const ChatDirection = () => {
       <button
         onClick={toggleChatDirection}
         data-testid="chatDirection"
-        className="btn btn-neutral relative"
+        className="btn btn-neutral relative ring-ring-primary"
         aria-labelledby="chat-direction-label chat-direction-status"
         aria-pressed={direction === 'RTL'}
       >

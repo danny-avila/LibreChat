@@ -20,7 +20,7 @@ function Commands() {
   });
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 p-1">
       <div className="flex items-center gap-2">
         <h3 className="text-lg font-medium text-text-primary">
           {localize('com_nav_chat_commands')}

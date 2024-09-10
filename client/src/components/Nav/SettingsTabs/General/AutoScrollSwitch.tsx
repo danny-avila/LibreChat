@@ -25,7 +25,7 @@ export default function AutoScrollSwitch({
         id="autoScroll"
         checked={autoScroll}
         onCheckedChange={handleCheckedChange}
-        className="ml-4 mt-2"
+        className="ml-4 mt-2 ring-ring-primary"
         data-testid="autoScroll"
       />
     </div>
