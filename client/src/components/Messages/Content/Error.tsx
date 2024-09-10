@@ -42,6 +42,7 @@ const errorMessages = {
   [ErrorTypes.NO_USER_KEY]: 'com_error_no_user_key',
   [ErrorTypes.INVALID_USER_KEY]: 'com_error_invalid_user_key',
   [ErrorTypes.NO_BASE_URL]: 'com_error_no_base_url',
+  [ErrorTypes.INVALID_REQUEST]: 'com_error_invalid_request',
   [ErrorTypes.EXPIRED_USER_KEY]: (json: TExpiredKey, localize: LocalizeFunction) => {
     const { expiredAt, endpoint } = json;
     return localize('com_error_expired_user_key', endpoint, expiredAt);

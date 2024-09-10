@@ -74,6 +74,15 @@ export function updateMessage(payload: t.TUpdateMessageRequest): Promise<unknown
   return request.put(endpoints.messages(conversationId, messageId), { text });
 }
 
+export function updateMessageContent(payload: t.TUpdateMessageContent): Promise<unknown> {
+  const { conversationId, messageId, index, text } = payload;
+  if (!conversationId) {
+    throw new Error('conversationId is required');
+  }
+
+  return request.put(endpoints.messages(conversationId, messageId), { text, index });
+}
+
 export function updateUserKey(payload: t.TUpdateUserKeyRequest) {
   const { value } = payload;
   if (!value) {

@@ -1,4 +1,4 @@
-const { isAssistantsEndpoint } = require('librechat-data-provider');
+const { isAssistantsEndpoint, ErrorTypes } = require('librechat-data-provider');
 const { sendMessage, sendError, countTokens, isEnabled } = require('~/server/utils');
 const { truncateText, smartTruncateText } = require('~/app/clients/prompts');
 const clearPendingReq = require('~/cache/clearPendingReq');
@@ -165,9 +165,13 @@ const handleAbortError = async (res, req, error, data) => {
     );
   }
 
-  const errorText = error?.message?.includes('"type"')
+  let errorText = error?.message?.includes('"type"')
     ? error.message
     : 'An error occurred while processing your request. Please contact the Admin.';
+
+  if (error?.type === ErrorTypes.INVALID_REQUEST) {
+    errorText = `{"type":"${ErrorTypes.INVALID_REQUEST}"}`;
+  }
 
   const respondWithError = async (partialText) => {
     let options = {

@@ -1271,7 +1271,7 @@ ${convo}
       const { choices } = chatCompletion;
       if (!Array.isArray(choices) || choices.length === 0) {
         logger.warn('[OpenAIClient] Chat completion response has no choices');
-        return intermediateReply;
+        return intermediateReply.join('');
       }
 
       const { message, finish_reason } = choices[0] ?? {};
@@ -1281,7 +1281,7 @@ ${convo}
 
       if (!message) {
         logger.warn('[OpenAIClient] Message is undefined in chatCompletion response');
-        return intermediateReply;
+        return intermediateReply.join('');
       }
 
       if (typeof message.content !== 'string' || message.content.trim() === '') {
@@ -1316,7 +1316,7 @@ ${convo}
         logger.error('[OpenAIClient] Known OpenAI error:', err);
         return intermediateReply.join('');
       } else if (err instanceof OpenAI.APIError) {
-        if (intermediateReply) {
+        if (intermediateReply.length > 0) {
           return intermediateReply.join('');
         } else {
           throw err;

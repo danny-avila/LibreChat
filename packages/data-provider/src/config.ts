@@ -617,8 +617,8 @@ export const bedrockModels = [
   'anthropic.claude-v2',
   'anthropic.claude-v2:1',
   'anthropic.claude-instant-v1',
-  'cohere.command-text-v14',
-  'cohere.command-light-text-v14',
+  // 'cohere.command-text-v14', // no conversation history
+  // 'cohere.command-light-text-v14', // no conversation history
   'cohere.command-r-v1:0',
   'cohere.command-r-plus-v1:0',
   'meta.llama2-13b-chat-v1',
@@ -943,11 +943,14 @@ export enum ErrorTypes {
    * Moderation error
    */
   MODERATION = 'moderation',
-
   /**
    * Prompt exceeds max length
    */
   INPUT_LENGTH = 'INPUT_LENGTH',
+  /**
+   * Invalid request error, API rejected request
+   */
+  INVALID_REQUEST = 'invalid_request_error',
 }
 
 /**

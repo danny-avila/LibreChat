@@ -32,6 +32,10 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     model_parameters: endpointOption.model_parameters,
   };
 
+  if (typeof endpointOption.artifactsPrompt === 'string' && endpointOption.artifactsPrompt) {
+    agent.instructions = `${agent.instructions ?? ''}\n${endpointOption.artifactsPrompt}`.trim();
+  }
+
   let modelOptions = { model: agent.model };
 
   // TODO: pass-in override settings that are specific to current run

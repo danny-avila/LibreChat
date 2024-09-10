@@ -12,6 +12,7 @@ export const bedrockInputSchema = s.tConversationSchema
     spec: true,
     maxOutputTokens: true,
     maxContextTokens: true,
+    artifacts: true,
     /* Bedrock params; optionType: 'model' */
     region: true,
     system: true,
@@ -38,6 +39,7 @@ export const bedrockInputParser = s.tConversationSchema
     iconURL: true,
     greeting: true,
     spec: true,
+    artifacts: true,
     maxOutputTokens: true,
     maxContextTokens: true,
     /* Bedrock params; optionType: 'model' */
@@ -61,6 +63,7 @@ export const bedrockInputParser = s.tConversationSchema
       'greeting',
       'spec',
       'maxOutputTokens',
+      'artifacts',
       'additionalModelRequestFields',
       'region',
       'model',

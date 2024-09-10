@@ -83,13 +83,13 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
         height: size,
       }}
       className={cn(
-        'relative flex items-center justify-center rounded-sm text-black dark:text-white',
+        'relative flex items-center justify-center rounded-sm text-text-secondary',
         props.className ?? '',
       )}
     >
       {icon}
       {error === true && (
-        <span className="absolute right-0 top-[20px] -mr-2 flex h-4 w-4 items-center justify-center rounded-full border border-white bg-red-500 text-[10px] text-black dark:text-white">
+        <span className="absolute right-0 top-[20px] -mr-2 flex h-4 w-4 items-center justify-center rounded-full border border-white bg-red-500 text-[10px] text-text-secondary">
           !
         </span>
       )}
