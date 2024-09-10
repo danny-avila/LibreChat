@@ -14,16 +14,22 @@ const ChatDirection = () => {
   return (
     <div className="flex items-center justify-between">
       <div className="flex items-center space-x-2">
-        <span>{localize('com_nav_chat_direction')}</span>
+        <span id="chat-direction-label">{localize('com_nav_chat_direction')}</span>
       </div>
-      <label
+      <button
         onClick={toggleChatDirection}
         data-testid="chatDirection"
         className="btn btn-neutral relative"
-        style={{ userSelect: 'none' }}
+        aria-labelledby="chat-direction-label chat-direction-status"
+        aria-pressed={direction === 'RTL'}
       >
-        {direction.toLowerCase()}
-      </label>
+        <span aria-hidden="true">{direction.toLowerCase()}</span>
+        <span id="chat-direction-status" className="sr-only">
+          {direction === 'LTR'
+            ? localize('chat_direction_left_to_right')
+            : localize('chat_direction_right_to_left')}
+        </span>
+      </button>
     </div>
   );
 };
