@@ -339,8 +339,11 @@ export type TAdditionalProps = {
 export type TMessageContentProps = TInitialProps & TAdditionalProps;
 
 export type TText = Pick<TInitialProps, 'text'> & { className?: string };
-export type TEditProps = Pick<TInitialProps, 'text' | 'isSubmitting'> &
-  Omit<TAdditionalProps, 'isCreatedByUser'>;
+export type TEditProps = Pick<TInitialProps, 'isSubmitting'> &
+  Omit<TAdditionalProps, 'isCreatedByUser' | 'siblingIdx'> & {
+    text?: string;
+    siblingIdx: number | null;
+  };
 export type TDisplayProps = TText &
   Pick<TAdditionalProps, 'isCreatedByUser' | 'message'> & {
     showCursor?: boolean;
