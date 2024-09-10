@@ -32,7 +32,7 @@ const localStorageAtoms = {
   forkSetting: atomWithLocalStorage('forkSetting', ''),
   splitAtTarget: atomWithLocalStorage('splitAtTarget', false),
 
-  rememberForkOption: atomWithLocalStorage('rememberForkOption', true),
+  rememberForkOption: atomWithLocalStorage('rememberForkOption', false),
 
   // Beta features settings
   modularChat: atomWithLocalStorage('modularChat', true),
