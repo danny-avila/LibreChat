@@ -1,21 +1,13 @@
 import { memo } from 'react';
-import * as Tabs from '@radix-ui/react-tabs';
-import { SettingsTabValues } from 'librechat-data-provider';
 import CodeArtifacts from './CodeArtifacts';
 
 function Beta() {
   return (
-    <Tabs.Content
-      value={SettingsTabValues.BETA}
-      role="tabpanel"
-      className="w-full md:min-h-[271px]"
-    >
-      <div className="flex flex-col gap-3 text-sm text-text-primary">
-        <div className="border-b border-border-medium pb-3 last-of-type:border-b-0">
-          <CodeArtifacts />
-        </div>
+    <div className="flex flex-col gap-3 text-sm text-text-primary">
+      <div className="border-b border-border-medium pb-3 last-of-type:border-b-0">
+        <CodeArtifacts />
       </div>
-    </Tabs.Content>
+    </div>
   );
 }
 
