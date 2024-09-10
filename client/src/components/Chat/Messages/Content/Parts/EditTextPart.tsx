@@ -1,4 +1,5 @@
 import { useForm } from 'react-hook-form';
+import { ContentTypes } from 'librechat-data-provider';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import { useRef, useEffect, useCallback, useMemo } from 'react';
 import { useUpdateMessageContentMutation } from 'librechat-data-provider/react-query';
@@ -16,14 +17,13 @@ const EditTextPart = ({
   messageId,
   isSubmitting,
   enterEdit,
-  siblingIdx,
-  setSiblingIdx,
 }: Omit<TEditProps, 'message' | 'ask'> & {
   index: number;
   messageId: string;
 }) => {
+  const localize = useLocalize();
   const { addedIndex } = useAddedChatContext();
-  const { ask, getMessages, setMessages, conversation } = useChatContext();
+  const { getMessages, setMessages, conversation } = useChatContext();
   const [latestMultiMessage, setLatestMultiMessage] = useRecoilState(
     store.latestMessageFamily(addedIndex),
   );
@@ -36,7 +36,6 @@ const EditTextPart = ({
 
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const updateMessageContentMutation = useUpdateMessageContentMutation(conversationId ?? '');
-  const localize = useLocalize();
 
   const chatDirection = useRecoilValue(store.chatDirection).toLowerCase();
   const isRTL = chatDirection === 'rtl';
@@ -56,7 +55,15 @@ const EditTextPart = ({
     }
   }, []);
 
-  const resubmitMessage = (data: { text: string }) => {
+  /*
+  const resubmitMessage = () => {
+    showToast({
+      status: 'warning',
+      message: localize('com_warning_resubmit_unsupported'),
+    });
+
+    // const resubmitMessage = (data: { text: string }) => {
+    // Not supported by AWS Bedrock
     const messages = getMessages();
     const parentMessage = messages?.find((msg) => msg.messageId === message?.parentMessageId);
 
@@ -74,9 +81,9 @@ const EditTextPart = ({
     );
 
     setSiblingIdx((siblingIdx ?? 0) - 1);
-
     enterEdit(true);
   };
+  */
 
   const updateMessage = (data: { text: string }) => {
     const messages = getMessages();
@@ -96,20 +103,27 @@ const EditTextPart = ({
 
     const isInMessages = messages.some((msg) => msg.messageId === messageId);
     if (!isInMessages) {
-      // message.text = data.text;
-    } else {
-      setMessages(
-        messages.map((msg) =>
-          msg.messageId === messageId
-            ? {
-              ...msg,
-              text: data.text,
-              isEdited: true,
-            }
-            : msg,
-        ),
-      );
+      return enterEdit(true);
     }
+
+    const updatedContent = message?.content?.map((part, idx) => {
+      if (part.type === ContentTypes.TEXT && idx === index) {
+        return { ...part, text: data.text };
+      }
+      return part;
+    });
+
+    setMessages(
+      messages.map((msg) =>
+        msg.messageId === messageId
+          ? {
+            ...msg,
+            content: updatedContent,
+            isEdited: true,
+          }
+          : msg,
+      ),
+    );
 
     enterEdit(true);
   };
@@ -154,13 +168,13 @@ const EditTextPart = ({
         />
       </div>
       <div className="mt-2 flex w-full justify-center text-center">
-        <button
+        {/* <button
           className="btn btn-primary relative mr-2"
           disabled={isSubmitting}
           onClick={handleSubmit(resubmitMessage)}
         >
           {localize('com_ui_save_submit')}
-        </button>
+        </button> */}
         <button
           className="btn btn-secondary relative mr-2"
           disabled={isSubmitting}
