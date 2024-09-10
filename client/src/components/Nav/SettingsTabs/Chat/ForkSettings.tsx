@@ -9,7 +9,7 @@ export const ForkSettings = () => {
   const localize = useLocalize();
   const [forkSetting, setForkSetting] = useRecoilState(store.forkSetting);
   const [splitAtTarget, setSplitAtTarget] = useRecoilState(store.splitAtTarget);
-  const [remember, setRemember] = useRecoilState<boolean>(store.rememberForkOption);
+  const [remember, setRemember] = useRecoilState<boolean>(store.rememberDefaultFork);
 
   const forkOptions = [
     { value: ForkOptions.DIRECT_PATH, label: localize('com_ui_fork_visible') },
@@ -39,11 +39,11 @@ export const ForkSettings = () => {
         <div className="flex items-center justify-between">
           <div> {localize('com_ui_fork_default')} </div>
           <Switch
-            id="rememberForkOption"
+            id="rememberDefaultFork"
             checked={remember}
             onCheckedChange={setRemember}
             className="ml-4 mt-2"
-            data-testid="rememberForkOption"
+            data-testid="rememberDefaultFork"
           />
         </div>
       </div>

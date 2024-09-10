@@ -1107,7 +1107,7 @@ export enum LocalStorageKeys {
   /** Key for the last selected fork setting */
   FORK_SETTING = 'forkSetting',
   /** Key for remembering the last selected option, instead of manually selecting */
-  REMEMBER_FORK_OPTION = 'rememberForkOption',
+  REMEMBER_FORK_OPTION = 'rememberDefaultFork',
   /** Key for remembering the split at target fork option modifier */
   FORK_SPLIT_AT_TARGET = 'splitAtTarget',
   /** Key for saving text drafts */
