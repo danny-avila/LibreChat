@@ -134,6 +134,10 @@ const ContentRender = memo(
                 isCreatedByUser={msg.isCreatedByUser}
                 isLast={isLast}
                 isSubmitting={isSubmitting}
+                edit={edit}
+                enterEdit={enterEdit}
+                siblingIdx={siblingIdx}
+                setSiblingIdx={setSiblingIdx}
               />
             </div>
           </div>

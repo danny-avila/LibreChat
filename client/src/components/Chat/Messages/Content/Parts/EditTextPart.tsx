@@ -1,38 +1,41 @@
-import { useRecoilState, useRecoilValue } from 'recoil';
-import { EModelEndpoint } from 'librechat-data-provider';
-import { useRef, useEffect, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
-import { useUpdateMessageMutation } from 'librechat-data-provider/react-query';
+import { ContentTypes } from 'librechat-data-provider';
+import { useRecoilState, useRecoilValue } from 'recoil';
+import { useRef, useEffect, useCallback, useMemo } from 'react';
+import { useUpdateMessageContentMutation } from 'librechat-data-provider/react-query';
 import type { TEditProps } from '~/common';
+import Container from '~/components/Chat/Messages/Content/Container';
 import { useChatContext, useAddedChatContext } from '~/Providers';
 import { TextareaAutosize } from '~/components/ui';
 import { cn, removeFocusRings } from '~/utils';
 import { useLocalize } from '~/hooks';
-import Container from './Container';
 import store from '~/store';
 
-const EditMessage = ({
+const EditTextPart = ({
   text,
-  message,
+  index,
+  messageId,
   isSubmitting,
-  ask,
   enterEdit,
-  siblingIdx,
-  setSiblingIdx,
-}: TEditProps) => {
+}: Omit<TEditProps, 'message' | 'ask'> & {
+  index: number;
+  messageId: string;
+}) => {
+  const localize = useLocalize();
   const { addedIndex } = useAddedChatContext();
   const { getMessages, setMessages, conversation } = useChatContext();
   const [latestMultiMessage, setLatestMultiMessage] = useRecoilState(
     store.latestMessageFamily(addedIndex),
   );
 
-  const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
+  const { conversationId = '' } = conversation ?? {};
+  const message = useMemo(
+    () => getMessages()?.find((msg) => msg.messageId === messageId),
+    [getMessages, messageId],
+  );
 
-  const { conversationId, parentMessageId, messageId } = message;
-  const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };
-  const endpoint = endpointType ?? _endpoint;
-  const updateMessageMutation = useUpdateMessageMutation(conversationId ?? '');
-  const localize = useLocalize();
+  const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
+  const updateMessageContentMutation = useUpdateMessageContentMutation(conversationId ?? '');
 
   const chatDirection = useRecoilValue(store.chatDirection).toLowerCase();
   const isRTL = chatDirection === 'rtl';
@@ -52,75 +55,75 @@ const EditMessage = ({
     }
   }, []);
 
-  const resubmitMessage = (data: { text: string }) => {
-    if (message.isCreatedByUser) {
-      ask(
-        {
-          text: data.text,
-          parentMessageId,
-          conversationId,
-        },
-        {
-          resubmitFiles: true,
-        },
-      );
+  /*
+  const resubmitMessage = () => {
+    showToast({
+      status: 'warning',
+      message: localize('com_warning_resubmit_unsupported'),
+    });
 
-      setSiblingIdx((siblingIdx ?? 0) - 1);
-    } else {
-      const messages = getMessages();
-      const parentMessage = messages?.find((msg) => msg.messageId === parentMessageId);
+    // const resubmitMessage = (data: { text: string }) => {
+    // Not supported by AWS Bedrock
+    const messages = getMessages();
+    const parentMessage = messages?.find((msg) => msg.messageId === message?.parentMessageId);
 
-      if (!parentMessage) {
-        return;
-      }
-      ask(
-        { ...parentMessage },
-        {
-          editedText: data.text,
-          editedMessageId: messageId,
-          isRegenerate: true,
-          isEdited: true,
-        },
-      );
-
-      setSiblingIdx((siblingIdx ?? 0) - 1);
+    if (!parentMessage) {
+      return;
     }
+    ask(
+      { ...parentMessage },
+      {
+        editedText: data.text,
+        editedMessageId: messageId,
+        isRegenerate: true,
+        isEdited: true,
+      },
+    );
 
+    setSiblingIdx((siblingIdx ?? 0) - 1);
     enterEdit(true);
   };
+  */
 
   const updateMessage = (data: { text: string }) => {
     const messages = getMessages();
     if (!messages) {
       return;
     }
-    updateMessageMutation.mutate({
+    updateMessageContentMutation.mutate({
+      index,
       conversationId: conversationId ?? '',
-      model: conversation?.model ?? 'gpt-3.5-turbo',
       text: data.text,
       messageId,
     });
 
-    if (message.messageId === latestMultiMessage?.messageId) {
+    if (messageId === latestMultiMessage?.messageId) {
       setLatestMultiMessage({ ...latestMultiMessage, text: data.text });
     }
 
-    const isInMessages = messages.some((message) => message.messageId === messageId);
+    const isInMessages = messages.some((msg) => msg.messageId === messageId);
     if (!isInMessages) {
-      message.text = data.text;
-    } else {
-      setMessages(
-        messages.map((msg) =>
-          msg.messageId === messageId
-            ? {
-              ...msg,
-              text: data.text,
-              isEdited: true,
-            }
-            : msg,
-        ),
-      );
+      return enterEdit(true);
     }
+
+    const updatedContent = message?.content?.map((part, idx) => {
+      if (part.type === ContentTypes.TEXT && idx === index) {
+        return { ...part, text: data.text };
+      }
+      return part;
+    });
+
+    setMessages(
+      messages.map((msg) =>
+        msg.messageId === messageId
+          ? {
+            ...msg,
+            content: updatedContent,
+            isEdited: true,
+          }
+          : msg,
+      ),
+    );
 
     enterEdit(true);
   };
@@ -165,15 +168,13 @@ const EditMessage = ({
         />
       </div>
       <div className="mt-2 flex w-full justify-center text-center">
-        <button
+        {/* <button
           className="btn btn-primary relative mr-2"
-          disabled={
-            isSubmitting || (endpoint === EModelEndpoint.google && !message.isCreatedByUser)
-          }
+          disabled={isSubmitting}
           onClick={handleSubmit(resubmitMessage)}
         >
           {localize('com_ui_save_submit')}
-        </button>
+        </button> */}
         <button
           className="btn btn-secondary relative mr-2"
           disabled={isSubmitting}
@@ -189,4 +190,4 @@ const EditMessage = ({
   );
 };
 
-export default EditMessage;
+export default EditTextPart;

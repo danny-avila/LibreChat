@@ -1,5 +1,7 @@
 import { memo } from 'react';
+import { ContentTypes } from 'librechat-data-provider';
 import type { TMessageContentParts } from 'librechat-data-provider';
+import EditTextPart from './Parts/EditTextPart';
 import Part from './Part';
 
 type ContentPartsProps = {
@@ -8,12 +10,53 @@ type ContentPartsProps = {
   isCreatedByUser: boolean;
   isLast: boolean;
   isSubmitting: boolean;
+  edit?: boolean;
+  enterEdit?: (cancel?: boolean) => void | null | undefined;
+  siblingIdx?: number;
+  setSiblingIdx?:
+    | ((value: number) => void | React.Dispatch<React.SetStateAction<number>>)
+    | null
+    | undefined;
 };
 
 const ContentParts = memo(
-  ({ content, messageId, isCreatedByUser, isLast, isSubmitting }: ContentPartsProps) => {
+  ({
+    content,
+    messageId,
+    isCreatedByUser,
+    isLast,
+    isSubmitting,
+    edit,
+    enterEdit,
+    siblingIdx,
+    setSiblingIdx,
+  }: ContentPartsProps) => {
     if (!content) {
       return null;
+    }
+    if (edit === true && enterEdit && setSiblingIdx) {
+      return (
+        <>
+          {content.map((part, idx) => {
+            if (part?.type !== ContentTypes.TEXT || typeof part.text !== 'string') {
+              return null;
+            }
+
+            return (
+              <EditTextPart
+                index={idx}
+                text={part.text}
+                messageId={messageId}
+                isSubmitting={isSubmitting}
+                enterEdit={enterEdit}
+                siblingIdx={siblingIdx ?? null}
+                setSiblingIdx={setSiblingIdx}
+                key={`edit-${messageId}-${idx}`}
+              />
+            );
+          })}
+        </>
+      );
     }
     return (
       <>
