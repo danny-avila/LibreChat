@@ -1,17 +1,22 @@
 import { useCallback, useRef } from 'react';
-import { StepTypes, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
+import { StepTypes, ContentTypes, ToolCallTypes, getNonEmptyValue } from 'librechat-data-provider';
 import type {
   Agents,
-  PartMetadata,
   TMessage,
-  TMessageContentParts,
+  PartMetadata,
   EventSubmission,
+  TMessageContentParts,
 } from 'librechat-data-provider';
-import { getNonEmptyValue } from 'librechat-data-provider';
+import type { SetterOrUpdater } from 'recoil';
+import type { AnnounceOptions } from '~/common';
+import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 
 type TUseStepHandler = {
+  announcePolite: (options: AnnounceOptions) => void;
   setMessages: (messages: TMessage[]) => void;
   getMessages: () => TMessage[] | undefined;
+  setIsSubmitting: SetterOrUpdater<boolean>;
+  lastAnnouncementTimeRef: React.MutableRefObject<number>;
 };
 
 type TStepEvent = {
@@ -28,7 +33,13 @@ type AllContentTypes =
   | ContentTypes.IMAGE_URL
   | ContentTypes.ERROR;
 
-export default function useStepHandler({ setMessages, getMessages }: TUseStepHandler) {
+export default function useStepHandler({
+  setMessages,
+  getMessages,
+  setIsSubmitting,
+  announcePolite,
+  lastAnnouncementTimeRef,
+}: TUseStepHandler) {
   const toolCallIdMap = useRef(new Map<string, string | undefined>());
   const messageMap = useRef(new Map<string, TMessage>());
   const stepMap = useRef(new Map<string, Agents.RunStep>());
@@ -112,6 +123,13 @@ export default function useStepHandler({ setMessages, getMessages }: TUseStepHan
     ({ event, data }: TStepEvent, submission: EventSubmission) => {
       const messages = getMessages() || [];
       const { userMessage } = submission;
+      setIsSubmitting(true);
+
+      const currentTime = Date.now();
+      if (currentTime - lastAnnouncementTimeRef.current > MESSAGE_UPDATE_INTERVAL) {
+        announcePolite({ message: 'composing', isStatus: true });
+        lastAnnouncementTimeRef.current = currentTime;
+      }
 
       if (event === 'on_run_step') {
         const runStep = data as Agents.RunStep;
@@ -249,6 +267,6 @@ export default function useStepHandler({ setMessages, getMessages }: TUseStepHan
         stepMap.current.clear();
       };
     },
-    [getMessages, stepMap, messageMap, setMessages, toolCallIdMap],
+    [getMessages, setIsSubmitting, lastAnnouncementTimeRef, announcePolite, setMessages],
   );
 }
