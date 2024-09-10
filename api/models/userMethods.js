@@ -2,6 +2,8 @@ const bcrypt = require('bcryptjs');
 const signPayload = require('~/server/services/signPayload');
 const User = require('./User');
 const { logger } = require('~/config');
+const Balance = require('~/models/Balance');
+
 /**
  * Retrieve a user by ID and convert the found user document to a plain object.
  *
@@ -71,6 +73,19 @@ const createUser = async (data, disableTTL = true, returnUser = false) => {
   }
 
   const user = await User.create(userData);
+  // Set default balance 10000
+  await Balance.updateOne(
+    {
+      user: user._id,
+    },
+    {
+      $set: {
+        tokenCredits: 10000,
+      },
+    },
+    { upsert: true },
+  );
+
   if (returnUser) {
     return user.toObject();
   }
@@ -162,7 +177,6 @@ const comparePassword = async (user, candidatePassword) => {
  */
 const getUsersByPage = async function (pageNumber = 1, pageSize = 25, searchKey = '') {
   try {
-
     const filter = {
       $or: [
         { name: { $regex: searchKey, $options: 'i' } },
