@@ -509,13 +509,33 @@ export const useGetAgentByIdQuery = (
 /** STT/TTS */
 
 /* Text to speech voices */
-export const useVoicesQuery = (): UseQueryResult<t.VoiceResponse> => {
-  return useQuery([QueryKeys.voices], () => dataService.getVoices());
+export const useVoicesQuery = (
+  config?: UseQueryOptions<t.VoiceResponse>,
+): QueryObserverResult<t.VoiceResponse> => {
+  return useQuery<t.VoiceResponse>([QueryKeys.voices], () => dataService.getVoices(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: false,
+    ...config,
+  });
 };
 
 /* Custom config speech */
-export const useCustomConfigSpeechQuery = () => {
-  return useQuery([QueryKeys.customConfigSpeech], () => dataService.getCustomConfigSpeech());
+export const useCustomConfigSpeechQuery = (
+  config?: UseQueryOptions<t.TCustomConfigSpeechResponse>,
+): QueryObserverResult<t.TCustomConfigSpeechResponse> => {
+  return useQuery<t.TCustomConfigSpeechResponse>(
+    [QueryKeys.customConfigSpeech],
+    () => dataService.getCustomConfigSpeech(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: false,
+      ...config,
+    },
+  );
 };
 
 /** Prompt */
