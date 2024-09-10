@@ -1178,11 +1178,19 @@ button {
   color: rgba(64, 65, 79, var(--tw-text-opacity));
   font-size: 0.875rem;
   line-height: 1.25rem;
+  transition: all 0.1s ease-in-out;
 }
+
 .btn-neutral:hover {
   --tw-bg-opacity: 1;
   background-color: rgba(236, 236, 241, var(--tw-bg-opacity));
 }
+
+.btn-neutral:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ring-primary);
+}
+
 .dark .btn-neutral {
   --tw-border-opacity: 1;
   --tw-bg-opacity: 1;
@@ -1191,9 +1199,14 @@ button {
   border-color: rgba(66, 66, 66, var(--tw-border-opacity));
   color: rgba(255, 255, 240, var(--tw-text-opacity));
 }
+
 .dark .btn-neutral:hover {
   --tw-bg-opacity: 1;
   background-color: rgba(66, 66, 66, var(--tw-bg-opacity));
+}
+
+.dark .btn-neutral:focus {
+  box-shadow: 0 0 0 2px var(--ring-primary);
 }
 .btn-small {
   padding: 0.25rem 0.5rem;
