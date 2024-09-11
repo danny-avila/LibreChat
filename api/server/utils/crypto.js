@@ -102,4 +102,14 @@ async function hashToken(str) {
   return Buffer.from(hashBuffer).toString('hex');
 }
 
-module.exports = { encrypt, decrypt, encryptV2, decryptV2, hashToken };
+async function getRandomValues(length) {
+  if (!Number.isInteger(length) || length <= 0) {
+    throw new Error('Length must be a positive integer');
+  }
+
+  const randomValues = new Uint8Array(length);
+  webcrypto.getRandomValues(randomValues);
+  return Buffer.from(randomValues).toString('hex');
+}
+
+module.exports = { encrypt, decrypt, encryptV2, decryptV2, hashToken, getRandomValues };
