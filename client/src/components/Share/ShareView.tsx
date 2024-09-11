@@ -1,17 +1,17 @@
 import { memo, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
 import { useRecoilState } from 'recoil';
+import { useParams } from 'react-router-dom';
 import { useGetSharedMessages, useGetStartupConfig } from 'librechat-data-provider/react-query';
+import SharedArtifactButton from './SharedArtifactButton';
 import { useLocalize, useDocumentTitle } from '~/hooks';
+import SharedArtifacts from './SharedArtifacts';
 import { ShareContext } from '~/Providers';
 import { Spinner } from '~/components/svg';
 import MessagesView from './MessagesView';
 import { buildTree } from '~/utils';
 import Footer from '../Chat/Footer';
-import SharedArtifacts from './SharedArtifacts';
 import { cn } from '~/utils';
 import store from '~/store';
-import SharedArtifactButton from './SharedArtifactButton';
 
 function SharedView() {
   const localize = useLocalize();
