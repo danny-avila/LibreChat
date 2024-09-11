@@ -7,7 +7,7 @@ import FilesView from '~/components/Chat/Input/Files/FilesView';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useAvatar from '~/hooks/Messages/useAvatar';
 import { GearIcon } from '~/components';
-import { UserIcon } from '~/components/svg';
+import { UserIcon, LinkIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 import Management from './Management';
 import Settings from './Settings';
@@ -88,13 +88,13 @@ function AccountSettings() {
                 {startupConfig?.checkBalance === true &&
                   balanceQuery.data != null &&
                   !isNaN(parseFloat(balanceQuery.data)) && (
-                  <>
-                    <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm">
-                      {`Balance: ${parseFloat(balanceQuery.data).toFixed(2)}`}
-                    </div>
-                    <div className="my-1.5 h-px border-b border-border-medium" role="none" />
-                  </>
-                )}
+                    <>
+                      <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm">
+                        {`Balance: ${parseFloat(balanceQuery.data).toFixed(2)}`}
+                      </div>
+                      <div className="my-1.5 h-px border-b border-border-medium" role="none" />
+                    </>
+                  )}
                 <MenuItem>
                   {({ focus }) => (
                     <NavLink
@@ -105,7 +105,7 @@ function AccountSettings() {
                     />
                   )}
                 </MenuItem>
-                {startupConfig?.helpAndFaqURL !== '/' && (
+                {/* {startupConfig?.helpAndFaqURL !== '/' && (
                   <MenuItem>
                     {({ focus }) => (
                       <NavLink
@@ -116,9 +116,9 @@ function AccountSettings() {
                       />
                     )}
                   </MenuItem>
-                )}
+                )} */}
                 {
-                  user?.role === SystemRoles.ADMIN &&(
+                  user?.role === SystemRoles.ADMIN && (
                     <>
                       <MenuItem>
                         {({ focus }) => (
