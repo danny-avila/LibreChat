@@ -17,6 +17,10 @@ function SocialLoginRender({
     return null;
   }
 
+  let autoRedirectOpenId = !startupConfig?.emailLoginEnabled 
+          && startupConfig?.openidLoginEnabled
+          && startupConfig?.socialLogins?.length === 1;
+
   const providerComponents = {
     discord: startupConfig?.discordLoginEnabled && (
       <SocialButton
@@ -27,6 +31,7 @@ function SocialLoginRender({
         Icon={DiscordIcon}
         label={localize('com_auth_discord_login')}
         id="discord"
+        autoRedirect={false}
       />
     ),
     facebook: startupConfig?.facebookLoginEnabled && (
@@ -38,6 +43,7 @@ function SocialLoginRender({
         Icon={FacebookIcon}
         label={localize('com_auth_facebook_login')}
         id="facebook"
+        autoRedirect={false}
       />
     ),
     github: startupConfig?.githubLoginEnabled && (
@@ -49,6 +55,7 @@ function SocialLoginRender({
         Icon={GithubIcon}
         label={localize('com_auth_github_login')}
         id="github"
+        autoRedirect={false}
       />
     ),
     google: startupConfig?.googleLoginEnabled && (
@@ -60,6 +67,7 @@ function SocialLoginRender({
         Icon={GoogleIcon}
         label={localize('com_auth_google_login')}
         id="google"
+        autoRedirect={false}
       />
     ),
     openid: startupConfig?.openidLoginEnabled && (
@@ -77,6 +85,7 @@ function SocialLoginRender({
         }
         label={startupConfig.openidLabel}
         id="openid"
+        autoRedirect={autoRedirectOpenId}
       />
     ),
   };

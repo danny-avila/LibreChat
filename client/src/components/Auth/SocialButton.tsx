@@ -1,9 +1,13 @@
 import React, { useState } from 'react';
 
-const SocialButton = ({ id, enabled, serverDomain, oauthPath, Icon, label }) => {
+const SocialButton = ({ id, enabled, serverDomain, oauthPath, Icon, label, autoRedirect }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
   const [activeButton, setActiveButton] = useState(null);
+
+  if (autoRedirect && typeof window !== 'undefined') {
+//        window.location.href = `${serverDomain}/oauth/${oauthPath}`;
+  }
 
   if (!enabled) {
     return null;
@@ -43,7 +47,6 @@ const SocialButton = ({ id, enabled, serverDomain, oauthPath, Icon, label }) => 
 
     return `${baseStyles} ${dynamicStyles}`;
   };
-
   return (
     <div className="mt-2 flex gap-x-2">
       <a
