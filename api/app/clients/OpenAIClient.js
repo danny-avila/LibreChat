@@ -1023,7 +1023,7 @@ ${convo}
   async chatCompletion({ payload, onProgress, abortController = null }) {
     let error = null;
     const errorCallback = (err) => (error = err);
-    let intermediateReply = '';
+    const intermediateReply = [];
     try {
       if (!abortController) {
         abortController = new AbortController();
@@ -1217,19 +1217,19 @@ ${convo}
             }
 
             if (typeof finalMessage.content !== 'string' || finalMessage.content.trim() === '') {
-              finalChatCompletion.choices[0].message.content = intermediateReply;
+              finalChatCompletion.choices[0].message.content = intermediateReply.join('');
             }
           })
           .on('finalMessage', (message) => {
             if (message?.role !== 'assistant') {
-              stream.messages.push({ role: 'assistant', content: intermediateReply });
+              stream.messages.push({ role: 'assistant', content: intermediateReply.join('') });
               UnexpectedRoleError = true;
             }
           });
 
         for await (const chunk of stream) {
           const token = chunk.choices[0]?.delta?.content || '';
-          intermediateReply += token;
+          intermediateReply.push(token);
           onProgress(token);
           if (abortController.signal.aborted) {
             stream.controller.abort();
@@ -1271,7 +1271,7 @@ ${convo}
       const { choices } = chatCompletion;
       if (!Array.isArray(choices) || choices.length === 0) {
         logger.warn('[OpenAIClient] Chat completion response has no choices');
-        return intermediateReply;
+        return intermediateReply.join('');
       }
 
       const { message, finish_reason } = choices[0] ?? {};
@@ -1281,15 +1281,16 @@ ${convo}
 
       if (!message) {
         logger.warn('[OpenAIClient] Message is undefined in chatCompletion response');
-        return intermediateReply;
+        return intermediateReply.join('');
       }
 
       if (typeof message.content !== 'string' || message.content.trim() === '') {
+        const reply = intermediateReply.join('');
         logger.debug(
           '[OpenAIClient] chatCompletion: using intermediateReply due to empty message.content',
-          { intermediateReply },
+          { intermediateReply: reply },
         );
-        return intermediateReply;
+        return reply;
       }
 
       return message.content;
@@ -1298,7 +1299,7 @@ ${convo}
         err?.message?.includes('abort') ||
         (err instanceof OpenAI.APIError && err?.message?.includes('abort'))
       ) {
-        return intermediateReply;
+        return intermediateReply.join('');
       }
       if (
         err?.message?.includes(
@@ -1313,10 +1314,10 @@ ${convo}
         (err instanceof OpenAI.OpenAIError && err?.message?.includes('missing finish_reason'))
       ) {
         logger.error('[OpenAIClient] Known OpenAI error:', err);
-        return intermediateReply;
+        return intermediateReply.join('');
       } else if (err instanceof OpenAI.APIError) {
-        if (intermediateReply) {
-          return intermediateReply;
+        if (intermediateReply.length > 0) {
+          return intermediateReply.join('');
         } else {
           throw err;
         }

@@ -185,6 +185,10 @@ export default {
   com_ui_bookmarks_update_error: 'Hubo un error al actualizar el marcador',
   com_ui_bookmarks_delete_error: 'Hubo un error al eliminar el marcador',
   com_ui_bookmarks_add_to_conversation: 'Agregar a la conversación actual',
+  com_ui_accept: 'Acepto',
+  com_ui_decline: 'No acepto',
+  com_ui_terms_and_conditions: 'Términos y Condiciones',
+  com_ui_no_terms_content: 'No hay contenido de términos y condiciones para mostrar',
   com_auth_error_login:
     'No se puede iniciar sesión con la información proporcionada. Verifique sus credenciales y vuelva a intentarlo.',
   com_auth_error_login_rl:
@@ -431,7 +435,7 @@ export default {
   com_nav_plugin_store: 'Tienda de plugins',
   com_nav_plugin_install: 'Instalar',
   com_nav_plugin_uninstall: 'Desinstalar',
-  com_nav_tool_add: 'Agregar',
+  com_ui_add: 'Agregar',
   com_nav_tool_remove: 'Eliminar',
   com_nav_tool_dialog: 'Herramientas del asistente',
   com_nav_tool_dialog_description:
@@ -2153,7 +2157,7 @@ export const comparisons = {
     english: 'Uninstall',
     translated: 'Desinstalar',
   },
-  com_nav_tool_add: {
+  com_ui_add: {
     english: 'Add',
     translated: 'Agregar',
   },

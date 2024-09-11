@@ -485,6 +485,10 @@ export default {
   com_ui_terms_of_service: 'شروط الخدمة',
   com_ui_min_tags: 'لا يمكن إزالة المزيد من القيم، الحد الأدنى المطلوب هو {0}.',
   com_ui_max_tags: 'الحد الأقصى المسموح به هو {0}، باستخدام أحدث القيم.',
+  com_ui_accept: 'أوافق',
+  com_ui_decline: 'لا أوافق',
+  com_ui_terms_and_conditions: 'شروط الخدمة',
+  com_ui_no_terms_content: 'لا يوجد محتوى لشروط الخدمة',
   com_auth_back_to_login: 'العودة إلى تسجيل الدخول',
   com_endpoint_message: 'رسالة',
   com_endpoint_message_not_appendable: 'عدّل رسالتك أو أعد إنشاءها.',
@@ -549,7 +553,7 @@ export default {
   com_nav_change_picture: 'تغيير الصورة',
   com_nav_plugin_install: 'تثبيت',
   com_nav_plugin_uninstall: 'إلغاء تثبيت',
-  com_nav_tool_add: 'إضافة',
+  com_ui_add: 'إضافة',
   com_nav_tool_remove: 'إزالة',
   com_nav_tool_dialog: 'أدوات المساعد',
   com_nav_tool_dialog_description: 'يجب حفظ المساعد لإبقاء اختيارات الأدوات.',
@@ -2594,7 +2598,7 @@ export const comparisons = {
     english: 'Uninstall',
     translated: 'إلغاء تثبيت',
   },
-  com_nav_tool_add: {
+  com_ui_add: {
     english: 'Add',
     translated: 'إضافة',
   },

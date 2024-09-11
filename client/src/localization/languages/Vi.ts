@@ -92,6 +92,10 @@ export default {
   com_ui_bookmarks_update_error: 'Có lỗi xảy ra khi cập nhật dấu trang',
   com_ui_bookmarks_delete_error: 'Có lỗi xảy ra khi x��a dấu trang',
   com_ui_bookmarks_add_to_conversation: 'Thêm vào cuộc hội thoại hiện tại',
+  com_ui_accept: 'Tôi chấp nhận',
+  com_ui_decline: 'Tôi không chấp nhận',
+  com_ui_terms_and_conditions: 'Điều khoản và điều kiện',
+  com_ui_no_terms_content: 'Không có nội dung điều khoản và điều kiện để hiển thị',
   com_auth_error_login:
     'Không thể đăng nhập với thông tin được cung cấp. Vui lòng kiểm tra thông tin đăng nhập và thử lại.',
   com_auth_error_login_rl:

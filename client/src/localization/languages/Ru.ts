@@ -104,6 +104,10 @@ export default {
   com_ui_bookmarks_update_error: 'Произошла ошибка при обновлении закладки',
   com_ui_bookmarks_delete_error: 'Произошла ошибка при удалении закладки',
   com_ui_bookmarks_add_to_conversation: 'Добавить в текущий разговор',
+  com_ui_accept: 'Принимаю',
+  com_ui_decline: 'Не принимаю',
+  com_ui_terms_and_conditions: 'Условия использования',
+  com_ui_no_terms_content: 'Нет содержания условий использования для отображения',
   com_auth_error_login:
     'Не удалось войти с предоставленной информацией. Пожалуйста, проверьте ваши учетные данные и попробуйте снова.',
   com_auth_error_login_rl:
@@ -567,7 +571,7 @@ export default {
   com_nav_welcome_assistant: 'Выберите ассистента',
   com_nav_plugin_install: 'Установить',
   com_nav_plugin_uninstall: 'Удалить',
-  com_nav_tool_add: 'Добавить',
+  com_ui_add: 'Добавить',
   com_nav_tool_remove: 'Удалить',
   com_nav_tool_dialog: 'Инструменты ассистента',
   com_nav_tool_dialog_description:
@@ -2656,7 +2660,7 @@ export const comparisons = {
     english: 'Uninstall',
     translated: 'Удалить',
   },
-  com_nav_tool_add: {
+  com_ui_add: {
     english: 'Add',
     translated: 'Добавить',
   },

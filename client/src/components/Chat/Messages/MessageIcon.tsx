@@ -1,6 +1,6 @@
 import React, { useMemo, memo } from 'react';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
-import type { TMessage, TPreset, Assistant } from 'librechat-data-provider';
+import type { TMessage, TPreset, Assistant, Agent } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import { getEndpointField, getIconEndpoint } from '~/utils';
@@ -10,14 +10,25 @@ const MessageIcon = memo(
   (
     props: Pick<TMessageProps, 'message' | 'conversation'> & {
       assistant?: Assistant;
+      agent?: Agent;
     },
   ) => {
     const { data: endpointsConfig } = useGetEndpointsQuery();
-    const { message, conversation, assistant } = props;
+    const { message, conversation, assistant, agent } = props;
 
     const assistantName = useMemo(() => assistant?.name ?? '', [assistant]);
     const assistantAvatar = useMemo(() => assistant?.metadata?.avatar ?? '', [assistant]);
+    const agentName = useMemo(() => props.agent?.name ?? '', [props.agent]);
+    const agentAvatar = useMemo(() => props.agent?.avatar?.filepath ?? '', [props.agent]);
     const isCreatedByUser = useMemo(() => message?.isCreatedByUser ?? false, [message]);
+
+    let avatarURL = '';
+
+    if (assistant) {
+      avatarURL = assistantAvatar;
+    } else if (agent) {
+      avatarURL = agentAvatar;
+    }
 
     const messageSettings = useMemo(
       () => ({
@@ -47,8 +58,10 @@ const MessageIcon = memo(
           preset={messageSettings as typeof messageSettings & TPreset}
           context="message"
           assistantAvatar={assistantAvatar}
+          agentAvatar={agentAvatar}
           endpointIconURL={endpointIconURL}
           assistantName={assistantName}
+          agentName={agentName}
         />
       );
     }
@@ -57,9 +70,10 @@ const MessageIcon = memo(
       <Icon
         isCreatedByUser={isCreatedByUser}
         endpoint={endpoint}
-        iconURL={!assistant ? endpointIconURL : assistantAvatar}
+        iconURL={avatarURL || endpointIconURL}
         model={message?.model ?? conversation?.model}
         assistantName={assistantName}
+        agentName={agentName}
         size={28.8}
       />
     );

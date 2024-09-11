@@ -10,7 +10,7 @@ const {
   getUsersByPage,
   findUser,
 } = require('~/models');
-
+const User = require('~/models/User');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
 const { updateUserPluginsService, deleteUserKey } = require('~/server/services/UserService');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
@@ -41,6 +41,32 @@ const getUsersController = async (req, res) => {
   let searchKey = req.query.searchKey;
 
   res.status(200).send(await getUsersByPage(pageNumber, pageSize, searchKey));
+};
+
+const getTermsStatusController = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.status(200).json({ termsAccepted: !!user.termsAccepted });
+  } catch (error) {
+    logger.error('Error fetching terms acceptance status:', error);
+    res.status(500).json({ message: 'Error fetching terms acceptance status' });
+  }
+};
+
+const acceptTermsController = async (req, res) => {
+  try {
+    const user = await User.findByIdAndUpdate(req.user.id, { termsAccepted: true }, { new: true });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.status(200).json({ message: 'Terms accepted successfully' });
+  } catch (error) {
+    logger.error('Error accepting terms:', error);
+    res.status(500).json({ message: 'Error accepting terms' });
+  }
 };
 
 const deleteUserFiles = async (req) => {
@@ -193,6 +219,8 @@ const resendVerificationController = async (req, res) => {
 module.exports = {
   getUserController,
   getUsersController,
+  getTermsStatusController,
+  acceptTermsController,
   deleteUserController,
   verifyEmailController,
   updateUserPluginsController,

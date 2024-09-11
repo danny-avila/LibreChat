@@ -32,6 +32,11 @@ export default function Header() {
     permission: Permissions.USE,
   });
 
+  const hasAccessToMultiConvo = useHasAccess({
+    permissionType: PermissionTypes.MULTI_CONVO,
+    permission: Permissions.USE,
+  });
+
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
   const isAdmin = user?.role === SystemRoles.ADMIN;
@@ -47,8 +52,7 @@ export default function Header() {
           {<HeaderOptions isAdmin={isAdmin} interfaceConfig={interfaceConfig} />}
           {interfaceConfig.presets === true && isAdmin && <PresetsMenu />}
           {hasAccessToBookmarks === true && <BookmarkMenu />}
-
-          {isAdmin && <AddMultiConvo />}
+          {hasAccessToMultiConvo === true && isAdmin && <AddMultiConvo />}
           {isSmallScreen && isAdmin && (
             <ExportAndShareMenu
               isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}

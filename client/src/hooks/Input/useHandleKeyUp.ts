@@ -46,8 +46,12 @@ const useHandleKeyUp = ({
   setShowPlusPopover: SetterOrUpdater<boolean>;
   setShowMentionPopover: SetterOrUpdater<boolean>;
 }) => {
-  const hasAccess = useHasAccess({
+  const hasPromptsAccess = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
+    permission: Permissions.USE,
+  });
+  const hasMultiConvoAccess = useHasAccess({
+    permissionType: PermissionTypes.MULTI_CONVO,
     permission: Permissions.USE,
   });
   const setShowPromptsPopover = useSetRecoilState(store.showPromptsPopoverFamily(index));
@@ -64,19 +68,22 @@ const useHandleKeyUp = ({
   }, [textAreaRef, setShowMentionPopover, atCommandEnabled]);
 
   const handlePlusCommand = useCallback(() => {
-    if (plusCommandEnabled && shouldTriggerCommand(textAreaRef, '+')) {
+    if (!hasMultiConvoAccess || !plusCommandEnabled) {
+      return;
+    }
+    if (shouldTriggerCommand(textAreaRef, '+')) {
       setShowPlusPopover(true);
     }
-  }, [textAreaRef, setShowPlusPopover, plusCommandEnabled]);
+  }, [textAreaRef, setShowPlusPopover, plusCommandEnabled, hasMultiConvoAccess]);
 
   const handlePromptsCommand = useCallback(() => {
-    if (!hasAccess || !slashCommandEnabled) {
+    if (!hasPromptsAccess || !slashCommandEnabled) {
       return;
     }
     if (shouldTriggerCommand(textAreaRef, '/')) {
       setShowPromptsPopover(true);
     }
-  }, [textAreaRef, hasAccess, setShowPromptsPopover, slashCommandEnabled]);
+  }, [textAreaRef, hasPromptsAccess, setShowPromptsPopover, slashCommandEnabled]);
 
   const commandHandlers = useMemo(
     () => ({

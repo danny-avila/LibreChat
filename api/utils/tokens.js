@@ -7,13 +7,13 @@ const openAIModels = {
   'gpt-4-32k': 32758, // -10 from max
   'gpt-4-32k-0314': 32758, // -10 from max
   'gpt-4-32k-0613': 32758, // -10 from max
-  'gpt-4-1106': 127990, // -10 from max
-  'gpt-4-0125': 127990, // -10 from max
-  'gpt-4o': 127990, // -10 from max
-  'gpt-4o-mini': 127990, // -10 from max
-  'gpt-4o-2024-08-06': 127990, // -10 from max
-  'gpt-4-turbo': 127990, // -10 from max
-  'gpt-4-vision': 127990, // -10 from max
+  'gpt-4-1106': 127500, // -500 from max
+  'gpt-4-0125': 127500, // -500 from max
+  'gpt-4o': 127500, // -500 from max
+  'gpt-4o-mini': 127500, // -500 from max
+  'gpt-4o-2024-08-06': 127500, // -500 from max
+  'gpt-4-turbo': 127500, // -500 from max
+  'gpt-4-vision': 127500, // -500 from max
   'gpt-3.5-turbo': 16375, // -10 from max
   'gpt-3.5-turbo-0613': 4092, // -5 from max
   'gpt-3.5-turbo-0301': 4092, // -5 from max
@@ -21,9 +21,15 @@ const openAIModels = {
   'gpt-3.5-turbo-16k-0613': 16375, // -10 from max
   'gpt-3.5-turbo-1106': 16375, // -10 from max
   'gpt-3.5-turbo-0125': 16375, // -10 from max
+};
+
+const mistralModels = {
   'mistral-': 31990, // -10 from max
-  llama3: 8187, // -5 from max
-  'llama-3': 8187, // -5 from max
+  'mistral-7b': 31990, // -10 from max
+  'mistral-small': 31990, // -10 from max
+  'mixtral-8x7b': 31990, // -10 from max
+  'mistral-large-2402': 127500,
+  'mistral-large-2407': 127500,
 };
 
 const cohereModels = {
@@ -54,6 +60,7 @@ const googleModels = {
 
 const anthropicModels = {
   'claude-': 100000,
+  'claude-instant': 100000,
   'claude-2': 100000,
   'claude-2.1': 200000,
   'claude-3-haiku': 200000,
@@ -63,14 +70,47 @@ const anthropicModels = {
   'claude-3.5-sonnet': 200000,
 };
 
-const aggregateModels = { ...openAIModels, ...googleModels, ...anthropicModels, ...cohereModels };
+const metaModels = {
+  'llama2-13b': 4000,
+  'llama2-70b': 4000,
+  'llama3-8b': 8000,
+  'llama3-70b': 8000,
+  'llama3-1-8b': 127500,
+  'llama3-1-70b': 127500,
+  'llama3-1-405b': 127500,
+};
+
+const ai21Models = {
+  'ai21.j2-mid-v1': 8182, // -10 from max
+  'ai21.j2-ultra-v1': 8182, // -10 from max
+  'ai21.jamba-instruct-v1:0': 255500, // -500 from max
+};
+
+const amazonModels = {
+  'amazon.titan-text-lite-v1': 4000,
+  'amazon.titan-text-express-v1': 8000,
+  'amazon.titan-text-premier-v1:0': 31500, // -500 from max
+};
+
+const bedrockModels = {
+  ...anthropicModels,
+  ...mistralModels,
+  ...cohereModels,
+  ...metaModels,
+  ...ai21Models,
+  ...amazonModels,
+};
+
+const aggregateModels = { ...openAIModels, ...googleModels, ...bedrockModels };
 
 const maxTokensMap = {
   [EModelEndpoint.azureOpenAI]: openAIModels,
   [EModelEndpoint.openAI]: aggregateModels,
+  [EModelEndpoint.agents]: aggregateModels,
   [EModelEndpoint.custom]: aggregateModels,
   [EModelEndpoint.google]: googleModels,
   [EModelEndpoint.anthropic]: anthropicModels,
+  [EModelEndpoint.bedrock]: bedrockModels,
 };
 
 /**

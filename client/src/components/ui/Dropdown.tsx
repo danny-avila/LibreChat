@@ -46,7 +46,7 @@ const Dropdown: FC<DropdownProps> = ({
           <ListboxButton
             data-testid={testId}
             className={cn(
-              'focus:ring-offset-ring-offset relative inline-flex w-auto items-center justify-between rounded-md border-border-light bg-header-primary py-2 pl-3 pr-8 text-text-primary transition-all duration-100 ease-in-out hover:bg-header-hover focus:ring-ring-primary',
+              'btn-neutral focus:ring-offset-ring-offset relative inline-flex w-auto items-center justify-between rounded-md border-border-light bg-header-primary py-2 pl-3 pr-8 text-text-primary transition-all duration-100 ease-in-out hover:bg-header-hover focus:ring-ring-primary',
               className,
             )}
             aria-label="Select an option"
@@ -88,7 +88,7 @@ const Dropdown: FC<DropdownProps> = ({
                 <ListboxOption
                   key={index}
                   value={typeof item === 'string' ? item : item.value}
-                  className="focus-visible:ring-offset ring-offset-ring-offset relative cursor-pointer select-none rounded border-border-light bg-header-primary py-2.5 pl-3 pr-3 text-sm text-text-secondary ring-ring-primary hover:bg-header-hover focus-visible:ring"
+                  className="focus-visible:ring-offset ring-offset-ring-offset relative cursor-pointer select-none rounded border-border-light bg-header-primary py-2.5 pl-3 pr-3 text-sm text-text-secondary ring-ring-primary hover:bg-header-hover focus-visible:ring data-[focus]:bg-surface-hover data-[focus]:text-text-primary"
                   style={{ width: '100%' }}
                   data-theme={typeof item === 'string' ? item : (item as Option).value}
                 >
