@@ -43,6 +43,7 @@ export enum QueryKeys {
   conversationTags = 'conversationTags',
   health = 'health',
   userTerms = 'userTerms',
+  banner = 'banner',
 }
 
 export enum MutationKeys {
