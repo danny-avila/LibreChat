@@ -71,7 +71,9 @@ const createTokenHash = () => {
 const sendVerificationEmail = async (user) => {
   const [verifyToken, hash] = createTokenHash();
 
-  const verificationLink = `${domains.client}/verify?token=${verifyToken}&email=${encodeURIComponent(user.email)}`;
+  const verificationLink = `${
+    domains.client
+  }/verify?token=${verifyToken}&email=${encodeURIComponent(user.email)}`;
   await sendEmail({
     email: user.email,
     subject: 'Verify your email',
@@ -371,7 +373,9 @@ const resendVerificationEmail = async (req) => {
 
     const [verifyToken, hash] = createTokenHash();
 
-    const verificationLink = `${domains.client}/verify?token=${verifyToken}&email=${encodeURIComponent(user.email)}`;
+    const verificationLink = `${
+      domains.client
+    }/verify?token=${verifyToken}&email=${encodeURIComponent(user.email)}`;
 
     await sendEmail({
       email: user.email,
