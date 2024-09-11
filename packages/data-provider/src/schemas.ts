@@ -1212,6 +1212,17 @@ export const compactPluginsSchema = tConversationSchema
   })
   .catch(() => ({}));
 
+const tBannerSchema = z.object({
+  bannerId: z.string(),
+  message: z.string(),
+  displayFrom: z.string(),
+  displayTo: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  isPublic: z.boolean(),
+});
+export type TBanner = z.infer<typeof tBannerSchema>;
+
 export const compactAgentsSchema = tConversationSchema
   .pick({
     model: true,

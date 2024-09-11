@@ -8,6 +8,7 @@ import { AgentsMapContext, AssistantsMapContext, FileMapContext, SearchContext }
 import { useAuthContext, useAssistantsMap, useAgentsMap, useFileMap, useSearch } from '~/hooks';
 import { Nav, MobileNav } from '~/components/Nav';
 import TermsAndConditionsModal from '~/components/ui/TermsAndConditionsModal';
+import { Banner } from '~/components/Banners';
 
 export default function Root() {
   const { isAuthenticated, logout, token } = useAuthContext();
@@ -16,6 +17,7 @@ export default function Root() {
     const savedNavVisible = localStorage.getItem('navVisible');
     return savedNavVisible !== null ? JSON.parse(savedNavVisible) : true;
   });
+  const [bannerHeight, setBannerHeight] = useState(0);
 
   const search = useSearch({ isAuthenticated });
   const fileMap = useFileMap({ isAuthenticated });
@@ -24,7 +26,6 @@ export default function Root() {
 
   const [showTerms, setShowTerms] = useState(false);
   const { data: config } = useGetStartupConfig();
-
   const { data: termsData } = useUserTermsQuery({
     enabled: isAuthenticated && !!config?.interface?.termsOfService?.modalAcceptance,
   });
@@ -54,7 +55,8 @@ export default function Root() {
       <FileMapContext.Provider value={fileMap}>
         <AssistantsMapContext.Provider value={assistantsMap}>
           <AgentsMapContext.Provider value={agentsMap}>
-            <div className="flex h-dvh">
+            <Banner onHeightChange={setBannerHeight} />
+            <div className="flex" style={{ height: `calc(100dvh - ${bannerHeight}px)` }}>
               <div className="relative z-0 flex h-full w-full overflow-hidden">
                 <Nav navVisible={navVisible} setNavVisible={setNavVisible} />
                 <div className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden">
