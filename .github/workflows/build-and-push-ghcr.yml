@@ -44,5 +44,6 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          file: Dockerfile.multi  # or Dockerfile, depending on which one you want to use
-          target: api-build  # or the appropriate target from your Dockerfile
+          file: Dockerfile.multi
+          target: api-build
+          platforms: linux/amd64,linux/arm64
