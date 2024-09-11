@@ -6,7 +6,7 @@ import { ShareContext } from '~/Providers';
 import { Spinner } from '~/components/svg';
 import MessagesView from './MessagesView';
 import { buildTree } from '~/utils';
-import Footer from '../Chat/Footer';
+import Footer from '../Input/FooterQima';
 
 function SharedView() {
   const localize = useLocalize();
