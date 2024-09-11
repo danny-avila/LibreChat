@@ -1,32 +1,71 @@
-ARG PG_MAJOR=16
-FROM postgres:$PG_MAJOR
-ARG PG_MAJOR
+ARG BASE_IMAGE=postgres:16-alpine3.20
+FROM ${BASE_IMAGE}
 
-COPY . /tmp/pgvector
+LABEL maintainer="PostGIS Project - https://postgis.net" \
+      org.opencontainers.image.description="PostGIS 3.4.2 spatial database extension with PostgreSQL 16 Alpine" \
+      org.opencontainers.image.source="https://github.com/postgis/docker-postgis"
 
-# Install build tools and necessary dependencies for pgvector and PostGIS
-RUN apt-get update && \
-    apt-mark hold locales && \
-    apt-get install -y --no-install-recommends \
-    build-essential \
-    postgresql-server-dev-$PG_MAJOR \
-    postgresql-$PG_MAJOR-postgis-3 \
-    postgresql-$PG_MAJOR-postgis-3-scripts \
-    libgdal-dev \
-    libgeos-dev && \
-    cd /tmp/pgvector && \
-    make clean && \
-    make OPTFLAGS="" && \
-    make install && \
-    mkdir /usr/share/doc/pgvector && \
-    cp LICENSE README.md /usr/share/doc/pgvector && \
-    rm -r /tmp/pgvector && \
-    apt-get remove -y build-essential postgresql-server-dev-$PG_MAJOR && \
-    apt-get autoremove -y && \
-    apt-mark unhold locales && \
-    rm -rf /var/lib/apt/lists/*
+ENV POSTGIS_VERSION 3.4.2
+ENV POSTGIS_SHA256 17aa8760a5c4fcb9a1fdc750c1c9aca0198a35dd1e320628064c43f178eefed2
 
-# Ensure the PostGIS extension is set up properly
-RUN docker-entrypoint.sh postgres --single -E <<EOSQL
-    CREATE EXTENSION IF NOT EXISTS postgis;
-EOSQL
+# Install PostGIS and pgvector
+RUN set -eux \
+    && apk add --no-cache --virtual .fetch-deps \
+        ca-certificates \
+        openssl \
+        tar \
+    \
+    && wget -O postgis.tar.gz "https://github.com/postgis/postgis/archive/${POSTGIS_VERSION}.tar.gz" \
+    && echo "${POSTGIS_SHA256} *postgis.tar.gz" | sha256sum -c - \
+    && mkdir -p /usr/src/postgis \
+    && tar --extract --file postgis.tar.gz --directory /usr/src/postgis --strip-components 1 \
+    && rm postgis.tar.gz \
+    \
+    && apk add --no-cache --virtual .build-deps \
+        gdal-dev \
+        geos-dev \
+        proj-dev \
+        proj-util \
+        sfcgal-dev \
+        clang \
+        llvm15-dev \
+        llvm15-libs \
+        clang15 \
+        autoconf \
+        automake \
+        cunit-dev \
+        file \
+        g++ \
+        gcc \
+        gettext-dev \
+        git \
+        json-c-dev \
+        libtool \
+        libxml2-dev \
+        make \
+        pcre2-dev \
+        perl \
+        protobuf-c-dev \
+    \
+    # build PostGIS
+    && cd /usr/src/postgis \
+    && gettextize \
+    && ./autogen.sh \
+    && ./configure --enable-lto \
+    && make -j$(nproc) \
+    && make install \
+    \
+    # Build pgvector
+    && cd /tmp \
+    && git clone https://github.com/pgvector/pgvector.git \
+    && cd pgvector \
+    && make \
+    && make install \
+    \
+    # Cleanup
+    && rm -rf /tmp/pgvector /usr/src/postgis \
+    && apk del .fetch-deps .build-deps
+
+# Add PostGIS extensions to the initialization process
+COPY ./initdb-postgis.sh /docker-entrypoint-initdb.d/10_postgis.sh
+COPY ./update-postgis.sh /usr/local/bin

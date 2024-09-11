@@ -12,7 +12,8 @@ COPY package*.json ./
 COPY packages/data-provider/package*.json ./packages/data-provider/
 COPY client/package*.json ./client/
 COPY api/package*.json ./api/
-RUN npm config set registry https://registry.npmmirror.com/
+
+#RUN npm config set registry https://registry.npmmirror.com/
 RUN npm ci
 
 # Build data-provider
