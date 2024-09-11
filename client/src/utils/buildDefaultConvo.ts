@@ -1,22 +1,25 @@
-import { parseConvo, EModelEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import {
+  parseConvo,
+  EModelEndpoint,
+  isAssistantsEndpoint,
+  isAgentsEndpoint,
+} from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
 import getLocalStorageItems from './getLocalStorageItems';
 
 const buildDefaultConvo = ({
   conversation,
-  endpoint,
+  endpoint = null,
   models,
   lastConversationSetup,
 }: {
   conversation: TConversation;
-  endpoint: EModelEndpoint;
+  endpoint: EModelEndpoint | null;
   models: string[];
-  // TODO: fix this type as we should allow undefined
-  lastConversationSetup: TConversation;
-}) => {
-  const { lastSelectedModel, lastSelectedTools, lastBingSettings } = getLocalStorageItems();
-  const { jailbreak, toneStyle } = lastBingSettings;
-  const endpointType = lastConversationSetup?.endpointType ?? conversation?.endpointType;
+  lastConversationSetup: TConversation | null;
+}): TConversation => {
+  const { lastSelectedModel, lastSelectedTools } = getLocalStorageItems();
+  const endpointType = lastConversationSetup?.endpointType ?? conversation.endpointType;
 
   if (!endpoint) {
     return {
@@ -27,10 +30,10 @@ const buildDefaultConvo = ({
   }
 
   const availableModels = models;
-  const model = lastConversationSetup?.model ?? lastSelectedModel?.[endpoint];
-  const secondaryModel =
+  const model = lastConversationSetup?.model ?? lastSelectedModel?.[endpoint] ?? '';
+  const secondaryModel: string | null =
     endpoint === EModelEndpoint.gptPlugins
-      ? lastConversationSetup?.agentOptions?.model ?? lastSelectedModel?.secondaryModel
+      ? lastConversationSetup?.agentOptions?.model ?? lastSelectedModel?.secondaryModel ?? null
       : null;
 
   let possibleModels: string[], secondaryModels: string[];
@@ -41,7 +44,7 @@ const buildDefaultConvo = ({
     possibleModels = [...availableModels];
   }
 
-  if (secondaryModel && availableModels.includes(secondaryModel)) {
+  if (secondaryModel != null && secondaryModel !== '' && availableModels.includes(secondaryModel)) {
     secondaryModels = [secondaryModel, ...availableModels];
   } else {
     secondaryModels = [...availableModels];
@@ -65,13 +68,20 @@ const buildDefaultConvo = ({
   };
 
   // Ensures assistant_id is always defined
-  if (isAssistantsEndpoint(endpoint) && !defaultConvo.assistant_id && convo.assistant_id) {
-    defaultConvo.assistant_id = convo.assistant_id;
+  const assistantId = convo?.assistant_id ?? '';
+  const defaultAssistantId = lastConversationSetup?.assistant_id ?? '';
+  if (isAssistantsEndpoint(endpoint) && !defaultAssistantId && assistantId) {
+    defaultConvo.assistant_id = assistantId;
+  }
+
+  // Ensures agent_id is always defined
+  const agentId = convo?.agent_id ?? '';
+  const defaultAgentId = lastConversationSetup?.agent_id ?? '';
+  if (isAgentsEndpoint(endpoint) && !defaultAgentId && agentId) {
+    defaultConvo.agent_id = agentId;
   }
 
   defaultConvo.tools = lastConversationSetup?.tools ?? lastSelectedTools ?? defaultConvo.tools;
-  defaultConvo.jailbreak = jailbreak ?? defaultConvo.jailbreak;
-  defaultConvo.toneStyle = toneStyle ?? defaultConvo.toneStyle;
 
   return defaultConvo;
 };

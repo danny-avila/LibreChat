@@ -1,8 +1,8 @@
-import { useState, type FC } from 'react';
+import { type FC } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useLocation } from 'react-router-dom';
 import { TConversation } from 'librechat-data-provider';
-import { Content, Portal, Root, Trigger } from '@radix-ui/react-popover';
+import { Menu, MenuButton, MenuItems } from '@headlessui/react';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
 import { BookmarkContext } from '~/Providers/BookmarkContext';
 import { useGetConversationTags } from '~/data-provider';
@@ -25,8 +25,6 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) 
   const activeConvo = useRecoilValue(store.conversationByIndex(0));
   const globalConvo = useRecoilValue(store.conversation) ?? ({} as TConversation);
 
-  const [open, setIsOpen] = useState(false);
-
   let conversation: TConversation | null | undefined;
   if (location.state?.from?.pathname.includes('/chat')) {
     conversation = globalConvo;
@@ -35,38 +33,31 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) 
   }
 
   return (
-    <Root open={open} onOpenChange={setIsOpen}>
-      <Trigger asChild>
-        <button
-          className={cn(
-            'relative mt-1 flex h-10 w-full cursor-pointer items-center gap-1 rounded-lg border-border-light bg-transparent px-1 py-2 text-text-primary transition-colors duration-200 focus-within:bg-surface-hover hover:bg-surface-hover',
-            open ? 'bg-surface-hover' : '',
-          )}
-          id="show-bookmarks"
-          data-testid="show-bookmarks"
-          title={localize('com_ui_bookmarks')}
-        >
-          <div className="relative flex h-8 w-8 items-center justify-center rounded-full p-1 text-text-primary">
-            {tags.length > 0 ? (
-              <BookmarkFilledIcon className="h-5 w-5" />
-            ) : (
-              <BookmarkIcon className="h-5 w-5" />
+    <Menu as="div" className="group relative">
+      {({ open }) => (
+        <>
+          <MenuButton
+            className={cn(
+              'mt-text-sm flex h-10 w-full items-center gap-2 rounded-lg p-2 text-sm transition-colors duration-200 hover:bg-surface-hover',
+              open ? 'bg-surface-hover' : '',
             )}
-          </div>
-          <div className="grow overflow-hidden whitespace-nowrap text-left text-sm text-text-primary">
-            {tags.length > 0 ? tags.join(', ') : localize('com_ui_bookmarks')}
-          </div>
-        </button>
-      </Trigger>
-      <Portal>
-        <div className="fixed left-0 top-0 z-auto translate-x-[268px] translate-y-[50px]">
-          <Content
-            side="bottom"
-            align="start"
-            className="mt-2 max-h-96 min-w-[240px] overflow-y-auto rounded-lg border border-border-medium bg-surface-primary-alt text-text-primary shadow-lg lg:max-h-96"
+            data-testid="bookmark-menu"
           >
+            <div className="h-7 w-7 flex-shrink-0">
+              <div className="relative flex h-full items-center justify-center rounded-full border border-border-medium bg-surface-primary-alt text-text-primary">
+                {tags.length > 0 ? (
+                  <BookmarkFilledIcon className="h-4 w-4" />
+                ) : (
+                  <BookmarkIcon className="h-4 w-4" />
+                )}
+              </div>
+            </div>
+            <div className="grow overflow-hidden whitespace-nowrap text-left text-sm font-medium text-text-primary">
+              {tags.length > 0 ? tags.join(', ') : localize('com_ui_bookmarks')}
+            </div>
+          </MenuButton>
+          <MenuItems className="absolute left-0 top-full z-[100] mt-1 w-full translate-y-0 overflow-hidden rounded-lg bg-header-primary p-1.5 shadow-lg outline-none">
             {data && conversation && (
-              // Display bookmarks and highlight the selected tag
               <BookmarkContext.Provider value={{ bookmarks: data.filter((tag) => tag.count > 0) }}>
                 <BookmarkNavItems
                   // Currently selected conversation
@@ -78,10 +69,10 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) 
                 />
               </BookmarkContext.Provider>
             )}
-          </Content>
-        </div>
-      </Portal>
-    </Root>
+          </MenuItems>
+        </>
+      )}
+    </Menu>
   );
 };
 

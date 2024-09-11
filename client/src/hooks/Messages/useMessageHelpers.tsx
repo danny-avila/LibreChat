@@ -1,7 +1,8 @@
+import throttle from 'lodash/throttle';
 import { useEffect, useRef, useCallback, useMemo } from 'react';
-import { Constants, isAssistantsEndpoint } from 'librechat-data-provider';
+import { Constants, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
-import { useChatContext, useAssistantsMapContext } from '~/Providers';
+import { useChatContext, useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
 import useCopyToClipboard from './useCopyToClipboard';
 import { getTextKey, logger } from '~/utils';
 
@@ -21,6 +22,7 @@ export default function useMessageHelpers(props: TMessageProps) {
     setLatestMessage,
   } = useChatContext();
   const assistantMap = useAssistantsMapContext();
+  const agentMap = useAgentsMapContext();
 
   const { text, content, children, messageId = null, isCreatedByUser } = message ?? {};
   const edit = messageId === currentEditId;
@@ -64,13 +66,23 @@ export default function useMessageHelpers(props: TMessageProps) {
     [messageId, setCurrentEditId],
   );
 
-  const handleScroll = useCallback(() => {
-    if (isSubmitting) {
-      setAbortScroll(true);
-    } else {
-      setAbortScroll(false);
-    }
-  }, [isSubmitting, setAbortScroll]);
+  const handleScroll = useCallback(
+    (event: unknown) => {
+      throttle(() => {
+        logger.log(
+          'message_scrolling',
+          `useMessageHelpers: setting abort scroll to ${isSubmitting}, handleScroll event`,
+          event,
+        );
+        if (isSubmitting) {
+          setAbortScroll(true);
+        } else {
+          setAbortScroll(false);
+        }
+      }, 500)();
+    },
+    [isSubmitting, setAbortScroll],
+  );
 
   const assistant = useMemo(() => {
     if (!isAssistantsEndpoint(conversation?.endpoint)) {
@@ -82,6 +94,16 @@ export default function useMessageHelpers(props: TMessageProps) {
 
     return assistantMap?.[endpointKey] ? assistantMap[endpointKey][modelKey] : undefined;
   }, [conversation?.endpoint, message?.model, assistantMap]);
+
+  const agent = useMemo(() => {
+    if (!isAgentsEndpoint(conversation?.endpoint)) {
+      return undefined;
+    }
+
+    const modelKey = message?.model ?? '';
+
+    return agentMap ? agentMap[modelKey] : undefined;
+  }, [agentMap, conversation?.endpoint, message?.model]);
 
   const regenerateMessage = () => {
     if ((isSubmitting && isCreatedByUser === true) || !message) {
@@ -96,6 +118,7 @@ export default function useMessageHelpers(props: TMessageProps) {
   return {
     ask,
     edit,
+    agent,
     index,
     isLast,
     assistant,

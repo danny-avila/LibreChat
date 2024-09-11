@@ -13,6 +13,11 @@ const conversationPreset = {
     type: String,
     required: false,
   },
+  // for bedrock only
+  region: {
+    type: String,
+    required: false,
+  },
   // for azureOpenAI, openAI only
   chatGptLabel: {
     type: String,
@@ -73,6 +78,13 @@ const conversationPreset = {
   // deprecated
   resendImages: {
     type: Boolean,
+  },
+  /* Anthropic only */
+  promptCache: {
+    type: Boolean,
+  },
+  system: {
+    type: String,
   },
   // files
   resendFiles: {

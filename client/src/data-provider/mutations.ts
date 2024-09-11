@@ -21,6 +21,7 @@ import {
   useSharedLinksInfiniteQuery,
 } from './queries';
 import {
+  logger,
   /* Shared Links */
   addSharedLink,
   deleteSharedLink,
@@ -96,6 +97,7 @@ export const useUpdateConversationMutation = (
  */
 export const useTagConversationMutation = (
   conversationId: string,
+  options?: t.updateTagsInConvoOptions,
 ): UseMutationResult<t.TTagConversationResponse, unknown, t.TTagConversationRequest, unknown> => {
   const query = useConversationTagsQuery();
   const { updateTagsInConversation } = useUpdateTagsInConvo();
@@ -103,13 +105,17 @@ export const useTagConversationMutation = (
     (payload: t.TTagConversationRequest) =>
       dataService.addTagToConversation(conversationId, payload),
     {
-      onSuccess: (updatedTags) => {
+      onSuccess: (updatedTags, ...rest) => {
         // Because the logic for calculating the bookmark count is complex,
         // the client does not perform the calculation,
         // but instead refetch the data from the API.
         query.refetch();
         updateTagsInConversation(conversationId, updatedTags);
+
+        options?.onSuccess?.(updatedTags, ...rest);
       },
+      onError: options?.onError,
+      onMutate: options?.onMutate,
     },
   );
 };
@@ -296,62 +302,99 @@ export const useDeleteSharedLinkMutation = (
       });
       const current = queryClient.getQueryData<t.ConversationData>([QueryKeys.sharedLinks]);
       refetch({
-        refetchPage: (page, index) => index === (current?.pages.length || 1) - 1,
+        refetchPage: (page, index) => index === (current?.pages.length ?? 1) - 1,
       });
       onSuccess?.(_data, vars, context);
     },
-    ...(_options || {}),
+    ..._options,
   });
 };
 
 // Add a tag or update tag information (tag, description, position, etc.)
-export const useConversationTagMutation = (
-  tag?: string,
-  options?: t.UpdateConversationTagOptions,
-): UseMutationResult<t.TConversationTagResponse, unknown, t.TConversationTagRequest, unknown> => {
+export const useConversationTagMutation = ({
+  context,
+  tag,
+  options,
+}: {
+  context: string;
+  tag?: string;
+  options?: t.UpdateConversationTagOptions;
+}): UseMutationResult<t.TConversationTagResponse, unknown, t.TConversationTagRequest, unknown> => {
   const queryClient = useQueryClient();
-  const { ..._options } = options || {};
+  const { onSuccess, ..._options } = options || {};
+  const onMutationSuccess: typeof onSuccess = (_data, vars) => {
+    queryClient.setQueryData<t.TConversationTag[]>([QueryKeys.conversationTags], (queryData) => {
+      if (!queryData) {
+        return [
+          {
+            count: 1,
+            position: 0,
+            tag: Constants.SAVED_TAG,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        ] as t.TConversationTag[];
+      }
+      if (tag === undefined || !tag.length) {
+        // Check if the tag already exists
+        const existingTagIndex = queryData.findIndex((item) => item.tag === _data.tag);
+        if (existingTagIndex !== -1) {
+          logger.log(
+            'tag_mutation',
+            `"Created" tag exists, updating from ${context}`,
+            queryData,
+            _data,
+          );
+          // If the tag exists, update it
+          const updatedData = [...queryData];
+          updatedData[existingTagIndex] = { ...updatedData[existingTagIndex], ..._data };
+          return updatedData.sort((a, b) => a.position - b.position);
+        } else {
+          // If the tag doesn't exist, add it
+          logger.log(
+            'tag_mutation',
+            `"Created" tag is new, adding from ${context}`,
+            queryData,
+            _data,
+          );
+          return [...queryData, _data].sort((a, b) => a.position - b.position);
+        }
+      }
+      logger.log('tag_mutation', `Updating tag from ${context}`, queryData, _data);
+      return updateConversationTag(queryData, vars, _data, tag);
+    });
+    if (vars.addToConversation === true && vars.conversationId != null && _data.tag) {
+      const currentConvo = queryClient.getQueryData<t.TConversation>([
+        QueryKeys.conversation,
+        vars.conversationId,
+      ]);
+      if (!currentConvo) {
+        return;
+      }
+      logger.log(
+        'tag_mutation',
+        `\`updateTagsInConversation\` Update from ${context}`,
+        currentConvo,
+      );
+      updateTagsInConversation(vars.conversationId, [...(currentConvo.tags || []), _data.tag]);
+    }
+    // Change the tag title to the new title
+    if (tag != null) {
+      replaceTagsInAllConversations(tag, _data.tag);
+    }
+  };
   const { updateTagsInConversation, replaceTagsInAllConversations } = useUpdateTagsInConvo();
   return useMutation(
     (payload: t.TConversationTagRequest) =>
-      tag
+      tag != null
         ? dataService.updateConversationTag(tag, payload)
         : dataService.createConversationTag(payload),
     {
-      onSuccess: (_data, vars) => {
-        queryClient.setQueryData<t.TConversationTag[]>([QueryKeys.conversationTags], (data) => {
-          if (!data) {
-            return [
-              {
-                count: 1,
-                position: 0,
-                tag: Constants.SAVED_TAG,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-              },
-            ] as t.TConversationTag[];
-          }
-          if (!tag) {
-            return [...data, _data].sort((a, b) => a.position - b.position);
-          }
-          return updateConversationTag(data, vars, _data, tag);
-        });
-        if (vars.addToConversation && vars.conversationId && _data.tag) {
-          const currentConvo = queryClient.getQueryData<t.TConversation>([
-            QueryKeys.conversation,
-            vars.conversationId,
-          ]);
-          if (!currentConvo) {
-            return;
-          }
-          updateTagsInConversation(vars.conversationId, [...(currentConvo.tags || []), _data.tag]);
-        }
-        // Change the tag title to the new title
-        if (tag) {
-          replaceTagsInAllConversations(tag, _data.tag);
-        }
+      onSuccess: (...args) => {
+        onMutationSuccess(...args);
+        onSuccess?.(...args);
       },
-      ...(_options || {}),
+      ..._options,
     },
   );
 };
@@ -407,20 +450,22 @@ export const useDeleteConversationTagMutation = (
 ): UseMutationResult<t.TConversationTagResponse, unknown, string, void> => {
   const queryClient = useQueryClient();
   const deleteTagInAllConversations = useDeleteTagInConversations();
+
   const { onSuccess, ..._options } = options || {};
+
   return useMutation((tag: string) => dataService.deleteConversationTag(tag), {
-    onSuccess: (_data, vars, context) => {
+    onSuccess: (_data, tagToDelete, context) => {
       queryClient.setQueryData<t.TConversationTag[]>([QueryKeys.conversationTags], (data) => {
         if (!data) {
           return data;
         }
-        return data.filter((t) => t.tag !== vars);
+        return data.filter((t) => t.tag !== tagToDelete);
       });
 
-      deleteTagInAllConversations(vars);
-      onSuccess?.(_data, vars, context);
+      deleteTagInAllConversations(tagToDelete);
+      onSuccess?.(_data, tagToDelete, context);
     },
-    ...(_options || {}),
+    ..._options,
   });
 };
 
@@ -570,14 +615,14 @@ export const useUploadFileMutation = (
 
           return {
             ...prev,
-            data: prev?.data.map((assistant) => {
+            data: prev.data.map((assistant) => {
               if (assistant.id !== assistant_id) {
                 return assistant;
               }
 
               const update = {};
               if (!tool_resource) {
-                update['file_ids'] = [...assistant.file_ids, data.file_id];
+                update['file_ids'] = [...(assistant.file_ids ?? []), data.file_id];
               }
               if (tool_resource === EToolResources.code_interpreter) {
                 const prevResources = assistant.tool_resources ?? {};
@@ -817,7 +862,8 @@ export const useUpdateAssistantMutation = (
     ({ assistant_id, data }: { assistant_id: string; data: t.AssistantUpdateParams }) => {
       const { endpoint } = data;
       const endpointsConfig = queryClient.getQueryData<t.TEndpointsConfig>([QueryKeys.endpoints]);
-      const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
+      const endpointConfig = endpointsConfig?.[endpoint];
+      const version = endpointConfig.version ?? defaultAssistantsVersion[endpoint];
       return dataService.updateAssistant({
         data,
         version,
@@ -837,6 +883,24 @@ export const useUpdateAssistantMutation = (
         if (!listRes) {
           return options?.onSuccess?.(updatedAssistant, variables, context);
         }
+
+        queryClient.setQueryData<t.AssistantDocument[]>(
+          [QueryKeys.assistantDocs, variables.data.endpoint],
+          (prev) => {
+            if (!prev) {
+              return prev;
+            }
+            prev.map((doc) => {
+              if (doc.assistant_id === variables.assistant_id) {
+                return {
+                  ...doc,
+                  conversation_starters: updatedAssistant.conversation_starters,
+                };
+              }
+              return doc;
+            });
+          },
+        );
 
         queryClient.setQueryData<t.AssistantListResponse>(
           [QueryKeys.assistants, variables.data.endpoint, defaultOrderQuery],
@@ -1020,16 +1084,258 @@ export const useDeleteAction = (
 
           return {
             ...prev,
-            data: prev?.data.map((assistant) => {
+            data: prev.data.map((assistant) => {
               if (assistant.id === variables.assistant_id) {
                 return {
                   ...assistant,
-                  tools: assistant.tools.filter(
+                  tools: (assistant.tools ?? []).filter(
                     (tool) => !tool.function?.name.includes(domain ?? ''),
                   ),
                 };
               }
               return assistant;
+            }),
+          };
+        },
+      );
+
+      return options?.onSuccess?.(_data, variables, context);
+    },
+  });
+};
+
+/**
+ * AGENTS
+ */
+
+/**
+ * Create a new agent
+ */
+export const useCreateAgentMutation = (
+  options?: t.CreateAgentMutationOptions,
+): UseMutationResult<t.Agent, Error, t.AgentCreateParams> => {
+  const queryClient = useQueryClient();
+  return useMutation((newAgentData: t.AgentCreateParams) => dataService.createAgent(newAgentData), {
+    onMutate: (variables) => options?.onMutate?.(variables),
+    onError: (error, variables, context) => options?.onError?.(error, variables, context),
+    onSuccess: (newAgent, variables, context) => {
+      const listRes = queryClient.getQueryData<t.AgentListResponse>([
+        QueryKeys.agents,
+        defaultOrderQuery,
+      ]);
+
+      if (!listRes) {
+        return options?.onSuccess?.(newAgent, variables, context);
+      }
+
+      const currentAgents = [newAgent, ...JSON.parse(JSON.stringify(listRes.data))];
+
+      queryClient.setQueryData<t.AgentListResponse>([QueryKeys.agents, defaultOrderQuery], {
+        ...listRes,
+        data: currentAgents,
+      });
+      return options?.onSuccess?.(newAgent, variables, context);
+    },
+  });
+};
+
+/**
+ * Hook for updating an agent
+ */
+export const useUpdateAgentMutation = (
+  options?: t.UpdateAgentMutationOptions,
+): UseMutationResult<t.Agent, Error, { agent_id: string; data: t.AgentUpdateParams }> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    ({ agent_id, data }: { agent_id: string; data: t.AgentUpdateParams }) => {
+      return dataService.updateAgent({
+        data,
+        agent_id,
+      });
+    },
+    {
+      onMutate: (variables) => options?.onMutate?.(variables),
+      onError: (error, variables, context) => options?.onError?.(error, variables, context),
+      onSuccess: (updatedAgent, variables, context) => {
+        const listRes = queryClient.getQueryData<t.AgentListResponse>([
+          QueryKeys.agents,
+          defaultOrderQuery,
+        ]);
+
+        if (!listRes) {
+          return options?.onSuccess?.(updatedAgent, variables, context);
+        }
+
+        queryClient.setQueryData<t.AgentListResponse>([QueryKeys.agents, defaultOrderQuery], {
+          ...listRes,
+          data: listRes.data.map((agent) => {
+            if (agent.id === variables.agent_id) {
+              return updatedAgent;
+            }
+            return agent;
+          }),
+        });
+        return options?.onSuccess?.(updatedAgent, variables, context);
+      },
+    },
+  );
+};
+
+/**
+ * Hook for deleting an agent
+ */
+export const useDeleteAgentMutation = (
+  options?: t.DeleteAgentMutationOptions,
+): UseMutationResult<void, Error, t.DeleteAgentBody> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    ({ agent_id }: t.DeleteAgentBody) => {
+      return dataService.deleteAgent({ agent_id });
+    },
+    {
+      onMutate: (variables) => options?.onMutate?.(variables),
+      onError: (error, variables, context) => options?.onError?.(error, variables, context),
+      onSuccess: (_data, variables, context) => {
+        const listRes = queryClient.getQueryData<t.AgentListResponse>([
+          QueryKeys.agents,
+          defaultOrderQuery,
+        ]);
+
+        if (!listRes) {
+          return options?.onSuccess?.(_data, variables, context);
+        }
+
+        const data = listRes.data.filter((agent) => agent.id !== variables.agent_id);
+
+        queryClient.setQueryData<t.AgentListResponse>([QueryKeys.agents, defaultOrderQuery], {
+          ...listRes,
+          data,
+        });
+
+        return options?.onSuccess?.(_data, variables, data);
+      },
+    },
+  );
+};
+
+/**
+ * Hook for uploading an agent avatar
+ */
+export const useUploadAgentAvatarMutation = (
+  options?: t.UploadAgentAvatarOptions,
+): UseMutationResult<
+  t.Agent, // response data
+  unknown, // error
+  t.AgentAvatarVariables, // request
+  unknown // context
+> => {
+  return useMutation([MutationKeys.agentAvatarUpload], {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    mutationFn: ({ postCreation, ...variables }: t.AgentAvatarVariables) =>
+      dataService.uploadAgentAvatar(variables),
+    ...(options || {}),
+  });
+};
+
+/**
+ * Hook for updating Agent Actions
+ */
+export const useUpdateAgentAction = (
+  options?: t.UpdateAgentActionOptions,
+): UseMutationResult<
+  t.UpdateAgentActionResponse, // response data
+  unknown, // error
+  t.UpdateAgentActionVariables, // request
+  unknown // context
+> => {
+  const queryClient = useQueryClient();
+  return useMutation([MutationKeys.updateAgentAction], {
+    mutationFn: (variables: t.UpdateAgentActionVariables) =>
+      dataService.updateAgentAction(variables),
+
+    onMutate: (variables) => options?.onMutate?.(variables),
+    onError: (error, variables, context) => options?.onError?.(error, variables, context),
+    onSuccess: (updateAgentActionResponse, variables, context) => {
+      const listRes = queryClient.getQueryData<t.AgentListResponse>([
+        QueryKeys.agents,
+        defaultOrderQuery,
+      ]);
+
+      if (!listRes) {
+        return options?.onSuccess?.(updateAgentActionResponse, variables, context);
+      }
+
+      const updatedAgent = updateAgentActionResponse[0];
+
+      queryClient.setQueryData<t.AgentListResponse>([QueryKeys.agents, defaultOrderQuery], {
+        ...listRes,
+        data: listRes.data.map((agent) => {
+          if (agent.id === variables.agent_id) {
+            return updatedAgent;
+          }
+          return agent;
+        }),
+      });
+
+      queryClient.setQueryData<t.Action[]>([QueryKeys.actions], (prev) => {
+        return prev
+          ?.map((action) => {
+            if (action.action_id === variables.action_id) {
+              return updateAgentActionResponse[1];
+            }
+            return action;
+          })
+          .concat(variables.action_id ? [] : [updateAgentActionResponse[1]]);
+      });
+
+      return options?.onSuccess?.(updateAgentActionResponse, variables, context);
+    },
+  });
+};
+
+/**
+ * Hook for deleting an Agent Action
+ */
+
+export const useDeleteAgentAction = (
+  options?: t.DeleteAgentActionOptions,
+): UseMutationResult<void, Error, t.DeleteAgentActionVariables, unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation([MutationKeys.deleteAgentAction], {
+    mutationFn: (variables: t.DeleteAgentActionVariables) => {
+      return dataService.deleteAgentAction({
+        ...variables,
+      });
+    },
+
+    onMutate: (variables) => options?.onMutate?.(variables),
+    onError: (error, variables, context) => options?.onError?.(error, variables, context),
+    onSuccess: (_data, variables, context) => {
+      let domain: string | undefined = '';
+      queryClient.setQueryData<t.Action[]>([QueryKeys.actions], (prev) => {
+        return prev?.filter((action) => {
+          domain = action.metadata.domain;
+          return action.action_id !== variables.action_id;
+        });
+      });
+
+      queryClient.setQueryData<t.AgentListResponse>(
+        [QueryKeys.agents, defaultOrderQuery],
+        (prev) => {
+          if (!prev) {
+            return prev;
+          }
+
+          return {
+            ...prev,
+            data: prev.data.map((agent) => {
+              if (agent.id === variables.agent_id) {
+                return {
+                  ...agent,
+                  tools: agent.tools?.filter((tool) => !tool.includes(domain ?? '')),
+                };
+              }
+              return agent;
             }),
           };
         },
@@ -1062,5 +1368,21 @@ export const useResendVerificationEmail = (
     mutationFn: (variables: t.TResendVerificationEmail) =>
       dataService.resendVerificationEmail(variables),
     ...(options || {}),
+  });
+};
+
+export const useAcceptTermsMutation = (
+  options?: t.AcceptTermsMutationOptions,
+): UseMutationResult<t.TAcceptTermsResponse, unknown, void, unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation(() => dataService.acceptTerms(), {
+    onSuccess: (data, variables, context) => {
+      queryClient.setQueryData<t.TUserTermsResponse>([QueryKeys.userTerms], {
+        termsAccepted: true,
+      });
+      options?.onSuccess?.(data, variables, context);
+    },
+    onError: options?.onError,
+    onMutate: options?.onMutate,
   });
 };

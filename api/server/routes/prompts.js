@@ -24,6 +24,7 @@ const checkPromptCreate = generateCheckAccess(PermissionTypes.PROMPTS, [
   Permissions.USE,
   Permissions.CREATE,
 ]);
+
 const checkGlobalPromptShare = generateCheckAccess(
   PermissionTypes.PROMPTS,
   [Permissions.USE, Permissions.CREATE],

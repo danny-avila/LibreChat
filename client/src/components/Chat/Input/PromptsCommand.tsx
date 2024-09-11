@@ -1,12 +1,13 @@
-import { useSetRecoilState, useRecoilValue } from 'recoil';
 import { useState, useRef, useEffect, useMemo, memo, useCallback } from 'react';
+import { useSetRecoilState, useRecoilValue } from 'recoil';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
 import type { PromptOption } from '~/common';
 import { removeCharIfLast, mapPromptGroups, detectVariables } from '~/utils';
 import VariableDialog from '~/components/Prompts/Groups/VariableDialog';
 import CategoryIcon from '~/components/Prompts/Groups/CategoryIcon';
+import { useLocalize, useCombobox, useHasAccess } from '~/hooks';
 import { useGetAllPromptGroups } from '~/data-provider';
-import { useLocalize, useCombobox } from '~/hooks';
 import { Spinner } from '~/components/svg';
 import MentionItem from './MentionItem';
 import store from '~/store';
@@ -51,8 +52,13 @@ function PromptsCommand({
   submitPrompt: (textPrompt: string) => void;
 }) {
   const localize = useLocalize();
+  const hasAccess = useHasAccess({
+    permissionType: PermissionTypes.PROMPTS,
+    permission: Permissions.USE,
+  });
 
   const { data, isLoading } = useGetAllPromptGroups(undefined, {
+    enabled: hasAccess,
     select: (data) => {
       const mappedArray = data.map((group) => ({
         id: group._id,
@@ -143,6 +149,10 @@ function PromptsCommand({
     const currentActiveItem = document.getElementById(`prompt-item-${activeIndex}`);
     currentActiveItem?.scrollIntoView({ behavior: 'instant', block: 'nearest' });
   }, [activeIndex]);
+
+  if (!hasAccess) {
+    return null;
+  }
 
   return (
     <PopoverContainer

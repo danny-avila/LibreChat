@@ -22,6 +22,7 @@ export enum FileContext {
   filename = 'filename',
   updatedAt = 'updatedAt',
   source = 'source',
+  filterSource = 'filterSource',
   context = 'context',
   bytes = 'bytes',
 }

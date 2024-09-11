@@ -2,8 +2,8 @@ import React, { useMemo } from 'react';
 import { useFormContext, Controller } from 'react-hook-form';
 import { LocalStorageKeys } from 'librechat-data-provider';
 import { useLocalize, useCategories } from '~/hooks';
+import { cn, createDropdownSetter } from '~/utils';
 import { SelectDropDown } from '~/components/ui';
-import { cn } from '~/utils';
 
 const CategorySelector = ({
   currentCategory,
@@ -37,11 +37,11 @@ const CategorySelector = ({
           title="Category"
           tabIndex={tabIndex}
           value={categoryOption || ''}
-          setValue={(value) => {
+          setValue={createDropdownSetter((value: string) => {
             setValue('category', value, { shouldDirty: false });
             localStorage.setItem(LocalStorageKeys.LAST_PROMPT_CATEGORY, value);
             onValueChange?.(value);
-          }}
+          })}
           availableValues={categories}
           showAbove={false}
           showLabel={false}

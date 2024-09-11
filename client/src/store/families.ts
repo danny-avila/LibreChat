@@ -2,6 +2,7 @@ import {
   atom,
   selector,
   atomFamily,
+  DefaultValue,
   selectorFamily,
   useRecoilState,
   useRecoilValue,
@@ -73,11 +74,15 @@ const conversationByIndex = atomFamily<TConversation | null, string | number>({
     ({ onSet, node }) => {
       onSet(async (newValue) => {
         const index = Number(node.key.split('__')[1]);
+        logger.log('conversation', 'Setting conversation:', { index, newValue });
         if (newValue?.assistant_id) {
           localStorage.setItem(
-            `${LocalStorageKeys.ASST_ID_PREFIX}${index}${newValue?.endpoint}`,
+            `${LocalStorageKeys.ASST_ID_PREFIX}${index}${newValue.endpoint}`,
             newValue.assistant_id,
           );
+        }
+        if (newValue?.agent_id) {
+          localStorage.setItem(`${LocalStorageKeys.AGENT_ID_PREFIX}${index}`, newValue.agent_id);
         }
         if (newValue?.spec) {
           localStorage.setItem(LocalStorageKeys.LAST_SPEC, newValue.spec);
@@ -139,11 +144,33 @@ const showStopButtonByIndex = atomFamily<boolean, string | number>({
 const abortScrollFamily = atomFamily({
   key: 'abortScrollByIndex',
   default: false,
+  effects: [
+    ({ onSet, node }) => {
+      onSet(async (newValue) => {
+        const key = Number(node.key.split(Constants.COMMON_DIVIDER)[1]);
+        logger.log('message_scrolling', 'Recoil Effect: Setting abortScrollByIndex', {
+          key,
+          newValue,
+        });
+      });
+    },
+  ] as const,
 });
 
 const isSubmittingFamily = atomFamily({
   key: 'isSubmittingByIndex',
   default: false,
+  effects: [
+    ({ onSet, node }) => {
+      onSet(async (newValue) => {
+        const key = Number(node.key.split(Constants.COMMON_DIVIDER)[1]);
+        logger.log('message_stream', 'Recoil Effect: Setting isSubmittingByIndex', {
+          key,
+          newValue,
+        });
+      });
+    },
+  ],
 });
 
 const optionSettingsFamily = atomFamily<TOptionSettings, string | number>({
@@ -314,6 +341,31 @@ function useClearLatestMessages(context?: string) {
   return clearAllLatestMessages;
 }
 
+const updateConversationSelector = selectorFamily({
+  key: 'updateConversationSelector',
+  get: () => () => null as Partial<TConversation> | null,
+  set:
+    (conversationId: string) =>
+      ({ set, get }, newPartialConversation) => {
+        if (newPartialConversation instanceof DefaultValue) {
+          return;
+        }
+
+        const keys = get(conversationKeysAtom);
+        keys.forEach((key) => {
+          set(conversationByIndex(key), (prevConversation) => {
+            if (prevConversation && prevConversation.conversationId === conversationId) {
+              return {
+                ...prevConversation,
+                ...newPartialConversation,
+              };
+            }
+            return prevConversation;
+          });
+        });
+      },
+});
+
 export default {
   conversationByIndex,
   filesByIndex,
@@ -343,4 +395,5 @@ export default {
   useClearSubmissionState,
   useClearLatestMessages,
   showPromptsPopoverFamily,
+  updateConversationSelector,
 };

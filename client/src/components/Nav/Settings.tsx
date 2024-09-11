@@ -1,3 +1,4 @@
+import * as React from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { MessageSquare, Command } from 'lucide-react';
 import { SettingsTabValues } from 'librechat-data-provider';
@@ -11,10 +12,45 @@ import { cn } from '~/utils';
 export default function Settings({ open, onOpenChange }: TDialogProps) {
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
   const localize = useLocalize();
+  const [activeTab, setActiveTab] = React.useState(SettingsTabValues.GENERAL);
+
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    const tabs = [
+      SettingsTabValues.GENERAL,
+      SettingsTabValues.CHAT,
+      SettingsTabValues.BETA,
+      SettingsTabValues.COMMANDS,
+      SettingsTabValues.SPEECH,
+      SettingsTabValues.DATA,
+      SettingsTabValues.ACCOUNT,
+    ];
+    const currentIndex = tabs.indexOf(activeTab);
+
+    switch (event.key) {
+      case 'ArrowDown':
+      case 'ArrowRight':
+        event.preventDefault();
+        setActiveTab(tabs[(currentIndex + 1) % tabs.length]);
+        break;
+      case 'ArrowUp':
+      case 'ArrowLeft':
+        event.preventDefault();
+        setActiveTab(tabs[(currentIndex - 1 + tabs.length) % tabs.length]);
+        break;
+      case 'Home':
+        event.preventDefault();
+        setActiveTab(tabs[0]);
+        break;
+      case 'End':
+        event.preventDefault();
+        setActiveTab(tabs[tabs.length - 1]);
+        break;
+    }
+  };
 
   return (
     <Transition appear show={open}>
-      <Dialog as="div" className="relative z-50 focus:outline-none" onClose={onOpenChange}>
+      <Dialog as="div" className="relative z-50" onClose={onOpenChange}>
         <TransitionChild
           enter="ease-out duration-200"
           enterFrom="opacity-0"
@@ -77,127 +113,93 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
               </DialogTitle>
               <div className="max-h-[373px] overflow-auto px-6 md:min-h-[373px] md:w-[680px]">
                 <Tabs.Root
-                  defaultValue={SettingsTabValues.GENERAL}
+                  value={activeTab}
+                  onValueChange={(value: string) => setActiveTab(value as SettingsTabValues)}
                   className="flex flex-col gap-10 md:flex-row"
                   orientation="horizontal"
                 >
                   <Tabs.List
                     aria-label="Settings"
-                    role="tablist"
-                    aria-orientation="horizontal"
                     className={cn(
                       'min-w-auto max-w-auto -ml-[8px] flex flex-shrink-0 flex-col flex-nowrap overflow-auto sm:max-w-none',
                       isSmallScreen ? 'flex-row rounded-lg bg-surface-secondary' : '',
                     )}
-                    style={{ outline: 'none' }}
+                    onKeyDown={handleKeyDown}
                   >
-                    <Tabs.Trigger
-                      tabIndex={0}
-                      className={cn(
-                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-primary',
-                        isSmallScreen
-                          ? 'flex-1 items-center justify-center text-nowrap p-1 px-3 text-sm text-text-secondary'
-                          : 'bg-surface-tertiary-alt',
-                      )}
-                      value={SettingsTabValues.GENERAL}
-                      style={{ userSelect: 'none' }}
-                    >
-                      <GearIcon />
-                      {localize('com_nav_setting_general')}
-                    </Tabs.Trigger>
-                    <Tabs.Trigger
-                      tabIndex={0}
-                      className={cn(
-                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-primary',
-                        isSmallScreen
-                          ? 'flex-1 items-center justify-center text-nowrap p-1 px-3 text-sm text-text-secondary'
-                          : 'bg-surface-tertiary-alt',
-                      )}
-                      value={SettingsTabValues.CHAT}
-                      style={{ userSelect: 'none' }}
-                    >
-                      <MessageSquare className="icon-sm" />
-                      {localize('com_nav_setting_chat')}
-                    </Tabs.Trigger>
-                    <Tabs.Trigger
-                      tabIndex={0}
-                      className={cn(
-                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-primary',
-                        isSmallScreen
-                          ? 'flex-1 items-center justify-center text-nowrap p-1 px-3 text-sm text-text-secondary'
-                          : 'bg-surface-tertiary-alt',
-                      )}
-                      value={SettingsTabValues.BETA}
-                      style={{ userSelect: 'none' }}
-                    >
-                      <ExperimentIcon />
-                      {localize('com_nav_setting_beta')}
-                    </Tabs.Trigger>
-                    <Tabs.Trigger
-                      tabIndex={0}
-                      className={cn(
-                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-primary',
-                        isSmallScreen
-                          ? 'flex-1 items-center justify-center text-nowrap text-sm text-text-secondary'
-                          : 'bg-surface-tertiary-alt',
-                      )}
-                      value={SettingsTabValues.COMMANDS}
-                      style={{ userSelect: 'none' }}
-                    >
-                      <Command className="icon-sm" />
-                      {localize('com_nav_commands')}
-                    </Tabs.Trigger>
-                    <Tabs.Trigger
-                      tabIndex={0}
-                      className={cn(
-                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-primary',
-                        isSmallScreen
-                          ? 'flex-1 items-center justify-center text-nowrap p-1 px-3 text-sm text-text-secondary'
-                          : 'bg-surface-tertiary-alt',
-                      )}
-                      value={SettingsTabValues.SPEECH}
-                      style={{ userSelect: 'none' }}
-                    >
-                      <SpeechIcon className="icon-sm" />
-                      {localize('com_nav_setting_speech')}
-                    </Tabs.Trigger>
-                    <Tabs.Trigger
-                      tabIndex={0}
-                      className={cn(
-                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-primary',
-                        isSmallScreen
-                          ? 'flex-1 items-center justify-center text-nowrap p-1 px-3 text-sm text-text-secondary'
-                          : 'bg-surface-tertiary-alt',
-                      )}
-                      value={SettingsTabValues.DATA}
-                      style={{ userSelect: 'none' }}
-                    >
-                      <DataIcon />
-                      {localize('com_nav_setting_data')}
-                    </Tabs.Trigger>
-                    <Tabs.Trigger
-                      tabIndex={0}
-                      className={cn(
-                        'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-primary',
-                        isSmallScreen
-                          ? 'flex-1 items-center justify-center text-nowrap p-1 px-3 text-sm text-text-secondary'
-                          : 'bg-surface-tertiary-alt',
-                      )}
-                      value={SettingsTabValues.ACCOUNT}
-                      style={{ userSelect: 'none' }}
-                    >
-                      <UserIcon />
-                      {localize('com_nav_setting_account')}
-                    </Tabs.Trigger>
+                    {[
+                      {
+                        value: SettingsTabValues.GENERAL,
+                        icon: <GearIcon />,
+                        label: 'com_nav_setting_general',
+                      },
+                      {
+                        value: SettingsTabValues.CHAT,
+                        icon: <MessageSquare className="icon-sm" />,
+                        label: 'com_nav_setting_chat',
+                      },
+                      {
+                        value: SettingsTabValues.BETA,
+                        icon: <ExperimentIcon />,
+                        label: 'com_nav_setting_beta',
+                      },
+                      {
+                        value: SettingsTabValues.COMMANDS,
+                        icon: <Command className="icon-sm" />,
+                        label: 'com_nav_commands',
+                      },
+                      {
+                        value: SettingsTabValues.SPEECH,
+                        icon: <SpeechIcon className="icon-sm" />,
+                        label: 'com_nav_setting_speech',
+                      },
+                      {
+                        value: SettingsTabValues.DATA,
+                        icon: <DataIcon />,
+                        label: 'com_nav_setting_data',
+                      },
+                      {
+                        value: SettingsTabValues.ACCOUNT,
+                        icon: <UserIcon />,
+                        label: 'com_nav_setting_account',
+                      },
+                    ].map(({ value, icon, label }) => (
+                      <Tabs.Trigger
+                        key={value}
+                        className={cn(
+                          'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-active',
+                          isSmallScreen
+                            ? 'flex-1 items-center justify-center text-nowrap p-1 px-3 text-sm text-text-secondary'
+                            : 'bg-surface-tertiary-alt',
+                        )}
+                        value={value}
+                      >
+                        {icon}
+                        {localize(label)}
+                      </Tabs.Trigger>
+                    ))}
                   </Tabs.List>
                   <div className="max-h-[373px] overflow-auto sm:w-full sm:max-w-none md:pr-0.5 md:pt-0.5">
-                    <General />
-                    <Chat />
-                    <Beta />
-                    <Commands />
-                    <Speech />
-                    <Data />
-                    <Account />
+                    <Tabs.Content value={SettingsTabValues.GENERAL}>
+                      <General />
+                    </Tabs.Content>
+                    <Tabs.Content value={SettingsTabValues.CHAT}>
+                      <Chat />
+                    </Tabs.Content>
+                    <Tabs.Content value={SettingsTabValues.BETA}>
+                      <Beta />
+                    </Tabs.Content>
+                    <Tabs.Content value={SettingsTabValues.COMMANDS}>
+                      <Commands />
+                    </Tabs.Content>
+                    <Tabs.Content value={SettingsTabValues.SPEECH}>
+                      <Speech />
+                    </Tabs.Content>
+                    <Tabs.Content value={SettingsTabValues.DATA}>
+                      <Data />
+                    </Tabs.Content>
+                    <Tabs.Content value={SettingsTabValues.ACCOUNT}>
+                      <Account />
+                    </Tabs.Content>
                   </div>
                 </Tabs.Root>
               </div>

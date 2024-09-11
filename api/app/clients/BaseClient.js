@@ -1,6 +1,14 @@
 const crypto = require('crypto');
 const fetch = require('node-fetch');
-const { supportsBalanceCheck, Constants, CacheKeys, Time } = require('librechat-data-provider');
+const {
+  supportsBalanceCheck,
+  isAgentsEndpoint,
+  paramEndpoints,
+  ErrorTypes,
+  Constants,
+  CacheKeys,
+  Time,
+} = require('librechat-data-provider');
 const { getMessages, saveMessage, updateMessage, saveConvo } = require('~/models');
 const { addSpaceIfNeeded, isEnabled } = require('~/server/utils');
 const checkBalance = require('~/models/checkBalance');
@@ -28,6 +36,12 @@ class BaseClient {
     this.userMessagePromise;
     /** @type {ClientDatabaseSavePromise} */
     this.responsePromise;
+    /** @type {string} */
+    this.user;
+    /** @type {string} */
+    this.conversationId;
+    /** @type {string} */
+    this.responseMessageId;
   }
 
   setOptions() {
@@ -54,10 +68,33 @@ class BaseClient {
     throw new Error('Subclasses attempted to call summarizeMessages without implementing it');
   }
 
-  async getTokenCountForResponse(response) {
-    logger.debug('`[BaseClient] recordTokenUsage` not implemented.', response);
+  /**
+   * @returns {string}
+   */
+  getResponseModel() {
+    if (isAgentsEndpoint(this.options.endpoint) && this.options.agent && this.options.agent.id) {
+      return this.options.agent.id;
+    }
+
+    return this.modelOptions.model;
   }
 
+  /**
+   * Abstract method to get the token count for a message. Subclasses must implement this method.
+   * @param {TMessage} responseMessage
+   * @returns {number}
+   */
+  getTokenCountForResponse(responseMessage) {
+    logger.debug('`[BaseClient] recordTokenUsage` not implemented.', responseMessage);
+  }
+
+  /**
+   * Abstract method to record token usage. Subclasses must implement this method.
+   * If a correction to the token usage is needed, the method should return an object with the corrected token counts.
+   * @param {number} promptTokens
+   * @param {number} completionTokens
+   * @returns {Promise<void>}
+   */
   async recordTokenUsage({ promptTokens, completionTokens }) {
     logger.debug('`[BaseClient] recordTokenUsage` not implemented.', {
       promptTokens,
@@ -143,6 +180,8 @@ class BaseClient {
       this.currentMessages[this.currentMessages.length - 1].messageId = head;
     }
 
+    this.responseMessageId = responseMessageId;
+
     return {
       ...opts,
       user,
@@ -191,6 +230,7 @@ class BaseClient {
         userMessage,
         conversationId,
         responseMessageId,
+        sender: this.sender,
       });
     }
 
@@ -329,7 +369,12 @@ class BaseClient {
     };
   }
 
-  async handleContextStrategy({ instructions, orderedMessages, formattedMessages }) {
+  async handleContextStrategy({
+    instructions,
+    orderedMessages,
+    formattedMessages,
+    buildTokenMap = true,
+  }) {
     let _instructions;
     let tokenCount;
 
@@ -371,9 +416,10 @@ class BaseClient {
 
     const latestMessage = orderedWithInstructions[orderedWithInstructions.length - 1];
     if (payload.length === 0 && !shouldSummarize && latestMessage) {
-      throw new Error(
-        `Prompt token count of ${latestMessage.tokenCount} exceeds max token count of ${this.maxContextTokens}.`,
-      );
+      const info = `${latestMessage.tokenCount} / ${this.maxContextTokens}`;
+      const errorMessage = `{ "type": "${ErrorTypes.INPUT_LENGTH}", "info": "${info}" }`;
+      logger.warn(`Prompt token count exceeds max token count (${info}).`);
+      throw new Error(errorMessage);
     }
 
     if (usePrevSummary) {
@@ -398,19 +444,23 @@ class BaseClient {
       maxContextTokens: this.maxContextTokens,
     });
 
-    let tokenCountMap = orderedWithInstructions.reduce((map, message, index) => {
-      const { messageId } = message;
-      if (!messageId) {
+    /** @type {Record<string, number> | undefined} */
+    let tokenCountMap;
+    if (buildTokenMap) {
+      tokenCountMap = orderedWithInstructions.reduce((map, message, index) => {
+        const { messageId } = message;
+        if (!messageId) {
+          return map;
+        }
+
+        if (shouldSummarize && index === summaryIndex && !usePrevSummary) {
+          map.summaryMessage = { ...summaryMessage, messageId, tokenCount: summaryTokenCount };
+        }
+
+        map[messageId] = orderedWithInstructions[index].tokenCount;
         return map;
-      }
-
-      if (shouldSummarize && index === summaryIndex && !usePrevSummary) {
-        map.summaryMessage = { ...summaryMessage, messageId, tokenCount: summaryTokenCount };
-      }
-
-      map[messageId] = orderedWithInstructions[index].tokenCount;
-      return map;
-    }, {});
+      }, {});
+    }
 
     const promptTokens = this.maxContextTokens - remainingContextTokens;
 
@@ -512,6 +562,7 @@ class BaseClient {
       });
     }
 
+    /** @type {string|string[]|undefined} */
     const completion = await this.sendCompletion(payload, opts);
     this.abortController.requestCompleted = true;
 
@@ -521,14 +572,22 @@ class BaseClient {
       parentMessageId: userMessage.messageId,
       isCreatedByUser: false,
       isEdited,
-      model: this.modelOptions.model,
+      model: this.getResponseModel(),
       sender: this.sender,
-      text: addSpaceIfNeeded(generation) + completion,
       promptTokens,
       iconURL: this.options.iconURL,
       endpoint: this.options.endpoint,
       ...(this.metadata ?? {}),
     };
+
+    if (typeof completion === 'string') {
+      responseMessage.text = addSpaceIfNeeded(generation) + completion;
+    } else if (Array.isArray(completion) && paramEndpoints.has(this.options.endpoint)) {
+      responseMessage.text = '';
+      responseMessage.content = completion;
+    } else if (Array.isArray(completion)) {
+      responseMessage.text = addSpaceIfNeeded(generation) + completion.join('');
+    }
 
     if (
       tokenCountMap &&
@@ -536,13 +595,31 @@ class BaseClient {
       this.getTokenCountForResponse &&
       this.getTokenCount
     ) {
-      responseMessage.tokenCount = this.getTokenCountForResponse(responseMessage);
-      const completionTokens = this.getTokenCount(completion);
-      await this.recordTokenUsage({ promptTokens, completionTokens });
+      let completionTokens;
+
+      /**
+       * Metadata about input/output costs for the current message. The client
+       * should provide a function to get the current stream usage metadata; if not,
+       * use the legacy token estimations.
+       * @type {StreamUsage | null} */
+      const usage = this.getStreamUsage != null ? this.getStreamUsage() : null;
+
+      if (usage != null && Number(usage.output_tokens) > 0) {
+        responseMessage.tokenCount = usage.output_tokens;
+        completionTokens = responseMessage.tokenCount;
+        await this.updateUserMessageTokenCount({ usage, tokenCountMap, userMessage, opts });
+      } else {
+        responseMessage.tokenCount = this.getTokenCountForResponse(responseMessage);
+        completionTokens = this.getTokenCount(completion);
+      }
+
+      await this.recordTokenUsage({ promptTokens, completionTokens, usage });
     }
+
     if (this.userMessagePromise) {
       await this.userMessagePromise;
     }
+
     this.responsePromise = this.saveMessageToDatabase(responseMessage, saveOptions, user);
     const messageCache = getLogStores(CacheKeys.MESSAGES);
     messageCache.set(
@@ -555,6 +632,66 @@ class BaseClient {
     );
     delete responseMessage.tokenCount;
     return responseMessage;
+  }
+
+  /**
+   * Stream usage should only be used for user message token count re-calculation if:
+   * - The stream usage is available, with input tokens greater than 0,
+   * - the client provides a function to calculate the current token count,
+   * - files are being resent with every message (default behavior; or if `false`, with no attachments),
+   * - the `promptPrefix` (custom instructions) is not set.
+   *
+   * In these cases, the legacy token estimations would be more accurate.
+   *
+   * TODO: included system messages in the `orderedMessages` accounting, potentially as a
+   * separate message in the UI. ChatGPT does this through "hidden" system messages.
+   * @param {object} params
+   * @param {StreamUsage} params.usage
+   * @param {Record<string, number>} params.tokenCountMap
+   * @param {TMessage} params.userMessage
+   * @param {object} params.opts
+   */
+  async updateUserMessageTokenCount({ usage, tokenCountMap, userMessage, opts }) {
+    /** @type {boolean} */
+    const shouldUpdateCount =
+      this.calculateCurrentTokenCount != null &&
+      Number(usage.input_tokens) > 0 &&
+      (this.options.resendFiles ||
+        (!this.options.resendFiles && !this.options.attachments?.length)) &&
+      !this.options.promptPrefix;
+
+    if (!shouldUpdateCount) {
+      return;
+    }
+
+    const userMessageTokenCount = this.calculateCurrentTokenCount({
+      currentMessageId: userMessage.messageId,
+      tokenCountMap,
+      usage,
+    });
+
+    if (userMessageTokenCount === userMessage.tokenCount) {
+      return;
+    }
+
+    userMessage.tokenCount = userMessageTokenCount;
+    /*
+      Note: `AskController` saves the user message, so we update the count of its `userMessage` reference
+    */
+    if (typeof opts?.getReqData === 'function') {
+      opts.getReqData({
+        userMessage,
+      });
+    }
+    /*
+      Note: we update the user message to be sure it gets the calculated token count;
+      though `AskController` saves the user message, EditController does not
+    */
+    await this.userMessagePromise;
+    await this.updateMessageInDatabase({
+      messageId: userMessage.messageId,
+      tokenCount: userMessageTokenCount,
+    });
   }
 
   async loadHistory(conversationId, parentMessageId = null) {
@@ -644,6 +781,10 @@ class BaseClient {
     return { message: savedMessage, conversation };
   }
 
+  /**
+   * Update a message in the database.
+   * @param {Partial<TMessage>} message
+   */
   async updateMessageInDatabase(message) {
     await updateMessage(this.options.req, message);
   }
@@ -767,8 +908,12 @@ class BaseClient {
 
           processValue(nestedValue);
         }
-      } else {
+      } else if (typeof value === 'string') {
         numTokens += this.getTokenCount(value);
+      } else if (typeof value === 'number') {
+        numTokens += this.getTokenCount(value.toString());
+      } else if (typeof value === 'boolean') {
+        numTokens += this.getTokenCount(value.toString());
       }
     };
 

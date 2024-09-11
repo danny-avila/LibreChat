@@ -94,6 +94,10 @@ export default {
   com_ui_bookmarks_update_error: 'Er is een fout opgetreden bij het bijwerken van de bladwijzer',
   com_ui_bookmarks_delete_error: 'Er is een fout opgetreden bij het verwijderen van de bladwijzer',
   com_ui_bookmarks_add_to_conversation: 'Toevoegen aan huidig gesprek',
+  com_ui_accept: 'Ik accepteer',
+  com_ui_decline: 'Ik accepteer niet',
+  com_ui_terms_and_conditions: 'Gebruiksvoorwaarden',
+  com_ui_no_terms_content: 'Geen gebruiksvoorwaarden-inhoud om weer te geven',
   com_auth_error_login:
     'Kan niet inloggen met de verstrekte informatie. Controleer uw referenties en probeer het opnieuw.',
   com_auth_error_login_rl: 'Te veel inlogpogingen in een korte tijd. Probeer het later nog eens.',

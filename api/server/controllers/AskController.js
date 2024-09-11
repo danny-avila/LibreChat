@@ -123,11 +123,6 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
     };
 
     let response = await client.sendMessage(text, messageOptions);
-
-    if (overrideParentMessageId) {
-      response.parentMessageId = overrideParentMessageId;
-    }
-
     response.endpoint = endpointOption.endpoint;
 
     const { conversation = {} } = await client.responsePromise;

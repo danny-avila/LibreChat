@@ -6,8 +6,9 @@ import {
   ContentTypes,
   parseCompactConvo,
   isAssistantsEndpoint,
+  EModelEndpoint,
 } from 'librechat-data-provider';
-import { useSetRecoilState, useResetRecoilState } from 'recoil';
+import { useSetRecoilState, useResetRecoilState, useRecoilValue } from 'recoil';
 import type {
   TMessage,
   TSubmission,
@@ -19,9 +20,16 @@ import type { SetterOrUpdater } from 'recoil';
 import type { TAskFunction, ExtendedFile } from '~/common';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
+import { getArtifactsMode } from '~/utils/artifacts';
 import { getEndpointField, logger } from '~/utils';
 import useUserKey from '~/hooks/Input/useUserKey';
 import store from '~/store';
+
+const logChatRequest = (request: Record<string, unknown>) => {
+  logger.log('=====================================\nAsk function called with:');
+  logger.dir(request);
+  logger.log('=====================================');
+};
 
 export default function useChatFunctions({
   index = 0,
@@ -47,6 +55,9 @@ export default function useChatFunctions({
   setSubmission: SetterOrUpdater<TSubmission | null>;
   setLatestMessage?: SetterOrUpdater<TMessage | null>;
 }) {
+  const codeArtifacts = useRecoilValue(store.codeArtifacts);
+  const includeShadcnui = useRecoilValue(store.includeShadcnui);
+  const customPromptMode = useRecoilValue(store.customPromptMode);
   const resetLatestMultiMessage = useResetRecoilState(store.latestMessageFamily(index + 1));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const setFilesToDelete = useSetFilesToDelete();
@@ -105,17 +116,17 @@ export default function useChatFunctions({
     // this is not a real messageId, it is used as placeholder before real messageId returned
     text = text.trim();
     const intermediateId = overrideUserMessageId ?? v4();
-    parentMessageId = parentMessageId || latestMessage?.messageId || Constants.NO_PARENT;
+    parentMessageId = parentMessageId ?? latestMessage?.messageId ?? Constants.NO_PARENT;
 
-    logger.dir('Ask function called with:', {
+    logChatRequest({
       index,
+      conversation,
       latestMessage,
       conversationId,
       intermediateId,
       parentMessageId,
       currentMessages,
     });
-    logger.log('=====================================');
 
     if (conversationId == Constants.NEW_CONVO) {
       parentMessageId = Constants.NO_PARENT;
@@ -123,7 +134,7 @@ export default function useChatFunctions({
       conversationId = null;
     }
 
-    const parentMessage = currentMessages?.find(
+    const parentMessage = currentMessages.find(
       (msg) => msg.messageId === latestMessage?.parentMessageId,
     );
 
@@ -143,16 +154,21 @@ export default function useChatFunctions({
     });
 
     const { modelDisplayLabel } = endpointsConfig?.[endpoint ?? ''] ?? {};
-    const endpointOption = {
-      ...convo,
-      endpoint,
-      thread_id,
-      endpointType,
-      overrideConvoId,
-      key: getExpiry(),
-      modelDisplayLabel,
-      overrideUserMessageId,
-    } as TEndpointOption;
+    const endpointOption = Object.assign(
+      {
+        endpoint,
+        endpointType,
+        overrideConvoId,
+        overrideUserMessageId,
+        artifacts: getArtifactsMode({ codeArtifacts, includeShadcnui, customPromptMode }),
+      },
+      convo,
+    ) as TEndpointOption;
+    if (endpoint !== EModelEndpoint.agents) {
+      endpointOption.key = getExpiry();
+      endpointOption.thread_id = thread_id;
+      endpointOption.modelDisplayLabel = modelDisplayLabel;
+    }
     const responseSender = getSender({ model: conversation?.model, ...endpointOption });
 
     const currentMsg: TMessage = {
@@ -175,7 +191,7 @@ export default function useChatFunctions({
       currentMsg.files = Array.from(files.values()).map((file) => ({
         file_id: file.file_id,
         filepath: file.filepath,
-        type: file.type || '', // Ensure type is not undefined
+        type: file.type ?? '', // Ensure type is not undefined
         height: file.height,
         width: file.width,
       }));
@@ -214,6 +230,18 @@ export default function useChatFunctions({
           },
         },
       ];
+    } else if (endpoint === EModelEndpoint.agents) {
+      initialResponse.model = conversation?.agent_id ?? '';
+      initialResponse.text = '';
+      initialResponse.content = [
+        {
+          type: ContentTypes.TEXT,
+          [ContentTypes.TEXT]: {
+            value: responseText,
+          },
+        },
+      ];
+      setShowStopButton(true);
     } else {
       setShowStopButton(true);
     }
@@ -251,8 +279,7 @@ export default function useChatFunctions({
     }
 
     setSubmission(submission);
-    logger.log('Submission:');
-    logger.dir(submission, { depth: null });
+    logger.dir('message_stream', submission, { depth: null });
   };
 
   const regenerate = ({ parentMessageId }) => {

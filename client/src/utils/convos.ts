@@ -13,7 +13,6 @@ import { EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import type {
   TConversation,
   ConversationData,
-  ConversationUpdater,
   GroupedConversations,
   ConversationListResponse,
 } from 'librechat-data-provider';
@@ -61,7 +60,9 @@ const getGroupName = (date: Date) => {
   return ' ' + getYear(date).toString();
 };
 
-export const groupConversationsByDate = (conversations: TConversation[]): GroupedConversations => {
+export const groupConversationsByDate = (
+  conversations: Array<TConversation | null>,
+): GroupedConversations => {
   if (!Array.isArray(conversations)) {
     return [];
   }

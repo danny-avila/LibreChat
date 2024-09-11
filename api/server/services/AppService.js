@@ -45,7 +45,7 @@ const AppService = async (app) => {
 
   const socialLogins =
     config?.registration?.socialLogins ?? configDefaults?.registration?.socialLogins;
-  const interfaceConfig = loadDefaultInterface(config, configDefaults);
+  const interfaceConfig = await loadDefaultInterface(config, configDefaults);
 
   const defaultLocals = {
     paths,
@@ -94,18 +94,19 @@ const AppService = async (app) => {
     );
   }
 
-  if (endpoints?.[EModelEndpoint.openAI]) {
-    endpointLocals[EModelEndpoint.openAI] = endpoints[EModelEndpoint.openAI];
-  }
-  if (endpoints?.[EModelEndpoint.google]) {
-    endpointLocals[EModelEndpoint.google] = endpoints[EModelEndpoint.google];
-  }
-  if (endpoints?.[EModelEndpoint.anthropic]) {
-    endpointLocals[EModelEndpoint.anthropic] = endpoints[EModelEndpoint.anthropic];
-  }
-  if (endpoints?.[EModelEndpoint.gptPlugins]) {
-    endpointLocals[EModelEndpoint.gptPlugins] = endpoints[EModelEndpoint.gptPlugins];
-  }
+  const endpointKeys = [
+    EModelEndpoint.openAI,
+    EModelEndpoint.google,
+    EModelEndpoint.bedrock,
+    EModelEndpoint.anthropic,
+    EModelEndpoint.gptPlugins,
+  ];
+
+  endpointKeys.forEach((key) => {
+    if (endpoints?.[key]) {
+      endpointLocals[key] = endpoints[key];
+    }
+  });
 
   app.locals = {
     ...defaultLocals,
