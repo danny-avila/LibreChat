@@ -42,6 +42,12 @@ class BaseClient {
     this.conversationId;
     /** @type {string} */
     this.responseMessageId;
+    /** The key for the usage object's input tokens
+     * @type {string} */
+    this.inputTokensKey = 'prompt_tokens';
+    /** The key for the usage object's output tokens
+     * @type {string} */
+    this.outputTokensKey = 'completion_tokens';
   }
 
   setOptions() {
@@ -604,8 +610,8 @@ class BaseClient {
        * @type {StreamUsage | null} */
       const usage = this.getStreamUsage != null ? this.getStreamUsage() : null;
 
-      if (usage != null && Number(usage.output_tokens) > 0) {
-        responseMessage.tokenCount = usage.output_tokens;
+      if (usage != null && Number(usage[this.outputTokensKey]) > 0) {
+        responseMessage.tokenCount = usage[this.outputTokensKey];
         completionTokens = responseMessage.tokenCount;
         await this.updateUserMessageTokenCount({ usage, tokenCountMap, userMessage, opts });
       } else {
@@ -655,7 +661,7 @@ class BaseClient {
     /** @type {boolean} */
     const shouldUpdateCount =
       this.calculateCurrentTokenCount != null &&
-      Number(usage.input_tokens) > 0 &&
+      Number(usage[this.inputTokensKey]) > 0 &&
       (this.options.resendFiles ||
         (!this.options.resendFiles && !this.options.attachments?.length)) &&
       !this.options.promptPrefix;
