@@ -54,7 +54,7 @@ export default function Root() {
       <FileMapContext.Provider value={fileMap}>
         <AssistantsMapContext.Provider value={assistantsMap}>
           <AgentsMapContext.Provider value={agentsMap}>
-            <div className="flex h-dvh">
+            <div className="flex h-dvh h-screen">
               <div className="relative z-0 flex h-full w-full overflow-hidden">
                 <Nav navVisible={navVisible} setNavVisible={setNavVisible} />
                 <div className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden">

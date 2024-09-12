@@ -25,7 +25,7 @@ const getEndpointFromLocalStorage = (endpointsConfig: TEndpointsConfig) => {
   try {
     const { lastConversationSetup } = getLocalStorageItems();
     const { endpoint } = lastConversationSetup;
-    const isDefaultConfig = Object.values(endpointsConfig ?? {})?.every((value) => !value);
+    const isDefaultConfig = Object.values(endpointsConfig ?? {}).every((value) => !value);
 
     if (isDefaultConfig && endpoint) {
       return endpoint;
@@ -44,7 +44,9 @@ const getEndpointFromLocalStorage = (endpointsConfig: TEndpointsConfig) => {
 
 const getDefinedEndpoint = (endpointsConfig: TEndpointsConfig) => {
   const endpoints = mapEndpoints(endpointsConfig);
-  return endpoints.find((e) => Object.hasOwn(endpointsConfig ?? {}, e));
+  return endpoints.find((e) =>
+    endpointsConfig != null && Object.prototype.hasOwnProperty.call(endpointsConfig, e),
+  );
 };
 
 const getDefaultEndpoint = ({ convoSetup, endpointsConfig }: TDefaultEndpoint): EModelEndpoint => {

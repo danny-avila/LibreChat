@@ -101,6 +101,7 @@ export default defineConfig({
   build: {
     sourcemap: process.env.NODE_ENV === 'development',
     outDir: './dist',
+    target: 'es2015',
     rollupOptions: {
       // external: ['uuid'],
       output: {
