@@ -12,6 +12,7 @@ COPY package*.json ./
 COPY packages/data-provider/package*.json ./packages/data-provider/
 COPY client/package*.json ./client/
 COPY api/package*.json ./api/
+
 RUN npm ci
 
 # Build data-provider
