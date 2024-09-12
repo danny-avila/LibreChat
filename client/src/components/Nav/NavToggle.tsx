@@ -37,10 +37,17 @@ export default function NavToggle({
         aria-label={`toggle-${side === 'left' ? 'chat-history' : 'controls'}-nav`}
         id={`toggle-${side}-nav`}
         onClick={onToggle}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onToggle();
+          }
+        }}
         description={
           navVisible ? localize('com_nav_close_sidebar') : localize('com_nav_open_sidebar')
         }
         className="flex cursor-pointer items-center justify-center"
+        tabIndex={0}
       >
         <span className="" data-state="closed">
           <div
