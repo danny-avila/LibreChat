@@ -1,10 +1,12 @@
-ARG BASE_IMAGE=postgres:15-alpine
-FROM ${BASE_IMAGE}
+# Use PostgreSQL 15 Alpine as the base image
+FROM postgres:15-alpine
 
+# Maintainer and metadata labels
 LABEL maintainer="PostGIS Project - https://postgis.net" \
-      org.opencontainers.image.description="PostGIS 3.4.2 spatial database extension with PostgreSQL 16 Alpine" \
+      org.opencontainers.image.description="PostGIS 3.4.2 and pgvector extensions for PostgreSQL 15 Alpine" \
       org.opencontainers.image.source="https://github.com/postgis/docker-postgis"
 
+# Set environment variables for PostGIS version
 ENV POSTGIS_VERSION 3.4.2
 ENV POSTGIS_SHA256 17aa8760a5c4fcb9a1fdc750c1c9aca0198a35dd1e320628064c43f178eefed2
 
@@ -47,7 +49,7 @@ RUN set -eux \
         perl \
         protobuf-c-dev \
     \
-    # build PostGIS
+    # Build and install PostGIS
     && cd /usr/src/postgis \
     && gettextize \
     && ./autogen.sh \
@@ -55,7 +57,7 @@ RUN set -eux \
     && make -j$(nproc) \
     && make install \
     \
-    # Build pgvector
+    # Build and install pgvector
     && cd /tmp \
     && git clone https://github.com/pgvector/pgvector.git \
     && cd pgvector \
@@ -66,6 +68,12 @@ RUN set -eux \
     && rm -rf /tmp/pgvector /usr/src/postgis \
     && apk del .fetch-deps .build-deps
 
-# Add PostGIS extensions to the initialization process
+# Add PostGIS and pgvector extensions to the initialization process
 COPY ./initdb-postgis.sh /docker-entrypoint-initdb.d/10_postgis.sh
 COPY ./update-postgis.sh /usr/local/bin
+
+# Expose PostgreSQL port
+EXPOSE 5432
+
+# Set the default command to run when starting the container
+CMD ["postgres"]
