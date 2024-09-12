@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=postgres:16-alpine3.20
+ARG BASE_IMAGE=postgres:15-alpine
 FROM ${BASE_IMAGE}
 
 LABEL maintainer="PostGIS Project - https://postgis.net" \
