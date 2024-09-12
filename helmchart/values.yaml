@@ -1,0 +1,112 @@
+# Default values for librechat.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/danny-avila/librechat
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations: {}
+
+podLabels: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+networkPolicies:
+  enabled: true
+
+service:
+  type: LoadBalancer
+  port: 80
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: chat.example.com
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: []
+  #  - secretName: chart-example-tls
+  #    hosts:
+  #      - chart-example.local
+
+resources: {}
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+  
+config:
+  envSecrets:
+    # Use this when using one k8s secret for multiply env secrets
+    # secretRef: librechat
+
+    # Use this when using one k8s secret for each env secret
+    secretKeyRef: []
+#      - name: CREDS_IV
+#        secretName: librechat
+#        secretKey: CREDS_IV
+
+  env:
+    # Full list of possible values
+    # https://github.com/danny-avila/LibreChat/blob/main/.env.example
+    ALLOW_EMAIL_LOGIN: "true"
+    ALLOW_REGISTRATION: "true"
+    ALLOW_SOCIAL_LOGIN: "false"
+    ALLOW_SOCIAL_REGISTRATION: "false"
+    APP_TITLE: "Librechat"
+    CUSTOM_FOOTER: "Provided with ❤️"
+    DEBUG_CONSOLE: "true"
+    DEBUG_LOGGING: "true"
+    DEBUG_OPENAI: "true"
+    DEBUG_PLUGINS: "true"
+    DOMAIN_CLIENT: ""
+    DOMAIN_SERVER: ""
+    ENDPOINTS: "openAI,azureOpenAI,bingAI,chatGPTBrowser,google,gptPlugins,anthropic"
+    SEARCH: false 

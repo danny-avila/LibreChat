@@ -1,10 +1,10 @@
-const { isAssistantsEndpoint } = require('librechat-data-provider');
+const { isAssistantsEndpoint, ErrorTypes } = require('librechat-data-provider');
 const { sendMessage, sendError, countTokens, isEnabled } = require('~/server/utils');
 const { truncateText, smartTruncateText } = require('~/app/clients/prompts');
 const clearPendingReq = require('~/cache/clearPendingReq');
+const { spendTokens } = require('~/models/spendTokens');
 const abortControllers = require('./abortControllers');
 const { saveMessage, getConvo } = require('~/models');
-const spendTokens = require('~/models/spendTokens');
 const { abortRun } = require('./abortRun');
 const { logger } = require('~/config');
 
@@ -30,7 +30,10 @@ async function abortMessage(req, res) {
     return res.status(204).send({ message: 'Request not found' });
   }
   const finalEvent = await abortController.abortCompletion();
-  logger.info('[abortMessage] Aborted request', { abortKey });
+  logger.debug(
+    `[abortMessage] ID: ${req.user.id} | ${req.user.email} | Aborted request: ` +
+      JSON.stringify({ abortKey }),
+  );
   abortControllers.delete(abortKey);
 
   if (res.headersSent && finalEvent) {
@@ -69,8 +72,10 @@ const createAbortController = (req, res, getAbortData, getReqData) => {
    */
   const onStart = (userMessage, responseMessageId) => {
     sendMessage(res, { message: userMessage, created: true });
+
     const abortKey = userMessage?.conversationId ?? req.user.id;
     const prevRequest = abortControllers.get(abortKey);
+
     if (prevRequest && prevRequest?.abortController) {
       const data = prevRequest.abortController.getAbortData();
       getReqData({ userMessage: data?.userMessage });
@@ -81,6 +86,7 @@ const createAbortController = (req, res, getAbortData, getReqData) => {
       });
       return;
     }
+
     abortControllers.set(abortKey, { abortController, ...endpointOption });
 
     res.on('finish', function () {
@@ -101,7 +107,7 @@ const createAbortController = (req, res, getAbortData, getReqData) => {
       finish_reason: 'incomplete',
       endpoint: endpointOption.endpoint,
       iconURL: endpointOption.iconURL,
-      model: endpointOption.modelOptions.model,
+      model: endpointOption.modelOptions?.model ?? endpointOption.model_parameters?.model,
       unfinished: false,
       error: false,
       isCreatedByUser: false,
@@ -113,7 +119,11 @@ const createAbortController = (req, res, getAbortData, getReqData) => {
       { promptTokens, completionTokens },
     );
 
-    saveMessage({ ...responseMessage, user });
+    saveMessage(
+      req,
+      { ...responseMessage, user },
+      { context: 'api/server/middleware/abortMiddleware.js' },
+    );
 
     let conversation;
     if (userMessagePromise) {
@@ -155,9 +165,13 @@ const handleAbortError = async (res, req, error, data) => {
     );
   }
 
-  const errorText = error?.message?.includes('"type"')
+  let errorText = error?.message?.includes('"type"')
     ? error.message
     : 'An error occurred while processing your request. Please contact the Admin.';
+
+  if (error?.type === ErrorTypes.INVALID_REQUEST) {
+    errorText = `{"type":"${ErrorTypes.INVALID_REQUEST}"}`;
+  }
 
   const respondWithError = async (partialText) => {
     let options = {
@@ -187,7 +201,7 @@ const handleAbortError = async (res, req, error, data) => {
       }
     };
 
-    await sendError(res, options, callback);
+    await sendError(req, res, options, callback);
   };
 
   if (partialText && partialText.length > 5) {

@@ -51,8 +51,8 @@ router.post('/', setHeaders, async (req, res) => {
   });
 
   if (!overrideParentMessageId) {
-    await saveMessage({ ...userMessage, user: req.user.id });
-    await saveConvo(req.user.id, {
+    await saveMessage(req, { ...userMessage, user: req.user.id });
+    await saveConvo(req, {
       ...userMessage,
       ...endpointOption,
       conversationId,
@@ -93,7 +93,7 @@ const ask = async ({
         const currentTimestamp = Date.now();
         if (currentTimestamp - lastSavedTimestamp > 500) {
           lastSavedTimestamp = currentTimestamp;
-          saveMessage({
+          saveMessage(req, {
             messageId: responseMessageId,
             sender: endpointOption?.jailbreak ? 'Sydney' : 'BingAI',
             conversationId,
@@ -159,7 +159,7 @@ const ask = async ({
       isCreatedByUser: false,
     };
 
-    await saveMessage({ ...responseMessage, user });
+    await saveMessage(req, { ...responseMessage, user });
     responseMessage.messageId = newResponseMessageId;
 
     // STEP2 update the conversation
@@ -183,7 +183,7 @@ const ask = async ({
       }
     }
 
-    await saveConvo(user, conversationUpdate);
+    await saveConvo(req, conversationUpdate);
     conversationId = newConversationId;
 
     // STEP3 update the user message
@@ -192,7 +192,7 @@ const ask = async ({
 
     // If response has parentMessageId, the fake userMessage.messageId should be updated to the real one.
     if (!overrideParentMessageId) {
-      await saveMessage({
+      await saveMessage(req, {
         ...userMessage,
         user,
         messageId: userMessageId,
@@ -213,7 +213,7 @@ const ask = async ({
     if (userParentMessageId == Constants.NO_PARENT) {
       // const title = await titleConvo({ endpoint: endpointOption?.endpoint, text, response: responseMessage });
       const title = await response.details.title;
-      await saveConvo(user, {
+      await saveConvo(req, {
         conversationId: conversationId,
         title,
       });
@@ -229,7 +229,7 @@ const ask = async ({
       isCreatedByUser: false,
       text: `${getPartialMessage() ?? ''}\n\nError message: "${error.message}"`,
     };
-    await saveMessage({ ...errorMessage, user });
+    await saveMessage(req, { ...errorMessage, user });
     handleError(res, errorMessage);
   }
 };

@@ -21,7 +21,9 @@ const mockStartupConfig = {
     openidLoginEnabled: true,
     openidLabel: 'Test OpenID',
     openidImageUrl: 'http://test-server.com',
-    ldapLoginEnabled: false,
+    ldap: {
+      enabled: false,
+    },
     registrationEnabled: true,
     emailLoginEnabled: true,
     socialLoginEnabled: true,
@@ -52,6 +54,11 @@ const setup = ({
     },
   },
   useGetStartupConfigReturnValue = mockStartupConfig,
+  useGetBannerQueryReturnValue = {
+    isLoading: false,
+    isError: false,
+    data: {},
+  },
 } = {}) => {
   const mockUseLoginUser = jest
     .spyOn(mockDataProvider, 'useLoginUserMutation')
@@ -69,6 +76,10 @@ const setup = ({
     .spyOn(mockDataProvider, 'useRefreshTokenMutation')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useRefreshTokenMutationReturnValue);
+  const mockUseGetBannerQuery = jest
+    .spyOn(mockDataProvider, 'useGetBannerQuery')
+    //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
+    .mockReturnValue(useGetBannerQueryReturnValue);
   const mockUseOutletContext = jest.spyOn(reactRouter, 'useOutletContext').mockReturnValue({
     startupConfig: useGetStartupConfigReturnValue.data,
   });
@@ -91,6 +102,7 @@ const setup = ({
     mockUseOutletContext,
     mockUseGetStartupConfig,
     mockUseRefreshTokenMutation,
+    mockUseGetBannerQuery,
   };
 };
 

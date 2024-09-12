@@ -75,18 +75,21 @@ export const fileTableColumns: ColumnDef<TFile>[] = [
       return (
         <>
           {attachedVectorStores.map((vectorStore, index) => {
-            if (index === 4)
-            {return (
-              <span
-                key={index}
-                className="ml-2 mt-2 flex w-fit flex-row items-center rounded-full bg-[#f5f5f5] px-2 text-gray-500"
-              >
-                <PlusIcon className="h-3 w-3" />
+            if (index === 4) {
+              return (
+                <span
+                  key={index}
+                  className="ml-2 mt-2 flex w-fit flex-row items-center rounded-full bg-[#f5f5f5] px-2 text-gray-500"
+                >
+                  <PlusIcon className="h-3 w-3" />
                   &nbsp;
-                {attachedVectorStores.length - index} more
-              </span>
-            );}
-            if (index > 4) {return null;}
+                  {attachedVectorStores.length - index} more
+                </span>
+              );
+            }
+            if (index > 4) {
+              return null;
+            }
             return (
               <span key={index} className="ml-2 mt-2 rounded-full bg-[#f2f8ec] px-2 text-[#91c561]">
                 {vectorStore.name}

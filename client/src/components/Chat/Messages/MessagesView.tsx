@@ -1,10 +1,13 @@
 import { useState } from 'react';
+import { useRecoilValue } from 'recoil';
+import { CSSTransition } from 'react-transition-group';
 import type { ReactNode } from 'react';
 import type { TMessage } from 'librechat-data-provider';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
 import { useScreenshot, useMessageScrolling } from '~/hooks';
-import { CSSTransition } from 'react-transition-group';
 import MultiMessage from './MultiMessage';
+import { cn } from '~/utils';
+import store from '~/store';
 
 export default function MessagesView({
   messagesTree: _messagesTree,
@@ -13,6 +16,7 @@ export default function MessagesView({
   messagesTree?: TMessage[] | null;
   Header?: ReactNode;
 }) {
+  const fontSize = useRecoilValue(store.fontSize);
   const { screenshotTargetRef } = useScreenshot();
   const [currentEditId, setCurrentEditId] = useState<number | string | null>(-1);
 
@@ -29,7 +33,7 @@ export default function MessagesView({
 
   return (
     <div className="flex-1 overflow-hidden overflow-y-auto">
-      <div className="dark:gpt-dark-gray relative h-full">
+      <div className="relative h-full">
         <div
           onScroll={debouncedHandleScroll}
           ref={scrollableRef}
@@ -39,9 +43,14 @@ export default function MessagesView({
             width: '100%',
           }}
         >
-          <div className="flex flex-col pb-9 text-sm dark:bg-transparent">
-            {(_messagesTree && _messagesTree?.length == 0) || _messagesTree === null ? (
-              <div className="flex w-full items-center justify-center gap-1 bg-gray-50 p-3 text-sm text-gray-500 dark:border-gray-800/50 dark:bg-gray-800 dark:text-gray-300">
+          <div className="flex flex-col pb-9 dark:bg-transparent">
+            {(_messagesTree && _messagesTree.length == 0) || _messagesTree === null ? (
+              <div
+                className={cn(
+                  'flex w-full items-center justify-center gap-1 bg-gray-50 p-3 text-gray-500 dark:border-gray-800/50 dark:bg-gray-800 dark:text-gray-300',
+                  fontSize,
+                )}
+              >
                 Nothing found
               </div>
             ) : (
@@ -59,7 +68,8 @@ export default function MessagesView({
               </>
             )}
             <div
-              className="dark:gpt-dark-gray group h-0 w-full flex-shrink-0 dark:border-gray-800/50"
+              id="messages-end"
+              className="group h-0 w-full flex-shrink-0"
               ref={messagesEndRef}
             />
           </div>

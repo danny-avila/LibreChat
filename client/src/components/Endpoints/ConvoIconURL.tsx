@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import type { TPreset } from 'librechat-data-provider';
 import type { IconMapProps } from '~/common';
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
@@ -7,8 +7,10 @@ interface ConvoIconURLProps {
   preset: TPreset | null;
   endpointIconURL?: string;
   assistantName?: string;
+  agentName?: string;
   context?: 'landing' | 'menu-item' | 'nav' | 'message';
   assistantAvatar?: string;
+  agentAvatar?: string;
 }
 
 const classMap = {
@@ -31,6 +33,8 @@ const ConvoIconURL: React.FC<ConvoIconURLProps> = ({
   endpointIconURL,
   assistantAvatar,
   assistantName,
+  agentAvatar,
+  agentName,
   context,
 }) => {
   const { iconURL = '' } = preset ?? {};
@@ -41,7 +45,7 @@ const ConvoIconURL: React.FC<ConvoIconURLProps> = ({
     },
   ) => React.JSX.Element;
 
-  const isURL = iconURL && (iconURL.includes('http') || iconURL.startsWith('/images/'));
+  const isURL = !!(iconURL && (iconURL.includes('http') || iconURL.startsWith('/images/')));
 
   if (!isURL) {
     Icon = icons[iconURL] ?? icons.unknown;
@@ -71,10 +75,11 @@ const ConvoIconURL: React.FC<ConvoIconURLProps> = ({
         className="h-2/3 w-2/3"
         iconURL={endpointIconURL}
         assistantName={assistantName}
-        avatar={assistantAvatar}
+        avatar={assistantAvatar || agentAvatar}
+        agentName={agentName}
       />
     </div>
   );
 };
 
-export default ConvoIconURL;
+export default memo(ConvoIconURL);

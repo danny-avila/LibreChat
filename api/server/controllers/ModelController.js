@@ -1,5 +1,8 @@
 const { loadDefaultModels, loadConfigModels } = require('~/server/services/Config');
 
+/**
+ * @param {ServerRequest} req
+ */
 const getModelsConfig = async (req) => {
   // never caching all models (caching per endpoint+key)
   return await loadModels(req);
@@ -7,7 +10,7 @@ const getModelsConfig = async (req) => {
 
 /**
  * Loads the models from the config.
- * @param {Express.Request} req - The Express request object.
+ * @param {ServerRequest} req - The Express request object.
  * @returns {Promise<TModelsConfig>} The models config.
  */
 async function loadModels(req) {

@@ -19,8 +19,7 @@ const createOnProgress = ({ generation = '', onProgress: _onProgress }) => {
 
   const basePayload = Object.assign({}, base, { text: tokens || '' });
 
-  const progressCallback = (partial, { res, text, ...rest }) => {
-    let chunk = partial === text ? '' : partial;
+  const progressCallback = (chunk, { res, ...rest }) => {
     basePayload.text = basePayload.text + chunk;
 
     const payload = Object.assign({}, basePayload, rest);

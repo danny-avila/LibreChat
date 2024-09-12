@@ -951,10 +951,6 @@ Write a prompt that is mindful of the nuances in the language with respect to it
   - **english**: Message
   - **translated**: Messaggio
 
-- **com_endpoint_messages**:
-  - **english**: Messages
-  - **translated**: Messaggi
-
 - **com_endpoint_message_not_appendable**:
   - **english**: Edit your message or Regenerate.
   - **translated**: Modifica il tuo messaggio o Rigenera.
@@ -1511,7 +1507,7 @@ Write a prompt that is mindful of the nuances in the language with respect to it
   - **english**: Uninstall
   - **translated**: Disinstalla
 
-- **com_nav_tool_add**:
+- **com_ui_add**:
   - **english**: Add
   - **translated**: Aggiungi
 

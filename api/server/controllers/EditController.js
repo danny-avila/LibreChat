@@ -1,7 +1,8 @@
 const throttle = require('lodash/throttle');
-const { getResponseSender, EModelEndpoint } = require('librechat-data-provider');
+const { getResponseSender, CacheKeys, Time } = require('librechat-data-provider');
 const { createAbortController, handleAbortError } = require('~/server/middleware');
 const { sendMessage, createOnProgress } = require('~/server/utils');
+const { getLogStores } = require('~/cache');
 const { saveMessage } = require('~/models');
 const { logger } = require('~/config');
 
@@ -51,12 +52,14 @@ const EditController = async (req, res, next, initializeClient) => {
     }
   };
 
-  const unfinished = endpointOption.endpoint === EModelEndpoint.google ? false : true;
+  const messageCache = getLogStores(CacheKeys.MESSAGES);
   const { onProgress: progressCallback, getPartialText } = createOnProgress({
     generation,
     onProgress: throttle(
       ({ text: partialText }) => {
-        saveMessage({
+        /*
+          const unfinished = endpointOption.endpoint === EModelEndpoint.google ? false : true;
+        {
           messageId: responseMessageId,
           sender,
           conversationId,
@@ -67,7 +70,8 @@ const EditController = async (req, res, next, initializeClient) => {
           isEdited: true,
           error: false,
           user,
-        });
+        } */
+        messageCache.set(responseMessageId, partialText, Time.FIVE_MINUTES);
       },
       3000,
       { trailing: false },
@@ -119,7 +123,6 @@ const EditController = async (req, res, next, initializeClient) => {
       progressCallback,
       progressOptions: {
         res,
-        text,
         // parentMessageId: overrideParentMessageId || userMessageId,
       },
     });
@@ -142,7 +145,11 @@ const EditController = async (req, res, next, initializeClient) => {
       });
       res.end();
 
-      await saveMessage({ ...response, user });
+      await saveMessage(
+        req,
+        { ...response, user },
+        { context: 'api/server/controllers/EditController.js - response end' },
+      );
     }
   } catch (error) {
     const partialText = getPartialText();

@@ -78,6 +78,24 @@ export default {
   com_ui_unarchive: 'Bỏ lưu trữ',
   com_ui_unarchive_error: 'Không thể bỏ lưu trữ cuộc trò chuyện',
   com_ui_more_options: 'Thêm',
+  com_ui_bookmarks: 'Dấu trang',
+  com_ui_bookmarks_rebuild: 'Xây dựng lại',
+  com_ui_bookmarks_new: 'Dấu trang mới',
+  com_ui_bookmark_delete_confirm: 'Bạn có chắc chắn muốn xóa dấu trang này không?',
+  com_ui_bookmarks_title: 'Tiêu đề',
+  com_ui_bookmarks_count: 'Số lượng',
+  com_ui_bookmarks_description: 'Mô tả',
+  com_ui_bookmarks_create_success: 'Tạo dấu trang thành công',
+  com_ui_bookmarks_update_success: 'Cập nhật dấu trang thành công',
+  com_ui_bookmarks_delete_success: 'Xóa dấu trang thành công',
+  com_ui_bookmarks_create_error: 'Có lỗi xảy ra khi tạo dấu trang',
+  com_ui_bookmarks_update_error: 'Có lỗi xảy ra khi cập nhật dấu trang',
+  com_ui_bookmarks_delete_error: 'Có lỗi xảy ra khi x��a dấu trang',
+  com_ui_bookmarks_add_to_conversation: 'Thêm vào cuộc hội thoại hiện tại',
+  com_ui_accept: 'Tôi chấp nhận',
+  com_ui_decline: 'Tôi không chấp nhận',
+  com_ui_terms_and_conditions: 'Điều khoản và điều kiện',
+  com_ui_no_terms_content: 'Không có nội dung điều khoản và điều kiện để hiển thị',
   com_auth_error_login:
     'Không thể đăng nhập với thông tin được cung cấp. Vui lòng kiểm tra thông tin đăng nhập và thử lại.',
   com_auth_error_login_rl:
@@ -280,6 +298,7 @@ export default {
   com_nav_theme_system: 'Hệ thống',
   com_nav_theme_dark: 'Tối',
   com_nav_theme_light: 'Sáng',
+  com_nav_font_size: 'Cỡ chữ',
   com_nav_clear_all_chats: 'Xóa tất cả cuộc trò chuyện',
   com_nav_confirm_clear: 'Xác nhận xóa',
   com_nav_close_sidebar: 'Đóng thanh bên',
@@ -293,6 +312,8 @@ export default {
   com_nav_help_faq: 'Trợ giúp & Câu hỏi thường gặp',
   com_nav_settings: 'Cài đặt',
   com_nav_search_placeholder: 'Tìm kiếm tin nhắn',
+  com_nav_info_bookmarks_rebuild:
+    'Nếu số lượng dấu trang không chính xác, vui lòng xây dựng lại thông tin dấu trang. Số lượng dấu trang sẽ được tính lại và dữ liệu sẽ được khôi phục về trạng thái chính xác.',
   com_nav_setting_general: 'Chung',
   com_nav_setting_data: 'Kiểm soát dữ liệu',
 };
@@ -587,6 +608,62 @@ export const comparisons = {
   com_ui_more_options: {
     english: 'More',
     translated: 'Thêm',
+  },
+  com_ui_bookmarks: {
+    english: 'Bookmarks',
+    translated: 'Dấu trang',
+  },
+  com_ui_bookmarks_rebuild: {
+    english: 'Rebuild',
+    translated: 'Xây dựng lại',
+  },
+  com_ui_bookmarks_new: {
+    english: 'New Bookmark',
+    translated: 'Dấu trang mới',
+  },
+  com_ui_bookmark_delete_confirm: {
+    english: 'Are you sure you want to delete this bookmark?',
+    translated: 'Bạn có chắc chắn muốn xóa dấu trang này không?',
+  },
+  com_ui_bookmarks_title: {
+    english: 'Title',
+    translated: 'Tiêu đề',
+  },
+  com_ui_bookmarks_count: {
+    english: 'Count',
+    translated: 'Số lượng',
+  },
+  com_ui_bookmarks_description: {
+    english: 'Description',
+    translated: 'Mô tả',
+  },
+  com_ui_bookmarks_create_success: {
+    english: 'Bookmark created successfully',
+    translated: 'Tạo dấu trang thành công',
+  },
+  com_ui_bookmarks_update_success: {
+    english: 'Bookmark updated successfully',
+    translated: 'Cập nhật dấu trang thành công',
+  },
+  com_ui_bookmarks_delete_success: {
+    english: 'Bookmark deleted successfully',
+    translated: 'Xóa dấu trang thành công',
+  },
+  com_ui_bookmarks_create_error: {
+    english: 'There was an error creating the bookmark',
+    translated: 'Có lỗi xảy ra khi tạo dấu trang',
+  },
+  com_ui_bookmarks_update_error: {
+    english: 'There was an error updating the bookmark',
+    translated: 'Có lỗi xảy ra khi cập nhật dấu trang',
+  },
+  com_ui_bookmarks_delete_error: {
+    english: 'There was an error deleting the bookmark',
+    translated: 'Có lỗi xảy ra khi xa dấu trang',
+  },
+  com_ui_bookmarks_add_to_conversation: {
+    english: 'Add to current conversation',
+    translated: 'Thêm vào cuộc hội thoại hiện tại',
   },
   com_auth_error_login: {
     english:
@@ -1360,6 +1437,12 @@ export const comparisons = {
   com_nav_search_placeholder: {
     english: 'Search messages',
     translated: 'Tìm kiếm tin nhắn',
+  },
+  com_nav_info_bookmarks_rebuild: {
+    english:
+      'If the bookmark count is incorrect, please rebuild the bookmark information. The bookmark count will be recalculated and the data will be restored to its correct state.',
+    translated:
+      'Nếu số lượng dấu trang không chính xác, vui lòng xây dựng lại thông tin dấu trang. Số lượng dấu trang sẽ được tính lại và dữ liệu sẽ được khôi phục về trạng thái chính xác.',
   },
   com_nav_setting_general: {
     english: 'General',

@@ -1,13 +1,14 @@
 import { useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { getConfigDefaults } from 'librechat-data-provider';
+import { getConfigDefaults, PermissionTypes, Permissions } from 'librechat-data-provider';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { ContextType } from '~/common';
 import { EndpointsMenu, ModelSpecsMenu, PresetsMenu, HeaderNewChat } from './Menus';
 import ExportAndShareMenu from './ExportAndShareMenu';
+import { useMediaQuery, useHasAccess } from '~/hooks';
 import HeaderOptions from './Input/HeaderOptions';
+import BookmarkMenu from './Menus/BookmarkMenu';
 import AddMultiConvo from './AddMultiConvo';
-import { useMediaQuery } from '~/hooks';
 
 const defaultInterface = getConfigDefaults().interface;
 
@@ -20,6 +21,16 @@ export default function Header() {
     [startupConfig],
   );
 
+  const hasAccessToBookmarks = useHasAccess({
+    permissionType: PermissionTypes.BOOKMARKS,
+    permission: Permissions.USE,
+  });
+
+  const hasAccessToMultiConvo = useHasAccess({
+    permissionType: PermissionTypes.MULTI_CONVO,
+    permission: Permissions.USE,
+  });
+
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
   return (
@@ -27,17 +38,17 @@ export default function Header() {
       <div className="hide-scrollbar flex w-full items-center justify-between gap-2 overflow-x-auto">
         <div className="flex items-center gap-2">
           {!navVisible && <HeaderNewChat />}
-          {interfaceConfig.endpointsMenu && <EndpointsMenu />}
-          {modelSpecs?.length > 0 && <ModelSpecsMenu modelSpecs={modelSpecs} />}
+          {interfaceConfig.endpointsMenu === true && <EndpointsMenu />}
+          {modelSpecs.length > 0 && <ModelSpecsMenu modelSpecs={modelSpecs} />}
           {<HeaderOptions interfaceConfig={interfaceConfig} />}
-          {interfaceConfig.presets && <PresetsMenu />}
+          {interfaceConfig.presets === true && <PresetsMenu />}
+          {hasAccessToBookmarks === true && <BookmarkMenu />}
+          {hasAccessToMultiConvo === true && <AddMultiConvo />}
           {isSmallScreen && (
             <ExportAndShareMenu
               isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
-              className="pl-0"
             />
           )}
-          <AddMultiConvo />
         </div>
         {!isSmallScreen && (
           <ExportAndShareMenu isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false} />

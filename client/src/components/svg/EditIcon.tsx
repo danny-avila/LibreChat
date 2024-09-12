@@ -1,8 +1,16 @@
+import React from 'react';
 import { cn } from '~/utils';
 
-export default function EditIcon({ className = 'icon-md', size = '1.2em' }) {
+type IconProps = {
+  className?: string;
+  size?: string;
+};
+
+const EditIcon = React.forwardRef<SVGSVGElement, IconProps>((props: IconProps, ref) => {
+  const { className = 'icon-md', size = '1.2em' } = props;
   return (
     <svg
+      ref={ref}
       fill="none"
       strokeWidth="2"
       xmlns="http://www.w3.org/2000/svg"
@@ -21,4 +29,6 @@ export default function EditIcon({ className = 'icon-md', size = '1.2em' }) {
       ></path>
     </svg>
   );
-}
+});
+
+export default EditIcon;

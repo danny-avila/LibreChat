@@ -31,7 +31,7 @@ const SharePrompt = ({ group, disabled }: { group?: TPromptGroup; disabled: bool
   const { data: startupConfig = {} as TStartupConfig, isFetching } = useGetStartupConfig();
   const { instanceProjectId } = startupConfig;
   const groupIsGlobal = useMemo(
-    () => !!group?.projectIds?.includes(instanceProjectId),
+    () => !!(group?.projectIds ?? []).includes(instanceProjectId),
     [group, instanceProjectId],
   );
 
@@ -57,7 +57,8 @@ const SharePrompt = ({ group, disabled }: { group?: TPromptGroup; disabled: bool
   }
 
   const onSubmit = (data: FormValues) => {
-    if (!group._id || !instanceProjectId) {
+    const groupId = group._id ?? '';
+    if (!groupId || !instanceProjectId) {
       return;
     }
 
@@ -70,7 +71,7 @@ const SharePrompt = ({ group, disabled }: { group?: TPromptGroup; disabled: bool
     }
 
     updateGroup.mutate({
-      id: group._id,
+      id: groupId,
       payload,
     });
   };
@@ -87,24 +88,38 @@ const SharePrompt = ({ group, disabled }: { group?: TPromptGroup; disabled: bool
           <Share2Icon className="cursor-pointer text-white " />
         </Button>
       </OGDialogTrigger>
-      <OGDialogContent className="bg-white dark:border-gray-700 dark:bg-gray-850 dark:text-gray-300">
+      <OGDialogContent className="border-border-light bg-surface-primary-alt text-text-secondary">
         <OGDialogTitle>{localize('com_ui_share_var', `"${group.name}"`)}</OGDialogTitle>
         <form className="p-2" onSubmit={handleSubmit(onSubmit)}>
           <div className="mb-4 flex items-center justify-between gap-2 py-4">
-            <label
-              className="cursor-pointer select-none"
-              htmlFor={Permissions.SHARED_GLOBAL}
-              onClick={() =>
-                setValue(Permissions.SHARED_GLOBAL, !getValues(Permissions.SHARED_GLOBAL), {
-                  shouldDirty: true,
-                })
-              }
-            >
-              {localize('com_ui_share_to_all_users')}
-              {groupIsGlobal && (
-                <span className="ml-2 text-xs">{localize('com_ui_prompt_shared_to_all')}</span>
-              )}
-            </label>
+            <div className="flex items-center">
+              <button
+                type="button"
+                className="mr-2 cursor-pointer"
+                onClick={() =>
+                  setValue(Permissions.SHARED_GLOBAL, !getValues(Permissions.SHARED_GLOBAL), {
+                    shouldDirty: true,
+                  })
+                }
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setValue(Permissions.SHARED_GLOBAL, !getValues(Permissions.SHARED_GLOBAL), {
+                      shouldDirty: true,
+                    });
+                  }
+                }}
+                aria-checked={getValues(Permissions.SHARED_GLOBAL)}
+                role="checkbox"
+              >
+                {localize('com_ui_share_to_all_users')}
+              </button>
+              <label htmlFor={Permissions.SHARED_GLOBAL} className="select-none">
+                {groupIsGlobal && (
+                  <span className="ml-2 text-xs">{localize('com_ui_prompt_shared_to_all')}</span>
+                )}
+              </label>
+            </div>
             <Controller
               name={Permissions.SHARED_GLOBAL}
               control={control}
@@ -126,7 +141,7 @@ const SharePrompt = ({ group, disabled }: { group?: TPromptGroup; disabled: bool
                   {...field}
                   checked={field.value}
                   onCheckedChange={field.onChange}
-                  value={field?.value?.toString()}
+                  value={field.value.toString()}
                 />
               )}
             />

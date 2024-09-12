@@ -1,13 +1,14 @@
 import type { AxiosResponse } from 'axios';
-import * as f from './types/files';
-import * as q from './types/queries';
-import * as m from './types/mutations';
-import * as a from './types/assistants';
-import * as r from './roles';
-import * as t from './types';
-import * as s from './schemas';
-import request from './request';
+import type * as t from './types';
 import * as endpoints from './api-endpoints';
+import * as a from './types/assistants';
+import * as m from './types/mutations';
+import * as q from './types/queries';
+import * as f from './types/files';
+import * as config from './config';
+import request from './request';
+import * as s from './schemas';
+import * as r from './roles';
 
 export function abortRequestWithMessage(
   endpoint: string,
@@ -71,6 +72,15 @@ export function updateMessage(payload: t.TUpdateMessageRequest): Promise<unknown
   }
 
   return request.put(endpoints.messages(conversationId, messageId), { text });
+}
+
+export function updateMessageContent(payload: t.TUpdateMessageContent): Promise<unknown> {
+  const { conversationId, messageId, index, text } = payload;
+  if (!conversationId) {
+    throw new Error('conversationId is required');
+  }
+
+  return request.put(endpoints.messages(conversationId, messageId), { text, index });
 }
 
 export function updateUserKey(payload: t.TUpdateUserKeyRequest) {
@@ -255,14 +265,18 @@ export function getAssistantDocs({
   endpoint,
   version,
 }: {
-  endpoint: s.AssistantsEndpoint;
+  endpoint: s.AssistantsEndpoint | string;
   version: number | string;
 }): Promise<a.AssistantDocument[]> {
+  if (!s.isAssistantsEndpoint(endpoint)) {
+    return Promise.resolve([]);
+  }
   return request.get(
     endpoints.assistants({
       path: 'documents',
       version,
-      endpoint,
+      options: { endpoint },
+      endpoint: endpoint as s.AssistantsEndpoint,
     }),
   );
 }
@@ -270,16 +284,24 @@ export function getAssistantDocs({
 /* Tools */
 
 export const getAvailableTools = (
-  version: number | string,
-  endpoint: s.AssistantsEndpoint,
+  _endpoint: s.AssistantsEndpoint | s.EModelEndpoint.agents,
+  version?: number | string,
 ): Promise<s.TPlugin[]> => {
-  return request.get(
-    endpoints.assistants({
+  let path = '';
+  if (s.isAssistantsEndpoint(_endpoint)) {
+    const endpoint = _endpoint as s.AssistantsEndpoint;
+    path = endpoints.assistants({
       path: 'tools',
-      endpoint,
-      version,
-    }),
-  );
+      endpoint: endpoint,
+      version: version ?? config.defaultAssistantsVersion[endpoint],
+    });
+  } else {
+    path = endpoints.agents({
+      path: 'tools',
+    });
+  }
+
+  return request.get(path);
 };
 
 /* Files */
@@ -299,6 +321,123 @@ export const uploadImage = (data: FormData): Promise<f.TFileUpload> => {
 export const uploadFile = (data: FormData): Promise<f.TFileUpload> => {
   return request.postMultiPart(endpoints.files(), data);
 };
+
+/* actions */
+
+export const updateAction = (data: m.UpdateActionVariables): Promise<m.UpdateActionResponse> => {
+  const { assistant_id, version, ...body } = data;
+  return request.post(
+    endpoints.assistants({
+      path: `actions/${assistant_id}`,
+      version,
+    }),
+    body,
+  );
+};
+
+export function getActions(): Promise<a.Action[]> {
+  return request.get(
+    endpoints.agents({
+      path: 'actions',
+    }),
+  );
+}
+
+export const deleteAction = async ({
+  assistant_id,
+  action_id,
+  model,
+  version,
+  endpoint,
+}: m.DeleteActionVariables & { version: number | string }): Promise<void> =>
+  request.delete(
+    endpoints.assistants({
+      path: `actions/${assistant_id}/${action_id}/${model}`,
+      version,
+      endpoint,
+    }),
+  );
+
+/**
+ * Agents
+ */
+
+export const createAgent = ({ ...data }: a.AgentCreateParams): Promise<a.Agent> => {
+  return request.post(endpoints.agents({}), data);
+};
+
+export const getAgentById = ({ agent_id }: { agent_id: string }): Promise<a.Agent> => {
+  return request.get(
+    endpoints.agents({
+      path: agent_id,
+    }),
+  );
+};
+
+export const updateAgent = ({
+  agent_id,
+  data,
+}: {
+  agent_id: string;
+  data: a.AgentUpdateParams;
+}): Promise<a.Agent> => {
+  return request.patch(
+    endpoints.agents({
+      path: agent_id,
+    }),
+    data,
+  );
+};
+
+export const deleteAgent = ({ agent_id }: m.DeleteAgentBody): Promise<void> => {
+  return request.delete(
+    endpoints.agents({
+      path: agent_id,
+    }),
+  );
+};
+
+export const listAgents = (params: a.AgentListParams): Promise<a.AgentListResponse> => {
+  return request.get(
+    endpoints.agents({
+      options: params,
+    }),
+  );
+};
+
+/* Tools */
+
+export const getAvailableAgentTools = (): Promise<s.TPlugin[]> => {
+  return request.get(
+    endpoints.agents({
+      path: 'tools',
+    }),
+  );
+};
+
+/* Actions */
+
+export const updateAgentAction = (
+  data: m.UpdateAgentActionVariables,
+): Promise<m.UpdateAgentActionResponse> => {
+  const { agent_id, ...body } = data;
+  return request.post(
+    endpoints.agents({
+      path: `actions/${agent_id}`,
+    }),
+    body,
+  );
+};
+
+export const deleteAgentAction = async ({
+  agent_id,
+  action_id,
+}: m.DeleteAgentActionVariables): Promise<void> =>
+  request.delete(
+    endpoints.agents({
+      path: `actions/${agent_id}/${action_id}`,
+    }),
+  );
 
 /**
  * Imports a conversations file.
@@ -325,6 +464,15 @@ export const uploadAssistantAvatar = (data: m.AssistantAvatarVariables): Promise
   );
 };
 
+export const uploadAgentAvatar = (data: m.AgentAvatarVariables): Promise<a.Agent> => {
+  return request.postMultiPart(
+    endpoints.agents({
+      path: `avatar/${data.agent_id}`,
+    }),
+    data.formData,
+  );
+};
+
 export const getFileDownload = async (userId: string, file_id: string): Promise<AxiosResponse> => {
   return request.getResponse(`${endpoints.files()}/download/${userId}/${file_id}`, {
     responseType: 'blob',
@@ -343,6 +491,8 @@ export const deleteFiles = async (
     data: { files, assistant_id, tool_resource },
   });
 
+/* Speech */
+
 export const speechToText = (data: FormData): Promise<f.SpeechToTextResponse> => {
   return request.postMultiPart(endpoints.speechToText(), data);
 };
@@ -355,49 +505,9 @@ export const getVoices = (): Promise<f.VoiceResponse> => {
   return request.get(endpoints.textToSpeechVoices());
 };
 
-/* actions */
-
-export const updateAction = (data: m.UpdateActionVariables): Promise<m.UpdateActionResponse> => {
-  const { assistant_id, version, ...body } = data;
-  return request.post(
-    endpoints.assistants({
-      path: `actions/${assistant_id}`,
-      version,
-    }),
-    body,
-  );
+export const getCustomConfigSpeech = (): Promise<t.TCustomConfigSpeechResponse> => {
+  return request.get(endpoints.getCustomConfigSpeech());
 };
-
-export function getActions({
-  endpoint,
-  version,
-}: {
-  endpoint: s.AssistantsEndpoint;
-  version: number | string;
-}): Promise<a.Action[]> {
-  return request.get(
-    endpoints.assistants({
-      path: 'actions',
-      version,
-      endpoint,
-    }),
-  );
-}
-
-export const deleteAction = async ({
-  assistant_id,
-  action_id,
-  model,
-  version,
-  endpoint,
-}: m.DeleteActionVariables & { version: number | string }): Promise<void> =>
-  request.delete(
-    endpoints.assistants({
-      path: `actions/${assistant_id}/${action_id}/${model}`,
-      version,
-      endpoint,
-    }),
-  );
 
 /* conversations */
 
@@ -420,7 +530,8 @@ export const listConversations = (
   // Assuming params has a pageNumber property
   const pageNumber = params?.pageNumber || '1'; // Default to page 1 if not provided
   const isArchived = params?.isArchived || false; // Default to false if not provided
-  return request.get(endpoints.conversations(pageNumber, isArchived));
+  const tags = params?.tags || []; // Default to an empty array if not provided
+  return request.get(endpoints.conversations(pageNumber, isArchived, tags));
 };
 
 export const listConversationsByQuery = (
@@ -536,4 +647,51 @@ export function updatePromptPermissions(
   variables: m.UpdatePromptPermVars,
 ): Promise<m.UpdatePromptPermResponse> {
   return request.put(endpoints.updatePromptPermissions(variables.roleName), variables.updates);
+}
+
+/* Tags */
+export function getConversationTags(): Promise<t.TConversationTagsResponse> {
+  return request.get(endpoints.conversationTags());
+}
+
+export function createConversationTag(
+  payload: t.TConversationTagRequest,
+): Promise<t.TConversationTagResponse> {
+  return request.post(endpoints.conversationTags(), payload);
+}
+
+export function updateConversationTag(
+  tag: string,
+  payload: t.TConversationTagRequest,
+): Promise<t.TConversationTagResponse> {
+  return request.put(endpoints.conversationTags(tag), payload);
+}
+export function deleteConversationTag(tag: string): Promise<t.TConversationTagResponse> {
+  return request.delete(endpoints.conversationTags(tag));
+}
+
+export function addTagToConversation(
+  conversationId: string,
+  payload: t.TTagConversationRequest,
+): Promise<t.TTagConversationResponse> {
+  return request.put(endpoints.addTagToConversation(conversationId), payload);
+}
+export function rebuildConversationTags(): Promise<t.TConversationTagsResponse> {
+  return request.post(endpoints.conversationTags('rebuild'));
+}
+
+export function healthCheck(): Promise<string> {
+  return request.get(endpoints.health());
+}
+
+export function getUserTerms(): Promise<t.TUserTermsResponse> {
+  return request.get(endpoints.userTerms());
+}
+
+export function acceptTerms(): Promise<t.TAcceptTermsResponse> {
+  return request.post(endpoints.acceptUserTerms());
+}
+
+export function getBanner(): Promise<t.TBannerResponse> {
+  return request.get(endpoints.banner());
 }

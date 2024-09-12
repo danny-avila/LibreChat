@@ -13,6 +13,8 @@ import {
 import type { FunctionTool, TConfig, TPlugin } from 'librechat-data-provider';
 import type { AssistantForm, AssistantPanelProps } from '~/common';
 import { useCreateAssistantMutation, useUpdateAssistantMutation } from '~/data-provider';
+import { cn, cardStyle, defaultTextProps, removeFocusOutlines } from '~/utils';
+import AssistantConversationStarters from './AssistantConversationStarters';
 import { useAssistantsMapContext, useToastContext } from '~/Providers';
 import { useSelectAssistant, useLocalize } from '~/hooks';
 import { ToolSelectDialog } from '~/components/Tools';
@@ -20,17 +22,19 @@ import CapabilitiesForm from './CapabilitiesForm';
 import { SelectDropDown } from '~/components/ui';
 import AssistantAvatar from './AssistantAvatar';
 import AssistantSelect from './AssistantSelect';
-import AssistantAction from './AssistantAction';
 import ContextButton from './ContextButton';
 import AssistantTool from './AssistantTool';
 import { Spinner } from '~/components/svg';
-import { cn, cardStyle } from '~/utils/';
 import Knowledge from './Knowledge';
 import { Panel } from '~/common';
+import Action from './Action';
 
-const labelClass = 'mb-2 block text-xs font-bold text-gray-700 dark:text-gray-400';
-const inputClass =
-  'focus:shadow-outline w-full appearance-none rounded-md border px-3 py-2 text-sm leading-tight text-gray-700 dark:text-white shadow focus:border-green-500 focus:outline-none focus:ring-0 dark:bg-gray-800 dark:border-gray-700/80';
+const labelClass = 'mb-2 text-token-text-primary block font-medium';
+const inputClass = cn(
+  defaultTextProps,
+  'flex w-full px-3 py-2 dark:border-gray-800 dark:bg-gray-800 rounded-xl mb-2',
+  removeFocusOutlines,
+);
 
 export default function AssistantPanel({
   // index = 0,
@@ -38,6 +42,7 @@ export default function AssistantPanel({
   endpoint,
   actions = [],
   setActivePanel,
+  documentsMap,
   assistant_id: current_assistant_id,
   setCurrentAssistantId,
   assistantsConfig,
@@ -97,12 +102,13 @@ export default function AssistantPanel({
       const error = err as Error;
       showToast({
         message: `${localize('com_assistants_update_error')}${
-          error?.message ? ` ${localize('com_ui_error')}: ${error?.message}` : ''
+          error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
         }`,
         status: 'error',
       });
     },
   });
+
   const create = useCreateAssistantMutation({
     onSuccess: (data) => {
       setCurrentAssistantId(data.id);
@@ -116,7 +122,7 @@ export default function AssistantPanel({
       const error = err as Error;
       showToast({
         message: `${localize('com_assistants_create_error')}${
-          error?.message ? ` ${localize('com_ui_error')}: ${error?.message}` : ''
+          error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
         }`,
         status: 'error',
       });
@@ -145,7 +151,6 @@ export default function AssistantPanel({
       return functionName;
     });
 
-    console.log(data);
     if (data.code_interpreter) {
       tools.push({ type: Tools.code_interpreter });
     }
@@ -160,6 +165,7 @@ export default function AssistantPanel({
       name,
       description,
       instructions,
+      conversation_starters: starters,
       model,
       // file_ids, // TODO: add file handling here
     } = data;
@@ -171,6 +177,7 @@ export default function AssistantPanel({
           name,
           description,
           instructions,
+          conversation_starters: starters.filter((starter) => starter.trim() !== ''),
           model,
           tools,
           endpoint,
@@ -183,12 +190,23 @@ export default function AssistantPanel({
       name,
       description,
       instructions,
+      conversation_starters: starters.filter((starter) => starter.trim() !== ''),
       model,
       tools,
       endpoint,
       version,
     });
   };
+
+  let submitContext: string | JSX.Element;
+
+  if (create.isLoading || update.isLoading) {
+    submitContext = <Spinner className="icon-md" />;
+  } else if (assistant_id) {
+    submitContext = localize('com_ui_save');
+  } else {
+    submitContext = localize('com_ui_create');
+  }
 
   return (
     <FormProvider {...methods}>
@@ -205,6 +223,7 @@ export default function AssistantPanel({
                 reset={reset}
                 value={field.value}
                 endpoint={endpoint}
+                documentsMap={documentsMap}
                 setCurrentAssistantId={setCurrentAssistantId}
                 selectedAssistant={current_assistant_id ?? null}
                 createMutation={create}
@@ -226,13 +245,13 @@ export default function AssistantPanel({
             </button>
           )}
         </div>
-        <div className="h-auto bg-white px-4 pb-8 pt-3 dark:bg-transparent">
+        <div className="bg-surface-50 h-auto px-4 pb-8 pt-3 dark:bg-transparent">
           {/* Avatar & Name */}
           <div className="mb-4">
             <AssistantAvatar
               createMutation={create}
-              assistant_id={assistant_id ?? null}
-              metadata={assistant?.['metadata'] ?? null}
+              assistant_id={assistant_id}
+              metadata={assistant['metadata'] ?? null}
               endpoint={endpoint}
               version={version}
             />
@@ -258,7 +277,7 @@ export default function AssistantPanel({
               name="id"
               control={control}
               render={({ field }) => (
-                <p className="h-3 text-xs italic text-gray-600">{field.value ?? ''}</p>
+                <p className="h-3 text-xs italic text-text-secondary">{field.value}</p>
               )}
             />
           </div>
@@ -297,10 +316,27 @@ export default function AssistantPanel({
                   {...field}
                   value={field.value ?? ''}
                   {...{ max: 32768 }}
-                  className="focus:shadow-outline min-h-[150px] w-full resize-none resize-y appearance-none rounded-md border px-3 py-2 text-sm leading-tight text-gray-700 shadow focus:border-green-500 focus:outline-none focus:ring-0 dark:border-gray-700/80 dark:bg-gray-800 dark:text-white"
+                  className={cn(inputClass, 'min-h-[100px] resize-y')}
                   id="instructions"
                   placeholder={localize('com_assistants_instructions_placeholder')}
                   rows={3}
+                />
+              )}
+            />
+          </div>
+
+          {/* Conversation Starters */}
+          <div className="relative mb-6">
+            {/* the label of conversation starters is in the component */}
+            <Controller
+              name="conversation_starters"
+              control={control}
+              defaultValue={[]}
+              render={({ field }) => (
+                <AssistantConversationStarters
+                  field={field}
+                  inputClass={inputClass}
+                  labelClass={labelClass}
                 />
               )}
             />
@@ -339,7 +375,7 @@ export default function AssistantPanel({
             />
           </div>
           {/* Knowledge */}
-          {(codeEnabled || retrievalEnabled) && version == 1 && (
+          {(codeEnabled === true || retrievalEnabled === true) && version == 1 && (
             <Knowledge assistant_id={assistant_id} files={files} endpoint={endpoint} />
           )}
           {/* Capabilities */}
@@ -353,11 +389,11 @@ export default function AssistantPanel({
           {/* Tools */}
           <div className="mb-6">
             <label className={labelClass}>
-              {`${toolsEnabled ? localize('com_assistants_tools') : ''}
-              ${toolsEnabled && actionsEnabled ? ' + ' : ''}
-              ${actionsEnabled ? localize('com_assistants_actions') : ''}`}
+              {`${toolsEnabled === true ? localize('com_assistants_tools') : ''}
+              ${toolsEnabled === true && actionsEnabled === true ? ' + ' : ''}
+              ${actionsEnabled === true ? localize('com_assistants_actions') : ''}`}
             </label>
-            <div className="space-y-1">
+            <div className="space-y-2">
               {functions.map((func, i) => (
                 <AssistantTool
                   key={`${func}-${i}-${assistant_id}`}
@@ -369,41 +405,41 @@ export default function AssistantPanel({
               {actions
                 .filter((action) => action.assistant_id === assistant_id)
                 .map((action, i) => {
-                  return (
-                    <AssistantAction key={i} action={action} onClick={() => setAction(action)} />
-                  );
+                  return <Action key={i} action={action} onClick={() => setAction(action)} />;
                 })}
-              {toolsEnabled && (
-                <button
-                  type="button"
-                  onClick={() => setShowToolDialog(true)}
-                  className="btn border-token-border-light relative mx-1 mt-2 h-8 rounded-lg bg-transparent font-medium hover:bg-gray-100 dark:hover:bg-gray-800"
-                >
-                  <div className="flex w-full items-center justify-center gap-2">
-                    {localize('com_assistants_add_tools')}
-                  </div>
-                </button>
-              )}
-              {actionsEnabled && (
-                <button
-                  type="button"
-                  disabled={!assistant_id}
-                  onClick={() => {
-                    if (!assistant_id) {
-                      return showToast({
-                        message: localize('com_assistants_actions_disabled'),
-                        status: 'warning',
-                      });
-                    }
-                    setActivePanel(Panel.actions);
-                  }}
-                  className="btn border-token-border-light relative mt-2 h-8 rounded-lg bg-transparent font-medium hover:bg-gray-100 dark:hover:bg-gray-800"
-                >
-                  <div className="flex w-full items-center justify-center gap-2">
-                    {localize('com_assistants_add_actions')}
-                  </div>
-                </button>
-              )}
+              <div className="flex space-x-2">
+                {toolsEnabled === true && (
+                  <button
+                    type="button"
+                    onClick={() => setShowToolDialog(true)}
+                    className="btn btn-neutral border-token-border-light relative h-8 w-full rounded-lg font-medium"
+                  >
+                    <div className="flex w-full items-center justify-center gap-2">
+                      {localize('com_assistants_add_tools')}
+                    </div>
+                  </button>
+                )}
+                {actionsEnabled === true && (
+                  <button
+                    type="button"
+                    disabled={!assistant_id}
+                    onClick={() => {
+                      if (!assistant_id) {
+                        return showToast({
+                          message: localize('com_assistants_actions_disabled'),
+                          status: 'warning',
+                        });
+                      }
+                      setActivePanel(Panel.actions);
+                    }}
+                    className="btn btn-neutral border-token-border-light relative h-8 w-full rounded-lg font-medium"
+                  >
+                    <div className="flex w-full items-center justify-center gap-2">
+                      {localize('com_assistants_add_actions')}
+                    </div>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex items-center justify-end gap-2">
@@ -415,39 +451,19 @@ export default function AssistantPanel({
               createMutation={create}
               endpoint={endpoint}
             />
-            {/* Secondary Select Button */}
-            {assistant_id && (
-              <button
-                className="btn btn-secondary"
-                type="button"
-                disabled={!assistant_id}
-                onClick={(e) => {
-                  e.preventDefault();
-                  onSelectAssistant(assistant_id);
-                }}
-              >
-                {localize('com_ui_select')}
-              </button>
-            )}
             {/* Submit Button */}
             <button
-              className="btn btn-primary focus:shadow-outline flex w-[90px] items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"
+              className="btn btn-primary focus:shadow-outline flex w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"
               type="submit"
             >
-              {create.isLoading || update.isLoading ? (
-                <Spinner className="icon-md" />
-              ) : assistant_id ? (
-                localize('com_ui_save')
-              ) : (
-                localize('com_ui_create')
-              )}
+              {submitContext}
             </button>
           </div>
         </div>
         <ToolSelectDialog
           isOpen={showToolDialog}
           setIsOpen={setShowToolDialog}
-          assistant_id={assistant_id}
+          toolsFormKey="functions"
           endpoint={endpoint}
         />
       </form>

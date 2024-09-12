@@ -88,6 +88,24 @@ export default {
   com_ui_preview: 'Pratinjau',
   com_ui_upload: 'Unggah',
   com_ui_connect: 'Hubungkan',
+  com_ui_bookmarks: 'Penanda',
+  com_ui_bookmarks_rebuild: 'Bangun Kembali',
+  com_ui_bookmarks_new: 'Penanda Baru',
+  com_ui_bookmark_delete_confirm: 'Apakah Anda yakin ingin menghapus penanda ini?',
+  com_ui_bookmarks_title: 'Judul',
+  com_ui_bookmarks_count: 'Jumlah',
+  com_ui_bookmarks_description: 'Deskripsi',
+  com_ui_bookmarks_create_success: 'Penanda berhasil dibuat',
+  com_ui_bookmarks_update_success: 'Penanda berhasil diperbarui',
+  com_ui_bookmarks_delete_success: 'Penanda berhasil dihapus',
+  com_ui_bookmarks_create_error: 'Terjadi kesalahan saat membuat penanda',
+  com_ui_bookmarks_update_error: 'Terjadi kesalahan saat memperbarui penanda',
+  com_ui_bookmarks_delete_error: 'Terjadi kesalahan saat menghapus penanda',
+  com_ui_bookmarks_add_to_conversation: 'Tambahkan ke percakapan saat ini',
+  com_ui_accept: 'Saya menerima',
+  com_ui_decline: 'Saya tidak menerima',
+  com_ui_terms_and_conditions: 'Syarat dan Ketentuan',
+  com_ui_no_terms_content: 'Tidak ada konten syarat dan ketentuan untuk ditampilkan',
   com_auth_error_login:
     'Tidak dapat masuk dengan informasi yang diberikan. Silakan periksa kredensial Anda dan coba lagi.',
   com_auth_error_login_rl:
@@ -329,6 +347,7 @@ export default {
   com_nav_theme_system: 'Sistem',
   com_nav_theme_dark: 'Gelap',
   com_nav_theme_light: 'Terang',
+  com_nav_font_size: 'Ukuran huruf',
   com_nav_user_name_display: 'Tampilkan nama pengguna dalam pesan',
   com_nav_save_drafts: 'Simpan draft',
   com_nav_clear_all_chats: 'Hapus semua obrolan',
@@ -351,6 +370,8 @@ export default {
   com_nav_help_faq: 'Bantuan & FAQ',
   com_nav_settings: 'Pengaturan',
   com_nav_search_placeholder: 'Cari pesan',
+  com_nav_info_bookmarks_rebuild:
+    'Jika jumlah penanda tidak benar, silakan bangun kembali informasi penanda. Jumlah penanda akan dihitung ulang dan data akan dipulihkan ke keadaan yang benar.',
   com_nav_setting_general: 'Umum',
   com_nav_setting_beta: 'Fitur beta',
   com_nav_setting_data: 'Kontrol data',
@@ -702,6 +723,62 @@ export const comparisons = {
   com_ui_connect: {
     english: 'Connect',
     translated: 'Hubungkan',
+  },
+  com_ui_bookmarks: {
+    english: 'Bookmarks',
+    translated: 'Penanda',
+  },
+  com_ui_bookmarks_rebuild: {
+    english: 'Rebuild',
+    translated: 'Bangun Kembali',
+  },
+  com_ui_bookmarks_new: {
+    english: 'New Bookmark',
+    translated: 'Penanda Baru',
+  },
+  com_ui_bookmark_delete_confirm: {
+    english: 'Are you sure you want to delete this bookmark?',
+    translated: 'Apakah Anda yakin ingin menghapus penanda ini?',
+  },
+  com_ui_bookmarks_title: {
+    english: 'Title',
+    translated: 'Judul',
+  },
+  com_ui_bookmarks_count: {
+    english: 'Count',
+    translated: 'Jumlah',
+  },
+  com_ui_bookmarks_description: {
+    english: 'Description',
+    translated: 'Deskripsi',
+  },
+  com_ui_bookmarks_create_success: {
+    english: 'Bookmark created successfully',
+    translated: 'Penanda berhasil dibuat',
+  },
+  com_ui_bookmarks_update_success: {
+    english: 'Bookmark updated successfully',
+    translated: 'Penanda berhasil diperbarui',
+  },
+  com_ui_bookmarks_delete_success: {
+    english: 'Bookmark deleted successfully',
+    translated: 'Penanda berhasil dihapus',
+  },
+  com_ui_bookmarks_create_error: {
+    english: 'There was an error creating the bookmark',
+    translated: 'Terjadi kesalahan saat membuat penanda',
+  },
+  com_ui_bookmarks_update_error: {
+    english: 'There was an error updating the bookmark',
+    translated: 'Terjadi kesalahan saat memperbarui penanda',
+  },
+  com_ui_bookmarks_delete_error: {
+    english: 'There was an error deleting the bookmark',
+    translated: 'Terjadi kesalahan saat menghapus penanda',
+  },
+  com_ui_bookmarks_add_to_conversation: {
+    english: 'Add to current conversation',
+    translated: 'Tambahkan ke percakapan saat ini',
   },
   com_auth_error_login: {
     english:
@@ -1659,6 +1736,12 @@ export const comparisons = {
   com_nav_search_placeholder: {
     english: 'Search messages',
     translated: 'Cari pesan',
+  },
+  com_nav_info_bookmarks_rebuild: {
+    english:
+      'If the bookmark count is incorrect, please rebuild the bookmark information. The bookmark count will be recalculated and the data will be restored to its correct state.',
+    translated:
+      'Jika jumlah penanda tidak benar, silakan bangun kembali informasi penanda. Jumlah penanda akan dihitung ulang dan data akan dipulihkan ke keadaan yang benar.',
   },
   com_nav_setting_general: {
     english: 'General',

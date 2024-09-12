@@ -45,5 +45,8 @@ module.exports = {
       AZURE_ASSISTANTS_BASE_URL,
       EModelEndpoint.azureAssistants,
     ),
+    [EModelEndpoint.bedrock]: generateConfig(process.env.BEDROCK_AWS_SECRET_ACCESS_KEY),
+    /* key will be part of separate config */
+    [EModelEndpoint.agents]: generateConfig(process.env.I_AM_A_TEAPOT),
   },
 };

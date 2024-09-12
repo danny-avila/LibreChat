@@ -1,5 +1,5 @@
 const { ObjectId } = require('mongodb');
-const { SystemRoles, SystemCategories } = require('librechat-data-provider');
+const { SystemRoles, SystemCategories, Constants } = require('librechat-data-provider');
 const {
   getProjectByName,
   addGroupIdsToProject,
@@ -123,7 +123,7 @@ const getAllPromptGroups = async (req, filter) => {
     let combinedQuery = query;
 
     if (searchShared) {
-      const project = await getProjectByName('instance', 'promptGroupIds');
+      const project = await getProjectByName(Constants.GLOBAL_PROJECT_NAME, 'promptGroupIds');
       if (project && project.promptGroupIds.length > 0) {
         const projectQuery = { _id: { $in: project.promptGroupIds }, ...query };
         delete projectQuery.author;
@@ -177,7 +177,7 @@ const getPromptGroups = async (req, filter) => {
 
     if (searchShared) {
       // const projects = req.user.projects || []; // TODO: handle multiple projects
-      const project = await getProjectByName('instance', 'promptGroupIds');
+      const project = await getProjectByName(Constants.GLOBAL_PROJECT_NAME, 'promptGroupIds');
       if (project && project.promptGroupIds.length > 0) {
         const projectQuery = { _id: { $in: project.promptGroupIds }, ...query };
         delete projectQuery.author;

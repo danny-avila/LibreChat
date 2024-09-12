@@ -1,56 +1,19 @@
 const z = require('zod');
 const { EModelEndpoint } = require('librechat-data-provider');
 
-const models = [
-  'text-davinci-003',
-  'text-davinci-002',
-  'text-davinci-001',
-  'text-curie-001',
-  'text-babbage-001',
-  'text-ada-001',
-  'davinci',
-  'curie',
-  'babbage',
-  'ada',
-  'code-davinci-002',
-  'code-davinci-001',
-  'code-cushman-002',
-  'code-cushman-001',
-  'davinci-codex',
-  'cushman-codex',
-  'text-davinci-edit-001',
-  'code-davinci-edit-001',
-  'text-embedding-ada-002',
-  'text-similarity-davinci-001',
-  'text-similarity-curie-001',
-  'text-similarity-babbage-001',
-  'text-similarity-ada-001',
-  'text-search-davinci-doc-001',
-  'text-search-curie-doc-001',
-  'text-search-babbage-doc-001',
-  'text-search-ada-doc-001',
-  'code-search-babbage-code-001',
-  'code-search-ada-code-001',
-  'gpt2',
-  'gpt-4',
-  'gpt-4-0314',
-  'gpt-4-32k',
-  'gpt-4-32k-0314',
-  'gpt-3.5-turbo',
-  'gpt-3.5-turbo-0301',
-];
-
 const openAIModels = {
   'gpt-4': 8187, // -5 from max
   'gpt-4-0613': 8187, // -5 from max
   'gpt-4-32k': 32758, // -10 from max
   'gpt-4-32k-0314': 32758, // -10 from max
   'gpt-4-32k-0613': 32758, // -10 from max
-  'gpt-4-1106': 127990, // -10 from max
-  'gpt-4-0125': 127990, // -10 from max
-  'gpt-4o': 127990, // -10 from max
-  'gpt-4-turbo': 127990, // -10 from max
-  'gpt-4-vision': 127990, // -10 from max
+  'gpt-4-1106': 127500, // -500 from max
+  'gpt-4-0125': 127500, // -500 from max
+  'gpt-4o': 127500, // -500 from max
+  'gpt-4o-mini': 127500, // -500 from max
+  'gpt-4o-2024-08-06': 127500, // -500 from max
+  'gpt-4-turbo': 127500, // -500 from max
+  'gpt-4-vision': 127500, // -500 from max
   'gpt-3.5-turbo': 16375, // -10 from max
   'gpt-3.5-turbo-0613': 4092, // -5 from max
   'gpt-3.5-turbo-0301': 4092, // -5 from max
@@ -58,9 +21,15 @@ const openAIModels = {
   'gpt-3.5-turbo-16k-0613': 16375, // -10 from max
   'gpt-3.5-turbo-1106': 16375, // -10 from max
   'gpt-3.5-turbo-0125': 16375, // -10 from max
+};
+
+const mistralModels = {
   'mistral-': 31990, // -10 from max
-  llama3: 8187, // -5 from max
-  'llama-3': 8187, // -5 from max
+  'mistral-7b': 31990, // -10 from max
+  'mistral-small': 31990, // -10 from max
+  'mixtral-8x7b': 31990, // -10 from max
+  'mistral-large-2402': 127500,
+  'mistral-large-2407': 127500,
 };
 
 const cohereModels = {
@@ -91,24 +60,76 @@ const googleModels = {
 
 const anthropicModels = {
   'claude-': 100000,
+  'claude-instant': 100000,
   'claude-2': 100000,
   'claude-2.1': 200000,
   'claude-3-haiku': 200000,
   'claude-3-sonnet': 200000,
   'claude-3-opus': 200000,
   'claude-3-5-sonnet': 200000,
+  'claude-3.5-sonnet': 200000,
 };
 
-const aggregateModels = { ...openAIModels, ...googleModels, ...anthropicModels, ...cohereModels };
+const metaModels = {
+  'llama2-13b': 4000,
+  'llama2-70b': 4000,
+  'llama3-8b': 8000,
+  'llama3-70b': 8000,
+  'llama3-1-8b': 127500,
+  'llama3-1-70b': 127500,
+  'llama3-1-405b': 127500,
+};
 
-// Order is important here: by model series and context size (gpt-4 then gpt-3, ascending)
+const ai21Models = {
+  'ai21.j2-mid-v1': 8182, // -10 from max
+  'ai21.j2-ultra-v1': 8182, // -10 from max
+  'ai21.jamba-instruct-v1:0': 255500, // -500 from max
+};
+
+const amazonModels = {
+  'amazon.titan-text-lite-v1': 4000,
+  'amazon.titan-text-express-v1': 8000,
+  'amazon.titan-text-premier-v1:0': 31500, // -500 from max
+};
+
+const bedrockModels = {
+  ...anthropicModels,
+  ...mistralModels,
+  ...cohereModels,
+  ...metaModels,
+  ...ai21Models,
+  ...amazonModels,
+};
+
+const aggregateModels = { ...openAIModels, ...googleModels, ...bedrockModels };
+
 const maxTokensMap = {
   [EModelEndpoint.azureOpenAI]: openAIModels,
   [EModelEndpoint.openAI]: aggregateModels,
+  [EModelEndpoint.agents]: aggregateModels,
   [EModelEndpoint.custom]: aggregateModels,
   [EModelEndpoint.google]: googleModels,
   [EModelEndpoint.anthropic]: anthropicModels,
+  [EModelEndpoint.bedrock]: bedrockModels,
 };
+
+/**
+ * Finds the first matching pattern in the tokens map.
+ * @param {string} modelName
+ * @param {Record<string, number>} tokensMap
+ * @returns {string|null}
+ */
+function findMatchingPattern(modelName, tokensMap) {
+  const keys = Object.keys(tokensMap);
+  for (let i = keys.length - 1; i >= 0; i--) {
+    const modelKey = keys[i];
+    if (modelName.includes(modelKey)) {
+      return modelKey;
+    }
+  }
+
+  return null;
+}
 
 /**
  * Retrieves the maximum tokens for a given model name. If the exact model name isn't found,
@@ -143,12 +164,11 @@ function getModelMaxTokens(modelName, endpoint = EModelEndpoint.openAI, endpoint
     return tokensMap[modelName];
   }
 
-  const keys = Object.keys(tokensMap);
-  for (let i = keys.length - 1; i >= 0; i--) {
-    if (modelName.includes(keys[i])) {
-      const result = tokensMap[keys[i]];
-      return result?.context ?? result;
-    }
+  const matchedPattern = findMatchingPattern(modelName, tokensMap);
+
+  if (matchedPattern) {
+    const result = tokensMap[matchedPattern];
+    return result?.context ?? result;
   }
 
   return undefined;
@@ -181,15 +201,8 @@ function matchModelName(modelName, endpoint = EModelEndpoint.openAI) {
     return modelName;
   }
 
-  const keys = Object.keys(tokensMap);
-  for (let i = keys.length - 1; i >= 0; i--) {
-    const modelKey = keys[i];
-    if (modelName.includes(modelKey)) {
-      return modelKey;
-    }
-  }
-
-  return modelName;
+  const matchedPattern = findMatchingPattern(modelName, tokensMap);
+  return matchedPattern || modelName;
 }
 
 const modelSchema = z.object({
@@ -241,8 +254,47 @@ function processModelData(input) {
   return tokenConfig;
 }
 
+const tiktokenModels = new Set([
+  'text-davinci-003',
+  'text-davinci-002',
+  'text-davinci-001',
+  'text-curie-001',
+  'text-babbage-001',
+  'text-ada-001',
+  'davinci',
+  'curie',
+  'babbage',
+  'ada',
+  'code-davinci-002',
+  'code-davinci-001',
+  'code-cushman-002',
+  'code-cushman-001',
+  'davinci-codex',
+  'cushman-codex',
+  'text-davinci-edit-001',
+  'code-davinci-edit-001',
+  'text-embedding-ada-002',
+  'text-similarity-davinci-001',
+  'text-similarity-curie-001',
+  'text-similarity-babbage-001',
+  'text-similarity-ada-001',
+  'text-search-davinci-doc-001',
+  'text-search-curie-doc-001',
+  'text-search-babbage-doc-001',
+  'text-search-ada-doc-001',
+  'code-search-babbage-code-001',
+  'code-search-ada-code-001',
+  'gpt2',
+  'gpt-4',
+  'gpt-4-0314',
+  'gpt-4-32k',
+  'gpt-4-32k-0314',
+  'gpt-3.5-turbo',
+  'gpt-3.5-turbo-0301',
+]);
+
 module.exports = {
-  tiktokenModels: new Set(models),
+  tiktokenModels,
   maxTokensMap,
   inputSchema,
   modelSchema,

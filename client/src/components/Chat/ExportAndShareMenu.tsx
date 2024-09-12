@@ -1,64 +1,99 @@
-import { useState } from 'react';
-import { Upload } from 'lucide-react';
+import { useState, useId } from 'react';
 import { useRecoilValue } from 'recoil';
-import DropDownMenu from '~/components/Conversations/DropDownMenu';
-import ShareButton from '~/components/Conversations/ShareButton';
-import HoverToggle from '~/components/Conversations/HoverToggle';
-import useLocalize from '~/hooks/useLocalize';
-import ExportButton from './ExportButton';
+import * as Ariakit from '@ariakit/react';
+import { Upload, Share2 } from 'lucide-react';
+import { ShareButton } from '~/components/Conversations/ConvoOptions';
+import { useMediaQuery, useLocalize } from '~/hooks';
+import { DropdownPopup } from '~/components/ui';
+import { ExportModal } from '../Nav';
 import store from '~/store';
 
 export default function ExportAndShareMenu({
   isSharedButtonEnabled,
-  className = '',
 }: {
   isSharedButtonEnabled: boolean;
-  className?: string;
 }) {
   const localize = useLocalize();
-
-  const conversation = useRecoilValue(store.conversationByIndex(0));
+  const [showExports, setShowExports] = useState(false);
   const [isPopoverActive, setIsPopoverActive] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
+
+  const menuId = useId();
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  const conversation = useRecoilValue(store.conversationByIndex(0));
 
   const exportable =
     conversation &&
-    conversation.conversationId &&
+    conversation.conversationId != null &&
     conversation.conversationId !== 'new' &&
     conversation.conversationId !== 'search';
 
-  if (!exportable) {
+  if (exportable === false) {
     return null;
   }
 
-  const isActiveConvo = exportable;
+  const onOpenChange = (value: boolean) => {
+    setShowExports(value);
+  };
+
+  const shareHandler = () => {
+    setIsPopoverActive(false);
+    setShowShareDialog(true);
+  };
+
+  const exportHandler = () => {
+    setIsPopoverActive(false);
+    setShowExports(true);
+  };
+
+  const dropdownItems = [
+    {
+      label: localize('com_endpoint_export'),
+      onClick: exportHandler,
+      icon: <Upload className="icon-md mr-2 dark:text-gray-300" />,
+    },
+    {
+      label: localize('com_ui_share'),
+      onClick: shareHandler,
+      icon: <Share2 className="icon-md mr-2 dark:text-gray-300" />,
+      show: isSharedButtonEnabled,
+    },
+  ];
 
   return (
-    <HoverToggle
-      isActiveConvo={!!isActiveConvo}
-      isPopoverActive={isPopoverActive}
-      setIsPopoverActive={setIsPopoverActive}
-      className={className}
-    >
-      <DropDownMenu
-        icon={<Upload />}
-        tooltip={localize('com_endpoint_export_share')}
-        className="pointer-cursor relative z-50 flex h-[40px] min-w-4 flex-none flex-col items-center justify-center rounded-md border border-gray-100 bg-white px-3 text-left hover:bg-gray-50 focus:outline-none focus:ring-0 focus:ring-offset-0 radix-state-open:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700 dark:radix-state-open:bg-gray-700 sm:text-sm"
-      >
-        {conversation && conversation.conversationId && (
-          <>
-            <ExportButton conversation={conversation} setPopoverActive={setIsPopoverActive} />
-            {isSharedButtonEnabled && (
-              <ShareButton
-                conversationId={conversation.conversationId}
-                title={conversation.title ?? ''}
-                appendLabel={true}
-                className="mb-[3.5px]"
-                setPopoverActive={setIsPopoverActive}
-              />
-            )}
-          </>
-        )}
-      </DropDownMenu>
-    </HoverToggle>
+    <>
+      <DropdownPopup
+        menuId={menuId}
+        isOpen={isPopoverActive}
+        setIsOpen={setIsPopoverActive}
+        trigger={
+          <Ariakit.MenuButton
+            id="export-menu-button"
+            aria-label="Export options"
+            className="mr-4 inline-flex h-10 w-10 items-center justify-center rounded-md border border-border-light bg-transparent p-0 text-sm font-medium transition-all duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
+          >
+            <Upload className="icon-md dark:text-gray-300" aria-hidden="true" focusable="false" />
+          </Ariakit.MenuButton>
+        }
+        items={dropdownItems}
+        className={isSmallScreen ? '' : 'absolute right-0 top-0 mt-2'}
+      />
+      {showShareDialog && conversation.conversationId != null && (
+        <ShareButton
+          conversationId={conversation.conversationId}
+          title={conversation.title ?? ''}
+          showShareDialog={showShareDialog}
+          setShowShareDialog={setShowShareDialog}
+        />
+      )}
+      {showExports && (
+        <ExportModal
+          open={showExports}
+          onOpenChange={onOpenChange}
+          conversation={conversation}
+          aria-label="Export conversation modal"
+        />
+      )}
+    </>
   );
 }

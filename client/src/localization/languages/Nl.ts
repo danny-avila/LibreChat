@@ -80,6 +80,24 @@ export default {
   com_ui_unarchive: 'Uit archiveren',
   com_ui_unarchive_error: 'Kan conversatie niet uit archiveren',
   com_ui_more_options: 'Meer',
+  com_ui_bookmarks: 'Bladwijzers',
+  com_ui_bookmarks_rebuild: 'Herbouwen',
+  com_ui_bookmarks_new: 'Nieuwe bladwijzer',
+  com_ui_bookmark_delete_confirm: 'Weet je zeker dat je deze bladwijzer wilt verwijderen?',
+  com_ui_bookmarks_title: 'Titel',
+  com_ui_bookmarks_count: 'Aantal',
+  com_ui_bookmarks_description: 'Beschrijving',
+  com_ui_bookmarks_create_success: 'Bladwijzer succesvol aangemaakt',
+  com_ui_bookmarks_update_success: 'Bladwijzer succesvol bijgewerkt',
+  com_ui_bookmarks_delete_success: 'Bladwijzer succesvol verwijderd',
+  com_ui_bookmarks_create_error: 'Er is een fout opgetreden bij het maken van de bladwijzer',
+  com_ui_bookmarks_update_error: 'Er is een fout opgetreden bij het bijwerken van de bladwijzer',
+  com_ui_bookmarks_delete_error: 'Er is een fout opgetreden bij het verwijderen van de bladwijzer',
+  com_ui_bookmarks_add_to_conversation: 'Toevoegen aan huidig gesprek',
+  com_ui_accept: 'Ik accepteer',
+  com_ui_decline: 'Ik accepteer niet',
+  com_ui_terms_and_conditions: 'Gebruiksvoorwaarden',
+  com_ui_no_terms_content: 'Geen gebruiksvoorwaarden-inhoud om weer te geven',
   com_auth_error_login:
     'Kan niet inloggen met de verstrekte informatie. Controleer uw referenties en probeer het opnieuw.',
   com_auth_error_login_rl: 'Te veel inlogpogingen in een korte tijd. Probeer het later nog eens.',
@@ -288,6 +306,7 @@ export default {
   com_nav_theme_system: 'Systeem',
   com_nav_theme_dark: 'Donker',
   com_nav_theme_light: 'Licht',
+  com_nav_font_size: 'Lettertypegrootte',
   com_nav_clear_all_chats: 'Alle chats wissen',
   com_nav_confirm_clear: 'Wissen bevestigen',
   com_nav_close_sidebar: 'Zijbalk sluiten',
@@ -308,6 +327,8 @@ export default {
   com_nav_help_faq: 'Help & FAQ',
   com_nav_settings: 'Instellingen',
   com_nav_search_placeholder: 'Berichten doorzoeken',
+  com_nav_info_bookmarks_rebuild:
+    'Als het aantal bladwijzers onjuist is, bouw dan de bladwijzerinformatie opnieuw op. Het aantal bladwijzers zal worden herberekend en de gegevens zullen worden hersteld naar hun juiste staat.',
   com_nav_setting_general: 'Algemeen',
   com_nav_setting_data: 'Gegevensbesturing',
 };
@@ -609,6 +630,62 @@ export const comparisons = {
   com_ui_more_options: {
     english: 'More',
     translated: 'Meer',
+  },
+  com_ui_bookmarks: {
+    english: 'Bookmarks',
+    translated: 'Bladwijzers',
+  },
+  com_ui_bookmarks_rebuild: {
+    english: 'Rebuild',
+    translated: 'Herbouwen',
+  },
+  com_ui_bookmarks_new: {
+    english: 'New Bookmark',
+    translated: 'Nieuwe bladwijzer',
+  },
+  com_ui_bookmark_delete_confirm: {
+    english: 'Are you sure you want to delete this bookmark?',
+    translated: 'Weet je zeker dat je deze bladwijzer wilt verwijderen?',
+  },
+  com_ui_bookmarks_title: {
+    english: 'Title',
+    translated: 'Titel',
+  },
+  com_ui_bookmarks_count: {
+    english: 'Count',
+    translated: 'Aantal',
+  },
+  com_ui_bookmarks_description: {
+    english: 'Description',
+    translated: 'Beschrijving',
+  },
+  com_ui_bookmarks_create_success: {
+    english: 'Bookmark created successfully',
+    translated: 'Bladwijzer succesvol aangemaakt',
+  },
+  com_ui_bookmarks_update_success: {
+    english: 'Bookmark updated successfully',
+    translated: 'Bladwijzer succesvol bijgewerkt',
+  },
+  com_ui_bookmarks_delete_success: {
+    english: 'Bookmark deleted successfully',
+    translated: 'Bladwijzer succesvol verwijderd',
+  },
+  com_ui_bookmarks_create_error: {
+    english: 'There was an error creating the bookmark',
+    translated: 'Er is een fout opgetreden bij het maken van de bladwijzer',
+  },
+  com_ui_bookmarks_update_error: {
+    english: 'There was an error updating the bookmark',
+    translated: 'Er is een fout opgetreden bij het bijwerken van de bladwijzer',
+  },
+  com_ui_bookmarks_delete_error: {
+    english: 'There was an error deleting the bookmark',
+    translated: 'Er is een fout opgetreden bij het verwijderen van de bladwijzer',
+  },
+  com_ui_bookmarks_add_to_conversation: {
+    english: 'Add to current conversation',
+    translated: 'Toevoegen aan huidig gesprek',
   },
   com_auth_error_login: {
     english:
@@ -1415,6 +1492,12 @@ export const comparisons = {
   com_nav_search_placeholder: {
     english: 'Search messages',
     translated: 'Berichten doorzoeken',
+  },
+  com_nav_info_bookmarks_rebuild: {
+    english:
+      'If the bookmark count is incorrect, please rebuild the bookmark information. The bookmark count will be recalculated and the data will be restored to its correct state.',
+    translated:
+      'Als het aantal bladwijzers onjuist is, bouw dan de bladwijzerinformatie opnieuw op. Het aantal bladwijzers zal worden herberekend en de gegevens zullen worden hersteld naar hun juiste staat.',
   },
   com_nav_setting_general: {
     english: 'General',

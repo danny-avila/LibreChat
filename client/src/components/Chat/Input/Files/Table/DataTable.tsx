@@ -32,7 +32,7 @@ import {
   DropdownMenuTrigger,
 } from '~/components/ui';
 import { useDeleteFilesFromTable } from '~/hooks/Files';
-import { NewTrashIcon, Spinner } from '~/components/svg';
+import { TrashIcon, Spinner } from '~/components/svg';
 import useLocalize from '~/hooks/useLocalize';
 
 interface DataTableProps<TData, TValue> {
@@ -43,7 +43,7 @@ interface DataTableProps<TData, TValue> {
 const contextMap = {
   [FileContext.filename]: 'com_ui_name',
   [FileContext.updatedAt]: 'com_ui_date',
-  [FileContext.source]: 'com_ui_storage',
+  [FileContext.filterSource]: 'com_ui_storage',
   [FileContext.context]: 'com_ui_context',
   [FileContext.bytes]: 'com_ui_size',
 };
@@ -96,25 +96,25 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
             deleteFiles({ files: filesToDelete as TFile[] });
             setRowSelection({});
           }}
-          className="dark:hover:bg-gray-850/25 ml-1 gap-2 sm:ml-0"
+          className="ml-1 gap-2 dark:hover:bg-gray-850/25 sm:ml-0"
           disabled={!table.getFilteredSelectedRowModel().rows.length || isDeleting}
         >
           {isDeleting ? (
             <Spinner className="h-4 w-4" />
           ) : (
-            <NewTrashIcon className="h-4 w-4 text-red-400" />
+            <TrashIcon className="h-4 w-4 text-red-400" />
           )}
           {localize('com_ui_delete')}
         </Button>
         <Input
           placeholder={localize('com_files_filter')}
-          value={(table.getColumn('filename')?.getFilterValue() as string) ?? ''}
+          value={(table.getColumn('filename')?.getFilterValue() as string | undefined) ?? ''}
           onChange={(event) => table.getColumn('filename')?.setFilterValue(event.target.value)}
-          className="max-w-sm dark:border-gray-500"
+          className="max-w-sm border-border-medium placeholder:text-text-secondary"
         />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="ml-auto">
+            <Button variant="outline" className="ml-auto border border-border-medium">
               <ListFilter className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
@@ -132,7 +132,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                     key={column.id}
                     className="cursor-pointer capitalize dark:text-white dark:hover:bg-gray-800"
                     checked={column.getIsVisible()}
-                    onCheckedChange={(value) => column.toggleVisibility(!!value)}
+                    onCheckedChange={(value) => column.toggleVisibility(Boolean(value))}
                   >
                     {localize(contextMap[column.id])}
                   </DropdownMenuCheckboxItem>
@@ -175,7 +175,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
             ))}
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows?.length ? (
+            {table.getRowModel().rows.length ? (
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}
@@ -184,7 +184,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                 >
                   {row.getVisibleCells().map((cell, index) => {
                     const maxWidth =
-                      (cell.column.columnDef as AugmentedColumnDef<TData, TValue>)?.meta?.size ??
+                      (cell.column.columnDef as AugmentedColumnDef<TData, TValue>).meta?.size ??
                       'auto';
 
                     const style: Style = {};
@@ -225,7 +225,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           )}
         </div>
         <Button
-          className="select-none dark:border-gray-500 dark:hover:bg-gray-600"
+          className="select-none border-border-medium"
           variant="outline"
           size="sm"
           onClick={() => table.previousPage()}
@@ -234,7 +234,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           {localize('com_ui_prev')}
         </Button>
         <Button
-          className="select-none dark:border-gray-500 dark:hover:bg-gray-600"
+          className="select-none border-border-medium"
           variant="outline"
           size="sm"
           onClick={() => table.nextPage()}

@@ -1,7 +1,7 @@
 import { TFile } from 'librechat-data-provider/dist/types';
 import React, { useState } from 'react';
 import { TThread, TVectorStore } from '~/common';
-import { CheckMark, NewTrashIcon } from '~/components/svg';
+import { CheckMark, TrashIcon } from '~/components/svg';
 import { Button } from '~/components/ui';
 import DeleteIconButton from '../DeleteIconButton';
 import VectorStoreButton from '../VectorStore/VectorStoreButton';
@@ -140,7 +140,7 @@ export default function FilePreview() {
                     }}
                     variant={'ghost'}
                   >
-                    <NewTrashIcon className="m-0 p-0" />
+                    <TrashIcon className="m-0 p-0" />
                   </Button>
                 </div>
               </div>
@@ -167,7 +167,7 @@ export default function FilePreview() {
                       console.log('Remove from thread');
                     }}
                   >
-                    <NewTrashIcon className="m-0 p-0" />
+                    <TrashIcon className="m-0 p-0" />
                   </Button>
                 </div>
               </div>

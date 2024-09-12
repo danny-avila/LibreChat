@@ -1,4 +1,4 @@
-// import { useState, useEffect } from 'react';
+import { useMemo } from 'react';
 import { actionDelimiter, actionDomainSeparator, Constants } from 'librechat-data-provider';
 import * as Popover from '@radix-ui/react-popover';
 import useLocalize from '~/hooks/useLocalize';
@@ -11,18 +11,19 @@ import ToolPopover from './ToolPopover';
 // import ActionIcon from './ActionIcon';
 import WrenchIcon from './WrenchIcon';
 import { useProgress } from '~/hooks';
+import { logger } from '~/utils';
 
 export default function ToolCall({
   initialProgress = 0.1,
   isSubmitting,
   name,
-  args = '',
+  args: _args = '',
   output,
 }: {
   initialProgress: number;
   isSubmitting: boolean;
   name: string;
-  args: string;
+  args: string | Record<string, unknown>;
   output?: string | null;
 }) {
   const localize = useLocalize();
@@ -34,6 +35,27 @@ export default function ToolCall({
   const [function_name, _domain] = name.split(actionDelimiter);
   const domain = _domain?.replaceAll(actionDomainSeparator, '.') ?? null;
   const error = output?.toLowerCase()?.includes('error processing tool');
+
+  const args = useMemo(() => {
+    if (typeof _args === 'string') {
+      return _args;
+    }
+
+    try {
+      return JSON.stringify(_args, null, 2);
+    } catch (e) {
+      logger.error(
+        'client/src/components/Chat/Messages/Content/ToolCall.tsx - Failed to stringify args',
+        e,
+      );
+      return '';
+    }
+  }, [_args]);
+
+  const hasInfo = useMemo(
+    () => (args?.length || 0) > 0 || (output?.length || 0) > 0,
+    [args, output],
+  );
 
   return (
     <Popover.Root>
@@ -67,10 +89,10 @@ export default function ToolCall({
               ? localize('com_assistants_completed_action', domain)
               : localize('com_assistants_completed_function', function_name)
           }
-          hasInput={!!args?.length}
+          hasInput={hasInfo}
           popover={true}
         />
-        {!!args?.length && (
+        {hasInfo && (
           <ToolPopover input={args} output={output} domain={domain} function_name={function_name} />
         )}
       </div>

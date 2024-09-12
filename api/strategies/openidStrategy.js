@@ -5,6 +5,7 @@ const { HttpsProxyAgent } = require('https-proxy-agent');
 const { Issuer, Strategy: OpenIDStrategy, custom } = require('openid-client');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { findUser, createUser, updateUser } = require('~/models/userMethods');
+const { hashToken } = require('~/server/utils/crypto');
 const { logger } = require('~/config');
 
 let crypto;
@@ -25,12 +26,18 @@ const downloadImage = async (url, accessToken) => {
   }
 
   try {
-    const response = await fetch(url, {
+    const options = {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },
-    });
+    };
+
+    if (process.env.PROXY) {
+      options.agent = new HttpsProxyAgent(process.env.PROXY);
+    }
+
+    const response = await fetch(url, options);
 
     if (response.ok) {
       const buffer = await response.buffer();
@@ -178,9 +185,7 @@ async function setupOpenId() {
 
             let fileName;
             if (crypto) {
-              const hash = crypto.createHash('sha256');
-              hash.update(userinfo.sub);
-              fileName = hash.digest('hex') + '.png';
+              fileName = (await hashToken(userinfo.sub)) + '.png';
             } else {
               fileName = userinfo.sub + '.png';
             }
