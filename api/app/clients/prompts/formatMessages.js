@@ -142,6 +142,9 @@ const formatAgentMessages = (payload) => {
   const messages = [];
 
   for (const message of payload) {
+    if (typeof message.content === 'string') {
+      message.content = [{ type: ContentTypes.TEXT, [ContentTypes.TEXT]: message.content }];
+    }
     if (message.role !== 'assistant') {
       messages.push(formatMessage({ message, langChain: true }));
       continue;
