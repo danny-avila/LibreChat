@@ -1,18 +1,14 @@
-# Use PostGIS with PostgreSQL 15 as the base image
 FROM postgis/postgis:15-3.4-alpine
 
-# Maintainer and metadata labels
-LABEL maintainer="Your Name <your.email@example.com>" \
-      org.opencontainers.image.description="PostGIS 3.4 and pgvector extensions for PostgreSQL 15 Alpine" \
-      org.opencontainers.image.source="https://github.com/pgvector/pgvector"
-
-# Install pgvector
+# Install pgvector and other dependencies
 RUN set -eux \
     && apk add --no-cache --virtual .build-deps \
         git \
         make \
         gcc \
         musl-dev \
+        llvm15 \
+        clang15 \
     \
     # Clone, build, and install pgvector
     && cd /tmp \
@@ -25,9 +21,12 @@ RUN set -eux \
     && rm -rf /tmp/pgvector \
     && apk del .build-deps
 
+# Add PostGIS and pgvector extensions to the initialization process
+COPY ./initdb-postgis.sh /docker-entrypoint-initdb.d/10_postgis.sh
+COPY ./update-postgis.sh /usr/local/bin
+
 # Expose PostgreSQL port
 EXPOSE 5432
 
 # Set the default command to run PostgreSQL
 CMD ["postgres"]
-
