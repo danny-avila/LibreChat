@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { MessageSquare, Link as LinkIcon } from 'lucide-react';
+import { Link as LinkIcon } from 'lucide-react';
 import type { SharedLinksResponse, TSharedLink } from 'librechat-data-provider';
 import { useDeleteSharedLinkMutation, useSharedLinksInfiniteQuery } from '~/data-provider';
 import { useAuthContext, useLocalize, useNavScrolling } from '~/hooks';

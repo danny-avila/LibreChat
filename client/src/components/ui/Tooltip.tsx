@@ -8,7 +8,7 @@ interface TooltipAnchorProps extends Ariakit.TooltipAnchorProps {
 }
 
 export const TooltipAnchor = forwardRef<HTMLDivElement, TooltipAnchorProps>(function TooltipAnchor(
-  { description, side = 'top', ...props },
+  { description, side = 'top', role, ...props },
   ref,
 ) {
   const tooltip = Ariakit.useTooltipStore({ placement: side });
@@ -31,9 +31,16 @@ export const TooltipAnchor = forwardRef<HTMLDivElement, TooltipAnchorProps>(func
     }
   }, [placement]);
 
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (role === 'button' && event.key === 'Enter') {
+      event.preventDefault();
+      (event.target as HTMLDivElement).click();
+    }
+  };
+
   return (
     <Ariakit.TooltipProvider store={tooltip} hideTimeout={0}>
-      <Ariakit.TooltipAnchor {...props} ref={ref} />
+      <Ariakit.TooltipAnchor {...props} ref={ref} role={role} onKeyDown={handleKeyDown} />
       <AnimatePresence>
         {mounted && (
           <Ariakit.Tooltip
