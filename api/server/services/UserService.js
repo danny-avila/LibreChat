@@ -73,7 +73,7 @@ const getUserKeyWithExpiry = async ({ userId, name }) => {
     );
   }
   try {
-    return { ...JSON.parse(decrypt(keyValue.value)), expiresAt: keyValue.expiresAt };
+    return { ...JSON.parse(await decrypt(keyValue.value)), expiresAt: keyValue.expiresAt };
   } catch (e) {
     throw new Error(
       JSON.stringify({
