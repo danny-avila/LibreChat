@@ -17,6 +17,14 @@ import {
 import { IconProps } from '~/common';
 import { cn } from '~/utils';
 
+function getOpenAIColor(_model: string | null | undefined) {
+  const model = _model?.toLowerCase() ?? '';
+  if (model && /\bo1\b/i.test(model)) {
+    return '#000000';
+  }
+  return model.includes('gpt-4') ? '#AB68FF' : '#19C37D';
+}
+
 function getGoogleIcon(model: string | null | undefined, size: number) {
   if (model?.toLowerCase().includes('code') === true) {
     return <CodeyIcon size={size * 0.75} />;
@@ -119,8 +127,7 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
     },
     [EModelEndpoint.openAI]: {
       icon: <GPTIcon size={size * 0.5555555555555556} />,
-      bg:
-        typeof model === 'string' && model.toLowerCase().includes('gpt-4') ? '#AB68FF' : '#19C37D',
+      bg: getOpenAIColor(model),
       name: 'ChatGPT',
     },
     [EModelEndpoint.gptPlugins]: {

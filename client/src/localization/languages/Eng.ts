@@ -24,8 +24,10 @@ export default {
   com_error_no_base_url: 'No base URL found. Please provide one and try again.',
   com_warning_resubmit_unsupported:
     'Resubmitting the AI message is not supported for this endpoint.',
-  com_error_invalid_request:
+  com_error_invalid_request_error:
     'The AI service rejected the request due to an error. This could be caused by an invalid API key or an improperly formatted request.',
+  com_error_no_system_messages:
+    'The selected AI service or model does not support system messages. Try using prompts instead of custom instructions.',
   com_error_invalid_user_key: 'Invalid key provided. Please provide a valid key and try again.',
   com_error_expired_user_key:
     'Provided key for {0} expired at {1}. Please provide a new key and try again.',

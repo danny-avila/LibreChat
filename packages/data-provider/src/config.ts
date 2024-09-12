@@ -11,6 +11,10 @@ export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'd
 
 export const defaultRetrievalModels = [
   'gpt-4o',
+  'o1-preview-2024-09-12',
+  'o1-preview',
+  'o1-mini-2024-09-12',
+  'o1-mini',
   'chatgpt-4o-latest',
   'gpt-4o-2024-05-13',
   'gpt-4o-2024-08-06',
@@ -951,6 +955,10 @@ export enum ErrorTypes {
    * Invalid request error, API rejected request
    */
   INVALID_REQUEST = 'invalid_request_error',
+  /**
+   * Invalid request error, API rejected request
+   */
+  NO_SYSTEM_MESSAGES = 'no_system_messages',
 }
 
 /**
