@@ -173,6 +173,10 @@ const handleAbortError = async (res, req, error, data) => {
     errorText = `{"type":"${ErrorTypes.INVALID_REQUEST}"}`;
   }
 
+  if (error?.message?.includes('does not support \'system\'')) {
+    errorText = `{"type":"${ErrorTypes.NO_SYSTEM_MESSAGES}"}`;
+  }
+
   const respondWithError = async (partialText) => {
     let options = {
       sender,
