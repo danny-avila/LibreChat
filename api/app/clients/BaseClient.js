@@ -507,8 +507,7 @@ class BaseClient {
     }
 
     const User = require('~/models/User');
-
-    const { email } = await User.findOne({ user }).lean();
+    const { email } = await User.findOne({ _id: user }).lean();
 
     global.appInsights.trackEvent({
       name: 'AzureQuery',
@@ -550,17 +549,6 @@ class BaseClient {
     const completion = await this.sendCompletion(payload, opts);
     this.abortController.requestCompleted = true;
 
-    global.appInsights.trackEvent({
-      name: 'AzureAnswerEnded',
-      properties: {
-        userId: user,
-        userEmail: email,
-        charactersLength: completion.length,
-        messageTokens: promptTokens,
-        model: this.modelOptions.model,
-      },
-    });
-
     const responseMessage = {
       messageId: responseMessageId,
       conversationId,
@@ -600,6 +588,19 @@ class BaseClient {
         completionTokens = this.getTokenCount(completion);
       }
 
+      global.appInsights.trackEvent({
+        name: 'AzureAnswerEnded',
+        properties: {
+          userId: user,
+          userEmail: email,
+          charactersLength: completion.length,
+          promptTokens: promptTokens,
+          completionTokens: completionTokens,
+          messageTokens: completionTokens + promptTokens ,
+          model: this.modelOptions.model,
+        },
+      });
+      
       await this.recordTokenUsage({ promptTokens, completionTokens, usage });
     }
 
