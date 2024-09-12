@@ -1,6 +1,5 @@
-const crypto = require('crypto');
-const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
+const { getRandomValues, hashToken } = require('~/server/utils/crypto');
 const { createToken, findToken } = require('./Token');
 const logger = require('~/config/winston');
 
@@ -18,8 +17,8 @@ const logger = require('~/config/winston');
  */
 const createInvite = async (email) => {
   try {
-    let token = crypto.randomBytes(32).toString('hex');
-    const hash = bcrypt.hashSync(token, 10);
+    const token = await getRandomValues(32);
+    const hash = await hashToken(token);
     const encodedToken = encodeURIComponent(token);
 
     const fakeUserId = new mongoose.Types.ObjectId();
@@ -50,7 +49,7 @@ const createInvite = async (email) => {
 const getInvite = async (encodedToken, email) => {
   try {
     const token = decodeURIComponent(encodedToken);
-    const hash = bcrypt.hashSync(token, 10);
+    const hash = await hashToken(token);
     const invite = await findToken({ token: hash, email });
 
     if (!invite) {
@@ -59,7 +58,7 @@ const getInvite = async (encodedToken, email) => {
 
     return invite;
   } catch (error) {
-    logger.error('[getInvite] Error getting invite', error);
+    logger.error('[getInvite] Error getting invite:', error);
     return { error: true, message: error.message };
   }
 };
