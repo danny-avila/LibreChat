@@ -545,7 +545,8 @@ class OpenAIClient extends BaseClient {
       promptPrefix = this.augmentedPrompt + promptPrefix;
     }
 
-    if (promptPrefix) {
+    const isO1Model = /\bo1\b/i.test(this.modelOptions.model);
+    if (promptPrefix && !isO1Model) {
       promptPrefix = `Instructions:\n${promptPrefix.trim()}`;
       instructions = {
         role: 'system',
@@ -572,6 +573,16 @@ class OpenAIClient extends BaseClient {
       promptTokens,
       messages,
     };
+
+    /** EXPERIMENTAL */
+    if (promptPrefix && isO1Model) {
+      const lastUserMessageIndex = payload.findLastIndex((message) => message.role === 'user');
+      if (lastUserMessageIndex !== -1) {
+        payload[
+          lastUserMessageIndex
+        ].content = `${promptPrefix}\n${payload[lastUserMessageIndex].content}`;
+      }
+    }
 
     if (tokenCountMap) {
       tokenCountMap.instructions = instructions?.tokenCount;
