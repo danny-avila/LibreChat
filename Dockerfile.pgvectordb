@@ -1,63 +1,20 @@
-# Use PostgreSQL 15 Alpine as the base image
-FROM postgres:15-alpine
+# Use PostGIS with PostgreSQL 15 as the base image
+FROM postgis/postgis:15-3.4-alpine
 
 # Maintainer and metadata labels
-LABEL maintainer="PostGIS Project - https://postgis.net" \
-      org.opencontainers.image.description="PostGIS 3.4.2 and pgvector extensions for PostgreSQL 15 Alpine" \
-      org.opencontainers.image.source="https://github.com/postgis/docker-postgis"
+LABEL maintainer="Your Name <your.email@example.com>" \
+      org.opencontainers.image.description="PostGIS 3.4 and pgvector extensions for PostgreSQL 15 Alpine" \
+      org.opencontainers.image.source="https://github.com/pgvector/pgvector"
 
-# Set environment variables for PostGIS version
-ENV POSTGIS_VERSION 3.4.2
-ENV POSTGIS_SHA256 17aa8760a5c4fcb9a1fdc750c1c9aca0198a35dd1e320628064c43f178eefed2
-
-# Install PostGIS and pgvector
+# Install pgvector
 RUN set -eux \
-    && apk add --no-cache --virtual .fetch-deps \
-        ca-certificates \
-        openssl \
-        tar \
-    \
-    && wget -O postgis.tar.gz "https://github.com/postgis/postgis/archive/${POSTGIS_VERSION}.tar.gz" \
-    && echo "${POSTGIS_SHA256} *postgis.tar.gz" | sha256sum -c - \
-    && mkdir -p /usr/src/postgis \
-    && tar --extract --file postgis.tar.gz --directory /usr/src/postgis --strip-components 1 \
-    && rm postgis.tar.gz \
-    \
     && apk add --no-cache --virtual .build-deps \
-        gdal-dev \
-        geos-dev \
-        proj-dev \
-        proj-util \
-        sfcgal-dev \
-        clang \
-        llvm15-dev \
-        llvm15-libs \
-        clang15 \
-        autoconf \
-        automake \
-        cunit-dev \
-        file \
-        g++ \
-        gcc \
-        gettext-dev \
         git \
-        json-c-dev \
-        libtool \
-        libxml2-dev \
         make \
-        pcre2-dev \
-        perl \
-        protobuf-c-dev \
+        gcc \
+        musl-dev \
     \
-    # Build and install PostGIS
-    && cd /usr/src/postgis \
-    && gettextize \
-    && ./autogen.sh \
-    && ./configure --enable-lto \
-    && make -j$(nproc) \
-    && make install \
-    \
-    # Build and install pgvector
+    # Clone, build, and install pgvector
     && cd /tmp \
     && git clone https://github.com/pgvector/pgvector.git \
     && cd pgvector \
@@ -65,15 +22,12 @@ RUN set -eux \
     && make install \
     \
     # Cleanup
-    && rm -rf /tmp/pgvector /usr/src/postgis \
-    && apk del .fetch-deps .build-deps
-
-# Add PostGIS and pgvector extensions to the initialization process
-COPY ./initdb-postgis.sh /docker-entrypoint-initdb.d/10_postgis.sh
-COPY ./update-postgis.sh /usr/local/bin
+    && rm -rf /tmp/pgvector \
+    && apk del .build-deps
 
 # Expose PostgreSQL port
 EXPOSE 5432
 
-# Set the default command to run when starting the container
+# Set the default command to run PostgreSQL
 CMD ["postgres"]
+
