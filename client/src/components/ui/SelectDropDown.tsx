@@ -102,7 +102,6 @@ function SelectDropDown({
   const hasSearchRender = searchRender != null;
   const options = hasSearchRender ? filteredValues : availableValues;
 
-  console.log({ hasSearchRender, options });
   const renderIcon = showOptionIcon && value != null && (value as OptionWithIcon).icon != null;
 
   return (
