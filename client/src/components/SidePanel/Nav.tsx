@@ -34,7 +34,7 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                       className={cn(
                         buttonVariants({ variant, size: 'icon' }),
                         removeFocusOutlines,
-                        'h-9 w-9 cursor-pointer',
+                        'h-9 w-9',
                         variant === 'default'
                           ? 'dark:bg-muted dark:text-muted-foreground dark:hover:bg-muted bg-surface-terniary dark:hover:text-white'
                           : '',

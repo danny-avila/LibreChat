@@ -83,7 +83,7 @@ export default function ArchivedChatsTable() {
                           setConversationId(conversation.conversationId);
                           archiveHandler();
                         }}
-                        className="cursor-pointer hover:text-black dark:hover:text-white"
+                        className="hover:text-black dark:hover:text-white"
                       >
                         <ArchiveRestore className="size-4 hover:text-gray-300" />
                       </TooltipAnchor>

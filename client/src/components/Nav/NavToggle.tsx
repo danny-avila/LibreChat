@@ -41,7 +41,7 @@ export default function NavToggle({
         description={
           navVisible ? localize('com_nav_close_sidebar') : localize('com_nav_open_sidebar')
         }
-        className="flex cursor-pointer items-center justify-center"
+        className="flex items-center justify-center"
         tabIndex={0}
       >
         <span className="" data-state="closed">
