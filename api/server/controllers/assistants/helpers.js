@@ -67,6 +67,16 @@ async function verifyAssistantPermissions(userId, allAssistants) {
   const assistants = global.azureAssistantsGroupsPermissions;
   const result = [];
 
+  if( targetGroupIds == null || targetGroupIds.length == 0 ){
+    allAssistants.forEach((assistant) => {
+      const exist = assistants.some((a) => a.assistant === assistant.id );
+      if (!exist) {
+        result.push(assistant);
+      }
+    })
+    return result;
+  }
+
   allAssistants.forEach((assistant) => {
     const exist = assistants.some((a) => a.assistant === assistant.id);
     if (!exist) {
@@ -85,6 +95,7 @@ async function verifyAssistantPermissions(userId, allAssistants) {
       });
     }
   });
+
   return result;
 }
 
