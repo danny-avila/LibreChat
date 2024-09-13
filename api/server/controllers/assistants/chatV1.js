@@ -36,7 +36,6 @@ const ten_minutes = 1000 * 60 * 10;
 
 async function sendResponseTelemetry(req, conversationId, response, model)  {
 
-  console.log(conversationId)
   const Conversation = require('~/models/schema/convoSchema');
   const Message = require ('~/models/schema/messageSchema');
 
@@ -45,7 +44,6 @@ async function sendResponseTelemetry(req, conversationId, response, model)  {
       .select('messages')
       .exec();
 
-  console.log(messages)
   const messagesText = 
     await Message.find({ _id: {  $in: messages } })
     .exec();
@@ -53,7 +51,6 @@ async function sendResponseTelemetry(req, conversationId, response, model)  {
   let messagesHistory = [];
 
   for (let i =0; i< messagesText.length; i++){
-    console.log(messagesText[i])
     if(messagesText[i].text)
       messagesHistory.push(messagesText[i].text)
     if(messagesText[i].content) {

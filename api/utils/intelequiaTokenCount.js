@@ -1,7 +1,10 @@
 const { getEncoding } = require('js-tiktoken');
 
 function getModelTokenEncoder(model) {
-  const o200k_base = ['gpt-4o'];
+  const o200k_base = [
+    'gpt-4o',
+    'gpt-4o-mini',
+  ];
   const cl100k_base = [
     'gpt-4',
     'gpt4',
