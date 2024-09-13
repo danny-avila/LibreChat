@@ -1,22 +1,13 @@
-import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
-import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
-import { useConversations, useLocalize, useNewConvo } from '~/hooks';
 import { useArchiveConversationMutation } from '~/data-provider';
+import useConversations from './useConversations';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
+import useLocalize from '../useLocalize';
+import useNewConvo from '../useNewConvo';
 
-type ArchiveButtonProps = {
-  children?: React.ReactNode;
-  conversationId: string;
-  retainView: () => void;
-  shouldArchive: boolean;
-  icon?: React.ReactNode;
-  className?: string;
-};
-
-export function useArchiveHandler(
+export default function useArchiveHandler(
   conversationId: string,
   shouldArchive: boolean,
   retainView: () => void,
@@ -57,31 +48,3 @@ export function useArchiveHandler(
     );
   };
 }
-
-export default function ArchiveButton({
-  conversationId,
-  retainView,
-  shouldArchive,
-  icon,
-  className = '',
-}: ArchiveButtonProps) {
-  const localize = useLocalize();
-  const archiveHandler = useArchiveHandler(conversationId, shouldArchive, retainView);
-
-  return (
-    <button type="button" className={className} onClick={archiveHandler}>
-      <TooltipProvider delayDuration={250}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="h-5 w-5">{icon}</span>
-          </TooltipTrigger>
-          <TooltipContent side="top" sideOffset={0}>
-            {localize(`com_ui_${shouldArchive ? 'archive' : 'unarchive'}`)}
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    </button>
-  );
-}
-
-export { useArchiveHandler as archiveHandler };

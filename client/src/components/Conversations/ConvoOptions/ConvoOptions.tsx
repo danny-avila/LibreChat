@@ -2,11 +2,10 @@ import { useState, useId } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { Ellipsis, Share2, Archive, Pen, Trash } from 'lucide-react';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
-import { useArchiveHandler } from './ArchiveButton';
+import { useLocalize, useArchiveHandler } from '~/hooks';
 import { DropdownPopup } from '~/components/ui';
 import DeleteButton from './DeleteButton';
 import ShareButton from './ShareButton';
-import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 export default function ConvoOptions({

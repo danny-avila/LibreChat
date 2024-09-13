@@ -207,12 +207,12 @@ export default {
   com_ui_shared_link_not_found: 'Link condiviso non trovato',
   com_ui_delete_conversation: 'Eliminare la chat?',
   com_ui_delete_confirm: 'Questo eliminerà',
-  com_ui_rename: 'Rinominare',
-  com_ui_archive: 'Arsip',
+  com_ui_rename: 'Rinomina',
+  com_ui_archive: 'Archivia',
   com_ui_archive_error: 'Errore durante l\'archiviazione della conversazione',
   com_ui_unarchive: 'Disarchivia',
   com_ui_unarchive_error: 'Impossibile disarchiviare la conversazione',
-  com_ui_more_options: 'Pi',
+  com_ui_more_options: 'Più',
   com_ui_delete_assistant_confirm:
     'Sei sicuro di voler eliminare questo Assistente? Questa operazione non può essere annullata.',
   com_ui_preview: 'Anteprima',
@@ -1361,11 +1361,11 @@ export const comparisons = {
   },
   com_ui_rename: {
     english: 'Rename',
-    translated: 'Rinominare',
+    translated: 'Rinomina',
   },
   com_ui_archive: {
     english: 'Archive',
-    translated: 'Arsip',
+    translated: 'Archivia',
   },
   com_ui_archive_error: {
     english: 'Failed to archive conversation',
