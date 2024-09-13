@@ -114,7 +114,8 @@ const startServer = async () => {
   app.use((req, res) => {
     // Replace lang attribute in index.html with lang from cookies or accept-language header
     const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
-    const updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${lang}"`);
+    const saneLang = lang.replace(/"/g, '&quot;'); // sanitize untrusted user input
+    const updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
     res.send(updatedIndexHtml);
   });
 
