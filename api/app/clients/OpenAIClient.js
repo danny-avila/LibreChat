@@ -1096,7 +1096,12 @@ ${convo}
       { promptTokens, completionTokens },
     );
 
-    if (typeof usage === 'object' && typeof usage.reasoning_tokens === 'number') {
+    if (
+      usage &&
+      typeof usage === 'object' &&
+      'reasoning_tokens' in usage &&
+      typeof usage.reasoning_tokens === 'number'
+    ) {
       await spendTokens(
         {
           context: 'reasoning',
