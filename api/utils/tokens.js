@@ -2,6 +2,9 @@ const z = require('zod');
 const { EModelEndpoint } = require('librechat-data-provider');
 
 const openAIModels = {
+  o1: 127500, // -500 from max
+  'o1-mini': 127500, // -500 from max
+  'o1-preview': 127500, // -500 from max
   'gpt-4': 8187, // -5 from max
   'gpt-4-0613': 8187, // -5 from max
   'gpt-4-32k': 32758, // -10 from max
@@ -113,6 +116,19 @@ const maxTokensMap = {
   [EModelEndpoint.bedrock]: bedrockModels,
 };
 
+const modelMaxOutputs = {
+  o1: 32268, // -500 from max: 32,768
+  'o1-mini': 65136, // -500 from max: 65,536
+  'o1-preview': 32268, // -500 from max: 32,768
+  system_default: 1024,
+};
+
+const maxOutputTokensMap = {
+  [EModelEndpoint.azureOpenAI]: modelMaxOutputs,
+  [EModelEndpoint.openAI]: modelMaxOutputs,
+  [EModelEndpoint.custom]: modelMaxOutputs,
+};
+
 /**
  * Finds the first matching pattern in the tokens map.
  * @param {string} modelName
@@ -132,27 +148,15 @@ function findMatchingPattern(modelName, tokensMap) {
 }
 
 /**
- * Retrieves the maximum tokens for a given model name. If the exact model name isn't found,
- * it searches for partial matches within the model name, checking keys in reverse order.
+ * Retrieves a token value for a given model name from a tokens map.
  *
  * @param {string} modelName - The name of the model to look up.
- * @param {string} endpoint - The endpoint (default is 'openAI').
- * @param {EndpointTokenConfig} [endpointTokenConfig] - Token Config for current endpoint to use for max tokens lookup
- * @returns {number|undefined} The maximum tokens for the given model or undefined if no match is found.
- *
- * @example
- * getModelMaxTokens('gpt-4-32k-0613'); // Returns 32767
- * getModelMaxTokens('gpt-4-32k-unknown'); // Returns 32767
- * getModelMaxTokens('unknown-model'); // Returns undefined
+ * @param {EndpointTokenConfig | Record<string, number>} tokensMap - The map of model names to token values.
+ * @param {string} [key='context'] - The key to look up in the tokens map.
+ * @returns {number|undefined} The token value for the given model or undefined if no match is found.
  */
-function getModelMaxTokens(modelName, endpoint = EModelEndpoint.openAI, endpointTokenConfig) {
-  if (typeof modelName !== 'string') {
-    return undefined;
-  }
-
-  /** @type {EndpointTokenConfig | Record<string, number>} */
-  const tokensMap = endpointTokenConfig ?? maxTokensMap[endpoint];
-  if (!tokensMap) {
+function getModelTokenValue(modelName, tokensMap, key = 'context') {
+  if (typeof modelName !== 'string' || !tokensMap) {
     return undefined;
   }
 
@@ -168,10 +172,36 @@ function getModelMaxTokens(modelName, endpoint = EModelEndpoint.openAI, endpoint
 
   if (matchedPattern) {
     const result = tokensMap[matchedPattern];
-    return result?.context ?? result;
+    return result?.[key] ?? result ?? tokensMap.system_default;
   }
 
-  return undefined;
+  return tokensMap.system_default;
+}
+
+/**
+ * Retrieves the maximum tokens for a given model name.
+ *
+ * @param {string} modelName - The name of the model to look up.
+ * @param {string} endpoint - The endpoint (default is 'openAI').
+ * @param {EndpointTokenConfig} [endpointTokenConfig] - Token Config for current endpoint to use for max tokens lookup
+ * @returns {number|undefined} The maximum tokens for the given model or undefined if no match is found.
+ */
+function getModelMaxTokens(modelName, endpoint = EModelEndpoint.openAI, endpointTokenConfig) {
+  const tokensMap = endpointTokenConfig ?? maxTokensMap[endpoint];
+  return getModelTokenValue(modelName, tokensMap);
+}
+
+/**
+ * Retrieves the maximum output tokens for a given model name.
+ *
+ * @param {string} modelName - The name of the model to look up.
+ * @param {string} endpoint - The endpoint (default is 'openAI').
+ * @param {EndpointTokenConfig} [endpointTokenConfig] - Token Config for current endpoint to use for max tokens lookup
+ * @returns {number|undefined} The maximum output tokens for the given model or undefined if no match is found.
+ */
+function getModelMaxOutputTokens(modelName, endpoint = EModelEndpoint.openAI, endpointTokenConfig) {
+  const tokensMap = endpointTokenConfig ?? maxOutputTokensMap[endpoint];
+  return getModelTokenValue(modelName, tokensMap, 'output');
 }
 
 /**
@@ -298,7 +328,8 @@ module.exports = {
   maxTokensMap,
   inputSchema,
   modelSchema,
-  getModelMaxTokens,
   matchModelName,
   processModelData,
+  getModelMaxTokens,
+  getModelMaxOutputTokens,
 };

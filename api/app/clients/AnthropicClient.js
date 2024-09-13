@@ -64,6 +64,12 @@ class AnthropicClient extends BaseClient {
     /** Whether or not the model supports Prompt Caching
      * @type {boolean} */
     this.supportsCacheControl;
+    /** The key for the usage object's input tokens
+     * @type {string} */
+    this.inputTokensKey = 'input_tokens';
+    /** The key for the usage object's output tokens
+     * @type {string} */
+    this.outputTokensKey = 'output_tokens';
   }
 
   setOptions(options) {
@@ -200,7 +206,7 @@ class AnthropicClient extends BaseClient {
   }
 
   /**
-   * Calculates the correct token count for the current message based on the token count map and API usage.
+   * Calculates the correct token count for the current user message based on the token count map and API usage.
    * Edge case: If the calculation results in a negative value, it returns the original estimate.
    * If revisiting a conversation with a chat history entirely composed of token estimates,
    * the cumulative token count going forward should become more accurate as the conversation progresses.
@@ -208,7 +214,7 @@ class AnthropicClient extends BaseClient {
    * @param {Record<string, number>} params.tokenCountMap - A map of message IDs to their token counts.
    * @param {string} params.currentMessageId - The ID of the current message to calculate.
    * @param {AnthropicStreamUsage} params.usage - The usage object returned by the API.
-   * @returns {number} The correct token count for the current message.
+   * @returns {number} The correct token count for the current user message.
    */
   calculateCurrentTokenCount({ tokenCountMap, currentMessageId, usage }) {
     const originalEstimate = tokenCountMap[currentMessageId] || 0;
@@ -680,7 +686,11 @@ class AnthropicClient extends BaseClient {
    */
   checkPromptCacheSupport(modelName) {
     const modelMatch = matchModelName(modelName, EModelEndpoint.anthropic);
-    if (modelMatch === 'claude-3-5-sonnet' || modelMatch === 'claude-3-haiku') {
+    if (
+      modelMatch === 'claude-3-5-sonnet' ||
+      modelMatch === 'claude-3-haiku' ||
+      modelMatch === 'claude-3-opus'
+    ) {
       return true;
     }
     return false;
