@@ -12,7 +12,7 @@ USER node
 
 COPY --chown=node:node . .
 
-RUN \
+RUN set -e; \
     # Allow mounting of these files, which have no default
     touch .env ; \
     # Create directories for the volumes to inherit the correct permissions
