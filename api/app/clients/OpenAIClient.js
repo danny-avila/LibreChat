@@ -914,8 +914,9 @@ ${convo}
    */
   getStreamUsage() {
     if (
+      this.usage &&
       typeof this.usage === 'object' &&
-      typeof this.usage.completion_tokens_details === 'object'
+      typeof this.usage?.completion_tokens_details === 'object'
     ) {
       const outputTokens = Math.abs(
         this.usage.completion_tokens_details.reasoning_tokens - this.usage[this.outputTokensKey],
