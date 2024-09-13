@@ -104,23 +104,50 @@ const MessageRender = memo(
         {isLatestCard === true && (
           <div className="absolute right-0 top-0 m-2 h-3 w-3 rounded-full bg-text-primary"></div>
         )}
-        <div className="relative flex flex-shrink-0 flex-col items-end">
-          <div>
-            <div className="pt-0.5">
-              <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-                <Icon message={msg} conversation={conversation} assistant={assistant} />
+        {msg.isCreatedByUser && currentEditId === msg.messageId ? (
+          <div className="relative flex flex-shrink-0 flex-col items-end">
+            <div>
+              <div className="pt-0.5">
+                <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
+                  <Icon message={msg} conversation={conversation} assistant={assistant} />
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        ) : 
+        !msg.isCreatedByUser && (
+          <div className="relative flex flex-shrink-0 flex-col items-end">
+            <div>
+              <div className="pt-0.5">
+                <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
+                  <Icon message={msg} conversation={conversation} assistant={assistant} />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         <div
           className={cn(
-            'relative flex w-11/12 flex-col',
-            msg.isCreatedByUser === true ? '' : 'agent-turn',
+            'relative flex flex-col',
+            msg.isCreatedByUser === true 
+            ? currentEditId === msg.messageId
+                ? 'ml-auto w-full' 
+                : 'ml-auto max-w-[80%] sm:max-w-[70%] w-auto'
+            : 'w-11/12 agent-turn',
           )}
         >
+          {!msg.isCreatedByUser && (
           <h2 className={cn('select-none font-semibold', fontSize)}>{messageLabel}</h2>
-          <div className="flex-col gap-1 md:gap-3">
+          )}
+          <div className={cn(
+            'flex-col gap-1 md:gap-3',
+            msg.isCreatedByUser === true
+            ? currentEditId === msg.messageId
+                ? '' 
+                : 'rounded-3xl px-5 py-2.5 bg-gray-200 dark:bg-gray-700'
+            : '',
+            )}
+          >
             <div className="flex max-w-full flex-grow flex-col gap-0">
               {msg.plugin && <Plugin plugin={msg.plugin} />}
               <MessageContent
