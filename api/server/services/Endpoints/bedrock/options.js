@@ -19,7 +19,7 @@ const getOptions = async ({ req, endpointOption }) => {
   const expiresAt = req.body.key;
   const isUserProvided = BEDROCK_AWS_SECRET_ACCESS_KEY === AuthType.USER_PROVIDED;
 
-  const credentials = isUserProvided
+  let credentials = isUserProvided
     ? await getUserKey({ userId: req.user.id, name: EModelEndpoint.bedrock })
     : {
       accessKeyId: BEDROCK_AWS_ACCESS_KEY_ID,
@@ -28,6 +28,14 @@ const getOptions = async ({ req, endpointOption }) => {
 
   if (!credentials) {
     throw new Error('Bedrock credentials not provided. Please provide them again.');
+  }
+
+  if (
+    !isUserProvided &&
+    (credentials.accessKeyId === undefined || credentials.accessKeyId === '') &&
+    (credentials.secretAccessKey === undefined || credentials.secretAccessKey === '')
+  ) {
+    credentials = undefined;
   }
 
   if (expiresAt && isUserProvided) {
