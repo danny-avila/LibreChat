@@ -96,15 +96,7 @@ export default function NewChat({
           </div>
           <div className="flex gap-3">
             <span className="flex items-center" data-state="closed">
-              <TooltipAnchor
-                side="right"
-                id="nav-new-chat-btn"
-                aria-label="nav-new-chat-btn"
-                description={localize('com_ui_new_chat')}
-                className="text-text-primary"
-              >
-                <NewChatIcon className="size-5" />
-              </TooltipAnchor>
+              <NewChatIcon className="size-5" />
             </span>
           </div>
         </a>

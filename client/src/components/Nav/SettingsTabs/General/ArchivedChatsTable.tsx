@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState } from 'react';
 import { MessageCircle, ArchiveRestore } from 'lucide-react';
 import { useConversationsInfiniteQuery } from '~/data-provider';
 import { ConversationListResponse } from 'librechat-data-provider';

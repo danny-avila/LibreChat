@@ -33,8 +33,7 @@ export const ThemeSelector = ({
         value={theme}
         onChange={onChange}
         options={themeOptions}
-        sizeClasses="w-[220px]"
-        anchor="bottom start"
+        sizeClasses="w-[180px]"
         testId="theme-selector"
       />
     </div>
@@ -111,7 +110,6 @@ export const LangSelector = ({
         value={langcode}
         onChange={onChange}
         sizeClasses="[--anchor-max-height:256px]"
-        anchor="bottom start"
         options={languageOptions}
       />
     </div>

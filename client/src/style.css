@@ -2292,7 +2292,7 @@ button.scroll-convo {
   z-index: 50;
   cursor: pointer;
   border-radius: 0.275rem;
-  background-color: var(--bg-gray-600);
+  background-color: var(--surface-primary);
   padding-top: 0.25rem;
   padding-bottom: 0.25rem;
   padding-left: 0.5rem;
@@ -2321,4 +2321,68 @@ button.scroll-convo {
 .dark :focus-visible {
   outline: 2px solid #fff;
   outline-offset: 2px;
+}
+
+.popover {
+  z-index: 1000;
+  display: flex;
+  max-height: min(var(--popover-available-height, 300px), 300px);
+  flex-direction: column;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border-radius: 1rem;
+  border-width: 1px;
+  border-style: solid;
+  border-color: var(--border-medium);
+  background-color: var(--surface-primary);
+  padding: 0.5rem;
+  color: var(--text-primary);
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  transform-origin: top;
+  opacity: 0;
+  transition-property: opacity, scale, translate;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+  scale: 0.95;
+  translate: 0 -0.5rem;
+  margin-top: 4px;
+  margin-right: -2px;
+}
+
+.popover:focus-visible,
+.popover[data-focus-visible] {
+  outline: var(--bg-surface-hover);
+  outline-offset: -1px;
+}
+
+.popover:where(.dark, .dark *) {
+  background-color: var(--surface-tertiary);
+  color: var(--text-secondary);
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.25), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
+
+.select-item {
+  display: flex;
+  cursor: pointer;
+  scroll-margin: 0.5rem;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 0.5rem;
+  padding: 0.5rem;
+  outline: none !important;
+}
+
+.select-item[aria-disabled='true'] {
+  opacity: 0.5;
+}
+
+.select-item[data-active-item] {
+  background-color: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.popover[data-enter] {
+  opacity: 1;
+  scale: 1;
+  translate: 0;
 }

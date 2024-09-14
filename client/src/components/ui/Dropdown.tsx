@@ -39,32 +39,27 @@ const Dropdown: React.FC<DropdownProps> = ({
       <Select.Select
         store={selectProps}
         className={cn(
-          'btn-neutral focus:ring-offset-ring-offset relative inline-flex w-auto items-center justify-between rounded-md border-border-light bg-header-primary py-2 pl-3 pr-8 text-text-primary transition-all duration-100 ease-in-out hover:bg-header-hover focus:ring-ring-primary',
+          'btn-neutral focus:ring-offset-ring-offset relative inline-flex w-auto items-center justify-between rounded-lg border-border-light bg-header-primary py-2 pl-3 pr-8 text-text-primary transition-all duration-200 ease-in-out hover:bg-header-hover focus:ring-ring-primary',
           className,
         )}
         data-testid={testId}
       >
-        <span className="block truncate">
-          {label}
-          {options
-            .map((o) => (typeof o === 'string' ? { value: o, label: o } : o))
-            .find((o) => o.value === selectedValue)?.label ?? selectedValue}
-        </span>
-        <Select.SelectArrow />
+        <div className="flex w-full items-center justify-between">
+          <span className="block truncate">
+            {label}
+            {options
+              .map((o) => (typeof o === 'string' ? { value: o, label: o } : o))
+              .find((o) => o.value === selectedValue)?.label ?? selectedValue}
+          </span>
+          <Select.SelectArrow />
+        </div>
       </Select.Select>
-      <Select.SelectPopover
-        store={selectProps}
-        className={cn(
-          'absolute z-50 mt-1 flex flex-col items-start gap-1 overflow-auto rounded-lg border border-border-medium bg-header-primary p-1.5 shadow-lg transition-opacity',
-          sizeClasses,
-          className,
-        )}
-      >
+      <Select.SelectPopover store={selectProps} className={cn('popover', sizeClasses, className)}>
         {options.map((item, index) => (
           <Select.SelectItem
             key={index}
             value={typeof item === 'string' ? item : item.value}
-            className="focus-visible:ring-offset ring-offset-ring-offset relative w-full cursor-pointer select-none rounded border-border-light bg-header-primary py-2.5 pl-3 pr-3 text-sm text-text-secondary ring-ring-primary hover:bg-header-hover focus-visible:ring data-[focus]:bg-surface-hover data-[focus]:text-text-primary"
+            className="select-item"
             data-theme={typeof item === 'string' ? item : (item as Option).value}
           >
             <div className="flex w-full items-center justify-between">
