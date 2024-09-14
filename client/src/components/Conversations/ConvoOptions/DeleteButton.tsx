@@ -84,14 +84,12 @@ export default function DeleteButton({
     <OGDialog open={open} onOpenChange={setOpen}>
       <TooltipAnchor
         description={localize('com_ui_delete')}
-        render={
-          <OGDialogTrigger asChild>
-            <button>
-              <TrashIcon className="h-5 w-5" />
-            </button>
-          </OGDialogTrigger>
-        }
-      ></TooltipAnchor>
+        className="flex size-7 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-hover hover:text-text-primary"
+      >
+        <OGDialogTrigger asChild>
+          <TrashIcon className="size-4" />
+        </OGDialogTrigger>
+      </TooltipAnchor>
       {dialogContent}
     </OGDialog>
   );
