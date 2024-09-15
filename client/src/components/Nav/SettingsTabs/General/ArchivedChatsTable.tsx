@@ -2,16 +2,17 @@ import { useMemo, useState, useCallback } from 'react';
 import { useConversationsInfiniteQuery } from '~/data-provider';
 import { ConversationListResponse } from 'librechat-data-provider';
 import {
-  MessageCircle,
-  ArchiveRestore,
+  Search,
   ChevronRight,
   ChevronLeft,
+  TrashIcon,
+  MessageCircle,
+  ArchiveRestore,
   ChevronsRight,
   ChevronsLeft,
-  Search,
 } from 'lucide-react';
 import { useAuthContext, useLocalize, useNavScrolling, useArchiveHandler } from '~/hooks';
-import { DeleteButton } from '~/components/Conversations/ConvoOptions';
+import { DeleteConversationDialog } from '~/components/Conversations/ConvoOptions';
 import {
   TooltipAnchor,
   Table,
@@ -24,6 +25,8 @@ import {
   Skeleton,
   Button,
   Input,
+  OGDialog,
+  OGDialogTrigger,
 } from '~/components';
 import { cn } from '~/utils';
 
@@ -171,15 +174,27 @@ export default function ArchivedChatsTable() {
                           setConversationId(conversation.conversationId);
                           archiveHandler();
                         }}
+                        aria-label="Unarchive conversation"
                         className="flex size-7 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-hover hover:text-text-primary"
                       >
                         <ArchiveRestore className="size-4" />
                       </TooltipAnchor>
-                      <DeleteButton
-                        conversationId={conversation.conversationId}
-                        retainView={moveToTop}
-                        title={conversation.title ?? ''}
-                      />
+                      <OGDialog>
+                        <TooltipAnchor
+                          description={localize('com_ui_delete')}
+                          aria-label="Delete conversation"
+                          className="flex size-7 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-hover hover:text-text-primary"
+                        >
+                          <OGDialogTrigger asChild>
+                            <TrashIcon className="size-4" />
+                          </OGDialogTrigger>
+                        </TooltipAnchor>
+                        {DeleteConversationDialog({
+                          conversationId: conversation.conversationId,
+                          retainView: moveToTop,
+                          title: conversation.title ?? '',
+                        })}
+                      </OGDialog>
                     </TableCell>
                   </TableRow>
                 );
