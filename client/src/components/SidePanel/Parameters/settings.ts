@@ -1,8 +1,8 @@
-import { EModelEndpoint, BedrockProviders } from 'librechat-data-provider';
+import { EModelEndpoint, BedrockProviders, openAISettings } from 'librechat-data-provider';
 import type { SettingsConfiguration, SettingDefinition } from 'librechat-data-provider';
 
 // Base definitions
-const baseDefinitions: Record<string, Partial<SettingDefinition>> = {
+const baseDefinitions: Record<string, SettingDefinition> = {
   model: {
     key: 'model',
     label: 'com_ui_model',
@@ -37,6 +37,38 @@ const baseDefinitions: Record<string, Partial<SettingDefinition>> = {
     component: 'slider',
     optionType: 'model',
     columnSpan: 4,
+  },
+  stop: {
+    key: 'stop',
+    label: 'com_endpoint_stop',
+    labelCode: true,
+    description: 'com_endpoint_openai_stop',
+    descriptionCode: true,
+    placeholder: 'com_endpoint_stop_placeholder',
+    placeholderCode: true,
+    type: 'array',
+    default: [],
+    component: 'tags',
+    optionType: 'conversation',
+    minTags: 0,
+    maxTags: 4,
+  },
+  imageDetail: {
+    key: 'imageDetail',
+    label: 'com_endpoint_plug_image_detail',
+    labelCode: true,
+    description: 'com_endpoint_openai_detail',
+    descriptionCode: true,
+    type: 'enum',
+    default: 'auto',
+    component: 'combobox',
+    items: [
+      { value: 'low', label: 'Low' },
+      { value: 'auto', label: 'Auto' },
+      { value: 'high', label: 'High' },
+    ],
+    optionType: 'conversation',
+    columnSpan: 2,
   },
 };
 
@@ -81,8 +113,10 @@ const librechat: Record<string, SettingDefinition> = {
     labelCode: true,
     type: 'number',
     component: 'input',
-    placeholder: 'com_endpoint_context_info',
+    placeholder: 'com_nav_theme_system',
     placeholderCode: true,
+    description: 'com_endpoint_context_info',
+    descriptionCode: true,
     optionType: 'model',
     columnSpan: 2,
   },
@@ -109,6 +143,78 @@ const librechat: Record<string, SettingDefinition> = {
     placeholder: 'com_endpoint_openai_prompt_prefix_placeholder',
     placeholderCode: true,
     optionType: 'model',
+  },
+};
+
+const openAIParams: Record<string, SettingDefinition> = {
+  chatGptLabel: {
+    ...librechat.modelLabel,
+    key: 'chatGptLabel',
+  },
+  promptPrefix: librechat.promptPrefix,
+  temperature: createDefinition(baseDefinitions.temperature, {
+    default: openAISettings.temperature.default,
+    range: {
+      min: openAISettings.temperature.min,
+      max: openAISettings.temperature.min,
+      step: openAISettings.temperature.step,
+    },
+  }),
+  top_p: createDefinition(baseDefinitions.topP, {
+    key: 'top_p',
+    default: openAISettings.top_p.default,
+    range: {
+      min: openAISettings.top_p.min,
+      max: openAISettings.top_p.min,
+      step: openAISettings.top_p.step,
+    },
+  }),
+  frequency_penalty: {
+    key: 'frequency_penalty',
+    label: 'com_endpoint_frequency_penalty',
+    labelCode: true,
+    description: 'com_endpoint_frequency_penalty_description',
+    descriptionCode: true,
+    type: 'number',
+    default: openAISettings.frequency_penalty.default,
+    range: {
+      min: openAISettings.frequency_penalty.min,
+      max: openAISettings.frequency_penalty.min,
+      step: openAISettings.frequency_penalty.step,
+    },
+    component: 'slider',
+    optionType: 'model',
+    columnSpan: 4,
+  },
+  presence_penalty: {
+    key: 'presence_penalty',
+    label: 'com_endpoint_presence_penalty',
+    labelCode: true,
+    description: 'com_endpoint_presence_penalty_description',
+    descriptionCode: true,
+    type: 'number',
+    default: openAISettings.presence_penalty.default,
+    range: {
+      min: openAISettings.presence_penalty.min,
+      max: openAISettings.presence_penalty.min,
+      step: openAISettings.presence_penalty.step,
+    },
+    component: 'slider',
+    optionType: 'model',
+    columnSpan: 4,
+  },
+  max_tokens: {
+    key: 'max_tokens',
+    label: 'com_endpoint_max_output_tokens',
+    labelCode: true,
+    type: 'number',
+    component: 'input',
+    description: 'com_endpoint_openai_max_tokens',
+    descriptionCode: true,
+    placeholder: 'com_nav_theme_system',
+    placeholderCode: true,
+    optionType: 'model',
+    columnSpan: 2,
   },
 };
 
@@ -155,21 +261,7 @@ const anthropic: Record<string, SettingDefinition> = {
     optionType: 'model',
     columnSpan: 4,
   },
-  stop: {
-    key: 'stop',
-    label: 'com_endpoint_stop',
-    labelCode: true,
-    description: 'com_endpoint_openai_stop',
-    descriptionCode: true,
-    placeholder: 'com_endpoint_stop_placeholder',
-    placeholderCode: true,
-    type: 'array',
-    default: [],
-    component: 'tags',
-    optionType: 'conversation',
-    minTags: 0,
-    maxTags: 4,
-  },
+  stop: baseDefinitions.stop,
 };
 
 const mistral: Record<string, SettingDefinition> = {
@@ -203,6 +295,37 @@ const meta: Record<string, SettingDefinition> = {
     range: { min: 0, max: 1, step: 0.01 },
   }),
 };
+
+const openAI: SettingsConfiguration = [
+  openAIParams.chatGptLabel,
+  librechat.promptPrefix,
+  librechat.maxContextTokens,
+  openAIParams.max_tokens,
+  openAIParams.temperature,
+  openAIParams.top_p,
+  openAIParams.frequency_penalty,
+  openAIParams.presence_penalty,
+  baseDefinitions.stop,
+  librechat.resendFiles,
+  baseDefinitions.imageDetail,
+];
+
+const openAICol1: SettingsConfiguration = [
+  openAIParams.chatGptLabel,
+  librechat.promptPrefix,
+  librechat.maxContextTokens,
+];
+
+const openAICol2: SettingsConfiguration = [
+  openAIParams.max_tokens,
+  openAIParams.temperature,
+  openAIParams.top_p,
+  openAIParams.frequency_penalty,
+  openAIParams.presence_penalty,
+  baseDefinitions.stop,
+  librechat.resendFiles,
+  baseDefinitions.imageDetail,
+];
 
 const bedrockAnthropic: SettingsConfiguration = [
   librechat.modelLabel,
@@ -311,6 +434,8 @@ const bedrockGeneralCol2: SettingsConfiguration = [
 ];
 
 export const settings: Record<string, SettingsConfiguration | undefined> = {
+  [EModelEndpoint.openAI]: openAI,
+  [EModelEndpoint.custom]: openAI,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Anthropic}`]: bedrockAnthropic,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.MistralAI}`]: bedrockMistral,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Cohere}`]: bedrockCohere,
@@ -327,6 +452,14 @@ export const presetSettings: Record<
     }
   | undefined
 > = {
+  [EModelEndpoint.openAI]: {
+    col1: openAICol1,
+    col2: openAICol2,
+  },
+  [EModelEndpoint.custom]: {
+    col1: openAICol1,
+    col2: openAICol2,
+  },
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Anthropic}`]: {
     col1: bedrockAnthropicCol1,
     col2: bedrockAnthropicCol2,
