@@ -4,7 +4,7 @@ import {
   isAssistantsEndpoint,
   isAgentsEndpoint,
   PermissionTypes,
-  paramEndpoints,
+  isParamEndpoint,
   EModelEndpoint,
   Permissions,
 } from 'librechat-data-provider';
@@ -25,6 +25,7 @@ export default function useSideNavLinks({
   agents,
   keyProvided,
   endpoint,
+  endpointType,
   interfaceConfig,
 }: {
   hidePanel: () => void;
@@ -32,6 +33,7 @@ export default function useSideNavLinks({
   agents?: TConfig | null;
   keyProvided: boolean;
   endpoint?: EModelEndpoint | null;
+  endpointType?: EModelEndpoint | null;
   interfaceConfig: Partial<TInterfaceConfig>;
 }) {
   const hasAccessToPrompts = useHasAccess({
@@ -87,7 +89,11 @@ export default function useSideNavLinks({
       });
     }
 
-    if (interfaceConfig.parameters === true && paramEndpoints.has(endpoint ?? '') && keyProvided) {
+    if (
+      interfaceConfig.parameters === true &&
+      isParamEndpoint(endpoint ?? '', endpointType ?? '') === true &&
+      keyProvided
+    ) {
       links.push({
         title: 'com_sidepanel_parameters',
         label: '',
@@ -128,6 +134,7 @@ export default function useSideNavLinks({
     interfaceConfig.parameters,
     keyProvided,
     assistants,
+    endpointType,
     endpoint,
     agents,
     hasAccessToPrompts,

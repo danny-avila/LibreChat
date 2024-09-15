@@ -28,6 +28,14 @@ export enum EModelEndpoint {
   bedrock = 'bedrock',
 }
 
+export const paramEndpoints = new Set<EModelEndpoint | string>([
+  EModelEndpoint.agents,
+  EModelEndpoint.bedrock,
+  EModelEndpoint.openAI,
+  EModelEndpoint.anthropic,
+  EModelEndpoint.custom,
+]);
+
 export enum BedrockProviders {
   AI21 = 'ai21',
   Amazon = 'amazon',
@@ -70,6 +78,21 @@ export const isAgentsEndpoint = (_endpoint?: EModelEndpoint.agents | null | stri
     return false;
   }
   return endpoint === EModelEndpoint.agents;
+};
+
+export const isParamEndpoint = (
+  endpoint: EModelEndpoint | string,
+  endpointType?: EModelEndpoint | string,
+): boolean => {
+  if (paramEndpoints.has(endpoint)) {
+    return true;
+  }
+
+  if (endpointType != null) {
+    return paramEndpoints.has(endpointType);
+  }
+
+  return false;
 };
 
 export enum ImageDetail {

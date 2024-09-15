@@ -6,6 +6,7 @@ import { SaveAsPresetDialog } from '~/components/Endpoints';
 import { useSetIndexOptions, useLocalize } from '~/hooks';
 import { componentMapping } from './components';
 import { useChatContext } from '~/Providers';
+import { getEndpointField } from '~/utils';
 import { settings } from './settings';
 
 export default function Parameters() {
@@ -22,13 +23,18 @@ export default function Parameters() {
     return endpointsConfig?.[conversation?.endpoint ?? '']?.availableRegions ?? [];
   }, [endpointsConfig, conversation?.endpoint]);
 
+  const endpointType = useMemo(
+    () => getEndpointField(endpointsConfig, conversation?.endpoint, 'type'),
+    [conversation?.endpoint, endpointsConfig],
+  );
+
   const parameters = useMemo(() => {
     const [combinedKey, endpointKey] = getSettingsKeys(
-      conversation?.endpoint ?? '',
+      endpointType ?? conversation?.endpoint ?? '',
       conversation?.model ?? '',
     );
     return settings[combinedKey] ?? settings[endpointKey];
-  }, [conversation]);
+  }, [conversation, endpointType]);
 
   const openDialog = useCallback(() => {
     const newPreset = tPresetUpdateSchema.parse({
