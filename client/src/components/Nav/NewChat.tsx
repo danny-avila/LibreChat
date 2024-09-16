@@ -7,7 +7,6 @@ import { getEndpointField, getIconEndpoint, getIconKey } from '~/utils';
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import { useLocalize, useNewConvo } from '~/hooks';
-import { TooltipAnchor } from '~/components/ui';
 import { NewChatIcon } from '~/components/svg';
 import store from '~/store';
 

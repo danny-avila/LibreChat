@@ -1,6 +1,5 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useConversationsInfiniteQuery } from '~/data-provider';
-import { ConversationListResponse } from 'librechat-data-provider';
 import {
   Search,
   ChevronRight,
@@ -11,7 +10,8 @@ import {
   ChevronsRight,
   ChevronsLeft,
 } from 'lucide-react';
-import { useAuthContext, useLocalize, useNavScrolling, useArchiveHandler } from '~/hooks';
+import type { TConversation } from 'librechat-data-provider';
+import { useAuthContext, useLocalize, useArchiveHandler } from '~/hooks';
 import { DeleteConversationDialog } from '~/components/Conversations/ConvoOptions';
 import {
   TooltipAnchor,
@@ -33,51 +33,39 @@ import { cn } from '~/utils';
 export default function ArchivedChatsTable() {
   const localize = useLocalize();
   const { isAuthenticated } = useAuthContext();
-  const [showLoading, setShowLoading] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
-  const itemsPerPage = 10;
+  const [totalPages, setTotalPages] = useState(1);
+  const [isOpened, setIsOpened] = useState(false); // New state variable
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useConversationsInfiniteQuery(
-    { pageNumber: '1', isArchived: true },
-    { enabled: isAuthenticated },
+  const { data, isLoading, refetch } = useConversationsInfiniteQuery(
+    { pageNumber: currentPage.toString(), limit: 10, isArchived: true },
+    { enabled: isAuthenticated && isOpened }, // Conditionally enable the query
   );
 
-  const { containerRef, moveToTop } = useNavScrolling<ConversationListResponse>({
-    setShowLoading,
-    hasNextPage: hasNextPage,
-    fetchNextPage: fetchNextPage,
-    isFetchingNextPage: isFetchingNextPage,
+  useEffect(() => {
+    if (data) {
+      setTotalPages(Math.ceil(Number(data.pages)));
+    }
+  }, [data]);
+
+  const archiveHandler = useArchiveHandler(conversationId ?? '', false, () => {
+    refetch();
   });
 
-  const conversations = useMemo(
-    () => data?.pages.flatMap((page) => page.conversations) || [],
-    [data],
-  );
-
-  const archiveHandler = useArchiveHandler(conversationId ?? '', false, moveToTop);
-
-  const handleChatClick = useCallback((conversationId: string) => {
+  const handleChatClick = useCallback((conversationId) => {
     window.open(`/c/${conversationId}`, '_blank');
   }, []);
 
-  const filteredConversations = useMemo(() => {
-    return conversations.filter((conversation) =>
-      (conversation.title?.toLowerCase() ?? '').includes(searchQuery.toLowerCase()),
-    );
-  }, [conversations, searchQuery]);
+  const handlePageChange = useCallback((newPage) => {
+    setCurrentPage(newPage);
+  }, []);
 
-  const paginatedConversations = useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    return filteredConversations.slice(startIndex, startIndex + itemsPerPage);
-  }, [filteredConversations, currentPage]);
-
-  const totalPages = Math.ceil(filteredConversations.length / itemsPerPage);
-
-  if (!data || conversations.length === 0) {
-    return <div className="text-gray-300">{localize('com_nav_archived_chats_empty')}</div>;
-  }
+  const handleSearch = useCallback((query) => {
+    setSearchQuery(query);
+    setCurrentPage(1);
+  }, []);
 
   const getRandomWidth = () => Math.floor(Math.random() * (400 - 170 + 1)) + 170;
 
@@ -98,6 +86,16 @@ export default function ArchivedChatsTable() {
     );
   });
 
+  if (isLoading) {
+    return <div className="text-gray-300">{skeletons}</div>;
+  }
+
+  if (!data || data.pages.length === 0 || data.pages[0].conversations.length === 0) {
+    return <div className="text-gray-300">{localize('com_nav_archived_chats_empty')}</div>;
+  }
+
+  const conversations = data.pages.flatMap((page) => page.conversations);
+
   return (
     <div
       className={cn(
@@ -105,7 +103,7 @@ export default function ArchivedChatsTable() {
         'flex-1 flex-col overflow-y-auto pr-2 transition-opacity duration-500',
         'max-h-[629px]',
       )}
-      ref={containerRef}
+      onMouseEnter={() => setIsOpened(true)} // Set isOpened to true when the component is opened
     >
       <div className="flex items-center">
         <Search className="size-4 text-text-secondary" />
@@ -113,15 +111,12 @@ export default function ArchivedChatsTable() {
           type="text"
           placeholder={localize('com_nav_search_placeholder')}
           value={searchQuery}
-          onChange={(e) => {
-            setSearchQuery(e.target.value);
-            setCurrentPage(1);
-          }}
+          onChange={(e) => handleSearch(e.target.value)}
           className="w-full border-none"
         />
       </div>
       <Separator />
-      {filteredConversations.length === 0 ? (
+      {conversations.length === 0 ? (
         <div className="mt-4 text-text-secondary">{localize('com_nav_no_search_results')}</div>
       ) : (
         <>
@@ -138,67 +133,59 @@ export default function ArchivedChatsTable() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paginatedConversations.map((conversation) => {
-                if (conversation.conversationId == null) {
-                  return null;
-                }
-                return (
-                  <TableRow key={conversation.conversationId}>
-                    <TableCell className="flex items-center py-3 text-text-primary">
-                      <button
-                        className="flex"
-                        onClick={() =>
-                          conversation.conversationId != null &&
-                          handleChatClick(conversation.conversationId)
-                        }
-                      >
-                        <MessageCircle className="mr-1 h-5 w-5" />
-                        <u>{conversation.title}</u>
-                      </button>
-                    </TableCell>
-                    <TableCell className="p-1">
-                      <div className="flex justify-between">
-                        <div className="flex justify-start text-text-secondary">
-                          {new Date(conversation.createdAt).toLocaleDateString('en-US', {
-                            month: 'long',
-                            day: 'numeric',
-                            year: 'numeric',
-                          })}
-                        </div>
+              {conversations.map((conversation: TConversation) => (
+                <TableRow key={conversation.conversationId}>
+                  <TableCell className="flex items-center py-3 text-text-primary">
+                    <button
+                      className="flex"
+                      onClick={() => handleChatClick(conversation.conversationId)}
+                    >
+                      <MessageCircle className="mr-1 h-5 w-5" />
+                      <u>{conversation.title}</u>
+                    </button>
+                  </TableCell>
+                  <TableCell className="p-1">
+                    <div className="flex justify-between">
+                      <div className="flex justify-start text-text-secondary">
+                        {new Date(conversation.createdAt).toLocaleDateString('en-US', {
+                          month: 'long',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })}
                       </div>
-                    </TableCell>
-                    <TableCell className="flex items-center justify-end gap-2 p-1">
+                    </div>
+                  </TableCell>
+                  <TableCell className="flex items-center justify-end gap-2 p-1">
+                    <TooltipAnchor
+                      description={localize('com_ui_unarchive')}
+                      onClick={() => {
+                        setConversationId(conversation.conversationId);
+                        archiveHandler();
+                      }}
+                      aria-label="Unarchive conversation"
+                      className="flex size-7 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-hover hover:text-text-primary"
+                    >
+                      <ArchiveRestore className="size-4" />
+                    </TooltipAnchor>
+                    <OGDialog>
                       <TooltipAnchor
-                        description={localize('com_ui_unarchive')}
-                        onClick={() => {
-                          setConversationId(conversation.conversationId);
-                          archiveHandler();
-                        }}
-                        aria-label="Unarchive conversation"
+                        description={localize('com_ui_delete')}
+                        aria-label="Delete conversation"
                         className="flex size-7 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-hover hover:text-text-primary"
                       >
-                        <ArchiveRestore className="size-4" />
+                        <OGDialogTrigger asChild>
+                          <TrashIcon className="size-4" />
+                        </OGDialogTrigger>
                       </TooltipAnchor>
-                      <OGDialog>
-                        <TooltipAnchor
-                          description={localize('com_ui_delete')}
-                          aria-label="Delete conversation"
-                          className="flex size-7 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-hover hover:text-text-primary"
-                        >
-                          <OGDialogTrigger asChild>
-                            <TrashIcon className="size-4" />
-                          </OGDialogTrigger>
-                        </TooltipAnchor>
-                        {DeleteConversationDialog({
-                          conversationId: conversation.conversationId,
-                          retainView: moveToTop,
-                          title: conversation.title ?? '',
-                        })}
-                      </OGDialog>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
+                      {DeleteConversationDialog({
+                        conversationId: conversation.conversationId ?? '',
+                        retainView: refetch,
+                        title: conversation.title ?? '',
+                      })}
+                    </OGDialog>
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
 
@@ -210,7 +197,7 @@ export default function ArchivedChatsTable() {
               <Button
                 variant="outline"
                 size="icon"
-                onClick={() => setCurrentPage((prev) => Math.max(prev - 10, 1))}
+                onClick={() => handlePageChange(Math.max(currentPage - 10, 1))}
                 disabled={currentPage === 1}
               >
                 <ChevronsLeft className="size-4" />
@@ -218,7 +205,7 @@ export default function ArchivedChatsTable() {
               <Button
                 variant="outline"
                 size="icon"
-                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                onClick={() => handlePageChange(Math.max(currentPage - 1, 1))}
                 disabled={currentPage === 1}
               >
                 <ChevronLeft className="size-4" />
@@ -226,7 +213,7 @@ export default function ArchivedChatsTable() {
               <Button
                 variant="outline"
                 size="icon"
-                onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                onClick={() => handlePageChange(Math.min(currentPage + 1, totalPages))}
                 disabled={currentPage === totalPages}
               >
                 <ChevronRight className="size-4" />
@@ -234,7 +221,7 @@ export default function ArchivedChatsTable() {
               <Button
                 variant="outline"
                 size="icon"
-                onClick={() => setCurrentPage((prev) => Math.min(prev + 10, totalPages))}
+                onClick={() => handlePageChange(Math.min(currentPage + 10, totalPages))}
                 disabled={currentPage === totalPages}
               >
                 <ChevronsRight className="size-4" />
@@ -243,7 +230,6 @@ export default function ArchivedChatsTable() {
           </div>
         </>
       )}
-      {(isFetchingNextPage || showLoading) && skeletons}
     </div>
   );
 }

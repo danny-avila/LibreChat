@@ -10,7 +10,13 @@ const searchQuery = atom({
   default: '',
 });
 
+const isSearching = atom({
+  key: 'isSearching',
+  default: false,
+});
+
 export default {
   isSearchEnabled,
   searchQuery,
+  isSearching,
 };
