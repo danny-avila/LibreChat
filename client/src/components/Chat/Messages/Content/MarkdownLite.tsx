@@ -7,7 +7,7 @@ import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import type { PluggableList } from 'unified';
 import { langSubset } from '~/utils';
-import { code, p } from './Markdown';
+import { code, a, p } from './Markdown';
 
 const MarkdownLite = memo(({ content = '' }: { content?: string }) => {
   const rehypePlugins: PluggableList = [
@@ -26,10 +26,11 @@ const MarkdownLite = memo(({ content = '' }: { content?: string }) => {
     <ReactMarkdown
       remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
       rehypePlugins={rehypePlugins}
-      linkTarget="_new"
+      // linkTarget="_new"
       components={
         {
           code,
+          a,
           p,
         } as {
           [nodeType: string]: React.ElementType;

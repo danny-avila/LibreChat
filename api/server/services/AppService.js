@@ -1,19 +1,14 @@
-const {
-  Constants,
-  FileSources,
-  EModelEndpoint,
-  defaultSocialLogins,
-  validateAzureGroups,
-  mapModelToAzureConfig,
-  deprecatedAzureVariables,
-  conflictingAzureVariables,
-} = require('librechat-data-provider');
+const { FileSources, EModelEndpoint, getConfigDefaults } = require('librechat-data-provider');
+const { checkVariables, checkHealth, checkConfig, checkAzureVariables } = require('./start/checks');
+const { azureAssistantsDefaults, assistantsConfigSetup } = require('./start/assistants');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
 const loadCustomConfig = require('./Config/loadCustomConfig');
 const handleRateLimits = require('./Config/handleRateLimits');
+const { loadDefaultInterface } = require('./start/interface');
+const { azureConfigSetup } = require('./start/azureOpenAI');
 const { loadAndFormatTools } = require('./ToolService');
+const { initializeRoles } = require('~/models/Role');
 const paths = require('~/config/paths');
-const { logger } = require('~/config');
 
 /**
  *
@@ -22,11 +17,20 @@ const { logger } = require('~/config');
  * @param {Express.Application} app - The Express application object.
  */
 const AppService = async (app) => {
+  await initializeRoles();
   /** @type {TCustomConfig}*/
   const config = (await loadCustomConfig()) ?? {};
+  const configDefaults = getConfigDefaults();
 
-  const fileStrategy = config.fileStrategy ?? FileSources.local;
+  const filteredTools = config.filteredTools;
+  const includedTools = config.includedTools;
+  const fileStrategy = config.fileStrategy ?? configDefaults.fileStrategy;
+  const imageOutputType = config?.imageOutputType ?? configDefaults.imageOutputType;
+
   process.env.CDN_PROVIDER = fileStrategy;
+
+  checkVariables();
+  await checkHealth();
 
   if (fileStrategy === FileSources.firebase) {
     initializeFirebase();
@@ -35,107 +39,80 @@ const AppService = async (app) => {
   /** @type {Record<string, FunctionTool} */
   const availableTools = loadAndFormatTools({
     directory: paths.structuredTools,
-    filter: new Set([
-      'ChatTool.js',
-      'CodeSherpa.js',
-      'CodeSherpaTools.js',
-      'E2BTools.js',
-      'extractionChain.js',
-    ]),
+    adminFilter: filteredTools,
+    adminIncluded: includedTools,
   });
 
-  const socialLogins = config?.registration?.socialLogins ?? defaultSocialLogins;
+  const socialLogins =
+    config?.registration?.socialLogins ?? configDefaults?.registration?.socialLogins;
+  const interfaceConfig = await loadDefaultInterface(config, configDefaults);
+
+  const defaultLocals = {
+    paths,
+    fileStrategy,
+    socialLogins,
+    filteredTools,
+    includedTools,
+    availableTools,
+    imageOutputType,
+    interfaceConfig,
+  };
 
   if (!Object.keys(config).length) {
-    app.locals = {
-      availableTools,
-      fileStrategy,
-      socialLogins,
-      paths,
-    };
-
+    app.locals = defaultLocals;
     return;
   }
 
-  if (config.version !== Constants.CONFIG_VERSION) {
-    logger.info(
-      `\nOutdated Config version: ${config.version}. Current version: ${Constants.CONFIG_VERSION}\n\nCheck out the latest config file guide for new options and features.\nhttps://docs.librechat.ai/install/configuration/custom_config.html\n\n`,
-    );
-  }
-
+  checkConfig(config);
   handleRateLimits(config?.rateLimits);
 
   const endpointLocals = {};
+  const endpoints = config?.endpoints;
 
-  if (config?.endpoints?.[EModelEndpoint.azureOpenAI]) {
-    const { groups, titleModel, titleConvo, titleMethod, plugins } =
-      config.endpoints[EModelEndpoint.azureOpenAI];
-    const { isValid, modelNames, modelGroupMap, groupMap, errors } = validateAzureGroups(groups);
-
-    if (!isValid) {
-      const errorString = errors.join('\n');
-      const errorMessage = 'Invalid Azure OpenAI configuration:\n' + errorString;
-      logger.error(errorMessage);
-      throw new Error(errorMessage);
-    }
-
-    for (const modelName of modelNames) {
-      mapModelToAzureConfig({ modelName, modelGroupMap, groupMap });
-    }
-
-    endpointLocals[EModelEndpoint.azureOpenAI] = {
-      modelNames,
-      modelGroupMap,
-      groupMap,
-      titleConvo,
-      titleMethod,
-      titleModel,
-      plugins,
-    };
-
-    deprecatedAzureVariables.forEach(({ key, description }) => {
-      if (process.env[key]) {
-        logger.warn(
-          `The \`${key}\` environment variable (related to ${description}) should not be used in combination with the \`azureOpenAI\` endpoint configuration, as you will experience conflicts and errors.`,
-        );
-      }
-    });
-
-    conflictingAzureVariables.forEach(({ key }) => {
-      if (process.env[key]) {
-        logger.warn(
-          `The \`${key}\` environment variable should not be used in combination with the \`azureOpenAI\` endpoint configuration, as you may experience with the defined placeholders for mapping to the current model grouping using the same name.`,
-        );
-      }
-    });
+  if (endpoints?.[EModelEndpoint.azureOpenAI]) {
+    endpointLocals[EModelEndpoint.azureOpenAI] = azureConfigSetup(config);
+    checkAzureVariables();
   }
 
-  if (config?.endpoints?.[EModelEndpoint.assistants]) {
-    const { disableBuilder, pollIntervalMs, timeoutMs, supportedIds, excludedIds } =
-      config.endpoints[EModelEndpoint.assistants];
-
-    if (supportedIds?.length && excludedIds?.length) {
-      logger.warn(
-        `Both \`supportedIds\` and \`excludedIds\` are defined for the ${EModelEndpoint.assistants} endpoint; \`excludedIds\` field will be ignored.`,
-      );
-    }
-
-    /** @type {Partial<TAssistantEndpoint>} */
-    endpointLocals[EModelEndpoint.assistants] = {
-      disableBuilder,
-      pollIntervalMs,
-      timeoutMs,
-      supportedIds,
-      excludedIds,
-    };
+  if (endpoints?.[EModelEndpoint.azureOpenAI]?.assistants) {
+    endpointLocals[EModelEndpoint.azureAssistants] = azureAssistantsDefaults();
   }
+
+  if (endpoints?.[EModelEndpoint.azureAssistants]) {
+    endpointLocals[EModelEndpoint.azureAssistants] = assistantsConfigSetup(
+      config,
+      EModelEndpoint.azureAssistants,
+      endpointLocals[EModelEndpoint.azureAssistants],
+    );
+  }
+
+  if (endpoints?.[EModelEndpoint.assistants]) {
+    endpointLocals[EModelEndpoint.assistants] = assistantsConfigSetup(
+      config,
+      EModelEndpoint.assistants,
+      endpointLocals[EModelEndpoint.assistants],
+    );
+  }
+
+  const endpointKeys = [
+    EModelEndpoint.openAI,
+    EModelEndpoint.google,
+    EModelEndpoint.bedrock,
+    EModelEndpoint.anthropic,
+    EModelEndpoint.gptPlugins,
+  ];
+
+  endpointKeys.forEach((key) => {
+    if (endpoints?.[key]) {
+      endpointLocals[key] = endpoints[key];
+    }
+  });
 
   app.locals = {
-    socialLogins,
-    availableTools,
-    fileStrategy,
+    ...defaultLocals,
+    modelSpecs: config.modelSpecs,
     fileConfig: config?.fileConfig,
-    paths,
+    secureImageLinks: config?.secureImageLinks,
     ...endpointLocals,
   };
 };

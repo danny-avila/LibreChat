@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
-import { EModelEndpoint, alternateName } from 'librechat-data-provider';
+import { EModelEndpoint, alternateName, isAssistantsEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { TDialogProps } from '~/common';
 import DialogTemplate from '~/components/ui/DialogTemplate';
@@ -21,6 +21,7 @@ const endpointComponents = {
   [EModelEndpoint.azureOpenAI]: OpenAIConfig,
   [EModelEndpoint.gptPlugins]: OpenAIConfig,
   [EModelEndpoint.assistants]: OpenAIConfig,
+  [EModelEndpoint.azureAssistants]: OpenAIConfig,
   default: OtherConfig,
 };
 
@@ -30,15 +31,17 @@ const formSet: Set<string> = new Set([
   EModelEndpoint.azureOpenAI,
   EModelEndpoint.gptPlugins,
   EModelEndpoint.assistants,
+  EModelEndpoint.azureAssistants,
 ]);
 
 const EXPIRY = {
-  THIRTY_MINUTES: { display: 'in 30 minutes', value: 30 * 60 * 1000 },
-  TWO_HOURS: { display: 'in 2 hours', value: 2 * 60 * 60 * 1000 },
-  TWELVE_HOURS: { display: 'in 12 hours', value: 12 * 60 * 60 * 1000 },
-  ONE_DAY: { display: 'in 1 day', value: 24 * 60 * 60 * 1000 },
-  ONE_WEEK: { display: 'in 7 days', value: 7 * 24 * 60 * 60 * 1000 },
-  ONE_MONTH: { display: 'in 30 days', value: 30 * 24 * 60 * 60 * 1000 },
+  THIRTY_MINUTES: { label: 'in 30 minutes', value: 30 * 60 * 1000 },
+  TWO_HOURS: { label: 'in 2 hours', value: 2 * 60 * 60 * 1000 },
+  TWELVE_HOURS: { label: 'in 12 hours', value: 12 * 60 * 60 * 1000 },
+  ONE_DAY: { label: 'in 1 day', value: 24 * 60 * 60 * 1000 },
+  ONE_WEEK: { label: 'in 7 days', value: 7 * 24 * 60 * 60 * 1000 },
+  ONE_MONTH: { label: 'in 30 days', value: 30 * 24 * 60 * 60 * 1000 },
+  NEVER: { label: 'never', value: 0 },
 };
 
 const SetKeyDialog = ({
@@ -69,7 +72,7 @@ const SetKeyDialog = ({
 
   const [userKey, setUserKey] = useState('');
   const { data: endpointsConfig } = useGetEndpointsQuery();
-  const [expiresAtLabel, setExpiresAtLabel] = useState(EXPIRY.TWELVE_HOURS.display);
+  const [expiresAtLabel, setExpiresAtLabel] = useState(EXPIRY.TWELVE_HOURS.label);
   const { getExpiry, saveUserKey } = useUserKey(endpoint);
   const { showToast } = useToastContext();
   const localize = useLocalize();
@@ -81,8 +84,14 @@ const SetKeyDialog = ({
   };
 
   const submit = () => {
-    const selectedOption = expirationOptions.find((option) => option.display === expiresAtLabel);
-    const expiresAt = Date.now() + (selectedOption ? selectedOption.value : 0);
+    const selectedOption = expirationOptions.find((option) => option.label === expiresAtLabel);
+    let expiresAt;
+
+    if (selectedOption?.value === 0) {
+      expiresAt = null;
+    } else {
+      expiresAt = Date.now() + (selectedOption ? selectedOption.value : 0);
+    }
 
     const saveKey = (key: string) => {
       saveUserKey(key, expiresAt);
@@ -97,7 +106,7 @@ const SetKeyDialog = ({
           isAzure ||
           endpoint === EModelEndpoint.openAI ||
           endpoint === EModelEndpoint.gptPlugins ||
-          endpoint === EModelEndpoint.assistants;
+          isAssistantsEndpoint(endpoint);
         if (isAzure) {
           data.apiKey = 'n/a';
         }
@@ -154,29 +163,29 @@ const SetKeyDialog = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
         title={`${localize('com_endpoint_config_key_for')} ${alternateName[endpoint] ?? endpoint}`}
-        className="w-full max-w-[650px] sm:w-3/4 md:w-3/4 lg:w-3/4"
+        className="w-11/12 max-w-[650px] sm:w-3/4 md:w-3/4 lg:w-3/4"
         main={
           <div className="grid w-full items-center gap-2">
             <small className="text-red-600">
-              {`${localize('com_endpoint_config_key_encryption')} ${
-                !expiryTime
-                  ? localize('com_endpoint_config_key_expiry')
-                  : `${new Date(expiryTime).toLocaleString()}`
-              }`}
-            </small>
+              {expiryTime === 'never'
+                ? localize('com_endpoint_config_key_never_expires')
+                : `${localize('com_endpoint_config_key_encryption')} ${new Date(
+                  expiryTime ?? 0,
+                ).toLocaleString()}`}
+            </small>{' '}
             <Dropdown
               label="Expires "
               value={expiresAtLabel}
               onChange={handleExpirationChange}
-              options={expirationOptions.map((option) => option.display)}
-              width={185}
+              options={expirationOptions.map((option) => option.label)}
+              sizeClasses="w-[185px]"
             />
             <FormProvider {...methods}>
               <EndpointComponent
                 userKey={userKey}
                 setUserKey={setUserKey}
                 endpoint={
-                  endpoint === EModelEndpoint.gptPlugins && config?.azure
+                  endpoint === EModelEndpoint.gptPlugins && (config?.azure ?? false)
                     ? EModelEndpoint.azureOpenAI
                     : endpoint
                 }

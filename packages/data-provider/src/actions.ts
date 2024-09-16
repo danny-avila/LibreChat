@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import axios from 'axios';
 import { URL } from 'url';
 import crypto from 'crypto';
@@ -11,6 +12,11 @@ export type ParametersSchema = {
   properties: Record<string, Reference | Schema>;
   required: string[];
 };
+
+export type OpenAPISchema = OpenAPIV3.SchemaObject &
+  ParametersSchema & {
+    items?: OpenAPIV3.ReferenceObject | OpenAPIV3.SchemaObject;
+  };
 
 export type ApiKeyCredentials = {
   api_key: string;
@@ -32,8 +38,74 @@ export function sha1(input: string) {
 }
 
 export function createURL(domain: string, path: string) {
-  const myURL = new URL(path, domain);
-  return myURL.toString();
+  const cleanDomain = domain.replace(/\/$/, '');
+  const cleanPath = path.replace(/^\//, '');
+  const fullURL = `${cleanDomain}/${cleanPath}`;
+  return new URL(fullURL).toString();
+}
+
+const schemaTypeHandlers: Record<string, (schema: OpenAPISchema) => z.ZodTypeAny> = {
+  string: (schema) => {
+    if (schema.enum) {
+      return z.enum(schema.enum as [string, ...string[]]);
+    }
+
+    let stringSchema = z.string();
+    if (schema.minLength !== undefined) {
+      stringSchema = stringSchema.min(schema.minLength);
+    }
+    if (schema.maxLength !== undefined) {
+      stringSchema = stringSchema.max(schema.maxLength);
+    }
+    return stringSchema;
+  },
+  number: (schema) => {
+    let numberSchema = z.number();
+    if (schema.minimum !== undefined) {
+      numberSchema = numberSchema.min(schema.minimum);
+    }
+    if (schema.maximum !== undefined) {
+      numberSchema = numberSchema.max(schema.maximum);
+    }
+    return numberSchema;
+  },
+  integer: (schema) => (schemaTypeHandlers.number(schema) as z.ZodNumber).int(),
+  boolean: () => z.boolean(),
+  array: (schema) => {
+    if (schema.items) {
+      const zodSchema = openAPISchemaToZod(schema.items as OpenAPISchema);
+      if (zodSchema) {
+        return z.array(zodSchema);
+      }
+
+      return z.array(z.unknown());
+    }
+    return z.array(z.unknown());
+  },
+  object: (schema) => {
+    const shape: { [key: string]: z.ZodTypeAny } = {};
+    if (schema.properties) {
+      Object.entries(schema.properties).forEach(([key, value]) => {
+        const zodSchema = openAPISchemaToZod(value as OpenAPISchema);
+        shape[key] = zodSchema || z.unknown();
+        if (schema.required && schema.required.includes(key)) {
+          shape[key] = shape[key].describe(value.description || '');
+        } else {
+          shape[key] = shape[key].optional().describe(value.description || '');
+        }
+      });
+    }
+    return z.object(shape);
+  },
+};
+
+function openAPISchemaToZod(schema: OpenAPISchema): z.ZodTypeAny | undefined {
+  if (schema.type === 'object' && Object.keys(schema.properties || {}).length === 0) {
+    return undefined;
+  }
+
+  const handler = schemaTypeHandlers[schema.type as string] || (() => z.unknown());
+  return handler(schema);
 }
 
 export class FunctionSignature {
@@ -44,11 +116,7 @@ export class FunctionSignature {
   constructor(name: string, description: string, parameters: ParametersSchema) {
     this.name = name;
     this.description = description;
-    if (parameters.properties?.['requestBody']) {
-      this.parameters = parameters.properties?.['requestBody'] as ParametersSchema;
-    } else {
-      this.parameters = parameters;
-    }
+    this.parameters = parameters;
   }
 
   toObjectTool(): FunctionTool {
@@ -92,9 +160,17 @@ export class ActionRequest {
   private authHeaders: Record<string, string> = {};
   private authToken?: string;
 
-  async setParams(params: object) {
+  setParams(params: object) {
     this.operationHash = sha1(JSON.stringify(params));
     this.params = params;
+
+    for (const [key, value] of Object.entries(params)) {
+      const paramPattern = `{${key}}`;
+      if (this.path.includes(paramPattern)) {
+        this.path = this.path.replace(paramPattern, encodeURIComponent(value as string));
+        delete (this.params as Record<string, unknown>)[key];
+      }
+    }
   }
 
   async setAuth(metadata: ActionMetadata) {
@@ -204,15 +280,22 @@ export function resolveRef(
   return schema as OpenAPIV3.SchemaObject;
 }
 
+function sanitizeOperationId(input: string) {
+  return input.replace(/[^a-zA-Z0-9_-]/g, '');
+}
+
 /** Function to convert OpenAPI spec to function signatures and request builders */
-export function openapiToFunction(openapiSpec: OpenAPIV3.Document): {
+export function openapiToFunction(
+  openapiSpec: OpenAPIV3.Document,
+  generateZodSchemas = false,
+): {
   functionSignatures: FunctionSignature[];
   requestBuilders: Record<string, ActionRequest>;
+  zodSchemas?: Record<string, z.ZodTypeAny>;
 } {
   const functionSignatures: FunctionSignature[] = [];
   const requestBuilders: Record<string, ActionRequest> = {};
-
-  // Base URL from OpenAPI spec servers
+  const zodSchemas: Record<string, z.ZodTypeAny> = {};
   const baseUrl = openapiSpec.servers?.[0]?.url ?? '';
 
   // Iterate over each path and method in the OpenAPI spec
@@ -223,22 +306,15 @@ export function openapiToFunction(openapiSpec: OpenAPIV3.Document): {
       };
 
       // Operation ID is used as the function name
-      const operationId = operationObj.operationId || `${method}_${path}`;
+      const defaultOperationId = `${method}_${path}`;
+      const operationId = operationObj.operationId || sanitizeOperationId(defaultOperationId);
       const description = operationObj.summary || operationObj.description || '';
 
-      const parametersSchema: ParametersSchema = { type: 'object', properties: {}, required: [] };
-
-      if (operationObj.requestBody) {
-        const requestBody = operationObj.requestBody as OpenAPIV3.RequestBodyObject;
-        const content = requestBody.content;
-        const contentType = Object.keys(content)[0];
-        const schema = content[contentType]?.schema;
-        const resolvedSchema = resolveRef(
-          schema as OpenAPIV3.ReferenceObject | OpenAPIV3.SchemaObject,
-          openapiSpec.components,
-        );
-        parametersSchema.properties['requestBody'] = resolvedSchema;
-      }
+      const parametersSchema: OpenAPISchema = {
+        type: 'object',
+        properties: {},
+        required: [],
+      };
 
       if (operationObj.parameters) {
         for (const param of operationObj.parameters) {
@@ -251,9 +327,24 @@ export function openapiToFunction(openapiSpec: OpenAPIV3.Document): {
           if (paramObj.required) {
             parametersSchema.required.push(paramObj.name);
           }
-          if (paramObj.description && !('$$ref' in parametersSchema.properties[paramObj.name])) {
-            parametersSchema.properties[paramObj.name].description = paramObj.description;
-          }
+        }
+      }
+
+      if (operationObj.requestBody) {
+        const requestBody = operationObj.requestBody as OpenAPIV3.RequestBodyObject;
+        const content = requestBody.content;
+        const contentType = Object.keys(content)[0];
+        const schema = content[contentType]?.schema;
+        const resolvedSchema = resolveRef(
+          schema as OpenAPIV3.ReferenceObject | OpenAPIV3.SchemaObject,
+          openapiSpec.components,
+        );
+        parametersSchema.properties = {
+          ...parametersSchema.properties,
+          ...resolvedSchema.properties,
+        };
+        if (resolvedSchema.required) {
+          parametersSchema.required.push(...resolvedSchema.required);
         }
       }
 
@@ -270,10 +361,17 @@ export function openapiToFunction(openapiSpec: OpenAPIV3.Document): {
       );
 
       requestBuilders[operationId] = actionRequest;
+
+      if (generateZodSchemas && Object.keys(parametersSchema.properties).length > 0) {
+        const schema = openAPISchemaToZod(parametersSchema);
+        if (schema) {
+          zodSchemas[operationId] = schema;
+        }
+      }
     }
   }
 
-  return { functionSignatures, requestBuilders };
+  return { functionSignatures, requestBuilders, zodSchemas };
 }
 
 export type ValidationResult = {

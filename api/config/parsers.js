@@ -27,25 +27,24 @@ function getMatchingSensitivePatterns(valueStr) {
 }
 
 /**
- * Redacts sensitive information from a console message.
- *
+ * Redacts sensitive information from a console message and trims it to a specified length if provided.
  * @param {string} str - The console message to be redacted.
- * @returns {string} - The redacted console message.
+ * @param {number} [trimLength] - The optional length at which to trim the redacted message.
+ * @returns {string} - The redacted and optionally trimmed console message.
  */
-function redactMessage(str) {
+function redactMessage(str, trimLength) {
   if (!str) {
     return '';
   }
 
   const patterns = getMatchingSensitivePatterns(str);
-
-  if (patterns.length === 0) {
-    return str;
-  }
-
   patterns.forEach((pattern) => {
     str = str.replace(pattern, '$1[REDACTED]');
   });
+
+  if (trimLength !== undefined && str.length > trimLength) {
+    return `${str.substring(0, trimLength)}...`;
+  }
 
   return str;
 }
@@ -110,6 +109,14 @@ const condenseArray = (item) => {
  * @returns {string} - The formatted log message.
  */
 const debugTraverse = winston.format.printf(({ level, message, timestamp, ...metadata }) => {
+  if (!message) {
+    return `${timestamp} ${level}`;
+  }
+
+  if (!message?.trim || typeof message !== 'string') {
+    return `${timestamp} ${level}: ${JSON.stringify(message)}`;
+  }
+
   let msg = `${timestamp} ${level}: ${truncateLongStrings(message?.trim(), 150)}`;
   try {
     if (level !== 'debug') {

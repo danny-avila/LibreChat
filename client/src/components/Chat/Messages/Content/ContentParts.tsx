@@ -1,50 +1,80 @@
-import { Suspense } from 'react';
+import { memo } from 'react';
+import { ContentTypes } from 'librechat-data-provider';
 import type { TMessageContentParts } from 'librechat-data-provider';
-import { UnfinishedMessage } from './MessageContent';
-import { DelayedRender } from '~/components/ui';
+import EditTextPart from './Parts/EditTextPart';
 import Part from './Part';
 
-const ContentParts = ({
-  error,
-  unfinished,
-  isSubmitting,
-  isLast,
-  content,
-  ...props
-}: // eslint-disable-next-line @typescript-eslint/no-explicit-any
-any) => {
-  if (error) {
-    // return <ErrorMessage text={text} />;
-  } else {
-    const { message } = props;
-    const { messageId } = message;
+type ContentPartsProps = {
+  content: Array<TMessageContentParts | undefined> | undefined;
+  messageId: string;
+  isCreatedByUser: boolean;
+  isLast: boolean;
+  isSubmitting: boolean;
+  edit?: boolean;
+  enterEdit?: (cancel?: boolean) => void | null | undefined;
+  siblingIdx?: number;
+  setSiblingIdx?:
+    | ((value: number) => void | React.Dispatch<React.SetStateAction<number>>)
+    | null
+    | undefined;
+};
 
+const ContentParts = memo(
+  ({
+    content,
+    messageId,
+    isCreatedByUser,
+    isLast,
+    isSubmitting,
+    edit,
+    enterEdit,
+    siblingIdx,
+    setSiblingIdx,
+  }: ContentPartsProps) => {
+    if (!content) {
+      return null;
+    }
+    if (edit === true && enterEdit && setSiblingIdx) {
+      return (
+        <>
+          {content.map((part, idx) => {
+            if (part?.type !== ContentTypes.TEXT || typeof part.text !== 'string') {
+              return null;
+            }
+
+            return (
+              <EditTextPart
+                index={idx}
+                text={part.text}
+                messageId={messageId}
+                isSubmitting={isSubmitting}
+                enterEdit={enterEdit}
+                siblingIdx={siblingIdx ?? null}
+                setSiblingIdx={setSiblingIdx}
+                key={`edit-${messageId}-${idx}`}
+              />
+            );
+          })}
+        </>
+      );
+    }
     return (
       <>
-        {content.map((part: TMessageContentParts | undefined, idx: number) => {
-          if (!part) {
-            return null;
-          }
-          return (
+        {content
+          .filter((part) => part)
+          .map((part, idx) => (
             <Part
               key={`display-${messageId}-${idx}`}
-              showCursor={idx === content.length - 1 && isLast}
-              isSubmitting={isSubmitting}
               part={part}
-              {...props}
+              isSubmitting={isSubmitting}
+              showCursor={idx === content.length - 1 && isLast}
+              messageId={messageId}
+              isCreatedByUser={isCreatedByUser}
             />
-          );
-        })}
-        {!isSubmitting && unfinished && (
-          <Suspense>
-            <DelayedRender delay={250}>
-              <UnfinishedMessage key={`unfinished-${messageId}`} />
-            </DelayedRender>
-          </Suspense>
-        )}
+          ))}
       </>
     );
-  }
-};
+  },
+);
 
 export default ContentParts;

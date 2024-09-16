@@ -1,11 +1,12 @@
-const { EModelEndpoint, validateAzureGroups } = require('librechat-data-provider');
-const { getUserKey } = require('~/server/services/UserService');
+const { EModelEndpoint, ErrorTypes, validateAzureGroups } = require('librechat-data-provider');
+const { getUserKey, getUserKeyValues } = require('~/server/services/UserService');
 const initializeClient = require('./initializeClient');
 const { OpenAIClient } = require('~/app');
 
 // Mock getUserKey since it's the only function we want to mock
 jest.mock('~/server/services/UserService', () => ({
   getUserKey: jest.fn(),
+  getUserKeyValues: jest.fn(),
   checkUserKeyExpiry: jest.requireActual('~/server/services/UserService').checkUserKeyExpiry,
 }));
 
@@ -200,7 +201,9 @@ describe('initializeClient', () => {
     const res = {};
     const endpointOption = {};
 
-    await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(/Your OpenAI API/);
+    await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(
+      /expired_user_key/,
+    );
   });
 
   test('should throw an error if no API keys are provided in the environment', async () => {
@@ -217,7 +220,7 @@ describe('initializeClient', () => {
     const endpointOption = {};
 
     await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(
-      `${EModelEndpoint.openAI} API key not provided.`,
+      `${EModelEndpoint.openAI} API Key not provided.`,
     );
   });
 
@@ -241,7 +244,7 @@ describe('initializeClient', () => {
     process.env.OPENAI_API_KEY = 'user_provided';
 
     // Mock getUserKey to return the expected key
-    getUserKey.mockResolvedValue(JSON.stringify({ apiKey: 'test-user-provided-openai-api-key' }));
+    getUserKeyValues.mockResolvedValue({ apiKey: 'test-user-provided-openai-api-key' });
 
     // Call the initializeClient function
     const result = await initializeClient({ req, res, endpointOption });
@@ -266,7 +269,9 @@ describe('initializeClient', () => {
     // Mock getUserKey to return an invalid key
     getUserKey.mockResolvedValue(invalidKey);
 
-    await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(/Your OpenAI API/);
+    await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(
+      /expired_user_key/,
+    );
   });
 
   test('should throw an error when user-provided values are not valid JSON', async () => {
@@ -281,9 +286,22 @@ describe('initializeClient', () => {
 
     // Mock getUserKey to return a non-JSON string
     getUserKey.mockResolvedValue('not-a-json');
+    getUserKeyValues.mockImplementation(() => {
+      let userValues = getUserKey();
+      try {
+        userValues = JSON.parse(userValues);
+      } catch (e) {
+        throw new Error(
+          JSON.stringify({
+            type: ErrorTypes.INVALID_USER_KEY,
+          }),
+        );
+      }
+      return userValues;
+    });
 
     await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(
-      /Invalid JSON provided for openAI user values/,
+      /invalid_user_key/,
     );
   });
 
@@ -347,9 +365,10 @@ describe('initializeClient', () => {
     const res = {};
     const endpointOption = {};
 
-    getUserKey.mockResolvedValue(
-      JSON.stringify({ apiKey: 'test', baseURL: 'https://user-provided-url.com' }),
-    );
+    getUserKeyValues.mockResolvedValue({
+      apiKey: 'test',
+      baseURL: 'https://user-provided-url.com',
+    });
 
     const result = await initializeClient({ req, res, endpointOption });
 

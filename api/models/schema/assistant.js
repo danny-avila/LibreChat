@@ -9,7 +9,6 @@ const assistantSchema = mongoose.Schema(
     },
     assistant_id: {
       type: String,
-      unique: true,
       index: true,
       required: true,
     },
@@ -19,6 +18,10 @@ const assistantSchema = mongoose.Schema(
         source: String,
       },
       default: undefined,
+    },
+    conversation_starters: {
+      type: [String],
+      default: [],
     },
     access_level: {
       type: Number,

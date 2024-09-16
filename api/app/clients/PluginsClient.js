@@ -1,5 +1,6 @@
 const OpenAIClient = require('./OpenAIClient');
 const { CallbackManager } = require('langchain/callbacks');
+const { CacheKeys, Time } = require('librechat-data-provider');
 const { BufferMemory, ChatMessageHistory } = require('langchain/memory');
 const { initializeCustomAgent, initializeFunctionsAgent } = require('./agents');
 const { addImages, buildErrorInput, buildPromptPrefix } = require('./output_parsers');
@@ -11,6 +12,7 @@ const { SelfReflectionTool } = require('./tools');
 const { isEnabled } = require('~/server/utils');
 const { extractBaseURL } = require('~/utils');
 const { loadTools } = require('./tools/util');
+const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
 
 class PluginsClient extends OpenAIClient {
@@ -40,10 +42,15 @@ class PluginsClient extends OpenAIClient {
 
   getSaveOptions() {
     return {
+      artifacts: this.options.artifacts,
       chatGptLabel: this.options.chatGptLabel,
       promptPrefix: this.options.promptPrefix,
+      tools: this.options.tools,
       ...this.modelOptions,
       agentOptions: this.agentOptions,
+      iconURL: this.options.iconURL,
+      greeting: this.options.greeting,
+      spec: this.options.spec,
     };
   }
 
@@ -139,14 +146,22 @@ class PluginsClient extends OpenAIClient {
 
     // initialize agent
     const initializer = this.functionsAgent ? initializeFunctionsAgent : initializeCustomAgent;
+
+    let customInstructions = (this.options.promptPrefix ?? '').trim();
+    if (typeof this.options.artifactsPrompt === 'string' && this.options.artifactsPrompt) {
+      customInstructions = `${customInstructions ?? ''}\n${this.options.artifactsPrompt}`.trim();
+    }
+
     this.executor = await initializer({
       model,
       signal,
       pastMessages,
       tools: this.tools,
-      currentDateString: this.currentDateString,
+      customInstructions,
       verbose: this.options.debug,
       returnIntermediateSteps: true,
+      customName: this.options.chatGptLabel,
+      currentDateString: this.currentDateString,
       callbackManager: CallbackManager.fromHandlers({
         async handleAgentAction(action, runId) {
           handleAction(action, runId, onAgentAction);
@@ -214,6 +229,13 @@ class PluginsClient extends OpenAIClient {
     }
   }
 
+  /**
+   *
+   * @param {TMessage} responseMessage
+   * @param {Partial<TMessage>} saveOptions
+   * @param {string} user
+   * @returns
+   */
   async handleResponseMessage(responseMessage, saveOptions, user) {
     const { output, errorMessage, ...result } = this.result;
     logger.debug('[PluginsClient][handleResponseMessage] Output:', {
@@ -232,19 +254,40 @@ class PluginsClient extends OpenAIClient {
       await this.recordTokenUsage(responseMessage);
     }
 
-    await this.saveMessageToDatabase(responseMessage, saveOptions, user);
+    this.responsePromise = this.saveMessageToDatabase(responseMessage, saveOptions, user);
+    const messageCache = getLogStores(CacheKeys.MESSAGES);
+    messageCache.set(
+      responseMessage.messageId,
+      {
+        text: responseMessage.text,
+        complete: true,
+      },
+      Time.FIVE_MINUTES,
+    );
     delete responseMessage.tokenCount;
     return { ...responseMessage, ...result };
   }
 
   async sendMessage(message, opts = {}) {
+    /** @type {{ filteredTools: string[], includedTools: string[] }} */
+    const { filteredTools = [], includedTools = [] } = this.options.req.app.locals;
+
+    if (includedTools.length > 0) {
+      const tools = this.options.tools.filter((plugin) => includedTools.includes(plugin));
+      this.options.tools = tools;
+    } else {
+      const tools = this.options.tools.filter((plugin) => !filteredTools.includes(plugin));
+      this.options.tools = tools;
+    }
+
     // If a message is edited, no tools can be used.
     const completionMode = this.options.tools.length === 0 || opts.isEdited;
     if (completionMode) {
       this.setOptions(opts);
       return super.sendMessage(message, opts);
     }
-    logger.debug('[PluginsClient] sendMessage', { message, opts });
+
+    logger.debug('[PluginsClient] sendMessage', { userMessageText: message, opts });
     const {
       user,
       isEdited,
@@ -257,6 +300,14 @@ class PluginsClient extends OpenAIClient {
       onToolStart,
       onToolEnd,
     } = await this.handleStartMethods(message, opts);
+
+    if (opts.progressCallback) {
+      opts.onProgress = opts.progressCallback.call(null, {
+        ...(opts.progressOptions ?? {}),
+        parentMessageId: userMessage.messageId,
+        messageId: responseMessageId,
+      });
+    }
 
     this.currentMessages.push(userMessage);
 
@@ -286,7 +337,15 @@ class PluginsClient extends OpenAIClient {
     if (payload) {
       this.currentMessages = payload;
     }
-    await this.saveMessageToDatabase(userMessage, saveOptions, user);
+
+    if (!this.skipSaveUserMessage) {
+      this.userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user);
+      if (typeof opts?.getReqData === 'function') {
+        opts.getReqData({
+          userMessagePromise: this.userMessagePromise,
+        });
+      }
+    }
 
     if (isEnabled(process.env.CHECK_BALANCE)) {
       await checkBalance({
@@ -304,6 +363,8 @@ class PluginsClient extends OpenAIClient {
     }
 
     const responseMessage = {
+      endpoint: EModelEndpoint.gptPlugins,
+      iconURL: this.options.iconURL,
       messageId: responseMessageId,
       conversationId,
       parentMessageId: userMessage.messageId,

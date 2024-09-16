@@ -8,7 +8,7 @@ export default function BirthdayIcon({ className = '' }) {
       viewBox="0 0 233.33 290"
       xmlns="http://www.w3.org/2000/svg"
       xmlnsXlink="http://www.w3.org/1999/xlink"
-      className={cn('h-14 w-14', className)}
+      className={cn('h-11 w-11', className)}
     >
       <defs>
         <linearGradient

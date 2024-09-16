@@ -4,6 +4,7 @@ import type {
   TAzureGroupMap,
   TAzureModelGroupMap,
   TValidatedAzureConfig,
+  TAzureConfigValidationResult,
 } from '../src/config';
 import { errorsToString, extractEnvVariable, envVarRegex } from '../src/parsers';
 import { azureGroupConfigsSchema } from '../src/config';
@@ -46,10 +47,7 @@ export const conflictingAzureVariables = [
   },
 ];
 
-export function validateAzureGroups(configs: TAzureGroups): TValidatedAzureConfig & {
-  isValid: boolean;
-  errors: (ZodError | string)[];
-} {
+export function validateAzureGroups(configs: TAzureGroups): TAzureConfigValidationResult {
   let isValid = true;
   const modelNames: string[] = [];
   const modelGroupMap: TAzureModelGroupMap = {};
@@ -234,14 +232,16 @@ export function mapModelToAzureConfig({
   }
 
   const modelDetails = groupConfig.models[modelName];
-  const deploymentName =
+  const { deploymentName, version } =
     typeof modelDetails === 'object'
-      ? modelDetails.deploymentName || groupConfig.deploymentName
-      : groupConfig.deploymentName;
-  const version =
-    typeof modelDetails === 'object'
-      ? modelDetails.version || groupConfig.version
-      : groupConfig.version;
+      ? {
+        deploymentName: modelDetails.deploymentName || groupConfig.deploymentName,
+        version: modelDetails.version || groupConfig.version,
+      }
+      : {
+        deploymentName: groupConfig.deploymentName,
+        version: groupConfig.version,
+      };
 
   if (!deploymentName || !version) {
     throw new Error(
@@ -261,6 +261,89 @@ export function mapModelToAzureConfig({
       throw new Error(`Azure configuration environment variable "${value}" was not found.`);
     }
   }
+
+  const result: MappedAzureConfig = { azureOptions };
+
+  if (groupConfig.baseURL) {
+    result.baseURL = extractEnvVariable(groupConfig.baseURL);
+  }
+
+  if (groupConfig.additionalHeaders) {
+    result.headers = groupConfig.additionalHeaders;
+  }
+
+  return result;
+}
+
+export function mapGroupToAzureConfig({
+  groupName,
+  groupMap,
+}: {
+  groupName: string;
+  groupMap: TAzureGroupMap;
+}): MappedAzureConfig {
+  const groupConfig = groupMap[groupName];
+  if (!groupConfig) {
+    throw new Error(`Group named "${groupName}" not found in configuration.`);
+  }
+
+  const instanceName = groupConfig.instanceName as string;
+
+  if (!instanceName && !groupConfig.serverless) {
+    throw new Error(
+      `Group "${groupName}" is missing an instanceName for non-serverless configuration.`,
+    );
+  }
+
+  if (groupConfig.serverless && !groupConfig.baseURL) {
+    throw new Error(
+      `Group "${groupName}" is missing the required base URL for serverless configuration.`,
+    );
+  }
+
+  const models = Object.keys(groupConfig.models);
+  if (models.length === 0) {
+    throw new Error(`Group "${groupName}" does not have any models configured.`);
+  }
+
+  // Use the first available model in the group
+  const firstModelName = models[0];
+  const modelDetails = groupConfig.models[firstModelName];
+
+  const azureOptions: AzureOptions = {
+    azureOpenAIApiKey: extractEnvVariable(groupConfig.apiKey),
+    azureOpenAIApiInstanceName: extractEnvVariable(instanceName),
+    // DeploymentName and Version set below
+  };
+
+  if (groupConfig.serverless) {
+    return {
+      azureOptions,
+      baseURL: extractEnvVariable(groupConfig.baseURL ?? ''),
+      serverless: true,
+      ...(groupConfig.additionalHeaders && { headers: groupConfig.additionalHeaders }),
+    };
+  }
+
+  const { deploymentName, version } =
+    typeof modelDetails === 'object'
+      ? {
+        deploymentName: modelDetails.deploymentName || groupConfig.deploymentName,
+        version: modelDetails.version || groupConfig.version,
+      }
+      : {
+        deploymentName: groupConfig.deploymentName,
+        version: groupConfig.version,
+      };
+
+  if (!deploymentName || !version) {
+    throw new Error(
+      `Model "${firstModelName}" in group "${groupName}" or the group itself is missing a deploymentName ("${deploymentName}") or version ("${version}").`,
+    );
+  }
+
+  azureOptions.azureOpenAIApiDeploymentName = extractEnvVariable(deploymentName);
+  azureOptions.azureOpenAIApiVersion = extractEnvVariable(version);
 
   const result: MappedAzureConfig = { azureOptions };
 

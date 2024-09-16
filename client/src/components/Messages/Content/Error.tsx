@@ -1,9 +1,12 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets
-
-import React from 'react';
+import { ViolationTypes, ErrorTypes } from 'librechat-data-provider';
 import type { TOpenAIMessage } from 'librechat-data-provider';
+import type { LocalizeFunction } from '~/common';
 import { formatJSON, extractJson, isJson } from '~/utils/json';
+import useLocalize from '~/hooks/useLocalize';
 import CodeBlock from './CodeBlock';
+
+const localizedErrorPrefix = 'com_error';
 
 type TConcurrent = {
   limit: number;
@@ -15,7 +18,7 @@ type TMessageLimit = {
 };
 
 type TTokenBalance = {
-  type: 'token_balance';
+  type: ViolationTypes | ErrorTypes;
   balance: number;
   tokenCost: number;
   promptTokens: number;
@@ -25,14 +28,36 @@ type TTokenBalance = {
   generations?: TOpenAIMessage[];
 };
 
+type TExpiredKey = {
+  expiredAt: string;
+  endpoint: string;
+};
+
+type TInputLength = {
+  info: string;
+};
+
 const errorMessages = {
-  ban: 'Your account has been temporarily banned due to violations of our service.',
+  [ErrorTypes.MODERATION]: 'com_error_moderation',
+  [ErrorTypes.NO_USER_KEY]: 'com_error_no_user_key',
+  [ErrorTypes.INVALID_USER_KEY]: 'com_error_invalid_user_key',
+  [ErrorTypes.NO_BASE_URL]: 'com_error_no_base_url',
+  [ErrorTypes.INVALID_REQUEST]: `com_error_${ErrorTypes.INVALID_REQUEST}`,
+  [ErrorTypes.NO_SYSTEM_MESSAGES]: `com_error_${ErrorTypes.NO_SYSTEM_MESSAGES}`,
+  [ErrorTypes.EXPIRED_USER_KEY]: (json: TExpiredKey, localize: LocalizeFunction) => {
+    const { expiredAt, endpoint } = json;
+    return localize('com_error_expired_user_key', endpoint, expiredAt);
+  },
+  [ErrorTypes.INPUT_LENGTH]: (json: TInputLength, localize: LocalizeFunction) => {
+    const { info } = json;
+    return localize('com_error_input_length', info);
+  },
+  [ViolationTypes.BAN]:
+    'Your account has been temporarily banned due to violations of our service.',
   invalid_api_key:
     'Invalid API key. Please check your API key and try again. You can do this by clicking on the model logo in the left corner of the textbox and selecting "Set Token" for the current selected endpoint. Thank you for your understanding.',
   insufficient_quota:
     'We apologize for any inconvenience caused. The default API key has reached its limit. To continue using this service, please set up your own API key. You can do this by clicking on the model logo in the left corner of the textbox and selecting "Set Token" for the current selected endpoint. Thank you for your understanding.',
-  moderation:
-    'It appears that the content submitted has been flagged by our moderation system for not aligning with our community guidelines. We\'re unable to proceed with this specific topic. If you have any other questions or topics you\'d like to explore, please edit your message, or create a new conversation.',
   concurrent: (json: TConcurrent) => {
     const { limit } = json;
     const plural = limit > 1 ? 's' : '';
@@ -70,6 +95,7 @@ const errorMessages = {
 };
 
 const Error = ({ text }: { text: string }) => {
+  const localize = useLocalize();
   const jsonString = extractJson(text);
   const errorMessage = text.length > 512 && !jsonString ? text.slice(0, 512) + '...' : text;
   const defaultResponse = `Something went wrong. Here's the specific error message we encountered: ${errorMessage}`;
@@ -83,7 +109,9 @@ const Error = ({ text }: { text: string }) => {
   const keyExists = errorKey && errorMessages[errorKey];
 
   if (keyExists && typeof errorMessages[errorKey] === 'function') {
-    return errorMessages[errorKey](json);
+    return errorMessages[errorKey](json, localize);
+  } else if (keyExists && keyExists.startsWith(localizedErrorPrefix)) {
+    return localize(errorMessages[errorKey]);
   } else if (keyExists) {
     return errorMessages[errorKey];
   } else {

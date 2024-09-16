@@ -5,10 +5,14 @@ import {
   AuthorizationTypeEnum,
   TokenExchangeMethodEnum,
 } from 'librechat-data-provider';
+import { ChevronLeft } from 'lucide-react';
 import type { AssistantPanelProps, ActionAuthForm } from '~/common';
-import { Dialog, DialogTrigger } from '~/components/ui';
+import { useAssistantsMapContext, useToastContext } from '~/Providers';
+import { Dialog, DialogTrigger, OGDialog, OGDialogTrigger, Label } from '~/components/ui';
+import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { useDeleteAction } from '~/data-provider';
-import { NewTrashIcon } from '~/components/svg';
+import { TrashIcon } from '~/components/svg';
+import useLocalize from '~/hooks/useLocalize';
 import ActionsInput from './ActionsInput';
 import ActionsAuth from './ActionsAuth';
 import { Panel } from '~/common';
@@ -16,15 +20,31 @@ import { Panel } from '~/common';
 export default function ActionsPanel({
   // activePanel,
   action,
+  endpoint,
+  version,
   setAction,
-  setActivePanel,
   assistant_id,
+  setActivePanel,
 }: AssistantPanelProps) {
+  const localize = useLocalize();
+  const { showToast } = useToastContext();
+  const assistantMap = useAssistantsMapContext();
   const [openAuthDialog, setOpenAuthDialog] = useState(false);
   const deleteAction = useDeleteAction({
     onSuccess: () => {
+      showToast({
+        message: localize('com_assistants_delete_actions_success'),
+        status: 'success',
+      });
       setActivePanel(Panel.builder);
       setAction(undefined);
+    },
+    onError(error) {
+      showToast({
+        message:
+          (error as Error | undefined)?.message ?? localize('com_assistants_delete_actions_error'),
+        status: 'error',
+      });
     },
   });
 
@@ -83,54 +103,60 @@ export default function ActionsPanel({
                 }}
               >
                 <div className="flex w-full items-center justify-center gap-2">
-                  <svg
-                    width="24"
-                    height="24"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="icon-md"
-                  >
-                    <path
-                      d="M15 5L8 12L15 19"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    ></path>
-                  </svg>
+                  <ChevronLeft />
                 </div>
               </button>
             </div>
+
             {!!action && (
-              <div className="absolute right-0 top-6">
-                <button
-                  type="button"
-                  disabled={!assistant_id || !action.action_id}
-                  className="btn relative bg-transparent text-red-500 hover:bg-gray-100 dark:hover:bg-gray-800"
-                  onClick={() => {
-                    if (!assistant_id) {
-                      return prompt('No assistant_id found, is the assistant created?');
-                    }
-                    const confirmed = confirm('Are you sure you want to delete this action?');
-                    if (confirmed) {
-                      deleteAction.mutate({
-                        action_id: action.action_id,
-                        assistant_id,
-                      });
-                    }
-                  }}
-                >
-                  <div className="flex w-full items-center justify-center gap-2">
-                    <NewTrashIcon className="icon-md text-red-500" />
+              <OGDialog>
+                <OGDialogTrigger asChild>
+                  <div className="absolute right-0 top-6">
+                    <button
+                      type="button"
+                      disabled={!(assistant_id ?? '') || !action.action_id}
+                      className="btn btn-neutral border-token-border-light relative h-9 rounded-lg font-medium"
+                    >
+                      <TrashIcon className="text-red-500" />
+                    </button>
                   </div>
-                </button>
-              </div>
+                </OGDialogTrigger>
+                <OGDialogTemplate
+                  showCloseButton={false}
+                  title={localize('com_ui_delete_action')}
+                  className="max-w-[450px]"
+                  main={
+                    <Label className="text-left text-sm font-medium">
+                      {localize('com_ui_delete_action_confirm')}
+                    </Label>
+                  }
+                  selection={{
+                    selectHandler: () => {
+                      const currentId = assistant_id ?? '';
+                      if (!currentId) {
+                        return showToast({
+                          message: 'No assistant_id found, is the assistant created?',
+                          status: 'error',
+                        });
+                      }
+                      deleteAction.mutate({
+                        model: assistantMap?.[endpoint][currentId].model ?? '',
+                        action_id: action.action_id,
+                        assistant_id: currentId,
+                        endpoint,
+                      });
+                    },
+                    selectClasses:
+                      'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 transition-color duration-200 text-white',
+                    selectText: localize('com_ui_delete'),
+                  }}
+                />
+              </OGDialog>
             )}
+
             <div className="text-xl font-medium">{(action ? 'Edit' : 'Add') + ' ' + 'actions'}</div>
             <div className="text-token-text-tertiary text-sm">
-              {/* TODO: use App title */}
-              Let your Assistant retrieve information or take actions outside of LibreChat.
+              {localize('com_assistants_actions_info')}
             </div>
             {/* <div className="text-sm text-token-text-tertiary">
             <a href="https://help.openai.com/en/articles/8554397-creating-a-gpt" target="_blank" rel="noreferrer" className="font-medium">Learn more.</a>
@@ -141,7 +167,7 @@ export default function ActionsPanel({
               <div className="relative mb-6">
                 <div className="mb-1.5 flex items-center">
                   <label className="text-token-text-primary block font-medium">
-                    Authentication
+                    {localize('com_ui_authentication')}
                   </label>
                 </div>
                 <div className="border-token-border-medium flex rounded-lg border text-sm hover:cursor-pointer">
@@ -170,7 +196,13 @@ export default function ActionsPanel({
             </DialogTrigger>
             <ActionsAuth setOpenAuthDialog={setOpenAuthDialog} />
           </Dialog>
-          <ActionsInput action={action} assistant_id={assistant_id} setAction={setAction} />
+          <ActionsInput
+            action={action}
+            assistant_id={assistant_id}
+            setAction={setAction}
+            endpoint={endpoint}
+            version={version}
+          />
         </div>
       </form>
     </FormProvider>

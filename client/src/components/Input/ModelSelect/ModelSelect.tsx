@@ -1,8 +1,7 @@
-import { useRecoilValue } from 'recoil';
+import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import type { TConversation } from 'librechat-data-provider';
 import type { TSetOption } from '~/common';
-import { options, multiChatOptions } from './options';
-import store from '~/store';
+import { multiChatOptions } from './options';
 
 type TGoogleProps = {
   showExamples: boolean;
@@ -13,26 +12,27 @@ type TSelectProps = {
   conversation: TConversation | null;
   setOption: TSetOption;
   extraProps?: TGoogleProps;
-  isMultiChat?: boolean;
   showAbove?: boolean;
+  popover?: boolean;
 };
 
 export default function ModelSelect({
   conversation,
   setOption,
-  isMultiChat = false,
+  popover = false,
   showAbove = true,
 }: TSelectProps) {
-  const modelsConfig = useRecoilValue(store.modelsConfig);
+  const modelsQuery = useGetModelsQuery();
+
   if (!conversation?.endpoint) {
     return null;
   }
 
   const { endpoint: _endpoint, endpointType } = conversation;
-  const models = modelsConfig?.[_endpoint] ?? [];
+  const models = modelsQuery?.data?.[_endpoint] ?? [];
   const endpoint = endpointType ?? _endpoint;
 
-  const OptionComponent = isMultiChat ? multiChatOptions[endpoint] : options[endpoint];
+  const OptionComponent = multiChatOptions[endpoint];
 
   if (!OptionComponent) {
     return null;
@@ -44,7 +44,7 @@ export default function ModelSelect({
       setOption={setOption}
       models={models}
       showAbove={showAbove}
-      popover={isMultiChat}
+      popover={popover}
     />
   );
 }

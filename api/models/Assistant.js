@@ -11,13 +11,11 @@ const Assistant = mongoose.model('assistant', assistantSchema);
  * @param {string} searchParams.assistant_id - The ID of the assistant to update.
  * @param {string} searchParams.user - The user ID of the assistant's author.
  * @param {Object} updateData - An object containing the properties to update.
- * @returns {Promise<Object>} The updated or newly created assistant document as a plain object.
+ * @returns {Promise<AssistantDocument>} The updated or newly created assistant document as a plain object.
  */
-const updateAssistant = async (searchParams, updateData) => {
-  return await Assistant.findOneAndUpdate(searchParams, updateData, {
-    new: true,
-    upsert: true,
-  }).lean();
+const updateAssistantDoc = async (searchParams, updateData) => {
+  const options = { new: true, upsert: true };
+  return await Assistant.findOneAndUpdate(searchParams, updateData, options).lean();
 };
 
 /**
@@ -26,7 +24,7 @@ const updateAssistant = async (searchParams, updateData) => {
  * @param {Object} searchParams - The search parameters to find the assistant to update.
  * @param {string} searchParams.assistant_id - The ID of the assistant to update.
  * @param {string} searchParams.user - The user ID of the assistant's author.
- * @returns {Promise<Object|null>} The assistant document as a plain object, or null if not found.
+ * @returns {Promise<AssistantDocument|null>} The assistant document as a plain object, or null if not found.
  */
 const getAssistant = async (searchParams) => await Assistant.findOne(searchParams).lean();
 
@@ -34,14 +32,34 @@ const getAssistant = async (searchParams) => await Assistant.findOne(searchParam
  * Retrieves all assistants that match the given search parameters.
  *
  * @param {Object} searchParams - The search parameters to find matching assistants.
- * @returns {Promise<Array<Object>>} A promise that resolves to an array of action documents as plain objects.
+ * @param {Object} [select] - Optional. Specifies which document fields to include or exclude.
+ * @returns {Promise<Array<AssistantDocument>>} A promise that resolves to an array of assistant documents as plain objects.
  */
-const getAssistants = async (searchParams) => {
-  return await Assistant.find(searchParams).lean();
+const getAssistants = async (searchParams, select = null) => {
+  let query = Assistant.find(searchParams);
+
+  if (select) {
+    query = query.select(select);
+  }
+
+  return await query.lean();
+};
+
+/**
+ * Deletes an assistant based on the provided ID.
+ *
+ * @param {Object} searchParams - The search parameters to find the assistant to delete.
+ * @param {string} searchParams.assistant_id - The ID of the assistant to delete.
+ * @param {string} searchParams.user - The user ID of the assistant's author.
+ * @returns {Promise<void>} Resolves when the assistant has been successfully deleted.
+ */
+const deleteAssistant = async (searchParams) => {
+  return await Assistant.findOneAndDelete(searchParams);
 };
 
 module.exports = {
-  updateAssistant,
+  updateAssistantDoc,
+  deleteAssistant,
   getAssistants,
   getAssistant,
 };

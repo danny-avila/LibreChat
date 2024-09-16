@@ -13,6 +13,11 @@ const conversationPreset = {
     type: String,
     required: false,
   },
+  // for bedrock only
+  region: {
+    type: String,
+    required: false,
+  },
   // for azureOpenAI, openAI only
   chatGptLabel: {
     type: String,
@@ -70,8 +75,19 @@ const conversationPreset = {
     type: String,
   },
   file_ids: { type: [{ type: String }], default: undefined },
-  // vision
+  // deprecated
   resendImages: {
+    type: Boolean,
+  },
+  /* Anthropic only */
+  promptCache: {
+    type: Boolean,
+  },
+  system: {
+    type: String,
+  },
+  // files
+  resendFiles: {
     type: Boolean,
   },
   imageDetail: {
@@ -83,6 +99,32 @@ const conversationPreset = {
   },
   instructions: {
     type: String,
+  },
+  stop: { type: [{ type: String }], default: undefined },
+  isArchived: {
+    type: Boolean,
+    default: false,
+  },
+  /* UI Components */
+  iconURL: {
+    type: String,
+  },
+  greeting: {
+    type: String,
+  },
+  spec: {
+    type: String,
+  },
+  tags: {
+    type: [String],
+    default: [],
+  },
+  tools: { type: [{ type: String }], default: undefined },
+  maxContextTokens: {
+    type: Number,
+  },
+  max_tokens: {
+    type: Number,
   },
 };
 

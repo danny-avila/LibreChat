@@ -1,17 +1,18 @@
 import throttle from 'lodash/throttle';
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import { useGetEndpointsQuery, useUserKeyQuery } from 'librechat-data-provider/react-query';
+import { getConfigDefaults } from 'librechat-data-provider';
+import { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react';
+import {
+  useGetEndpointsQuery,
+  useGetStartupConfig,
+  useUserKeyQuery,
+} from 'librechat-data-provider/react-query';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
-import { EModelEndpoint, type TEndpointsConfig } from 'librechat-data-provider';
-import type { NavLink } from '~/common';
+import type { TEndpointsConfig } from 'librechat-data-provider';
 import { ResizableHandleAlt, ResizablePanel, ResizablePanelGroup } from '~/components/ui/Resizable';
-import { TooltipProvider, Tooltip } from '~/components/ui/Tooltip';
-import { Blocks, AttachmentIcon } from '~/components/svg';
-import { useMediaQuery, useLocalStorage } from '~/hooks';
-import { Separator } from '~/components/ui/Separator';
+import { useMediaQuery, useLocalStorage, useLocalize } from '~/hooks';
+import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
 import NavToggle from '~/components/Nav/NavToggle';
-import PanelSwitch from './Builder/PanelSwitch';
-import FilesPanel from './Files/Panel';
+import { useChatContext } from '~/Providers';
 import Switcher from './Switcher';
 import { cn } from '~/utils';
 import Nav from './Nav';
@@ -20,61 +21,116 @@ interface SidePanelProps {
   defaultLayout?: number[] | undefined;
   defaultCollapsed?: boolean;
   navCollapsedSize?: number;
+  fullPanelCollapse?: boolean;
+  artifacts?: React.ReactNode;
   children: React.ReactNode;
 }
 
 const defaultMinSize = 20;
+const defaultInterface = getConfigDefaults().interface;
 
-export default function SidePanel({
+const normalizeLayout = (layout: number[]) => {
+  const sum = layout.reduce((acc, size) => acc + size, 0);
+  if (Math.abs(sum - 100) < 0.01) {
+    return layout.map((size) => Number(size.toFixed(2)));
+  }
+
+  const factor = 100 / sum;
+  const normalizedLayout = layout.map((size) => Number((size * factor).toFixed(2)));
+
+  const adjustedSum = normalizedLayout.reduce(
+    (acc, size, index) => (index === layout.length - 1 ? acc : acc + size),
+    0,
+  );
+  normalizedLayout[normalizedLayout.length - 1] = Number((100 - adjustedSum).toFixed(2));
+
+  return normalizedLayout;
+};
+
+const SidePanel = ({
   defaultLayout = [97, 3],
   defaultCollapsed = false,
+  fullPanelCollapse = false,
   navCollapsedSize = 3,
+  artifacts,
   children,
-}: SidePanelProps) {
-  const [minSize, setMinSize] = useState(defaultMinSize);
+}: SidePanelProps) => {
+  const localize = useLocalize();
   const [isHovering, setIsHovering] = useState(false);
+  const [minSize, setMinSize] = useState(defaultMinSize);
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
+  const [fullCollapse, setFullCollapse] = useState(fullPanelCollapse);
   const [collapsedSize, setCollapsedSize] = useState(navCollapsedSize);
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
-  const { data: keyExpiry = { expiresAt: undefined } } = useUserKeyQuery(EModelEndpoint.assistants);
+  const { data: startupConfig } = useGetStartupConfig();
+  const interfaceConfig = useMemo(
+    () => startupConfig?.interface ?? defaultInterface,
+    [startupConfig],
+  );
+
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
+  const { conversation } = useChatContext();
+  const { endpoint } = conversation ?? {};
+  const { data: keyExpiry = { expiresAt: undefined } } = useUserKeyQuery(endpoint ?? '');
 
   const panelRef = useRef<ImperativePanelHandle>(null);
 
-  const activePanel = localStorage.getItem('side:active-panel');
-  const defaultActive = activePanel ? activePanel : undefined;
+  const defaultActive = useMemo(() => {
+    const activePanel = localStorage.getItem('side:active-panel');
+    return typeof activePanel === 'string' ? activePanel : undefined;
+  }, []);
 
-  const Links = useMemo(() => {
-    const links: NavLink[] = [];
-    const assistants = endpointsConfig?.[EModelEndpoint.assistants];
-    const userProvidesKey = !!assistants?.userProvide;
-    const keyProvided = userProvidesKey ? !!keyExpiry?.expiresAt : true;
-    if (assistants && assistants.disableBuilder !== true && keyProvided) {
-      links.push({
-        title: 'com_sidepanel_assistant_builder',
-        label: '',
-        icon: Blocks,
-        id: 'assistants',
-        Component: PanelSwitch,
-      });
+  const assistants = useMemo(() => endpointsConfig?.[endpoint ?? ''], [endpoint, endpointsConfig]);
+  const agents = useMemo(() => endpointsConfig?.[endpoint ?? ''], [endpoint, endpointsConfig]);
+
+  const userProvidesKey = useMemo(
+    () => !!(endpointsConfig?.[endpoint ?? '']?.userProvide ?? false),
+    [endpointsConfig, endpoint],
+  );
+  const keyProvided = useMemo(
+    () => (userProvidesKey ? !!(keyExpiry.expiresAt ?? '') : true),
+    [keyExpiry.expiresAt, userProvidesKey],
+  );
+
+  const hidePanel = useCallback(() => {
+    setIsCollapsed(true);
+    setCollapsedSize(0);
+    setMinSize(defaultMinSize);
+    setFullCollapse(true);
+    localStorage.setItem('fullPanelCollapse', 'true');
+    panelRef.current?.collapse();
+  }, []);
+
+  const Links = useSideNavLinks({
+    agents,
+    endpoint,
+    hidePanel,
+    assistants,
+    keyProvided,
+    interfaceConfig,
+  });
+
+  const calculateLayout = useCallback(() => {
+    if (!artifacts) {
+      const navSize = defaultLayout.length === 2 ? defaultLayout[1] : defaultLayout[2];
+      return [100 - navSize, navSize];
+    } else {
+      const navSize = Math.max(minSize, navCollapsedSize);
+      const remainingSpace = 100 - navSize;
+      const newMainSize = Math.floor(remainingSpace / 2);
+      const artifactsSize = remainingSpace - newMainSize;
+      return [newMainSize, artifactsSize, navSize];
     }
+  }, [artifacts, defaultLayout, minSize, navCollapsedSize]);
 
-    links.push({
-      title: 'com_sidepanel_attach_files',
-      label: '',
-      icon: AttachmentIcon,
-      id: 'files',
-      Component: FilesPanel,
-    });
-
-    return links;
-  }, [endpointsConfig, keyExpiry?.expiresAt]);
+  const currentLayout = useMemo(() => normalizeLayout(calculateLayout()), [calculateLayout]);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const throttledSaveLayout = useCallback(
     throttle((sizes: number[]) => {
-      localStorage.setItem('react-resizable-panels:layout', JSON.stringify(sizes));
+      const normalizedSizes = normalizeLayout(sizes);
+      localStorage.setItem('react-resizable-panels:layout', JSON.stringify(normalizedSizes));
     }, 350),
     [],
   );
@@ -82,24 +138,29 @@ export default function SidePanel({
   useEffect(() => {
     if (isSmallScreen) {
       setIsCollapsed(true);
-      setMinSize(0);
       setCollapsedSize(0);
+      setMinSize(defaultMinSize);
+      setFullCollapse(true);
+      localStorage.setItem('fullPanelCollapse', 'true');
       panelRef.current?.collapse();
       return;
+    } else {
+      setIsCollapsed(defaultCollapsed);
+      setCollapsedSize(navCollapsedSize);
+      setMinSize(defaultMinSize);
     }
-  }, [isSmallScreen]);
+  }, [isSmallScreen, defaultCollapsed, navCollapsedSize, fullPanelCollapse]);
 
-  const toggleNavVisible = () => {
+  const toggleNavVisible = useCallback(() => {
     if (newUser) {
       setNewUser(false);
     }
     setIsCollapsed((prev: boolean) => {
-      if (!prev) {
-        setMinSize(0);
-        setCollapsedSize(0);
-      } else {
+      if (prev) {
         setMinSize(defaultMinSize);
-        setCollapsedSize(3);
+        setCollapsedSize(navCollapsedSize);
+        setFullCollapse(false);
+        localStorage.setItem('fullPanelCollapse', 'false');
       }
       return !prev;
     });
@@ -108,100 +169,122 @@ export default function SidePanel({
     } else {
       panelRef.current?.expand();
     }
-  };
+  }, [isCollapsed, newUser, setNewUser, navCollapsedSize]);
 
-  const assistants = endpointsConfig?.[EModelEndpoint.assistants];
-  const userProvidesKey = !!assistants?.userProvide;
-  const keyProvided = userProvidesKey ? !!keyExpiry?.expiresAt : true;
+  const minSizeMain = useMemo(() => (artifacts != null ? 15 : 30), [artifacts]);
 
   return (
     <>
-      <TooltipProvider delayDuration={0}>
-        <ResizablePanelGroup
-          direction="horizontal"
-          onLayout={(sizes: number[]) => throttledSaveLayout(sizes)}
-          className="transition-width relative h-full w-full flex-1 overflow-auto bg-white dark:bg-gray-800"
+      <ResizablePanelGroup
+        direction="horizontal"
+        onLayout={(sizes) => throttledSaveLayout(sizes)}
+        className="transition-width relative h-full w-full flex-1 overflow-auto bg-white dark:bg-gray-800"
+      >
+        <ResizablePanel
+          defaultSize={currentLayout[0]}
+          minSize={minSizeMain}
+          order={1}
+          id="messages-view"
         >
-          <ResizablePanel defaultSize={defaultLayout[0]} minSize={30}>
-            {children}
-          </ResizablePanel>
-          <TooltipProvider delayDuration={400}>
-            <Tooltip>
-              <div
-                onMouseEnter={() => setIsHovering(true)}
-                onMouseLeave={() => setIsHovering(false)}
-                className="relative flex w-px items-center justify-center"
-              >
-                <NavToggle
-                  navVisible={!isCollapsed}
-                  isHovering={isHovering}
-                  onToggle={toggleNavVisible}
-                  setIsHovering={setIsHovering}
-                  className={cn(
-                    'fixed top-1/2',
-                    isCollapsed && (minSize === 0 || collapsedSize === 0) ? 'mr-9' : 'mr-16',
-                  )}
-                  translateX={false}
-                  side="right"
-                />
-              </div>
-            </Tooltip>
-          </TooltipProvider>
-          {(!isCollapsed || minSize > 0) && (
-            <ResizableHandleAlt withHandle className="bg-transparent dark:text-white" />
-          )}
-          <ResizablePanel
-            collapsedSize={collapsedSize}
-            defaultSize={defaultLayout[1]}
-            collapsible={true}
-            minSize={minSize}
-            maxSize={40}
-            ref={panelRef}
-            style={{
-              overflowY: 'auto',
-              visibility:
-                isCollapsed && (minSize === 0 || collapsedSize === 0) ? 'hidden' : 'visible',
-              transition: 'width 0.2s ease',
-            }}
-            onExpand={() => {
-              setIsCollapsed(false);
-              localStorage.setItem('react-resizable-panels:collapsed', 'false');
-            }}
-            onCollapse={() => {
-              setIsCollapsed(true);
-              localStorage.setItem('react-resizable-panels:collapsed', 'true');
-            }}
+          {children}
+        </ResizablePanel>
+        {artifacts != null && (
+          <>
+            <ResizableHandleAlt withHandle className="ml-3 bg-border-medium dark:text-white" />
+            <ResizablePanel
+              defaultSize={currentLayout[1]}
+              minSize={minSizeMain}
+              order={2}
+              id="artifacts-panel"
+            >
+              {artifacts}
+            </ResizablePanel>
+          </>
+        )}
+        <div
+          onMouseEnter={() => setIsHovering(true)}
+          onMouseLeave={() => setIsHovering(false)}
+          className="relative flex w-px items-center justify-center"
+        >
+          <NavToggle
+            navVisible={!isCollapsed}
+            isHovering={isHovering}
+            onToggle={toggleNavVisible}
+            setIsHovering={setIsHovering}
             className={cn(
-              'sidenav hide-scrollbar border-l border-gray-200 bg-white dark:border-gray-800/50 dark:bg-gray-900',
-              isCollapsed ? 'min-w-[50px]' : 'min-w-[340px] sm:min-w-[352px]',
-              minSize === 0 ? 'min-w-0' : '',
+              'fixed top-1/2',
+              (isCollapsed && (minSize === 0 || collapsedSize === 0)) || fullCollapse
+                ? 'mr-9'
+                : 'mr-16',
             )}
-          >
-            {keyProvided && (
-              <div
-                className={cn(
-                  'sticky left-0 right-0 top-0 z-[100] flex h-[52px] flex-wrap items-center justify-center bg-white dark:bg-gray-900',
-                  isCollapsed ? 'h-[52px]' : 'px-2',
-                )}
-              >
-                <Switcher isCollapsed={isCollapsed} />
-                <Separator className="bg-gray-100/50 dark:bg-gray-600" />
-              </div>
-            )}
-
-            <Nav
-              resize={panelRef.current?.resize}
-              isCollapsed={isCollapsed}
-              defaultActive={defaultActive}
-              links={Links}
-            />
-          </ResizablePanel>
-        </ResizablePanelGroup>
-      </TooltipProvider>
-      <div
-        className={`nav-mask${!isCollapsed ? ' active' : ''}`}
+            translateX={false}
+            side="right"
+          />
+        </div>
+        {(!isCollapsed || minSize > 0) && !isSmallScreen && !fullCollapse && (
+          <ResizableHandleAlt withHandle className="bg-transparent dark:text-white" />
+        )}
+        <ResizablePanel
+          tagName="nav"
+          id="controls-nav"
+          order={artifacts != null ? 3 : 2}
+          aria-label={localize('com_ui_controls')}
+          role="region"
+          collapsedSize={collapsedSize}
+          defaultSize={currentLayout[currentLayout.length - 1]}
+          collapsible={true}
+          minSize={minSize}
+          maxSize={40}
+          ref={panelRef}
+          style={{
+            overflowY: 'auto',
+            transition: 'width 0.2s ease, visibility 0s linear 0.2s',
+          }}
+          onExpand={() => {
+            setIsCollapsed(false);
+            localStorage.setItem('react-resizable-panels:collapsed', 'false');
+          }}
+          onCollapse={() => {
+            setIsCollapsed(true);
+            localStorage.setItem('react-resizable-panels:collapsed', 'true');
+          }}
+          className={cn(
+            'sidenav hide-scrollbar border-l border-border-light bg-surface-primary-alt transition-opacity',
+            isCollapsed ? 'min-w-[50px]' : 'min-w-[340px] sm:min-w-[352px]',
+            (isSmallScreen && isCollapsed && (minSize === 0 || collapsedSize === 0)) || fullCollapse
+              ? 'hidden min-w-0'
+              : 'opacity-100',
+          )}
+        >
+          {interfaceConfig.modelSelect && (
+            <div
+              className={cn(
+                'sticky left-0 right-0 top-0 z-[100] flex h-[52px] flex-wrap items-center justify-center bg-surface-primary-alt',
+                isCollapsed ? 'h-[52px]' : 'px-2',
+              )}
+            >
+              <Switcher
+                isCollapsed={isCollapsed}
+                endpointKeyProvided={keyProvided}
+                endpoint={endpoint}
+              />
+            </div>
+          )}
+          <Nav
+            resize={panelRef.current?.resize}
+            isCollapsed={isCollapsed}
+            defaultActive={defaultActive}
+            links={Links}
+          />
+        </ResizablePanel>
+      </ResizablePanelGroup>
+      <button
+        aria-label="Close right side panel"
+        className={`nav-mask ${!isCollapsed ? 'active' : ''}`}
         onClick={() => {
           setIsCollapsed(() => {
+            localStorage.setItem('fullPanelCollapse', 'true');
+            setFullCollapse(true);
             setCollapsedSize(0);
             setMinSize(0);
             return false;
@@ -211,4 +294,6 @@ export default function SidePanel({
       />
     </>
   );
-}
+};
+
+export default memo(SidePanel);

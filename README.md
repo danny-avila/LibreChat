@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://librechat.ai">
-    <img src="docs/assets/LibreChat.svg" height="256">
+    <img src="client/public/assets/logo.svg" height="256">
   </a>
   <h1 align="center">
     <a href="https://librechat.ai">LibreChat</a>
@@ -40,23 +40,42 @@
 
 # 📃 Features
 
-- 🖥️ UI matching ChatGPT, including Dark mode, Streaming, and 11-2023 updates
+- 🖥️ UI matching ChatGPT, including Dark mode, Streaming, and latest updates
+- 🤖 AI model selection:
+  - Anthropic (Claude), AWS Bedrock, OpenAI, Azure OpenAI, BingAI, ChatGPT, Google Vertex AI, Plugins, Assistants API (including Azure Assistants)
+- ✅ Compatible across both **[Remote & Local AI services](https://www.librechat.ai/docs/configuration/librechat_yaml/ai_endpoints):**
+  - groq, Ollama, Cohere, Mistral AI, Apple MLX, koboldcpp, OpenRouter, together.ai, Perplexity, ShuttleAI, and more
+- 🪄 Generative UI with **[Code Artifacts](https://youtu.be/GfTj7O4gmd0?si=WJbdnemZpJzBrJo3)**
+   - Create React, HTML code, and Mermaid diagrams right in chat
+- 💾 Create, Save, & Share Custom Presets
+- 🔀 Switch between AI Endpoints and Presets, mid-chat
+- 🔄 Edit, Resubmit, and Continue Messages with Conversation branching
+- 🌿 Fork Messages & Conversations for Advanced Context control
 - 💬 Multimodal Chat:
-  - Upload and analyze images with GPT-4 and Gemini Vision 📸
-  - More filetypes and Assistants API integration in Active Development 🚧
+    - Upload and analyze images with Claude 3, GPT-4 (including `gpt-4o` and `gpt-4o-mini`), and Gemini Vision 📸
+    - Chat with Files using Custom Endpoints, OpenAI, Azure, Anthropic, & Google. 🗃️
+    - Advanced Agents with Files, Code Interpreter, Tools, and API Actions 🔦
+      - Available through the [OpenAI Assistants API](https://platform.openai.com/docs/assistants/overview) 🌤️
+      - Non-OpenAI Agents in Active Development 🚧
 - 🌎 Multilingual UI:
   - English, 中文, Deutsch, Español, Français, Italiano, Polski, Português Brasileiro,
   - Русский, 日本語, Svenska, 한국어, Tiếng Việt, 繁體中文, العربية, Türkçe, Nederlands, עברית
-- 🤖 AI model selection: OpenAI API, Azure, BingAI, ChatGPT, Google Vertex AI, Anthropic (Claude), Plugins
-- 💾 Create, Save, & Share Custom Presets
-- 🔄 Edit, Resubmit, and Continue messages with conversation branching
-- 📤 Export conversations as screenshots, markdown, text, json.
+- 🎨 Customizable Dropdown & Interface: Adapts to both power users and newcomers
+- 📧 Verify your email to ensure secure access
+- 🗣️ Chat hands-free with Speech-to-Text and Text-to-Speech magic
+  - Automatically send and play Audio
+  - Supports OpenAI, Azure OpenAI, and Elevenlabs
+- 📥 Import Conversations from LibreChat, ChatGPT, Chatbot UI
+- 📤 Export conversations as screenshots, markdown, text, json
 - 🔍 Search all messages/conversations
 - 🔌 Plugins, including web access, image generation with DALL-E-3 and more
 - 👥 Multi-User, Secure Authentication with Moderation and Token spend tools
-- ⚙️ Configure Proxy, Reverse Proxy, Docker, many Deployment options, and completely Open-Source
+- ⚙️ Configure Proxy, Reverse Proxy, Docker, & many Deployment options:
+  - Use completely local or deploy on the cloud
+- 📖 Completely Open-Source & Built in Public
+- 🧑‍🤝‍🧑 Community-driven development, support, and feedback
 
-[For a thorough review of our features, see our docs here](https://docs.librechat.ai/features/plugins/introduction.html) 📚
+[For a thorough review of our features, see our docs here](https://docs.librechat.ai/) 📚
 
 ## 🪶 All-In-One AI Conversations with LibreChat
 
@@ -64,16 +83,21 @@ LibreChat brings together the future of assistant AIs with the revolutionary tec
 
 With LibreChat, you no longer need to opt for ChatGPT Plus and can instead use free or pay-per-call APIs. We welcome contributions, cloning, and forking to enhance the capabilities of this advanced chatbot platform.
 
-<!-- https://github.com/danny-avila/LibreChat/assets/110412045/c1eb0c0f-41f6-4335-b982-84b278b53d59 -->
-
-[![Watch the video](https://img.youtube.com/vi/pNIOs1ovsXw/maxresdefault.jpg)](https://youtu.be/pNIOs1ovsXw)
+[![Watch the video](https://raw.githubusercontent.com/LibreChat-AI/librechat.ai/main/public/images/changelog/v0.7.4.png)](https://www.youtube.com/watch?v=cvosUxogdpI)
 Click on the thumbnail to open the video☝️
 
 ---
 
-## 📚 Documentation
+## 🌐 Resources
 
-For more information on how to use our advanced features, install and configure our software, and access our guidelines and tutorials, please check out our documentation at [docs.librechat.ai](https://docs.librechat.ai)
+**GitHub Repo:**
+  - **RAG API:** [github.com/danny-avila/rag_api](https://github.com/danny-avila/rag_api)
+  - **Website:** [github.com/LibreChat-AI/librechat.ai](https://github.com/LibreChat-AI/librechat.ai)
+
+**Other:**
+  - **Website:** [librechat.ai](https://librechat.ai)
+  - **Documentation:** [docs.librechat.ai](https://docs.librechat.ai)
+  - **Blog:** [blog.librechat.ai](https://docs.librechat.ai)
 
 ---
 
@@ -142,22 +166,29 @@ For more information on how to use our advanced features, install and configure 
 
 ## 📝 Changelog
 
-Keep up with the latest updates by visiting the releases page - [Releases](https://github.com/danny-avila/LibreChat/releases)
+Keep up with the latest updates by visiting the releases page and notes:
+- [Releases](https://github.com/danny-avila/LibreChat/releases)
+- [Changelog](https://www.librechat.ai/changelog) 
 
-**⚠️ [Breaking Changes](docs/general_info/breaking_changes.md)**
-Please consult the breaking changes before updating.
+**⚠️ Please consult the [changelog](https://www.librechat.ai/changelog) for breaking changes before updating.**
 
 ---
 
 ## ⭐ Star History
 
 <p align="center">
-<a href="https://trendshift.io/repositories/4685" target="_blank"><img src="https://trendshift.io/api/badge/repositories/4685" alt="danny-avila%2FLibreChat | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+  <a href="https://star-history.com/#danny-avila/LibreChat&Date">
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date&theme=dark" onerror="this.src='https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date'" />
+  </a>
 </p>
-
-<a href="https://star-history.com/#danny-avila/LibreChat&Date">
-  <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date&theme=dark" onerror="this.src='https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date'" />
-</a>
+<p align="center">
+  <a href="https://trendshift.io/repositories/4685" target="_blank" style="padding: 10px;">
+    <img src="https://trendshift.io/api/badge/repositories/4685" alt="danny-avila%2FLibreChat | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/>
+  </a>
+  <a href="https://runacap.com/ross-index/q1-24/" target="_blank" rel="noopener" style="margin-left: 20px;">
+    <img style="width: 260px; height: 56px" src="https://runacap.com/wp-content/uploads/2024/04/ROSS_badge_white_Q1_2024.svg" alt="ROSS Index - Fastest Growing Open-Source Startups in Q1 2024 | Runa Capital" width="260" height="56"/>
+  </a>
+</p>
 
 ---
 

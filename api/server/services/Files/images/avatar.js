@@ -1,15 +1,17 @@
 const sharp = require('sharp');
 const fs = require('fs').promises;
 const fetch = require('node-fetch');
+const { EImageOutputType } = require('librechat-data-provider');
 const { resizeAndConvert } = require('./resize');
 const { logger } = require('~/config');
 
 /**
  * Uploads an avatar image for a user. This function can handle various types of input (URL, Buffer, or File object),
- * processes the image to a square format, converts it to WebP format, and returns the resized buffer.
+ * processes the image to a square format, converts it to target format, and returns the resized buffer.
  *
  * @param {Object} params - The parameters object.
  * @param {string} params.userId - The unique identifier of the user for whom the avatar is being uploaded.
+ * @param {string} options.desiredFormat - The desired output format of the image.
  * @param {(string|Buffer|File)} params.input - The input representing the avatar image. Can be a URL (string),
  *                                               a Buffer, or a File object.
  *
@@ -19,7 +21,7 @@ const { logger } = require('~/config');
  * @throws {Error} Throws an error if the user ID is undefined, the input type is invalid, the image fetching fails,
  *                 or any other error occurs during the processing.
  */
-async function resizeAvatar({ userId, input }) {
+async function resizeAvatar({ userId, input, desiredFormat = EImageOutputType.PNG }) {
   try {
     if (userId === undefined) {
       throw new Error('User ID is undefined');
@@ -53,7 +55,10 @@ async function resizeAvatar({ userId, input }) {
       })
       .toBuffer();
 
-    const { buffer } = await resizeAndConvert(squaredBuffer);
+    const { buffer } = await resizeAndConvert({
+      inputBuffer: squaredBuffer,
+      desiredFormat,
+    });
     return buffer;
   } catch (error) {
     logger.error('Error uploading the avatar:', error);

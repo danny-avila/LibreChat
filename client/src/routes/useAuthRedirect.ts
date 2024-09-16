@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthContext } from '~/hooks';
 
 export default function useAuthRedirect() {
-  const { isAuthenticated } = useAuthContext();
+  const { user, isAuthenticated } = useAuthContext();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -19,6 +19,7 @@ export default function useAuthRedirect() {
   }, [isAuthenticated, navigate]);
 
   return {
+    user,
     isAuthenticated,
   };
 }

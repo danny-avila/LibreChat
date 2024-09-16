@@ -12,6 +12,7 @@ module.exports = {
     'plugin:react-hooks/recommended',
     'plugin:jest/recommended',
     'prettier',
+    'plugin:jsx-a11y/recommended',
   ],
   ignorePatterns: [
     'client/dist/**/*',
@@ -19,6 +20,7 @@ module.exports = {
     'e2e/playwright-report/**/*',
     'packages/data-provider/types/**/*',
     'packages/data-provider/dist/**/*',
+    'packages/data-provider/test_bundle/**/*',
     'data-node/**/*',
     'meili_data/**/*',
     'node_modules/**/*',
@@ -31,7 +33,7 @@ module.exports = {
       jsx: true,
     },
   },
-  plugins: ['react', 'react-hooks', '@typescript-eslint', 'import'],
+  plugins: ['react', 'react-hooks', '@typescript-eslint', 'import', 'jsx-a11y'],
   rules: {
     'react/react-in-jsx-scope': 'off',
     '@typescript-eslint/ban-ts-comment': ['error', { 'ts-ignore': 'allow' }],
@@ -64,6 +66,7 @@ module.exports = {
     'no-restricted-syntax': 'off',
     'react/prop-types': ['off'],
     'react/display-name': ['off'],
+    'no-nested-ternary': 'error',
     'no-unused-vars': ['error', { varsIgnorePattern: '^_' }],
     quotes: ['error', 'single'],
   },
@@ -117,6 +120,8 @@ module.exports = {
       ],
       rules: {
         '@typescript-eslint/no-explicit-any': 'error',
+        '@typescript-eslint/no-unnecessary-condition': 'warn',
+        '@typescript-eslint/strict-boolean-expressions': 'warn',
       },
     },
     {
@@ -130,6 +135,13 @@ module.exports = {
           },
         },
       ],
+    },
+    {
+      files: './config/translations/**/*.ts',
+      parser: '@typescript-eslint/parser',
+      parserOptions: {
+        project: './config/translations/tsconfig.json',
+      },
     },
     {
       files: ['./packages/data-provider/specs/**/*.ts'],

@@ -1,12 +1,18 @@
+import { useCallback, useMemo } from 'react';
 import { ContentTypes } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
+
 import type {
-  TSubmission,
+  Text,
   TMessage,
-  TContentData,
+  ImageFile,
   ContentPart,
+  PartMetadata,
+  TContentData,
+  EventSubmission,
   TMessageContentParts,
 } from 'librechat-data-provider';
-import { useCallback, useMemo } from 'react';
+import { addFileToCache } from '~/utils';
 
 type TUseContentHandler = {
   setMessages: (messages: TMessage[]) => void;
@@ -15,29 +21,30 @@ type TUseContentHandler = {
 
 type TContentHandler = {
   data: TContentData;
-  submission: TSubmission;
+  submission: EventSubmission;
 };
 
 export default function useContentHandler({ setMessages, getMessages }: TUseContentHandler) {
+  const queryClient = useQueryClient();
   const messageMap = useMemo(() => new Map<string, TMessage>(), []);
   return useCallback(
     ({ data, submission }: TContentHandler) => {
-      const { type, messageId, thread_id, conversationId, index, stream } = data;
+      const { type, messageId, thread_id, conversationId, index } = data;
 
       const _messages = getMessages();
       const messages =
         _messages
           ?.filter((m) => m.messageId !== messageId)
           ?.map((msg) => ({ ...msg, thread_id })) ?? [];
-      const userMessage = messages[messages.length - 1];
+      const userMessage = messages[messages.length - 1] as TMessage | undefined;
 
       const { initialResponse } = submission;
 
       let response = messageMap.get(messageId);
       if (!response) {
         response = {
-          ...initialResponse,
-          parentMessageId: userMessage?.messageId,
+          ...(initialResponse as TMessage),
+          parentMessageId: userMessage?.messageId ?? '',
           conversationId,
           messageId,
           thread_id,
@@ -46,8 +53,13 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
       }
 
       // TODO: handle streaming for non-text
+      const textPart: Text | string | undefined = data[ContentTypes.TEXT];
       const part: ContentPart =
-        stream && data[ContentTypes.TEXT] ? { value: data[ContentTypes.TEXT] } : data[type];
+        textPart != null && typeof textPart === 'string' ? { value: textPart } : data[type];
+
+      if (type === ContentTypes.IMAGE_FILE) {
+        addFileToCache(queryClient, part as ImageFile & PartMetadata);
+      }
 
       /* spreading the content array to avoid mutation */
       response.content = [...(response.content ?? [])];
@@ -66,6 +78,6 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
 
       setMessages([...messages, response]);
     },
-    [getMessages, messageMap, setMessages],
+    [queryClient, getMessages, messageMap, setMessages],
   );
 }

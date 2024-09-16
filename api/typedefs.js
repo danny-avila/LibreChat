@@ -9,6 +9,422 @@
  */
 
 /**
+ * @exports ServerRequest
+ * @typedef {import('express').Request} ServerRequest
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ServerResponse
+ * @typedef {import('express').Response} ServerResponse
+ * @memberof typedefs
+ */
+
+/**
+ * @exports AgentRun
+ * @typedef {import('@librechat/agents').Run} AgentRun
+ * @memberof typedefs
+ */
+
+/**
+ * @exports IState
+ * @typedef {import('@librechat/agents').IState} IState
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ClientCallbacks
+ * @typedef {import('@librechat/agents').ClientCallbacks} ClientCallbacks
+ * @memberof typedefs
+ */
+
+/**
+ * @exports BedrockClientOptions
+ * @typedef {import('@librechat/agents').BedrockConverseClientOptions} BedrockClientOptions
+ * @memberof typedefs
+ */
+
+/**
+ * @exports StreamEventData
+ * @typedef {import('@librechat/agents').StreamEventData} StreamEventData
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ToolEndData
+ * @typedef {import('@librechat/agents').ToolEndData} ToolEndData
+ * @memberof typedefs
+ */
+
+/**
+ * @exports UsageMetadata
+ * @typedef {import('@langchain/core/messages').UsageMetadata} UsageMetadata
+ * @memberof typedefs
+ */
+
+/**
+ * @exports Ollama
+ * @typedef {import('ollama').Ollama} Ollama
+ * @memberof typedefs
+ */
+
+/**
+ * @exports AxiosResponse
+ * @typedef {import('axios').AxiosResponse} AxiosResponse
+ * @memberof typedefs
+ */
+
+/**
+ * @exports Anthropic
+ * @typedef {import('@anthropic-ai/sdk').default} Anthropic
+ * @memberof typedefs
+ */
+
+/**
+ * @exports AnthropicMessage
+ * @typedef {import('@anthropic-ai/sdk').default.MessageParam} AnthropicMessage
+ * @memberof typedefs
+ */
+
+/**
+ * @exports AnthropicMessageStartEvent
+ * @typedef {import('@anthropic-ai/sdk').default.MessageStartEvent} AnthropicMessageStartEvent
+ * @memberof typedefs
+ */
+
+/**
+ * @exports AnthropicMessageDeltaEvent
+ * @typedef {import('@anthropic-ai/sdk').default.MessageDeltaEvent} AnthropicMessageDeltaEvent
+ * @memberof typedefs
+ */
+
+/**
+ * @exports GenerativeModel
+ * @typedef {import('@google/generative-ai').GenerativeModel} GenerativeModel
+ * @memberof typedefs
+ */
+
+/**
+ * @exports AssistantStreamEvent
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent} AssistantStreamEvent
+ * @memberof typedefs
+ */
+
+/**
+ * @exports AssistantStream
+ * @typedef {AsyncIterable<AssistantStreamEvent>} AssistantStream
+ * @memberof typedefs
+ */
+
+/**
+ * @exports RunCreateAndStreamParams
+ * @typedef {import('openai').OpenAI.Beta.Threads.RunCreateAndStreamParams} RunCreateAndStreamParams
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ChatCompletionContentPartImage
+ * @typedef {import('openai').OpenAI.ChatCompletionContentPartImage} ChatCompletionContentPartImage
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ChatCompletion
+ * @typedef {import('openai').OpenAI.ChatCompletion} ChatCompletion
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ChatCompletionPayload
+ * @typedef {import('openai').OpenAI.ChatCompletionCreateParams} ChatCompletionPayload
+ * @memberof typedefs
+ */
+
+/**
+ * @exports OllamaMessage
+ * @typedef {import('ollama').Message} OllamaMessage
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ChatCompletionMessage
+ * @typedef {import('openai').OpenAI.ChatCompletionMessageParam} ChatCompletionMessage
+ * @memberof typedefs
+ */
+
+/**
+ * @exports CohereChatStreamRequest
+ * @typedef {import('cohere-ai').Cohere.ChatStreamRequest} CohereChatStreamRequest
+ * @memberof typedefs
+ */
+
+/**
+ * @exports CohereChatRequest
+ * @typedef {import('cohere-ai').Cohere.ChatRequest} CohereChatRequest
+ * @memberof typedefs
+ */
+
+/**
+ * @exports OpenAIRequestOptions
+ * @typedef {import('openai').OpenAI.RequestOptions} OpenAIRequestOptions
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadCreated
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadCreated} ThreadCreated
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunCreated
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunCreated} ThreadRunCreated
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunQueued
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunQueued} ThreadRunQueued
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunInProgress
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunInProgress} ThreadRunInProgress
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunRequiresAction
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunRequiresAction} ThreadRunRequiresAction
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunCompleted
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunCompleted} ThreadRunCompleted
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunFailed
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunFailed} ThreadRunFailed
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunCancelling
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunCancelling} ThreadRunCancelling
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunCancelled
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunCancelled} ThreadRunCancelled
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunExpired
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunExpired} ThreadRunExpired
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunStepCreated
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunStepCreated} ThreadRunStepCreated
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunStepInProgress
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunStepInProgress} ThreadRunStepInProgress
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunStepDelta
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunStepDelta} ThreadRunStepDelta
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunStepCompleted
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunStepCompleted} ThreadRunStepCompleted
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunStepFailed
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunStepFailed} ThreadRunStepFailed
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunStepCancelled
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunStepCancelled} ThreadRunStepCancelled
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunStepExpired
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunStepExpired} ThreadRunStepExpired
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadMessageCreated
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadMessageCreated} ThreadMessageCreated
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadMessageInProgress
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadMessageInProgress} ThreadMessageInProgress
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadMessageDelta
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadMessageDelta} ThreadMessageDelta
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadMessageCompleted
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadMessageCompleted} ThreadMessageCompleted
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadMessageIncomplete
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadMessageIncomplete} ThreadMessageIncomplete
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ErrorEvent
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ErrorEvent} ErrorEvent
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ToolCallDeltaObject
+ * @typedef {import('openai').default.Beta.Threads.Runs.Steps.ToolCallDeltaObject} ToolCallDeltaObject
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ToolCallDelta
+ * @typedef {import('openai').default.Beta.Threads.Runs.Steps.ToolCallDelta} ToolCallDelta
+ * @memberof typedefs
+ */
+
+/** Prompts */
+/**
+ * @exports TPrompt
+ * @typedef {import('librechat-data-provider').TPrompt} TPrompt
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TPromptGroup
+ * @typedef {import('librechat-data-provider').TPromptGroup} TPromptGroup
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TCreatePrompt
+ * @typedef {import('librechat-data-provider').TCreatePrompt} TCreatePrompt
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TCreatePromptRecord
+ * @typedef {import('librechat-data-provider').TCreatePromptRecord} TCreatePromptRecord
+ * @memberof typedefs
+ */
+/**
+ * @exports TCreatePromptResponse
+ * @typedef {import('librechat-data-provider').TCreatePromptResponse} TCreatePromptResponse
+ * @memberof typedefs
+ */
+/**
+ * @exports TUpdatePromptGroupResponse
+ * @typedef {import('librechat-data-provider').TUpdatePromptGroupResponse} TUpdatePromptGroupResponse
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TPromptGroupsWithFilterRequest
+ * @typedef {import('librechat-data-provider').TPromptGroupsWithFilterRequest } TPromptGroupsWithFilterRequest
+ * @memberof typedefs
+ */
+
+/**
+ * @exports PromptGroupListResponse
+ * @typedef {import('librechat-data-provider').PromptGroupListResponse } PromptGroupListResponse
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TGetCategoriesResponse
+ * @typedef {import('librechat-data-provider').TGetCategoriesResponse } TGetCategoriesResponse
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TGetRandomPromptsResponse
+ * @typedef {import('librechat-data-provider').TGetRandomPromptsResponse } TGetRandomPromptsResponse
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TGetRandomPromptsRequest
+ * @typedef {import('librechat-data-provider').TGetRandomPromptsRequest } TGetRandomPromptsRequest
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TUpdatePromptGroupPayload
+ * @typedef {import('librechat-data-provider').TUpdatePromptGroupPayload } TUpdatePromptGroupPayload
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TDeletePromptVariables
+ * @typedef {import('librechat-data-provider').TDeletePromptVariables } TDeletePromptVariables
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TDeletePromptResponse
+ * @typedef {import('librechat-data-provider').TDeletePromptResponse } TDeletePromptResponse
+ * @memberof typedefs
+ */
+
+/* Roles */
+
+/**
+ * @exports TRole
+ * @typedef {import('librechat-data-provider').TRole } TRole
+ * @memberof typedefs
+ */
+
+/**
+ * @exports PermissionTypes
+ * @typedef {import('librechat-data-provider').PermissionTypes } PermissionTypes
+ * @memberof typedefs
+ */
+
+/**
+ * @exports Permissions
+ * @typedef {import('librechat-data-provider').Permissions } Permissions
+ * @memberof typedefs
+ */
+
+/** Assistants */
+/**
  * @exports Assistant
  * @typedef {import('librechat-data-provider').Assistant} Assistant
  * @memberof typedefs
@@ -29,6 +445,24 @@
 /**
  * @exports TConfig
  * @typedef {import('librechat-data-provider').TConfig} TConfig
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TPayload
+ * @typedef {import('librechat-data-provider').TPayload} TPayload
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TAzureModelConfig
+ * @typedef {import('librechat-data-provider').TAzureModelConfig} TAzureModelConfig
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TAzureGroup
+ * @typedef {import('librechat-data-provider').TAzureGroup} TAzureGroup
  * @memberof typedefs
  */
 
@@ -62,14 +496,56 @@
  */
 
 /**
+ * @exports TStartupConfig
+ * @typedef {import('librechat-data-provider').TStartupConfig} TStartupConfig
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TConfigDefaults
+ * @typedef {import('librechat-data-provider').TConfigDefaults} TConfigDefaults
+ * @memberof typedefs
+ */
+
+/**
  * @exports TPlugin
  * @typedef {import('librechat-data-provider').TPlugin} TPlugin
  * @memberof typedefs
  */
 
 /**
+ * @exports TAzureConfigValidationResult
+ * @typedef {import('librechat-data-provider').TAzureConfigValidationResult} TAzureConfigValidationResult
+ * @memberof typedefs
+ */
+
+/**
+ * @exports EImageOutputType
+ * @typedef {import('librechat-data-provider').EImageOutputType} EImageOutputType
+ * @memberof typedefs
+ */
+
+/**
  * @exports TCustomConfig
  * @typedef {import('librechat-data-provider').TCustomConfig} TCustomConfig
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TProviderSchema
+ * @typedef {import('librechat-data-provider').TProviderSchema} TProviderSchema
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TBaseEndpoint
+ * @typedef {import('librechat-data-provider').TBaseEndpoint} TBaseEndpoint
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TEndpoint
+ * @typedef {import('librechat-data-provider').TEndpoint} TEndpoint
  * @memberof typedefs
  */
 
@@ -82,6 +558,18 @@
 /**
  * @exports TMessage
  * @typedef {import('librechat-data-provider').TMessage} TMessage
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TConversation
+ * @typedef {import('librechat-data-provider').TConversation} TConversation
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TModelSpec
+ * @typedef {import('librechat-data-provider').TModelSpec} TModelSpec
  * @memberof typedefs
  */
 
@@ -106,6 +594,18 @@
 /**
  * @exports ImageFile
  * @typedef {import('librechat-data-provider').ImageFile} ImageFile
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TMessageContentParts
+ * @typedef {import('librechat-data-provider').TMessageContentParts} TMessageContentParts
+ * @memberof typedefs
+ */
+
+/**
+ * @exports StreamContentData
+ * @typedef {import('librechat-data-provider').StreamContentData} StreamContentData
  * @memberof typedefs
  */
 
@@ -159,8 +659,50 @@
  */
 
 /**
+ * @exports MongooseSchema
+ * @typedef {import('mongoose').Schema} MongooseSchema
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ObjectId
+ * @typedef {import('mongoose').Types.ObjectId} ObjectId
+ * @memberof typedefs
+ */
+
+/**
  * @exports MongoFile
  * @typedef {import('~/models/schema/fileSchema.js').MongoFile} MongoFile
+ * @memberof typedefs
+ */
+
+/**
+ * @exports MongoUser
+ * @typedef {import('~/models/schema/userSchema.js').MongoUser} MongoUser
+ * @memberof typedefs
+ */
+
+/**
+ * @exports MongoProject
+ * @typedef {import('~/models/schema/projectSchema.js').MongoProject} MongoProject
+ * @memberof typedefs
+ */
+
+/**
+ * @exports MongoPromptGroup
+ * @typedef {import('~/models/schema/promptSchema.js').MongoPromptGroup} MongoPromptGroup
+ * @memberof typedefs
+ */
+
+/**
+ * @exports uploadImageBuffer
+ * @typedef {import('~/server/services/Files/process').uploadImageBuffer} uploadImageBuffer
+ * @memberof typedefs
+ */
+
+/**
+ * @exports processFileURL
+ * @typedef {import('~/server/services/Files/process').processFileURL} processFileURL
  * @memberof typedefs
  */
 
@@ -220,13 +762,49 @@
 
 /**
  * @exports ThreadMessage
- * @typedef {import('openai').OpenAI.Beta.Threads.ThreadMessage} ThreadMessage
+ * @typedef {import('openai').OpenAI.Beta.Threads.Message} ThreadMessage
+ * @memberof typedefs
+ */
+
+/**
+ * @exports Annotation
+ * @typedef {import('openai').OpenAI.Beta.Threads.Messages.Annotation} Annotation
  * @memberof typedefs
  */
 
 /**
  * @exports TAssistantEndpoint
  * @typedef {import('librechat-data-provider').TAssistantEndpoint} TAssistantEndpoint
+ * @memberof typedefs
+ */
+
+/**
+ * @exports Agent
+ * @typedef {import('librechat-data-provider').Agent} Agent
+ * @memberof typedefs
+ */
+
+/**
+ * @exports AgentCreateParams
+ * @typedef {import('librechat-data-provider').AgentCreateParams} AgentCreateParams
+ * @memberof typedefs
+ */
+
+/**
+ * @exports AgentUpdateParams
+ * @typedef {import('librechat-data-provider').AgentUpdateParams} AgentUpdateParams
+ * @memberof typedefs
+ */
+
+/**
+ * @exports AgentListParams
+ * @typedef {import('librechat-data-provider').AgentListParams} AgentListParams
+ * @memberof typedefs
+ */
+
+/**
+ * @exports AgentListResponse
+ * @typedef {import('librechat-data-provider').AgentListResponse} AgentListResponse
  * @memberof typedefs
  */
 
@@ -330,6 +908,24 @@
 /**
  * @exports RunManager
  * @typedef {import('./server/services/Runs/RunManager.js').RunManager} RunManager
+ * @memberof typedefs
+ */
+
+/**
+ * @exports OpenAISpecClient
+ * @typedef {import('./app/clients/OpenAIClient')} OpenAISpecClient
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TAgentClient
+ * @typedef {import('./server/controllers/agents/client')} TAgentClient
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ImportBatchBuilder
+ * @typedef {import('./server/utils/import/importBatchBuilder.js').ImportBatchBuilder} ImportBatchBuilder
  * @memberof typedefs
  */
 
@@ -698,6 +1294,8 @@
  * @property {Run} run - The detailed information about the run.
  * @property {RunStep[]} steps - An array of steps taken during the run.
  * @property {StepMessage[]} messages - An array of messages related to the run.
+ * @property {ResponseMessage} finalMessage - The final response message, with all content parts.
+ * @property {string} text - The final response text, accumulated from message parts
  * @memberof typedefs
  */
 
@@ -726,7 +1324,7 @@
 // */
 
 /**
- * @typedef {Object} OpenAIClientType
+ * @typedef {Object} RunClient
  *
  * @property {Express.Request} req - The Express request object.
  * @property {Express.Response} res - The Express response object.
@@ -743,6 +1341,8 @@
  * @property {Set<string>} completeToolCallSteps - A set of completed tool call steps.
  * @property {Set<string>} seenCompletedMessages - A set of completed messages that have been seen/processed.
  * @property {Map<string, StepToolCall>} seenToolCalls - A map of tool calls that have been seen/processed.
+ * @property {object | undefined} locals - Local variables for the request.
+ * @property {AzureOptions} locals.azureOptions - Local Azure options for the request.
  * @property {(data: TContentData) => void} addContentData - Updates the response message's relevant
  * @property {InProgressFunction} in_progress - Updates the response message's relevant
  * content array with the part by index & sends intermediate SSE message with content data.
@@ -752,7 +1352,7 @@
  *
  * @property {ResponseMessage} responseMessage - A message object for responses.
  *
- * @typedef {OpenAI & OpenAIClientType} OpenAIClient
+ * @typedef {OpenAI & RunClient} OpenAIClient
  */
 
 /**
@@ -769,5 +1369,236 @@
  * @property {string[]} [file_ids] - Optional. List of File IDs the assistant can use for this run.
  * **Note:** The API seems to prefer files added to messages, not runs.
  * @property {Object} [metadata] - Optional. Metadata for the run.
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Object} StreamRunManager
+ * Manages streaming and processing of run steps, messages, and tool calls within a thread.
+ *
+ * @property {number} index - Tracks the current index for step or message processing.
+ * @property {Map<string, any>} steps - Stores run steps by their IDs.
+ * @property {Map<string, number>} mappedOrder - Maps step or message IDs to their processing order index.
+ * @property {Map<number, any>} orderedRunSteps - Stores run steps in order of processing.
+ * @property {Set<string>} processedFileIds - Keeps track of file IDs that have been processed.
+ * @property {Map<string, Function>} progressCallbacks - Stores callbacks for reporting progress on step or message processing.
+ * @property {boolean} submittedToolOutputs - Indicates whether tool outputs have been submitted.
+ * @property {Object|null} run - Holds the current run object.
+ * @property {Object} req - The HTTP request object associated with the run.
+ * @property {Object} res - The HTTP response object for sending back data.
+ * @property {Object} openai - The OpenAI client instance.
+ * @property {string} apiKey - The API key used for OpenAI requests.
+ * @property {string} thread_id - The ID of the thread associated with the run.
+ * @property {Object} initialRunBody - The initial body of the run request.
+ * @property {Object.<string, Function>} clientHandlers - Custom handlers provided by the client.
+ * @property {Object} streamOptions - Options for streaming the run.
+ * @property {Object} finalMessage - The final message object to be constructed and sent.
+ * @property {Array} messages - An array of messages processed during the run.
+ * @property {string} text - Accumulated text from text content data.
+ * @property {Object.<string, Function>} handlers - Internal event handlers for different types of streaming events.
+ *
+ * @method addContentData Adds content data to the final message or sends it immediately depending on type.
+ * @method runAssistant Initializes and manages the streaming of a thread run.
+ * @method handleEvent Dispatches streaming events to the appropriate handlers.
+ * @method handleThreadCreated Handles the event when a thread is created.
+ * @method handleRunEvent Handles various run state events.
+ * @method handleRunStepEvent Handles events related to individual run steps.
+ * @method handleCodeImageOutput Processes and handles code-generated image outputs.
+ * @method createToolCallStream Initializes streaming for tool call outputs.
+ * @method handleNewToolCall Handles the creation of a new tool call within a run step.
+ * @method handleCompletedToolCall Handles the completion of tool call processing.
+ * @method handleRunStepDeltaEvent Handles updates (deltas) for run steps.
+ * @method handleMessageDeltaEvent Handles updates (deltas) for messages.
+ * @method handleErrorEvent Handles error events during streaming.
+ * @method getStepIndex Retrieves or assigns an index for a given step or message key.
+ * @method generateToolCallKey Generates a unique key for a tool call within a step.
+ * @method onRunRequiresAction Handles actions required by a run to proceed.
+ * @method onRunStepCreated Handles the creation of a new run step.
+ * @method onRunStepCompleted Handles the completion of a run step.
+ * @method handleMessageEvent Handles events related to messages within the run.
+ * @method messageCompleted Handles the completion of a message processing.
+ */
+
+/* TX Types */
+
+/**
+ * @typedef {object} txData - Transaction data.
+ * @property {mongoose.Schema.Types.ObjectId} user - The user ID.
+ * @property {String} conversationId - The ID of the conversation.
+ * @property {String} model - The model name.
+ * @property {String} context - The context in which the transaction is made.
+ * @property {EndpointTokenConfig} [endpointTokenConfig] - The current endpoint token config.
+ * @property {object} [cacheUsage] - Cache usage, if any.
+ * @property {String} [valueKey] - The value key (optional).
+ * @memberof typedefs
+ */
+
+/**
+ * https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching#pricing
+ * @typedef {object} AnthropicStreamUsage - Stream usage for Anthropic
+ * @property {number} [input_tokens] - The number of input tokens used.
+ * @property {number} [cache_creation_input_tokens] - The number of cache creation input tokens used (write).
+ * @property {number} [cache_read_input_tokens] - The number of cache input tokens used (read).
+ * @property {number} [output_tokens] - The number of output tokens used.
+ */
+
+/**
+ * @exports OpenAIUsageMetadata
+ * @typedef {Object} OpenAIUsageMetadata -  Usage statistics related to the run. This value will be `null` if the run is not in a terminal state (i.e. `in_progress`, `queued`, etc.).
+ * @property {number} [usage.completion_tokens] - Number of completion tokens used over the course of the run.
+ * @property {number} [usage.prompt_tokens] - Number of prompt tokens used over the course of the run.
+ * @property {number} [usage.total_tokens] - Total number of tokens used (prompt + completion).
+ * @property {number} [usage.reasoning_tokens] - Total number of tokens used for reasoning (OpenAI o1 models).
+ * @property {Object} [usage.completion_tokens_details] - Further details on the completion tokens used (OpenAI o1 models).
+ * @property {number} [usage.completion_tokens_details.reasoning_tokens] - Total number of tokens used for reasoning (OpenAI o1 models).
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {AnthropicStreamUsage | OpenAIUsageMetadata | UsageMetadata} StreamUsage - Stream usage for all providers (currently only Anthropic, OpenAI, LangChain)
+ */
+
+/* Native app/client methods */
+
+/**
+ * Accumulates tokens and sends them to the client for processing.
+ * @callback onTokenProgress
+ * @param {string} token - The current token generated by the model.
+ * @returns {Promise<void>}
+ * @memberof typedefs
+ */
+
+/**
+ * Main entrypoint for API completion calls
+ * @callback sendCompletion
+ * @param {Array<ChatCompletionMessage> | string} payload - The messages or prompt to send to the model
+ * @param {object} opts - Options for the completion
+ * @param {onTokenProgress} opts.onProgress - Callback function to handle token progress
+ * @param {AbortController} opts.abortController - AbortController instance
+ * @returns {Promise<string>}
+ * @memberof typedefs
+ */
+
+/**
+ * Legacy completion handler for OpenAI API.
+ * @callback getCompletion
+ * @param {Array<ChatCompletionMessage> | string} input - Array of messages or a single prompt string
+ * @param {(event: object | string) => Promise<void>} onProgress - SSE progress handler
+ * @param {onTokenProgress} onTokenProgress - Token progress handler
+ * @param {AbortController} [abortController] - AbortController instance
+ * @returns {Promise<Object | string>} - Completion response
+ * @memberof typedefs
+ */
+
+/**
+ * Cohere Stream handling. Note: abortController is not supported here.
+ * @callback cohereChatCompletion
+ * @param {object} params
+ * @param {CohereChatStreamRequest | CohereChatRequest} params.payload
+ * @param {onTokenProgress} params.onTokenProgress
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Object} OllamaModelDetails
+ * @property {string} parent_model - The identifier for the parent model, if any.
+ * @property {string} format - The format of the model.
+ * @property {string} family - The primary family to which the model belongs.
+ * @property {string[]} families - An array of families that include the model.
+ * @property {string} parameter_size - The size of the parameters of the model.
+ * @property {string} quantization_level - The level of quantization of the model.
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Object} OllamaModel
+ * @property {string} name - The name of the model, including version tag.
+ * @property {string} model - A redundant copy of the name, including version tag.
+ * @property {string} modified_at - The ISO string representing the last modification date.
+ * @property {number} size - The size of the model in bytes.
+ * @property {string} digest - The digest hash of the model.
+ * @property {OllamaModelDetails} details - Detailed information about the model.
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Object} OllamaListResponse
+ * @property {OllamaModel[]} models - the list of models available.
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Object} ChatGPTAuthor
+ * @property {string} role - The role of the author (e.g., 'assistant', 'system', 'user').
+ * @property {?string} name - The name of the author, if available.
+ * @property {Object} metadata - Additional metadata related to the author.
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Object} ChatGPTContentPart
+ * @property {string} content_type - The type of content (e.g., 'text').
+ * @property {string[]} parts - The textual parts of the message.
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Object} ChatGPTMetadata
+ * @property {boolean} is_visually_hidden_from_conversation - Indicates if the message should be hidden.
+ * @property {?Array<Object>} citations - Potential citations included in the message.
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Object} ChatGPTMessage
+ * @property {string} id - Unique identifier for the message.
+ * @property {?ChatGPTAuthor} author - The author of the message.
+ * @property {?number} create_time - Creation time as a Unix timestamp.
+ * @property {?number} update_time - Last update time as a Unix timestamp.
+ * @property {ChatGPTContentPart} content - Content of the message.
+ * @property {string} status - Status of the message (e.g., 'finished_successfully').
+ * @property {boolean} end_turn - Indicates if it's the end of a conversation turn.
+ * @property {number} weight - A numerical value representing the weight/importance of the message.
+ * @property {ChatGPTMetadata} metadata - Metadata associated with the message.
+ * @property {string} recipient - Intended recipient of the message.
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Object} ChatGPTMapping
+ * @property {ChatGPTMessage} message - Details of the message.
+ * @property {string} id - Identifier of the message.
+ * @property {?string} parent - Parent message ID.
+ * @property {string[]} children - Child message IDs.
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Object} ChatGPTConvo
+ * @property {string} title - Title of the conversation.
+ * @property {number} create_time - Creation time of the conversation as a Unix timestamp.
+ * @property {number} update_time - Last update time of the conversation as a Unix timestamp.
+ * @property {Object.<string, ChatGPTMapping>} mapping - Mapping of message nodes within the conversation.
+ * @memberof typedefs
+ */
+
+/** Mutations */
+
+/**
+ * @exports TForkConvoResponse
+ * @typedef {import('librechat-data-provider').TForkConvoResponse} TForkConvoResponse
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TForkConvoRequest
+ * @typedef {import('librechat-data-provider').TForkConvoRequest} TForkConvoRequest
+ * @memberof typedefs
+ */
+
+/** Clients */
+
+/**
+ * @typedef {Promise<{ message: TMessage, conversation: TConversation }> | undefined} ClientDatabaseSavePromise
  * @memberof typedefs
  */

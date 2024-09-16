@@ -1,5 +1,7 @@
 const axios = require('axios');
+const { ErrorTypes } = require('librechat-data-provider');
 const denyRequest = require('./denyRequest');
+const { logger } = require('~/config');
 
 async function moderateText(req, res, next) {
   if (process.env.OPENAI_MODERATION === 'true') {
@@ -23,12 +25,12 @@ async function moderateText(req, res, next) {
       const flagged = results.some((result) => result.flagged);
 
       if (flagged) {
-        const type = 'moderation';
+        const type = ErrorTypes.MODERATION;
         const errorMessage = { type };
         return await denyRequest(req, res, errorMessage);
       }
     } catch (error) {
-      console.error('Error in moderateText:', error);
+      logger.error('Error in moderateText:', error);
       const errorMessage = 'error in moderation check';
       return await denyRequest(req, res, errorMessage);
     }

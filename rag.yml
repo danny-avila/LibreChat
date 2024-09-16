@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  vectordb:
+    image: ankane/pgvector:latest
+    environment:
+      POSTGRES_DB: mydatabase
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+    volumes:
+      - pgdata2:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+
+  rag_api:
+    image: ghcr.io/danny-avila/librechat-rag-api-dev:latest
+    environment:
+      - DB_HOST=vectordb
+      - DB_PORT=5432
+      - POSTGRES_DB=mydatabase
+      - POSTGRES_USER=myuser
+      - POSTGRES_PASSWORD=mypassword
+    ports:
+      - "${RAG_PORT}:${RAG_PORT}"
+    depends_on:
+      - vectordb
+    env_file:
+      - .env
+
+volumes:
+  pgdata2:

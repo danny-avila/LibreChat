@@ -39,13 +39,13 @@ const actionSchema = new Schema({
     default: 'action_prototype',
   },
   settings: Schema.Types.Mixed,
+  agent_id: String,
   assistant_id: String,
   metadata: {
     api_key: String, // private, encrypted
     auth: AuthSchema,
     domain: {
       type: String,
-      unique: true,
       required: true,
     },
     // json_schema: Schema.Types.Mixed,

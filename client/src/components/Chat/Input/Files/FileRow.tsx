@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { EToolResources } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { useDeleteFilesMutation } from '~/data-provider';
 import { useFileDeletion } from '~/hooks/Files';
@@ -10,7 +11,11 @@ export default function FileRow({
   setFiles,
   setFilesLoading,
   assistant_id,
+  // TODO: Agent file handling
+  agent_id,
+  tool_resource,
   fileFilter,
+  isRTL,
   Wrapper,
 }: {
   files: Map<string, ExtendedFile>;
@@ -18,6 +23,9 @@ export default function FileRow({
   setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
   fileFilter?: (file: ExtendedFile) => boolean;
   assistant_id?: string;
+  agent_id?: string;
+  tool_resource?: EToolResources;
+  isRTL?: boolean;
   Wrapper?: React.FC<{ children: React.ReactNode }>;
 }) {
   const files = Array.from(_files.values()).filter((file) =>
@@ -25,7 +33,8 @@ export default function FileRow({
   );
 
   const { mutateAsync } = useDeleteFilesMutation({
-    onMutate: async () => console.log('Deleting files: assistant_id', assistant_id),
+    onMutate: async () =>
+      console.log('Deleting files: assistant_id, tool_resource', assistant_id, tool_resource),
     onSuccess: () => {
       console.log('Files deleted');
     },
@@ -34,7 +43,7 @@ export default function FileRow({
     },
   });
 
-  const { deleteFile } = useFileDeletion({ mutateAsync, assistant_id });
+  const { deleteFile } = useFileDeletion({ mutateAsync, assistant_id, tool_resource });
 
   useEffect(() => {
     if (!files) {
@@ -60,8 +69,11 @@ export default function FileRow({
   }
 
   const renderFiles = () => {
+    // Inline style for RTL
+    const rowStyle = isRTL ? { display: 'flex', flexDirection: 'row-reverse' } : {};
+
     return (
-      <>
+      <div style={rowStyle as React.CSSProperties}>
         {files
           .reduce(
             (acc, current) => {
@@ -79,16 +91,16 @@ export default function FileRow({
               return (
                 <Image
                   key={index}
-                  url={file.preview}
+                  url={file.preview || file.filepath}
                   onDelete={handleDelete}
                   progress={file.progress}
+                  source={file.source}
                 />
               );
             }
-
             return <FileContainer key={index} file={file} onDelete={handleDelete} />;
           })}
-      </>
+      </div>
     );
   };
 

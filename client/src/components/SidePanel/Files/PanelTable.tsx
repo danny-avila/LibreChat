@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useSetRecoilState } from 'recoil';
 import { LucideArrowUpLeft } from 'lucide-react';
+import { useLocalize } from '~/hooks';
 import {
   flexRender,
   getCoreRowModel,
@@ -34,6 +35,7 @@ interface DataTableProps<TData, TValue> {
 }
 
 export default function DataTable<TData, TValue>({ columns, data }: DataTableProps<TData, TValue>) {
+  const localize = useLocalize();
   const [rowSelection, setRowSelection] = useState({});
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -70,12 +72,12 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
 
   return (
     <>
-      <div className="flex items-center gap-4 px-2 py-4">
+      <div className="flex items-center gap-4 py-4">
         <Input
-          placeholder="Filter files..."
+          placeholder={localize('com_files_filter')}
           value={(table.getColumn('filename')?.getFilterValue() as string) ?? ''}
           onChange={(event) => table.getColumn('filename')?.setFilterValue(event.target.value)}
-          className="max-w-xs dark:border-gray-700"
+          className="w-full border-border-light placeholder:text-text-secondary"
         />
       </div>
       <div className="overflow-y-auto rounded-md border border-black/10 dark:border-white/10">
@@ -88,7 +90,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                     <TableHead
                       key={header.id}
                       style={{ width: index === 0 ? '75%' : '25%' }}
-                      className="sticky top-0 h-auto border-b border-black/10 bg-white py-1 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-800 dark:text-gray-100"
+                      className="sticky top-0 h-auto bg-white py-1 text-left font-medium text-gray-700 dark:bg-gray-700 dark:text-gray-100"
                     >
                       {header.isPlaceholder
                         ? null
@@ -100,7 +102,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
             ))}
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows?.length ? (
+            {table.getRowModel().rows.length ? (
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}
@@ -124,31 +126,33 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
             ) : (
               <TableRow>
                 <TableCell colSpan={columns.length} className="h-24 text-center">
-                  No results.
+                  {localize('com_files_no_results')}
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
       </div>
-      <div className="flex items-center justify-around space-x-2 py-4">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setShowFiles(true)}
-          className="flex gap-2"
-        >
-          <LucideArrowUpLeft className="icon-sm" />
-          Manage Files
-        </Button>
-        <div className="flex gap-2">
+      <div className="flex items-center justify-between py-4">
+        <div className="flex items-center">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowFiles(true)}
+            className="flex gap-2"
+          >
+            <LucideArrowUpLeft className="icon-sm" />
+            {localize('com_sidepanel_manage_files')}
+          </Button>
+        </div>
+        <div className="flex items-center gap-2">
           <Button
             variant="outline"
             size="sm"
             onClick={() => table.previousPage()}
             disabled={!table.getCanPreviousPage()}
           >
-            Previous
+            {localize('com_ui_prev')}
           </Button>
           <Button
             variant="outline"
@@ -156,7 +160,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
             onClick={() => table.nextPage()}
             disabled={!table.getCanNextPage()}
           >
-            Next
+            {localize('com_ui_next')}
           </Button>
         </div>
       </div>

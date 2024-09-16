@@ -1,9 +1,9 @@
 import type { TMessage } from 'librechat-data-provider';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 
 type TUseGenerations = {
   endpoint?: string;
-  message: TMessage;
+  message?: TMessage;
   isSubmitting: boolean;
   isEditing?: boolean;
   latestMessage: TMessage | null;
@@ -16,16 +16,25 @@ export default function useGenerationsByLatest({
   isEditing = false,
   latestMessage,
 }: TUseGenerations) {
-  const { error, messageId, searchResult, finish_reason, isCreatedByUser } = message ?? {};
-  const isEditableEndpoint = !![
-    EModelEndpoint.openAI,
-    EModelEndpoint.custom,
-    EModelEndpoint.google,
-    EModelEndpoint.assistants,
-    EModelEndpoint.anthropic,
-    EModelEndpoint.gptPlugins,
-    EModelEndpoint.azureOpenAI,
-  ].find((e) => e === endpoint);
+  const {
+    messageId,
+    searchResult = false,
+    error = false,
+    finish_reason = '',
+    isCreatedByUser = false,
+  } = message ?? {};
+  const isEditableEndpoint = Boolean(
+    [
+      EModelEndpoint.openAI,
+      EModelEndpoint.custom,
+      EModelEndpoint.google,
+      EModelEndpoint.agents,
+      EModelEndpoint.bedrock,
+      EModelEndpoint.anthropic,
+      EModelEndpoint.gptPlugins,
+      EModelEndpoint.azureOpenAI,
+    ].find((e) => e === endpoint),
+  );
 
   const continueSupported =
     latestMessage?.messageId === messageId &&
@@ -35,18 +44,20 @@ export default function useGenerationsByLatest({
     !searchResult &&
     isEditableEndpoint;
 
-  const branchingSupported =
-    // 5/21/23: Bing is allowing editing and Message regenerating
-    !![
+  const branchingSupported = Boolean(
+    [
       EModelEndpoint.azureOpenAI,
       EModelEndpoint.openAI,
       EModelEndpoint.custom,
+      EModelEndpoint.agents,
+      EModelEndpoint.bedrock,
       EModelEndpoint.chatGPTBrowser,
       EModelEndpoint.google,
       EModelEndpoint.bingAI,
       EModelEndpoint.gptPlugins,
       EModelEndpoint.anthropic,
-    ].find((e) => e === endpoint);
+    ].find((e) => e === endpoint),
+  );
 
   const regenerateEnabled =
     !isCreatedByUser && !searchResult && !isEditing && !isSubmitting && branchingSupported;
@@ -58,9 +69,13 @@ export default function useGenerationsByLatest({
     !branchingSupported ||
     (!isEditableEndpoint && !isCreatedByUser);
 
+  const forkingSupported = !isAssistantsEndpoint(endpoint) && !searchResult;
+
   return {
+    forkingSupported,
     continueSupported,
     regenerateEnabled,
+    isEditableEndpoint,
     hideEditButton,
   };
 }

@@ -59,6 +59,12 @@ describe('getModelMaxTokens', () => {
     expect(getModelMaxTokens('gpt-4-1106')).toBe(maxTokensMap[EModelEndpoint.openAI]['gpt-4-1106']);
   });
 
+  test('should return correct tokens for gpt-4-vision exact match', () => {
+    expect(getModelMaxTokens('gpt-4-vision')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-4-vision'],
+    );
+  });
+
   test('should return correct tokens for gpt-3.5-turbo-1106 partial match', () => {
     expect(getModelMaxTokens('something-/gpt-3.5-turbo-1106')).toBe(
       maxTokensMap[EModelEndpoint.openAI]['gpt-3.5-turbo-1106'],
@@ -106,12 +112,29 @@ describe('getModelMaxTokens', () => {
       'claude-1-100k',
       'claude-instant-1',
       'claude-instant-1-100k',
+      'claude-3-haiku',
+      'claude-3-sonnet',
+      'claude-3-opus',
+      'claude-3-5-sonnet',
     ];
 
-    const claudeMaxTokens = maxTokensMap[EModelEndpoint.anthropic]['claude-'];
-    const claude21MaxTokens = maxTokensMap[EModelEndpoint.anthropic]['claude-2.1'];
+    const maxTokens = {
+      'claude-': maxTokensMap[EModelEndpoint.anthropic]['claude-'],
+      'claude-2.1': maxTokensMap[EModelEndpoint.anthropic]['claude-2.1'],
+      'claude-3': maxTokensMap[EModelEndpoint.anthropic]['claude-3-sonnet'],
+    };
+
     models.forEach((model) => {
-      const expectedTokens = model === 'claude-2.1' ? claude21MaxTokens : claudeMaxTokens;
+      let expectedTokens;
+
+      if (model === 'claude-2.1') {
+        expectedTokens = maxTokens['claude-2.1'];
+      } else if (model.startsWith('claude-3')) {
+        expectedTokens = maxTokens['claude-3'];
+      } else {
+        expectedTokens = maxTokens['claude-'];
+      }
+
       expect(getModelMaxTokens(model, EModelEndpoint.anthropic)).toEqual(expectedTokens);
     });
   });
@@ -131,6 +154,18 @@ describe('getModelMaxTokens', () => {
   });
 
   test('should return correct tokens for partial match - Google models', () => {
+    expect(getModelMaxTokens('gemini-1.5-pro-latest', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['gemini-1.5'],
+    );
+    expect(getModelMaxTokens('gemini-1.5-pro-preview-0409', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['gemini-1.5'],
+    );
+    expect(getModelMaxTokens('gemini-pro-vision', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['gemini-pro-vision'],
+    );
+    expect(getModelMaxTokens('gemini-1.0', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['gemini'],
+    );
     expect(getModelMaxTokens('gemini-pro', EModelEndpoint.google)).toBe(
       maxTokensMap[EModelEndpoint.google]['gemini'],
     );
@@ -139,6 +174,15 @@ describe('getModelMaxTokens', () => {
     );
     expect(getModelMaxTokens('chat-', EModelEndpoint.google)).toBe(
       maxTokensMap[EModelEndpoint.google]['chat-'],
+    );
+  });
+
+  test('should return correct tokens for partial match - Cohere models', () => {
+    expect(getModelMaxTokens('command', EModelEndpoint.custom)).toBe(
+      maxTokensMap[EModelEndpoint.custom]['command'],
+    );
+    expect(getModelMaxTokens('command-r-plus', EModelEndpoint.custom)).toBe(
+      maxTokensMap[EModelEndpoint.custom]['command-r-plus'],
     );
   });
 

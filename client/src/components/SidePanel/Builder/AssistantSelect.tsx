@@ -1,129 +1,207 @@
 import { Plus } from 'lucide-react';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useMemo } from 'react';
 import {
-  defaultAssistantFormValues,
-  defaultOrderQuery,
+  Tools,
   FileSources,
+  Capabilities,
+  EModelEndpoint,
+  LocalStorageKeys,
+  isImageVisionTool,
+  defaultAssistantFormValues,
 } from 'librechat-data-provider';
 import type { UseFormReset } from 'react-hook-form';
 import type { UseMutationResult } from '@tanstack/react-query';
-import type { Assistant, AssistantCreateParams } from 'librechat-data-provider';
-import type { AssistantForm, Actions, TAssistantOption, ExtendedFile } from '~/common';
+import type {
+  Assistant,
+  AssistantDocument,
+  AssistantsEndpoint,
+  AssistantCreateParams,
+} from 'librechat-data-provider';
+import type {
+  Actions,
+  ExtendedFile,
+  AssistantForm,
+  TAssistantOption,
+  LastSelectedModels,
+} from '~/common';
 import SelectDropDown from '~/components/ui/SelectDropDown';
 import { useListAssistantsQuery } from '~/data-provider';
+import { useLocalize, useLocalStorage } from '~/hooks';
+import { cn, createDropdownSetter } from '~/utils';
 import { useFileMapContext } from '~/Providers';
-import { useLocalize } from '~/hooks';
-import { cn } from '~/utils/';
 
-const keys = new Set(['name', 'id', 'description', 'instructions', 'model']);
+const keys = new Set([
+  'name',
+  'id',
+  'description',
+  'instructions',
+  'conversation_starters',
+  'model',
+]);
 
 export default function AssistantSelect({
   reset,
   value,
+  endpoint,
+  documentsMap,
   selectedAssistant,
   setCurrentAssistantId,
   createMutation,
 }: {
   reset: UseFormReset<AssistantForm>;
   value: TAssistantOption;
+  endpoint: AssistantsEndpoint;
   selectedAssistant: string | null;
+  documentsMap: Map<string, AssistantDocument> | null;
   setCurrentAssistantId: React.Dispatch<React.SetStateAction<string | undefined>>;
   createMutation: UseMutationResult<Assistant, Error, AssistantCreateParams>;
 }) {
   const localize = useLocalize();
   const fileMap = useFileMapContext();
   const lastSelectedAssistant = useRef<string | null>(null);
+  const [lastSelectedModels] = useLocalStorage<LastSelectedModels | undefined>(
+    LocalStorageKeys.LAST_MODEL,
+    {} as LastSelectedModels,
+  );
 
-  const assistants = useListAssistantsQuery(defaultOrderQuery, {
+  const query = useListAssistantsQuery(endpoint, undefined, {
     select: (res) =>
       res.data.map((_assistant) => {
+        const source =
+          endpoint === EModelEndpoint.assistants ? FileSources.openai : FileSources.azure;
         const assistant = {
           ..._assistant,
-          label: _assistant?.name ?? '',
+          label: _assistant.name ?? '',
           value: _assistant.id,
-          files: _assistant?.file_ids ? ([] as Array<[string, ExtendedFile]>) : undefined,
+          files: _assistant.file_ids ? ([] as Array<[string, ExtendedFile]>) : undefined,
+          code_files: _assistant.tool_resources?.code_interpreter?.file_ids
+            ? ([] as Array<[string, ExtendedFile]>)
+            : undefined,
+        };
+
+        const handleFile = (file_id: string, list?: Array<[string, ExtendedFile]>) => {
+          const file = fileMap?.[file_id];
+          if (file) {
+            list?.push([
+              file_id,
+              {
+                file_id: file.file_id,
+                type: file.type,
+                filepath: file.filepath,
+                filename: file.filename,
+                width: file.width,
+                height: file.height,
+                size: file.bytes,
+                preview: file.filepath,
+                progress: 1,
+                source,
+              },
+            ]);
+          } else {
+            list?.push([
+              file_id,
+              {
+                file_id,
+                type: '',
+                filename: '',
+                size: 1,
+                progress: 1,
+                filepath: endpoint,
+                source,
+              },
+            ]);
+          }
         };
 
         if (assistant.files && _assistant.file_ids) {
-          _assistant.file_ids.forEach((file_id) => {
-            const file = fileMap?.[file_id];
-            if (file) {
-              assistant.files?.push([
-                file_id,
-                {
-                  file_id: file.file_id,
-                  type: file.type,
-                  filepath: file.filepath,
-                  filename: file.filename,
-                  width: file.width,
-                  height: file.height,
-                  size: file.bytes,
-                  preview: file.filepath,
-                  progress: 1,
-                  source: FileSources.openai,
-                },
-              ]);
-            }
-          });
+          _assistant.file_ids.forEach((file_id) => handleFile(file_id, assistant.files));
         }
+
+        if (assistant.code_files && _assistant.tool_resources?.code_interpreter?.file_ids) {
+          _assistant.tool_resources.code_interpreter.file_ids.forEach((file_id) =>
+            handleFile(file_id, assistant.code_files),
+          );
+        }
+
+        const assistantDoc = documentsMap?.get(_assistant.id);
+        /* If no user updates, use the latest assistant docs */
+        if (assistantDoc && !assistant.conversation_starters) {
+          assistant.conversation_starters = assistantDoc.conversation_starters;
+        }
+
         return assistant;
       }),
   });
 
   const onSelect = useCallback(
     (value: string) => {
-      const assistant = assistants.data?.find((assistant) => assistant.id === value);
+      const assistant = query.data?.find((assistant) => assistant.id === value);
 
       createMutation.reset();
       if (!assistant) {
         setCurrentAssistantId(undefined);
-        return reset(defaultAssistantFormValues);
+        return reset({
+          ...defaultAssistantFormValues,
+          model: lastSelectedModels?.[endpoint] ?? '',
+        });
       }
 
       const update = {
         ...assistant,
-        label: assistant?.name ?? '',
-        value: assistant?.id ?? '',
+        label: assistant.name ?? '',
+        value: assistant.id ?? '',
       };
 
       const actions: Actions = {
-        code_interpreter: false,
-        retrieval: false,
+        [Capabilities.code_interpreter]: false,
+        [Capabilities.image_vision]: false,
+        [Capabilities.retrieval]: false,
       };
 
-      assistant?.tools
-        ?.filter((tool) => tool.type !== 'function')
-        ?.map((tool) => tool.type)
+      (assistant.tools ?? [])
+        .filter((tool) => tool.type !== 'function' || isImageVisionTool(tool))
+        .map((tool) => tool.function?.name || tool.type)
         .forEach((tool) => {
+          if (tool === Tools.file_search) {
+            actions[Capabilities.retrieval] = true;
+          }
           actions[tool] = true;
         });
 
-      const functions =
-        assistant?.tools
-          ?.filter((tool) => tool.type === 'function')
-          ?.map((tool) => tool.function?.name ?? '') ?? [];
+      const functions = (assistant.tools ?? [])
+        .filter((tool) => tool.type === 'function' && !isImageVisionTool(tool))
+        .map((tool) => tool.function?.name ?? '');
 
       const formValues: Partial<AssistantForm & Actions> = {
         functions,
         ...actions,
         assistant: update,
+        model: update.model,
       };
 
       Object.entries(assistant).forEach(([name, value]) => {
-        if (typeof value === 'number') {
-          return;
-        } else if (typeof value === 'object') {
+        if (!keys.has(name)) {
           return;
         }
-        if (keys.has(name)) {
+
+        if (
+          name === 'conversation_starters' &&
+          Array.isArray(value) &&
+          value.every((item) => typeof item === 'string')
+        ) {
+          formValues[name] = value;
+          return;
+        }
+
+        if (typeof value !== 'number' && typeof value !== 'object') {
           formValues[name] = value;
         }
       });
 
       reset(formValues);
-      setCurrentAssistantId(assistant?.id);
+      setCurrentAssistantId(assistant.id);
     },
-    [assistants.data, reset, setCurrentAssistantId, createMutation],
+    [query.data, reset, setCurrentAssistantId, createMutation, endpoint, lastSelectedModels],
   );
 
   useEffect(() => {
@@ -133,7 +211,7 @@ export default function AssistantSelect({
       return;
     }
 
-    if (selectedAssistant && assistants.data) {
+    if (selectedAssistant !== '' && selectedAssistant != null && query.data) {
       timerId = setTimeout(() => {
         lastSelectedAssistant.current = selectedAssistant;
         onSelect(selectedAssistant);
@@ -145,15 +223,15 @@ export default function AssistantSelect({
         clearTimeout(timerId);
       }
     };
-  }, [selectedAssistant, assistants.data, onSelect]);
+  }, [selectedAssistant, query.data, onSelect]);
 
   const createAssistant = localize('com_ui_create') + ' ' + localize('com_ui_assistant');
   return (
     <SelectDropDown
       value={!value ? createAssistant : value}
-      setValue={onSelect}
+      setValue={createDropdownSetter(onSelect)}
       availableValues={
-        assistants.data ?? [
+        query.data ?? [
           {
             label: 'Loading...',
             value: '',
@@ -165,14 +243,16 @@ export default function AssistantSelect({
       showLabel={false}
       emptyTitle={true}
       containerClassName="flex-grow"
+      searchClassName="dark:from-gray-850"
+      searchPlaceholder={localize('com_assistants_search_name')}
       optionsClass="hover:bg-gray-20/50 dark:border-gray-700"
-      optionsListClass="rounded-lg shadow-lg dark:bg-gray-900 dark:border-gray-700 dark:last:border"
+      optionsListClass="rounded-lg shadow-lg dark:bg-gray-850 dark:border-gray-700 dark:last:border"
       currentValueClass={cn(
         'text-md font-semibold text-gray-900 dark:text-white',
         value === '' ? 'text-gray-500' : '',
       )}
       className={cn(
-        'mt-1 rounded-md dark:border-gray-700 dark:bg-gray-900',
+        'mt-1 rounded-md dark:border-gray-700 dark:bg-gray-850',
         'z-50 flex h-[40px] w-full flex-none items-center justify-center px-4 hover:cursor-pointer hover:border-green-500 focus:border-gray-400',
       )}
       renderOption={() => (

@@ -1,29 +1,38 @@
+const { removeNullishValues } = require('librechat-data-provider');
+const generateArtifactsPrompt = require('~/app/clients/prompts/artifacts');
+
 const buildOptions = (endpoint, parsedBody) => {
   const {
     chatGptLabel,
     promptPrefix,
     agentOptions,
-    tools,
-    model,
-    temperature,
-    top_p,
-    presence_penalty,
-    frequency_penalty,
+    tools = [],
+    iconURL,
+    greeting,
+    spec,
+    maxContextTokens,
+    artifacts,
+    ...modelOptions
   } = parsedBody;
-  const endpointOption = {
+  const endpointOption = removeNullishValues({
     endpoint,
-    tools: tools.map((tool) => tool.pluginKey) ?? [],
+    tools:
+      tools
+        .map((tool) => tool?.pluginKey ?? tool)
+        .filter((toolName) => typeof toolName === 'string'),
     chatGptLabel,
     promptPrefix,
     agentOptions,
-    modelOptions: {
-      model,
-      temperature,
-      top_p,
-      presence_penalty,
-      frequency_penalty,
-    },
-  };
+    iconURL,
+    greeting,
+    spec,
+    maxContextTokens,
+    modelOptions,
+  });
+
+  if (typeof artifacts === 'string') {
+    endpointOption.artifactsPrompt = generateArtifactsPrompt({ endpoint, artifacts });
+  }
 
   return endpointOption;
 };

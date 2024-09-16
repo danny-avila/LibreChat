@@ -1,8 +1,10 @@
 import { useCallback } from 'react';
 import {
   fileConfig as defaultFileConfig,
+  checkOpenAIStorage,
   mergeFileConfig,
   megabyte,
+  isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type { Row } from '@tanstack/react-table';
 import type { TFile } from 'librechat-data-provider';
@@ -34,6 +36,18 @@ export default function PanelFileCell({ row }: { row: Row<TFile> }) {
 
     if (!endpoint) {
       return showToast({ message: localize('com_ui_attach_error'), status: 'error' });
+    }
+
+    if (checkOpenAIStorage(fileData?.source ?? '') && !isAssistantsEndpoint(endpoint)) {
+      return showToast({
+        message: localize('com_ui_attach_error_openai'),
+        status: 'error',
+      });
+    } else if (!checkOpenAIStorage(fileData?.source ?? '') && isAssistantsEndpoint(endpoint)) {
+      showToast({
+        message: localize('com_ui_attach_warn_endpoint'),
+        status: 'warning',
+      });
     }
 
     const { fileSizeLimit, supportedMimeTypes } =
@@ -77,11 +91,12 @@ export default function PanelFileCell({ row }: { row: Row<TFile> }) {
     return (
       <div
         onClick={handleFileClick}
-        className="flex cursor-pointer gap-2 rounded-md dark:hover:bg-gray-900"
+        className="flex cursor-pointer gap-2 rounded-md dark:hover:bg-gray-700"
       >
         <ImagePreview
           url={file.filepath}
-          className="h-10 w-10 shrink-0 overflow-hidden rounded-md"
+          className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md"
+          source={file.source}
         />
         <span className="self-center truncate text-xs">{file.filename}</span>
       </div>
@@ -92,9 +107,9 @@ export default function PanelFileCell({ row }: { row: Row<TFile> }) {
   return (
     <div
       onClick={handleFileClick}
-      className="flex cursor-pointer gap-2 rounded-md dark:hover:bg-gray-900"
+      className="flex cursor-pointer gap-2 rounded-md dark:hover:bg-gray-700"
     >
-      {fileType && <FilePreview fileType={fileType} />}
+      {fileType && <FilePreview fileType={fileType} className="relative" file={file} />}
       <span className="self-center truncate">{file.filename}</span>
     </div>
   );

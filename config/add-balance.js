@@ -1,7 +1,8 @@
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, silentExit } = require('./helpers');
-const Transaction = require('~/models/Transaction');
+const { isEnabled } = require('~/server/utils/handleText');
+const { Transaction } = require('~/models/Transaction');
 const User = require('~/models/User');
 const connect = require('./connect');
 
@@ -33,6 +34,12 @@ const connect = require('./connect');
   if (!process.env.CHECK_BALANCE) {
     console.red(
       'Error: CHECK_BALANCE environment variable is not set! Configure it to use it: `CHECK_BALANCE=true`',
+    );
+    silentExit(1);
+  }
+  if (isEnabled(process.env.CHECK_BALANCE) === false) {
+    console.red(
+      'Error: CHECK_BALANCE environment variable is set to `false`! Please configure: `CHECK_BALANCE=true`',
     );
     silentExit(1);
   }

@@ -1,20 +1,26 @@
 import { useState } from 'react';
+import { useRecoilValue } from 'recoil';
 import ProgressCircle from './ProgressCircle';
+import CancelledIcon from './CancelledIcon';
 import ProgressText from './ProgressText';
 import FinishedIcon from './FinishedIcon';
 import MarkdownLite from './MarkdownLite';
 import { useProgress } from '~/hooks';
+import store from '~/store';
 
 export default function CodeAnalyze({
   initialProgress = 0.1,
   code,
   outputs = [],
+  isSubmitting,
 }: {
   initialProgress: number;
   code: string;
   outputs: Record<string, unknown>[];
+  isSubmitting: boolean;
 }) {
-  const [showCode, setShowCode] = useState(false);
+  const showCodeDefault = useRecoilValue(store.showCode);
+  const [showCode, setShowCode] = useState(showCodeDefault);
   const progress = useProgress(initialProgress);
   const radius = 56.08695652173913;
   const circumference = 2 * Math.PI * radius;
@@ -32,7 +38,13 @@ export default function CodeAnalyze({
       <div className="my-2.5 flex items-center gap-2.5">
         <div className="relative h-5 w-5 shrink-0">
           {progress < 1 ? (
-            <CodeInProgress offset={offset} circumference={circumference} radius={radius} />
+            <CodeInProgress
+              offset={offset}
+              radius={radius}
+              progress={progress}
+              isSubmitting={isSubmitting}
+              circumference={circumference}
+            />
           ) : (
             <FinishedIcon />
           )}
@@ -42,11 +54,11 @@ export default function CodeAnalyze({
           onClick={() => setShowCode((prev) => !prev)}
           inProgressText="Analyzing"
           finishedText="Finished analyzing"
-          hasInput={!!code?.length}
+          hasInput={!!code.length}
         />
       </div>
       {showCode && (
-        <div className="mb-3 mt-0.5 overflow-hidden rounded-xl bg-black">
+        <div className="code-analyze-block mb-3 mt-0.5 overflow-hidden rounded-xl bg-black">
           <MarkdownLite content={code ? `\`\`\`python\n${code}\n\`\`\`` : ''} />
           {logs && (
             <div className="bg-gray-700 p-4 text-xs">
@@ -71,25 +83,32 @@ const CodeInProgress = ({
   offset,
   circumference,
   radius,
+  isSubmitting,
+  progress,
 }: {
+  progress: number;
   offset: number;
   circumference: number;
   radius: number;
+  isSubmitting: boolean;
 }) => {
+  if (progress < 1 && !isSubmitting) {
+    return <CancelledIcon />;
+  }
   return (
     <div
       className="absolute left-0 top-0 flex h-full w-full items-center justify-center rounded-full bg-transparent text-white"
       style={{ opacity: 1, transform: 'none' }}
       data-projection-id="77"
     >
-      <div>
+      <div className="absolute bottom-[1.5px] right-[1.5px]">
         <svg
           xmlns="http://www.w3.org/2000/svg"
           xmlnsXlink="http://www.w3.org/1999/xlink"
           viewBox="0 0 20 20"
           width="20"
           height="20"
-          style={{ width: '100%', height: '100%', transform: 'translate3d(0px, 0px, 0px)' }}
+          style={{ transform: 'translate3d(0px, 0px, 0px)' }}
           preserveAspectRatio="xMidYMid meet"
         >
           <defs>
@@ -98,7 +117,10 @@ const CodeInProgress = ({
             </clipPath>
           </defs>
           <g clipPath="url(#__lottie_element_11)">
-            <g style={{ display: 'block', transform: 'matrix(1,0,0,1,-2,-2)', opacity: 1 }}>
+            <g
+              style={{ display: 'block', transform: 'matrix(1,0,0,1,-2,-2)', opacity: 1 }}
+              className="slide-from-left"
+            >
               <g opacity="1" transform="matrix(1,0,0,1,7.026679992675781,8.834091186523438)">
                 <path
                   fill="rgb(177,98,253)"
@@ -116,7 +138,10 @@ const CodeInProgress = ({
                 />
               </g>
             </g>
-            <g style={{ display: 'block', transform: 'matrix(1,0,0,1,-2,-2)', opacity: 1 }}>
+            <g
+              style={{ display: 'block', transform: 'matrix(1,0,0,1,-2,-2)', opacity: 1 }}
+              className="slide-to-down"
+            >
               <g opacity="1" transform="matrix(1,0,0,1,11.79640007019043,13.512199401855469)">
                 <path
                   fill="rgb(177,98,253)"

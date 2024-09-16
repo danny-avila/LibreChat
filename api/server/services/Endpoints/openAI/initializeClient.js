@@ -1,14 +1,23 @@
 const {
+  ErrorTypes,
   EModelEndpoint,
-  mapModelToAzureConfig,
   resolveHeaders,
+  mapModelToAzureConfig,
 } = require('librechat-data-provider');
-const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
+const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/UserService');
+const { getLLMConfig } = require('~/server/services/Endpoints/openAI/llm');
 const { isEnabled, isUserProvided } = require('~/server/utils');
 const { getAzureCredentials } = require('~/utils');
 const { OpenAIClient } = require('~/app');
 
-const initializeClient = async ({ req, res, endpointOption }) => {
+const initializeClient = async ({
+  req,
+  res,
+  endpointOption,
+  optionsOnly,
+  overrideEndpoint,
+  overrideModel,
+}) => {
   const {
     PROXY,
     OPENAI_API_KEY,
@@ -18,7 +27,9 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     OPENAI_SUMMARIZE,
     DEBUG_OPENAI,
   } = process.env;
-  const { key: expiresAt, endpoint, model: modelName } = req.body;
+  const { key: expiresAt } = req.body;
+  const modelName = overrideModel ?? req.body.model;
+  const endpoint = overrideEndpoint ?? req.body.endpoint;
   const contextStrategy = isEnabled(OPENAI_SUMMARIZE) ? 'summarize' : null;
 
   const credentials = {
@@ -36,30 +47,18 @@ const initializeClient = async ({ req, res, endpointOption }) => {
 
   let userValues = null;
   if (expiresAt && (userProvidesKey || userProvidesURL)) {
-    checkUserKeyExpiry(
-      expiresAt,
-      'Your OpenAI API values have expired. Please provide them again.',
-    );
-    userValues = await getUserKey({ userId: req.user.id, name: endpoint });
-    try {
-      userValues = JSON.parse(userValues);
-    } catch (e) {
-      throw new Error(
-        `Invalid JSON provided for ${endpoint} user values. Please provide them again.`,
-      );
-    }
+    checkUserKeyExpiry(expiresAt, endpoint);
+    userValues = await getUserKeyValues({ userId: req.user.id, name: endpoint });
   }
 
   let apiKey = userProvidesKey ? userValues?.apiKey : credentials[endpoint];
   let baseURL = userProvidesURL ? userValues?.baseURL : baseURLOptions[endpoint];
 
   const clientOptions = {
-    debug: isEnabled(DEBUG_OPENAI),
     contextStrategy,
-    reverseProxyUrl: baseURL ? baseURL : null,
     proxy: PROXY ?? null,
-    req,
-    res,
+    debug: isEnabled(DEBUG_OPENAI),
+    reverseProxyUrl: baseURL ? baseURL : null,
     ...endpointOption,
   };
 
@@ -85,6 +84,10 @@ const initializeClient = async ({ req, res, endpointOption }) => {
 
     clientOptions.titleConvo = azureConfig.titleConvo;
     clientOptions.titleModel = azureConfig.titleModel;
+
+    const azureRate = modelName.includes('gpt-4') ? 30 : 17;
+    clientOptions.streamRate = azureConfig.streamRate ?? azureRate;
+
     clientOptions.titleMethod = azureConfig.titleMethod ?? 'completion';
 
     const groupName = modelGroupMap[modelName].group;
@@ -99,11 +102,42 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     apiKey = clientOptions.azure.azureOpenAIApiKey;
   }
 
-  if (!apiKey) {
-    throw new Error(`${endpoint} API key not provided. Please provide it again.`);
+  /** @type {undefined | TBaseEndpoint} */
+  const openAIConfig = req.app.locals[EModelEndpoint.openAI];
+
+  if (!isAzureOpenAI && openAIConfig) {
+    clientOptions.streamRate = openAIConfig.streamRate;
   }
 
-  const client = new OpenAIClient(apiKey, clientOptions);
+  /** @type {undefined | TBaseEndpoint} */
+  const allConfig = req.app.locals.all;
+  if (allConfig) {
+    clientOptions.streamRate = allConfig.streamRate;
+  }
+
+  if (userProvidesKey & !apiKey) {
+    throw new Error(
+      JSON.stringify({
+        type: ErrorTypes.NO_USER_KEY,
+      }),
+    );
+  }
+
+  if (!apiKey) {
+    throw new Error(`${endpoint} API Key not provided.`);
+  }
+
+  if (optionsOnly) {
+    const requestOptions = Object.assign(
+      {
+        modelOptions: endpointOption.modelOptions,
+      },
+      clientOptions,
+    );
+    return getLLMConfig(apiKey, requestOptions);
+  }
+
+  const client = new OpenAIClient(apiKey, Object.assign({ req, res }, clientOptions));
   return {
     client,
     openAIApiKey: apiKey,

@@ -39,11 +39,11 @@ function ToolItem({ tool, onAddTool, onRemoveTool, isInstalled }: ToolItemProps)
           {!isInstalled ? (
             <button
               className="btn btn-primary relative"
-              aria-label={`${localize('com_nav_tool_add')} ${tool.name}`}
+              aria-label={`${localize('com_ui_add')} ${tool.name}`}
               onClick={handleClick}
             >
               <div className="flex w-full items-center justify-center gap-2">
-                {localize('com_nav_tool_add')}
+                {localize('com_ui_add')}
                 <PlusCircleIcon className="flex h-4 w-4 items-center stroke-2" />
               </div>
             </button>
@@ -61,7 +61,7 @@ function ToolItem({ tool, onAddTool, onRemoveTool, isInstalled }: ToolItemProps)
           )}
         </div>
       </div>
-      <div className="line-clamp-3 h-[60px] text-sm text-slate-700/70 dark:text-slate-50/70">
+      <div className="line-clamp-3 h-[60px] text-sm text-gray-700/70 dark:text-gray-50/70">
         {tool.description}
       </div>
     </div>

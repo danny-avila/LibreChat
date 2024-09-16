@@ -7,9 +7,12 @@ export const supportsFiles = {
   [EModelEndpoint.openAI]: true,
   [EModelEndpoint.google]: true,
   [EModelEndpoint.assistants]: true,
+  [EModelEndpoint.azureAssistants]: true,
+  [EModelEndpoint.agents]: true,
   [EModelEndpoint.azureOpenAI]: true,
   [EModelEndpoint.anthropic]: true,
   [EModelEndpoint.custom]: true,
+  [EModelEndpoint.bedrock]: true,
 };
 
 export const excelFileTypes = [
@@ -106,10 +109,10 @@ export const excelMimeTypes =
   /^application\/(vnd\.ms-excel|msexcel|x-msexcel|x-ms-excel|x-excel|x-dos_ms_excel|xls|x-xls|vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet)$/;
 
 export const textMimeTypes =
-  /^(text\/(x-c|x-c\+\+|x-java|html|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|css|javascript|csv))$/;
+  /^(text\/(x-c|x-csharp|x-c\+\+|x-java|html|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|css|javascript|csv))$/;
 
 export const applicationMimeTypes =
-  /^(application\/(csv|json|pdf|x-tar|typescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|xml|zip))$/;
+  /^(application\/(epub\+zip|csv|json|pdf|x-tar|typescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|xml|zip))$/;
 
 export const imageMimeTypes = /^image\/(jpeg|gif|png|webp)$/;
 
@@ -127,8 +130,24 @@ export const codeInterpreterMimeTypes = [
   imageMimeTypes,
 ];
 
+export const codeTypeMapping: { [key: string]: string } = {
+  c: 'text/x-c',
+  cs: 'text/x-csharp',
+  cpp: 'text/x-c++',
+  md: 'text/markdown',
+  php: 'text/x-php',
+  py: 'text/x-python',
+  rb: 'text/x-ruby',
+  tex: 'text/x-tex',
+  js: 'text/javascript',
+  sh: 'application/x-sh',
+  ts: 'application/typescript',
+  tar: 'application/x-tar',
+  zip: 'application/zip',
+};
+
 export const retrievalMimeTypes = [
-  /^(text\/(x-c|x-c\+\+|html|x-java|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain))$/,
+  /^(text\/(x-c|x-c\+\+|html|x-java|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|xml))$/,
   /^(application\/(json|pdf|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation)))$/,
 ];
 
@@ -136,24 +155,28 @@ export const megabyte = 1024 * 1024;
 /** Helper function to get megabytes value */
 export const mbToBytes = (mb: number): number => mb * megabyte;
 
+const defaultSizeLimit = mbToBytes(512);
+const assistantsFileConfig = {
+  fileLimit: 10,
+  fileSizeLimit: defaultSizeLimit,
+  totalSizeLimit: defaultSizeLimit,
+  supportedMimeTypes,
+  disabled: false,
+};
+
 export const fileConfig = {
   endpoints: {
-    [EModelEndpoint.assistants]: {
+    [EModelEndpoint.assistants]: assistantsFileConfig,
+    [EModelEndpoint.azureAssistants]: assistantsFileConfig,
+    default: {
       fileLimit: 10,
-      fileSizeLimit: mbToBytes(512),
-      totalSizeLimit: mbToBytes(512),
+      fileSizeLimit: defaultSizeLimit,
+      totalSizeLimit: defaultSizeLimit,
       supportedMimeTypes,
       disabled: false,
     },
-    default: {
-      fileLimit: 10,
-      fileSizeLimit: mbToBytes(20),
-      totalSizeLimit: mbToBytes(25),
-      supportedMimeTypes: [imageMimeTypes],
-      disabled: false,
-    },
   },
-  serverFileSizeLimit: mbToBytes(512),
+  serverFileSizeLimit: defaultSizeLimit,
   avatarSizeLimit: mbToBytes(2),
   checkType: function (fileType: string, supportedTypes: RegExp[] = supportedMimeTypes) {
     return supportedTypes.some((regex) => regex.test(fileType));

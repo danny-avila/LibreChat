@@ -9,6 +9,7 @@ import {
   DropdownMenuTrigger,
 } from '~/components/ui/DropdownMenu';
 import { Button } from '~/components/ui/Button';
+import useLocalize from '~/hooks/useLocalize';
 import { cn } from '~/utils';
 
 interface SortFilterHeaderProps<TData, TValue> extends React.HTMLAttributes<HTMLDivElement> {
@@ -25,6 +26,7 @@ export function SortFilterHeader<TData, TValue>({
   filters,
   valueMap,
 }: SortFilterHeaderProps<TData, TValue>) {
+  const localize = useLocalize();
   if (!column.getCanSort()) {
     return <div className={cn(className)}>{title}</div>;
   }
@@ -53,36 +55,46 @@ export function SortFilterHeader<TData, TValue>({
             )}
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="z-[1001] dark:border-gray-700 dark:bg-black">
+        <DropdownMenuContent
+          align="start"
+          className="z-[1001] dark:border-gray-700 dark:bg-gray-850"
+        >
           <DropdownMenuItem
             onClick={() => column.toggleSorting(false)}
             className="cursor-pointer dark:text-white dark:hover:bg-gray-800"
           >
             <ArrowUpIcon className="text-muted-foreground/70 mr-2 h-3.5 w-3.5" />
-            Asc
+            {localize('com_ui_ascending')}
           </DropdownMenuItem>
           <DropdownMenuItem
             onClick={() => column.toggleSorting(true)}
             className="cursor-pointer dark:text-white dark:hover:bg-gray-800"
           >
             <ArrowDownIcon className="text-muted-foreground/70 mr-2 h-3.5 w-3.5" />
-            Desc
+            {localize('com_ui_descending')}
           </DropdownMenuItem>
-          <DropdownMenuSeparator />
+          <DropdownMenuSeparator className="dark:bg-gray-500" />
           {filters &&
             Object.entries(filters).map(([key, values]) =>
-              values.map((value: string | number) => (
-                <DropdownMenuItem
-                  className="cursor-pointer dark:text-white dark:hover:bg-gray-800"
-                  key={`${key}-${value}`}
-                  onClick={() => {
-                    column.setFilterValue(value);
-                  }}
-                >
-                  <ListFilter className="text-muted-foreground/70 mr-2 h-3.5 w-3.5" />
-                  {valueMap?.[value] ?? value}
-                </DropdownMenuItem>
-              )),
+              values.map((value: string | number) => {
+                const localizedValue = localize(valueMap?.[value] ?? '');
+                const filterValue = localizedValue?.length ? localizedValue : valueMap?.[value];
+                if (!filterValue) {
+                  return null;
+                }
+                return (
+                  <DropdownMenuItem
+                    className="cursor-pointer dark:text-white dark:hover:bg-gray-800"
+                    key={`${key}-${value}`}
+                    onClick={() => {
+                      column.setFilterValue(value);
+                    }}
+                  >
+                    <ListFilter className="text-muted-foreground/70 mr-2 h-3.5 w-3.5" />
+                    {filterValue}
+                  </DropdownMenuItem>
+                );
+              }),
             )}
           {filters && (
             <DropdownMenuItem
@@ -96,7 +108,7 @@ export function SortFilterHeader<TData, TValue>({
               }}
             >
               <FilterX className="text-muted-foreground/70 mr-2 h-3.5 w-3.5" />
-              Show All
+              {localize('com_ui_show_all')}
             </DropdownMenuItem>
           )}
         </DropdownMenuContent>

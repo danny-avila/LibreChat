@@ -1,28 +1,119 @@
+import React from 'react';
 import { FileSources } from 'librechat-data-provider';
+import type * as InputNumberPrimitive from 'rc-input-number';
 import type { ColumnDef } from '@tanstack/react-table';
 import type { SetterOrUpdater } from 'recoil';
 import type {
-  TConversation,
-  TMessage,
-  TPreset,
-  TLoginUser,
+  TRole,
   TUser,
-  EModelEndpoint,
+  Agent,
   Action,
+  TPreset,
+  TPlugin,
+  TMessage,
+  Assistant,
+  TResPlugin,
+  TLoginUser,
   AuthTypeEnum,
+  TModelsConfig,
+  TConversation,
+  TStartupConfig,
+  EModelEndpoint,
+  TEndpointsConfig,
+  ActionMetadata,
+  AssistantDocument,
+  AssistantsEndpoint,
+  TMessageContentParts,
   AuthorizationTypeEnum,
+  TSetOption as SetOption,
   TokenExchangeMethodEnum,
 } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type { LucideIcon } from 'lucide-react';
 
+export enum PromptsEditorMode {
+  SIMPLE = 'simple',
+  ADVANCED = 'advanced',
+}
+
+export enum STTEndpoints {
+  browser = 'browser',
+  external = 'external',
+}
+
+export enum TTSEndpoints {
+  browser = 'browser',
+  edge = 'edge',
+  external = 'external',
+}
+
+export type AudioChunk = {
+  audio: string;
+  isFinal: boolean;
+  alignment: {
+    char_start_times_ms: number[];
+    chars_durations_ms: number[];
+    chars: string[];
+  };
+  normalizedAlignment: {
+    char_start_times_ms: number[];
+    chars_durations_ms: number[];
+    chars: string[];
+  };
+};
+
+export type AssistantListItem = {
+  id: string;
+  name: string;
+  metadata: Assistant['metadata'];
+  model: string;
+};
+
+export type AgentListItem = {
+  id: string;
+  name: string;
+  avatar: Agent['avatar'];
+};
+
+export type TPluginMap = Record<string, TPlugin>;
+
 export type GenericSetter<T> = (value: T | ((currentValue: T) => T)) => void;
+
+export type LastSelectedModels = Record<EModelEndpoint, string>;
+
+export type LocalizeFunction = (phraseKey: string, ...values: string[]) => string;
+
+export type ChatFormValues = { text: string };
+
+export const mainTextareaId = 'prompt-textarea';
+export const globalAudioId = 'global-audio';
+
+export enum IconContext {
+  landing = 'landing',
+  menuItem = 'menu-item',
+  nav = 'nav',
+  message = 'message',
+}
+
+export type IconMapProps = {
+  className?: string;
+  iconURL?: string;
+  context?: 'landing' | 'menu-item' | 'nav' | 'message';
+  endpoint?: string | null;
+  assistantName?: string;
+  agentName?: string;
+  avatar?: string;
+  size?: number;
+};
+
+export type AgentIconMapProps = IconMapProps & { agentName: string };
 
 export type NavLink = {
   title: string;
   label?: string;
-  icon: LucideIcon;
+  icon: LucideIcon | React.FC;
   Component?: React.ComponentType;
+  onClick?: (e?: React.MouseEvent) => void;
   variant?: 'default' | 'ghost';
   id: string;
 };
@@ -34,15 +125,18 @@ export interface NavProps {
   defaultActive?: string;
 }
 
-interface ColumnMeta {
-  meta: {
-    size: number | string;
-  };
+export interface DataColumnMeta {
+  meta:
+    | {
+        size: number | string;
+      }
+    | undefined;
 }
 
 export enum Panel {
   builder = 'builder',
   actions = 'actions',
+  model = 'model',
 }
 
 export type FileSetter =
@@ -66,27 +160,55 @@ export type ActionAuthForm = {
   token_exchange_method: TokenExchangeMethodEnum;
 };
 
+export type ActionWithNullableMetadata = Omit<Action, 'metadata'> & {
+  metadata: ActionMetadata | null;
+};
+
 export type AssistantPanelProps = {
   index?: number;
-  action?: Action;
+  action?: ActionWithNullableMetadata;
   actions?: Action[];
   assistant_id?: string;
   activePanel?: string;
+  endpoint: AssistantsEndpoint;
+  version: number | string;
+  documentsMap: Map<string, AssistantDocument> | null;
   setAction: React.Dispatch<React.SetStateAction<Action | undefined>>;
   setCurrentAssistantId: React.Dispatch<React.SetStateAction<string | undefined>>;
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
 };
 
-export type AugmentedColumnDef<TData, TValue> = ColumnDef<TData, TValue> & ColumnMeta;
+export type AgentPanelProps = {
+  index?: number;
+  agent_id?: string;
+  activePanel?: string;
+  action?: Action;
+  actions?: Action[];
+  setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
+  setAction: React.Dispatch<React.SetStateAction<Action | undefined>>;
+  endpointsConfig?: TEndpointsConfig;
+  setCurrentAgentId: React.Dispatch<React.SetStateAction<string | undefined>>;
+};
 
-export type TSetOption = (
-  param: number | string,
-) => (newValue: number | string | boolean | Partial<TPreset>) => void;
+export type AgentModelPanelProps = {
+  setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
+  providers: Option[];
+  models: Record<string, string[]>;
+};
+
+export type AugmentedColumnDef<TData, TValue> = ColumnDef<TData, TValue> & DataColumnMeta;
+
+export type TSetOption = SetOption;
+
 export type TSetExample = (
   i: number,
   type: string,
   newValue: number | string | boolean | null,
 ) => void;
+
+export type OnInputNumberChange = InputNumberPrimitive.InputNumberProps['onChange'];
+
+export const defaultDebouncedDelay = 450;
 
 export enum ESide {
   Top = 'top',
@@ -136,6 +258,7 @@ export type TEditPresetProps = {
   title?: string;
 };
 
+export type TSetOptions = (options: Record<string, unknown>) => void;
 export type TSetOptionsPayload = {
   setOption: TSetOption;
   setExample: TSetExample;
@@ -145,6 +268,7 @@ export type TSetOptionsPayload = {
   // getConversation: () => TConversation | TPreset | null;
   checkPluginSelection: (value: string) => boolean;
   setTools: (newValue: string, remove?: boolean) => void;
+  setOptions?: TSetOptions;
 };
 
 export type TPresetItemProps = {
@@ -163,6 +287,8 @@ export type TGenButtonProps = {
 
 export type TAskProps = {
   text: string;
+  overrideConvoId?: string;
+  overrideUserMessageId?: string;
   parentMessageId?: string | null;
   conversationId?: string | null;
   messageId?: string | null;
@@ -171,9 +297,11 @@ export type TAskProps = {
 export type TOptions = {
   editedMessageId?: string | null;
   editedText?: string | null;
+  resubmitFiles?: boolean;
   isRegenerate?: boolean;
   isContinued?: boolean;
   isEdited?: boolean;
+  overrideMessages?: TMessage[];
 };
 
 export type TAskFunction = (props: TAskProps, options?: TOptions) => void;
@@ -210,9 +338,13 @@ export type TAdditionalProps = {
 
 export type TMessageContentProps = TInitialProps & TAdditionalProps;
 
-export type TText = Pick<TInitialProps, 'text'>;
-export type TEditProps = Pick<TInitialProps, 'text' | 'isSubmitting'> &
-  Omit<TAdditionalProps, 'isCreatedByUser'>;
+export type TText = Pick<TInitialProps, 'text'> & { className?: string };
+export type TEditProps = Pick<TInitialProps, 'isSubmitting'> &
+  Omit<TAdditionalProps, 'isCreatedByUser' | 'siblingIdx'> & {
+    text?: string;
+    index?: number;
+    siblingIdx: number | null;
+  };
 export type TDisplayProps = TText &
   Pick<TAdditionalProps, 'isCreatedByUser' | 'message'> & {
     showCursor?: boolean;
@@ -236,6 +368,7 @@ export type TDangerButtonProps = {
   actionTextCode: string;
   dataTestIdInitial: string;
   dataTestIdConfirm: string;
+  infoDescriptionCode?: string;
   confirmActionTextCode?: string;
 };
 
@@ -261,6 +394,8 @@ export type TAuthContext = {
   error: string | undefined;
   login: (data: TLoginUser) => void;
   logout: () => void;
+  setError: React.Dispatch<React.SetStateAction<string | undefined>>;
+  roles?: Record<string, TRole | null | undefined>;
 };
 
 export type TUserContext = {
@@ -282,15 +417,41 @@ export type IconProps = Pick<TMessage, 'isCreatedByUser' | 'model'> &
     iconURL?: string;
     message?: boolean;
     className?: string;
+    iconClassName?: string;
     endpoint?: EModelEndpoint | string | null;
     endpointType?: EModelEndpoint | null;
     assistantName?: string;
+    agentName?: string;
     error?: boolean;
   };
 
 export type Option = Record<string, unknown> & {
   label?: string;
   value: string | number | null;
+};
+
+export type VoiceOption = {
+  value: string;
+  label: string;
+};
+
+export type TMessageAudio = {
+  messageId?: string;
+  content?: TMessageContentParts[] | string;
+  className?: string;
+  isLast: boolean;
+  index: number;
+};
+
+export type OptionWithIcon = Option & { icon?: React.ReactNode };
+export type DropdownValueSetter = (value: string | Option | OptionWithIcon) => void;
+export type MentionOption = OptionWithIcon & {
+  type: string;
+  value: string;
+  description?: string;
+};
+export type PromptOption = MentionOption & {
+  id: string;
 };
 
 export type TOptionSettings = {
@@ -312,6 +473,70 @@ export interface ExtendedFile {
   progress: number;
   source?: FileSources;
   attached?: boolean;
+  embedded?: boolean;
 }
 
 export type ContextType = { navVisible: boolean; setNavVisible: (visible: boolean) => void };
+
+export interface SwitcherProps {
+  endpoint?: EModelEndpoint | null;
+  endpointKeyProvided: boolean;
+  isCollapsed: boolean;
+}
+export type TLoginLayoutContext = {
+  startupConfig: TStartupConfig | null;
+  startupConfigError: unknown;
+  isFetching: boolean;
+  error: string | null;
+  setError: React.Dispatch<React.SetStateAction<string | null>>;
+  headerText: string;
+  setHeaderText: React.Dispatch<React.SetStateAction<string>>;
+};
+
+export type NewConversationParams = {
+  template?: Partial<TConversation>;
+  preset?: Partial<TPreset>;
+  modelsData?: TModelsConfig;
+  buildDefault?: boolean;
+  keepLatestMessage?: boolean;
+  keepAddedConvos?: boolean;
+};
+
+export type ConvoGenerator = (params: NewConversationParams) => void | TConversation;
+
+export type TBaseResData = {
+  plugin?: TResPlugin;
+  final?: boolean;
+  initial?: boolean;
+  previousMessages?: TMessage[];
+  conversation: TConversation;
+  conversationId?: string;
+  runMessages?: TMessage[];
+};
+
+export type TResData = TBaseResData & {
+  requestMessage: TMessage;
+  responseMessage: TMessage;
+};
+
+export type TFinalResData = TBaseResData & {
+  requestMessage?: TMessage;
+  responseMessage?: TMessage;
+};
+
+export type TVectorStore = {
+  _id: string;
+  object: 'vector_store';
+  created_at: string | Date;
+  name: string;
+  bytes?: number;
+  file_counts?: {
+    in_progress: number;
+    completed: number;
+    failed: number;
+    cancelled: number;
+    total: number;
+  };
+};
+
+export type TThread = { id: string; createdAt: string };

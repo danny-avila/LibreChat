@@ -1,16 +1,29 @@
 import type { OpenAPIV3 } from 'openapi-types';
+import type { AssistantsEndpoint, AgentProvider } from 'src/schemas';
+import type { ContentTypes } from './runs';
+import type { Agents } from './agents';
+import type { TFile } from './files';
 
 export type Schema = OpenAPIV3.SchemaObject & { description?: string };
 export type Reference = OpenAPIV3.ReferenceObject & { description?: string };
 
 export type Metadata = {
+  avatar?: string;
+  author?: string;
+} & {
   [key: string]: unknown;
 };
 
 export enum Tools {
   code_interpreter = 'code_interpreter',
+  file_search = 'file_search',
   retrieval = 'retrieval',
   function = 'function',
+}
+
+export enum EToolResources {
+  code_interpreter = 'code_interpreter',
+  file_search = 'file_search',
 }
 
 export type Tool = {
@@ -26,27 +39,65 @@ export type FunctionTool = {
   };
 };
 
+/**
+ * A set of resources that are used by the assistant's tools. The resources are
+ * specific to the type of tool. For example, the `code_interpreter` tool requires
+ * a list of file IDs, while the `file_search` tool requires a list of vector store
+ * IDs.
+ */
+export interface ToolResources {
+  code_interpreter?: CodeInterpreterResource;
+  file_search?: FileSearchResource;
+}
+export interface CodeInterpreterResource {
+  /**
+   * A list of [file](https://platform.openai.com/docs/api-reference/files) IDs made
+   * available to the `code_interpreter`` tool. There can be a maximum of 20 files
+   * associated with the tool.
+   */
+  file_ids?: Array<string>;
+}
+
+export interface FileSearchResource {
+  /**
+   * The ID of the
+   * [vector store](https://platform.openai.com/docs/api-reference/vector-stores/object)
+   * attached to this assistant. There can be a maximum of 1 vector store attached to
+   * the assistant.
+   */
+  vector_store_ids?: Array<string>;
+}
+
+/* Assistant types */
+
 export type Assistant = {
   id: string;
   created_at: number;
   description: string | null;
-  file_ids: string[];
+  file_ids?: string[];
   instructions: string | null;
+  conversation_starters?: string[];
   metadata: Metadata | null;
   model: string;
   name: string | null;
   object: string;
-  tools: FunctionTool[];
+  tools?: FunctionTool[];
+  tool_resources?: ToolResources;
 };
+
+export type TAssistantsMap = Record<AssistantsEndpoint, Record<string, Assistant>>;
 
 export type AssistantCreateParams = {
   model: string;
   description?: string | null;
   file_ids?: string[];
   instructions?: string | null;
+  conversation_starters?: string[];
   metadata?: Metadata | null;
   name?: string | null;
   tools?: Array<FunctionTool | string>;
+  endpoint: AssistantsEndpoint;
+  version: number | string;
 };
 
 export type AssistantUpdateParams = {
@@ -54,9 +105,12 @@ export type AssistantUpdateParams = {
   description?: string | null;
   file_ids?: string[];
   instructions?: string | null;
+  conversation_starters?: string[] | null;
   metadata?: Metadata | null;
   name?: string | null;
   tools?: Array<FunctionTool | string>;
+  tool_resources?: ToolResources;
+  endpoint: AssistantsEndpoint;
 };
 
 export type AssistantListParams = {
@@ -64,6 +118,7 @@ export type AssistantListParams = {
   before?: string | null;
   after?: string | null;
   order?: 'asc' | 'desc';
+  endpoint: AssistantsEndpoint;
 };
 
 export type AssistantListResponse = {
@@ -83,6 +138,92 @@ export type File = {
   filename: string;
   object: string;
   purpose: 'fine-tune' | 'fine-tune-results' | 'assistants' | 'assistants_output';
+};
+
+/* Agent types */
+
+export type AgentModelParameters = {
+  temperature: number | null;
+  max_context_tokens: number | null;
+  max_output_tokens: number | null;
+  top_p: number | null;
+  frequency_penalty: number | null;
+  presence_penalty: number | null;
+};
+
+export type Agent = {
+  id: string;
+  name: string | null;
+  description: string | null;
+  created_at: number;
+  avatar: AgentAvatar | null;
+  file_ids: string[];
+  instructions: string | null;
+  tools?: string[];
+  projectIds?: string[];
+  tool_kwargs?: Record<string, unknown>;
+  tool_resources?: ToolResources;
+  metadata?: Record<string, unknown>;
+  provider: AgentProvider;
+  model: string | null;
+  model_parameters: AgentModelParameters;
+  object: string;
+};
+
+export type TAgentsMap = Record<string, Agent | undefined>;
+
+export type AgentCreateParams = {
+  name?: string | null;
+  description?: string | null;
+  avatar?: AgentAvatar | null;
+  file_ids?: string[];
+  instructions?: string | null;
+  tools?: Array<FunctionTool | string>;
+  provider: AgentProvider;
+  model: string | null;
+  model_parameters: AgentModelParameters;
+};
+
+export type AgentUpdateParams = {
+  name?: string | null;
+  description?: string | null;
+  avatar?: AgentAvatar | null;
+  file_ids?: string[];
+  instructions?: string | null;
+  tools?: Array<FunctionTool | string>;
+  tool_resources?: ToolResources;
+  provider?: AgentProvider;
+  model?: string | null;
+  model_parameters?: AgentModelParameters;
+  projectIds?: string[];
+  removeProjectIds?: string[];
+};
+
+export type AgentListParams = {
+  limit?: number;
+  before?: string | null;
+  after?: string | null;
+  order?: 'asc' | 'desc';
+  provider?: AgentProvider;
+};
+
+export type AgentListResponse = {
+  object: string;
+  data: Agent[];
+  first_id: string;
+  last_id: string;
+  has_more: boolean;
+};
+
+export type AgentFile = {
+  file_id: string;
+  id?: string;
+  temp_file_id?: string;
+  bytes: number;
+  created_at: number;
+  filename: string;
+  object: string;
+  purpose: 'fine-tune' | 'fine-tune-results' | 'agents' | 'agents_output';
 };
 
 /**
@@ -123,15 +264,25 @@ export type RetrievalToolCall = {
 };
 
 /**
+ * Details of a Retrieval tool call the run step was involved in.
+ * Includes the tool call ID and the type of tool call.
+ */
+export type FileSearchToolCall = {
+  id: string; // The ID of the tool call object.
+  file_search: unknown; // An empty object for now.
+  type: 'file_search'; // The type of tool call, always 'retrieval'.
+};
+
+/**
  * Details of the tool calls involved in a run step.
  * Can be associated with one of three types of tools: `code_interpreter`, `retrieval`, or `function`.
  */
 export type ToolCallsStepDetails = {
-  tool_calls: Array<CodeToolCall | RetrievalToolCall | FunctionToolCall>; // An array of tool calls the run step was involved in.
+  tool_calls: Array<CodeToolCall | RetrievalToolCall | FileSearchToolCall | FunctionToolCall>; // An array of tool calls the run step was involved in.
   type: 'tool_calls'; // Always 'tool_calls'.
 };
 
-export type ImageFile = {
+export type ImageFile = TFile & {
   /**
    * The [File](https://platform.openai.com/docs/api-reference/files) ID of the image
    * in the message content.
@@ -182,21 +333,9 @@ export type Text = {
   value: string;
 };
 
-export enum ContentTypes {
-  TEXT = 'text',
-  TOOL_CALL = 'tool_call',
-  IMAGE_FILE = 'image_file',
-}
-
-export enum StepTypes {
-  TOOL_CALLS = 'tool_calls',
-  MESSAGE_CREATION = 'message_creation',
-}
-
-export enum ToolCallTypes {
-  FUNCTION = 'function',
-  RETRIEVAL = 'retrieval',
-  CODE_INTERPRETER = 'code_interpreter',
+export enum AnnotationTypes {
+  FILE_CITATION = 'file_citation',
+  FILE_PATH = 'file_path',
 }
 
 export enum StepStatus {
@@ -232,27 +371,53 @@ export type PartMetadata = {
   action?: boolean;
 };
 
-export type ContentPart = (CodeToolCall | RetrievalToolCall | FunctionToolCall | ImageFile | Text) &
+export type ContentPart = (
+  | CodeToolCall
+  | RetrievalToolCall
+  | FileSearchToolCall
+  | FunctionToolCall
+  | Agents.AgentToolCall
+  | ImageFile
+  | Text
+) &
   PartMetadata;
 
 export type TMessageContentParts =
-  | { type: ContentTypes.TEXT; text: Text & PartMetadata }
+  | { type: ContentTypes.ERROR; text: Text & PartMetadata }
+  | { type: ContentTypes.TEXT; text: string | (Text & PartMetadata); tool_call_ids?: string[] }
   | {
       type: ContentTypes.TOOL_CALL;
-      tool_call: (CodeToolCall | RetrievalToolCall | FunctionToolCall) & PartMetadata;
+      tool_call: (
+        | CodeToolCall
+        | RetrievalToolCall
+        | FileSearchToolCall
+        | FunctionToolCall
+        | Agents.AgentToolCall
+      ) &
+        PartMetadata;
     }
-  | { type: ContentTypes.IMAGE_FILE; image_file: ImageFile & PartMetadata };
+  | { type: ContentTypes.IMAGE_FILE; image_file: ImageFile & PartMetadata }
+  | Agents.MessageContentImageUrl;
 
-export type TContentData = TMessageContentParts & {
+export type StreamContentData = TMessageContentParts & {
+  /** The index of the current content part */
+  index: number;
+  /** The current text content was already served but edited to replace elements therein */
+  edited?: boolean;
+};
+
+export type TContentData = StreamContentData & {
   messageId: string;
   conversationId: string;
   userMessageId: string;
   thread_id: string;
-  index: number;
   stream?: boolean;
 };
 
 export const actionDelimiter = '_action_';
+export const actionDomainSeparator = '---';
+export const hostImageIdSuffix = '_host_copy';
+export const hostImageNamePrefix = 'host_copy_';
 
 export enum AuthTypeEnum {
   ServiceHttp = 'service_http',
@@ -292,13 +457,15 @@ export type ActionMetadata = {
   oauth_client_secret?: string;
 };
 
+/* Assistant types */
+
 export type Action = {
   action_id: string;
-  assistant_id: string;
   type?: string;
   settings?: Record<string, unknown>;
   metadata: ActionMetadata;
-};
+  version: number | string;
+} & ({ assistant_id: string; agent_id?: never } | { assistant_id?: never; agent_id: string });
 
 export type AssistantAvatar = {
   filepath: string;
@@ -308,6 +475,7 @@ export type AssistantAvatar = {
 export type AssistantDocument = {
   user: string;
   assistant_id: string;
+  conversation_starters?: string[];
   avatar?: AssistantAvatar;
   access_level?: number;
   file_ids?: string[];
@@ -316,9 +484,51 @@ export type AssistantDocument = {
   updatedAt?: Date;
 };
 
+/* Agent types */
+
+export type AgentAvatar = {
+  filepath: string;
+  source: string;
+};
+
 export enum FilePurpose {
+  Vision = 'vision',
   FineTune = 'fine-tune',
   FineTuneResults = 'fine-tune-results',
   Assistants = 'assistants',
   AssistantsOutput = 'assistants_output',
+}
+
+export const defaultOrderQuery: {
+  order: 'desc';
+  limit: 100;
+} = {
+  order: 'desc',
+  limit: 100,
+};
+
+export enum AssistantStreamEvents {
+  ThreadCreated = 'thread.created',
+  ThreadRunCreated = 'thread.run.created',
+  ThreadRunQueued = 'thread.run.queued',
+  ThreadRunInProgress = 'thread.run.in_progress',
+  ThreadRunRequiresAction = 'thread.run.requires_action',
+  ThreadRunCompleted = 'thread.run.completed',
+  ThreadRunFailed = 'thread.run.failed',
+  ThreadRunCancelling = 'thread.run.cancelling',
+  ThreadRunCancelled = 'thread.run.cancelled',
+  ThreadRunExpired = 'thread.run.expired',
+  ThreadRunStepCreated = 'thread.run.step.created',
+  ThreadRunStepInProgress = 'thread.run.step.in_progress',
+  ThreadRunStepCompleted = 'thread.run.step.completed',
+  ThreadRunStepFailed = 'thread.run.step.failed',
+  ThreadRunStepCancelled = 'thread.run.step.cancelled',
+  ThreadRunStepExpired = 'thread.run.step.expired',
+  ThreadRunStepDelta = 'thread.run.step.delta',
+  ThreadMessageCreated = 'thread.message.created',
+  ThreadMessageInProgress = 'thread.message.in_progress',
+  ThreadMessageCompleted = 'thread.message.completed',
+  ThreadMessageIncomplete = 'thread.message.incomplete',
+  ThreadMessageDelta = 'thread.message.delta',
+  ErrorEvent = 'error',
 }

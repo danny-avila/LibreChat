@@ -1,5 +1,5 @@
 const Keyv = require('keyv');
-const { CacheKeys, ViolationTypes } = require('librechat-data-provider');
+const { CacheKeys, ViolationTypes, Time } = require('librechat-data-provider');
 const { logFile, violationFile } = require('./keyvFiles');
 const { math, isEnabled } = require('~/server/utils');
 const keyvRedis = require('./keyvRedis');
@@ -23,13 +23,25 @@ const config = isEnabled(USE_REDIS)
   ? new Keyv({ store: keyvRedis })
   : new Keyv({ namespace: CacheKeys.CONFIG_STORE });
 
-const tokenConfig = isEnabled(USE_REDIS) // ttl: 30 minutes
-  ? new Keyv({ store: keyvRedis, ttl: 1800000 })
-  : new Keyv({ namespace: CacheKeys.TOKEN_CONFIG, ttl: 1800000 });
+const roles = isEnabled(USE_REDIS)
+  ? new Keyv({ store: keyvRedis })
+  : new Keyv({ namespace: CacheKeys.ROLES });
 
-const genTitle = isEnabled(USE_REDIS) // ttl: 2 minutes
-  ? new Keyv({ store: keyvRedis, ttl: 120000 })
-  : new Keyv({ namespace: CacheKeys.GEN_TITLE, ttl: 120000 });
+const audioRuns = isEnabled(USE_REDIS)
+  ? new Keyv({ store: keyvRedis, ttl: Time.TEN_MINUTES })
+  : new Keyv({ namespace: CacheKeys.AUDIO_RUNS, ttl: Time.TEN_MINUTES });
+
+const messages = isEnabled(USE_REDIS)
+  ? new Keyv({ store: keyvRedis, ttl: Time.FIVE_MINUTES })
+  : new Keyv({ namespace: CacheKeys.MESSAGES, ttl: Time.FIVE_MINUTES });
+
+const tokenConfig = isEnabled(USE_REDIS)
+  ? new Keyv({ store: keyvRedis, ttl: Time.THIRTY_MINUTES })
+  : new Keyv({ namespace: CacheKeys.TOKEN_CONFIG, ttl: Time.THIRTY_MINUTES });
+
+const genTitle = isEnabled(USE_REDIS)
+  ? new Keyv({ store: keyvRedis, ttl: Time.TWO_MINUTES })
+  : new Keyv({ namespace: CacheKeys.GEN_TITLE, ttl: Time.TWO_MINUTES });
 
 const modelQueries = isEnabled(process.env.USE_REDIS)
   ? new Keyv({ store: keyvRedis })
@@ -37,19 +49,32 @@ const modelQueries = isEnabled(process.env.USE_REDIS)
 
 const abortKeys = isEnabled(USE_REDIS)
   ? new Keyv({ store: keyvRedis })
-  : new Keyv({ namespace: CacheKeys.ABORT_KEYS });
+  : new Keyv({ namespace: CacheKeys.ABORT_KEYS, ttl: Time.TEN_MINUTES });
 
 const namespaces = {
+  [CacheKeys.ROLES]: roles,
   [CacheKeys.CONFIG_STORE]: config,
   pending_req,
-  ban: new Keyv({ store: keyvMongo, namespace: 'bans', ttl: duration }),
+  [ViolationTypes.BAN]: new Keyv({ store: keyvMongo, namespace: CacheKeys.BANS, ttl: duration }),
+  [CacheKeys.ENCODED_DOMAINS]: new Keyv({
+    store: keyvMongo,
+    namespace: CacheKeys.ENCODED_DOMAINS,
+    ttl: 0,
+  }),
   general: new Keyv({ store: logFile, namespace: 'violations' }),
   concurrent: createViolationInstance('concurrent'),
   non_browser: createViolationInstance('non_browser'),
   message_limit: createViolationInstance('message_limit'),
-  token_balance: createViolationInstance('token_balance'),
+  token_balance: createViolationInstance(ViolationTypes.TOKEN_BALANCE),
   registrations: createViolationInstance('registrations'),
+  [ViolationTypes.TTS_LIMIT]: createViolationInstance(ViolationTypes.TTS_LIMIT),
+  [ViolationTypes.STT_LIMIT]: createViolationInstance(ViolationTypes.STT_LIMIT),
+  [ViolationTypes.CONVO_ACCESS]: createViolationInstance(ViolationTypes.CONVO_ACCESS),
   [ViolationTypes.FILE_UPLOAD_LIMIT]: createViolationInstance(ViolationTypes.FILE_UPLOAD_LIMIT),
+  [ViolationTypes.VERIFY_EMAIL_LIMIT]: createViolationInstance(ViolationTypes.VERIFY_EMAIL_LIMIT),
+  [ViolationTypes.RESET_PASSWORD_LIMIT]: createViolationInstance(
+    ViolationTypes.RESET_PASSWORD_LIMIT,
+  ),
   [ViolationTypes.ILLEGAL_MODEL_REQUEST]: createViolationInstance(
     ViolationTypes.ILLEGAL_MODEL_REQUEST,
   ),
@@ -58,6 +83,8 @@ const namespaces = {
   [CacheKeys.TOKEN_CONFIG]: tokenConfig,
   [CacheKeys.GEN_TITLE]: genTitle,
   [CacheKeys.MODEL_QUERIES]: modelQueries,
+  [CacheKeys.AUDIO_RUNS]: audioRuns,
+  [CacheKeys.MESSAGES]: messages,
 };
 
 /**

@@ -8,7 +8,7 @@ const { isEnabled } = require('~/server/utils');
  * @param {Object} options - The options for creating the LLM.
  * @param {ModelOptions} options.modelOptions - The options specific to the model, including modelName, temperature, presence_penalty, frequency_penalty, and other model-related settings.
  * @param {ConfigOptions} options.configOptions - Configuration options for the API requests, including proxy settings and custom headers.
- * @param {Callbacks} options.callbacks - Callback functions for managing the lifecycle of the LLM, including token buffers, context, and initial message count.
+ * @param {Callbacks} [options.callbacks] - Callback functions for managing the lifecycle of the LLM, including token buffers, context, and initial message count.
  * @param {boolean} [options.streaming=false] - Determines if the LLM should operate in streaming mode.
  * @param {string} options.openAIApiKey - The API key for OpenAI, used for authentication.
  * @param {AzureOptions} [options.azure={}] - Optional Azure-specific configurations. If provided, Azure configurations take precedence over OpenAI configurations.
@@ -57,7 +57,7 @@ function createLLM({
   if (azure && configOptions.basePath) {
     const azureURL = constructAzureURL({
       baseURL: configOptions.basePath,
-      azure: azureOptions,
+      azureOptions,
     });
     azureOptions.azureOpenAIBasePath = azureURL.split(
       `/${azureOptions.azureOpenAIApiDeploymentName}`,

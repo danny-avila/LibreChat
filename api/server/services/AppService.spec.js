@@ -1,6 +1,7 @@
 const {
   FileSources,
   EModelEndpoint,
+  EImageOutputType,
   defaultSocialLogins,
   validateAzureGroups,
   deprecatedAzureVariables,
@@ -19,6 +20,10 @@ jest.mock('./Config/loadCustomConfig', () => {
 });
 jest.mock('./Files/Firebase/initialize', () => ({
   initializeFirebase: jest.fn(),
+}));
+jest.mock('~/models/Role', () => ({
+  initializeRoles: jest.fn(),
+  updateAccessPermissions: jest.fn(),
 }));
 jest.mock('./ToolService', () => ({
   loadAndFormatTools: jest.fn().mockReturnValue({
@@ -92,6 +97,14 @@ describe('AppService', () => {
     expect(app.locals).toEqual({
       socialLogins: ['testLogin'],
       fileStrategy: 'testStrategy',
+      interfaceConfig: expect.objectContaining({
+        endpointsMenu: true,
+        modelSelect: true,
+        parameters: true,
+        sidePanel: true,
+        presets: true,
+      }),
+      modelSpecs: undefined,
       availableTools: {
         ExampleTool: {
           type: 'function',
@@ -107,6 +120,9 @@ describe('AppService', () => {
         },
       },
       paths: expect.anything(),
+      imageOutputType: expect.any(String),
+      fileConfig: undefined,
+      secureImageLinks: undefined,
     });
   });
 
@@ -123,6 +139,36 @@ describe('AppService', () => {
 
     const { logger } = require('~/config');
     expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('Outdated Config version'));
+  });
+
+  it('should change the `imageOutputType` based on config value', async () => {
+    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+      Promise.resolve({
+        version: '0.10.0',
+        imageOutputType: EImageOutputType.WEBP,
+      }),
+    );
+
+    await AppService(app);
+    expect(app.locals.imageOutputType).toEqual(EImageOutputType.WEBP);
+  });
+
+  it('should default to `PNG` `imageOutputType` with no provided type', async () => {
+    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+      Promise.resolve({
+        version: '0.10.0',
+      }),
+    );
+
+    await AppService(app);
+    expect(app.locals.imageOutputType).toEqual(EImageOutputType.PNG);
+  });
+
+  it('should default to `PNG` `imageOutputType` with no provided config', async () => {
+    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(undefined));
+
+    await AppService(app);
+    expect(app.locals.imageOutputType).toEqual(EImageOutputType.PNG);
   });
 
   it('should initialize Firebase when fileStrategy is firebase', async () => {
@@ -146,7 +192,6 @@ describe('AppService', () => {
 
     expect(loadAndFormatTools).toHaveBeenCalledWith({
       directory: expect.anything(),
-      filter: expect.anything(),
     });
 
     expect(app.locals.availableTools.ExampleTool).toBeDefined();
@@ -175,6 +220,7 @@ describe('AppService', () => {
             pollIntervalMs: 5000,
             timeoutMs: 30000,
             supportedIds: ['id1', 'id2'],
+            privateAssistants: false,
           },
         },
       }),
@@ -189,8 +235,30 @@ describe('AppService', () => {
         pollIntervalMs: 5000,
         timeoutMs: 30000,
         supportedIds: expect.arrayContaining(['id1', 'id2']),
+        privateAssistants: false,
       }),
     );
+  });
+
+  it('should correctly configure minimum Azure OpenAI Assistant values', async () => {
+    const assistantGroups = [azureGroups[0], { ...azureGroups[1], assistants: true }];
+    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+      Promise.resolve({
+        endpoints: {
+          [EModelEndpoint.azureOpenAI]: {
+            groups: assistantGroups,
+            assistants: true,
+          },
+        },
+      }),
+    );
+
+    process.env.WESTUS_API_KEY = 'westus-key';
+    process.env.EASTUS_API_KEY = 'eastus-key';
+
+    await AppService(app);
+    expect(app.locals).toHaveProperty(EModelEndpoint.azureAssistants);
+    expect(app.locals[EModelEndpoint.azureAssistants].capabilities.length).toEqual(3);
   });
 
   it('should correctly configure Azure OpenAI endpoint based on custom config', async () => {
@@ -282,6 +350,69 @@ describe('AppService', () => {
     expect(process.env.FILE_UPLOAD_IP_WINDOW).toEqual('initialWindow');
     expect(process.env.FILE_UPLOAD_USER_MAX).toEqual('initialUserMax');
     expect(process.env.FILE_UPLOAD_USER_WINDOW).toEqual('initialUserWindow');
+  });
+
+  it('should not modify IMPORT environment variables without rate limits', async () => {
+    // Setup initial environment variables
+    process.env.IMPORT_IP_MAX = '10';
+    process.env.IMPORT_IP_WINDOW = '15';
+    process.env.IMPORT_USER_MAX = '5';
+    process.env.IMPORT_USER_WINDOW = '20';
+
+    const initialEnv = { ...process.env };
+
+    await AppService(app);
+
+    // Expect environment variables to remain unchanged
+    expect(process.env.IMPORT_IP_MAX).toEqual(initialEnv.IMPORT_IP_MAX);
+    expect(process.env.IMPORT_IP_WINDOW).toEqual(initialEnv.IMPORT_IP_WINDOW);
+    expect(process.env.IMPORT_USER_MAX).toEqual(initialEnv.IMPORT_USER_MAX);
+    expect(process.env.IMPORT_USER_WINDOW).toEqual(initialEnv.IMPORT_USER_WINDOW);
+  });
+
+  it('should correctly set IMPORT environment variables based on rate limits', async () => {
+    // Define and mock a custom configuration with rate limits
+    const importLimitsConfig = {
+      rateLimits: {
+        conversationsImport: {
+          ipMax: '150',
+          ipWindowInMinutes: '60',
+          userMax: '50',
+          userWindowInMinutes: '30',
+        },
+      },
+    };
+
+    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+      Promise.resolve(importLimitsConfig),
+    );
+
+    await AppService(app);
+
+    // Verify that process.env has been updated according to the rate limits config
+    expect(process.env.IMPORT_IP_MAX).toEqual('150');
+    expect(process.env.IMPORT_IP_WINDOW).toEqual('60');
+    expect(process.env.IMPORT_USER_MAX).toEqual('50');
+    expect(process.env.IMPORT_USER_WINDOW).toEqual('30');
+  });
+
+  it('should fallback to default IMPORT environment variables when rate limits are unspecified', async () => {
+    // Setup initial environment variables to non-default values
+    process.env.IMPORT_IP_MAX = 'initialMax';
+    process.env.IMPORT_IP_WINDOW = 'initialWindow';
+    process.env.IMPORT_USER_MAX = 'initialUserMax';
+    process.env.IMPORT_USER_WINDOW = 'initialUserWindow';
+
+    // Mock a custom configuration without specific rate limits
+    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve({}));
+
+    await AppService(app);
+
+    // Verify that process.env falls back to the initial values
+    expect(process.env.IMPORT_IP_MAX).toEqual('initialMax');
+    expect(process.env.IMPORT_IP_WINDOW).toEqual('initialWindow');
+    expect(process.env.IMPORT_USER_MAX).toEqual('initialUserMax');
+    expect(process.env.IMPORT_USER_WINDOW).toEqual('initialUserWindow');
   });
 });
 
@@ -378,7 +509,31 @@ describe('AppService updating app.locals and issuing warnings', () => {
 
     const { logger } = require('~/config');
     expect(logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining('Both `supportedIds` and `excludedIds` are defined'),
+      expect.stringContaining(
+        'The \'assistants\' endpoint has both \'supportedIds\' and \'excludedIds\' defined.',
+      ),
+    );
+  });
+
+  it('should log a warning when privateAssistants and supportedIds or excludedIds are provided', async () => {
+    const mockConfig = {
+      endpoints: {
+        assistants: {
+          privateAssistants: true,
+          supportedIds: ['id1'],
+        },
+      },
+    };
+    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(mockConfig));
+
+    const app = { locals: {} };
+    await require('./AppService')(app);
+
+    const { logger } = require('~/config');
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'The \'assistants\' endpoint has both \'privateAssistants\' and \'supportedIds\' or \'excludedIds\' defined.',
+      ),
     );
   });
 

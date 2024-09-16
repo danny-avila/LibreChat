@@ -1,15 +1,25 @@
 const Anthropic = require('@anthropic-ai/sdk');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const {
-  getResponseSender,
+  Constants,
   EModelEndpoint,
+  anthropicSettings,
+  getResponseSender,
   validateVisionModel,
 } = require('librechat-data-provider');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
-const spendTokens = require('~/models/spendTokens');
-const { getModelMaxTokens } = require('~/utils');
-const { formatMessage } = require('./prompts');
-const { getFiles } = require('~/models/File');
+const {
+  truncateText,
+  formatMessage,
+  addCacheControl,
+  titleFunctionPrompt,
+  parseParamFromPrompt,
+  createContextHandlers,
+} = require('./prompts');
+const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
+const { getModelMaxTokens, matchModelName } = require('~/utils');
+const { sleep } = require('~/server/utils');
 const BaseClient = require('./BaseClient');
 const { logger } = require('~/config');
 
@@ -23,6 +33,9 @@ function delayBeforeRetry(attempts, baseDelay = 1000) {
   return new Promise((resolve) => setTimeout(resolve, baseDelay * attempts));
 }
 
+const tokenEventTypes = new Set(['message_start', 'message_delta']);
+const { legacy } = anthropicSettings;
+
 class AnthropicClient extends BaseClient {
   constructor(apiKey, options = {}) {
     super(apiKey, options);
@@ -33,6 +46,30 @@ class AnthropicClient extends BaseClient {
       ? options.contextStrategy.toLowerCase()
       : 'discard';
     this.setOptions(options);
+    /** @type {string | undefined} */
+    this.systemMessage;
+    /** @type {AnthropicMessageStartEvent| undefined} */
+    this.message_start;
+    /** @type {AnthropicMessageDeltaEvent| undefined} */
+    this.message_delta;
+    /** Whether the model is part of the Claude 3 Family
+     * @type {boolean} */
+    this.isClaude3;
+    /** Whether to use Messages API or Completions API
+     * @type {boolean} */
+    this.useMessages;
+    /** Whether or not the model is limited to the legacy amount of output tokens
+     * @type {boolean} */
+    this.isLegacyOutput;
+    /** Whether or not the model supports Prompt Caching
+     * @type {boolean} */
+    this.supportsCacheControl;
+    /** The key for the usage object's input tokens
+     * @type {string} */
+    this.inputTokensKey = 'input_tokens';
+    /** The key for the usage object's output tokens
+     * @type {string} */
+    this.outputTokensKey = 'output_tokens';
   }
 
   setOptions(options) {
@@ -52,25 +89,37 @@ class AnthropicClient extends BaseClient {
       this.options = options;
     }
 
-    const modelOptions = this.options.modelOptions || {};
-    this.modelOptions = {
-      ...modelOptions,
-      // set some good defaults (check for undefined in some cases because they may be 0)
-      model: modelOptions.model || 'claude-1',
-      temperature: typeof modelOptions.temperature === 'undefined' ? 1 : modelOptions.temperature, // 0 - 1, 1 is default
-      topP: typeof modelOptions.topP === 'undefined' ? 0.7 : modelOptions.topP, // 0 - 1, default: 0.7
-      topK: typeof modelOptions.topK === 'undefined' ? 40 : modelOptions.topK, // 1-40, default: 40
-      stop: modelOptions.stop, // no stop method for now
-    };
+    this.modelOptions = Object.assign(
+      {
+        model: anthropicSettings.model.default,
+      },
+      this.modelOptions,
+      this.options.modelOptions,
+    );
 
-    this.isClaude3 = this.modelOptions.model.includes('claude-3');
+    const modelMatch = matchModelName(this.modelOptions.model, EModelEndpoint.anthropic);
+    this.isClaude3 = modelMatch.startsWith('claude-3');
+    this.isLegacyOutput = !modelMatch.startsWith('claude-3-5-sonnet');
+    this.supportsCacheControl =
+      this.options.promptCache && this.checkPromptCacheSupport(modelMatch);
+
+    if (
+      this.isLegacyOutput &&
+      this.modelOptions.maxOutputTokens &&
+      this.modelOptions.maxOutputTokens > legacy.maxOutputTokens.default
+    ) {
+      this.modelOptions.maxOutputTokens = legacy.maxOutputTokens.default;
+    }
+
     this.useMessages = this.isClaude3 || !!this.options.attachments;
 
     this.defaultVisionModel = this.options.visionModel ?? 'claude-3-sonnet-20240229';
-    this.checkVisionRequest(this.options.attachments);
+    this.options.attachments?.then((attachments) => this.checkVisionRequest(attachments));
 
     this.maxContextTokens =
-      getModelMaxTokens(this.modelOptions.model, EModelEndpoint.anthropic) ?? 100000;
+      this.options.maxContextTokens ??
+      getModelMaxTokens(this.modelOptions.model, EModelEndpoint.anthropic) ??
+      100000;
     this.maxResponseTokens = this.modelOptions.maxOutputTokens || 1500;
     this.maxPromptTokens =
       this.options.maxPromptTokens || this.maxContextTokens - this.maxResponseTokens;
@@ -109,22 +158,94 @@ class AnthropicClient extends BaseClient {
     return this;
   }
 
-  getClient() {
+  /**
+   * Get the initialized Anthropic client.
+   * @param {Partial<Anthropic.ClientOptions>} requestOptions - The options for the client.
+   * @returns {Anthropic} The Anthropic client instance.
+   */
+  getClient(requestOptions) {
+    /** @type {Anthropic.ClientOptions} */
     const options = {
+      fetch: this.fetch,
       apiKey: this.apiKey,
     };
+
+    if (this.options.proxy) {
+      options.httpAgent = new HttpsProxyAgent(this.options.proxy);
+    }
 
     if (this.options.reverseProxyUrl) {
       options.baseURL = this.options.reverseProxyUrl;
     }
 
+    if (
+      this.supportsCacheControl &&
+      requestOptions?.model &&
+      requestOptions.model.includes('claude-3-5-sonnet')
+    ) {
+      options.defaultHeaders = {
+        'anthropic-beta': 'max-tokens-3-5-sonnet-2024-07-15,prompt-caching-2024-07-31',
+      };
+    } else if (this.supportsCacheControl) {
+      options.defaultHeaders = {
+        'anthropic-beta': 'prompt-caching-2024-07-31',
+      };
+    }
+
     return new Anthropic(options);
   }
 
-  getTokenCountForResponse(response) {
+  /**
+   * Get stream usage as returned by this client's API response.
+   * @returns {AnthropicStreamUsage} The stream usage object.
+   */
+  getStreamUsage() {
+    const inputUsage = this.message_start?.message?.usage ?? {};
+    const outputUsage = this.message_delta?.usage ?? {};
+    return Object.assign({}, inputUsage, outputUsage);
+  }
+
+  /**
+   * Calculates the correct token count for the current user message based on the token count map and API usage.
+   * Edge case: If the calculation results in a negative value, it returns the original estimate.
+   * If revisiting a conversation with a chat history entirely composed of token estimates,
+   * the cumulative token count going forward should become more accurate as the conversation progresses.
+   * @param {Object} params - The parameters for the calculation.
+   * @param {Record<string, number>} params.tokenCountMap - A map of message IDs to their token counts.
+   * @param {string} params.currentMessageId - The ID of the current message to calculate.
+   * @param {AnthropicStreamUsage} params.usage - The usage object returned by the API.
+   * @returns {number} The correct token count for the current user message.
+   */
+  calculateCurrentTokenCount({ tokenCountMap, currentMessageId, usage }) {
+    const originalEstimate = tokenCountMap[currentMessageId] || 0;
+
+    if (!usage || typeof usage.input_tokens !== 'number') {
+      return originalEstimate;
+    }
+
+    tokenCountMap[currentMessageId] = 0;
+    const totalTokensFromMap = Object.values(tokenCountMap).reduce((sum, count) => {
+      const numCount = Number(count);
+      return sum + (isNaN(numCount) ? 0 : numCount);
+    }, 0);
+    const totalInputTokens =
+      (usage.input_tokens ?? 0) +
+      (usage.cache_creation_input_tokens ?? 0) +
+      (usage.cache_read_input_tokens ?? 0);
+
+    const currentMessageTokens = totalInputTokens - totalTokensFromMap;
+    return currentMessageTokens > 0 ? currentMessageTokens : originalEstimate;
+  }
+
+  /**
+   * Get Token Count for LibreChat Message
+   * @param {TMessage} responseMessage
+   * @returns {number}
+   */
+  getTokenCountForResponse(responseMessage) {
     return this.getTokenCountForMessage({
       role: 'assistant',
-      content: response.text,
+      content: responseMessage.text,
     });
   }
 
@@ -134,14 +255,19 @@ class AnthropicClient extends BaseClient {
    * - Sets `this.modelOptions.model` to `gpt-4-vision-preview` if the request is a vision request.
    * - Sets `this.isVisionModel` to `true` if vision request.
    * - Deletes `this.modelOptions.stop` if vision request.
-   * @param {Array<Promise<MongoFile[]> | MongoFile[]> | Record<string, MongoFile[]>} attachments
+   * @param {MongoFile[]} attachments
    */
   checkVisionRequest(attachments) {
     const availableModels = this.options.modelsConfig?.[EModelEndpoint.anthropic];
     this.isVisionModel = validateVisionModel({ model: this.modelOptions.model, availableModels });
 
     const visionModelAvailable = availableModels?.includes(this.defaultVisionModel);
-    if (attachments && visionModelAvailable && !this.isVisionModel) {
+    if (
+      attachments &&
+      attachments.some((file) => file?.type && file?.type?.includes('image')) &&
+      visionModelAvailable &&
+      !this.isVisionModel
+    ) {
       this.modelOptions.model = this.defaultVisionModel;
       this.isVisionModel = true;
     }
@@ -168,70 +294,52 @@ class AnthropicClient extends BaseClient {
       attachments,
       EModelEndpoint.anthropic,
     );
-    message.image_urls = image_urls;
+    message.image_urls = image_urls.length ? image_urls : undefined;
     return files;
   }
 
-  async recordTokenUsage({ promptTokens, completionTokens }) {
-    logger.debug('[AnthropicClient] recordTokenUsage:', { promptTokens, completionTokens });
+  /**
+   * @param {object} params
+   * @param {number} params.promptTokens
+   * @param {number} params.completionTokens
+   * @param {AnthropicStreamUsage} [params.usage]
+   * @param {string} [params.model]
+   * @param {string} [params.context='message']
+   * @returns {Promise<void>}
+   */
+  async recordTokenUsage({ promptTokens, completionTokens, usage, model, context = 'message' }) {
+    if (usage != null && usage?.input_tokens != null) {
+      const input = usage.input_tokens ?? 0;
+      const write = usage.cache_creation_input_tokens ?? 0;
+      const read = usage.cache_read_input_tokens ?? 0;
+
+      await spendStructuredTokens(
+        {
+          context,
+          user: this.user,
+          conversationId: this.conversationId,
+          model: model ?? this.modelOptions.model,
+          endpointTokenConfig: this.options.endpointTokenConfig,
+        },
+        {
+          promptTokens: { input, write, read },
+          completionTokens,
+        },
+      );
+
+      return;
+    }
+
     await spendTokens(
       {
+        context,
         user: this.user,
-        model: this.modelOptions.model,
-        context: 'message',
         conversationId: this.conversationId,
+        model: model ?? this.modelOptions.model,
         endpointTokenConfig: this.options.endpointTokenConfig,
       },
       { promptTokens, completionTokens },
     );
-  }
-
-  /**
-   *
-   * @param {TMessage[]} _messages
-   * @returns {TMessage[]}
-   */
-  async addPreviousAttachments(_messages) {
-    if (!this.options.resendImages) {
-      return _messages;
-    }
-
-    /**
-     *
-     * @param {TMessage} message
-     */
-    const processMessage = async (message) => {
-      if (!this.message_file_map) {
-        /** @type {Record<string, MongoFile[]> */
-        this.message_file_map = {};
-      }
-
-      const fileIds = message.files.map((file) => file.file_id);
-      const files = await getFiles({
-        file_id: { $in: fileIds },
-      });
-
-      await this.addImageURLs(message, files);
-
-      this.message_file_map[message.messageId] = files;
-      return message;
-    };
-
-    const promises = [];
-
-    for (const message of _messages) {
-      if (!message.files) {
-        promises.push(message);
-        continue;
-      }
-
-      promises.push(processMessage(message));
-    }
-
-    const messages = await Promise.all(promises);
-
-    this.checkVisionRequest(this.message_file_map);
-    return messages;
   }
 
   async buildMessages(messages, parentMessageId) {
@@ -242,12 +350,13 @@ class AnthropicClient extends BaseClient {
 
     logger.debug('[AnthropicClient] orderedMessages', { orderedMessages, parentMessageId });
 
-    if (!this.isVisionModel && this.options.attachments) {
-      throw new Error('Attachments are only supported with the Claude 3 family of models');
-    } else if (this.options.attachments) {
-      const attachments = (await this.options.attachments).filter((file) =>
-        file.type.includes('image'),
-      );
+    if (this.options.attachments) {
+      const attachments = await this.options.attachments;
+      const images = attachments.filter((file) => file.type.includes('image'));
+
+      if (images.length && !this.isVisionModel) {
+        throw new Error('Images are only supported with the Claude 3 family of models');
+      }
 
       const latestMessage = orderedMessages[orderedMessages.length - 1];
 
@@ -262,6 +371,13 @@ class AnthropicClient extends BaseClient {
       const files = await this.addImageURLs(latestMessage, attachments);
 
       this.options.attachments = files;
+    }
+
+    if (this.message_file_map) {
+      this.contextHandlers = createContextHandlers(
+        this.options.req,
+        orderedMessages[orderedMessages.length - 1].text,
+      );
     }
 
     const formattedMessages = orderedMessages.map((message, i) => {
@@ -285,6 +401,11 @@ class AnthropicClient extends BaseClient {
       if (this.message_file_map && this.message_file_map[message.messageId]) {
         const attachments = this.message_file_map[message.messageId];
         for (const file of attachments) {
+          if (file.embedded) {
+            this.contextHandlers?.processFile(file);
+            continue;
+          }
+
           orderedMessages[i].tokenCount += this.calculateImageTokenCost({
             width: file.width,
             height: file.height,
@@ -295,6 +416,11 @@ class AnthropicClient extends BaseClient {
       formattedMessage.tokenCount = orderedMessages[i].tokenCount;
       return formattedMessage;
     });
+
+    if (this.contextHandlers) {
+      this.augmentedPrompt = await this.contextHandlers.createContext();
+      this.options.promptPrefix = this.augmentedPrompt + (this.options.promptPrefix ?? '');
+    }
 
     let { context: messagesInWindow, remainingContextTokens } =
       await this.getMessagesWithinTokenLimit(formattedMessages);
@@ -372,7 +498,10 @@ class AnthropicClient extends BaseClient {
       identityPrefix = `${identityPrefix}\nYou are ${this.options.modelLabel}`;
     }
 
-    let promptPrefix = (this.options.promptPrefix || '').trim();
+    let promptPrefix = (this.options.promptPrefix ?? '').trim();
+    if (typeof this.options.artifactsPrompt === 'string' && this.options.artifactsPrompt) {
+      promptPrefix = `${promptPrefix ?? ''}\n${this.options.artifactsPrompt}`.trim();
+    }
     if (promptPrefix) {
       // If the prompt prefix doesn't end with the end token, add it.
       if (!promptPrefix.endsWith(`${this.endToken}`)) {
@@ -389,7 +518,7 @@ class AnthropicClient extends BaseClient {
     let isEdited = lastAuthor === this.assistantLabel;
     const promptSuffix = isEdited ? '' : `${promptPrefix}${this.assistantLabel}\n`;
     let currentTokenCount =
-      isEdited || this.useMEssages
+      isEdited || this.useMessages
         ? this.getTokenCount(promptPrefix)
         : this.getTokenCount(promptSuffix);
 
@@ -538,10 +667,33 @@ class AnthropicClient extends BaseClient {
     logger.debug('AnthropicClient doesn\'t use getCompletion (all handled in sendCompletion)');
   }
 
-  async createResponse(client, options) {
-    return this.useMessages
+  /**
+   * Creates a message or completion response using the Anthropic client.
+   * @param {Anthropic} client - The Anthropic client instance.
+   * @param {Anthropic.default.MessageCreateParams | Anthropic.default.CompletionCreateParams} options - The options for the message or completion.
+   * @param {boolean} useMessages - Whether to use messages or completions. Defaults to `this.useMessages`.
+   * @returns {Promise<Anthropic.default.Message | Anthropic.default.Completion>} The response from the Anthropic client.
+   */
+  async createResponse(client, options, useMessages) {
+    return useMessages ?? this.useMessages
       ? await client.messages.create(options)
       : await client.completions.create(options);
+  }
+
+  /**
+   * @param {string} modelName
+   * @returns {boolean}
+   */
+  checkPromptCacheSupport(modelName) {
+    const modelMatch = matchModelName(modelName, EModelEndpoint.anthropic);
+    if (
+      modelMatch === 'claude-3-5-sonnet' ||
+      modelMatch === 'claude-3-haiku' ||
+      modelMatch === 'claude-3-opus'
+    ) {
+      return true;
+    }
+    return false;
   }
 
   async sendCompletion(payload, { onProgress, abortController }) {
@@ -557,8 +709,6 @@ class AnthropicClient extends BaseClient {
     }
 
     logger.debug('modelOptions', { modelOptions });
-
-    const client = this.getClient();
     const metadata = {
       user_id: this.user,
     };
@@ -586,14 +736,26 @@ class AnthropicClient extends BaseClient {
 
     if (this.useMessages) {
       requestOptions.messages = payload;
-      requestOptions.max_tokens = maxOutputTokens || 1500;
+      requestOptions.max_tokens = maxOutputTokens || legacy.maxOutputTokens.default;
     } else {
       requestOptions.prompt = payload;
       requestOptions.max_tokens_to_sample = maxOutputTokens || 1500;
     }
 
-    if (this.systemMessage) {
+    if (this.systemMessage && this.supportsCacheControl === true) {
+      requestOptions.system = [
+        {
+          type: 'text',
+          text: this.systemMessage,
+          cache_control: { type: 'ephemeral' },
+        },
+      ];
+    } else if (this.systemMessage) {
       requestOptions.system = this.systemMessage;
+    }
+
+    if (this.supportsCacheControl === true && this.useMessages) {
+      requestOptions.messages = addCacheControl(requestOptions.messages);
     }
 
     logger.debug('[AnthropicClient]', { ...requestOptions });
@@ -606,12 +768,14 @@ class AnthropicClient extends BaseClient {
     };
 
     const maxRetries = 3;
+    const streamRate = this.options.streamRate ?? Constants.DEFAULT_STREAM_RATE;
     async function processResponse() {
       let attempts = 0;
 
       while (attempts < maxRetries) {
         let response;
         try {
+          const client = this.getClient(requestOptions);
           response = await this.createResponse(client, requestOptions);
 
           signal.addEventListener('abort', () => {
@@ -623,11 +787,18 @@ class AnthropicClient extends BaseClient {
 
           for await (const completion of response) {
             // Handle each completion as before
+            const type = completion?.type ?? '';
+            if (tokenEventTypes.has(type)) {
+              logger.debug(`[AnthropicClient] ${type}`, completion);
+              this[type] = completion;
+            }
             if (completion?.delta?.text) {
               handleChunk(completion.delta.text);
             } else if (completion.completion) {
               handleChunk(completion.completion);
             }
+
+            await sleep(streamRate);
           }
 
           // Successful processing, exit loop
@@ -661,8 +832,15 @@ class AnthropicClient extends BaseClient {
 
   getSaveOptions() {
     return {
+      maxContextTokens: this.options.maxContextTokens,
+      artifacts: this.options.artifacts,
       promptPrefix: this.options.promptPrefix,
       modelLabel: this.options.modelLabel,
+      promptCache: this.options.promptCache,
+      resendFiles: this.options.resendFiles,
+      iconURL: this.options.iconURL,
+      greeting: this.options.greeting,
+      spec: this.options.spec,
       ...this.modelOptions,
     };
   }
@@ -687,6 +865,84 @@ class AnthropicClient extends BaseClient {
 
   getTokenCount(text) {
     return this.gptEncoder.encode(text, 'all').length;
+  }
+
+  /**
+   * Generates a concise title for a conversation based on the user's input text and response.
+   * Involves sending a chat completion request with specific instructions for title generation.
+   *
+   * This function capitlizes on [Anthropic's function calling training](https://docs.anthropic.com/claude/docs/functions-external-tools).
+   *
+   * @param {Object} params - The parameters for the conversation title generation.
+   * @param {string} params.text - The user's input.
+   * @param {string} [params.responseText=''] - The AI's immediate response to the user.
+   *
+   * @returns {Promise<string | 'New Chat'>} A promise that resolves to the generated conversation title.
+   *                            In case of failure, it will return the default title, "New Chat".
+   */
+  async titleConvo({ text, responseText = '' }) {
+    let title = 'New Chat';
+    this.message_delta = undefined;
+    this.message_start = undefined;
+    const convo = `<initial_message>
+  ${truncateText(text)}
+  </initial_message>
+  <response>
+  ${JSON.stringify(truncateText(responseText))}
+  </response>`;
+
+    const { ANTHROPIC_TITLE_MODEL } = process.env ?? {};
+    const model = this.options.titleModel ?? ANTHROPIC_TITLE_MODEL ?? 'claude-3-haiku-20240307';
+    const system = titleFunctionPrompt;
+
+    const titleChatCompletion = async () => {
+      const content = `<conversation_context>
+  ${convo}
+  </conversation_context>
+  
+  Please generate a title for this conversation.`;
+
+      const titleMessage = { role: 'user', content };
+      const requestOptions = {
+        model,
+        temperature: 0.3,
+        max_tokens: 1024,
+        system,
+        stop_sequences: ['\n\nHuman:', '\n\nAssistant', '</function_calls>'],
+        messages: [titleMessage],
+      };
+
+      try {
+        const response = await this.createResponse(
+          this.getClient(requestOptions),
+          requestOptions,
+          true,
+        );
+        let promptTokens = response?.usage?.input_tokens;
+        let completionTokens = response?.usage?.output_tokens;
+        if (!promptTokens) {
+          promptTokens = this.getTokenCountForMessage(titleMessage);
+          promptTokens += this.getTokenCountForMessage({ role: 'system', content: system });
+        }
+        if (!completionTokens) {
+          completionTokens = this.getTokenCountForMessage(response.content[0]);
+        }
+        await this.recordTokenUsage({
+          model,
+          promptTokens,
+          completionTokens,
+          context: 'title',
+        });
+        const text = response.content[0].text;
+        title = parseParamFromPrompt(text, 'title');
+      } catch (e) {
+        logger.error('[AnthropicClient] There was an issue generating the title', e);
+      }
+    };
+
+    await titleChatCompletion();
+    logger.debug('[AnthropicClient] Convo Title: ' + title);
+    return title;
   }
 }
 

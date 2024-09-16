@@ -1,11 +1,11 @@
 const express = require('express');
-const router = express.Router();
-const { getResponseSender, Constants } = require('librechat-data-provider');
-const { validateTools } = require('~/app');
-const { addTitle } = require('~/server/services/Endpoints/openAI');
+const throttle = require('lodash/throttle');
+const { getResponseSender, Constants, CacheKeys, Time } = require('librechat-data-provider');
 const { initializeClient } = require('~/server/services/Endpoints/gptPlugins');
-const { saveMessage, getConvoTitle, getConvo } = require('~/models');
 const { sendMessage, createOnProgress } = require('~/server/utils');
+const { addTitle } = require('~/server/services/Endpoints/openAI');
+const { saveMessage, updateMessage } = require('~/models');
+const { getLogStores } = require('~/cache');
 const {
   handleAbort,
   createAbortController,
@@ -16,7 +16,10 @@ const {
   buildEndpointOption,
   moderateText,
 } = require('~/server/middleware');
+const { validateTools } = require('~/app');
 const { logger } = require('~/config');
+
+const router = express.Router();
 
 router.use(moderateText);
 router.post('/abort', handleAbort());
@@ -35,14 +38,14 @@ router.post(
       parentMessageId = null,
       overrideParentMessageId = null,
     } = req.body;
+
     logger.debug('[/ask/gptPlugins]', { text, conversationId, ...endpointOption });
-    let metadata;
+
     let userMessage;
+    let userMessagePromise;
     let promptTokens;
     let userMessageId;
     let responseMessageId;
-    let lastSavedTimestamp = 0;
-    let saveDelay = 100;
     const sender = getResponseSender({
       ...endpointOption,
       model: endpointOption.modelOptions.model,
@@ -52,12 +55,13 @@ router.post(
 
     const plugins = [];
 
-    const addMetadata = (data) => (metadata = data);
     const getReqData = (data = {}) => {
       for (let key in data) {
         if (key === 'userMessage') {
           userMessage = data[key];
           userMessageId = data[key].messageId;
+        } else if (key === 'userMessagePromise') {
+          userMessagePromise = data[key];
         } else if (key === 'responseMessageId') {
           responseMessageId = data[key];
         } else if (key === 'promptTokens') {
@@ -68,6 +72,15 @@ router.post(
       }
     };
 
+    const messageCache = getLogStores(CacheKeys.MESSAGES);
+    const throttledCacheSet = throttle(
+      (text) => {
+        messageCache.set(responseMessageId, text, Time.FIVE_MINUTES);
+      },
+      3000,
+      { trailing: false },
+    );
+
     let streaming = null;
     let timer = null;
 
@@ -77,31 +90,11 @@ router.post(
       getPartialText,
     } = createOnProgress({
       onProgress: ({ text: partialText }) => {
-        const currentTimestamp = Date.now();
-
         if (timer) {
           clearTimeout(timer);
         }
 
-        if (currentTimestamp - lastSavedTimestamp > saveDelay) {
-          lastSavedTimestamp = currentTimestamp;
-          saveMessage({
-            messageId: responseMessageId,
-            sender,
-            conversationId,
-            parentMessageId: overrideParentMessageId || userMessageId,
-            text: partialText,
-            model: endpointOption.modelOptions.model,
-            unfinished: true,
-            error: false,
-            plugins,
-            user,
-          });
-        }
-
-        if (saveDelay < 500) {
-          saveDelay = 500;
-        }
+        throttledCacheSet(partialText);
 
         streaming = new Promise((resolve) => {
           timer = setTimeout(() => {
@@ -114,7 +107,11 @@ router.post(
     const pluginMap = new Map();
     const onAgentAction = async (action, runId) => {
       pluginMap.set(runId, action.tool);
-      sendIntermediateMessage(res, { plugins });
+      sendIntermediateMessage(res, {
+        plugins,
+        parentMessageId: userMessage.messageId,
+        messageId: responseMessageId,
+      });
     };
 
     const onToolStart = async (tool, input, runId, parentRunId) => {
@@ -132,7 +129,11 @@ router.post(
       }
       const extraTokens = ':::plugin:::\n';
       plugins.push(latestPlugin);
-      sendIntermediateMessage(res, { plugins }, extraTokens);
+      sendIntermediateMessage(
+        res,
+        { plugins, parentMessageId: userMessage.messageId, messageId: responseMessageId },
+        extraTokens,
+      );
     };
 
     const onToolEnd = async (output, runId) => {
@@ -148,14 +149,10 @@ router.post(
       }
     };
 
-    const onChainEnd = () => {
-      saveMessage({ ...userMessage, user });
-      sendIntermediateMessage(res, { plugins });
-    };
-
     const getAbortData = () => ({
       sender,
       conversationId,
+      userMessagePromise,
       messageId: responseMessageId,
       parentMessageId: overrideParentMessageId ?? userMessageId,
       text: getPartialText(),
@@ -163,11 +160,26 @@ router.post(
       userMessage,
       promptTokens,
     });
-    const { abortController, onStart } = createAbortController(req, res, getAbortData);
+    const { abortController, onStart } = createAbortController(req, res, getAbortData, getReqData);
 
     try {
       endpointOption.tools = await validateTools(user, endpointOption.tools);
       const { client } = await initializeClient({ req, res, endpointOption });
+
+      const onChainEnd = () => {
+        if (!client.skipSaveUserMessage) {
+          saveMessage(
+            req,
+            { ...userMessage, user },
+            { context: 'api/server/routes/ask/gptPlugins.js - onChainEnd' },
+          );
+        }
+        sendIntermediateMessage(res, {
+          plugins,
+          parentMessageId: userMessage.messageId,
+          messageId: responseMessageId,
+        });
+      };
 
       let response = await client.sendMessage(text, {
         user,
@@ -180,15 +192,14 @@ router.post(
         onToolStart,
         onToolEnd,
         onStart,
-        addMetadata,
         getPartialText,
         ...endpointOption,
-        onProgress: progressCallback.call(null, {
+        progressCallback,
+        progressOptions: {
           res,
-          text,
-          parentMessageId: overrideParentMessageId || userMessageId,
+          // parentMessageId: overrideParentMessageId || userMessageId,
           plugins,
-        }),
+        },
         abortController,
       });
 
@@ -196,19 +207,16 @@ router.post(
         response.parentMessageId = overrideParentMessageId;
       }
 
-      if (metadata) {
-        response = { ...response, ...metadata };
-      }
-
       logger.debug('[/ask/gptPlugins]', response);
 
-      response.plugins = plugins.map((p) => ({ ...p, loading: false }));
-      await saveMessage({ ...response, user });
+      const { conversation = {} } = await client.responsePromise;
+      conversation.title =
+        conversation && !conversation.title ? null : conversation?.title || 'New Chat';
 
       sendMessage(res, {
-        title: await getConvoTitle(user, conversationId),
+        title: conversation.title,
         final: true,
-        conversation: await getConvo(user, conversationId),
+        conversation,
         requestMessage: userMessage,
         responseMessage: response,
       });
@@ -220,6 +228,15 @@ router.post(
           response,
           client,
         });
+      }
+
+      response.plugins = plugins.map((p) => ({ ...p, loading: false }));
+      if (response.plugins?.length > 0) {
+        await updateMessage(
+          req,
+          { ...response, user },
+          { context: 'api/server/routes/ask/gptPlugins.js - save plugins used' },
+        );
       }
     } catch (error) {
       const partialText = getPartialText();

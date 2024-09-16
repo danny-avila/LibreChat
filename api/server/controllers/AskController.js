@@ -1,7 +1,9 @@
-const { getResponseSender, Constants } = require('librechat-data-provider');
+const throttle = require('lodash/throttle');
+const { getResponseSender, Constants, CacheKeys, Time } = require('librechat-data-provider');
 const { createAbortController, handleAbortError } = require('~/server/middleware');
 const { sendMessage, createOnProgress } = require('~/server/utils');
-const { saveMessage, getConvo } = require('~/models');
+const { getLogStores } = require('~/cache');
+const { saveMessage } = require('~/models');
 const { logger } = require('~/config');
 
 const AskController = async (req, res, next, initializeClient, addTitle) => {
@@ -16,13 +18,11 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
 
   logger.debug('[AskController]', { text, conversationId, ...endpointOption });
 
-  let metadata;
   let userMessage;
+  let userMessagePromise;
   let promptTokens;
   let userMessageId;
   let responseMessageId;
-  let lastSavedTimestamp = 0;
-  let saveDelay = 100;
   const sender = getResponseSender({
     ...endpointOption,
     model: endpointOption.modelOptions.model,
@@ -31,13 +31,13 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
   const newConvo = !conversationId;
   const user = req.user.id;
 
-  const addMetadata = (data) => (metadata = data);
-
   const getReqData = (data = {}) => {
     for (let key in data) {
       if (key === 'userMessage') {
         userMessage = data[key];
         userMessageId = data[key].messageId;
+      } else if (key === 'userMessagePromise') {
+        userMessagePromise = data[key];
       } else if (key === 'responseMessageId') {
         responseMessageId = data[key];
       } else if (key === 'promptTokens') {
@@ -52,30 +52,30 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
 
   try {
     const { client } = await initializeClient({ req, res, endpointOption });
-
+    const messageCache = getLogStores(CacheKeys.MESSAGES);
     const { onProgress: progressCallback, getPartialText } = createOnProgress({
-      onProgress: ({ text: partialText }) => {
-        const currentTimestamp = Date.now();
-
-        if (currentTimestamp - lastSavedTimestamp > saveDelay) {
-          lastSavedTimestamp = currentTimestamp;
-          saveMessage({
+      onProgress: throttle(
+        ({ text: partialText }) => {
+          /*
+              const unfinished = endpointOption.endpoint === EModelEndpoint.google ? false : true;
+          messageCache.set(responseMessageId, {
             messageId: responseMessageId,
             sender,
             conversationId,
             parentMessageId: overrideParentMessageId ?? userMessageId,
             text: partialText,
             model: client.modelOptions.model,
-            unfinished: true,
+            unfinished,
             error: false,
             user,
-          });
-        }
+          }, Time.FIVE_MINUTES);
+          */
 
-        if (saveDelay < 500) {
-          saveDelay = 500;
-        }
-      },
+          messageCache.set(responseMessageId, partialText, Time.FIVE_MINUTES);
+        },
+        3000,
+        { trailing: false },
+      ),
     });
 
     getText = getPartialText;
@@ -83,6 +83,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
     const getAbortData = () => ({
       sender,
       conversationId,
+      userMessagePromise,
       messageId: responseMessageId,
       parentMessageId: overrideParentMessageId ?? userMessageId,
       text: getPartialText(),
@@ -90,7 +91,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       promptTokens,
     });
 
-    const { abortController, onStart } = createAbortController(req, res, getAbortData);
+    const { abortController, onStart } = createAbortController(req, res, getAbortData, getReqData);
 
     res.on('close', () => {
       logger.debug('[AskController] Request closed');
@@ -113,28 +114,18 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       overrideParentMessageId,
       getReqData,
       onStart,
-      addMetadata,
       abortController,
-      onProgress: progressCallback.call(null, {
+      progressCallback,
+      progressOptions: {
         res,
-        text,
-        parentMessageId: overrideParentMessageId || userMessageId,
-      }),
+        // parentMessageId: overrideParentMessageId || userMessageId,
+      },
     };
 
     let response = await client.sendMessage(text, messageOptions);
-
-    if (overrideParentMessageId) {
-      response.parentMessageId = overrideParentMessageId;
-    }
-
-    if (metadata) {
-      response = { ...response, ...metadata };
-    }
-
     response.endpoint = endpointOption.endpoint;
 
-    const conversation = await getConvo(user, conversationId);
+    const { conversation = {} } = await client.responsePromise;
     conversation.title =
       conversation && !conversation.title ? null : conversation?.title || 'New Chat';
 
@@ -154,10 +145,18 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       });
       res.end();
 
-      await saveMessage({ ...response, user });
+      await saveMessage(
+        req,
+        { ...response, user },
+        { context: 'api/server/controllers/AskController.js - response end' },
+      );
     }
 
-    await saveMessage(userMessage);
+    if (!client.skipSaveUserMessage) {
+      await saveMessage(req, userMessage, {
+        context: 'api/server/controllers/AskController.js - don\'t skip saving user message',
+      });
+    }
 
     if (addTitle && parentMessageId === Constants.NO_PARENT && newConvo) {
       addTitle(req, {

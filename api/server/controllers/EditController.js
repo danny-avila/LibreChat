@@ -1,7 +1,9 @@
-const { getResponseSender } = require('librechat-data-provider');
+const throttle = require('lodash/throttle');
+const { getResponseSender, CacheKeys, Time } = require('librechat-data-provider');
 const { createAbortController, handleAbortError } = require('~/server/middleware');
 const { sendMessage, createOnProgress } = require('~/server/utils');
-const { saveMessage, getConvo } = require('~/models');
+const { getLogStores } = require('~/cache');
+const { saveMessage } = require('~/models');
 const { logger } = require('~/config');
 
 const EditController = async (req, res, next, initializeClient) => {
@@ -25,11 +27,9 @@ const EditController = async (req, res, next, initializeClient) => {
     ...endpointOption,
   });
 
-  let metadata;
   let userMessage;
+  let userMessagePromise;
   let promptTokens;
-  let lastSavedTimestamp = 0;
-  let saveDelay = 100;
   const sender = getResponseSender({
     ...endpointOption,
     model: endpointOption.modelOptions.model,
@@ -38,11 +38,12 @@ const EditController = async (req, res, next, initializeClient) => {
   const userMessageId = parentMessageId;
   const user = req.user.id;
 
-  const addMetadata = (data) => (metadata = data);
   const getReqData = (data = {}) => {
     for (let key in data) {
       if (key === 'userMessage') {
         userMessage = data[key];
+      } else if (key === 'userMessagePromise') {
+        userMessagePromise = data[key];
       } else if (key === 'responseMessageId') {
         responseMessageId = data[key];
       } else if (key === 'promptTokens') {
@@ -51,35 +52,35 @@ const EditController = async (req, res, next, initializeClient) => {
     }
   };
 
+  const messageCache = getLogStores(CacheKeys.MESSAGES);
   const { onProgress: progressCallback, getPartialText } = createOnProgress({
     generation,
-    onProgress: ({ text: partialText }) => {
-      const currentTimestamp = Date.now();
-
-      if (currentTimestamp - lastSavedTimestamp > saveDelay) {
-        lastSavedTimestamp = currentTimestamp;
-        saveMessage({
+    onProgress: throttle(
+      ({ text: partialText }) => {
+        /*
+          const unfinished = endpointOption.endpoint === EModelEndpoint.google ? false : true;
+        {
           messageId: responseMessageId,
           sender,
           conversationId,
           parentMessageId: overrideParentMessageId ?? userMessageId,
           text: partialText,
           model: endpointOption.modelOptions.model,
-          unfinished: true,
+          unfinished,
           isEdited: true,
           error: false,
           user,
-        });
-      }
-
-      if (saveDelay < 500) {
-        saveDelay = 500;
-      }
-    },
+        } */
+        messageCache.set(responseMessageId, partialText, Time.FIVE_MINUTES);
+      },
+      3000,
+      { trailing: false },
+    ),
   });
 
   const getAbortData = () => ({
     conversationId,
+    userMessagePromise,
     messageId: responseMessageId,
     sender,
     parentMessageId: overrideParentMessageId ?? userMessageId,
@@ -88,7 +89,7 @@ const EditController = async (req, res, next, initializeClient) => {
     promptTokens,
   });
 
-  const { abortController, onStart } = createAbortController(req, res, getAbortData);
+  const { abortController, onStart } = createAbortController(req, res, getAbortData, getReqData);
 
   res.on('close', () => {
     logger.debug('[EditController] Request closed');
@@ -118,20 +119,15 @@ const EditController = async (req, res, next, initializeClient) => {
       overrideParentMessageId,
       getReqData,
       onStart,
-      addMetadata,
       abortController,
-      onProgress: progressCallback.call(null, {
+      progressCallback,
+      progressOptions: {
         res,
-        text,
-        parentMessageId: overrideParentMessageId || userMessageId,
-      }),
+        // parentMessageId: overrideParentMessageId || userMessageId,
+      },
     });
 
-    if (metadata) {
-      response = { ...response, ...metadata };
-    }
-
-    const conversation = await getConvo(user, conversationId);
+    const { conversation = {} } = await client.responsePromise;
     conversation.title =
       conversation && !conversation.title ? null : conversation?.title || 'New Chat';
 
@@ -149,7 +145,11 @@ const EditController = async (req, res, next, initializeClient) => {
       });
       res.end();
 
-      await saveMessage({ ...response, user });
+      await saveMessage(
+        req,
+        { ...response, user },
+        { context: 'api/server/controllers/EditController.js - response end' },
+      );
     }
   } catch (error) {
     const partialText = getPartialText();

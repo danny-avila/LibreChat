@@ -182,3 +182,159 @@
 .rotate {
   animation: tuning 2.1s 1;
 }
+
+@-webkit-keyframes slideUpAndFade {
+  0% {
+    opacity:0;
+    -webkit-transform:translateY(2px);
+    transform:translateY(2px)
+  }
+  to {
+    opacity:1;
+    -webkit-transform:translateY(0);
+    transform:translateY(0)
+  }
+}
+@keyframes slideUpAndFade {
+  0% {
+    opacity:0;
+    -webkit-transform:translateY(2px);
+    transform:translateY(2px)
+  }
+  to {
+    opacity:1;
+    -webkit-transform:translateY(0);
+    transform:translateY(0)
+  }
+}
+.radix-side-bottom\:animate-slideUpAndFade[data-side=bottom] {
+  -webkit-animation:slideUpAndFade .4s cubic-bezier(.16,1,.3,1);
+  animation:slideUpAndFade .4s cubic-bezier(.16,1,.3,1)
+}
+@-webkit-keyframes slideRightAndFade {
+  0% {
+    opacity:0;
+    -webkit-transform:translateX(-2px);
+    transform:translateX(-2px)
+  }
+  to {
+    opacity:1;
+    -webkit-transform:translateX(0);
+    transform:translateX(0)
+  }
+}
+@keyframes slideRightAndFade {
+  0% {
+    opacity:0;
+    -webkit-transform:translateX(-2px);
+    transform:translateX(-2px)
+  }
+  to {
+    opacity:1;
+    -webkit-transform:translateX(0);
+    transform:translateX(0)
+  }
+}
+.radix-side-left\:animate-slideRightAndFade[data-side=left] {
+  -webkit-animation:slideRightAndFade .4s cubic-bezier(.16,1,.3,1);
+  animation:slideRightAndFade .4s cubic-bezier(.16,1,.3,1)
+}
+@keyframes slideLeftAndFade {
+  0% {
+    opacity:0;
+    -webkit-transform:translateX(2px);
+    transform:translateX(2px)
+  }
+  to {
+    opacity:1;
+    -webkit-transform:translateX(0);
+    transform:translateX(0)
+  }
+}
+.radix-side-right\:animate-slideLeftAndFade[data-side=right] {
+  -webkit-animation:slideLeftAndFade .4s cubic-bezier(.16,1,.3,1);
+  animation:slideLeftAndFade .4s cubic-bezier(.16,1,.3,1)
+}
+@keyframes slideDownAndFade {
+  0% {
+    opacity:0;
+    -webkit-transform:translateY(-2px);
+    transform:translateY(-2px)
+  }
+  to {
+    opacity:1;
+    -webkit-transform:translateY(0);
+    transform:translateY(0)
+  }
+}
+.radix-side-top\:animate-slideDownAndFade[data-side=top] {
+  -webkit-animation:slideDownAndFade .4s cubic-bezier(.16,1,.3,1);
+  animation:slideDownAndFade .4s cubic-bezier(.16,1,.3,1)
+}
+
+.azure-bg-color {
+  background: linear-gradient(0.375turn, #61bde2, #4389d0);
+}
+
+@keyframes slowPulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.slow-pulse {
+  animation: slowPulse 2.5s ease-in-out infinite;
+}
+
+.scrollbar-gutter-stable {
+  scrollbar-gutter: stable;
+}
+
+/* Styles for Chrome scrollbar */
+.chrome-scrollbar::-webkit-scrollbar {
+  width: 12px;  /* Increase the width of the scrollbar */
+}
+
+.chrome-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);  /* Color of the scroll thumb */
+  border-radius: 6px;  /* Rounded corners on the scroll thumb */
+  border: 2px solid transparent;  /* Creates padding around scroll thumb */
+  background-clip: padding-box;  /* Prevents background color from leaking outside the border */
+}
+
+.chrome-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.3);  /* Darker color when hovering */
+}
+
+.chrome-scrollbar::-webkit-scrollbar-track {
+  background-color: transparent;  /* Color of the tracking area */
+}
+
+.sp-preview-container {
+  @apply flex h-full w-full grow flex-col justify-center;
+}
+
+.sp-preview {
+  @apply flex h-full w-full grow flex-col justify-center;
+}
+
+.sp-preview-iframe {
+  @apply grow;
+}
+
+.sp-wrapper {
+  @apply flex h-full w-full grow flex-col justify-center;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-3px); }
+  20%, 40%, 60%, 80% { transform: translateX(3px); }
+}
+
+.shake {
+  animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+}

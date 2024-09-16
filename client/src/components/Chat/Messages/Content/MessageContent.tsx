@@ -1,27 +1,63 @@
-import { Fragment, Suspense } from 'react';
-import type { TResPlugin, TFile } from 'librechat-data-provider';
-import type { TMessageContentProps, TText, TDisplayProps } from '~/common';
-import FileContainer from '~/components/Chat/Input/Files/FileContainer';
+import { Fragment, Suspense, useMemo } from 'react';
+import type { TMessage, TResPlugin } from 'librechat-data-provider';
+import type { TMessageContentProps, TDisplayProps } from '~/common';
 import Plugin from '~/components/Messages/Content/Plugin';
 import Error from '~/components/Messages/Content/Error';
 import { DelayedRender } from '~/components/ui';
-import { useAuthContext } from '~/hooks';
+import { useChatContext } from '~/Providers';
 import EditMessage from './EditMessage';
+import { useLocalize } from '~/hooks';
 import Container from './Container';
 import Markdown from './Markdown';
 import { cn } from '~/utils';
-import Image from './Image';
 
-export const ErrorMessage = ({ text }: TText) => {
-  const { logout } = useAuthContext();
-
-  if (text.includes('ban')) {
-    logout();
-    return null;
+export const ErrorMessage = ({
+  text,
+  message,
+  className = '',
+}: Pick<TDisplayProps, 'text' | 'className'> & {
+  message?: TMessage;
+}) => {
+  const localize = useLocalize();
+  if (text === 'Error connecting to server, try refreshing the page.') {
+    console.log('error message', message);
+    return (
+      <Suspense
+        fallback={
+          <div className="text-message mb-[0.625rem] flex min-h-[20px] flex-col items-start gap-3 overflow-x-auto">
+            <div className="markdown prose dark:prose-invert light w-full break-words dark:text-gray-100">
+              <div className="absolute">
+                <p className="submitting relative">
+                  <span className="result-thinking" />
+                </p>
+              </div>
+            </div>
+          </div>
+        }
+      >
+        <DelayedRender delay={5500}>
+          <Container message={message}>
+            <div
+              className={cn(
+                'rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200',
+                className,
+              )}
+            >
+              {localize('com_ui_error_connection')}
+            </div>
+          </Container>
+        </DelayedRender>
+      </Suspense>
+    );
   }
   return (
-    <Container>
-      <div className="rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200">
+    <Container message={message}>
+      <div
+        className={cn(
+          'rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200',
+          className,
+        )}
+      >
         <Error text={text} />
       </div>
     </Container>
@@ -30,40 +66,27 @@ export const ErrorMessage = ({ text }: TText) => {
 
 // Display Message Component
 const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplayProps) => {
-  const files: TFile[] = [];
-  const imageFiles = message?.files
-    ? message.files.filter((file) => {
-      if (file.type && file.type.startsWith('image/')) {
-        return true;
-      }
-
-      files.push(file);
-    })
-    : null;
+  const { isSubmitting, latestMessage } = useChatContext();
+  const showCursorState = useMemo(
+    () => showCursor === true && isSubmitting,
+    [showCursor, isSubmitting],
+  );
+  const isLatestMessage = useMemo(
+    () => message.messageId === latestMessage?.messageId,
+    [message.messageId, latestMessage?.messageId],
+  );
   return (
-    <Container>
-      {files.length > 0 && files.map((file) => <FileContainer key={file.file_id} file={file} />)}
-      {imageFiles &&
-        imageFiles.map((file) => (
-          <Image
-            key={file.file_id}
-            imagePath={file?.preview ?? file.filepath ?? ''}
-            height={file.height ?? 1920}
-            width={file.width ?? 1080}
-            altText={file.filename ?? 'Uploaded Image'}
-            // n={imageFiles.length}
-            // i={i}
-          />
-        ))}
+    <Container message={message}>
       <div
         className={cn(
-          showCursor && !!text?.length ? 'result-streaming' : '',
-          'markdown prose dark:prose-invert light w-full break-words',
+          isSubmitting ? 'submitting' : '',
+          showCursorState && !!text.length ? 'result-streaming' : '',
+          'markdown prose message-content dark:prose-invert light w-full break-words',
           isCreatedByUser ? 'whitespace-pre-wrap dark:text-gray-20' : 'dark:text-gray-100',
         )}
       >
         {!isCreatedByUser ? (
-          <Markdown content={text} message={message} showCursor={showCursor} />
+          <Markdown content={text} showCursor={showCursorState} isLatestMessage={isLatestMessage} />
         ) : (
           <>{text}</>
         )}
@@ -73,8 +96,11 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
 };
 
 // Unfinished Message Component
-export const UnfinishedMessage = () => (
-  <ErrorMessage text="The response is incomplete; it's either still processing, was cancelled, or censoreded. Refresh or try a different prompt." />
+export const UnfinishedMessage = ({ message }: { message: TMessage }) => (
+  <ErrorMessage
+    message={message}
+    text="The response is incomplete; it's either still processing, was cancelled, or censored. Refresh or try a different prompt."
+  />
 );
 
 // Content Component
@@ -88,7 +114,7 @@ const MessageContent = ({
   ...props
 }: TMessageContentProps) => {
   if (error) {
-    return <ErrorMessage text={text} />;
+    return <ErrorMessage message={props.message} text={text} />;
   } else if (edit) {
     return <EditMessage text={text} isSubmitting={isSubmitting} {...props} />;
   } else {
@@ -145,7 +171,7 @@ const MessageContent = ({
           {!isSubmitting && unfinished && (
             <Suspense>
               <DelayedRender delay={250}>
-                <UnfinishedMessage key={`unfinished-${messageId}-${idx}`} />
+                <UnfinishedMessage message={message} key={`unfinished-${messageId}-${idx}`} />
               </DelayedRender>
             </Suspense>
           )}

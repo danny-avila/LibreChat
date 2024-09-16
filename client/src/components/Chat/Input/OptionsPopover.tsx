@@ -13,6 +13,7 @@ type TOptionsPopoverProps = {
   saveAsPreset: () => void;
   closePopover: () => void;
   PopoverButtons: ReactNode;
+  presetsDisabled: boolean;
 };
 
 export default function OptionsPopover({
@@ -22,6 +23,7 @@ export default function OptionsPopover({
   saveAsPreset,
   closePopover,
   PopoverButtons,
+  presetsDisabled,
 }: TOptionsPopoverProps) {
   const popoverRef = useRef(null);
   useOnClickOutside(
@@ -31,19 +33,19 @@ export default function OptionsPopover({
     (_target) => {
       const target = _target as Element;
       if (
-        target?.id === 'presets-button' ||
-        (target?.parentNode instanceof Element && target.parentNode.id === 'presets-button')
+        target.id === 'presets-button' ||
+        (target.parentNode instanceof Element && target.parentNode.id === 'presets-button')
       ) {
         return false;
       }
-      const tagName = target?.tagName;
+      const tagName = target.tagName;
       return tagName === 'path' || tagName === 'svg' || tagName === 'circle';
     },
   );
 
   const localize = useLocalize();
   const cardStyle =
-    'shadow-xl rounded-md min-w-[75px] font-normal bg-white border-black/10 border dark:bg-gray-700 text-black dark:text-white ';
+    'shadow-xl rounded-md min-w-[75px] font-normal bg-white border-black/10 border dark:bg-gray-700 text-black dark:text-white';
 
   if (!visible) {
     return null;
@@ -56,24 +58,26 @@ export default function OptionsPopover({
           <div
             className={cn(
               cardStyle,
-              'dark:bg-gray-800',
+              'dark:bg-gray-700',
               'border-d-0 flex w-full flex-col overflow-hidden rounded-none border-s-0 border-t bg-white px-0 pb-[10px] dark:border-white/10 md:rounded-md md:border lg:w-[736px]',
             )}
           >
-            <div className="flex w-full items-center bg-gray-50 px-2 py-2 dark:bg-gray-800/60">
-              <Button
-                type="button"
-                className="h-auto justify-start rounded-md bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-gray-100 hover:text-black dark:bg-transparent dark:text-white dark:hover:bg-gray-700"
-                onClick={saveAsPreset}
-              >
-                <Save className="mr-1 w-[14px]" />
-                {localize('com_endpoint_save_as_preset')}
-              </Button>
+            <div className="flex w-full items-center bg-gray-50 px-2 py-2 dark:bg-gray-700">
+              {presetsDisabled ? null : (
+                <Button
+                  type="button"
+                  className="h-auto w-[150px] justify-start rounded-md border border-gray-300/50 bg-transparent px-2 py-1 text-xs font-normal text-black hover:bg-gray-100 hover:text-black focus-visible:ring-1 focus-visible:ring-ring-primary dark:border-gray-600 dark:bg-transparent dark:text-white dark:hover:bg-gray-600 dark:focus-visible:ring-white"
+                  onClick={saveAsPreset}
+                >
+                  <Save className="mr-1 w-[14px]" />
+                  {localize('com_endpoint_save_as_preset')}
+                </Button>
+              )}
               {PopoverButtons}
               <Button
                 type="button"
                 className={cn(
-                  'ml-auto h-auto bg-transparent px-3 py-2 text-xs font-medium font-normal text-black hover:bg-gray-100 hover:text-black dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white',
+                  'ml-auto h-auto bg-transparent px-3 py-2 text-xs font-normal text-black hover:bg-gray-100 hover:text-black dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white',
                   removeFocusOutlines,
                 )}
                 onClick={closePopover}

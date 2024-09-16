@@ -1,13 +1,15 @@
 import { convoData } from './convos.fakeData';
 import {
-  groupConversationsByDate,
+  dateKeys,
   addConversation,
-  updateConversation,
   updateConvoFields,
+  updateConversation,
   deleteConversation,
   findPageForConversation,
+  groupConversationsByDate,
 } from './convos';
 import type { TConversation, ConversationData } from 'librechat-data-provider';
+import { normalizeData } from './collection';
 
 describe('Conversation Utilities', () => {
   describe('groupConversationsByDate', () => {
@@ -20,13 +22,13 @@ describe('Conversation Utilities', () => {
         { conversationId: '5', updatedAt: new Date(Date.now() - 86400000 * 8).toISOString() }, // 8 days ago (previous 30 days)
       ];
       const grouped = groupConversationsByDate(conversations as TConversation[]);
-      expect(grouped[0][0]).toBe('Today');
+      expect(grouped[0][0]).toBe(dateKeys.today);
       expect(grouped[0][1]).toHaveLength(1);
-      expect(grouped[1][0]).toBe('Yesterday');
+      expect(grouped[1][0]).toBe(dateKeys.yesterday);
       expect(grouped[1][1]).toHaveLength(1);
-      expect(grouped[2][0]).toBe('Previous 7 days');
+      expect(grouped[2][0]).toBe(dateKeys.previous7Days);
       expect(grouped[2][1]).toHaveLength(1);
-      expect(grouped[3][0]).toBe('Previous 30 days');
+      expect(grouped[3][0]).toBe(dateKeys.previous30Days);
       expect(grouped[3][1]).toHaveLength(1);
       expect(grouped[4][0]).toBe(' 2023');
       expect(grouped[4][1]).toHaveLength(1);
@@ -145,11 +147,11 @@ describe('Conversation Utilities', () => {
           },
         ],
       };
-      const { pageIndex, convIndex } = findPageForConversation(data as ConversationData, {
+      const { pageIndex, index } = findPageForConversation(data as ConversationData, {
         conversationId: '2',
       });
       expect(pageIndex).toBe(0);
-      expect(convIndex).toBe(1);
+      expect(index).toBe(1);
     });
   });
 });
@@ -218,11 +220,180 @@ describe('Conversation Utilities with Fake Data', () => {
   describe('findPageForConversation', () => {
     it('finds the correct page and index for a given conversation in fake data', () => {
       const targetConversation = convoData.pages[0].conversations[0];
-      const { pageIndex, convIndex } = findPageForConversation(convoData, {
+      const { pageIndex, index } = findPageForConversation(convoData, {
         conversationId: targetConversation.conversationId as string,
       });
       expect(pageIndex).toBeGreaterThanOrEqual(0);
-      expect(convIndex).toBeGreaterThanOrEqual(0);
+      expect(index).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  describe('normalizeConversationData', () => {
+    it('normalizes the number of items on each page after data removal', () => {
+      // Create test data:
+      // Generates 15 conversation items, each with a unique conversationId and an updatedAt timestamp set to a different day.
+      // { conversationId: '1', updatedAt: new Date(Date.now() - 86400000 * i).toISOString() }
+      const conversations = Array.from({ length: 15 }, (_, i) => ({
+        conversationId: (i + 1).toString(),
+        updatedAt: new Date(Date.now() - 86400000 * i).toISOString(),
+      }));
+
+      // Paginate Data:
+      // Divides the 15 conversation items into pages, with each page containing up to 5 items (pageSize is set to 5). This results in 3 pages.
+      const pageSize = 5;
+      const totalPageNumber = Math.ceil(conversations.length / pageSize);
+
+      const paginatedData = Array.from({ length: totalPageNumber }, (_, index) => ({
+        conversations: conversations.slice(index * pageSize, (index + 1) * pageSize),
+        pages: totalPageNumber,
+        pageNumber: index + 1,
+        pageSize,
+      }));
+
+      const testData = { pages: paginatedData, pageParams: [null, 2, 3] };
+
+      // Removes one item from the first page, resulting in the first page having 4 items, while the second and third pages still have 5 items each.
+      testData.pages[0].conversations.splice(1, 1);
+      expect(testData.pages[0].conversations).toHaveLength(4);
+      expect(testData.pages[1].conversations).toHaveLength(5);
+      expect(testData.pages[2].conversations).toHaveLength(5);
+
+      // Normalize Data:
+      // Calls the normalizeData function to ensure that each page contains exactly 5 items, redistributing the items across the pages as needed.
+      const normalizedData = normalizeData(testData, 'conversations', pageSize);
+
+      // Verify Results:
+      // Asserts that the number of conversation data is 5 except for the last page,
+      // that the number of conversation data is 4 only for the last page,
+      // and that the conversation ids are in the expected order.
+      expect(normalizedData.pages[0].conversations).toHaveLength(5);
+      expect(normalizedData.pages[0].conversations[0].conversationId).toBe('1');
+      expect(normalizedData.pages[0].conversations[4].conversationId).toBe('6');
+
+      expect(normalizedData.pages[1].conversations).toHaveLength(5);
+      expect(normalizedData.pages[1].conversations[0].conversationId).toBe('7');
+      expect(normalizedData.pages[1].conversations[4].conversationId).toBe('11');
+
+      expect(normalizedData.pages[2].conversations).toHaveLength(4);
+      expect(normalizedData.pages[2].conversations[0].conversationId).toBe('12');
+      expect(normalizedData.pages[2].conversations[3].conversationId).toBe('15');
+    });
+
+    it('normalizes the number of items on each page after data addition', () => {
+      // Create test data:
+      // Generates 15 conversation items, each with a unique conversationId and an updatedAt timestamp set to a different day.
+      // { conversationId: '1', updatedAt: new Date(Date.now() - 86400000 * i).toISOString() }
+      const conversations = Array.from({ length: 15 }, (_, i) => ({
+        conversationId: (i + 1).toString(),
+        updatedAt: new Date(Date.now() - 86400000 * i).toISOString(),
+      }));
+
+      // Paginate Data:
+      // Divides the 15 conversation items into pages,
+      // with each page containing up to 5 items (pageSize is set to 5). This results in 3 pages.
+      const pageSize = 5;
+      const totalPageNumber = Math.ceil(conversations.length / pageSize);
+
+      const paginatedData = Array.from({ length: totalPageNumber }, (_, index) => ({
+        conversations: conversations.slice(index * pageSize, (index + 1) * pageSize),
+        pages: totalPageNumber,
+        pageNumber: index + 1,
+        pageSize,
+      }));
+
+      const testData = { pages: paginatedData, pageParams: [null, 2, 3] };
+
+      // Inserts a new conversation item at the beginning of the first page,
+      testData.pages[0].conversations.unshift({
+        conversationId: '16',
+        updatedAt: new Date().toISOString(),
+      });
+
+      // resulting in the first page having 6 items,
+      // while the second and third pages still have 5 items each.
+      expect(testData.pages[0].conversations).toHaveLength(6);
+      expect(testData.pages[1].conversations).toHaveLength(5);
+      expect(testData.pages[2].conversations).toHaveLength(5);
+      expect(testData.pages[2].conversations[4].conversationId).toBe('15');
+      expect(testData.pages).toHaveLength(3);
+
+      const normalizedData = normalizeData(testData, 'conversations', pageSize);
+
+      // Verify Results:
+      // Asserts that after normalization, each page contains the correct number of items (5 items per page).
+      expect(normalizedData.pages[0].conversations).toHaveLength(5);
+      expect(normalizedData.pages[1].conversations).toHaveLength(5);
+      expect(normalizedData.pages[2].conversations).toHaveLength(5);
+      expect(normalizedData.pages).toHaveLength(3);
+
+      // Checks that the items are in the expected order, ensuring that the conversationId values are correctly distributed across the pages.
+
+      expect(normalizedData.pages[0].conversations[0].conversationId).toBe('16');
+      expect(normalizedData.pages[0].conversations[4].conversationId).toBe('4');
+
+      expect(normalizedData.pages[1].conversations[0].conversationId).toBe('5');
+      expect(normalizedData.pages[1].conversations[4].conversationId).toBe('9');
+
+      expect(normalizedData.pages[2].conversations[0].conversationId).toBe('10');
+      expect(normalizedData.pages[2].conversations[4].conversationId).toBe('14');
+      expect(normalizedData.pageParams).toHaveLength(3);
+    });
+
+    it('returns empty data when there is no data', () => {
+      const normalizedData = normalizeData(
+        { pages: [{ conversations: [], pageNumber: 1, pageSize: 5, pages: 1 }], pageParams: [] },
+        'conversations',
+        5,
+      );
+
+      console.log(normalizedData);
+
+      expect(normalizedData.pages[0].conversations).toHaveLength(0);
+    });
+
+    it('does not normalize data when not needed', () => {
+      const normalizedData = normalizeData(
+        { pages: [{ conversations: ['1'], pageNumber: 1, pageSize: 5, pages: 1 }], pageParams: [] },
+        'conversations',
+        5,
+      );
+
+      expect(normalizedData.pages[0].conversations).toHaveLength(1);
+    });
+
+    it('deletes pages that have no data as a result of normalization', () => {
+      const conversations = Array.from({ length: 15 }, (_, i) => ({
+        conversationId: (i + 1).toString(),
+        updatedAt: new Date(Date.now() - 86400000 * i).toISOString(),
+      }));
+
+      const pageSize = 5;
+      const totalPageNumber = Math.ceil(conversations.length / pageSize);
+
+      const paginatedData = Array.from({ length: totalPageNumber }, (_, index) => ({
+        conversations: conversations.slice(index * pageSize, (index + 1) * pageSize),
+        pages: totalPageNumber,
+        pageNumber: index + 1,
+        pageSize,
+      }));
+
+      const testData = { pages: paginatedData, pageParams: [null, 2, 3] };
+
+      // Removes all data from the last page, resulting in the last page having 0 items.
+      testData.pages[2].conversations = [];
+      expect(testData.pages[0].conversations).toHaveLength(5);
+      expect(testData.pages[1].conversations).toHaveLength(5);
+      expect(testData.pages[2].conversations).toHaveLength(0);
+      expect(testData.pageParams).toHaveLength(3);
+
+      const normalizedData = normalizeData(testData, 'conversations', pageSize);
+
+      // Verify Results:
+      // Asserts that the last page is removed after normalization, leaving only the first and second pages.
+      expect(normalizedData.pages).toHaveLength(2);
+      expect(normalizedData.pages[0].conversations).toHaveLength(5);
+      expect(normalizedData.pages[1].conversations).toHaveLength(5);
+      expect(normalizedData.pageParams).toHaveLength(2);
     });
   });
 });

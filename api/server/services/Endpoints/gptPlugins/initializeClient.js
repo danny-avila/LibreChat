@@ -3,7 +3,7 @@ const {
   mapModelToAzureConfig,
   resolveHeaders,
 } = require('librechat-data-provider');
-const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
+const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/UserService');
 const { isEnabled, isUserProvided } = require('~/server/utils');
 const { getAzureCredentials } = require('~/utils');
 const { PluginsClient } = require('~/app');
@@ -49,18 +49,8 @@ const initializeClient = async ({ req, res, endpointOption }) => {
 
   let userValues = null;
   if (expiresAt && (userProvidesKey || userProvidesURL)) {
-    checkUserKeyExpiry(
-      expiresAt,
-      'Your OpenAI API values have expired. Please provide them again.',
-    );
-    userValues = await getUserKey({ userId: req.user.id, name: endpoint });
-    try {
-      userValues = JSON.parse(userValues);
-    } catch (e) {
-      throw new Error(
-        `Invalid JSON provided for ${endpoint} user values. Please provide them again.`,
-      );
-    }
+    checkUserKeyExpiry(expiresAt, endpoint);
+    userValues = await getUserKeyValues({ userId: req.user.id, name: endpoint });
   }
 
   let apiKey = userProvidesKey ? userValues?.apiKey : credentials[endpoint];
@@ -96,6 +86,9 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     clientOptions.titleModel = azureConfig.titleModel;
     clientOptions.titleMethod = azureConfig.titleMethod ?? 'completion';
 
+    const azureRate = modelName.includes('gpt-4') ? 30 : 17;
+    clientOptions.streamRate = azureConfig.streamRate ?? azureRate;
+
     const groupName = modelGroupMap[modelName].group;
     clientOptions.addParams = azureConfig.groupMap[groupName].addParams;
     clientOptions.dropParams = azureConfig.groupMap[groupName].dropParams;
@@ -106,6 +99,19 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   } else if (useAzure || (apiKey && apiKey.includes('{"azure') && !clientOptions.azure)) {
     clientOptions.azure = userProvidesKey ? JSON.parse(userValues.apiKey) : getAzureCredentials();
     apiKey = clientOptions.azure.azureOpenAIApiKey;
+  }
+
+  /** @type {undefined | TBaseEndpoint} */
+  const pluginsConfig = req.app.locals[EModelEndpoint.gptPlugins];
+
+  if (!useAzure && pluginsConfig) {
+    clientOptions.streamRate = pluginsConfig.streamRate;
+  }
+
+  /** @type {undefined | TBaseEndpoint} */
+  const allConfig = req.app.locals.all;
+  if (allConfig) {
+    clientOptions.streamRate = allConfig.streamRate;
   }
 
   if (!apiKey) {

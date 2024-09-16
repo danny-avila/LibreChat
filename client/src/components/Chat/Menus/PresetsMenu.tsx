@@ -4,7 +4,7 @@ import { Content, Portal, Root, Trigger } from '@radix-ui/react-popover';
 import { EditPresetDialog, PresetItems } from './Presets';
 import { useLocalize, usePresets } from '~/hooks';
 import { useChatContext } from '~/Providers';
-import { cn } from '~/utils';
+import { TooltipAnchor } from '~/components';
 
 const PresetsMenu: FC = () => {
   const localize = useLocalize();
@@ -25,18 +25,17 @@ const PresetsMenu: FC = () => {
   return (
     <Root>
       <Trigger asChild>
-        <button
-          className={cn(
-            'pointer-cursor relative flex flex-col rounded-md border border-black/10 bg-white text-left focus:outline-none focus:ring-0 focus:ring-offset-0 dark:border-white/20 dark:bg-gray-800 sm:text-sm',
-            'hover:bg-gray-50 radix-state-open:bg-gray-50 dark:hover:bg-black/10 dark:radix-state-open:bg-black/20',
-            'z-50 flex h-[40px] min-w-4 flex-none items-center justify-center px-3 focus:ring-0 focus:ring-offset-0',
-          )}
+        <TooltipAnchor
           id="presets-button"
+          aria-label={localize('com_endpoint_examples')}
+          description={localize('com_endpoint_examples')}
+          tabIndex={0}
+          role="button"
           data-testid="presets-button"
-          title={localize('com_endpoint_examples')}
+          className="inline-flex size-10 items-center justify-center rounded-lg border border-border-light bg-transparent text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
         >
-          <BookCopy className="icon-sm" id="presets-button" />
-        </button>
+          <BookCopy size={16} aria-label="Preset Icon" />
+        </TooltipAnchor>
       </Trigger>
       <Portal>
         <div
@@ -52,7 +51,7 @@ const PresetsMenu: FC = () => {
           <Content
             side="bottom"
             align="center"
-            className="mt-2 max-h-[495px] overflow-x-hidden rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800 dark:text-white md:min-w-[400px]"
+            className="mt-2 max-h-[495px] overflow-x-hidden rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-700 dark:text-white md:min-w-[400px]"
           >
             <PresetItems
               presets={presets}
