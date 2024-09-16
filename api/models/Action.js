@@ -1,7 +1,14 @@
+const { logger } = require('~/config');
 const mongoose = require('mongoose');
 const actionSchema = require('./schema/action');
 
 const Action = mongoose.model('action', actionSchema);
+
+Action.on('index', (error) => {
+  if (error) {
+    logger.error(`Failed to create Action index ${error}`);
+  }
+});
 
 /**
  * Update an action with new data without overwriting existing properties,

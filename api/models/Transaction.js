@@ -164,6 +164,12 @@ transactionSchema.methods.calculateStructuredTokenValue = function () {
 
 const Transaction = mongoose.model('Transaction', transactionSchema);
 
+Transaction.on('index', (error) => {
+  if (error) {
+    logger.error(`Failed to create Transaction index ${error}`);
+  }
+});
+
 /**
  * Queries and retrieves transactions based on a given filter.
  * @async

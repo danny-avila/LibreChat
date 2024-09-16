@@ -1,3 +1,4 @@
+const { logger } = require('~/config');
 const mongoose = require('mongoose');
 
 const conversationTagSchema = mongoose.Schema(
@@ -28,4 +29,12 @@ const conversationTagSchema = mongoose.Schema(
 
 conversationTagSchema.index({ tag: 1, user: 1 }, { unique: true });
 
-module.exports = mongoose.model('ConversationTag', conversationTagSchema);
+const ConversationTag = mongoose.model('ConversationTag', conversationTagSchema);
+
+ConversationTag.on('index', (error) => {
+  if (error) {
+    logger.error(`Failed to create ConversationTag index ${error}`);
+  }
+});
+
+module.exports = ConversationTag;

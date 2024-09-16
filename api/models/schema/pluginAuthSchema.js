@@ -1,3 +1,4 @@
+const { logger } = require('~/config');
 const mongoose = require('mongoose');
 
 const pluginAuthSchema = mongoose.Schema(
@@ -22,5 +23,11 @@ const pluginAuthSchema = mongoose.Schema(
 );
 
 const PluginAuth = mongoose.models.Plugin || mongoose.model('PluginAuth', pluginAuthSchema);
+
+PluginAuth.on('index', (error) => {
+  if (error) {
+    logger.error(`Failed to create PluginAuth index ${error}`);
+  }
+});
 
 module.exports = PluginAuth;

@@ -8,6 +8,12 @@ const { logger } = require('~/config');
  */
 const Token = mongoose.model('Token', tokenSchema);
 
+Token.on('index', (error) => {
+  if (error) {
+    logger.error(`Failed to create Token index ${error}`);
+  }
+});
+
 /**
  * Creates a new Token instance.
  * @param {Object} tokenData - The data for the new Token.

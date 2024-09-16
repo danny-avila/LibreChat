@@ -1,3 +1,4 @@
+const { logger } = require('~/config');
 const mongoose = require('mongoose');
 
 const shareSchema = mongoose.Schema(
@@ -35,4 +36,12 @@ const shareSchema = mongoose.Schema(
   { timestamps: true },
 );
 
-module.exports = mongoose.model('SharedLink', shareSchema);
+const SharedLink = mongoose.model('SharedLink', shareSchema);
+
+SharedLink.on('index', (error) => {
+  if (error) {
+    logger.error(`Failed to create SharedLink index ${error}`);
+  }
+});
+
+module.exports = SharedLink;

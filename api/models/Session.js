@@ -72,4 +72,10 @@ sessionSchema.statics.deleteAllUserSessions = async function (userId) {
 
 const Session = mongoose.model('Session', sessionSchema);
 
+Session.on('index', (error) => {
+  if (error) {
+    logger.error(`Failed to create Session index ${error}`);
+  }
+});
+
 module.exports = Session;

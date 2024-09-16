@@ -1,3 +1,4 @@
+const { logger } = require('~/config');
 const mongoose = require('mongoose');
 const { Constants } = require('librechat-data-provider');
 const Schema = mongoose.Schema;
@@ -82,6 +83,12 @@ const promptGroupSchema = new Schema(
 
 const PromptGroup = mongoose.model('PromptGroup', promptGroupSchema);
 
+PromptGroup.on('PromptGroup', (error) => {
+  if (error) {
+    logger.error(`Failed to create PromptGroup index ${error}`);
+  }
+});
+
 const promptSchema = new Schema(
   {
     groupId: {
@@ -111,6 +118,12 @@ const promptSchema = new Schema(
 );
 
 const Prompt = mongoose.model('Prompt', promptSchema);
+
+Prompt.on('index', (error) => {
+  if (error) {
+    logger.error(`Failed to create Prompt index ${error}`);
+  }
+});
 
 promptSchema.index({ createdAt: 1, updatedAt: 1 });
 promptGroupSchema.index({ createdAt: 1, updatedAt: 1 });

@@ -66,6 +66,12 @@ configSchema.statics.updateByTag = async function (tag, update) {
 
 const Config = mongoose.models.Config || mongoose.model('Config', configSchema);
 
+Config.on('index', (error) => {
+  if (error) {
+    logger.error(`Failed to create Config index ${error}`);
+  }
+});
+
 module.exports = {
   getConfigs: async (filter) => {
     try {

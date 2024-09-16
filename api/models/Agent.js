@@ -1,3 +1,4 @@
+const { logger } = require('~/config');
 const mongoose = require('mongoose');
 const { GLOBAL_PROJECT_NAME } = require('librechat-data-provider').Constants;
 const {
@@ -9,6 +10,12 @@ const {
 const agentSchema = require('./schema/agent');
 
 const Agent = mongoose.model('agent', agentSchema);
+
+Agent.on('index', (error) => {
+  if (error) {
+    logger.error(`Failed to create Agent index ${error}`);
+  }
+});
 
 /**
  * Create an agent with the provided data.
