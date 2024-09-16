@@ -1,4 +1,4 @@
-import * as React from 'react';
+import { useState, useRef, useEffect } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { MessageSquare, Command } from 'lucide-react';
 import { SettingsTabValues } from 'librechat-data-provider';
@@ -12,7 +12,28 @@ import { cn } from '~/utils';
 export default function Settings({ open, onOpenChange }: TDialogProps) {
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
   const localize = useLocalize();
-  const [activeTab, setActiveTab] = React.useState(SettingsTabValues.GENERAL);
+  const [activeTab, setActiveTab] = useState(SettingsTabValues.GENERAL);
+  const [activeTabPosition, setActiveTabPosition] = useState({ top: 0, height: 0 });
+  const tabRefs = useRef({});
+
+  const updateActiveTabPosition = (value) => {
+    const tabElement = tabRefs.current[value];
+    if (tabElement) {
+      const { offsetTop, offsetHeight } = tabElement;
+      setActiveTabPosition({ top: offsetTop, height: offsetHeight });
+    }
+  };
+
+  useEffect(() => {
+    updateActiveTabPosition(activeTab);
+  }, [activeTab]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      updateActiveTabPosition(SettingsTabValues.GENERAL);
+    }, 100);
+    return () => clearTimeout(timer);
+  }, []);
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
     const tabs = [
@@ -27,14 +48,6 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
     const currentIndex = tabs.indexOf(activeTab);
 
     switch (event.key) {
-      case 'ArrowRight':
-        event.preventDefault();
-        setActiveTab(tabs[(currentIndex + 1) % tabs.length]);
-        break;
-      case 'ArrowLeft':
-        event.preventDefault();
-        setActiveTab(tabs[(currentIndex - 1 + tabs.length) % tabs.length]);
-        break;
       case 'ArrowDown':
         event.preventDefault();
         setActiveTab(tabs[(currentIndex + 1) % tabs.length]);
@@ -54,6 +67,10 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
     }
   };
 
+  const handleTabChange = (value: string) => {
+    setActiveTab(value as SettingsTabValues);
+    updateActiveTabPosition(value);
+  };
   return (
     <Transition appear show={open}>
       <Dialog as="div" className="relative z-50" onClose={onOpenChange}>
@@ -61,7 +78,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
           enter="ease-out duration-200"
           enterFrom="opacity-0"
           enterTo="opacity-100"
-          leave="ease-in duration-100"
+          leave="ease-in duration-200"
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
@@ -117,21 +134,32 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                   <span className="sr-only">Close</span>
                 </button>
               </DialogTitle>
-              <div className="max-h-[550px] overflow-auto px-6 md:min-h-[373px] md:w-[680px]">
+              <div className="max-h-[550px] overflow-auto px-6 md:max-h-[400px] md:min-h-[400px] md:w-[680px]">
                 <Tabs.Root
                   value={activeTab}
-                  onValueChange={(value: string) => setActiveTab(value as SettingsTabValues)}
+                  onValueChange={handleTabChange}
                   className="flex flex-col gap-10 md:flex-row"
                   orientation="vertical"
                 >
                   <Tabs.List
                     aria-label="Settings"
                     className={cn(
-                      'min-w-auto max-w-auto -ml-[8px] flex flex-shrink-0 flex-col flex-nowrap overflow-auto sm:max-w-none',
+                      'min-w-auto max-w-auto relative -ml-[8px] flex flex-shrink-0 flex-col flex-nowrap overflow-auto sm:max-w-none',
                       isSmallScreen ? 'flex-row rounded-xl bg-surface-secondary' : '',
                     )}
                     onKeyDown={handleKeyDown}
                   >
+                    {!isSmallScreen && (
+                      <div
+                        className="absolute rounded-lg bg-surface-tertiary transition-all duration-200 ease-in-out"
+                        style={{
+                          top: activeTabPosition.top,
+                          height: activeTabPosition.height,
+                          left: 0,
+                          width: '100%',
+                        }}
+                      />
+                    )}
                     {[
                       {
                         value: SettingsTabValues.GENERAL,
@@ -172,12 +200,13 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                       <Tabs.Trigger
                         key={value}
                         className={cn(
-                          'group m-1 flex items-center justify-start gap-2 px-2 py-1.5 transition-all duration-200 ease-in-out radix-state-active:text-text-primary',
+                          'group relative z-10 m-1 flex items-center justify-start gap-2 px-2 py-1.5 transition-all duration-200 ease-in-out',
                           isSmallScreen
-                            ? 'flex-1 justify-center text-nowrap rounded-xl p-1 px-3 text-sm text-text-secondary radix-state-active:bg-surface-hover'
-                            : 'rounded-md bg-transparent text-text-primary radix-state-active:bg-surface-tertiary',
+                            ? 'flex-1 justify-center text-nowrap rounded-xl p-1 px-3 text-sm text-text-secondary radix-state-active:bg-surface-hover radix-state-active:text-text-primary'
+                            : 'rounded-md bg-transparent text-text-primary radix-state-active:bg-transparent',
                         )}
                         value={value}
+                        ref={(el) => (tabRefs.current[value] = el)}
                       >
                         {icon}
                         {localize(label)}
