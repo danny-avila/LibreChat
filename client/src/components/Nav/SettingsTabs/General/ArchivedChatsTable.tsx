@@ -37,11 +37,11 @@ export default function ArchivedChatsTable() {
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
   const [totalPages, setTotalPages] = useState(1);
-  const [isOpened, setIsOpened] = useState(false); // New state variable
+  const [isOpened, setIsOpened] = useState(false);
 
   const { data, isLoading, refetch } = useConversationsInfiniteQuery(
     { pageNumber: currentPage.toString(), limit: 10, isArchived: true },
-    { enabled: isAuthenticated && isOpened }, // Conditionally enable the query
+    { enabled: isAuthenticated && isOpened },
   );
 
   useEffect(() => {
@@ -103,7 +103,7 @@ export default function ArchivedChatsTable() {
         'flex-1 flex-col overflow-y-auto pr-2 transition-opacity duration-500',
         'max-h-[629px]',
       )}
-      onMouseEnter={() => setIsOpened(true)} // Set isOpened to true when the component is opened
+      onMouseEnter={() => setIsOpened(true)}
     >
       <div className="flex items-center">
         <Search className="size-4 text-text-secondary" />
@@ -138,6 +138,7 @@ export default function ArchivedChatsTable() {
                   <TableCell className="flex items-center py-3 text-text-primary">
                     <button
                       className="flex"
+                      aria-label="Open conversation in a new tab"
                       onClick={() => handleChatClick(conversation.conversationId)}
                     >
                       <MessageCircle className="mr-1 h-5 w-5" />
@@ -197,6 +198,7 @@ export default function ArchivedChatsTable() {
               <Button
                 variant="outline"
                 size="icon"
+                aria-label="Go to the previous 10 pages"
                 onClick={() => handlePageChange(Math.max(currentPage - 10, 1))}
                 disabled={currentPage === 1}
               >
@@ -205,6 +207,7 @@ export default function ArchivedChatsTable() {
               <Button
                 variant="outline"
                 size="icon"
+                aria-label="Go to the previous page"
                 onClick={() => handlePageChange(Math.max(currentPage - 1, 1))}
                 disabled={currentPage === 1}
               >
@@ -213,6 +216,7 @@ export default function ArchivedChatsTable() {
               <Button
                 variant="outline"
                 size="icon"
+                aria-label="Go to the next page"
                 onClick={() => handlePageChange(Math.min(currentPage + 1, totalPages))}
                 disabled={currentPage === totalPages}
               >
@@ -221,6 +225,7 @@ export default function ArchivedChatsTable() {
               <Button
                 variant="outline"
                 size="icon"
+                aria-label="Go to the next 10 pages"
                 onClick={() => handlePageChange(Math.min(currentPage + 10, totalPages))}
                 disabled={currentPage === totalPages}
               >

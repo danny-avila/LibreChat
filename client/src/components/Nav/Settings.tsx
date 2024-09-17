@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { MessageSquare, Command } from 'lucide-react';
 import { SettingsTabValues } from 'librechat-data-provider';
@@ -13,27 +13,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
   const localize = useLocalize();
   const [activeTab, setActiveTab] = useState(SettingsTabValues.GENERAL);
-  const [activeTabPosition, setActiveTabPosition] = useState({ top: 0, height: 0 });
   const tabRefs = useRef({});
-
-  const updateActiveTabPosition = (value) => {
-    const tabElement = tabRefs.current[value];
-    if (tabElement) {
-      const { offsetTop, offsetHeight } = tabElement;
-      setActiveTabPosition({ top: offsetTop, height: offsetHeight });
-    }
-  };
-
-  useEffect(() => {
-    updateActiveTabPosition(activeTab);
-  }, [activeTab]);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      updateActiveTabPosition(SettingsTabValues.GENERAL);
-    }, 100);
-    return () => clearTimeout(timer);
-  }, []);
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
     const tabs = [
@@ -69,8 +49,8 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
 
   const handleTabChange = (value: string) => {
     setActiveTab(value as SettingsTabValues);
-    updateActiveTabPosition(value);
   };
+
   return (
     <Transition appear show={open}>
       <Dialog as="div" className="relative z-50" onClose={onOpenChange}>
@@ -93,12 +73,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
           leaveFrom="opacity-100 scale-100"
           leaveTo="opacity-0 scale-95"
         >
-          <div
-            className={cn(
-              'fixed inset-0 flex w-screen items-center justify-center p-4',
-              isSmallScreen ? '' : '',
-            )}
-          >
+          <div className={cn('fixed inset-0 flex w-screen items-center justify-center p-4')}>
             <DialogPanel
               className={cn(
                 'min-h-[600px] overflow-hidden rounded-xl rounded-b-lg bg-surface-dialog pb-6 shadow-2xl backdrop-blur-2xl animate-in sm:rounded-lg md:min-h-[373px] md:w-[680px]',
@@ -149,17 +124,6 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     )}
                     onKeyDown={handleKeyDown}
                   >
-                    {!isSmallScreen && (
-                      <div
-                        className="absolute rounded-lg bg-surface-tertiary transition-all duration-200 ease-in-out"
-                        style={{
-                          top: activeTabPosition.top,
-                          height: activeTabPosition.height,
-                          left: 0,
-                          width: '100%',
-                        }}
-                      />
-                    )}
                     {[
                       {
                         value: SettingsTabValues.GENERAL,
@@ -203,7 +167,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                           'group relative z-10 m-1 flex items-center justify-start gap-2 px-2 py-1.5 transition-all duration-200 ease-in-out',
                           isSmallScreen
                             ? 'flex-1 justify-center text-nowrap rounded-xl p-1 px-3 text-sm text-text-secondary radix-state-active:bg-surface-hover radix-state-active:text-text-primary'
-                            : 'rounded-md bg-transparent text-text-primary radix-state-active:bg-transparent',
+                            : 'rounded-md bg-transparent text-text-primary radix-state-active:bg-surface-tertiary',
                         )}
                         value={value}
                         ref={(el) => (tabRefs.current[value] = el)}
