@@ -3,7 +3,7 @@ const fetch = require('node-fetch');
 const {
   supportsBalanceCheck,
   isAgentsEndpoint,
-  paramEndpoints,
+  isParamEndpoint,
   ErrorTypes,
   Constants,
   CacheKeys,
@@ -588,7 +588,10 @@ class BaseClient {
 
     if (typeof completion === 'string') {
       responseMessage.text = addSpaceIfNeeded(generation) + completion;
-    } else if (Array.isArray(completion) && paramEndpoints.has(this.options.endpoint)) {
+    } else if (
+      Array.isArray(completion) &&
+      isParamEndpoint(this.options.endpoint, this.options.endpointType)
+    ) {
       responseMessage.text = '';
       responseMessage.content = completion;
     } else if (Array.isArray(completion)) {
