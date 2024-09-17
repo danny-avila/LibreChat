@@ -58,16 +58,16 @@ export default function Parameters() {
       return;
     }
 
-    const defaultValueMap = new Map();
-    const paramKeys = new Set(
-      parameters.map((setting) => {
-        if (setting.default != null) {
-          defaultValueMap.set(setting.key, setting.default);
-        }
-        return setting.key;
-      }),
-    );
-
+    // const defaultValueMap = new Map();
+    // const paramKeys = new Set(
+    //   parameters.map((setting) => {
+    //     if (setting.default != null) {
+    //       defaultValueMap.set(setting.key, setting.default);
+    //     }
+    //     return setting.key;
+    //   }),
+    // );
+    const paramKeys = new Set(parameters.map((setting) => setting.key));
     setConversation((prev) => {
       if (!prev) {
         return prev;
