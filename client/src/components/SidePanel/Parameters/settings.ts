@@ -145,7 +145,7 @@ const openAIParams: Record<string, SettingDefinition> = {
     default: openAISettings.temperature.default,
     range: {
       min: openAISettings.temperature.min,
-      max: openAISettings.temperature.min,
+      max: openAISettings.temperature.max,
       step: openAISettings.temperature.step,
     },
   }),
@@ -154,7 +154,7 @@ const openAIParams: Record<string, SettingDefinition> = {
     default: openAISettings.top_p.default,
     range: {
       min: openAISettings.top_p.min,
-      max: openAISettings.top_p.min,
+      max: openAISettings.top_p.max,
       step: openAISettings.top_p.step,
     },
   }),
@@ -168,7 +168,7 @@ const openAIParams: Record<string, SettingDefinition> = {
     default: openAISettings.frequency_penalty.default,
     range: {
       min: openAISettings.frequency_penalty.min,
-      max: openAISettings.frequency_penalty.min,
+      max: openAISettings.frequency_penalty.max,
       step: openAISettings.frequency_penalty.step,
     },
     component: 'slider',
@@ -185,7 +185,7 @@ const openAIParams: Record<string, SettingDefinition> = {
     default: openAISettings.presence_penalty.default,
     range: {
       min: openAISettings.presence_penalty.min,
-      max: openAISettings.presence_penalty.min,
+      max: openAISettings.presence_penalty.max,
       step: openAISettings.presence_penalty.step,
     },
     component: 'slider',
