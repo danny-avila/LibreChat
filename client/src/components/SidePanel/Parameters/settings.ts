@@ -1,7 +1,8 @@
 import {
+  ImageDetail,
   EModelEndpoint,
-  BedrockProviders,
   openAISettings,
+  BedrockProviders,
   anthropicSettings,
 } from 'librechat-data-provider';
 import type { SettingsConfiguration, SettingDefinition } from 'librechat-data-provider';
@@ -65,13 +66,9 @@ const baseDefinitions: Record<string, SettingDefinition> = {
     description: 'com_endpoint_openai_detail',
     descriptionCode: true,
     type: 'enum',
-    default: 'auto',
-    component: 'combobox',
-    items: [
-      { value: 'low', label: 'low' },
-      { value: 'auto', label: 'auto' },
-      { value: 'high', label: 'high' },
-    ],
+    default: ImageDetail.auto,
+    component: 'slider',
+    options: [ImageDetail.low, ImageDetail.auto, ImageDetail.high],
     optionType: 'conversation',
     columnSpan: 2,
   },
