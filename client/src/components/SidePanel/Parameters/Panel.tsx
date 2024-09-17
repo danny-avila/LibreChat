@@ -1,17 +1,34 @@
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import { getSettingsKeys, tPresetUpdateSchema } from 'librechat-data-provider';
 import type { TPreset } from 'librechat-data-provider';
 import { SaveAsPresetDialog } from '~/components/Endpoints';
 import { useSetIndexOptions, useLocalize } from '~/hooks';
+import { getEndpointField, logger } from '~/utils';
 import { componentMapping } from './components';
 import { useChatContext } from '~/Providers';
-import { getEndpointField } from '~/utils';
 import { settings } from './settings';
+
+const excludedKeys = new Set([
+  'conversationId',
+  'title',
+  'endpoint',
+  'endpointType',
+  'createdAt',
+  'updatedAt',
+  'messages',
+  'isArchived',
+  'tags',
+  'user',
+  '__v',
+  '_id',
+  'tools',
+  'model',
+]);
 
 export default function Parameters() {
   const localize = useLocalize();
-  const { conversation } = useChatContext();
+  const { conversation, setConversation } = useChatContext();
   const { setOption } = useSetIndexOptions();
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -35,6 +52,58 @@ export default function Parameters() {
     );
     return settings[combinedKey] ?? settings[endpointKey];
   }, [conversation, endpointType]);
+
+  useEffect(() => {
+    if (!parameters) {
+      return;
+    }
+
+    const defaultValueMap = new Map();
+    const paramKeys = new Set(
+      parameters.map((setting) => {
+        if (setting.default != null) {
+          defaultValueMap.set(setting.key, setting.default);
+        }
+        return setting.key;
+      }),
+    );
+
+    setConversation((prev) => {
+      if (!prev) {
+        return prev;
+      }
+
+      const updatedConversation = { ...prev };
+
+      const conversationKeys = Object.keys(updatedConversation);
+      const updatedKeys: string[] = [];
+      conversationKeys.forEach((key) => {
+        // const defaultValue = defaultValueMap.get(key);
+        // if (paramKeys.has(key) && defaultValue != null && prev[key] != null) {
+        //   updatedKeys.push(key);
+        //   updatedConversation[key] = defaultValue;
+        //   return;
+        // }
+
+        if (paramKeys.has(key)) {
+          return;
+        }
+
+        if (excludedKeys.has(key)) {
+          return;
+        }
+
+        if (prev[key] != null) {
+          updatedKeys.push(key);
+          delete updatedConversation[key];
+        }
+      });
+
+      logger.log('parameters', 'parameters effect, updated keys:', updatedKeys);
+
+      return updatedConversation;
+    });
+  }, [parameters, setConversation]);
 
   const openDialog = useCallback(() => {
     const newPreset = tPresetUpdateSchema.parse({
