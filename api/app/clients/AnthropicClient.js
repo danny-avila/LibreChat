@@ -144,17 +144,6 @@ class AnthropicClient extends BaseClient {
     this.endToken = '';
     this.gptEncoder = this.constructor.getTokenizer('cl100k_base');
 
-    if (!this.modelOptions.stop) {
-      const stopTokens = [this.startToken];
-      if (this.endToken && this.endToken !== this.startToken) {
-        stopTokens.push(this.endToken);
-      }
-      stopTokens.push(`${this.userLabel}`);
-      stopTokens.push('<|diff_marker|>');
-
-      this.modelOptions.stop = stopTokens;
-    }
-
     return this;
   }
 
