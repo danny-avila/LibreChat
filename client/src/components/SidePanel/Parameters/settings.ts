@@ -68,9 +68,9 @@ const baseDefinitions: Record<string, SettingDefinition> = {
     default: 'auto',
     component: 'combobox',
     items: [
-      { value: 'low', label: 'Low' },
-      { value: 'auto', label: 'Auto' },
-      { value: 'high', label: 'High' },
+      { value: 'low', label: 'low' },
+      { value: 'auto', label: 'auto' },
+      { value: 'high', label: 'high' },
     ],
     optionType: 'conversation',
     columnSpan: 2,
