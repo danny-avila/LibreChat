@@ -564,6 +564,7 @@ export default {
   com_endpoint_export: 'Export',
   com_endpoint_export_share: 'Export/Share',
   com_endpoint_assistant: 'Assistant',
+  com_endpoint_search: 'Search endpoint by name',
   com_endpoint_use_active_assistant: 'Use Active Assistant',
   com_endpoint_assistant_model: 'Assistant Model',
   com_endpoint_save_as_preset: 'Save As Preset',
