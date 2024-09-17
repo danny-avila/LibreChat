@@ -125,6 +125,9 @@ export default function Parameters() {
         {/* Below is an example of an applied dynamic setting, each be contained by a div with the column span specified */}
         {parameters.map((setting) => {
           const Component = componentMapping[setting.component];
+          if (!Component) {
+            return null;
+          }
           const { key, default: defaultValue, ...rest } = setting;
 
           if (key === 'region' && bedrockRegions.length) {
