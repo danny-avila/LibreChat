@@ -5,6 +5,9 @@ import type { LocalizeFunction } from '~/common';
 import { formatJSON, extractJson, isJson } from '~/utils/json';
 import useLocalize from '~/hooks/useLocalize';
 import CodeBlock from './CodeBlock';
+import { useState } from 'react';
+import { Button } from '~/components/ui/Button';
+import PricingModal from './PricingModal';
 
 const localizedErrorPrefix = 'com_error';
 
@@ -95,6 +98,7 @@ const errorMessages = {
 };
 
 const Error = ({ text }: { text: string }) => {
+  const [isPricingModalOpen, setIsPricingModalOpen] = useState(false);
   const localize = useLocalize();
   const jsonString = extractJson(text);
   const errorMessage = text.length > 512 && !jsonString ? text.slice(0, 512) + '...' : text;
@@ -103,6 +107,45 @@ const Error = ({ text }: { text: string }) => {
   if (!isJson(jsonString)) {
     return defaultResponse;
   }
+
+  const handleUpgradeClick = () => {
+    setIsPricingModalOpen(true);
+  };
+
+  const handleSelectPlan = (stripePriceId: string) => {
+    // TODO: Implement plan selection logic
+    console.log('Selected plan:', stripePriceId);
+    setIsPricingModalOpen(false);
+  };
+
+  errorMessages.token_balance = (json: TTokenBalance) => {
+    const { balance, tokenCost, promptTokens, generations } = json;
+    const message = `Insufficient Funds! Balance: ${balance}. Prompt tokens: ${promptTokens}. Cost: ${tokenCost}.`;
+    return (
+      <>
+        {message}
+        <br />
+        <br />
+        <Button onClick={handleUpgradeClick}>Upgrade to Pro</Button>
+        {generations && (
+          <>
+            <br />
+            <br />
+            <CodeBlock
+              lang="Generations"
+              error={true}
+              codeChildren={formatJSON(JSON.stringify(generations))}
+            />
+          </>
+        )}
+        <PricingModal
+          isOpen={isPricingModalOpen}
+          onClose={() => setIsPricingModalOpen(false)}
+          onSelectPlan={handleSelectPlan}
+        />
+      </>
+    );
+  };
 
   const json = JSON.parse(jsonString);
   const errorKey = json.code || json.type;
