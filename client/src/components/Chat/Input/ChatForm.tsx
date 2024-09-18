@@ -136,7 +136,7 @@ const ChatForm = ({ index = 0 }) => {
               newConversation={generateConversation}
               textAreaRef={textAreaRef}
               commandChar="+"
-              placeholder="com_ui_add"
+              placeholder="com_ui_add_model_preset"
               includeAssistants={false}
             />
           )}

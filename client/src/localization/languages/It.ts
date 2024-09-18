@@ -207,12 +207,12 @@ export default {
   com_ui_shared_link_not_found: 'Link condiviso non trovato',
   com_ui_delete_conversation: 'Eliminare la chat?',
   com_ui_delete_confirm: 'Questo eliminerà',
-  com_ui_rename: 'Rinominare',
-  com_ui_archive: 'Arsip',
+  com_ui_rename: 'Rinomina',
+  com_ui_archive: 'Archivia',
   com_ui_archive_error: 'Errore durante l\'archiviazione della conversazione',
   com_ui_unarchive: 'Disarchivia',
   com_ui_unarchive_error: 'Impossibile disarchiviare la conversazione',
-  com_ui_more_options: 'Pi',
+  com_ui_more_options: 'Più',
   com_ui_delete_assistant_confirm:
     'Sei sicuro di voler eliminare questo Assistente? Questa operazione non può essere annullata.',
   com_ui_preview: 'Anteprima',
@@ -483,7 +483,7 @@ export default {
   com_nav_plugin_store: 'Store plugin',
   com_nav_plugin_install: 'Installa',
   com_nav_plugin_uninstall: 'Disinstalla',
-  com_nav_tool_add: 'Aggiungi',
+  com_ui_add: 'Aggiungi',
   com_nav_tool_remove: 'Rimuovi',
   com_nav_tool_dialog: 'Strumenti Assistente',
   com_nav_tool_dialog_description:
@@ -592,6 +592,10 @@ export default {
   com_user_message: 'Mostra nome utente nei messaggi',
   com_ui_fork: 'Duplica',
   com_ui_mention: 'Menziona un endpoint, assistente o preset per passare rapidamente ad esso',
+  com_ui_accept: 'Accetto',
+  com_ui_decline: 'Non accetto',
+  com_ui_terms_and_conditions: 'Termini d\'uso',
+  com_ui_no_terms_content: 'Nessun contenuto dei termini d\'uso da visualizzare',
   com_endpoint_context_tokens: 'Token di Contesto Massimi',
   com_endpoint_context_info:
     'Il numero massimo di token che possono essere utilizzati per il contesto. Usalo per controllare quanti token vengono inviati per richiesta. Se non specificato, verranno utilizzate le impostazioni di sistema predefinite in base alle dimensioni del contesto dei modelli noti. Impostare valori più alti potrebbe causare errori e/o costi di token più elevati.',
@@ -1357,11 +1361,11 @@ export const comparisons = {
   },
   com_ui_rename: {
     english: 'Rename',
-    translated: 'Rinominare',
+    translated: 'Rinomina',
   },
   com_ui_archive: {
     english: 'Archive',
-    translated: 'Arsip',
+    translated: 'Archivia',
   },
   com_ui_archive_error: {
     english: 'Failed to archive conversation',
@@ -2326,7 +2330,7 @@ export const comparisons = {
     english: 'Uninstall',
     translated: 'Disinstalla',
   },
-  com_nav_tool_add: {
+  com_ui_add: {
     english: 'Add',
     translated: 'Aggiungi',
   },

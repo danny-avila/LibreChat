@@ -1,17 +1,18 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { MessageCircle, ArchiveRestore } from 'lucide-react';
 import { useConversationsInfiniteQuery } from '~/data-provider';
-import { useAuthContext, useLocalize, useNavScrolling } from '~/hooks';
-import ArchiveButton from '~/components/Conversations/ConvoOptions/ArchiveButton';
-import DeleteButton from '~/components/Conversations/ConvoOptions/DeleteButton';
+import { ConversationListResponse } from 'librechat-data-provider';
+import { useAuthContext, useLocalize, useNavScrolling, useArchiveHandler } from '~/hooks';
+import { DeleteButton } from '~/components/Conversations/ConvoOptions';
+import { TooltipAnchor } from '~/components/ui';
 import { Spinner } from '~/components/svg';
 import { cn } from '~/utils';
-import { ConversationListResponse } from 'librechat-data-provider';
 
-export default function ArchivedChatsTable({ className }: { className?: string }) {
+export default function ArchivedChatsTable() {
   const localize = useLocalize();
   const { isAuthenticated } = useAuthContext();
   const [showLoading, setShowLoading] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useConversationsInfiniteQuery(
     { pageNumber: '1', isArchived: true },
@@ -30,14 +31,9 @@ export default function ArchivedChatsTable({ className }: { className?: string }
     [data],
   );
 
-  const classProp: { className?: string } = {
-    className: 'p-1 hover:text-black dark:hover:text-white',
-  };
-  if (className) {
-    classProp.className = className;
-  }
+  const archiveHandler = useArchiveHandler(conversationId ?? '', false, moveToTop);
 
-  if (!conversations || conversations.length === 0) {
+  if (!data || conversations.length === 0) {
     return <div className="text-gray-300">{localize('com_nav_archived_chats_empty')}</div>;
   }
 
@@ -58,48 +54,52 @@ export default function ArchivedChatsTable({ className }: { className?: string }
           </tr>
         </thead>
         <tbody>
-          {conversations.map((conversation) => (
-            <tr
-              key={conversation.conversationId}
-              className="border-b border-gray-200 text-sm font-normal dark:border-white/10"
-            >
-              <td className="flex items-center py-3 text-blue-800/70 dark:text-blue-500">
-                <MessageCircle className="mr-1 h-5 w-5" />
-                {conversation.title}
-              </td>
-              <td className="p-1">
-                <div className="flex justify-between">
-                  <div className="flex justify-start dark:text-gray-200">
-                    {new Date(conversation.createdAt).toLocaleDateString('en-US', {
-                      month: 'long',
-                      day: 'numeric',
-                      year: 'numeric',
-                    })}
-                  </div>
-                  <div className="ml-auto mr-4 flex items-center justify-end gap-1 text-gray-400">
-                    {conversation.conversationId && (
-                      <>
-                        <ArchiveButton
-                          className="hover:text-black dark:hover:text-white"
+          {conversations.map((conversation) => {
+            if (!conversation.conversationId) {
+              return null;
+            }
+            return (
+              <tr
+                key={conversation.conversationId}
+                className="border-b border-gray-200 text-sm font-normal dark:border-white/10"
+              >
+                <td className="flex items-center py-3 text-blue-800/70 dark:text-blue-500">
+                  <MessageCircle className="mr-1 h-5 w-5" />
+                  {conversation.title}
+                </td>
+                <td className="p-1">
+                  <div className="flex justify-between">
+                    <div className="flex justify-start dark:text-gray-200">
+                      {new Date(conversation.createdAt).toLocaleDateString('en-US', {
+                        month: 'long',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })}
+                    </div>
+                    <div className="ml-auto mr-4 flex items-center justify-end gap-1 text-gray-400">
+                      <TooltipAnchor
+                        description={localize('com_ui_unarchive')}
+                        onClick={() => {
+                          setConversationId(conversation.conversationId);
+                          archiveHandler();
+                        }}
+                        className="cursor-pointer hover:text-black dark:hover:text-white"
+                      >
+                        <ArchiveRestore className="size-4 hover:text-gray-300" />
+                      </TooltipAnchor>
+                      <div className="size-5 hover:text-gray-300">
+                        <DeleteButton
                           conversationId={conversation.conversationId}
                           retainView={moveToTop}
-                          shouldArchive={false}
-                          icon={<ArchiveRestore className="h-4 w-4 hover:text-gray-300" />}
+                          title={conversation.title ?? ''}
                         />
-                        <div className="h-5 w-5 hover:text-gray-300">
-                          <DeleteButton
-                            conversationId={conversation.conversationId}
-                            retainView={moveToTop}
-                            title={conversation.title ?? ''}
-                          />
-                        </div>
-                      </>
-                    )}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </td>
-            </tr>
-          ))}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
       {(isFetchingNextPage || showLoading) && (

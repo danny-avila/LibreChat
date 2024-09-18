@@ -1172,17 +1172,25 @@ button {
 .btn-neutral {
   --tw-bg-opacity: 1;
   --tw-text-opacity: 1;
-  background-color: rgba(255, 255, 255, var(--tw-bg-opacity));
+  background-color: var(--surface-secondary);
   border-color: rgba(0, 0, 0, 0.1);
   border-width: 1px;
   color: rgba(64, 65, 79, var(--tw-text-opacity));
   font-size: 0.875rem;
   line-height: 1.25rem;
+  transition: all 0.1s ease-in-out;
 }
+
 .btn-neutral:hover {
   --tw-bg-opacity: 1;
   background-color: rgba(236, 236, 241, var(--tw-bg-opacity));
 }
+
+.btn-neutral:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ring-primary);
+}
+
 .dark .btn-neutral {
   --tw-border-opacity: 1;
   --tw-bg-opacity: 1;
@@ -1191,9 +1199,14 @@ button {
   border-color: rgba(66, 66, 66, var(--tw-border-opacity));
   color: rgba(255, 255, 240, var(--tw-text-opacity));
 }
+
 .dark .btn-neutral:hover {
   --tw-bg-opacity: 1;
   background-color: rgba(66, 66, 66, var(--tw-bg-opacity));
+}
+
+.dark .btn-neutral:focus {
+  box-shadow: 0 0 0 2px var(--ring-primary);
 }
 .btn-small {
   padding: 0.25rem 0.5rem;
@@ -1950,7 +1963,7 @@ button.scroll-convo {
 
 .prose ol > li::marker,
 .markdown ol > li::marker {
-  content: counter(list-counter) ". ";
+  content: counter(list-counter) '. ';
   color: var(--tw-prose-counters);
   font-weight: 400;
 }
@@ -1969,7 +1982,7 @@ button.scroll-convo {
 
 .prose ol ol > li::marker,
 .markdown ol ol > li::marker {
-  content: counter(list-counter-alpha, lower-alpha) ". ";
+  content: counter(list-counter-alpha, lower-alpha) '. ';
 }
 
 .prose ol ol ol,
@@ -1985,7 +1998,7 @@ button.scroll-convo {
 
 .prose ol ol ol > li::marker,
 .markdown ol ol ol > li::marker {
-  content: counter(list-counter-roman, lower-roman) ". ";
+  content: counter(list-counter-roman, lower-roman) '. ';
 }
 
 /* Unordered lists */
@@ -2273,6 +2286,27 @@ button.scroll-convo {
 .progress-text-wrapper button {
   font-size: inherit;
   line-height: inherit;
+}
+
+.tooltip {
+  z-index: 50;
+  cursor: pointer;
+  border-radius: 0.275rem;
+  background-color: var(--bg-gray-600);
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+  font-size: 1rem;
+  line-height: 1.5rem;
+  color: black;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.25);
+}
+
+.tooltip:where(.dark, .dark *) {
+  background-color: var(--surface-primary);
+  color: white;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.35);
 }
 
 :focus {

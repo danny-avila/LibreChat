@@ -16,7 +16,12 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
     overrideParentMessageId = null,
   } = req.body;
 
-  logger.debug('[AskController]', { text, conversationId, ...endpointOption });
+  logger.debug('[AskController]', {
+    text,
+    conversationId,
+    ...endpointOption,
+    modelsConfig: endpointOption.modelsConfig ? 'exists' : '',
+  });
 
   let userMessage;
   let userMessagePromise;
@@ -123,11 +128,6 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
     };
 
     let response = await client.sendMessage(text, messageOptions);
-
-    if (overrideParentMessageId) {
-      response.parentMessageId = overrideParentMessageId;
-    }
-
     response.endpoint = endpointOption.endpoint;
 
     const { conversation = {} } = await client.responsePromise;

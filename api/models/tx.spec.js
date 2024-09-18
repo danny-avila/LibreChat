@@ -1,3 +1,4 @@
+const { EModelEndpoint } = require('librechat-data-provider');
 const {
   defaultRate,
   tokenValues,
@@ -224,34 +225,18 @@ describe('AWS Bedrock Model Tests', () => {
 
   it('should return the correct prompt multipliers for all models', () => {
     const results = awsModels.map((model) => {
-      const multiplier = getMultiplier({ valueKey: model, tokenType: 'prompt' });
-      return multiplier === tokenValues[model].prompt;
+      const valueKey = getValueKey(model, EModelEndpoint.bedrock);
+      const multiplier = getMultiplier({ valueKey, tokenType: 'prompt' });
+      return tokenValues[valueKey].prompt && multiplier === tokenValues[valueKey].prompt;
     });
     expect(results.every(Boolean)).toBe(true);
   });
 
   it('should return the correct completion multipliers for all models', () => {
     const results = awsModels.map((model) => {
-      const multiplier = getMultiplier({ valueKey: model, tokenType: 'completion' });
-      return multiplier === tokenValues[model].completion;
-    });
-    expect(results.every(Boolean)).toBe(true);
-  });
-
-  it('should return the correct prompt multipliers for all models with Bedrock prefix', () => {
-    const results = awsModels.map((model) => {
-      const modelName = `bedrock/${model}`;
-      const multiplier = getMultiplier({ valueKey: modelName, tokenType: 'prompt' });
-      return multiplier === tokenValues[model].prompt;
-    });
-    expect(results.every(Boolean)).toBe(true);
-  });
-
-  it('should return the correct completion multipliers for all models with Bedrock prefix', () => {
-    const results = awsModels.map((model) => {
-      const modelName = `bedrock/${model}`;
-      const multiplier = getMultiplier({ valueKey: modelName, tokenType: 'completion' });
-      return multiplier === tokenValues[model].completion;
+      const valueKey = getValueKey(model, EModelEndpoint.bedrock);
+      const multiplier = getMultiplier({ valueKey, tokenType: 'completion' });
+      return tokenValues[valueKey].completion && multiplier === tokenValues[valueKey].completion;
     });
     expect(results.every(Boolean)).toBe(true);
   });

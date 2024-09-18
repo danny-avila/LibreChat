@@ -3,6 +3,7 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets present in this file
 
 export default {
+  com_nav_convo_menu_options: 'Conversation Menu Options',
   com_ui_artifacts: 'Artifacts',
   com_ui_artifacts_toggle: 'Toggle Artifacts UI',
   com_nav_info_code_artifacts:
@@ -14,15 +15,24 @@ export default {
   com_nav_info_custom_prompt_mode:
     'When enabled, the default artifacts system prompt will not be included. All artifact-generating instructions must be provided manually in this mode.',
   com_ui_artifact_click: 'Click to open',
-  com_a11y_start: 'The AI is replying.',
+  com_a11y_start: 'The AI has started their reply.',
+  com_a11y_ai_composing: 'The AI is still composing.',
   com_a11y_end: 'The AI has finished their reply.',
   com_error_moderation:
     'It appears that the content submitted has been flagged by our moderation system for not aligning with our community guidelines. We\'re unable to proceed with this specific topic. If you have any other questions or topics you\'d like to explore, please edit your message, or create a new conversation.',
   com_error_no_user_key: 'No key found. Please provide a key and try again.',
   com_error_no_base_url: 'No base URL found. Please provide one and try again.',
+  com_warning_resubmit_unsupported:
+    'Resubmitting the AI message is not supported for this endpoint.',
+  com_error_invalid_request_error:
+    'The AI service rejected the request due to an error. This could be caused by an invalid API key or an improperly formatted request.',
+  com_error_no_system_messages:
+    'The selected AI service or model does not support system messages. Try using prompts instead of custom instructions.',
   com_error_invalid_user_key: 'Invalid key provided. Please provide a valid key and try again.',
   com_error_expired_user_key:
     'Provided key for {0} expired at {1}. Please provide a new key and try again.',
+  com_error_input_length:
+    'The latest message token count is too long, exceeding the token limit ({0} respectively). Please shorten your message, adjust the max context size from the conversation parameters, or fork the conversation to continue.',
   com_files_no_results: 'No results.',
   com_files_filter: 'Filter files...',
   com_files_number_selected: '{0} of {1} file(s) selected',
@@ -74,6 +84,15 @@ export default {
   com_assistants_update_error: 'There was an error updating your assistant.',
   com_assistants_create_success: 'Successfully created',
   com_assistants_create_error: 'There was an error creating your assistant.',
+  com_assistants_conversation_starters: 'Conversation Starters',
+  com_assistants_conversation_starters_placeholder: 'Enter a conversation starter',
+  com_sidepanel_agent_builder: 'Agent Builder',
+  com_agents_name_placeholder: 'Optional: The name of the agent',
+  com_agents_description_placeholder: 'Optional: Describe your Agent here',
+  com_agents_instructions_placeholder: 'The system instructions that the agent uses',
+  com_agents_search_name: 'Search agents by name',
+  com_agents_update_error: 'There was an error updating your agent.',
+  com_agents_create_error: 'There was an error creating your agent.',
   com_ui_date_today: 'Today',
   com_ui_date_yesterday: 'Yesterday',
   com_ui_date_previous_7_days: 'Previous 7 days',
@@ -124,9 +143,18 @@ export default {
   com_ui_select: 'Select',
   com_ui_input: 'Input',
   com_ui_close: 'Close',
+  com_ui_endpoint: 'Endpoint',
+  com_ui_provider: 'Provider',
   com_ui_model: 'Model',
+  com_ui_region: 'Region',
+  com_ui_model_parameters: 'Model Parameters',
+  com_ui_model_save_success: 'Model parameters saved successfully',
   com_ui_select_model: 'Select a model',
+  com_ui_select_region: 'Select a region',
+  com_ui_select_provider: 'Select a provider',
+  com_ui_select_provider_first: 'Select a provider first',
   com_ui_select_search_model: 'Search model by name',
+  com_ui_select_search_region: 'Search region by name',
   com_ui_select_search_plugin: 'Search plugin by name',
   com_ui_use_prompt: 'Use prompt',
   com_ui_prev: 'Prev',
@@ -217,7 +245,8 @@ export default {
   com_ui_fork_visible: 'Visible messages only',
   com_ui_fork_from_message: 'Select a fork option',
   com_ui_mention: 'Mention an endpoint, assistant, or preset to quickly switch to it',
-  com_ui_add: 'Add a model or preset for an additional response',
+  com_ui_add_model_preset: 'Add a model or preset for an additional response',
+  com_assistants_max_starters_reached: 'Max number of conversation starters reached',
   com_ui_regenerate: 'Regenerate',
   com_ui_continue: 'Continue',
   com_ui_edit: 'Edit',
@@ -251,6 +280,11 @@ export default {
   com_ui_assistants: 'Assistants',
   com_ui_attachment: 'Attachment',
   com_ui_assistants_output: 'Assistants Output',
+  com_ui_agent: 'Agent',
+  com_ui_agent_deleted: 'Successfully deleted agent',
+  com_ui_agent_delete_error: 'There was an error deleting the agent',
+  com_ui_agents: 'Agents',
+  com_ui_delete_agent_confirm: 'Are you sure you want to delete this agent?',
   com_ui_delete: 'Delete',
   com_ui_create: 'Create',
   com_ui_create_prompt: 'Create Prompt',
@@ -328,8 +362,10 @@ export default {
   com_ui_bookmarks_delete_error: 'There was an error deleting the bookmark',
   com_ui_bookmarks_add_to_conversation: 'Add to current conversation',
   com_ui_bookmarks_filter: 'Filter bookmarks...',
+  com_ui_bookmarks_delete: 'Delete Bookmark',
   com_ui_no_bookmarks: 'it seems like you have no bookmarks yet. Click on a chat and add a new one',
   com_ui_no_conversation_id: 'No conversation ID found',
+  com_ui_add_multi_conversation: 'Add multi-conversation',
   com_auth_error_login:
     'Unable to login with the information provided. Please check your credentials and try again.',
   com_auth_error_login_rl:
@@ -528,6 +564,7 @@ export default {
   com_endpoint_export: 'Export',
   com_endpoint_export_share: 'Export/Share',
   com_endpoint_assistant: 'Assistant',
+  com_endpoint_search: 'Search endpoint by name',
   com_endpoint_use_active_assistant: 'Use Active Assistant',
   com_endpoint_assistant_model: 'Assistant Model',
   com_endpoint_save_as_preset: 'Save As Preset',
@@ -599,7 +636,7 @@ export default {
   com_nav_plugin_store: 'Plugin store',
   com_nav_plugin_install: 'Install',
   com_nav_plugin_uninstall: 'Uninstall',
-  com_nav_tool_add: 'Add',
+  com_ui_add: 'Add',
   com_nav_tool_remove: 'Remove',
   com_nav_tool_dialog: 'Assistant Tools',
   com_ui_misc: 'Misc.',
@@ -725,6 +762,9 @@ export default {
   com_nav_info_delete_cache_storage:
     'This action will delete all cached TTS (Text-to-Speech) audio files stored on your device. Cached audio files are used to speed up playback of previously generated TTS audio, but they can consume storage space on your device.',
   // Command Settings Tab
+  com_nav_chat_commands: 'Chat Commands',
+  com_nav_chat_commands_info:
+    'These commands are activated by typing specific characters at the beginning of your message. Each command is triggered by its designated prefix. You can disable them if you frequently use these characters to start messages.',
   com_nav_commands: 'Commands',
   com_nav_commands_tab: 'Command Settings',
   com_nav_at_command: '@-Command',
@@ -764,4 +804,8 @@ export default {
   com_nav_lang_indonesia: 'Indonesia',
   com_nav_lang_hebrew: 'עברית',
   com_nav_lang_finnish: 'Suomi',
+  com_ui_accept: 'I accept',
+  com_ui_decline: 'I do not accept',
+  com_ui_terms_and_conditions: 'Terms and Conditions',
+  com_ui_no_terms_content: 'No terms and conditions content to display',
 };

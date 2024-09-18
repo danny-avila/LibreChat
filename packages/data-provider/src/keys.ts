@@ -19,12 +19,16 @@ export enum QueryKeys {
   startupConfig = 'startupConfig',
   assistants = 'assistants',
   assistant = 'assistant',
+  agents = 'agents',
+  agent = 'agent',
   endpointsConfigOverride = 'endpointsConfigOverride',
   files = 'files',
   fileConfig = 'fileConfig',
   tools = 'tools',
+  agentTools = 'agentTools',
   actions = 'actions',
   assistantDocs = 'assistantDocs',
+  agentDocs = 'agentDocs',
   fileDownload = 'fileDownload',
   voices = 'voices',
   customConfigSpeech = 'customConfigSpeech',
@@ -38,6 +42,8 @@ export enum QueryKeys {
   roles = 'roles',
   conversationTags = 'conversationTags',
   health = 'health',
+  userTerms = 'userTerms',
+  banner = 'banner',
 }
 
 export enum MutationKeys {
@@ -50,8 +56,11 @@ export enum MutationKeys {
   speechToText = 'speechToText',
   textToSpeech = 'textToSpeech',
   assistantAvatarUpload = 'assistantAvatarUpload',
+  agentAvatarUpload = 'agentAvatarUpload',
   updateAction = 'updateAction',
+  updateAgentAction = 'updateAgentAction',
   deleteAction = 'deleteAction',
+  deleteAgentAction = 'deleteAgentAction',
   deleteUser = 'deleteUser',
   updateRole = 'updateRole',
 }

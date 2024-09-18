@@ -7,8 +7,10 @@ interface ConvoIconURLProps {
   preset: TPreset | null;
   endpointIconURL?: string;
   assistantName?: string;
+  agentName?: string;
   context?: 'landing' | 'menu-item' | 'nav' | 'message';
   assistantAvatar?: string;
+  agentAvatar?: string;
 }
 
 const classMap = {
@@ -31,6 +33,8 @@ const ConvoIconURL: React.FC<ConvoIconURLProps> = ({
   endpointIconURL,
   assistantAvatar,
   assistantName,
+  agentAvatar,
+  agentName,
   context,
 }) => {
   const { iconURL = '' } = preset ?? {};
@@ -71,7 +75,8 @@ const ConvoIconURL: React.FC<ConvoIconURLProps> = ({
         className="h-2/3 w-2/3"
         iconURL={endpointIconURL}
         assistantName={assistantName}
-        avatar={assistantAvatar}
+        avatar={assistantAvatar || agentAvatar}
+        agentName={agentName}
       />
     </div>
   );

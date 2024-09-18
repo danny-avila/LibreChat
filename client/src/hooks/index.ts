@@ -1,5 +1,6 @@
 export * from './Audio';
 export * from './Assistants';
+export * from './Agents';
 export * from './Chat';
 export * from './Config';
 export * from './Conversations';

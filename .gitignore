@@ -105,6 +105,6 @@ uploads/
 
 # owner
 release/
-
 build.sh
 /.vs
+configFiles.zip

@@ -17,8 +17,8 @@ const {
   parseParamFromPrompt,
   createContextHandlers,
 } = require('./prompts');
+const { getModelMaxTokens, getModelMaxOutputTokens, matchModelName } = require('~/utils');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
-const { getModelMaxTokens, matchModelName } = require('~/utils');
 const { sleep } = require('~/server/utils');
 const BaseClient = require('./BaseClient');
 const { logger } = require('~/config');
@@ -64,6 +64,12 @@ class AnthropicClient extends BaseClient {
     /** Whether or not the model supports Prompt Caching
      * @type {boolean} */
     this.supportsCacheControl;
+    /** The key for the usage object's input tokens
+     * @type {string} */
+    this.inputTokensKey = 'input_tokens';
+    /** The key for the usage object's output tokens
+     * @type {string} */
+    this.outputTokensKey = 'output_tokens';
   }
 
   setOptions(options) {
@@ -114,7 +120,14 @@ class AnthropicClient extends BaseClient {
       this.options.maxContextTokens ??
       getModelMaxTokens(this.modelOptions.model, EModelEndpoint.anthropic) ??
       100000;
-    this.maxResponseTokens = this.modelOptions.maxOutputTokens || 1500;
+    this.maxResponseTokens =
+      this.modelOptions.maxOutputTokens ??
+      getModelMaxOutputTokens(
+        this.modelOptions.model,
+        this.options.endpointType ?? this.options.endpoint,
+        this.options.endpointTokenConfig,
+      ) ??
+      1500;
     this.maxPromptTokens =
       this.options.maxPromptTokens || this.maxContextTokens - this.maxResponseTokens;
 
@@ -137,17 +150,6 @@ class AnthropicClient extends BaseClient {
     this.startToken = '||>';
     this.endToken = '';
     this.gptEncoder = this.constructor.getTokenizer('cl100k_base');
-
-    if (!this.modelOptions.stop) {
-      const stopTokens = [this.startToken];
-      if (this.endToken && this.endToken !== this.startToken) {
-        stopTokens.push(this.endToken);
-      }
-      stopTokens.push(`${this.userLabel}`);
-      stopTokens.push('<|diff_marker|>');
-
-      this.modelOptions.stop = stopTokens;
-    }
 
     return this;
   }
@@ -200,7 +202,7 @@ class AnthropicClient extends BaseClient {
   }
 
   /**
-   * Calculates the correct token count for the current message based on the token count map and API usage.
+   * Calculates the correct token count for the current user message based on the token count map and API usage.
    * Edge case: If the calculation results in a negative value, it returns the original estimate.
    * If revisiting a conversation with a chat history entirely composed of token estimates,
    * the cumulative token count going forward should become more accurate as the conversation progresses.
@@ -208,7 +210,7 @@ class AnthropicClient extends BaseClient {
    * @param {Record<string, number>} params.tokenCountMap - A map of message IDs to their token counts.
    * @param {string} params.currentMessageId - The ID of the current message to calculate.
    * @param {AnthropicStreamUsage} params.usage - The usage object returned by the API.
-   * @returns {number} The correct token count for the current message.
+   * @returns {number} The correct token count for the current user message.
    */
   calculateCurrentTokenCount({ tokenCountMap, currentMessageId, usage }) {
     const originalEstimate = tokenCountMap[currentMessageId] || 0;
@@ -680,7 +682,11 @@ class AnthropicClient extends BaseClient {
    */
   checkPromptCacheSupport(modelName) {
     const modelMatch = matchModelName(modelName, EModelEndpoint.anthropic);
-    if (modelMatch === 'claude-3-5-sonnet' || modelMatch === 'claude-3-haiku') {
+    if (
+      modelMatch === 'claude-3-5-sonnet' ||
+      modelMatch === 'claude-3-haiku' ||
+      modelMatch === 'claude-3-opus'
+    ) {
       return true;
     }
     return false;

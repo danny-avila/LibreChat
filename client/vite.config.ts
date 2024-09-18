@@ -55,7 +55,7 @@ export default defineConfig({
     nodePolyfills(),
     VitePWA({
       injectRegister: 'auto', // 'auto' | 'manual' | 'disabled'
-      registerType: 'prompt', // 'prompt' | 'auto' | 'disabled'
+      registerType: 'autoUpdate', // 'prompt' | 'autoUpdate'
       devOptions: {
         enabled: false, // enable/disable registering SW in development mode
       },
@@ -112,6 +112,14 @@ export default defineConfig({
           if (id.includes('node_modules')) {
             return 'vendor';
           }
+        },
+        entryFileNames: 'assets/[name].[hash].js',
+        chunkFileNames: 'assets/[name].[hash].js',
+        assetFileNames: (assetInfo) => {
+          if (assetInfo.name && /\.(woff|woff2|eot|ttf|otf)$/.test(assetInfo.name)) {
+            return 'assets/[name][extname]';
+          }
+          return 'assets/[name].[hash][extname]';
         },
       },
       /**

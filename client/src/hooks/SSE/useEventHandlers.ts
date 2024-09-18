@@ -1,5 +1,5 @@
 import { v4 } from 'uuid';
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { useSetRecoilState } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -19,16 +19,19 @@ import type {
 } from 'librechat-data-provider';
 import type { SetterOrUpdater, Resetter } from 'recoil';
 import type { TResData, TFinalResData, ConvoGenerator } from '~/common';
+import type { TGenTitleMutation } from '~/data-provider';
 import {
   scrollToEnd,
   addConversation,
+  getAllContentText,
   deleteConversation,
   updateConversation,
   getConversationById,
 } from '~/utils';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
-import type { TGenTitleMutation } from '~/data-provider';
+import useStepHandler from '~/hooks/SSE/useStepHandler';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 import { useLiveAnnouncer } from '~/Providers';
 import store from '~/store';
 
@@ -68,12 +71,20 @@ export default function useEventHandlers({
 }: EventHandlerParams) {
   const queryClient = useQueryClient();
   const setAbortScroll = useSetRecoilState(store.abortScroll);
-  const { announcePolite, announceAssertive } = useLiveAnnouncer();
+  const { announcePolite } = useLiveAnnouncer();
 
+  const lastAnnouncementTimeRef = useRef(Date.now());
   const { conversationId: paramId } = useParams();
   const { token } = useAuthContext();
 
   const contentHandler = useContentHandler({ setMessages, getMessages });
+  const stepHandler = useStepHandler({
+    setMessages,
+    getMessages,
+    announcePolite,
+    setIsSubmitting,
+    lastAnnouncementTimeRef,
+  });
 
   const messageHandler = useCallback(
     (data: string | undefined, submission: EventSubmission) => {
@@ -87,11 +98,11 @@ export default function useEventHandlers({
       } = submission;
       const text = data ?? '';
       setIsSubmitting(true);
-      if (text.length > 0) {
-        announcePolite({
-          message: text,
-          isStream: true,
-        });
+
+      const currentTime = Date.now();
+      if (currentTime - lastAnnouncementTimeRef.current > MESSAGE_UPDATE_INTERVAL) {
+        announcePolite({ message: 'composing', isStatus: true });
+        lastAnnouncementTimeRef.current = currentTime;
       }
 
       if (isRegenerate) {
@@ -187,9 +198,9 @@ export default function useEventHandlers({
         },
       ]);
 
-      announceAssertive({
+      announcePolite({
         message: 'start',
-        id: `start-${Date.now()}`,
+        isStatus: true,
       });
 
       let update = {} as TConversation;
@@ -245,8 +256,8 @@ export default function useEventHandlers({
       queryClient,
       setMessages,
       isAddedRequest,
+      announcePolite,
       setConversation,
-      announceAssertive,
       setShowStopButton,
       resetLatestMessage,
     ],
@@ -267,9 +278,10 @@ export default function useEventHandlers({
       }
 
       const { conversationId, parentMessageId } = userMessage;
-      announceAssertive({
+      lastAnnouncementTimeRef.current = Date.now();
+      announcePolite({
         message: 'start',
-        id: `start-${Date.now()}`,
+        isStatus: true,
       });
 
       let update = {} as TConversation;
@@ -323,8 +335,8 @@ export default function useEventHandlers({
       queryClient,
       setAbortScroll,
       isAddedRequest,
+      announcePolite,
       setConversation,
-      announceAssertive,
       resetLatestMessage,
     ],
   );
@@ -345,16 +357,13 @@ export default function useEventHandlers({
 
       /* a11y announcements */
       announcePolite({
-        message: responseMessage?.text ?? '',
-        isComplete: true,
+        message: 'end',
+        isStatus: true,
       });
 
-      setTimeout(() => {
-        announcePolite({
-          message: 'end',
-          id: `end-${Date.now()}`,
-        });
-      }, 100);
+      announcePolite({
+        message: getAllContentText(responseMessage),
+      });
 
       /* Update messages; if assistants endpoint, client doesn't receive responseMessage */
       if (runMessages) {
@@ -585,6 +594,7 @@ export default function useEventHandlers({
   );
 
   return {
+    stepHandler,
     syncHandler,
     finalHandler,
     errorHandler,

@@ -1,4 +1,5 @@
 const express = require('express');
+const { ContentTypes } = require('librechat-data-provider');
 const { saveConvo, saveMessage, getMessages, updateMessage, deleteMessages } = require('~/models');
 const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
 const { countTokens } = require('~/server/utils');
@@ -54,11 +55,50 @@ router.get('/:conversationId/:messageId', validateMessageReq, async (req, res) =
 
 router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) => {
   try {
-    const { messageId, model } = req.params;
-    const { text } = req.body;
-    const tokenCount = await countTokens(text, model);
-    const result = await updateMessage(req, { messageId, text, tokenCount });
-    res.status(200).json(result);
+    const { conversationId, messageId } = req.params;
+    const { text, index, model } = req.body;
+
+    if (index === undefined) {
+      const tokenCount = await countTokens(text, model);
+      const result = await updateMessage(req, { messageId, text, tokenCount });
+      return res.status(200).json(result);
+    }
+
+    if (typeof index !== 'number' || index < 0) {
+      return res.status(400).json({ error: 'Invalid index' });
+    }
+
+    const message = (await getMessages({ conversationId, messageId }, 'content tokenCount'))?.[0];
+    if (!message) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    const existingContent = message.content;
+    if (!Array.isArray(existingContent) || index >= existingContent.length) {
+      return res.status(400).json({ error: 'Invalid index' });
+    }
+
+    const updatedContent = [...existingContent];
+    if (!updatedContent[index]) {
+      return res.status(400).json({ error: 'Content part not found' });
+    }
+
+    if (updatedContent[index].type !== ContentTypes.TEXT) {
+      return res.status(400).json({ error: 'Cannot update non-text content' });
+    }
+
+    const oldText = updatedContent[index].text;
+    updatedContent[index] = { type: ContentTypes.TEXT, text };
+
+    let tokenCount = message.tokenCount;
+    if (tokenCount !== undefined) {
+      const oldTokenCount = await countTokens(oldText, model);
+      const newTokenCount = await countTokens(text, model);
+      tokenCount = Math.max(0, tokenCount - oldTokenCount) + newTokenCount;
+    }
+
+    const result = await updateMessage(req, { messageId, content: updatedContent, tokenCount });
+    return res.status(200).json(result);
   } catch (error) {
     logger.error('Error updating message:', error);
     res.status(500).json({ error: 'Internal server error' });

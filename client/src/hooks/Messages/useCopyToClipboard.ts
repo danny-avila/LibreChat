@@ -14,12 +14,13 @@ export default function useCopyToClipboard({
       if (content) {
         messageText = content.reduce((acc, curr, i) => {
           if (curr.type === ContentTypes.TEXT) {
-            return acc + curr.text.value + (i === content.length - 1 ? '' : '\n');
+            const text = typeof curr.text === 'string' ? curr.text : curr.text.value;
+            return acc + text + (i === content.length - 1 ? '' : '\n');
           }
           return acc;
         }, '');
       }
-      copy(messageText ?? '', { format: 'text/plain' });
+      copy(messageText, { format: 'text/plain' });
 
       setTimeout(() => {
         setIsCopied(false);

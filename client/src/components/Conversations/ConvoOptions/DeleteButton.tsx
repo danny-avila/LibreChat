@@ -4,15 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { TMessage } from 'librechat-data-provider';
 import { useDeleteConversationMutation } from '~/data-provider';
-import {
-  OGDialog,
-  OGDialogTrigger,
-  Label,
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '~/components/ui';
+import { OGDialog, OGDialogTrigger, Label, TooltipAnchor } from '~/components/ui';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { TrashIcon } from '~/components/svg';
 import { useLocalize, useNewConvo } from '~/hooks';
@@ -21,7 +13,6 @@ type DeleteButtonProps = {
   conversationId: string;
   retainView: () => void;
   title: string;
-  className?: string;
   showDeleteDialog?: boolean;
   setShowDeleteDialog?: (value: boolean) => void;
 };
@@ -30,7 +21,6 @@ export default function DeleteButton({
   conversationId,
   retainView,
   title,
-  className = '',
   showDeleteDialog,
   setShowDeleteDialog,
 }: DeleteButtonProps) {
@@ -92,20 +82,13 @@ export default function DeleteButton({
 
   return (
     <OGDialog open={open} onOpenChange={setOpen}>
-      <TooltipProvider delayDuration={250}>
-        <Tooltip>
-          <OGDialogTrigger asChild>
-            <TooltipTrigger asChild>
-              <button>
-                <TrashIcon className="h-5 w-5" />
-              </button>
-            </TooltipTrigger>
-          </OGDialogTrigger>
-          <TooltipContent side="top" sideOffset={0} className={className}>
-            {localize('com_ui_delete')}
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+      <TooltipAnchor description={localize('com_ui_delete')}>
+        <OGDialogTrigger asChild>
+          <button>
+            <TrashIcon className="h-5 w-5" />
+          </button>
+        </OGDialogTrigger>
+      </TooltipAnchor>
       {dialogContent}
     </OGDialog>
   );

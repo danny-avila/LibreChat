@@ -134,6 +134,10 @@ export default {
   com_ui_bookmarks_update_error: 'אירעה שגיאה בעת עדכון הסימניה',
   com_ui_bookmarks_delete_error: 'אירעה שגיאה בעת מחיקת הסימניה',
   com_ui_bookmarks_add_to_conversation: 'הוסף לשיחה הנוכחית',
+  com_ui_accept: 'אני מקבל',
+  com_ui_decline: 'אני לא מקבל',
+  com_ui_terms_and_conditions: 'תנאים והגבלות',
+  com_ui_no_terms_content: 'אין תוכן תנאים והגבלות להצגה',
   com_auth_error_login: 'לא ניתן להתחבר עם המידע שסופק. אנא בדוק את האישורים שלך ונסה שוב.',
   com_auth_error_login_rl: 'יותר מדי ניסיונות כניסה בזמן קצר. בבקשה נסה שוב מאוחר יותר.',
   com_auth_error_login_ban: 'החשבון שלך נחסם באופן זמני עקב הפרות של השירות שלנו.',
@@ -354,7 +358,7 @@ export default {
   com_nav_plugin_store: 'חנות פלאגין',
   com_nav_plugin_install: 'התקן',
   com_nav_plugin_uninstall: 'הסר התקנה',
-  com_nav_tool_add: 'הוסף',
+  com_ui_add: 'הוסף',
   com_nav_tool_remove: 'הסר',
   com_nav_tool_dialog: 'כלי סייען',
   com_nav_tool_dialog_description: 'יש לשמור את האסיסטנט כדי להמשיך בבחירת הכלים.',
@@ -1728,7 +1732,7 @@ export const comparisons = {
     english: 'Uninstall',
     translated: 'הסר התקנה',
   },
-  com_nav_tool_add: {
+  com_ui_add: {
     english: 'Add',
     translated: 'הוסף',
   },

@@ -1,6 +1,6 @@
 {
   "name": "@librechat/frontend",
-  "version": "v0.7.5-rc1",
+  "version": "v0.7.5-rc2",
   "description": "",
   "type": "module",
   "scripts": {
@@ -28,7 +28,7 @@
   },
   "homepage": "https://librechat.ai",
   "dependencies": {
-    "@ariakit/react": "^0.4.8",
+    "@ariakit/react": "^0.4.11",
     "@codesandbox/sandpack-react": "^2.18.2",
     "@dicebear/collection": "^7.0.4",
     "@dicebear/core": "^7.0.4",
@@ -63,8 +63,10 @@
     "downloadjs": "^1.4.7",
     "export-from-json": "^1.7.2",
     "filenamify": "^6.0.0",
+    "framer-motion": "^11.5.4",
     "html-to-image": "^1.11.11",
     "image-blob-reduce": "^4.1.0",
+    "js-cookie": "^3.0.5",
     "librechat-data-provider": "*",
     "lodash": "^4.17.21",
     "lucide-react": "^0.394.0",
@@ -111,6 +113,7 @@
     "@testing-library/react": "^14.0.0",
     "@testing-library/user-event": "^14.4.3",
     "@types/jest": "^29.5.2",
+    "@types/js-cookie": "^3.0.6",
     "@types/node": "^20.3.0",
     "@types/react": "^18.2.11",
     "@types/react-dom": "^18.2.4",
@@ -133,7 +136,7 @@
     "tailwindcss": "^3.4.1",
     "ts-jest": "^29.1.0",
     "typescript": "^5.0.4",
-    "vite": "^5.4.2",
+    "vite": "^5.1.1",
     "vite-plugin-node-polyfills": "^0.17.0",
     "vite-plugin-pwa": "^0.19.8"
   }

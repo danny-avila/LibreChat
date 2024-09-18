@@ -2,13 +2,15 @@ import { PlusCircle } from 'lucide-react';
 import { isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
 import { useChatContext, useAddedChatContext } from '~/Providers';
+import { TooltipAnchor } from '~/components';
 import { mainTextareaId } from '~/common';
-import { Button } from '~/components/ui';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
-function AddMultiConvo({ className = '' }: { className?: string }) {
+function AddMultiConvo() {
   const { conversation } = useChatContext();
   const { setConversation: setAddedConvo } = useAddedChatContext();
+  const localize = useLocalize();
 
   const clickHandler = () => {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -33,15 +35,18 @@ function AddMultiConvo({ className = '' }: { className?: string }) {
   }
 
   return (
-    <Button
+    <TooltipAnchor
       id="add-multi-conversation-button"
-      aria-label="Add multi-conversation"
+      aria-label={localize('com_ui_add_multi_conversation')}
+      description={localize('com_ui_add_multi_conversation')}
+      tabIndex={0}
+      role="button"
       onClick={clickHandler}
-      variant="outline"
-      className={cn('h-10 w-10 p-0 transition-all duration-300 ease-in-out', className)}
+      data-testid="parameters-button"
+      className="inline-flex size-10 items-center justify-center rounded-lg border border-border-light bg-transparent text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
     >
-      <PlusCircle size={16} />
-    </Button>
+      <PlusCircle size={16} aria-label="Plus Icon" />
+    </TooltipAnchor>
   );
 }
 

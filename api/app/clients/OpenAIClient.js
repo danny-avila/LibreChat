@@ -19,6 +19,7 @@ const {
   constructAzureURL,
   getModelMaxTokens,
   genAzureChatCompletion,
+  getModelMaxOutputTokens,
 } = require('~/utils');
 const {
   truncateText,
@@ -64,6 +65,9 @@ class OpenAIClient extends BaseClient {
 
     /** @type {string | undefined} - The API Completions URL */
     this.completionsUrl;
+
+    /** @type {OpenAIUsageMetadata | undefined} */
+    this.usage;
   }
 
   // TODO: PluginsClient calls this 3x, unneeded
@@ -138,7 +142,8 @@ class OpenAIClient extends BaseClient {
 
     const { model } = this.modelOptions;
 
-    this.isChatCompletion = this.useOpenRouter || !!reverseProxy || model.includes('gpt');
+    this.isChatCompletion =
+      /\bo1\b/i.test(model) || model.includes('gpt') || this.useOpenRouter || !!reverseProxy;
     this.isChatGptModel = this.isChatCompletion;
     if (
       model.includes('text-davinci') ||
@@ -169,7 +174,14 @@ class OpenAIClient extends BaseClient {
       logger.debug('[OpenAIClient] maxContextTokens', this.maxContextTokens);
     }
 
-    this.maxResponseTokens = this.modelOptions.max_tokens || 1024;
+    this.maxResponseTokens =
+      this.modelOptions.max_tokens ??
+      getModelMaxOutputTokens(
+        model,
+        this.options.endpointType ?? this.options.endpoint,
+        this.options.endpointTokenConfig,
+      ) ??
+      1024;
     this.maxPromptTokens =
       this.options.maxPromptTokens || this.maxContextTokens - this.maxResponseTokens;
 
@@ -533,7 +545,8 @@ class OpenAIClient extends BaseClient {
       promptPrefix = this.augmentedPrompt + promptPrefix;
     }
 
-    if (promptPrefix) {
+    const isO1Model = /\bo1\b/i.test(this.modelOptions.model);
+    if (promptPrefix && !isO1Model) {
       promptPrefix = `Instructions:\n${promptPrefix.trim()}`;
       instructions = {
         role: 'system',
@@ -560,6 +573,16 @@ class OpenAIClient extends BaseClient {
       promptTokens,
       messages,
     };
+
+    /** EXPERIMENTAL */
+    if (promptPrefix && isO1Model) {
+      const lastUserMessageIndex = payload.findLastIndex((message) => message.role === 'user');
+      if (lastUserMessageIndex !== -1) {
+        payload[
+          lastUserMessageIndex
+        ].content = `${promptPrefix}\n${payload[lastUserMessageIndex].content}`;
+      }
+    }
 
     if (tokenCountMap) {
       tokenCountMap.instructions = instructions?.tokenCount;
@@ -885,6 +908,58 @@ ${convo}
     return title;
   }
 
+  /**
+   * Get stream usage as returned by this client's API response.
+   * @returns {OpenAIUsageMetadata} The stream usage object.
+   */
+  getStreamUsage() {
+    if (
+      this.usage &&
+      typeof this.usage === 'object' &&
+      'completion_tokens_details' in this.usage &&
+      typeof this.usage.completion_tokens_details === 'object'
+    ) {
+      const outputTokens = Math.abs(
+        this.usage.completion_tokens_details.reasoning_tokens - this.usage[this.outputTokensKey],
+      );
+      return {
+        ...this.usage.completion_tokens_details,
+        [this.inputTokensKey]: this.usage[this.inputTokensKey],
+        [this.outputTokensKey]: outputTokens,
+      };
+    }
+    return this.usage;
+  }
+
+  /**
+   * Calculates the correct token count for the current user message based on the token count map and API usage.
+   * Edge case: If the calculation results in a negative value, it returns the original estimate.
+   * If revisiting a conversation with a chat history entirely composed of token estimates,
+   * the cumulative token count going forward should become more accurate as the conversation progresses.
+   * @param {Object} params - The parameters for the calculation.
+   * @param {Record<string, number>} params.tokenCountMap - A map of message IDs to their token counts.
+   * @param {string} params.currentMessageId - The ID of the current message to calculate.
+   * @param {OpenAIUsageMetadata} params.usage - The usage object returned by the API.
+   * @returns {number} The correct token count for the current user message.
+   */
+  calculateCurrentTokenCount({ tokenCountMap, currentMessageId, usage }) {
+    const originalEstimate = tokenCountMap[currentMessageId] || 0;
+
+    if (!usage || typeof usage[this.inputTokensKey] !== 'number') {
+      return originalEstimate;
+    }
+
+    tokenCountMap[currentMessageId] = 0;
+    const totalTokensFromMap = Object.values(tokenCountMap).reduce((sum, count) => {
+      const numCount = Number(count);
+      return sum + (isNaN(numCount) ? 0 : numCount);
+    }, 0);
+    const totalInputTokens = usage[this.inputTokensKey] ?? 0;
+
+    const currentMessageTokens = totalInputTokens - totalTokensFromMap;
+    return currentMessageTokens > 0 ? currentMessageTokens : originalEstimate;
+  }
+
   async summarizeMessages({ messagesToRefine, remainingContextTokens }) {
     logger.debug('[OpenAIClient] Summarizing messages...');
     let context = messagesToRefine;
@@ -1000,7 +1075,16 @@ ${convo}
     }
   }
 
-  async recordTokenUsage({ promptTokens, completionTokens, context = 'message' }) {
+  /**
+   * @param {object} params
+   * @param {number} params.promptTokens
+   * @param {number} params.completionTokens
+   * @param {OpenAIUsageMetadata} [params.usage]
+   * @param {string} [params.model]
+   * @param {string} [params.context='message']
+   * @returns {Promise<void>}
+   */
+  async recordTokenUsage({ promptTokens, completionTokens, usage, context = 'message' }) {
     await spendTokens(
       {
         context,
@@ -1011,6 +1095,24 @@ ${convo}
       },
       { promptTokens, completionTokens },
     );
+
+    if (
+      usage &&
+      typeof usage === 'object' &&
+      'reasoning_tokens' in usage &&
+      typeof usage.reasoning_tokens === 'number'
+    ) {
+      await spendTokens(
+        {
+          context: 'reasoning',
+          model: this.modelOptions.model,
+          conversationId: this.conversationId,
+          user: this.user ?? this.options.req.user?.id,
+          endpointTokenConfig: this.options.endpointTokenConfig,
+        },
+        { completionTokens: usage.reasoning_tokens },
+      );
+    }
   }
 
   getTokenCountForResponse(response) {
@@ -1023,7 +1125,7 @@ ${convo}
   async chatCompletion({ payload, onProgress, abortController = null }) {
     let error = null;
     const errorCallback = (err) => (error = err);
-    let intermediateReply = '';
+    const intermediateReply = [];
     try {
       if (!abortController) {
         abortController = new AbortController();
@@ -1191,6 +1293,11 @@ ${convo}
       /** @type {(value: void | PromiseLike<void>) => void} */
       let streamResolve;
 
+      if (modelOptions.stream && /\bo1\b/i.test(modelOptions.model)) {
+        delete modelOptions.stream;
+        delete modelOptions.stop;
+      }
+
       if (modelOptions.stream) {
         streamPromise = new Promise((resolve) => {
           streamResolve = resolve;
@@ -1217,19 +1324,19 @@ ${convo}
             }
 
             if (typeof finalMessage.content !== 'string' || finalMessage.content.trim() === '') {
-              finalChatCompletion.choices[0].message.content = intermediateReply;
+              finalChatCompletion.choices[0].message.content = intermediateReply.join('');
             }
           })
           .on('finalMessage', (message) => {
             if (message?.role !== 'assistant') {
-              stream.messages.push({ role: 'assistant', content: intermediateReply });
+              stream.messages.push({ role: 'assistant', content: intermediateReply.join('') });
               UnexpectedRoleError = true;
             }
           });
 
         for await (const chunk of stream) {
           const token = chunk.choices[0]?.delta?.content || '';
-          intermediateReply += token;
+          intermediateReply.push(token);
           onProgress(token);
           if (abortController.signal.aborted) {
             stream.controller.abort();
@@ -1269,9 +1376,11 @@ ${convo}
       }
 
       const { choices } = chatCompletion;
+      this.usage = chatCompletion.usage;
+
       if (!Array.isArray(choices) || choices.length === 0) {
         logger.warn('[OpenAIClient] Chat completion response has no choices');
-        return intermediateReply;
+        return intermediateReply.join('');
       }
 
       const { message, finish_reason } = choices[0] ?? {};
@@ -1281,15 +1390,16 @@ ${convo}
 
       if (!message) {
         logger.warn('[OpenAIClient] Message is undefined in chatCompletion response');
-        return intermediateReply;
+        return intermediateReply.join('');
       }
 
       if (typeof message.content !== 'string' || message.content.trim() === '') {
+        const reply = intermediateReply.join('');
         logger.debug(
           '[OpenAIClient] chatCompletion: using intermediateReply due to empty message.content',
-          { intermediateReply },
+          { intermediateReply: reply },
         );
-        return intermediateReply;
+        return reply;
       }
 
       return message.content;
@@ -1298,7 +1408,7 @@ ${convo}
         err?.message?.includes('abort') ||
         (err instanceof OpenAI.APIError && err?.message?.includes('abort'))
       ) {
-        return intermediateReply;
+        return intermediateReply.join('');
       }
       if (
         err?.message?.includes(
@@ -1313,10 +1423,10 @@ ${convo}
         (err instanceof OpenAI.OpenAIError && err?.message?.includes('missing finish_reason'))
       ) {
         logger.error('[OpenAIClient] Known OpenAI error:', err);
-        return intermediateReply;
+        return intermediateReply.join('');
       } else if (err instanceof OpenAI.APIError) {
-        if (intermediateReply) {
-          return intermediateReply;
+        if (intermediateReply.length > 0) {
+          return intermediateReply.join('');
         } else {
           throw err;
         }
