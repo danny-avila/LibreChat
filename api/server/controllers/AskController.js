@@ -16,7 +16,12 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
     overrideParentMessageId = null,
   } = req.body;
 
-  logger.debug('[AskController]', { text, conversationId, ...endpointOption });
+  logger.debug('[AskController]', {
+    text,
+    conversationId,
+    ...endpointOption,
+    modelsConfig: endpointOption.modelsConfig ? 'exists' : '',
+  });
 
   let userMessage;
   let userMessagePromise;
