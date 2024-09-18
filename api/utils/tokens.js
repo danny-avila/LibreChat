@@ -123,7 +123,16 @@ const modelMaxOutputs = {
   system_default: 1024,
 };
 
+const anthropicMaxOutputs = {
+  'claude-3-haiku': 4096,
+  'claude-3-sonnet': 4096,
+  'claude-3-opus': 4096,
+  'claude-3.5-sonnet': 8192,
+  'claude-3-5-sonnet': 8192,
+};
+
 const maxOutputTokensMap = {
+  [EModelEndpoint.anthropic]: anthropicMaxOutputs,
   [EModelEndpoint.azureOpenAI]: modelMaxOutputs,
   [EModelEndpoint.openAI]: modelMaxOutputs,
   [EModelEndpoint.custom]: modelMaxOutputs,
