@@ -523,7 +523,7 @@ export const tConversationSchema = z.object({
   frequency_penalty: z.number().optional(),
   presence_penalty: z.number().optional(),
   parentMessageId: z.string().optional(),
-  maxOutputTokens: z.number().optional(),
+  maxOutputTokens: coerceNumber.optional(),
   maxContextTokens: coerceNumber.optional(),
   max_tokens: coerceNumber.optional(),
   /* Anthropic */
