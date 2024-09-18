@@ -1,5 +1,7 @@
 require('dotenv').config();
+
 let appInsights = require('applicationinsights');
+
 appInsights
   .setup(process.env.APPLICATIONINSIGHTS_CONNECTION_STRING)
   .setAutoCollectConsole(true)
@@ -10,8 +12,8 @@ appInsights
   .setDistributedTracingMode(appInsights.DistributedTracingModes.AI_AND_W3C)
   .setSendLiveMetrics(true)
   .start();
-global.appInsights = appInsights.defaultClient;
 
+global.appInsights = appInsights.defaultClient;
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
 const cors = require('cors');

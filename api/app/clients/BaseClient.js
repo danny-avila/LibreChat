@@ -507,6 +507,7 @@ class BaseClient {
     }
 
     const User = require('~/models/User');
+    const { email } = await User.findOne({ _id: user }).lean();
 
     const { email } = await User.findOne({ user }).lean();
 
@@ -600,6 +601,19 @@ class BaseClient {
         completionTokens = this.getTokenCount(completion);
       }
 
+      global.appInsights.trackEvent({
+        name: 'AzureAnswerEnded',
+        properties: {
+          userId: user,
+          userEmail: email,
+          charactersLength: completion.length,
+          promptTokens: promptTokens,
+          completionTokens: completionTokens,
+          messageTokens: completionTokens + promptTokens ,
+          model: this.modelOptions.model,
+        },
+      });
+      
       await this.recordTokenUsage({ promptTokens, completionTokens, usage });
     }
 

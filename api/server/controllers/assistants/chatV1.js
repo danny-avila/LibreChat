@@ -34,6 +34,48 @@ const { logger } = require('~/config');
 
 const ten_minutes = 1000 * 60 * 10;
 
+async function sendResponseTelemetry(req, conversationId, response, model)  {
+
+  const Conversation = require('~/models/schema/convoSchema');
+  const Message = require ('~/models/schema/messageSchema');
+
+  const {messages} = 
+    await Conversation.findOne({ conversationId })
+      .select('messages')
+      .exec();
+
+  const messagesText = 
+    await Message.find({ _id: {  $in: messages } })
+    .exec();
+  
+  let messagesHistory = [];
+
+  for (let i =0; i< messagesText.length; i++){
+    if(messagesText[i].text)
+      messagesHistory.push(messagesText[i].text)
+    if(messagesText[i].content) {
+      if(messagesText[i].content[0].type === 'text')
+        messagesHistory.push(messagesText[i].content[0].text.value)
+      else
+        messagesHistory.push(messagesText[i].content[1].text.value)
+    }
+  }
+
+  const { completion, prompt } = intelequiaCountTokens(messagesHistory, model);
+  global.appInsights.trackEvent({
+    name: 'AzureAssistantsAnswerEnded',
+    properties: {
+      userId: req.user.id,
+      userEmail: req.user.email,
+      charactersLength: response.text.length,
+      messageTokens: completion + prompt,
+      promptTokens: prompt,
+      completionTokens: completion,
+      model: model,
+    },
+  });
+}
+
 /**
  * @route POST /
  * @desc Chat with an assistant
@@ -491,7 +533,7 @@ const chatV1 = async (req, res) => {
           assistantId: body.assistant_id,
         },
       });
-      global.appInsights.flush();
+
       sendMessage(res, {
         sync: true,
         conversationId,
@@ -605,17 +647,7 @@ const chatV1 = async (req, res) => {
       model: assistant_id,
       endpoint,
     };
-    const responseTokens = intelequiaCountTokens(response.text, model);
-    global.appInsights.trackEvent({
-      name: 'AzureAssistantsAnswerEnded',
-      properties: {
-        userId: req.user.id,
-        userEmail: req.user.email,
-        charactersLength: response.text.length,
-        messageTokens: responseTokens.length,
-        model: model,
-      },
-    });
+
     sendMessage(res, {
       final: true,
       conversation,
@@ -666,6 +698,8 @@ const chatV1 = async (req, res) => {
         conversationId,
       });
     }
+    await sendResponseTelemetry(req, conversationId, response, model)
+
   } catch (error) {
     await handleError(error);
   }

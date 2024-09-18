@@ -62,31 +62,42 @@ const _listAssistants = async ({ req, res, version, query }) => {
  * @returns {Array} list of assistants in wich the specified user has permissions
  */
 
-async function verifyAssistantPermissions(userId, allAssistants) {
-  const targetGroupIds = global.myCache.get(userId);
-  const assistants = global.azureAssistantsGroupsPermissions;
-  const result = [];
+  async function verifyAssistantPermissions(userId, allAssistants) {
+    const targetGroupIds = global.myCache.get(userId);
+    const assistants = global.azureAssistantsGroupsPermissions;
+    const result = [];
 
-  allAssistants.forEach((assistant) => {
-    const exist = assistants.some((a) => a.assistant === assistant.id);
-    if (!exist) {
-      result.push(assistant);
-    } else {
-      assistants.forEach((assist) => {
-        if (assist.assistant == assistant.id) {
-          const matches = assist.groups.some((groupId) => {
-            return targetGroupIds.includes(groupId);
-          });
-
-          if (matches) {
-            result.push(assistant);
-          }
+    if( targetGroupIds == null ){   // codigo nuevo
+      allAssistants.forEach((assistant) => {
+        const exist = assistants.some((a) => a.assistant === assistant.id );
+        if (!exist) {
+          result.push(assistant);
         }
-      });
+      })
+      return result;
     }
-  });
-  return result;
-}
+
+    allAssistants.forEach((assistant) => {
+      const exist = assistants.some((a) => a.assistant === assistant.id);
+      if (!exist) {
+        result.push(assistant);
+      } else {
+        assistants.forEach((assist) => {
+          if (assist.assistant == assistant.id) {
+            const matches = assist.groups.some((groupId) => {
+              return targetGroupIds.includes(groupId);
+            });
+
+            if (matches) {
+              result.push(assistant);
+            }
+          }
+        });
+      }
+    });
+
+    return result;
+  }
 
 /**
  * Fetches all assistants based on provided query params, until `has_more` is `false`.

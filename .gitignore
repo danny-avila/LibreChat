@@ -107,3 +107,4 @@ uploads/
 release/
 
 build.sh
+/.vs

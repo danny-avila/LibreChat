@@ -1,7 +1,10 @@
 const { getEncoding } = require('js-tiktoken');
 
 function getModelTokenEncoder(model) {
-  const o200k_base = ['gpt-4o'];
+  const o200k_base = [
+    'gpt-4o',
+    'gpt-4o-mini',
+  ];
   const cl100k_base = [
     'gpt-4',
     'gpt4',
@@ -61,10 +64,20 @@ function getModelTokenEncoder(model) {
   }
 }
 
-function intelequiaCountTokens(text = '', modelName = 'gpt-3.5-turbo') {
+function intelequiaCountTokens(messages = [""], modelName = 'gpt-3.5-turbo') {
   let modelEncoder = getModelTokenEncoder(modelName);
   let enc = getEncoding(modelEncoder);
-  return enc.encode(text);
+  let completionMessage = messages[messages.length - 1] 
+  let completionArray = enc.encode(completionMessage);
+  let completion = completionArray.length;
+  let prompt = 0;
+
+  for (let message of messages) {
+    const count = enc.encode(message).length;
+    prompt += count;
+  }
+  
+  return {completion: completion, prompt: prompt};
 }
 
 module.exports = intelequiaCountTokens;
