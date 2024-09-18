@@ -17,8 +17,8 @@ const {
   parseParamFromPrompt,
   createContextHandlers,
 } = require('./prompts');
+const { getModelMaxTokens, getModelMaxOutputTokens, matchModelName } = require('~/utils');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
-const { getModelMaxTokens, matchModelName } = require('~/utils');
 const { sleep } = require('~/server/utils');
 const BaseClient = require('./BaseClient');
 const { logger } = require('~/config');
@@ -120,7 +120,14 @@ class AnthropicClient extends BaseClient {
       this.options.maxContextTokens ??
       getModelMaxTokens(this.modelOptions.model, EModelEndpoint.anthropic) ??
       100000;
-    this.maxResponseTokens = this.modelOptions.maxOutputTokens || 1500;
+    this.maxResponseTokens =
+      this.modelOptions.maxOutputTokens ??
+      getModelMaxOutputTokens(
+        this.modelOptions.model,
+        this.options.endpointType ?? this.options.endpoint,
+        this.options.endpointTokenConfig,
+      ) ??
+      1500;
     this.maxPromptTokens =
       this.options.maxPromptTokens || this.maxContextTokens - this.maxResponseTokens;
 
@@ -143,17 +150,6 @@ class AnthropicClient extends BaseClient {
     this.startToken = '||>';
     this.endToken = '';
     this.gptEncoder = this.constructor.getTokenizer('cl100k_base');
-
-    if (!this.modelOptions.stop) {
-      const stopTokens = [this.startToken];
-      if (this.endToken && this.endToken !== this.startToken) {
-        stopTokens.push(this.endToken);
-      }
-      stopTokens.push(`${this.userLabel}`);
-      stopTokens.push('<|diff_marker|>');
-
-      this.modelOptions.stop = stopTokens;
-    }
 
     return this;
   }
