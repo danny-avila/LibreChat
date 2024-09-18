@@ -39,7 +39,7 @@ const Dropdown: React.FC<DropdownProps> = ({
       <Select.Select
         store={selectProps}
         className={cn(
-          'btn-neutral focus:ring-offset-ring-offset relative inline-flex w-auto items-center justify-between rounded-lg border-border-light bg-header-primary py-2 pl-3 pr-8 text-text-primary transition-all duration-200 ease-in-out hover:bg-header-hover focus:ring-ring-primary',
+          'focus:ring-offset-ring-offset relative inline-flex w-auto items-center justify-between rounded-lg border border-input bg-background py-2 pl-3 pr-8 text-text-primary transition-all duration-200 ease-in-out hover:bg-accent hover:text-accent-foreground focus:ring-ring-primary',
           className,
         )}
         data-testid={testId}
@@ -54,7 +54,10 @@ const Dropdown: React.FC<DropdownProps> = ({
           <Select.SelectArrow />
         </div>
       </Select.Select>
-      <Select.SelectPopover store={selectProps} className={cn('popover', sizeClasses, className)}>
+      <Select.SelectPopover
+        store={selectProps}
+        className={cn('popover-ui', sizeClasses, className)}
+      >
         {options.map((item, index) => (
           <Select.SelectItem
             key={index}

@@ -134,7 +134,7 @@ export default function ArchivedChatsTable() {
             </TableHeader>
             <TableBody>
               {conversations.map((conversation: TConversation) => (
-                <TableRow key={conversation.conversationId}>
+                <TableRow key={conversation.conversationId} className="hover:bg-transparent">
                   <TableCell className="flex items-center py-3 text-text-primary">
                     <button
                       className="flex"
@@ -159,25 +159,38 @@ export default function ArchivedChatsTable() {
                   <TableCell className="flex items-center justify-end gap-2 p-1">
                     <TooltipAnchor
                       description={localize('com_ui_unarchive')}
-                      onClick={() => {
-                        setConversationId(conversation.conversationId);
-                        archiveHandler();
-                      }}
-                      aria-label="Unarchive conversation"
-                      className="flex size-7 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-hover hover:text-text-primary"
-                    >
-                      <ArchiveRestore className="size-4" />
-                    </TooltipAnchor>
+                      render={
+                        <Button
+                          aria-label="Unarchive conversation"
+                          variant="ghost"
+                          size="icon"
+                          className="size-8"
+                          onClick={() => {
+                            setConversationId(conversation.conversationId);
+                            archiveHandler();
+                          }}
+                        >
+                          <ArchiveRestore className="size-4" />
+                        </Button>
+                      }
+                    ></TooltipAnchor>
+
                     <OGDialog>
-                      <TooltipAnchor
-                        description={localize('com_ui_delete')}
-                        aria-label="Delete conversation"
-                        className="flex size-7 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-hover hover:text-text-primary"
-                      >
-                        <OGDialogTrigger asChild>
-                          <TrashIcon className="size-4" />
-                        </OGDialogTrigger>
-                      </TooltipAnchor>
+                      <OGDialogTrigger asChild>
+                        <TooltipAnchor
+                          description={localize('com_ui_delete')}
+                          render={
+                            <Button
+                              aria-label="Delete archived conversation"
+                              variant="ghost"
+                              size="icon"
+                              className="size-8"
+                            >
+                              <TrashIcon className="size-4" />
+                            </Button>
+                          }
+                        ></TooltipAnchor>
+                      </OGDialogTrigger>
                       {DeleteConversationDialog({
                         conversationId: conversation.conversationId ?? '',
                         retainView: refetch,
