@@ -1,47 +1,41 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options:
-# https://docs.github.com/github/administering-a-repository/configuration-options-for-dependency-updates
-
 version: 2
 updates:
-  - package-ecosystem: "npm" # See documentation for possible values
-    directory: "/api" # Location of package manifests
-    target-branch: "dev"
-    versioning-strategy: increase-if-necessary
+  - package-ecosystem: "npm"
+    directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "daily"
+    open-pull-requests-limit: 10
+    versioning-strategy: auto
     allow:
-      # Allow both direct and indirect updates for all packages
-      - dependency-type: "all"
-    commit-message:
-      prefix: "npm api prod"
-      prefix-development: "npm api dev"
-      include: "scope"
-  - package-ecosystem: "npm" # See documentation for possible values
-    directory: "/client" # Location of package manifests
-    target-branch: "dev"
-    versioning-strategy: increase-if-necessary
+      - dependency-type: "direct"
+    security-updates-only: true
+
+  - package-ecosystem: "npm"
+    directory: "/api"
     schedule:
-      interval: "weekly"
+      interval: "daily"
+    open-pull-requests-limit: 10
+    versioning-strategy: auto
     allow:
-      # Allow both direct and indirect updates for all packages
-      - dependency-type: "all"
-    commit-message:
-      prefix: "npm client prod"
-      prefix-development: "npm client dev"
-      include: "scope"
-  - package-ecosystem: "npm" # See documentation for possible values
-    directory: "/" # Location of package manifests
-    target-branch: "dev"
-    versioning-strategy: increase-if-necessary
+      - dependency-type: "direct"
+    security-updates-only: true
+
+  - package-ecosystem: "npm"
+    directory: "/client"
     schedule:
-      interval: "weekly"
+      interval: "daily"
+    open-pull-requests-limit: 10
+    versioning-strategy: auto
     allow:
-      # Allow both direct and indirect updates for all packages
-      - dependency-type: "all"
-    commit-message:
-      prefix: "npm all prod"
-      prefix-development: "npm all dev"
-      include: "scope" 
-     
+      - dependency-type: "direct"
+    security-updates-only: true
+
+  - package-ecosystem: "npm"
+    directory: "/packages/data-provider"
+    schedule:
+      interval: "daily"
+    open-pull-requests-limit: 10
+    versioning-strategy: auto
+    allow:
+      - dependency-type: "direct"
+    security-updates-only: true
