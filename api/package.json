@@ -50,7 +50,7 @@
     "cohere-ai": "^7.9.1",
     "compression": "^1.7.4",
     "connect-redis": "^7.1.0",
-    "cookie": "^0.5.0",
+    "cookie": "^0.6.0",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
     "dedent": "^1.5.3",
