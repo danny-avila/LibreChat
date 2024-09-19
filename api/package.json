@@ -40,7 +40,7 @@
     "@keyv/mongo": "^2.1.8",
     "@keyv/redis": "^2.8.1",
     "@langchain/community": "^0.0.46",
-    "@langchain/core": "^0.2.18",
+    "@langchain/core": "^0.3.3",
     "@langchain/google-genai": "^0.0.11",
     "@langchain/google-vertexai": "^0.0.17",
     "@librechat/agents": "^1.5.2",
