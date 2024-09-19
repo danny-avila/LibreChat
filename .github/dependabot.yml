@@ -4,38 +4,30 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
-    open-pull-requests-limit: 10
-    versioning-strategy: auto
-    allow:
-      - dependency-type: "direct"
-    security-updates-only: true
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-minor", "version-update:semver-patch"]
 
   - package-ecosystem: "npm"
     directory: "/api"
     schedule:
       interval: "daily"
-    open-pull-requests-limit: 10
-    versioning-strategy: auto
-    allow:
-      - dependency-type: "direct"
-    security-updates-only: true
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-minor", "version-update:semver-patch"]
 
   - package-ecosystem: "npm"
     directory: "/client"
     schedule:
       interval: "daily"
-    open-pull-requests-limit: 10
-    versioning-strategy: auto
-    allow:
-      - dependency-type: "direct"
-    security-updates-only: true
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-minor", "version-update:semver-patch"]
 
   - package-ecosystem: "npm"
     directory: "/packages/data-provider"
     schedule:
       interval: "daily"
-    open-pull-requests-limit: 10
-    versioning-strategy: auto
-    allow:
-      - dependency-type: "direct"
-    security-updates-only: true
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-minor", "version-update:semver-patch"]
