@@ -42,7 +42,7 @@
     "@langchain/community": "^0.0.46",
     "@langchain/core": "^0.2.18",
     "@langchain/google-genai": "^0.0.11",
-    "@langchain/google-vertexai": "^0.0.17",
+    "@langchain/google-vertexai": "^0.1.0",
     "@librechat/agents": "^1.5.2",
     "axios": "^1.3.4",
     "bcryptjs": "^2.4.3",
