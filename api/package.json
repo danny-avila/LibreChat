@@ -1,5 +1,5 @@
 {
-  "name": "@librechat-backend",
+  "name": "@librechat/backend",
   "version": "v0.7.5-rc2",
   "description": "",
   "scripts": {
