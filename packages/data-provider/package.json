@@ -65,7 +65,7 @@
     "rollup": "^3.26.0",
     "rollup-plugin-generate-package-json": "^3.2.0",
     "rollup-plugin-peer-deps-external": "^2.2.4",
-    "rollup-plugin-typescript2": "^0.35.0",
+    "rollup-plugin-typescript2": "^0.36.0",
     "typescript": "^5.0.4"
   },
   "peerDependencies": {
