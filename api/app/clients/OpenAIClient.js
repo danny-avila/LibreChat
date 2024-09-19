@@ -644,6 +644,12 @@ class OpenAIClient extends BaseClient {
 
       if (completionResult && typeof completionResult === 'string') {
         reply = completionResult;
+      } else if (
+        completionResult &&
+        typeof completionResult === 'object' &&
+        Array.isArray(completionResult.choices)
+      ) {
+        reply = completionResult.choices[0]?.text?.replace(this.endToken, '');
       }
     } else if (typeof opts.onProgress === 'function' || this.options.useChatCompletion) {
       reply = await this.chatCompletion({
