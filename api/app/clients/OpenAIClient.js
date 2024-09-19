@@ -923,7 +923,9 @@ ${convo}
       this.usage &&
       typeof this.usage === 'object' &&
       'completion_tokens_details' in this.usage &&
-      typeof this.usage.completion_tokens_details === 'object'
+      this.usage.completion_tokens_details &&
+      typeof this.usage.completion_tokens_details === 'object' &&
+      'reasoning_tokens' in this.usage.completion_tokens_details
     ) {
       const outputTokens = Math.abs(
         this.usage.completion_tokens_details.reasoning_tokens - this.usage[this.outputTokensKey],
