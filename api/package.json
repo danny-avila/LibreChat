@@ -101,7 +101,6 @@
     "ua-parser-js": "^1.0.36",
     "winston": "^3.11.0",
     "winston-daily-rotate-file": "^4.7.1",
-    "ws": "^8.17.0",
     "zod": "^3.22.4"
   },
   "devDependencies": {
