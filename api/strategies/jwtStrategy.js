@@ -13,6 +13,7 @@ const jwtLogin = async () =>
     },
     async (payload, done) => {
       try {
+        logger.info('Checking user existence: ' + payload?.id);
         let user = await getUserById(payload?.id, '-password -__v');
         if (user) {
           user.id = user._id.toString();
