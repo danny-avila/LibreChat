@@ -57,7 +57,13 @@ const TermsAndConditionsModal = ({
         showCloseButton={false}
         showCancelButton={false}
         main={
-          <div className="max-h-[60vh] overflow-y-auto p-4">
+          <section
+            // Motivation: This is a dialog, so its content should be focusable
+            // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+            tabIndex={0}
+            className="max-h-[60vh] overflow-y-auto p-4"
+            aria-label={localize('com_ui_terms_and_conditions')}
+          >
             <div className="prose dark:prose-invert w-full max-w-none !text-text-primary">
               {modalContent != null && modalContent ? (
                 <MarkdownLite content={modalContent} />
@@ -65,7 +71,7 @@ const TermsAndConditionsModal = ({
                 <p>{localize('com_ui_no_terms_content')}</p>
               )}
             </div>
-          </div>
+          </section>
         }
         buttons={
           <>
