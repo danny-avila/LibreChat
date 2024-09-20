@@ -11,7 +11,7 @@ import TermsAndConditionsModal from '~/components/ui/TermsAndConditionsModal';
 import { Banner } from '~/components/Banners';
 
 export default function Root() {
-  const { isAuthenticated, logout, token } = useAuthContext();
+  const { isAuthenticated, logout } = useAuthContext();
   const navigate = useNavigate();
   const [navVisible, setNavVisible] = useState(() => {
     const savedNavVisible = localStorage.getItem('navVisible');
@@ -27,7 +27,7 @@ export default function Root() {
   const [showTerms, setShowTerms] = useState(false);
   const { data: config } = useGetStartupConfig();
   const { data: termsData } = useUserTermsQuery({
-    enabled: isAuthenticated && !!config?.interface?.termsOfService?.modalAcceptance,
+    enabled: isAuthenticated && config?.interface?.termsOfService?.modalAcceptance === true,
   });
 
   useEffect(() => {
@@ -66,7 +66,7 @@ export default function Root() {
               </div>
             </div>
           </AgentsMapContext.Provider>
-          {config?.interface?.termsOfService?.modalAcceptance && (
+          {config?.interface?.termsOfService?.modalAcceptance === true && (
             <TermsAndConditionsModal
               open={showTerms}
               onOpenChange={setShowTerms}
