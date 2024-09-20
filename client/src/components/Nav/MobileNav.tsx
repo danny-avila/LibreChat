@@ -19,7 +19,8 @@ export default function MobileNav({
       <button
         type="button"
         data-testid="mobile-header-new-chat-button"
-        className="inline-flex size-10 items-center justify-center rounded-full hover:bg-surface-hover"
+        aria-label={localize('com_nav_open_sidebar')}
+        className="m-1 inline-flex size-10 items-center justify-center rounded-full hover:bg-surface-hover"
         onClick={() =>
           setNavVisible((prev) => {
             localStorage.setItem('navVisible', JSON.stringify(!prev));
@@ -49,7 +50,8 @@ export default function MobileNav({
       </h1>
       <button
         type="button"
-        className="inline-flex size-10 items-center justify-center rounded-full hover:bg-surface-hover"
+        aria-label={localize('com_ui_new_chat')}
+        className="m-1 inline-flex size-10 items-center justify-center rounded-full hover:bg-surface-hover"
         onClick={() => newConversation()}
       >
         <svg
