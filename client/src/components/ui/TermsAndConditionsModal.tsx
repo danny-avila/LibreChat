@@ -1,4 +1,4 @@
-import Markdown from '~/components/Chat/Messages/Content/Markdown';
+import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { useAcceptTermsMutation } from '~/data-provider';
 import { useToastContext } from '~/Providers';
@@ -60,7 +60,7 @@ const TermsAndConditionsModal = ({
           <div className="max-h-[60vh] overflow-y-auto p-4">
             <div className="prose dark:prose-invert w-full max-w-none !text-text-primary">
               {modalContent != null && modalContent ? (
-                <Markdown content={modalContent} isLatestMessage={false} />
+                <MarkdownLite content={modalContent} />
               ) : (
                 <p>{localize('com_ui_no_terms_content')}</p>
               )}
