@@ -1,10 +1,9 @@
-import { useLocalize } from '~/hooks';
-import { OGDialog } from '~/components/ui';
-import DialogTemplate from '~/components/ui/DialogTemplate';
-import { useAuthContext } from '~/hooks';
 import Markdown from '~/components/Chat/Messages/Content/Markdown';
-import { useToastContext } from '~/Providers';
+import DialogTemplate from '~/components/ui/DialogTemplate';
 import { useAcceptTermsMutation } from '~/data-provider';
+import { useToastContext } from '~/Providers';
+import { OGDialog } from '~/components/ui';
+import { useLocalize } from '~/hooks';
 
 const TermsAndConditionsModal = ({
   open,
@@ -59,8 +58,8 @@ const TermsAndConditionsModal = ({
         showCancelButton={false}
         main={
           <div className="max-h-[60vh] overflow-y-auto p-4">
-            <div className="prose dark:prose-invert w-full max-w-none !text-black dark:!text-white">
-              {modalContent ? (
+            <div className="prose dark:prose-invert w-full max-w-none !text-text-primary">
+              {modalContent != null && modalContent ? (
                 <Markdown content={modalContent} isLatestMessage={false} />
               ) : (
                 <p>{localize('com_ui_no_terms_content')}</p>
@@ -72,13 +71,13 @@ const TermsAndConditionsModal = ({
           <>
             <button
               onClick={handleDecline}
-              className="border-border-none bg-surface-500 dark:hover:bg-surface-600 inline-flex h-10 items-center justify-center rounded-lg px-4 py-2 text-sm text-white hover:bg-gray-600"
+              className="inline-flex h-10 items-center justify-center rounded-lg border border-border-heavy bg-surface-secondary px-4 py-2 text-sm text-text-primary hover:bg-surface-active"
             >
               {localize('com_ui_decline')}
             </button>
             <button
               onClick={handleAccept}
-              className="border-border-none bg-surface-500 inline-flex h-10 items-center justify-center rounded-lg px-4 py-2 text-sm text-white hover:bg-green-600 dark:hover:bg-green-600"
+              className="inline-flex h-10 items-center justify-center rounded-lg border border-border-heavy bg-surface-secondary px-4 py-2 text-sm text-text-primary hover:bg-green-500 hover:text-white focus:bg-green-500 focus:text-white dark:hover:bg-green-600 dark:focus:bg-green-600"
             >
               {localize('com_ui_accept')}
             </button>
