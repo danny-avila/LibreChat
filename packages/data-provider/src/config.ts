@@ -1119,6 +1119,8 @@ export enum LocalStorageKeys {
   FILES_DRAFT = 'filesDraft_',
   /** Key for last Selected Prompt Category */
   LAST_PROMPT_CATEGORY = 'lastPromptCategory',
+  /** Key for rendering User Messages as Markdown */
+  ENABLE_USER_MSG_MARKDOWN = 'enableUserMsgMarkdown',
 }
 
 export enum ForkOptions {

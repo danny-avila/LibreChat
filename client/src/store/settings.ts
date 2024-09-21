@@ -23,6 +23,10 @@ const localStorageAtoms = {
   autoScroll: atomWithLocalStorage('autoScroll', false),
   hideSidePanel: atomWithLocalStorage('hideSidePanel', false),
   fontSize: atomWithLocalStorage('fontSize', 'text-base'),
+  enableUserMsgMarkdown: atomWithLocalStorage<boolean>(
+    LocalStorageKeys.ENABLE_USER_MSG_MARKDOWN,
+    true,
+  ),
 
   // Messages settings
   enterToSend: atomWithLocalStorage('enterToSend', true),
