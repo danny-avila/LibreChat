@@ -80,7 +80,7 @@ export const groupConversationsByDate = (
 
     const date = conversation.updatedAt ? parseISO(conversation.updatedAt) : startOfToday();
     const groupName = getGroupName(date);
-    if (!acc[groupName]) {
+    if (acc[groupName] === undefined || acc[groupName] === null) {
       acc[groupName] = [];
     }
     acc[groupName].push(conversation);
@@ -95,7 +95,7 @@ export const groupConversationsByDate = (
     dateKeys.previous30Days,
   ];
   dateGroups.forEach((group) => {
-    if (groups[group]) {
+    if (groups[group] != null) {
       sortedGroups[group] = groups[group];
     }
   });
@@ -195,7 +195,7 @@ export const getConversationById = (
   data: ConversationData | undefined,
   conversationId: string | null,
 ): TConversation | undefined => {
-  if (!data || !conversationId) {
+  if (!data || !(conversationId ?? '')) {
     return undefined;
   }
 
@@ -224,11 +224,11 @@ export function storeEndpointSettings(conversation: TConversation | null) {
     return;
   }
 
-  const lastModel = JSON.parse(localStorage.getItem(LocalStorageKeys.LAST_MODEL) || '{}');
+  const lastModel = JSON.parse(localStorage.getItem(LocalStorageKeys.LAST_MODEL) ?? '{}');
   lastModel[endpoint] = model;
 
   if (endpoint === EModelEndpoint.gptPlugins) {
-    lastModel.secondaryModel = agentOptions?.model || model || '';
+    lastModel.secondaryModel = agentOptions?.model ?? model ?? '';
   }
 
   localStorage.setItem(LocalStorageKeys.LAST_MODEL, JSON.stringify(lastModel));
