@@ -1,4 +1,5 @@
-import { convoData } from './convos.fakeData';
+import { Constants } from 'librechat-data-provider';
+import type { TConversation, ConversationData } from 'librechat-data-provider';
 import {
   dateKeys,
   addConversation,
@@ -8,7 +9,7 @@ import {
   findPageForConversation,
   groupConversationsByDate,
 } from './convos';
-import type { TConversation, ConversationData } from 'librechat-data-provider';
+import { convoData } from './convos.fakeData';
 import { normalizeData } from './collection';
 
 describe('Conversation Utilities', () => {
@@ -242,13 +243,16 @@ describe('Conversation Utilities', () => {
   describe('addConversation', () => {
     it('adds a new conversation to the top of the list', () => {
       const data = { pages: [{ conversations: [] }] };
-      const newConversation = { conversationId: 'new', updatedAt: '2023-04-02T12:00:00Z' };
+      const newConversation = {
+        conversationId: Constants.NEW_CONVO,
+        updatedAt: '2023-04-02T12:00:00Z',
+      };
       const newData = addConversation(
         data as unknown as ConversationData,
         newConversation as TConversation,
       );
       expect(newData.pages[0].conversations).toHaveLength(1);
-      expect(newData.pages[0].conversations[0].conversationId).toBe('new');
+      expect(newData.pages[0].conversations[0].conversationId).toBe(Constants.NEW_CONVO);
     });
   });
 
@@ -348,13 +352,13 @@ describe('Conversation Utilities with Fake Data', () => {
   describe('addConversation', () => {
     it('adds a new conversation to the existing fake data', () => {
       const newConversation = {
-        conversationId: 'new',
+        conversationId: Constants.NEW_CONVO,
         updatedAt: new Date().toISOString(),
       } as TConversation;
       const initialLength = convoData.pages[0].conversations.length;
       const newData = addConversation(convoData, newConversation);
       expect(newData.pages[0].conversations.length).toBe(initialLength + 1);
-      expect(newData.pages[0].conversations[0].conversationId).toBe('new');
+      expect(newData.pages[0].conversations[0].conversationId).toBe(Constants.NEW_CONVO);
     });
   });
 
