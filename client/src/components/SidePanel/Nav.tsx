@@ -3,8 +3,8 @@ import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import type { NavLink, NavProps } from '~/common';
 import { Accordion, AccordionItem, AccordionContent } from '~/components/ui/Accordion';
 import { buttonVariants } from '~/components/ui/Button';
+import { TooltipAnchor, Button } from '~/components';
 import { cn, removeFocusOutlines } from '~/utils';
-import { TooltipAnchor } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 
 export default function Nav({ links, isCollapsed, resize, defaultActive }: NavProps) {
@@ -31,29 +31,27 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                   const variant = getVariant(link);
                   return isCollapsed ? (
                     <TooltipAnchor
-                      className={cn(
-                        buttonVariants({ variant, size: 'icon' }),
-                        removeFocusOutlines,
-                        'h-9 w-9',
-                        variant === 'default'
-                          ? 'dark:bg-muted dark:text-muted-foreground dark:hover:bg-muted bg-surface-terniary dark:hover:text-white'
-                          : '',
-                      )}
-                      onClick={(e) => {
-                        if (link.onClick) {
-                          link.onClick(e);
-                          setActive('');
-                          return;
-                        }
-                        setActive(link.id);
-                        resize && resize(25);
-                      }}
                       description={localize(link.title)}
                       side="left"
-                    >
-                      <link.icon className="h-4 w-4" />
-                      <span className="sr-only">{link.title}</span>
-                    </TooltipAnchor>
+                      render={
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => {
+                            if (link.onClick) {
+                              link.onClick(e);
+                              setActive('');
+                              return;
+                            }
+                            setActive(link.id);
+                            resize && resize(25);
+                          }}
+                        >
+                          <link.icon className="h-4 w-4 text-text-secondary" />
+                          <span className="sr-only">{link.title}</span>
+                        </Button>
+                      }
+                    ></TooltipAnchor>
                   ) : (
                     <Accordion
                       key={index}
@@ -65,16 +63,10 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                       <AccordionItem value={link.id} className="w-full border-none">
                         <AccordionPrimitive.Header asChild>
                           <AccordionPrimitive.Trigger asChild>
-                            <button
-                              className={cn(
-                                buttonVariants({ variant, size: 'sm' }),
-                                removeFocusOutlines,
-                                variant === 'default'
-                                  ? 'dark:bg-muted dark:hover:bg-muted dark:text-white dark:hover:text-white'
-                                  : '',
-                                'hover:bg-gray-200 data-[state=open]:bg-gray-200 data-[state=open]:text-black dark:hover:bg-gray-700 dark:data-[state=open]:bg-gray-700 dark:data-[state=open]:text-white',
-                                'w-full justify-start rounded-md border dark:border-gray-700',
-                              )}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full justify-start bg-transparent text-text-secondary data-[state=open]:bg-surface-secondary data-[state=open]:text-text-primary"
                               onClick={(e) => {
                                 if (link.onClick) {
                                   link.onClick(e);
@@ -95,7 +87,7 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                                   {link.label}
                                 </span>
                               )}
-                            </button>
+                            </Button>
                           </AccordionPrimitive.Trigger>
                         </AccordionPrimitive.Header>
 
