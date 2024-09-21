@@ -100,10 +100,12 @@ export default function useAppStartup({
     setAvailableTools({ pluginStore, ...mapPlugins(tools) });
   }, [allPlugins, user, setAvailableTools]);
 
-  if (startupConfig?.analyticsGtmId) {
-    const tagManagerArgs = {
-      gtmId: startupConfig?.analyticsGtmId,
-    };
-    TagManager.initialize(tagManagerArgs);
-  }
+  useEffect(() => {
+    if (startupConfig?.analyticsGtmId != null && typeof window.google_tag_manager === 'undefined') {
+      const tagManagerArgs = {
+        gtmId: startupConfig.analyticsGtmId,
+      };
+      TagManager.initialize(tagManagerArgs);
+    }
+  }, [startupConfig?.analyticsGtmId]);
 }
