@@ -41,7 +41,8 @@ const Conversations = ({
                   paddingLeft: '10px',
                 }}
               >
-                {localize(groupName) ?? groupName}
+                {/* eslint-disable-next-line @typescript-eslint/strict-boolean-expressions */}
+                {localize(groupName) || groupName}
               </div>
               {convos.map((convo, i) => (
                 <Convo

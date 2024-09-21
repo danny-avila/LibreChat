@@ -12,6 +12,14 @@ import {
 import { convoData } from './convos.fakeData';
 import { normalizeData } from './collection';
 
+jest.mock('date-fns', () => {
+  const actual = jest.requireActual('date-fns');
+  return {
+    ...actual,
+    startOfToday: jest.fn(() => new Date('2023-07-15T00:00:00Z')),
+  };
+});
+
 describe('Conversation Utilities', () => {
   describe('groupConversationsByDate', () => {
     it('groups conversations by date correctly', () => {
@@ -33,6 +41,66 @@ describe('Conversation Utilities', () => {
       expect(grouped[3][1]).toHaveLength(1);
       expect(grouped[4][0]).toBe(' 2023');
       expect(grouped[4][1]).toHaveLength(1);
+    });
+
+    it('groups conversations correctly across multiple years', () => {
+      const fixedDate = new Date('2023-07-15T12:00:00Z');
+      const conversations = [
+        { conversationId: '1', updatedAt: '2023-07-15T10:00:00Z' }, // Today
+        { conversationId: '2', updatedAt: '2023-07-14T12:00:00Z' }, // Yesterday
+        { conversationId: '3', updatedAt: '2023-07-08T12:00:00Z' }, // This week
+        { conversationId: '4', updatedAt: '2023-07-01T12:00:00Z' }, // This month (within last 30 days)
+        { conversationId: '5', updatedAt: '2023-06-01T12:00:00Z' }, // Last month
+        { conversationId: '6', updatedAt: '2023-01-01T12:00:00Z' }, // This year, January
+        { conversationId: '7', updatedAt: '2022-12-01T12:00:00Z' }, // Last year, December
+        { conversationId: '8', updatedAt: '2022-06-01T12:00:00Z' }, // Last year, June
+        { conversationId: '9', updatedAt: '2021-12-01T12:00:00Z' }, // Two years ago
+        { conversationId: '10', updatedAt: '2020-06-01T12:00:00Z' }, // Three years ago
+      ];
+
+      // Mock Date.now
+      const originalDateNow = Date.now;
+      Date.now = jest.fn(() => fixedDate.getTime());
+
+      const grouped = groupConversationsByDate(conversations as TConversation[]);
+
+      // Restore Date.now
+      Date.now = originalDateNow;
+
+      const expectedGroups = [
+        dateKeys.today,
+        dateKeys.yesterday,
+        dateKeys.previous7Days,
+        dateKeys.previous30Days,
+        dateKeys.june,
+        dateKeys.january,
+        ' 2022',
+        ' 2021',
+        ' 2020',
+      ];
+
+      expect(grouped.map(([key]) => key)).toEqual(expectedGroups);
+
+      // Helper function to safely get group length
+      const getGroupLength = (key: string) => grouped.find(([k]) => k === key)?.[1]?.length ?? 0;
+
+      // Check specific group contents
+      expect(getGroupLength(dateKeys.today)).toBe(1);
+      expect(getGroupLength(dateKeys.yesterday)).toBe(1);
+      expect(getGroupLength(dateKeys.previous7Days)).toBe(1);
+      expect(getGroupLength(dateKeys.previous30Days)).toBe(1);
+      expect(getGroupLength(dateKeys.june)).toBe(1);
+      expect(getGroupLength(dateKeys.january)).toBe(1);
+      expect(getGroupLength(' 2022')).toBe(2); // December and June 2022
+      expect(getGroupLength(' 2021')).toBe(1);
+      expect(getGroupLength(' 2020')).toBe(1);
+
+      // Check that all conversations are accounted for
+      const totalGroupedConversations = grouped.reduce(
+        (total, [, convos]) => total + convos.length,
+        0,
+      );
+      expect(totalGroupedConversations).toBe(conversations.length);
     });
 
     it('returns an empty array for no conversations', () => {
