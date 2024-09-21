@@ -97,6 +97,17 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
 
     const mail = (LDAP_EMAIL && userinfo[LDAP_EMAIL]) || userinfo.mail || username + '@ldap.local';
 
+    if (!userinfo.mail && !(LDAP_EMAIL && userinfo[LDAP_EMAIL])) {
+      logger.warn(
+        '[ldapStrategy]',
+        `No valid email attribute found in LDAP userinfo. Using fallback email: ${username}@ldap.local`,
+        `LDAP_EMAIL env var: ${LDAP_EMAIL || 'not set'}`,
+        `Available userinfo attributes: ${Object.keys(userinfo).join(', ')}`,
+        'Full userinfo:',
+        JSON.stringify(userinfo, null, 2),
+      );
+    }
+
     if (!user) {
       user = {
         provider: 'ldap',
