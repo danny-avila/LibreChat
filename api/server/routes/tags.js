@@ -61,7 +61,8 @@ router.post('/', async (req, res) => {
  */
 router.put('/:tag', async (req, res) => {
   try {
-    const tag = await updateConversationTag(req.user.id, req.params.tag, req.body);
+    const decodedTag = decodeURIComponent(req.params.tag);
+    const tag = await updateConversationTag(req.user.id, decodedTag, req.body);
     if (tag) {
       res.status(200).json(tag);
     } else {
@@ -81,7 +82,8 @@ router.put('/:tag', async (req, res) => {
  */
 router.delete('/:tag', async (req, res) => {
   try {
-    const tag = await deleteConversationTag(req.user.id, req.params.tag);
+    const decodedTag = decodeURIComponent(req.params.tag);
+    const tag = await deleteConversationTag(req.user.id, decodedTag);
     if (tag) {
       res.status(200).json(tag);
     } else {
