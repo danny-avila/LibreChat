@@ -60,6 +60,30 @@ describe('Conversation Utilities', () => {
       const uniqueIds = [...new Set(allGroupedIds)];
       expect(allGroupedIds.length).toBe(uniqueIds.length);
     });
+
+    it('sorts conversations by month correctly', () => {
+      const conversations = [
+        { conversationId: '1', updatedAt: '2023-01-01T12:00:00Z' }, // January 2023
+        { conversationId: '2', updatedAt: '2023-12-01T12:00:00Z' }, // December 2023
+        { conversationId: '3', updatedAt: '2023-02-01T12:00:00Z' }, // February 2023
+        { conversationId: '4', updatedAt: '2023-11-01T12:00:00Z' }, // November 2023
+        { conversationId: '5', updatedAt: '2022-12-01T12:00:00Z' }, // December 2022
+      ];
+
+      const grouped = groupConversationsByDate(conversations as TConversation[]);
+
+      // Check if the years are in the correct order (most recent first)
+      expect(grouped.map(([key]) => key)).toEqual([' 2023', ' 2022']);
+
+      // Check if conversations within 2023 are sorted correctly by month
+      const conversationsIn2023 = grouped[0][1];
+      const monthsIn2023 = conversationsIn2023.map((c) => new Date(c.updatedAt).getMonth());
+      expect(monthsIn2023).toEqual([11, 10, 1, 0]); // December (11), November (10), February (1), January (0)
+
+      // Check if the conversation from 2022 is in its own group
+      expect(grouped[1][1].length).toBe(1);
+      expect(new Date(grouped[1][1][0].updatedAt).getFullYear()).toBe(2022);
+    });
   });
 
   describe('addConversation', () => {
