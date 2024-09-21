@@ -863,7 +863,7 @@ export const useUpdateAssistantMutation = (
       const { endpoint } = data;
       const endpointsConfig = queryClient.getQueryData<t.TEndpointsConfig>([QueryKeys.endpoints]);
       const endpointConfig = endpointsConfig?.[endpoint];
-      const version = endpointConfig.version ?? defaultAssistantsVersion[endpoint];
+      const version = endpointConfig?.version ?? defaultAssistantsVersion[endpoint];
       return dataService.updateAssistant({
         data,
         version,

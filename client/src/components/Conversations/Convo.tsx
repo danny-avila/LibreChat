@@ -151,10 +151,10 @@ export default function Conversation({
             aria-label={`${localize('com_ui_rename')} ${localize('com_ui_chat')}`}
           />
           <div className="flex gap-1">
-            <button onClick={cancelRename} aria-label='cancel new name'>
+            <button onClick={cancelRename} aria-label={`${localize('com_ui_cancel')} ${localize('com_ui_rename')}`}>
               <X aria-hidden={true} className="transition-colors h-4 w-4 duration-200 ease-in-out hover:opacity-70" />
             </button>
-            <button onClick={onRename} aria-label='submit new name'>
+            <button onClick={onRename} aria-label={`${localize('com_ui_submit')} ${localize('com_ui_rename')}`}>
               <Check aria-hidden={true} className="transition-colors h-4 w-4 duration-200 ease-in-out hover:opacity-70" />
             </button>
           </div>

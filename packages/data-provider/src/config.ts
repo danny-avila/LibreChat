@@ -720,11 +720,6 @@ export const modularEndpoints = new Set<EModelEndpoint | string>([
   EModelEndpoint.bedrock,
 ]);
 
-export const paramEndpoints = new Set<EModelEndpoint | string>([
-  EModelEndpoint.agents,
-  EModelEndpoint.bedrock,
-]);
-
 export const supportsBalanceCheck = {
   [EModelEndpoint.custom]: true,
   [EModelEndpoint.openAI]: true,
@@ -1124,6 +1119,8 @@ export enum LocalStorageKeys {
   FILES_DRAFT = 'filesDraft_',
   /** Key for last Selected Prompt Category */
   LAST_PROMPT_CATEGORY = 'lastPromptCategory',
+  /** Key for rendering User Messages as Markdown */
+  ENABLE_USER_MSG_MARKDOWN = 'enableUserMsgMarkdown',
 }
 
 export enum ForkOptions {

@@ -12,9 +12,9 @@ import { ResizableHandleAlt, ResizablePanel, ResizablePanelGroup } from '~/compo
 import { useMediaQuery, useLocalStorage, useLocalize } from '~/hooks';
 import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
 import NavToggle from '~/components/Nav/NavToggle';
+import { cn, getEndpointField } from '~/utils';
 import { useChatContext } from '~/Providers';
 import Switcher from './Switcher';
-import { cn } from '~/utils';
 import Nav from './Nav';
 
 interface SidePanelProps {
@@ -81,6 +81,10 @@ const SidePanel = ({
     return typeof activePanel === 'string' ? activePanel : undefined;
   }, []);
 
+  const endpointType = useMemo(
+    () => getEndpointField(endpointsConfig, endpoint, 'type'),
+    [endpoint, endpointsConfig],
+  );
   const assistants = useMemo(() => endpointsConfig?.[endpoint ?? ''], [endpoint, endpointsConfig]);
   const agents = useMemo(() => endpointsConfig?.[endpoint ?? ''], [endpoint, endpointsConfig]);
 
@@ -108,6 +112,7 @@ const SidePanel = ({
     hidePanel,
     assistants,
     keyProvided,
+    endpointType,
     interfaceConfig,
   });
 

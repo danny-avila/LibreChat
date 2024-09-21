@@ -1,6 +1,6 @@
 {
   "name": "librechat-data-provider",
-  "version": "0.7.423",
+  "version": "0.7.425",
   "description": "data services for librechat apps",
   "main": "dist/index.js",
   "module": "dist/index.es.js",
@@ -40,7 +40,7 @@
   "homepage": "https://librechat.ai",
   "dependencies": {
     "@types/js-yaml": "^4.0.9",
-    "axios": "^1.3.4",
+    "axios": "^1.7.7",
     "js-yaml": "^4.1.0",
     "openai": "4.11.1",
     "openapi-types": "^12.1.3",

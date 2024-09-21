@@ -61,7 +61,6 @@ const getOptions = async ({ req, endpointOption }) => {
   /** @type {import('@librechat/agents').BedrockConverseClientOptions} */
   const requestOptions = Object.assign(
     {
-      credentials,
       model: endpointOption.model,
       region: BEDROCK_AWS_DEFAULT_REGION,
       streaming: true,
@@ -79,6 +78,10 @@ const getOptions = async ({ req, endpointOption }) => {
     },
     endpointOption.model_parameters,
   );
+
+  if (credentials) {
+    requestOptions.credentials = credentials;
+  }
 
   const configOptions = {};
   if (PROXY) {

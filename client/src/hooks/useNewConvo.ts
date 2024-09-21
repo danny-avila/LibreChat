@@ -7,9 +7,9 @@ import {
 import { useNavigate } from 'react-router-dom';
 import {
   FileSources,
+  isParamEndpoint,
   LocalStorageKeys,
   isAssistantsEndpoint,
-  paramEndpoints,
 } from 'librechat-data-provider';
 import { useRecoilState, useRecoilValue, useSetRecoilState, useRecoilCallback } from 'recoil';
 import type {
@@ -185,12 +185,11 @@ const useNewConvo = (index = 0) => {
       pauseGlobalAudio();
 
       const templateConvoId = _template.conversationId ?? '';
-      const isParamEndpoint =
-        paramEndpoints.has(_template.endpoint ?? '') ||
-        paramEndpoints.has(_preset?.endpoint ?? '') ||
-        paramEndpoints.has(_template.endpointType ?? '');
+      const paramEndpoint =
+        isParamEndpoint(_template.endpoint ?? '', _template.endpointType ?? '') === true ||
+        isParamEndpoint(_preset?.endpoint ?? '', _preset?.endpointType ?? '');
       const template =
-        isParamEndpoint && templateConvoId && templateConvoId === 'new'
+        paramEndpoint === true && templateConvoId && templateConvoId === 'new'
           ? { endpoint: _template.endpoint }
           : _template;
 

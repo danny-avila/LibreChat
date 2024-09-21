@@ -1,9 +1,10 @@
 import { useRecoilState } from 'recoil';
 import Cookies from 'js-cookie';
-import React, { useContext, useCallback, useRef } from 'react';
+import React, { useContext, useCallback } from 'react';
 import type { TDangerButtonProps } from '~/common';
-import { ThemeContext, useLocalize } from '~/hooks';
+import UserMsgMarkdownSwitch from './UserMsgMarkdownSwitch';
 import HideSidePanelSwitch from './HideSidePanelSwitch';
+import { ThemeContext, useLocalize } from '~/hooks';
 import AutoScrollSwitch from './AutoScrollSwitch';
 import ArchivedChats from './ArchivedChats';
 import { Dropdown } from '~/components/ui';
@@ -121,8 +122,6 @@ function General() {
 
   const [langcode, setLangcode] = useRecoilState(store.lang);
 
-  const contentRef = useRef(null);
-
   const changeTheme = useCallback(
     (value: string) => {
       setTheme(value);
@@ -153,6 +152,9 @@ function General() {
       </div>
       <div className="border-b border-border-light pb-3 last-of-type:border-b-0">
         <LangSelector langcode={langcode} onChange={changeLang} />
+      </div>
+      <div className="border-b border-border-light pb-3 last-of-type:border-b-0">
+        <UserMsgMarkdownSwitch />
       </div>
       <div className="border-b border-border-light pb-3 last-of-type:border-b-0">
         <AutoScrollSwitch />

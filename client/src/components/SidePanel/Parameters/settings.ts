@@ -1,8 +1,14 @@
-import { EModelEndpoint, BedrockProviders } from 'librechat-data-provider';
+import {
+  ImageDetail,
+  EModelEndpoint,
+  openAISettings,
+  BedrockProviders,
+  anthropicSettings,
+} from 'librechat-data-provider';
 import type { SettingsConfiguration, SettingDefinition } from 'librechat-data-provider';
 
 // Base definitions
-const baseDefinitions: Record<string, Partial<SettingDefinition>> = {
+const baseDefinitions: Record<string, SettingDefinition> = {
   model: {
     key: 'model',
     label: 'com_ui_model',
@@ -38,20 +44,32 @@ const baseDefinitions: Record<string, Partial<SettingDefinition>> = {
     optionType: 'model',
     columnSpan: 4,
   },
-};
-
-const bedrock: Record<string, SettingDefinition> = {
-  region: {
-    key: 'region',
-    type: 'string',
-    label: 'com_ui_region',
+  stop: {
+    key: 'stop',
+    label: 'com_endpoint_stop',
     labelCode: true,
-    component: 'combobox',
+    description: 'com_endpoint_openai_stop',
+    descriptionCode: true,
+    placeholder: 'com_endpoint_stop_placeholder',
+    placeholderCode: true,
+    type: 'array',
+    default: [],
+    component: 'tags',
     optionType: 'conversation',
-    selectPlaceholder: 'com_ui_select_region',
-    searchPlaceholder: 'com_ui_select_search_region',
-    searchPlaceholderCode: true,
-    selectPlaceholderCode: true,
+    minTags: 0,
+    maxTags: 4,
+  },
+  imageDetail: {
+    key: 'imageDetail',
+    label: 'com_endpoint_plug_image_detail',
+    labelCode: true,
+    description: 'com_endpoint_openai_detail',
+    descriptionCode: true,
+    type: 'enum',
+    default: ImageDetail.auto,
+    component: 'slider',
+    options: [ImageDetail.low, ImageDetail.auto, ImageDetail.high],
+    optionType: 'conversation',
     columnSpan: 2,
   },
 };
@@ -81,8 +99,10 @@ const librechat: Record<string, SettingDefinition> = {
     labelCode: true,
     type: 'number',
     component: 'input',
-    placeholder: 'com_endpoint_context_info',
+    placeholder: 'com_nav_theme_system',
     placeholderCode: true,
+    description: 'com_endpoint_context_info',
+    descriptionCode: true,
     optionType: 'model',
     columnSpan: 2,
   },
@@ -112,7 +132,146 @@ const librechat: Record<string, SettingDefinition> = {
   },
 };
 
+const openAIParams: Record<string, SettingDefinition> = {
+  chatGptLabel: {
+    ...librechat.modelLabel,
+    key: 'chatGptLabel',
+  },
+  promptPrefix: librechat.promptPrefix,
+  temperature: createDefinition(baseDefinitions.temperature, {
+    default: openAISettings.temperature.default,
+    range: {
+      min: openAISettings.temperature.min,
+      max: openAISettings.temperature.max,
+      step: openAISettings.temperature.step,
+    },
+  }),
+  top_p: createDefinition(baseDefinitions.topP, {
+    key: 'top_p',
+    default: openAISettings.top_p.default,
+    range: {
+      min: openAISettings.top_p.min,
+      max: openAISettings.top_p.max,
+      step: openAISettings.top_p.step,
+    },
+  }),
+  frequency_penalty: {
+    key: 'frequency_penalty',
+    label: 'com_endpoint_frequency_penalty',
+    labelCode: true,
+    description: 'com_endpoint_openai_freq',
+    descriptionCode: true,
+    type: 'number',
+    default: openAISettings.frequency_penalty.default,
+    range: {
+      min: openAISettings.frequency_penalty.min,
+      max: openAISettings.frequency_penalty.max,
+      step: openAISettings.frequency_penalty.step,
+    },
+    component: 'slider',
+    optionType: 'model',
+    columnSpan: 4,
+  },
+  presence_penalty: {
+    key: 'presence_penalty',
+    label: 'com_endpoint_presence_penalty',
+    labelCode: true,
+    description: 'com_endpoint_openai_pres',
+    descriptionCode: true,
+    type: 'number',
+    default: openAISettings.presence_penalty.default,
+    range: {
+      min: openAISettings.presence_penalty.min,
+      max: openAISettings.presence_penalty.max,
+      step: openAISettings.presence_penalty.step,
+    },
+    component: 'slider',
+    optionType: 'model',
+    columnSpan: 4,
+  },
+  max_tokens: {
+    key: 'max_tokens',
+    label: 'com_endpoint_max_output_tokens',
+    labelCode: true,
+    type: 'number',
+    component: 'input',
+    description: 'com_endpoint_openai_max_tokens',
+    descriptionCode: true,
+    placeholder: 'com_nav_theme_system',
+    placeholderCode: true,
+    optionType: 'model',
+    columnSpan: 2,
+  },
+};
+
 const anthropic: Record<string, SettingDefinition> = {
+  maxOutputTokens: {
+    key: 'maxOutputTokens',
+    label: 'com_endpoint_max_output_tokens',
+    labelCode: true,
+    type: 'number',
+    component: 'input',
+    description: 'com_endpoint_anthropic_maxoutputtokens',
+    descriptionCode: true,
+    placeholder: 'com_nav_theme_system',
+    placeholderCode: true,
+    range: {
+      min: anthropicSettings.maxOutputTokens.min,
+      max: anthropicSettings.maxOutputTokens.max,
+      step: anthropicSettings.maxOutputTokens.step,
+    },
+    optionType: 'model',
+    columnSpan: 2,
+  },
+  temperature: createDefinition(baseDefinitions.temperature, {
+    default: anthropicSettings.temperature.default,
+    range: {
+      min: anthropicSettings.temperature.min,
+      max: anthropicSettings.temperature.max,
+      step: anthropicSettings.temperature.step,
+    },
+  }),
+  topP: createDefinition(baseDefinitions.topP, {
+    default: anthropicSettings.topP.default,
+    range: {
+      min: anthropicSettings.topP.min,
+      max: anthropicSettings.topP.max,
+      step: anthropicSettings.topP.step,
+    },
+  }),
+  topK: {
+    key: 'topK',
+    label: 'com_endpoint_top_k',
+    labelCode: true,
+    description: 'com_endpoint_anthropic_topk',
+    descriptionCode: true,
+    type: 'number',
+    default: anthropicSettings.topK.default,
+    range: {
+      min: anthropicSettings.topK.min,
+      max: anthropicSettings.topK.max,
+      step: anthropicSettings.topK.step,
+    },
+    component: 'slider',
+    optionType: 'model',
+    columnSpan: 4,
+  },
+  promptCache: {
+    key: 'promptCache',
+    label: 'com_endpoint_prompt_cache',
+    labelCode: true,
+    description: 'com_endpoint_anthropic_prompt_cache',
+    descriptionCode: true,
+    type: 'boolean',
+    default: true,
+    component: 'switch',
+    optionType: 'conversation',
+    showDefault: false,
+    columnSpan: 2,
+  },
+};
+
+const bedrock: Record<string, SettingDefinition> = {
   system: {
     key: 'system',
     label: 'com_endpoint_prompt_prefix',
@@ -123,6 +282,19 @@ const anthropic: Record<string, SettingDefinition> = {
     placeholder: 'com_endpoint_openai_prompt_prefix_placeholder',
     placeholderCode: true,
     optionType: 'model',
+  },
+  region: {
+    key: 'region',
+    type: 'string',
+    label: 'com_ui_region',
+    labelCode: true,
+    component: 'combobox',
+    optionType: 'conversation',
+    selectPlaceholder: 'com_ui_select_region',
+    searchPlaceholder: 'com_ui_select_search_region',
+    searchPlaceholderCode: true,
+    selectPlaceholderCode: true,
+    columnSpan: 2,
   },
   maxTokens: {
     key: 'maxTokens',
@@ -139,37 +311,13 @@ const anthropic: Record<string, SettingDefinition> = {
     default: 1,
     range: { min: 0, max: 1, step: 0.01 },
   }),
+  topK: createDefinition(anthropic.topK, {
+    range: { min: 0, max: 500, step: 1 },
+  }),
   topP: createDefinition(baseDefinitions.topP, {
     default: 0.999,
     range: { min: 0, max: 1, step: 0.01 },
   }),
-  topK: {
-    key: 'topK',
-    label: 'com_endpoint_top_k',
-    labelCode: true,
-    description: 'com_endpoint_anthropic_topk',
-    descriptionCode: true,
-    type: 'number',
-    range: { min: 0, max: 500, step: 1 },
-    component: 'slider',
-    optionType: 'model',
-    columnSpan: 4,
-  },
-  stop: {
-    key: 'stop',
-    label: 'com_endpoint_stop',
-    labelCode: true,
-    description: 'com_endpoint_openai_stop',
-    descriptionCode: true,
-    placeholder: 'com_endpoint_stop_placeholder',
-    placeholderCode: true,
-    type: 'array',
-    default: [],
-    component: 'tags',
-    optionType: 'conversation',
-    minTags: 0,
-    maxTags: 4,
-  },
 };
 
 const mistral: Record<string, SettingDefinition> = {
@@ -204,15 +352,75 @@ const meta: Record<string, SettingDefinition> = {
   }),
 };
 
-const bedrockAnthropic: SettingsConfiguration = [
-  librechat.modelLabel,
-  anthropic.system,
+const openAI: SettingsConfiguration = [
+  openAIParams.chatGptLabel,
+  librechat.promptPrefix,
   librechat.maxContextTokens,
-  anthropic.maxTokens,
+  openAIParams.max_tokens,
+  openAIParams.temperature,
+  openAIParams.top_p,
+  openAIParams.frequency_penalty,
+  openAIParams.presence_penalty,
+  baseDefinitions.stop,
+  librechat.resendFiles,
+  baseDefinitions.imageDetail,
+];
+
+const openAICol1: SettingsConfiguration = [
+  baseDefinitions.model as SettingDefinition,
+  openAIParams.chatGptLabel,
+  librechat.promptPrefix,
+  librechat.maxContextTokens,
+];
+
+const openAICol2: SettingsConfiguration = [
+  openAIParams.max_tokens,
+  openAIParams.temperature,
+  openAIParams.top_p,
+  openAIParams.frequency_penalty,
+  openAIParams.presence_penalty,
+  baseDefinitions.stop,
+  librechat.resendFiles,
+  baseDefinitions.imageDetail,
+];
+
+const anthropicConfig: SettingsConfiguration = [
+  librechat.modelLabel,
+  librechat.promptPrefix,
+  librechat.maxContextTokens,
+  anthropic.maxOutputTokens,
   anthropic.temperature,
   anthropic.topP,
   anthropic.topK,
-  anthropic.stop,
+  librechat.resendFiles,
+  anthropic.promptCache,
+];
+
+const anthropicCol1: SettingsConfiguration = [
+  baseDefinitions.model as SettingDefinition,
+  librechat.modelLabel,
+  librechat.promptPrefix,
+];
+
+const anthropicCol2: SettingsConfiguration = [
+  librechat.maxContextTokens,
+  anthropic.maxOutputTokens,
+  anthropic.temperature,
+  anthropic.topP,
+  anthropic.topK,
+  librechat.resendFiles,
+  anthropic.promptCache,
+];
+
+const bedrockAnthropic: SettingsConfiguration = [
+  librechat.modelLabel,
+  bedrock.system,
+  librechat.maxContextTokens,
+  bedrock.maxTokens,
+  bedrock.temperature,
+  bedrock.topP,
+  bedrock.topK,
+  baseDefinitions.stop,
   bedrock.region,
   librechat.resendFiles,
 ];
@@ -221,7 +429,7 @@ const bedrockMistral: SettingsConfiguration = [
   librechat.modelLabel,
   librechat.promptPrefix,
   librechat.maxContextTokens,
-  anthropic.maxTokens,
+  bedrock.maxTokens,
   mistral.temperature,
   mistral.topP,
   bedrock.region,
@@ -232,7 +440,7 @@ const bedrockCohere: SettingsConfiguration = [
   librechat.modelLabel,
   librechat.promptPrefix,
   librechat.maxContextTokens,
-  anthropic.maxTokens,
+  bedrock.maxTokens,
   cohere.temperature,
   cohere.topP,
   bedrock.region,
@@ -252,16 +460,16 @@ const bedrockGeneral: SettingsConfiguration = [
 const bedrockAnthropicCol1: SettingsConfiguration = [
   baseDefinitions.model as SettingDefinition,
   librechat.modelLabel,
-  anthropic.system,
-  anthropic.stop,
+  bedrock.system,
+  baseDefinitions.stop,
 ];
 
 const bedrockAnthropicCol2: SettingsConfiguration = [
   librechat.maxContextTokens,
-  anthropic.maxTokens,
-  anthropic.temperature,
-  anthropic.topP,
-  anthropic.topK,
+  bedrock.maxTokens,
+  bedrock.temperature,
+  bedrock.topP,
+  bedrock.topK,
   bedrock.region,
   librechat.resendFiles,
 ];
@@ -274,7 +482,7 @@ const bedrockMistralCol1: SettingsConfiguration = [
 
 const bedrockMistralCol2: SettingsConfiguration = [
   librechat.maxContextTokens,
-  anthropic.maxTokens,
+  bedrock.maxTokens,
   mistral.temperature,
   mistral.topP,
   bedrock.region,
@@ -289,7 +497,7 @@ const bedrockCohereCol1: SettingsConfiguration = [
 
 const bedrockCohereCol2: SettingsConfiguration = [
   librechat.maxContextTokens,
-  anthropic.maxTokens,
+  bedrock.maxTokens,
   cohere.temperature,
   cohere.topP,
   bedrock.region,
@@ -311,12 +519,26 @@ const bedrockGeneralCol2: SettingsConfiguration = [
 ];
 
 export const settings: Record<string, SettingsConfiguration | undefined> = {
+  [EModelEndpoint.openAI]: openAI,
+  [EModelEndpoint.azureOpenAI]: openAI,
+  [EModelEndpoint.custom]: openAI,
+  [EModelEndpoint.anthropic]: anthropicConfig,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Anthropic}`]: bedrockAnthropic,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.MistralAI}`]: bedrockMistral,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Cohere}`]: bedrockCohere,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Meta}`]: bedrockGeneral,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.AI21}`]: bedrockGeneral,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Amazon}`]: bedrockGeneral,
+};
+
+const openAIColumns = {
+  col1: openAICol1,
+  col2: openAICol2,
+};
+
+const bedrockGeneralColumns = {
+  col1: bedrockGeneralCol1,
+  col2: bedrockGeneralCol2,
 };
 
 export const presetSettings: Record<
@@ -327,6 +549,13 @@ export const presetSettings: Record<
     }
   | undefined
 > = {
+  [EModelEndpoint.openAI]: openAIColumns,
+  [EModelEndpoint.azureOpenAI]: openAIColumns,
+  [EModelEndpoint.custom]: openAIColumns,
+  [EModelEndpoint.anthropic]: {
+    col1: anthropicCol1,
+    col2: anthropicCol2,
+  },
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Anthropic}`]: {
     col1: bedrockAnthropicCol1,
     col2: bedrockAnthropicCol2,
@@ -339,16 +568,7 @@ export const presetSettings: Record<
     col1: bedrockCohereCol1,
     col2: bedrockCohereCol2,
   },
-  [`${EModelEndpoint.bedrock}-${BedrockProviders.Meta}`]: {
-    col1: bedrockGeneralCol1,
-    col2: bedrockGeneralCol2,
-  },
-  [`${EModelEndpoint.bedrock}-${BedrockProviders.AI21}`]: {
-    col1: bedrockGeneralCol1,
-    col2: bedrockGeneralCol2,
-  },
-  [`${EModelEndpoint.bedrock}-${BedrockProviders.Amazon}`]: {
-    col1: bedrockGeneralCol1,
-    col2: bedrockGeneralCol2,
-  },
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.Meta}`]: bedrockGeneralColumns,
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.AI21}`]: bedrockGeneralColumns,
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.Amazon}`]: bedrockGeneralColumns,
 };
