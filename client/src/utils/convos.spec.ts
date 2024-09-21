@@ -84,6 +84,159 @@ describe('Conversation Utilities', () => {
       expect(grouped[1][1].length).toBe(1);
       expect(new Date(grouped[1][1][0].updatedAt).getFullYear()).toBe(2022);
     });
+
+    it('handles conversations from multiple years correctly', () => {
+      const conversations = [
+        { conversationId: '1', updatedAt: '2023-01-01T12:00:00Z' }, // January 2023
+        { conversationId: '2', updatedAt: '2022-12-01T12:00:00Z' }, // December 2022
+        { conversationId: '3', updatedAt: '2021-06-01T12:00:00Z' }, // June 2021
+        { conversationId: '4', updatedAt: '2023-06-01T12:00:00Z' }, // June 2023
+        { conversationId: '5', updatedAt: '2021-12-01T12:00:00Z' }, // December 2021
+      ];
+
+      const grouped = groupConversationsByDate(conversations as TConversation[]);
+
+      expect(grouped.map(([key]) => key)).toEqual([' 2023', ' 2022', ' 2021']);
+      expect(grouped[0][1].map((c) => new Date(c.updatedAt).getMonth())).toEqual([5, 0]); // June, January
+      expect(grouped[1][1].map((c) => new Date(c.updatedAt).getMonth())).toEqual([11]); // December
+      expect(grouped[2][1].map((c) => new Date(c.updatedAt).getMonth())).toEqual([11, 5]); // December, June
+    });
+
+    it('handles conversations from the same month correctly', () => {
+      const conversations = [
+        { conversationId: '1', updatedAt: '2023-06-01T12:00:00Z' },
+        { conversationId: '2', updatedAt: '2023-06-15T12:00:00Z' },
+        { conversationId: '3', updatedAt: '2023-06-30T12:00:00Z' },
+      ];
+
+      const grouped = groupConversationsByDate(conversations as TConversation[]);
+
+      expect(grouped.length).toBe(1);
+      expect(grouped[0][0]).toBe(' 2023');
+      expect(grouped[0][1].map((c) => c.conversationId)).toEqual(['3', '2', '1']);
+    });
+
+    it('handles conversations from today, yesterday, and previous days correctly', () => {
+      const today = new Date();
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const twoDaysAgo = new Date(today);
+      twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+
+      const conversations = [
+        { conversationId: '1', updatedAt: today.toISOString() },
+        { conversationId: '2', updatedAt: yesterday.toISOString() },
+        { conversationId: '3', updatedAt: twoDaysAgo.toISOString() },
+      ];
+
+      const grouped = groupConversationsByDate(conversations as TConversation[]);
+
+      expect(grouped.map(([key]) => key)).toEqual([
+        dateKeys.today,
+        dateKeys.yesterday,
+        dateKeys.previous7Days,
+      ]);
+    });
+
+    it('handles conversations with null or undefined updatedAt correctly', () => {
+      const conversations = [
+        { conversationId: '1', updatedAt: '2023-06-01T12:00:00Z' },
+        { conversationId: '2', updatedAt: null },
+        { conversationId: '3', updatedAt: undefined },
+      ];
+
+      const grouped = groupConversationsByDate(conversations as TConversation[]);
+
+      expect(grouped.length).toBe(2); // One group for 2023 and one for today (null/undefined dates)
+      expect(grouped[0][0]).toBe(dateKeys.today);
+      expect(grouped[0][1].length).toBe(2); // Two conversations with null/undefined dates
+      expect(grouped[1][0]).toBe(' 2023');
+      expect(grouped[1][1].length).toBe(1); // One conversation from 2023
+    });
+
+    it('handles an empty array of conversations', () => {
+      const grouped = groupConversationsByDate([]);
+
+      expect(grouped).toEqual([]);
+    });
+
+    it('correctly groups and sorts conversations for every month of the year', () => {
+      const months = [
+        'january',
+        'february',
+        'march',
+        'april',
+        'may',
+        'june',
+        'july',
+        'august',
+        'september',
+        'october',
+        'november',
+        'december',
+      ];
+
+      // Create conversations for each month in both 2023 and 2022
+      const conversations = months.flatMap((month, index) => [
+        {
+          conversationId: `2023-${month}`,
+          updatedAt: `2023-${String(index + 1).padStart(2, '0')}-15T12:00:00Z`,
+        },
+        {
+          conversationId: `2022-${month}`,
+          updatedAt: `2022-${String(index + 1).padStart(2, '0')}-15T12:00:00Z`,
+        },
+      ]);
+
+      // Add some conversations for special date groups
+      const now = new Date();
+      conversations.push(
+        { conversationId: 'today', updatedAt: now.toISOString() },
+        {
+          conversationId: 'yesterday',
+          updatedAt: new Date(now.setDate(now.getDate() - 1)).toISOString(),
+        },
+        {
+          conversationId: 'lastWeek',
+          updatedAt: new Date(now.setDate(now.getDate() - 6)).toISOString(),
+        },
+      );
+
+      const grouped = groupConversationsByDate(conversations as TConversation[]);
+
+      // Check special date groups
+      expect(grouped[0][0]).toBe(dateKeys.today);
+      expect(grouped[1][0]).toBe(dateKeys.yesterday);
+      expect(grouped[2][0]).toBe(dateKeys.previous7Days);
+
+      // Check 2023 months
+      const group2023 = grouped.find(([key]) => key === ' 2023') ?? [];
+      const grouped2023 = group2023[1];
+      expect(grouped2023?.length).toBe(12);
+      expect(grouped2023?.map((c) => new Date(c.updatedAt).getMonth())).toEqual([
+        11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0,
+      ]);
+
+      // Check 2022 months
+      const group2022 = grouped.find(([key]) => key === ' 2022') ?? [];
+      const grouped2022 = group2022[1];
+      expect(grouped2022?.length).toBe(12);
+      expect(grouped2022?.map((c) => new Date(c.updatedAt).getMonth())).toEqual([
+        11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0,
+      ]);
+
+      // Check that all conversations are accounted for
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const totalGroupedConversations = grouped.reduce(
+        (total, [_, convos]) => total + convos.length,
+        0,
+      );
+      expect(totalGroupedConversations).toBe(conversations.length);
+
+      // Check that the years are in the correct order
+      const yearOrder = grouped.map(([key]) => key).filter((key) => key.trim().length === 4);
+      expect(yearOrder).toEqual([' 2023', ' 2022']);
+    });
   });
 
   describe('addConversation', () => {
