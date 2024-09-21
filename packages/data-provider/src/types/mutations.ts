@@ -235,3 +235,10 @@ export type UpdateConversationTagOptions = MutationOptions<
   types.TConversationTagRequest
 >;
 export type DeleteConversationTagOptions = MutationOptions<types.TConversationTag, string>;
+
+export type AcceptTermsMutationOptions = MutationOptions<
+  types.TAcceptTermsResponse,
+  void,
+  unknown,
+  void
+>;
