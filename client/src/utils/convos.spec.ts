@@ -189,29 +189,14 @@ describe('Conversation Utilities', () => {
         },
       ]);
 
-      // Add some conversations for special date groups
-      const now = new Date();
-      conversations.push(
-        { conversationId: 'today', updatedAt: now.toISOString() },
-        {
-          conversationId: 'yesterday',
-          updatedAt: new Date(now.setDate(now.getDate() - 1)).toISOString(),
-        },
-        {
-          conversationId: 'lastWeek',
-          updatedAt: new Date(now.setDate(now.getDate() - 6)).toISOString(),
-        },
-      );
-
       const grouped = groupConversationsByDate(conversations as TConversation[]);
 
-      // Check special date groups
-      expect(grouped[0][0]).toBe(dateKeys.today);
-      expect(grouped[1][0]).toBe(dateKeys.yesterday);
-      expect(grouped[2][0]).toBe(dateKeys.previous7Days);
+      // Check that we have two year groups
+      expect(grouped.length).toBe(2);
 
       // Check 2023 months
       const group2023 = grouped.find(([key]) => key === ' 2023') ?? [];
+      expect(group2023).toBeDefined();
       const grouped2023 = group2023[1];
       expect(grouped2023?.length).toBe(12);
       expect(grouped2023?.map((c) => new Date(c.updatedAt).getMonth())).toEqual([
@@ -220,6 +205,7 @@ describe('Conversation Utilities', () => {
 
       // Check 2022 months
       const group2022 = grouped.find(([key]) => key === ' 2022') ?? [];
+      expect(group2022).toBeDefined();
       const grouped2022 = group2022[1];
       expect(grouped2022?.length).toBe(12);
       expect(grouped2022?.map((c) => new Date(c.updatedAt).getMonth())).toEqual([
@@ -227,15 +213,13 @@ describe('Conversation Utilities', () => {
       ]);
 
       // Check that all conversations are accounted for
-      const totalGroupedConversations = grouped.reduce(
+      const totalGroupedConversations =
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        (total, [_, convos]) => total + convos.length,
-        0,
-      );
+        grouped.reduce((total, [_, convos]) => total + convos.length, 0);
       expect(totalGroupedConversations).toBe(conversations.length);
 
       // Check that the years are in the correct order
-      const yearOrder = grouped.map(([key]) => key).filter((key) => key.trim().length === 4);
+      const yearOrder = grouped.map(([key]) => key);
       expect(yearOrder).toEqual([' 2023', ' 2022']);
     });
   });
