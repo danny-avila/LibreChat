@@ -226,8 +226,8 @@ describe('Conversation Utilities', () => {
       ]);
 
       // Check that all conversations are accounted for
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const totalGroupedConversations = grouped.reduce(
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         (total, [_, convos]) => total + convos.length,
         0,
       );
