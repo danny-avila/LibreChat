@@ -6,7 +6,6 @@ import {
   parseISO,
   startOfDay,
   startOfYear,
-  startOfToday,
   isWithinInterval,
 } from 'date-fns';
 import { EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
@@ -40,7 +39,7 @@ export const dateKeys = {
 };
 
 const getGroupName = (date: Date) => {
-  const now = new Date();
+  const now = new Date(Date.now());
   if (isToday(date)) {
     return dateKeys.today;
   }
@@ -95,7 +94,7 @@ export const groupConversationsByDate = (
 
   const seenConversationIds = new Set();
   const groups = new Map();
-  const today = startOfToday();
+  const now = new Date(Date.now());
 
   conversations.forEach((conversation) => {
     if (!conversation || seenConversationIds.has(conversation.conversationId)) {
@@ -103,7 +102,13 @@ export const groupConversationsByDate = (
     }
     seenConversationIds.add(conversation.conversationId);
 
-    const date = conversation.updatedAt ? parseISO(conversation.updatedAt) : today;
+    let date: Date;
+    if (conversation.updatedAt) {
+      date = parseISO(conversation.updatedAt);
+    } else {
+      date = now;
+    }
+
     const groupName = getGroupName(date);
     if (!groups.has(groupName)) {
       groups.set(groupName, []);
