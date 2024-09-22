@@ -1,11 +1,13 @@
 const mongoose = require('mongoose');
 const { GLOBAL_PROJECT_NAME } = require('librechat-data-provider').Constants;
+const { CONFIG_STORE, STARTUP_CONFIG } = require('librechat-data-provider').CacheKeys;
 const {
   getProjectByName,
   addAgentIdsToProject,
   removeAgentIdsFromProject,
   removeAgentFromAllProjects,
 } = require('./Project');
+const getLogStores = require('~/cache/getLogStores');
 const agentSchema = require('./schema/agent');
 
 const Agent = mongoose.model('agent', agentSchema);
@@ -29,6 +31,43 @@ const createAgent = async (agentData) => {
  * @returns {Promise<Agent|null>} The agent document as a plain object, or null if not found.
  */
 const getAgent = async (searchParameter) => await Agent.findOne(searchParameter).lean();
+
+/**
+ * Load an agent based on the provided ID
+ *
+ * @param {Object} params
+ * @param {ServerRequest} params.req
+ * @param {string} params.agent_id
+ * @returns {Promise<Agent|null>} The agent document as a plain object, or null if not found.
+ */
+const loadAgent = async ({ req, agent_id }) => {
+  const agent = await getAgent({
+    id: agent_id,
+  });
+
+  const cache = getLogStores(CONFIG_STORE);
+  /** @type {TStartupConfig} */
+  const cachedStartupConfig = await cache.get(STARTUP_CONFIG);
+  let { instanceProjectId } = cachedStartupConfig ?? {};
+  if (!instanceProjectId) {
+    instanceProjectId = (await getProjectByName(GLOBAL_PROJECT_NAME, '_id'))._id.toString();
+  }
+
+  if (agent.author.toString() === req.user.id) {
+    return agent;
+  }
+
+  if (!agent.projectIds) {
+    return null;
+  }
+
+  for (const projectObjectId of agent.projectIds) {
+    const projectId = projectObjectId.toString();
+    if (projectId === instanceProjectId) {
+      return agent;
+    }
+  }
+};
 
 /**
  * Update an agent with new data without overwriting existing
@@ -133,8 +172,9 @@ const updateAgentProjects = async (agentId, projectIds, removeProjectIds) => {
 };
 
 module.exports = {
-  createAgent,
   getAgent,
+  loadAgent,
+  createAgent,
   updateAgent,
   deleteAgent,
   getListAgents,

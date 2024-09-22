@@ -154,6 +154,7 @@ export type AgentModelParameters = {
 export type Agent = {
   id: string;
   name: string | null;
+  author?: string | null;
   description: string | null;
   created_at: number;
   avatar: AgentAvatar | null;

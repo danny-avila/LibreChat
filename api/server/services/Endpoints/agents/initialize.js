@@ -58,30 +58,20 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   }
 
   // TODO: use endpointOption to determine options/modelOptions
+  /** @type {Array<UsageMetadata>} */
+  const collectedUsage = [];
   const { contentParts, aggregateContent } = createContentAggregator();
-  const eventHandlers = getDefaultHandlers({ res, aggregateContent });
-
-  // const tools = [createTavilySearchTool()];
-  // const tools = [_getWeather];
-  // const tool_calls = [{ name: 'getPeople_action_swapi---dev' }];
-  // const tool_calls = [{ name: 'dalle' }];
-  // const tool_calls = [{ name: 'getItmOptions_action_YWlhcGkzLn' }];
-  // const tool_calls = [{ name: 'tavily_search_results_json' }];
-  // const tool_calls = [
-  //   { name: 'searchListings_action_emlsbG93NT' },
-  //   { name: 'searchAddress_action_emlsbG93NT' },
-  //   { name: 'searchMLS_action_emlsbG93NT' },
-  //   { name: 'searchCoordinates_action_emlsbG93NT' },
-  //   { name: 'searchUrl_action_emlsbG93NT' },
-  //   { name: 'getPropertyDetails_action_emlsbG93NT' },
-  // ];
+  const eventHandlers = getDefaultHandlers({ res, aggregateContent, collectedUsage });
 
   if (!endpointOption.agent) {
     throw new Error('No agent promise provided');
   }
 
-  /** @type {Agent} */
+  /** @type {Agent | null} */
   const agent = await endpointOption.agent;
+  if (!agent) {
+    throw new Error('Agent not found');
+  }
   const { tools, toolMap } = await loadAgentTools({
     req,
     tools: agent.tools,
@@ -121,6 +111,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     contentParts,
     modelOptions,
     eventHandlers,
+    collectedUsage,
     endpoint: EModelEndpoint.agents,
     configOptions: options.configOptions,
     maxContextTokens:
