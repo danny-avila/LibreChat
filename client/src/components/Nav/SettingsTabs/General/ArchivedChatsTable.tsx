@@ -4,9 +4,9 @@ import {
   TrashIcon,
   ChevronLeft,
   ChevronRight,
-  ChevronsLeft,
+  // ChevronsLeft,
+  // ChevronsRight,
   MessageCircle,
-  ChevronsRight,
   ArchiveRestore,
 } from 'lucide-react';
 import type { TConversation } from 'librechat-data-provider';
@@ -37,10 +37,11 @@ export default function ArchivedChatsTable() {
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const { data, isLoading, refetch } = useConversationsInfiniteQuery(
-    { pageNumber: currentPage.toString(), limit: 10, isArchived: true },
-    { enabled: isAuthenticated && isOpened },
-  );
+  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage, refetch } =
+    useConversationsInfiniteQuery(
+      { pageNumber: currentPage.toString(), isArchived: true },
+      { enabled: isAuthenticated && isOpened },
+    );
   const mutation = useArchiveConvoMutation();
   const handleUnarchive = useCallback(
     (conversationId: string) => {
@@ -50,10 +51,10 @@ export default function ArchivedChatsTable() {
   );
 
   const conversations = useMemo(
-    () => data?.pages.flatMap((page) => page.conversations) ?? [],
-    [data],
+    () => data?.pages[currentPage - 1]?.conversations ?? [],
+    [data, currentPage],
   );
-  const totalPages = useMemo(() => Math.ceil(Number(data?.pages.length ?? 1)) ?? 1, [data]);
+  const totalPages = useMemo(() => Math.ceil(Number(data?.pages[0].pages ?? 1)) ?? 1, [data]);
 
   const handleChatClick = useCallback((conversationId: string) => {
     if (!conversationId) {
@@ -62,9 +63,16 @@ export default function ArchivedChatsTable() {
     window.open(`/c/${conversationId}`, '_blank');
   }, []);
 
-  const handlePageChange = useCallback((newPage) => {
-    setCurrentPage(newPage);
-  }, []);
+  const handlePageChange = useCallback(
+    (newPage) => {
+      setCurrentPage(newPage);
+      if (!(hasNextPage ?? false)) {
+        return;
+      }
+      fetchNextPage({ pageParam: newPage });
+    },
+    [fetchNextPage, hasNextPage],
+  );
 
   const handleSearch = useCallback((query) => {
     setSearchQuery(query);
@@ -90,11 +98,11 @@ export default function ArchivedChatsTable() {
     );
   });
 
-  if (isLoading) {
+  if (isLoading || isFetchingNextPage) {
     return <div className="text-text-secondary">{skeletons}</div>;
   }
 
-  if (!data || data.pages.length === 0 || data.pages[0].conversations.length === 0) {
+  if (!data || (conversations.length === 0 && totalPages === 0)) {
     return <div className="text-text-secondary">{localize('com_nav_archived_chats_empty')}</div>;
   }
 
@@ -222,7 +230,7 @@ export default function ArchivedChatsTable() {
               Page {currentPage} of {totalPages}
             </div>
             <div className="flex space-x-2">
-              <Button
+              {/* <Button
                 variant="outline"
                 size="icon"
                 aria-label="Go to the previous 10 pages"
@@ -230,7 +238,7 @@ export default function ArchivedChatsTable() {
                 disabled={currentPage === 1}
               >
                 <ChevronsLeft className="size-4" />
-              </Button>
+              </Button> */}
               <Button
                 variant="outline"
                 size="icon"
@@ -249,7 +257,7 @@ export default function ArchivedChatsTable() {
               >
                 <ChevronRight className="size-4" />
               </Button>
-              <Button
+              {/* <Button
                 variant="outline"
                 size="icon"
                 aria-label="Go to the next 10 pages"
@@ -257,7 +265,7 @@ export default function ArchivedChatsTable() {
                 disabled={currentPage === totalPages}
               >
                 <ChevronsRight className="size-4" />
-              </Button>
+              </Button> */}
             </div>
           </div>
         </>
