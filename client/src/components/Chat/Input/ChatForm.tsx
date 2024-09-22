@@ -128,7 +128,6 @@ const ChatForm = ({ index = 0 }) => {
     if (!isSearching && textAreaRef.current && !disableInputs) {
       textAreaRef.current.focus();
     }
-    console.log({ isSearching, disableInputs });
   }, [isSearching, disableInputs]);
 
   return (
