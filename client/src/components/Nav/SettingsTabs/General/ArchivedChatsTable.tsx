@@ -64,7 +64,7 @@ export default function ArchivedChatsTable() {
   }, []);
 
   const handlePageChange = useCallback(
-    (newPage) => {
+    (newPage: number) => {
       setCurrentPage(newPage);
       if (!(hasNextPage ?? false)) {
         return;
@@ -74,7 +74,7 @@ export default function ArchivedChatsTable() {
     [fetchNextPage, hasNextPage],
   );
 
-  const handleSearch = useCallback((query) => {
+  const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);
     setCurrentPage(1);
   }, []);
