@@ -2747,4 +2747,8 @@ export const comparisons = {
     english: 'עברית',
     translated: '히브리어',
   },
+	com_nav_lang_catala:  {
+    english: 'Catalan', 
+    translated: 'Català',  
+  }  
 };

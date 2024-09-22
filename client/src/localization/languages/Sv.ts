@@ -1471,4 +1471,8 @@ export const comparisons = {
     english: 'Data controls',
     translated: 'Datakontroller',
   },
+	com_nav_lang_catala:  {
+    english: 'Catalan', 
+    translated: 'Català',  
+  }  
 };

@@ -689,4 +689,5 @@ export default {
   com_nav_setting_speech: 'Puhe',
   com_nav_language: 'Kieli',
   com_nav_lang_auto: 'Tunnista automaattisesti',
+	com_nav_lang_catala: 'Català',  
 };

@@ -1962,4 +1962,8 @@ export const comparisons = {
     english: 'Account',
     translated: 'חשבון',
   },
+	com_nav_lang_catala:  {
+    english: 'Catalan', 
+    translated: 'Català',  
+  }  
 };

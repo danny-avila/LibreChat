@@ -18,6 +18,7 @@ import Dutch from './languages/Nl';
 import Indonesia from './languages/Id';
 import Hebrew from './languages/He';
 import Finnish from './languages/Fi';
+import Catala from './languages/Ca';
 
 // === import additional language files here === //
 
@@ -45,6 +46,7 @@ const languageMap: Record<string, Language> = {
   'he-HE': Hebrew,
   'fi-FI': Finnish,
   // Add additional language mappings here
+  'ca-ES': Catala,
 };
 
 // New method on String allow using "{\d}" placeholder for

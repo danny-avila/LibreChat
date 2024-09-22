@@ -2918,4 +2918,8 @@ export const comparisons = {
     english: 'Uninstall',
     translated: 'Désinstaller',
   },
+	com_nav_lang_catala:  {
+    english: 'Catalan', 
+    translated: 'Català',  
+  }  
 };

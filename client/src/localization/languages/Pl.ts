@@ -1192,4 +1192,8 @@ export const comparisons = {
     english: 'There was an error importing your conversations',
     translated: 'Wystąpił błąd podczas importowania konwersacji',
   },
+	com_nav_lang_catala:  {
+    english: 'Catalan', 
+    translated: 'Català',  
+  }  
 };

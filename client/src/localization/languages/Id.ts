@@ -1839,4 +1839,8 @@ export const comparisons = {
     english: 'Indonesia',
     translated: 'Indonesia',
   },
+	com_nav_lang_catala:  {
+    english: 'Catalan', 
+    translated: 'Català',  
+  }  
 };

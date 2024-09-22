@@ -804,6 +804,7 @@ export default {
   com_nav_lang_indonesia: 'Indonesia',
   com_nav_lang_hebrew: 'עברית',
   com_nav_lang_finnish: 'Suomi',
+	com_nav_lang_catala: 'Català',
   com_ui_accept: 'I accept',
   com_ui_decline: 'I do not accept',
   com_ui_terms_and_conditions: 'Terms and Conditions',

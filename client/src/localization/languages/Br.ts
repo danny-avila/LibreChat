@@ -2475,4 +2475,8 @@ export const comparisons = {
     english: 'Português Brasileiro',
     translated: 'Português Brasileiro',
   },
+	com_nav_lang_catala:  {
+    english: 'Catalan', 
+    translated: 'Català',  
+  }
 };

@@ -1452,4 +1452,8 @@ export const comparisons = {
     english: 'Data controls',
     translated: 'Kiểm soát dữ liệu',
   },
+	com_nav_lang_catala:  {
+    english: 'Catalan', 
+    translated: 'Català',  
+  }  
 };

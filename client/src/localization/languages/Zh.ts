@@ -793,4 +793,5 @@ export default {
   com_ui_decline: '我不接受',
   com_ui_terms_and_conditions: '条款和条件',
   com_ui_no_terms_content: '没有可显示的条款和条件内容',
+	com_nav_lang_catala: 'Català',  
 };

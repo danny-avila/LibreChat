@@ -2804,4 +2804,8 @@ export const comparisons = {
     english: 'עברית',
     translated: 'ebraico',
   },
+	com_nav_lang_catala:  {
+    english: 'Catalan', 
+    translated: 'Català',  
+  }  
 };
