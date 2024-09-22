@@ -7,6 +7,7 @@ interface TooltipAnchorProps extends Ariakit.TooltipAnchorProps {
   description: string;
   side?: 'top' | 'bottom' | 'left' | 'right';
   className?: string;
+  role?: string;
 }
 
 export const TooltipAnchor = forwardRef<HTMLDivElement, TooltipAnchorProps>(function TooltipAnchor(
@@ -50,7 +51,7 @@ export const TooltipAnchor = forwardRef<HTMLDivElement, TooltipAnchorProps>(func
         className={cn('cursor-pointer', className)}
       />
       <AnimatePresence>
-        {mounted && (
+        {mounted === true && (
           <Ariakit.Tooltip
             gutter={4}
             alwaysVisible

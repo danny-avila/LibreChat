@@ -109,8 +109,14 @@ router.post('/clear', async (req, res) => {
 router.post('/update', async (req, res) => {
   const update = req.body.arg;
 
+  if (!update.conversationId) {
+    return res.status(400).json({ error: 'conversationId is required' });
+  }
+
   try {
-    const dbResponse = await saveConvo(req, update, { context: 'POST /api/convos/update' });
+    const dbResponse = await saveConvo(req, update, {
+      context: `POST /api/convos/update ${update.conversationId}`,
+    });
     res.status(201).json(dbResponse);
   } catch (error) {
     logger.error('Error updating conversation', error);

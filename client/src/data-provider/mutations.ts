@@ -138,7 +138,8 @@ export const useArchiveConversationMutation = (
     (payload: t.TArchiveConversationRequest) => dataService.archiveConversation(payload),
     {
       onSuccess: (_data, vars) => {
-        if (vars.isArchived) {
+        const isArchived = vars.isArchived === true;
+        if (isArchived) {
           queryClient.setQueryData([QueryKeys.conversation, id], null);
         } else {
           queryClient.setQueryData([QueryKeys.conversation, id], _data);
@@ -151,17 +152,17 @@ export const useArchiveConversationMutation = (
           const pageSize = convoData.pages[0].pageSize as number;
 
           return normalizeData(
-            vars.isArchived ? deleteConversation(convoData, id) : addConversation(convoData, _data),
+            isArchived ? deleteConversation(convoData, id) : addConversation(convoData, _data),
             'conversations',
             pageSize,
           );
         });
 
-        if (vars.isArchived) {
+        if (isArchived) {
           const current = queryClient.getQueryData<t.ConversationData>([
             QueryKeys.allConversations,
           ]);
-          refetch({ refetchPage: (page, index) => index === (current?.pages.length || 1) - 1 });
+          refetch({ refetchPage: (page, index) => index === (current?.pages.length ?? 1) - 1 });
         }
 
         queryClient.setQueryData<t.ConversationData>(
@@ -172,24 +173,76 @@ export const useArchiveConversationMutation = (
             }
             const pageSize = convoData.pages[0].pageSize as number;
             return normalizeData(
-              vars.isArchived
-                ? addConversation(convoData, _data)
-                : deleteConversation(convoData, id),
+              isArchived ? addConversation(convoData, _data) : deleteConversation(convoData, id),
               'conversations',
               pageSize,
             );
           },
         );
 
-        if (!vars.isArchived) {
+        if (!isArchived) {
           const currentArchive = queryClient.getQueryData<t.ConversationData>([
             QueryKeys.archivedConversations,
           ]);
           archiveRefetch({
-            refetchPage: (page, index) => index === (currentArchive?.pages.length || 1) - 1,
+            refetchPage: (page, index) => index === (currentArchive?.pages.length ?? 1) - 1,
           });
         }
       },
+    },
+  );
+};
+
+export const useArchiveConvoMutation = (options?: t.ArchiveConvoOptions) => {
+  const queryClient = useQueryClient();
+  const { onSuccess, ..._options } = options ?? {};
+
+  return useMutation<t.TArchiveConversationResponse, unknown, t.TArchiveConversationRequest>(
+    (payload: t.TArchiveConversationRequest) => dataService.archiveConversation(payload),
+    {
+      onSuccess: (_data, vars) => {
+        const { conversationId } = vars;
+        const isArchived = vars.isArchived === true;
+        if (isArchived) {
+          queryClient.setQueryData([QueryKeys.conversation, conversationId], null);
+        } else {
+          queryClient.setQueryData([QueryKeys.conversation, conversationId], _data);
+        }
+
+        queryClient.setQueryData<t.ConversationData>([QueryKeys.allConversations], (convoData) => {
+          if (!convoData) {
+            return convoData;
+          }
+          const pageSize = convoData.pages[0].pageSize as number;
+          return normalizeData(
+            isArchived
+              ? deleteConversation(convoData, conversationId)
+              : addConversation(convoData, _data),
+            'conversations',
+            pageSize,
+          );
+        });
+
+        queryClient.setQueryData<t.ConversationData>(
+          [QueryKeys.archivedConversations],
+          (convoData) => {
+            if (!convoData) {
+              return convoData;
+            }
+            const pageSize = convoData.pages[0].pageSize as number;
+            return normalizeData(
+              isArchived
+                ? addConversation(convoData, _data)
+                : deleteConversation(convoData, conversationId),
+              'conversations',
+              pageSize,
+            );
+          },
+        );
+
+        onSuccess?.(_data, vars);
+      },
+      ..._options,
     },
   );
 };

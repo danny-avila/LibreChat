@@ -1,68 +1,80 @@
-import { useState, useCallback, useEffect } from 'react';
-import { useConversationsInfiniteQuery } from '~/data-provider';
+import { useState, useCallback, useMemo } from 'react';
 import {
   Search,
-  ChevronRight,
-  ChevronLeft,
   TrashIcon,
+  ChevronLeft,
+  ChevronRight,
+  // ChevronsLeft,
+  // ChevronsRight,
   MessageCircle,
   ArchiveRestore,
-  ChevronsRight,
-  ChevronsLeft,
 } from 'lucide-react';
 import type { TConversation } from 'librechat-data-provider';
-import { useAuthContext, useLocalize, useArchiveHandler } from '~/hooks';
-import { DeleteConversationDialog } from '~/components/Conversations/ConvoOptions';
 import {
-  TooltipAnchor,
   Table,
-  TableBody,
+  Input,
+  Button,
+  TableRow,
+  Skeleton,
+  OGDialog,
+  Separator,
   TableCell,
+  TableBody,
   TableHead,
   TableHeader,
-  TableRow,
-  Separator,
-  Skeleton,
-  Button,
-  Input,
-  OGDialog,
+  TooltipAnchor,
   OGDialogTrigger,
 } from '~/components';
+import { useConversationsInfiniteQuery, useArchiveConvoMutation } from '~/data-provider';
+import { DeleteConversationDialog } from '~/components/Conversations/ConvoOptions';
+import { useAuthContext, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 export default function ArchivedChatsTable() {
   const localize = useLocalize();
   const { isAuthenticated } = useAuthContext();
-  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [isOpened, setIsOpened] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
-  const [totalPages, setTotalPages] = useState(1);
-  const [isOpened, setIsOpened] = useState(false);
 
-  const { data, isLoading, refetch } = useConversationsInfiniteQuery(
-    { pageNumber: currentPage.toString(), limit: 10, isArchived: true },
-    { enabled: isAuthenticated && isOpened },
+  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage, refetch } =
+    useConversationsInfiniteQuery(
+      { pageNumber: currentPage.toString(), isArchived: true },
+      { enabled: isAuthenticated && isOpened },
+    );
+  const mutation = useArchiveConvoMutation();
+  const handleUnarchive = useCallback(
+    (conversationId: string) => {
+      mutation.mutate({ conversationId, isArchived: false });
+    },
+    [mutation],
   );
 
-  useEffect(() => {
-    if (data) {
-      setTotalPages(Math.ceil(Number(data.pages)));
+  const conversations = useMemo(
+    () => data?.pages[currentPage - 1]?.conversations ?? [],
+    [data, currentPage],
+  );
+  const totalPages = useMemo(() => Math.ceil(Number(data?.pages[0].pages ?? 1)) ?? 1, [data]);
+
+  const handleChatClick = useCallback((conversationId: string) => {
+    if (!conversationId) {
+      return;
     }
-  }, [data]);
-
-  const archiveHandler = useArchiveHandler(conversationId ?? '', false, () => {
-    refetch();
-  });
-
-  const handleChatClick = useCallback((conversationId) => {
     window.open(`/c/${conversationId}`, '_blank');
   }, []);
 
-  const handlePageChange = useCallback((newPage) => {
-    setCurrentPage(newPage);
-  }, []);
+  const handlePageChange = useCallback(
+    (newPage: number) => {
+      setCurrentPage(newPage);
+      if (!(hasNextPage ?? false)) {
+        return;
+      }
+      fetchNextPage({ pageParam: newPage });
+    },
+    [fetchNextPage, hasNextPage],
+  );
 
-  const handleSearch = useCallback((query) => {
+  const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);
     setCurrentPage(1);
   }, []);
@@ -86,15 +98,13 @@ export default function ArchivedChatsTable() {
     );
   });
 
-  if (isLoading) {
-    return <div className="text-gray-300">{skeletons}</div>;
+  if (isLoading || isFetchingNextPage) {
+    return <div className="text-text-secondary">{skeletons}</div>;
   }
 
-  if (!data || data.pages.length === 0 || data.pages[0].conversations.length === 0) {
-    return <div className="text-gray-300">{localize('com_nav_archived_chats_empty')}</div>;
+  if (!data || (conversations.length === 0 && totalPages === 0)) {
+    return <div className="text-text-secondary">{localize('com_nav_archived_chats_empty')}</div>;
   }
-
-  const conversations = data.pages.flatMap((page) => page.conversations);
 
   return (
     <div
@@ -112,7 +122,7 @@ export default function ArchivedChatsTable() {
           placeholder={localize('com_nav_search_placeholder')}
           value={searchQuery}
           onChange={(e) => handleSearch(e.target.value)}
-          className="w-full border-none"
+          className="w-full border-none placeholder:text-text-secondary"
         />
       </div>
       <Separator />
@@ -137,9 +147,16 @@ export default function ArchivedChatsTable() {
                 <TableRow key={conversation.conversationId} className="hover:bg-transparent">
                   <TableCell className="flex items-center py-3 text-text-primary">
                     <button
+                      type="button"
                       className="flex"
                       aria-label="Open conversation in a new tab"
-                      onClick={() => handleChatClick(conversation.conversationId)}
+                      onClick={() => {
+                        const conversationId = conversation.conversationId ?? '';
+                        if (!conversationId) {
+                          return;
+                        }
+                        handleChatClick(conversationId);
+                      }}
                     >
                       <MessageCircle className="mr-1 h-5 w-5" />
                       <u>{conversation.title}</u>
@@ -161,19 +178,23 @@ export default function ArchivedChatsTable() {
                       description={localize('com_ui_unarchive')}
                       render={
                         <Button
+                          type="button"
                           aria-label="Unarchive conversation"
                           variant="ghost"
                           size="icon"
                           className="size-8"
                           onClick={() => {
-                            setConversationId(conversation.conversationId);
-                            archiveHandler();
+                            const conversationId = conversation.conversationId ?? '';
+                            if (!conversationId) {
+                              return;
+                            }
+                            handleUnarchive(conversationId);
                           }}
                         >
                           <ArchiveRestore className="size-4" />
                         </Button>
                       }
-                    ></TooltipAnchor>
+                    />
 
                     <OGDialog>
                       <OGDialogTrigger asChild>
@@ -181,6 +202,7 @@ export default function ArchivedChatsTable() {
                           description={localize('com_ui_delete')}
                           render={
                             <Button
+                              type="button"
                               aria-label="Delete archived conversation"
                               variant="ghost"
                               size="icon"
@@ -189,13 +211,13 @@ export default function ArchivedChatsTable() {
                               <TrashIcon className="size-4" />
                             </Button>
                           }
-                        ></TooltipAnchor>
+                        />
                       </OGDialogTrigger>
-                      {DeleteConversationDialog({
-                        conversationId: conversation.conversationId ?? '',
-                        retainView: refetch,
-                        title: conversation.title ?? '',
-                      })}
+                      <DeleteConversationDialog
+                        conversationId={conversation.conversationId ?? ''}
+                        retainView={refetch}
+                        title={conversation.title ?? ''}
+                      />
                     </OGDialog>
                   </TableCell>
                 </TableRow>
@@ -208,7 +230,7 @@ export default function ArchivedChatsTable() {
               Page {currentPage} of {totalPages}
             </div>
             <div className="flex space-x-2">
-              <Button
+              {/* <Button
                 variant="outline"
                 size="icon"
                 aria-label="Go to the previous 10 pages"
@@ -216,7 +238,7 @@ export default function ArchivedChatsTable() {
                 disabled={currentPage === 1}
               >
                 <ChevronsLeft className="size-4" />
-              </Button>
+              </Button> */}
               <Button
                 variant="outline"
                 size="icon"
@@ -235,7 +257,7 @@ export default function ArchivedChatsTable() {
               >
                 <ChevronRight className="size-4" />
               </Button>
-              <Button
+              {/* <Button
                 variant="outline"
                 size="icon"
                 aria-label="Go to the next 10 pages"
@@ -243,7 +265,7 @@ export default function ArchivedChatsTable() {
                 disabled={currentPage === totalPages}
               >
                 <ChevronsRight className="size-4" />
-              </Button>
+              </Button> */}
             </div>
           </div>
         </>
