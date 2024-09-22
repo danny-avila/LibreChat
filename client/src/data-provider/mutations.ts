@@ -240,8 +240,6 @@ export const useArchiveConvoMutation = (options?: t.ArchiveConvoOptions) => {
           },
         );
 
-        queryClient.invalidateQueries([QueryKeys.allConversations]);
-        queryClient.invalidateQueries([QueryKeys.archivedConversations]);
         onSuccess?.(_data, vars);
       },
       ..._options,

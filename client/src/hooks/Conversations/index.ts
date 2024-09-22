@@ -2,7 +2,6 @@ export { default as useSearch } from './useSearch';
 export { default as usePresets } from './usePresets';
 export { default as useGetSender } from './useGetSender';
 export { default as useDefaultConvo } from './useDefaultConvo';
-export { default as useArchiveConvo } from './useArchiveConvo';
 export { default as useConversation } from './useConversation';
 export { default as useGenerateConvo } from './useGenerateConvo';
 export { default as useConversations } from './useConversations';

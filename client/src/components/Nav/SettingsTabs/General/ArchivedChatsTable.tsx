@@ -1,54 +1,59 @@
-import { useState, useCallback, useEffect } from 'react';
-import { useConversationsInfiniteQuery } from '~/data-provider';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   Search,
-  ChevronRight,
-  ChevronLeft,
   TrashIcon,
-  MessageCircle,
-  ArchiveRestore,
-  ChevronsRight,
+  ChevronLeft,
+  ChevronRight,
   ChevronsLeft,
+  MessageCircle,
+  ChevronsRight,
+  ArchiveRestore,
 } from 'lucide-react';
 import type { TConversation } from 'librechat-data-provider';
-import { useAuthContext, useLocalize, useArchiveConvo } from '~/hooks';
-import { DeleteConversationDialog } from '~/components/Conversations/ConvoOptions';
 import {
-  TooltipAnchor,
   Table,
-  TableBody,
+  Input,
+  Button,
+  TableRow,
+  Skeleton,
+  OGDialog,
+  Separator,
   TableCell,
+  TableBody,
   TableHead,
   TableHeader,
-  TableRow,
-  Separator,
-  Skeleton,
-  Button,
-  Input,
-  OGDialog,
+  TooltipAnchor,
   OGDialogTrigger,
 } from '~/components';
+import { useConversationsInfiniteQuery, useArchiveConvoMutation } from '~/data-provider';
+import { DeleteConversationDialog } from '~/components/Conversations/ConvoOptions';
+import { useAuthContext, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 export default function ArchivedChatsTable() {
   const localize = useLocalize();
   const { isAuthenticated } = useAuthContext();
   const [isOpened, setIsOpened] = useState(false);
-  const [totalPages, setTotalPages] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const { archiveConversation } = useArchiveConvo();
   const { data, isLoading, refetch } = useConversationsInfiniteQuery(
     { pageNumber: currentPage.toString(), limit: 10, isArchived: true },
     { enabled: isAuthenticated && isOpened },
   );
+  const mutation = useArchiveConvoMutation();
+  const handleUnarchive = useCallback(
+    (conversationId: string) => {
+      mutation.mutate({ conversationId, isArchived: false });
+    },
+    [mutation],
+  );
 
-  useEffect(() => {
-    if (data) {
-      setTotalPages(Math.ceil(Number(data.pages)));
-    }
-  }, [data]);
+  const conversations = useMemo(
+    () => data?.pages.flatMap((page) => page.conversations) ?? [],
+    [data],
+  );
+  const totalPages = useMemo(() => Math.ceil(Number(data?.pages.length ?? 1)) ?? 1, [data]);
 
   const handleChatClick = useCallback((conversationId: string) => {
     if (!conversationId) {
@@ -92,8 +97,6 @@ export default function ArchivedChatsTable() {
   if (!data || data.pages.length === 0 || data.pages[0].conversations.length === 0) {
     return <div className="text-text-secondary">{localize('com_nav_archived_chats_empty')}</div>;
   }
-
-  const conversations = data.pages.flatMap((page) => page.conversations);
 
   return (
     <div
@@ -177,7 +180,7 @@ export default function ArchivedChatsTable() {
                             if (!conversationId) {
                               return;
                             }
-                            archiveConversation(conversationId, false);
+                            handleUnarchive(conversationId);
                           }}
                         >
                           <ArchiveRestore className="size-4" />
@@ -202,11 +205,11 @@ export default function ArchivedChatsTable() {
                           }
                         />
                       </OGDialogTrigger>
-                      {DeleteConversationDialog({
-                        conversationId: conversation.conversationId ?? '',
-                        retainView: refetch,
-                        title: conversation.title ?? '',
-                      })}
+                      <DeleteConversationDialog
+                        conversationId={conversation.conversationId ?? ''}
+                        retainView={refetch}
+                        title={conversation.title ?? ''}
+                      />
                     </OGDialog>
                   </TableCell>
                 </TableRow>
@@ -216,7 +219,7 @@ export default function ArchivedChatsTable() {
 
           <div className="flex items-center justify-end gap-6 px-2 py-4">
             <div className="text-sm font-bold text-text-primary">
-              Page {currentPage} of {totalPages || 1}
+              Page {currentPage} of {totalPages}
             </div>
             <div className="flex space-x-2">
               <Button
