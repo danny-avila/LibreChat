@@ -11,7 +11,7 @@ import {
   ChevronsLeft,
 } from 'lucide-react';
 import type { TConversation } from 'librechat-data-provider';
-import { useAuthContext, useLocalize, useArchiveHandler } from '~/hooks';
+import { useAuthContext, useLocalize, useArchiveConvo } from '~/hooks';
 import { DeleteConversationDialog } from '~/components/Conversations/ConvoOptions';
 import {
   TooltipAnchor,
@@ -33,12 +33,12 @@ import { cn } from '~/utils';
 export default function ArchivedChatsTable() {
   const localize = useLocalize();
   const { isAuthenticated } = useAuthContext();
-  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [isOpened, setIsOpened] = useState(false);
+  const [totalPages, setTotalPages] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
-  const [totalPages, setTotalPages] = useState(1);
-  const [isOpened, setIsOpened] = useState(false);
 
+  const { archiveConversation } = useArchiveConvo();
   const { data, isLoading, refetch } = useConversationsInfiniteQuery(
     { pageNumber: currentPage.toString(), limit: 10, isArchived: true },
     { enabled: isAuthenticated && isOpened },
@@ -49,10 +49,6 @@ export default function ArchivedChatsTable() {
       setTotalPages(Math.ceil(Number(data.pages)));
     }
   }, [data]);
-
-  const archiveHandler = useArchiveHandler(conversationId ?? '', false, () => {
-    refetch();
-  });
 
   const handleChatClick = useCallback((conversationId: string) => {
     if (!conversationId) {
@@ -177,8 +173,11 @@ export default function ArchivedChatsTable() {
                           size="icon"
                           className="size-8"
                           onClick={() => {
-                            setConversationId(conversation.conversationId);
-                            archiveHandler();
+                            const conversationId = conversation.conversationId ?? '';
+                            if (!conversationId) {
+                              return;
+                            }
+                            archiveConversation(conversationId, false);
                           }}
                         >
                           <ArchiveRestore className="size-4" />

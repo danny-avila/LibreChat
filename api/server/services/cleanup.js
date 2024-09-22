@@ -6,7 +6,7 @@ const cleanup = async () => {
   } catch (error) {
     logger.error('[cleanup] Error during app cleanup', error);
   } finally {
-    logger.debug('App cleanup on startup complete');
+    logger.debug('Startup cleanup complete');
   }
 };
 
