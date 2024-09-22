@@ -1,109 +1,252 @@
-import { useMemo, useState, useCallback } from 'react';
-import { MessageCircle, ArchiveRestore } from 'lucide-react';
+import { useState, useCallback, useEffect } from 'react';
 import { useConversationsInfiniteQuery } from '~/data-provider';
-import { ConversationListResponse } from 'librechat-data-provider';
-import { useAuthContext, useLocalize, useNavScrolling, useArchiveHandler } from '~/hooks';
-import { DeleteButton } from '~/components/Conversations/ConvoOptions';
-import { TooltipAnchor } from '~/components/ui';
-import { Spinner } from '~/components/svg';
+import {
+  Search,
+  ChevronRight,
+  ChevronLeft,
+  TrashIcon,
+  MessageCircle,
+  ArchiveRestore,
+  ChevronsRight,
+  ChevronsLeft,
+} from 'lucide-react';
+import type { TConversation } from 'librechat-data-provider';
+import { useAuthContext, useLocalize, useArchiveHandler } from '~/hooks';
+import { DeleteConversationDialog } from '~/components/Conversations/ConvoOptions';
+import {
+  TooltipAnchor,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Separator,
+  Skeleton,
+  Button,
+  Input,
+  OGDialog,
+  OGDialogTrigger,
+} from '~/components';
 import { cn } from '~/utils';
 
 export default function ArchivedChatsTable() {
   const localize = useLocalize();
   const { isAuthenticated } = useAuthContext();
-  const [showLoading, setShowLoading] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [totalPages, setTotalPages] = useState(1);
+  const [isOpened, setIsOpened] = useState(false);
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useConversationsInfiniteQuery(
-    { pageNumber: '1', isArchived: true },
-    { enabled: isAuthenticated },
+  const { data, isLoading, refetch } = useConversationsInfiniteQuery(
+    { pageNumber: currentPage.toString(), limit: 10, isArchived: true },
+    { enabled: isAuthenticated && isOpened },
   );
 
-  const { containerRef, moveToTop } = useNavScrolling<ConversationListResponse>({
-    setShowLoading,
-    hasNextPage: hasNextPage,
-    fetchNextPage: fetchNextPage,
-    isFetchingNextPage: isFetchingNextPage,
+  useEffect(() => {
+    if (data) {
+      setTotalPages(Math.ceil(Number(data.pages)));
+    }
+  }, [data]);
+
+  const archiveHandler = useArchiveHandler(conversationId ?? '', false, () => {
+    refetch();
   });
 
-  const conversations = useMemo(
-    () => data?.pages.flatMap((page) => page.conversations) || [],
-    [data],
-  );
+  const handleChatClick = useCallback((conversationId) => {
+    window.open(`/c/${conversationId}`, '_blank');
+  }, []);
 
-  const archiveHandler = useArchiveHandler(conversationId ?? '', false, moveToTop);
+  const handlePageChange = useCallback((newPage) => {
+    setCurrentPage(newPage);
+  }, []);
 
-  if (!data || conversations.length === 0) {
+  const handleSearch = useCallback((query) => {
+    setSearchQuery(query);
+    setCurrentPage(1);
+  }, []);
+
+  const getRandomWidth = () => Math.floor(Math.random() * (400 - 170 + 1)) + 170;
+
+  const skeletons = Array.from({ length: 11 }, (_, index) => {
+    const randomWidth = getRandomWidth();
+    return (
+      <div key={index} className="flex h-10 w-full items-center">
+        <div className="flex w-[410px] items-center">
+          <Skeleton className="h-4" style={{ width: `${randomWidth}px` }} />
+        </div>
+        <div className="flex flex-grow justify-center">
+          <Skeleton className="h-4 w-28" />
+        </div>
+        <div className="mr-2 flex justify-end">
+          <Skeleton className="h-4 w-12" />
+        </div>
+      </div>
+    );
+  });
+
+  if (isLoading) {
+    return <div className="text-gray-300">{skeletons}</div>;
+  }
+
+  if (!data || data.pages.length === 0 || data.pages[0].conversations.length === 0) {
     return <div className="text-gray-300">{localize('com_nav_archived_chats_empty')}</div>;
   }
+
+  const conversations = data.pages.flatMap((page) => page.conversations);
 
   return (
     <div
       className={cn(
         'grid w-full gap-2',
         'flex-1 flex-col overflow-y-auto pr-2 transition-opacity duration-500',
-        'max-h-[350px]',
+        'max-h-[629px]',
       )}
-      ref={containerRef}
+      onMouseEnter={() => setIsOpened(true)}
     >
-      <table className="table-fixed text-left">
-        <thead className="sticky top-0 bg-white dark:bg-gray-700">
-          <tr className="border-b border-gray-200 text-sm font-semibold text-gray-500 dark:border-white/10 dark:text-gray-200">
-            <th className="p-3">{localize('com_nav_archive_name')}</th>
-            <th className="p-3">{localize('com_nav_archive_created_at')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {conversations.map((conversation) => {
-            if (!conversation.conversationId) {
-              return null;
-            }
-            return (
-              <tr
-                key={conversation.conversationId}
-                className="border-b border-gray-200 text-sm font-normal dark:border-white/10"
-              >
-                <td className="flex items-center py-3 text-blue-800/70 dark:text-blue-500">
-                  <MessageCircle className="mr-1 h-5 w-5" />
-                  {conversation.title}
-                </td>
-                <td className="p-1">
-                  <div className="flex justify-between">
-                    <div className="flex justify-start dark:text-gray-200">
-                      {new Date(conversation.createdAt).toLocaleDateString('en-US', {
-                        month: 'long',
-                        day: 'numeric',
-                        year: 'numeric',
-                      })}
-                    </div>
-                    <div className="ml-auto mr-4 flex items-center justify-end gap-1 text-gray-400">
-                      <TooltipAnchor
-                        description={localize('com_ui_unarchive')}
-                        onClick={() => {
-                          setConversationId(conversation.conversationId);
-                          archiveHandler();
-                        }}
-                        className="cursor-pointer hover:text-black dark:hover:text-white"
-                      >
-                        <ArchiveRestore className="size-4 hover:text-gray-300" />
-                      </TooltipAnchor>
-                      <div className="size-5 hover:text-gray-300">
-                        <DeleteButton
-                          conversationId={conversation.conversationId}
-                          retainView={moveToTop}
-                          title={conversation.title ?? ''}
-                        />
+      <div className="flex items-center">
+        <Search className="size-4 text-text-secondary" />
+        <Input
+          type="text"
+          placeholder={localize('com_nav_search_placeholder')}
+          value={searchQuery}
+          onChange={(e) => handleSearch(e.target.value)}
+          className="w-full border-none"
+        />
+      </div>
+      <Separator />
+      {conversations.length === 0 ? (
+        <div className="mt-4 text-text-secondary">{localize('com_nav_no_search_results')}</div>
+      ) : (
+        <>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[50%] p-4">{localize('com_nav_archive_name')}</TableHead>
+                <TableHead className="w-[35%] p-1">
+                  {localize('com_nav_archive_created_at')}
+                </TableHead>
+                <TableHead className="w-[15%] p-1 text-right">
+                  {localize('com_assistants_actions')}
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {conversations.map((conversation: TConversation) => (
+                <TableRow key={conversation.conversationId} className="hover:bg-transparent">
+                  <TableCell className="flex items-center py-3 text-text-primary">
+                    <button
+                      className="flex"
+                      aria-label="Open conversation in a new tab"
+                      onClick={() => handleChatClick(conversation.conversationId)}
+                    >
+                      <MessageCircle className="mr-1 h-5 w-5" />
+                      <u>{conversation.title}</u>
+                    </button>
+                  </TableCell>
+                  <TableCell className="p-1">
+                    <div className="flex justify-between">
+                      <div className="flex justify-start text-text-secondary">
+                        {new Date(conversation.createdAt).toLocaleDateString('en-US', {
+                          month: 'long',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })}
                       </div>
                     </div>
-                  </div>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-      {(isFetchingNextPage || showLoading) && (
-        <Spinner className={cn('m-1 mx-auto mb-4 h-4 w-4 text-black dark:text-white')} />
+                  </TableCell>
+                  <TableCell className="flex items-center justify-end gap-2 p-1">
+                    <TooltipAnchor
+                      description={localize('com_ui_unarchive')}
+                      render={
+                        <Button
+                          aria-label="Unarchive conversation"
+                          variant="ghost"
+                          size="icon"
+                          className="size-8"
+                          onClick={() => {
+                            setConversationId(conversation.conversationId);
+                            archiveHandler();
+                          }}
+                        >
+                          <ArchiveRestore className="size-4" />
+                        </Button>
+                      }
+                    ></TooltipAnchor>
+
+                    <OGDialog>
+                      <OGDialogTrigger asChild>
+                        <TooltipAnchor
+                          description={localize('com_ui_delete')}
+                          render={
+                            <Button
+                              aria-label="Delete archived conversation"
+                              variant="ghost"
+                              size="icon"
+                              className="size-8"
+                            >
+                              <TrashIcon className="size-4" />
+                            </Button>
+                          }
+                        ></TooltipAnchor>
+                      </OGDialogTrigger>
+                      {DeleteConversationDialog({
+                        conversationId: conversation.conversationId ?? '',
+                        retainView: refetch,
+                        title: conversation.title ?? '',
+                      })}
+                    </OGDialog>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+
+          <div className="flex items-center justify-end gap-6 px-2 py-4">
+            <div className="text-sm font-bold text-text-primary">
+              Page {currentPage} of {totalPages}
+            </div>
+            <div className="flex space-x-2">
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Go to the previous 10 pages"
+                onClick={() => handlePageChange(Math.max(currentPage - 10, 1))}
+                disabled={currentPage === 1}
+              >
+                <ChevronsLeft className="size-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Go to the previous page"
+                onClick={() => handlePageChange(Math.max(currentPage - 1, 1))}
+                disabled={currentPage === 1}
+              >
+                <ChevronLeft className="size-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Go to the next page"
+                onClick={() => handlePageChange(Math.min(currentPage + 1, totalPages))}
+                disabled={currentPage === totalPages}
+              >
+                <ChevronRight className="size-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Go to the next 10 pages"
+                onClick={() => handlePageChange(Math.min(currentPage + 10, totalPages))}
+                disabled={currentPage === totalPages}
+              >
+                <ChevronsRight className="size-4" />
+              </Button>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

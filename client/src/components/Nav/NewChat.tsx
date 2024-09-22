@@ -7,7 +7,6 @@ import { getEndpointField, getIconEndpoint, getIconKey } from '~/utils';
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import { useLocalize, useNewConvo } from '~/hooks';
-import { TooltipAnchor } from '~/components/ui';
 import { NewChatIcon } from '~/components/svg';
 import store from '~/store';
 
@@ -96,15 +95,7 @@ export default function NewChat({
           </div>
           <div className="flex gap-3">
             <span className="flex items-center" data-state="closed">
-              <TooltipAnchor
-                side="right"
-                id="nav-new-chat-btn"
-                aria-label="nav-new-chat-btn"
-                description={localize('com_ui_new_chat')}
-                className="text-text-primary"
-              >
-                <NewChatIcon className="size-5" />
-              </TooltipAnchor>
+              <NewChatIcon className="size-5" />
             </span>
           </div>
         </a>

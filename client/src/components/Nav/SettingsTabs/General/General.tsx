@@ -34,8 +34,7 @@ export const ThemeSelector = ({
         value={theme}
         onChange={onChange}
         options={themeOptions}
-        sizeClasses="w-[220px]"
-        anchor="bottom start"
+        sizeClasses="w-[180px]"
         testId="theme-selector"
       />
     </div>
@@ -112,7 +111,6 @@ export const LangSelector = ({
         value={langcode}
         onChange={onChange}
         sizeClasses="[--anchor-max-height:256px]"
-        anchor="bottom start"
         options={languageOptions}
       />
     </div>
@@ -149,26 +147,24 @@ function General() {
 
   return (
     <div className="flex flex-col gap-3 p-1 text-sm text-text-primary">
-      <div className="border-b border-border-medium pb-3 last-of-type:border-b-0">
+      <div className="border-b border-border-light pb-3 last-of-type:border-b-0">
         <ThemeSelector theme={theme} onChange={changeTheme} />
       </div>
-      <div className="border-b border-border-medium pb-3 last-of-type:border-b-0">
+      <div className="border-b border-border-light pb-3 last-of-type:border-b-0">
         <LangSelector langcode={langcode} onChange={changeLang} />
       </div>
-      <div className="border-b border-border-medium pb-3 last-of-type:border-b-0">
+      <div className="border-b border-border-light pb-3 last-of-type:border-b-0">
         <UserMsgMarkdownSwitch />
       </div>
-      <div className="border-b border-border-medium pb-3 last-of-type:border-b-0">
+      <div className="border-b border-border-light pb-3 last-of-type:border-b-0">
         <AutoScrollSwitch />
       </div>
-      <div className="border-b border-border-medium pb-3 last-of-type:border-b-0">
+      <div className="border-b border-border-light pb-3 last-of-type:border-b-0">
         <HideSidePanelSwitch />
       </div>
-      <div className="border-b border-border-medium pb-3 last-of-type:border-b-0">
+      <div className="border-b border-border-light pb-3 last-of-type:border-b-0">
         <ArchivedChats />
       </div>
-      {/* <div className="border-b pb-3 last-of-type:border-b-0 border-border-medium">
-        </div> */}
     </div>
   );
 }

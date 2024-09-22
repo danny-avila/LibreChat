@@ -150,12 +150,12 @@ export const useConversationsInfiniteQuery = (
   config?: UseInfiniteQueryOptions<ConversationListResponse, unknown>,
 ) => {
   return useInfiniteQuery<ConversationListResponse, unknown>(
-    params?.isArchived ? [QueryKeys.archivedConversations] : [QueryKeys.allConversations],
+    params?.isArchived === true ? [QueryKeys.archivedConversations] : [QueryKeys.allConversations],
     ({ pageParam = '' }) =>
       dataService.listConversations({
         ...params,
         pageNumber: pageParam?.toString(),
-        isArchived: params?.isArchived || false,
+        isArchived: params?.isArchived ?? false,
         tags: params?.tags || [],
       }),
     {

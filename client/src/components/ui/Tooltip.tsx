@@ -1,14 +1,16 @@
 import * as Ariakit from '@ariakit/react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { forwardRef, useMemo } from 'react';
+import { cn } from '~/utils';
 
 interface TooltipAnchorProps extends Ariakit.TooltipAnchorProps {
   description: string;
   side?: 'top' | 'bottom' | 'left' | 'right';
+  className?: string;
 }
 
 export const TooltipAnchor = forwardRef<HTMLDivElement, TooltipAnchorProps>(function TooltipAnchor(
-  { description, side = 'top', role, ...props },
+  { description, side = 'top', className, role, ...props },
   ref,
 ) {
   const tooltip = Ariakit.useTooltipStore({ placement: side });
@@ -40,7 +42,13 @@ export const TooltipAnchor = forwardRef<HTMLDivElement, TooltipAnchorProps>(func
 
   return (
     <Ariakit.TooltipProvider store={tooltip} hideTimeout={0}>
-      <Ariakit.TooltipAnchor {...props} ref={ref} role={role} onKeyDown={handleKeyDown} />
+      <Ariakit.TooltipAnchor
+        {...props}
+        ref={ref}
+        role={role}
+        onKeyDown={handleKeyDown}
+        className={cn('cursor-pointer', className)}
+      />
       <AnimatePresence>
         {mounted && (
           <Ariakit.Tooltip

@@ -1,13 +1,12 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback } from 'react';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { TMessage } from 'librechat-data-provider';
 import { useDeleteConversationMutation } from '~/data-provider';
-import { OGDialog, OGDialogTrigger, Label, TooltipAnchor } from '~/components/ui';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
-import { TrashIcon } from '~/components/svg';
 import { useLocalize, useNewConvo } from '~/hooks';
+import { OGDialog, Label } from '~/components';
 
 type DeleteButtonProps = {
   conversationId: string;
@@ -17,19 +16,21 @@ type DeleteButtonProps = {
   setShowDeleteDialog?: (value: boolean) => void;
 };
 
-export default function DeleteButton({
+export function DeleteConversationDialog({
   conversationId,
   retainView,
   title,
-  showDeleteDialog,
-  setShowDeleteDialog,
-}: DeleteButtonProps) {
+}: {
+  conversationId: string;
+  retainView: () => void;
+  title: string;
+}) {
   const localize = useLocalize();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { newConversation } = useNewConvo();
   const { conversationId: currentConvoId } = useParams();
-  const [open, setOpen] = useState(false);
+
   const deleteConvoMutation = useDeleteConversationMutation({
     onSuccess: () => {
       if (currentConvoId === conversationId || currentConvoId === 'new') {
@@ -47,7 +48,7 @@ export default function DeleteButton({
     deleteConvoMutation.mutate({ conversationId, thread_id, source: 'button' });
   }, [conversationId, deleteConvoMutation, queryClient]);
 
-  const dialogContent = (
+  return (
     <OGDialogTemplate
       showCloseButton={false}
       title={localize('com_ui_delete_conversation')}
@@ -71,25 +72,26 @@ export default function DeleteButton({
       }}
     />
   );
+}
 
-  if (showDeleteDialog !== undefined && setShowDeleteDialog !== undefined) {
-    return (
-      <OGDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        {dialogContent}
-      </OGDialog>
-    );
+export default function DeleteButton({
+  conversationId,
+  retainView,
+  title,
+  showDeleteDialog,
+  setShowDeleteDialog,
+}: DeleteButtonProps) {
+  if (showDeleteDialog === undefined && setShowDeleteDialog === undefined) {
+    return null;
   }
 
   return (
-    <OGDialog open={open} onOpenChange={setOpen}>
-      <TooltipAnchor description={localize('com_ui_delete')}>
-        <OGDialogTrigger asChild>
-          <button>
-            <TrashIcon className="h-5 w-5" />
-          </button>
-        </OGDialogTrigger>
-      </TooltipAnchor>
-      {dialogContent}
+    <OGDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+      <DeleteConversationDialog
+        conversationId={conversationId}
+        retainView={retainView}
+        title={title}
+      />
     </OGDialog>
   );
 }
