@@ -54,7 +54,10 @@ export default function ArchivedChatsTable() {
     refetch();
   });
 
-  const handleChatClick = useCallback((conversationId) => {
+  const handleChatClick = useCallback((conversationId: string) => {
+    if (!conversationId) {
+      return;
+    }
     window.open(`/c/${conversationId}`, '_blank');
   }, []);
 
@@ -87,11 +90,11 @@ export default function ArchivedChatsTable() {
   });
 
   if (isLoading) {
-    return <div className="text-gray-300">{skeletons}</div>;
+    return <div className="text-text-secondary">{skeletons}</div>;
   }
 
   if (!data || data.pages.length === 0 || data.pages[0].conversations.length === 0) {
-    return <div className="text-gray-300">{localize('com_nav_archived_chats_empty')}</div>;
+    return <div className="text-text-secondary">{localize('com_nav_archived_chats_empty')}</div>;
   }
 
   const conversations = data.pages.flatMap((page) => page.conversations);
@@ -112,7 +115,7 @@ export default function ArchivedChatsTable() {
           placeholder={localize('com_nav_search_placeholder')}
           value={searchQuery}
           onChange={(e) => handleSearch(e.target.value)}
-          className="w-full border-none"
+          className="w-full border-none placeholder:text-text-secondary"
         />
       </div>
       <Separator />
@@ -137,9 +140,16 @@ export default function ArchivedChatsTable() {
                 <TableRow key={conversation.conversationId} className="hover:bg-transparent">
                   <TableCell className="flex items-center py-3 text-text-primary">
                     <button
+                      type="button"
                       className="flex"
                       aria-label="Open conversation in a new tab"
-                      onClick={() => handleChatClick(conversation.conversationId)}
+                      onClick={() => {
+                        const conversationId = conversation.conversationId ?? '';
+                        if (!conversationId) {
+                          return;
+                        }
+                        handleChatClick(conversationId);
+                      }}
                     >
                       <MessageCircle className="mr-1 h-5 w-5" />
                       <u>{conversation.title}</u>
@@ -161,6 +171,7 @@ export default function ArchivedChatsTable() {
                       description={localize('com_ui_unarchive')}
                       render={
                         <Button
+                          type="button"
                           aria-label="Unarchive conversation"
                           variant="ghost"
                           size="icon"
@@ -173,7 +184,7 @@ export default function ArchivedChatsTable() {
                           <ArchiveRestore className="size-4" />
                         </Button>
                       }
-                    ></TooltipAnchor>
+                    />
 
                     <OGDialog>
                       <OGDialogTrigger asChild>
@@ -181,6 +192,7 @@ export default function ArchivedChatsTable() {
                           description={localize('com_ui_delete')}
                           render={
                             <Button
+                              type="button"
                               aria-label="Delete archived conversation"
                               variant="ghost"
                               size="icon"
@@ -189,7 +201,7 @@ export default function ArchivedChatsTable() {
                               <TrashIcon className="size-4" />
                             </Button>
                           }
-                        ></TooltipAnchor>
+                        />
                       </OGDialogTrigger>
                       {DeleteConversationDialog({
                         conversationId: conversation.conversationId ?? '',
@@ -205,7 +217,7 @@ export default function ArchivedChatsTable() {
 
           <div className="flex items-center justify-end gap-6 px-2 py-4">
             <div className="text-sm font-bold text-text-primary">
-              Page {currentPage} of {totalPages}
+              Page {currentPage} of {totalPages || 1}
             </div>
             <div className="flex space-x-2">
               <Button
