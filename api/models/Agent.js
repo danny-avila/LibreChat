@@ -45,20 +45,20 @@ const loadAgent = async ({ req, agent_id }) => {
     id: agent_id,
   });
 
-  const cache = getLogStores(CONFIG_STORE);
-  /** @type {TStartupConfig} */
-  const cachedStartupConfig = await cache.get(STARTUP_CONFIG);
-  let { instanceProjectId } = cachedStartupConfig ?? {};
-  if (!instanceProjectId) {
-    instanceProjectId = (await getProjectByName(GLOBAL_PROJECT_NAME, '_id'))._id.toString();
-  }
-
   if (agent.author.toString() === req.user.id) {
     return agent;
   }
 
   if (!agent.projectIds) {
     return null;
+  }
+
+  const cache = getLogStores(CONFIG_STORE);
+  /** @type {TStartupConfig} */
+  const cachedStartupConfig = await cache.get(STARTUP_CONFIG);
+  let { instanceProjectId } = cachedStartupConfig ?? {};
+  if (!instanceProjectId) {
+    instanceProjectId = (await getProjectByName(GLOBAL_PROJECT_NAME, '_id'))._id.toString();
   }
 
   for (const projectObjectId of agent.projectIds) {
