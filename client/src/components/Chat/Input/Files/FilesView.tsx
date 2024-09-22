@@ -1,9 +1,8 @@
 import { FileSources, FileContext } from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
-import OGDialogTemplate from '~/components/ui/DialogTemplate';
+import { OGDialog, OGDialogContent, OGDialogHeader, OGDialogTitle } from '~/components';
 import { useGetFiles } from '~/data-provider';
 import { DataTable, columns } from './Table';
-import { Dialog } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 
 export default function Files({ open, onOpenChange }) {
@@ -19,13 +18,16 @@ export default function Files({ open, onOpenChange }) {
   });
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <OGDialogTemplate
-        showCancelButton={false}
+    <OGDialog open={open} onOpenChange={onOpenChange}>
+      <OGDialogContent
         title={localize('com_nav_my_files')}
-        main={<DataTable columns={columns} data={files} />}
         className="w-11/12 overflow-x-auto bg-background text-text-primary shadow-2xl"
-      />
-    </Dialog>
+      >
+        <OGDialogHeader>
+          <OGDialogTitle>{localize('com_nav_my_files')}</OGDialogTitle>
+        </OGDialogHeader>
+        <DataTable columns={columns} data={files} />
+      </OGDialogContent>
+    </OGDialog>
   );
 }
