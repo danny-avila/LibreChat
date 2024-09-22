@@ -1,4 +1,4 @@
-import { memo, useRef, useMemo } from 'react';
+import { memo, useRef, useMemo, useEffect } from 'react';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import {
   supportsFiles,
@@ -44,6 +44,7 @@ const ChatForm = ({ index = 0 }) => {
   const TextToSpeech = useRecoilValue(store.textToSpeech);
   const automaticPlayback = useRecoilValue(store.automaticPlayback);
 
+  const isSearching = useRecoilValue(store.isSearching);
   const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
   const [showPlusPopover, setShowPlusPopover] = useRecoilState(store.showPlusPopoverFamily(index));
   const [showMentionPopover, setShowMentionPopover] = useRecoilState(
@@ -123,6 +124,12 @@ const ChatForm = ({ index = 0 }) => {
     },
   });
 
+  useEffect(() => {
+    if (!isSearching && textAreaRef.current && !disableInputs) {
+      textAreaRef.current.focus();
+    }
+  }, [isSearching, disableInputs]);
+
   return (
     <form
       onSubmit={methods.handleSubmit((data) => submitMessage(data))}
@@ -164,9 +171,6 @@ const ChatForm = ({ index = 0 }) => {
             {endpoint && (
               <TextareaAutosize
                 {...registerProps}
-                // TODO: remove autofocus due to a11y issues
-                // eslint-disable-next-line jsx-a11y/no-autofocus
-                autoFocus
                 ref={(e) => {
                   ref(e);
                   textAreaRef.current = e;

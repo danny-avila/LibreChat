@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { useSetRecoilState } from 'recoil';
 import { useLocalize, useCustomLink } from '~/hooks';
-import { buttonVariants } from '~/components/ui';
+import { Button } from '~/components/ui';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -15,13 +15,10 @@ export default function ManagePrompts({ className }: { className?: string }) {
   }, [setPromptsName, setPromptsCategory]);
 
   const clickHandler = useCustomLink('/d/prompts', clickCallback);
+
   return (
-    <a
-      className={cn(buttonVariants({ variant: 'outline' }), className)}
-      href="/d/prompts"
-      onClick={clickHandler}
-    >
+    <Button variant="outline" className={cn(className, 'bg-transparent')} onClick={clickHandler}>
       {localize('com_ui_manage')}
-    </a>
+    </Button>
   );
 }

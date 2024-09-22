@@ -57,7 +57,7 @@ export const ErrorMessage = ({
     <Container message={message}>
       <div
         className={cn(
-          'rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200',
+          'rounded-xl border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-gray-600 dark:text-gray-200',
           className,
         )}
       >
