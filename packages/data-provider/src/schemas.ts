@@ -508,6 +508,7 @@ export const tConversationSchema = z.object({
   conversationId: z.string().nullable(),
   endpoint: eModelEndpointSchema.nullable(),
   endpointType: eModelEndpointSchema.optional(),
+  isArchived: z.boolean().optional(),
   title: z.string().nullable().or(z.literal('New Chat')).default('New Chat'),
   user: z.string().optional(),
   messages: z.array(z.string()).optional(),
