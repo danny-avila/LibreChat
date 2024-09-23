@@ -1,4 +1,5 @@
-import { useRecoilState } from 'recoil';
+import { useState } from 'react';
+import { useRecoilValue } from 'recoil';
 import { CodeInProgress } from './Parts/CodeProgress';
 import { useProgress, useLocalize } from '~/hooks';
 import ProgressText from './ProgressText';
@@ -19,7 +20,8 @@ export default function CodeAnalyze({
 }) {
   const localize = useLocalize();
   const progress = useProgress(initialProgress);
-  const [showCode, setShowCode] = useRecoilState(store.showCode);
+  const showAnalysisCode = useRecoilValue(store.showCode);
+  const [showCode, setShowCode] = useState(showAnalysisCode);
 
   const radius = 56.08695652173913;
   const circumference = 2 * Math.PI * radius;

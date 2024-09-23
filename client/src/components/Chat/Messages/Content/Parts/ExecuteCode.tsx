@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { useRecoilState } from 'recoil';
+import { useMemo, useState } from 'react';
+import { useRecoilValue } from 'recoil';
 import { CodeInProgress } from './CodeProgress';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
 import FinishedIcon from '~/components/Chat/Messages/Content/FinishedIcon';
@@ -35,7 +35,8 @@ export default function ExecuteCode({
   outputs: [string | undefined, Record<string, unknown> | undefined];
   isSubmitting: boolean;
 }) {
-  const [showCode, setShowCode] = useRecoilState(store.showCode);
+  const showAnalysisCode = useRecoilValue(store.showCode);
+  const [showCode, setShowCode] = useState(showAnalysisCode);
 
   const { lang, code } = useParseArgs(args);
   const progress = useProgress(initialProgress);
