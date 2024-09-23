@@ -3,10 +3,12 @@ import {
   ContentTypes,
   imageGenTools,
   isImageVisionTool,
+  Tools,
 } from 'librechat-data-provider';
 import { memo } from 'react';
 import type { TMessageContentParts } from 'librechat-data-provider';
 import { ErrorMessage } from './MessageContent';
+import ExecuteCode from './Parts/ExecuteCode';
 import RetrievalCall from './RetrievalCall';
 import CodeAnalyze from './CodeAnalyze';
 import Container from './Container';
@@ -56,7 +58,19 @@ const Part = memo(({ part, isSubmitting, showCursor, messageId, isCreatedByUser 
       return null;
     }
 
-    if ('args' in toolCall && (!toolCall.type || toolCall.type === ToolCallTypes.TOOL_CALL)) {
+    const isToolCall =
+      'args' in toolCall && (!toolCall.type || toolCall.type === ToolCallTypes.TOOL_CALL);
+    if (isToolCall && toolCall.name === Tools.execute_code) {
+      console.log('toolCall', toolCall);
+      return (
+        <ExecuteCode
+          args={typeof toolCall.args === 'string' ? toolCall.args : ''}
+          outputs={[toolCall.output ?? '', {}]}
+          initialProgress={toolCall.progress ?? 0.1}
+          isSubmitting={isSubmitting}
+        />
+      );
+    } else if (isToolCall) {
       return (
         <ToolCall
           args={toolCall.args ?? ''}

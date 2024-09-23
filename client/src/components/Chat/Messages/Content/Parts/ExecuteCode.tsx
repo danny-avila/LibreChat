@@ -1,36 +1,50 @@
+import { useMemo } from 'react';
 import { useRecoilState } from 'recoil';
-import { CodeInProgress } from './Parts/CodeProgress';
-import { useProgress, useLocalize } from '~/hooks';
-import ProgressText from './ProgressText';
-import FinishedIcon from './FinishedIcon';
-import MarkdownLite from './MarkdownLite';
+import { CodeInProgress } from './CodeProgress';
+import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
+import FinishedIcon from '~/components/Chat/Messages/Content/FinishedIcon';
+import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
+import { useProgress } from '~/hooks';
 import store from '~/store';
 
-export default function CodeAnalyze({
+interface ParsedArgs {
+  lang: string;
+  code: string;
+}
+
+export function useParseArgs(args: string): ParsedArgs {
+  return useMemo(() => {
+    const langMatch = args.match(/"lang"\s*:\s*"(\w+)"/);
+    const codeMatch = args.match(/"code"\s*:\s*"(.+?)(?="\s*,\s*"args"|$)/s);
+
+    return {
+      lang: langMatch ? langMatch[1] : '',
+      code: codeMatch ? codeMatch[1].replace(/\\n/g, '\n').replace(/\\/g, '') : '',
+    };
+  }, [args]);
+}
+
+export default function ExecuteCode({
   initialProgress = 0.1,
-  code,
-  outputs = [],
+  args,
+  outputs = ['', {}],
   isSubmitting,
 }: {
   initialProgress: number;
-  code: string;
-  outputs: Record<string, unknown>[];
+  args: string;
+  outputs: [string | undefined, Record<string, unknown> | undefined];
   isSubmitting: boolean;
 }) {
-  const localize = useLocalize();
-  const progress = useProgress(initialProgress);
   const [showCode, setShowCode] = useRecoilState(store.showCode);
+
+  const { lang, code } = useParseArgs(args);
+  const progress = useProgress(initialProgress);
 
   const radius = 56.08695652173913;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - progress * circumference;
 
-  const logs = outputs.reduce((acc, output) => {
-    if (output['logs']) {
-      return acc + output['logs'] + '\n';
-    }
-    return acc;
-  }, '');
+  const logs = outputs[0];
 
   return (
     <>
@@ -58,10 +72,9 @@ export default function CodeAnalyze({
       </div>
       {showCode && (
         <div className="code-analyze-block mb-3 mt-0.5 overflow-hidden rounded-xl bg-black">
-          <MarkdownLite content={code ? `\`\`\`python\n${code}\n\`\`\`` : ''} />
-          {logs && (
+          <MarkdownLite content={code ? `\`\`\`${lang}\n${code}\n\`\`\`` : ''} />
+          {logs != null && logs && (
             <div className="bg-gray-700 p-4 text-xs">
-              <div className="mb-1 text-gray-400">{localize('com_ui_result')}</div>
               <div
                 className="prose flex flex-col-reverse text-white"
                 style={{

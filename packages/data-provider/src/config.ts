@@ -1128,6 +1128,8 @@ export enum LocalStorageKeys {
   LAST_PROMPT_CATEGORY = 'lastPromptCategory',
   /** Key for rendering User Messages as Markdown */
   ENABLE_USER_MSG_MARKDOWN = 'enableUserMsgMarkdown',
+  /** Key for displaying analysis tool code input */
+  SHOW_ANALYSIS_CODE = 'showAnalysisCode',
 }
 
 export enum ForkOptions {
