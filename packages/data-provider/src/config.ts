@@ -139,6 +139,13 @@ export enum Capabilities {
   tools = 'tools',
 }
 
+export enum AgentCapabilities {
+  execute_code = 'execute_code',
+  retrieval = 'retrieval',
+  actions = 'actions',
+  tools = 'tools',
+}
+
 export const defaultAssistantsVersion = {
   [EModelEndpoint.assistants]: 2,
   [EModelEndpoint.azureAssistants]: 1,

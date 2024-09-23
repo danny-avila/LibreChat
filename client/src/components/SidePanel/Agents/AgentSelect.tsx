@@ -1,11 +1,11 @@
 import { Plus, EarthIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef } from 'react';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
-import { Capabilities, defaultAgentFormValues } from 'librechat-data-provider';
+import { AgentCapabilities, defaultAgentFormValues } from 'librechat-data-provider';
 import type { Agent, AgentCreateParams } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type { UseFormReset } from 'react-hook-form';
-import type { AgentCapabilities, AgentForm, TAgentOption } from '~/common';
+import type { TAgentCapabilities, AgentForm, TAgentOption } from '~/common';
 import { cn, createDropdownSetter, createProviderOption, processAgentOption } from '~/utils';
 import { useListAgentsQuery, useGetAgentByIdQuery } from '~/data-provider';
 import SelectDropDown from '~/components/ui/SelectDropDown';
@@ -61,13 +61,16 @@ export default function AgentSelect({
         icon: isGlobal ? <EarthIcon className={'icon-lg text-green-400'} /> : null,
       };
 
-      const actions: AgentCapabilities = {
-        [Capabilities.code_interpreter]: false,
-        [Capabilities.image_vision]: false,
-        [Capabilities.retrieval]: false,
+      const actions: TAgentCapabilities = {
+        [AgentCapabilities.execute_code]: false,
+        [AgentCapabilities.retrieval]: false,
       };
 
-      const formValues: Partial<AgentForm & AgentCapabilities> = {
+      (fullAgent.tools ?? []).forEach((tool) => {
+        actions[tool] = true;
+      });
+
+      const formValues: Partial<AgentForm & TAgentCapabilities> = {
         ...actions,
         agent: update,
         model: update.model,
@@ -91,7 +94,7 @@ export default function AgentSelect({
 
       reset(formValues);
     },
-    [reset],
+    [reset, startupConfig],
   );
 
   const onSelect = useCallback(

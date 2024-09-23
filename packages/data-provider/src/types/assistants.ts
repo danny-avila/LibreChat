@@ -15,6 +15,7 @@ export type Metadata = {
 };
 
 export enum Tools {
+  execute_code = 'execute_code',
   code_interpreter = 'code_interpreter',
   file_search = 'file_search',
   retrieval = 'retrieval',

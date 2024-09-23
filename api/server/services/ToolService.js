@@ -405,6 +405,10 @@ async function loadAgentTools({ req, agent_id, tools, openAIApiKey }) {
   const agentTools = [];
   for (let i = 0; i < loadedTools.length; i++) {
     const tool = loadedTools[i];
+    if (tool.name && tool.name === Tools.execute_code) {
+      agentTools.push(tool);
+      continue;
+    }
 
     const toolInstance = toolFn(
       async (...args) => {

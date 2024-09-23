@@ -1,20 +1,28 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
-import { QueryKeys, Capabilities, EModelEndpoint } from 'librechat-data-provider';
+import { QueryKeys, AgentCapabilities, EModelEndpoint } from 'librechat-data-provider';
 import type { TConfig, TPlugin } from 'librechat-data-provider';
 import type { AgentForm, AgentPanelProps } from '~/common';
-import { cn, defaultTextProps, removeFocusOutlines, getEndpointField, getIconKey } from '~/utils';
+import {
+  cn,
+  defaultTextProps,
+  removeFocusOutlines,
+  getEndpointField,
+  getIconKey,
+  logger,
+} from '~/utils';
 import { useCreateAgentMutation, useUpdateAgentMutation } from '~/data-provider';
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 import Action from '~/components/SidePanel/Builder/Action';
-import { useLocalize } from '~/hooks';
 import { ToolSelectDialog } from '~/components/Tools';
+import CapabilitiesForm from './CapabilitiesForm';
 import { useToastContext } from '~/Providers';
 import { Spinner } from '~/components/svg';
 import DeleteButton from './DeleteButton';
 import AgentAvatar from './AgentAvatar';
 import ShareAgent from './ShareAgent';
+import { useLocalize } from '~/hooks';
 import AgentTool from './AgentTool';
 import { Panel } from '~/common';
 
@@ -51,21 +59,24 @@ export default function AgentConfig({
   const agent_id = useWatch({ control, name: 'id' });
 
   const toolsEnabled = useMemo(
-    () => agentsConfig?.capabilities?.includes(Capabilities.tools),
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.tools),
     [agentsConfig],
   );
   const actionsEnabled = useMemo(
-    () => agentsConfig?.capabilities?.includes(Capabilities.actions),
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.actions),
     [agentsConfig],
   );
   // const retrievalEnabled = useMemo(
   //   () => agentsConfig?.capabilities?.includes(Capabilities.retrieval),
   //   [agentsConfig],
   // );
-  // const codeEnabled = useMemo(
-  //   () => agentsConfig?.capabilities?.includes(Capabilities.code_interpreter),
-  //   [agentsConfig],
-  // );
+  const codeEnabled = useMemo(
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.execute_code),
+    [agentsConfig],
+  );
+
+  // logger.info('agents', 'agentsConfig', agentsConfig);
+  // logger.info('agents', 'capabilities', { toolsEnabled, actionsEnabled, codeEnabled });
 
   /* Mutations */
   const update = useUpdateAgentMutation({
@@ -280,6 +291,11 @@ export default function AgentConfig({
             </div>
           </button>
         </div>
+        <CapabilitiesForm
+          codeEnabled={codeEnabled}
+          agentsConfig={agentsConfig}
+          retrievalEnabled={false}
+        />
         {/* Agent Tools & Actions */}
         <div className="mb-6">
           <label className={labelClass}>

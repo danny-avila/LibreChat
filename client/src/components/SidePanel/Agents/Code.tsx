@@ -1,4 +1,4 @@
-import { Capabilities } from 'librechat-data-provider';
+import { AgentCapabilities } from 'librechat-data-provider';
 import { useFormContext, Controller } from 'react-hook-form';
 import type { AgentForm } from '~/common';
 import {
@@ -22,7 +22,7 @@ export default function Code() {
       <HoverCard openDelay={50}>
         <div className="flex items-center">
           <Controller
-            name={Capabilities.code_interpreter}
+            name={AgentCapabilities.execute_code}
             control={control}
             render={({ field }) => (
               <Checkbox
@@ -30,26 +30,30 @@ export default function Code() {
                 checked={field.value}
                 onCheckedChange={field.onChange}
                 className="relative float-left  mr-2 inline-flex h-4 w-4 cursor-pointer"
-                value={field?.value?.toString()}
+                value={field.value.toString()}
               />
             )}
           />
-          <div className="flex items-center space-x-2">
+          <button
+            type="button"
+            className="flex items-center space-x-2"
+            onClick={() =>
+              // eslint-disable-next-line @typescript-eslint/strict-boolean-expressions
+              setValue(AgentCapabilities.execute_code, !getValues(AgentCapabilities.execute_code), {
+                shouldDirty: true,
+              })
+            }
+          >
             <label
               className="form-check-label text-token-text-primary w-full cursor-pointer"
-              htmlFor={Capabilities.code_interpreter}
-              onClick={() =>
-                setValue(Capabilities.code_interpreter, !getValues(Capabilities.code_interpreter), {
-                  shouldDirty: true,
-                })
-              }
+              htmlFor={AgentCapabilities.execute_code}
             >
-              {localize('com_assistants_code_interpreter')}
+              {localize('com_agents_execute_code')}
             </label>
             <HoverCardTrigger>
               <CircleHelpIcon className="h-5 w-5 text-gray-500" />
             </HoverCardTrigger>
-          </div>
+          </button>
           <HoverCardPortal>
             <HoverCardContent side={ESide.Top} className="w-80">
               <div className="space-y-2">

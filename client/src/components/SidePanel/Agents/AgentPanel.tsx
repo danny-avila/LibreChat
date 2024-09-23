@@ -101,10 +101,10 @@ export default function AgentPanel({
     (data: AgentForm) => {
       const tools = data.tools ?? [];
 
-      if (data.code_interpreter) {
-        tools.push(Tools.code_interpreter);
+      if (data.execute_code === true) {
+        tools.push(Tools.execute_code);
       }
-      if (data.retrieval) {
+      if (data.retrieval === true) {
         tools.push(Tools.file_search);
       }
 

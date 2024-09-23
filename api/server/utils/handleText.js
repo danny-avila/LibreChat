@@ -1,6 +1,8 @@
 const {
   Capabilities,
   EModelEndpoint,
+  isAgentsEndpoint,
+  AgentCapabilities,
   isAssistantsEndpoint,
   defaultRetrievalModels,
   defaultAssistantsVersion,
@@ -160,8 +162,8 @@ const isUserProvided = (value) => value === 'user_provided';
 /**
  * Generate the configuration for a given key and base URL.
  * @param {string} key
- * @param {string} baseURL
- * @param {string} endpoint
+ * @param {string} [baseURL]
+ * @param {string} [endpoint]
  * @returns {boolean | { userProvide: boolean, userProvideURL?: boolean }}
  */
 function generateConfig(key, baseURL, endpoint) {
@@ -177,7 +179,7 @@ function generateConfig(key, baseURL, endpoint) {
   }
 
   const assistants = isAssistantsEndpoint(endpoint);
-
+  const agents = isAgentsEndpoint(endpoint);
   if (assistants) {
     config.retrievalModels = defaultRetrievalModels;
     config.capabilities = [
@@ -186,6 +188,15 @@ function generateConfig(key, baseURL, endpoint) {
       Capabilities.retrieval,
       Capabilities.actions,
       Capabilities.tools,
+    ];
+  }
+
+  if (agents) {
+    config.capabilities = [
+      AgentCapabilities.execute_code,
+      // AgentCapabilities.retrieval,
+      AgentCapabilities.actions,
+      AgentCapabilities.tools,
     ];
   }
 
