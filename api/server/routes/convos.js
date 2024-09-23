@@ -1,13 +1,13 @@
 const multer = require('multer');
 const express = require('express');
-const { CacheKeys } = require('librechat-data-provider');
+const { CacheKeys, PermissionTypes, Permissions } = require('librechat-data-provider');
 const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { getConvosByPage, deleteConvos, getConvo, saveConvo } = require('~/models/Conversation');
 const { storage, importFileFilter } = require('~/server/routes/files/multer');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { forkConversation } = require('~/server/utils/import/fork');
 const { importConversations } = require('~/server/utils/import');
-const { createImportLimiters } = require('~/server/middleware');
+const { createImportLimiters, generateCheckAccess } = require('~/server/middleware');
 const getLogStores = require('~/cache/getLogStores');
 const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
@@ -67,12 +67,14 @@ router.post('/gen_title', async (req, res) => {
     res.status(200).json({ title });
   } else {
     res.status(404).json({
-      message: 'Title not found or method not implemented for the conversation\'s endpoint',
+      message: "Title not found or method not implemented for the conversation's endpoint",
     });
   }
 });
 
-router.post('/clear', async (req, res) => {
+const checkDeleteConvoAccess = generateCheckAccess(PermissionTypes.DELETE_CONVO, [Permissions.USE]);
+
+router.post('/clear', checkDeleteConvoAccess, async (req, res) => {
   let filter = {};
   const { conversationId, source, thread_id } = req.body.arg;
   if (conversationId) {
