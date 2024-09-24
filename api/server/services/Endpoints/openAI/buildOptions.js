@@ -3,6 +3,7 @@ const generateArtifactsPrompt = require('~/app/clients/prompts/artifacts');
 
 const buildOptions = (endpoint, parsedBody) => {
   const {
+    modelLabel,
     chatGptLabel,
     promptPrefix,
     maxContextTokens,
@@ -17,6 +18,7 @@ const buildOptions = (endpoint, parsedBody) => {
 
   const endpointOption = removeNullishValues({
     endpoint,
+    modelLabel,
     chatGptLabel,
     promptPrefix,
     resendFiles,
