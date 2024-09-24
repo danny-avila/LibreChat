@@ -17,9 +17,18 @@ export function useParseArgs(args: string): ParsedArgs {
     const langMatch = args.match(/"lang"\s*:\s*"(\w+)"/);
     const codeMatch = args.match(/"code"\s*:\s*"(.+?)(?="\s*,\s*"args"|$)/s);
 
+    let code = '';
+    if (codeMatch) {
+      code = codeMatch[1];
+      if (code.endsWith('"}')) {
+        code = code.slice(0, -2);
+      }
+      code = code.replace(/\\n/g, '\n').replace(/\\/g, '');
+    }
+
     return {
       lang: langMatch ? langMatch[1] : '',
-      code: codeMatch ? codeMatch[1].replace(/\\n/g, '\n').replace(/\\/g, '') : '',
+      code,
     };
   }, [args]);
 }
