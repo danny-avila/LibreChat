@@ -351,6 +351,7 @@ const loadTools = async ({
 
 module.exports = {
   loadToolWithAuth,
+  loadAuthValues,
   validateTools,
   loadTools,
 };
