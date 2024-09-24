@@ -138,6 +138,6 @@
     "typescript": "^5.0.4",
     "vite": "^5.1.1",
     "vite-plugin-node-polyfills": "^0.17.0",
-    "vite-plugin-pwa": "^0.19.8"
+    "vite-plugin-pwa": "^0.20.5"
   }
 }
