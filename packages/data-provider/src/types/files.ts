@@ -7,6 +7,7 @@ export enum FileSources {
   openai = 'openai',
   s3 = 's3',
   vectordb = 'vectordb',
+  execute_code = 'execute_code',
 }
 
 export const checkOpenAIStorage = (source: string) =>
@@ -16,6 +17,7 @@ export enum FileContext {
   avatar = 'avatar',
   unknown = 'unknown',
   assistants = 'assistants',
+  execute_code = 'execute_code',
   image_generation = 'image_generation',
   assistants_output = 'assistants_output',
   message_attachment = 'message_attachment',

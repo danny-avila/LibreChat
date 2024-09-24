@@ -1,8 +1,10 @@
+const { Tools } = require('librechat-data-provider');
 const { GraphEvents, ToolEndHandler, ChatModelStreamHandler } = require('@librechat/agents');
 
 /** @typedef {import('@librechat/agents').Graph} Graph */
 /** @typedef {import('@librechat/agents').EventHandler} EventHandler */
 /** @typedef {import('@librechat/agents').ModelEndData} ModelEndData */
+/** @typedef {import('@librechat/agents').ToolEndData} ToolEndData */
 /** @typedef {import('@librechat/agents').ChatModelStreamHandler} ChatModelStreamHandler */
 /** @typedef {import('@librechat/agents').ContentAggregatorResult['aggregateContent']} ContentAggregator */
 /** @typedef {import('@librechat/agents').GraphEvents} GraphEvents */
@@ -58,11 +60,12 @@ class ModelEndHandler {
  * @param {Object} options - The options object.
  * @param {ServerResponse} options.res - The options object.
  * @param {ContentAggregator} options.aggregateContent - The options object.
+ * @param {(data: ToolEndData) => void} options.toolEndCallback - Callback to use when tool ends.
  * @param {Array<UsageMetadata>} options.collectedUsage - The list of collected usage metadata.
  * @returns {Record<string, t.EventHandler>} The default handlers.
  * @throws {Error} If the request is not found.
  */
-function getDefaultHandlers({ res, aggregateContent, collectedUsage }) {
+function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedUsage }) {
   if (!res || !aggregateContent) {
     throw new Error(
       `[getDefaultHandlers] Missing required options: res: ${!res}, aggregateContent: ${!aggregateContent}`,
@@ -70,7 +73,7 @@ function getDefaultHandlers({ res, aggregateContent, collectedUsage }) {
   }
   const handlers = {
     [GraphEvents.CHAT_MODEL_END]: new ModelEndHandler(collectedUsage),
-    [GraphEvents.TOOL_END]: new ToolEndHandler(),
+    [GraphEvents.TOOL_END]: new ToolEndHandler(toolEndCallback),
     [GraphEvents.CHAT_MODEL_STREAM]: new ChatModelStreamHandler(),
     [GraphEvents.ON_RUN_STEP]: {
       /**
@@ -121,7 +124,35 @@ function getDefaultHandlers({ res, aggregateContent, collectedUsage }) {
   return handlers;
 }
 
+/**
+ *
+ * @param {Object} params
+ * @param {ServerRequest} params.req
+ * @param {Promise<FileObject | null>[]} params.artifactPromises
+ */
+function createToolEndCallback({ req, artifactPromises }) {
+  /**
+   * @param {ToolEndData | undefined} data
+   */
+  return async (data) => {
+    const output = data?.output;
+    if (!output) {
+      return;
+    }
+
+    if (output.name !== Tools.execute_code) {
+      return;
+    }
+
+    const { tool_call_id, artifact } = output;
+    if (!artifact.files) {
+      return;
+    }
+  };
+}
+
 module.exports = {
   sendEvent,
   getDefaultHandlers,
+  createToolEndCallback,
 };

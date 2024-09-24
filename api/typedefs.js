@@ -650,6 +650,11 @@
  */
 
 /**
+ * @exports FileObject
+ * @typedef {{file_id: string, filepath: string, source: string, bytes?: number, width?: number, height?: number}} FileObject
+ * @memberof typedefs
+
+/**
  * @typedef {Object} ImageOnlyMetadata
  * @property {number} width - The width of the image.
  * @property {number} height - The height of the image.
