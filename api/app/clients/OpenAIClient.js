@@ -199,8 +199,8 @@ class OpenAIClient extends BaseClient {
         model: this.modelOptions.model,
         endpoint: this.options.endpoint,
         endpointType: this.options.endpointType,
-        chatGptLabel: this.options.chatGptLabel,
         modelDisplayLabel: this.options.modelDisplayLabel,
+        chatGptLabel: this.options.chatGptLabel || this.options.modelLabel,
       });
 
     this.userLabel = this.options.userLabel || 'User';
