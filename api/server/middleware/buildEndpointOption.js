@@ -10,7 +10,6 @@ const openAI = require('~/server/services/Endpoints/openAI');
 const agents = require('~/server/services/Endpoints/agents');
 const custom = require('~/server/services/Endpoints/custom');
 const google = require('~/server/services/Endpoints/google');
-const enforceModelSpec = require('./enforceModelSpec');
 const { handleError } = require('~/server/utils');
 
 const buildFunction = {
@@ -28,7 +27,7 @@ const buildFunction = {
 
 async function buildEndpointOption(req, res, next) {
   const { endpoint, endpointType } = req.body;
-  const parsedBody = parseCompactConvo({ endpoint, endpointType, conversation: req.body });
+  let parsedBody = parseCompactConvo({ endpoint, endpointType, conversation: req.body });
 
   if (req.app.locals.modelSpecs?.list && req.app.locals.modelSpecs?.enforce) {
     /** @type {{ list: TModelSpec[] }}*/
@@ -57,10 +56,11 @@ async function buildEndpointOption(req, res, next) {
       });
     }
 
-    const isValidModelSpec = enforceModelSpec(currentModelSpec, parsedBody);
-    if (!isValidModelSpec) {
-      return handleError(res, { text: 'Model spec mismatch' });
-    }
+    parsedBody = parseCompactConvo({
+      endpoint,
+      endpointType,
+      conversation: currentModelSpec.preset,
+    });
   }
 
   const endpointFn = buildFunction[endpointType ?? endpoint];
