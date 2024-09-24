@@ -2,8 +2,8 @@ const { ZapierToolKit } = require('langchain/agents');
 const { Calculator } = require('langchain/tools/calculator');
 const { WebBrowser } = require('langchain/tools/webbrowser');
 const { SerpAPI, ZapierNLAWrapper } = require('langchain/tools');
-const { createCodeExecutionTool } = require('@librechat/agents');
 const { OpenAIEmbeddings } = require('langchain/embeddings/openai');
+const { createCodeExecutionTool, EnvVar } = require('@librechat/agents');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const {
   availableTools,
@@ -274,7 +274,7 @@ const loadTools = async ({
     if (tool === Tools.execute_code) {
       const authValues = await loadAuthValues({
         userId: user.id,
-        authFields: ['LIBRECHAT_CODE_API_KEY'],
+        authFields: [EnvVar.CODE_API_KEY],
       });
       requestedTools[tool] = () =>
         createCodeExecutionTool({
