@@ -23,7 +23,7 @@ export default function useSelectMention({
 }: {
   presets?: TPreset[];
   modelSpecs: TModelSpec[];
-  assistantMap: TAssistantsMap;
+  assistantMap?: TAssistantsMap;
   newConversation: ConvoGenerator;
   endpointsConfig: TEndpointsConfig;
 }) {
@@ -40,7 +40,8 @@ export default function useSelectMention({
       const { preset } = spec;
       preset.iconURL = getModelSpecIconURL(spec);
       preset.spec = spec.name;
-      const { endpoint: newEndpoint } = preset;
+      const { endpoint } = preset;
+      const newEndpoint = endpoint ?? '';
       if (!newEndpoint) {
         return;
       }
@@ -58,6 +59,10 @@ export default function useSelectMention({
         conversation,
         endpointsConfig,
       });
+
+      if (newEndpointType) {
+        preset.endpointType = newEndpointType;
+      }
 
       const isModular = isCurrentModular && isNewModular && shouldSwitch;
       if (isExistingConversation && isModular) {
@@ -94,7 +99,8 @@ export default function useSelectMention({
   };
 
   const onSelectEndpoint = useCallback(
-    (newEndpoint?: EModelEndpoint | string | null, kwargs: Kwargs = {}) => {
+    (_newEndpoint?: EModelEndpoint | string | null, kwargs: Kwargs = {}) => {
+      const newEndpoint = _newEndpoint ?? '';
       if (!newEndpoint) {
         return;
       }
@@ -113,12 +119,14 @@ export default function useSelectMention({
         endpointsConfig,
       });
 
-      if (kwargs.model) {
-        template.model = kwargs.model;
+      const model = kwargs.model ?? '';
+      if (model) {
+        template.model = model;
       }
 
-      if (kwargs.assistant_id) {
-        template.assistant_id = kwargs.assistant_id;
+      const assistant_id = kwargs.assistant_id ?? '';
+      if (assistant_id) {
+        template.assistant_id = assistant_id;
       }
 
       if (isExistingConversation && isCurrentModular && isNewModular && shouldSwitch) {

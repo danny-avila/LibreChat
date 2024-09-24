@@ -931,6 +931,7 @@ export const agentsSchema = tConversationSchema
 export const openAISchema = tConversationSchema
   .pick({
     model: true,
+    modelLabel: true,
     chatGptLabel: true,
     promptPrefix: true,
     temperature: true,
