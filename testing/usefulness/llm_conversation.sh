@@ -2,16 +2,24 @@
 
 PROTOCOL="http"
 HOST="librechat-alb-1920668103.us-east-1.elb.amazonaws.com"
-JWT_TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY2ZWFkOWQ2OGZlZGE2MmQzZTA0NGJjMiIsInVzZXJuYW1lIjoidW5rbm93biIsInByb3ZpZGVyIjoibG9jYWwiLCJlbWFpbCI6InVua25vd25AZ21haWwuY29tIiwiaWF0IjoxNzI3MTg3NzE1LCJleHAiOjE3NTgyOTE3MTV9.vE1kPJtwJQckYV2bft-4uprez1V0MRjgrBobH7cyCgY"
+JWT_TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY2YjhmNDFiMmM2YzgzMjE5MTRmZDI4ZCIsInVzZXJuYW1lIjoidG9tIiwicHJvdmlkZXIiOiJsb2NhbCIsImVtYWlsIjoidG9tYXNAdmFsZXJlcmVhbG1zLmNvbSIsImlhdCI6MTcyNzIwOTU1MiwiZXhwIjoxNzU4MzEzNTUyfQ.XrFGMU2eHDbiB8JRb1vc8hZZGlWQ6Xj1GOTAwwIfHsg"
 
-CONVERSATION_ID="$(uuidgen)"
+CONVERSATION_ID="00000000-0000-0000-0000-000000000006"
 PARENT_MESSAGE_ID="00000000-0000-0000-0000-000000000000"
+ENDPOINT="openAI"
 MODEL="gpt-4"
-MAX_MESSAGES=10
+MAX_MESSAGES=1000
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m'
 
 send_message() {
   local text="$1"
-  
+
   response=$(curl -s -X POST "$PROTOCOL://$HOST/api/ask/openAI" \
     -H "Authorization: Bearer $JWT_TOKEN" \
     -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:130.0) Gecko/20100101 Firefox/130.0" \
@@ -19,23 +27,60 @@ send_message() {
     -d '{
       "conversationId": "'"$CONVERSATION_ID"'",
       "text": "'"$text"'",
-      "endpoint": "openAI",
+      "endpoint": "'"$ENDPOINT"'",
       "model": "'"$MODEL"'",
       "parentMessageId": "'"$PARENT_MESSAGE_ID"'"
     }')
-  
-  echo "Response: $response" 
-  CONVERSATION_ID=$(echo "$response" | jq -r '.message.conversationId')
-  PARENT_MESSAGE_ID=$(echo "$response" | jq -r '.message.messageId')
-  echo "Message sent: $text"
+
+  last_message=$(echo "$response" | grep 'data:' | sed 's/^data: //g' | tail -n 1)
+
+  if [ -z "$last_message" ]; then
+    echo "Error: No valid message found in the response."
+    return 1
+  fi
+
+  if ! echo "$last_message" | jq -e '. | has("final") and has("conversation") and has("requestMessage") and has("responseMessage")' > /dev/null; then
+    echo "Error: The response does not match the expected structure."
+    return 1
+  fi
+
+  message_id=$(echo "$last_message" | jq -r '.responseMessage.messageId')
+  message_text=$(echo "$last_message" | jq -r '.responseMessage.text')
+
+  if [ "$message_id" = "null" ] || [ "$message_text" = "null" ]; then
+    echo "Error: Invalid message data received."
+    echo "Full response: $last_message"
+    return 1
+  fi
+
+  #echo "Message ID: $message_id"
+  echo "   - $message_text"
+
+  PARENT_MESSAGE_ID=$message_id
 }
 
 retrieve_messages() {
   messages=$(curl -s -X GET "$PROTOCOL://$HOST/api/messages/$CONVERSATION_ID" \
     -H "Authorization: Bearer $JWT_TOKEN")
-  
-  echo "Conversation messages:"
-  echo "$messages" | jq '.[] | {sender: .sender, text: .text}'
+
+  # Total number of messages
+  total_messages=$(echo "$messages" | jq 'length')
+
+  # First and last sender
+  first_sender=$(echo "$messages" | jq -r '.[0].sender')
+  last_sender=$(echo "$messages" | jq -r '.[-1].sender')
+
+  # Creation times (first and last)
+  first_created_at=$(echo "$messages" | jq -r '.[0].createdAt')
+  last_created_at=$(echo "$messages" | jq -r '.[-1].createdAt')
+
+  # Print metadata summary
+  echo -e "${GREEN}Conversation Metadata Summary:${NC}"
+  echo -e "${CYAN}Total messages:${NC} $total_messages"
+  echo -e "${YELLOW}First sender:${NC} $first_sender"
+  echo -e "${YELLOW}Last sender:${NC} $last_sender"
+  echo -e "${BLUE}First message created at:${NC} $first_created_at"
+  echo -e "${BLUE}Last message created at:${NC} $last_created_at"
 }
 
 set_title() {
