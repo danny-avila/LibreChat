@@ -220,13 +220,16 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
     model: _m,
     endpoint,
     endpointType,
-    modelDisplayLabel,
-    chatGptLabel,
-    modelLabel,
+    modelDisplayLabel: _mdl,
+    chatGptLabel: _cgl,
+    modelLabel: _ml,
     jailbreak,
   } = endpointOption;
 
   const model = _m ?? '';
+  const modelDisplayLabel = _mdl ?? '';
+  const chatGptLabel = _cgl ?? '';
+  const modelLabel = _ml ?? '';
   if (
     [
       EModelEndpoint.openAI,
@@ -238,6 +241,8 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
   ) {
     if (chatGptLabel) {
       return chatGptLabel;
+    } else if (modelLabel) {
+      return modelLabel;
     } else if (model && /\bo1\b/i.test(model)) {
       return 'o1';
     } else if (model && model.includes('gpt-3')) {
@@ -257,11 +262,11 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
   }
 
   if (endpoint === EModelEndpoint.anthropic) {
-    return modelLabel ?? 'Claude';
+    return modelLabel || 'Claude';
   }
 
   if (endpoint === EModelEndpoint.bedrock) {
-    return modelLabel ?? alternateName[endpoint];
+    return modelLabel || alternateName[endpoint];
   }
 
   if (endpoint === EModelEndpoint.google) {
