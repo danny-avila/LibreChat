@@ -62,7 +62,7 @@ export default function useEventHandlers({
   setMessages,
   getMessages,
   setCompleted,
-  isAddedRequest,
+  isAddedRequest = false,
   setConversation,
   setIsSubmitting,
   newConversation,
@@ -138,15 +138,20 @@ export default function useEventHandlers({
       const { requestMessage, responseMessage, conversation } = data;
       const { messages, isRegenerate = false } = submission;
 
-      const convoUpdate = conversation ?? submission.conversation;
+      const convoUpdate =
+        (conversation as TConversation | null) ?? (submission.conversation as TConversation);
 
       // update the messages
       if (isRegenerate) {
-        const messagesUpdate = [...messages, responseMessage].filter((msg) => msg);
-        setMessages(messagesUpdate);
+        const messagesUpdate = (
+          [...messages, responseMessage] as Array<TMessage | undefined>
+        ).filter((msg) => msg);
+        setMessages(messagesUpdate as TMessage[]);
       } else {
-        const messagesUpdate = [...messages, requestMessage, responseMessage].filter((msg) => msg);
-        setMessages(messagesUpdate);
+        const messagesUpdate = (
+          [...messages, requestMessage, responseMessage] as Array<TMessage | undefined>
+        ).filter((msg) => msg);
+        setMessages(messagesUpdate as TMessage[]);
       }
 
       const isNewConvo = conversation.conversationId !== submission.conversation.conversationId;
@@ -208,7 +213,10 @@ export default function useEventHandlers({
         setConversation((prevState) => {
           let title = prevState?.title;
           const parentId = requestMessage.parentMessageId;
-          if (parentId !== Constants.NO_PARENT && title?.toLowerCase()?.includes('new chat')) {
+          if (
+            parentId !== Constants.NO_PARENT &&
+            (title?.toLowerCase()?.includes('new chat') ?? false)
+          ) {
             const convos = queryClient.getQueryData<ConversationData>([QueryKeys.allConversations]);
             const cachedConvo = getConversationById(convos, conversationId);
             title = cachedConvo?.title;
@@ -289,7 +297,10 @@ export default function useEventHandlers({
         setConversation((prevState) => {
           let title = prevState?.title;
           const parentId = isRegenerate ? userMessage.overrideParentMessageId : parentMessageId;
-          if (parentId !== Constants.NO_PARENT && title?.toLowerCase()?.includes('new chat')) {
+          if (
+            parentId !== Constants.NO_PARENT &&
+            (title?.toLowerCase()?.includes('new chat') ?? false)
+          ) {
             const convos = queryClient.getQueryData<ConversationData>([QueryKeys.allConversations]);
             const cachedConvo = getConversationById(convos, conversationId);
             title = cachedConvo?.title;
@@ -437,7 +448,7 @@ export default function useEventHandlers({
 
       setCompleted((prev) => new Set(prev.add(initialResponse.messageId)));
 
-      const conversationId = userMessage.conversationId ?? submission.conversationId;
+      const conversationId = userMessage.conversationId ?? submission.conversationId ?? '';
 
       const parseErrorResponse = (data: TResData | Partial<TMessage>) => {
         const metadata = data['responseMessage'] ?? data;
@@ -456,7 +467,7 @@ export default function useEventHandlers({
       };
 
       if (!data) {
-        const convoId = conversationId ?? v4();
+        const convoId = conversationId || v4();
         const errorResponse = parseErrorResponse({
           text: 'Error connecting to server, try refreshing the page.',
           ...submission,
@@ -473,7 +484,8 @@ export default function useEventHandlers({
         return;
       }
 
-      if (!conversationId && !data.conversationId) {
+      const receivedConvoId = data.conversationId ?? '';
+      if (!conversationId && !receivedConvoId) {
         const convoId = v4();
         const errorResponse = parseErrorResponse(data);
         setMessages([...messages, userMessage, errorResponse]);
@@ -485,7 +497,7 @@ export default function useEventHandlers({
         }
         setIsSubmitting(false);
         return;
-      } else if (!data.conversationId) {
+      } else if (!receivedConvoId) {
         const errorResponse = parseErrorResponse(data);
         setMessages([...messages, userMessage, errorResponse]);
         setIsSubmitting(false);
@@ -500,9 +512,9 @@ export default function useEventHandlers({
       });
 
       setMessages([...messages, userMessage, errorResponse]);
-      if (data.conversationId && paramId === 'new' && newConversation) {
+      if (receivedConvoId && paramId === 'new' && newConversation) {
         newConversation({
-          template: { conversationId: data.conversationId },
+          template: { conversationId: receivedConvoId },
           preset: tPresetSchema.parse(submission.conversation),
         });
       }
@@ -517,7 +529,8 @@ export default function useEventHandlers({
     async (conversationId = '', submission: EventSubmission, messages?: TMessage[]) => {
       const runAbortKey = `${conversationId}:${messages?.[messages.length - 1]?.messageId ?? ''}`;
       console.log({ conversationId, submission, messages, runAbortKey });
-      const { endpoint: _endpoint, endpointType } = submission.conversation || {};
+      const { endpoint: _endpoint, endpointType } =
+        (submission.conversation as TConversation | null) ?? {};
       const endpoint = endpointType ?? _endpoint;
       try {
         const response = await fetch(`${EndpointURLs[endpoint ?? '']}/abort`, {
@@ -541,7 +554,7 @@ export default function useEventHandlers({
             setIsSubmitting(false);
             return;
           }
-          if (data.final) {
+          if (data.final === true) {
             finalHandler(data, submission);
           } else {
             cancelHandler(data, submission);
@@ -569,13 +582,13 @@ export default function useEventHandlers({
       } catch (error) {
         console.error('Error cancelling request');
         console.error(error);
-        const convoId = conversationId ?? v4();
+        const convoId = conversationId || v4();
         const text =
           submission.initialResponse.text.length > 45 ? submission.initialResponse.text : '';
         const errorMessage = {
           ...submission,
           ...submission.initialResponse,
-          text: text ?? (error as Error).message ?? 'Error cancelling request',
+          text: (text || (error as Error | undefined)?.message) ?? 'Error cancelling request',
           unfinished: !!text.length,
           error: true,
         };
