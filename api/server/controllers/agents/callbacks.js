@@ -1,6 +1,6 @@
 const { Tools } = require('librechat-data-provider');
 const { GraphEvents, ToolEndHandler, ChatModelStreamHandler } = require('@librechat/agents');
-const { processCodeOutput } = require('~/server/services/Files/Code');
+const { processCodeOutput } = require('~/server/services/Files/Code/process');
 const { logger } = require('~/config');
 
 /** @typedef {import('@librechat/agents').Graph} Graph */

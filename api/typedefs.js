@@ -719,6 +719,12 @@
  */
 
 /**
+ * @exports TAttachment
+ * @typedef {import('librechat-data-provider').TAttachment} TAttachment
+ * @memberof typedefs
+ */
+
+/**
  * @exports AssistantCreateParams
  * @typedef {import('librechat-data-provider').AssistantCreateParams} AssistantCreateParams
  * @memberof typedefs

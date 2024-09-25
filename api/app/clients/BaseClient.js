@@ -42,6 +42,8 @@ class BaseClient {
     this.conversationId;
     /** @type {string} */
     this.responseMessageId;
+    /** @type {TAttachment[]} */
+    this.attachments;
     /** The key for the usage object's input tokens
      * @type {string} */
     this.inputTokensKey = 'prompt_tokens';
@@ -627,6 +629,10 @@ class BaseClient {
 
     if (this.userMessagePromise) {
       await this.userMessagePromise;
+    }
+
+    if (this.artifactPromises) {
+      responseMessage.attachments = await Promise.all(this.artifactPromises);
     }
 
     this.responsePromise = this.saveMessageToDatabase(responseMessage, saveOptions, user);

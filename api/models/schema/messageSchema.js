@@ -115,6 +115,8 @@ const messageSchema = mongoose.Schema(
     iconURL: {
       type: String,
     },
+    attachments: { type: [{ type: mongoose.Schema.Types.Mixed }], default: undefined },
+    /*
     attachments: {
       type: [
         {
@@ -130,14 +132,12 @@ const messageSchema = mongoose.Schema(
             type: String,
             required: true,
           },
-          toolCallId: {
-            type: String,
-            required: true,
-          },
+          toolCallId: String,
         },
       ],
       default: undefined,
     },
+    */
   },
   { timestamps: true },
 );

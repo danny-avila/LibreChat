@@ -1,9 +1,9 @@
 const path = require('path');
 const { v4 } = require('uuid');
 const axios = require('axios');
-const { FileContext, imageExtRegex } = require('librechat-data-provider');
 const { getCodeBaseURL, EnvVar } = require('@librechat/agents');
-const { convertImage } = require('~/server/services/Files/images');
+const { FileContext, imageExtRegex } = require('librechat-data-provider');
+const { convertImage } = require('~/server/services/Files/images/convert');
 const { loadAuthValues } = require('~/app/clients/tools/util');
 const { createFile } = require('~/models/File');
 const { logger } = require('~/config');
@@ -34,7 +34,7 @@ const processCodeOutput = async ({
   if (!fileExt || !imageExtRegex.test(name)) {
     return {
       filename: name,
-      filepath: `${baseURL}/${sessionId}/${id}`,
+      filepath: `/api/files/code/download/${sessionId}/${id}`,
       /** Note: expires 24 hours after creation */
       expiresAt: currentDate.getTime() + 86400000,
       conversationId,

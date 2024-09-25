@@ -28,6 +28,7 @@ import {
   updateConversation,
   getConversationById,
 } from '~/utils';
+import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
 import { useAuthContext } from '~/hooks/AuthContext';
@@ -79,6 +80,13 @@ export default function useEventHandlers({
 
   const contentHandler = useContentHandler({ setMessages, getMessages });
   const stepHandler = useStepHandler({
+    setMessages,
+    getMessages,
+    announcePolite,
+    setIsSubmitting,
+    lastAnnouncementTimeRef,
+  });
+  const attachmentHandler = useAttachmentHandler({
     setMessages,
     getMessages,
     announcePolite,
@@ -614,6 +622,7 @@ export default function useEventHandlers({
     messageHandler,
     contentHandler,
     createdHandler,
+    attachmentHandler,
     abortConversation,
   };
 }

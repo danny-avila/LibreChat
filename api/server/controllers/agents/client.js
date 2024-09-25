@@ -501,9 +501,6 @@ class AgentClient extends BaseClient {
           );
         },
       });
-      if (this.artifactPromises) {
-        await Promise.all(this.artifactPromises);
-      }
       this.recordCollectedUsage({ context: 'message' }).catch((err) => {
         logger.error(
           '[api/server/controllers/agents/client.js #chatCompletion] Error recording collected usage',

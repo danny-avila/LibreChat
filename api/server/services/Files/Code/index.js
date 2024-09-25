@@ -1,5 +1,5 @@
-const process = require('./process');
+const crud = require('./crud');
 
 module.exports = {
-  ...process,
+  ...crud,
 };
