@@ -158,9 +158,15 @@ async function setupOpenId() {
             }
           }
 
-          const username = convertToUsername(
-            userinfo.username || userinfo.given_name || userinfo.email,
-          );
+          let username = '';
+          if (process.env.OPENID_USERNAME_CLAIM) {
+            username = userinfo[process.env.OPENID_USERNAME_CLAIM];
+          }
+          else {
+            username = convertToUsername(
+              userinfo.username || userinfo.given_name || userinfo.email,
+            );
+          }
 
           if (!user) {
             user = {
