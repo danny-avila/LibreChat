@@ -63,18 +63,14 @@ retrieve_messages() {
   messages=$(curl -s -X GET "$PROTOCOL://$HOST/api/messages/$CONVERSATION_ID" \
     -H "Authorization: Bearer $JWT_TOKEN")
 
-  # Total number of messages
   total_messages=$(echo "$messages" | jq 'length')
 
-  # First and last sender
   first_sender=$(echo "$messages" | jq -r '.[0].sender')
   last_sender=$(echo "$messages" | jq -r '.[-1].sender')
 
-  # Creation times (first and last)
   first_created_at=$(echo "$messages" | jq -r '.[0].createdAt')
   last_created_at=$(echo "$messages" | jq -r '.[-1].createdAt')
 
-  # Print metadata summary
   echo -e "${GREEN}Conversation Metadata Summary:${NC}"
   echo -e "${CYAN}Total messages:${NC} $total_messages"
   echo -e "${YELLOW}First sender:${NC} $first_sender"
