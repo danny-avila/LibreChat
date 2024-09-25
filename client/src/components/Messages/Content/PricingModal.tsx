@@ -2,11 +2,11 @@ import React from 'react';
 import Modal from '../../ui/Modal';
 import { Button } from '../../ui/Button';
 import { cn } from '~/utils';
+import { redirectToCheckout } from '~/utils/stripe';
 
 interface PricingModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSelectPlan: (stripePriceId: string) => void;
 }
 
 const plans = [
@@ -14,7 +14,7 @@ const plans = [
     name: 'Plus',
     description: 'Essential AI tools for everyday use',
     price: '$10',
-    stripePriceId: 'price_123',
+    stripePriceId: 'price_1PxUbbJiXhdbiMBd58hxC5HI',
     features: [
       '1,000 AI-powered messages',
       '30 image generations',
@@ -28,7 +28,7 @@ const plans = [
     name: 'Pro',
     description: 'Advanced features for serious AI enthusiasts',
     price: '$20',
-    stripePriceId: 'price_456',
+    stripePriceId: 'price_1PxUc4JiXhdbiMBdrCSsnxqY',
     features: [
       '5,000 AI-powered messages',
       '100 image generations',
@@ -42,7 +42,7 @@ const plans = [
     name: 'Enterprise',
     description: 'Unlimited potential for power users',
     price: '$100',
-    stripePriceId: 'price_789',
+    stripePriceId: 'price_1PxUchJiXhdbiMBdnQFAuUrf',
     features: [
       '10,000 AI-powered messages',
       '300 image generations',
@@ -55,7 +55,45 @@ const plans = [
   },
 ];
 
-const PricingModal: React.FC<PricingModalProps> = ({ isOpen, onClose, onSelectPlan }) => {
+export const api = async (url: string, options: RequestInit & { body?: Record<string, unknown> }) => {
+  const { body, headers, ...opts } = options;
+  const requestBody = body ? JSON.stringify(body) : undefined;
+  const response = await fetch(url, {
+    body: requestBody,
+    headers: {
+      'Content-Type': 'application/json',
+      ...headers,
+    },
+    ...opts,
+  });
+  const result = await response.json();
+  return { status: response.status, ...result, url };
+};
+
+const PricingModal: React.FC<PricingModalProps> = ({ isOpen, onClose }) => {
+
+  const subscribe = async (priceId: string) => {
+    try {
+      const response = await fetch('/api/stripe/create-checkout-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ priceId }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error as string || 'An error occurred');
+      }
+
+      await redirectToCheckout(data.sessionId);
+    } catch (error) {
+      console.error('Error:', error);
+    }
+  };
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="10+ AI models for the price of one!" className="sm:max-w-[800px]">
       <div className="space-y-6">
@@ -84,7 +122,7 @@ const PricingModal: React.FC<PricingModalProps> = ({ isOpen, onClose, onSelectPl
               </p>
               <Button
                 className="mt-6 w-full bg-blue-600 hover:bg-blue-700 text-white"
-                onClick={() => onSelectPlan(plan.stripePriceId)}
+                onClick={() => subscribe(plan.stripePriceId)}
               >
                 Upgrade to {plan.name}
               </Button>

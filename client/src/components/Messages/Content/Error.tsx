@@ -112,12 +112,6 @@ const Error = ({ text }: { text: string }) => {
     setIsPricingModalOpen(true);
   };
 
-  const handleSelectPlan = (stripePriceId: string) => {
-    // TODO: Implement plan selection logic
-    console.log('Selected plan:', stripePriceId);
-    setIsPricingModalOpen(false);
-  };
-
   errorMessages.token_balance = (json: TTokenBalance) => {
     const { balance, tokenCost, promptTokens, generations } = json;
     const message = `Insufficient Funds! Balance: ${balance}. Prompt tokens: ${promptTokens}. Cost: ${tokenCost}.`;
@@ -141,7 +135,6 @@ const Error = ({ text }: { text: string }) => {
         <PricingModal
           isOpen={isPricingModalOpen}
           onClose={() => setIsPricingModalOpen(false)}
-          onSelectPlan={handleSelectPlan}
         />
       </>
     );

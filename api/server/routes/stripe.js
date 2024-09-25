@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { MongoClient, ObjectId } = require('mongodb');
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const stripe = require('stripe')(process.env.NEXT_PUBLIC_STRIPE_SECRET_KEY);
 const getRawBody = require('raw-body');
 const { logger } = require('~/config');
 
@@ -77,6 +77,29 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
   }
 
   res.status(200).send({ received: true });
+});
+
+router.post('/create-checkout-session', async (req, res) => {
+  const { priceId } = req.body;
+
+  try {
+    const session = await stripe.checkout.sessions.create({
+      line_items: [
+        {
+          price: priceId,
+          quantity: 1,
+        },
+      ],
+      mode: 'subscription',
+      success_url: `${process.env.DOMAIN_CLIENT}/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.DOMAIN_CLIENT}/canceled`,
+    });
+
+    res.json({ sessionId: session.id });
+  } catch (error) {
+    logger.error('Error creating checkout session:', error);
+    res.status(500).json({ error: 'Failed to create checkout session' });
+  }
 });
 
 async function handleSubscriptionDeleted(subscription) {
