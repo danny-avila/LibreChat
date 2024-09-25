@@ -17,7 +17,7 @@ const { logger } = require('~/config');
  * @param {string} params.sessionId - The code execution session ID.
  * @param {string} params.conversationId - The current conversation ID.
  * @param {string} params.messageId - The current message ID.
- * @returns {Promise<MongoFile | { filename: string; filepath: string; expires: number}>} The file metadata.
+ * @returns {Promise<MongoFile & { messageId: string, toolCallId: string } | { filename: string; filepath: string; expiresAt: number; conversationId: string; toolCallId: string; messageId: string } | undefined>} The file metadata or undefined if an error occurs.
  */
 const processCodeOutput = async ({
   req,
@@ -36,7 +36,7 @@ const processCodeOutput = async ({
       filename: name,
       filepath: `${baseURL}/${sessionId}/${id}`,
       /** Note: expires 24 hours after creation */
-      expires: currentDate.getTime() + 86400000,
+      expiresAt: currentDate.getTime() + 86400000,
       conversationId,
       toolCallId,
       messageId,

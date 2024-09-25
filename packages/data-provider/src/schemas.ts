@@ -468,6 +468,11 @@ export const tMessageSchema = z.object({
   iconURL: z.string().optional(),
 });
 
+export type TAttachmentMetadata = { messageId: string; toolCallId: string };
+export type TAttachment =
+  | (TFile & TAttachmentMetadata)
+  | (Pick<TFile, 'filename' | 'filepath' | 'expiresAt' | 'conversationId'> & TAttachmentMetadata);
+
 export type TMessage = z.input<typeof tMessageSchema> & {
   children?: TMessage[];
   plugin?: TResPlugin | null;
@@ -476,6 +481,7 @@ export type TMessage = z.input<typeof tMessageSchema> & {
   files?: Partial<TFile>[];
   depth?: number;
   siblingIndex?: number;
+  attachments?: TAttachment[];
 };
 
 export const coerceNumber = z.union([z.number(), z.string()]).transform((val) => {
