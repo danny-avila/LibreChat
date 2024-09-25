@@ -61,7 +61,6 @@ const Part = memo(({ part, isSubmitting, showCursor, messageId, isCreatedByUser 
     const isToolCall =
       'args' in toolCall && (!toolCall.type || toolCall.type === ToolCallTypes.TOOL_CALL);
     if (isToolCall && toolCall.name === Tools.execute_code) {
-      console.log('toolCall', toolCall);
       return (
         <ExecuteCode
           args={typeof toolCall.args === 'string' ? toolCall.args : ''}
