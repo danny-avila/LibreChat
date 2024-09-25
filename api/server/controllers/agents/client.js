@@ -480,7 +480,6 @@ class AgentClient extends BaseClient {
           provider: providerEndpointMap[this.options.agent.provider],
           thread_id: this.conversationId,
         },
-        run_id: this.responseMessageId,
         signal: abortController.signal,
         streamMode: 'values',
         version: 'v2',
@@ -502,7 +501,9 @@ class AgentClient extends BaseClient {
           );
         },
       });
-      await Promise.all(this.artifactPromises);
+      if (this.artifactPromises) {
+        await Promise.all(this.artifactPromises);
+      }
       this.recordCollectedUsage({ context: 'message' }).catch((err) => {
         logger.error(
           '[api/server/controllers/agents/client.js #chatCompletion] Error recording collected usage',

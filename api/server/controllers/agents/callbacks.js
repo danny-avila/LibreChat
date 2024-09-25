@@ -7,6 +7,7 @@ const { logger } = require('~/config');
 /** @typedef {import('@librechat/agents').EventHandler} EventHandler */
 /** @typedef {import('@librechat/agents').ModelEndData} ModelEndData */
 /** @typedef {import('@librechat/agents').ToolEndData} ToolEndData */
+/** @typedef {import('@librechat/agents').ToolEndCallback} ToolEndCallback */
 /** @typedef {import('@librechat/agents').ChatModelStreamHandler} ChatModelStreamHandler */
 /** @typedef {import('@librechat/agents').ContentAggregatorResult['aggregateContent']} ContentAggregator */
 /** @typedef {import('@librechat/agents').GraphEvents} GraphEvents */
@@ -62,7 +63,7 @@ class ModelEndHandler {
  * @param {Object} options - The options object.
  * @param {ServerResponse} options.res - The options object.
  * @param {ContentAggregator} options.aggregateContent - The options object.
- * @param {(data: ToolEndData) => void} options.toolEndCallback - Callback to use when tool ends.
+ * @param {ToolEndCallback} options.toolEndCallback - Callback to use when tool ends.
  * @param {Array<UsageMetadata>} options.collectedUsage - The list of collected usage metadata.
  * @returns {Record<string, t.EventHandler>} The default handlers.
  * @throws {Error} If the request is not found.
@@ -132,12 +133,13 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
  * @param {ServerRequest} params.req
  * @param {ServerResponse} params.res
  * @param {Promise<MongoFile | { filename: string; filepath: string; expires: number;} | null>[]} params.artifactPromises
+ * @returns {ToolEndCallback} The tool end callback.
  */
 function createToolEndCallback({ req, res, artifactPromises }) {
   /**
-   * @param {ToolEndData | undefined} data
+   * @type {ToolEndCallback}
    */
-  return async (data) => {
+  return async (data, metadata) => {
     const output = data?.output;
     if (!output) {
       return;
@@ -147,7 +149,7 @@ function createToolEndCallback({ req, res, artifactPromises }) {
       return;
     }
 
-    const { artifact } = output;
+    const { tool_call_id, artifact } = output;
     if (!artifact.files) {
       return;
     }
@@ -160,7 +162,10 @@ function createToolEndCallback({ req, res, artifactPromises }) {
             req,
             id,
             name,
-            session_id: artifact.session_id,
+            toolCallId: tool_call_id,
+            messageId: metadata.run_id,
+            sessionId: artifact.session_id,
+            conversationId: metadata.thread_id,
           });
           if (!res.headersSent) {
             return fileMetadata;

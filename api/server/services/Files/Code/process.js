@@ -13,19 +13,33 @@ const { logger } = require('~/config');
  * @param {ServerRequest} params.req - The Express request object.
  * @param {string} params.id - The file ID.
  * @param {string} params.name - The filename.
- * @param {string} params.session_id - The code execution session ID.
+ * @param {string} params.toolCallId - The tool call ID that generated the file.
+ * @param {string} params.sessionId - The code execution session ID.
+ * @param {string} params.conversationId - The current conversation ID.
+ * @param {string} params.messageId - The current message ID.
  * @returns {Promise<MongoFile | { filename: string; filepath: string; expires: number}>} The file metadata.
  */
-const processCodeOutput = async ({ req, id, name, session_id }) => {
+const processCodeOutput = async ({
+  req,
+  id,
+  name,
+  toolCallId,
+  conversationId,
+  messageId,
+  sessionId,
+}) => {
   const currentDate = new Date();
   const baseURL = getCodeBaseURL();
   const fileExt = path.extname(name);
   if (!fileExt || !imageExtRegex.test(name)) {
     return {
       filename: name,
-      filepath: `${baseURL}/${session_id}/${id}`,
-      // expires 24 hours after creation
+      filepath: `${baseURL}/${sessionId}/${id}`,
+      /** Note: expires 24 hours after creation */
       expires: currentDate.getTime() + 86400000,
+      conversationId,
+      toolCallId,
+      messageId,
     };
   }
 
@@ -34,7 +48,7 @@ const processCodeOutput = async ({ req, id, name, session_id }) => {
     const result = await loadAuthValues({ userId: req.user.id, authFields: [EnvVar.CODE_API_KEY] });
     const response = await axios({
       method: 'get',
-      url: `${baseURL}/download/${session_id}/${id}`,
+      url: `${baseURL}/download/${sessionId}/${id}`,
       responseType: 'arraybuffer',
       headers: {
         'User-Agent': 'LibreChat/1.0',
@@ -52,6 +66,7 @@ const processCodeOutput = async ({ req, id, name, session_id }) => {
       file_id,
       usage: 1,
       filename: name,
+      conversationId,
       user: req.user.id,
       type: `image/${req.app.locals.imageOutputType}`,
       createdAt: formattedDate,
@@ -60,7 +75,8 @@ const processCodeOutput = async ({ req, id, name, session_id }) => {
       context: FileContext.execute_code,
     };
     createFile(file, true);
-    return file;
+    /** Note: `messageId` & `toolCallId` are not part of file DB schema; message object records associated file ID */
+    return Object.assign(file, { messageId, toolCallId });
   } catch (error) {
     logger.error('Error downloading file:', error);
   }
