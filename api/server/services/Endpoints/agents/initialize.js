@@ -17,7 +17,10 @@ const {
   providerEndpointMap,
   getResponseSender,
 } = require('librechat-data-provider');
-const { getDefaultHandlers, createToolEndCallback } = require('~/server/controllers/agents/callbacks');
+const {
+  getDefaultHandlers,
+  createToolEndCallback,
+} = require('~/server/controllers/agents/callbacks');
 // for testing purposes
 // const createTavilySearchTool = require('~/app/clients/tools/structured/TavilySearch');
 const initAnthropic = require('~/server/services/Endpoints/anthropic/initializeClient');
@@ -60,11 +63,16 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   // TODO: use endpointOption to determine options/modelOptions
   /** @type {Array<UsageMetadata>} */
   const collectedUsage = [];
-  /** @type {Promise<FileObject | null>[]} */
+  /** @type {ArtifactPromises} */
   const artifactPromises = [];
   const { contentParts, aggregateContent } = createContentAggregator();
-  const toolEndCallback = createToolEndCallback({ req, artifactPromises });
-  const eventHandlers = getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedUsage });
+  const toolEndCallback = createToolEndCallback({ req, res, artifactPromises });
+  const eventHandlers = getDefaultHandlers({
+    res,
+    aggregateContent,
+    toolEndCallback,
+    collectedUsage,
+  });
 
   if (!endpointOption.agent) {
     throw new Error('No agent promise provided');
@@ -115,6 +123,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     modelOptions,
     eventHandlers,
     collectedUsage,
+    artifactPromises,
     endpoint: EModelEndpoint.agents,
     configOptions: options.configOptions,
     maxContextTokens:

@@ -1,5 +1,7 @@
 const { Tools } = require('librechat-data-provider');
 const { GraphEvents, ToolEndHandler, ChatModelStreamHandler } = require('@librechat/agents');
+const { processCodeOutput } = require('~/server/services/Files/Code');
+const { logger } = require('~/config');
 
 /** @typedef {import('@librechat/agents').Graph} Graph */
 /** @typedef {import('@librechat/agents').EventHandler} EventHandler */
@@ -128,9 +130,10 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
  *
  * @param {Object} params
  * @param {ServerRequest} params.req
- * @param {Promise<FileObject | null>[]} params.artifactPromises
+ * @param {ServerResponse} params.res
+ * @param {Promise<MongoFile | { filename: string; filepath: string; expires: number;} | null>[]} params.artifactPromises
  */
-function createToolEndCallback({ req, artifactPromises }) {
+function createToolEndCallback({ req, res, artifactPromises }) {
   /**
    * @param {ToolEndData | undefined} data
    */
@@ -144,9 +147,32 @@ function createToolEndCallback({ req, artifactPromises }) {
       return;
     }
 
-    const { tool_call_id, artifact } = output;
+    const { artifact } = output;
     if (!artifact.files) {
       return;
+    }
+
+    for (const file of artifact.files) {
+      const { id, name } = file;
+      artifactPromises.push(
+        (async () => {
+          const fileMetadata = await processCodeOutput({
+            req,
+            id,
+            name,
+            session_id: artifact.session_id,
+          });
+          if (!res.headersSent) {
+            return fileMetadata;
+          }
+
+          res.write(`event: attachment\ndata: ${JSON.stringify(fileMetadata)}\n\n`);
+          return fileMetadata;
+        })().catch((error) => {
+          logger.error('Error processing code output:', error);
+          return null;
+        }),
+      );
     }
   };
 }

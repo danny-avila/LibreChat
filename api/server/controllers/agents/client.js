@@ -57,10 +57,11 @@ class AgentClient extends BaseClient {
     this.run;
 
     const {
-      maxContextTokens,
-      modelOptions = {},
       contentParts,
       collectedUsage,
+      artifactPromises,
+      maxContextTokens,
+      modelOptions = {},
       ...clientOptions
     } = options;
 
@@ -70,6 +71,8 @@ class AgentClient extends BaseClient {
     this.contentParts = contentParts;
     /** @type {Array<UsageMetadata>} */
     this.collectedUsage = collectedUsage;
+    /** @type {ArtifactPromises} */
+    this.artifactPromises = artifactPromises;
     this.options = Object.assign({ endpoint: options.endpoint }, clientOptions);
   }
 
@@ -499,6 +502,7 @@ class AgentClient extends BaseClient {
           );
         },
       });
+      await Promise.all(this.artifactPromises);
       this.recordCollectedUsage({ context: 'message' }).catch((err) => {
         logger.error(
           '[api/server/controllers/agents/client.js #chatCompletion] Error recording collected usage',
