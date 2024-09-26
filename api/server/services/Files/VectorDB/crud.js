@@ -52,6 +52,7 @@ const deleteVectors = async (req, file) => {
  *            - filepath: The path where the file is saved.
  *            - bytes: The size of the file in bytes.
  */
+/**
 async function uploadVectors({ req, file, file_id }) {
   if (!process.env.RAG_API_URL) {
     throw new Error('RAG_API_URL not defined');
@@ -95,6 +96,77 @@ async function uploadVectors({ req, file, file_id }) {
     throw new Error(error.message || 'An error occurred during file upload.');
   }
 }
+*/
+async function uploadVectors({ req, file, file_id }) {
+  if (!process.env.RAG_API_URL) {
+    const errorMessage = 'RAG_API_URL not defined';
+    logger.error(errorMessage);
+    throw new Error(errorMessage);
+  }
+
+  try {
+    console.log('Iniciando proceso de subida de vectores');
+
+    const jwtToken = req.headers.authorization.split(' ')[1];
+    console.log('JWT token obtenido:', jwtToken);
+
+    const formData = new FormData();
+    formData.append('file_id', file_id);
+    formData.append('file', fs.createReadStream(file.path));
+    console.log('Form data construida con file_id:', file_id, 'y archivo:', file.path);
+
+    const formHeaders = formData.getHeaders(); // Automatically sets the correct Content-Type
+    console.log('Encabezados del formulario obtenidos:', formHeaders);
+
+    console.log('Enviando solicitud POST para incrustar archivo a URL:', process.env.RAG_API_URL);
+    const response = await axios.post(`${process.env.RAG_API_URL}/embed`, formData, {
+      headers: {
+        Authorization: `Bearer ${jwtToken}`,
+        accept: 'application/json',
+        ...formHeaders,
+      },
+    });
+    console.log('Respuesta recibida de la API de incrustación');
+
+    const responseData = response.data;
+    logger.debug('Datos de respuesta de la API de incrustación:', responseData);
+
+    if (responseData.known_type === false) {
+      const errorMessage = `File embedding failed. The filetype ${file.mimetype} is not supported`;
+      logger.error(errorMessage, { filetype: file.mimetype });
+      throw new Error(errorMessage);
+    }
+
+    if (!responseData.status) {
+      const errorMessage = 'File embedding failed.';
+      logger.error(errorMessage, { status: responseData.status });
+      throw new Error(errorMessage);
+    }
+
+    console.log('Archivo incrustado con éxito. Detalles:', {
+      bytes: file.size,
+      filename: file.originalname,
+      filepath: FileSources.vectordb,
+      embedded: Boolean(responseData.known_type),
+    });
+
+    return {
+      bytes: file.size,
+      filename: file.originalname,
+      filepath: FileSources.vectordb,
+      embedded: Boolean(responseData.known_type),
+    };
+  } catch (error) {
+    logger.error('Error embedding file:', error, {
+      file_id,
+      file_path: file.path,
+      file_mimetype: file.mimetype,
+      file_size: file.size,
+    });
+    throw new Error(error.message || 'An error occurred during file upload.');
+  }
+}
+
 
 module.exports = {
   deleteVectors,

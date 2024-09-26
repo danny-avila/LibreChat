@@ -323,6 +323,8 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
  * @param {FileMetadata} params.metadata - Additional metadata for the file.
  * @returns {Promise<void>}
  */
+
+/**
 const processFileUpload = async ({ req, res, file, metadata }) => {
   const isAssistantUpload = isAssistantsEndpoint(metadata.endpoint);
   const assistantSource =
@@ -331,7 +333,6 @@ const processFileUpload = async ({ req, res, file, metadata }) => {
   const { handleFileUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id } = metadata;
 
-  /** @type {OpenAI | undefined} */
   let openai;
   if (checkOpenAIStorage(source)) {
     ({ openai } = await getOpenAIClient({ req }));
@@ -397,6 +398,107 @@ const processFileUpload = async ({ req, res, file, metadata }) => {
   );
   res.status(200).json({ message: 'File uploaded and processed successfully', ...result });
 };
+
+*/
+
+const processFileUpload = async ({ req, res, file, metadata }) => {
+  try {
+    console.log('Iniciando proceso de carga de archivo');
+
+    const isAssistantUpload = isAssistantsEndpoint(metadata.endpoint);
+    console.log('Es subida de asistente:', isAssistantUpload);
+
+    const assistantSource = metadata.endpoint === EModelEndpoint.azureAssistants ? FileSources.azure : FileSources.openai;
+    const source = isAssistantUpload ? assistantSource : FileSources.vectordb;
+    console.log('Fuente del archivo determinada:', source);
+
+    const { handleFileUpload } = getStrategyFunctions(source);
+    console.log('Funciones de estrategia de manejo de archivos obtenidas');
+
+    const { file_id, temp_file_id } = metadata;
+    console.log('Metadata del archivo:', { file_id, temp_file_id });
+
+    /** @type {OpenAI | undefined} */
+    let openai;
+    if (checkOpenAIStorage(source)) {
+      console.log('El almacenamiento de OpenAI es necesario, obteniendo cliente');
+      ({ openai } = await getOpenAIClient({ req }));
+      console.log('Cliente de OpenAI obtenido con éxito');
+    }
+
+    console.log('Subiendo y manejando archivo...');
+    const {
+      id,
+      bytes,
+      filename,
+      filepath: _filepath,
+      embedded,
+      height,
+      width,
+    } = await handleFileUpload({
+      req,
+      file,
+      file_id,
+      openai,
+    });
+    console.log('Archivo subido y manejado con éxito:', { id, filename });
+
+    if (isAssistantUpload && !metadata.message_file && !metadata.tool_resource) {
+      console.log('Asociando archivo con asistente');
+      await openai.beta.assistants.files.create(metadata.assistant_id, { file_id: id });
+      console.log('Archivo asociado con asistente con éxito');
+    } else if (isAssistantUpload && !metadata.message_file) {
+      console.log('Asociando ID de archivo de recurso con asistente');
+      await addResourceFileId({
+        req,
+        openai,
+        file_id: id,
+        assistant_id: metadata.assistant_id,
+        tool_resource: metadata.tool_resource,
+      });
+      console.log('ID de archivo de recurso asociado con asistente con éxito');
+    }
+
+    let filepath = isAssistantUpload ? `${openai.baseURL}/files/${id}` : _filepath;
+    if (isAssistantUpload && file.mimetype.startsWith('image')) {
+      console.log('Procesando archivo de imagen...');
+      const result = await processImageFile({
+        req,
+        file,
+        metadata: { file_id: v4() },
+        returnFile: true,
+      });
+      filepath = result.filepath;
+      console.log('Archivo de imagen procesado con éxito:', filepath);
+    }
+
+    console.log('Creando registro del archivo en la base de datos...');
+    const result = await createFile({
+      user: req.user.id,
+      file_id: id ?? file_id,
+      temp_file_id,
+      bytes,
+      filepath,
+      filename: filename ?? file.originalname,
+      context: isAssistantUpload ? FileContext.assistants : FileContext.message_attachment,
+      model: isAssistantUpload ? req.body.model : undefined,
+      type: file.mimetype,
+      embedded,
+      source,
+      height,
+      width,
+    }, true);
+    console.log('Registro de archivo creado con éxito:', result);
+
+    res.status(200).json({ message: 'File uploaded and processed successfully', ...result });
+    console.log('Respuesta enviada al cliente con éxito');
+
+  } catch (error) {
+    console.error('Error durante el procesamiento de la carga de archivo:', error);
+    res.status(500).json({ message: 'Failed to upload and process file', error: error.message });
+  }
+};
+
 
 /**
  * @param {object} params - The params object.

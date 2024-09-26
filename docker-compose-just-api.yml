@@ -8,9 +8,7 @@ services:
     container_name: LibreChat
     ports:
       - "${PORT}:${PORT}"
-    depends_on:
-      - rag_api
-    image: ghcr.io/danny-avila/librechat-dev:latest
+    image: librechat:latest
     restart: always
     user: "${UID}:${GID}"
     extra_hosts:
@@ -35,16 +33,5 @@ services:
       - type: bind
         source: ./global-bundle.pem
         target: /app/global-bundle.pem
-    env_file:
-      - .env
-  rag_api:
-    container_name: rag_api
-    image: ghcr.io/danny-avila/librechat-rag-api-dev-lite:latest
-    environment:
-      - DB_HOST=${PGVECTOR_HOST}
-      - RAG_PORT=${RAG_PORT}
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-    restart: always
     env_file:
       - .env

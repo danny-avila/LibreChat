@@ -28,6 +28,12 @@ RUN \
 
 RUN mkdir -p /app/client/public/images /app/api/logs
 
+# documentdb certificate to connect
+COPY global-bundle.pem /app/global-bundle.pem
+COPY librechat.yaml /app/librechat.yaml
+#COPY rag.yml /app/rag.yml
+
+
 # Node API setup
 EXPOSE 3080
 ENV HOST=0.0.0.0
