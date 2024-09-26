@@ -482,6 +482,15 @@ export const getFileDownload = async (userId: string, file_id: string): Promise<
   });
 };
 
+export const getCodeOutputDownload = async (url: string): Promise<AxiosResponse> => {
+  return request.getResponse(url, {
+    responseType: 'blob',
+    headers: {
+      Accept: 'application/octet-stream',
+    },
+  });
+};
+
 export const deleteFiles = async (
   files: f.BatchFile[],
   assistant_id?: string,

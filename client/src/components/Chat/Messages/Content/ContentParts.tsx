@@ -1,12 +1,14 @@
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import { ContentTypes } from 'librechat-data-provider';
-import type { TMessageContentParts } from 'librechat-data-provider';
+import type { TMessageContentParts, TAttachment, Agents } from 'librechat-data-provider';
+import { mapAttachments } from '~/utils/map';
 import EditTextPart from './Parts/EditTextPart';
 import Part from './Part';
 
 type ContentPartsProps = {
   content: Array<TMessageContentParts | undefined> | undefined;
   messageId: string;
+  attachments?: TAttachment[];
   isCreatedByUser: boolean;
   isLast: boolean;
   isSubmitting: boolean;
@@ -23,6 +25,7 @@ const ContentParts = memo(
   ({
     content,
     messageId,
+    attachments,
     isCreatedByUser,
     isLast,
     isSubmitting,
@@ -31,6 +34,7 @@ const ContentParts = memo(
     siblingIdx,
     setSiblingIdx,
   }: ContentPartsProps) => {
+    const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
     if (!content) {
       return null;
     }
@@ -58,20 +62,28 @@ const ContentParts = memo(
         </>
       );
     }
+
     return (
       <>
         {content
           .filter((part) => part)
-          .map((part, idx) => (
-            <Part
-              key={`display-${messageId}-${idx}`}
-              part={part}
-              isSubmitting={isSubmitting}
-              showCursor={idx === content.length - 1 && isLast}
-              messageId={messageId}
-              isCreatedByUser={isCreatedByUser}
-            />
-          ))}
+          .map((part, idx) => {
+            const toolCallId =
+              (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
+            const attachments = attachmentMap[toolCallId];
+
+            return (
+              <Part
+                part={part}
+                isSubmitting={isSubmitting}
+                attachments={attachments}
+                key={`display-${messageId}-${idx}`}
+                showCursor={idx === content.length - 1 && isLast}
+                messageId={messageId}
+                isCreatedByUser={isCreatedByUser}
+              />
+            );
+          })}
       </>
     );
   },

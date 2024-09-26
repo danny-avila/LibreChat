@@ -1,9 +1,13 @@
-import { useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import { CodeInProgress } from './CodeProgress';
+import { imageExtRegex } from 'librechat-data-provider';
+import type { TFile, TAttachment, TAttachmentMetadata } from 'librechat-data-provider';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
 import FinishedIcon from '~/components/Chat/Messages/Content/FinishedIcon';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
+import Image from '~/components/Chat/Messages/Content/Image';
+import LogContent from './LogContent';
 import { useProgress } from '~/hooks';
 import store from '~/store';
 
@@ -36,13 +40,15 @@ export function useParseArgs(args: string): ParsedArgs {
 export default function ExecuteCode({
   initialProgress = 0.1,
   args,
-  outputs = ['', {}],
+  output = '',
   isSubmitting,
+  attachments,
 }: {
   initialProgress: number;
   args: string;
-  outputs: [string | undefined, Record<string, unknown> | undefined];
+  output?: string;
   isSubmitting: boolean;
+  attachments?: TAttachment[];
 }) {
   const showAnalysisCode = useRecoilValue(store.showCode);
   const [showCode, setShowCode] = useState(showAnalysisCode);
@@ -53,8 +59,6 @@ export default function ExecuteCode({
   const radius = 56.08695652173913;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - progress * circumference;
-
-  const logs = outputs[0];
 
   return (
     <>
@@ -83,7 +87,7 @@ export default function ExecuteCode({
       {showCode && (
         <div className="code-analyze-block mb-3 mt-0.5 overflow-hidden rounded-xl bg-black">
           <MarkdownLite content={code ? `\`\`\`${lang}\n${code}\n\`\`\`` : ''} />
-          {logs != null && logs && (
+          {output.length > 0 && (
             <div className="bg-gray-700 p-4 text-xs">
               <div
                 className="prose flex flex-col-reverse text-white"
@@ -91,12 +95,33 @@ export default function ExecuteCode({
                   color: 'white',
                 }}
               >
-                <pre className="shrink-0">{logs}</pre>
+                <pre className="shrink-0">
+                  <LogContent output={output} attachments={attachments} />
+                </pre>
               </div>
             </div>
           )}
         </div>
       )}
+      {attachments?.map((attachment, index) => {
+        const { width, height, filepath } = attachment as TFile & TAttachmentMetadata;
+        const isImage =
+          imageExtRegex.test(attachment.filename) &&
+          width != null &&
+          height != null &&
+          filepath != null;
+        if (isImage) {
+          return (
+            <Image
+              key={index}
+              altText={attachment.filename}
+              imagePath={filepath}
+              height={height}
+              width={width}
+            />
+          );
+        }
+      })}
     </>
   );
 }

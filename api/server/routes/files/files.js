@@ -94,7 +94,7 @@ router.get('/code/download/:sessionId/:fileId', async (req, res) => {
     const result = await loadAuthValues({ userId: req.user.id, authFields: [EnvVar.CODE_API_KEY] });
 
     /** @type {AxiosResponse<ReadableStream> | undefined} */
-    const response = getDownloadStream(`${sessionId}/${fileId}`, result[EnvVar.CODE_API_KEY]);
+    const response = await getDownloadStream(`${sessionId}/${fileId}`, result[EnvVar.CODE_API_KEY]);
     res.set(response.headers);
     response.data.pipe(res);
   } catch (error) {

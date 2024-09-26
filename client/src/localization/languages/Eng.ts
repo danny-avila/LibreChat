@@ -36,6 +36,7 @@ export default {
     'The latest message token count is too long, exceeding the token limit ({0} respectively). Please shorten your message, adjust the max context size from the conversation parameters, or fork the conversation to continue.',
   com_files_no_results: 'No results.',
   com_files_filter: 'Filter files...',
+  com_generated_files: 'Generated files:',
   com_files_number_selected: '{0} of {1} file(s) selected',
   com_sidepanel_select_assistant: 'Select an Assistant',
   com_sidepanel_parameters: 'Parameters',
