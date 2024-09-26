@@ -33,9 +33,12 @@ updateUser.mockImplementation(async (id, data) => ({
 describe('setupOpenId', () => {
   const OLD_ENV = process.env;
   describe('OpenIDStrategy', () => {
+    let validateFn;
 
-    beforeAll(() => {
-
+    beforeAll(async () => {
+      //call setup so we can grab a reference to the validate function
+      await setupOpenId();
+      validateFn = OpenIDStrategy.mock.calls[0][1];
     });
 
     afterAll(() => {
@@ -72,12 +75,7 @@ describe('setupOpenId', () => {
     };
 
     it('should set username correctly for a new user when username claim exists', async () => {
-      await setupOpenId();
-
-      expect(OpenIDStrategy.mock.calls.length).toBe(1);
-      const strategy = OpenIDStrategy.mock.calls[0][1];
-
-      strategy(tokenset, userinfo, (err, user) => {
+      validateFn(tokenset, userinfo, (err, user) => {
         expect(err).toBe(null);
         expect(user.username).toBe(userinfo.username);
       });
@@ -87,12 +85,7 @@ describe('setupOpenId', () => {
       let userinfo_modified = { ...userinfo };
       delete userinfo_modified.username;
 
-      await setupOpenId();
-
-      expect(OpenIDStrategy.mock.calls.length).toBe(1);
-      const strategy = OpenIDStrategy.mock.calls[0][1];
-
-      strategy(tokenset, userinfo_modified, (err, user) => {
+      validateFn(tokenset, userinfo_modified, (err, user) => {
         expect(err).toBe(null);
         expect(user.username).toBe(userinfo.given_name);
       });
@@ -103,12 +96,7 @@ describe('setupOpenId', () => {
       delete userinfo_modified.username;
       delete userinfo_modified.given_name;
 
-      await setupOpenId();
-
-      expect(OpenIDStrategy.mock.calls.length).toBe(1);
-      const strategy = OpenIDStrategy.mock.calls[0][1];
-
-      strategy(tokenset, userinfo_modified, (err, user) => {
+      validateFn(tokenset, userinfo_modified, (err, user) => {
         expect(err).toBe(null);
         expect(user.username).toBe(userinfo.email);
       });
@@ -117,24 +105,14 @@ describe('setupOpenId', () => {
     it('should set username correctly for a new user when using OPENID_USERNAME_CLAIM', async () => {
       process.env.OPENID_USERNAME_CLAIM = 'sub';
 
-      await setupOpenId();
-
-      expect(OpenIDStrategy.mock.calls.length).toBe(1);
-      const strategy = OpenIDStrategy.mock.calls[0][1];
-
-      strategy(tokenset, userinfo, (err, user) => {
+      validateFn(tokenset, userinfo, (err, user) => {
         expect(err).toBe(null);
         expect(user.username).toBe(userinfo.sub);
       });
     });
 
     it('should set name correctly for a new user with first and last names', async () => {
-      await setupOpenId();
-
-      expect(OpenIDStrategy.mock.calls.length).toBe(1);
-      const strategy = OpenIDStrategy.mock.calls[0][1];
-
-      strategy(tokenset, userinfo, (err, user) => {
+      validateFn(tokenset, userinfo, (err, user) => {
         expect(err).toBe(null);
         expect(user.name).toBe(userinfo.given_name + ' ' + userinfo.family_name);
       });
@@ -143,12 +121,8 @@ describe('setupOpenId', () => {
     it('should set name correctly for a new user using OPENID_NAME_CLAIM', async () => {
       process.env.OPENID_NAME_CLAIM = 'name';
       let userinfo_modified = { ...userinfo, name: 'Custom Name' };
-      await setupOpenId();
 
-      expect(OpenIDStrategy.mock.calls.length).toBe(1);
-      const strategy = OpenIDStrategy.mock.calls[0][1];
-
-      strategy(tokenset, userinfo_modified, (err, user) => {
+      validateFn(tokenset, userinfo_modified, (err, user) => {
         expect(err).toBe(null);
         expect(user.name).toBe(userinfo_modified.name);
       });
