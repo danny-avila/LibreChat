@@ -1,5 +1,5 @@
 const { nanoid } = require('nanoid');
-const { FileContext, Constants } = require('librechat-data-provider');
+const { FileContext, Constants, Tools } = require('librechat-data-provider');
 const {
   getAgent,
   createAgent,
@@ -14,6 +14,11 @@ const { updateAgentProjects } = require('~/models/Agent');
 const { deleteFileByFilter } = require('~/models/File');
 const { logger } = require('~/config');
 
+const systemTools = {
+  [Tools.execute_code]: true,
+  [Tools.file_search]: true,
+};
+
 /**
  * Creates an Agent.
  * @route POST /Agents
@@ -27,9 +32,17 @@ const createAgentHandler = async (req, res) => {
     const { tools = [], provider, name, description, instructions, model, ...agentData } = req.body;
     const { id: userId } = req.user;
 
-    agentData.tools = tools
-      .map((tool) => (typeof tool === 'string' ? req.app.locals.availableTools[tool] : tool))
-      .filter(Boolean);
+    agentData.tools = [];
+
+    for (const tool of tools) {
+      if (req.app.locals.availableTools[tool]) {
+        agentData.tools.push(tool);
+      }
+
+      if (systemTools[tool]) {
+        agentData.tools.push(tool);
+      }
+    }
 
     Object.assign(agentData, {
       author: userId,
