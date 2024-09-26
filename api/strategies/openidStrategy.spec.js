@@ -75,7 +75,7 @@ describe('setupOpenId', () => {
     it('should set username correctly for a new user when username claim exists', async () => {
       await validateFn(tokenset, userinfo, (err, user) => {
         expect(err).toBe(null);
-        expect(user.username).toBe(userinfo.username);
+        expect(user.username).toBe(userinfo.username.toLowerCase());
       });
     });
 
@@ -96,7 +96,7 @@ describe('setupOpenId', () => {
 
       await validateFn(tokenset, userinfo_modified, (err, user) => {
         expect(err).toBe(null);
-        expect(user.username).toBe(userinfo.email);
+        expect(user.username).toBe(userinfo.email.toLowerCase());
       });
     });
 
@@ -105,7 +105,7 @@ describe('setupOpenId', () => {
 
       await validateFn(tokenset, userinfo, (err, user) => {
         expect(err).toBe(null);
-        expect(user.username).toBe(userinfo.sub);
+        expect(user.username).toBe(userinfo.sub.toLowerCase());
       });
     });
 
