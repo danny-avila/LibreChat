@@ -1,9 +1,9 @@
 const jwtDecode = require('jsonwebtoken/decode');
 const { Issuer, Strategy: OpenIDStrategy } = require('openid-client');
-const { createUser, updateUser } = require('~/models/userMethods');
+const mongoose = require('mongoose');
+const { MongoMemoryServer } = require('mongodb-memory-server');
 const setupOpenId = require('./openidStrategy');
 
-jest.mock('~/models/userMethods');
 jest.mock('jsonwebtoken/decode');
 jest.mock('openid-client');
 
@@ -21,33 +21,31 @@ jwtDecode.mockReturnValue({
   roles: ['requiredRole'],
 });
 
-createUser.mockImplementation(async (data) => ({
-  ...data,
-  _id: 'mockedUserId',
-}));
-
-updateUser.mockImplementation(async (id, data) => ({
-  ...data,
-}));
-
 describe('setupOpenId', () => {
   const OLD_ENV = process.env;
   describe('OpenIDStrategy', () => {
-    let validateFn;
+    let validateFn, mongoServer;
 
     beforeAll(async () => {
       //call setup so we can grab a reference to the validate function
       await setupOpenId();
       validateFn = OpenIDStrategy.mock.calls[0][1];
+
+      mongoServer = await MongoMemoryServer.create();
+      const mongoUri = mongoServer.getUri();
+      await mongoose.connect(mongoUri);
     });
 
-    afterAll(() => {
+    afterAll(async () => {
       process.env = OLD_ENV;
+      await mongoose.disconnect();
+      await mongoServer.stop();
     });
 
     beforeEach(() => {
       jest.clearAllMocks();
       process.env = {
+        ...process.env,
         OPENID_ISSUER: 'https://fake-issuer.com',
         OPENID_CLIENT_ID: 'fake_client_id',
         OPENID_CLIENT_SECRET: 'fake_client_secret',
@@ -75,7 +73,7 @@ describe('setupOpenId', () => {
     };
 
     it('should set username correctly for a new user when username claim exists', async () => {
-      validateFn(tokenset, userinfo, (err, user) => {
+      await validateFn(tokenset, userinfo, (err, user) => {
         expect(err).toBe(null);
         expect(user.username).toBe(userinfo.username);
       });
@@ -85,9 +83,9 @@ describe('setupOpenId', () => {
       let userinfo_modified = { ...userinfo };
       delete userinfo_modified.username;
 
-      validateFn(tokenset, userinfo_modified, (err, user) => {
+      await validateFn(tokenset, userinfo_modified, (err, user) => {
         expect(err).toBe(null);
-        expect(user.username).toBe(userinfo.given_name);
+        expect(user.username).toBe(userinfo.given_name.toLowerCase());
       });
     });
 
@@ -96,7 +94,7 @@ describe('setupOpenId', () => {
       delete userinfo_modified.username;
       delete userinfo_modified.given_name;
 
-      validateFn(tokenset, userinfo_modified, (err, user) => {
+      await validateFn(tokenset, userinfo_modified, (err, user) => {
         expect(err).toBe(null);
         expect(user.username).toBe(userinfo.email);
       });
@@ -105,14 +103,14 @@ describe('setupOpenId', () => {
     it('should set username correctly for a new user when using OPENID_USERNAME_CLAIM', async () => {
       process.env.OPENID_USERNAME_CLAIM = 'sub';
 
-      validateFn(tokenset, userinfo, (err, user) => {
+      await validateFn(tokenset, userinfo, (err, user) => {
         expect(err).toBe(null);
         expect(user.username).toBe(userinfo.sub);
       });
     });
 
     it('should set name correctly for a new user with first and last names', async () => {
-      validateFn(tokenset, userinfo, (err, user) => {
+      await validateFn(tokenset, userinfo, (err, user) => {
         expect(err).toBe(null);
         expect(user.name).toBe(userinfo.given_name + ' ' + userinfo.family_name);
       });
@@ -122,7 +120,7 @@ describe('setupOpenId', () => {
       process.env.OPENID_NAME_CLAIM = 'name';
       let userinfo_modified = { ...userinfo, name: 'Custom Name' };
 
-      validateFn(tokenset, userinfo_modified, (err, user) => {
+      await validateFn(tokenset, userinfo_modified, (err, user) => {
         expect(err).toBe(null);
         expect(user.name).toBe(userinfo_modified.name);
       });
