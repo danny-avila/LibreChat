@@ -38,7 +38,7 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', attachments }) => 
     //   : ` ${localize('com_click_to_download')}`;
 
     return (
-      <LogLink href={file.filepath}>
+      <LogLink href={file.filepath} filename={file.filename}>
         {'- '}
         {file.filename} {localize('com_click_to_download')}
       </LogLink>

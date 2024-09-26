@@ -4,10 +4,11 @@ import { useToastContext } from '~/Providers';
 
 interface LogLinkProps {
   href: string;
+  filename: string;
   children: React.ReactNode;
 }
 
-const LogLink: React.FC<LogLinkProps> = ({ href, children }) => {
+const LogLink: React.FC<LogLinkProps> = ({ href, filename, children }) => {
   const { showToast } = useToastContext();
   const { refetch: downloadFile } = useCodeOutputDownload(href);
 
@@ -25,7 +26,7 @@ const LogLink: React.FC<LogLinkProps> = ({ href, children }) => {
       }
       const link = document.createElement('a');
       link.href = stream.data;
-      link.setAttribute('download', children as string);
+      link.setAttribute('download', filename);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
