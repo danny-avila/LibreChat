@@ -471,7 +471,9 @@ export const tMessageSchema = z.object({
 export type TAttachmentMetadata = { messageId: string; toolCallId: string };
 export type TAttachment =
   | (TFile & TAttachmentMetadata)
-  | (Pick<TFile, 'filename' | 'filepath' | 'expiresAt' | 'conversationId'> & TAttachmentMetadata);
+  | (Pick<TFile, 'filename' | 'filepath' | 'conversationId'> & {
+      expiresAt: number;
+    } & TAttachmentMetadata);
 
 export type TMessage = z.input<typeof tMessageSchema> & {
   children?: TMessage[];
