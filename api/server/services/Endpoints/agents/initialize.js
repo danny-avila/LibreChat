@@ -126,6 +126,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     artifactPromises,
     endpoint: EModelEndpoint.agents,
     configOptions: options.configOptions,
+    attachments: endpointOption.attachments,
     maxContextTokens:
       agent.max_context_tokens ??
       getModelMaxTokens(modelOptions.model, providerEndpointMap[agent.provider]),
