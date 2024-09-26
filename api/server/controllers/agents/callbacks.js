@@ -171,6 +171,10 @@ function createToolEndCallback({ req, res, artifactPromises }) {
             return fileMetadata;
           }
 
+          if (!fileMetadata) {
+            return null;
+          }
+
           res.write(`event: attachment\ndata: ${JSON.stringify(fileMetadata)}\n\n`);
           return fileMetadata;
         })().catch((error) => {

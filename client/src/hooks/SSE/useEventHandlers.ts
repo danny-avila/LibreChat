@@ -86,13 +86,7 @@ export default function useEventHandlers({
     setIsSubmitting,
     lastAnnouncementTimeRef,
   });
-  const attachmentHandler = useAttachmentHandler({
-    setMessages,
-    getMessages,
-    announcePolite,
-    setIsSubmitting,
-    lastAnnouncementTimeRef,
-  });
+  const attachmentHandler = useAttachmentHandler();
 
   const messageHandler = useCallback(
     (data: string | undefined, submission: EventSubmission) => {

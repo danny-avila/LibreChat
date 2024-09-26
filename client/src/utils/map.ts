@@ -2,10 +2,13 @@ import type { TFile, TAttachment, Assistant, Agent, TPlugin } from 'librechat-da
 import type { TPluginMap } from '~/common';
 
 /** Maps Attachments by `toolCallId` for quick lookup */
-export function mapAttachments(attachments: TAttachment[]) {
+export function mapAttachments(attachments: Array<TAttachment | null | undefined>) {
   const attachmentMap: Record<string, TAttachment[] | undefined> = {};
 
   for (const attachment of attachments) {
+    if (attachment === null || attachment === undefined) {
+      continue;
+    }
     const key = attachment.toolCallId ?? '';
     if (key.length === 0) {
       continue;

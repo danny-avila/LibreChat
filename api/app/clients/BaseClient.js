@@ -632,7 +632,7 @@ class BaseClient {
     }
 
     if (this.artifactPromises) {
-      responseMessage.attachments = await Promise.all(this.artifactPromises);
+      responseMessage.attachments = (await Promise.all(this.artifactPromises)).filter((a) => a);
     }
 
     this.responsePromise = this.saveMessageToDatabase(responseMessage, saveOptions, user);

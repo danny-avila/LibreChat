@@ -1,8 +1,10 @@
 import { memo, useMemo } from 'react';
+import { useRecoilValue } from 'recoil';
 import { ContentTypes } from 'librechat-data-provider';
 import type { TMessageContentParts, TAttachment, Agents } from 'librechat-data-provider';
-import { mapAttachments } from '~/utils/map';
 import EditTextPart from './Parts/EditTextPart';
+import { mapAttachments } from '~/utils/map';
+import store from '~/store';
 import Part from './Part';
 
 type ContentPartsProps = {
@@ -34,7 +36,11 @@ const ContentParts = memo(
     siblingIdx,
     setSiblingIdx,
   }: ContentPartsProps) => {
-    const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
+    const messageAttachmentsMap = useRecoilValue(store.messageAttachmentsMap);
+    const attachmentMap = useMemo(
+      () => mapAttachments(attachments ?? messageAttachmentsMap[messageId] ?? []),
+      [attachments, messageAttachmentsMap, messageId],
+    );
     if (!content) {
       return null;
     }
