@@ -50,4 +50,4 @@ jobs:
 
       - name: Deploy to ECS
         run: |
-          aws ecs update-service --cluster juristai-librechat-ecs-cluster --service librechat-service --force-new-deployment --debug
+          aws ecs update-service --cluster juristai-librechat-ecs-cluster --service librechat-service --force-new-deployment --region us-east-1 --debug
