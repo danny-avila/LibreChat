@@ -1,6 +1,6 @@
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { IconMapProps, AgentIconMapProps } from '~/common';
-import { BrainCircuit } from 'lucide-react';
+import { Feather } from 'lucide-react';
 import {
   MinimalPlugin,
   GPTIcon,
@@ -17,7 +17,12 @@ import {
 import UnknownIcon from './UnknownIcon';
 import { cn } from '~/utils';
 
-const AssistantAvatar = ({ className = '', assistantName, avatar, size }: IconMapProps) => {
+const AssistantAvatar = ({
+  className = '',
+  assistantName = '',
+  avatar = '',
+  size,
+}: IconMapProps) => {
   if (assistantName && avatar) {
     return (
       <img
@@ -35,7 +40,7 @@ const AssistantAvatar = ({ className = '', assistantName, avatar, size }: IconMa
   return <Sparkles className={cn(assistantName === '' ? 'icon-2xl' : '', className)} />;
 };
 
-const AgentAvatar = ({ className = '', agentName, avatar, size }: AgentIconMapProps) => {
+const AgentAvatar = ({ className = '', avatar = '', agentName, size }: AgentIconMapProps) => {
   if (agentName && avatar) {
     return (
       <img
@@ -50,7 +55,7 @@ const AgentAvatar = ({ className = '', agentName, avatar, size }: AgentIconMapPr
     return <AssistantIcon className={cn('text-token-secondary', className)} size={size} />;
   }
 
-  return <BrainCircuit className={cn(agentName === '' ? 'icon-2xl' : '', className)} />;
+  return <Feather className={cn(agentName === '' ? 'icon-2xl' : '', className)} />;
 };
 
 const Bedrock = ({ className = '' }: IconMapProps) => {
