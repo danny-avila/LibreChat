@@ -10,7 +10,9 @@
 const { Callback, createMetadataAggregator } = require('@librechat/agents');
 const {
   Constants,
+  openAISchema,
   EModelEndpoint,
+  anthropicSchema,
   bedrockOutputParser,
   providerEndpointMap,
   removeNullishValues,
@@ -35,11 +37,10 @@ const { logger } = require('~/config');
 
 /** @typedef {import('@librechat/agents').MessageContentComplex} MessageContentComplex */
 
-// const providerSchemas = {
-// [EModelEndpoint.bedrock]: true,
-// };
-
 const providerParsers = {
+  [EModelEndpoint.openAI]: openAISchema,
+  [EModelEndpoint.azureOpenAI]: openAISchema,
+  [EModelEndpoint.anthropic]: anthropicSchema,
   [EModelEndpoint.bedrock]: bedrockOutputParser,
 };
 

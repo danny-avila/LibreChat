@@ -14,17 +14,16 @@ const { tool } = require('@langchain/core/tools');
 const { createContentAggregator } = require('@librechat/agents');
 const {
   EModelEndpoint,
-  providerEndpointMap,
   getResponseSender,
+  providerEndpointMap,
 } = require('librechat-data-provider');
 const {
   getDefaultHandlers,
   createToolEndCallback,
 } = require('~/server/controllers/agents/callbacks');
-// for testing purposes
-// const createTavilySearchTool = require('~/app/clients/tools/structured/TavilySearch');
 const initAnthropic = require('~/server/services/Endpoints/anthropic/initializeClient');
 const initOpenAI = require('~/server/services/Endpoints/openAI/initializeClient');
+const getBedrockOptions = require('~/server/services/Endpoints/bedrock/options');
 const { loadAgentTools } = require('~/server/services/ToolService');
 const AgentClient = require('~/server/controllers/agents/client');
 const { getModelMaxTokens } = require('~/utils');
@@ -53,6 +52,7 @@ const providerConfigMap = {
   [EModelEndpoint.openAI]: initOpenAI,
   [EModelEndpoint.azureOpenAI]: initOpenAI,
   [EModelEndpoint.anthropic]: initAnthropic,
+  [EModelEndpoint.bedrock]: getBedrockOptions,
 };
 
 const initializeClient = async ({ req, res, endpointOption }) => {
