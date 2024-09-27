@@ -4,14 +4,7 @@ import { Controller, useWatch, useFormContext } from 'react-hook-form';
 import { QueryKeys, AgentCapabilities, EModelEndpoint } from 'librechat-data-provider';
 import type { TConfig, TPlugin } from 'librechat-data-provider';
 import type { AgentForm, AgentPanelProps } from '~/common';
-import {
-  cn,
-  defaultTextProps,
-  removeFocusOutlines,
-  getEndpointField,
-  getIconKey,
-  logger,
-} from '~/utils';
+import { cn, defaultTextProps, removeFocusOutlines, getEndpointField, getIconKey } from '~/utils';
 import { useCreateAgentMutation, useUpdateAgentMutation } from '~/data-provider';
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 import Action from '~/components/SidePanel/Builder/Action';

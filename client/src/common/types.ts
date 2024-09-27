@@ -430,6 +430,8 @@ export type Option = Record<string, unknown> & {
   value: string | number | null;
 };
 
+export type StringOption = Option & { value: string | null };
+
 export type VoiceOption = {
   value: string;
   label: string;

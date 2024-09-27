@@ -8,7 +8,7 @@ import {
   defaultAgentFormValues,
 } from 'librechat-data-provider';
 import type { TConfig } from 'librechat-data-provider';
-import type { AgentForm, AgentPanelProps, Option } from '~/common';
+import type { AgentForm, AgentPanelProps, StringOption } from '~/common';
 import { useCreateAgentMutation, useUpdateAgentMutation } from '~/data-provider';
 import { useSelectAgent, useLocalize } from '~/hooks';
 // import CapabilitiesForm from './CapabilitiesForm';
@@ -110,14 +110,16 @@ export default function AgentPanel({
 
       const {
         name,
-        model,
-        model_parameters,
-        provider: _provider,
         description,
         instructions,
+        model: _model,
+        model_parameters,
+        provider: _provider,
       } = data;
 
-      const provider = typeof _provider === 'string' ? _provider : (_provider as Option).value;
+      const model = _model ?? '';
+      const provider =
+        (typeof _provider === 'string' ? _provider : (_provider as StringOption).value) ?? '';
 
       if (agent_id) {
         update.mutate({
@@ -135,6 +137,13 @@ export default function AgentPanel({
         return;
       }
 
+      if (!provider || !model) {
+        return showToast({
+          message: localize('com_agents_missing_provider_model'),
+          status: 'error',
+        });
+      }
+
       create.mutate({
         name,
         description,
@@ -145,7 +154,7 @@ export default function AgentPanel({
         model_parameters,
       });
     },
-    [agent_id, create, update],
+    [agent_id, create, update, showToast, localize],
   );
 
   const handleSelectAgent = useCallback(() => {
