@@ -10,7 +10,7 @@ const {
 } = require('~/server/middleware');
 const { initializeClient } = require('~/server/services/Endpoints/bedrock');
 const AgentController = require('~/server/controllers/agents/request');
-const addTitle = require('~/server/services/Endpoints/bedrock/title');
+const addTitle = require('~/server/services/Endpoints/agents/title');
 
 router.post('/abort', handleAbort());
 
