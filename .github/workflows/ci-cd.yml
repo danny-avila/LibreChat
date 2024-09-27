@@ -24,7 +24,7 @@ jobs:
         run: npm ci
 
       - name: Build Docker image
-        run: docker build -t ${{ secrets.ECR_REPOSITORY }}:${{ github.sha }} .
+        run: docker build -t ${{ secrets.ECR_REPOSITORY }}:latest .
 
       - name: Login to AWS ECR
         env:
@@ -33,7 +33,7 @@ jobs:
         run: aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.ECR_URI }}
 
       - name: Push Docker image to ECR
-        run: docker push ${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
+        run: docker push ${{ secrets.ECR_REPOSITORY }}:latest
 
   deploy:
     runs-on: ubuntu-latest
