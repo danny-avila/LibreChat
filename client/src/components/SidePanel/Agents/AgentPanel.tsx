@@ -81,7 +81,7 @@ export default function AgentPanel({
     onSuccess: (data) => {
       setCurrentAgentId(data.id);
       showToast({
-        message: `${localize('com_assistants_create_success ')} ${
+        message: `${localize('com_assistants_create_success')} ${
           data.name ?? localize('com_ui_agent')
         }`,
       });
