@@ -21,6 +21,7 @@ const AssistantAvatar = ({
   className = '',
   assistantName = '',
   avatar = '',
+  context,
   size,
 }: IconMapProps) => {
   if (assistantName && avatar) {
@@ -37,7 +38,7 @@ const AssistantAvatar = ({
     return <AssistantIcon className={cn('text-token-secondary', className)} size={size} />;
   }
 
-  return <Sparkles className={cn(assistantName === '' ? 'icon-2xl' : '', className)} />;
+  return <Sparkles className={cn(context === 'landing' ? 'icon-2xl' : '', className)} />;
 };
 
 const AgentAvatar = ({ className = '', avatar = '', agentName, size }: AgentIconMapProps) => {
@@ -51,11 +52,9 @@ const AgentAvatar = ({ className = '', avatar = '', agentName, size }: AgentIcon
         height="80"
       />
     );
-  } else if (agentName) {
-    return <AssistantIcon className={cn('text-token-secondary', className)} size={size} />;
   }
 
-  return <Feather className={cn(agentName === '' ? 'icon-2xl' : '', className)} />;
+  return <Feather className={cn(agentName === '' ? 'icon-2xl' : '', className)} size={size} />;
 };
 
 const Bedrock = ({ className = '' }: IconMapProps) => {

@@ -3,19 +3,14 @@ import {
   defaultEndpoints,
   modularEndpoints,
   LocalStorageKeys,
+  isAgentsEndpoint,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import type {
-  TConfig,
-  TPreset,
-  TModelSpec,
-  TConversation,
-  TEndpointsConfig,
-} from 'librechat-data-provider';
+import type * as t from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
 
 export const getAssistantName = ({
-  name,
+  name = '',
   localize,
 }: {
   name?: string;
@@ -28,7 +23,7 @@ export const getAssistantName = ({
   }
 };
 
-export const getEndpointsFilter = (endpointsConfig: TEndpointsConfig) => {
+export const getEndpointsFilter = (endpointsConfig: t.TEndpointsConfig) => {
   const filter: Record<string, boolean> = {};
   if (!endpointsConfig) {
     return filter;
@@ -41,7 +36,7 @@ export const getEndpointsFilter = (endpointsConfig: TEndpointsConfig) => {
 
 export const getAvailableEndpoints = (
   filter: Record<string, boolean>,
-  endpointsConfig: TEndpointsConfig,
+  endpointsConfig: t.TEndpointsConfig,
 ) => {
   const defaultSet = new Set(defaultEndpoints);
   const availableEndpoints: EModelEndpoint[] = [];
@@ -61,11 +56,11 @@ export const getAvailableEndpoints = (
 };
 
 /** Get the specified field from the endpoint config */
-export function getEndpointField<K extends keyof TConfig>(
-  endpointsConfig: TEndpointsConfig | undefined,
+export function getEndpointField<K extends keyof t.TConfig>(
+  endpointsConfig: t.TEndpointsConfig | undefined,
   endpoint: EModelEndpoint | string | null | undefined,
   property: K,
-): TConfig[K] | undefined {
+): t.TConfig[K] | undefined {
   if (!endpointsConfig || endpoint === null || endpoint === undefined) {
     return undefined;
   }
@@ -78,7 +73,7 @@ export function getEndpointField<K extends keyof TConfig>(
   return config[property];
 }
 
-export function mapEndpoints(endpointsConfig: TEndpointsConfig) {
+export function mapEndpoints(endpointsConfig: t.TEndpointsConfig) {
   const filter = getEndpointsFilter(endpointsConfig);
   return getAvailableEndpoints(filter, endpointsConfig).sort(
     (a, b) => (endpointsConfig?.[a]?.order ?? 0) - (endpointsConfig?.[b]?.order ?? 0),
@@ -113,14 +108,14 @@ export function updateLastSelectedModel({
 }
 
 interface ConversationInitParams {
-  conversation: TConversation | null;
-  newEndpoint: EModelEndpoint | string;
-  endpointsConfig: TEndpointsConfig;
+  conversation: t.TConversation | null;
+  newEndpoint: EModelEndpoint | string | null;
+  endpointsConfig: t.TEndpointsConfig;
   modularChat?: boolean;
 }
 
 interface InitiatedTemplateResult {
-  template: Partial<TPreset>;
+  template: Partial<t.TPreset>;
   shouldSwitch: boolean;
   isExistingConversation: boolean;
   isCurrentModular: boolean;
@@ -130,10 +125,10 @@ interface InitiatedTemplateResult {
 
 /** Get the conditional logic for switching conversations */
 export function getConvoSwitchLogic(params: ConversationInitParams): InitiatedTemplateResult {
-  const { conversation, newEndpoint, endpointsConfig, modularChat } = params;
+  const { conversation, newEndpoint, endpointsConfig, modularChat = false } = params;
 
   const currentEndpoint = conversation?.endpoint;
-  const template: Partial<TPreset> = {
+  const template: Partial<t.TPreset> = {
     ...conversation,
     endpoint: newEndpoint,
     conversationId: 'new',
@@ -144,7 +139,7 @@ export function getConvoSwitchLogic(params: ConversationInitParams): InitiatedTe
     isAssistantsEndpoint(currentEndpoint) &&
     currentEndpoint === newEndpoint;
 
-  const conversationId = conversation?.conversationId;
+  const conversationId = conversation?.conversationId ?? '';
   const isExistingConversation = !!(conversationId && conversationId !== 'new');
 
   const currentEndpointType =
@@ -178,7 +173,7 @@ export function getConvoSwitchLogic(params: ConversationInitParams): InitiatedTe
  *
  * First, the admin defined default, then last selected spec, followed by first spec
  */
-export function getDefaultModelSpec(modelSpecs?: TModelSpec[]) {
+export function getDefaultModelSpec(modelSpecs?: t.TModelSpec[]) {
   const defaultSpec = modelSpecs?.find((spec) => spec.default);
   const lastSelectedSpecName = localStorage.getItem(LocalStorageKeys.LAST_SPEC);
   const lastSelectedSpec = modelSpecs?.find((spec) => spec.name === lastSelectedSpecName);
@@ -189,7 +184,7 @@ export function getDefaultModelSpec(modelSpecs?: TModelSpec[]) {
  *
  * First, the admin defined default, then last selected spec, followed by first spec
  */
-export function getModelSpecIconURL(modelSpec: TModelSpec) {
+export function getModelSpecIconURL(modelSpec: t.TModelSpec) {
   return modelSpec.iconURL ?? modelSpec.preset.iconURL ?? modelSpec.preset.endpoint ?? '';
 }
 
@@ -202,7 +197,7 @@ export function getIconEndpoint({
   iconURL,
   endpoint,
 }: {
-  endpointsConfig: TEndpointsConfig | undefined;
+  endpointsConfig: t.TEndpointsConfig | undefined;
   iconURL: string | undefined;
   endpoint: string | null | undefined;
 }) {
@@ -217,14 +212,44 @@ export function getIconKey({
   endpointIconURL: iconURL,
 }: {
   endpoint?: string | null;
-  endpointsConfig?: TEndpointsConfig | undefined;
+  endpointsConfig?: t.TEndpointsConfig | undefined;
   endpointType?: string | null;
   endpointIconURL?: string;
 }) {
-  const endpointType = _eType ?? getEndpointField(endpointsConfig, endpoint, 'type');
-  const endpointIconURL = iconURL ?? getEndpointField(endpointsConfig, endpoint, 'iconURL');
-  if (endpointIconURL && EModelEndpoint[endpointIconURL]) {
+  const endpointType = _eType ?? getEndpointField(endpointsConfig, endpoint, 'type') ?? '';
+  const endpointIconURL = iconURL ?? getEndpointField(endpointsConfig, endpoint, 'iconURL') ?? '';
+  if (endpointIconURL && EModelEndpoint[endpointIconURL] != null) {
     return endpointIconURL;
   }
   return endpointType ? 'unknown' : endpoint ?? 'unknown';
 }
+
+export const getEntity = ({
+  endpoint,
+  assistant_id,
+  agent_id,
+  agentsMap,
+  assistantMap,
+}: {
+  endpoint: EModelEndpoint | string | null | undefined;
+  assistant_id: string | undefined;
+  agent_id: string | undefined;
+  agentsMap: t.TAgentsMap | undefined;
+  assistantMap: t.TAssistantsMap | undefined;
+}): {
+  entity: t.Agent | t.Assistant | undefined | null;
+  isAgent: boolean;
+  isAssistant: boolean;
+} => {
+  const isAgent = isAgentsEndpoint(endpoint);
+  const isAssistant = isAssistantsEndpoint(endpoint);
+
+  if (isAgent) {
+    const agent = agentsMap?.[agent_id ?? ''];
+    return { entity: agent, isAgent, isAssistant };
+  } else if (isAssistant) {
+    const assistant = assistantMap?.[endpoint ?? '']?.[assistant_id ?? ''];
+    return { entity: assistant, isAgent, isAssistant };
+  }
+  return { entity: null, isAgent, isAssistant };
+};

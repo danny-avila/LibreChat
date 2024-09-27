@@ -169,6 +169,7 @@ export type Agent = {
   provider: AgentProvider;
   model: string | null;
   model_parameters: AgentModelParameters;
+  conversation_starters?: string[];
   object: string;
 };
 
