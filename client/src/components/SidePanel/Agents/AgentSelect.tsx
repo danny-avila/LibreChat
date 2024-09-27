@@ -61,20 +61,26 @@ export default function AgentSelect({
         icon: isGlobal ? <EarthIcon className={'icon-lg text-green-400'} /> : null,
       };
 
-      const actions: TAgentCapabilities = {
+      const capabilities: TAgentCapabilities = {
         [AgentCapabilities.execute_code]: false,
         [AgentCapabilities.retrieval]: false,
       };
 
+      const agentTools: string[] = [];
       (fullAgent.tools ?? []).forEach((tool) => {
-        actions[tool] = true;
+        if (capabilities[tool] !== undefined) {
+          capabilities[tool] = true;
+          return;
+        }
+
+        agentTools.push(tool);
       });
 
       const formValues: Partial<AgentForm & TAgentCapabilities> = {
-        ...actions,
+        ...capabilities,
         agent: update,
         model: update.model,
-        tools: update.tools ?? [],
+        tools: agentTools,
       };
 
       Object.entries(fullAgent).forEach(([name, value]) => {
