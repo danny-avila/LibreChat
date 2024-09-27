@@ -140,9 +140,8 @@ export const defaultAgentFormValues = {
   tools: [],
   provider: {},
   projectIds: [],
-  code_interpreter: false,
-  image_vision: false,
-  retrieval: false,
+  [Tools.execute_code]: false,
+  [Tools.file_search]: false,
 };
 
 export const ImageVisionTool: FunctionTool = {
