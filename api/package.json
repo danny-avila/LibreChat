@@ -43,7 +43,7 @@
     "@langchain/core": "^0.2.18",
     "@langchain/google-genai": "^0.0.11",
     "@langchain/google-vertexai": "^0.0.17",
-    "@librechat/agents": "^1.6.8",
+    "@librechat/agents": "^1.6.9",
     "axios": "^1.7.7",
     "bcryptjs": "^2.4.3",
     "cheerio": "^1.0.0-rc.12",
