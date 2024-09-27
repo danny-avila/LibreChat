@@ -26,8 +26,11 @@ jobs:
       - name: Build Docker image
         run: docker build -t ${{ secrets.ECR_REPOSITORY }}:latest .
 
-      - name: AWS Configuration
-        run: aws configure list
+      - name: Configure AWS credentials
+        run: |
+          aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws configure set region us-east-1
 
       - name: Login to AWS ECR
         env:
