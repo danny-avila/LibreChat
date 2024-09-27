@@ -1,1 +1,1 @@
-We're overriding the previous deployment script
+We're overriding the previous deployment script.
