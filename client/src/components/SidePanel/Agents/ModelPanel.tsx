@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { Controller, useFormContext } from 'react-hook-form';
-import type { AgentForm, AgentModelPanelProps } from '~/common';
+import type { AgentForm, AgentModelPanelProps, StringOption } from '~/common';
 import { SelectDropDown, ModelParameters } from '~/components/ui';
 import { cn, cardStyle } from '~/utils';
 import { useLocalize } from '~/hooks';
@@ -15,25 +15,30 @@ export default function ModelPanel({
   const localize = useLocalize();
 
   const { control, setValue, watch } = useFormContext<AgentForm>();
-  const model = watch('model');
   const providerOption = watch('provider');
+  const model = watch('model');
 
   const provider = useMemo(() => {
-    if (!providerOption) {
-      return '';
-    }
-
-    return typeof providerOption === 'string' ? providerOption : providerOption.value;
+    const value =
+      typeof providerOption === 'string'
+        ? providerOption
+        : (providerOption as StringOption | undefined)?.value;
+    return value ?? '';
   }, [providerOption]);
   const models = useMemo(() => (provider ? modelsData[provider] : []), [modelsData, provider]);
 
   useEffect(() => {
-    if (provider && model) {
-      const modelExists = models.includes(model);
+    const _model = model ?? '';
+    if (provider && _model) {
+      const modelExists = models.includes(_model);
       if (!modelExists) {
         const newModels = modelsData[provider];
         setValue('model', newModels[0] ?? '');
       }
+    }
+
+    if (provider && !_model) {
+      setValue('model', models[0] ?? '');
     }
   }, [provider, models, modelsData, setValue, model]);
 
@@ -81,7 +86,7 @@ export default function ModelPanel({
                 className={cn(
                   cardStyle,
                   'flex h-[40px] w-full flex-none items-center justify-center border-none px-4 hover:cursor-pointer',
-                  !field.value && 'border-2 border-yellow-400',
+                  (field.value === undefined || field.value === '') && 'border-2 border-yellow-400',
                 )}
                 containerClassName={cn('rounded-md', error ? 'border-red-500 border-2' : '')}
               />
