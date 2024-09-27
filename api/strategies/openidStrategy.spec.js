@@ -2,6 +2,7 @@ const jwtDecode = require('jsonwebtoken/decode');
 const { Issuer, Strategy: OpenIDStrategy } = require('openid-client');
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+const User = require('~/models/User');
 const setupOpenId = require('./openidStrategy');
 
 jest.mock('jsonwebtoken/decode');
@@ -17,9 +18,6 @@ Issuer.discover = jest.fn().mockResolvedValue({
   Client: jest.fn(),
 });
 
-jwtDecode.mockReturnValue({
-  roles: ['requiredRole'],
-});
 
 describe('setupOpenId', () => {
   const OLD_ENV = process.env;
@@ -27,10 +25,6 @@ describe('setupOpenId', () => {
     let validateFn, mongoServer;
 
     beforeAll(async () => {
-      //call setup so we can grab a reference to the validate function
-      await setupOpenId();
-      validateFn = OpenIDStrategy.mock.calls[0][1];
-
       mongoServer = await MongoMemoryServer.create();
       const mongoUri = mongoServer.getUri();
       await mongoose.connect(mongoUri);
@@ -42,10 +36,11 @@ describe('setupOpenId', () => {
       await mongoServer.stop();
     });
 
-    beforeEach(() => {
+    beforeEach(async () => {
       jest.clearAllMocks();
+      await User.deleteMany({});
       process.env = {
-        ...process.env,
+        ...OLD_ENV,
         OPENID_ISSUER: 'https://fake-issuer.com',
         OPENID_CLIENT_ID: 'fake_client_id',
         OPENID_CLIENT_SECRET: 'fake_client_secret',
@@ -56,6 +51,14 @@ describe('setupOpenId', () => {
         OPENID_REQUIRED_ROLE_PARAMETER_PATH: 'roles',
         OPENID_REQUIRED_ROLE_TOKEN_KIND: 'id',
       };
+
+      jwtDecode.mockReturnValue({
+        roles: ['requiredRole'],
+      });
+
+      //call setup so we can grab a reference to the validate function
+      await setupOpenId();
+      validateFn = OpenIDStrategy.mock.calls[0][1];
     });
 
     const tokenset = {
@@ -72,57 +75,99 @@ describe('setupOpenId', () => {
       username: 'flast',
     };
 
+    const userModel = {
+      openidId: userinfo.sub,
+      email: userinfo.email,
+    };
+
     it('should set username correctly for a new user when username claim exists', async () => {
+      const expectUsername = userinfo.username.toLowerCase();
       await validateFn(tokenset, userinfo, (err, user) => {
         expect(err).toBe(null);
-        expect(user.username).toBe(userinfo.username.toLowerCase());
+        expect(user.username).toBe(expectUsername);
       });
+
+      await expect(User.exists({ username: expectUsername })).resolves.not.toBeNull();
     });
 
     it('should set username correctly for a new user when given_name claim exists, but username does not', async () => {
       let userinfo_modified = { ...userinfo };
       delete userinfo_modified.username;
+      const expectUsername = userinfo.given_name.toLowerCase();
 
       await validateFn(tokenset, userinfo_modified, (err, user) => {
         expect(err).toBe(null);
-        expect(user.username).toBe(userinfo.given_name.toLowerCase());
+        expect(user.username).toBe(expectUsername);
       });
+      await expect(User.exists({ username: expectUsername })).resolves.not.toBeNull();
     });
 
     it('should set username correctly for a new user when email claim exists, but username and given_name do not', async () => {
       let userinfo_modified = { ...userinfo };
       delete userinfo_modified.username;
       delete userinfo_modified.given_name;
+      const expectUsername = userinfo.email.toLowerCase();
 
       await validateFn(tokenset, userinfo_modified, (err, user) => {
         expect(err).toBe(null);
-        expect(user.username).toBe(userinfo.email.toLowerCase());
+        expect(user.username).toBe(expectUsername);
       });
+      await expect(User.exists({ username: expectUsername })).resolves.not.toBeNull();
     });
 
     it('should set username correctly for a new user when using OPENID_USERNAME_CLAIM', async () => {
       process.env.OPENID_USERNAME_CLAIM = 'sub';
+      const expectUsername = userinfo.sub.toLowerCase();
 
       await validateFn(tokenset, userinfo, (err, user) => {
         expect(err).toBe(null);
-        expect(user.username).toBe(userinfo.sub.toLowerCase());
+        expect(user.username).toBe(expectUsername);
       });
+      await expect(User.exists({ username: expectUsername })).resolves.not.toBeNull();
     });
 
     it('should set name correctly for a new user with first and last names', async () => {
+      const expectName = userinfo.given_name + ' ' + userinfo.family_name;
       await validateFn(tokenset, userinfo, (err, user) => {
         expect(err).toBe(null);
-        expect(user.name).toBe(userinfo.given_name + ' ' + userinfo.family_name);
+        expect(user.name).toBe(expectName);
       });
+      await expect(User.exists({ name: expectName })).resolves.not.toBeNull();
     });
 
     it('should set name correctly for a new user using OPENID_NAME_CLAIM', async () => {
+      const expectName = 'Custom Name';
       process.env.OPENID_NAME_CLAIM = 'name';
-      let userinfo_modified = { ...userinfo, name: 'Custom Name' };
+      let userinfo_modified = { ...userinfo, name: expectName };
 
       await validateFn(tokenset, userinfo_modified, (err, user) => {
         expect(err).toBe(null);
-        expect(user.name).toBe(userinfo_modified.name);
+        expect(user.name).toBe(expectName);
+      });
+      await expect(User.exists({ name: expectName })).resolves.not.toBeNull();
+    });
+
+    it('should should update existing user after login', async () => {
+      const expectUsername = userinfo.username.toLowerCase();
+      await User.create(userModel);
+
+      await validateFn(tokenset, userinfo, (err) => {
+        expect(err).toBe(null);
+      });
+      const newUser = await User.findOne({ openidId: userModel.openidId });
+      await expect(newUser.provider).toBe('openid');
+      await expect(newUser.username).toBe(expectUsername);
+      await expect(newUser.name).toBe(userinfo.given_name + ' ' + userinfo.family_name);
+    });
+
+    it('should should enforce required role', async () => {
+      jwtDecode.mockReturnValue({
+        roles: ['SomeOtherRole'],
+      });
+      await validateFn(tokenset, userinfo, (err, user, details) => {
+        expect(err).toBe(null);
+        expect(user).toBe(false);
+        expect(details.message).toBe('You must have the "' + process.env.OPENID_REQUIRED_ROLE + '" role to log in.');
       });
     });
 
