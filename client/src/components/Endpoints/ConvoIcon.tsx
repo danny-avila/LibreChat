@@ -48,8 +48,6 @@ export default function ConvoIcon({
   const iconKey = getIconKey({ endpoint, endpointsConfig, endpointIconURL });
   const Icon = icons[iconKey] ?? null;
 
-  console.log('avatar, context, iconURL', { avatar, context, iconURL });
-
   return (
     <>
       {iconURL && iconURL.includes('http') ? (
