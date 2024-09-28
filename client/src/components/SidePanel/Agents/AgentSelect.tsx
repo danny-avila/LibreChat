@@ -2,13 +2,13 @@ import { Plus, EarthIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef } from 'react';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { AgentCapabilities, defaultAgentFormValues } from 'librechat-data-provider';
+import type { UseMutationResult, QueryObserverResult } from '@tanstack/react-query';
 import type { Agent, AgentCreateParams } from 'librechat-data-provider';
-import type { UseMutationResult } from '@tanstack/react-query';
 import type { UseFormReset } from 'react-hook-form';
 import type { TAgentCapabilities, AgentForm, TAgentOption } from '~/common';
 import { cn, createDropdownSetter, createProviderOption, processAgentOption } from '~/utils';
-import { useListAgentsQuery, useGetAgentByIdQuery } from '~/data-provider';
 import SelectDropDown from '~/components/ui/SelectDropDown';
+import { useListAgentsQuery } from '~/data-provider';
 // import { useFileMapContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 
@@ -16,6 +16,7 @@ const keys = new Set(Object.keys(defaultAgentFormValues));
 
 export default function AgentSelect({
   reset,
+  agentQuery,
   value: currentAgentValue,
   selectedAgentId = null,
   setCurrentAgentId,
@@ -24,6 +25,7 @@ export default function AgentSelect({
   reset: UseFormReset<AgentForm>;
   value?: TAgentOption;
   selectedAgentId: string | null;
+  agentQuery: QueryObserverResult<Agent>;
   setCurrentAgentId: React.Dispatch<React.SetStateAction<string | undefined>>;
   createMutation: UseMutationResult<Agent, Error, AgentCreateParams>;
 }) {
@@ -42,10 +44,6 @@ export default function AgentSelect({
           /* fileMap */
         }),
       ),
-  });
-
-  const agentQuery = useGetAgentByIdQuery(selectedAgentId ?? '', {
-    enabled: !!(selectedAgentId ?? ''),
   });
 
   const resetAgentForm = useCallback(

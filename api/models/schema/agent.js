@@ -57,6 +57,14 @@ const agentSchema = mongoose.Schema(
       ref: 'User',
       required: true,
     },
+    isCollaborative: {
+      type: Boolean,
+      default: undefined,
+    },
+    conversation_starters: {
+      type: [String],
+      default: [],
+    },
     projectIds: {
       type: [mongoose.Schema.Types.ObjectId],
       ref: 'Project',

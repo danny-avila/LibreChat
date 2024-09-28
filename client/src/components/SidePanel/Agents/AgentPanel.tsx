@@ -3,15 +3,20 @@ import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import { Controller, useWatch, useForm, FormProvider } from 'react-hook-form';
 import {
   Tools,
+  SystemRoles,
   EModelEndpoint,
   isAssistantsEndpoint,
   defaultAgentFormValues,
 } from 'librechat-data-provider';
 import type { TConfig } from 'librechat-data-provider';
 import type { AgentForm, AgentPanelProps, StringOption } from '~/common';
-import { useCreateAgentMutation, useUpdateAgentMutation } from '~/data-provider';
-import { useSelectAgent, useLocalize } from '~/hooks';
-// import CapabilitiesForm from './CapabilitiesForm';
+import {
+  useCreateAgentMutation,
+  useUpdateAgentMutation,
+  useGetAgentByIdQuery,
+} from '~/data-provider';
+import { useSelectAgent, useLocalize, useAuthContext } from '~/hooks';
+import AgentPanelSkeleton from './AgentPanelSkeleton';
 import { createProviderOption } from '~/utils';
 import { useToastContext } from '~/Providers';
 import AgentConfig from './AgentConfig';
@@ -29,11 +34,17 @@ export default function AgentPanel({
   agentsConfig,
   endpointsConfig,
 }: AgentPanelProps & { agentsConfig?: TConfig | null }) {
-  const { onSelect: onSelectAgent } = useSelectAgent();
-  const { showToast } = useToastContext();
   const localize = useLocalize();
+  const { user } = useAuthContext();
+  const { showToast } = useToastContext();
+
+  const { onSelect: onSelectAgent } = useSelectAgent();
 
   const modelsQuery = useGetModelsQuery();
+  const agentQuery = useGetAgentByIdQuery(current_agent_id ?? '', {
+    enabled: !!(current_agent_id ?? ''),
+  });
+
   const models = useMemo(() => modelsQuery.data ?? {}, [modelsQuery.data]);
   const methods = useForm<AgentForm>({
     defaultValues: defaultAgentFormValues,
@@ -163,6 +174,15 @@ export default function AgentPanel({
     }
   }, [agent_id, onSelectAgent]);
 
+  if (agentQuery.isLoading) {
+    return <AgentPanelSkeleton />;
+  }
+
+  const canEditAgent =
+    agentQuery.data?.isCollaborative ?? false
+      ? true
+      : agentQuery.data?.author === user?.id || user?.role === SystemRoles.ADMIN;
+
   return (
     <FormProvider {...methods}>
       <form
@@ -178,6 +198,7 @@ export default function AgentPanel({
               <AgentSelect
                 reset={reset}
                 value={field.value}
+                agentQuery={agentQuery}
                 setCurrentAgentId={setCurrentAgentId}
                 selectedAgentId={current_agent_id ?? null}
                 createMutation={create}
@@ -197,10 +218,20 @@ export default function AgentPanel({
             </button>
           )}
         </div>
-        {activePanel === Panel.model ? (
+        {!canEditAgent && (
+          <div className="flex h-[30vh] w-full items-center justify-center">
+            <div className="text-center">
+              <h2 className="text-token-text-primary m-2 text-xl font-semibold">
+                {localize('com_agents_not_available')}
+              </h2>
+              <p className="text-token-text-secondary">{localize('com_agents_no_access')}</p>
+            </div>
+          </div>
+        )}
+        {canEditAgent && activePanel === Panel.model && (
           <ModelPanel setActivePanel={setActivePanel} providers={providers} models={models} />
-        ) : null}
-        {activePanel === Panel.builder ? (
+        )}
+        {canEditAgent && activePanel === Panel.builder && (
           <AgentConfig
             actions={actions}
             setAction={setAction}
@@ -209,7 +240,7 @@ export default function AgentPanel({
             endpointsConfig={endpointsConfig}
             setCurrentAgentId={setCurrentAgentId}
           />
-        ) : null}
+        )}
       </form>
     </FormProvider>
   );

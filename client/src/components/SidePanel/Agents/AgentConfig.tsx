@@ -123,8 +123,6 @@ export default function AgentConfig({
     setActivePanel(Panel.actions);
   }, [agent_id, setActivePanel, showToast, localize]);
 
-  // Provider Icon logic
-
   const providerValue = typeof provider === 'string' ? provider : provider?.value;
   let endpointType: EModelEndpoint | undefined;
   let endpointIconURL: string | undefined;
@@ -359,6 +357,7 @@ export default function AgentConfig({
               agent_id={agent_id}
               agentName={agent?.name ?? ''}
               projectIds={agent?.projectIds ?? []}
+              isCollaborative={agent?.isCollaborative}
             />
           )}
           {/* Submit Button */}

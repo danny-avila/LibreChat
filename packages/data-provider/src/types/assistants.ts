@@ -170,6 +170,7 @@ export type Agent = {
   model: string | null;
   model_parameters: AgentModelParameters;
   conversation_starters?: string[];
+  isCollaborative?: boolean;
   object: string;
 };
 
@@ -200,6 +201,7 @@ export type AgentUpdateParams = {
   model_parameters?: AgentModelParameters;
   projectIds?: string[];
   removeProjectIds?: string[];
+  isCollaborative?: boolean;
 };
 
 export type AgentListParams = {

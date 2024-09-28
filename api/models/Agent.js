@@ -127,6 +127,7 @@ const getListAgents = async (searchParameter) => {
       avatar: 1,
       author: 1,
       projectIds: 1,
+      isCollaborative: 1,
     }).lean()
   ).map((agent) => {
     if (agent.author?.toString() !== author) {

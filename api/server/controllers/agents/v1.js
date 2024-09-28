@@ -1,5 +1,5 @@
 const { nanoid } = require('nanoid');
-const { FileContext, Constants, Tools } = require('librechat-data-provider');
+const { FileContext, Constants, Tools, SystemRoles } = require('librechat-data-provider');
 const {
   getAgent,
   createAgent,
@@ -93,8 +93,22 @@ const getAgentHandler = async (req, res) => {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
-    if (agent.author.toString() !== author) {
+    agent.author = agent.author.toString();
+    agent.isCollaborative = !!agent.isCollaborative;
+
+    if (agent.author !== author) {
       delete agent.author;
+    }
+
+    if (!agent.isCollaborative && agent.author !== author && req.user.role !== SystemRoles.ADMIN) {
+      return res.status(200).json({
+        id: agent.id,
+        name: agent.name,
+        avatar: agent.avatar,
+        author: agent.author,
+        projectIds: agent.projectIds,
+        isCollaborative: agent.isCollaborative,
+      });
     }
 
     return res.status(200).json(agent);
