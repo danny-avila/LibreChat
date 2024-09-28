@@ -57,6 +57,10 @@ const agentSchema = mongoose.Schema(
       ref: 'User',
       required: true,
     },
+    authorName: {
+      type: String,
+      default: undefined,
+    },
     isCollaborative: {
       type: Boolean,
       default: undefined,

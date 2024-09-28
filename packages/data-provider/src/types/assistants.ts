@@ -156,6 +156,7 @@ export type Agent = {
   id: string;
   name: string | null;
   author?: string | null;
+  authorName?: string | null;
   description: string | null;
   created_at: number;
   avatar: AgentAvatar | null;
@@ -171,7 +172,6 @@ export type Agent = {
   model_parameters: AgentModelParameters;
   conversation_starters?: string[];
   isCollaborative?: boolean;
-  object: string;
 };
 
 export type TAgentsMap = Record<string, Agent | undefined>;
