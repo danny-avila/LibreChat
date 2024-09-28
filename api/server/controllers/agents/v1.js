@@ -93,7 +93,7 @@ const getAgentHandler = async (req, res) => {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
-    if (agent.author !== author) {
+    if (agent.author.toString() !== author) {
       delete agent.author;
     }
 
@@ -124,7 +124,20 @@ const updateAgentHandler = async (req, res) => {
     }
 
     if (projectIds || removeProjectIds) {
-      updatedAgent = await updateAgentProjects(id, projectIds, removeProjectIds);
+      updatedAgent = await updateAgentProjects({
+        user: req.user,
+        agentId: id,
+        projectIds,
+        removeProjectIds,
+      });
+    }
+
+    if (updatedAgent.author) {
+      updatedAgent.author = updatedAgent.author.toString();
+    }
+
+    if (updatedAgent.author !== req.user.id) {
+      delete updatedAgent.author;
     }
 
     return res.json(updatedAgent);

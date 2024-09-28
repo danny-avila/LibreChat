@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { SystemRoles } = require('librechat-data-provider');
 const { GLOBAL_PROJECT_NAME } = require('librechat-data-provider').Constants;
 const { CONFIG_STORE, STARTUP_CONFIG } = require('librechat-data-provider').CacheKeys;
 const {
@@ -118,12 +119,24 @@ const getListAgents = async (searchParameter) => {
     query = { $or: [globalQuery, query] };
   }
 
-  const agents = await Agent.find(query, {
-    id: 1,
-    name: 1,
-    avatar: 1,
-    projectIds: 1,
-  }).lean();
+  const agents = (
+    await Agent.find(query, {
+      id: 1,
+      _id: 0,
+      name: 1,
+      avatar: 1,
+      author: 1,
+      projectIds: 1,
+    }).lean()
+  ).map((agent) => {
+    if (agent.author?.toString() !== author) {
+      delete agent.author;
+    }
+    if (agent.author) {
+      agent.author = agent.author.toString();
+    }
+    return agent;
+  });
 
   const hasMore = agents.length > 0;
   const firstId = agents.length > 0 ? agents[0].id : null;
@@ -141,13 +154,15 @@ const getListAgents = async (searchParameter) => {
  * Updates the projects associated with an agent, adding and removing project IDs as specified.
  * This function also updates the corresponding projects to include or exclude the agent ID.
  *
- * @param {string} agentId - The ID of the agent to update.
- * @param {string[]} [projectIds] - Array of project IDs to add to the agent.
- * @param {string[]} [removeProjectIds] - Array of project IDs to remove from the agent.
+ * @param {Object} params - Parameters for updating the agent's projects.
+ * @param {import('librechat-data-provider').TUser} params.user - Parameters for updating the agent's projects.
+ * @param {string} params.agentId - The ID of the agent to update.
+ * @param {string[]} [params.projectIds] - Array of project IDs to add to the agent.
+ * @param {string[]} [params.removeProjectIds] - Array of project IDs to remove from the agent.
  * @returns {Promise<MongoAgent>} The updated agent document.
  * @throws {Error} If there's an error updating the agent or projects.
  */
-const updateAgentProjects = async (agentId, projectIds, removeProjectIds) => {
+const updateAgentProjects = async ({ user, agentId, projectIds, removeProjectIds }) => {
   const updateOps = {};
 
   if (removeProjectIds && removeProjectIds.length > 0) {
@@ -168,7 +183,26 @@ const updateAgentProjects = async (agentId, projectIds, removeProjectIds) => {
     return await getAgent({ id: agentId });
   }
 
-  return await updateAgent({ id: agentId }, updateOps);
+  const updateQuery = { id: agentId, author: user.id };
+  if (user.role === SystemRoles.ADMIN) {
+    delete updateQuery.author;
+  }
+
+  const updatedAgent = await updateAgent(updateQuery, updateOps);
+  if (updatedAgent) {
+    return updatedAgent;
+  }
+  if (updateOps.$addToSet) {
+    for (const projectId of projectIds) {
+      await removeAgentIdsFromProject(projectId, [agentId]);
+    }
+  } else if (updateOps.$pull) {
+    for (const projectId of removeProjectIds) {
+      await addAgentIdsToProject(projectId, [agentId]);
+    }
+  }
+
+  return await getAgent({ id: agentId });
 };
 
 module.exports = {

@@ -99,6 +99,7 @@ export default {
   com_agents_update_error: 'There was an error updating your agent.',
   com_agents_create_error: 'There was an error creating your agent.',
   com_agents_missing_provider_model: 'Please select a provider and model before creating an agent.',
+  com_ui_agent_already_shared_to_all: 'This agent is already shared to all users',
   com_ui_date_today: 'Today',
   com_ui_date_yesterday: 'Yesterday',
   com_ui_date_previous_7_days: 'Previous 7 days',

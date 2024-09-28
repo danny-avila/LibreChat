@@ -43,6 +43,9 @@ export enum Permissions {
   SHARED_GLOBAL = 'SHARED_GLOBAL',
   USE = 'USE',
   CREATE = 'CREATE',
+  UPDATE = 'UPDATE',
+  READ = 'READ',
+  READ_AUTHOR = 'READ_AUTHOR',
   SHARE = 'SHARE',
 }
 

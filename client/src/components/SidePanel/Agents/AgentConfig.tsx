@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
-import { QueryKeys, AgentCapabilities, EModelEndpoint } from 'librechat-data-provider';
+import { QueryKeys, AgentCapabilities, EModelEndpoint, SystemRoles } from 'librechat-data-provider';
 import type { TConfig, TPlugin } from 'librechat-data-provider';
 import type { AgentForm, AgentPanelProps } from '~/common';
 import { cn, defaultTextProps, removeFocusOutlines, getEndpointField, getIconKey } from '~/utils';
@@ -9,13 +9,13 @@ import { useCreateAgentMutation, useUpdateAgentMutation } from '~/data-provider'
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 import Action from '~/components/SidePanel/Builder/Action';
 import { ToolSelectDialog } from '~/components/Tools';
+import { useLocalize, useAuthContext } from '~/hooks';
 import CapabilitiesForm from './CapabilitiesForm';
 import { useToastContext } from '~/Providers';
 import { Spinner } from '~/components/svg';
 import DeleteButton from './DeleteButton';
 import AgentAvatar from './AgentAvatar';
 import ShareAgent from './ShareAgent';
-import { useLocalize } from '~/hooks';
 import AgentTool from './AgentTool';
 import { Panel } from '~/common';
 
@@ -34,6 +34,7 @@ export default function AgentConfig({
   setActivePanel,
   setCurrentAgentId,
 }: AgentPanelProps & { agentsConfig?: TConfig | null }) {
+  const { user } = useAuthContext();
   const queryClient = useQueryClient();
 
   const allTools = queryClient.getQueryData<TPlugin[]>([QueryKeys.tools]) ?? [];
@@ -353,11 +354,13 @@ export default function AgentConfig({
             setCurrentAgentId={setCurrentAgentId}
             createMutation={create}
           />
-          <ShareAgent
-            agent_id={agent_id}
-            agentName={agent?.name ?? ''}
-            projectIds={agent?.projectIds ?? []}
-          />
+          {(agent?.author === user?.id || user?.role === SystemRoles.ADMIN) && (
+            <ShareAgent
+              agent_id={agent_id}
+              agentName={agent?.name ?? ''}
+              projectIds={agent?.projectIds ?? []}
+            />
+          )}
           {/* Submit Button */}
           <button
             className="btn btn-primary focus:shadow-outline flex w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"

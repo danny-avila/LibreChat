@@ -9,7 +9,7 @@ import {
 import { useSetRecoilState } from 'recoil';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
-import type t from 'librechat-data-provider';
+import type * as t from 'librechat-data-provider';
 import type { InfiniteData, UseMutationResult } from '@tanstack/react-query';
 import useUpdateTagsInConvo from '~/hooks/Conversations/useUpdateTagsInConvo';
 import { updateConversationTag } from '~/utils/conversationTags';
@@ -1228,6 +1228,8 @@ export const useUpdateAgentMutation = (
             return agent;
           }),
         });
+
+        queryClient.setQueryData<t.Agent>([QueryKeys.agent, variables.agent_id], updatedAgent);
         return options?.onSuccess?.(updatedAgent, variables, context);
       },
     },

@@ -19,6 +19,7 @@ import { useLocalize } from '~/hooks';
 
 type FormValues = {
   [Permissions.SHARED_GLOBAL]: boolean;
+  [Permissions.UPDATE]: boolean;
 };
 
 export default function ShareAgent({
@@ -49,6 +50,7 @@ export default function ShareAgent({
     mode: 'onChange',
     defaultValues: {
       [Permissions.SHARED_GLOBAL]: agentIsGlobal,
+      [Permissions.UPDATE]: false,
     },
   });
 
@@ -113,12 +115,12 @@ export default function ShareAgent({
           )}
           type="button"
         >
-          <div className="flex w-full items-center justify-center gap-2 text-blue-500">
+          <div className="flex items-center justify-center gap-2 text-blue-500">
             <Share2Icon className="icon-md h-4 w-4" />
           </div>
         </button>
       </OGDialogTrigger>
-      <OGDialogContent className="border-border-light bg-surface-primary-alt text-text-secondary">
+      <OGDialogContent className="w-1/4 border-border-light bg-surface-primary-alt text-text-secondary">
         <OGDialogTitle>
           {localize(
             'com_ui_share_var',
