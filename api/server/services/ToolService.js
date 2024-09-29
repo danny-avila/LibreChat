@@ -1,9 +1,8 @@
 const fs = require('fs');
 const path = require('path');
-const { StructuredTool } = require('langchain/tools');
-const { tool: toolFn } = require('@langchain/core/tools');
 const { zodToJsonSchema } = require('zod-to-json-schema');
 const { Calculator } = require('langchain/tools/calculator');
+const { tool: toolFn, Tool } = require('@langchain/core/tools');
 const {
   Tools,
   ContentTypes,
@@ -70,7 +69,7 @@ function loadAndFormatTools({ directory, adminFilter = [], adminIncluded = [] })
       continue;
     }
 
-    if (!ToolClass || !(ToolClass.prototype instanceof StructuredTool)) {
+    if (!ToolClass || !(ToolClass.prototype instanceof Tool)) {
       continue;
     }
 
