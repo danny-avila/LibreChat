@@ -143,13 +143,15 @@ export type File = {
 
 /* Agent types */
 
+export type AgentParameterValue = number | null;
+
 export type AgentModelParameters = {
-  temperature: number | null;
-  max_context_tokens: number | null;
-  max_output_tokens: number | null;
-  top_p: number | null;
-  frequency_penalty: number | null;
-  presence_penalty: number | null;
+  temperature: AgentParameterValue;
+  max_context_tokens: AgentParameterValue;
+  max_output_tokens: AgentParameterValue;
+  top_p: AgentParameterValue;
+  frequency_penalty: AgentParameterValue;
+  presence_penalty: AgentParameterValue;
 };
 
 export type Agent = {

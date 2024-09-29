@@ -229,7 +229,12 @@ export default function AgentPanel({
           </div>
         )}
         {canEditAgent && activePanel === Panel.model && (
-          <ModelPanel setActivePanel={setActivePanel} providers={providers} models={models} />
+          <ModelPanel
+            setActivePanel={setActivePanel}
+            agent_id={agent_id}
+            providers={providers}
+            models={models}
+          />
         )}
         {canEditAgent && activePanel === Panel.builder && (
           <AgentConfig

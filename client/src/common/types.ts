@@ -194,6 +194,7 @@ export type AgentModelPanelProps = {
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
   providers: Option[];
   models: Record<string, string[]>;
+  agent_id?: string;
 };
 
 export type AugmentedColumnDef<TData, TValue> = ColumnDef<TData, TValue> & DataColumnMeta;

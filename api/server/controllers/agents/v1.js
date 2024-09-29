@@ -133,8 +133,12 @@ const updateAgentHandler = async (req, res) => {
     const { projectIds, removeProjectIds, ...updateData } = req.body;
 
     let updatedAgent;
+    const query = { id, author: req.user.id };
+    if (req.user.role === SystemRoles.ADMIN) {
+      delete query.author;
+    }
     if (Object.keys(updateData).length > 0) {
-      updatedAgent = await updateAgent({ id, author: req.user.id }, updateData);
+      updatedAgent = await updateAgent(query, updateData);
     }
 
     if (projectIds || removeProjectIds) {

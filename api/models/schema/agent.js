@@ -5,6 +5,7 @@ const agentSchema = mongoose.Schema(
     id: {
       type: String,
       index: true,
+      unique: true,
       required: true,
     },
     name: {

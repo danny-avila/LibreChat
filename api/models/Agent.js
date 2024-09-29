@@ -81,7 +81,7 @@ const loadAgent = async ({ req, agent_id }) => {
  * @returns {Promise<Agent>} The updated or newly created agent document as a plain object.
  */
 const updateAgent = async (searchParameter, updateData) => {
-  const options = { new: true, upsert: true };
+  const options = { new: true, upsert: false };
   return await Agent.findOneAndUpdate(searchParameter, updateData, options).lean();
 };
 
