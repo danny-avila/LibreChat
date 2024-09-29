@@ -360,7 +360,7 @@ export default {
   com_assistants_code_interpreter_files: '以下檔案僅適用於程式碼解譯器：',
   com_assistants_retrieval: '檢索',
   com_assistants_search_name: '搜尋助理名稱',
-  com_assistants_tools: '工具',
+  com_ui_tools: '工具',
   com_assistants_actions: '操作',
   com_assistants_add_tools: '新增工具',
   com_assistants_add_actions: '新增操作',
@@ -1933,7 +1933,7 @@ export const comparisons = {
     english: 'Search assistants by name',
     translated: '搜尋助理名稱',
   },
-  com_assistants_tools: {
+  com_ui_tools: {
     english: 'Tools',
     translated: '工具',
   },

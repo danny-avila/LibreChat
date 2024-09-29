@@ -483,7 +483,7 @@ export default {
     'Les fichiers suivants sont disponibles uniquement pour l\'interpréteur de code :',
   com_assistants_retrieval: 'Récupération',
   com_assistants_search_name: 'Rechercher des assistants par nom',
-  com_assistants_tools: 'Outils',
+  com_ui_tools: 'Outils',
   com_assistants_actions: 'Actions',
   com_assistants_add_tools: 'Ajouter des outils',
   com_assistants_add_actions: 'Ajouter des actions',
@@ -2434,7 +2434,7 @@ export const comparisons = {
     english: 'Search assistants by name',
     translated: 'Rechercher des assistants par nom',
   },
-  com_assistants_tools: {
+  com_ui_tools: {
     english: 'Tools',
     translated: 'Outils',
   },

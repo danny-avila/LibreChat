@@ -75,7 +75,7 @@ Write a prompt that is mindful of the nuances in the language with respect to it
   - **english**: Search assistants by name
   - **translated**: Assistenten nach Namen suchen
 
-- **com_assistants_tools**:
+- **com_ui_tools**:
   - **english**: Tools
   - **translated**: Werkzeuge
 
