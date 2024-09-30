@@ -1,12 +1,7 @@
 import debounce from 'lodash/debounce';
-import { FileSources, EToolResources } from 'librechat-data-provider';
+import { FileSources, EToolResources, removeNullishValues } from 'librechat-data-provider';
 import { useCallback, useState, useEffect } from 'react';
-import type {
-  BatchFile,
-  TFile,
-  DeleteFilesResponse,
-  DeleteFilesBody,
-} from 'librechat-data-provider';
+import type * as t from 'librechat-data-provider';
 import type { UseMutateAsyncFunction } from '@tanstack/react-query';
 import type { ExtendedFile, GenericSetter } from '~/common';
 import useSetFilesToDelete from './useSetFilesToDelete';
@@ -15,21 +10,38 @@ type FileMapSetter = GenericSetter<Map<string, ExtendedFile>>;
 
 const useFileDeletion = ({
   mutateAsync,
+  agent_id,
   assistant_id,
   tool_resource,
 }: {
-  mutateAsync: UseMutateAsyncFunction<DeleteFilesResponse, unknown, DeleteFilesBody, unknown>;
+  mutateAsync: UseMutateAsyncFunction<t.DeleteFilesResponse, unknown, t.DeleteFilesBody, unknown>;
+  agent_id?: string;
   assistant_id?: string;
   tool_resource?: EToolResources;
 }) => {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [_batch, setFileDeleteBatch] = useState<BatchFile[]>([]);
+  const [_batch, setFileDeleteBatch] = useState<t.BatchFile[]>([]);
   const setFilesToDelete = useSetFilesToDelete();
 
   const executeBatchDelete = useCallback(
-    (filesToDelete: BatchFile[], assistant_id?: string, tool_resource?: EToolResources) => {
-      console.log('Deleting files:', filesToDelete, assistant_id, tool_resource);
-      mutateAsync({ files: filesToDelete, assistant_id, tool_resource });
+    ({
+      filesToDelete,
+      agent_id,
+      assistant_id,
+      tool_resource,
+    }: {
+      filesToDelete: t.BatchFile[];
+      agent_id?: string;
+      assistant_id?: string;
+      tool_resource?: EToolResources;
+    }) => {
+      const payload = removeNullishValues({
+        agent_id,
+        assistant_id,
+        tool_resource,
+      });
+      console.log('Deleting files:', filesToDelete, payload);
+      mutateAsync({ files: filesToDelete, ...payload });
       setFileDeleteBatch([]);
     },
     [mutateAsync],
@@ -44,22 +56,22 @@ const useFileDeletion = ({
   }, [debouncedDelete]);
 
   const deleteFile = useCallback(
-    ({ file: _file, setFiles }: { file: ExtendedFile | TFile; setFiles?: FileMapSetter }) => {
+    ({ file: _file, setFiles }: { file: ExtendedFile | t.TFile; setFiles?: FileMapSetter }) => {
       const {
         file_id,
         temp_file_id = '',
         filepath = '',
         source = FileSources.local,
         embedded,
-        attached,
-      } = _file as TFile & { attached?: boolean };
+        attached = false,
+      } = _file as t.TFile & { attached?: boolean };
 
       const progress = _file['progress'] ?? 1;
 
       if (progress < 1) {
         return;
       }
-      const file: BatchFile = {
+      const file: t.BatchFile = {
         file_id,
         embedded,
         filepath,
@@ -83,15 +95,20 @@ const useFileDeletion = ({
 
       setFileDeleteBatch((prevBatch) => {
         const newBatch = [...prevBatch, file];
-        debouncedDelete(newBatch, assistant_id, tool_resource);
+        debouncedDelete({
+          filesToDelete: newBatch,
+          agent_id,
+          assistant_id,
+          tool_resource,
+        });
         return newBatch;
       });
     },
-    [debouncedDelete, setFilesToDelete, assistant_id, tool_resource],
+    [debouncedDelete, setFilesToDelete, agent_id, assistant_id, tool_resource],
   );
 
   const deleteFiles = useCallback(
-    ({ files, setFiles }: { files: ExtendedFile[] | TFile[]; setFiles?: FileMapSetter }) => {
+    ({ files, setFiles }: { files: ExtendedFile[] | t.TFile[]; setFiles?: FileMapSetter }) => {
       const batchFiles = files.map((_file) => {
         const { file_id, embedded, filepath = '', source = FileSources.local } = _file;
 
@@ -117,11 +134,15 @@ const useFileDeletion = ({
 
       setFileDeleteBatch((prevBatch) => {
         const newBatch = [...prevBatch, ...batchFiles];
-        debouncedDelete(newBatch, assistant_id);
+        debouncedDelete({
+          filesToDelete: newBatch,
+          agent_id,
+          assistant_id,
+        });
         return newBatch;
       });
     },
-    [debouncedDelete, setFilesToDelete, assistant_id],
+    [debouncedDelete, setFilesToDelete, agent_id, assistant_id],
   );
 
   return { deleteFile, deleteFiles };

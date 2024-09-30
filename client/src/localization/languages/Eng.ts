@@ -3,7 +3,6 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets present in this file
 
 export default {
-  com_agents_execute_code: 'Run Code',
   com_nav_convo_menu_options: 'Conversation Menu Options',
   com_ui_artifacts: 'Artifacts',
   com_ui_artifacts_toggle: 'Toggle Artifacts UI',
@@ -102,6 +101,9 @@ export default {
   com_agents_allow_editing: 'Allow other users to edit your agent',
   com_agents_not_available: 'Agent Not Available',
   com_agents_no_access: 'You don\'t have access to edit this agent.',
+  com_agents_knowledge_info:
+    '"Knowledge" files will be used for "File Search." The agent will be made aware of the exact filenames, in order to retrieve context from them.',
+  com_agents_execute_code: 'Run Code',
   com_ui_agent_already_shared_to_all: 'This agent is already shared to all users',
   com_ui_agent_editing_allowed: 'Other users can already edit this agent',
   com_ui_no_changes: 'No changes to update',

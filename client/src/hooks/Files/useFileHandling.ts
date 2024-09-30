@@ -40,6 +40,8 @@ const useFileHandling = (params?: UseFileHandling) => {
     params?.fileSetter ?? setFiles,
   );
 
+  const assistant_id = params?.additionalMetadata?.assistant_id ?? '';
+
   const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
@@ -90,7 +92,7 @@ const useFileHandling = (params?: UseFileHandling) => {
           progress: 0.9,
           filepath: data.filepath,
         },
-        params?.additionalMetadata?.assistant_id ? true : false,
+        assistant_id ? true : false,
       );
 
       setTimeout(() => {
@@ -108,7 +110,7 @@ const useFileHandling = (params?: UseFileHandling) => {
             source: data.source,
             embedded: data.embedded,
           },
-          params?.additionalMetadata?.assistant_id ? true : false,
+          assistant_id ? true : false,
         );
       }, 300);
     },
@@ -118,51 +120,45 @@ const useFileHandling = (params?: UseFileHandling) => {
       clearUploadTimer(file_id as string);
       deleteFileById(file_id as string);
       setError(
-        (error as TError)?.response?.data?.message ?? 'An error occurred while uploading the file.',
+        (error as TError | undefined)?.response?.data?.message ??
+          'An error occurred while uploading the file.',
       );
     },
   });
 
   const startUpload = async (extendedFile: ExtendedFile) => {
-    if (!endpoint) {
-      setError('An error occurred while uploading the file: Endpoint is undefined');
-      return;
-    }
-
-    startUploadTimer(extendedFile.file_id, extendedFile.file?.name || 'File', extendedFile.size);
+    const filename = extendedFile.file?.name ?? 'File';
+    startUploadTimer(extendedFile.file_id, filename, extendedFile.size);
 
     const formData = new FormData();
-    formData.append(
-      'file',
-      extendedFile.file as File,
-      encodeURIComponent(extendedFile.file?.name || 'File'),
-    );
+    formData.append('file', extendedFile.file as File, encodeURIComponent(filename));
     formData.append('file_id', extendedFile.file_id);
-    if (extendedFile.width) {
-      formData.append('width', extendedFile.width?.toString());
+
+    const width = extendedFile.width ?? 0;
+    const height = extendedFile.height ?? 0;
+    if (width) {
+      formData.append('width', width.toString());
     }
-    if (extendedFile.height) {
-      formData.append('height', extendedFile.height?.toString());
+    if (height) {
+      formData.append('height', height.toString());
     }
 
     if (params?.additionalMetadata) {
-      for (const [key, value] of Object.entries(params.additionalMetadata)) {
+      for (const [key, value = ''] of Object.entries(params.additionalMetadata)) {
         if (value) {
           formData.append(key, value);
         }
       }
     }
 
-    if (
-      isAssistantsEndpoint(endpoint) &&
-      !formData.get('assistant_id') &&
-      conversation?.assistant_id
-    ) {
+    const convoAssistantId = conversation?.assistant_id ?? '';
+    const convoModel = conversation?.model ?? '';
+    if (isAssistantsEndpoint(endpoint) && !formData.get('assistant_id') && convoAssistantId) {
       const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
       const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
       formData.append('version', version);
-      formData.append('assistant_id', conversation.assistant_id);
-      formData.append('model', conversation?.model ?? '');
+      formData.append('assistant_id', convoAssistantId);
+      formData.append('model', convoModel);
       formData.append('message_file', 'true');
     }
     if (isAssistantsEndpoint(endpoint) && !formData.get('version')) {
@@ -238,7 +234,10 @@ const useFileHandling = (params?: UseFileHandling) => {
         (file) =>
           `${file.file?.name ?? file.filename}-${file.size}-${file.type?.split('/')[0] ?? 'file'}`,
       ),
-      ...fileList.map((file) => `${file.name}-${file.size}-${file.type?.split('/')[0] ?? 'file'}`),
+      ...fileList.map(
+        (file: File | undefined) =>
+          `${file?.name}-${file?.size}-${file?.type.split('/')[0] ?? 'file'}`,
+      ),
     ];
 
     const uniqueFilesSet = new Set(combinedFilesInfo);
@@ -300,7 +299,7 @@ const useFileHandling = (params?: UseFileHandling) => {
 
         addFile(extendedFile);
 
-        if (originalFile.type?.split('/')[0] === 'image') {
+        if (originalFile.type.split('/')[0] === 'image') {
           loadImage(extendedFile, preview);
           continue;
         }

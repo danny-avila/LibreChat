@@ -17,6 +17,7 @@ import DeleteButton from './DeleteButton';
 import AgentAvatar from './AgentAvatar';
 import ShareAgent from './ShareAgent';
 import AgentTool from './AgentTool';
+import Knowledge from './Knowledge';
 import { Panel } from '~/common';
 
 const labelClass = 'mb-2 text-token-text-primary block font-medium';
@@ -69,8 +70,12 @@ export default function AgentConfig({
     [agentsConfig],
   );
 
-  // logger.info('agents', 'agentsConfig', agentsConfig);
-  // logger.info('agents', 'capabilities', { toolsEnabled, actionsEnabled, codeEnabled });
+  const files = useMemo(() => {
+    if (typeof agent === 'string') {
+      return [];
+    }
+    return agent?.files;
+  }, [agent]);
 
   /* Mutations */
   const update = useUpdateAgentMutation({
@@ -288,6 +293,8 @@ export default function AgentConfig({
           agentsConfig={agentsConfig}
           retrievalEnabled={false}
         />
+        {/* Knowledge (for file search) */}
+        <Knowledge agent_id={agent_id} files={files} />
         {/* Agent Tools & Actions */}
         <div className="mb-6">
           <label className={labelClass}>
