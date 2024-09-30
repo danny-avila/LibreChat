@@ -174,7 +174,7 @@ export default function AgentPanel({
     }
   }, [agent_id, onSelectAgent]);
 
-  if (agentQuery.isLoading) {
+  if (agentQuery.isInitialLoading) {
     return <AgentPanelSkeleton />;
   }
 

@@ -63,9 +63,7 @@ export default function Knowledge({
         <div className="mb-1.5 flex items-center gap-2">
           <span>
             <label className="text-token-text-primary block font-medium">
-              {agent_id
-                ? localize('com_assistants_knowledge')
-                : localize('com_assistants_knowledge_disabled')}
+              {localize('com_assistants_knowledge')}
             </label>
           </span>
           <HoverCardTrigger>
@@ -82,7 +80,7 @@ export default function Knowledge({
           </HoverCardPortal>
         </div>
       </HoverCard>
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2">
         <div>
           <button
             type="button"
@@ -105,6 +103,12 @@ export default function Knowledge({
             </div>
           </button>
         </div>
+        {/* Disabled Message */}
+        {agent_id ? null : (
+          <div className="text-sm text-text-secondary">
+            {localize('com_agents_knowledge_disabled')}
+          </div>
+        )}
         {/* Knowledge Files */}
         <FileRow
           files={files}
