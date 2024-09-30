@@ -193,11 +193,14 @@ function generateConfig(key, baseURL, endpoint) {
 
   if (agents) {
     config.capabilities = [
-      AgentCapabilities.execute_code,
       AgentCapabilities.file_search,
       AgentCapabilities.actions,
       AgentCapabilities.tools,
     ];
+
+    if (key === 'EXPERIMENTAL_RUN_CODE') {
+      config.capabilities.push(AgentCapabilities.execute_code);
+    }
   }
 
   if (assistants && endpoint === EModelEndpoint.azureAssistants) {

@@ -50,7 +50,7 @@ module.exports = {
     ),
     /* key will be part of separate config */
     [EModelEndpoint.agents]: generateConfig(
-      process.env.I_AM_A_TEAPOT,
+      process.env.EXPERIMENTAL_AGENTS,
       undefined,
       EModelEndpoint.agents,
     ),

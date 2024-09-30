@@ -104,8 +104,7 @@ export default {
   com_agents_enable_file_search: 'Enable File Search',
   com_agents_file_search_info:
     'When enabled, the agent will be informed of the exact filenames listed below, allowing it to retrieve relevant context from these files.',
-  com_agents_file_search_disabled:
-    'Agent must be created before uploading files as Knowledge. Note: these files are only used for "File Search" if enabled.',
+  com_agents_file_search_disabled: 'Agent must be created before uploading files for File Search.',
   com_agents_execute_code: 'Run Code',
   com_ui_agent_already_shared_to_all: 'This agent is already shared to all users',
   com_ui_agent_editing_allowed: 'Other users can already edit this agent',
