@@ -1,11 +1,14 @@
 const mongoose = require('mongoose');
+const { SystemRoles } = require('librechat-data-provider');
 const { GLOBAL_PROJECT_NAME } = require('librechat-data-provider').Constants;
+const { CONFIG_STORE, STARTUP_CONFIG } = require('librechat-data-provider').CacheKeys;
 const {
   getProjectByName,
   addAgentIdsToProject,
   removeAgentIdsFromProject,
   removeAgentFromAllProjects,
 } = require('./Project');
+const getLogStores = require('~/cache/getLogStores');
 const agentSchema = require('./schema/agent');
 
 const Agent = mongoose.model('agent', agentSchema);
@@ -31,6 +34,43 @@ const createAgent = async (agentData) => {
 const getAgent = async (searchParameter) => await Agent.findOne(searchParameter).lean();
 
 /**
+ * Load an agent based on the provided ID
+ *
+ * @param {Object} params
+ * @param {ServerRequest} params.req
+ * @param {string} params.agent_id
+ * @returns {Promise<Agent|null>} The agent document as a plain object, or null if not found.
+ */
+const loadAgent = async ({ req, agent_id }) => {
+  const agent = await getAgent({
+    id: agent_id,
+  });
+
+  if (agent.author.toString() === req.user.id) {
+    return agent;
+  }
+
+  if (!agent.projectIds) {
+    return null;
+  }
+
+  const cache = getLogStores(CONFIG_STORE);
+  /** @type {TStartupConfig} */
+  const cachedStartupConfig = await cache.get(STARTUP_CONFIG);
+  let { instanceProjectId } = cachedStartupConfig ?? {};
+  if (!instanceProjectId) {
+    instanceProjectId = (await getProjectByName(GLOBAL_PROJECT_NAME, '_id'))._id.toString();
+  }
+
+  for (const projectObjectId of agent.projectIds) {
+    const projectId = projectObjectId.toString();
+    if (projectId === instanceProjectId) {
+      return agent;
+    }
+  }
+};
+
+/**
  * Update an agent with new data without overwriting existing
  *  properties, or create a new agent if it doesn't exist.
  *
@@ -41,8 +81,74 @@ const getAgent = async (searchParameter) => await Agent.findOne(searchParameter)
  * @returns {Promise<Agent>} The updated or newly created agent document as a plain object.
  */
 const updateAgent = async (searchParameter, updateData) => {
-  const options = { new: true, upsert: true };
+  const options = { new: true, upsert: false };
   return await Agent.findOneAndUpdate(searchParameter, updateData, options).lean();
+};
+
+/**
+ * Modifies an agent with the resource file id.
+ * @param {object} params
+ * @param {ServerRequest} params.req
+ * @param {string} params.agent_id
+ * @param {string} params.tool_resource
+ * @param {string} params.file_id
+ * @returns {Promise<Agent>} The updated agent.
+ */
+const addAgentResourceFile = async ({ agent_id, tool_resource, file_id }) => {
+  const searchParameter = { id: agent_id };
+  const agent = await getAgent(searchParameter);
+
+  if (!agent) {
+    throw new Error('Agent not found for adding resource file');
+  }
+
+  const tool_resources = agent.tool_resources || {};
+
+  if (!tool_resources[tool_resource]) {
+    tool_resources[tool_resource] = { file_ids: [] };
+  }
+
+  if (!tool_resources[tool_resource].file_ids.includes(file_id)) {
+    tool_resources[tool_resource].file_ids.push(file_id);
+  }
+
+  const updateData = { tool_resources };
+
+  return await updateAgent(searchParameter, updateData);
+};
+
+/**
+ * Removes a resource file id from an agent.
+ * @param {object} params
+ * @param {ServerRequest} params.req
+ * @param {string} params.agent_id
+ * @param {string} params.tool_resource
+ * @param {string} params.file_id
+ * @returns {Promise<Agent>} The updated agent.
+ */
+const removeAgentResourceFile = async ({ agent_id, tool_resource, file_id }) => {
+  const searchParameter = { id: agent_id };
+  const agent = await getAgent(searchParameter);
+
+  if (!agent) {
+    throw new Error('Agent not found for removing resource file');
+  }
+
+  const tool_resources = agent.tool_resources || {};
+
+  if (tool_resources[tool_resource] && tool_resources[tool_resource].file_ids) {
+    tool_resources[tool_resource].file_ids = tool_resources[tool_resource].file_ids.filter(
+      (id) => id !== file_id,
+    );
+
+    if (tool_resources[tool_resource].file_ids.length === 0) {
+      delete tool_resources[tool_resource];
+    }
+  }
+
+  const updateData = { tool_resources };
+
+  return await updateAgent(searchParameter, updateData);
 };
 
 /**
@@ -79,12 +185,25 @@ const getListAgents = async (searchParameter) => {
     query = { $or: [globalQuery, query] };
   }
 
-  const agents = await Agent.find(query, {
-    id: 1,
-    name: 1,
-    avatar: 1,
-    projectIds: 1,
-  }).lean();
+  const agents = (
+    await Agent.find(query, {
+      id: 1,
+      _id: 0,
+      name: 1,
+      avatar: 1,
+      author: 1,
+      projectIds: 1,
+      isCollaborative: 1,
+    }).lean()
+  ).map((agent) => {
+    if (agent.author?.toString() !== author) {
+      delete agent.author;
+    }
+    if (agent.author) {
+      agent.author = agent.author.toString();
+    }
+    return agent;
+  });
 
   const hasMore = agents.length > 0;
   const firstId = agents.length > 0 ? agents[0].id : null;
@@ -102,13 +221,15 @@ const getListAgents = async (searchParameter) => {
  * Updates the projects associated with an agent, adding and removing project IDs as specified.
  * This function also updates the corresponding projects to include or exclude the agent ID.
  *
- * @param {string} agentId - The ID of the agent to update.
- * @param {string[]} [projectIds] - Array of project IDs to add to the agent.
- * @param {string[]} [removeProjectIds] - Array of project IDs to remove from the agent.
+ * @param {Object} params - Parameters for updating the agent's projects.
+ * @param {import('librechat-data-provider').TUser} params.user - Parameters for updating the agent's projects.
+ * @param {string} params.agentId - The ID of the agent to update.
+ * @param {string[]} [params.projectIds] - Array of project IDs to add to the agent.
+ * @param {string[]} [params.removeProjectIds] - Array of project IDs to remove from the agent.
  * @returns {Promise<MongoAgent>} The updated agent document.
  * @throws {Error} If there's an error updating the agent or projects.
  */
-const updateAgentProjects = async (agentId, projectIds, removeProjectIds) => {
+const updateAgentProjects = async ({ user, agentId, projectIds, removeProjectIds }) => {
   const updateOps = {};
 
   if (removeProjectIds && removeProjectIds.length > 0) {
@@ -129,14 +250,36 @@ const updateAgentProjects = async (agentId, projectIds, removeProjectIds) => {
     return await getAgent({ id: agentId });
   }
 
-  return await updateAgent({ id: agentId }, updateOps);
+  const updateQuery = { id: agentId, author: user.id };
+  if (user.role === SystemRoles.ADMIN) {
+    delete updateQuery.author;
+  }
+
+  const updatedAgent = await updateAgent(updateQuery, updateOps);
+  if (updatedAgent) {
+    return updatedAgent;
+  }
+  if (updateOps.$addToSet) {
+    for (const projectId of projectIds) {
+      await removeAgentIdsFromProject(projectId, [agentId]);
+    }
+  } else if (updateOps.$pull) {
+    for (const projectId of removeProjectIds) {
+      await addAgentIdsToProject(projectId, [agentId]);
+    }
+  }
+
+  return await getAgent({ id: agentId });
 };
 
 module.exports = {
-  createAgent,
   getAgent,
+  loadAgent,
+  createAgent,
   updateAgent,
   deleteAgent,
   getListAgents,
   updateAgentProjects,
+  addAgentResourceFile,
+  removeAgentResourceFile,
 };

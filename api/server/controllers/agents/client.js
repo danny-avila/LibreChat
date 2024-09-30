@@ -10,7 +10,9 @@
 const { Callback, createMetadataAggregator } = require('@librechat/agents');
 const {
   Constants,
+  openAISchema,
   EModelEndpoint,
+  anthropicSchema,
   bedrockOutputParser,
   providerEndpointMap,
   removeNullishValues,
@@ -35,11 +37,10 @@ const { logger } = require('~/config');
 
 /** @typedef {import('@librechat/agents').MessageContentComplex} MessageContentComplex */
 
-// const providerSchemas = {
-// [EModelEndpoint.bedrock]: true,
-// };
-
 const providerParsers = {
+  [EModelEndpoint.openAI]: openAISchema,
+  [EModelEndpoint.azureOpenAI]: openAISchema,
+  [EModelEndpoint.anthropic]: anthropicSchema,
   [EModelEndpoint.bedrock]: bedrockOutputParser,
 };
 
@@ -57,10 +58,11 @@ class AgentClient extends BaseClient {
     this.run;
 
     const {
-      maxContextTokens,
-      modelOptions = {},
       contentParts,
       collectedUsage,
+      artifactPromises,
+      maxContextTokens,
+      modelOptions = {},
       ...clientOptions
     } = options;
 
@@ -70,6 +72,8 @@ class AgentClient extends BaseClient {
     this.contentParts = contentParts;
     /** @type {Array<UsageMetadata>} */
     this.collectedUsage = collectedUsage;
+    /** @type {ArtifactPromises} */
+    this.artifactPromises = artifactPromises;
     this.options = Object.assign({ endpoint: options.endpoint }, clientOptions);
   }
 
@@ -477,7 +481,6 @@ class AgentClient extends BaseClient {
           provider: providerEndpointMap[this.options.agent.provider],
           thread_id: this.conversationId,
         },
-        run_id: this.responseMessageId,
         signal: abortController.signal,
         streamMode: 'values',
         version: 'v2',

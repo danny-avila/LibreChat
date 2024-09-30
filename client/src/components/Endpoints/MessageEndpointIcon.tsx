@@ -1,6 +1,6 @@
 import { EModelEndpoint, isAssistantsEndpoint, alternateName } from 'librechat-data-provider';
 import UnknownIcon from '~/components/Chat/Menus/Endpoints/UnknownIcon';
-import { BrainCircuit } from 'lucide-react';
+import { Feather } from 'lucide-react';
 import {
   Plugin,
   GPTIcon,
@@ -109,7 +109,7 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
     ) : (
       <div className="h-6 w-6">
         <div className="shadow-stroke flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-          <BrainCircuit className="h-2/3 w-2/3 text-gray-400" />
+          <Feather className="h-2/3 w-2/3 text-gray-400" />
         </div>
       </div>
     ),

@@ -646,8 +646,21 @@
  * @property {string} [temp_file_id] - The temporary identifier of the file.
  * @property {string} endpoint - The conversation endpoint origin for the file upload.
  * @property {string} [assistant_id] - The assistant ID if file upload is in the `knowledge` context.
+ * @property {string} [tool_resource] - The relevant tool resource for the file upload.
  * @memberof typedefs
  */
+
+/**
+ * @exports FileObject
+ * @typedef {{file_id: string, filepath: string, source: string, bytes?: number, width?: number, height?: number}} FileObject
+ * @memberof typedefs
+ *
+
+/**
+ * @exports ArtifactPromises
+ * @typedef {Promise<MongoFile | { filename: string; filepath: string; expires: number;} | null>[]} ArtifactPromises
+ * @memberof typedefs
+ *
 
 /**
  * @typedef {Object} ImageOnlyMetadata
@@ -703,6 +716,12 @@
 /**
  * @exports processFileURL
  * @typedef {import('~/server/services/Files/process').processFileURL} processFileURL
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TAttachment
+ * @typedef {import('librechat-data-provider').TAttachment} TAttachment
  * @memberof typedefs
  */
 

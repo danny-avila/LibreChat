@@ -139,6 +139,13 @@ export enum Capabilities {
   tools = 'tools',
 }
 
+export enum AgentCapabilities {
+  execute_code = 'execute_code',
+  file_search = 'file_search',
+  actions = 'actions',
+  tools = 'tools',
+}
+
 export const defaultAssistantsVersion = {
   [EModelEndpoint.assistants]: 2,
   [EModelEndpoint.azureAssistants]: 1,
@@ -1121,6 +1128,8 @@ export enum LocalStorageKeys {
   LAST_PROMPT_CATEGORY = 'lastPromptCategory',
   /** Key for rendering User Messages as Markdown */
   ENABLE_USER_MSG_MARKDOWN = 'enableUserMsgMarkdown',
+  /** Key for displaying analysis tool code input */
+  SHOW_ANALYSIS_CODE = 'showAnalysisCode',
 }
 
 export enum ForkOptions {

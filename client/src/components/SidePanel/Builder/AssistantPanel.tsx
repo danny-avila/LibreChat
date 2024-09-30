@@ -389,7 +389,7 @@ export default function AssistantPanel({
           {/* Tools */}
           <div className="mb-6">
             <label className={labelClass}>
-              {`${toolsEnabled === true ? localize('com_assistants_tools') : ''}
+              {`${toolsEnabled === true ? localize('com_ui_tools') : ''}
               ${toolsEnabled === true && actionsEnabled === true ? ' + ' : ''}
               ${actionsEnabled === true ? localize('com_assistants_actions') : ''}`}
             </label>

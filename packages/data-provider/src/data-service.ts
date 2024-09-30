@@ -482,13 +482,23 @@ export const getFileDownload = async (userId: string, file_id: string): Promise<
   });
 };
 
-export const deleteFiles = async (
-  files: f.BatchFile[],
-  assistant_id?: string,
-  tool_resource?: a.EToolResources,
-): Promise<f.DeleteFilesResponse> =>
+export const getCodeOutputDownload = async (url: string): Promise<AxiosResponse> => {
+  return request.getResponse(url, {
+    responseType: 'blob',
+    headers: {
+      Accept: 'application/octet-stream',
+    },
+  });
+};
+
+export const deleteFiles = async (payload: {
+  files: f.BatchFile[];
+  agent_id?: string;
+  assistant_id?: string;
+  tool_resource?: a.EToolResources;
+}): Promise<f.DeleteFilesResponse> =>
   request.deleteWithOptions(endpoints.files(), {
-    data: { files, assistant_id, tool_resource },
+    data: payload,
   });
 
 /* Speech */

@@ -376,7 +376,7 @@ export default {
   com_assistants_code_interpreter_files: 'الملفات التالية متاحة فقط لمفسر الشفرة:',
   com_assistants_retrieval: 'استرداد',
   com_assistants_search_name: 'البحث عن المساعدين بالاسم',
-  com_assistants_tools: 'أدوات المساعدين',
+  com_ui_tools: 'أدوات المساعدين',
   com_assistants_actions: 'إجراءات',
   com_assistants_add_tools: 'إضافة أدوات',
   com_assistants_add_actions: 'إضافة إجراءات',
@@ -1964,7 +1964,7 @@ export const comparisons = {
     english: 'Search assistants by name',
     translated: 'البحث عن المساعدين بالاسم',
   },
-  com_assistants_tools: {
+  com_ui_tools: {
     english: 'Tools',
     translated: 'أدوات المساعدين',
   },

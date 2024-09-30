@@ -113,7 +113,7 @@ const MenuItem: FC<MenuItemProps> = ({
         <div className="flex grow items-center justify-between gap-2">
           <div>
             <div className="flex items-center gap-2">
-              {Icon && (
+              {Icon != null && (
                 <Icon
                   size={18}
                   endpoint={endpoint}

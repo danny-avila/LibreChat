@@ -17,7 +17,7 @@ export default function useSelectAgent() {
   );
 
   const agentQuery = useGetAgentByIdQuery(selectedAgentId ?? '', {
-    enabled: !!selectedAgentId,
+    enabled: !!(selectedAgentId ?? ''),
   });
 
   const updateConversation = useCallback(

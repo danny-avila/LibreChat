@@ -3,15 +3,20 @@ import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import { Controller, useWatch, useForm, FormProvider } from 'react-hook-form';
 import {
   Tools,
+  SystemRoles,
   EModelEndpoint,
   isAssistantsEndpoint,
   defaultAgentFormValues,
 } from 'librechat-data-provider';
 import type { TConfig } from 'librechat-data-provider';
-import type { AgentForm, AgentPanelProps, Option } from '~/common';
-import { useCreateAgentMutation, useUpdateAgentMutation } from '~/data-provider';
-import { useSelectAgent, useLocalize } from '~/hooks';
-// import CapabilitiesForm from './CapabilitiesForm';
+import type { AgentForm, AgentPanelProps, StringOption } from '~/common';
+import {
+  useCreateAgentMutation,
+  useUpdateAgentMutation,
+  useGetAgentByIdQuery,
+} from '~/data-provider';
+import { useSelectAgent, useLocalize, useAuthContext } from '~/hooks';
+import AgentPanelSkeleton from './AgentPanelSkeleton';
 import { createProviderOption } from '~/utils';
 import { useToastContext } from '~/Providers';
 import AgentConfig from './AgentConfig';
@@ -29,11 +34,17 @@ export default function AgentPanel({
   agentsConfig,
   endpointsConfig,
 }: AgentPanelProps & { agentsConfig?: TConfig | null }) {
-  const { onSelect: onSelectAgent } = useSelectAgent();
-  const { showToast } = useToastContext();
   const localize = useLocalize();
+  const { user } = useAuthContext();
+  const { showToast } = useToastContext();
+
+  const { onSelect: onSelectAgent } = useSelectAgent();
 
   const modelsQuery = useGetModelsQuery();
+  const agentQuery = useGetAgentByIdQuery(current_agent_id ?? '', {
+    enabled: !!(current_agent_id ?? ''),
+  });
+
   const models = useMemo(() => modelsQuery.data ?? {}, [modelsQuery.data]);
   const methods = useForm<AgentForm>({
     defaultValues: defaultAgentFormValues,
@@ -81,7 +92,7 @@ export default function AgentPanel({
     onSuccess: (data) => {
       setCurrentAgentId(data.id);
       showToast({
-        message: `${localize('com_assistants_create_success ')} ${
+        message: `${localize('com_assistants_create_success')} ${
           data.name ?? localize('com_ui_agent')
         }`,
       });
@@ -101,23 +112,25 @@ export default function AgentPanel({
     (data: AgentForm) => {
       const tools = data.tools ?? [];
 
-      if (data.code_interpreter) {
-        tools.push(Tools.code_interpreter);
+      if (data.execute_code === true) {
+        tools.push(Tools.execute_code);
       }
-      if (data.retrieval) {
+      if (data.file_search === true) {
         tools.push(Tools.file_search);
       }
 
       const {
         name,
-        model,
-        model_parameters,
-        provider: _provider,
         description,
         instructions,
+        model: _model,
+        model_parameters,
+        provider: _provider,
       } = data;
 
-      const provider = typeof _provider === 'string' ? _provider : (_provider as Option).value;
+      const model = _model ?? '';
+      const provider =
+        (typeof _provider === 'string' ? _provider : (_provider as StringOption).value) ?? '';
 
       if (agent_id) {
         update.mutate({
@@ -135,6 +148,13 @@ export default function AgentPanel({
         return;
       }
 
+      if (!provider || !model) {
+        return showToast({
+          message: localize('com_agents_missing_provider_model'),
+          status: 'error',
+        });
+      }
+
       create.mutate({
         name,
         description,
@@ -145,7 +165,7 @@ export default function AgentPanel({
         model_parameters,
       });
     },
-    [agent_id, create, update],
+    [agent_id, create, update, showToast, localize],
   );
 
   const handleSelectAgent = useCallback(() => {
@@ -153,6 +173,15 @@ export default function AgentPanel({
       onSelectAgent(agent_id);
     }
   }, [agent_id, onSelectAgent]);
+
+  if (agentQuery.isInitialLoading) {
+    return <AgentPanelSkeleton />;
+  }
+
+  const canEditAgent =
+    agentQuery.data?.isCollaborative ?? false
+      ? true
+      : agentQuery.data?.author === user?.id || user?.role === SystemRoles.ADMIN;
 
   return (
     <FormProvider {...methods}>
@@ -169,6 +198,7 @@ export default function AgentPanel({
               <AgentSelect
                 reset={reset}
                 value={field.value}
+                agentQuery={agentQuery}
                 setCurrentAgentId={setCurrentAgentId}
                 selectedAgentId={current_agent_id ?? null}
                 createMutation={create}
@@ -188,10 +218,25 @@ export default function AgentPanel({
             </button>
           )}
         </div>
-        {activePanel === Panel.model ? (
-          <ModelPanel setActivePanel={setActivePanel} providers={providers} models={models} />
-        ) : null}
-        {activePanel === Panel.builder ? (
+        {!canEditAgent && (
+          <div className="flex h-[30vh] w-full items-center justify-center">
+            <div className="text-center">
+              <h2 className="text-token-text-primary m-2 text-xl font-semibold">
+                {localize('com_agents_not_available')}
+              </h2>
+              <p className="text-token-text-secondary">{localize('com_agents_no_access')}</p>
+            </div>
+          </div>
+        )}
+        {canEditAgent && activePanel === Panel.model && (
+          <ModelPanel
+            setActivePanel={setActivePanel}
+            agent_id={agent_id}
+            providers={providers}
+            models={models}
+          />
+        )}
+        {canEditAgent && activePanel === Panel.builder && (
           <AgentConfig
             actions={actions}
             setAction={setAction}
@@ -200,7 +245,7 @@ export default function AgentPanel({
             endpointsConfig={endpointsConfig}
             setCurrentAgentId={setCurrentAgentId}
           />
-        ) : null}
+        )}
       </form>
     </FormProvider>
   );

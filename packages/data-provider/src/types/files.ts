@@ -7,6 +7,7 @@ export enum FileSources {
   openai = 'openai',
   s3 = 's3',
   vectordb = 'vectordb',
+  execute_code = 'execute_code',
 }
 
 export const checkOpenAIStorage = (source: string) =>
@@ -15,7 +16,9 @@ export const checkOpenAIStorage = (source: string) =>
 export enum FileContext {
   avatar = 'avatar',
   unknown = 'unknown',
+  agents = 'agents',
   assistants = 'assistants',
+  execute_code = 'execute_code',
   image_generation = 'image_generation',
   assistants_output = 'assistants_output',
   message_attachment = 'message_attachment',
@@ -128,6 +131,7 @@ export type BatchFile = {
 
 export type DeleteFilesBody = {
   files: BatchFile[];
+  agent_id?: string;
   assistant_id?: string;
   tool_resource?: EToolResources;
 };

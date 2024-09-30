@@ -168,6 +168,7 @@ export const fileConfig = {
   endpoints: {
     [EModelEndpoint.assistants]: assistantsFileConfig,
     [EModelEndpoint.azureAssistants]: assistantsFileConfig,
+    [EModelEndpoint.agents]: assistantsFileConfig,
     default: {
       fileLimit: 10,
       fileSizeLimit: defaultSizeLimit,

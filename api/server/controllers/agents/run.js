@@ -45,10 +45,9 @@ async function createRun({
   );
 
   const graphConfig = {
-    runId,
-    llmConfig,
     tools,
     toolMap,
+    llmConfig,
     instructions: agent.instructions,
     additional_instructions: agent.additional_instructions,
   };
@@ -59,6 +58,7 @@ async function createRun({
   }
 
   return Run.create({
+    runId,
     graphConfig,
     customHandlers,
   });

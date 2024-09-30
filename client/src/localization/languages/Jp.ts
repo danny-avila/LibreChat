@@ -6,8 +6,7 @@ export default {
   com_nav_convo_menu_options: '会話メニューオプション',
   com_ui_artifacts: 'アーティファクト',
   com_ui_artifacts_toggle: 'アーティファクト UI の切替',
-  com_nav_info_code_artifacts:
-    'チャットの横に実験的なコード アーティファクトの表示を有効にします',
+  com_nav_info_code_artifacts: 'チャットの横に実験的なコード アーティファクトの表示を有効にします',
   com_ui_include_shadcnui: 'shadcn/uiコンポーネントの指示を含める',
   com_nav_info_include_shadcnui:
     '有効にすると、shadcn/uiコンポーネントを使用するための指示が含まれます。shadcn/uiはRadix UIとTailwind CSSを使用して構築された再利用可能なコンポーネントのコレクションです。注:これらの指示は長文ですので、LLM に正しいインポートとコンポーネントを知らせることが重要でない限り、有効にしないでください。これらのコンポーネントの詳細については、https://ui.shadcn.com/をご覧ください。',
@@ -53,7 +52,7 @@ export default {
   com_assistants_code_interpreter_files: '次のファイルはコードインタプリタでのみ使用できます。',
   com_assistants_retrieval: '検索',
   com_assistants_search_name: 'アシスタントの名前で検索',
-  com_assistants_tools: 'ツール',
+  com_ui_tools: 'ツール',
   com_assistants_actions: 'アクション',
   com_assistants_add_tools: 'ツールを追加',
   com_assistants_add_actions: 'アクションを追加',
@@ -69,7 +68,8 @@ export default {
   com_assistants_update_actions_success: 'アクションが作成または更新されました',
   com_assistants_update_actions_error: 'アクションの作成または更新中にエラーが発生しました。',
   com_assistants_delete_actions_error: 'アクションの削除中にエラーが発生しました。',
-  com_assistants_actions_info: 'アシスタントが API を介して情報を取得したり、アクションを実行したりできるようにします\'s',
+  com_assistants_actions_info:
+    'アシスタントが API を介して情報を取得したり、アクションを実行したりできるようにします\'s',
   com_assistants_name_placeholder: 'オプション: アシスタントの名前',
   com_assistants_instructions_placeholder: 'アシスタントが使用するシステム指示',
   com_assistants_description_placeholder: 'オプション: ここにアシスタントについて説明します',
@@ -104,10 +104,12 @@ export default {
   com_ui_date_november: '11月',
   com_ui_date_december: '12月',
   com_ui_field_required: '必須入力項目です',
-  com_ui_download_error: 'ファイルのダウンロード中にエラーが発生しました。ファイルが削除された可能性があります。',
+  com_ui_download_error:
+    'ファイルのダウンロード中にエラーが発生しました。ファイルが削除された可能性があります。',
   com_ui_attach_error_type: 'エンドポイントでサポートされていないファイルタイプ:',
   com_ui_attach_error_openai: '他のエンドポイントにアシスタントファイルを添付することはできません',
-  com_ui_attach_warn_endpoint: '互換性のあるツールがない場合、非アシスタントのファイルは無視される可能性があります',
+  com_ui_attach_warn_endpoint:
+    '互換性のあるツールがない場合、非アシスタントのファイルは無視される可能性があります',
   com_ui_attach_error_size: 'エンドポイントのファイルサイズ制限を超えました:',
   com_ui_attach_error:
     'ファイルを添付できません。会話を作成または選択するか、ページを更新してみてください。',
@@ -193,8 +195,10 @@ export default {
   com_ui_none_selected: '選択されていません',
   com_ui_upload_success: 'アップロード成功',
   com_ui_upload_error: 'ファイルのアップロード中にエラーが発生しました。',
-  com_ui_upload_invalid: 'アップロードに無効なファイルです。制限を超えない画像である必要があります。',
-  com_ui_upload_invalid_var: 'アップロードに無効なファイルです。 {0} MBまでの画像である必要があります。',
+  com_ui_upload_invalid:
+    'アップロードに無効なファイルです。制限を超えない画像である必要があります。',
+  com_ui_upload_invalid_var:
+    'アップロードに無効なファイルです。 {0} MBまでの画像である必要があります。',
   com_ui_cancel: 'キャンセル',
   com_ui_save: '保存',
   com_ui_renaming_var: '改名 "{0}"',
@@ -235,7 +239,8 @@ export default {
   com_ui_fork_branches: '関連ブランチを含める',
   com_ui_fork_visible: '表示メッセージのみ',
   com_ui_fork_from_message: '分岐オプションを選択する',
-  com_ui_mention: 'エンドポイント、アシスタント、またはプリセットを素早く切り替えるには、それらを言及してください。',
+  com_ui_mention:
+    'エンドポイント、アシスタント、またはプリセットを素早く切り替えるには、それらを言及してください。',
   com_ui_add_model_preset: '追加の応答のためのモデルまたはプリセットを追加する',
   com_assistants_max_starters_reached: '会話の開始が最大数に達しました',
   com_ui_regenerate: '再度 生成する',
@@ -303,7 +308,8 @@ export default {
   com_ui_share_error: 'チャットの共有リンクの共有中にエラーが発生しました',
   com_ui_share_retrieve_error: '共有リンクの削除中にエラーが発生しました。',
   com_ui_share_delete_error: '共有リンクの削除中にエラーが発生しました。',
-  com_ui_share_create_message: 'あなたの名前と共有リンクを作成した後のメッセージは、共有されません。',
+  com_ui_share_create_message:
+    'あなたの名前と共有リンクを作成した後のメッセージは、共有されません。',
   com_ui_share_created_message:
     'チャットの共有リンクが作成されました。設定から以前共有したチャットを管理できます。',
   com_ui_share_update_message:
@@ -319,8 +325,7 @@ export default {
   com_ui_delete_action_confirm: 'このアクションを削除してもよろしいですか？',
   com_ui_delete_confirm_prompt_version_var:
     'これは、選択されたバージョンを "{0}." から削除します。他のバージョンが存在しない場合、プロンプトが削除されます。',
-  com_ui_delete_assistant_confirm:
-    'このアシスタントを削除しますか？ この操作は元に戻せません。',
+  com_ui_delete_assistant_confirm: 'このアシスタントを削除しますか？ この操作は元に戻せません。',
   com_ui_rename: 'タイトル変更',
   com_ui_archive: 'アーカイブ',
   com_ui_archive_error: 'アーカイブに失敗しました。',
@@ -353,14 +358,14 @@ export default {
   com_ui_bookmarks_delete_error: 'ブックマークの削除中にエラーが発生しました',
   com_ui_bookmarks_add_to_conversation: '現在の会話に追加',
   com_ui_bookmarks_filter: 'ブックマークをフィルタリング...',
-  com_ui_no_bookmarks: 'ブックマークがまだないようです。チャットをクリックして新しいブックマークを追加してください',
+  com_ui_no_bookmarks:
+    'ブックマークがまだないようです。チャットをクリックして新しいブックマークを追加してください',
   com_ui_no_conversation_id: '会話 ID が見つかりません',
   com_auth_error_login:
     '入力された情報ではログインできませんでした。認証情報を確認した上で再度お試しください。',
   com_auth_error_login_rl:
     'お使いのIPアドレスから短時間に多数のログイン試行がありました。しばらくしてから再度お試しください。',
-  com_auth_error_login_ban:
-    '本サービスの利用規約違反のため、一時的にアカウントを停止しました。',
+  com_auth_error_login_ban: '本サービスの利用規約違反のため、一時的にアカウントを停止しました。',
   com_auth_error_login_server:
     'サーバーエラーが発生しています。。しばらくしてから再度お試しください。',
   com_auth_error_login_unverified:
@@ -387,8 +392,7 @@ export default {
   com_auth_password_not_match: 'パスワードが一致しません',
   com_auth_continue: '続ける',
   com_auth_create_account: 'アカウント登録',
-  com_auth_error_create:
-    'アカウント登録に失敗しました。もう一度お試しください。',
+  com_auth_error_create: 'アカウント登録に失敗しました。もう一度お試しください。',
   com_auth_full_name: 'フルネーム',
   com_auth_name_required: 'フルネームは必須です',
   com_auth_name_min_length: 'フルネームは最低3文字で入力してください',
@@ -408,8 +412,7 @@ export default {
   com_auth_reset_password_link_sent: 'メールを送信',
   com_auth_reset_password_if_email_exists:
     'そのメールアドレスのアカウントが存在する場合は、パスワードリセット手順が記載されたメールが送信されています。スパムフォルダを必ず確認してください。',
-  com_auth_reset_password_email_sent:
-    'パスワードのリセット方法を記載したメールを送信しました。',
+  com_auth_reset_password_email_sent: 'パスワードのリセット方法を記載したメールを送信しました。',
   com_auth_reset_password_success: 'パスワードのリセットに成功しました',
   com_auth_login_with_new_password: '新しいパスワードでログインをお試しください。',
   com_auth_error_invalid_reset_token: '無効なパスワードリセットトークンです。',
@@ -419,7 +422,8 @@ export default {
   com_auth_welcome_back: 'おかえりなさい',
   com_auth_back_to_login: 'ログイン画面に戻る',
   com_auth_email_verification_failed: 'メール検証に失敗しました',
-  com_auth_email_verification_rate_limited: 'リクエストが多すぎます。しばらくしてからもう一度お試しください',
+  com_auth_email_verification_rate_limited:
+    'リクエストが多すぎます。しばらくしてからもう一度お試しください',
   com_auth_email_verification_success: 'メールが正常に検証されました',
   com_auth_email_resent_success: '検証メールが正常に再送信されました',
   com_auth_email_resent_failed: '検証メールの再送信に失敗しました',
@@ -461,7 +465,8 @@ export default {
   com_endpoint_google_maxoutputtokens:
     ' 	生成されるレスポンスの最大トークン数。短いレスポンスには低い値を、長いレスポンスには高い値を指定します。',
   com_endpoint_google_custom_name_placeholder: 'Googleのカスタム名を設定する',
-  com_endpoint_prompt_prefix_placeholder: 'custom instructions か context を設定する。空の場合は無視されます。',
+  com_endpoint_prompt_prefix_placeholder:
+    'custom instructions か context を設定する。空の場合は無視されます。',
   com_endpoint_instructions_assistants_placeholder:
     'アシスタントの指示を上書きします。これは、実行ごとに動作を変更する場合に便利です。',
   com_endpoint_prompt_prefix_assistants_placeholder:
@@ -496,7 +501,8 @@ export default {
     '以前に添付されたすべてのファイルを再送信します。注意：これにより、トークンのコストが増加し、多くの添付ファイルでエラーが発生する可能性があります。',
   com_endpoint_openai_detail:
     'Visionリクエストの解像度を選択します。"Low"はコストが安くて低解像度、"Highは"コストが高くて高解像度"、"Auto"は画像の解像度に基づいて自動的に選択します。',
-  com_endpoint_openai_stop: 'APIがさらにトークンを生成するのを止めるため、最大で4つのシーケンスを設定可能',
+  com_endpoint_openai_stop:
+    'APIがさらにトークンを生成するのを止めるため、最大で4つのシーケンスを設定可能',
   com_endpoint_openai_custom_name_placeholder: 'ChatGPTのカスタム名を設定する',
   com_endpoint_openai_prompt_prefix_placeholder:
     'システムメッセージに含める Custom Instructions。デフォルト: none',
@@ -586,15 +592,18 @@ export default {
   com_endpoint_config_google_gemini_api: '(Gemini API)',
   com_endpoint_config_google_api_info: 'Gemeni用のGenerative Language API keyを取得するには',
   com_endpoint_config_key_import_json_key: 'Service Account JSON Key をインポートする。',
-  com_endpoint_config_key_import_json_key_success: 'Service Account JSON Keyのインポートに成功しました。',
+  com_endpoint_config_key_import_json_key_success:
+    'Service Account JSON Keyのインポートに成功しました。',
   com_endpoint_config_key_import_json_key_invalid:
     '無効なService Account JSON Keyです。正しいファイルかどうか確認してください。',
-  com_endpoint_config_key_get_edge_key: 'Bing用のアクセストークンを取得するためにログインをしてください: ',
+  com_endpoint_config_key_get_edge_key:
+    'Bing用のアクセストークンを取得するためにログインをしてください: ',
   com_endpoint_config_key_get_edge_key_dev_tool:
     'サイトにログインした状態で、開発ツールまたは拡張機能を使用して、_U クッキーの内容をコピーします。もし失敗する場合は次の手順に従ってください。',
   com_endpoint_config_key_edge_instructions: '手順',
   com_endpoint_config_key_edge_full_key_string: 'to provide the full cookie strings.',
-  com_endpoint_config_key_chatgpt: 'ChatGPTの「無料版」のアクセストークンを入手するためにへログインをしてください:',
+  com_endpoint_config_key_chatgpt:
+    'ChatGPTの「無料版」のアクセストークンを入手するためにへログインをしてください:',
   com_endpoint_config_key_chatgpt_then_visit: 'つぎに、ここへアクセスしてください:',
   com_endpoint_config_key_chatgpt_copy_token: 'トークンをコピーしてください。',
   com_endpoint_config_key_google_need_to: 'こちらを有効化する必要があります:',
@@ -615,7 +624,8 @@ export default {
   com_nav_auto_scroll: 'チャットを開いたときに最新まで自動でスクロール',
   com_nav_hide_panel: '右側のパネルを非表示',
   com_nav_modular_chat: '会話の途中でのエンドポイント切替を有効化',
-  com_nav_latex_parsing: 'メッセージ内の LaTeX の構文解析 (パフォーマンスに影響する可能性があります)',
+  com_nav_latex_parsing:
+    'メッセージ内の LaTeX の構文解析 (パフォーマンスに影響する可能性があります)',
   com_nav_text_to_speech: 'テキスト読み上げ',
   com_nav_automatic_playback: '最新メッセージを自動再生',
   com_nav_speech_to_text: '音声テキスト変換',
@@ -641,7 +651,8 @@ export default {
   com_ui_upload_image: '画像をアップロード',
   com_ui_select_a_category: 'カテゴリ未選択',
   com_ui_clear_all: 'すべてクリア',
-  com_nav_tool_dialog_description: 'ツールの選択を維持するには、アシスタントを保存する必要があります。',
+  com_nav_tool_dialog_description:
+    'ツールの選択を維持するには、アシスタントを保存する必要があります。',
   com_show_agent_settings: 'エージェント設定を表示',
   com_show_completion_settings: 'コンプリーション設定を表示',
   com_hide_examples: '例を非表示',
@@ -703,7 +714,8 @@ export default {
   com_nav_delete_account_confirm: 'アカウントを削除しますか?',
   com_nav_delete_account_button: 'アカウントを完全に削除する',
   com_nav_delete_account_email_placeholder: 'アカウントのメールアドレスを入力してください',
-  com_nav_delete_account_confirm_placeholder: '続行するには、以下の入力フィールドに「DELETE」と入力してください',
+  com_nav_delete_account_confirm_placeholder:
+    '続行するには、以下の入力フィールドに「DELETE」と入力してください',
   com_nav_delete_warning: '警告: この操作により、アカウントが完全に削除されます。',
   com_nav_delete_data_info: 'すべてのデータが削除されます。',
   com_nav_conversation_mode: '会話モード',
@@ -718,11 +730,14 @@ export default {
   com_nav_tts_init_error: 'テキスト読み上げの初期化に失敗しました: {0}',
   com_nav_tts_unsupported_error:
     '選択したエンジンでのテキスト読み上げはこのブラウザではサポートされていません。',
-  com_nav_source_buffer_error: 'オーディオ再生の設定エラーが発生しました。ページを更新してください。',
+  com_nav_source_buffer_error:
+    'オーディオ再生の設定エラーが発生しました。ページを更新してください。',
   com_nav_media_source_init_error:
     'オーディオプレーヤーを準備できませんでした。ブラウザの設定を確認してください。',
-  com_nav_buffer_append_error: 'オーディオストリーミングに問題が発生しました。再生が中断される可能性があります。',
-  com_nav_speech_cancel_error: 'オーディオ再生を停止できません。ページを更新する必要があるかもしれません。',
+  com_nav_buffer_append_error:
+    'オーディオストリーミングに問題が発生しました。再生が中断される可能性があります。',
+  com_nav_speech_cancel_error:
+    'オーディオ再生を停止できません。ページを更新する必要があるかもしれません。',
   com_nav_voices_fetch_error:
     '音声オプションを取得できませんでした。インターネット接続を確認してください。',
   com_nav_engine: 'エンジン',
@@ -753,8 +768,7 @@ export default {
   com_nav_commands: 'Commands',
   com_nav_commands_tab: 'コマンド設定',
   com_nav_at_command: '@-Command',
-  com_nav_at_command_description:
-    'コマンド"@"でエンドポイント、モデル、プリセットを切り替える',
+  com_nav_at_command_description: 'コマンド"@"でエンドポイント、モデル、プリセットを切り替える',
   com_nav_plus_command: '+-Command',
   com_nav_plus_command_description: 'コマンド"+"で複数応答設定を追加する',
   com_nav_slash_command: '/-Command',
@@ -894,7 +908,7 @@ export const comparisons = {
     english: 'Search assistants by name',
     translated: 'Assistantの名前で検索',
   },
-  com_assistants_tools: {
+  com_ui_tools: {
     english: 'Tools',
     translated: 'Tools',
   },
