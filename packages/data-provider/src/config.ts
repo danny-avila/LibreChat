@@ -532,6 +532,7 @@ export enum KnownEndpoints {
   apipie = 'apipie',
   cohere = 'cohere',
   fireworks = 'fireworks',
+  deepinfra = 'deepinfra',
   deepseek = 'deepseek',
   groq = 'groq',
   huggingface = 'huggingface',
