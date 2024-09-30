@@ -115,7 +115,7 @@ export default function AgentPanel({
       if (data.execute_code === true) {
         tools.push(Tools.execute_code);
       }
-      if (data.retrieval === true) {
+      if (data.file_search === true) {
         tools.push(Tools.file_search);
       }
 

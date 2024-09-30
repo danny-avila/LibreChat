@@ -1,22 +1,23 @@
 import { useState, useRef, useEffect } from 'react';
+import { useFormContext } from 'react-hook-form';
 import {
   EModelEndpoint,
   EToolResources,
   mergeFileConfig,
+  AgentCapabilities,
   retrievalMimeTypes,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
-import type { ExtendedFile } from '~/common';
-import { HoverCard, HoverCardPortal, HoverCardContent, HoverCardTrigger } from '~/components/ui';
-import { CircleHelpIcon, AttachmentIcon } from '~/components/svg';
+import type { ExtendedFile, AgentForm } from '~/common';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
+import FileSearchCheckbox from './FileSearchCheckbox';
 import { useGetFileConfig } from '~/data-provider';
+import { AttachmentIcon } from '~/components/svg';
 import { useFileHandling } from '~/hooks/Files';
 import useLocalize from '~/hooks/useLocalize';
 import { useChatContext } from '~/Providers';
-import { ESide } from '~/common';
 
-export default function Knowledge({
+export default function FileSearch({
   agent_id,
   files: _files,
 }: {
@@ -25,6 +26,7 @@ export default function Knowledge({
 }) {
   const localize = useLocalize();
   const { setFilesLoading } = useChatContext();
+  const { watch } = useFormContext<AgentForm>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<Map<string, ExtendedFile>>(new Map());
 
@@ -44,6 +46,8 @@ export default function Knowledge({
     }
   }, [_files]);
 
+  const fileSearchChecked = watch(AgentCapabilities.file_search);
+
   const endpointFileConfig = fileConfig.endpoints[EModelEndpoint.agents];
   const disabled = endpointFileConfig.disabled ?? false;
 
@@ -61,32 +65,19 @@ export default function Knowledge({
 
   return (
     <div className="mb-6">
-      <HoverCard openDelay={50}>
-        <div className="mb-1.5 flex items-center gap-2">
-          <span>
-            <label className="text-token-text-primary block font-medium">
-              {localize('com_assistants_knowledge')}
-            </label>
-          </span>
-          <HoverCardTrigger>
-            <CircleHelpIcon className="h-5 w-5 text-gray-500" />
-          </HoverCardTrigger>
-          <HoverCardPortal>
-            <HoverCardContent side={ESide.Top} className="w-80">
-              <div className="space-y-2">
-                <p className="text-sm text-text-secondary">
-                  {localize('com_agents_knowledge_info')}
-                </p>
-              </div>
-            </HoverCardContent>
-          </HoverCardPortal>
-        </div>
-      </HoverCard>
+      <div className="mb-1.5 flex items-center gap-2">
+        <span>
+          <label className="text-token-text-primary block font-medium">
+            {localize('com_assistants_file_search')}
+          </label>
+        </span>
+      </div>
+      <FileSearchCheckbox />
       <div className="flex flex-col gap-2">
         <div>
           <button
             type="button"
-            disabled={!agent_id}
+            disabled={!agent_id || fileSearchChecked === false}
             className="btn btn-neutral border-token-border-light relative h-8 rounded-lg font-medium"
             onClick={handleButtonClick}
           >
@@ -98,7 +89,7 @@ export default function Knowledge({
                 style={{ display: 'none' }}
                 tabIndex={-1}
                 ref={fileInputRef}
-                disabled={!agent_id}
+                disabled={!agent_id || fileSearchChecked === false}
                 onChange={handleFileChange}
               />
               {localize('com_ui_upload_files')}
@@ -108,7 +99,7 @@ export default function Knowledge({
         {/* Disabled Message */}
         {agent_id ? null : (
           <div className="text-sm text-text-secondary">
-            {localize('com_agents_knowledge_disabled')}
+            {localize('com_agents_file_search_disabled')}
           </div>
         )}
         {/* Knowledge Files */}

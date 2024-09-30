@@ -16,9 +16,9 @@ import { processAgentOption } from '~/utils';
 import { Spinner } from '~/components/svg';
 import DeleteButton from './DeleteButton';
 import AgentAvatar from './AgentAvatar';
+import FileSearch from './FileSearch';
 import ShareAgent from './ShareAgent';
 import AgentTool from './AgentTool';
-import Knowledge from './Knowledge';
 import { Panel } from '~/common';
 
 const labelClass = 'mb-2 text-token-text-primary block font-medium';
@@ -63,12 +63,12 @@ export default function AgentConfig({
     () => agentsConfig?.capabilities?.includes(AgentCapabilities.actions),
     [agentsConfig],
   );
-  // const retrievalEnabled = useMemo(
-  //   () => agentsConfig?.capabilities?.includes(Capabilities.retrieval),
-  //   [agentsConfig],
-  // );
+  const fileSearchEnabled = useMemo(
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.file_search) ?? false,
+    [agentsConfig],
+  );
   const codeEnabled = useMemo(
-    () => agentsConfig?.capabilities?.includes(AgentCapabilities.execute_code),
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.execute_code) ?? false,
     [agentsConfig],
   );
 
@@ -91,8 +91,6 @@ export default function AgentConfig({
     });
     return _agent.knowledge_files ?? [];
   }, [agent, agent_id, fileMap]);
-
-  console.log('AgentConfig knowledge_files:', knowledge_files);
 
   /* Mutations */
   const update = useUpdateAgentMutation({
@@ -310,8 +308,8 @@ export default function AgentConfig({
           agentsConfig={agentsConfig}
           retrievalEnabled={false}
         />
-        {/* Knowledge (for file search) */}
-        <Knowledge agent_id={agent_id} files={knowledge_files} />
+        {/* File Search */}
+        {fileSearchEnabled && <FileSearch agent_id={agent_id} files={knowledge_files} />}
         {/* Agent Tools & Actions */}
         <div className="mb-6">
           <label className={labelClass}>

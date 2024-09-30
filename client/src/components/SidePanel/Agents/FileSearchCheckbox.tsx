@@ -12,7 +12,7 @@ import { CircleHelpIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
 
-export default function Code() {
+export default function FileSearchCheckbox() {
   const localize = useLocalize();
   const methods = useFormContext<AgentForm>();
   const { control, setValue, getValues } = methods;
@@ -20,9 +20,9 @@ export default function Code() {
   return (
     <>
       <HoverCard openDelay={50}>
-        <div className="flex items-center">
+        <div className="my-2 flex items-center">
           <Controller
-            name={AgentCapabilities.execute_code}
+            name={AgentCapabilities.file_search}
             control={control}
             render={({ field }) => (
               <Checkbox
@@ -39,16 +39,16 @@ export default function Code() {
             className="flex items-center space-x-2"
             onClick={() =>
               // eslint-disable-next-line @typescript-eslint/strict-boolean-expressions
-              setValue(AgentCapabilities.execute_code, !getValues(AgentCapabilities.execute_code), {
+              setValue(AgentCapabilities.file_search, !getValues(AgentCapabilities.file_search), {
                 shouldDirty: true,
               })
             }
           >
             <label
               className="form-check-label text-token-text-primary w-full cursor-pointer"
-              htmlFor={AgentCapabilities.execute_code}
+              htmlFor={AgentCapabilities.file_search}
             >
-              {localize('com_agents_execute_code')}
+              {localize('com_agents_enable_file_search')}
             </label>
             <HoverCardTrigger>
               <CircleHelpIcon className="h-5 w-5 text-gray-500" />
@@ -58,7 +58,7 @@ export default function Code() {
             <HoverCardContent side={ESide.Top} className="w-80">
               <div className="space-y-2">
                 <p className="text-sm text-text-secondary">
-                  {/* // TODO: add a Code Interpreter description */}
+                  {localize('com_agents_file_search_info')}
                 </p>
               </div>
             </HoverCardContent>

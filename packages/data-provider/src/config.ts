@@ -141,7 +141,7 @@ export enum Capabilities {
 
 export enum AgentCapabilities {
   execute_code = 'execute_code',
-  retrieval = 'retrieval',
+  file_search = 'file_search',
   actions = 'actions',
   tools = 'tools',
 }

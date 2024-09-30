@@ -194,7 +194,7 @@ function generateConfig(key, baseURL, endpoint) {
   if (agents) {
     config.capabilities = [
       AgentCapabilities.execute_code,
-      // AgentCapabilities.retrieval,
+      AgentCapabilities.file_search,
       AgentCapabilities.actions,
       AgentCapabilities.tools,
     ];

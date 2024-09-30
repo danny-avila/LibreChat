@@ -10,7 +10,7 @@ export type TAgentOption = OptionWithIcon &
 
 export type TAgentCapabilities = {
   [AgentCapabilities.execute_code]: boolean;
-  [AgentCapabilities.retrieval]: boolean;
+  [AgentCapabilities.file_search]: boolean;
 };
 
 export type AgentForm = {

@@ -57,7 +57,7 @@ export default function AgentSelect({
 
       const capabilities: TAgentCapabilities = {
         [AgentCapabilities.execute_code]: false,
-        [AgentCapabilities.retrieval]: false,
+        [AgentCapabilities.file_search]: false,
       };
 
       const agentTools: string[] = [];
