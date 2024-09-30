@@ -66,6 +66,10 @@ router.delete('/', async (req, res) => {
 
     await processDeleteRequest({ req, files });
 
+    logger.debug(
+      '[/files] Files deleted successfully: ',
+      files.map((f) => f.file_id),
+    );
     res.status(200).json({ message: 'Files deleted successfully' });
   } catch (error) {
     logger.error('[/files] Error deleting files:', error);
