@@ -33,7 +33,7 @@ export default {
   com_assistants_code_interpreter_files: 'Seuraavat tiedostot ovat vain Kooditulkin käytettävissä:',
   com_assistants_retrieval: 'Tiedonhaku',
   com_assistants_search_name: 'Hae Avustajia nimen perusteella',
-  com_assistants_tools: 'Työkalut',
+  com_ui_tools: 'Työkalut',
   com_assistants_actions: 'Toiminnot',
   com_assistants_add_tools: 'Lisää Työkaluja',
   com_assistants_add_actions: 'Lisää Toimintoja',

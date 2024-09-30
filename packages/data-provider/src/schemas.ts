@@ -140,9 +140,9 @@ export const defaultAgentFormValues = {
   tools: [],
   provider: {},
   projectIds: [],
-  code_interpreter: false,
-  image_vision: false,
-  retrieval: false,
+  isCollaborative: false,
+  [Tools.execute_code]: false,
+  [Tools.file_search]: false,
 };
 
 export const ImageVisionTool: FunctionTool = {
@@ -468,6 +468,13 @@ export const tMessageSchema = z.object({
   iconURL: z.string().optional(),
 });
 
+export type TAttachmentMetadata = { messageId: string; toolCallId: string };
+export type TAttachment =
+  | (TFile & TAttachmentMetadata)
+  | (Pick<TFile, 'filename' | 'filepath' | 'conversationId'> & {
+      expiresAt: number;
+    } & TAttachmentMetadata);
+
 export type TMessage = z.input<typeof tMessageSchema> & {
   children?: TMessage[];
   plugin?: TResPlugin | null;
@@ -476,6 +483,7 @@ export type TMessage = z.input<typeof tMessageSchema> & {
   files?: Partial<TFile>[];
   depth?: number;
   siblingIndex?: number;
+  attachments?: TAttachment[];
 };
 
 export const coerceNumber = z.union([z.number(), z.string()]).transform((val) => {

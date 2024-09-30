@@ -19,16 +19,19 @@ import { useLocalize } from '~/hooks';
 
 type FormValues = {
   [Permissions.SHARED_GLOBAL]: boolean;
+  [Permissions.UPDATE]: boolean;
 };
 
 export default function ShareAgent({
   agent_id = '',
   agentName,
   projectIds = [],
+  isCollaborative = false,
 }: {
   agent_id?: string;
   agentName?: string;
   projectIds?: string[];
+  isCollaborative?: boolean;
 }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -40,6 +43,7 @@ export default function ShareAgent({
   );
 
   const {
+    watch,
     control,
     setValue,
     getValues,
@@ -49,12 +53,22 @@ export default function ShareAgent({
     mode: 'onChange',
     defaultValues: {
       [Permissions.SHARED_GLOBAL]: agentIsGlobal,
+      [Permissions.UPDATE]: isCollaborative,
     },
   });
 
+  const sharedGlobalValue = watch(Permissions.SHARED_GLOBAL);
+
+  useEffect(() => {
+    if (!sharedGlobalValue) {
+      setValue(Permissions.UPDATE, false);
+    }
+  }, [sharedGlobalValue, setValue]);
+
   useEffect(() => {
     setValue(Permissions.SHARED_GLOBAL, agentIsGlobal);
-  }, [agentIsGlobal, setValue]);
+    setValue(Permissions.UPDATE, isCollaborative);
+  }, [agentIsGlobal, isCollaborative, setValue]);
 
   const updateAgent = useUpdateAgentMutation({
     onSuccess: (data) => {
@@ -87,16 +101,30 @@ export default function ShareAgent({
 
     const payload = {} as AgentUpdateParams;
 
-    if (data[Permissions.SHARED_GLOBAL]) {
-      payload.projectIds = [startupConfig.instanceProjectId];
-    } else {
-      payload.removeProjectIds = [startupConfig.instanceProjectId];
+    if (data[Permissions.UPDATE] !== isCollaborative) {
+      payload.isCollaborative = data[Permissions.UPDATE];
     }
 
-    updateAgent.mutate({
-      agent_id,
-      data: payload,
-    });
+    if (data[Permissions.SHARED_GLOBAL] !== agentIsGlobal) {
+      if (data[Permissions.SHARED_GLOBAL]) {
+        payload.projectIds = [startupConfig.instanceProjectId];
+      } else {
+        payload.removeProjectIds = [startupConfig.instanceProjectId];
+        payload.isCollaborative = false;
+      }
+    }
+
+    if (Object.keys(payload).length > 0) {
+      updateAgent.mutate({
+        agent_id,
+        data: payload,
+      });
+    } else {
+      showToast({
+        message: localize('com_ui_no_changes'),
+        status: 'info',
+      });
+    }
   };
 
   return (
@@ -113,12 +141,12 @@ export default function ShareAgent({
           )}
           type="button"
         >
-          <div className="flex w-full items-center justify-center gap-2 text-blue-500">
+          <div className="flex items-center justify-center gap-2 text-blue-500">
             <Share2Icon className="icon-md h-4 w-4" />
           </div>
         </button>
       </OGDialogTrigger>
-      <OGDialogContent className="border-border-light bg-surface-primary-alt text-text-secondary">
+      <OGDialogContent className="w-1/4 border-border-light bg-surface-primary-alt text-text-secondary">
         <OGDialogTitle>
           {localize(
             'com_ui_share_var',
@@ -133,11 +161,12 @@ export default function ShareAgent({
             handleSubmit(onSubmit)(e);
           }}
         >
-          <div className="mb-4 flex items-center justify-between gap-2 py-4">
+          <div className="flex items-center justify-between gap-2 py-2">
             <div className="flex items-center">
               <button
                 type="button"
                 className="mr-2 cursor-pointer"
+                disabled={isFetching || updateAgent.isLoading || !instanceProjectId}
                 onClick={() =>
                   setValue(Permissions.SHARED_GLOBAL, !getValues(Permissions.SHARED_GLOBAL), {
                     shouldDirty: true,
@@ -166,18 +195,54 @@ export default function ShareAgent({
               name={Permissions.SHARED_GLOBAL}
               control={control}
               disabled={isFetching || updateAgent.isLoading || !instanceProjectId}
-              rules={{
-                validate: (value) => {
-                  const isValid = !(value && agentIsGlobal);
-                  if (!isValid) {
-                    showToast({
-                      message: localize('com_ui_agent_already_shared_to_all'),
-                      status: 'warning',
+              render={({ field }) => (
+                <Switch
+                  {...field}
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                  value={field.value.toString()}
+                />
+              )}
+            />
+          </div>
+          <div className="mb-4 flex items-center justify-between gap-2 py-2">
+            <div className="flex items-center">
+              <button
+                type="button"
+                className="mr-2 cursor-pointer"
+                disabled={
+                  isFetching || updateAgent.isLoading || !instanceProjectId || !sharedGlobalValue
+                }
+                onClick={() =>
+                  setValue(Permissions.UPDATE, !getValues(Permissions.UPDATE), {
+                    shouldDirty: true,
+                  })
+                }
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setValue(Permissions.UPDATE, !getValues(Permissions.UPDATE), {
+                      shouldDirty: true,
                     });
                   }
-                  return isValid;
-                },
-              }}
+                }}
+                aria-checked={getValues(Permissions.UPDATE)}
+                role="checkbox"
+              >
+                {localize('com_agents_allow_editing')}
+              </button>
+              {/* <label htmlFor={Permissions.UPDATE} className="select-none">
+                {agentIsGlobal && (
+                  <span className="ml-2 text-xs">{localize('com_ui_agent_editing_allowed')}</span>
+                )}
+              </label> */}
+            </div>
+            <Controller
+              name={Permissions.UPDATE}
+              control={control}
+              disabled={
+                isFetching || updateAgent.isLoading || !instanceProjectId || !sharedGlobalValue
+              }
               render={({ field }) => (
                 <Switch
                   {...field}
