@@ -830,7 +830,7 @@ export function removeNullishValues<T extends Record<string, unknown>>(obj: T): 
 
   (Object.keys(newObj) as Array<keyof T>).forEach((key) => {
     const value = newObj[key];
-    if (value === undefined || value === null || value === '') {
+    if (value === undefined || value === null) {
       delete newObj[key];
     }
   });
