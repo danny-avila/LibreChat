@@ -6,12 +6,13 @@ import type { TConfig, TPlugin } from 'librechat-data-provider';
 import type { AgentForm, AgentPanelProps } from '~/common';
 import { cn, defaultTextProps, removeFocusOutlines, getEndpointField, getIconKey } from '~/utils';
 import { useCreateAgentMutation, useUpdateAgentMutation } from '~/data-provider';
+import { useToastContext, useFileMapContext } from '~/Providers';
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 import Action from '~/components/SidePanel/Builder/Action';
 import { ToolSelectDialog } from '~/components/Tools';
 import { useLocalize, useAuthContext } from '~/hooks';
 import CapabilitiesForm from './CapabilitiesForm';
-import { useToastContext } from '~/Providers';
+import { processAgentOption } from '~/utils';
 import { Spinner } from '~/components/svg';
 import DeleteButton from './DeleteButton';
 import AgentAvatar from './AgentAvatar';
@@ -36,6 +37,7 @@ export default function AgentConfig({
   setCurrentAgentId,
 }: AgentPanelProps & { agentsConfig?: TConfig | null }) {
   const { user } = useAuthContext();
+  const fileMap = useFileMapContext();
   const queryClient = useQueryClient();
 
   const allTools = queryClient.getQueryData<TPlugin[]>([QueryKeys.tools]) ?? [];
@@ -70,12 +72,27 @@ export default function AgentConfig({
     [agentsConfig],
   );
 
-  const files = useMemo(() => {
+  const knowledge_files = useMemo(() => {
     if (typeof agent === 'string') {
       return [];
     }
-    return agent?.files;
-  }, [agent]);
+
+    if (agent?.id !== agent_id) {
+      return [];
+    }
+
+    if (agent.knowledge_files) {
+      return agent.knowledge_files;
+    }
+
+    const _agent = processAgentOption({
+      agent,
+      fileMap,
+    });
+    return _agent.knowledge_files ?? [];
+  }, [agent, agent_id, fileMap]);
+
+  console.log('AgentConfig knowledge_files:', knowledge_files);
 
   /* Mutations */
   const update = useUpdateAgentMutation({
@@ -294,7 +311,7 @@ export default function AgentConfig({
           retrievalEnabled={false}
         />
         {/* Knowledge (for file search) */}
-        <Knowledge agent_id={agent_id} files={files} />
+        <Knowledge agent_id={agent_id} files={knowledge_files} />
         {/* Agent Tools & Actions */}
         <div className="mb-6">
           <label className={labelClass}>

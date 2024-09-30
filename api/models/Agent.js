@@ -86,6 +86,72 @@ const updateAgent = async (searchParameter, updateData) => {
 };
 
 /**
+ * Modifies an agent with the resource file id.
+ * @param {object} params
+ * @param {ServerRequest} params.req
+ * @param {string} params.agent_id
+ * @param {string} params.tool_resource
+ * @param {string} params.file_id
+ * @returns {Promise<Agent>} The updated agent.
+ */
+const addAgentResourceFile = async ({ agent_id, tool_resource, file_id }) => {
+  const searchParameter = { id: agent_id };
+  const agent = await getAgent(searchParameter);
+
+  if (!agent) {
+    throw new Error('Agent not found for adding resource file');
+  }
+
+  const tool_resources = agent.tool_resources || {};
+
+  if (!tool_resources[tool_resource]) {
+    tool_resources[tool_resource] = { file_ids: [] };
+  }
+
+  if (!tool_resources[tool_resource].file_ids.includes(file_id)) {
+    tool_resources[tool_resource].file_ids.push(file_id);
+  }
+
+  const updateData = { tool_resources };
+
+  return await updateAgent(searchParameter, updateData);
+};
+
+/**
+ * Removes a resource file id from an agent.
+ * @param {object} params
+ * @param {ServerRequest} params.req
+ * @param {string} params.agent_id
+ * @param {string} params.tool_resource
+ * @param {string} params.file_id
+ * @returns {Promise<Agent>} The updated agent.
+ */
+const removeAgentResourceFile = async ({ agent_id, tool_resource, file_id }) => {
+  const searchParameter = { id: agent_id };
+  const agent = await getAgent(searchParameter);
+
+  if (!agent) {
+    throw new Error('Agent not found for removing resource file');
+  }
+
+  const tool_resources = agent.tool_resources || {};
+
+  if (tool_resources[tool_resource] && tool_resources[tool_resource].file_ids) {
+    tool_resources[tool_resource].file_ids = tool_resources[tool_resource].file_ids.filter(
+      (id) => id !== file_id,
+    );
+
+    if (tool_resources[tool_resource].file_ids.length === 0) {
+      delete tool_resources[tool_resource];
+    }
+  }
+
+  const updateData = { tool_resources };
+
+  return await updateAgent(searchParameter, updateData);
+};
+
+/**
  * Deletes an agent based on the provided ID.
  *
  * @param {Object} searchParameter - The search parameters to find the agent to delete.
@@ -214,4 +280,6 @@ module.exports = {
   deleteAgent,
   getListAgents,
   updateAgentProjects,
+  addAgentResourceFile,
+  removeAgentResourceFile,
 };

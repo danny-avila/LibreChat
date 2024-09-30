@@ -45,10 +45,6 @@ const agentSchema = mongoose.Schema(
     tool_kwargs: {
       type: [{ type: mongoose.Schema.Types.Mixed }],
     },
-    file_ids: {
-      type: [String],
-      default: undefined,
-    },
     actions: {
       type: [String],
       default: undefined,
@@ -69,6 +65,10 @@ const agentSchema = mongoose.Schema(
     conversation_starters: {
       type: [String],
       default: [],
+    },
+    tool_resources: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
     },
     projectIds: {
       type: [mongoose.Schema.Types.ObjectId],

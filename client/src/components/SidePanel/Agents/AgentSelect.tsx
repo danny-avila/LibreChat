@@ -9,7 +9,6 @@ import type { TAgentCapabilities, AgentForm, TAgentOption } from '~/common';
 import { cn, createDropdownSetter, createProviderOption, processAgentOption } from '~/utils';
 import SelectDropDown from '~/components/ui/SelectDropDown';
 import { useListAgentsQuery } from '~/data-provider';
-// import { useFileMapContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 
 const keys = new Set(Object.keys(defaultAgentFormValues));
@@ -30,8 +29,6 @@ export default function AgentSelect({
   createMutation: UseMutationResult<Agent, Error, AgentCreateParams>;
 }) {
   const localize = useLocalize();
-  // TODO: file handling for agents
-  // const fileMap = useFileMapContext();
   const lastSelectedAgent = useRef<string | null>(null);
 
   const { data: startupConfig } = useGetStartupConfig();
@@ -41,7 +38,6 @@ export default function AgentSelect({
         processAgentOption({
           agent,
           instanceProjectId: startupConfig?.instanceProjectId,
-          /* fileMap */
         }),
       ),
   });

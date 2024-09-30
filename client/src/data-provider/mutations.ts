@@ -537,32 +537,33 @@ export const useDeleteConversationMutation = (
     (payload: t.TDeleteConversationRequest) => dataService.deleteConversation(payload),
     {
       onSuccess: (_data, vars, context) => {
-        if (!vars.conversationId) {
+        const conversationId = vars.conversationId ?? '';
+        if (!conversationId) {
           return;
         }
 
-        const handleDelete = (convoData) => {
+        const handleDelete = (convoData: t.ConversationData | undefined) => {
           if (!convoData) {
             return convoData;
           }
           return normalizeData(
-            deleteConversation(convoData, vars.conversationId as string),
+            deleteConversation(convoData, conversationId),
             'conversations',
-            convoData.pages[0].pageSize,
+            Number(convoData.pages[0].pageSize),
           );
         };
 
-        queryClient.setQueryData([QueryKeys.conversation, vars.conversationId], null);
+        queryClient.setQueryData([QueryKeys.conversation, conversationId], null);
         queryClient.setQueryData<t.ConversationData>([QueryKeys.allConversations], handleDelete);
         queryClient.setQueryData<t.ConversationData>(
           [QueryKeys.archivedConversations],
           handleDelete,
         );
         const current = queryClient.getQueryData<t.ConversationData>([QueryKeys.allConversations]);
-        refetch({ refetchPage: (page, index) => index === (current?.pages.length || 1) - 1 });
+        refetch({ refetchPage: (page, index) => index === (current?.pages.length ?? 1) - 1 });
         onSuccess?.(_data, vars, context);
       },
-      ...(_options || {}),
+      ..._options,
     },
   );
 };
@@ -593,7 +594,7 @@ export const useForkConvoMutation = (
       );
       onSuccess?.(data, vars, context);
     },
-    ...(_options || {}),
+    ..._options,
   });
 };
 
@@ -642,7 +643,7 @@ export const useUploadFileMutation = (
 
       return dataService.uploadFile(body);
     },
-    ...(options || {}),
+    ...options,
     onSuccess: (data, formData, context) => {
       queryClient.setQueryData<t.TFile[] | undefined>([QueryKeys.files], (_files) => [
         data,
@@ -650,11 +651,44 @@ export const useUploadFileMutation = (
       ]);
 
       const endpoint = formData.get('endpoint');
-      const assistant_id = formData.get('assistant_id');
       const message_file = formData.get('message_file');
-      const tool_resource = formData.get('tool_resource');
+      const agent_id = (formData.get('agent_id') as string | undefined) ?? '';
+      const assistant_id = (formData.get('assistant_id') as string | undefined) ?? '';
+      const tool_resource = (formData.get('tool_resource') as string | undefined) ?? '';
 
-      if (!assistant_id || message_file === 'true') {
+      if (message_file === 'true') {
+        onSuccess?.(data, formData, context);
+        return;
+      }
+
+      if (agent_id && tool_resource) {
+        queryClient.setQueryData<t.Agent>([QueryKeys.agent, agent_id], (agent) => {
+          if (!agent) {
+            return agent;
+          }
+
+          const update = {};
+          const prevResources = agent.tool_resources ?? {};
+          const prevResource: t.ExecuteCodeResource | t.AgentFileSearchResource = agent
+            .tool_resources?.[tool_resource] ?? {
+            file_ids: [],
+          };
+          if (!prevResource.file_ids) {
+            prevResource.file_ids = [];
+          }
+          prevResource.file_ids.push(data.file_id);
+          update['tool_resources'] = {
+            ...prevResources,
+            [tool_resource]: prevResource,
+          };
+          return {
+            ...agent,
+            ...update,
+          };
+        });
+      }
+
+      if (!assistant_id) {
         onSuccess?.(data, formData, context);
         return;
       }
@@ -679,13 +713,16 @@ export const useUploadFileMutation = (
               }
               if (tool_resource === EToolResources.code_interpreter) {
                 const prevResources = assistant.tool_resources ?? {};
-                const prevResource = assistant.tool_resources?.[tool_resource as string] ?? {
+                const prevResource = assistant.tool_resources?.[tool_resource] ?? {
                   file_ids: [],
                 };
+                if (!prevResource.file_ids) {
+                  prevResource.file_ids = [];
+                }
                 prevResource.file_ids.push(data.file_id);
                 update['tool_resources'] = {
                   ...prevResources,
-                  [tool_resource as string]: prevResource,
+                  [tool_resource]: prevResource,
                 };
               }
               return {
@@ -712,9 +749,8 @@ export const useDeleteFilesMutation = (
   const queryClient = useQueryClient();
   const { onSuccess, ...options } = _options || {};
   return useMutation([MutationKeys.fileDelete], {
-    mutationFn: (body: t.DeleteFilesBody) =>
-      dataService.deleteFiles(body.files, body.assistant_id, body.tool_resource),
-    ...(options || {}),
+    mutationFn: (body: t.DeleteFilesBody) => dataService.deleteFiles(body),
+    ...options,
     onSuccess: (data, ...args) => {
       queryClient.setQueryData<t.TFile[] | undefined>([QueryKeys.files], (cachefiles) => {
         const { files: filesDeleted } = args[0];

@@ -40,6 +40,7 @@ const useFileHandling = (params?: UseFileHandling) => {
     params?.fileSetter ?? setFiles,
   );
 
+  const agent_id = params?.additionalMetadata?.agent_id ?? '';
   const assistant_id = params?.additionalMetadata?.assistant_id ?? '';
 
   const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
@@ -86,6 +87,10 @@ const useFileHandling = (params?: UseFileHandling) => {
     onSuccess: (data) => {
       clearUploadTimer(data.temp_file_id);
       console.log('upload success', data);
+      if (agent_id) {
+        queryClient.refetchQueries([QueryKeys.agent, agent_id]);
+        return;
+      }
       updateFileById(
         data.temp_file_id,
         {

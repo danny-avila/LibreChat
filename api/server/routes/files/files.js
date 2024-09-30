@@ -5,12 +5,14 @@ const {
   isUUID,
   FileSources,
   EModelEndpoint,
+  isAgentsEndpoint,
   checkOpenAIStorage,
 } = require('librechat-data-provider');
 const {
   filterFile,
   processFileUpload,
   processDeleteRequest,
+  processAgentFileUpload,
 } = require('~/server/services/Files/process');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
@@ -190,6 +192,10 @@ router.post('/', async (req, res) => {
 
     metadata.temp_file_id = metadata.file_id;
     metadata.file_id = req.file_id;
+
+    if (isAgentsEndpoint(metadata.endpoint)) {
+      return await processAgentFileUpload({ req, res, file, metadata });
+    }
 
     await processFileUpload({ req, res, file, metadata });
   } catch (error) {

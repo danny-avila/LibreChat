@@ -149,7 +149,6 @@ const updateAssistant = async ({ req, openai, assistant_id, updateData }) => {
  * @param {string} params.assistant_id
  * @param {string} params.tool_resource
  * @param {string} params.file_id
- * @param {AssistantUpdateParams} params.updateData
  * @returns {Promise<Assistant>} The updated assistant.
  */
 const addResourceFileId = async ({ req, openai, assistant_id, tool_resource, file_id }) => {

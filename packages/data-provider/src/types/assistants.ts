@@ -155,6 +155,31 @@ export type AgentModelParameters = {
   presence_penalty: AgentParameterValue;
 };
 
+export interface AgentToolResources {
+  execute_code?: ExecuteCodeResource;
+  file_search?: AgentFileSearchResource;
+}
+export interface ExecuteCodeResource {
+  /**
+   * A list of file IDs made available to the `execute_code` tool.
+   * There can be a maximum of 20 files associated with the tool.
+   */
+  file_ids?: Array<string>;
+}
+
+export interface AgentFileSearchResource {
+  /**
+   * The ID of the vector store attached to this agent. There
+   * can be a maximum of 1 vector store attached to the agent.
+   */
+  vector_store_ids?: Array<string>;
+  /**
+   * A list of file IDs made available to the `file_search` tool.
+   * To be used before vector stores are implemented.
+   */
+  file_ids?: Array<string>;
+}
+
 export type Agent = {
   id: string;
   name: string | null;
@@ -163,18 +188,17 @@ export type Agent = {
   description: string | null;
   created_at: number;
   avatar: AgentAvatar | null;
-  file_ids: string[];
   instructions: string | null;
   tools?: string[];
   projectIds?: string[];
   tool_kwargs?: Record<string, unknown>;
-  tool_resources?: ToolResources;
   metadata?: Record<string, unknown>;
   provider: AgentProvider;
   model: string | null;
   model_parameters: AgentModelParameters;
   conversation_starters?: string[];
   isCollaborative?: boolean;
+  tool_resources?: AgentToolResources;
 };
 
 export type TAgentsMap = Record<string, Agent | undefined>;

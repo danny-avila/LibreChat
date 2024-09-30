@@ -4,7 +4,7 @@ import type { OptionWithIcon, ExtendedFile } from './types';
 
 export type TAgentOption = OptionWithIcon &
   Agent & {
-    files?: Array<[string, ExtendedFile]>;
+    knowledge_files?: Array<[string, ExtendedFile]>;
     code_files?: Array<[string, ExtendedFile]>;
   };
 
