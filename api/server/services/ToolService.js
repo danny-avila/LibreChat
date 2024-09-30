@@ -377,11 +377,12 @@ async function processRequiredActions(client, requiredActions) {
  * @param {Object} params - Run params containing user and request information.
  * @param {ServerRequest} params.req - The request object.
  * @param {string} params.agent_id - The agent ID.
- * @param {string[]} params.tools - The agent's available tools.
+ * @param {Agent['tools']} params.tools - The agent's available tools.
+ * @param {Agent['tool_resources']} params.tool_resources - The agent's available tool resources.
  * @param {string | undefined} [params.openAIApiKey] - The OpenAI API key.
  * @returns {Promise<{ tools?: StructuredTool[]; toolMap?: Record<string, StructuredTool>}>} The combined toolMap.
  */
-async function loadAgentTools({ req, agent_id, tools, openAIApiKey }) {
+async function loadAgentTools({ req, agent_id, tools, tool_resources, openAIApiKey }) {
   if (!tools || tools.length === 0) {
     return {};
   }
@@ -393,6 +394,7 @@ async function loadAgentTools({ req, agent_id, tools, openAIApiKey }) {
     options: {
       req,
       openAIApiKey,
+      tool_resources,
       returnMetadata: true,
       processFileURL,
       uploadImageBuffer,
@@ -404,7 +406,7 @@ async function loadAgentTools({ req, agent_id, tools, openAIApiKey }) {
   const agentTools = [];
   for (let i = 0; i < loadedTools.length; i++) {
     const tool = loadedTools[i];
-    if (tool.name && tool.name === Tools.execute_code) {
+    if (tool.name && (tool.name === Tools.execute_code || tool.name === Tools.file_search)) {
       agentTools.push(tool);
       continue;
     }

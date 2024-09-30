@@ -87,6 +87,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     req,
     tools: agent.tools,
     agent_id: agent.id,
+    tool_resources: agent.tool_resources,
     // openAIApiKey: process.env.OPENAI_API_KEY,
   });
 

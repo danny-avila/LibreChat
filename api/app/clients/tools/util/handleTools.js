@@ -1,3 +1,4 @@
+const { Tools } = require('librechat-data-provider');
 const { ZapierToolKit } = require('langchain/agents');
 const { Calculator } = require('langchain/tools/calculator');
 const { WebBrowser } = require('langchain/tools/webbrowser');
@@ -25,10 +26,10 @@ const {
   StructuredWolfram,
   TavilySearchResults,
 } = require('../');
+const createFileSearchTool = require('./createFileSearchTool');
 const { loadToolSuite } = require('./loadToolSuite');
 const { loadSpecs } = require('./loadSpecs');
 const { logger } = require('~/config');
-const { Tools } = require('librechat-data-provider');
 
 const getOpenAIKey = async (options, user) => {
   let openAIApiKey = options.openAIApiKey ?? process.env.OPENAI_API_KEY;
@@ -281,6 +282,9 @@ const loadTools = async ({
           user_id: user.id,
           ...authValues,
         });
+      continue;
+    } else if (tool === Tools.file_search) {
+      requestedTools[tool] = () => createFileSearchTool(options);
       continue;
     }
 
