@@ -2,7 +2,7 @@ const { Tools } = require('librechat-data-provider');
 const { ZapierToolKit } = require('langchain/agents');
 const { Calculator } = require('langchain/tools/calculator');
 const { WebBrowser } = require('langchain/tools/webbrowser');
-const { SerpAPI, ZapierNLAWrapper } = require('langchain/tools');
+const { SerpAPI, ZapierNLAWrapper, SearchApi } = require('langchain/tools');
 const { OpenAIEmbeddings } = require('langchain/embeddings/openai');
 const { createCodeExecutionTool, EnvVar } = require('@librechat/agents');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
@@ -215,6 +215,16 @@ const loadTools = async ({
       const browser = new WebBrowser({ model, embeddings: new OpenAIEmbeddings({ openAIApiKey }) });
       browser.description_for_model = browser.description;
       return browser;
+    },
+    searchapi: async () => {
+      let apiKey = process.env.SEARCHAPI_API_KEY;
+      if (!apiKey) {
+        apiKey = await getUserPluginAuthValue(user, 'SEARCHAPI_API_KEY');
+      }
+      return new SearchApi(apiKey, {
+        hl: 'en',
+        gl: 'us',
+      });
     },
     serpapi: async () => {
       let apiKey = process.env.SERPAPI_API_KEY;
