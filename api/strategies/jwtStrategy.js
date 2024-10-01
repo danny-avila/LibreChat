@@ -13,11 +13,13 @@ const jwtLogin = async () =>
     },
     async (payload, done) => {
       try {
-        logger.info('Checking user existence: ' + payload?.id);
+        logger.info('JwtStrategy => A new request with a JWT has been received, lets checking for the user existence: ' + payload?.id);
         let user = await getUserById(payload?.id, '-password -__v');
         if (user) {
+          logger.info('JwtStrategy => User exists, so nothing to do just attend the request: ' + user._id);
           user.id = user._id.toString();
           if (!user.role) {
+            logger.info('JwtStrategy => User had no role, so lets set it as USER: ' + user._id);
             user.role = SystemRoles.USER;
             await updateUser(user.id, { role: user.role });
           }
@@ -27,7 +29,7 @@ const jwtLogin = async () =>
         //  done(null, false);
         //}
         } else {
-          logger.warn('[jwtLogin] JwtStrategy => no user found, creating new user: ' + payload?.email);
+          logger.warn('JwtStrategy => no user found, creating new user: ' + payload?.email);
           
           const newUser = {
             _id: payload.id,          
@@ -39,10 +41,10 @@ const jwtLogin = async () =>
           
           try {
             user = await createUser(newUser);
-            logger.info('[jwtLogin] New user created: ' + user._id);
+            logger.info('JwtStrategy => New user created: ' + user._id);
             done(null, user);
           } catch (createError) {
-            logger.error('[jwtLogin] Error creating new user: ', createError);
+            logger.error('JwtStrategy => Error creating new user: ', createError);
             done(createError, false);
           }
         }
