@@ -144,13 +144,15 @@ const updateUserKey = async ({ userId, name, value, expiresAt = null }) => {
     name,
     value: encryptedValue,
   };
-
-  // Only add expiresAt to the update object if it's not null
+  const updateQuery = { $set: updateObject };
+  // add expiresAt to the update object if it's not null
   if (expiresAt) {
     updateObject.expiresAt = new Date(expiresAt);
+  } else {
+    // else unset if already present
+    updateQuery.$unset = { expiresAt };
   }
-
-  return await Key.findOneAndUpdate({ userId, name }, updateObject, {
+  return await Key.findOneAndUpdate({ userId, name }, updateQuery, {
     upsert: true,
     new: true,
   }).lean();
