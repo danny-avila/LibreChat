@@ -1,9 +1,7 @@
 const { Tools } = require('librechat-data-provider');
 const { ZapierToolKit } = require('langchain/agents');
 const { Calculator } = require('langchain/tools/calculator');
-const { WebBrowser } = require('langchain/tools/webbrowser');
 const { SerpAPI, ZapierNLAWrapper } = require('langchain/tools');
-const { OpenAIEmbeddings } = require('langchain/embeddings/openai');
 const { createCodeExecutionTool, EnvVar } = require('@librechat/agents');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const {
@@ -30,12 +28,6 @@ const createFileSearchTool = require('./createFileSearchTool');
 const { loadToolSuite } = require('./loadToolSuite');
 const { loadSpecs } = require('./loadSpecs');
 const { logger } = require('~/config');
-
-const getOpenAIKey = async (options, user) => {
-  let openAIApiKey = options.openAIApiKey ?? process.env.OPENAI_API_KEY;
-  openAIApiKey = openAIApiKey === 'user_provided' ? null : openAIApiKey;
-  return openAIApiKey || (await getUserPluginAuthValue(user, 'OPENAI_API_KEY'));
-};
 
 /**
  * Validates the availability and authentication of tools for a user based on environment variables or user-specific plugin authentication values.
@@ -177,8 +169,6 @@ const loadTools = async ({
     traversaal_search: TraversaalSearch,
   };
 
-  const openAIApiKey = await getOpenAIKey(options, user);
-
   const customConstructors = {
     e2b_code_interpreter: async () => {
       if (!functions) {
@@ -191,7 +181,6 @@ const loadTools = async ({
         user,
         options: {
           model,
-          openAIApiKey,
           ...options,
         },
       });
@@ -207,14 +196,6 @@ const loadTools = async ({
         user,
         options,
       });
-    },
-    'web-browser': async () => {
-      // let openAIApiKey = options.openAIApiKey ?? process.env.OPENAI_API_KEY;
-      // openAIApiKey = openAIApiKey === 'user_provided' ? null : openAIApiKey;
-      // openAIApiKey = openAIApiKey || (await getUserPluginAuthValue(user, 'OPENAI_API_KEY'));
-      const browser = new WebBrowser({ model, embeddings: new OpenAIEmbeddings({ openAIApiKey }) });
-      browser.description_for_model = browser.description;
-      return browser;
     },
     serpapi: async () => {
       let apiKey = process.env.SERPAPI_API_KEY;

@@ -174,14 +174,24 @@ export default function AgentPanel({
     }
   }, [agent_id, onSelectAgent]);
 
+  const canEditAgent = useMemo(() => {
+    const canEdit =
+      agentQuery.data?.isCollaborative ?? false
+        ? true
+        : agentQuery.data?.author === user?.id || user?.role === SystemRoles.ADMIN;
+
+    return agentQuery.data?.id != null && agentQuery.data.id ? canEdit : true;
+  }, [
+    agentQuery.data?.isCollaborative,
+    agentQuery.data?.author,
+    agentQuery.data?.id,
+    user?.id,
+    user?.role,
+  ]);
+
   if (agentQuery.isInitialLoading) {
     return <AgentPanelSkeleton />;
   }
-
-  const canEditAgent =
-    agentQuery.data?.isCollaborative ?? false
-      ? true
-      : agentQuery.data?.author === user?.id || user?.role === SystemRoles.ADMIN;
 
   return (
     <FormProvider {...methods}>
