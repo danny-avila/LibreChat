@@ -74,8 +74,8 @@ async function loadConfigModels(req) {
     if (models.fetch && isUserProvided(API_KEY)) {
       try {
         const userKey = await getUserKeyWithExpiry({ userId: req.user.id, name });
-        if (userKey.expiresAt && new Date(userKey.expiresAt).getTime() > Date.now()) {
-          // in case key is valid replace the default key with the user provided key
+        if (!userKey.expiresAt || new Date(userKey.expiresAt).getTime() > Date.now()) {
+          // in case the key is not expired (expires never if expiresAt is missing) replace the default key with the user provided key
           API_KEY = userKey.apiKey || API_KEY;
         } else {
           // if key is expired remove it from the cache
