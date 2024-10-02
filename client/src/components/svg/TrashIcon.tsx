@@ -1,6 +1,10 @@
 import { cn } from '~/utils';
 
-export default function TrashIcon({ className = '' }) {
+type TrashIconProps = {
+  className?: string;
+};
+
+export default function TrashIcon({ className = '' }: TrashIconProps) {
   return (
     <svg
       fill="none"
@@ -8,7 +12,7 @@ export default function TrashIcon({ className = '' }) {
       viewBox="0 0 24 24"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={cn('icon-md', className)}
+      className={cn('icon-md h-4 w-4', className)}
       height="1em"
       width="1em"
       xmlns="http://www.w3.org/2000/svg"

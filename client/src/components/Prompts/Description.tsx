@@ -50,10 +50,10 @@ const Description = ({
           placeholder={localize('com_ui_description_placeholder')}
           value={description}
           onChange={handleInputChange}
-          className="w-full rounded-lg border-none bg-transparent p-1 text-text-primary placeholder:text-text-tertiary placeholder:underline placeholder:underline-offset-2 focus:bg-surface-tertiary focus:outline-none focus:ring-0 md:w-96"
+          className="w-full rounded-lg border-none bg-surface-tertiary p-1 text-text-primary placeholder:text-text-secondary focus:bg-surface-tertiary focus:outline-none focus:ring-1 focus:ring-inset focus:ring-ring-primary md:w-96"
         />
         {!disabled && (
-          <span className="mr-1 w-10 text-xs text-text-tertiary md:text-sm">{`${charCount}/${MAX_LENGTH}`}</span>
+          <span className="mr-1 w-10 text-xs text-text-secondary md:text-sm">{`${charCount}/${MAX_LENGTH}`}</span>
         )}
       </h3>
     </div>

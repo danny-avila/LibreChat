@@ -1,6 +1,7 @@
 const multer = require('multer');
 const express = require('express');
 const controllers = require('~/server/controllers/assistants/v1');
+const documents = require('./documents');
 const actions = require('./actions');
 const tools = require('./tools');
 
@@ -19,6 +20,13 @@ router.use('/actions', actions);
  * @returns {TPlugin[]} 200 - application/json
  */
 router.use('/tools', tools);
+
+/**
+ * Create an assistant.
+ * @route GET /assistants/documents
+ * @returns {AssistantDocument[]} 200 - application/json
+ */
+router.use('/documents', documents);
 
 /**
  * Create an assistant.
@@ -60,13 +68,6 @@ router.delete('/:id', controllers.deleteAssistant);
  * @returns {AssistantListResponse} 200 - success response - application/json
  */
 router.get('/', controllers.listAssistants);
-
-/**
- * Returns a list of the user's assistant documents (metadata saved to database).
- * @route GET /assistants/documents
- * @returns {AssistantDocument[]} 200 - success response - application/json
- */
-router.get('/documents', controllers.getAssistantDocuments);
 
 /**
  * Uploads and updates an avatar for a specific assistant.

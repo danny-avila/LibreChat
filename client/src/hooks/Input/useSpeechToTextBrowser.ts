@@ -1,34 +1,58 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRecoilState } from 'recoil';
 import { useToastContext } from '~/Providers';
 import store from '~/store';
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
+import useGetAudioSettings from './useGetAudioSettings';
 
 const useSpeechToTextBrowser = () => {
   const { showToast } = useToastContext();
-  const [endpointSTT] = useRecoilState<string>(store.endpointSTT);
+  const [languageSTT] = useRecoilState<string>(store.languageSTT);
+  const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
+  const { speechToTextEndpoint } = useGetAudioSettings();
+  const isBrowserSTTEnabled = speechToTextEndpoint === 'browser';
+  const [isListening, setIsListening] = useState(false);
 
-  const { transcript, listening, resetTranscript, browserSupportsSpeechRecognition } =
-    useSpeechRecognition();
+  const {
+    interimTranscript,
+    finalTranscript,
+    listening,
+    browserSupportsSpeechRecognition,
+    isMicrophoneAvailable,
+  } = useSpeechRecognition();
 
   const toggleListening = () => {
-    if (browserSupportsSpeechRecognition) {
-      if (listening) {
-        SpeechRecognition.stopListening();
-      } else {
-        SpeechRecognition.startListening();
-      }
-    } else {
+    if (!browserSupportsSpeechRecognition) {
       showToast({
         message: 'Browser does not support SpeechRecognition',
         status: 'error',
+      });
+      return;
+    }
+
+    if (!isMicrophoneAvailable) {
+      showToast({
+        message: 'Microphone is not available',
+        status: 'error',
+      });
+      return;
+    }
+
+    if (listening) {
+      setIsListening(false);
+      SpeechRecognition.stopListening();
+    } else {
+      setIsListening(true);
+      SpeechRecognition.startListening({
+        language: languageSTT,
+        continuous: autoTranscribeAudio,
       });
     }
   };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.shiftKey && e.altKey && e.code === 'KeyL' && endpointSTT === 'browser') {
+      if (e.shiftKey && e.altKey && e.code === 'KeyL' && !isBrowserSTTEnabled) {
         toggleListening();
       }
     };
@@ -37,15 +61,19 @@ const useSpeechToTextBrowser = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  useEffect(() => {
+    if (!listening) {
+      setIsListening(false);
+    }
+  }, [listening]);
+
   return {
-    isListening: listening,
+    isListening,
     isLoading: false,
-    text: transcript,
+    interimTranscript,
+    text: finalTranscript,
     startRecording: toggleListening,
-    stopRecording: () => {
-      SpeechRecognition.stopListening();
-      resetTranscript();
-    },
+    stopRecording: toggleListening,
   };
 };
 

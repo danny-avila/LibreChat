@@ -47,12 +47,20 @@ const addTitle = async (req, { text, response, client }) => {
   const titleCache = getLogStores(CacheKeys.GEN_TITLE);
   const key = `${req.user.id}-${response.conversationId}`;
 
-  const title = await titleClient.titleConvo({ text, responseText: response?.text });
-  await titleCache.set(key, title, 120000);
-  await saveConvo(req.user.id, {
+  const title = await titleClient.titleConvo({
+    text,
+    responseText: response?.text ?? '',
     conversationId: response.conversationId,
-    title,
   });
+  await titleCache.set(key, title, 120000);
+  await saveConvo(
+    req,
+    {
+      conversationId: response.conversationId,
+      title,
+    },
+    { context: 'api/server/services/Endpoints/google/addTitle.js' },
+  );
 };
 
 module.exports = addTitle;

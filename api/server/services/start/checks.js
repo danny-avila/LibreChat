@@ -124,7 +124,7 @@ function checkPasswordReset() {
       
       Please configure email service for secure password reset functionality.
       
-      https://www.librechat.ai/docs/configuration/authentication/password_reset
+      https://www.librechat.ai/docs/configuration/authentication/email
 
       ❗❗❗`,
     );

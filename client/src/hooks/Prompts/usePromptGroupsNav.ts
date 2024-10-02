@@ -3,8 +3,11 @@ import { useMemo, useRef, useEffect, useCallback } from 'react';
 import { usePromptGroupsInfiniteQuery } from '~/data-provider';
 import debounce from 'lodash/debounce';
 import store from '~/store';
+import { useQueryClient } from '@tanstack/react-query';
+import { QueryKeys } from 'librechat-data-provider';
 
 export default function usePromptGroupsNav() {
+  const queryClient = useQueryClient();
   const category = useRecoilValue(store.promptsCategory);
   const [name, setName] = useRecoilState(store.promptsName);
   const [pageSize, setPageSize] = useRecoilState(store.promptsPageSize);
@@ -28,6 +31,7 @@ export default function usePromptGroupsNav() {
   useEffect(() => {
     maxPageNumberReached.current = 1;
     setPageNumber(1);
+    queryClient.resetQueries([QueryKeys.promptGroups, name, category, pageSize]);
   }, [pageSize, name, category, setPageNumber]);
 
   const promptGroups = useMemo(() => {

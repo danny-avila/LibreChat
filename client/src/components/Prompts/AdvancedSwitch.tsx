@@ -1,8 +1,9 @@
 import { useRecoilState, useSetRecoilState } from 'recoil';
-import { Tabs, TabsList, TabsTrigger } from '~/components/ui';
+import { PromptsEditorMode } from '~/common';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
-const { PromptsEditorMode, promptsEditorMode, alwaysMakeProd } = store;
+
+const { promptsEditorMode, alwaysMakeProd } = store;
 
 const AdvancedSwitch = () => {
   const localize = useLocalize();
@@ -10,29 +11,35 @@ const AdvancedSwitch = () => {
   const setAlwaysMakeProd = useSetRecoilState(alwaysMakeProd);
 
   return (
-    <Tabs
-      defaultValue={mode}
-      className="w-auto rounded-lg"
-      onValueChange={(value) => {
-        value === PromptsEditorMode.SIMPLE && setAlwaysMakeProd(true);
-        setMode(value);
-      }}
-    >
-      <TabsList className="grid w-auto grid-cols-2 bg-surface-tertiary">
-        <TabsTrigger
-          value={PromptsEditorMode.SIMPLE}
-          className="w-20 min-w-0 rounded-md text-xs md:w-auto md:text-sm"
+    <div className="inline-flex h-10 items-center justify-center rounded-lg border border-border-light bg-surface-primary p-0.5 text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50">
+      <div className="flex flex-row items-stretch gap-0 whitespace-nowrap">
+        <button
+          type="button"
+          className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-200 ${
+            mode === PromptsEditorMode.SIMPLE
+              ? 'bg-surface-tertiary text-text-primary'
+              : 'bg-transparent text-text-tertiary hover:text-text-secondary'
+          }`}
+          onClick={() => {
+            setAlwaysMakeProd(true);
+            setMode(PromptsEditorMode.SIMPLE);
+          }}
         >
           {localize('com_ui_simple')}
-        </TabsTrigger>
-        <TabsTrigger
-          value={PromptsEditorMode.ADVANCED}
-          className="w-20 min-w-0 rounded-md text-xs md:w-auto md:text-sm"
+        </button>
+        <button
+          type="button"
+          className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-200 ${
+            mode === PromptsEditorMode.ADVANCED
+              ? 'bg-surface-tertiary text-text-primary'
+              : 'bg-transparent text-text-tertiary hover:text-text-secondary'
+          }`}
+          onClick={() => setMode(PromptsEditorMode.ADVANCED)}
         >
           {localize('com_ui_advanced')}
-        </TabsTrigger>
-      </TabsList>
-    </Tabs>
+        </button>
+      </div>
+    </div>
   );
 };
 

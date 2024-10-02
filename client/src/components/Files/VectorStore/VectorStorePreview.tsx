@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import DeleteIconButton from '../DeleteIconButton';
 import { Button } from '~/components/ui';
-import { NewTrashIcon } from '~/components/svg';
+import { TrashIcon } from '~/components/svg';
 import { TFile } from 'librechat-data-provider/dist/types';
 import UploadFileButton from '../FileList/UploadFileButton';
 import UploadFileModal from '../FileList/UploadFileModal';
@@ -204,7 +204,7 @@ export default function VectorStorePreview() {
                     className="my-0 ml-3 h-min bg-transparent p-0 text-[#666666] hover:bg-slate-200"
                     onClick={() => console.log('click')}
                   >
-                    <NewTrashIcon className="m-0 p-0" />
+                    <TrashIcon className="m-0 p-0" />
                   </Button>
                 </div>
               </div>

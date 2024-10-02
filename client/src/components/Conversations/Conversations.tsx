@@ -10,7 +10,7 @@ const Conversations = ({
   moveToTop,
   toggleNav,
 }: {
-  conversations: TConversation[];
+  conversations: Array<TConversation | null>;
   moveToTop: () => void;
   toggleNav: () => void;
 }) => {
@@ -33,14 +33,15 @@ const Conversations = ({
           {groupedConversations.map(([groupName, convos]) => (
             <div key={groupName}>
               <div
+                className="text-text-secondary"
                 style={{
-                  color: '#aaa',
                   fontSize: '0.7rem',
                   marginTop: '20px',
                   marginBottom: '5px',
                   paddingLeft: '10px',
                 }}
               >
+                {/* eslint-disable-next-line @typescript-eslint/strict-boolean-expressions */}
                 {localize(groupName) || groupName}
               </div>
               {convos.map((convo, i) => (

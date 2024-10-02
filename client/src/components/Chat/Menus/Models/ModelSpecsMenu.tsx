@@ -11,7 +11,7 @@ import MenuButton from './MenuButton';
 import ModelSpecs from './ModelSpecs';
 import store from '~/store';
 
-export default function ModelSpecsMenu({ modelSpecs }: { modelSpecs: TModelSpec[] }) {
+export default function ModelSpecsMenu({ modelSpecs }: { modelSpecs?: TModelSpec[] }) {
   const { conversation } = useChatContext();
   const { newConversation } = useNewConvo();
 
@@ -23,7 +23,8 @@ export default function ModelSpecsMenu({ modelSpecs }: { modelSpecs: TModelSpec[
     const { preset } = spec;
     preset.iconURL = getModelSpecIconURL(spec);
     preset.spec = spec.name;
-    const { endpoint: newEndpoint } = preset;
+    const { endpoint } = preset;
+    const newEndpoint = endpoint ?? '';
     if (!newEndpoint) {
       return;
     }
@@ -41,6 +42,10 @@ export default function ModelSpecsMenu({ modelSpecs }: { modelSpecs: TModelSpec[
       conversation,
       endpointsConfig,
     });
+
+    if (newEndpointType) {
+      preset.endpointType = newEndpointType;
+    }
 
     const isModular = isCurrentModular && isNewModular && shouldSwitch;
     if (isExistingConversation && isModular) {
@@ -87,7 +92,7 @@ export default function ModelSpecsMenu({ modelSpecs }: { modelSpecs: TModelSpec[
         endpointsConfig={endpointsConfig}
       />
       <Portal>
-        {modelSpecs && modelSpecs?.length && (
+        {modelSpecs && modelSpecs.length && (
           <div
             style={{
               position: 'fixed',

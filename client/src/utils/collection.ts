@@ -1,4 +1,4 @@
-import { InfiniteData } from '@tanstack/react-query';
+import { InfiniteData, QueryClient } from '@tanstack/react-query';
 
 export const addData = <TCollection, TData>(
   data: InfiniteData<TCollection>,
@@ -165,3 +165,56 @@ export const updateFields = <TCollection, TData>(
 
   return newData;
 };
+
+type UpdateCacheListOptions<TData> = {
+  queryClient: QueryClient;
+  queryKey: unknown[];
+  searchProperty: keyof TData;
+  updateData: Partial<TData>;
+  searchValue: unknown;
+};
+
+export function updateCacheList<TData>({
+  queryClient,
+  queryKey,
+  searchProperty,
+  updateData,
+  searchValue,
+}: UpdateCacheListOptions<TData>) {
+  queryClient.setQueryData<TData[]>(queryKey, (oldData) => {
+    if (!oldData) {
+      return oldData;
+    }
+
+    return oldData.map((item) =>
+      item[searchProperty] === searchValue ? { ...item, ...updateData } : item,
+    );
+  });
+}
+
+export function addToCacheList<TData>(
+  queryClient: QueryClient,
+  queryKey: unknown[],
+  newItem: TData,
+) {
+  queryClient.setQueryData<TData[]>(queryKey, (oldData) => {
+    if (!oldData) {
+      return [newItem];
+    }
+    return [...oldData, newItem];
+  });
+}
+
+export function removeFromCacheList<TData>(
+  queryClient: QueryClient,
+  queryKey: unknown[],
+  searchProperty: keyof TData,
+  searchValue: unknown,
+) {
+  queryClient.setQueryData<TData[]>(queryKey, (oldData) => {
+    if (!oldData) {
+      return oldData;
+    }
+    return oldData.filter((item) => item[searchProperty] !== searchValue);
+  });
+}

@@ -27,11 +27,27 @@ const initializeClient = async ({ req, res, endpointOption }) => {
       [AuthKeys.GOOGLE_API_KEY]: GOOGLE_KEY,
     };
 
+  const clientOptions = {};
+
+  /** @type {undefined | TBaseEndpoint} */
+  const allConfig = req.app.locals.all;
+  /** @type {undefined | TBaseEndpoint} */
+  const googleConfig = req.app.locals[EModelEndpoint.google];
+
+  if (googleConfig) {
+    clientOptions.streamRate = googleConfig.streamRate;
+  }
+
+  if (allConfig) {
+    clientOptions.streamRate = allConfig.streamRate;
+  }
+
   const client = new GoogleClient(credentials, {
     req,
     res,
     reverseProxyUrl: GOOGLE_REVERSE_PROXY ?? null,
     proxy: PROXY ?? null,
+    ...clientOptions,
     ...endpointOption,
   });
 

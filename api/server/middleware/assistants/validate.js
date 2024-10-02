@@ -19,7 +19,8 @@ const validateAssistant = async (req, res, next) => {
   }
 
   const { supportedIds, excludedIds } = assistantsConfig;
-  const error = { message: 'Assistant not supported' };
+  const error = { message: 'validateAssistant: Assistant not supported' };
+
   if (supportedIds?.length && !supportedIds.includes(assistant_id)) {
     return await handleAbortError(res, req, error, {
       sender: 'System',

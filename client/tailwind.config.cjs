@@ -6,9 +6,6 @@ module.exports = {
   // darkMode: 'class',
   darkMode: ['class'],
   theme: {
-    // colors: {
-    //   'gpt-dark-gray': '#171717',
-    // },
     fontFamily: {
       sans: ['Inter', 'sans-serif'],
       mono: ['Roboto Mono', 'monospace'],
@@ -19,7 +16,7 @@ module.exports = {
     // },
     extend: {
       width: {
-        'authPageWidth': '370px',
+        authPageWidth: '370px',
       },
       keyframes: {
         'accordion-down': {
@@ -66,17 +63,61 @@ module.exports = {
         'brand-purple': '#ab68ff',
         'text-primary': 'var(--text-primary)',
         'text-secondary': 'var(--text-secondary)',
+        'text-secondary-alt': 'var(--text-secondary-alt)',
         'text-tertiary': 'var(--text-tertiary)',
+        'ring-primary': 'var(--ring-primary)',
+        'header-primary': 'var(--header-primary)',
+        'header-hover': 'var(--header-hover)',
+        'header-button-hover': 'var(--header-button-hover)',
+        'surface-active': 'var(--surface-active)',
+        'surface-hover': 'var(--surface-hover)',
         'surface-primary': 'var(--surface-primary)',
         'surface-primary-alt': 'var(--surface-primary-alt)',
         'surface-primary-contrast': 'var(--surface-primary-contrast)',
         'surface-secondary': 'var(--surface-secondary)',
         'surface-tertiary': 'var(--surface-tertiary)',
+        'surface-tertiary-alt': 'var(--surface-tertiary-alt)',
+        'surface-dialog': 'var(--surface-dialog)',
         'border-light': 'var(--border-light)',
         'border-medium': 'var(--border-medium)',
         'border-medium-alt': 'var(--border-medium-alt)',
-        'border-heavy': 'var(--gray-300)',
-        'border-xheavy': 'var(--gray-400',
+        'border-heavy': 'var(--border-heavy)',
+        'border-xheavy': 'var(--border-xheavy)',
+        /* These are test styles */
+        border: 'hsl(var(--border))',
+        input: 'hsl(var(--input))',
+        ring: 'hsl(var(--ring))',
+        background: 'hsl(var(--background))',
+        foreground: 'hsl(var(--foreground))',
+        primary: {
+          DEFAULT: 'hsl(var(--primary))',
+          foreground: 'hsl(var(--primary-foreground))',
+        },
+        secondary: {
+          DEFAULT: 'hsl(var(--secondary))',
+          foreground: 'hsl(var(--secondary-foreground))',
+        },
+        destructive: {
+          DEFAULT: 'hsl(var(--destructive))',
+          foreground: 'hsl(var(--destructive-foreground))',
+        },
+        muted: {
+          DEFAULT: 'hsl(var(--muted))',
+          foreground: 'hsl(var(--muted-foreground))',
+        },
+        accent: {
+          DEFAULT: 'hsl(var(--accent))',
+          foreground: 'hsl(var(--accent-foreground))',
+        },
+        card: {
+          DEFAULT: 'hsl(var(--card))',
+          foreground: 'hsl(var(--card-foreground))',
+        },
+      },
+      borderRadius: {
+        lg: 'var(--radius)',
+        md: 'calc(var(--radius) - 2px)',
+        sm: 'calc(var(--radius) - 4px)',
       },
     },
   },

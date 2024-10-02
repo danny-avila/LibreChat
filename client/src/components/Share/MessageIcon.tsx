@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { TMessage, TPreset, Assistant } from 'librechat-data-provider';
+import type { TMessage, TPreset, Assistant, Agent } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import MessageEndpointIcon from '../Endpoints/MessageEndpointIcon';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
@@ -9,12 +9,15 @@ import { UserIcon } from '../svg';
 export default function MessageIcon(
   props: Pick<TMessageProps, 'message' | 'conversation'> & {
     assistant?: false | Assistant;
+    agent?: false | Agent;
   },
 ) {
-  const { message, conversation, assistant } = props;
+  const { message, conversation, assistant, agent } = props;
 
   const assistantName = assistant ? (assistant.name as string | undefined) : '';
   const assistantAvatar = assistant ? (assistant.metadata?.avatar as string | undefined) : '';
+  const agentName = agent ? (agent.name as string | undefined) : '';
+  const agentAvatar = agent ? (agent.metadata?.avatar as string | undefined) : '';
 
   const messageSettings = useMemo(
     () => ({
@@ -38,6 +41,8 @@ export default function MessageIcon(
         context="message"
         assistantAvatar={assistantAvatar}
         assistantName={assistantName}
+        agentAvatar={agentAvatar}
+        agentName={agentName}
       />
     );
   }
@@ -65,6 +70,7 @@ export default function MessageIcon(
       iconURL={!assistant ? undefined : assistantAvatar}
       model={message?.model ?? conversation?.model}
       assistantName={assistantName}
+      agentName={agentName}
       size={28.8}
     />
   );

@@ -1,4 +1,4 @@
-import { startTransition, useMemo } from 'react';
+import { startTransition } from 'react';
 import { Search as SearchIcon } from 'lucide-react';
 import * as RadixSelect from '@radix-ui/react-select';
 import { CheckIcon, ChevronDownIcon } from '@radix-ui/react-icons';
@@ -52,7 +52,16 @@ export default function ComboboxComponent({
       value={selectedValue}
       onValueChange={setValue}
       open={open}
-      onOpenChange={setOpen}
+      /** Hacky fix for radix-ui Android issue: https://github.com/radix-ui/primitives/issues/1658  */
+      onOpenChange={() => {
+        if (open === true) {
+          setOpen(false);
+          return;
+        }
+        setTimeout(() => {
+          setOpen(!open);
+        }, 75);
+      }}
     >
       <ComboboxProvider
         open={open}
@@ -72,7 +81,7 @@ export default function ComboboxComponent({
             isCollapsed
               ? 'flex h-9 w-9 shrink-0 items-center justify-center p-0 [&>span]:w-auto [&>svg]:hidden'
               : '',
-            'bg-white text-black hover:bg-gray-50 dark:bg-gray-850 dark:text-white',
+            'bg-white text-black hover:bg-gray-50 focus-visible:ring-2 focus-visible:ring-gray-500 dark:bg-gray-850 dark:text-white ',
           )}
         >
           <SelectValue placeholder={selectPlaceholder}>
@@ -134,6 +143,11 @@ export default function ComboboxComponent({
                         'focus:bg-accent focus:text-accent-foreground relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
                         'rounded-lg hover:bg-gray-100/50 hover:bg-gray-50 dark:text-white dark:hover:bg-gray-600',
                       )}
+                      /** Hacky fix for radix-ui Android issue: https://github.com/radix-ui/primitives/issues/1658  */
+                      onTouchEnd={() => {
+                        setValue(`${value ?? ''}`);
+                        setOpen(false);
+                      }}
                     >
                       <span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center">
                         <RadixSelect.ItemIndicator>

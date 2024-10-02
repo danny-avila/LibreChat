@@ -8,6 +8,8 @@ jest.mock('~/server/services/UserService', () => ({
   getUserKey: jest.fn().mockImplementation(() => ({})),
 }));
 
+const app = { locals: {} };
+
 describe('google/initializeClient', () => {
   afterEach(() => {
     jest.clearAllMocks();
@@ -23,6 +25,7 @@ describe('google/initializeClient', () => {
     const req = {
       body: { key: expiresAt },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'default-model' } };
@@ -44,6 +47,7 @@ describe('google/initializeClient', () => {
     const req = {
       body: { key: null },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'default-model' } };
@@ -66,6 +70,7 @@ describe('google/initializeClient', () => {
     const req = {
       body: { key: expiresAt },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'default-model' } };

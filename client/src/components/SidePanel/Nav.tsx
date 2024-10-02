@@ -2,10 +2,9 @@ import { useState } from 'react';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import type { NavLink, NavProps } from '~/common';
 import { Accordion, AccordionItem, AccordionContent } from '~/components/ui/Accordion';
-import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/Tooltip';
-import { buttonVariants } from '~/components/ui/Button';
-import { cn, removeFocusOutlines } from '~/utils';
+import { TooltipAnchor, Button } from '~/components';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 
 export default function Nav({ links, isCollapsed, resize, defaultActive }: NavProps) {
   const localize = useLocalize();
@@ -20,30 +19,26 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
   return (
     <div
       data-collapsed={isCollapsed}
-      className="bg-token-sidebar-surface-primary hide-scrollbar group flex-shrink-0 overflow-x-hidden py-2 data-[collapsed=true]:py-2"
+      className="bg-token-sidebar-surface-primary hide-scrollbar group flex-shrink-0 overflow-x-hidden"
     >
       <div className="h-full">
         <div className="flex h-full min-h-0 flex-col">
           <div className="flex h-full min-h-0 flex-col opacity-100 transition-opacity">
             <div className="scrollbar-trigger relative h-full w-full flex-1 items-start border-white/20">
-              <nav className="flex h-full w-full flex-col gap-1 px-2 px-3 pb-3.5 group-[[data-collapsed=true]]:items-center group-[[data-collapsed=true]]:justify-center group-[[data-collapsed=true]]:px-2">
+              <div className="flex h-full w-full flex-col gap-1 px-3 pb-3.5 group-[[data-collapsed=true]]:items-center group-[[data-collapsed=true]]:justify-center group-[[data-collapsed=true]]:px-2">
                 {links.map((link, index) => {
                   const variant = getVariant(link);
                   return isCollapsed ? (
-                    <Tooltip key={index} delayDuration={0}>
-                      <TooltipTrigger asChild>
-                        <button
-                          className={cn(
-                            buttonVariants({ variant, size: 'icon' }),
-                            removeFocusOutlines,
-                            'h-9 w-9',
-                            variant === 'default'
-                              ? 'dark:bg-muted dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-white'
-                              : '',
-                          )}
-                          onClick={() => {
+                    <TooltipAnchor
+                      description={localize(link.title)}
+                      side="left"
+                      render={
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => {
                             if (link.onClick) {
-                              link.onClick();
+                              link.onClick(e);
                               setActive('');
                               return;
                             }
@@ -51,21 +46,11 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                             resize && resize(25);
                           }}
                         >
-                          <link.icon className="h-4 w-4" />
+                          <link.icon className="h-4 w-4 text-text-secondary" />
                           <span className="sr-only">{link.title}</span>
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent
-                        side="left"
-                        sideOffset={10}
-                        className="flex items-center gap-4"
-                      >
-                        {localize(link.title)}
-                        {link.label && (
-                          <span className="text-muted-foreground ml-auto">{link.label}</span>
-                        )}
-                      </TooltipContent>
-                    </Tooltip>
+                        </Button>
+                      }
+                    ></TooltipAnchor>
                   ) : (
                     <Accordion
                       key={index}
@@ -77,37 +62,30 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                       <AccordionItem value={link.id} className="w-full border-none">
                         <AccordionPrimitive.Header asChild>
                           <AccordionPrimitive.Trigger asChild>
-                            <button
-                              className={cn(
-                                buttonVariants({ variant, size: 'sm' }),
-                                removeFocusOutlines,
-                                variant === 'default'
-                                  ? 'dark:bg-muted dark:hover:bg-muted dark:text-white dark:hover:text-white'
-                                  : '',
-                                'hover:bg-gray-50 data-[state=open]:bg-gray-50 data-[state=open]:text-black dark:hover:bg-gray-700 dark:data-[state=open]:bg-gray-700 dark:data-[state=open]:text-white',
-                                'w-full justify-start rounded-md border dark:border-gray-700',
-                              )}
-                              onClick={() => {
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full justify-start bg-transparent text-text-secondary data-[state=open]:bg-surface-secondary data-[state=open]:text-text-primary"
+                              onClick={(e) => {
                                 if (link.onClick) {
-                                  link.onClick();
+                                  link.onClick(e);
                                   setActive('');
                                 }
                               }}
                             >
                               <link.icon className="mr-2 h-4 w-4" />
                               {localize(link.title)}
-                              {link.label && (
+                              {link.label != null && link.label && (
                                 <span
                                   className={cn(
-                                    'ml-auto transition-all duration-300 ease-in-out',
+                                    'ml-auto opacity-100 transition-all duration-300 ease-in-out',
                                     variant === 'default' ? 'text-background dark:text-white' : '',
-                                    isCollapsed ? 'opacity-0' : 'opacity-100',
                                   )}
                                 >
                                   {link.label}
                                 </span>
                               )}
-                            </button>
+                            </Button>
                           </AccordionPrimitive.Trigger>
                         </AccordionPrimitive.Header>
 
@@ -118,7 +96,7 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                     </Accordion>
                   );
                 })}
-              </nav>
+              </div>
             </div>
           </div>
         </div>

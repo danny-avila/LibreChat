@@ -3,6 +3,20 @@ const { getMessages, deleteMessages } = require('./Message');
 const logger = require('~/config/winston');
 
 /**
+ * Searches for a conversation by conversationId and returns a lean document with only conversationId and user.
+ * @param {string} conversationId - The conversation's ID.
+ * @returns {Promise<{conversationId: string, user: string} | null>} The conversation object with selected fields or null if not found.
+ */
+const searchConversation = async (conversationId) => {
+  try {
+    return await Conversation.findOne({ conversationId }, 'conversationId user').lean();
+  } catch (error) {
+    logger.error('[searchConversation] Error searching conversation', error);
+    throw new Error('Error searching conversation');
+  }
+};
+
+/**
  * Retrieves a single conversation for a given user and conversation ID.
  * @param {string} user - The user's ID.
  * @param {string} conversationId - The conversation's ID.
@@ -17,22 +31,72 @@ const getConvo = async (user, conversationId) => {
   }
 };
 
+const deleteNullOrEmptyConversations = async () => {
+  try {
+    const filter = {
+      $or: [
+        { conversationId: null },
+        { conversationId: '' },
+        { conversationId: { $exists: false } },
+      ],
+    };
+
+    const result = await Conversation.deleteMany(filter);
+
+    // Delete associated messages
+    const messageDeleteResult = await deleteMessages(filter);
+
+    logger.info(
+      `[deleteNullOrEmptyConversations] Deleted ${result.deletedCount} conversations and ${messageDeleteResult.deletedCount} messages`,
+    );
+
+    return {
+      conversations: result,
+      messages: messageDeleteResult,
+    };
+  } catch (error) {
+    logger.error('[deleteNullOrEmptyConversations] Error deleting conversations', error);
+    throw new Error('Error deleting conversations with null or empty conversationId');
+  }
+};
+
 module.exports = {
   Conversation,
-  saveConvo: async (user, { conversationId, newConversationId, ...convo }) => {
+  searchConversation,
+  deleteNullOrEmptyConversations,
+  /**
+   * Saves a conversation to the database.
+   * @param {Object} req - The request object.
+   * @param {string} conversationId - The conversation's ID.
+   * @param {Object} metadata - Additional metadata to log for operation.
+   * @returns {Promise<TConversation>} The conversation object.
+   */
+  saveConvo: async (req, { conversationId, newConversationId, ...convo }, metadata) => {
     try {
+      if (metadata && metadata?.context) {
+        logger.debug(`[saveConvo] ${metadata.context}`);
+      }
       const messages = await getMessages({ conversationId }, '_id');
-      const update = { ...convo, messages, user };
+      const update = { ...convo, messages, user: req.user.id };
       if (newConversationId) {
         update.conversationId = newConversationId;
       }
 
-      return await Conversation.findOneAndUpdate({ conversationId: conversationId, user }, update, {
-        new: true,
-        upsert: true,
-      });
+      const conversation = await Conversation.findOneAndUpdate(
+        { conversationId, user: req.user.id },
+        update,
+        {
+          new: true,
+          upsert: true,
+        },
+      );
+
+      return conversation.toObject();
     } catch (error) {
       logger.error('[saveConvo] Error saving conversation', error);
+      if (metadata && metadata?.context) {
+        logger.info(`[saveConvo] ${metadata.context}`);
+      }
       return { message: 'Error saving conversation' };
     }
   },
@@ -54,12 +118,15 @@ module.exports = {
       throw new Error('Failed to save conversations in bulk.');
     }
   },
-  getConvosByPage: async (user, pageNumber = 1, pageSize = 25, isArchived = false) => {
+  getConvosByPage: async (user, pageNumber = 1, pageSize = 25, isArchived = false, tags) => {
     const query = { user };
     if (isArchived) {
       query.isArchived = true;
     } else {
       query.$or = [{ isArchived: false }, { isArchived: { $exists: false } }];
+    }
+    if (Array.isArray(tags) && tags.length > 0) {
+      query.tags = { $in: tags };
     }
     try {
       const totalConvos = (await Conversation.countDocuments(query)) || 1;

@@ -1,10 +1,11 @@
-import { useRecoilState } from 'recoil';
-import TextareaAutosize from 'react-textarea-autosize';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import { EModelEndpoint } from 'librechat-data-provider';
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect, useCallback } from 'react';
+import { useForm } from 'react-hook-form';
 import { useUpdateMessageMutation } from 'librechat-data-provider/react-query';
 import type { TEditProps } from '~/common';
 import { useChatContext, useAddedChatContext } from '~/Providers';
+import { TextareaAutosize } from '~/components/ui';
 import { cn, removeFocusRings } from '~/utils';
 import { useLocalize } from '~/hooks';
 import Container from './Container';
@@ -25,7 +26,6 @@ const EditMessage = ({
     store.latestMessageFamily(addedIndex),
   );
 
-  const [editedText, setEditedText] = useState<string>(text ?? '');
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const { conversationId, parentMessageId, messageId } = message;
@@ -33,6 +33,15 @@ const EditMessage = ({
   const endpoint = endpointType ?? _endpoint;
   const updateMessageMutation = useUpdateMessageMutation(conversationId ?? '');
   const localize = useLocalize();
+
+  const chatDirection = useRecoilValue(store.chatDirection).toLowerCase();
+  const isRTL = chatDirection === 'rtl';
+
+  const { register, handleSubmit, setValue } = useForm({
+    defaultValues: {
+      text: text ?? '',
+    },
+  });
 
   useEffect(() => {
     const textArea = textAreaRef.current;
@@ -43,11 +52,11 @@ const EditMessage = ({
     }
   }, []);
 
-  const resubmitMessage = () => {
+  const resubmitMessage = (data: { text: string }) => {
     if (message.isCreatedByUser) {
       ask(
         {
-          text: editedText,
+          text: data.text,
           parentMessageId,
           conversationId,
         },
@@ -67,7 +76,7 @@ const EditMessage = ({
       ask(
         { ...parentMessage },
         {
-          editedText,
+          editedText: data.text,
           editedMessageId: messageId,
           isRegenerate: true,
           isEdited: true,
@@ -80,7 +89,7 @@ const EditMessage = ({
     enterEdit(true);
   };
 
-  const updateMessage = () => {
+  const updateMessage = (data: { text: string }) => {
     const messages = getMessages();
     if (!messages) {
       return;
@@ -88,24 +97,24 @@ const EditMessage = ({
     updateMessageMutation.mutate({
       conversationId: conversationId ?? '',
       model: conversation?.model ?? 'gpt-3.5-turbo',
-      text: editedText,
+      text: data.text,
       messageId,
     });
 
     if (message.messageId === latestMultiMessage?.messageId) {
-      setLatestMultiMessage({ ...latestMultiMessage, text: editedText });
+      setLatestMultiMessage({ ...latestMultiMessage, text: data.text });
     }
 
-    const isInMessages = messages?.some((message) => message?.messageId === messageId);
+    const isInMessages = messages.some((message) => message.messageId === messageId);
     if (!isInMessages) {
-      message.text = editedText;
+      message.text = data.text;
     } else {
       setMessages(
         messages.map((msg) =>
           msg.messageId === messageId
             ? {
               ...msg,
-              text: editedText,
+              text: data.text,
               isEdited: true,
             }
             : msg,
@@ -126,42 +135,33 @@ const EditMessage = ({
     [enterEdit],
   );
 
+  const { ref, ...registerProps } = register('text', {
+    required: true,
+    onChange: (e) => {
+      setValue('text', e.target.value, { shouldValidate: true });
+    },
+  });
+
   return (
     <Container message={message}>
-      <div className="bg-token-main-surface-primary relative flex w-full flex-grow flex-col overflow-hidden rounded-2xl border dark:border-gray-600 dark:text-white [&:has(textarea:focus)]:border-gray-300 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)] dark:[&:has(textarea:focus)]:border-gray-500">
+      <div className="bg-token-main-surface-primary relative flex w-full flex-grow flex-col overflow-hidden rounded-2xl border border-border-medium text-text-primary [&:has(textarea:focus)]:border-border-heavy [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]">
         <TextareaAutosize
-          ref={textAreaRef}
-          onChange={(e) => {
-            setEditedText(e.target.value);
+          {...registerProps}
+          ref={(e) => {
+            ref(e);
+            textAreaRef.current = e;
           }}
           onKeyDown={handleKeyDown}
           data-testid="message-text-editor"
           className={cn(
-            'markdown prose dark:prose-invert light whitespace-pre-wrap break-words',
-            'pl-3 md:pl-4',
+            'markdown prose dark:prose-invert light whitespace-pre-wrap break-words pl-3 md:pl-4',
             'm-0 w-full resize-none border-0 bg-transparent py-[10px]',
-            'placeholder-black/50 focus:ring-0 focus-visible:ring-0 dark:bg-transparent dark:placeholder-white/50 md:py-3.5  ',
-            'pr-3 md:pr-4',
-            'max-h-[65vh] md:max-h-[75vh]',
+            'placeholder-text-secondary focus:ring-0 focus-visible:ring-0 md:py-3.5',
+            isRTL ? 'text-right' : 'text-left',
+            'max-h-[65vh] pr-3 md:max-h-[75vh] md:pr-4',
             removeFocusRings,
           )}
-          onPaste={(e) => {
-            e.preventDefault();
-
-            const pastedData = e.clipboardData.getData('text/plain');
-            const textArea = textAreaRef.current;
-            if (!textArea) {
-              return;
-            }
-            const start = textArea.selectionStart;
-            const end = textArea.selectionEnd;
-            const newValue =
-              textArea.value.substring(0, start) + pastedData + textArea.value.substring(end);
-            setEditedText(newValue);
-          }}
-          contentEditable={true}
-          value={editedText}
-          suppressContentEditableWarning={true}
+          dir={isRTL ? 'rtl' : 'ltr'}
         />
       </div>
       <div className="mt-2 flex w-full justify-center text-center">
@@ -170,14 +170,14 @@ const EditMessage = ({
           disabled={
             isSubmitting || (endpoint === EModelEndpoint.google && !message.isCreatedByUser)
           }
-          onClick={resubmitMessage}
+          onClick={handleSubmit(resubmitMessage)}
         >
           {localize('com_ui_save_submit')}
         </button>
         <button
           className="btn btn-secondary relative mr-2"
           disabled={isSubmitting}
-          onClick={updateMessage}
+          onClick={handleSubmit(updateMessage)}
         >
           {localize('com_ui_save')}
         </button>

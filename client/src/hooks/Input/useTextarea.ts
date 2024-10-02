@@ -8,6 +8,7 @@ import { forceResize, insertTextAtCursor, getAssistantName } from '~/utils';
 import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import useFileHandling from '~/hooks/Files/useFileHandling';
+import { useInteractionHealthCheck } from '~/data-provider';
 import { useChatContext } from '~/Providers/ChatContext';
 import useLocalize from '~/hooks/useLocalize';
 import { globalAudioId } from '~/common';
@@ -29,6 +30,7 @@ export default function useTextarea({
   const isComposing = useRef(false);
   const { handleFiles } = useFileHandling();
   const assistantMap = useAssistantsMapContext();
+  const checkHealth = useInteractionHealthCheck();
   const enterToSend = useRecoilValue(store.enterToSend);
 
   const {
@@ -50,7 +52,7 @@ export default function useTextarea({
 
   const assistant =
     isAssistantsEndpoint(endpoint) && assistantMap?.[endpoint ?? '']?.[assistant_id ?? ''];
-  const assistantName = (assistant && assistant?.name) || '';
+  const assistantName = (assistant && assistant.name) || '';
 
   useEffect(() => {
     if (activePrompt && textAreaRef.current) {
@@ -112,7 +114,7 @@ export default function useTextarea({
         ? getAssistantName({ name: assistantName, localize })
         : getSender(conversation as TEndpointOption);
 
-      return `${localize('com_endpoint_message')} ${sender ? sender : 'ChatGPT'}…`;
+      return `${localize('com_endpoint_message')} ${sender ? sender : 'AI'}`;
     };
 
     const placeholder = getPlaceholderText();
@@ -152,6 +154,8 @@ export default function useTextarea({
         return;
       }
 
+      checkHealth();
+
       const isNonShiftEnter = e.key === 'Enter' && !e.shiftKey;
       const isCtrlEnter = e.key === 'Enter' && e.ctrlKey;
 
@@ -168,7 +172,7 @@ export default function useTextarea({
         !enterToSend &&
         !isCtrlEnter &&
         textAreaRef.current &&
-        !isComposing?.current
+        !isComposing.current
       ) {
         e.preventDefault();
         insertTextAtCursor(textAreaRef.current, '\n');
@@ -176,7 +180,7 @@ export default function useTextarea({
         return;
       }
 
-      if ((isNonShiftEnter || isCtrlEnter) && !isComposing?.current) {
+      if ((isNonShiftEnter || isCtrlEnter) && !isComposing.current) {
         const globalAudio = document.getElementById(globalAudioId) as HTMLAudioElement;
         if (globalAudio) {
           console.log('Unmuting global audio');
@@ -185,7 +189,7 @@ export default function useTextarea({
         submitButtonRef.current?.click();
       }
     },
-    [isSubmitting, filesLoading, enterToSend, textAreaRef, submitButtonRef],
+    [isSubmitting, checkHealth, filesLoading, enterToSend, textAreaRef, submitButtonRef],
   );
 
   const handleCompositionStart = () => {

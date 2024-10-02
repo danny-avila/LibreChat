@@ -10,10 +10,10 @@ import {
   BreadcrumbList,
   BreadcrumbSeparator,
   // BreadcrumbEllipsis,
-  DropdownMenu,
+  // DropdownMenu,
   // DropdownMenuItem,
   // DropdownMenuContent,
-  DropdownMenuTrigger,
+  // DropdownMenuTrigger,
 } from '~/components/ui';
 import { useLocalize, useCustomLink, useAuthContext } from '~/hooks';
 import AdvancedSwitch from '~/components/Prompts/AdvancedSwitch';
@@ -21,7 +21,7 @@ import AdminSettings from '~/components/Prompts/AdminSettings';
 import { useDashboardContext } from '~/Providers';
 import store from '~/store';
 
-const promptsPathPattern = /prompts\/.*/;
+const promptsPathPattern = /prompts\/(?!new(?:\/|$)).*$/;
 
 const getConversationId = (prevLocationPath: string) => {
   if (!prevLocationPath || prevLocationPath.includes('/d/')) {

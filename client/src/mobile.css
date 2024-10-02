@@ -288,3 +288,53 @@
 .slow-pulse {
   animation: slowPulse 2.5s ease-in-out infinite;
 }
+
+.scrollbar-gutter-stable {
+  scrollbar-gutter: stable;
+}
+
+/* Styles for Chrome scrollbar */
+.chrome-scrollbar::-webkit-scrollbar {
+  width: 12px;  /* Increase the width of the scrollbar */
+}
+
+.chrome-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);  /* Color of the scroll thumb */
+  border-radius: 6px;  /* Rounded corners on the scroll thumb */
+  border: 2px solid transparent;  /* Creates padding around scroll thumb */
+  background-clip: padding-box;  /* Prevents background color from leaking outside the border */
+}
+
+.chrome-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.3);  /* Darker color when hovering */
+}
+
+.chrome-scrollbar::-webkit-scrollbar-track {
+  background-color: transparent;  /* Color of the tracking area */
+}
+
+.sp-preview-container {
+  @apply flex h-full w-full grow flex-col justify-center;
+}
+
+.sp-preview {
+  @apply flex h-full w-full grow flex-col justify-center;
+}
+
+.sp-preview-iframe {
+  @apply grow;
+}
+
+.sp-wrapper {
+  @apply flex h-full w-full grow flex-col justify-center;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-3px); }
+  20%, 40%, 60%, 80% { transform: translateX(3px); }
+}
+
+.shake {
+  animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+}

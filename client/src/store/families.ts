@@ -2,13 +2,14 @@ import {
   atom,
   selector,
   atomFamily,
+  DefaultValue,
   selectorFamily,
   useRecoilState,
   useRecoilValue,
   useSetRecoilState,
   useRecoilCallback,
 } from 'recoil';
-import { LocalStorageKeys } from 'librechat-data-provider';
+import { LocalStorageKeys, Constants } from 'librechat-data-provider';
 import type { TMessage, TPreset, TConversation, TSubmission } from 'librechat-data-provider';
 import type { TOptionSettings, ExtendedFile } from '~/common';
 import { storeEndpointSettings, logger } from '~/utils';
@@ -27,6 +28,14 @@ const submissionKeysAtom = atom<(string | number)[]>({
 const latestMessageFamily = atomFamily<TMessage | null, string | number | null>({
   key: 'latestMessageByIndex',
   default: null,
+  effects: [
+    ({ onSet, node }) => {
+      onSet(async (newValue) => {
+        const key = Number(node.key.split(Constants.COMMON_DIVIDER)[1]);
+        logger.log('Recoil Effect: Setting latestMessage', { key, newValue });
+      });
+    },
+  ] as const,
 });
 
 const submissionByIndex = atomFamily<TSubmission | null, string | number>({
@@ -41,7 +50,7 @@ const latestMessageKeysSelector = selector<(string | number)[]>({
     return keys.filter((key) => get(latestMessageFamily(key)) !== null);
   },
   set: ({ set }, newKeys) => {
-    logger.log('setting latestMessageKeys', newKeys);
+    logger.log('setting latestMessageKeys', { newKeys });
     set(latestMessageKeysAtom, newKeys);
   },
 });
@@ -65,11 +74,15 @@ const conversationByIndex = atomFamily<TConversation | null, string | number>({
     ({ onSet, node }) => {
       onSet(async (newValue) => {
         const index = Number(node.key.split('__')[1]);
+        logger.log('conversation', 'Setting conversation:', { index, newValue });
         if (newValue?.assistant_id) {
           localStorage.setItem(
-            `${LocalStorageKeys.ASST_ID_PREFIX}${index}${newValue?.endpoint}`,
+            `${LocalStorageKeys.ASST_ID_PREFIX}${index}${newValue.endpoint}`,
             newValue.assistant_id,
           );
+        }
+        if (newValue?.agent_id) {
+          localStorage.setItem(`${LocalStorageKeys.AGENT_ID_PREFIX}${index}`, newValue.agent_id);
         }
         if (newValue?.spec) {
           localStorage.setItem(LocalStorageKeys.LAST_SPEC, newValue.spec);
@@ -131,11 +144,33 @@ const showStopButtonByIndex = atomFamily<boolean, string | number>({
 const abortScrollFamily = atomFamily({
   key: 'abortScrollByIndex',
   default: false,
+  effects: [
+    ({ onSet, node }) => {
+      onSet(async (newValue) => {
+        const key = Number(node.key.split(Constants.COMMON_DIVIDER)[1]);
+        logger.log('message_scrolling', 'Recoil Effect: Setting abortScrollByIndex', {
+          key,
+          newValue,
+        });
+      });
+    },
+  ] as const,
 });
 
 const isSubmittingFamily = atomFamily({
   key: 'isSubmittingByIndex',
   default: false,
+  effects: [
+    ({ onSet, node }) => {
+      onSet(async (newValue) => {
+        const key = Number(node.key.split(Constants.COMMON_DIVIDER)[1]);
+        logger.log('message_stream', 'Recoil Effect: Setting isSubmittingByIndex', {
+          key,
+          newValue,
+        });
+      });
+    },
+  ],
 });
 
 const optionSettingsFamily = atomFamily<TOptionSettings, string | number>({
@@ -170,6 +205,11 @@ const showMentionPopoverFamily = atomFamily<boolean, string | number | null>({
 
 const showPlusPopoverFamily = atomFamily<boolean, string | number | null>({
   key: 'showPlusPopoverByIndex',
+  default: false,
+});
+
+const showPromptsPopoverFamily = atomFamily<boolean, string | number | null>({
+  key: 'showPromptsPopoverByIndex',
   default: false,
 });
 
@@ -274,19 +314,22 @@ function useClearSubmissionState() {
   return clearAllSubmissions;
 }
 
-function useClearLatestMessages() {
+function useClearLatestMessages(context?: string) {
   const clearAllLatestMessages = useRecoilCallback(
     ({ reset, set, snapshot }) =>
       async (skipFirst?: boolean) => {
         const latestMessageKeys = await snapshot.getPromise(latestMessageKeysSelector);
-        logger.log('latestMessageKeys', latestMessageKeys);
+        logger.log('[clearAllLatestMessages] latestMessageKeys', latestMessageKeys);
+        if (context) {
+          logger.log(`[clearAllLatestMessages] context: ${context}`);
+        }
 
         for (const key of latestMessageKeys) {
           if (skipFirst && key == 0) {
             continue;
           }
 
-          logger.log('resetting latest message', key);
+          logger.log(`[clearAllLatestMessages] resetting latest message; key: ${key}`);
           reset(latestMessageFamily(key));
         }
 
@@ -297,6 +340,31 @@ function useClearLatestMessages() {
 
   return clearAllLatestMessages;
 }
+
+const updateConversationSelector = selectorFamily({
+  key: 'updateConversationSelector',
+  get: () => () => null as Partial<TConversation> | null,
+  set:
+    (conversationId: string) =>
+      ({ set, get }, newPartialConversation) => {
+        if (newPartialConversation instanceof DefaultValue) {
+          return;
+        }
+
+        const keys = get(conversationKeysAtom);
+        keys.forEach((key) => {
+          set(conversationByIndex(key), (prevConversation) => {
+            if (prevConversation && prevConversation.conversationId === conversationId) {
+              return {
+                ...prevConversation,
+                ...newPartialConversation,
+              };
+            }
+            return prevConversation;
+          });
+        });
+      },
+});
 
 export default {
   conversationByIndex,
@@ -326,4 +394,6 @@ export default {
   activePromptByIndex,
   useClearSubmissionState,
   useClearLatestMessages,
+  showPromptsPopoverFamily,
+  updateConversationSelector,
 };

@@ -1,89 +1,145 @@
 const { createChunkProcessor, splitTextIntoChunks } = require('./streamAudio');
-const { Message } = require('~/models/Message');
 
-jest.mock('~/models/Message', () => ({
-  Message: {
-    findOne: jest.fn().mockReturnValue({
-      lean: jest.fn(),
-    }),
-  },
-}));
+jest.mock('keyv');
+
+const globalCache = {};
+jest.mock('~/cache/getLogStores', () => {
+  return jest.fn().mockImplementation(() => {
+    const EventEmitter = require('events');
+    const { CacheKeys } = require('librechat-data-provider');
+
+    class KeyvMongo extends EventEmitter {
+      constructor(url = 'mongodb://127.0.0.1:27017', options) {
+        super();
+        this.ttlSupport = false;
+        url = url ?? {};
+        if (typeof url === 'string') {
+          url = { url };
+        }
+        if (url.uri) {
+          url = { url: url.uri, ...url };
+        }
+        this.opts = {
+          url,
+          collection: 'keyv',
+          ...url,
+          ...options,
+        };
+      }
+
+      get = async (key) => {
+        return new Promise((resolve) => {
+          resolve(globalCache[key] || null);
+        });
+      };
+
+      set = async (key, value) => {
+        return new Promise((resolve) => {
+          globalCache[key] = value;
+          resolve(true);
+        });
+      };
+    }
+
+    return new KeyvMongo('', {
+      namespace: CacheKeys.MESSAGES,
+      ttl: 0,
+    });
+  });
+});
 
 describe('processChunks', () => {
   let processChunks;
+  let mockMessageCache;
 
   beforeEach(() => {
+    jest.resetAllMocks();
+    mockMessageCache = {
+      get: jest.fn(),
+    };
+    require('~/cache/getLogStores').mockReturnValue(mockMessageCache);
     processChunks = createChunkProcessor('message-id');
-    Message.findOne.mockClear();
-    Message.findOne().lean.mockClear();
   });
 
   it('should return an empty array when the message is not found', async () => {
-    Message.findOne().lean.mockResolvedValueOnce(null);
+    mockMessageCache.get.mockResolvedValueOnce(null);
 
     const result = await processChunks();
 
     expect(result).toEqual([]);
-    expect(Message.findOne).toHaveBeenCalledWith({ messageId: 'message-id' }, 'text unfinished');
-    expect(Message.findOne().lean).toHaveBeenCalled();
+    expect(mockMessageCache.get).toHaveBeenCalledWith('message-id');
   });
 
-  it('should return an empty array when the message does not have a text property', async () => {
-    Message.findOne().lean.mockResolvedValueOnce({ unfinished: true });
+  it('should return an error message after MAX_NOT_FOUND_COUNT attempts', async () => {
+    mockMessageCache.get.mockResolvedValue(null);
 
+    for (let i = 0; i < 6; i++) {
+      await processChunks();
+    }
     const result = await processChunks();
 
-    expect(result).toEqual([]);
-    expect(Message.findOne).toHaveBeenCalledWith({ messageId: 'message-id' }, 'text unfinished');
-    expect(Message.findOne().lean).toHaveBeenCalled();
+    expect(result).toBe('Message not found after 6 attempts');
   });
 
-  it('should return chunks for an unfinished message with separators', async () => {
+  it('should return chunks for an incomplete message with separators', async () => {
     const messageText = 'This is a long message. It should be split into chunks. Lol hi mom';
-    Message.findOne().lean.mockResolvedValueOnce({ text: messageText, unfinished: true });
+    mockMessageCache.get.mockResolvedValueOnce({ text: messageText, complete: false });
 
     const result = await processChunks();
 
     expect(result).toEqual([
       { text: 'This is a long message. It should be split into chunks.', isFinished: false },
     ]);
-    expect(Message.findOne).toHaveBeenCalledWith({ messageId: 'message-id' }, 'text unfinished');
-    expect(Message.findOne().lean).toHaveBeenCalled();
   });
 
-  it('should return chunks for an unfinished message without separators', async () => {
+  it('should return chunks for an incomplete message without separators', async () => {
     const messageText = 'This is a long message without separators hello there my friend';
-    Message.findOne().lean.mockResolvedValueOnce({ text: messageText, unfinished: true });
+    mockMessageCache.get.mockResolvedValueOnce({ text: messageText, complete: false });
 
     const result = await processChunks();
 
     expect(result).toEqual([{ text: messageText, isFinished: false }]);
-    expect(Message.findOne).toHaveBeenCalledWith({ messageId: 'message-id' }, 'text unfinished');
-    expect(Message.findOne().lean).toHaveBeenCalled();
   });
 
-  it('should return the remaining text as a chunk for a finished message', async () => {
+  it('should return the remaining text as a chunk for a complete message', async () => {
     const messageText = 'This is a finished message.';
-    Message.findOne().lean.mockResolvedValueOnce({ text: messageText, unfinished: false });
+    mockMessageCache.get.mockResolvedValueOnce({ text: messageText, complete: true });
 
     const result = await processChunks();
 
     expect(result).toEqual([{ text: messageText, isFinished: true }]);
-    expect(Message.findOne).toHaveBeenCalledWith({ messageId: 'message-id' }, 'text unfinished');
-    expect(Message.findOne().lean).toHaveBeenCalled();
   });
 
-  it('should return an empty array for a finished message with no remaining text', async () => {
+  it('should return an empty array for a complete message with no remaining text', async () => {
     const messageText = 'This is a finished message.';
-    Message.findOne().lean.mockResolvedValueOnce({ text: messageText, unfinished: false });
+    mockMessageCache.get.mockResolvedValueOnce({ text: messageText, complete: true });
 
     await processChunks();
-    Message.findOne().lean.mockResolvedValueOnce({ text: messageText, unfinished: false });
+    mockMessageCache.get.mockResolvedValueOnce({ text: messageText, complete: true });
     const result = await processChunks();
 
     expect(result).toEqual([]);
-    expect(Message.findOne).toHaveBeenCalledWith({ messageId: 'message-id' }, 'text unfinished');
-    expect(Message.findOne().lean).toHaveBeenCalledTimes(2);
+  });
+
+  it('should return an error message after MAX_NO_CHANGE_COUNT attempts with no change', async () => {
+    const messageText = 'This is a message that does not change.';
+    mockMessageCache.get.mockResolvedValue({ text: messageText, complete: false });
+
+    for (let i = 0; i < 11; i++) {
+      await processChunks();
+    }
+    const result = await processChunks();
+
+    expect(result).toBe('No change in message after 10 attempts');
+  });
+
+  it('should handle string messages as incomplete', async () => {
+    const messageText = 'This is a message as a string.';
+    mockMessageCache.get.mockResolvedValueOnce(messageText);
+
+    const result = await processChunks();
+
+    expect(result).toEqual([{ text: messageText, isFinished: false }]);
   });
 });
 

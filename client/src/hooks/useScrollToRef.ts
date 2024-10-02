@@ -7,7 +7,21 @@ type TUseScrollToRef = {
   smoothCallback: () => void;
 };
 
-export default function useScrollToRef({ targetRef, callback, smoothCallback }: TUseScrollToRef) {
+type ThrottledFunction = (() => void) & {
+  cancel: () => void;
+  flush: () => void;
+};
+
+type ScrollToRefReturn = {
+  scrollToRef?: ThrottledFunction;
+  handleSmoothToRef: React.MouseEventHandler<HTMLButtonElement>;
+};
+
+export default function useScrollToRef({
+  targetRef,
+  callback,
+  smoothCallback,
+}: TUseScrollToRef): ScrollToRefReturn {
   const logAndScroll = (behavior: 'instant' | 'smooth', callbackFn: () => void) => {
     // Debugging:
     // console.log(`Scrolling with behavior: ${behavior}, Time: ${new Date().toISOString()}`);
@@ -17,7 +31,7 @@ export default function useScrollToRef({ targetRef, callback, smoothCallback }: 
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const scrollToRef = useCallback(
-    throttle(() => logAndScroll('instant', callback), 250, { leading: true }),
+    throttle(() => logAndScroll('instant', callback), 145, { leading: true }),
     [targetRef],
   );
 

@@ -1,19 +1,20 @@
 const express = require('express');
 const throttle = require('lodash/throttle');
-const { getResponseSender } = require('librechat-data-provider');
+const { getResponseSender, CacheKeys, Time } = require('librechat-data-provider');
 const {
-  handleAbort,
-  createAbortController,
-  handleAbortError,
   setHeaders,
+  handleAbort,
+  moderateText,
   validateModel,
+  handleAbortError,
   validateEndpoint,
   buildEndpointOption,
-  moderateText,
+  createAbortController,
 } = require('~/server/middleware');
 const { sendMessage, createOnProgress, formatSteps, formatAction } = require('~/server/utils');
 const { initializeClient } = require('~/server/services/Endpoints/gptPlugins');
-const { saveMessage, getConvoTitle, getConvo } = require('~/models');
+const { saveMessage, updateMessage } = require('~/models');
+const { getLogStores } = require('~/cache');
 const { validateTools } = require('~/app');
 const { logger } = require('~/config');
 
@@ -49,6 +50,7 @@ router.post(
     });
 
     let userMessage;
+    let userMessagePromise;
     let promptTokens;
     const sender = getResponseSender({
       ...endpointOption,
@@ -68,6 +70,8 @@ router.post(
       for (let key in data) {
         if (key === 'userMessage') {
           userMessage = data[key];
+        } else if (key === 'userMessagePromise') {
+          userMessagePromise = data[key];
         } else if (key === 'responseMessageId') {
           responseMessageId = data[key];
         } else if (key === 'promptTokens') {
@@ -76,7 +80,15 @@ router.post(
       }
     };
 
-    const throttledSaveMessage = throttle(saveMessage, 3000, { trailing: false });
+    const messageCache = getLogStores(CacheKeys.MESSAGES);
+    const throttledCacheSet = throttle(
+      (text) => {
+        messageCache.set(responseMessageId, text, Time.FIVE_MINUTES);
+      },
+      3000,
+      { trailing: false },
+    );
+
     const {
       onProgress: progressCallback,
       sendIntermediateMessage,
@@ -87,19 +99,7 @@ router.post(
         if (plugin.loading === true) {
           plugin.loading = false;
         }
-
-        throttledSaveMessage({
-          messageId: responseMessageId,
-          sender,
-          conversationId,
-          parentMessageId: overrideParentMessageId || userMessageId,
-          text: partialText,
-          model: endpointOption.modelOptions.model,
-          unfinished: true,
-          isEdited: true,
-          error: false,
-          user,
-        });
+        throttledCacheSet(partialText);
       },
     });
 
@@ -107,7 +107,11 @@ router.post(
       let { intermediateSteps: steps } = data;
       plugin.outputs = steps && steps[0].action ? formatSteps(steps) : 'An error occurred.';
       plugin.loading = false;
-      saveMessage({ ...userMessage, user });
+      saveMessage(
+        req,
+        { ...userMessage, user },
+        { context: 'api/server/routes/ask/gptPlugins.js - onChainEnd' },
+      );
       sendIntermediateMessage(res, {
         plugin,
         parentMessageId: userMessage.messageId,
@@ -119,6 +123,7 @@ router.post(
     const getAbortData = () => ({
       sender,
       conversationId,
+      userMessagePromise,
       messageId: responseMessageId,
       parentMessageId: overrideParentMessageId ?? userMessageId,
       text: getPartialText(),
@@ -137,7 +142,11 @@ router.post(
         plugin.inputs.push(formattedAction);
         plugin.latest = formattedAction.plugin;
         if (!start && !client.skipSaveUserMessage) {
-          saveMessage({ ...userMessage, user });
+          saveMessage(
+            req,
+            { ...userMessage, user },
+            { context: 'api/server/routes/ask/gptPlugins.js - onAgentAction' },
+          );
         }
         sendIntermediateMessage(res, {
           plugin,
@@ -164,7 +173,6 @@ router.post(
         progressCallback,
         progressOptions: {
           res,
-          text,
           plugin,
           // parentMessageId: overrideParentMessageId || userMessageId,
         },
@@ -176,17 +184,26 @@ router.post(
       }
 
       logger.debug('[/edit/gptPlugins] CLIENT RESPONSE', response);
-      response.plugin = { ...plugin, loading: false };
-      await saveMessage({ ...response, user });
+
+      const { conversation = {} } = await client.responsePromise;
+      conversation.title =
+        conversation && !conversation.title ? null : conversation?.title || 'New Chat';
 
       sendMessage(res, {
-        title: await getConvoTitle(user, conversationId),
+        title: conversation.title,
         final: true,
-        conversation: await getConvo(user, conversationId),
+        conversation,
         requestMessage: userMessage,
         responseMessage: response,
       });
       res.end();
+
+      response.plugin = { ...plugin, loading: false };
+      await updateMessage(
+        req,
+        { ...response, user },
+        { context: 'api/server/routes/edit/gptPlugins.js' },
+      );
     } catch (error) {
       const partialText = getPartialText();
       handleAbortError(res, req, error, {

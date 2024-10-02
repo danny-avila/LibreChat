@@ -8,6 +8,7 @@ const { loadDefaultInterface } = require('./start/interface');
 const { azureConfigSetup } = require('./start/azureOpenAI');
 const { loadAndFormatTools } = require('./ToolService');
 const { initializeRoles } = require('~/models/Role');
+const { cleanup } = require('./cleanup');
 const paths = require('~/config/paths');
 
 /**
@@ -17,6 +18,7 @@ const paths = require('~/config/paths');
  * @param {Express.Application} app - The Express application object.
  */
 const AppService = async (app) => {
+  cleanup();
   await initializeRoles();
   /** @type {TCustomConfig}*/
   const config = (await loadCustomConfig()) ?? {};
@@ -45,7 +47,7 @@ const AppService = async (app) => {
 
   const socialLogins =
     config?.registration?.socialLogins ?? configDefaults?.registration?.socialLogins;
-  const interfaceConfig = loadDefaultInterface(config, configDefaults);
+  const interfaceConfig = await loadDefaultInterface(config, configDefaults);
 
   const defaultLocals = {
     paths,
@@ -67,17 +69,18 @@ const AppService = async (app) => {
   handleRateLimits(config?.rateLimits);
 
   const endpointLocals = {};
+  const endpoints = config?.endpoints;
 
-  if (config?.endpoints?.[EModelEndpoint.azureOpenAI]) {
+  if (endpoints?.[EModelEndpoint.azureOpenAI]) {
     endpointLocals[EModelEndpoint.azureOpenAI] = azureConfigSetup(config);
     checkAzureVariables();
   }
 
-  if (config?.endpoints?.[EModelEndpoint.azureOpenAI]?.assistants) {
+  if (endpoints?.[EModelEndpoint.azureOpenAI]?.assistants) {
     endpointLocals[EModelEndpoint.azureAssistants] = azureAssistantsDefaults();
   }
 
-  if (config?.endpoints?.[EModelEndpoint.azureAssistants]) {
+  if (endpoints?.[EModelEndpoint.azureAssistants]) {
     endpointLocals[EModelEndpoint.azureAssistants] = assistantsConfigSetup(
       config,
       EModelEndpoint.azureAssistants,
@@ -85,13 +88,27 @@ const AppService = async (app) => {
     );
   }
 
-  if (config?.endpoints?.[EModelEndpoint.assistants]) {
+  if (endpoints?.[EModelEndpoint.assistants]) {
     endpointLocals[EModelEndpoint.assistants] = assistantsConfigSetup(
       config,
       EModelEndpoint.assistants,
       endpointLocals[EModelEndpoint.assistants],
     );
   }
+
+  const endpointKeys = [
+    EModelEndpoint.openAI,
+    EModelEndpoint.google,
+    EModelEndpoint.bedrock,
+    EModelEndpoint.anthropic,
+    EModelEndpoint.gptPlugins,
+  ];
+
+  endpointKeys.forEach((key) => {
+    if (endpoints?.[key]) {
+      endpointLocals[key] = endpoints[key];
+    }
+  });
 
   app.locals = {
     ...defaultLocals,

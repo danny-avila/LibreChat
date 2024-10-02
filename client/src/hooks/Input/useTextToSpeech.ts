@@ -1,43 +1,135 @@
-import { useRef } from 'react';
+import { useRecoilState, useRecoilValue } from 'recoil';
+import { useRef, useMemo, useEffect, useState } from 'react';
 import { parseTextParts } from 'librechat-data-provider';
-import type { TMessage } from 'librechat-data-provider';
-import useTextToSpeechExternal from './useTextToSpeechExternal';
-import useTextToSpeechBrowser from './useTextToSpeechBrowser';
+import type { TMessageContentParts } from 'librechat-data-provider';
+import type { Option } from '~/common';
+import useTextToSpeechExternal from '~/hooks/Input/useTextToSpeechExternal';
+import useTextToSpeechBrowser from '~/hooks/Input/useTextToSpeechBrowser';
+import useGetAudioSettings from '~/hooks/Input/useGetAudioSettings';
+import useTextToSpeechEdge from '~/hooks/Input/useTextToSpeechEdge';
+import useAudioRef from '~/hooks/Audio/useAudioRef';
 import { usePauseGlobalAudio } from '../Audio';
-import { useRecoilState } from 'recoil';
+import { logger } from '~/utils';
 import store from '~/store';
 
-const useTextToSpeech = (message: TMessage, isLast: boolean, index = 0) => {
-  const [endpointTTS] = useRecoilState<string>(store.endpointTTS);
-  const useExternalTextToSpeech = endpointTTS === 'external';
+type TUseTextToSpeech = {
+  messageId?: string;
+  content?: TMessageContentParts[] | string;
+  isLast?: boolean;
+  index?: number;
+};
 
-  const {
-    generateSpeechLocal: generateSpeechLocal,
-    cancelSpeechLocal: cancelSpeechLocal,
-    isSpeaking: isSpeakingLocal,
-  } = useTextToSpeechBrowser();
-
-  const {
-    generateSpeechExternal: generateSpeechExternal,
-    cancelSpeech: cancelSpeechExternal,
-    isSpeaking: isSpeakingExternal,
-    isLoading: isLoading,
-    audioRef,
-  } = useTextToSpeechExternal(message.messageId, isLast, index);
-  const { pauseGlobalAudio } = usePauseGlobalAudio(index);
-
-  const generateSpeech = useExternalTextToSpeech ? generateSpeechExternal : generateSpeechLocal;
-  const cancelSpeech = useExternalTextToSpeech ? cancelSpeechExternal : cancelSpeechLocal;
-  const isSpeaking = useExternalTextToSpeech ? isSpeakingExternal : isSpeakingLocal;
+const useTextToSpeech = (props?: TUseTextToSpeech) => {
+  const { messageId, content, isLast = false, index = 0 } = props ?? {};
 
   const isMouseDownRef = useRef(false);
   const timerRef = useRef<number | undefined>(undefined);
+  const [isSpeakingState, setIsSpeaking] = useState(false);
+  const { audioRef } = useAudioRef({ setIsPlaying: setIsSpeaking });
+
+  const { textToSpeechEndpoint } = useGetAudioSettings();
+  const { pauseGlobalAudio } = usePauseGlobalAudio(index);
+  const [voice, setVoice] = useRecoilState(store.voice);
+  const globalIsPlaying = useRecoilValue(store.globalAudioPlayingFamily(index));
+
+  const isSpeaking = isSpeakingState || (isLast && globalIsPlaying);
+
+  const {
+    generateSpeechLocal,
+    cancelSpeechLocal,
+    voices: voicesLocal,
+  } = useTextToSpeechBrowser({ setIsSpeaking });
+
+  const {
+    generateSpeechEdge,
+    cancelSpeechEdge,
+    voices: voicesEdge,
+  } = useTextToSpeechEdge({ setIsSpeaking });
+
+  const {
+    generateSpeechExternal,
+    cancelSpeech: cancelSpeechExternal,
+    isLoading: isLoadingExternal,
+    voices: voicesExternal,
+  } = useTextToSpeechExternal({
+    setIsSpeaking,
+    audioRef,
+    messageId,
+    isLast,
+    index,
+  });
+
+  const generateSpeech = useMemo(() => {
+    const map = {
+      edge: generateSpeechEdge,
+      browser: generateSpeechLocal,
+      external: generateSpeechExternal,
+    };
+
+    return map[textToSpeechEndpoint];
+  }, [generateSpeechEdge, generateSpeechExternal, generateSpeechLocal, textToSpeechEndpoint]);
+
+  const cancelSpeech = useMemo(() => {
+    const map = {
+      edge: cancelSpeechEdge,
+      browser: cancelSpeechLocal,
+      external: cancelSpeechExternal,
+    };
+    return map[textToSpeechEndpoint];
+  }, [cancelSpeechEdge, cancelSpeechExternal, cancelSpeechLocal, textToSpeechEndpoint]);
+
+  const isLoading = useMemo(() => {
+    const map = {
+      edge: false,
+      browser: false,
+      external: isLoadingExternal,
+    };
+    return map[textToSpeechEndpoint];
+  }, [isLoadingExternal, textToSpeechEndpoint]);
+
+  const voices: Option[] | string[] = useMemo(() => {
+    const voiceMap = {
+      edge: voicesEdge,
+      browser: voicesLocal,
+      external: voicesExternal,
+    };
+
+    return voiceMap[textToSpeechEndpoint];
+  }, [textToSpeechEndpoint, voicesEdge, voicesExternal, voicesLocal]);
+
+  useEffect(() => {
+    const firstVoice = voices[0];
+    if (voices.length && typeof firstVoice === 'object') {
+      const lastSelectedVoice = voices.find((v) =>
+        typeof v === 'object' ? v.value === voice : v === voice,
+      );
+      if (lastSelectedVoice != null) {
+        const currentVoice =
+          typeof lastSelectedVoice === 'object' ? lastSelectedVoice.value : lastSelectedVoice;
+        logger.log('useTextToSpeech.ts - Effect:', { voices, voice: currentVoice });
+        setVoice(currentVoice?.toString() ?? undefined);
+        return;
+      }
+
+      logger.log('useTextToSpeech.ts - Effect:', { voices, voice: firstVoice.value });
+      setVoice(firstVoice.value?.toString() ?? undefined);
+    } else if (voices.length) {
+      const lastSelectedVoice = voices.find((v) => v === voice);
+      if (lastSelectedVoice != null) {
+        logger.log('useTextToSpeech.ts - Effect:', { voices, voice: lastSelectedVoice });
+        setVoice(lastSelectedVoice.toString());
+        return;
+      }
+      logger.log('useTextToSpeech.ts - Effect:', { voices, voice: firstVoice });
+      setVoice(firstVoice.toString());
+    }
+  }, [setVoice, textToSpeechEndpoint, voice, voices]);
 
   const handleMouseDown = () => {
     isMouseDownRef.current = true;
     timerRef.current = window.setTimeout(() => {
       if (isMouseDownRef.current) {
-        const messageContent = message?.content ?? message?.text ?? '';
+        const messageContent = content ?? '';
         const parsedMessage =
           typeof messageContent === 'string' ? messageContent : parseTextParts(messageContent);
         generateSpeech(parsedMessage, false);
@@ -47,18 +139,17 @@ const useTextToSpeech = (message: TMessage, isLast: boolean, index = 0) => {
 
   const handleMouseUp = () => {
     isMouseDownRef.current = false;
-    if (timerRef.current) {
+    if (timerRef.current != null) {
       window.clearTimeout(timerRef.current);
     }
   };
 
   const toggleSpeech = () => {
-    if (isSpeaking) {
-      console.log('canceling message audio speech');
+    if (isSpeaking === true) {
       cancelSpeech();
       pauseGlobalAudio();
     } else {
-      const messageContent = message?.content ?? message?.text ?? '';
+      const messageContent = content ?? '';
       const parsedMessage =
         typeof messageContent === 'string' ? messageContent : parseTextParts(messageContent);
       generateSpeech(parsedMessage, false);
@@ -72,6 +163,7 @@ const useTextToSpeech = (message: TMessage, isLast: boolean, index = 0) => {
     isSpeaking,
     isLoading,
     audioRef,
+    voices,
   };
 };
 

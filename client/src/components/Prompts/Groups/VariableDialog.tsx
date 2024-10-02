@@ -7,7 +7,7 @@ import VariableForm from './VariableForm';
 
 interface VariableDialogProps extends Omit<DialogPrimitive.DialogProps, 'onOpenChange'> {
   onClose: () => void;
-  group: TPromptGroup;
+  group: TPromptGroup | null;
 }
 
 const VariableDialog: React.FC<VariableDialogProps> = ({ open, onClose, group }) => {
@@ -18,16 +18,20 @@ const VariableDialog: React.FC<VariableDialogProps> = ({ open, onClose, group })
   };
 
   const hasVariables = useMemo(
-    () => detectVariables(group.productionPrompt?.prompt ?? ''),
-    [group.productionPrompt?.prompt],
+    () => detectVariables(group?.productionPrompt?.prompt ?? ''),
+    [group?.productionPrompt?.prompt],
   );
+  if (!group) {
+    return null;
+  }
+
   if (!hasVariables) {
     return null;
   }
 
   return (
     <OGDialog open={open} onOpenChange={handleOpenChange}>
-      <OGDialogContent className="max-w-3xl bg-white dark:border-gray-700 dark:bg-gray-850 dark:text-gray-300">
+      <OGDialogContent className="max-w-full bg-white dark:border-gray-700 dark:bg-gray-850 dark:text-gray-300 md:max-w-3xl">
         <OGDialogTitle>{group.name}</OGDialogTitle>
         <VariableForm group={group} onClose={onClose} />
       </OGDialogContent>

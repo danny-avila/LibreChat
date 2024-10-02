@@ -41,12 +41,12 @@ export default function PromptsView() {
         <GroupSidePanel isDetailView={isDetailView} {...groupsNav}>
           <div className="mx-2 mt-1 flex flex-row items-center justify-between">
             <FilterPrompts setName={groupsNav.setName} />
-            <AutoSendPrompt className="text-xs dark:text-white" />
+            <AutoSendPrompt className="text-xs text-text-primary" />
           </div>
         </GroupSidePanel>
         <div
           className={cn(
-            'w-full overflow-y-auto lg:w-3/4 xl:w-3/4',
+            'scrollbar-gutter-stable w-full overflow-y-auto lg:w-3/4 xl:w-3/4',
             isDetailView ? 'block' : 'hidden md:block',
           )}
         >

@@ -13,10 +13,12 @@ const {
   endpointSettings,
   EModelEndpoint,
   VisionModes,
+  Constants,
   AuthKeys,
 } = require('librechat-data-provider');
 const { encodeAndFormat } = require('~/server/services/Files/images');
 const { getModelMaxTokens } = require('~/utils');
+const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
 const {
   formatMessage,
@@ -118,19 +120,7 @@ class GoogleClient extends BaseClient {
       .filter((ex) => ex)
       .filter((obj) => obj.input.content !== '' && obj.output.content !== '');
 
-    const modelOptions = this.options.modelOptions || {};
-    this.modelOptions = {
-      ...modelOptions,
-      // set some good defaults (check for undefined in some cases because they may be 0)
-      model: modelOptions.model || settings.model.default,
-      temperature:
-        typeof modelOptions.temperature === 'undefined'
-          ? settings.temperature.default
-          : modelOptions.temperature,
-      topP: typeof modelOptions.topP === 'undefined' ? settings.topP.default : modelOptions.topP,
-      topK: typeof modelOptions.topK === 'undefined' ? settings.topK.default : modelOptions.topK,
-      // stop: modelOptions.stop // no stop method for now
-    };
+    this.modelOptions = this.options.modelOptions || {};
 
     this.options.attachments?.then((attachments) => this.checkVisionRequest(attachments));
 
@@ -400,8 +390,13 @@ class GoogleClient extends BaseClient {
       parameters: this.modelOptions,
     };
 
-    if (this.options.promptPrefix) {
-      payload.instances[0].context = this.options.promptPrefix;
+    let promptPrefix = (this.options.promptPrefix ?? '').trim();
+    if (typeof this.options.artifactsPrompt === 'string' && this.options.artifactsPrompt) {
+      promptPrefix = `${promptPrefix ?? ''}\n${this.options.artifactsPrompt}`.trim();
+    }
+
+    if (promptPrefix) {
+      payload.instances[0].context = promptPrefix;
     }
 
     if (this.options.examples.length > 0) {
@@ -455,7 +450,10 @@ class GoogleClient extends BaseClient {
       identityPrefix = `${identityPrefix}\nYou are ${this.options.modelLabel}`;
     }
 
-    let promptPrefix = (this.options.promptPrefix || '').trim();
+    let promptPrefix = (this.options.promptPrefix ?? '').trim();
+    if (typeof this.options.artifactsPrompt === 'string' && this.options.artifactsPrompt) {
+      promptPrefix = `${promptPrefix ?? ''}\n${this.options.artifactsPrompt}`.trim();
+    }
     if (promptPrefix) {
       // If the prompt prefix doesn't end with the end token, add it.
       if (!promptPrefix.endsWith(`${this.endToken}`)) {
@@ -620,8 +618,9 @@ class GoogleClient extends BaseClient {
   }
 
   async getCompletion(_payload, options = {}) {
-    const { onProgress, abortController } = options;
     const { parameters, instances } = _payload;
+    const { onProgress, abortController } = options;
+    const streamRate = this.options.streamRate ?? Constants.DEFAULT_STREAM_RATE;
     const { messages: _messages, context, examples: _examples } = instances?.[0] ?? {};
 
     let examples;
@@ -674,24 +673,27 @@ class GoogleClient extends BaseClient {
 
     const modelName = clientOptions.modelName ?? clientOptions.model ?? '';
     if (modelName?.includes('1.5') && !this.project_id) {
-      /** @type {GenerativeModel} */
       const client = model;
       const requestOptions = {
         contents: _payload,
       };
 
+      let promptPrefix = (this.options.promptPrefix ?? '').trim();
+      if (typeof this.options.artifactsPrompt === 'string' && this.options.artifactsPrompt) {
+        promptPrefix = `${promptPrefix ?? ''}\n${this.options.artifactsPrompt}`.trim();
+      }
+
       if (this.options?.promptPrefix?.length) {
         requestOptions.systemInstruction = {
           parts: [
             {
-              text: this.options.promptPrefix,
+              text: promptPrefix,
             },
           ],
         };
       }
 
-      const safetySettings = _payload.safetySettings;
-      requestOptions.safetySettings = safetySettings;
+      requestOptions.safetySettings = _payload.safetySettings;
 
       const delay = modelName.includes('flash') ? 8 : 14;
       const result = await client.generateContentStream(requestOptions);
@@ -701,21 +703,28 @@ class GoogleClient extends BaseClient {
           delay,
         });
         reply += chunkText;
+        await sleep(streamRate);
       }
       return reply;
     }
 
-    const safetySettings = _payload.safetySettings;
     const stream = await model.stream(messages, {
       signal: abortController.signal,
       timeout: 7000,
-      safetySettings: safetySettings,
+      safetySettings: _payload.safetySettings,
     });
 
-    let delay = this.isGenerativeModel ? 12 : 8;
-    if (modelName.includes('flash')) {
-      delay = 5;
+    let delay = this.options.streamRate || 8;
+
+    if (!this.options.streamRate) {
+      if (this.isGenerativeModel) {
+        delay = 12;
+      }
+      if (modelName.includes('flash')) {
+        delay = 5;
+      }
     }
+
     for await (const chunk of stream) {
       const chunkText = chunk?.content ?? chunk;
       await this.generateTextStream(chunkText, onProgress, {
@@ -771,11 +780,16 @@ class GoogleClient extends BaseClient {
         contents: _payload,
       };
 
+      let promptPrefix = (this.options.promptPrefix ?? '').trim();
+      if (typeof this.options.artifactsPrompt === 'string' && this.options.artifactsPrompt) {
+        promptPrefix = `${promptPrefix ?? ''}\n${this.options.artifactsPrompt}`.trim();
+      }
+
       if (this.options?.promptPrefix?.length) {
         requestOptions.systemInstruction = {
           parts: [
             {
-              text: this.options.promptPrefix,
+              text: promptPrefix,
             },
           ],
         };
@@ -800,7 +814,7 @@ class GoogleClient extends BaseClient {
       });
 
       reply = titleResponse.content;
-
+      // TODO: RECORD TOKEN USAGE
       return reply;
     }
   }
@@ -846,6 +860,7 @@ class GoogleClient extends BaseClient {
 
   getSaveOptions() {
     return {
+      artifacts: this.options.artifacts,
       promptPrefix: this.options.promptPrefix,
       modelLabel: this.options.modelLabel,
       iconURL: this.options.iconURL,
@@ -860,36 +875,34 @@ class GoogleClient extends BaseClient {
   }
 
   async sendCompletion(payload, opts = {}) {
-    const modelName = payload.parameters?.model;
-
-    if (modelName && modelName.toLowerCase().includes('gemini')) {
-      const safetySettings = [
-        {
-          category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-          threshold:
-            process.env.GOOGLE_SAFETY_SEXUALLY_EXPLICIT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
-        },
-        {
-          category: 'HARM_CATEGORY_HATE_SPEECH',
-          threshold: process.env.GOOGLE_SAFETY_HATE_SPEECH || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
-        },
-        {
-          category: 'HARM_CATEGORY_HARASSMENT',
-          threshold: process.env.GOOGLE_SAFETY_HARASSMENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
-        },
-        {
-          category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
-          threshold:
-            process.env.GOOGLE_SAFETY_DANGEROUS_CONTENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
-        },
-      ];
-
-      payload.safetySettings = safetySettings;
-    }
+    payload.safetySettings = this.getSafetySettings();
 
     let reply = '';
     reply = await this.getCompletion(payload, opts);
     return reply.trim();
+  }
+
+  getSafetySettings() {
+    return [
+      {
+        category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+        threshold:
+          process.env.GOOGLE_SAFETY_SEXUALLY_EXPLICIT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+      },
+      {
+        category: 'HARM_CATEGORY_HATE_SPEECH',
+        threshold: process.env.GOOGLE_SAFETY_HATE_SPEECH || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+      },
+      {
+        category: 'HARM_CATEGORY_HARASSMENT',
+        threshold: process.env.GOOGLE_SAFETY_HARASSMENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+      },
+      {
+        category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
+        threshold:
+          process.env.GOOGLE_SAFETY_DANGEROUS_CONTENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+      },
+    ];
   }
 
   /* TO-DO: Handle tokens with Google tokenization NOTE: these are required */

@@ -1,3 +1,4 @@
+import * as artifacts from './artifacts';
 import conversation from './conversation';
 import conversations from './conversations';
 import families from './families';
@@ -11,8 +12,9 @@ import preset from './preset';
 import prompts from './prompts';
 import lang from './language';
 import settings from './settings';
-
+import banner from './banner';
 export default {
+  ...artifacts,
   ...families,
   ...conversation,
   ...conversations,
@@ -26,4 +28,5 @@ export default {
   ...preset,
   ...lang,
   ...settings,
+  ...banner,
 };

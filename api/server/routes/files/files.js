@@ -1,13 +1,22 @@
 const fs = require('fs').promises;
 const express = require('express');
-const { isUUID, checkOpenAIStorage } = require('librechat-data-provider');
+const { EnvVar } = require('@librechat/agents');
+const {
+  isUUID,
+  FileSources,
+  EModelEndpoint,
+  isAgentsEndpoint,
+  checkOpenAIStorage,
+} = require('librechat-data-provider');
 const {
   filterFile,
   processFileUpload,
   processDeleteRequest,
+  processAgentFileUpload,
 } = require('~/server/services/Files/process');
-const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
+const { loadAuthValues } = require('~/app/clients/tools/util');
 const { getFiles } = require('~/models/File');
 const { logger } = require('~/config');
 
@@ -59,10 +68,45 @@ router.delete('/', async (req, res) => {
 
     await processDeleteRequest({ req, files });
 
+    logger.debug(
+      `[/files] Files deleted successfully: ${files.map(
+        (f, i) => `${f.file_id}${i < files.length - 1 ? ', ' : ''}`,
+      )}`,
+    );
     res.status(200).json({ message: 'Files deleted successfully' });
   } catch (error) {
     logger.error('[/files] Error deleting files:', error);
     res.status(400).json({ message: 'Error in request', error: error.message });
+  }
+});
+
+router.get('/code/download/:sessionId/:fileId', async (req, res) => {
+  try {
+    const { sessionId, fileId } = req.params;
+    const logPrefix = `Session ID: ${sessionId} | File ID: ${fileId} | Code output download requested by user `;
+    logger.debug(logPrefix);
+
+    if (!sessionId || !fileId) {
+      return res.status(400).send('Bad request');
+    }
+
+    const { getDownloadStream } = getStrategyFunctions(FileSources.execute_code);
+    if (!getDownloadStream) {
+      logger.warn(
+        `${logPrefix} has no stream method implemented for ${FileSources.execute_code} source`,
+      );
+      return res.status(501).send('Not Implemented');
+    }
+
+    const result = await loadAuthValues({ userId: req.user.id, authFields: [EnvVar.CODE_API_KEY] });
+
+    /** @type {AxiosResponse<ReadableStream> | undefined} */
+    const response = await getDownloadStream(`${sessionId}/${fileId}`, result[EnvVar.CODE_API_KEY]);
+    res.set(response.headers);
+    response.data.pipe(res);
+  } catch (error) {
+    logger.error('Error downloading file:', error);
+    res.status(500).send('Error downloading file');
   }
 });
 
@@ -113,7 +157,15 @@ router.get('/download/:userId/:file_id', async (req, res) => {
 
     if (checkOpenAIStorage(file.source)) {
       req.body = { model: file.model };
-      const { openai } = await initializeClient({ req, res });
+      const endpointMap = {
+        [FileSources.openai]: EModelEndpoint.assistants,
+        [FileSources.azure]: EModelEndpoint.azureAssistants,
+      };
+      const { openai } = await getOpenAIClient({
+        req,
+        res,
+        overrideEndpoint: endpointMap[file.source],
+      });
       logger.debug(`Downloading file ${file_id} from OpenAI`);
       passThrough = await getDownloadStream(file_id, openai);
       setHeaders();
@@ -140,6 +192,10 @@ router.post('/', async (req, res) => {
 
     metadata.temp_file_id = metadata.file_id;
     metadata.file_id = req.file_id;
+
+    if (isAgentsEndpoint(metadata.endpoint)) {
+      return await processAgentFileUpload({ req, res, file, metadata });
+    }
 
     await processFileUpload({ req, res, file, metadata });
   } catch (error) {

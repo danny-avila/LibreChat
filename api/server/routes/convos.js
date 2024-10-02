@@ -30,8 +30,14 @@ router.get('/', async (req, res) => {
     return res.status(400).json({ error: 'Invalid page size' });
   }
   const isArchived = req.query.isArchived === 'true';
+  let tags;
+  if (req.query.tags) {
+    tags = Array.isArray(req.query.tags) ? req.query.tags : [req.query.tags];
+  } else {
+    tags = undefined;
+  }
 
-  res.status(200).send(await getConvosByPage(req.user.id, pageNumber, pageSize, isArchived));
+  res.status(200).send(await getConvosByPage(req.user.id, pageNumber, pageSize, isArchived, tags));
 });
 
 router.get('/:conversationId', async (req, res) => {
@@ -103,8 +109,14 @@ router.post('/clear', async (req, res) => {
 router.post('/update', async (req, res) => {
   const update = req.body.arg;
 
+  if (!update.conversationId) {
+    return res.status(400).json({ error: 'conversationId is required' });
+  }
+
   try {
-    const dbResponse = await saveConvo(req.user.id, update);
+    const dbResponse = await saveConvo(req, update, {
+      context: `POST /api/convos/update ${update.conversationId}`,
+    });
     res.status(201).json(dbResponse);
   } catch (error) {
     logger.error('Error updating conversation', error);

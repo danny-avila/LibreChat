@@ -31,7 +31,7 @@ export function FilterItem({
   return (
     <DropdownMenuItem
       onClick={onClick}
-      className="relative cursor-pointer gap-2 text-text-secondary hover:bg-surface-tertiary focus:bg-surface-tertiary dark:focus:bg-surface-tertiary"
+      className="relative cursor-pointer gap-2 text-text-secondary hover:bg-surface-tertiary focus:bg-surface-tertiary"
     >
       {icon}
       <span>{label}</span>
@@ -133,7 +133,13 @@ export default function FilterPrompts({
     <div className={cn('flex gap-2', className)}>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="sm" className="h-10 w-10 flex-shrink-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-10 w-10 flex-shrink-0"
+            id="filter-prompts"
+            aria-label="filter-prompts"
+          >
             {selectedIcon}
           </Button>
         </DropdownMenuTrigger>
@@ -146,7 +152,7 @@ export default function FilterPrompts({
           setDisplayName(e.target.value);
           setName(e.target.value);
         }}
-        className="max-w-xs border-border-light focus:bg-surface-tertiary"
+        className="w-full border-border-light placeholder:text-text-secondary"
       />
     </div>
   );
