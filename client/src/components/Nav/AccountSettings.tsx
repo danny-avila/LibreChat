@@ -50,7 +50,7 @@ function AccountSettings() {
             ) : (
               <img
                 className="rounded-full"
-                src={user?.avatar ?? avatarSrc}
+                src={(user?.avatar ?? '') || avatarSrc}
                 alt={`${name}'s avatar`}
               />
             )}
