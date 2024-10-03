@@ -17,7 +17,7 @@ const {
   parseParamFromPrompt,
   createContextHandlers,
 } = require('./prompts');
-const { getModelMaxTokens, getModelMaxOutputTokens, matchModelName } = require('~/utils');
+const { getModelMaxTokens, getModelMaxOutputTokens, matchModelName, replaceSpecialVars} = require('~/utils');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { sleep } = require('~/server/utils');
 const BaseClient = require('./BaseClient');
@@ -494,7 +494,8 @@ class AnthropicClient extends BaseClient {
       identityPrefix = `${identityPrefix}\nYou are ${this.options.modelLabel}`;
     }
 
-    let promptPrefix = (this.options.promptPrefix ?? '').trim();
+    let promptPrefix = replaceSpecialVars((this.options.promptPrefix ?? '').trim());
+    console.log(`promptPrefix: ${promptPrefix}`);
     if (typeof this.options.artifactsPrompt === 'string' && this.options.artifactsPrompt) {
       promptPrefix = `${promptPrefix ?? ''}\n${this.options.artifactsPrompt}`.trim();
     }

@@ -5,6 +5,7 @@ const deriveBaseURL = require('./deriveBaseURL');
 const logAxiosError = require('./logAxiosError');
 const extractBaseURL = require('./extractBaseURL');
 const findMessageContent = require('./findMessageContent');
+const replaceSpecialVars = require('./replaceSpecialVars');
 
 module.exports = {
   loadYaml,
@@ -14,4 +15,5 @@ module.exports = {
   logAxiosError,
   extractBaseURL,
   findMessageContent,
+  replaceSpecialVars
 };
