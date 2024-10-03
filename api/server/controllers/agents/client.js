@@ -184,10 +184,10 @@ class AgentClient extends BaseClient {
     );
   }
 
-  getBuildMessagesOptions(opts) {
+  getBuildMessagesOptions() {
     return {
-      instructions: opts.instructions,
-      additional_instructions: opts.additional_instructions,
+      instructions: this.options.agent.instructions,
+      additional_instructions: this.options.agent.additional_instructions,
     };
   }
 
