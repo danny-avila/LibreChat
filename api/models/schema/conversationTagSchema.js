@@ -21,6 +21,7 @@ const conversationTagSchema = mongoose.Schema(
     position: {
       type: Number,
       default: 0,
+      index: true,
     },
   },
   { timestamps: true },
