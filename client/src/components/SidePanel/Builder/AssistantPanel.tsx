@@ -426,18 +426,12 @@ export default function AssistantPanel({
                     className="relative w-full"
                     showOnHover={!assistant_id}
                     tabIndex={0}
+                    accessibleWhenDisabled
                   >
                     <button
                       type="button"
                       disabled={!assistant_id}
-                      // TODO: Only if Button is enabled can onClick be called
                       onClick={() => {
-                        if (!assistant_id) {
-                          return showToast({
-                            message: localize('com_assistants_actions_disabled'),
-                            status: 'warning',
-                          });
-                        }
                         setActivePanel(Panel.actions);
                       }}
                       className="btn btn-neutral border-token-border-light relative h-8 w-full rounded-lg font-medium"
