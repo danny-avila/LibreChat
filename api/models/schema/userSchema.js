@@ -83,18 +83,12 @@ const userSchema = mongoose.Schema(
     },
     googleId: {
       type: String,
-      unique: true,
-      sparse: true,
     },
     facebookId: {
       type: String,
-      unique: true,
-      sparse: true,
     },
     openidId: {
       type: String,
-      unique: true,
-      sparse: true,
     },
     ldapId: {
       type: String,
@@ -103,13 +97,9 @@ const userSchema = mongoose.Schema(
     },
     githubId: {
       type: String,
-      unique: true,
-      sparse: true,
     },
     discordId: {
       type: String,
-      unique: true,
-      sparse: true,
     },
     plugins: {
       type: Array,
@@ -129,6 +119,27 @@ const userSchema = mongoose.Schema(
   },
 
   { timestamps: true },
+);
+
+userSchema.index(
+  { googleId: 1 },
+  { unique: true, partialFilterExpression: { googleId: { $type: 'string' } } },
+);
+userSchema.index(
+  { facebookId: 1 },
+  { unique: true, partialFilterExpression: { facebookId: { $type: 'string' } } },
+);
+userSchema.index(
+  { openidId: 1 },
+  { unique: true, partialFilterExpression: { openidId: { $type: 'string' } } },
+);
+userSchema.index(
+  { githubId: 1 },
+  { unique: true, partialFilterExpression: { githubId: { $type: 'string' } } },
+);
+userSchema.index(
+  { discordId: 1 },
+  { unique: true, partialFilterExpression: { discordId: { $type: 'string' } } },
 );
 
 module.exports = userSchema;
