@@ -495,7 +495,6 @@ class AnthropicClient extends BaseClient {
     }
 
     let promptPrefix = replaceSpecialVars((this.options.promptPrefix ?? '').trim());
-    console.log(`promptPrefix: ${promptPrefix}`);
     if (typeof this.options.artifactsPrompt === 'string' && this.options.artifactsPrompt) {
       promptPrefix = `${promptPrefix ?? ''}\n${this.options.artifactsPrompt}`.trim();
     }
