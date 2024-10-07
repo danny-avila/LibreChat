@@ -157,7 +157,7 @@ const fetchOpenAIModels = async (opts, _models = []) => {
   }
 
   if (baseURL === openaiBaseURL) {
-    const regex = /(text-davinci-003|gpt-)/;
+    const regex = /(text-davinci-003|gpt-|o1-)/;
     models = models.filter((model) => regex.test(model));
     const instructModels = models.filter((model) => model.includes('instruct'));
     const otherModels = models.filter((model) => !model.includes('instruct'));
