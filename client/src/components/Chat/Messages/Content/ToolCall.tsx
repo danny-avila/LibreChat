@@ -33,7 +33,8 @@ export default function ToolCall({
 
   const [function_name, _domain] = name.split(actionDelimiter) as [string, string | undefined];
   const domain = _domain?.replaceAll(actionDomainSeparator, '.') ?? null;
-  const error = output?.toLowerCase()?.includes('error processing tool');
+  const error =
+    typeof output === 'string' && output.toLowerCase().includes('error processing tool');
 
   const args = useMemo(() => {
     if (typeof _args === 'string') {
