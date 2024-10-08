@@ -2,11 +2,12 @@ import { useState, useId } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { Ellipsis, Share2, Archive, Pen, Trash } from 'lucide-react';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
-import { useLocalize, useArchiveHandler } from '~/hooks';
+import { useLocalize, useArchiveHandler, useHasAccess } from '~/hooks';
 import { DropdownPopup } from '~/components/ui';
 import DeleteButton from './DeleteButton';
 import ShareButton from './ShareButton';
 import { cn } from '~/utils';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 
 export default function ConvoOptions({
   conversation,
@@ -33,6 +34,11 @@ export default function ConvoOptions({
     setShowDeleteDialog(true);
   };
 
+  const hasAccessToDeleteConvo = useHasAccess({
+    permissionType: PermissionTypes.DELETE_CONVO,
+    permission: Permissions.USE,
+  });
+
   const dropdownItems = [
     {
       label: localize('com_ui_rename'),
@@ -50,12 +56,15 @@ export default function ConvoOptions({
       onClick: archiveHandler,
       icon: <Archive className="icon-md mr-2 text-text-secondary" />,
     },
-    {
+  ];
+
+  if (hasAccessToDeleteConvo) {
+    dropdownItems.push({
       label: localize('com_ui_delete'),
       onClick: deleteHandler,
       icon: <Trash className="icon-md mr-2 text-text-secondary" />,
-    },
-  ];
+    });
+  }
 
   const menuId = useId();
 

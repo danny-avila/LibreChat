@@ -14,7 +14,7 @@ import { useToastContext } from '~/Providers';
 import { ConvoOptions } from './ConvoOptions';
 import { cn } from '~/utils';
 import store from '~/store';
-import { useLocalize } from '~/hooks'
+import { useLocalize } from '~/hooks';
 
 type KeyEvent = KeyboardEvent<HTMLInputElement>;
 
@@ -151,11 +151,23 @@ export default function Conversation({
             aria-label={`${localize('com_ui_rename')} ${localize('com_ui_chat')}`}
           />
           <div className="flex gap-1">
-            <button onClick={cancelRename} aria-label={`${localize('com_ui_cancel')} ${localize('com_ui_rename')}`}>
-              <X aria-hidden={true} className="transition-colors h-4 w-4 duration-200 ease-in-out hover:opacity-70" />
+            <button
+              onClick={cancelRename}
+              aria-label={`${localize('com_ui_cancel')} ${localize('com_ui_rename')}`}
+            >
+              <X
+                aria-hidden={true}
+                className="h-4 w-4 transition-colors duration-200 ease-in-out hover:opacity-70"
+              />
             </button>
-            <button onClick={onRename} aria-label={`${localize('com_ui_submit')} ${localize('com_ui_rename')}`}>
-              <Check aria-hidden={true} className="transition-colors h-4 w-4 duration-200 ease-in-out hover:opacity-70" />
+            <button
+              onClick={onRename}
+              aria-label={`${localize('com_ui_submit')} ${localize('com_ui_rename')}`}
+            >
+              <Check
+                aria-hidden={true}
+                className="h-4 w-4 transition-colors duration-200 ease-in-out hover:opacity-70"
+              />
             </button>
           </div>
         </div>

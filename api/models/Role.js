@@ -8,6 +8,7 @@ const {
   promptPermissionsSchema,
   bookmarkPermissionsSchema,
   multiConvoPermissionsSchema,
+  deleteConvoPermissionsSchema,
 } = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
 const Role = require('~/models/schema/roleSchema');
@@ -77,6 +78,7 @@ const permissionSchemas = {
   [PermissionTypes.PROMPTS]: promptPermissionsSchema,
   [PermissionTypes.BOOKMARKS]: bookmarkPermissionsSchema,
   [PermissionTypes.MULTI_CONVO]: multiConvoPermissionsSchema,
+  [PermissionTypes.DELETE_CONVO]: deleteConvoPermissionsSchema,
 };
 
 /**
