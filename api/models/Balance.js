@@ -41,4 +41,11 @@ balanceSchema.statics.check = async function ({
   return { canSpend: balance >= tokenCost, balance, tokenCost };
 };
 
-module.exports = mongoose.model('Balance', balanceSchema);
+const Balance = mongoose.model('Balance', balanceSchema);
+Balance.on('index', (error) => {
+  if (error) {
+    logger.error(`Failed to create Balance index ${error}`);
+  }
+});
+
+module.exports = Balance;

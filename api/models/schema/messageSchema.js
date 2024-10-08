@@ -1,3 +1,4 @@
+const { logger } = require('~/config');
 const mongoose = require('mongoose');
 const mongoMeili = require('~/models/plugins/mongoMeili');
 const messageSchema = mongoose.Schema(
@@ -156,5 +157,11 @@ messageSchema.index({ messageId: 1, user: 1 }, { unique: true });
 
 /** @type {mongoose.Model<TMessage>} */
 const Message = mongoose.models.Message || mongoose.model('Message', messageSchema);
+
+Message.on('index', (error) => {
+  if (error) {
+    logger.error(`Failed to create Message index ${error}`);
+  }
+});
 
 module.exports = Message;

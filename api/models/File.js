@@ -1,7 +1,14 @@
+const { logger } = require('~/config');
 const mongoose = require('mongoose');
 const fileSchema = require('./schema/fileSchema');
 
 const File = mongoose.model('File', fileSchema);
+
+File.on('index', (error) => {
+  if (error) {
+    logger.error(`Failed to create File index ${error}`);
+  }
+});
 
 /**
  * Finds a file by its file_id with additional query options.
