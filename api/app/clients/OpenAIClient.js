@@ -1255,7 +1255,9 @@ ${convo}
 
       /* If there is only one message and it's a system message, change the role to user */
       if (
-        (opts.baseURL.includes('api.mistral.ai') || opts.baseURL.includes('api.perplexity.ai')) &&
+        (opts.baseURL.includes('api.mistral.ai') ||
+          opts.baseURL.includes('api.perplexity.ai') ||
+          opts.baseURL.includes('api.deepinfra.com')) &&
         modelOptions.messages &&
         modelOptions.messages.length === 1 &&
         modelOptions.messages[0]?.role === 'system'
