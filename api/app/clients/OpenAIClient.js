@@ -20,6 +20,7 @@ const {
   getModelMaxTokens,
   genAzureChatCompletion,
   getModelMaxOutputTokens,
+  replaceSpecialVars,
 } = require('~/utils');
 const {
   truncateText,
@@ -547,7 +548,7 @@ class OpenAIClient extends BaseClient {
 
     const isO1Model = /\bo1\b/i.test(this.modelOptions.model);
     if (promptPrefix && !isO1Model) {
-      promptPrefix = `Instructions:\n${promptPrefix.trim()}`;
+      promptPrefix = `Instructions:\n${replaceSpecialVars(promptPrefix.trim())}`;
       instructions = {
         role: 'system',
         name: 'instructions',

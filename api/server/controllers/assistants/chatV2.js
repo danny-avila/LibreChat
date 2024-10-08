@@ -27,7 +27,7 @@ const { getTransactions } = require('~/models/Transaction');
 const checkBalance = require('~/models/checkBalance');
 const { getConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
-const { getModelMaxTokens } = require('~/utils');
+const { getModelMaxTokens, replaceSpecialVars } = require('~/utils');
 const { getOpenAIClient } = require('./helpers');
 const { logger } = require('~/config');
 
@@ -192,7 +192,7 @@ const chatV2 = async (req, res) => {
     };
 
     if (promptPrefix) {
-      body.additional_instructions = promptPrefix;
+      body.additional_instructions = replaceSpecialVars(promptPrefix);
     }
 
     if (typeof endpointOption.artifactsPrompt === 'string' && endpointOption.artifactsPrompt) {
