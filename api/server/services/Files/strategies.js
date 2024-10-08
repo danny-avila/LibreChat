@@ -10,6 +10,7 @@ const {
   getFirebaseFileStream,
 } = require('./Firebase');
 const {
+  uploadLocalFile,
   getLocalFileURL,
   saveFileFromURL,
   saveLocalBuffer,
@@ -47,7 +48,7 @@ const firebaseStrategy = () => ({
  * */
 const localStrategy = () => ({
   /** @type {typeof uploadVectors | null} */
-  handleFileUpload: null,
+  handleFileUpload: uploadLocalFile,
   saveURL: saveFileFromURL,
   getFileURL: getLocalFileURL,
   saveBuffer: saveLocalBuffer,
