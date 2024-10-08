@@ -21,8 +21,8 @@ const {
   getDefaultHandlers,
   createToolEndCallback,
 } = require('~/server/controllers/agents/callbacks');
-const initAnthropic = require('~/server/services/Endpoints/anthropic/initializeClient');
-const initOpenAI = require('~/server/services/Endpoints/openAI/initializeClient');
+const initAnthropic = require('server/services/Endpoints/anthropic/initialize');
+const initOpenAI = require('server/services/Endpoints/openAI/initialize');
 const getBedrockOptions = require('~/server/services/Endpoints/bedrock/options');
 const { loadAgentTools } = require('~/server/services/ToolService');
 const AgentClient = require('~/server/controllers/agents/client');
