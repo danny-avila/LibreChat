@@ -3,7 +3,7 @@ const getLogStores = require('~/cache/getLogStores');
 const { isEnabled } = require('~/server/utils');
 const { saveConvo } = require('~/models');
 const { logger } = require('~/config');
-const initializeClient = require('./initializeClient');
+const initializeClient = require('./initialize');
 
 const addTitle = async (req, { text, response, client }) => {
   const { TITLE_CONVO = 'true' } = process.env ?? {};
