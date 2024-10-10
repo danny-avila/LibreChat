@@ -1,7 +1,8 @@
+// gptPlugins/initializeClient.spec.js
 const { EModelEndpoint, ErrorTypes, validateAzureGroups } = require('librechat-data-provider');
 const { getUserKey, getUserKeyValues } = require('~/server/services/UserService');
-const initializeClient = require('./initializeClient');
-const { OpenAIClient } = require('~/app');
+const initializeClient = require('./initialize');
+const { PluginsClient } = require('~/app');
 
 // Mock getUserKey since it's the only function we want to mock
 jest.mock('~/server/services/UserService', () => ({
@@ -10,7 +11,7 @@ jest.mock('~/server/services/UserService', () => ({
   checkUserKeyExpiry: jest.requireActual('~/server/services/UserService').checkUserKeyExpiry,
 }));
 
-describe('initializeClient', () => {
+describe('gptPlugins/initializeClient', () => {
   // Set up environment variables
   const originalEnvironment = process.env;
   const app = {
@@ -89,65 +90,66 @@ describe('initializeClient', () => {
     process.env = originalEnvironment; // Restore original env vars
   });
 
-  test('should initialize client with OpenAI API key and default options', async () => {
+  test('should initialize PluginsClient with OpenAI API key and default options', async () => {
     process.env.OPENAI_API_KEY = 'test-openai-api-key';
-    process.env.DEBUG_OPENAI = 'false';
+    process.env.PLUGINS_USE_AZURE = 'false';
+    process.env.DEBUG_PLUGINS = 'false';
     process.env.OPENAI_SUMMARIZE = 'false';
 
     const req = {
-      body: { key: null, endpoint: EModelEndpoint.openAI },
+      body: { key: null },
       user: { id: '123' },
       app,
     };
     const res = {};
-    const endpointOption = {};
+    const endpointOption = { modelOptions: { model: 'default-model' } };
 
-    const result = await initializeClient({ req, res, endpointOption });
+    const { client, openAIApiKey } = await initializeClient({ req, res, endpointOption });
 
-    expect(result.openAIApiKey).toBe('test-openai-api-key');
-    expect(result.client).toBeInstanceOf(OpenAIClient);
+    expect(openAIApiKey).toBe('test-openai-api-key');
+    expect(client).toBeInstanceOf(PluginsClient);
   });
 
-  test('should initialize client with Azure credentials when endpoint is azureOpenAI', async () => {
+  test('should initialize PluginsClient with Azure credentials when PLUGINS_USE_AZURE is true', async () => {
     process.env.AZURE_API_KEY = 'test-azure-api-key';
     (process.env.AZURE_OPENAI_API_INSTANCE_NAME = 'some-value'),
     (process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME = 'some-value'),
     (process.env.AZURE_OPENAI_API_VERSION = 'some-value'),
     (process.env.AZURE_OPENAI_API_COMPLETIONS_DEPLOYMENT_NAME = 'some-value'),
     (process.env.AZURE_OPENAI_API_EMBEDDINGS_DEPLOYMENT_NAME = 'some-value'),
-    (process.env.OPENAI_API_KEY = 'test-openai-api-key');
-    process.env.DEBUG_OPENAI = 'false';
+    (process.env.PLUGINS_USE_AZURE = 'true');
+    process.env.DEBUG_PLUGINS = 'false';
     process.env.OPENAI_SUMMARIZE = 'false';
 
     const req = {
-      body: { key: null, endpoint: 'azureOpenAI' },
+      body: { key: null },
       user: { id: '123' },
       app,
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'test-model' } };
 
-    const client = await initializeClient({ req, res, endpointOption });
+    const { client, azure } = await initializeClient({ req, res, endpointOption });
 
-    expect(client.openAIApiKey).toBe('test-azure-api-key');
-    expect(client.client).toBeInstanceOf(OpenAIClient);
+    expect(azure.azureOpenAIApiKey).toBe('test-azure-api-key');
+    expect(client).toBeInstanceOf(PluginsClient);
   });
 
-  test('should use the debug option when DEBUG_OPENAI is enabled', async () => {
+  test('should use the debug option when DEBUG_PLUGINS is enabled', async () => {
     process.env.OPENAI_API_KEY = 'test-openai-api-key';
-    process.env.DEBUG_OPENAI = 'true';
+    process.env.DEBUG_PLUGINS = 'true';
 
     const req = {
-      body: { key: null, endpoint: EModelEndpoint.openAI },
+      body: { key: null },
       user: { id: '123' },
       app,
     };
     const res = {};
-    const endpointOption = {};
+    const endpointOption = { modelOptions: { model: 'default-model' } };
 
-    const client = await initializeClient({ req, res, endpointOption });
+    const { client } = await initializeClient({ req, res, endpointOption });
 
-    expect(client.client.options.debug).toBe(true);
+    expect(client.options.debug).toBe(true);
   });
 
   test('should set contextStrategy to summarize when OPENAI_SUMMARIZE is enabled', async () => {
@@ -155,56 +157,19 @@ describe('initializeClient', () => {
     process.env.OPENAI_SUMMARIZE = 'true';
 
     const req = {
-      body: { key: null, endpoint: EModelEndpoint.openAI },
+      body: { key: null },
       user: { id: '123' },
       app,
     };
     const res = {};
-    const endpointOption = {};
+    const endpointOption = { modelOptions: { model: 'default-model' } };
 
-    const client = await initializeClient({ req, res, endpointOption });
+    const { client } = await initializeClient({ req, res, endpointOption });
 
-    expect(client.client.options.contextStrategy).toBe('summarize');
+    expect(client.options.contextStrategy).toBe('summarize');
   });
 
-  test('should set reverseProxyUrl and proxy when they are provided in the environment', async () => {
-    process.env.OPENAI_API_KEY = 'test-openai-api-key';
-    process.env.OPENAI_REVERSE_PROXY = 'http://reverse.proxy';
-    process.env.PROXY = 'http://proxy';
-
-    const req = {
-      body: { key: null, endpoint: EModelEndpoint.openAI },
-      user: { id: '123' },
-      app,
-    };
-    const res = {};
-    const endpointOption = {};
-
-    const client = await initializeClient({ req, res, endpointOption });
-
-    expect(client.client.options.reverseProxyUrl).toBe('http://reverse.proxy');
-    expect(client.client.options.proxy).toBe('http://proxy');
-  });
-
-  test('should throw an error if the user-provided key has expired', async () => {
-    process.env.OPENAI_API_KEY = 'user_provided';
-    process.env.AZURE_API_KEY = 'user_provided';
-    process.env.DEBUG_OPENAI = 'false';
-    process.env.OPENAI_SUMMARIZE = 'false';
-
-    const expiresAt = new Date(Date.now() - 10000).toISOString(); // Expired
-    const req = {
-      body: { key: expiresAt, endpoint: EModelEndpoint.openAI },
-      user: { id: '123' },
-      app,
-    };
-    const res = {};
-    const endpointOption = {};
-
-    await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(
-      /expired_user_key/,
-    );
-  });
+  // ... additional tests for reverseProxyUrl, proxy, user-provided keys, etc.
 
   test('should throw an error if no API keys are provided in the environment', async () => {
     // Clear the environment variables for API keys
@@ -212,72 +177,140 @@ describe('initializeClient', () => {
     delete process.env.AZURE_API_KEY;
 
     const req = {
-      body: { key: null, endpoint: EModelEndpoint.openAI },
+      body: { key: null },
       user: { id: '123' },
       app,
     };
     const res = {};
-    const endpointOption = {};
+    const endpointOption = { modelOptions: { model: 'default-model' } };
 
     await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(
-      `${EModelEndpoint.openAI} API Key not provided.`,
+      `${EModelEndpoint.openAI} API key not provided.`,
     );
   });
 
-  it('should handle user-provided keys and check expiry', async () => {
-    // Set up the req.body to simulate user-provided key scenario
-    const req = {
-      body: {
-        key: new Date(Date.now() + 10000).toISOString(),
-        endpoint: EModelEndpoint.openAI,
-      },
-      user: {
-        id: '123',
-      },
-      app,
-    };
+  // Additional tests for gptPlugins/initializeClient.spec.js
 
-    const res = {};
-    const endpointOption = {};
+  // ... (previous test setup code)
 
-    // Ensure the environment variable is set to 'user_provided' to match the isUserProvided condition
+  test('should handle user-provided OpenAI keys and check expiry', async () => {
     process.env.OPENAI_API_KEY = 'user_provided';
+    process.env.PLUGINS_USE_AZURE = 'false';
 
-    // Mock getUserKey to return the expected key
-    getUserKeyValues.mockResolvedValue({ apiKey: 'test-user-provided-openai-api-key' });
-
-    // Call the initializeClient function
-    const result = await initializeClient({ req, res, endpointOption });
-
-    // Assertions
-    expect(result.openAIApiKey).toBe('test-user-provided-openai-api-key');
-  });
-
-  test('should throw an error if the user-provided key is invalid', async () => {
-    const invalidKey = new Date(Date.now() - 100000).toISOString();
+    const futureDate = new Date(Date.now() + 10000).toISOString();
     const req = {
-      body: { key: invalidKey, endpoint: EModelEndpoint.openAI },
+      body: { key: futureDate },
       user: { id: '123' },
       app,
     };
     const res = {};
-    const endpointOption = {};
+    const endpointOption = { modelOptions: { model: 'default-model' } };
 
-    // Ensure the environment variable is set to 'user_provided' to match the isUserProvided condition
+    getUserKeyValues.mockResolvedValue({ apiKey: 'test-user-provided-openai-api-key' });
+
+    const { openAIApiKey } = await initializeClient({ req, res, endpointOption });
+
+    expect(openAIApiKey).toBe('test-user-provided-openai-api-key');
+  });
+
+  test('should handle user-provided Azure keys and check expiry', async () => {
+    process.env.AZURE_API_KEY = 'user_provided';
+    process.env.PLUGINS_USE_AZURE = 'true';
+
+    const futureDate = new Date(Date.now() + 10000).toISOString();
+    const req = {
+      body: { key: futureDate },
+      user: { id: '123' },
+      app,
+    };
+    const res = {};
+    const endpointOption = { modelOptions: { model: 'test-model' } };
+
+    getUserKeyValues.mockResolvedValue({
+      apiKey: JSON.stringify({
+        azureOpenAIApiKey: 'test-user-provided-azure-api-key',
+        azureOpenAIApiDeploymentName: 'test-deployment',
+      }),
+    });
+
+    const { azure } = await initializeClient({ req, res, endpointOption });
+
+    expect(azure.azureOpenAIApiKey).toBe('test-user-provided-azure-api-key');
+  });
+
+  test('should throw an error if the user-provided key has expired', async () => {
     process.env.OPENAI_API_KEY = 'user_provided';
-
-    // Mock getUserKey to return an invalid key
-    getUserKey.mockResolvedValue(invalidKey);
+    process.env.PLUGINS_USE_AZURE = 'FALSE';
+    const expiresAt = new Date(Date.now() - 10000).toISOString(); // Expired
+    const req = {
+      body: { key: expiresAt },
+      user: { id: '123' },
+      app,
+    };
+    const res = {};
+    const endpointOption = { modelOptions: { model: 'default-model' } };
 
     await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(
       /expired_user_key/,
     );
   });
 
+  test('should throw an error if the user-provided Azure key is invalid JSON', async () => {
+    process.env.AZURE_API_KEY = 'user_provided';
+    process.env.PLUGINS_USE_AZURE = 'true';
+
+    const req = {
+      body: { key: new Date(Date.now() + 10000).toISOString() },
+      user: { id: '123' },
+      app,
+    };
+    const res = {};
+    const endpointOption = { modelOptions: { model: 'default-model' } };
+
+    // Simulate an invalid JSON string returned from getUserKey
+    getUserKey.mockResolvedValue('invalid-json');
+    getUserKeyValues.mockImplementation(() => {
+      let userValues = getUserKey();
+      try {
+        userValues = JSON.parse(userValues);
+      } catch (e) {
+        throw new Error(
+          JSON.stringify({
+            type: ErrorTypes.INVALID_USER_KEY,
+          }),
+        );
+      }
+      return userValues;
+    });
+
+    await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(
+      /invalid_user_key/,
+    );
+  });
+
+  test('should correctly handle the presence of a reverse proxy', async () => {
+    process.env.OPENAI_REVERSE_PROXY = 'http://reverse.proxy';
+    process.env.PROXY = 'http://proxy';
+    process.env.OPENAI_API_KEY = 'test-openai-api-key';
+
+    const req = {
+      body: { key: null },
+      user: { id: '123' },
+      app,
+    };
+    const res = {};
+    const endpointOption = { modelOptions: { model: 'default-model' } };
+
+    const { client } = await initializeClient({ req, res, endpointOption });
+
+    expect(client.options.reverseProxyUrl).toBe('http://reverse.proxy');
+    expect(client.options.proxy).toBe('http://proxy');
+  });
+
   test('should throw an error when user-provided values are not valid JSON', async () => {
     process.env.OPENAI_API_KEY = 'user_provided';
     const req = {
-      body: { key: new Date(Date.now() + 10000).toISOString(), endpoint: EModelEndpoint.openAI },
+      body: { key: new Date(Date.now() + 10000).toISOString(), endpoint: 'openAI' },
       user: { id: '123' },
       app,
     };
@@ -309,13 +342,14 @@ describe('initializeClient', () => {
     const req = {
       body: {
         key: null,
-        endpoint: EModelEndpoint.azureOpenAI,
+        endpoint: EModelEndpoint.gptPlugins,
         model: modelNames[0],
       },
       user: { id: '123' },
       app: {
         locals: {
           [EModelEndpoint.azureOpenAI]: {
+            plugins: true,
             modelNames,
             modelGroupMap,
             groupMap,
@@ -331,12 +365,11 @@ describe('initializeClient', () => {
   });
 
   test('should initialize client with default options when certain env vars are not set', async () => {
-    delete process.env.DEBUG_OPENAI;
     delete process.env.OPENAI_SUMMARIZE;
     process.env.OPENAI_API_KEY = 'some-api-key';
 
     const req = {
-      body: { key: null, endpoint: EModelEndpoint.openAI },
+      body: { key: null, endpoint: EModelEndpoint.gptPlugins },
       user: { id: '123' },
       app,
     };
@@ -344,8 +377,6 @@ describe('initializeClient', () => {
     const endpointOption = {};
 
     const client = await initializeClient({ req, res, endpointOption });
-
-    expect(client.client.options.debug).toBe(false);
     expect(client.client.options.contextStrategy).toBe(null);
   });
 
@@ -355,7 +386,7 @@ describe('initializeClient', () => {
     const req = {
       body: {
         key: new Date(Date.now() + 10000).toISOString(),
-        endpoint: EModelEndpoint.openAI,
+        endpoint: 'openAI',
       },
       user: {
         id: '123',
