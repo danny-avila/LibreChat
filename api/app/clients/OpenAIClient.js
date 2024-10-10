@@ -1310,7 +1310,7 @@ ${convo}
       /** @type {(value: void | PromiseLike<void>) => void} */
       let streamResolve;
 
-      if (modelOptions.stream && /\bo1\b/i.test(modelOptions.model)) {
+      if (modelOptions.stream && this.isO1Model) {
         delete modelOptions.stream;
         delete modelOptions.stop;
       }
