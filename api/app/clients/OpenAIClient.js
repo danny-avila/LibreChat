@@ -69,6 +69,8 @@ class OpenAIClient extends BaseClient {
 
     /** @type {OpenAIUsageMetadata | undefined} */
     this.usage;
+    /** @type {boolean|undefined} */
+    this.isO1Model;
   }
 
   // TODO: PluginsClient calls this 3x, unneeded
@@ -98,6 +100,8 @@ class OpenAIClient extends BaseClient {
       this.modelOptions,
       this.options.modelOptions,
     );
+
+    this.isO1Model = /\bo1\b/i.test(this.modelOptions.model);
 
     this.defaultVisionModel = this.options.visionModel ?? 'gpt-4-vision-preview';
     if (typeof this.options.attachments?.then === 'function') {
@@ -546,8 +550,7 @@ class OpenAIClient extends BaseClient {
       promptPrefix = this.augmentedPrompt + promptPrefix;
     }
 
-    const isO1Model = /\bo1\b/i.test(this.modelOptions.model);
-    if (promptPrefix && !isO1Model) {
+    if (promptPrefix && this.isO1Model !== true) {
       promptPrefix = `Instructions:\n${replaceSpecialVars(promptPrefix.trim())}`;
       instructions = {
         role: 'system',
@@ -576,7 +579,7 @@ class OpenAIClient extends BaseClient {
     };
 
     /** EXPERIMENTAL */
-    if (promptPrefix && isO1Model) {
+    if (promptPrefix && this.isO1Model === true) {
       const lastUserMessageIndex = payload.findLastIndex((message) => message.role === 'user');
       if (lastUserMessageIndex !== -1) {
         payload[
@@ -1226,6 +1229,11 @@ ${convo}
 
         opts.defaultQuery = { 'api-version': this.azure.azureOpenAIApiVersion };
         opts.defaultHeaders = { ...opts.defaultHeaders, 'api-key': this.apiKey };
+      }
+
+      if (this.isO1Model === true && modelOptions.max_tokens != null) {
+        modelOptions.max_completion_tokens = modelOptions.max_tokens;
+        delete modelOptions.max_tokens;
       }
 
       if (process.env.OPENAI_ORGANIZATION) {
