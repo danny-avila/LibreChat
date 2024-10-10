@@ -118,14 +118,19 @@ async function setupOpenId() {
           }
 
           let fullName = '';
-          if (userinfo.given_name && userinfo.family_name) {
-            fullName = userinfo.given_name + ' ' + userinfo.family_name;
-          } else if (userinfo.given_name) {
-            fullName = userinfo.given_name;
-          } else if (userinfo.family_name) {
-            fullName = userinfo.family_name;
-          } else {
-            fullName = userinfo.username || userinfo.email;
+          if (process.env.OPENID_NAME_CLAIM) {
+            fullName = userinfo[process.env.OPENID_NAME_CLAIM];
+          }
+          else {
+            if (userinfo.given_name && userinfo.family_name) {
+              fullName = userinfo.given_name + ' ' + userinfo.family_name;
+            } else if (userinfo.given_name) {
+              fullName = userinfo.given_name;
+            } else if (userinfo.family_name) {
+              fullName = userinfo.family_name;
+            } else {
+              fullName = userinfo.username || userinfo.email;
+            }
           }
 
           if (requiredRole) {
@@ -158,9 +163,15 @@ async function setupOpenId() {
             }
           }
 
-          const username = convertToUsername(
-            userinfo.username || userinfo.given_name || userinfo.email,
-          );
+          let username = '';
+          if (process.env.OPENID_USERNAME_CLAIM) {
+            username = userinfo[process.env.OPENID_USERNAME_CLAIM];
+          }
+          else {
+            username = convertToUsername(
+              userinfo.username || userinfo.given_name || userinfo.email,
+            );
+          }
 
           if (!user) {
             user = {
