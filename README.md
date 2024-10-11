@@ -36,6 +36,9 @@
 <a href="https://template.cloud.sealos.io/deploy?templateName=librechat">
   <img src="https://raw.githubusercontent.com/labring-actions/templates/main/Deploy-on-Sealos.svg" alt="Deploy on Sealos" height="30">
 </a>
+<a href="https://computenest.console.aliyun.com/service/instance/create/default?type=user&ServiceName=LibreChat%E7%A4%BE%E5%8C%BA%E7%89%88" style="margin-left:24px">
+	<img src="https://service-info-public.oss-cn-hangzhou.aliyuncs.com/computenest-en.svg" alt="Deploy to Alibaba Cloud" height="30" />
+</a>
 </p>
 
 # 📃 Features
