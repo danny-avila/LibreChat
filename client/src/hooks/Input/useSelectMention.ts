@@ -64,6 +64,10 @@ export default function useSelectMention({
         preset.endpointType = newEndpointType;
       }
 
+      if (isAssistantsEndpoint(newEndpoint) && preset.assistant_id != null && !(preset.model ?? '')) {
+        preset.model = assistantMap?.[newEndpoint]?.[preset.assistant_id]?.model;
+      }
+
       const isModular = isCurrentModular && isNewModular && shouldSwitch;
       if (isExistingConversation && isModular) {
         template.endpointType = newEndpointType as EModelEndpoint | undefined;
@@ -90,7 +94,7 @@ export default function useSelectMention({
         keepAddedConvos: isModular,
       });
     },
-    [conversation, getDefaultConversation, modularChat, newConversation, endpointsConfig],
+    [conversation, getDefaultConversation, modularChat, newConversation, endpointsConfig, assistantMap],
   );
 
   type Kwargs = {
