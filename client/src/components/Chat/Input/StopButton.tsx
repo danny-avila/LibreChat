@@ -1,36 +1,44 @@
+import { TooltipAnchor } from '~/components/ui';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 export default function StopButton({ stop, setShowStopButton, isRTL }) {
+  const localize = useLocalize();
+
   return (
     <div
       className={cn(
         'absolute',
-        isRTL ? 'bottom-3 left-2 md:bottom-4 md:left-4' : 'bottom-3 right-2 md:bottom-4 md:right-4',
+        isRTL
+          ? 'bottom-3 left-2 md:bottom-4 md:left-4'
+          : 'bottom-1 right-1.5 md:bottom-2 md:right-2.5',
       )}
     >
-      <button
-        type="button"
-        className="border-gizmo-gray-900 rounded-full border-2 p-1 dark:border-gray-200"
-        aria-label="Stop generating"
-        onClick={(e) => {
-          setShowStopButton(false);
-          stop(e);
-        }}
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 16 16"
-          fill="currentColor"
-          className="text-gizmo-gray-900 h-2 w-2 dark:text-gray-200"
-          height="16"
-          width="16"
-        >
-          <path
-            d="M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2z"
-            strokeWidth="0"
-          ></path>
-        </svg>
-      </button>
+      <TooltipAnchor
+        description={localize('com_nav_stop_generating')}
+        render={
+          <button
+            type="button"
+            className="rounded-full border-2 bg-text-primary p-0.5"
+            aria-label={localize('com_nav_stop_generating')}
+            onClick={(e) => {
+              setShowStopButton(false);
+              stop(e);
+            }}
+          >
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              className="icon-lg text-surface-primary"
+            >
+              <rect x="7" y="7" width="10" height="10" rx="1.25" fill="currentColor"></rect>
+            </svg>
+          </button>
+        }
+      ></TooltipAnchor>
     </div>
   );
 }

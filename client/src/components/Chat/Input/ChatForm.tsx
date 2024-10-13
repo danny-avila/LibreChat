@@ -155,7 +155,7 @@ const ChatForm = ({ index = 0 }) => {
             />
           )}
           <PromptsCommand index={index} textAreaRef={textAreaRef} submitPrompt={submitPrompt} />
-          <div className="bg-token-main-surface-primary relative flex w-full flex-grow flex-col overflow-hidden rounded-2xl border dark:border-gray-600 dark:text-white [&:has(textarea:focus)]:border-gray-300 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)] dark:[&:has(textarea:focus)]:border-gray-500">
+          <div className="transitional-all relative flex w-full flex-grow flex-col overflow-hidden rounded-full text-text-primary duration-200">
             <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
             <FileRow
               files={files}
@@ -183,17 +183,15 @@ const ChatForm = ({ index = 0 }) => {
                 onCompositionEnd={handleCompositionEnd}
                 id={mainTextareaId}
                 tabIndex={0}
-                data-testid="text-input"
-                style={{ height: 44, overflowY: 'auto' }}
                 rows={1}
+                data-testid="text-input"
                 className={cn(
                   supportsFiles[endpointType ?? endpoint ?? ''] && !endpointFileConfig?.disabled
                     ? ' pl-10 md:pl-[55px]'
                     : 'pl-3 md:pl-4',
-                  'm-0 w-full resize-none border-0 bg-transparent py-[10px] placeholder-black/50 focus:ring-0 focus-visible:ring-0 dark:bg-transparent dark:placeholder-white/50 md:py-3.5  ',
+                  'm-0 w-full resize-none bg-surface-tertiary py-[10px] placeholder-black/50 dark:placeholder-white/50 md:py-3.5',
                   SpeechToText && !isRTL ? 'pr-20 md:pr-[85px]' : 'pr-10 md:pr-12',
                   'max-h-[65vh] md:max-h-[75vh]',
-                  removeFocusRings,
                 )}
               />
             )}
@@ -203,6 +201,18 @@ const ChatForm = ({ index = 0 }) => {
               isRTL={isRTL}
               disabled={disableInputs}
             />
+            {SpeechToText && (
+              <AudioRecorder
+                disabled={!!disableInputs}
+                textAreaRef={textAreaRef}
+                ask={submitMessage}
+                isRTL={isRTL}
+                methods={methods}
+              />
+            )}
+            {TextToSpeech && automaticPlayback && <StreamAudio index={index} />}
+          </div>
+          <div className="flex flex-col items-center justify-center">
             {(isSubmitting || isSubmittingAdded) && (showStopButton || showStopAdded) ? (
               <StopButton
                 stop={handleStopGenerating}
@@ -219,16 +229,6 @@ const ChatForm = ({ index = 0 }) => {
                 />
               )
             )}
-            {SpeechToText && (
-              <AudioRecorder
-                disabled={!!disableInputs}
-                textAreaRef={textAreaRef}
-                ask={submitMessage}
-                isRTL={isRTL}
-                methods={methods}
-              />
-            )}
-            {TextToSpeech && automaticPlayback && <StreamAudio index={index} />}
           </div>
         </div>
       </div>
