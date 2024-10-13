@@ -97,9 +97,11 @@ async function setupOpenId() {
         params: {
           scope: process.env.OPENID_SCOPE,
         },
+        passReqToCallback: true,
       },
-      async (tokenset, userinfo, done) => {
+      async (req, tokenset, userinfo, done) => {
         try {
+          req.tokenset = tokenset;
           logger.info(`[openidStrategy] verify login openidId: ${userinfo.sub}`);
           logger.debug('[openidStrategy] very login tokenset and userinfo', { tokenset, userinfo });
 

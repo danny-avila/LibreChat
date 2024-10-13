@@ -1,5 +1,13 @@
 const { z } = require('zod');
 
+function isOpenIDConfigured() {
+  return (
+    process.env.OPENID_JWKS_URI &&
+    process.env.OPENID_ISSUER &&
+    process.env.OPENID_CLIENT_ID
+  );
+};
+
 const allowedCharactersRegex = new RegExp(
   '^[' +
     'a-zA-Z0-9_.@#$%&*()' + // Basic Latin characters and symbols
@@ -75,4 +83,5 @@ const registerSchema = z
 module.exports = {
   loginSchema,
   registerSchema,
+  isOpenIDConfigured,
 };

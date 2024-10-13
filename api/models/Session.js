@@ -52,6 +52,44 @@ sessionSchema.methods.generateRefreshToken = async function () {
     throw error;
   }
 };
+sessionSchema.methods.storeRefreshToken = async function (refreshToken, expiresIn, userId) {
+  try {
+    if (!userId) {
+      throw new Error('User ID is required to update refresh token');
+    }
+    if (!refreshToken) {
+      throw new Error('Refresh token is required to update refresh token');
+    }
+    if (typeof expiresIn === 'undefined' || expiresIn === null || isNaN(expiresIn)) {
+      throw new Error('Valid expiration time is required to update refresh token');
+    }
+
+    const expirationDate = new Date(expiresIn);
+    if (isNaN(expirationDate.getTime())) {
+      throw new Error('Invalid expiration date calculated from expiresIn');
+    }
+
+    const refreshTokenHash = await hashToken(refreshToken);
+
+    let session = await mongoose.model('Session').findOne({ user: userId });
+    if (!session) {
+      session = new mongoose.model('Session')({
+        user: userId,
+        refreshTokenHash,
+        expiration: expirationDate,
+      });
+    } else {
+      session.refreshTokenHash = refreshTokenHash;
+      session.expiration = expirationDate;
+    }
+
+    await session.save();
+    return session;
+  } catch (error) {
+    logger.error('[storeRefreshToken] Error storing refresh token:', error);
+    throw error;
+  }
+};
 
 sessionSchema.statics.deleteAllUserSessions = async function (userId) {
   try {

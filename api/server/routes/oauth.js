@@ -21,7 +21,7 @@ const oauthHandler = async (req, res) => {
     if (req.banned) {
       return;
     }
-    await setAuthTokens(req.user._id, res);
+    await setAuthTokens(req.user._id, res, req.tokenset);
     res.redirect(domains.client);
   } catch (err) {
     logger.error('Error in setting authentication tokens:', err);

@@ -320,13 +320,14 @@ const resetPassword = async (userId, token, password) => {
  *
  * @param {String | ObjectId} userId
  * @param {Object} res
+ * @param {Object} tokenSet
  * @param {String} sessionId
  * @returns
  */
-const setAuthTokens = async (userId, res, sessionId = null) => {
+const setAuthTokens = async (userId, res, tokenSet = null, sessionId = null) => {
   try {
-    const user = await getUserById(userId);
-    const token = await generateToken(user);
+    const user = tokenSet ? null : await getUserById(userId);
+    const token = tokenSet ? tokenSet.access_token : await generateToken(user);
 
     let session;
     let refreshTokenExpires;
@@ -335,12 +336,22 @@ const setAuthTokens = async (userId, res, sessionId = null) => {
       refreshTokenExpires = session.expiration.getTime();
     } else {
       session = new Session({ user: userId });
-      const { REFRESH_TOKEN_EXPIRY } = process.env ?? {};
-      const expires = eval(REFRESH_TOKEN_EXPIRY) ?? 1000 * 60 * 60 * 24 * 7;
-      refreshTokenExpires = Date.now() + expires;
+
+      if (tokenSet) {
+        const expiresInMs = tokenSet.refresh_expires_in ? tokenSet.refresh_expires_in * 1000 : 1000 * 60 * 60 * 24 * 7;
+        refreshTokenExpires = Date.now() + expiresInMs;
+      } else {
+        const { REFRESH_TOKEN_EXPIRY } = process.env ?? {};
+        const expires = eval(REFRESH_TOKEN_EXPIRY) ?? 1000 * 60 * 60 * 24 * 7;
+        refreshTokenExpires = Date.now() + expires;
+      }
     }
 
-    const refreshToken = await session.generateRefreshToken();
+    const refreshToken = tokenSet ? tokenSet.refresh_token : await session.generateRefreshToken();
+
+    if (tokenSet) {
+      await session.storeRefreshToken(refreshToken, refreshTokenExpires, userId);
+    }
 
     res.cookie('refreshToken', refreshToken, {
       expires: new Date(refreshTokenExpires),
