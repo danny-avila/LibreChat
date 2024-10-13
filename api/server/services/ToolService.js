@@ -177,6 +177,8 @@ async function processRequiredActions(client, requiredActions) {
     `[required actions] user: ${client.req.user.id} | thread_id: ${requiredActions[0].thread_id} | run_id: ${requiredActions[0].run_id}`,
     requiredActions,
   );
+  
+  const threadId = requiredActions[0].thread_id;
   const tools = requiredActions.map((action) => action.tool);
   const loadedTools = await loadTools({
     user: client.req.user.id,
@@ -335,7 +337,17 @@ async function processRequiredActions(client, requiredActions) {
         continue;
       }
 
-      tool = await createActionTool({ action: actionSet, requestBuilder });
+      // Initialize an object to hold additional headers
+      const additionalHeaders = {};
+
+      // Detect if "x-openai-thread-id" is required for this operation
+      if (requestBuilder.requiredHeaders.includes('x-openai-thread-id')) {
+        requestBuilder.setHeaders({
+          'x-openai-thread-id': threadId,
+        });
+      }
+      
+      tool = await createActionTool({ action: actionSet, requestBuilder, additionalHeaders });
       isActionTool = !!tool;
       ActionToolMap[currentAction.tool] = tool;
     }

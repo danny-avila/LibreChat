@@ -23,6 +23,7 @@ import { Spinner } from '~/components/svg';
 
 const debouncedValidation = debounce(
   (input: string, callback: (result: ValidationResult) => void) => {
+    
     const result = validateAndParseOpenAPISpec(input);
     callback(result);
   },

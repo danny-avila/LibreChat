@@ -140,6 +140,7 @@ export class ActionRequest {
   isConsequential: boolean;
   contentType: string;
   params?: object;
+  requiredHeaders: string[];
 
   constructor(
     domain: string,
@@ -148,6 +149,7 @@ export class ActionRequest {
     operation: string,
     isConsequential: boolean,
     contentType: string,
+    requiredHeaders: string[] = [],
   ) {
     this.domain = domain;
     this.path = path;
@@ -155,9 +157,11 @@ export class ActionRequest {
     this.operation = operation;
     this.isConsequential = isConsequential;
     this.contentType = contentType;
+    this.requiredHeaders = requiredHeaders; 
   }
 
   private authHeaders: Record<string, string> = {};
+  private customHeaders: Record<string, string> = {};
   private authToken?: string;
 
   setParams(params: object) {
@@ -171,6 +175,10 @@ export class ActionRequest {
         delete (this.params as Record<string, unknown>)[key];
       }
     }
+  }
+
+  setHeaders(headers: Record<string, string>) {
+    this.customHeaders = { ...this.customHeaders, ...headers };
   }
 
   async setAuth(metadata: ActionMetadata) {
@@ -244,6 +252,7 @@ export class ActionRequest {
     const url = createURL(this.domain, this.path);
     const headers = {
       ...this.authHeaders,
+      ...this.customHeaders,
       'Content-Type': this.contentType,
     };
 
@@ -316,6 +325,10 @@ export function openapiToFunction(
         required: [],
       };
 
+      // Collect custom header parameters
+      const headerParameters: OpenAPIV3.ParameterObject[] = [];
+      const requiredHeaders: string[] = [];
+
       if (operationObj.parameters) {
         for (const param of operationObj.parameters) {
           const paramObj = param as OpenAPIV3.ParameterObject;
@@ -323,9 +336,19 @@ export function openapiToFunction(
             { ...paramObj.schema } as OpenAPIV3.ReferenceObject | OpenAPIV3.SchemaObject,
             openapiSpec.components,
           );
-          parametersSchema.properties[paramObj.name] = resolvedSchema;
-          if (paramObj.required) {
-            parametersSchema.required.push(paramObj.name);
+
+          if (paramObj.in === 'header') {
+            // Store header parameters separately
+            headerParameters.push(paramObj);
+            if (paramObj.required) {
+              requiredHeaders.push(paramObj.name);
+            }  
+          } else {
+            // Handle non-header parameters
+            parametersSchema.properties[paramObj.name] = resolvedSchema;
+            if (paramObj.required) {
+              parametersSchema.required.push(paramObj.name);
+            }
           }
         }
       }
@@ -358,6 +381,7 @@ export function openapiToFunction(
         operationId,
         !!operationObj['x-openai-isConsequential'], // Custom extension for consequential actions
         operationObj.requestBody ? 'application/json' : 'application/x-www-form-urlencoded',
+        requiredHeaders
       );
 
       requestBuilders[operationId] = actionRequest;
