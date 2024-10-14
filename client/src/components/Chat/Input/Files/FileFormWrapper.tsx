@@ -1,7 +1,14 @@
-import { memo, useRef } from 'react';
+import { memo } from 'react';
 import { useRecoilValue } from 'recoil';
+import {
+  supportsFiles,
+  mergeFileConfig,
+  EndpointFileConfig,
+  fileConfig as defaultFileConfig,
+} from 'librechat-data-provider';
+import { useGetFileConfig } from '~/data-provider';
 import { useChatContext } from '~/Providers';
-import { useQueryParams } from '~/hooks';
+import { useFileHandling } from '~/hooks';
 import AttachFile from './AttachFile';
 import FileRow from './FileRow';
 import store from '~/store';
@@ -10,11 +17,8 @@ function FileFormWrapper({ children, disableInputs } : {
   disableInputs: boolean;
   children?: React.ReactNode;
 }) {
-  const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
-  useQueryParams({ textAreaRef });
-
+  const { handleFileChange } = useFileHandling();
   const chatDirection = useRecoilValue(store.chatDirection).toLowerCase();
-  const isRTL = chatDirection === 'rtl';
 
   const {
     files,
@@ -22,8 +26,20 @@ function FileFormWrapper({ children, disableInputs } : {
     conversation,
     setFilesLoading,
   } = useChatContext();
+  const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
+    select: (data) => mergeFileConfig(data),
+  });
+
+  const isRTL = chatDirection === 'rtl';
 
   const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };
+  const endpointFileConfig = fileConfig.endpoints[_endpoint ?? ''] as EndpointFileConfig | undefined;
+  const endpointSupportsFiles: boolean = supportsFiles[endpointType ?? _endpoint ?? ''] ?? false;
+  const isUploadDisabled = (disableInputs || endpointFileConfig?.disabled) ?? false;
+
+  if (!endpointSupportsFiles || isUploadDisabled) {
+    return null;
+  }
 
   return (<>
     <FileRow
@@ -41,8 +57,7 @@ function FileFormWrapper({ children, disableInputs } : {
     <AttachFile
       isRTL={isRTL}
       disabled={disableInputs}
-      endpoint={_endpoint ?? ''}
-      endpointType={endpointType}
+      handleFileChange={handleFileChange}
     />
   </>);
 }

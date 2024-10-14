@@ -1,37 +1,20 @@
 import React from 'react';
-import {
-  EModelEndpoint,
-  supportsFiles,
-  fileConfig as defaultFileConfig,
-  mergeFileConfig,
-} from 'librechat-data-provider';
 import { FileUpload, TooltipAnchor } from '~/components/ui';
-import { useFileHandling, useLocalize } from '~/hooks';
-import { useGetFileConfig } from '~/data-provider';
 import { AttachmentIcon } from '~/components/svg';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 const AttachFile = ({
-  endpoint,
-  endpointType,
   isRTL,
-  disabled = false,
+  disabled,
+  handleFileChange,
 }: {
-  endpoint: EModelEndpoint | '';
-  endpointType?: EModelEndpoint;
   isRTL: boolean;
   disabled?: boolean | null;
+  handleFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
 }) => {
   const localize = useLocalize();
-  const { handleFileChange } = useFileHandling();
-  const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
-    select: (data) => mergeFileConfig(data),
-  });
-  const endpointFileConfig = fileConfig.endpoints[endpoint ?? ''];
-
-  if (!supportsFiles[endpointType ?? endpoint ?? ''] || endpointFileConfig?.disabled) {
-    return null;
-  }
+  const isUploadDisabled = disabled ?? false;
 
   return (
     <div
@@ -45,8 +28,8 @@ const AttachFile = ({
       <FileUpload handleFileChange={handleFileChange} className="flex">
         <TooltipAnchor
           id="audio-recorder"
+          disabled={isUploadDisabled}
           aria-label={localize('com_sidepanel_attach_files')}
-          disabled={!!disabled}
           className="btn relative text-black focus:outline-none focus:ring-2 focus:ring-border-xheavy focus:ring-opacity-50 dark:text-white"
           style={{ padding: 0 }}
           description={localize('com_sidepanel_attach_files')}

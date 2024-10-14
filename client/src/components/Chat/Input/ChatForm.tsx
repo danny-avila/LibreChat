@@ -129,7 +129,7 @@ const ChatForm = ({ index = 0 }) => {
   }, [isSearching, disableInputs]);
 
   const endpointSupportsFiles: boolean = supportsFiles[endpointType ?? endpoint ?? ''] ?? false;
-  const isEndpointDisabled: boolean = endpointFileConfig?.disabled ?? false;
+  const isUploadDisabled: boolean = endpointFileConfig?.disabled ?? false;
 
   return (
     <form
@@ -178,7 +178,7 @@ const ChatForm = ({ index = 0 }) => {
                   style={{ height: 44, overflowY: 'auto' }}
                   rows={1}
                   className={cn(
-                    endpointSupportsFiles && !isEndpointDisabled
+                    endpointSupportsFiles && !isUploadDisabled
                       ? 'pl-10 md:pl-[55px]'
                       : 'pl-3 md:pl-4',
                     'm-0 w-full resize-none border-0 bg-transparent py-[10px] placeholder-black/50 focus:ring-0 focus-visible:ring-0 dark:bg-transparent dark:placeholder-white/50 md:py-3.5  ',
