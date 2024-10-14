@@ -136,7 +136,7 @@ const ChatForm = ({ index = 0 }) => {
       className="stretch mx-2 flex flex-row gap-3 last:mb-2 md:mx-4 md:last:mb-6 lg:mx-auto lg:max-w-2xl xl:max-w-3xl"
     >
       <div className="relative flex h-full flex-1 items-stretch md:flex-col">
-        <div className="flex w-full items-center">
+        <div className={`bott flex w-full items-center ${isRTL ? 'flex-row-reverse' : ''}`}>
           {showPlusPopover && !isAssistantsEndpoint(endpoint) && (
             <Mention
               setShowMentionPopover={setShowPlusPopover}
@@ -155,7 +155,7 @@ const ChatForm = ({ index = 0 }) => {
             />
           )}
           <PromptsCommand index={index} textAreaRef={textAreaRef} submitPrompt={submitPrompt} />
-          <div className="transitional-all relative flex w-full flex-grow flex-col overflow-hidden rounded-full text-text-primary duration-200">
+          <div className="transitional-all relative flex w-full flex-grow flex-col overflow-hidden rounded-3xl text-text-primary duration-200">
             <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
             <FileRow
               files={files}
@@ -189,7 +189,7 @@ const ChatForm = ({ index = 0 }) => {
                   supportsFiles[endpointType ?? endpoint ?? ''] && !endpointFileConfig?.disabled
                     ? ' pl-10 md:pl-[55px]'
                     : 'pl-3 md:pl-4',
-                  'm-0 w-full resize-none bg-surface-tertiary py-[10px] placeholder-black/50 dark:placeholder-white/50 md:py-3.5',
+                  'md:py-3.5- m-0 w-full resize-none bg-surface-tertiary py-[10px] placeholder-black/50 dark:placeholder-white/50 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
                   SpeechToText && !isRTL ? 'pr-20 md:pr-[85px]' : 'pr-10 md:pr-12',
                   'max-h-[65vh] md:max-h-[75vh]',
                 )}
@@ -212,7 +212,7 @@ const ChatForm = ({ index = 0 }) => {
             )}
             {TextToSpeech && automaticPlayback && <StreamAudio index={index} />}
           </div>
-          <div className="flex flex-col items-center justify-center">
+          <div className={`ml-4 ${isRTL ? 'mr-4' : ''} flex h-full flex-col justify-end`}>
             {(isSubmitting || isSubmittingAdded) && (showStopButton || showStopAdded) ? (
               <StopButton
                 stop={handleStopGenerating}
