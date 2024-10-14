@@ -1,7 +1,7 @@
 import { v4 } from 'uuid';
 import debounce from 'lodash/debounce';
 import { useQueryClient } from '@tanstack/react-query';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   megabyte,
   QueryKeys,
@@ -33,6 +33,7 @@ const useFileHandling = (params?: UseFileHandling) => {
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
   const [errors, setErrors] = useState<string[]>([]);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const { startUploadTimer, clearUploadTimer } = useDelayedUploadToast();
   const { files, setFiles, setFilesLoading, conversation } = useChatContext();
   const setError = (error: string) => setErrors((prevErrors) => [...prevErrors, error]);
@@ -129,7 +130,7 @@ const useFileHandling = (params?: UseFileHandling) => {
           'An error occurred while uploading the file.',
       );
     },
-  });
+  }, abortControllerRef.current?.signal);
 
   const startUpload = async (extendedFile: ExtendedFile) => {
     const filename = extendedFile.file?.name ?? 'File';
@@ -328,11 +329,21 @@ const useFileHandling = (params?: UseFileHandling) => {
     }
   };
 
+  const abortUpload = (file_id: string) => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    clearUploadTimer(file_id);
+    deleteFileById(file_id);
+  };
+
   return {
     handleFileChange,
     handleFiles,
-    files,
+    abortUpload,
     setFiles,
+    files,
   };
 };
 

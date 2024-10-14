@@ -17,7 +17,7 @@ function FileFormWrapper({ children, disableInputs } : {
   disableInputs: boolean;
   children?: React.ReactNode;
 }) {
-  const { handleFileChange } = useFileHandling();
+  const { handleFileChange, abortUpload } = useFileHandling();
   const chatDirection = useRecoilValue(store.chatDirection).toLowerCase();
 
   const {
@@ -37,14 +37,11 @@ function FileFormWrapper({ children, disableInputs } : {
   const endpointSupportsFiles: boolean = supportsFiles[endpointType ?? _endpoint ?? ''] ?? false;
   const isUploadDisabled = (disableInputs || endpointFileConfig?.disabled) ?? false;
 
-  if (!endpointSupportsFiles || isUploadDisabled) {
-    return null;
-  }
-
   return (<>
     <FileRow
       files={files}
       setFiles={setFiles}
+      abortUpload={abortUpload}
       setFilesLoading={setFilesLoading}
       isRTL={isRTL}
       Wrapper={({ children }) => (
@@ -54,11 +51,11 @@ function FileFormWrapper({ children, disableInputs } : {
       )}
     />
     {children}
-    <AttachFile
+    {endpointSupportsFiles && !isUploadDisabled && <AttachFile
       isRTL={isRTL}
       disabled={disableInputs}
       handleFileChange={handleFileChange}
-    />
+    />}
   </>);
 }
 

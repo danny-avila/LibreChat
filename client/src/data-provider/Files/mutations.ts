@@ -13,6 +13,7 @@ export type TGenTitleMutation = UseMutationResult<
 
 export const useUploadFileMutation = (
   _options?: t.UploadMutationOptions,
+  signal?: AbortSignal | null,
 ): UseMutationResult<
   t.TFileUpload, // response data
   unknown, // error
@@ -33,10 +34,10 @@ export const useUploadFileMutation = (
         version !== '' &&
         version.toString() !== '2'
       ) {
-        return dataService.uploadImage(body);
+        return dataService.uploadImage(body, signal);
       }
 
-      return dataService.uploadFile(body);
+      return dataService.uploadFile(body, signal);
     },
     ...options,
     onSuccess: (data, formData, context) => {

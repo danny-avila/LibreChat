@@ -187,6 +187,10 @@ router.post('/', async (req, res) => {
   const metadata = req.body;
   let cleanup = true;
 
+  req.on('close', () => {
+    logger.debug('[/files] Request closed ');
+  });
+
   try {
     filterFile({ req, file });
 

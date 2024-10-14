@@ -9,6 +9,7 @@ import Image from './Image';
 export default function FileRow({
   files: _files,
   setFiles,
+  abortUpload,
   setFilesLoading,
   assistant_id,
   agent_id,
@@ -18,6 +19,7 @@ export default function FileRow({
   Wrapper,
 }: {
   files: Map<string, ExtendedFile> | undefined;
+  abortUpload?: (file_id: string) => void
   setFiles: React.Dispatch<React.SetStateAction<Map<string, ExtendedFile>>>;
   setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
   fileFilter?: (file: ExtendedFile) => boolean;
@@ -86,7 +88,12 @@ export default function FileRow({
             { map: new Map(), uniqueFiles: [] as ExtendedFile[] },
           )
           .uniqueFiles.map((file: ExtendedFile, index: number) => {
-            const handleDelete = () => deleteFile({ file, setFiles });
+            const handleDelete = () => {
+              if (abortUpload && file.progress < 1) {
+                return abortUpload(file.temp_file_id ?? file.file_id);
+              }
+              deleteFile({ file, setFiles });
+            };
             const isImage = file.type?.startsWith('image') ?? false;
             if (isImage) {
               return (
