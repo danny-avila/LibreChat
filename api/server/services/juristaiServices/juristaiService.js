@@ -1,5 +1,5 @@
 // api/server/services/juristaiService.js
-const { saveUserMessage, initThread } = require('../services/Threads');
+const { saveUserMessage, initThread } = require('../Threads');
 const { v4: uuidv4 } = require('uuid');
 
 exports.addMessageToThread = async ({ thread_id, message, user_id }) => {

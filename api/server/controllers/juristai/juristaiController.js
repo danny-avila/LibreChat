@@ -1,5 +1,5 @@
 // api/server/controllers/juristaiController.js
-const juristaiService = require('../services/juristaiService');
+const juristaiService = require('~/services/juristaiService');
 const { logger } = require('~/config');
 
 
