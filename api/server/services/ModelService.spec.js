@@ -291,7 +291,9 @@ describe('fetchModels with Ollama specific logic', () => {
     });
 
     expect(models).toEqual(['Ollama-Base', 'Ollama-Advanced']);
-    expect(axios.get).toHaveBeenCalledWith('https://api.ollama.test.com/api/tags'); // Adjusted to expect only one argument if no options are passed
+    expect(axios.get).toHaveBeenCalledWith('https://api.ollama.test.com/api/tags', {
+      timeout: 5000,
+    });
   });
 
   it('should handle errors gracefully when fetching Ollama models fails', async () => {
