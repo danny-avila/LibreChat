@@ -60,7 +60,9 @@ class OllamaClient {
     try {
       const ollamaEndpoint = deriveBaseURL(baseURL);
       /** @type {Promise<AxiosResponse<OllamaListResponse>>} */
-      const response = await axios.get(`${ollamaEndpoint}/api/tags`);
+      const response = await axios.get(`${ollamaEndpoint}/api/tags`, {
+        timeout: 5000,
+      });
       models = response.data.models.map((tag) => tag.name);
       return models;
     } catch (error) {
