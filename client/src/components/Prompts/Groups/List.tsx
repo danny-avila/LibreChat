@@ -31,7 +31,7 @@ export default function List({
         <div className="flex w-full justify-end">
           <Button
             variant="outline"
-            className="mx-2 w-full px-3"
+            className="mx-2 w-full bg-transparent px-3"
             onClick={() => navigate('/d/prompts/new')}
           >
             + {localize('com_ui_create_prompt')}

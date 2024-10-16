@@ -3,37 +3,27 @@ const defaultRate = 6;
 
 /** AWS Bedrock pricing */
 const bedrockValues = {
-  'anthropic.claude-3-haiku-20240307-v1:0': { prompt: 0.25, completion: 1.25 },
-  'anthropic.claude-3-sonnet-20240229-v1:0': { prompt: 3.0, completion: 15.0 },
-  'anthropic.claude-3-opus-20240229-v1:0': { prompt: 15.0, completion: 75.0 },
-  'anthropic.claude-3-5-sonnet-20240620-v1:0': { prompt: 3.0, completion: 15.0 },
-  'anthropic.claude-v2:1': { prompt: 8.0, completion: 24.0 },
-  'anthropic.claude-instant-v1': { prompt: 0.8, completion: 2.4 },
-  'meta.llama2-13b-chat-v1': { prompt: 0.75, completion: 1.0 },
-  'meta.llama2-70b-chat-v1': { prompt: 1.95, completion: 2.56 },
-  'meta.llama3-8b-instruct-v1:0': { prompt: 0.3, completion: 0.6 },
-  'meta.llama3-70b-instruct-v1:0': { prompt: 2.65, completion: 3.5 },
-  'meta.llama3-1-8b-instruct-v1:0': { prompt: 0.3, completion: 0.6 },
-  'meta.llama3-1-70b-instruct-v1:0': { prompt: 2.65, completion: 3.5 },
-  'meta.llama3-1-405b-instruct-v1:0': { prompt: 5.32, completion: 16.0 },
-  'mistral.mistral-7b-instruct-v0:2': { prompt: 0.15, completion: 0.2 },
-  'mistral.mistral-small-2402-v1:0': { prompt: 0.15, completion: 0.2 },
-  'mistral.mixtral-8x7b-instruct-v0:1': { prompt: 0.45, completion: 0.7 },
-  'mistral.mistral-large-2402-v1:0': { prompt: 4.0, completion: 12.0 },
-  'mistral.mistral-large-2407-v1:0': { prompt: 3.0, completion: 9.0 },
-  'cohere.command-text-v14': { prompt: 1.5, completion: 2.0 },
-  'cohere.command-light-text-v14': { prompt: 0.3, completion: 0.6 },
-  'cohere.command-r-v1:0': { prompt: 0.5, completion: 1.5 },
-  'cohere.command-r-plus-v1:0': { prompt: 3.0, completion: 15.0 },
+  'llama2-13b': { prompt: 0.75, completion: 1.0 },
+  'llama2-70b': { prompt: 1.95, completion: 2.56 },
+  'llama3-8b': { prompt: 0.3, completion: 0.6 },
+  'llama3-70b': { prompt: 2.65, completion: 3.5 },
+  'llama3-1-8b': { prompt: 0.3, completion: 0.6 },
+  'llama3-1-70b': { prompt: 2.65, completion: 3.5 },
+  'llama3-1-405b': { prompt: 5.32, completion: 16.0 },
+  'mistral-7b': { prompt: 0.15, completion: 0.2 },
+  'mistral-small': { prompt: 0.15, completion: 0.2 },
+  'mixtral-8x7b': { prompt: 0.45, completion: 0.7 },
+  'mistral-large-2402': { prompt: 4.0, completion: 12.0 },
+  'mistral-large-2407': { prompt: 3.0, completion: 9.0 },
+  'command-text': { prompt: 1.5, completion: 2.0 },
+  'command-light': { prompt: 0.3, completion: 0.6 },
   'ai21.j2-mid-v1': { prompt: 12.5, completion: 12.5 },
   'ai21.j2-ultra-v1': { prompt: 18.8, completion: 18.8 },
+  'ai21.jamba-instruct-v1:0': { prompt: 0.5, completion: 0.7 },
   'amazon.titan-text-lite-v1': { prompt: 0.15, completion: 0.2 },
   'amazon.titan-text-express-v1': { prompt: 0.2, completion: 0.6 },
+  'amazon.titan-text-premier-v1:0': { prompt: 0.5, completion: 1.5 },
 };
-
-for (const [key, value] of Object.entries(bedrockValues)) {
-  bedrockValues[`bedrock/${key}`] = value;
-}
 
 /**
  * Mapping of model token sizes to their respective multipliers for prompt and completion.
@@ -47,9 +37,12 @@ const tokenValues = Object.assign(
     '4k': { prompt: 1.5, completion: 2 },
     '16k': { prompt: 3, completion: 4 },
     'gpt-3.5-turbo-1106': { prompt: 1, completion: 2 },
-    'gpt-4o-2024-08-06': { prompt: 2.5, completion: 10 },
+    'o1-preview': { prompt: 15, completion: 60 },
+    'o1-mini': { prompt: 3, completion: 12 },
+    o1: { prompt: 15, completion: 60 },
     'gpt-4o-mini': { prompt: 0.15, completion: 0.6 },
-    'gpt-4o': { prompt: 5, completion: 15 },
+    'gpt-4o': { prompt: 2.5, completion: 10 },
+    'gpt-4o-2024-05-13': { prompt: 5, completion: 15 },
     'gpt-4-1106': { prompt: 10, completion: 30 },
     'gpt-3.5-turbo-0125': { prompt: 0.5, completion: 1.5 },
     'claude-3-opus': { prompt: 15, completion: 75 },
@@ -59,6 +52,7 @@ const tokenValues = Object.assign(
     'claude-3-haiku': { prompt: 0.25, completion: 1.25 },
     'claude-2.1': { prompt: 8, completion: 24 },
     'claude-2': { prompt: 8, completion: 24 },
+    'claude-instant': { prompt: 0.8, completion: 2.4 },
     'claude-': { prompt: 0.8, completion: 2.4 },
     'command-r-plus': { prompt: 3, completion: 15 },
     'command-r': { prompt: 0.5, completion: 1.5 },
@@ -104,8 +98,14 @@ const getValueKey = (model, endpoint) => {
     return 'gpt-3.5-turbo-1106';
   } else if (modelName.includes('gpt-3.5')) {
     return '4k';
-  } else if (modelName.includes('gpt-4o-2024-08-06')) {
-    return 'gpt-4o-2024-08-06';
+  } else if (modelName.includes('o1-preview')) {
+    return 'o1-preview';
+  } else if (modelName.includes('o1-mini')) {
+    return 'o1-mini';
+  } else if (modelName.includes('o1')) {
+    return 'o1';
+  } else if (modelName.includes('gpt-4o-2024-05-13')) {
+    return 'gpt-4o-2024-05-13';
   } else if (modelName.includes('gpt-4o-mini')) {
     return 'gpt-4o-mini';
   } else if (modelName.includes('gpt-4o')) {

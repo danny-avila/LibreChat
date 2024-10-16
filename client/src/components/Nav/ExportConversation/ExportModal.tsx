@@ -33,7 +33,7 @@ export default function ExportModal({
   ];
 
   useEffect(() => {
-    setFileName(filenamify(String(conversation?.title || 'file')));
+    setFileName(filenamify(String(conversation?.title ?? 'file')));
     setType('screenshot');
     setIncludeOptions(true);
     setExportBranches(false);

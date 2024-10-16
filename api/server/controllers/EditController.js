@@ -25,6 +25,7 @@ const EditController = async (req, res, next, initializeClient) => {
     isContinued,
     conversationId,
     ...endpointOption,
+    modelsConfig: endpointOption.modelsConfig ? 'exists' : '',
   });
 
   let userMessage;

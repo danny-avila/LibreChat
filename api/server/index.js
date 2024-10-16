@@ -105,13 +105,17 @@ const startServer = async () => {
   app.use('/images/', validateImageRequest, routes.staticRoute);
   app.use('/api/share', routes.share);
   app.use('/api/roles', routes.roles);
+  app.use('/api/agents', routes.agents);
+  app.use('/api/banner', routes.banner);
+  app.use('/api/bedrock', routes.bedrock);
 
   app.use('/api/tags', routes.tags);
 
   app.use((req, res) => {
     // Replace lang attribute in index.html with lang from cookies or accept-language header
     const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
-    const updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${lang}"`);
+    const saneLang = lang.replace(/"/g, '&quot;'); // sanitize untrusted user input
+    const updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
     res.send(updatedIndexHtml);
   });
 

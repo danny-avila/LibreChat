@@ -2,18 +2,22 @@ const z = require('zod');
 const { EModelEndpoint } = require('librechat-data-provider');
 
 const openAIModels = {
+  o1: 127500, // -500 from max
+  'o1-mini': 127500, // -500 from max
+  'o1-preview': 127500, // -500 from max
   'gpt-4': 8187, // -5 from max
   'gpt-4-0613': 8187, // -5 from max
   'gpt-4-32k': 32758, // -10 from max
   'gpt-4-32k-0314': 32758, // -10 from max
   'gpt-4-32k-0613': 32758, // -10 from max
-  'gpt-4-1106': 127990, // -10 from max
-  'gpt-4-0125': 127990, // -10 from max
-  'gpt-4o': 127990, // -10 from max
-  'gpt-4o-mini': 127990, // -10 from max
-  'gpt-4o-2024-08-06': 127990, // -10 from max
-  'gpt-4-turbo': 127990, // -10 from max
-  'gpt-4-vision': 127990, // -10 from max
+  'gpt-4-1106': 127500, // -500 from max
+  'gpt-4-0125': 127500, // -500 from max
+  'gpt-4o': 127500, // -500 from max
+  'gpt-4o-mini': 127500, // -500 from max
+  'gpt-4o-2024-05-13': 127500, // -500 from max
+  'gpt-4o-2024-08-06': 127500, // -500 from max
+  'gpt-4-turbo': 127500, // -500 from max
+  'gpt-4-vision': 127500, // -500 from max
   'gpt-3.5-turbo': 16375, // -10 from max
   'gpt-3.5-turbo-0613': 4092, // -5 from max
   'gpt-3.5-turbo-0301': 4092, // -5 from max
@@ -21,9 +25,15 @@ const openAIModels = {
   'gpt-3.5-turbo-16k-0613': 16375, // -10 from max
   'gpt-3.5-turbo-1106': 16375, // -10 from max
   'gpt-3.5-turbo-0125': 16375, // -10 from max
+};
+
+const mistralModels = {
   'mistral-': 31990, // -10 from max
-  llama3: 8187, // -5 from max
-  'llama-3': 8187, // -5 from max
+  'mistral-7b': 31990, // -10 from max
+  'mistral-small': 31990, // -10 from max
+  'mixtral-8x7b': 31990, // -10 from max
+  'mistral-large-2402': 127500,
+  'mistral-large-2407': 127500,
 };
 
 const cohereModels = {
@@ -54,6 +64,7 @@ const googleModels = {
 
 const anthropicModels = {
   'claude-': 100000,
+  'claude-instant': 100000,
   'claude-2': 100000,
   'claude-2.1': 200000,
   'claude-3-haiku': 200000,
@@ -63,14 +74,69 @@ const anthropicModels = {
   'claude-3.5-sonnet': 200000,
 };
 
-const aggregateModels = { ...openAIModels, ...googleModels, ...anthropicModels, ...cohereModels };
+const metaModels = {
+  'llama2-13b': 4000,
+  'llama2-70b': 4000,
+  'llama3-8b': 8000,
+  'llama3-70b': 8000,
+  'llama3-1-8b': 127500,
+  'llama3-1-70b': 127500,
+  'llama3-1-405b': 127500,
+};
+
+const ai21Models = {
+  'ai21.j2-mid-v1': 8182, // -10 from max
+  'ai21.j2-ultra-v1': 8182, // -10 from max
+  'ai21.jamba-instruct-v1:0': 255500, // -500 from max
+};
+
+const amazonModels = {
+  'amazon.titan-text-lite-v1': 4000,
+  'amazon.titan-text-express-v1': 8000,
+  'amazon.titan-text-premier-v1:0': 31500, // -500 from max
+};
+
+const bedrockModels = {
+  ...anthropicModels,
+  ...mistralModels,
+  ...cohereModels,
+  ...metaModels,
+  ...ai21Models,
+  ...amazonModels,
+};
+
+const aggregateModels = { ...openAIModels, ...googleModels, ...bedrockModels };
 
 const maxTokensMap = {
   [EModelEndpoint.azureOpenAI]: openAIModels,
   [EModelEndpoint.openAI]: aggregateModels,
+  [EModelEndpoint.agents]: aggregateModels,
   [EModelEndpoint.custom]: aggregateModels,
   [EModelEndpoint.google]: googleModels,
   [EModelEndpoint.anthropic]: anthropicModels,
+  [EModelEndpoint.bedrock]: bedrockModels,
+};
+
+const modelMaxOutputs = {
+  o1: 32268, // -500 from max: 32,768
+  'o1-mini': 65136, // -500 from max: 65,536
+  'o1-preview': 32268, // -500 from max: 32,768
+  system_default: 1024,
+};
+
+const anthropicMaxOutputs = {
+  'claude-3-haiku': 4096,
+  'claude-3-sonnet': 4096,
+  'claude-3-opus': 4096,
+  'claude-3.5-sonnet': 8192,
+  'claude-3-5-sonnet': 8192,
+};
+
+const maxOutputTokensMap = {
+  [EModelEndpoint.anthropic]: anthropicMaxOutputs,
+  [EModelEndpoint.azureOpenAI]: modelMaxOutputs,
+  [EModelEndpoint.openAI]: modelMaxOutputs,
+  [EModelEndpoint.custom]: modelMaxOutputs,
 };
 
 /**
@@ -92,27 +158,15 @@ function findMatchingPattern(modelName, tokensMap) {
 }
 
 /**
- * Retrieves the maximum tokens for a given model name. If the exact model name isn't found,
- * it searches for partial matches within the model name, checking keys in reverse order.
+ * Retrieves a token value for a given model name from a tokens map.
  *
  * @param {string} modelName - The name of the model to look up.
- * @param {string} endpoint - The endpoint (default is 'openAI').
- * @param {EndpointTokenConfig} [endpointTokenConfig] - Token Config for current endpoint to use for max tokens lookup
- * @returns {number|undefined} The maximum tokens for the given model or undefined if no match is found.
- *
- * @example
- * getModelMaxTokens('gpt-4-32k-0613'); // Returns 32767
- * getModelMaxTokens('gpt-4-32k-unknown'); // Returns 32767
- * getModelMaxTokens('unknown-model'); // Returns undefined
+ * @param {EndpointTokenConfig | Record<string, number>} tokensMap - The map of model names to token values.
+ * @param {string} [key='context'] - The key to look up in the tokens map.
+ * @returns {number|undefined} The token value for the given model or undefined if no match is found.
  */
-function getModelMaxTokens(modelName, endpoint = EModelEndpoint.openAI, endpointTokenConfig) {
-  if (typeof modelName !== 'string') {
-    return undefined;
-  }
-
-  /** @type {EndpointTokenConfig | Record<string, number>} */
-  const tokensMap = endpointTokenConfig ?? maxTokensMap[endpoint];
-  if (!tokensMap) {
+function getModelTokenValue(modelName, tokensMap, key = 'context') {
+  if (typeof modelName !== 'string' || !tokensMap) {
     return undefined;
   }
 
@@ -128,10 +182,36 @@ function getModelMaxTokens(modelName, endpoint = EModelEndpoint.openAI, endpoint
 
   if (matchedPattern) {
     const result = tokensMap[matchedPattern];
-    return result?.context ?? result;
+    return result?.[key] ?? result ?? tokensMap.system_default;
   }
 
-  return undefined;
+  return tokensMap.system_default;
+}
+
+/**
+ * Retrieves the maximum tokens for a given model name.
+ *
+ * @param {string} modelName - The name of the model to look up.
+ * @param {string} endpoint - The endpoint (default is 'openAI').
+ * @param {EndpointTokenConfig} [endpointTokenConfig] - Token Config for current endpoint to use for max tokens lookup
+ * @returns {number|undefined} The maximum tokens for the given model or undefined if no match is found.
+ */
+function getModelMaxTokens(modelName, endpoint = EModelEndpoint.openAI, endpointTokenConfig) {
+  const tokensMap = endpointTokenConfig ?? maxTokensMap[endpoint];
+  return getModelTokenValue(modelName, tokensMap);
+}
+
+/**
+ * Retrieves the maximum output tokens for a given model name.
+ *
+ * @param {string} modelName - The name of the model to look up.
+ * @param {string} endpoint - The endpoint (default is 'openAI').
+ * @param {EndpointTokenConfig} [endpointTokenConfig] - Token Config for current endpoint to use for max tokens lookup
+ * @returns {number|undefined} The maximum output tokens for the given model or undefined if no match is found.
+ */
+function getModelMaxOutputTokens(modelName, endpoint = EModelEndpoint.openAI, endpointTokenConfig) {
+  const tokensMap = endpointTokenConfig ?? maxOutputTokensMap[endpoint];
+  return getModelTokenValue(modelName, tokensMap, 'output');
 }
 
 /**
@@ -258,7 +338,8 @@ module.exports = {
   maxTokensMap,
   inputSchema,
   modelSchema,
-  getModelMaxTokens,
   matchModelName,
   processModelData,
+  getModelMaxTokens,
+  getModelMaxOutputTokens,
 };

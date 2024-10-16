@@ -9,25 +9,25 @@ import OptionHover from './OptionHover';
 import { ESide } from '~/common';
 
 function DynamicTextarea({
-  label,
+  label = '',
   settingKey,
   defaultValue,
-  description,
+  description = '',
   columnSpan,
   setOption,
   optionType,
-  placeholder,
+  placeholder = '',
   readonly = false,
-  showDefault = true,
-  labelCode,
-  descriptionCode,
-  placeholderCode,
+  showDefault = false,
+  labelCode = false,
+  descriptionCode = false,
+  placeholderCode = false,
   conversation,
 }: DynamicSettingProps) {
   const localize = useLocalize();
   const { preset } = useChatContext();
 
-  const [setInputValue, inputValue] = useDebouncedInput<string | null>({
+  const [setInputValue, inputValue, setLocalValue] = useDebouncedInput<string | null>({
     optionKey: optionType !== OptionTypes.Custom ? settingKey : undefined,
     initialValue:
       optionType !== OptionTypes.Custom
@@ -43,13 +43,13 @@ function DynamicTextarea({
     defaultValue: typeof defaultValue === 'undefined' ? '' : defaultValue,
     conversation,
     inputValue,
-    setInputValue,
+    setInputValue: setLocalValue,
   });
 
   return (
     <div
       className={`flex flex-col items-center justify-start gap-6 ${
-        columnSpan ? `col-span-${columnSpan}` : 'col-span-full'
+        columnSpan != null ? `col-span-${columnSpan}` : 'col-span-full'
       }`}
     >
       <HoverCard openDelay={300}>
@@ -59,11 +59,11 @@ function DynamicTextarea({
               htmlFor={`${settingKey}-dynamic-textarea`}
               className="text-left text-sm font-medium"
             >
-              {labelCode ? localize(label ?? '') || label : label ?? settingKey}{' '}
+              {labelCode ? localize(label) ?? label : label || settingKey}{' '}
               {showDefault && (
                 <small className="opacity-40">
                   (
-                  {typeof defaultValue === 'undefined' || !(defaultValue as string)?.length
+                  {typeof defaultValue === 'undefined' || !(defaultValue as string).length
                     ? localize('com_endpoint_default_blank')
                     : `${localize('com_endpoint_default')}: ${defaultValue}`}
                   )
@@ -76,7 +76,7 @@ function DynamicTextarea({
             disabled={readonly}
             value={inputValue ?? ''}
             onChange={setInputValue}
-            placeholder={placeholderCode ? localize(placeholder ?? '') || placeholder : placeholder}
+            placeholder={placeholderCode ? localize(placeholder) ?? placeholder : placeholder}
             className={cn(
               defaultTextProps,
               // TODO: configurable max height
@@ -86,7 +86,7 @@ function DynamicTextarea({
         </HoverCardTrigger>
         {description && (
           <OptionHover
-            description={descriptionCode ? localize(description) || description : description}
+            description={descriptionCode ? localize(description) ?? description : description}
             side={ESide.Left}
           />
         )}

@@ -88,6 +88,10 @@ export default {
   com_ui_bookmarks_update_error: '북마크 업데이트 중 오류가 발생했습니다',
   com_ui_bookmarks_delete_error: '북마크 삭제 중 오류가 발생했습니다',
   com_ui_bookmarks_add_to_conversation: '현재 대화에 추가',
+  com_ui_accept: '동의합니다',
+  com_ui_decline: '동의하지 않습니다',
+  com_ui_terms_and_conditions: '이용 약관',
+  com_ui_no_terms_content: '이용 약관 내용이 없습니다',
   com_auth_error_login: '제공된 정보로 로그인할 수 없습니다. 자격 증명을 확인하고 다시 시도하세요.',
   com_auth_no_account: '계정이 없으신가요?',
   com_auth_sign_up: '가입하기',
@@ -357,7 +361,7 @@ export default {
   com_assistants_code_interpreter_files: '코드 인터프리터에서만 다음 파일을 사용할 수 있습니다:',
   com_assistants_retrieval: '검색',
   com_assistants_search_name: '이름으로 도우미 검색',
-  com_assistants_tools: '도구',
+  com_ui_tools: '도구',
   com_assistants_actions: '작업',
   com_assistants_add_tools: '도구 추가',
   com_assistants_add_actions: '작업 추가',
@@ -544,7 +548,7 @@ export default {
   com_nav_change_picture: '프로필 사진 변경',
   com_nav_plugin_install: '플러그인 설치',
   com_nav_plugin_uninstall: '플러그인 제거',
-  com_nav_tool_add: '추가',
+  com_ui_add: '추가',
   com_nav_tool_remove: '제거',
   com_nav_tool_dialog: '어시스턴트 도구',
   com_nav_tool_dialog_description: 'Assistant를 저장해야 도구 선택이 유지됩니다.',
@@ -1906,7 +1910,7 @@ export const comparisons = {
     english: 'Search assistants by name',
     translated: '이름으로 도우미 검색',
   },
-  com_assistants_tools: {
+  com_ui_tools: {
     english: 'Tools',
     translated: '도구',
   },
@@ -2595,7 +2599,7 @@ export const comparisons = {
     english: 'Uninstall',
     translated: '플러그인 제거',
   },
-  com_nav_tool_add: {
+  com_ui_add: {
     english: 'Add',
     translated: '추가',
   },

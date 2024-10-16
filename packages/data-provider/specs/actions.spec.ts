@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { z } from 'zod';
 import { OpenAPIV3 } from 'openapi-types';
 import {
   createURL,
@@ -8,7 +9,12 @@ import {
   FunctionSignature,
   validateAndParseOpenAPISpec,
 } from '../src/actions';
-import { getWeatherOpenapiSpec, whimsicalOpenapiSpec, scholarAIOpenapiSpec } from './openapiSpecs';
+import {
+  getWeatherOpenapiSpec,
+  whimsicalOpenapiSpec,
+  scholarAIOpenapiSpec,
+  swapidev,
+} from './openapiSpecs';
 import { AuthorizationTypeEnum, AuthTypeEnum } from '../src/types/assistants';
 import type { FlowchartSchema } from './openapiSpecs';
 import type { ParametersSchema } from '../src/actions';
@@ -547,5 +553,274 @@ describe('createURL', () => {
     expect(createURL('https://example.com/subdirectory', '/api/v1/users')).toBe(
       'https://example.com/subdirectory/api/v1/users',
     );
+  });
+
+  describe('openapiToFunction zodSchemas', () => {
+    describe('getWeatherOpenapiSpec', () => {
+      const { zodSchemas } = openapiToFunction(getWeatherOpenapiSpec, true);
+
+      it('generates correct Zod schema for GetCurrentWeather', () => {
+        expect(zodSchemas).toBeDefined();
+        expect(zodSchemas?.GetCurrentWeather).toBeDefined();
+
+        const GetCurrentWeatherSchema = zodSchemas?.GetCurrentWeather;
+
+        expect(GetCurrentWeatherSchema instanceof z.ZodObject).toBe(true);
+
+        if (!(GetCurrentWeatherSchema instanceof z.ZodObject)) {
+          throw new Error('GetCurrentWeatherSchema is not a ZodObject');
+        }
+
+        const shape = GetCurrentWeatherSchema.shape;
+        expect(shape.location instanceof z.ZodString).toBe(true);
+
+        // Check locations property
+        expect(shape.locations).toBeDefined();
+        expect(shape.locations instanceof z.ZodOptional).toBe(true);
+
+        if (!(shape.locations instanceof z.ZodOptional)) {
+          throw new Error('locations is not a ZodOptional');
+        }
+
+        const locationsInnerType = shape.locations._def.innerType;
+        expect(locationsInnerType instanceof z.ZodArray).toBe(true);
+
+        if (!(locationsInnerType instanceof z.ZodArray)) {
+          throw new Error('locationsInnerType is not a ZodArray');
+        }
+
+        const locationsItemSchema = locationsInnerType.element;
+        expect(locationsItemSchema instanceof z.ZodObject).toBe(true);
+
+        if (!(locationsItemSchema instanceof z.ZodObject)) {
+          throw new Error('locationsItemSchema is not a ZodObject');
+        }
+
+        // Validate the structure of locationsItemSchema
+        expect(locationsItemSchema.shape.city instanceof z.ZodString).toBe(true);
+        expect(locationsItemSchema.shape.state instanceof z.ZodString).toBe(true);
+        expect(locationsItemSchema.shape.countryCode instanceof z.ZodString).toBe(true);
+
+        // Check if time is optional
+        const timeSchema = locationsItemSchema.shape.time;
+        expect(timeSchema instanceof z.ZodOptional).toBe(true);
+
+        if (!(timeSchema instanceof z.ZodOptional)) {
+          throw new Error('timeSchema is not a ZodOptional');
+        }
+
+        expect(timeSchema._def.innerType instanceof z.ZodString).toBe(true);
+
+        // Check the description
+        expect(shape.locations._def.description).toBe(
+          'A list of locations to retrieve the weather for.',
+        );
+      });
+
+      it('validates correct data for GetCurrentWeather', () => {
+        const GetCurrentWeatherSchema = zodSchemas?.GetCurrentWeather as z.ZodTypeAny;
+        const validData = {
+          location: 'New York',
+          locations: [
+            { city: 'New York', state: 'NY', countryCode: 'US', time: '2023-12-04T14:00:00Z' },
+          ],
+        };
+        expect(() => GetCurrentWeatherSchema.parse(validData)).not.toThrow();
+      });
+
+      it('throws error for invalid data for GetCurrentWeather', () => {
+        const GetCurrentWeatherSchema = zodSchemas?.GetCurrentWeather as z.ZodTypeAny;
+        const invalidData = {
+          location: 123,
+          locations: [{ city: 'New York', state: 'NY', countryCode: 'US', time: 'invalid-time' }],
+        };
+        expect(() => GetCurrentWeatherSchema.parse(invalidData)).toThrow();
+      });
+    });
+
+    describe('whimsicalOpenapiSpec', () => {
+      const { zodSchemas } = openapiToFunction(whimsicalOpenapiSpec, true);
+
+      it('generates correct Zod schema for postRenderFlowchart', () => {
+        expect(zodSchemas).toBeDefined();
+        expect(zodSchemas?.postRenderFlowchart).toBeDefined();
+
+        const PostRenderFlowchartSchema = zodSchemas?.postRenderFlowchart;
+        expect(PostRenderFlowchartSchema).toBeInstanceOf(z.ZodObject);
+
+        if (!(PostRenderFlowchartSchema instanceof z.ZodObject)) {
+          return;
+        }
+
+        const shape = PostRenderFlowchartSchema.shape;
+        expect(shape.mermaid).toBeInstanceOf(z.ZodString);
+        expect(shape.title).toBeInstanceOf(z.ZodOptional);
+        expect((shape.title as z.ZodOptional<z.ZodString>)._def.innerType).toBeInstanceOf(
+          z.ZodString,
+        );
+      });
+
+      it('validates correct data for postRenderFlowchart', () => {
+        const PostRenderFlowchartSchema = zodSchemas?.postRenderFlowchart;
+        const validData = {
+          mermaid: 'graph TD; A-->B; B-->C; C-->D;',
+          title: 'Test Flowchart',
+        };
+        expect(() => PostRenderFlowchartSchema?.parse(validData)).not.toThrow();
+      });
+
+      it('throws error for invalid data for postRenderFlowchart', () => {
+        const PostRenderFlowchartSchema = zodSchemas?.postRenderFlowchart;
+        const invalidData = {
+          mermaid: 123,
+          title: 42,
+        };
+        expect(() => PostRenderFlowchartSchema?.parse(invalidData)).toThrow();
+      });
+    });
+
+    describe('scholarAIOpenapiSpec', () => {
+      const result = validateAndParseOpenAPISpec(scholarAIOpenapiSpec);
+      const spec = result.spec as OpenAPIV3.Document;
+      const { zodSchemas } = openapiToFunction(spec, true);
+
+      it('generates correct Zod schema for searchAbstracts', () => {
+        expect(zodSchemas).toBeDefined();
+        expect(zodSchemas?.searchAbstracts).toBeDefined();
+
+        const SearchAbstractsSchema = zodSchemas?.searchAbstracts;
+        expect(SearchAbstractsSchema).toBeInstanceOf(z.ZodObject);
+
+        if (!(SearchAbstractsSchema instanceof z.ZodObject)) {
+          return;
+        }
+
+        const shape = SearchAbstractsSchema.shape;
+        expect(shape.keywords).toBeInstanceOf(z.ZodString);
+        expect(shape.sort).toBeInstanceOf(z.ZodOptional);
+        expect(
+          (shape.sort as z.ZodOptional<z.ZodEnum<[string, ...string[]]>>)._def.innerType,
+        ).toBeInstanceOf(z.ZodEnum);
+        expect(shape.query).toBeInstanceOf(z.ZodString);
+        expect(shape.peer_reviewed_only).toBeInstanceOf(z.ZodOptional);
+        expect(shape.start_year).toBeInstanceOf(z.ZodOptional);
+        expect(shape.end_year).toBeInstanceOf(z.ZodOptional);
+        expect(shape.offset).toBeInstanceOf(z.ZodOptional);
+      });
+
+      it('validates correct data for searchAbstracts', () => {
+        const SearchAbstractsSchema = zodSchemas?.searchAbstracts;
+        const validData = {
+          keywords: 'machine learning',
+          sort: 'cited_by_count',
+          query: 'AI applications',
+          peer_reviewed_only: 'true',
+          start_year: '2020',
+          end_year: '2023',
+          offset: '0',
+        };
+        expect(() => SearchAbstractsSchema?.parse(validData)).not.toThrow();
+      });
+
+      it('throws error for invalid data for searchAbstracts', () => {
+        const SearchAbstractsSchema = zodSchemas?.searchAbstracts;
+        const invalidData = {
+          keywords: 123,
+          sort: 'invalid_sort',
+          query: 42,
+          peer_reviewed_only: 'maybe',
+          start_year: 2020,
+          end_year: 2023,
+          offset: 0,
+        };
+        expect(() => SearchAbstractsSchema?.parse(invalidData)).toThrow();
+      });
+
+      it('generates correct Zod schema for getFullText', () => {
+        expect(zodSchemas?.getFullText).toBeDefined();
+
+        const GetFullTextSchema = zodSchemas?.getFullText;
+        expect(GetFullTextSchema).toBeInstanceOf(z.ZodObject);
+
+        if (!(GetFullTextSchema instanceof z.ZodObject)) {
+          return;
+        }
+
+        const shape = GetFullTextSchema.shape;
+        expect(shape.pdf_url).toBeInstanceOf(z.ZodString);
+        expect(shape.chunk).toBeInstanceOf(z.ZodOptional);
+        expect((shape.chunk as z.ZodOptional<z.ZodNumber>)._def.innerType).toBeInstanceOf(
+          z.ZodNumber,
+        );
+      });
+
+      it('generates correct Zod schema for saveCitation', () => {
+        expect(zodSchemas?.saveCitation).toBeDefined();
+
+        const SaveCitationSchema = zodSchemas?.saveCitation;
+        expect(SaveCitationSchema).toBeInstanceOf(z.ZodObject);
+
+        if (!(SaveCitationSchema instanceof z.ZodObject)) {
+          return;
+        }
+
+        const shape = SaveCitationSchema.shape;
+        expect(shape.doi).toBeInstanceOf(z.ZodString);
+        expect(shape.zotero_user_id).toBeInstanceOf(z.ZodString);
+        expect(shape.zotero_api_key).toBeInstanceOf(z.ZodString);
+      });
+    });
+  });
+
+  describe('openapiToFunction zodSchemas for SWAPI', () => {
+    const result = validateAndParseOpenAPISpec(swapidev);
+    const spec = result.spec as OpenAPIV3.Document;
+    const { zodSchemas } = openapiToFunction(spec, true);
+
+    describe('getPeople schema', () => {
+      it('does not generate Zod schema for getPeople (no parameters)', () => {
+        expect(zodSchemas).toBeDefined();
+        expect(zodSchemas?.getPeople).toBeUndefined();
+      });
+
+      it('validates correct data for getPeople', () => {
+        const GetPeopleSchema = zodSchemas?.getPeople;
+        expect(GetPeopleSchema).toBeUndefined();
+      });
+
+      it('does not throw for invalid data for getPeople', () => {
+        const GetPeopleSchema = zodSchemas?.getPeople;
+        expect(GetPeopleSchema).toBeUndefined();
+      });
+    });
+
+    describe('getPersonById schema', () => {
+      it('generates correct Zod schema for getPersonById', () => {
+        expect(zodSchemas).toBeDefined();
+        expect(zodSchemas?.getPersonById).toBeDefined();
+
+        const GetPersonByIdSchema = zodSchemas?.getPersonById;
+        expect(GetPersonByIdSchema).toBeInstanceOf(z.ZodObject);
+
+        if (!(GetPersonByIdSchema instanceof z.ZodObject)) {
+          return;
+        }
+
+        const shape = GetPersonByIdSchema.shape;
+        expect(shape.id).toBeInstanceOf(z.ZodString);
+      });
+
+      it('validates correct data for getPersonById', () => {
+        const GetPersonByIdSchema = zodSchemas?.getPersonById;
+        const validData = { id: '1' };
+        expect(() => GetPersonByIdSchema?.parse(validData)).not.toThrow();
+      });
+
+      it('throws error for invalid data for getPersonById', () => {
+        const GetPersonByIdSchema = zodSchemas?.getPersonById;
+        const invalidData = { id: 1 }; // should be string
+        expect(() => GetPersonByIdSchema?.parse(invalidData)).toThrow();
+      });
+    });
   });
 });

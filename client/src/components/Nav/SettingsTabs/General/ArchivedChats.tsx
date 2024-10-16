@@ -1,7 +1,6 @@
 import { useLocalize } from '~/hooks';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
-import { OGDialog, OGDialogTrigger } from '~/components/ui';
-
+import { OGDialog, OGDialogTrigger, Button } from '~/components';
 import ArchivedChatsTable from './ArchivedChatsTable';
 
 export default function ArchivedChats() {
@@ -12,9 +11,9 @@ export default function ArchivedChats() {
       <div>{localize('com_nav_archived_chats')}</div>
       <OGDialog>
         <OGDialogTrigger asChild>
-          <button className="btn btn-neutral relative ">
+          <Button variant="outline" aria-label="Archived chats">
             {localize('com_nav_archived_chats_manage')}
-          </button>
+          </Button>
         </OGDialogTrigger>
         <OGDialogTemplate
           title={localize('com_nav_archived_chats')}

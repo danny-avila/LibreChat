@@ -1,6 +1,6 @@
 {
   "name": "LibreChat",
-  "version": "v0.7.5-rc1",
+  "version": "v0.7.5-rc2",
   "description": "",
   "workspaces": [
     "api",
@@ -29,6 +29,8 @@
     "invite-user": "node config/invite-user.js",
     "ban-user": "node config/ban-user.js",
     "delete-user": "node config/delete-user.js",
+    "update-banner": "node config/update-banner.js",
+    "delete-banner": "node config/delete-banner.js",
     "backend": "cross-env NODE_ENV=production node api/server/index.js",
     "backend:dev": "cross-env NODE_ENV=development npx nodemon api/server/index.js",
     "backend:stop": "node config/stop-backend.js",
@@ -60,7 +62,8 @@
     "b:test:client": "cd client && bun run b:test",
     "b:test:api": "cd api && bun run b:test",
     "b:balance": "bun config/add-balance.js",
-    "b:list-balances": "bun config/list-balances.js"
+    "b:list-balances": "bun config/list-balances.js",
+    "reset-terms": "node config/reset-terms.js"
   },
   "repository": {
     "type": "git",
@@ -90,11 +93,16 @@
     "eslint-plugin-react-hooks": "^4.6.0",
     "husky": "^8.0.0",
     "jest": "^29.5.0",
-    "lint-staged": "^13.2.2",
+    "lint-staged": "^15.2.10",
     "prettier": "^2.8.8",
     "prettier-eslint": "^15.0.1",
     "prettier-eslint-cli": "^7.1.0",
     "prettier-plugin-tailwindcss": "^0.2.2"
+  },
+  "overrides": {
+    "vite-plugin-pwa": {
+      "rollup": "^4.22.4"
+    }
   },
   "nodemonConfig": {
     "ignore": [

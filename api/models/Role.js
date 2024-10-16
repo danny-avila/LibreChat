@@ -4,8 +4,10 @@ const {
   roleDefaults,
   PermissionTypes,
   removeNullishValues,
+  agentPermissionsSchema,
   promptPermissionsSchema,
   bookmarkPermissionsSchema,
+  multiConvoPermissionsSchema,
 } = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
 const Role = require('~/models/schema/roleSchema');
@@ -71,8 +73,10 @@ const updateRoleByName = async function (roleName, updates) {
 };
 
 const permissionSchemas = {
+  [PermissionTypes.AGENTS]: agentPermissionsSchema,
   [PermissionTypes.PROMPTS]: promptPermissionsSchema,
   [PermissionTypes.BOOKMARKS]: bookmarkPermissionsSchema,
+  [PermissionTypes.MULTI_CONVO]: multiConvoPermissionsSchema,
 };
 
 /**
@@ -130,6 +134,7 @@ async function updateAccessPermissions(roleName, permissionsUpdate) {
 /**
  * Initialize default roles in the system.
  * Creates the default roles (ADMIN, USER) if they don't exist in the database.
+ * Updates existing roles with new permission types if they're missing.
  *
  * @returns {Promise<void>}
  */
@@ -137,14 +142,27 @@ const initializeRoles = async function () {
   const defaultRoles = [SystemRoles.ADMIN, SystemRoles.USER];
 
   for (const roleName of defaultRoles) {
-    let role = await Role.findOne({ name: roleName }).select('name').lean();
+    let role = await Role.findOne({ name: roleName });
+
     if (!role) {
+      // Create new role if it doesn't exist
       role = new Role(roleDefaults[roleName]);
-      await role.save();
+    } else {
+      // Add missing permission types
+      let isUpdated = false;
+      for (const permType of Object.values(PermissionTypes)) {
+        if (!role[permType]) {
+          role[permType] = roleDefaults[roleName][permType];
+          isUpdated = true;
+        }
+      }
+      if (isUpdated) {
+        await role.save();
+      }
     }
+    await role.save();
   }
 };
-
 module.exports = {
   getRoleByName,
   initializeRoles,

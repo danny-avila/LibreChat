@@ -33,7 +33,7 @@ export default {
   com_assistants_code_interpreter_files: 'Seuraavat tiedostot ovat vain Kooditulkin käytettävissä:',
   com_assistants_retrieval: 'Tiedonhaku',
   com_assistants_search_name: 'Hae Avustajia nimen perusteella',
-  com_assistants_tools: 'Työkalut',
+  com_ui_tools: 'Työkalut',
   com_assistants_actions: 'Toiminnot',
   com_assistants_add_tools: 'Lisää Työkaluja',
   com_assistants_add_actions: 'Lisää Toimintoja',
@@ -202,7 +202,7 @@ export default {
   com_ui_fork_visible: 'Vain näkyvät viestit',
   com_ui_fork_from_message: 'Valitse haarautustapa',
   com_ui_mention: 'Mainitse päätepiste, Avustaja tai asetus vaihtaaksesi siihen pikana',
-  com_ui_add: 'Lisää malli tai esiasetus lisävastausta varten',
+  com_ui_add_model_preset: 'Lisää malli tai esiasetus lisävastausta varten',
   com_ui_regenerate: 'Luo uudestaan',
   com_ui_continue: 'Jatka',
   com_ui_edit: 'Muokkaa',
@@ -295,8 +295,7 @@ export default {
   com_ui_bookmarks: 'Kirjanmerkit',
   com_ui_bookmarks_rebuild: 'Uudelleenkokoa',
   com_ui_bookmarks_new: 'Uusi kirjanmerkki',
-  com_ui_bookmark_delete_confirm:
-      'Oletko varma, että haluat poistaa tämän kirjanmerkin?',
+  com_ui_bookmark_delete_confirm: 'Oletko varma, että haluat poistaa tämän kirjanmerkin?',
   com_ui_bookmarks_title: 'Otsikko',
   com_ui_bookmarks_count: 'Määrä',
   com_ui_bookmarks_description: 'Kuvaus',
@@ -307,6 +306,10 @@ export default {
   com_ui_bookmarks_update_error: 'Virhe kirjanmerkin päivittämisessä',
   com_ui_bookmarks_delete_error: 'Virhe kirjanmerkin poistamisessa',
   com_ui_bookmarks_add_to_conversation: 'Lisää nykyiseen keskusteluun',
+  com_ui_accept: 'Hyväksyn',
+  com_ui_decline: 'En hyväksy',
+  com_ui_terms_and_conditions: 'Käyttöehdot',
+  com_ui_no_terms_content: 'Ei käyttöehtoja näytettäväksi',
   com_auth_error_login:
     'Kirjautuminen annetuilla tiedoilla ei onnistunut. Tarkista kirjautumistiedot, ja yritä uudestaan.',
   com_auth_error_login_rl:
@@ -402,7 +405,8 @@ export default {
   com_endpoint_token_count: 'Token-määrä',
   com_endpoint_output: 'Tulos',
   com_endpoint_context_tokens: 'Konteksti-tokenien maksimimäärä',
-  com_endpoint_context_info: 'Kontekstia varten käytettävien tokeneiden maksimimäärä. Käytä tätä pyyntökohtaisten token-määrien hallinnointiin. Jos tätä ei määritetä, käytössä ovat järjestelmän oletusarvot perustuen tiedossa olevien mallien konteksti-ikkunoiden kokoon. Korkeamman arvon asettaminen voi aiheuttaa virheitä tai korkeamman token-hinnan.',
+  com_endpoint_context_info:
+    'Kontekstia varten käytettävien tokeneiden maksimimäärä. Käytä tätä pyyntökohtaisten token-määrien hallinnointiin. Jos tätä ei määritetä, käytössä ovat järjestelmän oletusarvot perustuen tiedossa olevien mallien konteksti-ikkunoiden kokoon. Korkeamman arvon asettaminen voi aiheuttaa virheitä tai korkeamman token-hinnan.',
   com_endpoint_google_temp:
     'Korkeampi arvo = satunnaisempi; matalampi arvo = keskittyneempi ja deterministisempi. Suosittelemme, että muokkaat tätä tai Top P:tä, mutta ei molempia.',
   com_endpoint_google_topp:
@@ -571,7 +575,7 @@ export default {
   com_nav_plugin_store: 'Lisäosakauppa',
   com_nav_plugin_install: 'Asenna',
   com_nav_plugin_uninstall: 'Poista',
-  com_nav_tool_add: 'Lisää',
+  com_ui_add: 'Lisää',
   com_nav_tool_remove: 'Poista',
   com_nav_tool_dialog: 'Avustajatyökalut',
   com_ui_misc: 'Muu',

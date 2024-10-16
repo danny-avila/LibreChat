@@ -8,6 +8,9 @@ import {
   FunctionTool,
   AssistantDocument,
   Action,
+  Agent,
+  AgentCreateParams,
+  AgentUpdateParams,
 } from './assistants';
 
 export type MutationOptions<
@@ -40,6 +43,8 @@ export type UpdatePresetOptions = MutationOptions<types.TPreset, types.TPreset>;
 export type DeletePresetOptions = MutationOptions<PresetDeleteResponse, types.TPreset | undefined>;
 
 export type LogoutOptions = MutationOptions<unknown, undefined>;
+
+/* Assistant mutations */
 
 export type AssistantAvatarVariables = {
   assistant_id: string;
@@ -94,6 +99,51 @@ export type DeleteActionVariables = {
 
 export type DeleteActionOptions = MutationOptions<void, DeleteActionVariables>;
 
+/* Agent mutations */
+
+export type AgentAvatarVariables = {
+  agent_id: string;
+  formData: FormData;
+  postCreation?: boolean;
+};
+
+export type UpdateAgentActionVariables = {
+  agent_id: string;
+  action_id?: string;
+  metadata: ActionMetadata;
+  functions: FunctionTool[];
+};
+
+export type UploadAgentAvatarOptions = MutationOptions<Agent, AgentAvatarVariables>;
+
+export type CreateAgentMutationOptions = MutationOptions<Agent, AgentCreateParams>;
+
+export type UpdateAgentVariables = {
+  agent_id: string;
+  data: AgentUpdateParams;
+};
+
+export type UpdateAgentMutationOptions = MutationOptions<Agent, UpdateAgentVariables>;
+
+export type DeleteAgentBody = {
+  agent_id: string;
+};
+
+export type DeleteAgentMutationOptions = MutationOptions<void, Pick<DeleteAgentBody, 'agent_id'>>;
+
+export type UpdateAgentActionResponse = [Agent, Action];
+export type UpdateAgentActionOptions = MutationOptions<
+  UpdateAgentActionResponse,
+  UpdateAgentActionVariables
+>;
+
+export type DeleteAgentActionVariables = {
+  agent_id: string;
+  action_id: string;
+};
+
+export type DeleteAgentActionOptions = MutationOptions<void, DeleteAgentActionVariables>;
+
 export type DeleteConversationOptions = MutationOptions<
   types.TDeleteConversationResponse,
   types.TDeleteConversationRequest
@@ -115,6 +165,12 @@ export type UpdateSharedLinkOptions = MutationOptions<
   types.TSharedLink,
   Partial<types.TSharedLink>
 >;
+
+export type ArchiveConvoOptions = MutationOptions<
+  types.TArchiveConversationResponse,
+  types.TArchiveConversationRequest
+>;
+
 export type DeleteSharedLinkOptions = MutationOptions<types.TSharedLink, { shareId: string }>;
 
 export type TUpdatePromptContext =
@@ -185,3 +241,10 @@ export type UpdateConversationTagOptions = MutationOptions<
   types.TConversationTagRequest
 >;
 export type DeleteConversationTagOptions = MutationOptions<types.TConversationTag, string>;
+
+export type AcceptTermsMutationOptions = MutationOptions<
+  types.TAcceptTermsResponse,
+  void,
+  unknown,
+  void
+>;

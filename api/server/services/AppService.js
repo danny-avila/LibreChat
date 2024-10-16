@@ -8,6 +8,7 @@ const { loadDefaultInterface } = require('./start/interface');
 const { azureConfigSetup } = require('./start/azureOpenAI');
 const { loadAndFormatTools } = require('./ToolService');
 const { initializeRoles } = require('~/models/Role');
+const { cleanup } = require('./cleanup');
 const paths = require('~/config/paths');
 
 /**
@@ -17,6 +18,7 @@ const paths = require('~/config/paths');
  * @param {Express.Application} app - The Express application object.
  */
 const AppService = async (app) => {
+  cleanup();
   await initializeRoles();
   /** @type {TCustomConfig}*/
   const config = (await loadCustomConfig()) ?? {};
@@ -94,18 +96,19 @@ const AppService = async (app) => {
     );
   }
 
-  if (endpoints?.[EModelEndpoint.openAI]) {
-    endpointLocals[EModelEndpoint.openAI] = endpoints[EModelEndpoint.openAI];
-  }
-  if (endpoints?.[EModelEndpoint.google]) {
-    endpointLocals[EModelEndpoint.google] = endpoints[EModelEndpoint.google];
-  }
-  if (endpoints?.[EModelEndpoint.anthropic]) {
-    endpointLocals[EModelEndpoint.anthropic] = endpoints[EModelEndpoint.anthropic];
-  }
-  if (endpoints?.[EModelEndpoint.gptPlugins]) {
-    endpointLocals[EModelEndpoint.gptPlugins] = endpoints[EModelEndpoint.gptPlugins];
-  }
+  const endpointKeys = [
+    EModelEndpoint.openAI,
+    EModelEndpoint.google,
+    EModelEndpoint.bedrock,
+    EModelEndpoint.anthropic,
+    EModelEndpoint.gptPlugins,
+  ];
+
+  endpointKeys.forEach((key) => {
+    if (endpoints?.[key]) {
+      endpointLocals[key] = endpoints[key];
+    }
+  });
 
   app.locals = {
     ...defaultLocals,

@@ -611,15 +611,7 @@ describe('OpenAIClient', () => {
       expect(getCompletion).toHaveBeenCalled();
       expect(getCompletion.mock.calls.length).toBe(1);
 
-      const currentDateString = new Date().toLocaleDateString('en-us', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      });
-
-      expect(getCompletion.mock.calls[0][0]).toBe(
-        `||>Instructions:\nYou are ChatGPT, a large language model trained by OpenAI. Respond conversationally.\nCurrent date: ${currentDateString}\n\n||>User:\nHi mom!\n||>Assistant:\n`,
-      );
+      expect(getCompletion.mock.calls[0][0]).toBe('||>User:\nHi mom!\n||>Assistant:\n');
 
       expect(fetchEventSource).toHaveBeenCalled();
       expect(fetchEventSource.mock.calls.length).toBe(1);
@@ -699,6 +691,72 @@ describe('OpenAIClient', () => {
       expect(client.modelOptions.model).toBe('llava');
       expect(client.isVisionModel).toBeTruthy();
       expect(client.modelOptions.stop).toBeUndefined();
+    });
+  });
+
+  describe('getStreamUsage', () => {
+    it('should return this.usage when completion_tokens_details is null', () => {
+      const client = new OpenAIClient('test-api-key', defaultOptions);
+      client.usage = {
+        completion_tokens_details: null,
+        prompt_tokens: 10,
+        completion_tokens: 20,
+      };
+      client.inputTokensKey = 'prompt_tokens';
+      client.outputTokensKey = 'completion_tokens';
+
+      const result = client.getStreamUsage();
+
+      expect(result).toEqual(client.usage);
+    });
+
+    it('should return this.usage when completion_tokens_details is missing reasoning_tokens', () => {
+      const client = new OpenAIClient('test-api-key', defaultOptions);
+      client.usage = {
+        completion_tokens_details: {
+          other_tokens: 5,
+        },
+        prompt_tokens: 10,
+        completion_tokens: 20,
+      };
+      client.inputTokensKey = 'prompt_tokens';
+      client.outputTokensKey = 'completion_tokens';
+
+      const result = client.getStreamUsage();
+
+      expect(result).toEqual(client.usage);
+    });
+
+    it('should calculate output tokens correctly when completion_tokens_details is present with reasoning_tokens', () => {
+      const client = new OpenAIClient('test-api-key', defaultOptions);
+      client.usage = {
+        completion_tokens_details: {
+          reasoning_tokens: 30,
+          other_tokens: 5,
+        },
+        prompt_tokens: 10,
+        completion_tokens: 20,
+      };
+      client.inputTokensKey = 'prompt_tokens';
+      client.outputTokensKey = 'completion_tokens';
+
+      const result = client.getStreamUsage();
+
+      expect(result).toEqual({
+        reasoning_tokens: 30,
+        other_tokens: 5,
+        prompt_tokens: 10,
+        completion_tokens: 10, // |30 - 20| = 10
+      });
+    });
+
+    it('should return this.usage when it is undefined', () => {
+      const client = new OpenAIClient('test-api-key', defaultOptions);
+      client.usage = undefined;
+
+      const result = client.getStreamUsage();
+
+      expect(result).toBeUndefined();
     });
   });
 });

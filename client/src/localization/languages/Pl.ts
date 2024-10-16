@@ -261,6 +261,10 @@ export default {
   com_ui_import_conversation_info: 'Importuj konwersacje z pliku JSON',
   com_ui_import_conversation_success: 'Konwersacje zostały pomyślnie zaimportowane',
   com_ui_import_conversation_error: 'Wystąpił błąd podczas importowania konwersacji',
+  com_ui_accept: 'Akceptuję',
+  com_ui_decline: 'Nie akceptuję',
+  com_ui_terms_and_conditions: 'Warunki użytkowania',
+  com_ui_no_terms_content: 'Brak treści warunków użytkowania do wyświetlenia',
 };
 
 export const comparisons = {

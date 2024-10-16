@@ -5,11 +5,12 @@ import {
   /* @ts-ignore */
   SSE,
   createPayload,
+  isAgentsEndpoint,
   removeNullishValues,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import { useGetUserBalance, useGetStartupConfig } from 'librechat-data-provider/react-query';
-import type { TMessage, TSubmission, EventSubmission } from 'librechat-data-provider';
+import type { TMessage, TSubmission, TPayload, EventSubmission } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData } from '~/common';
 import { useGenTitleMutation } from '~/data-provider';
@@ -51,12 +52,14 @@ export default function useSSE(
   } = chatHelpers;
 
   const {
+    stepHandler,
     syncHandler,
     finalHandler,
     errorHandler,
     messageHandler,
     contentHandler,
     createdHandler,
+    attachmentHandler,
     abortConversation,
   } = useEventHandlers({
     genTitle,
@@ -85,8 +88,8 @@ export default function useSSE(
 
     const payloadData = createPayload(submission);
     let { payload } = payloadData;
-    if (isAssistantsEndpoint(payload.endpoint)) {
-      payload = removeNullishValues(payload);
+    if (isAssistantsEndpoint(payload.endpoint) || isAgentsEndpoint(payload.endpoint)) {
+      payload = removeNullishValues(payload) as TPayload;
     }
 
     let textIndex = null;
@@ -96,6 +99,15 @@ export default function useSSE(
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     });
 
+    events.onattachment = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data);
+        attachmentHandler({ data, submission: submission as EventSubmission });
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
     events.onmessage = (e: MessageEvent) => {
       const data = JSON.parse(e.data);
 
@@ -104,8 +116,8 @@ export default function useSSE(
         finalHandler(data, { ...submission, plugins } as EventSubmission);
         (startupConfig?.checkBalance ?? false) && balanceQuery.refetch();
         console.log('final', data);
-      }
-      if (data.created != null) {
+        return;
+      } else if (data.created != null) {
         const runId = v4();
         setActiveRunId(runId);
         userMessage = {
@@ -115,6 +127,8 @@ export default function useSSE(
         };
 
         createdHandler(data, { ...submission, userMessage } as EventSubmission);
+      } else if (data.event != null) {
+        stepHandler(data, { ...submission, userMessage } as EventSubmission);
       } else if (data.sync != null) {
         const runId = v4();
         setActiveRunId(runId);

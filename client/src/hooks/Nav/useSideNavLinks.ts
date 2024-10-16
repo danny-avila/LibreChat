@@ -1,22 +1,20 @@
 import { useMemo } from 'react';
+import { MessageSquareQuote, ArrowRightToLine, Settings2, Bookmark } from 'lucide-react';
 import {
-  ArrowRightToLine,
-  MessageSquareQuote,
-  Bookmark,
-  // Settings2,
-} from 'lucide-react';
-import {
-  EModelEndpoint,
   isAssistantsEndpoint,
+  isAgentsEndpoint,
   PermissionTypes,
+  isParamEndpoint,
+  EModelEndpoint,
   Permissions,
 } from 'librechat-data-provider';
 import type { TConfig, TInterfaceConfig } from 'librechat-data-provider';
 import type { NavLink } from '~/common';
 import BookmarkPanel from '~/components/SidePanel/Bookmarks/BookmarkPanel';
 import PanelSwitch from '~/components/SidePanel/Builder/PanelSwitch';
+import AgentPanelSwitch from '~/components/SidePanel/Agents/AgentPanelSwitch';
 import PromptsAccordion from '~/components/Prompts/PromptsAccordion';
-// import Parameters from '~/components/SidePanel/Parameters/Panel';
+import Parameters from '~/components/SidePanel/Parameters/Panel';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
 import { Blocks, AttachmentIcon } from '~/components/svg';
 import { useHasAccess } from '~/hooks';
@@ -24,14 +22,18 @@ import { useHasAccess } from '~/hooks';
 export default function useSideNavLinks({
   hidePanel,
   assistants,
+  agents,
   keyProvided,
   endpoint,
+  endpointType,
   interfaceConfig,
 }: {
   hidePanel: () => void;
   assistants?: TConfig | null;
+  agents?: TConfig | null;
   keyProvided: boolean;
   endpoint?: EModelEndpoint | null;
+  endpointType?: EModelEndpoint | null;
   interfaceConfig: Partial<TInterfaceConfig>;
 }) {
   const hasAccessToPrompts = useHasAccess({
@@ -50,7 +52,7 @@ export default function useSideNavLinks({
       assistants &&
       assistants.disableBuilder !== true &&
       keyProvided &&
-      interfaceConfig.parameters
+      interfaceConfig.parameters === true
     ) {
       links.push({
         title: 'com_sidepanel_assistant_builder',
@@ -61,6 +63,22 @@ export default function useSideNavLinks({
       });
     }
 
+    if (
+      isAgentsEndpoint(endpoint) &&
+      agents &&
+      // agents.disableBuilder !== true &&
+      keyProvided &&
+      interfaceConfig.parameters === true
+    ) {
+      links.push({
+        title: 'com_sidepanel_agent_builder',
+        label: '',
+        icon: Blocks,
+        id: 'agents',
+        Component: AgentPanelSwitch,
+      });
+    }
+
     if (hasAccessToPrompts) {
       links.push({
         title: 'com_ui_prompts',
@@ -68,6 +86,20 @@ export default function useSideNavLinks({
         icon: MessageSquareQuote,
         id: 'prompts',
         Component: PromptsAccordion,
+      });
+    }
+
+    if (
+      interfaceConfig.parameters === true &&
+      isParamEndpoint(endpoint ?? '', endpointType ?? '') === true &&
+      keyProvided
+    ) {
+      links.push({
+        title: 'com_sidepanel_parameters',
+        label: '',
+        icon: Settings2,
+        id: 'parameters',
+        Component: Parameters,
       });
     }
 
@@ -99,12 +131,15 @@ export default function useSideNavLinks({
 
     return links;
   }, [
-    assistants,
-    keyProvided,
-    hidePanel,
-    endpoint,
     interfaceConfig.parameters,
+    keyProvided,
+    assistants,
+    endpointType,
+    endpoint,
+    agents,
     hasAccessToPrompts,
+    hasAccessToBookmarks,
+    hidePanel,
   ]);
 
   return Links;

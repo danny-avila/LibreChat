@@ -2,6 +2,8 @@ const crypto = require('crypto');
 const fetch = require('node-fetch');
 const {
   supportsBalanceCheck,
+  isAgentsEndpoint,
+  isParamEndpoint,
   ErrorTypes,
   Constants,
   CacheKeys,
@@ -34,6 +36,20 @@ class BaseClient {
     this.userMessagePromise;
     /** @type {ClientDatabaseSavePromise} */
     this.responsePromise;
+    /** @type {string} */
+    this.user;
+    /** @type {string} */
+    this.conversationId;
+    /** @type {string} */
+    this.responseMessageId;
+    /** @type {TAttachment[]} */
+    this.attachments;
+    /** The key for the usage object's input tokens
+     * @type {string} */
+    this.inputTokensKey = 'prompt_tokens';
+    /** The key for the usage object's output tokens
+     * @type {string} */
+    this.outputTokensKey = 'completion_tokens';
   }
 
   setOptions() {
@@ -58,6 +74,17 @@ class BaseClient {
 
   async summarizeMessages() {
     throw new Error('Subclasses attempted to call summarizeMessages without implementing it');
+  }
+
+  /**
+   * @returns {string}
+   */
+  getResponseModel() {
+    if (isAgentsEndpoint(this.options.endpoint) && this.options.agent && this.options.agent.id) {
+      return this.options.agent.id;
+    }
+
+    return this.modelOptions.model;
   }
 
   /**
@@ -161,6 +188,8 @@ class BaseClient {
       this.currentMessages[this.currentMessages.length - 1].messageId = head;
     }
 
+    this.responseMessageId = responseMessageId;
+
     return {
       ...opts,
       user,
@@ -209,6 +238,7 @@ class BaseClient {
         userMessage,
         conversationId,
         responseMessageId,
+        sender: this.sender,
       });
     }
 
@@ -347,7 +377,12 @@ class BaseClient {
     };
   }
 
-  async handleContextStrategy({ instructions, orderedMessages, formattedMessages }) {
+  async handleContextStrategy({
+    instructions,
+    orderedMessages,
+    formattedMessages,
+    buildTokenMap = true,
+  }) {
     let _instructions;
     let tokenCount;
 
@@ -417,19 +452,23 @@ class BaseClient {
       maxContextTokens: this.maxContextTokens,
     });
 
-    let tokenCountMap = orderedWithInstructions.reduce((map, message, index) => {
-      const { messageId } = message;
-      if (!messageId) {
+    /** @type {Record<string, number> | undefined} */
+    let tokenCountMap;
+    if (buildTokenMap) {
+      tokenCountMap = orderedWithInstructions.reduce((map, message, index) => {
+        const { messageId } = message;
+        if (!messageId) {
+          return map;
+        }
+
+        if (shouldSummarize && index === summaryIndex && !usePrevSummary) {
+          map.summaryMessage = { ...summaryMessage, messageId, tokenCount: summaryTokenCount };
+        }
+
+        map[messageId] = orderedWithInstructions[index].tokenCount;
         return map;
-      }
-
-      if (shouldSummarize && index === summaryIndex && !usePrevSummary) {
-        map.summaryMessage = { ...summaryMessage, messageId, tokenCount: summaryTokenCount };
-      }
-
-      map[messageId] = orderedWithInstructions[index].tokenCount;
-      return map;
-    }, {});
+      }, {});
+    }
 
     const promptTokens = this.maxContextTokens - remainingContextTokens;
 
@@ -531,6 +570,7 @@ class BaseClient {
       });
     }
 
+    /** @type {string|string[]|undefined} */
     const completion = await this.sendCompletion(payload, opts);
     this.abortController.requestCompleted = true;
 
@@ -540,14 +580,25 @@ class BaseClient {
       parentMessageId: userMessage.messageId,
       isCreatedByUser: false,
       isEdited,
-      model: this.modelOptions.model,
+      model: this.getResponseModel(),
       sender: this.sender,
-      text: addSpaceIfNeeded(generation) + completion,
       promptTokens,
       iconURL: this.options.iconURL,
       endpoint: this.options.endpoint,
       ...(this.metadata ?? {}),
     };
+
+    if (typeof completion === 'string') {
+      responseMessage.text = addSpaceIfNeeded(generation) + completion;
+    } else if (
+      Array.isArray(completion) &&
+      isParamEndpoint(this.options.endpoint, this.options.endpointType)
+    ) {
+      responseMessage.text = '';
+      responseMessage.content = completion;
+    } else if (Array.isArray(completion)) {
+      responseMessage.text = addSpaceIfNeeded(generation) + completion.join('');
+    }
 
     if (
       tokenCountMap &&
@@ -564,8 +615,8 @@ class BaseClient {
        * @type {StreamUsage | null} */
       const usage = this.getStreamUsage != null ? this.getStreamUsage() : null;
 
-      if (usage != null && Number(usage.output_tokens) > 0) {
-        responseMessage.tokenCount = usage.output_tokens;
+      if (usage != null && Number(usage[this.outputTokensKey]) > 0) {
+        responseMessage.tokenCount = usage[this.outputTokensKey];
         completionTokens = responseMessage.tokenCount;
         await this.updateUserMessageTokenCount({ usage, tokenCountMap, userMessage, opts });
       } else {
@@ -578,6 +629,10 @@ class BaseClient {
 
     if (this.userMessagePromise) {
       await this.userMessagePromise;
+    }
+
+    if (this.artifactPromises) {
+      responseMessage.attachments = (await Promise.all(this.artifactPromises)).filter((a) => a);
     }
 
     this.responsePromise = this.saveMessageToDatabase(responseMessage, saveOptions, user);
@@ -615,7 +670,7 @@ class BaseClient {
     /** @type {boolean} */
     const shouldUpdateCount =
       this.calculateCurrentTokenCount != null &&
-      Number(usage.input_tokens) > 0 &&
+      Number(usage[this.inputTokensKey]) > 0 &&
       (this.options.resendFiles ||
         (!this.options.resendFiles && !this.options.attachments?.length)) &&
       !this.options.promptPrefix;
@@ -868,8 +923,12 @@ class BaseClient {
 
           processValue(nestedValue);
         }
-      } else {
+      } else if (typeof value === 'string') {
         numTokens += this.getTokenCount(value);
+      } else if (typeof value === 'number') {
+        numTokens += this.getTokenCount(value.toString());
+      } else if (typeof value === 'boolean') {
+        numTokens += this.getTokenCount(value.toString());
       }
     };
 

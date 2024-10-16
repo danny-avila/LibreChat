@@ -1,29 +1,31 @@
 import { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { EModelEndpoint } from 'librechat-data-provider';
 import { Content, Portal, Root } from '@radix-ui/react-popover';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
+import { EModelEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TModelSpec, TConversation, TEndpointsConfig } from 'librechat-data-provider';
+import { useChatContext, useAssistantsMapContext } from '~/Providers';
 import { getConvoSwitchLogic, getModelSpecIconURL } from '~/utils';
 import { useDefaultConvo, useNewConvo } from '~/hooks';
-import { useChatContext } from '~/Providers';
 import MenuButton from './MenuButton';
 import ModelSpecs from './ModelSpecs';
 import store from '~/store';
 
-export default function ModelSpecsMenu({ modelSpecs }: { modelSpecs: TModelSpec[] }) {
+export default function ModelSpecsMenu({ modelSpecs }: { modelSpecs?: TModelSpec[] }) {
   const { conversation } = useChatContext();
   const { newConversation } = useNewConvo();
 
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
   const modularChat = useRecoilValue(store.modularChat);
   const getDefaultConversation = useDefaultConvo();
+  const assistantMap = useAssistantsMapContext();
 
   const onSelectSpec = (spec: TModelSpec) => {
     const { preset } = spec;
     preset.iconURL = getModelSpecIconURL(spec);
     preset.spec = spec.name;
-    const { endpoint: newEndpoint } = preset;
+    const { endpoint } = preset;
+    const newEndpoint = endpoint ?? '';
     if (!newEndpoint) {
       return;
     }
@@ -41,6 +43,14 @@ export default function ModelSpecsMenu({ modelSpecs }: { modelSpecs: TModelSpec[
       conversation,
       endpointsConfig,
     });
+
+    if (newEndpointType) {
+      preset.endpointType = newEndpointType;
+    }
+
+    if (isAssistantsEndpoint(newEndpoint) && preset.assistant_id != null && !(preset.model ?? '')) {
+      preset.model = assistantMap?.[newEndpoint]?.[preset.assistant_id]?.model;
+    }
 
     const isModular = isCurrentModular && isNewModular && shouldSwitch;
     if (isExistingConversation && isModular) {
@@ -87,7 +97,7 @@ export default function ModelSpecsMenu({ modelSpecs }: { modelSpecs: TModelSpec[
         endpointsConfig={endpointsConfig}
       />
       <Portal>
-        {modelSpecs && modelSpecs?.length && (
+        {modelSpecs && modelSpecs.length && (
           <div
             style={{
               position: 'fixed',

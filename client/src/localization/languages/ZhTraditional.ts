@@ -85,6 +85,10 @@ export default {
   com_ui_bookmarks_update_error: '更新書籤時出錯',
   com_ui_bookmarks_delete_error: '刪除書籤時出錯',
   com_ui_bookmarks_add_to_conversation: '添加到當前對話',
+  com_ui_accept: '我接受',
+  com_ui_decline: '我不同意',
+  com_ui_terms_and_conditions: '條款和條件',
+  com_ui_no_terms_content: '沒有條款和條件內容顯示',
   com_auth_error_login: '無法使用提供的資訊登入。請檢查您的登入資訊後重試。',
   com_auth_error_login_rl: '短時間內嘗試登入的次數過多。請稍後再試。',
   com_auth_error_login_ban: '由於違反我們的服務條款，您的帳號已被暫時停用。',
@@ -356,7 +360,7 @@ export default {
   com_assistants_code_interpreter_files: '以下檔案僅適用於程式碼解譯器：',
   com_assistants_retrieval: '檢索',
   com_assistants_search_name: '搜尋助理名稱',
-  com_assistants_tools: '工具',
+  com_ui_tools: '工具',
   com_assistants_actions: '操作',
   com_assistants_add_tools: '新增工具',
   com_assistants_add_actions: '新增操作',
@@ -522,7 +526,7 @@ export default {
   com_nav_change_picture: '更換圖片',
   com_nav_plugin_install: '安裝',
   com_nav_plugin_uninstall: '解除安裝',
-  com_nav_tool_add: '新增',
+  com_ui_add: '新增',
   com_nav_tool_remove: '移除',
   com_nav_tool_dialog: 'AI 工具',
   com_nav_tool_dialog_description: '必須儲存 Assistant 才能保留工具選擇。',
@@ -1929,7 +1933,7 @@ export const comparisons = {
     english: 'Search assistants by name',
     translated: '搜尋助理名稱',
   },
-  com_assistants_tools: {
+  com_ui_tools: {
     english: 'Tools',
     translated: '工具',
   },
@@ -2563,7 +2567,7 @@ export const comparisons = {
     english: 'Uninstall',
     translated: '解除安裝',
   },
-  com_nav_tool_add: {
+  com_ui_add: {
     english: 'Add',
     translated: '新增',
   },

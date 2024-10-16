@@ -104,6 +104,10 @@ export default {
   com_ui_bookmarks_update_error: 'Une erreur est survenue lors de la mise à jour du signet',
   com_ui_bookmarks_delete_error: 'Une erreur est survenue lors de la suppression du signet',
   com_ui_bookmarks_add_to_conversation: 'Ajouter à la conversation en cours',
+  com_ui_accept: 'J\'accepte',
+  com_ui_decline: 'Je n\'accepte pas',
+  com_ui_terms_and_conditions: 'Conditions d\'utilisation',
+  com_ui_no_terms_content: 'Aucun contenu de conditions d\'utilisation à afficher',
   com_auth_error_login:
     'Impossible de se connecter avec les informations fournies. Veuillez vérifier vos identifiants et réessayer.',
   com_auth_error_login_rl:
@@ -418,7 +422,7 @@ export default {
   com_ui_date_december: 'Décembre',
   com_ui_nothing_found: 'Aucun résultat trouvé',
   com_ui_go_to_conversation: 'Aller à la conversation',
-  com_nav_tool_add: 'Ajouter',
+  com_ui_add: 'Ajouter',
   com_nav_tool_remove: 'Supprimer',
   com_nav_tool_dialog: 'Outils de l\'assistant',
   com_nav_tool_dialog_description:
@@ -479,7 +483,7 @@ export default {
     'Les fichiers suivants sont disponibles uniquement pour l\'interpréteur de code :',
   com_assistants_retrieval: 'Récupération',
   com_assistants_search_name: 'Rechercher des assistants par nom',
-  com_assistants_tools: 'Outils',
+  com_ui_tools: 'Outils',
   com_assistants_actions: 'Actions',
   com_assistants_add_tools: 'Ajouter des outils',
   com_assistants_add_actions: 'Ajouter des actions',
@@ -624,7 +628,7 @@ export default {
   com_ui_upload_invalid_var:
     'Fichier non valide pour le téléchargement. L\'image ne doit pas dépasser {0} Mo',
   com_ui_read_aloud: 'Lire à haute voix',
-  com_ui_add: 'Ajouter un modèle ou un préréglage pour une réponse supplémentaire',
+  com_ui_add_model_preset: 'Ajouter un modèle ou un préréglage pour une réponse supplémentaire',
   com_ui_loading: 'Chargement...',
   com_ui_all_proper: 'Tout',
   com_ui_chat: 'Discussion',
@@ -2208,7 +2212,7 @@ export const comparisons = {
     english: 'Go to conversation',
     translated: 'Aller à la conversation',
   },
-  com_nav_tool_add: {
+  com_ui_add: {
     english: 'Add',
     translated: 'Ajouter',
   },
@@ -2430,7 +2434,7 @@ export const comparisons = {
     english: 'Search assistants by name',
     translated: 'Rechercher des assistants par nom',
   },
-  com_assistants_tools: {
+  com_ui_tools: {
     english: 'Tools',
     translated: 'Outils',
   },

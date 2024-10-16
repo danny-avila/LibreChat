@@ -116,7 +116,7 @@ export default function Fork({
   const [forkSetting, setForkSetting] = useRecoilState(store.forkSetting);
   const [activeSetting, setActiveSetting] = useState(optionLabels.default);
   const [splitAtTarget, setSplitAtTarget] = useRecoilState(store.splitAtTarget);
-  const [rememberGlobal, setRememberGlobal] = useRecoilState(store.rememberForkOption);
+  const [rememberGlobal, setRememberGlobal] = useRecoilState(store.rememberDefaultFork);
   const forkConvo = useForkConvoMutation({
     onSuccess: (data) => {
       if (data) {

@@ -9,13 +9,12 @@ import {
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import type { TEndpointsConfig } from 'librechat-data-provider';
 import { ResizableHandleAlt, ResizablePanel, ResizablePanelGroup } from '~/components/ui/Resizable';
-import { TooltipProvider, Tooltip } from '~/components/ui/Tooltip';
-import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
 import { useMediaQuery, useLocalStorage, useLocalize } from '~/hooks';
+import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
 import NavToggle from '~/components/Nav/NavToggle';
+import { cn, getEndpointField } from '~/utils';
 import { useChatContext } from '~/Providers';
 import Switcher from './Switcher';
-import { cn } from '~/utils';
 import Nav from './Nav';
 
 interface SidePanelProps {
@@ -82,7 +81,13 @@ const SidePanel = ({
     return typeof activePanel === 'string' ? activePanel : undefined;
   }, []);
 
+  const endpointType = useMemo(
+    () => getEndpointField(endpointsConfig, endpoint, 'type'),
+    [endpoint, endpointsConfig],
+  );
   const assistants = useMemo(() => endpointsConfig?.[endpoint ?? ''], [endpoint, endpointsConfig]);
+  const agents = useMemo(() => endpointsConfig?.[endpoint ?? ''], [endpoint, endpointsConfig]);
+
   const userProvidesKey = useMemo(
     () => !!(endpointsConfig?.[endpoint ?? '']?.userProvide ?? false),
     [endpointsConfig, endpoint],
@@ -102,10 +107,12 @@ const SidePanel = ({
   }, []);
 
   const Links = useSideNavLinks({
+    agents,
+    endpoint,
     hidePanel,
     assistants,
     keyProvided,
-    endpoint,
+    endpointType,
     interfaceConfig,
   });
 
@@ -173,116 +180,109 @@ const SidePanel = ({
 
   return (
     <>
-      <TooltipProvider delayDuration={0}>
-        <ResizablePanelGroup
-          direction="horizontal"
-          onLayout={(sizes) => throttledSaveLayout(sizes)}
-          className="transition-width relative h-full w-full flex-1 overflow-auto bg-white dark:bg-gray-800"
+      <ResizablePanelGroup
+        direction="horizontal"
+        onLayout={(sizes) => throttledSaveLayout(sizes)}
+        className="transition-width relative h-full w-full flex-1 overflow-auto bg-white dark:bg-gray-800"
+      >
+        <ResizablePanel
+          defaultSize={currentLayout[0]}
+          minSize={minSizeMain}
+          order={1}
+          id="messages-view"
         >
-          <ResizablePanel
-            defaultSize={currentLayout[0]}
-            minSize={minSizeMain}
-            order={1}
-            id="messages-view"
-          >
-            {children}
-          </ResizablePanel>
-          {artifacts != null && (
-            <>
-              <ResizableHandleAlt withHandle className="ml-3 bg-border-medium dark:text-white" />
-              <ResizablePanel
-                defaultSize={currentLayout[1]}
-                minSize={minSizeMain}
-                order={2}
-                id="artifacts-panel"
-              >
-                {artifacts}
-              </ResizablePanel>
-            </>
-          )}
-          <TooltipProvider delayDuration={400}>
-            <Tooltip>
-              <div
-                onMouseEnter={() => setIsHovering(true)}
-                onMouseLeave={() => setIsHovering(false)}
-                className="relative flex w-px items-center justify-center"
-              >
-                <NavToggle
-                  navVisible={!isCollapsed}
-                  isHovering={isHovering}
-                  onToggle={toggleNavVisible}
-                  setIsHovering={setIsHovering}
-                  className={cn(
-                    'fixed top-1/2',
-                    (isCollapsed && (minSize === 0 || collapsedSize === 0)) || fullCollapse
-                      ? 'mr-9'
-                      : 'mr-16',
-                  )}
-                  translateX={false}
-                  side="right"
-                />
-              </div>
-            </Tooltip>
-          </TooltipProvider>
-          {(!isCollapsed || minSize > 0) && !isSmallScreen && !fullCollapse && (
-            <ResizableHandleAlt withHandle className="bg-transparent dark:text-white" />
-          )}
-          <ResizablePanel
-            tagName="nav"
-            id="controls-nav"
-            order={artifacts != null ? 3 : 2}
-            aria-label={localize('com_ui_controls')}
-            role="region"
-            collapsedSize={collapsedSize}
-            defaultSize={currentLayout[currentLayout.length - 1]}
-            collapsible={true}
-            minSize={minSize}
-            maxSize={40}
-            ref={panelRef}
-            style={{
-              overflowY: 'auto',
-              transition: 'width 0.2s ease, visibility 0s linear 0.2s',
-            }}
-            onExpand={() => {
-              setIsCollapsed(false);
-              localStorage.setItem('react-resizable-panels:collapsed', 'false');
-            }}
-            onCollapse={() => {
-              setIsCollapsed(true);
-              localStorage.setItem('react-resizable-panels:collapsed', 'true');
-            }}
+          {children}
+        </ResizablePanel>
+        {artifacts != null && (
+          <>
+            <ResizableHandleAlt withHandle className="ml-3 bg-border-medium dark:text-white" />
+            <ResizablePanel
+              defaultSize={currentLayout[1]}
+              minSize={minSizeMain}
+              order={2}
+              id="artifacts-panel"
+            >
+              {artifacts}
+            </ResizablePanel>
+          </>
+        )}
+        <div
+          onMouseEnter={() => setIsHovering(true)}
+          onMouseLeave={() => setIsHovering(false)}
+          className="relative flex w-px items-center justify-center"
+        >
+          <NavToggle
+            navVisible={!isCollapsed}
+            isHovering={isHovering}
+            onToggle={toggleNavVisible}
+            setIsHovering={setIsHovering}
             className={cn(
-              'sidenav hide-scrollbar border-l border-border-light bg-surface-primary-alt transition-opacity',
-              isCollapsed ? 'min-w-[50px]' : 'min-w-[340px] sm:min-w-[352px]',
-              (isSmallScreen && isCollapsed && (minSize === 0 || collapsedSize === 0)) ||
-                fullCollapse
-                ? 'hidden min-w-0'
-                : 'opacity-100',
+              'fixed top-1/2',
+              (isCollapsed && (minSize === 0 || collapsedSize === 0)) || fullCollapse
+                ? 'mr-9'
+                : 'mr-16',
             )}
-          >
-            {interfaceConfig.modelSelect && (
-              <div
-                className={cn(
-                  'sticky left-0 right-0 top-0 z-[100] flex h-[52px] flex-wrap items-center justify-center bg-surface-primary-alt',
-                  isCollapsed ? 'h-[52px]' : 'px-2',
-                )}
-              >
-                <Switcher
-                  isCollapsed={isCollapsed}
-                  endpointKeyProvided={keyProvided}
-                  endpoint={endpoint}
-                />
-              </div>
-            )}
-            <Nav
-              resize={panelRef.current?.resize}
-              isCollapsed={isCollapsed}
-              defaultActive={defaultActive}
-              links={Links}
-            />
-          </ResizablePanel>
-        </ResizablePanelGroup>
-      </TooltipProvider>
+            translateX={false}
+            side="right"
+          />
+        </div>
+        {(!isCollapsed || minSize > 0) && !isSmallScreen && !fullCollapse && (
+          <ResizableHandleAlt withHandle className="bg-transparent dark:text-white" />
+        )}
+        <ResizablePanel
+          tagName="nav"
+          id="controls-nav"
+          order={artifacts != null ? 3 : 2}
+          aria-label={localize('com_ui_controls')}
+          role="region"
+          collapsedSize={collapsedSize}
+          defaultSize={currentLayout[currentLayout.length - 1]}
+          collapsible={true}
+          minSize={minSize}
+          maxSize={40}
+          ref={panelRef}
+          style={{
+            overflowY: 'auto',
+            transition: 'width 0.2s ease, visibility 0s linear 0.2s',
+          }}
+          onExpand={() => {
+            setIsCollapsed(false);
+            localStorage.setItem('react-resizable-panels:collapsed', 'false');
+          }}
+          onCollapse={() => {
+            setIsCollapsed(true);
+            localStorage.setItem('react-resizable-panels:collapsed', 'true');
+          }}
+          className={cn(
+            'sidenav hide-scrollbar border-l border-border-light bg-background transition-opacity',
+            isCollapsed ? 'min-w-[50px]' : 'min-w-[340px] sm:min-w-[352px]',
+            (isSmallScreen && isCollapsed && (minSize === 0 || collapsedSize === 0)) || fullCollapse
+              ? 'hidden min-w-0'
+              : 'opacity-100',
+          )}
+        >
+          {interfaceConfig.modelSelect && (
+            <div
+              className={cn(
+                'sticky left-0 right-0 top-0 z-[100] flex h-[52px] flex-wrap items-center justify-center bg-background',
+                isCollapsed ? 'h-[52px]' : 'px-2',
+              )}
+            >
+              <Switcher
+                isCollapsed={isCollapsed}
+                endpointKeyProvided={keyProvided}
+                endpoint={endpoint}
+              />
+            </div>
+          )}
+          <Nav
+            resize={panelRef.current?.resize}
+            isCollapsed={isCollapsed}
+            defaultActive={defaultActive}
+            links={Links}
+          />
+        </ResizablePanel>
+      </ResizablePanelGroup>
       <button
         aria-label="Close right side panel"
         className={`nav-mask ${!isCollapsed ? 'active' : ''}`}

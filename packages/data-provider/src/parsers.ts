@@ -2,23 +2,24 @@ import type { ZodIssue } from 'zod';
 import type * as a from './types/assistants';
 import type * as s from './schemas';
 import type * as t from './types';
-import { ContentTypes } from './types/assistants';
+import { ContentTypes } from './types/runs';
 import {
-  EModelEndpoint,
   openAISchema,
   googleSchema,
   bingAISchema,
+  EModelEndpoint,
   anthropicSchema,
-  chatGPTBrowserSchema,
-  gptPluginsSchema,
   assistantSchema,
-  compactOpenAISchema,
+  gptPluginsSchema,
+  // agentsSchema,
+  compactAgentsSchema,
   compactGoogleSchema,
-  compactAnthropicSchema,
   compactChatGPTSchema,
+  chatGPTBrowserSchema,
   compactPluginsSchema,
   compactAssistantSchema,
 } from './schemas';
+import { bedrockInputSchema } from './bedrock';
 import { alternateName } from './config';
 
 type EndpointSchema =
@@ -28,7 +29,9 @@ type EndpointSchema =
   | typeof anthropicSchema
   | typeof chatGPTBrowserSchema
   | typeof gptPluginsSchema
-  | typeof assistantSchema;
+  | typeof assistantSchema
+  | typeof compactAgentsSchema
+  | typeof bedrockInputSchema;
 
 const endpointSchemas: Record<EModelEndpoint, EndpointSchema> = {
   [EModelEndpoint.openAI]: openAISchema,
@@ -41,6 +44,8 @@ const endpointSchemas: Record<EModelEndpoint, EndpointSchema> = {
   [EModelEndpoint.gptPlugins]: gptPluginsSchema,
   [EModelEndpoint.assistants]: assistantSchema,
   [EModelEndpoint.azureAssistants]: assistantSchema,
+  [EModelEndpoint.agents]: compactAgentsSchema,
+  [EModelEndpoint.bedrock]: bedrockInputSchema,
 };
 
 // const schemaCreators: Record<EModelEndpoint, (customSchema: DefaultSchemaValues) => EndpointSchema> = {
@@ -51,6 +56,7 @@ const endpointSchemas: Record<EModelEndpoint, EndpointSchema> = {
 export function getEnabledEndpoints() {
   const defaultEndpoints: string[] = [
     EModelEndpoint.openAI,
+    EModelEndpoint.agents,
     EModelEndpoint.assistants,
     EModelEndpoint.azureAssistants,
     EModelEndpoint.azureOpenAI,
@@ -59,9 +65,10 @@ export function getEnabledEndpoints() {
     EModelEndpoint.chatGPTBrowser,
     EModelEndpoint.gptPlugins,
     EModelEndpoint.anthropic,
+    EModelEndpoint.bedrock,
   ];
 
-  const endpointsEnv = process.env.ENDPOINTS || '';
+  const endpointsEnv = process.env.ENDPOINTS ?? '';
   let enabledEndpoints = defaultEndpoints;
   if (endpointsEnv) {
     enabledEndpoints = endpointsEnv
@@ -125,6 +132,7 @@ export const envVarRegex = /^\${(.+)}$/;
 export function extractEnvVariable(value: string) {
   const envVarMatch = value.match(envVarRegex);
   if (envVarMatch) {
+    // eslint-disable-next-line @typescript-eslint/strict-boolean-expressions
     return process.env[envVarMatch[1]] || value;
   }
   return value;
@@ -154,6 +162,15 @@ export function getFirstDefinedValue(possibleValues: string[]) {
   return returnValue;
 }
 
+export function getNonEmptyValue(possibleValues: string[]) {
+  for (const value of possibleValues) {
+    if (value && value.trim() !== '') {
+      return value;
+    }
+  }
+  return undefined;
+}
+
 export type TPossibleValues = {
   models: string[];
   secondaryModels?: string[];
@@ -167,12 +184,12 @@ export const parseConvo = ({
 }: {
   endpoint: EModelEndpoint;
   endpointType?: EModelEndpoint;
-  conversation: Partial<s.TConversation | s.TPreset>;
+  conversation: Partial<s.TConversation | s.TPreset> | null;
   possibleValues?: TPossibleValues;
   // TODO: POC for default schema
   // defaultSchema?: Partial<EndpointSchema>,
 }) => {
-  let schema = endpointSchemas[endpoint];
+  let schema = endpointSchemas[endpoint] as EndpointSchema | undefined;
 
   if (!schema && !endpointType) {
     throw new Error(`Unknown endpoint: ${endpoint}`);
@@ -184,14 +201,14 @@ export const parseConvo = ({
   //   schema = schemaCreators[endpoint](defaultSchema);
   // }
 
-  const convo = schema.parse(conversation) as s.TConversation;
+  const convo = schema?.parse(conversation) as s.TConversation | undefined;
   const { models, secondaryModels } = possibleValues ?? {};
 
   if (models && convo) {
     convo.model = getFirstDefinedValue(models) ?? convo.model;
   }
 
-  if (secondaryModels && convo.agentOptions) {
+  if (secondaryModels && convo?.agentOptions) {
     convo.agentOptions.model = getFirstDefinedValue(secondaryModels) ?? convo.agentOptions.model;
   }
 
@@ -199,35 +216,57 @@ export const parseConvo = ({
 };
 
 export const getResponseSender = (endpointOption: t.TEndpointOption): string => {
-  const { model, endpoint, endpointType, modelDisplayLabel, chatGptLabel, modelLabel, jailbreak } =
-    endpointOption;
+  const {
+    model: _m,
+    endpoint,
+    endpointType,
+    modelDisplayLabel: _mdl,
+    chatGptLabel: _cgl,
+    modelLabel: _ml,
+    jailbreak,
+  } = endpointOption;
 
+  const model = _m ?? '';
+  const modelDisplayLabel = _mdl ?? '';
+  const chatGptLabel = _cgl ?? '';
+  const modelLabel = _ml ?? '';
   if (
     [
       EModelEndpoint.openAI,
-      EModelEndpoint.azureOpenAI,
+      EModelEndpoint.bedrock,
       EModelEndpoint.gptPlugins,
+      EModelEndpoint.azureOpenAI,
       EModelEndpoint.chatGPTBrowser,
     ].includes(endpoint)
   ) {
     if (chatGptLabel) {
       return chatGptLabel;
+    } else if (modelLabel) {
+      return modelLabel;
+    } else if (model && /\bo1\b/i.test(model)) {
+      return 'o1';
     } else if (model && model.includes('gpt-3')) {
       return 'GPT-3.5';
+    } else if (model && model.includes('gpt-4o')) {
+      return 'GPT-4o';
     } else if (model && model.includes('gpt-4')) {
       return 'GPT-4';
     } else if (model && model.includes('mistral')) {
       return 'Mistral';
     }
-    return alternateName[endpoint] ?? 'ChatGPT';
+    return (alternateName[endpoint] as string | undefined) ?? 'ChatGPT';
   }
 
   if (endpoint === EModelEndpoint.bingAI) {
-    return jailbreak ? 'Sydney' : 'BingAI';
+    return jailbreak === true ? 'Sydney' : 'BingAI';
   }
 
   if (endpoint === EModelEndpoint.anthropic) {
-    return modelLabel ?? 'Claude';
+    return modelLabel || 'Claude';
+  }
+
+  if (endpoint === EModelEndpoint.bedrock) {
+    return modelLabel || alternateName[endpoint];
   }
 
   if (endpoint === EModelEndpoint.google) {
@@ -251,6 +290,8 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
       return 'Mistral';
     } else if (model && model.includes('gpt-3')) {
       return 'GPT-3.5';
+    } else if (model && model.includes('gpt-4o')) {
+      return 'GPT-4o';
     } else if (model && model.includes('gpt-4')) {
       return 'GPT-4';
     } else if (modelDisplayLabel) {
@@ -264,24 +305,28 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
 };
 
 type CompactEndpointSchema =
-  | typeof compactOpenAISchema
+  | typeof openAISchema
   | typeof compactAssistantSchema
+  | typeof compactAgentsSchema
   | typeof compactGoogleSchema
   | typeof bingAISchema
-  | typeof compactAnthropicSchema
+  | typeof anthropicSchema
   | typeof compactChatGPTSchema
+  | typeof bedrockInputSchema
   | typeof compactPluginsSchema;
 
 const compactEndpointSchemas: Record<string, CompactEndpointSchema> = {
-  [EModelEndpoint.openAI]: compactOpenAISchema,
-  [EModelEndpoint.azureOpenAI]: compactOpenAISchema,
-  [EModelEndpoint.custom]: compactOpenAISchema,
+  [EModelEndpoint.openAI]: openAISchema,
+  [EModelEndpoint.azureOpenAI]: openAISchema,
+  [EModelEndpoint.custom]: openAISchema,
   [EModelEndpoint.assistants]: compactAssistantSchema,
   [EModelEndpoint.azureAssistants]: compactAssistantSchema,
+  [EModelEndpoint.agents]: compactAgentsSchema,
   [EModelEndpoint.google]: compactGoogleSchema,
+  [EModelEndpoint.bedrock]: bedrockInputSchema,
   /* BingAI needs all fields */
   [EModelEndpoint.bingAI]: bingAISchema,
-  [EModelEndpoint.anthropic]: compactAnthropicSchema,
+  [EModelEndpoint.anthropic]: anthropicSchema,
   [EModelEndpoint.chatGPTBrowser]: compactChatGPTSchema,
   [EModelEndpoint.gptPlugins]: compactPluginsSchema,
 };
@@ -331,7 +376,7 @@ export function parseTextParts(contentParts: a.TMessageContentParts[]): string {
 
   for (const part of contentParts) {
     if (part.type === ContentTypes.TEXT) {
-      const textValue = part.text.value;
+      const textValue = typeof part.text === 'string' ? part.text : part.text.value;
 
       if (
         result.length > 0 &&

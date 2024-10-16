@@ -78,7 +78,7 @@ export default function AssistantTool({
           <OGDialogTrigger asChild>
             <button
               type="button"
-              className="transition-color flex h-9 w-9 min-w-9 items-center justify-center rounded-lg duration-200 hover:bg-gray-200 dark:hover:bg-gray-700"
+              className="transition-colors flex h-9 w-9 min-w-9 items-center justify-center rounded-lg duration-200 hover:bg-gray-200 dark:hover:bg-gray-700"
             >
               <TrashIcon />
             </button>
@@ -97,7 +97,7 @@ export default function AssistantTool({
         selection={{
           selectHandler: () => removeTool(currentTool.pluginKey),
           selectClasses:
-            'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 transition-color duration-200 text-white',
+            'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 transition-colors duration-200 text-white',
           selectText: localize('com_ui_delete'),
         }}
       />

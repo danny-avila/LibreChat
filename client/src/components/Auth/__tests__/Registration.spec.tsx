@@ -50,6 +50,11 @@ const setup = ({
       user: {},
     },
   },
+  useGetBannerQueryReturnValue = {
+    isLoading: false,
+    isError: false,
+    data: {},
+  },
   useGetStartupConfigReturnValue = mockStartupConfig,
 } = {}) => {
   const mockUseRegisterUserMutation = jest
@@ -71,6 +76,10 @@ const setup = ({
   const mockUseOutletContext = jest.spyOn(reactRouter, 'useOutletContext').mockReturnValue({
     startupConfig: useGetStartupConfigReturnValue.data,
   });
+  const mockUseGetBannerQuery = jest
+    .spyOn(mockDataProvider, 'useGetBannerQuery')
+    //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
+    .mockReturnValue(useGetBannerQueryReturnValue);
   const renderResult = render(
     <AuthLayout
       startupConfig={useGetStartupConfigReturnValue.data as TStartupConfig}

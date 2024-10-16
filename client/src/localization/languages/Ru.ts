@@ -104,6 +104,10 @@ export default {
   com_ui_bookmarks_update_error: 'Произошла ошибка при обновлении закладки',
   com_ui_bookmarks_delete_error: 'Произошла ошибка при удалении закладки',
   com_ui_bookmarks_add_to_conversation: 'Добавить в текущий разговор',
+  com_ui_accept: 'Принимаю',
+  com_ui_decline: 'Не принимаю',
+  com_ui_terms_and_conditions: 'Условия использования',
+  com_ui_no_terms_content: 'Нет содержания условий использования для отображения',
   com_auth_error_login:
     'Не удалось войти с предоставленной информацией. Пожалуйста, проверьте ваши учетные данные и попробуйте снова.',
   com_auth_error_login_rl:
@@ -452,7 +456,7 @@ export default {
   com_assistants_capabilities: 'Возможности',
   com_assistants_image_vision: 'Анализ изображений',
   com_assistants_search_name: 'Поиск ассистентов по имени',
-  com_assistants_tools: 'Инструменты',
+  com_ui_tools: 'Инструменты',
   com_assistants_actions: 'Действия',
   com_assistants_add_tools: 'Добавить инструменты',
   com_assistants_add_actions: 'Добавить действия',
@@ -567,7 +571,7 @@ export default {
   com_nav_welcome_assistant: 'Выберите ассистента',
   com_nav_plugin_install: 'Установить',
   com_nav_plugin_uninstall: 'Удалить',
-  com_nav_tool_add: 'Добавить',
+  com_ui_add: 'Добавить',
   com_nav_tool_remove: 'Удалить',
   com_nav_tool_dialog: 'Инструменты ассистента',
   com_nav_tool_dialog_description:
@@ -2239,7 +2243,7 @@ export const comparisons = {
     english: 'Search assistants by name',
     translated: 'Поиск ассистентов по имени',
   },
-  com_assistants_tools: {
+  com_ui_tools: {
     english: 'Tools',
     translated: 'Инструменты',
   },
@@ -2656,7 +2660,7 @@ export const comparisons = {
     english: 'Uninstall',
     translated: 'Удалить',
   },
-  com_nav_tool_add: {
+  com_ui_add: {
     english: 'Add',
     translated: 'Добавить',
   },

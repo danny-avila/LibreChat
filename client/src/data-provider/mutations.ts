@@ -9,7 +9,7 @@ import {
 import { useSetRecoilState } from 'recoil';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
-import type t from 'librechat-data-provider';
+import type * as t from 'librechat-data-provider';
 import type { InfiniteData, UseMutationResult } from '@tanstack/react-query';
 import useUpdateTagsInConvo from '~/hooks/Conversations/useUpdateTagsInConvo';
 import { updateConversationTag } from '~/utils/conversationTags';
@@ -138,7 +138,8 @@ export const useArchiveConversationMutation = (
     (payload: t.TArchiveConversationRequest) => dataService.archiveConversation(payload),
     {
       onSuccess: (_data, vars) => {
-        if (vars.isArchived) {
+        const isArchived = vars.isArchived === true;
+        if (isArchived) {
           queryClient.setQueryData([QueryKeys.conversation, id], null);
         } else {
           queryClient.setQueryData([QueryKeys.conversation, id], _data);
@@ -151,17 +152,17 @@ export const useArchiveConversationMutation = (
           const pageSize = convoData.pages[0].pageSize as number;
 
           return normalizeData(
-            vars.isArchived ? deleteConversation(convoData, id) : addConversation(convoData, _data),
+            isArchived ? deleteConversation(convoData, id) : addConversation(convoData, _data),
             'conversations',
             pageSize,
           );
         });
 
-        if (vars.isArchived) {
+        if (isArchived) {
           const current = queryClient.getQueryData<t.ConversationData>([
             QueryKeys.allConversations,
           ]);
-          refetch({ refetchPage: (page, index) => index === (current?.pages.length || 1) - 1 });
+          refetch({ refetchPage: (page, index) => index === (current?.pages.length ?? 1) - 1 });
         }
 
         queryClient.setQueryData<t.ConversationData>(
@@ -172,24 +173,76 @@ export const useArchiveConversationMutation = (
             }
             const pageSize = convoData.pages[0].pageSize as number;
             return normalizeData(
-              vars.isArchived
-                ? addConversation(convoData, _data)
-                : deleteConversation(convoData, id),
+              isArchived ? addConversation(convoData, _data) : deleteConversation(convoData, id),
               'conversations',
               pageSize,
             );
           },
         );
 
-        if (!vars.isArchived) {
+        if (!isArchived) {
           const currentArchive = queryClient.getQueryData<t.ConversationData>([
             QueryKeys.archivedConversations,
           ]);
           archiveRefetch({
-            refetchPage: (page, index) => index === (currentArchive?.pages.length || 1) - 1,
+            refetchPage: (page, index) => index === (currentArchive?.pages.length ?? 1) - 1,
           });
         }
       },
+    },
+  );
+};
+
+export const useArchiveConvoMutation = (options?: t.ArchiveConvoOptions) => {
+  const queryClient = useQueryClient();
+  const { onSuccess, ..._options } = options ?? {};
+
+  return useMutation<t.TArchiveConversationResponse, unknown, t.TArchiveConversationRequest>(
+    (payload: t.TArchiveConversationRequest) => dataService.archiveConversation(payload),
+    {
+      onSuccess: (_data, vars) => {
+        const { conversationId } = vars;
+        const isArchived = vars.isArchived === true;
+        if (isArchived) {
+          queryClient.setQueryData([QueryKeys.conversation, conversationId], null);
+        } else {
+          queryClient.setQueryData([QueryKeys.conversation, conversationId], _data);
+        }
+
+        queryClient.setQueryData<t.ConversationData>([QueryKeys.allConversations], (convoData) => {
+          if (!convoData) {
+            return convoData;
+          }
+          const pageSize = convoData.pages[0].pageSize as number;
+          return normalizeData(
+            isArchived
+              ? deleteConversation(convoData, conversationId)
+              : addConversation(convoData, _data),
+            'conversations',
+            pageSize,
+          );
+        });
+
+        queryClient.setQueryData<t.ConversationData>(
+          [QueryKeys.archivedConversations],
+          (convoData) => {
+            if (!convoData) {
+              return convoData;
+            }
+            const pageSize = convoData.pages[0].pageSize as number;
+            return normalizeData(
+              isArchived
+                ? addConversation(convoData, _data)
+                : deleteConversation(convoData, conversationId),
+              'conversations',
+              pageSize,
+            );
+          },
+        );
+
+        onSuccess?.(_data, vars);
+      },
+      ..._options,
     },
   );
 };
@@ -484,32 +537,33 @@ export const useDeleteConversationMutation = (
     (payload: t.TDeleteConversationRequest) => dataService.deleteConversation(payload),
     {
       onSuccess: (_data, vars, context) => {
-        if (!vars.conversationId) {
+        const conversationId = vars.conversationId ?? '';
+        if (!conversationId) {
           return;
         }
 
-        const handleDelete = (convoData) => {
+        const handleDelete = (convoData: t.ConversationData | undefined) => {
           if (!convoData) {
             return convoData;
           }
           return normalizeData(
-            deleteConversation(convoData, vars.conversationId as string),
+            deleteConversation(convoData, conversationId),
             'conversations',
-            convoData.pages[0].pageSize,
+            Number(convoData.pages[0].pageSize),
           );
         };
 
-        queryClient.setQueryData([QueryKeys.conversation, vars.conversationId], null);
+        queryClient.setQueryData([QueryKeys.conversation, conversationId], null);
         queryClient.setQueryData<t.ConversationData>([QueryKeys.allConversations], handleDelete);
         queryClient.setQueryData<t.ConversationData>(
           [QueryKeys.archivedConversations],
           handleDelete,
         );
         const current = queryClient.getQueryData<t.ConversationData>([QueryKeys.allConversations]);
-        refetch({ refetchPage: (page, index) => index === (current?.pages.length || 1) - 1 });
+        refetch({ refetchPage: (page, index) => index === (current?.pages.length ?? 1) - 1 });
         onSuccess?.(_data, vars, context);
       },
-      ...(_options || {}),
+      ..._options,
     },
   );
 };
@@ -540,7 +594,7 @@ export const useForkConvoMutation = (
       );
       onSuccess?.(data, vars, context);
     },
-    ...(_options || {}),
+    ..._options,
   });
 };
 
@@ -589,7 +643,7 @@ export const useUploadFileMutation = (
 
       return dataService.uploadFile(body);
     },
-    ...(options || {}),
+    ...options,
     onSuccess: (data, formData, context) => {
       queryClient.setQueryData<t.TFile[] | undefined>([QueryKeys.files], (_files) => [
         data,
@@ -597,11 +651,44 @@ export const useUploadFileMutation = (
       ]);
 
       const endpoint = formData.get('endpoint');
-      const assistant_id = formData.get('assistant_id');
       const message_file = formData.get('message_file');
-      const tool_resource = formData.get('tool_resource');
+      const agent_id = (formData.get('agent_id') as string | undefined) ?? '';
+      const assistant_id = (formData.get('assistant_id') as string | undefined) ?? '';
+      const tool_resource = (formData.get('tool_resource') as string | undefined) ?? '';
 
-      if (!assistant_id || message_file === 'true') {
+      if (message_file === 'true') {
+        onSuccess?.(data, formData, context);
+        return;
+      }
+
+      if (agent_id && tool_resource) {
+        queryClient.setQueryData<t.Agent>([QueryKeys.agent, agent_id], (agent) => {
+          if (!agent) {
+            return agent;
+          }
+
+          const update = {};
+          const prevResources = agent.tool_resources ?? {};
+          const prevResource: t.ExecuteCodeResource | t.AgentFileSearchResource = agent
+            .tool_resources?.[tool_resource] ?? {
+            file_ids: [],
+          };
+          if (!prevResource.file_ids) {
+            prevResource.file_ids = [];
+          }
+          prevResource.file_ids.push(data.file_id);
+          update['tool_resources'] = {
+            ...prevResources,
+            [tool_resource]: prevResource,
+          };
+          return {
+            ...agent,
+            ...update,
+          };
+        });
+      }
+
+      if (!assistant_id) {
         onSuccess?.(data, formData, context);
         return;
       }
@@ -622,17 +709,20 @@ export const useUploadFileMutation = (
 
               const update = {};
               if (!tool_resource) {
-                update['file_ids'] = [...assistant.file_ids, data.file_id];
+                update['file_ids'] = [...(assistant.file_ids ?? []), data.file_id];
               }
               if (tool_resource === EToolResources.code_interpreter) {
                 const prevResources = assistant.tool_resources ?? {};
-                const prevResource = assistant.tool_resources?.[tool_resource as string] ?? {
+                const prevResource = assistant.tool_resources?.[tool_resource] ?? {
                   file_ids: [],
                 };
+                if (!prevResource.file_ids) {
+                  prevResource.file_ids = [];
+                }
                 prevResource.file_ids.push(data.file_id);
                 update['tool_resources'] = {
                   ...prevResources,
-                  [tool_resource as string]: prevResource,
+                  [tool_resource]: prevResource,
                 };
               }
               return {
@@ -659,9 +749,8 @@ export const useDeleteFilesMutation = (
   const queryClient = useQueryClient();
   const { onSuccess, ...options } = _options || {};
   return useMutation([MutationKeys.fileDelete], {
-    mutationFn: (body: t.DeleteFilesBody) =>
-      dataService.deleteFiles(body.files, body.assistant_id, body.tool_resource),
-    ...(options || {}),
+    mutationFn: (body: t.DeleteFilesBody) => dataService.deleteFiles(body),
+    ...options,
     onSuccess: (data, ...args) => {
       queryClient.setQueryData<t.TFile[] | undefined>([QueryKeys.files], (cachefiles) => {
         const { files: filesDeleted } = args[0];
@@ -884,6 +973,24 @@ export const useUpdateAssistantMutation = (
           return options?.onSuccess?.(updatedAssistant, variables, context);
         }
 
+        queryClient.setQueryData<t.AssistantDocument[]>(
+          [QueryKeys.assistantDocs, variables.data.endpoint],
+          (prev) => {
+            if (!prev) {
+              return prev;
+            }
+            prev.map((doc) => {
+              if (doc.assistant_id === variables.assistant_id) {
+                return {
+                  ...doc,
+                  conversation_starters: updatedAssistant.conversation_starters,
+                };
+              }
+              return doc;
+            });
+          },
+        );
+
         queryClient.setQueryData<t.AssistantListResponse>(
           [QueryKeys.assistants, variables.data.endpoint, defaultOrderQuery],
           {
@@ -1070,12 +1177,256 @@ export const useDeleteAction = (
               if (assistant.id === variables.assistant_id) {
                 return {
                   ...assistant,
-                  tools: assistant.tools.filter(
+                  tools: (assistant.tools ?? []).filter(
                     (tool) => !tool.function?.name.includes(domain ?? ''),
                   ),
                 };
               }
               return assistant;
+            }),
+          };
+        },
+      );
+
+      return options?.onSuccess?.(_data, variables, context);
+    },
+  });
+};
+
+/**
+ * AGENTS
+ */
+
+/**
+ * Create a new agent
+ */
+export const useCreateAgentMutation = (
+  options?: t.CreateAgentMutationOptions,
+): UseMutationResult<t.Agent, Error, t.AgentCreateParams> => {
+  const queryClient = useQueryClient();
+  return useMutation((newAgentData: t.AgentCreateParams) => dataService.createAgent(newAgentData), {
+    onMutate: (variables) => options?.onMutate?.(variables),
+    onError: (error, variables, context) => options?.onError?.(error, variables, context),
+    onSuccess: (newAgent, variables, context) => {
+      const listRes = queryClient.getQueryData<t.AgentListResponse>([
+        QueryKeys.agents,
+        defaultOrderQuery,
+      ]);
+
+      if (!listRes) {
+        return options?.onSuccess?.(newAgent, variables, context);
+      }
+
+      const currentAgents = [newAgent, ...JSON.parse(JSON.stringify(listRes.data))];
+
+      queryClient.setQueryData<t.AgentListResponse>([QueryKeys.agents, defaultOrderQuery], {
+        ...listRes,
+        data: currentAgents,
+      });
+      return options?.onSuccess?.(newAgent, variables, context);
+    },
+  });
+};
+
+/**
+ * Hook for updating an agent
+ */
+export const useUpdateAgentMutation = (
+  options?: t.UpdateAgentMutationOptions,
+): UseMutationResult<t.Agent, Error, { agent_id: string; data: t.AgentUpdateParams }> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    ({ agent_id, data }: { agent_id: string; data: t.AgentUpdateParams }) => {
+      return dataService.updateAgent({
+        data,
+        agent_id,
+      });
+    },
+    {
+      onMutate: (variables) => options?.onMutate?.(variables),
+      onError: (error, variables, context) => options?.onError?.(error, variables, context),
+      onSuccess: (updatedAgent, variables, context) => {
+        const listRes = queryClient.getQueryData<t.AgentListResponse>([
+          QueryKeys.agents,
+          defaultOrderQuery,
+        ]);
+
+        if (!listRes) {
+          return options?.onSuccess?.(updatedAgent, variables, context);
+        }
+
+        queryClient.setQueryData<t.AgentListResponse>([QueryKeys.agents, defaultOrderQuery], {
+          ...listRes,
+          data: listRes.data.map((agent) => {
+            if (agent.id === variables.agent_id) {
+              return updatedAgent;
+            }
+            return agent;
+          }),
+        });
+
+        queryClient.setQueryData<t.Agent>([QueryKeys.agent, variables.agent_id], updatedAgent);
+        return options?.onSuccess?.(updatedAgent, variables, context);
+      },
+    },
+  );
+};
+
+/**
+ * Hook for deleting an agent
+ */
+export const useDeleteAgentMutation = (
+  options?: t.DeleteAgentMutationOptions,
+): UseMutationResult<void, Error, t.DeleteAgentBody> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    ({ agent_id }: t.DeleteAgentBody) => {
+      return dataService.deleteAgent({ agent_id });
+    },
+    {
+      onMutate: (variables) => options?.onMutate?.(variables),
+      onError: (error, variables, context) => options?.onError?.(error, variables, context),
+      onSuccess: (_data, variables, context) => {
+        const listRes = queryClient.getQueryData<t.AgentListResponse>([
+          QueryKeys.agents,
+          defaultOrderQuery,
+        ]);
+
+        if (!listRes) {
+          return options?.onSuccess?.(_data, variables, context);
+        }
+
+        const data = listRes.data.filter((agent) => agent.id !== variables.agent_id);
+
+        queryClient.setQueryData<t.AgentListResponse>([QueryKeys.agents, defaultOrderQuery], {
+          ...listRes,
+          data,
+        });
+
+        return options?.onSuccess?.(_data, variables, data);
+      },
+    },
+  );
+};
+
+/**
+ * Hook for uploading an agent avatar
+ */
+export const useUploadAgentAvatarMutation = (
+  options?: t.UploadAgentAvatarOptions,
+): UseMutationResult<
+  t.Agent, // response data
+  unknown, // error
+  t.AgentAvatarVariables, // request
+  unknown // context
+> => {
+  return useMutation([MutationKeys.agentAvatarUpload], {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    mutationFn: ({ postCreation, ...variables }: t.AgentAvatarVariables) =>
+      dataService.uploadAgentAvatar(variables),
+    ...(options || {}),
+  });
+};
+
+/**
+ * Hook for updating Agent Actions
+ */
+export const useUpdateAgentAction = (
+  options?: t.UpdateAgentActionOptions,
+): UseMutationResult<
+  t.UpdateAgentActionResponse, // response data
+  unknown, // error
+  t.UpdateAgentActionVariables, // request
+  unknown // context
+> => {
+  const queryClient = useQueryClient();
+  return useMutation([MutationKeys.updateAgentAction], {
+    mutationFn: (variables: t.UpdateAgentActionVariables) =>
+      dataService.updateAgentAction(variables),
+
+    onMutate: (variables) => options?.onMutate?.(variables),
+    onError: (error, variables, context) => options?.onError?.(error, variables, context),
+    onSuccess: (updateAgentActionResponse, variables, context) => {
+      const listRes = queryClient.getQueryData<t.AgentListResponse>([
+        QueryKeys.agents,
+        defaultOrderQuery,
+      ]);
+
+      if (!listRes) {
+        return options?.onSuccess?.(updateAgentActionResponse, variables, context);
+      }
+
+      const updatedAgent = updateAgentActionResponse[0];
+
+      queryClient.setQueryData<t.AgentListResponse>([QueryKeys.agents, defaultOrderQuery], {
+        ...listRes,
+        data: listRes.data.map((agent) => {
+          if (agent.id === variables.agent_id) {
+            return updatedAgent;
+          }
+          return agent;
+        }),
+      });
+
+      queryClient.setQueryData<t.Action[]>([QueryKeys.actions], (prev) => {
+        return prev
+          ?.map((action) => {
+            if (action.action_id === variables.action_id) {
+              return updateAgentActionResponse[1];
+            }
+            return action;
+          })
+          .concat(variables.action_id ? [] : [updateAgentActionResponse[1]]);
+      });
+
+      return options?.onSuccess?.(updateAgentActionResponse, variables, context);
+    },
+  });
+};
+
+/**
+ * Hook for deleting an Agent Action
+ */
+
+export const useDeleteAgentAction = (
+  options?: t.DeleteAgentActionOptions,
+): UseMutationResult<void, Error, t.DeleteAgentActionVariables, unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation([MutationKeys.deleteAgentAction], {
+    mutationFn: (variables: t.DeleteAgentActionVariables) => {
+      return dataService.deleteAgentAction({
+        ...variables,
+      });
+    },
+
+    onMutate: (variables) => options?.onMutate?.(variables),
+    onError: (error, variables, context) => options?.onError?.(error, variables, context),
+    onSuccess: (_data, variables, context) => {
+      let domain: string | undefined = '';
+      queryClient.setQueryData<t.Action[]>([QueryKeys.actions], (prev) => {
+        return prev?.filter((action) => {
+          domain = action.metadata.domain;
+          return action.action_id !== variables.action_id;
+        });
+      });
+
+      queryClient.setQueryData<t.AgentListResponse>(
+        [QueryKeys.agents, defaultOrderQuery],
+        (prev) => {
+          if (!prev) {
+            return prev;
+          }
+
+          return {
+            ...prev,
+            data: prev.data.map((agent) => {
+              if (agent.id === variables.agent_id) {
+                return {
+                  ...agent,
+                  tools: agent.tools?.filter((tool) => !tool.includes(domain ?? '')),
+                };
+              }
+              return agent;
             }),
           };
         },
@@ -1108,5 +1459,21 @@ export const useResendVerificationEmail = (
     mutationFn: (variables: t.TResendVerificationEmail) =>
       dataService.resendVerificationEmail(variables),
     ...(options || {}),
+  });
+};
+
+export const useAcceptTermsMutation = (
+  options?: t.AcceptTermsMutationOptions,
+): UseMutationResult<t.TAcceptTermsResponse, unknown, void, unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation(() => dataService.acceptTerms(), {
+    onSuccess: (data, variables, context) => {
+      queryClient.setQueryData<t.TUserTermsResponse>([QueryKeys.userTerms], {
+        termsAccepted: true,
+      });
+      options?.onSuccess?.(data, variables, context);
+    },
+    onError: options?.onError,
+    onMutate: options?.onMutate,
   });
 };
