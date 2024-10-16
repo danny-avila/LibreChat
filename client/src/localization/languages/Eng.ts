@@ -714,6 +714,7 @@ export default {
   com_nav_auto_send_prompts: 'Auto-send Prompts',
   com_nav_always_make_prod: 'Always make new versions production',
   com_nav_clear_all_chats: 'Clear all chats',
+  com_nav_clear_cache_confirm_message: 'Are you sure you want to clear the cache?',
   com_nav_confirm_clear: 'Confirm Clear',
   com_nav_close_sidebar: 'Close sidebar',
   com_nav_open_sidebar: 'Open sidebar',

@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { DeleteCacheButton } from './DeleteCacheButton';
 import ImportConversations from './ImportConversations';
 import { RevokeAllKeys } from './RevokeAllKeys';
+import { DeleteCache } from './DeleteCache';
 import { useOnClickOutside } from '~/hooks';
 import { ClearChats } from './ClearChats';
 import SharedLinks from './SharedLinks';
@@ -23,7 +23,7 @@ function Data() {
         <RevokeAllKeys />
       </div>
       <div className="border-b border-border-medium pb-3 last-of-type:border-b-0">
-        <DeleteCacheButton />
+        <DeleteCache />
       </div>
       <div className="border-b border-border-medium pb-3 last-of-type:border-b-0">
         <ClearChats />

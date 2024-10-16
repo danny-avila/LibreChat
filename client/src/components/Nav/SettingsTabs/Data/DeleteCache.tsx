@@ -47,7 +47,11 @@ export const DeleteCache = ({ disabled = false }: { disabled?: boolean }) => {
           showCloseButton={false}
           title={localize('com_nav_confirm_clear')}
           className="max-w-[450px]"
-          main={<Label className="text-left text-sm font-medium">{localize('')}</Label>}
+          main={
+            <Label className="text-left text-sm font-medium">
+              {localize('com_nav_clear_cache_confirm_message')}
+            </Label>
+          }
           selection={{
             selectHandler: revokeAllUserKeys,
             selectClasses:
