@@ -33,6 +33,13 @@ export default {
     'Provided key for {0} expired at {1}. Please provide a new key and try again.',
   com_error_input_length:
     'The latest message token count is too long, exceeding the token limit ({0} respectively). Please shorten your message, adjust the max context size from the conversation parameters, or fork the conversation to continue.',
+  com_error_files_empty: 'Empty files are not allowed.',
+  com_error_files_dupe: 'Duplicate file detected.',
+  com_error_files_validation: 'An error occurred while validating the file.',
+  com_error_files_process: 'An error occurred while processing the file.',
+  com_error_files_upload: 'An error occurred while uploading the file.',
+  com_error_files_upload_canceled:
+    'The file upload request was canceled. Note: the file upload may still be processing and will need to be manually deleted.',
   com_files_no_results: 'No results.',
   com_files_filter: 'Filter files...',
   com_generated_files: 'Generated files:',

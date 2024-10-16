@@ -83,7 +83,7 @@ export const getTranslations = (langCode: string): Language => {
 
 // input: language code in string & phrase key in string
 // returns an corresponding phrase value in string
-export const localize = (langCode: string, phraseKey: string, ...values: string[]) => {
+export const localize = (langCode: string, phraseKey: string, ...values: string[]): string => {
   const lang = getTranslations(langCode);
   const phrase = lang[phraseKey] || English[phraseKey] || '';
 

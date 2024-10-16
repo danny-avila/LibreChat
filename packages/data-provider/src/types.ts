@@ -93,7 +93,7 @@ export type TCategory = {
 
 export type TError = {
   message: string;
-  code?: number;
+  code?: number | string;
   response?: {
     data?: {
       message?: string;
