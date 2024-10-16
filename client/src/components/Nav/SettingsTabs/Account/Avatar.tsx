@@ -131,7 +131,7 @@ function Avatar() {
       </div>
 
       <OGDialogContent
-        className={cn('bg-surface-tertiary text-text-primary shadow-2xl  md:h-auto md:w-[450px]')}
+        className={cn('bg-surface-tertiary text-text-primary shadow-2xl md:h-auto md:w-[450px]')}
         style={{ borderRadius: '12px' }}
       >
         <OGDialogHeader>

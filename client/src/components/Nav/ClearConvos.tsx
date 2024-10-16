@@ -12,7 +12,6 @@ const ClearConvos = ({ open, onOpenChange }) => {
   const [confirmClear, setConfirmClear] = useState(false);
   const localize = useLocalize();
 
-  // Clear all conversations
   const clearConvos = () => {
     if (confirmClear) {
       clearConvosMutation.mutate(

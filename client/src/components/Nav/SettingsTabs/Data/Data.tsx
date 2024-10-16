@@ -4,35 +4,13 @@ import { useConversation, useConversations, useOnClickOutside } from '~/hooks';
 import { DeleteCacheButton } from './DeleteCacheButton';
 import ImportConversations from './ImportConversations';
 import { RevokeAllKeys } from './RevokeAllKeys';
-import { ClearChatsButton } from './ClearChats';
+import { ClearChats } from './ClearChats';
 import SharedLinks from './SharedLinks';
 
 function Data() {
   const dataTabRef = useRef(null);
   const [confirmClearConvos, setConfirmClearConvos] = useState(false);
   useOnClickOutside(dataTabRef, () => confirmClearConvos && setConfirmClearConvos(false), []);
-
-  const { newConversation } = useConversation();
-  const { refreshConversations } = useConversations();
-  const clearConvosMutation = useClearConversationsMutation();
-
-  const clearConvos = () => {
-    if (confirmClearConvos) {
-      console.log('Clearing conversations...');
-      setConfirmClearConvos(false);
-      clearConvosMutation.mutate(
-        {},
-        {
-          onSuccess: () => {
-            newConversation();
-            refreshConversations();
-          },
-        },
-      );
-    } else {
-      setConfirmClearConvos(true);
-    }
-  };
 
   return (
     <div className="flex flex-col gap-3 p-1 text-sm text-text-primary">
@@ -49,12 +27,7 @@ function Data() {
         <DeleteCacheButton />
       </div>
       <div className="border-b border-border-medium pb-3 last-of-type:border-b-0">
-        <ClearChatsButton
-          confirmClear={confirmClearConvos}
-          onClick={clearConvos}
-          showText={true}
-          mutation={clearConvosMutation}
-        />
+        <ClearChats />
       </div>
     </div>
   );
