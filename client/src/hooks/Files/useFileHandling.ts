@@ -181,9 +181,10 @@ const useFileHandling = (params?: UseFileHandling) => {
       formData.append('message_file', 'true');
     }
 
+    const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
+    const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
+
     if (!assistant_id && convoAssistantId) {
-      const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
-      const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
       formData.append('version', version);
       formData.append('model', convoModel);
       formData.append('assistant_id', convoAssistantId);
@@ -191,8 +192,6 @@ const useFileHandling = (params?: UseFileHandling) => {
 
     const formVersion = (formData.get('version') ?? '') as string;
     if (!formVersion) {
-      const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
-      const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
       formData.append('version', version);
     }
 
