@@ -28,12 +28,7 @@ export const useUploadFileMutation = (
       const height = body.get('height') ?? '';
       const version = body.get('version') ?? '';
 
-      if (
-        width !== '' &&
-        height !== '' &&
-        version !== '' &&
-        version.toString() !== '2'
-      ) {
+      if (width !== '' && height !== '' && (version !== '' || version.toString() !== '2')) {
         return dataService.uploadImage(body, signal);
       }
 
