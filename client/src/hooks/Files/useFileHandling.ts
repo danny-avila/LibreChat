@@ -158,33 +158,48 @@ const useFileHandling = (params?: UseFileHandling) => {
       formData.append('height', height.toString());
     }
 
+    const metadata = params?.additionalMetadata ?? {};
     if (params?.additionalMetadata) {
-      for (const [key, value = ''] of Object.entries(params.additionalMetadata)) {
+      for (const [key, value = ''] of Object.entries(metadata)) {
         if (value) {
           formData.append(key, value);
         }
       }
     }
 
-    const convoAssistantId = conversation?.assistant_id ?? '';
-    const convoModel = conversation?.model ?? '';
-    if (isAssistantsEndpoint(endpoint) && !formData.get('assistant_id') && convoAssistantId) {
-      const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
-      const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
-      formData.append('version', version);
-      formData.append('assistant_id', convoAssistantId);
-      formData.append('model', convoModel);
-      formData.append('message_file', 'true');
+    formData.append('endpoint', endpoint);
+
+    if (!isAssistantsEndpoint(endpoint)) {
+      uploadFile.mutate(formData);
+      return;
     }
-    if (isAssistantsEndpoint(endpoint) && !formData.get('version')) {
-      const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
-      const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
-      formData.append('version', version);
-      formData.append('model', conversation?.model ?? '');
+
+    const convoModel = conversation?.model ?? '';
+    const convoAssistantId = conversation?.assistant_id ?? '';
+
+    if (!assistant_id) {
       formData.append('message_file', 'true');
     }
 
-    formData.append('endpoint', endpoint);
+    if (!assistant_id && convoAssistantId) {
+      const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
+      const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
+      formData.append('version', version);
+      formData.append('model', convoModel);
+      formData.append('assistant_id', convoAssistantId);
+    }
+
+    const formVersion = (formData.get('version') ?? '') as string;
+    if (!formVersion) {
+      const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
+      const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
+      formData.append('version', version);
+    }
+
+    const formModel = (formData.get('model') ?? '') as string;
+    if (!formModel) {
+      formData.append('model', convoModel);
+    }
 
     uploadFile.mutate(formData);
   };
