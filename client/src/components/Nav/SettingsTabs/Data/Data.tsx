@@ -1,9 +1,8 @@
 import React, { useState, useRef } from 'react';
-import { useClearConversationsMutation } from 'librechat-data-provider/react-query';
-import { useConversation, useConversations, useOnClickOutside } from '~/hooks';
 import { DeleteCacheButton } from './DeleteCacheButton';
 import ImportConversations from './ImportConversations';
 import { RevokeAllKeys } from './RevokeAllKeys';
+import { useOnClickOutside } from '~/hooks';
 import { ClearChats } from './ClearChats';
 import SharedLinks from './SharedLinks';
 

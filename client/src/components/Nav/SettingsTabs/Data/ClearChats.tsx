@@ -32,7 +32,6 @@ export const ClearChats = () => {
             variant="destructive"
             className="flex items-center justify-center rounded-lg transition-colors duration-200"
             onClick={() => setOpen(true)}
-            // disabled={disabled}
           >
             {localize('com_ui_delete')}
           </Button>

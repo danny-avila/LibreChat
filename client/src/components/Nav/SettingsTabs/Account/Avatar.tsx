@@ -5,16 +5,17 @@ import AvatarEditor from 'react-avatar-editor';
 import { fileConfig as defaultFileConfig, mergeFileConfig } from 'librechat-data-provider';
 import type { TUser } from 'librechat-data-provider';
 import {
+  Slider,
+  Button,
+  Spinner,
   OGDialog,
   OGDialogContent,
   OGDialogHeader,
   OGDialogTitle,
   OGDialogTrigger,
-  Slider,
-} from '~/components/ui';
+} from '~/components';
 import { useUploadAvatarMutation, useGetFileConfig } from '~/data-provider';
 import { useToastContext } from '~/Providers';
-import { Spinner } from '~/components/svg';
 import { cn, formatBytes } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -130,10 +131,7 @@ function Avatar() {
         </OGDialogTrigger>
       </div>
 
-      <OGDialogContent
-        className={cn('bg-surface-tertiary text-text-primary shadow-2xl md:h-auto md:w-[450px]')}
-        style={{ borderRadius: '12px' }}
-      >
+      <OGDialogContent className="w-11/12 max-w-sm" style={{ borderRadius: '12px' }}>
         <OGDialogHeader>
           <OGDialogTitle className="text-lg font-medium leading-6 text-text-primary">
             {image ? localize('com_ui_preview') : localize('com_ui_upload_image')}
@@ -174,10 +172,10 @@ function Avatar() {
                   <RotateCw className="h-5 w-5" />
                 </button>
               </div>
-              <button
+              <Button
                 className={cn(
-                  'mt-4 flex items-center rounded px-4 py-2 text-white transition-colors hover:bg-green-600 hover:text-gray-200',
-                  isUploading ? 'cursor-not-allowed bg-green-600' : 'bg-green-500',
+                  'btn btn-primary mt-4 flex w-full hover:bg-green-600',
+                  isUploading ? 'cursor-not-allowed opacity-90' : '',
                 )}
                 onClick={handleUpload}
                 disabled={isUploading}
@@ -188,24 +186,21 @@ function Avatar() {
                   <Upload className="mr-2 h-5 w-5" />
                 )}
                 {localize('com_ui_upload')}
-              </button>
+              </Button>
             </>
           ) : (
             <div
-              className="flex h-64 w-64 flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 dark:border-gray-600 dark:bg-gray-700"
+              className="flex h-64 w-11/12 flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-transparent dark:border-gray-600"
               onDrop={handleDrop}
               onDragOver={handleDragOver}
             >
-              <FileImage className="mb-4 h-12 w-12 text-gray-400" />
+              <FileImage className="mb-4 size-12 text-gray-400" />
               <p className="mb-2 text-center text-sm text-gray-500 dark:text-gray-400">
                 {localize('com_ui_drag_drop')}
               </p>
-              <button
-                onClick={openFileDialog}
-                className="rounded bg-gray-200 px-4 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500"
-              >
+              <Button variant="secondary" onClick={openFileDialog}>
                 {localize('com_ui_select_file')}
-              </button>
+              </Button>
               <input
                 ref={fileInputRef}
                 type="file"
