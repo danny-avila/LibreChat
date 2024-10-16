@@ -50,8 +50,10 @@ describe('getValueKey', () => {
   });
 
   it('should return "gpt-4o" for model type of "gpt-4o"', () => {
-    expect(getValueKey('gpt-4o-2024-05-13')).toBe('gpt-4o');
+    expect(getValueKey('gpt-4o-2024-08-06')).toBe('gpt-4o');
+    expect(getValueKey('gpt-4o-2024-08-06-0718')).toBe('gpt-4o');
     expect(getValueKey('openai/gpt-4o')).toBe('gpt-4o');
+    expect(getValueKey('openai/gpt-4o-2024-08-06')).toBe('gpt-4o');
     expect(getValueKey('gpt-4o-turbo')).toBe('gpt-4o');
     expect(getValueKey('gpt-4o-0125')).toBe('gpt-4o');
   });
@@ -60,14 +62,14 @@ describe('getValueKey', () => {
     expect(getValueKey('gpt-4o-mini-2024-07-18')).toBe('gpt-4o-mini');
     expect(getValueKey('openai/gpt-4o-mini')).toBe('gpt-4o-mini');
     expect(getValueKey('gpt-4o-mini-0718')).toBe('gpt-4o-mini');
-    expect(getValueKey('gpt-4o-2024-08-06-0718')).not.toBe('gpt-4o');
+    expect(getValueKey('gpt-4o-2024-08-06-0718')).not.toBe('gpt-4o-mini');
   });
 
-  it('should return "gpt-4o-2024-08-06" for model type of "gpt-4o-2024-08-06"', () => {
-    expect(getValueKey('gpt-4o-2024-08-06-2024-07-18')).toBe('gpt-4o-2024-08-06');
-    expect(getValueKey('openai/gpt-4o-2024-08-06')).toBe('gpt-4o-2024-08-06');
-    expect(getValueKey('gpt-4o-2024-08-06-0718')).toBe('gpt-4o-2024-08-06');
-    expect(getValueKey('gpt-4o-2024-08-06-0718')).not.toBe('gpt-4o');
+  it('should return "gpt-4o-2024-05-13" for model type of "gpt-4o-2024-05-13"', () => {
+    expect(getValueKey('gpt-4o-2024-05-13')).toBe('gpt-4o-2024-05-13');
+    expect(getValueKey('openai/gpt-4o-2024-05-13')).toBe('gpt-4o-2024-05-13');
+    expect(getValueKey('gpt-4o-2024-05-13-0718')).toBe('gpt-4o-2024-05-13');
+    expect(getValueKey('gpt-4o-2024-05-13-0718')).not.toBe('gpt-4o');
   });
 
   it('should return "gpt-4o" for model type of "chatgpt-4o"', () => {
@@ -134,7 +136,7 @@ describe('getMultiplier', () => {
   });
 
   it('should return the correct multiplier for gpt-4o', () => {
-    const valueKey = getValueKey('gpt-4o-2024-05-13');
+    const valueKey = getValueKey('gpt-4o-2024-08-06');
     expect(getMultiplier({ valueKey, tokenType: 'prompt' })).toBe(tokenValues['gpt-4o'].prompt);
     expect(getMultiplier({ valueKey, tokenType: 'completion' })).toBe(
       tokenValues['gpt-4o'].completion,
