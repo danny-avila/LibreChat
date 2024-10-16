@@ -1,6 +1,12 @@
 import { EToolResources } from 'librechat-data-provider';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
+import {
+  QueryKeys,
+  dataService,
+  MutationKeys,
+  defaultOrderQuery,
+  isAssistantsEndpoint,
+} from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 
@@ -27,8 +33,12 @@ export const useUploadFileMutation = (
       const width = body.get('width') ?? '';
       const height = body.get('height') ?? '';
       const version = body.get('version') ?? '';
+      const endpoint = (body.get('endpoint') ?? '') as string;
+      if (isAssistantsEndpoint(endpoint) && version === '2') {
+        return dataService.uploadFile(body, signal);
+      }
 
-      if (width !== '' && height !== '' && (version !== '' || version.toString() !== '2')) {
+      if (width !== '' && height !== '') {
         return dataService.uploadImage(body, signal);
       }
 

@@ -329,7 +329,7 @@ class StreamRunManager {
           }
         } else if (typeof delta[key] === 'string' && typeof data[key] === 'string') {
           // Concatenate strings
-          data[key] += delta[key];
+          // data[key] += delta[key];
         } else if (
           typeof delta[key] === 'object' &&
           delta[key] !== null &&
