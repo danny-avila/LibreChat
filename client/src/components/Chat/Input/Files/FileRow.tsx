@@ -4,6 +4,7 @@ import type { ExtendedFile } from '~/common';
 import { useDeleteFilesMutation } from '~/data-provider';
 import { useFileDeletion } from '~/hooks/Files';
 import FileContainer from './FileContainer';
+import { logger } from '~/utils';
 import Image from './Image';
 
 export default function FileRow({
@@ -19,7 +20,7 @@ export default function FileRow({
   Wrapper,
 }: {
   files: Map<string, ExtendedFile> | undefined;
-  abortUpload?: (file_id: string) => void
+  abortUpload?: () => void;
   setFiles: React.Dispatch<React.SetStateAction<Map<string, ExtendedFile>>>;
   setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
   fileFilter?: (file: ExtendedFile) => boolean;
@@ -35,7 +36,8 @@ export default function FileRow({
 
   const { mutateAsync } = useDeleteFilesMutation({
     onMutate: async () =>
-      console.log(
+      logger.log(
+        'agents',
         'Deleting files: agent_id, assistant_id, tool_resource',
         agent_id,
         assistant_id,
@@ -90,7 +92,7 @@ export default function FileRow({
           .uniqueFiles.map((file: ExtendedFile, index: number) => {
             const handleDelete = () => {
               if (abortUpload && file.progress < 1) {
-                return abortUpload(file.temp_file_id ?? file.file_id);
+                abortUpload();
               }
               deleteFile({ file, setFiles });
             };

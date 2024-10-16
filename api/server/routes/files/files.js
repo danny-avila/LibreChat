@@ -188,10 +188,6 @@ router.post('/', async (req, res) => {
   const metadata = req.body;
   let cleanup = true;
 
-  req.on('close', () => {
-    logger.debug('[/files] Request closed ');
-  });
-
   try {
     filterFile({ req, file });
 
@@ -225,7 +221,7 @@ router.post('/', async (req, res) => {
     try {
       await fs.unlink(file.path);
     } catch (error) {
-      logger.error('[/files/images] Error deleting file after file processing:', error);
+      logger.error('[/files] Error deleting file after file processing:', error);
     }
   }
 });

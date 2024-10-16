@@ -18,7 +18,9 @@ import { useUploadFileMutation, useGetFileConfig } from '~/data-provider';
 import { useDelayedUploadToast } from './useDelayedUploadToast';
 import { useToastContext } from '~/Providers/ToastContext';
 import { useChatContext } from '~/Providers/ChatContext';
+import useLocalize from '~/hooks/useLocalize';
 import useUpdateFiles from './useUpdateFiles';
+import { logger } from '~/utils';
 
 const { checkType } = defaultFileConfig;
 
@@ -30,6 +32,7 @@ type UseFileHandling = {
 };
 
 const useFileHandling = (params?: UseFileHandling) => {
+  const localize = useLocalize();
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
   const [errors, setErrors] = useState<string[]>([]);
@@ -56,7 +59,7 @@ const useFileHandling = (params?: UseFileHandling) => {
   const displayToast = useCallback(() => {
     if (errors.length > 1) {
       const errorList = Array.from(new Set(errors))
-        .map((e, i) => `${i > 0 ? '• ' : ''}${e}\n`)
+        .map((e, i) => `${i > 0 ? '• ' : ''}${localize(e) || e}\n`)
         .join('');
       showToast({
         message: errorList,
@@ -64,15 +67,16 @@ const useFileHandling = (params?: UseFileHandling) => {
         duration: 5000,
       });
     } else if (errors.length === 1) {
+      const message = localize(errors[0]) || errors[0];
       showToast({
-        message: errors[0],
+        message,
         status: 'error',
         duration: 5000,
       });
     }
 
     setErrors([]);
-  }, [errors, showToast]);
+  }, [errors, showToast, localize]);
 
   const debouncedDisplayToast = debounce(displayToast, 250);
 
@@ -84,53 +88,58 @@ const useFileHandling = (params?: UseFileHandling) => {
     return () => debouncedDisplayToast.cancel();
   }, [errors, debouncedDisplayToast]);
 
-  const uploadFile = useUploadFileMutation({
-    onSuccess: (data) => {
-      clearUploadTimer(data.temp_file_id);
-      console.log('upload success', data);
-      if (agent_id) {
-        queryClient.refetchQueries([QueryKeys.agent, agent_id]);
-        return;
-      }
-      updateFileById(
-        data.temp_file_id,
-        {
-          progress: 0.9,
-          filepath: data.filepath,
-        },
-        assistant_id ? true : false,
-      );
-
-      setTimeout(() => {
+  const uploadFile = useUploadFileMutation(
+    {
+      onSuccess: (data) => {
+        clearUploadTimer(data.temp_file_id);
+        console.log('upload success', data);
+        if (agent_id) {
+          queryClient.refetchQueries([QueryKeys.agent, agent_id]);
+          return;
+        }
         updateFileById(
           data.temp_file_id,
           {
-            progress: 1,
-            file_id: data.file_id,
-            temp_file_id: data.temp_file_id,
+            progress: 0.9,
             filepath: data.filepath,
-            type: data.type,
-            height: data.height,
-            width: data.width,
-            filename: data.filename,
-            source: data.source,
-            embedded: data.embedded,
           },
           assistant_id ? true : false,
         );
-      }, 300);
+
+        setTimeout(() => {
+          updateFileById(
+            data.temp_file_id,
+            {
+              progress: 1,
+              file_id: data.file_id,
+              temp_file_id: data.temp_file_id,
+              filepath: data.filepath,
+              type: data.type,
+              height: data.height,
+              width: data.width,
+              filename: data.filename,
+              source: data.source,
+              embedded: data.embedded,
+            },
+            assistant_id ? true : false,
+          );
+        }, 300);
+      },
+      onError: (_error, body) => {
+        const error = _error as TError | undefined;
+        console.log('upload error', error);
+        const file_id = body.get('file_id');
+        clearUploadTimer(file_id as string);
+        deleteFileById(file_id as string);
+        const errorMessage =
+          error?.code === 'ERR_CANCELED'
+            ? 'com_error_files_upload_canceled'
+            : error?.response?.data?.message ?? 'com_error_files_upload';
+        setError(errorMessage);
+      },
     },
-    onError: (error, body) => {
-      console.log('upload error', error);
-      const file_id = body.get('file_id');
-      clearUploadTimer(file_id as string);
-      deleteFileById(file_id as string);
-      setError(
-        (error as TError | undefined)?.response?.data?.message ??
-          'An error occurred while uploading the file.',
-      );
-    },
-  }, abortControllerRef.current?.signal);
+    abortControllerRef.current?.signal,
+  );
 
   const startUpload = async (extendedFile: ExtendedFile) => {
     const filename = extendedFile.file?.name ?? 'File';
@@ -184,7 +193,7 @@ const useFileHandling = (params?: UseFileHandling) => {
     const existingFiles = Array.from(files.values());
     const incomingTotalSize = fileList.reduce((total, file) => total + file.size, 0);
     if (incomingTotalSize === 0) {
-      setError('Empty files are not allowed.');
+      setError('com_error_files_empty');
       return false;
     }
     const currentTotalSize = existingFiles.reduce((total, file) => total + file.size, 0);
@@ -249,7 +258,7 @@ const useFileHandling = (params?: UseFileHandling) => {
     const uniqueFilesSet = new Set(combinedFilesInfo);
 
     if (uniqueFilesSet.size !== combinedFilesInfo.length) {
-      setError('Duplicate file detected.');
+      setError('com_error_files_dupe');
       return false;
     }
 
@@ -274,6 +283,7 @@ const useFileHandling = (params?: UseFileHandling) => {
   };
 
   const handleFiles = async (_files: FileList | File[]) => {
+    abortControllerRef.current = new AbortController();
     const fileList = Array.from(_files);
     /* Validate files */
     let filesAreValid: boolean;
@@ -281,7 +291,7 @@ const useFileHandling = (params?: UseFileHandling) => {
       filesAreValid = validateFiles(fileList);
     } catch (error) {
       console.error('file validation error', error);
-      setError('An error occurred while validating the file.');
+      setError('com_error_files_validation');
       return;
     }
     if (!filesAreValid) {
@@ -314,7 +324,7 @@ const useFileHandling = (params?: UseFileHandling) => {
       } catch (error) {
         deleteFileById(file_id);
         console.log('file handling error', error);
-        setError('An error occurred while processing the file.');
+        setError('com_error_files_process');
       }
     }
   };
@@ -329,13 +339,12 @@ const useFileHandling = (params?: UseFileHandling) => {
     }
   };
 
-  const abortUpload = (file_id: string) => {
+  const abortUpload = () => {
     if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
+      logger.log('files', 'Aborting upload');
+      abortControllerRef.current.abort('User aborted upload');
       abortControllerRef.current = null;
     }
-    clearUploadTimer(file_id);
-    deleteFileById(file_id);
   };
 
   return {
