@@ -30,8 +30,9 @@ export enum EModelEndpoint {
 
 export const paramEndpoints = new Set<EModelEndpoint | string>([
   EModelEndpoint.agents,
-  EModelEndpoint.bedrock,
   EModelEndpoint.openAI,
+  EModelEndpoint.bedrock,
+  EModelEndpoint.azureOpenAI,
   EModelEndpoint.anthropic,
   EModelEndpoint.custom,
 ]);
