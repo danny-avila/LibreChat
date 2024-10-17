@@ -3,9 +3,9 @@ import { useForm, FormProvider } from 'react-hook-form';
 import { EModelEndpoint, alternateName, isAssistantsEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { TDialogProps } from '~/common';
-import DialogTemplate from '~/components/ui/DialogTemplate';
+import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { RevokeKeysButton } from '~/components/Nav';
-import { Dialog, Dropdown } from '~/components/ui';
+import { OGDialog, Dropdown } from '~/components/ui';
 import { useUserKey, useLocalize } from '~/hooks';
 import { useToastContext } from '~/Providers';
 import CustomConfig from './CustomEndpoint';
@@ -160,10 +160,11 @@ const SetKeyDialog = ({
   const config = endpointsConfig?.[endpoint];
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogTemplate
+    <OGDialog open={open} onOpenChange={onOpenChange}>
+      <OGDialogTemplate
         title={`${localize('com_endpoint_config_key_for')} ${alternateName[endpoint] ?? endpoint}`}
         className="w-11/12 max-w-[650px] sm:w-3/4 md:w-3/4 lg:w-3/4"
+        showCancelButton={false}
         main={
           <div className="grid w-full items-center gap-2">
             <small className="text-red-600">
@@ -172,7 +173,7 @@ const SetKeyDialog = ({
                 : `${localize('com_endpoint_config_key_encryption')} ${new Date(
                   expiryTime ?? 0,
                 ).toLocaleString()}`}
-            </small>{' '}
+            </small>
             <Dropdown
               label="Expires "
               value={expiresAtLabel}
@@ -180,6 +181,7 @@ const SetKeyDialog = ({
               options={expirationOptions.map((option) => option.label)}
               sizeClasses="w-[185px]"
             />
+            <div className="mt-2" />
             <FormProvider {...methods}>
               <EndpointComponent
                 userKey={userKey}
@@ -197,14 +199,18 @@ const SetKeyDialog = ({
         }
         selection={{
           selectHandler: submit,
-          selectClasses: 'bg-green-500 hover:bg-green-600 dark:hover:bg-green-600 text-white',
+          selectClasses: 'btn btn-primary',
           selectText: localize('com_ui_submit'),
         }}
         leftButtons={
-          <RevokeKeysButton endpoint={endpoint} showText={false} disabled={!expiryTime} />
+          <RevokeKeysButton
+            endpoint={endpoint}
+            disabled={!expiryTime}
+            setDialogOpen={onOpenChange}
+          />
         }
       />
-    </Dialog>
+    </OGDialog>
   );
 };
 

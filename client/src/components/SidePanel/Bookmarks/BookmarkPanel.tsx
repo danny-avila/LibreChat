@@ -18,8 +18,8 @@ const BookmarkPanel = () => {
         <BookmarkTable />
         <div className="flex justify-between gap-2">
           <BookmarkEditDialog context="BookmarkPanel" open={open} setOpen={setOpen} />
-          <Button variant="outline" className="w-full text-sm" onClick={() => setOpen(!open)}>
-            <BookmarkPlusIcon className="mr-1 size-4" />
+          <Button variant="outline" className="w-full gap-2 text-sm" onClick={() => setOpen(!open)}>
+            <BookmarkPlusIcon className="size-4" />
             <div className="break-all">{localize('com_ui_bookmarks_new')}</div>
           </Button>
         </div>

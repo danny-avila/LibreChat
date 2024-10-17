@@ -41,7 +41,7 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags, isSmallScreen }: Boo
             className={cn(
               'mt-text-sm flex h-10 w-full items-center gap-2 rounded-lg p-2 text-sm transition-colors duration-200 hover:bg-surface-hover',
               open ? 'bg-surface-hover' : '',
-              isSmallScreen ? 'h-14 rounded-2xl' : '',
+              isSmallScreen ? 'h-12' : '',
             )}
             data-testid="bookmark-menu"
           >
