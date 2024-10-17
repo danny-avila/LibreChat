@@ -202,9 +202,10 @@ const ChatForm = ({ index = 0 }) => {
           </div>
           <div
             className={cn(
-              'ml-2 flex flex-col items-center justify-center',
+              'mb-1 ml-2 flex flex-col items-end justify-end',
               isRTL && 'order-first mr-2',
             )}
+            style={{ alignSelf: 'flex-end' }}
           >
             {(isSubmitting || isSubmittingAdded) && (showStopButton || showStopAdded) ? (
               <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
