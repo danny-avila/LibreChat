@@ -69,9 +69,10 @@ router.delete('/', async (req, res) => {
     await processDeleteRequest({ req, files });
 
     logger.debug(
-      `[/files] Files deleted successfully: ${files.map(
-        (f, i) => `${f.file_id}${i < files.length - 1 ? ', ' : ''}`,
-      )}`,
+      `[/files] Files deleted successfully: ${files
+        .filter((f) => f.file_id)
+        .map((f) => f.file_id)
+        .join(', ')}`,
     );
     res.status(200).json({ message: 'Files deleted successfully' });
   } catch (error) {
@@ -220,7 +221,7 @@ router.post('/', async (req, res) => {
     try {
       await fs.unlink(file.path);
     } catch (error) {
-      logger.error('[/files/images] Error deleting file after file processing:', error);
+      logger.error('[/files] Error deleting file after file processing:', error);
     }
   }
 });

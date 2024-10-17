@@ -8,9 +8,9 @@ import {
 } from 'librechat-data-provider';
 import {
   useChatContext,
+  useChatFormContext,
   useAddedChatContext,
   useAssistantsMapContext,
-  useChatFormContext,
 } from '~/Providers';
 import {
   useTextarea,
@@ -20,18 +20,17 @@ import {
   useQueryParams,
   useSubmitMessage,
 } from '~/hooks';
+import FileFormWrapper from './Files/FileFormWrapper';
 import { TextareaAutosize } from '~/components/ui';
 import { useGetFileConfig } from '~/data-provider';
 import { cn, removeFocusRings } from '~/utils';
 import TextareaHeader from './TextareaHeader';
 import PromptsCommand from './PromptsCommand';
-import AttachFile from './Files/AttachFile';
 import AudioRecorder from './AudioRecorder';
 import { mainTextareaId } from '~/common';
 import StreamAudio from './StreamAudio';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
-import FileRow from './Files/FileRow';
 import Mention from './Mention';
 import store from '~/store';
 
@@ -73,7 +72,6 @@ const ChatForm = ({ index = 0 }) => {
     conversation,
     isSubmitting,
     filesLoading,
-    setFilesLoading,
     newConversation,
     handleStopGenerating,
   } = useChatContext();
@@ -130,13 +128,16 @@ const ChatForm = ({ index = 0 }) => {
     }
   }, [isSearching, disableInputs]);
 
+  const endpointSupportsFiles: boolean = supportsFiles[endpointType ?? endpoint ?? ''] ?? false;
+  const isUploadDisabled: boolean = endpointFileConfig?.disabled ?? false;
+
   return (
     <form
       onSubmit={methods.handleSubmit((data) => submitMessage(data))}
       className="stretch mx-2 flex flex-row gap-3 last:mb-2 md:mx-4 md:last:mb-6 lg:mx-auto lg:max-w-2xl xl:max-w-3xl"
     >
       <div className="relative flex h-full flex-1 items-stretch md:flex-col">
-        <div className={`bott flex w-full items-center ${isRTL ? 'flex-row-reverse' : ''}`}>
+        <div className="flex w-full items-center">
           {showPlusPopover && !isAssistantsEndpoint(endpoint) && (
             <Mention
               setShowMentionPopover={setShowPlusPopover}
@@ -157,50 +158,37 @@ const ChatForm = ({ index = 0 }) => {
           <PromptsCommand index={index} textAreaRef={textAreaRef} submitPrompt={submitPrompt} />
           <div className="transitional-all relative flex w-full flex-grow flex-col overflow-hidden rounded-3xl text-text-primary duration-200">
             <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
-            <FileRow
-              files={files}
-              setFiles={setFiles}
-              setFilesLoading={setFilesLoading}
-              isRTL={isRTL}
-              Wrapper={({ children }) => (
-                <div className="mx-2 mt-2 flex flex-wrap gap-2 px-2.5 md:pl-0 md:pr-4">
-                  {children}
-                </div>
+            <FileFormWrapper disableInputs={disableInputs}>
+              {endpoint && (
+                <TextareaAutosize
+                  {...registerProps}
+                  ref={(e) => {
+                    ref(e);
+                    textAreaRef.current = e;
+                  }}
+                  disabled={disableInputs}
+                  onPaste={handlePaste}
+                  onKeyDown={handleKeyDown}
+                  onKeyUp={handleKeyUp}
+                  onCompositionStart={handleCompositionStart}
+                  onCompositionEnd={handleCompositionEnd}
+                  id={mainTextareaId}
+                  tabIndex={0}
+                  data-testid="text-input"
+                  style={{ height: 44, overflowY: 'auto' }}
+                  rows={1}
+                  className={cn(
+                    endpointSupportsFiles && !isUploadDisabled
+                      ? 'pl-10 md:pl-[55px]'
+                      : 'pl-3 md:pl-4',
+                    'md:py-3.5- m-0 w-full resize-none bg-surface-tertiary py-[10px] placeholder-black/50 dark:placeholder-white/50 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
+                    SpeechToText && !isRTL ? 'pr-20 md:pr-[85px]' : 'pr-10 md:pr-12',
+                    'max-h-[65vh] md:max-h-[75vh]',
+                    removeFocusRings,
+                  )}
+                />
               )}
-            />
-            {endpoint && (
-              <TextareaAutosize
-                {...registerProps}
-                ref={(e) => {
-                  ref(e);
-                  textAreaRef.current = e;
-                }}
-                disabled={disableInputs}
-                onPaste={handlePaste}
-                onKeyDown={handleKeyDown}
-                onKeyUp={handleKeyUp}
-                onCompositionStart={handleCompositionStart}
-                onCompositionEnd={handleCompositionEnd}
-                id={mainTextareaId}
-                tabIndex={0}
-                rows={1}
-                data-testid="text-input"
-                className={cn(
-                  supportsFiles[endpointType ?? endpoint ?? ''] && !endpointFileConfig?.disabled
-                    ? ' pl-10 md:pl-[55px]'
-                    : 'pl-3 md:pl-4',
-                  'md:py-3.5- m-0 w-full resize-none bg-surface-tertiary py-[10px] placeholder-black/50 dark:placeholder-white/50 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
-                  SpeechToText && !isRTL ? 'pr-20 md:pr-[85px]' : 'pr-10 md:pr-12',
-                  'max-h-[65vh] md:max-h-[75vh]',
-                )}
-              />
-            )}
-            <AttachFile
-              endpoint={_endpoint ?? ''}
-              endpointType={endpointType}
-              isRTL={isRTL}
-              disabled={disableInputs}
-            />
+            </FileFormWrapper>
             {SpeechToText && (
               <AudioRecorder
                 disabled={!!disableInputs}
@@ -212,19 +200,14 @@ const ChatForm = ({ index = 0 }) => {
             )}
             {TextToSpeech && automaticPlayback && <StreamAudio index={index} />}
           </div>
-          <div className={`ml-4 ${isRTL ? 'mr-4' : ''} flex h-full flex-col justify-end`}>
+          <div className="ml-2 flex flex-col items-center justify-center">
             {(isSubmitting || isSubmittingAdded) && (showStopButton || showStopAdded) ? (
-              <StopButton
-                stop={handleStopGenerating}
-                setShowStopButton={setShowStopButton}
-                isRTL={isRTL}
-              />
+              <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
             ) : (
               endpoint && (
                 <SendButton
                   ref={submitButtonRef}
                   control={methods.control}
-                  isRTL={isRTL}
                   disabled={!!(filesLoading || isSubmitting || disableInputs)}
                 />
               )
