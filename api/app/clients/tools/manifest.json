@@ -83,6 +83,19 @@
     ]
   },
   {
+    "name": "SearchApi",
+    "pluginKey": "searchapi",
+    "description": "SearchApi is a robust real-time SERP API delivering structured data from a collection of search engines.",
+    "icon": "https://www.searchapi.io/press/searchapi-logo-symbol-screen.png",
+    "authConfig": [
+      {
+        "authField": "SEARCHAPI_API_KEY",
+        "label": "SearchApi Private API Key",
+        "description": "Private Key for SearchApi. Register at <a href='https://www.searchapi.io/'>SearchApi</a> to obtain a private key."
+      }
+    ]
+  },
+  {
     "name": "Serpapi",
     "pluginKey": "serpapi",
     "description": "SerpApi is a real-time API to access search engine results.",
