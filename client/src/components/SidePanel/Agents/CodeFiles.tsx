@@ -8,9 +8,8 @@ import {
 import type { EndpointFileConfig } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
+import { useFileHandling, useLocalize } from '~/hooks';
 import { useGetFileConfig } from '~/data-provider';
-import { useFileHandling } from '~/hooks/Files';
-import useLocalize from '~/hooks/useLocalize';
 import { useChatContext } from '~/Providers';
 
 const tool_resource = EToolResources.code_interpreter;
@@ -29,10 +28,10 @@ export default function CodeFiles({
   const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
-  const { handleFileChange } = useFileHandling({
+  const { abortUpload, handleFileChange } = useFileHandling({
+    fileSetter: setFiles,
     overrideEndpoint: EModelEndpoint.agents,
     additionalMetadata: { agent_id, tool_resource },
-    fileSetter: setFiles,
   });
 
   useEffect(() => {
@@ -68,6 +67,7 @@ export default function CodeFiles({
           files={files}
           setFiles={setFiles}
           agent_id={agent_id}
+          abortUpload={abortUpload}
           tool_resource={tool_resource}
           setFilesLoading={setFilesLoading}
           Wrapper={({ children }) => <div className="flex flex-wrap gap-2">{children}</div>}
