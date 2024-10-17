@@ -75,6 +75,7 @@ module.exports = {
         'surface-primary-alt': 'var(--surface-primary-alt)',
         'surface-primary-contrast': 'var(--surface-primary-contrast)',
         'surface-secondary': 'var(--surface-secondary)',
+        'surface-secondary-alt': 'var(--surface-secondary-alt)',
         'surface-tertiary': 'var(--surface-tertiary)',
         'surface-tertiary-alt': 'var(--surface-tertiary-alt)',
         'surface-dialog': 'var(--surface-dialog)',
