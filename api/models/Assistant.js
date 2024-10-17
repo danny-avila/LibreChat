@@ -1,7 +1,14 @@
+const { logger } = require('~/config');
 const mongoose = require('mongoose');
 const assistantSchema = require('./schema/assistant');
 
 const Assistant = mongoose.model('assistant', assistantSchema);
+
+Assistant.on('index', (error) => {
+  if (error) {
+    logger.error(`Failed to create Assistant index ${error}`);
+  }
+});
 
 /**
  * Update an assistant with new data without overwriting existing properties,
