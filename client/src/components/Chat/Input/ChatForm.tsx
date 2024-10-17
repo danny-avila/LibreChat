@@ -181,7 +181,7 @@ const ChatForm = ({ index = 0 }) => {
                     endpointSupportsFiles && !isUploadDisabled
                       ? 'pl-10 md:pl-[55px]'
                       : 'pl-3 md:pl-4',
-                    'md:py-3.5- m-0 w-full resize-none bg-surface-tertiary py-[10px] placeholder-black/50 dark:placeholder-white/50 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
+                    'md:py-3.5- m-0 w-full resize-none bg-surface-tertiary py-[13px] placeholder-black/50 dark:placeholder-white/50 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
                     SpeechToText && !isRTL ? 'pr-20 md:pr-[85px]' : 'pr-10 md:pr-12',
                     'max-h-[65vh] md:max-h-[75vh]',
                     removeFocusRings,
@@ -202,8 +202,8 @@ const ChatForm = ({ index = 0 }) => {
           </div>
           <div
             className={cn(
-              'mb-1 ml-2 flex flex-col items-end justify-end',
-              isRTL && 'order-first mr-2',
+              'mb-[5px] ml-[8px] flex flex-col items-end justify-end',
+              isRTL && 'order-first mr-[8px]',
             )}
             style={{ alignSelf: 'flex-end' }}
           >
