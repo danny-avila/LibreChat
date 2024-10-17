@@ -73,6 +73,33 @@ function convertToUsername(input, defaultValue = '') {
   return defaultValue;
 }
 
+async function mapCustomOpenIdData(accessToken, customOpenIdFields) {
+  const customData = {};
+  const fieldsQueryURL = `https://graph.microsoft.com/v1.0/me?$select=${customOpenIdFields.join(',')}`;
+
+  const response = await fetch(fieldsQueryURL, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    }
+  });
+
+
+  if (response.ok) {
+    const customOpenIdFieldsResult = await response.json();
+
+    // Extract relevant fields from the response
+    customOpenIdFields.forEach(field => {
+      if (customOpenIdFieldsResult[field]) {
+        customData[field] = customOpenIdFieldsResult[field];
+      }
+    });
+  }
+  logger.debug('[openidStrategy] map custom openId data', { fieldsQueryURL, customData });
+  return customData;
+}
+
 async function setupOpenId() {
   try {
     if (process.env.PROXY) {
@@ -202,6 +229,11 @@ async function setupOpenId() {
             }
           }
 
+          const customOpenIdFields = process.env.OPENID_CUSTOM_DATA ? process.env.OPENID_CUSTOM_DATA.split(" ") : [];
+          if (customOpenIdFields.length > 0) {
+            user.customOpenIdData = new Map(Object.entries(await mapCustomOpenIdData(tokenset.access_token, customOpenIdFields)));
+          }
+          
           user = await updateUser(user._id, user);
 
           logger.info(
