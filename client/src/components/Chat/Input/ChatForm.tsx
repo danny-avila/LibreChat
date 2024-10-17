@@ -200,7 +200,12 @@ const ChatForm = ({ index = 0 }) => {
             )}
             {TextToSpeech && automaticPlayback && <StreamAudio index={index} />}
           </div>
-          <div className="ml-2 flex flex-col items-center justify-center">
+          <div
+            className={cn(
+              'ml-2 flex flex-col items-center justify-center',
+              isRTL && 'order-first mr-2',
+            )}
+          >
             {(isSubmitting || isSubmittingAdded) && (showStopButton || showStopAdded) ? (
               <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
             ) : (
