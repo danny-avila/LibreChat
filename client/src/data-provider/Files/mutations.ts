@@ -152,9 +152,9 @@ export const useDeleteFilesMutation = (
   return useMutation([MutationKeys.fileDelete], {
     mutationFn: (body: t.DeleteFilesBody) => dataService.deleteFiles(body),
     ...options,
-    onSuccess: (data, ...args) => {
+    onSuccess: (data, vars, context) => {
       queryClient.setQueryData<t.TFile[] | undefined>([QueryKeys.files], (cachefiles) => {
-        const { files: filesDeleted } = args[0];
+        const { files: filesDeleted } = vars;
 
         const fileMap = filesDeleted.reduce((acc, file) => {
           acc.set(file.file_id, file);
@@ -163,7 +163,10 @@ export const useDeleteFilesMutation = (
 
         return (cachefiles ?? []).filter((file) => !fileMap.has(file.file_id));
       });
-      onSuccess?.(data, ...args);
+      onSuccess?.(data, vars, context);
+      if (vars.agent_id != null && vars.agent_id) {
+        queryClient.refetchQueries([QueryKeys.agent, vars.agent_id]);
+      }
     },
   });
 };

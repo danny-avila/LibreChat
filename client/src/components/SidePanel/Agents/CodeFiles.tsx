@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import {
   EToolResources,
   EModelEndpoint,
@@ -7,8 +7,8 @@ import {
 } from 'librechat-data-provider';
 import type { EndpointFileConfig } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
+import { useFileHandling, useLocalize, useLazyEffect } from '~/hooks';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
-import { useFileHandling, useLocalize } from '~/hooks';
 import { useGetFileConfig } from '~/data-provider';
 import { useChatContext } from '~/Providers';
 
@@ -34,11 +34,15 @@ export default function CodeFiles({
     additionalMetadata: { agent_id, tool_resource },
   });
 
-  useEffect(() => {
-    if (_files) {
-      setFiles(new Map(_files));
-    }
-  }, [_files]);
+  useLazyEffect(
+    () => {
+      if (_files) {
+        setFiles(new Map(_files));
+      }
+    },
+    [_files],
+    750,
+  );
 
   const endpointFileConfig = fileConfig.endpoints[EModelEndpoint.agents] as
     | EndpointFileConfig
