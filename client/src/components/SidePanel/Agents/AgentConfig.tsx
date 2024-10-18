@@ -11,7 +11,6 @@ import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 import Action from '~/components/SidePanel/Builder/Action';
 import { ToolSelectDialog } from '~/components/Tools';
 import { useLocalize, useAuthContext } from '~/hooks';
-import CapabilitiesForm from './CapabilitiesForm';
 import { processAgentOption } from '~/utils';
 import { Spinner } from '~/components/svg';
 import DeleteButton from './DeleteButton';
@@ -19,6 +18,7 @@ import AgentAvatar from './AgentAvatar';
 import FileSearch from './FileSearch';
 import ShareAgent from './ShareAgent';
 import AgentTool from './AgentTool';
+import CodeForm from './CodeForm';
 import { Panel } from '~/common';
 
 const labelClass = 'mb-2 text-token-text-primary block font-medium';
@@ -90,6 +90,26 @@ export default function AgentConfig({
       fileMap,
     });
     return _agent.knowledge_files ?? [];
+  }, [agent, agent_id, fileMap]);
+
+  const code_files = useMemo(() => {
+    if (typeof agent === 'string') {
+      return [];
+    }
+
+    if (agent?.id !== agent_id) {
+      return [];
+    }
+
+    if (agent.code_files) {
+      return agent.code_files;
+    }
+
+    const _agent = processAgentOption({
+      agent,
+      fileMap,
+    });
+    return _agent.code_files ?? [];
   }, [agent, agent_id, fileMap]);
 
   /* Mutations */
@@ -303,11 +323,8 @@ export default function AgentConfig({
             </div>
           </button>
         </div>
-        <CapabilitiesForm
-          codeEnabled={codeEnabled}
-          agentsConfig={agentsConfig}
-          retrievalEnabled={false}
-        />
+        {/* Code Execution */}
+        {codeEnabled && <CodeForm agent_id={agent_id} files={code_files} />}
         {/* File Search */}
         {fileSearchEnabled && <FileSearch agent_id={agent_id} files={knowledge_files} />}
         {/* Agent Tools & Actions */}

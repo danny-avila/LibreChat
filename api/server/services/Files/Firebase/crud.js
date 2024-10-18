@@ -155,7 +155,7 @@ function extractFirebaseFilePath(urlString) {
  * Deletes a file from Firebase storage. This function determines the filepath from the
  * Firebase storage URL via regex for deletion. Validated by the user's ID.
  *
- * @param {Express.Request} req - The request object from Express.
+ * @param {ServerRequest} req - The request object from Express.
  * It should contain a `user` object with an `id` property.
  * @param {MongoFile} file - The file object to be deleted.
  *
@@ -195,7 +195,7 @@ const deleteFirebaseFile = async (req, file) => {
  * Uploads a file to Firebase Storage.
  *
  * @param {Object} params - The params object.
- * @param {Express.Request} params.req - The request object from Express. It should have a `user` property with an `id`
+ * @param {ServerRequest} params.req - The request object from Express. It should have a `user` property with an `id`
  *                       representing the user.
  * @param {Express.Multer.File} params.file - The file object, which is part of the request. The file object should
  *                                     have a `path` property that points to the location of the uploaded file.

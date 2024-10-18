@@ -12,7 +12,7 @@ import { useFileHandling, useLocalize } from '~/hooks';
 import { useGetFileConfig } from '~/data-provider';
 import { useChatContext } from '~/Providers';
 
-const tool_resource = EToolResources.code_interpreter;
+const tool_resource = EToolResources.execute_code;
 
 export default function CodeFiles({
   agent_id,

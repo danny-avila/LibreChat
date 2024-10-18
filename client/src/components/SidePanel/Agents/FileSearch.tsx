@@ -49,9 +49,9 @@ export default function FileSearch({
   const fileSearchChecked = watch(AgentCapabilities.file_search);
 
   const endpointFileConfig = fileConfig.endpoints[EModelEndpoint.agents];
-  const disabled = endpointFileConfig.disabled ?? false;
+  const isUploadDisabled = endpointFileConfig.disabled ?? false;
 
-  if (disabled === true) {
+  if (isUploadDisabled) {
     return null;
   }
 
