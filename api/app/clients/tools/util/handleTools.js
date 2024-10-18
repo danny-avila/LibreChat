@@ -26,6 +26,7 @@ const {
 } = require('../');
 const createFileSearchTool = require('./createFileSearchTool');
 const { loadToolSuite } = require('./loadToolSuite');
+const primeCodeFiles = require('./primeCodeFiles');
 const { loadSpecs } = require('./loadSpecs');
 const { logger } = require('~/config');
 
@@ -258,9 +259,11 @@ const loadTools = async ({
         userId: user.id,
         authFields: [EnvVar.CODE_API_KEY],
       });
+      const files = await primeCodeFiles(options);
       requestedTools[tool] = () =>
         createCodeExecutionTool({
           user_id: user.id,
+          files,
           ...authValues,
         });
       continue;

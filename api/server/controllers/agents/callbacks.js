@@ -164,7 +164,7 @@ function createToolEndCallback({ req, res, artifactPromises }) {
             name,
             toolCallId: tool_call_id,
             messageId: metadata.run_id,
-            sessionId: artifact.session_id,
+            session_id: artifact.session_id,
             conversationId: metadata.thread_id,
           });
           if (!res.headersSent) {

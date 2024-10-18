@@ -87,13 +87,13 @@ router.delete('/', async (req, res) => {
   }
 });
 
-router.get('/code/download/:sessionId/:fileId', async (req, res) => {
+router.get('/code/download/:session_id/:fileId', async (req, res) => {
   try {
-    const { sessionId, fileId } = req.params;
-    const logPrefix = `Session ID: ${sessionId} | File ID: ${fileId} | Code output download requested by user `;
+    const { session_id, fileId } = req.params;
+    const logPrefix = `Session ID: ${session_id} | File ID: ${fileId} | Code output download requested by user `;
     logger.debug(logPrefix);
 
-    if (!sessionId || !fileId) {
+    if (!session_id || !fileId) {
       return res.status(400).send('Bad request');
     }
 
@@ -108,7 +108,10 @@ router.get('/code/download/:sessionId/:fileId', async (req, res) => {
     const result = await loadAuthValues({ userId: req.user.id, authFields: [EnvVar.CODE_API_KEY] });
 
     /** @type {AxiosResponse<ReadableStream> | undefined} */
-    const response = await getDownloadStream(`${sessionId}/${fileId}`, result[EnvVar.CODE_API_KEY]);
+    const response = await getDownloadStream(
+      `${session_id}/${fileId}`,
+      result[EnvVar.CODE_API_KEY],
+    );
     res.set(response.headers);
     response.data.pipe(res);
   } catch (error) {

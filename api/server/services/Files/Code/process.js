@@ -14,7 +14,7 @@ const { logger } = require('~/config');
  * @param {string} params.id - The file ID.
  * @param {string} params.name - The filename.
  * @param {string} params.toolCallId - The tool call ID that generated the file.
- * @param {string} params.sessionId - The code execution session ID.
+ * @param {string} params.session_id - The code execution session ID.
  * @param {string} params.conversationId - The current conversation ID.
  * @param {string} params.messageId - The current message ID.
  * @returns {Promise<MongoFile & { messageId: string, toolCallId: string } | { filename: string; filepath: string; expiresAt: number; conversationId: string; toolCallId: string; messageId: string } | undefined>} The file metadata or undefined if an error occurs.
@@ -26,7 +26,7 @@ const processCodeOutput = async ({
   toolCallId,
   conversationId,
   messageId,
-  sessionId,
+  session_id,
 }) => {
   const currentDate = new Date();
   const baseURL = getCodeBaseURL();
@@ -34,7 +34,7 @@ const processCodeOutput = async ({
   if (!fileExt || !imageExtRegex.test(name)) {
     return {
       filename: name,
-      filepath: `/api/files/code/download/${sessionId}/${id}`,
+      filepath: `/api/files/code/download/${session_id}/${id}`,
       /** Note: expires 24 hours after creation */
       expiresAt: currentDate.getTime() + 86400000,
       conversationId,
@@ -48,7 +48,7 @@ const processCodeOutput = async ({
     const result = await loadAuthValues({ userId: req.user.id, authFields: [EnvVar.CODE_API_KEY] });
     const response = await axios({
       method: 'get',
-      url: `${baseURL}/download/${sessionId}/${id}`,
+      url: `${baseURL}/download/${session_id}/${id}`,
       responseType: 'arraybuffer',
       headers: {
         'User-Agent': 'LibreChat/1.0',

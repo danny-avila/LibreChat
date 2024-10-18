@@ -17,7 +17,7 @@ const MAX_FILE_SIZE = 25 * 1024 * 1024;
 
 /**
  * Retrieves a download stream for a specified file.
- * @param {string} fileIdentifier - The identifier for the file (e.g., "sessionId/fileId").
+ * @param {string} fileIdentifier - The identifier for the file (e.g., "session_id/fileId").
  * @param {string} apiKey - The API key for authentication.
  * @returns {Promise<AxiosResponse>} A promise that resolves to a readable stream of the file content.
  * @throws {Error} If there's an error during the download process.
@@ -69,13 +69,13 @@ async function uploadCodeEnvFile({ req, file, apiKey }) {
       maxBodyLength: MAX_FILE_SIZE,
     });
 
-    /** @type {{ message: string; sessionId: string; files: Array<{ fileId: string; filename: string }> }} */
+    /** @type {{ message: string; session_id: string; files: Array<{ fileId: string; filename: string }> }} */
     const result = response.data;
     if (result.message !== 'success') {
       throw new Error(`Error uploading file: ${result.message}`);
     }
 
-    return `${result.sessionId}/${result.files[0].fileId}`;
+    return `${result.session_id}/${result.files[0].fileId}`;
   } catch (error) {
     throw new Error(`Error uploading file: ${error.message}`);
   }
@@ -85,7 +85,7 @@ async function uploadCodeEnvFile({ req, file, apiKey }) {
  * Retrieves the upload time string for a specified file from Code Execution Server.
  *
  * @param {Object} params - The parameters object.
- * @param {string} params.fileIdentifier - The identifier for the file (e.g., "sessionId/fileId").
+ * @param {string} params.fileIdentifier - The identifier for the file (e.g., "session_id/fileId").
  * @param {string} params.apiKey - The API key for authentication.
  *
  * @returns {Promise<string|null>}
