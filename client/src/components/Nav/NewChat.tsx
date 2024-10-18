@@ -8,6 +8,7 @@ import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import { useLocalize, useNewConvo } from '~/hooks';
 import { NewChatIcon } from '~/components/svg';
+import { cn } from '~/utils';
 import store from '~/store';
 
 const NewChatButtonIcon = ({ conversation }: { conversation: TConversation | null }) => {
@@ -57,10 +58,12 @@ export default function NewChat({
   index = 0,
   toggleNav,
   subHeaders,
+  isSmallScreen,
 }: {
   index?: number;
   toggleNav: () => void;
   subHeaders?: React.ReactNode;
+  isSmallScreen: boolean;
 }) {
   /** Note: this component needs an explicit index passed if using more than one */
   const { newConversation: newConvo } = useNewConvo(index);
@@ -86,7 +89,10 @@ export default function NewChat({
           tabIndex={0}
           data-testid="nav-new-chat"
           onClick={clickHandler}
-          className="group flex h-10 items-center gap-2 rounded-lg px-2 font-medium transition-colors duration-200 hover:bg-surface-hover"
+          className={cn(
+            'group flex h-10 items-center gap-2 rounded-lg px-2 font-medium transition-colors duration-200 hover:bg-surface-hover',
+            isSmallScreen ? 'h-14' : '',
+          )}
           aria-label={localize('com_ui_new_chat')}
         >
           <NewChatButtonIcon conversation={conversation} />

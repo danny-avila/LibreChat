@@ -29,6 +29,7 @@ const InputWithLabel: FC<InputWithLabelProps> = forwardRef((props, ref) => {
         )}
         <br />
       </div>
+      <div className="h-1" />
       <Input
         id={id}
         data-testid={`input-${id}`}
@@ -36,12 +37,7 @@ const InputWithLabel: FC<InputWithLabelProps> = forwardRef((props, ref) => {
         onChange={onChange}
         ref={ref}
         placeholder={`${localize('com_endpoint_config_value')} ${label}`}
-        className={cn(
-          defaultTextProps,
-          'flex h-10 max-h-10 w-full resize-none px-3 py-2',
-          removeFocusOutlines,
-          inputClassName,
-        )}
+        className={cn('flex h-10 max-h-10 w-full resize-none px-3 py-2')}
       />
     </>
   );

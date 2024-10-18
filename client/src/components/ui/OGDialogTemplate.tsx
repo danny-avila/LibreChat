@@ -13,7 +13,7 @@ import { cn } from '~/utils/';
 type SelectionProps = {
   selectHandler?: () => void;
   selectClasses?: string;
-  selectText?: string;
+  selectText?: string | ReactNode;
 };
 
 type DialogTemplateProps = {
@@ -81,7 +81,7 @@ const OGDialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDi
               onClick={selectHandler}
               className={`${
                 selectClasses ?? defaultSelect
-              } inline-flex h-10 items-center justify-center rounded-lg border-none px-4 py-2 text-sm`}
+              } flex h-10 w-full items-center justify-center rounded-lg border-none px-4 py-2 text-sm`}
             >
               {selectText}
             </OGDialogClose>

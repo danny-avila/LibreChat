@@ -156,7 +156,7 @@ const ChatForm = ({ index = 0 }) => {
             />
           )}
           <PromptsCommand index={index} textAreaRef={textAreaRef} submitPrompt={submitPrompt} />
-          <div className="bg-token-main-surface-primary relative flex w-full flex-grow flex-col overflow-hidden rounded-2xl border dark:border-gray-600 dark:text-white [&:has(textarea:focus)]:border-gray-300 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)] dark:[&:has(textarea:focus)]:border-gray-500">
+          <div className="transitional-all relative flex w-full flex-grow flex-col overflow-hidden rounded-3xl bg-surface-tertiary text-text-primary duration-200">
             <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
             <FileFormWrapper disableInputs={disableInputs}>
               {endpoint && (
@@ -181,7 +181,7 @@ const ChatForm = ({ index = 0 }) => {
                     endpointSupportsFiles && !isUploadDisabled
                       ? 'pl-10 md:pl-[55px]'
                       : 'pl-3 md:pl-4',
-                    'm-0 w-full resize-none border-0 bg-transparent py-[10px] placeholder-black/50 focus:ring-0 focus-visible:ring-0 dark:bg-transparent dark:placeholder-white/50 md:py-3.5  ',
+                    'md:py-3.5- m-0 w-full resize-none bg-surface-tertiary py-[13px] placeholder-black/50 dark:placeholder-white/50 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
                     SpeechToText && !isRTL ? 'pr-20 md:pr-[85px]' : 'pr-10 md:pr-12',
                     'max-h-[65vh] md:max-h-[75vh]',
                     removeFocusRings,
@@ -189,22 +189,6 @@ const ChatForm = ({ index = 0 }) => {
                 />
               )}
             </FileFormWrapper>
-            {(isSubmitting || isSubmittingAdded) && (showStopButton || showStopAdded) ? (
-              <StopButton
-                stop={handleStopGenerating}
-                setShowStopButton={setShowStopButton}
-                isRTL={isRTL}
-              />
-            ) : (
-              endpoint && (
-                <SendButton
-                  ref={submitButtonRef}
-                  control={methods.control}
-                  isRTL={isRTL}
-                  disabled={!!(filesLoading || isSubmitting || disableInputs)}
-                />
-              )
-            )}
             {SpeechToText && (
               <AudioRecorder
                 disabled={!!disableInputs}
@@ -215,6 +199,25 @@ const ChatForm = ({ index = 0 }) => {
               />
             )}
             {TextToSpeech && automaticPlayback && <StreamAudio index={index} />}
+          </div>
+          <div
+            className={cn(
+              'mb-[5px] ml-[8px] flex flex-col items-end justify-end',
+              isRTL && 'order-first mr-[8px]',
+            )}
+            style={{ alignSelf: 'flex-end' }}
+          >
+            {(isSubmitting || isSubmittingAdded) && (showStopButton || showStopAdded) ? (
+              <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
+            ) : (
+              endpoint && (
+                <SendButton
+                  ref={submitButtonRef}
+                  control={methods.control}
+                  disabled={!!(filesLoading || isSubmitting || disableInputs)}
+                />
+              )
+            )}
           </div>
         </div>
       </div>

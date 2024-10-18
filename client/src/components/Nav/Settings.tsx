@@ -76,11 +76,11 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
           <div className={cn('fixed inset-0 flex w-screen items-center justify-center p-4')}>
             <DialogPanel
               className={cn(
-                'min-h-[600px] overflow-hidden rounded-xl rounded-b-lg bg-background pb-6 shadow-2xl backdrop-blur-2xl animate-in sm:rounded-lg md:min-h-[373px] md:w-[680px]',
+                'min-h-[600px] overflow-hidden rounded-xl rounded-b-lg bg-background pb-6 shadow-2xl backdrop-blur-2xl animate-in sm:rounded-2xl md:min-h-[373px] md:w-[680px]',
               )}
             >
               <DialogTitle
-                className="mb-3 flex items-center justify-between border-b border-border-medium p-6 pb-5 text-left"
+                className="mb-1 flex items-center justify-between p-6 pb-5 text-left"
                 as="div"
               >
                 <h2 className="text-lg font-medium leading-6 text-text-primary">

@@ -78,7 +78,7 @@ export default function FileSearch({
           <button
             type="button"
             disabled={!agent_id || fileSearchChecked === false}
-            className="btn btn-neutral border-token-border-light relative h-8 rounded-lg font-medium"
+            className="btn btn-neutral border-token-border-light relative h-8 w-full rounded-lg font-medium"
             onClick={handleButtonClick}
           >
             <div className="flex w-full items-center justify-center gap-1">
