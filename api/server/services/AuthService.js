@@ -321,18 +321,18 @@ const resetPassword = async (userId, token, password) => {
  *
  * @param {String | ObjectId} userId
  * @param {Object} res
- * @param {String} session_id
+ * @param {String} sessionId
  * @returns
  */
-const setAuthTokens = async (userId, res, session_id = null) => {
+const setAuthTokens = async (userId, res, sessionId = null) => {
   try {
     const user = await getUserById(userId);
     const token = await generateToken(user);
 
     let session;
     let refreshTokenExpires;
-    if (session_id) {
-      session = await Session.findById(session_id);
+    if (sessionId) {
+      session = await Session.findById(sessionId);
       refreshTokenExpires = session.expiration.getTime();
     } else {
       session = new Session({ user: userId });
