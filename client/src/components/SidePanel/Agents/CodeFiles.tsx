@@ -1,12 +1,14 @@
 import { useState, useRef } from 'react';
+import { useFormContext } from 'react-hook-form';
 import {
   EToolResources,
   EModelEndpoint,
   mergeFileConfig,
+  AgentCapabilities,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
 import type { EndpointFileConfig } from 'librechat-data-provider';
-import type { ExtendedFile } from '~/common';
+import type { ExtendedFile, AgentForm } from '~/common';
 import { useFileHandling, useLocalize, useLazyEffect } from '~/hooks';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
 import { useGetFileConfig } from '~/data-provider';
@@ -23,6 +25,7 @@ export default function CodeFiles({
 }) {
   const localize = useLocalize();
   const { setFilesLoading } = useChatContext();
+  const { watch } = useFormContext<AgentForm>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<Map<string, ExtendedFile>>(new Map());
   const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
@@ -43,6 +46,8 @@ export default function CodeFiles({
     [_files],
     750,
   );
+
+  const codeChecked = watch(AgentCapabilities.execute_code);
 
   const endpointFileConfig = fileConfig.endpoints[EModelEndpoint.agents] as
     | EndpointFileConfig
@@ -79,7 +84,7 @@ export default function CodeFiles({
         <div>
           <button
             type="button"
-            disabled={!agent_id}
+            disabled={!agent_id || codeChecked === false}
             className="btn btn-neutral border-token-border-light relative h-8 w-full rounded-lg font-medium"
             onClick={handleButtonClick}
           >
@@ -90,7 +95,7 @@ export default function CodeFiles({
                 style={{ display: 'none' }}
                 tabIndex={-1}
                 ref={fileInputRef}
-                disabled={!agent_id}
+                disabled={!agent_id || codeChecked === false}
                 onChange={handleFileChange}
               />
               {localize('com_ui_upload_files')}
