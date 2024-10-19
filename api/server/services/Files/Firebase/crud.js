@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const fetch = require('node-fetch');
-const { ref, uploadBytes, getDownloadURL, getStream, deleteObject } = require('firebase/storage');
+const { ref, uploadBytes, getDownloadURL, deleteObject } = require('firebase/storage');
 const { getBufferMetadata } = require('~/server/utils');
 const { getFirebaseStorage } = require('./initialize');
 const { logger } = require('~/config');
@@ -225,16 +225,22 @@ async function uploadFileToFirebase({ req, file, file_id }) {
  * Retrieves a readable stream for a file from Firebase storage.
  *
  * @param {string} filepath - The filepath.
- * @returns {ReadableStream} A readable stream of the file.
+ * @returns {Promise<ReadableStream>} A readable stream of the file.
  */
-function getFirebaseFileStream(filepath) {
+async function getFirebaseFileStream(filepath) {
   try {
     const storage = getFirebaseStorage();
     if (!storage) {
       throw new Error('Firebase is not initialized');
     }
-    const fileRef = ref(storage, filepath);
-    return getStream(fileRef);
+
+    const response = await axios({
+      method: 'get',
+      url: filepath,
+      responseType: 'stream',
+    });
+
+    return response.data;
   } catch (error) {
     logger.error('Error getting Firebase file stream:', error);
     throw error;

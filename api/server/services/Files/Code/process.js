@@ -2,9 +2,15 @@ const path = require('path');
 const { v4 } = require('uuid');
 const axios = require('axios');
 const { getCodeBaseURL } = require('@librechat/agents');
-const { EToolResources, FileContext, imageExtRegex } = require('librechat-data-provider');
+const {
+  EToolResources,
+  FileContext,
+  imageExtRegex,
+  FileSources,
+} = require('librechat-data-provider');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
-const { createFile, getFiles } = require('~/models/File');
+const { createFile, getFiles, updateFile } = require('~/models/File');
 const { logger } = require('~/config');
 
 /**
@@ -154,13 +160,40 @@ const primeFiles = async (options, apiKey) => {
         pushFile();
         continue;
       }
+      const reuploadFile = async () => {
+        try {
+          const { getDownloadStream } = getStrategyFunctions(file.source);
+          const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(
+            FileSources.execute_code,
+          );
+          const stream = await getDownloadStream(file.filepath);
+          const fileIdentifier = await uploadCodeEnvFile({
+            req: options.req,
+            stream,
+            filename: file.filename,
+            apiKey,
+          });
+          await updateFile({ file_id: file.file_id, metadata: { fileIdentifier } });
+          sessions.set(session_id, true);
+          pushFile();
+        } catch (error) {
+          logger.error(
+            `Error re-uploading file ${id} in session ${session_id}: ${error.message}`,
+            error,
+          );
+        }
+      };
       const uploadTime = await getSessionInfo(file.metadata.fileIdentifier, apiKey);
       if (!uploadTime) {
         logger.warn(`Failed to get upload time for file ${id} in session ${session_id}`);
+        await reuploadFile();
         continue;
       }
-      const isActive = checkIfActive(uploadTime);
-      sessions.set(session_id, isActive);
+      if (!checkIfActive(uploadTime)) {
+        await reuploadFile();
+        continue;
+      }
+      sessions.set(session_id, true);
       pushFile();
     }
   }
