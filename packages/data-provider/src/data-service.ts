@@ -314,7 +314,10 @@ export const getFileConfig = (): Promise<f.FileConfig> => {
   return request.get(`${endpoints.files()}/config`);
 };
 
-export const uploadImage = (data: FormData, signal?: AbortSignal | null): Promise<f.TFileUpload> => {
+export const uploadImage = (
+  data: FormData,
+  signal?: AbortSignal | null,
+): Promise<f.TFileUpload> => {
   const requestConfig = signal ? { signal } : undefined;
   return request.postMultiPart(endpoints.images(), data, requestConfig);
 };
