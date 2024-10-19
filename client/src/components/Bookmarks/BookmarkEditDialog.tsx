@@ -2,10 +2,9 @@ import React, { useRef, Dispatch, SetStateAction } from 'react';
 import { TConversationTag, TConversation } from 'librechat-data-provider';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { useConversationTagMutation } from '~/data-provider';
+import { OGDialog, Button, Spinner } from '~/components';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
-import { OGDialog } from '~/components/ui';
-import { Spinner } from '~/components/svg';
 import BookmarkForm from './BookmarkForm';
 import { useLocalize } from '~/hooks';
 import { logger } from '~/utils';
@@ -75,6 +74,7 @@ const BookmarkEditDialog = ({
       <OGDialogTemplate
         title="Bookmark"
         showCloseButton={false}
+        className="w-11/12 md:max-w-2xl"
         main={
           <BookmarkForm
             tags={tags}
@@ -86,14 +86,14 @@ const BookmarkEditDialog = ({
           />
         }
         buttons={
-          <button
+          <Button
+            variant="submit"
             type="submit"
             disabled={mutation.isLoading}
             onClick={handleSubmitForm}
-            className="btn rounded bg-green-500 font-bold text-white transition-all hover:bg-green-600"
           >
             {mutation.isLoading ? <Spinner /> : localize('com_ui_save')}
-          </button>
+          </Button>
         }
       />
     </OGDialog>
