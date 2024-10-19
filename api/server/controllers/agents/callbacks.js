@@ -1,6 +1,12 @@
 const { Tools } = require('librechat-data-provider');
-const { GraphEvents, ToolEndHandler, ChatModelStreamHandler } = require('@librechat/agents');
+const {
+  EnvVar,
+  GraphEvents,
+  ToolEndHandler,
+  ChatModelStreamHandler,
+} = require('@librechat/agents');
 const { processCodeOutput } = require('~/server/services/Files/Code/process');
+const { loadAuthValues } = require('~/app/clients/tools/util');
 const { logger } = require('~/config');
 
 /** @typedef {import('@librechat/agents').Graph} Graph */
@@ -158,10 +164,15 @@ function createToolEndCallback({ req, res, artifactPromises }) {
       const { id, name } = file;
       artifactPromises.push(
         (async () => {
+          const result = await loadAuthValues({
+            userId: req.user.id,
+            authFields: [EnvVar.CODE_API_KEY],
+          });
           const fileMetadata = await processCodeOutput({
             req,
             id,
             name,
+            apiKey: result[EnvVar.CODE_API_KEY],
             toolCallId: tool_call_id,
             messageId: metadata.run_id,
             session_id: artifact.session_id,

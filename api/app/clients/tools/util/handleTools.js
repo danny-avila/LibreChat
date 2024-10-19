@@ -24,9 +24,9 @@ const {
   StructuredWolfram,
   TavilySearchResults,
 } = require('../');
+const { primeFiles } = require('~/server/services/Files/Code/process');
 const createFileSearchTool = require('./createFileSearchTool');
 const { loadToolSuite } = require('./loadToolSuite');
-const primeCodeFiles = require('./primeCodeFiles');
 const { loadSpecs } = require('./loadSpecs');
 const { logger } = require('~/config');
 
@@ -259,7 +259,7 @@ const loadTools = async ({
         userId: user.id,
         authFields: [EnvVar.CODE_API_KEY],
       });
-      const files = await primeCodeFiles(options);
+      const files = await primeFiles(options, authValues[EnvVar.CODE_API_KEY]);
       requestedTools[tool] = () =>
         createCodeExecutionTool({
           user_id: user.id,

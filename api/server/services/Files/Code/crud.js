@@ -4,16 +4,7 @@ const axios = require('axios');
 const FormData = require('form-data');
 const { getCodeBaseURL } = require('@librechat/agents');
 
-const baseURL = getCodeBaseURL();
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
-
-// function checkIfStale(dateString) {
-//   const givenDate = new Date(dateString);
-//   const currentDate = new Date();
-//   const timeDifference = currentDate - givenDate;
-//   const hoursPassed = timeDifference / (1000 * 60 * 60);
-//   return hoursPassed > 23;
-// }
 
 /**
  * Retrieves a download stream for a specified file.
@@ -24,6 +15,7 @@ const MAX_FILE_SIZE = 25 * 1024 * 1024;
  */
 async function getCodeOutputDownloadStream(fileIdentifier, apiKey) {
   try {
+    const baseURL = getCodeBaseURL();
     const response = await axios({
       method: 'get',
       url: `${baseURL}/download/${fileIdentifier}`,
@@ -57,6 +49,7 @@ async function uploadCodeEnvFile({ req, file, apiKey }) {
     const form = new FormData();
     form.append('file', fs.createReadStream(file.path), file.originalname);
 
+    const baseURL = getCodeBaseURL();
     const response = await axios.post(`${baseURL}/upload`, form, {
       headers: {
         ...form.getHeaders(),
@@ -80,20 +73,5 @@ async function uploadCodeEnvFile({ req, file, apiKey }) {
     throw new Error(`Error uploading file: ${error.message}`);
   }
 }
-
-/**
- * Retrieves the upload time string for a specified file from Code Execution Server.
- *
- * @param {Object} params - The parameters object.
- * @param {string} params.fileIdentifier - The identifier for the file (e.g., "session_id/fileId").
- * @param {string} params.apiKey - The API key for authentication.
- *
- * @returns {Promise<string|null>}
- *          A promise that resolves to the upload time string of the file if successful, or null if there is an
- *          error in initialization or fetching the info.
- */
-// async function getFileInfo(fileIdentifier, apiKey) {
-
-// }
 
 module.exports = { getCodeOutputDownloadStream, uploadCodeEnvFile };
