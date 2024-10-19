@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   vectordb:
-    image: ankane/pgvector:latest
+    image: pgvector/pgvector:latest
     environment:
       POSTGRES_DB: mydatabase
       POSTGRES_USER: myuser
