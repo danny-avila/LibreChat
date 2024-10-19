@@ -1,3 +1,4 @@
+const fs = require('fs');
 const path = require('path');
 const mime = require('mime');
 const { v4 } = require('uuid');
@@ -445,9 +446,11 @@ const processAgentFileUpload = async ({ req, res, file, metadata }) => {
   if (tool_resource === EToolResources.execute_code) {
     const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(FileSources.execute_code);
     const result = await loadAuthValues({ userId: req.user.id, authFields: [EnvVar.CODE_API_KEY] });
+    const stream = fs.createReadStream(file.path);
     const fileIdentifier = await uploadCodeEnvFile({
       req,
-      file,
+      stream,
+      filename: file.originalname,
       apiKey: result[EnvVar.CODE_API_KEY],
     });
     fileInfoMetadata = { fileIdentifier };

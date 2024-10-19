@@ -1,5 +1,4 @@
 // Code Files
-const fs = require('fs');
 const axios = require('axios');
 const FormData = require('form-data');
 const { getCodeBaseURL } = require('@librechat/agents');
@@ -38,16 +37,16 @@ async function getCodeOutputDownloadStream(fileIdentifier, apiKey) {
  * @param {Object} params - The params object.
  * @param {ServerRequest} params.req - The request object from Express. It should have a `user` property with an `id`
  *                       representing the user, and an `app.locals.paths` object with an `uploads` path.
- * @param {Express.Multer.File} params.file - The file object, which is part of the request. The file object should
- *                                     have a `path` property that points to the location of the uploaded file.
+ * @param {import('fs').ReadStream | import('stream').Readable} params.stream - The read stream for the file.
+ * @param {string} params.filename - The name of the file.
  * @param {string} params.apiKey - The API key for authentication.
  * @returns {Promise<string>}
  * @throws {Error} If there's an error during the upload process.
  */
-async function uploadCodeEnvFile({ req, file, apiKey }) {
+async function uploadCodeEnvFile({ req, stream, filename, apiKey }) {
   try {
     const form = new FormData();
-    form.append('file', fs.createReadStream(file.path), file.originalname);
+    form.append('file', stream, filename);
 
     const baseURL = getCodeBaseURL();
     const response = await axios.post(`${baseURL}/upload`, form, {
