@@ -19,34 +19,36 @@ export const ForkSettings = () => {
 
   return (
     <>
-      <div className="border-b border-border-light pb-3 last-of-type:border-b-0">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <div>{localize('com_ui_fork_change_default')}</div>
-            <HoverCardSettings side="bottom" text="com_nav_info_fork_change_default" />
-          </div>
-          <Dropdown
-            value={forkSetting}
-            onChange={setForkSetting}
-            options={forkOptions}
-            sizeClasses="w-[200px]"
-            testId="fork-setting-dropdown"
-          />
-        </div>
-      </div>
-      <div className="border-b border-border-light pb-3 last-of-type:border-b-0">
+      <div className="pb-3">
         <div className="flex items-center justify-between">
           <div> {localize('com_ui_fork_default')} </div>
           <Switch
             id="rememberDefaultFork"
             checked={remember}
             onCheckedChange={setRemember}
-            className="ml-4 mt-2"
+            className="ml-4"
             data-testid="rememberDefaultFork"
           />
         </div>
       </div>
-      <div className="border-b border-border-light pb-3 last-of-type:border-b-0">
+      {remember && (
+        <div className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <div>{localize('com_ui_fork_change_default')}</div>
+              <HoverCardSettings side="bottom" text="com_nav_info_fork_change_default" />
+            </div>
+            <Dropdown
+              value={forkSetting}
+              onChange={setForkSetting}
+              options={forkOptions}
+              sizeClasses="w-[200px]"
+              testId="fork-setting-dropdown"
+            />
+          </div>
+        </div>
+      )}
+      <div className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <div>{localize('com_ui_fork_split_target_setting')}</div>
@@ -56,7 +58,7 @@ export const ForkSettings = () => {
             id="splitAtTarget"
             checked={splitAtTarget}
             onCheckedChange={setSplitAtTarget}
-            className="ml-4 mt-2"
+            className="ml-4"
             data-testid="splitAtTarget"
           />
         </div>

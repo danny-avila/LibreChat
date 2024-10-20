@@ -13,19 +13,19 @@ function Data() {
 
   return (
     <div className="flex flex-col gap-3 p-1 text-sm text-text-primary">
-      <div className="border-b border-border-medium pb-3 last-of-type:border-b-0">
+      <div className="pb-3">
         <ImportConversations />
       </div>
-      <div className="border-b border-border-medium pb-3 last-of-type:border-b-0">
+      <div className="pb-3">
         <SharedLinks />
       </div>
-      <div className="border-b border-border-medium pb-3 last-of-type:border-b-0">
+      <div className="pb-3">
         <RevokeAllKeys />
       </div>
-      <div className="border-b border-border-medium pb-3 last-of-type:border-b-0">
+      <div className="pb-3">
         <DeleteCache />
       </div>
-      <div className="border-b border-border-medium pb-3 last-of-type:border-b-0">
+      <div className="pb-3">
         <ClearChats />
       </div>
     </div>

@@ -3,6 +3,7 @@ import { useRecoilState } from 'recoil';
 import type { Option } from '~/common';
 import DropdownNoState from '~/components/ui/DropdownNoState';
 import { useLocalize, useTTSBrowser, useTTSEdge, useTTSExternal } from '~/hooks';
+import { Dropdown } from '~/components/ui';
 import { logger } from '~/utils';
 import store from '~/store';
 
@@ -22,13 +23,12 @@ export function EdgeVoiceDropdown() {
   return (
     <div className="flex items-center justify-between">
       <div>{localize('com_nav_voice_select')}</div>
-      <DropdownNoState
+      <Dropdown
         key={`edge-voice-dropdown-${voices.length}`}
-        value={voice}
+        value={voice ?? ''}
         options={voices}
         onChange={handleVoiceChange}
         sizeClasses="min-w-[200px] !max-w-[400px] [--anchor-max-width:400px]"
-        anchor="bottom start"
         testId="EdgeVoiceDropdown"
       />
     </div>
@@ -51,13 +51,12 @@ export function BrowserVoiceDropdown() {
   return (
     <div className="flex items-center justify-between">
       <div>{localize('com_nav_voice_select')}</div>
-      <DropdownNoState
+      <Dropdown
         key={`browser-voice-dropdown-${voices.length}`}
-        value={voice}
+        value={voice ?? ''}
         options={voices}
         onChange={handleVoiceChange}
         sizeClasses="min-w-[200px] !max-w-[400px] [--anchor-max-width:400px]"
-        anchor="bottom start"
         testId="BrowserVoiceDropdown"
       />
     </div>
@@ -80,13 +79,12 @@ export function ExternalVoiceDropdown() {
   return (
     <div className="flex items-center justify-between">
       <div>{localize('com_nav_voice_select')}</div>
-      <DropdownNoState
+      <Dropdown
         key={`external-voice-dropdown-${voices.length}`}
-        value={voice}
+        value={voice ?? ''}
         options={voices}
         onChange={handleVoiceChange}
         sizeClasses="min-w-[200px] !max-w-[400px] [--anchor-max-width:400px]"
-        anchor="bottom start"
         testId="ExternalVoiceDropdown"
       />
     </div>

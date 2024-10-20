@@ -52,7 +52,7 @@ export function DeleteConversationDialog({
     <OGDialogTemplate
       showCloseButton={false}
       title={localize('com_ui_delete_conversation')}
-      className="z-[1000] max-w-[450px]"
+      className="max-w-[450px]"
       main={
         <>
           <div className="flex w-full flex-col items-center gap-2">

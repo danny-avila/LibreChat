@@ -27,7 +27,7 @@ export default function HideSidePanelSwitch({
         checked={hideSidePanel}
         aria-label="Hide right-most side panel"
         onCheckedChange={handleCheckedChange}
-        className="ml-4 mt-2"
+        className="ml-4"
         data-testid="hideSidePanel"
       />
     </div>
