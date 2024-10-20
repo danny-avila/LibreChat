@@ -26,7 +26,7 @@ export const ForkSettings = () => {
             id="rememberDefaultFork"
             checked={remember}
             onCheckedChange={setRemember}
-            className="ml-4 mt-2"
+            className="ml-4"
             data-testid="rememberDefaultFork"
           />
         </div>
@@ -58,7 +58,7 @@ export const ForkSettings = () => {
             id="splitAtTarget"
             checked={splitAtTarget}
             onCheckedChange={setSplitAtTarget}
-            className="ml-4 mt-2"
+            className="ml-4"
             data-testid="splitAtTarget"
           />
         </div>

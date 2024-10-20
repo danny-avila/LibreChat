@@ -1,14 +1,12 @@
 import { useRecoilState } from 'recoil';
 import Cookies from 'js-cookie';
 import React, { useContext, useCallback } from 'react';
-import type { TDangerButtonProps } from '~/common';
 import UserMsgMarkdownSwitch from './UserMsgMarkdownSwitch';
 import HideSidePanelSwitch from './HideSidePanelSwitch';
 import { ThemeContext, useLocalize } from '~/hooks';
 import AutoScrollSwitch from './AutoScrollSwitch';
 import ArchivedChats from './ArchivedChats';
 import { Dropdown } from '~/components/ui';
-import DangerButton from '../DangerButton';
 import store from '~/store';
 
 export const ThemeSelector = ({
@@ -41,34 +39,6 @@ export const ThemeSelector = ({
   );
 };
 
-export const ClearChatsButton = ({
-  confirmClear,
-  className = '',
-  showText = true,
-  mutation,
-  onClick,
-}: Pick<
-  TDangerButtonProps,
-  'confirmClear' | 'mutation' | 'className' | 'showText' | 'onClick'
->) => {
-  return (
-    <DangerButton
-      id="clearConvosBtn"
-      mutation={mutation}
-      confirmClear={confirmClear}
-      className={className}
-      showText={showText}
-      infoTextCode="com_nav_clear_all_chats"
-      actionTextCode="com_ui_clear"
-      confirmActionTextCode="com_nav_confirm_clear"
-      dataTestIdInitial="clear-convos-initial"
-      dataTestIdConfirm="clear-convos-confirm"
-      infoDescriptionCode="com_nav_info_clear_all_chats"
-      onClick={onClick}
-    />
-  );
-};
-
 export const LangSelector = ({
   langcode,
   onChange,
@@ -78,7 +48,6 @@ export const LangSelector = ({
 }) => {
   const localize = useLocalize();
 
-  // Create an array of options for the Dropdown
   const languageOptions = [
     { value: 'auto', label: localize('com_nav_lang_auto') },
     { value: 'en-US', label: localize('com_nav_lang_english') },

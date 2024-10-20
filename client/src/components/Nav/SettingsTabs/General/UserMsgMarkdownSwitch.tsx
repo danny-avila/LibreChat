@@ -27,7 +27,7 @@ export default function UserMsgMarkdownSwitch({
         id="enableUserMsgMarkdown"
         checked={enableUserMsgMarkdown}
         onCheckedChange={handleCheckedChange}
-        className="ml-4 mt-2 ring-ring-primary"
+        className="ml-4"
         data-testid="enableUserMsgMarkdown"
       />
     </div>
