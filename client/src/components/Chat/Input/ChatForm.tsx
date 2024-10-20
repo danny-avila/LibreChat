@@ -131,6 +131,14 @@ const ChatForm = ({ index = 0 }) => {
   const endpointSupportsFiles: boolean = supportsFiles[endpointType ?? endpoint ?? ''] ?? false;
   const isUploadDisabled: boolean = endpointFileConfig?.disabled ?? false;
 
+  const baseClasses =
+    'md:py-3.5 m-0 w-full resize-none bg-surface-tertiary py-[13px] placeholder-black/50 dark:placeholder-white/50 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)] max-h-[65vh] md:max-h-[75vh]';
+
+  const uploadActive = endpointSupportsFiles && !isUploadDisabled;
+  const speechClass = isRTL
+    ? `pr-${uploadActive ? '12' : '4'} pl-12`
+    : `pl-${uploadActive ? '12' : '4'} pr-12`;
+
   return (
     <form
       onSubmit={methods.handleSubmit((data) => submitMessage(data))}
@@ -177,15 +185,7 @@ const ChatForm = ({ index = 0 }) => {
                   data-testid="text-input"
                   style={{ height: 44, overflowY: 'auto' }}
                   rows={1}
-                  className={cn(
-                    endpointSupportsFiles && !isUploadDisabled
-                      ? 'pl-10 md:pl-[55px]'
-                      : 'pl-3 md:pl-4',
-                    'md:py-3.5- m-0 w-full resize-none bg-surface-tertiary py-[13px] placeholder-black/50 dark:placeholder-white/50 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
-                    SpeechToText && !isRTL ? 'pr-20 md:pr-[85px]' : 'pr-10 md:pr-12',
-                    'max-h-[65vh] md:max-h-[75vh]',
-                    removeFocusRings,
-                  )}
+                  className={cn(baseClasses, speechClass, removeFocusRings)}
                 />
               )}
             </FileFormWrapper>
