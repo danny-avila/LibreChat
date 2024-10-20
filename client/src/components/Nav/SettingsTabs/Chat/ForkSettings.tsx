@@ -19,7 +19,19 @@ export const ForkSettings = () => {
 
   return (
     <>
-      <div className="border-b border-border-light pb-3 last-of-type:border-b-0">
+      <div className="pb-3 last-of-type:border-b-0">
+        <div className="flex items-center justify-between">
+          <div> {localize('com_ui_fork_default')} </div>
+          <Switch
+            id="rememberDefaultFork"
+            checked={remember}
+            onCheckedChange={setRemember}
+            className="ml-4 mt-2"
+            data-testid="rememberDefaultFork"
+          />
+        </div>
+      </div>
+      <div className="pb-3 last-of-type:border-b-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <div>{localize('com_ui_fork_change_default')}</div>
@@ -34,19 +46,7 @@ export const ForkSettings = () => {
           />
         </div>
       </div>
-      <div className="border-b border-border-light pb-3 last-of-type:border-b-0">
-        <div className="flex items-center justify-between">
-          <div> {localize('com_ui_fork_default')} </div>
-          <Switch
-            id="rememberDefaultFork"
-            checked={remember}
-            onCheckedChange={setRemember}
-            className="ml-4 mt-2"
-            data-testid="rememberDefaultFork"
-          />
-        </div>
-      </div>
-      <div className="border-b border-border-light pb-3 last-of-type:border-b-0">
+      <div className="pb-3 last-of-type:border-b-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <div>{localize('com_ui_fork_split_target_setting')}</div>

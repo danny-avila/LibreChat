@@ -1,8 +1,8 @@
 import React from 'react';
 import { useRecoilState } from 'recoil';
 import HoverCardSettings from '../HoverCardSettings';
+import { Switch, Label } from '~/components/ui';
 import DeleteAccount from './DeleteAccount';
-import { Switch } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import Avatar from './Avatar';
 import store from '~/store';
@@ -28,7 +28,7 @@ function Account({ onCheckedChange }: { onCheckedChange?: (value: boolean) => vo
       </div>
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-2">
-          <div>{localize('com_nav_user_name_display')}</div>
+          <Label className="font-light">{localize('com_nav_user_name_display')}</Label>
           <HoverCardSettings side="bottom" text="com_nav_info_user_name_display" />
         </div>
         <Switch
