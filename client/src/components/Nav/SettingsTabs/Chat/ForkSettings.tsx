@@ -31,21 +31,23 @@ export const ForkSettings = () => {
           />
         </div>
       </div>
-      <div className="pb-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <div>{localize('com_ui_fork_change_default')}</div>
-            <HoverCardSettings side="bottom" text="com_nav_info_fork_change_default" />
+      {remember && (
+        <div className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <div>{localize('com_ui_fork_change_default')}</div>
+              <HoverCardSettings side="bottom" text="com_nav_info_fork_change_default" />
+            </div>
+            <Dropdown
+              value={forkSetting}
+              onChange={setForkSetting}
+              options={forkOptions}
+              sizeClasses="w-[200px]"
+              testId="fork-setting-dropdown"
+            />
           </div>
-          <Dropdown
-            value={forkSetting}
-            onChange={setForkSetting}
-            options={forkOptions}
-            sizeClasses="w-[200px]"
-            testId="fork-setting-dropdown"
-          />
         </div>
-      </div>
+      )}
       <div className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
