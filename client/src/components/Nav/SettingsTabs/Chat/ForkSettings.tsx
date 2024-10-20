@@ -19,7 +19,7 @@ export const ForkSettings = () => {
 
   return (
     <>
-      <div className="pb-3 last-of-type:border-b-0">
+      <div className="pb-3">
         <div className="flex items-center justify-between">
           <div> {localize('com_ui_fork_default')} </div>
           <Switch
@@ -31,7 +31,7 @@ export const ForkSettings = () => {
           />
         </div>
       </div>
-      <div className="pb-3 last-of-type:border-b-0">
+      <div className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <div>{localize('com_ui_fork_change_default')}</div>
@@ -46,7 +46,7 @@ export const ForkSettings = () => {
           />
         </div>
       </div>
-      <div className="pb-3 last-of-type:border-b-0">
+      <div className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <div>{localize('com_ui_fork_split_target_setting')}</div>
