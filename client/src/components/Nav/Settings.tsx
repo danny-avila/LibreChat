@@ -120,7 +120,9 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     aria-label="Settings"
                     className={cn(
                       'min-w-auto max-w-auto relative -ml-[8px] flex flex-shrink-0 flex-col flex-nowrap overflow-auto sm:max-w-none',
-                      isSmallScreen ? 'flex-row rounded-xl bg-surface-secondary' : '',
+                      isSmallScreen
+                        ? 'flex-row rounded-xl bg-surface-secondary'
+                        : 'sticky top-0 h-full',
                     )}
                     onKeyDown={handleKeyDown}
                   >

@@ -18,7 +18,8 @@ export default function PlusCommandSwitch() {
         id="plusCommand"
         checked={plusCommand}
         onCheckedChange={handleCheckedChange}
-        className="ml-4 mt-2"
+        f
+        className="ml-4"
         data-testid="plusCommand"
       />
     </div>
