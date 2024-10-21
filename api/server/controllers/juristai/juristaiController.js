@@ -2,7 +2,6 @@
 const juristaiService = require('~/services/juristaiService');
 const { logger } = require('~/config');
 
-
 exports.createMessage = async (req, res) => {
   try {
     logger.info('[/juristai/create] Request payload:', req.body);
