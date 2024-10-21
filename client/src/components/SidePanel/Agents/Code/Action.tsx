@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { KeyRoundIcon } from 'lucide-react';
-import { AuthType, AgentCapabilities } from 'librechat-data-provider';
 import { useFormContext, Controller, useForm } from 'react-hook-form';
+import { AuthType, AgentCapabilities } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
 import {
   Input,
@@ -64,17 +64,24 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
             render={({ field }) => (
               <Checkbox
                 {...field}
-                checked={field.value}
+                checked={isToolAuthenticated && field.value}
                 onCheckedChange={handleCheckboxChange}
                 className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
                 value={field.value.toString()}
+                disabled={!isToolAuthenticated}
               />
             )}
           />
           <button
             type="button"
             className="flex items-center space-x-2"
-            onClick={() => handleCheckboxChange(!getValues(AgentCapabilities.execute_code))}
+            onClick={() => {
+              if (isToolAuthenticated) {
+                handleCheckboxChange(!getValues(AgentCapabilities.execute_code));
+              } else {
+                setIsDialogOpen(true);
+              }
+            }}
           >
             <label
               className="form-check-label text-token-text-primary w-full cursor-pointer"

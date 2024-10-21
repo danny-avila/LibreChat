@@ -409,7 +409,7 @@ export const useAvailablePluginsQuery = <TData = s.TPlugin[]>(
 };
 
 export const useUpdateUserPluginsMutation = (
-  _options?: m.MutationOptions<t.TUser, t.TUpdateUserPlugins>,
+  _options?: m.UpdatePluginAuthOptions,
 ): UseMutationResult<t.TUser, unknown, t.TUpdateUserPlugins, unknown> => {
   const queryClient = useQueryClient();
   const { onSuccess, ...options } = _options ?? {};
