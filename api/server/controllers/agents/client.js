@@ -10,6 +10,7 @@
 const { Callback, createMetadataAggregator } = require('@librechat/agents');
 const {
   Constants,
+  VisionModes,
   openAISchema,
   EModelEndpoint,
   anthropicSchema,
@@ -196,6 +197,7 @@ class AgentClient extends BaseClient {
       this.options.req,
       attachments,
       this.options.agent.provider,
+      VisionModes.agents,
     );
     message.image_urls = image_urls.length ? image_urls : undefined;
     return files;
