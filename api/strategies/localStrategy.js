@@ -48,7 +48,12 @@ async function passportLogin(req, email, password, done) {
       user.emailVerified = true;
     }
 
-    if (!user.emailVerified && !isEnabled(process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN)) {
+    const unverifiedAllowed = isEnabled(process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN);
+    if (user.expiresAt && unverifiedAllowed) {
+      await updateUser(user._id, {});
+    }
+
+    if (!user.emailVerified && !unverifiedAllowed) {
       logError('Passport Local Strategy - Email not verified', { email });
       logger.error(`[Login] [Login failed] [Username: ${email}] [Request-IP: ${req.ip}]`);
       return done(null, user, { message: 'Email not verified.' });
