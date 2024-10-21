@@ -1,5 +1,5 @@
 const { promises: fs } = require('fs');
-const { CacheKeys } = require('librechat-data-provider');
+const { CacheKeys, AuthType } = require('librechat-data-provider');
 const { addOpenAPISpecs } = require('~/app/clients/tools/util/addOpenAPISpecs');
 const { getLogStores } = require('~/cache');
 
@@ -36,7 +36,7 @@ const checkPluginAuth = (plugin) => {
 
     for (const fieldOption of authFieldOptions) {
       const envValue = process.env[fieldOption];
-      if (envValue && envValue.trim() !== '' && envValue !== 'user_provided') {
+      if (envValue && envValue.trim() !== '' && envValue !== AuthType.USER_PROVIDED) {
         isFieldAuthenticated = true;
         break;
       }
