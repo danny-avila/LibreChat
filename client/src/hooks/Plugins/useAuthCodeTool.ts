@@ -3,17 +3,17 @@ import { Tools } from 'librechat-data-provider';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 // import { useToastContext } from '~/Providers';
 
-export const useExecuteCodeTool = (options?: { isEntityTool: boolean }) => {
+const useAuthCodeTool = (options?: { isEntityTool: boolean }) => {
   // const { showToast } = useToastContext();
   const isEntityTool = options?.isEntityTool ?? true;
   const updateUserPlugins = useUpdateUserPluginsMutation();
 
   const installTool = useCallback(
-    (auth: Record<string, string>) => {
+    (apiKey: string) => {
       updateUserPlugins.mutate({
         pluginKey: Tools.execute_code,
         action: 'install',
-        auth,
+        auth: { LIBRECHAT_CODE_API_KEY: apiKey },
         isEntityTool,
       });
     },
@@ -24,7 +24,7 @@ export const useExecuteCodeTool = (options?: { isEntityTool: boolean }) => {
     updateUserPlugins.mutate({
       pluginKey: Tools.execute_code,
       action: 'uninstall',
-      auth: null,
+      auth: { LIBRECHAT_CODE_API_KEY: null },
       isEntityTool,
     });
   }, [updateUserPlugins, isEntityTool]);
@@ -34,3 +34,5 @@ export const useExecuteCodeTool = (options?: { isEntityTool: boolean }) => {
     installTool,
   };
 };
+
+export default useAuthCodeTool;

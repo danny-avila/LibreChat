@@ -1,13 +1,13 @@
 import type { InfiniteData } from '@tanstack/react-query';
+import type * as s from '../schemas';
 import type * as t from '../types';
-import type { TMessage, TConversation, TSharedLink, TConversationTag } from '../schemas';
 
 export type Conversation = {
   id: string;
   createdAt: number;
   participants: string[];
   lastMessage: string;
-  conversations: TConversation[];
+  conversations: s.TConversation[];
 };
 
 // Parameters for listing conversations (e.g., for pagination)
@@ -24,33 +24,33 @@ export type ConversationListParams = {
 
 // Type for the response from the conversation list API
 export type ConversationListResponse = {
-  conversations: TConversation[];
+  conversations: s.TConversation[];
   pageNumber: string;
   pageSize: string | number;
   pages: string | number;
-  messages: TMessage[];
+  messages: s.TMessage[];
 };
 
 export type ConversationData = InfiniteData<ConversationListResponse>;
 export type ConversationUpdater = (
   data: ConversationData,
-  conversation: TConversation,
+  conversation: s.TConversation,
 ) => ConversationData;
 
-export type SharedMessagesResponse = Omit<TSharedLink, 'messages'> & {
-  messages: TMessage[];
+export type SharedMessagesResponse = Omit<s.TSharedLink, 'messages'> & {
+  messages: s.TMessage[];
 };
 export type SharedLinkListParams = Omit<ConversationListParams, 'isArchived' | 'conversationId'> & {
   isPublic?: boolean;
 };
 
 export type SharedLinksResponse = Omit<ConversationListResponse, 'conversations' | 'messages'> & {
-  sharedLinks: TSharedLink[];
+  sharedLinks: s.TSharedLink[];
 };
 
 // Type for the response from the conversation list API
 export type SharedLinkListResponse = {
-  sharedLinks: TSharedLink[];
+  sharedLinks: s.TSharedLink[];
   pageNumber: string;
   pageSize: string | number;
   pages: string | number;
@@ -71,7 +71,7 @@ export type AllPromptGroupsFilterRequest = {
 
 export type AllPromptGroupsResponse = t.TPromptGroup[];
 
-export type ConversationTagsResponse = TConversationTag[];
+export type ConversationTagsResponse = s.TConversationTag[];
 
 export type VerifyToolAuthParams = { toolId: string };
-export type VerifyToolAuthResponse = { authenticated: boolean };
+export type VerifyToolAuthResponse = { authenticated: boolean; message?: string | s.AuthType };

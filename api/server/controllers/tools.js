@@ -1,5 +1,5 @@
 const { EnvVar } = require('@librechat/agents');
-const { Tools } = require('librechat-data-provider');
+const { Tools, AuthType } = require('librechat-data-provider');
 const { loadAuthValues } = require('~/app/clients/tools/util');
 
 const fieldsMap = {
@@ -19,17 +19,30 @@ const verifyToolAuth = async (req, res) => {
       res.status(404).json({ message: 'Tool not found' });
       return;
     }
-    const result = await loadAuthValues({
-      userId: req.user.id,
-      authFields,
-    });
+    let result;
+    try {
+      result = await loadAuthValues({
+        userId: req.user.id,
+        authFields,
+      });
+    } catch (error) {
+      res.status(200).json({ authenticated: false, message: AuthType.USER_PROVIDED });
+      return;
+    }
+    let isUserProvided = false;
     for (const field of authFields) {
       if (!result[field]) {
-        res.status(200).json({ authenticated: false });
+        res.status(200).json({ authenticated: false, message: AuthType.USER_PROVIDED });
         return;
       }
+      if (!isUserProvided && process.env[field] !== result[field]) {
+        isUserProvided = true;
+      }
     }
-    res.status(200).json({ authenticated: true });
+    res.status(200).json({
+      authenticated: true,
+      message: isUserProvided ? AuthType.USER_PROVIDED : AuthType.SYSTEM_DEFINED,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

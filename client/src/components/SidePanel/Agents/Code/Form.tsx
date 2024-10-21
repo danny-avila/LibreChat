@@ -25,7 +25,7 @@ export default function CodeForm({
         </span>
       </div>
       <div className="flex flex-col items-start gap-2">
-        <Action isToolAuthenticated={data?.authenticated} />
+        <Action authType={data?.message} isToolAuthenticated={data?.authenticated} />
         <Files agent_id={agent_id} files={files} />
       </div>
     </div>
