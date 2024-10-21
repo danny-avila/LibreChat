@@ -11,7 +11,7 @@ const {
   deleteUserById,
 } = require('~/models/userMethods');
 const { createToken, findToken, deleteTokens, Session } = require('~/models');
-const { sendEmail, checkEmailConfig } = require('~/server/utils');
+const { isEnabled, checkEmailConfig, sendEmail } = require('~/server/utils');
 const { registerSchema } = require('~/strategies/validators');
 const { hashToken } = require('~/server/utils/crypto');
 const isDomainAllowed = require('./isDomainAllowed');
@@ -188,7 +188,8 @@ const registerUser = async (user, additionalData = {}) => {
     };
 
     const emailEnabled = checkEmailConfig();
-    const newUser = await createUser(newUserData, false, true);
+    const disableTTL = isEnabled(process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN);
+    const newUser = await createUser(newUserData, disableTTL, true);
     newUserId = newUser._id;
     if (emailEnabled && !newUser.emailVerified) {
       await sendVerificationEmail({
