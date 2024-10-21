@@ -25,7 +25,7 @@ const filterUniquePlugins = (plugins) => {
  * @param {TPlugin} plugin The plugin object containing the authentication configuration.
  * @returns {boolean} True if the plugin is authenticated for all required fields, false otherwise.
  */
-const isPluginAuthenticated = (plugin) => {
+const checkPluginAuth = (plugin) => {
   if (!plugin.authConfig || plugin.authConfig.length === 0) {
     return false;
   }
@@ -64,7 +64,7 @@ const getAvailablePluginsController = async (req, res) => {
     let authenticatedPlugins = [];
     for (const plugin of uniquePlugins) {
       authenticatedPlugins.push(
-        isPluginAuthenticated(plugin) ? { ...plugin, authenticated: true } : plugin,
+        checkPluginAuth(plugin) ? { ...plugin, authenticated: true } : plugin,
       );
     }
 
@@ -111,7 +111,7 @@ const getAvailableTools = async (req, res) => {
     const uniquePlugins = filterUniquePlugins(jsonData);
 
     const authenticatedPlugins = uniquePlugins.map((plugin) => {
-      if (isPluginAuthenticated(plugin)) {
+      if (checkPluginAuth(plugin)) {
         return { ...plugin, authenticated: true };
       } else {
         return plugin;
