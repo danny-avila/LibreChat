@@ -12,6 +12,7 @@ const { fetchModels } = require('~/server/services/ModelService');
 const getLogStores = require('~/cache/getLogStores');
 const { isUserProvided } = require('~/server/utils');
 const { OpenAIClient } = require('~/app');
+const User = require('~/models/User');
 
 const { PROXY } = process.env;
 
@@ -29,13 +30,31 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   const CUSTOM_API_KEY = extractEnvVariable(endpointConfig.apiKey);
   const CUSTOM_BASE_URL = extractEnvVariable(endpointConfig.baseURL);
 
+  const replaceUserEmail = async (metadata, userId) => {    // function to replace ${USER_EMAIL} with the user's email
+    try {
+      const user = await User.findById(userId).exec();      // Fetch user by ID from database
+      return user?.email && metadata.includes('${USER_EMAIL}') // Check if user has an email and if metadata contains ${USER_EMAIL}
+        ? metadata.replace('${USER_EMAIL}', user.email)
+        : metadata;                                         // Return unchanged metadata if conditions aren't met
+    } catch {
+      throw new Error('User not found');
+    }
+  };
+  
   let resolvedHeaders = {};
   if (endpointConfig.headers && typeof endpointConfig.headers === 'object') {
-    Object.keys(endpointConfig.headers).forEach((key) => {
-      resolvedHeaders[key] = extractEnvVariable(endpointConfig.headers[key]);
-    });
+    await Promise.all(Object.entries(endpointConfig.headers).map(async ([key, value]) => {
+        try {
+          resolvedHeaders[key] = value.includes('${USER_EMAIL}')  // Check if header value contains ${USER_EMAIL}
+            ? await replaceUserEmail(value, req.user.id)    // Replace ${USER_EMAIL} with user's email if present
+            : extractEnvVariable(value);
+        } catch {
+          resolvedHeaders[key] = 'null';                    // Fallback to 'null' if an error occurs during processing
+        }
+      })
+    );
   }
-
+  
   if (CUSTOM_API_KEY.match(envVarRegex)) {
     throw new Error(`Missing API Key for ${endpoint}.`);
   }
