@@ -90,14 +90,16 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
               {localize('com_agents_execute_code')}
             </label>
           </button>
-          {isUserProvided && (
-            <button type="button" className="mx-2" onClick={() => setIsDialogOpen(true)}>
-              <KeyRoundIcon className="h-5 w-5 text-text-primary" />
-            </button>
-          )}
-          <HoverCardTrigger>
-            <CircleHelpIcon className="h-5 w-5 text-gray-500" />
-          </HoverCardTrigger>
+          <div className="ml-2 flex gap-2">
+            {isUserProvided && isToolAuthenticated && (
+              <button type="button" onClick={() => setIsDialogOpen(true)}>
+                <KeyRoundIcon className="h-5 w-5 text-text-primary" />
+              </button>
+            )}
+            <HoverCardTrigger>
+              <CircleHelpIcon className="h-5 w-5 text-gray-500" />
+            </HoverCardTrigger>
+          </div>
           <HoverCardPortal>
             <HoverCardContent side={ESide.Top} className="w-80">
               <div className="space-y-2">
@@ -131,7 +133,8 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
             selectText: localize('com_ui_save'),
           }}
           buttons={
-            isUserProvided && (
+            isUserProvided &&
+            isToolAuthenticated && (
               <Button
                 onClick={handleRevokeApiKey}
                 className="bg-destructive text-white transition-all duration-200 hover:bg-destructive/80"
