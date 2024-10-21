@@ -119,6 +119,12 @@ async function encodeAndFormat(req, files, endpoint, mode) {
       },
     };
 
+    if (mode === VisionModes.agents) {
+      result.image_urls.push(imagePart);
+      result.files.push(fileMetadata);
+      continue;
+    }
+
     if (endpoint && endpoint === EModelEndpoint.google && mode === VisionModes.generative) {
       delete imagePart.image_url;
       imagePart.inlineData = {
