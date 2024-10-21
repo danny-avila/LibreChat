@@ -18,7 +18,7 @@ import AgentAvatar from './AgentAvatar';
 import FileSearch from './FileSearch';
 import ShareAgent from './ShareAgent';
 import AgentTool from './AgentTool';
-import CodeForm from './CodeForm';
+import CodeForm from './Code/Form';
 import { Panel } from '~/common';
 
 const labelClass = 'mb-2 text-token-text-primary block font-medium';

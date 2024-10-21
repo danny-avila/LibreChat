@@ -1,21 +1,33 @@
+import { useState } from 'react';
 import { AgentCapabilities } from 'librechat-data-provider';
 import { useFormContext, Controller } from 'react-hook-form';
 import type { AgentForm } from '~/common';
 import {
+  OGDialog,
   Checkbox,
   HoverCard,
   HoverCardContent,
   HoverCardPortal,
   HoverCardTrigger,
 } from '~/components/ui';
+import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { CircleHelpIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
 
-export default function Code() {
+export default function Action({ isToolAuthenticated = false }) {
   const localize = useLocalize();
   const methods = useFormContext<AgentForm>();
   const { control, setValue, getValues } = methods;
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+  const handleCheckboxChange = (checked: boolean) => {
+    if (isToolAuthenticated) {
+      setValue(AgentCapabilities.execute_code, checked, { shouldDirty: true });
+    } else {
+      setIsDialogOpen(true);
+    }
+  };
 
   return (
     <>
@@ -28,7 +40,7 @@ export default function Code() {
               <Checkbox
                 {...field}
                 checked={field.value}
-                onCheckedChange={field.onChange}
+                onCheckedChange={handleCheckboxChange}
                 className="relative float-left  mr-2 inline-flex h-4 w-4 cursor-pointer"
                 value={field.value.toString()}
               />
@@ -37,12 +49,7 @@ export default function Code() {
           <button
             type="button"
             className="flex items-center space-x-2"
-            onClick={() =>
-              // eslint-disable-next-line @typescript-eslint/strict-boolean-expressions
-              setValue(AgentCapabilities.execute_code, !getValues(AgentCapabilities.execute_code), {
-                shouldDirty: true,
-              })
-            }
+            onClick={() => handleCheckboxChange(!getValues(AgentCapabilities.execute_code))}
           >
             <label
               className="form-check-label text-token-text-primary w-full cursor-pointer"
@@ -65,6 +72,19 @@ export default function Code() {
           </HoverCardPortal>
         </div>
       </HoverCard>
+      <OGDialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <OGDialogTemplate
+          className="w-11/12 sm:w-1/4"
+          title={localize('com_agents_tool_not_authenticated')}
+          main={<></>}
+          selection={{
+            selectHandler: () => setIsDialogOpen(false),
+            selectClasses: 'bg-green-500 hover:bg-green-600 text-white',
+            selectText: localize('com_ui_save'),
+          }}
+          showCancelButton={false}
+        />
+      </OGDialog>
     </>
   );
 }

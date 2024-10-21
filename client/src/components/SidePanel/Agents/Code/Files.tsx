@@ -16,7 +16,7 @@ import { useChatContext } from '~/Providers';
 
 const tool_resource = EToolResources.execute_code;
 
-export default function CodeFiles({
+export default function Files({
   agent_id,
   files: _files,
 }: {

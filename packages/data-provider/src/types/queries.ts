@@ -72,3 +72,6 @@ export type AllPromptGroupsFilterRequest = {
 export type AllPromptGroupsResponse = t.TPromptGroup[];
 
 export type ConversationTagsResponse = TConversationTag[];
+
+export type VerifyToolAuthParams = { toolId: string };
+export type VerifyToolAuthResponse = { authenticated: boolean };

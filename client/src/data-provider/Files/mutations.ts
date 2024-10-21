@@ -10,13 +10,6 @@ import {
 import type * as t from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 
-export type TGenTitleMutation = UseMutationResult<
-  t.TGenTitleResponse,
-  unknown,
-  t.TGenTitleRequest,
-  unknown
->;
-
 export const useUploadFileMutation = (
   _options?: t.UploadMutationOptions,
   signal?: AbortSignal | null,
