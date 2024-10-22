@@ -91,7 +91,7 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
             </label>
           </button>
           <div className="ml-2 flex gap-2">
-            {isUserProvided && isToolAuthenticated && (
+            {isUserProvided && (isToolAuthenticated || runCodeIsEnabled) && (
               <button type="button" onClick={() => setIsDialogOpen(true)}>
                 <KeyRoundIcon className="h-5 w-5 text-text-primary" />
               </button>
