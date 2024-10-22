@@ -10,21 +10,21 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logger } = require('~/config');
 
 /**
- * Fetches an image from a URL and returns its base64 representation.
+ * Fetches a file from a URL and returns its base64 representation.
  *
  * @async
- * @param {string} url The URL of the image.
- * @returns {Promise<string>} The base64-encoded string of the image.
- * @throws {Error} If there's an issue fetching the image or encoding it.
+ * @param {string} url The URL of the file.
+ * @returns {Promise<string>} The base64-encoded string of the file.
+ * @throws {Error} If there's an issue fetching the file or encoding it.
  */
-async function fetchImageToBase64(url) {
+async function fetchFileToBase64(url) {
   try {
     const response = await axios.get(url, {
       responseType: 'arraybuffer',
     });
     return Buffer.from(response.data).toString('base64');
   } catch (error) {
-    logger.error('Error fetching image to convert to base64', error);
+    logger.error('Error fetching file to convert to base64', error);
     throw error;
   }
 }
@@ -60,29 +60,34 @@ async function encodeAndFormat(req, files, endpoint, mode) {
   for (let file of files) {
     const source = file.source ?? FileSources.local;
 
-    if (!file.height) {
+    if (!base64Only.has(endpoint) && !file.height) {
       promises.push([file, null]);
       continue;
     }
 
     if (!encodingMethods[source]) {
-      const { prepareImagePayload } = getStrategyFunctions(source);
-      if (!prepareImagePayload) {
+      const { prepareFilePayload } = getStrategyFunctions(source);
+      if (!prepareFilePayload) {
         throw new Error(`Encoding function not implemented for ${source}`);
       }
 
-      encodingMethods[source] = prepareImagePayload;
+      encodingMethods[source] = prepareFilePayload;
     }
 
     const preparePayload = encodingMethods[source];
 
     /* Google & Anthropic don't support passing URLs to payload */
+    const outputPaths = {
+      publicPath: req.app.locals.paths.publicPath,
+      fileOutput: file.height ? req.app.locals.paths.imageOutput: req.app.locals.paths.filesOutput,
+    };
     if (source !== FileSources.local && base64Only.has(endpoint)) {
-      const [_file, imageURL] = await preparePayload(req, file);
-      promises.push([_file, await fetchImageToBase64(imageURL)]);
+
+      const [_file, fileUrl] = await preparePayload(req, file, outputPaths);
+      promises.push([_file, await fetchFileToBase64(fileUrl)]);
       continue;
     }
-    promises.push(preparePayload(req, file));
+    promises.push(preparePayload(req, file, outputPaths));
   }
 
   const detail = req.body.imageDetail ?? ImageDetail.auto;
