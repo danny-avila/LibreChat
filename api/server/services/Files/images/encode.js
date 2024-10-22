@@ -1,6 +1,12 @@
 const axios = require('axios');
-const { EModelEndpoint, FileSources, VisionModes } = require('librechat-data-provider');
-const { getStrategyFunctions } = require('../strategies');
+const {
+  FileSources,
+  VisionModes,
+  ImageDetail,
+  ContentTypes,
+  EModelEndpoint,
+} = require('librechat-data-provider');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logger } = require('~/config');
 
 /**
@@ -79,7 +85,7 @@ async function encodeAndFormat(req, files, endpoint, mode) {
     promises.push(preparePayload(req, file));
   }
 
-  const detail = req.body.imageDetail ?? 'auto';
+  const detail = req.body.imageDetail ?? ImageDetail.auto;
 
   /** @type {Array<[MongoFile, string]>} */
   const formattedImages = await Promise.all(promises);
@@ -104,7 +110,7 @@ async function encodeAndFormat(req, files, endpoint, mode) {
     }
 
     const imagePart = {
-      type: 'image_url',
+      type: ContentTypes.IMAGE_URL,
       image_url: {
         url: imageContent.startsWith('http')
           ? imageContent
@@ -112,6 +118,12 @@ async function encodeAndFormat(req, files, endpoint, mode) {
         detail,
       },
     };
+
+    if (mode === VisionModes.agents) {
+      result.image_urls.push(imagePart);
+      result.files.push(fileMetadata);
+      continue;
+    }
 
     if (endpoint && endpoint === EModelEndpoint.google && mode === VisionModes.generative) {
       delete imagePart.image_url;

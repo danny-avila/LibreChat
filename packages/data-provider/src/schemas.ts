@@ -30,8 +30,9 @@ export enum EModelEndpoint {
 
 export const paramEndpoints = new Set<EModelEndpoint | string>([
   EModelEndpoint.agents,
-  EModelEndpoint.bedrock,
   EModelEndpoint.openAI,
+  EModelEndpoint.bedrock,
+  EModelEndpoint.azureOpenAI,
   EModelEndpoint.anthropic,
   EModelEndpoint.custom,
 ]);
@@ -167,7 +168,7 @@ export const openAISettings = {
   },
   temperature: {
     min: 0,
-    max: 1,
+    max: 2,
     step: 0.01,
     default: 1,
   },

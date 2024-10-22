@@ -70,7 +70,7 @@ export default function ExportAndShareMenu({
           <Ariakit.MenuButton
             id="export-menu-button"
             aria-label="Export options"
-            className="mr-4 inline-flex h-10 w-10 items-center justify-center rounded-md border border-border-light bg-transparent p-0 text-sm font-medium transition-all duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
+            className="inline-flex size-10 items-center justify-center rounded-lg border border-border-light bg-transparent text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
           >
             <Upload className="icon-md dark:text-gray-300" aria-hidden="true" focusable="false" />
           </Ariakit.MenuButton>
