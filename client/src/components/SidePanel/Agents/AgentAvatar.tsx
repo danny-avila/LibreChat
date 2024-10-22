@@ -135,10 +135,6 @@ function Avatar({
       formData.append('file', input, input.name);
       formData.append('agent_id', createMutation.data.id);
 
-      if (typeof createMutation.data.avatar === 'object') {
-        formData.append('avatar', JSON.stringify(createMutation.data.avatar));
-      }
-
       uploadAvatar({
         agent_id: createMutation.data.id,
         postCreation: true,
