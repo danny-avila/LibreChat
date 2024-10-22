@@ -226,8 +226,6 @@ const uploadAgentAvatarHandler = async (req, res) => {
       return res.status(400).json({ message: 'Agent ID is required' });
     }
 
-    let { avatar: _avatar = '{}' } = req.body;
-
     const image = await uploadImageBuffer({
       req,
       context: FileContext.avatar,
@@ -236,10 +234,12 @@ const uploadAgentAvatarHandler = async (req, res) => {
       },
     });
 
+    let _avatar;
     try {
-      _avatar = JSON.parse(_avatar);
+      const agent = await getAgent({ id: agent_id });
+      _avatar = agent.avatar;
     } catch (error) {
-      logger.error('[/avatar/:agent_id] Error parsing avatar', error);
+      logger.error('[/avatar/:agent_id] Error fetching agent', error);
       _avatar = {};
     }
 
@@ -247,7 +247,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
       const { deleteFile } = getStrategyFunctions(_avatar.source);
       try {
         await deleteFile(req, { filepath: _avatar.filepath });
-        await deleteFileByFilter({ filepath: _avatar.filepath });
+        await deleteFileByFilter({ user: req.user.id, filepath: _avatar.filepath });
       } catch (error) {
         logger.error('[/avatar/:agent_id] Error deleting old avatar', error);
       }
