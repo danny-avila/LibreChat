@@ -319,6 +319,7 @@ export type TInterfaceConfig = {
   sidePanel: boolean;
   presets: boolean;
   multiConvo: boolean;
+  deleteConvo: boolean;
   bookmarks: boolean;
   prompts: boolean;
 };

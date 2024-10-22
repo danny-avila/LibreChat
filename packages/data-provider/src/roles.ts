@@ -34,6 +34,10 @@ export enum PermissionTypes {
    * Type for Multi-Conversation Permissions
    */
   MULTI_CONVO = 'MULTI_CONVO',
+  /**
+   * Type for Delete Conversation Permissions
+   */
+  DELETE_CONVO = 'DELETE_CONVO',
 }
 
 /**
@@ -71,12 +75,17 @@ export const multiConvoPermissionsSchema = z.object({
   [Permissions.USE]: z.boolean().default(false),
 });
 
+export const deleteConvoPermissionsSchema = z.object({
+  [Permissions.USE]: z.boolean().default(false),
+});
+
 export const roleSchema = z.object({
   name: z.string(),
   [PermissionTypes.PROMPTS]: promptPermissionsSchema,
   [PermissionTypes.BOOKMARKS]: bookmarkPermissionsSchema,
   [PermissionTypes.AGENTS]: agentPermissionsSchema,
   [PermissionTypes.MULTI_CONVO]: multiConvoPermissionsSchema,
+  [PermissionTypes.DELETE_CONVO]: deleteConvoPermissionsSchema,
 });
 
 export type TRole = z.infer<typeof roleSchema>;
@@ -106,6 +115,9 @@ const defaultRolesSchema = z.object({
     [PermissionTypes.MULTI_CONVO]: multiConvoPermissionsSchema.extend({
       [Permissions.USE]: z.boolean().default(true),
     }),
+    [PermissionTypes.DELETE_CONVO]: deleteConvoPermissionsSchema.extend({
+      [Permissions.USE]: z.boolean().default(true),
+    }),
   }),
   [SystemRoles.USER]: roleSchema.extend({
     name: z.literal(SystemRoles.USER),
@@ -113,6 +125,7 @@ const defaultRolesSchema = z.object({
     [PermissionTypes.BOOKMARKS]: bookmarkPermissionsSchema,
     [PermissionTypes.AGENTS]: agentPermissionsSchema,
     [PermissionTypes.MULTI_CONVO]: multiConvoPermissionsSchema,
+    [PermissionTypes.DELETE_CONVO]: multiConvoPermissionsSchema,
   }),
 });
 
@@ -123,6 +136,7 @@ export const roleDefaults = defaultRolesSchema.parse({
     [PermissionTypes.BOOKMARKS]: {},
     [PermissionTypes.AGENTS]: {},
     [PermissionTypes.MULTI_CONVO]: {},
+    [PermissionTypes.DELETE_CONVO]: {},
   },
   [SystemRoles.USER]: {
     name: SystemRoles.USER,
@@ -130,5 +144,6 @@ export const roleDefaults = defaultRolesSchema.parse({
     [PermissionTypes.BOOKMARKS]: {},
     [PermissionTypes.AGENTS]: {},
     [PermissionTypes.MULTI_CONVO]: {},
+    [PermissionTypes.DELETE_CONVO]: {},
   },
 });

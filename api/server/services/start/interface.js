@@ -32,17 +32,20 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
     bookmarks: interfaceConfig?.bookmarks ?? defaults.bookmarks,
     prompts: interfaceConfig?.prompts ?? defaults.prompts,
     multiConvo: interfaceConfig?.multiConvo ?? defaults.multiConvo,
+    deleteConvo: interfaceConfig?.deleteConvo ?? defaults.deleteConvo,
   });
 
   await updateAccessPermissions(roleName, {
     [PermissionTypes.PROMPTS]: { [Permissions.USE]: loadedInterface.prompts },
     [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: loadedInterface.bookmarks },
     [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: loadedInterface.multiConvo },
+    [PermissionTypes.DELETE_CONVO]: { [Permissions.USE]: loadedInterface.deleteConvo },
   });
   await updateAccessPermissions(SystemRoles.ADMIN, {
     [PermissionTypes.PROMPTS]: { [Permissions.USE]: loadedInterface.prompts },
     [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: loadedInterface.bookmarks },
     [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: loadedInterface.multiConvo },
+    [PermissionTypes.DELETE_CONVO]: { [Permissions.USE]: loadedInterface.deleteConvo },
   });
 
   let i = 0;
