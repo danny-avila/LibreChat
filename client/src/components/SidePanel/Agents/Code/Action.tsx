@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { KeyRoundIcon } from 'lucide-react';
-import { useFormContext, Controller, useForm } from 'react-hook-form';
 import { AuthType, AgentCapabilities } from 'librechat-data-provider';
+import { useFormContext, Controller, useForm, useWatch } from 'react-hook-form';
 import type { AgentForm } from '~/common';
 import {
   Input,
@@ -28,6 +28,7 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
   const methods = useFormContext<AgentForm>();
   const { control, setValue, getValues } = methods;
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const runCodeIsEnabled = useWatch({ control, name: AgentCapabilities.execute_code });
 
   const { installTool, removeTool } = useAuthCodeTool({ isEntityTool: true });
 
@@ -37,6 +38,8 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
   const handleCheckboxChange = (checked: boolean) => {
     if (isToolAuthenticated) {
       setValue(AgentCapabilities.execute_code, checked, { shouldDirty: true });
+    } else if (runCodeIsEnabled) {
+      setValue(AgentCapabilities.execute_code, false, { shouldDirty: true });
     } else {
       setIsDialogOpen(true);
     }
@@ -64,11 +67,11 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
             render={({ field }) => (
               <Checkbox
                 {...field}
-                checked={isToolAuthenticated && field.value}
+                checked={runCodeIsEnabled ? runCodeIsEnabled : isToolAuthenticated && field.value}
                 onCheckedChange={handleCheckboxChange}
                 className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
                 value={field.value.toString()}
-                disabled={!isToolAuthenticated}
+                disabled={runCodeIsEnabled ? false : !isToolAuthenticated}
               />
             )}
           />
@@ -76,11 +79,8 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
             type="button"
             className="flex items-center space-x-2"
             onClick={() => {
-              if (isToolAuthenticated) {
-                handleCheckboxChange(!getValues(AgentCapabilities.execute_code));
-              } else {
-                setIsDialogOpen(true);
-              }
+              const value = !getValues(AgentCapabilities.execute_code);
+              handleCheckboxChange(value);
             }}
           >
             <label
