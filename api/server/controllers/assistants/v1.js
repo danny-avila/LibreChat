@@ -241,7 +241,6 @@ const getAssistantDocuments = async (req, res) => {
  * @param {string} req.params.assistant_id - The ID of the assistant.
  * @param {Express.Multer.File} req.file - The avatar image file.
  * @param {object} req.body - Request body
- * @param {string} [req.body.metadata] - Optional metadata for the assistant's avatar.
  * @returns {Object} 200 - success response - application/json
  */
 const uploadAssistantAvatar = async (req, res) => {
@@ -251,7 +250,6 @@ const uploadAssistantAvatar = async (req, res) => {
       return res.status(400).json({ message: 'Assistant ID is required' });
     }
 
-    let { metadata: _metadata = '{}' } = req.body;
     const { openai } = await getOpenAIClient({ req, res });
     await validateAuthor({ req, openai });
 
@@ -263,10 +261,15 @@ const uploadAssistantAvatar = async (req, res) => {
       },
     });
 
+    let _metadata;
+
     try {
-      _metadata = JSON.parse(_metadata);
+      const assistant = await openai.beta.assistants.retrieve(assistant_id);
+      if (assistant) {
+        _metadata = assistant.metadata;
+      }
     } catch (error) {
-      logger.error('[/avatar/:assistant_id] Error parsing metadata', error);
+      logger.error('[/avatar/:assistant_id] Error fetching assistant', error);
       _metadata = {};
     }
 
@@ -274,7 +277,7 @@ const uploadAssistantAvatar = async (req, res) => {
       const { deleteFile } = getStrategyFunctions(_metadata.avatar_source);
       try {
         await deleteFile(req, { filepath: _metadata.avatar });
-        await deleteFileByFilter({ filepath: _metadata.avatar });
+        await deleteFileByFilter({ user: req.user.id, filepath: _metadata.avatar });
       } catch (error) {
         logger.error('[/avatar/:assistant_id] Error deleting old avatar', error);
       }
