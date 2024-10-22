@@ -682,6 +682,9 @@ class AnthropicClient extends BaseClient {
    */
   checkPromptCacheSupport(modelName) {
     const modelMatch = matchModelName(modelName, EModelEndpoint.anthropic);
+    if (modelMatch.includes('claude-3-5-sonnet-latest')) {
+      return false;
+    }
     if (
       modelMatch === 'claude-3-5-sonnet' ||
       modelMatch === 'claude-3-haiku' ||
