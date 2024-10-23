@@ -56,15 +56,6 @@ const Balance = require('~/models/Balance');
     silentExit(1);
   }
 
-  if (!amount) {
-    amount = await askQuestion('amount:');
-  }
-  // Validate the amount
-  if (!amount) {
-    console.red('Error: Please specify an amount!');
-    silentExit(1);
-  }
-
   // Validate the user
   const user = await User.findOne({ email }).lean();
   if (!user) {
@@ -72,6 +63,22 @@ const Balance = require('~/models/Balance');
     silentExit(1);
   } else {
     console.purple(`Found user: ${user.email}`);
+  }
+
+  let balance = await Balance.findOne({ user: user._id }).lean();
+  if (!balance) {
+    console.purple('User has no balance!');
+  } else {
+    console.purple(`Current Balance: ${balance.tokenCredits}`);
+  }
+
+  if (!amount) {
+    amount = await askQuestion('amount:');
+  }
+  // Validate the amount
+  if (!amount) {
+    console.red('Error: Please specify an amount!');
+    silentExit(1);
   }
 
   /**
