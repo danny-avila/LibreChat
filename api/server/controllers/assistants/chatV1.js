@@ -314,7 +314,9 @@ const chatV1 = async (req, res) => {
     }
 
     if (typeof endpointOption.artifactsPrompt === 'string' && endpointOption.artifactsPrompt) {
-      body.additional_instructions = `${body.additional_instructions ?? ''}\n${endpointOption.artifactsPrompt}`.trim();
+      body.additional_instructions = `${body.additional_instructions ?? ''}\n${
+        endpointOption.artifactsPrompt
+      }`.trim();
     }
 
     if (instructions) {
@@ -371,11 +373,15 @@ const chatV1 = async (req, res) => {
       visionMessage.content = createVisionPrompt(plural);
       visionMessage = formatMessage({ message: visionMessage, endpoint: EModelEndpoint.openAI });
 
-      visionPromise = openai.chat.completions.create({
-        model: 'gpt-4-vision-preview',
-        messages: [visionMessage],
-        max_tokens: 4000,
-      });
+      visionPromise = openai.chat.completions
+        .create({
+          model,
+          messages: [visionMessage],
+          max_tokens: 4000,
+        })
+        .catch((error) => {
+          logger.error('[/assistants/chat/] Error creating vision prompt', error);
+        });
 
       const pluralized = plural ? 's' : '';
       body.additional_instructions = `${
