@@ -375,7 +375,7 @@ const chatV1 = async (req, res) => {
 
       visionPromise = openai.chat.completions
         .create({
-          model,
+          model: openai._options.model,
           messages: [visionMessage],
           max_tokens: 4000,
         })
