@@ -151,7 +151,7 @@ const processVisionRequest = async (client, currentAction) => {
 
   /** @type {ChatCompletion | undefined} */
   const completion = await client.visionPromise;
-  if (completion.usage) {
+  if (completion && completion.usage) {
     recordUsage({
       user: client.req.user.id,
       model: client.req.body.model,
