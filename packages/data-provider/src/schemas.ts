@@ -232,7 +232,7 @@ export const googleSettings = {
   topK: {
     min: 1,
     max: 40,
-    step: 0.01,
+    step: 1,
     default: 40,
   },
 };
