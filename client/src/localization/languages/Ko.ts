@@ -122,7 +122,7 @@ export default {
   com_auth_name_max_length: '이름은 80자를 초과할 수 없습니다',
   com_auth_username: '사용자명',
   com_auth_username_required: '사용자명이 필요합니다',
-  com_auth_username_min_length: '사용자명은 최소 3자 이상이어야 합니다',
+  com_auth_username_min_length: '사용자명은 최소 2자 이상이어야 합니다',
   com_auth_username_max_length: '사용자명은 20자를 초과할 수 없습니다',
   com_auth_already_have_account: '이미 계정이 있으신가요?',
   com_auth_login: '로그인',
@@ -1055,7 +1055,7 @@ export const comparisons = {
   },
   com_auth_username_min_length: {
     english: 'Username must be at least 2 characters',
-    translated: '사용자명은 최소 3자 이상이어야 합니다',
+    translated: '사용자명은 최소 2자 이상이어야 합니다',
   },
   com_auth_username_max_length: {
     english: 'Username must be less than 20 characters',
