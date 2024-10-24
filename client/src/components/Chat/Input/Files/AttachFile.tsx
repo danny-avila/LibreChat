@@ -30,11 +30,21 @@ const AttachFile = ({
         )}
         description={localize('com_sidepanel_attach_files')}
         onKeyDownCapture={(e) => {
+          if (!inputRef.current) {
+            return;
+          }
           if (e.key === 'Enter' || e.key === ' ') {
-            inputRef.current?.click();
+            inputRef.current.value = '';
+            inputRef.current.click();
           }
         }}
-        onClick={() => inputRef.current?.click()}
+        onClick={() => {
+          if (!inputRef.current) {
+            return;
+          }
+          inputRef.current.value = '';
+          inputRef.current.click();
+        }}
       >
         <div className="flex w-full items-center justify-center gap-2">
           <AttachmentIcon />
