@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const signPayload = require('~/server/services/signPayload');
 const User = require('./User');
+const { Transaction } = require('./Transaction');
 
 /**
  * Retrieve a user by ID and convert the found user document to a plain object.
@@ -71,6 +72,15 @@ const createUser = async (data, disableTTL = true, returnUser = false) => {
   }
 
   const user = await User.create(userData);
+  if (process.env.CHECK_BALANCE && process.env.REGISTRATION_BALANCE) {
+    await Transaction.create({
+      user: user._id,
+      tokenType: 'credits',
+      context: 'admin',
+      rawAmount: +process.env.REGISTRATION_BALANCE,
+    });
+  }
+
   if (returnUser) {
     return user.toObject();
   }
