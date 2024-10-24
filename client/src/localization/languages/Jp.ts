@@ -749,7 +749,7 @@ export default {
   com_nav_voice_select: '音声',
   com_nav_enable_cloud_browser_voice: 'クラウドベースの音声を使用',
   com_nav_info_enter_to_send:
-    '有効になっている場合、 `ENTER` キーを押すとメッセージが送信されます。無効になっている場合、Enterキーを押すと新しい行が追加され、 `CTRL + ENTER` キーを押してメッセージを送信する必要があります。',
+    '有効になっている場合、 `ENTER` キーを押すとメッセージが送信されます。無効になっている場合、Enterキーを押すと新しい行が追加され、 `CTRL + ENTER` / `⌘ + ENTER` キーを押してメッセージを送信する必要があります。',
   com_nav_info_save_draft:
     '有効になっている場合、チャットフォームに入力したテキストと添付ファイルがドラフトとしてローカルに自動保存されます。これらのドラフトは、ページをリロードしたり、別の会話に切り替えても利用できます。ドラフトはデバイスにローカルに保存され、メッセージが送信されると削除されます。',
   com_nav_info_fork_change_default:

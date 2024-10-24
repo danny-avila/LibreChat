@@ -706,7 +706,7 @@ export default {
   com_nav_voice_select: '语音',
   com_nav_enable_cloud_browser_voice: '使用云端语音',
   com_nav_info_enter_to_send:
-    '启用后，按下 `ENTER` 将发送您的消息。禁用后，按下 `ENTER` 将添加新行，您需要按下 `CTRL + ENTER` 来发送消息。',
+    '启用后，按下 `ENTER` 将发送您的消息。禁用后，按下 `ENTER` 将添加新行，您需要按下 `CTRL + ENTER` / `⌘ + ENTER` 来发送消息。',
   com_nav_info_save_draft:
     '启用后，您在聊天表单中输入的文本和附件将自动本地保存为草稿。即使您重新加载页面或切换到不同的对话，这些草稿也将可用。草稿存储在您设备的本地，并在消息发送后删除。',
   com_nav_info_fork_change_default:
