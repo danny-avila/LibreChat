@@ -277,22 +277,6 @@ function processConversation(conv, importBatchBuilder, requestUserId) {
 
 /**
  * Processes text content of messages authored by an assistant, inserting citation links as required.
- * Applies citation metadata to construct regex patterns and replacements for inserting links into the text.
- *
- * @param {ChatGPTMessage} messageData - The message data containing metadata about citations.
- * @param {string} messageText - The original text of the message which may be altered by inserting citation links.
- * @returns {string} - The updated message text after processing for citations.
- */
-/**
- * Processes text content of messages authored by an assistant, inserting citation links as required.
- * Uses citation start and end indices to place links at the correct positions.
- *
- * @param {ChatGPTMessage} messageData - The message data containing metadata about citations.
- * @param {string} messageText - The original text of the message which may be altered by inserting citation links.
- * @returns {string} - The updated message text after processing for citations.
- */
-/**
- * Processes text content of messages authored by an assistant, inserting citation links as required.
  * Uses citation start and end indices to place links at the correct positions.
  *
  * @param {ChatGPTMessage} messageData - The message data containing metadata about citations.
