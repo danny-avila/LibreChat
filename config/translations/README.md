@@ -11,9 +11,7 @@ This script can be expensive, several dollars worth, even with prompt caching. I
 
 ### Instructions:
 
-1. (Optional) Run the instructions template script: `bun config/translations/instructions.ts` from the root directory.
-  - This generates a "comparisons" prompt for the AI to review, the outputs of which are saved in `client/src/localization/prompts/instructions`.
-2. Main script: Run `bun config/translations/scan.ts` from the root directory.
-3. Observe translations being generated in all supported languages.
-  - Supported languages are localizations with general translation prompts, the files directly found in `client/src/localization/prompts`.
-  - Instructions 
+1. Main script: Run `bun config/translations/scan.ts` from the root directory.
+2. Observe translations being generated in all supported languages.
+  - Supported languages are localizations with general translation prompts:
+      - These prompts are directly found in `client/src/localization/prompts`.
