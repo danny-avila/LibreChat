@@ -7,6 +7,7 @@ const {
   removeGroupFromAllProjects,
 } = require('./Project');
 const { Prompt, PromptGroup } = require('./schema/promptSchema');
+const { escapeRegExp } = require('~/server/utils');
 const { logger } = require('~/config');
 
 /**
@@ -106,7 +107,7 @@ const getAllPromptGroups = async (req, filter) => {
     let searchShared = true;
     let searchSharedOnly = false;
     if (name) {
-      query.name = new RegExp(name, 'i');
+      query.name = new RegExp(escapeRegExp(name), 'i');
     }
     if (!query.category) {
       delete query.category;
@@ -159,7 +160,7 @@ const getPromptGroups = async (req, filter) => {
     let searchShared = true;
     let searchSharedOnly = false;
     if (name) {
-      query.name = new RegExp(name, 'i');
+      query.name = new RegExp(escapeRegExp(name), 'i');
     }
     if (!query.category) {
       delete query.category;
