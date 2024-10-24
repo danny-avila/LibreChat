@@ -66,7 +66,13 @@ router.delete('/', async (req, res) => {
       return;
     }
 
-    await processDeleteRequest({ req, files });
+    const fileIds = files.map((file) => file.file_id);
+    const userFiles = await getFiles({ file_id: { $in: fileIds }, user: req.user.id });
+    if (userFiles.length !== files.length) {
+      return res.status(403).json({ message: 'You can only delete your own files' });
+    }
+
+    await processDeleteRequest({ req, files: userFiles });
 
     logger.debug(
       `[/files] Files deleted successfully: ${files
