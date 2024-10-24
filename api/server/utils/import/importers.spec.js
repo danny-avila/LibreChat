@@ -530,4 +530,34 @@ describe('processAssistantMessage', () => {
     const result = processAssistantMessage(messageWithBadIndices, messageText);
     expect(result).toBe(messageText);
   });
+
+  test('should correctly process citations from real ChatGPT data', () => {
+    const jsonData = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '__data__', 'chatgpt-citations.json'), 'utf8'),
+    );
+
+    // Get the message containing citations from the JSON data
+    const assistantMessage = jsonData[0].mapping['4b3aec6b-5146-4bad-ae8e-204fdb6accda'].message;
+
+    const messageText = assistantMessage.content.parts[0];
+    const citations = assistantMessage.metadata.citations;
+
+    // Expected output should have all citations replaced with markdown links
+    const expectedOutput =
+      'Signal Sciences is a web application security company that was founded on March 10, 2014, by Andrew Peterson, Nick Galbreath, and Zane Lackey. It operates as a for-profit company with its legal name being Signal Sciences Corp. The company has achieved significant growth and is recognized as the fastest-growing web application security company in the world. Signal Sciences developed a next-gen web application firewall (NGWAF) and runtime application self-protection (RASP) technologies designed to increase security and maintain reliability without compromising the performance of modern web applications distributed across cloud, on-premise, edge, or hybrid environments ([Signal Sciences - Crunchbase Company Profile & Funding](https://www.crunchbase.com/organization/signal-sciences)) ([Demand More from Your WAF - Signal Sciences now part of Fastly](https://www.signalsciences.com/)).\n\nIn a major development, Fastly, Inc., a provider of an edge cloud platform, announced the completion of its acquisition of Signal Sciences on October 1, 2020. This acquisition was valued at approximately $775 million in cash and stock. By integrating Signal Sciences\' powerful web application and API security solutions with Fastly\'s edge cloud platform and existing security offerings, they aimed to form a unified suite of security solutions. The merger was aimed at expanding Fastly\'s security portfolio, particularly at a time when digital security has become paramount for businesses operating online ([Fastly Completes Acquisition of Signal Sciences | Fastly](https://www.fastly.com/press/press-releases/fastly-completes-acquisition-signal-sciences)) ([Fastly Agrees to Acquire Signal Sciences for $775 Million - Cooley](https://www.cooley.com/news/coverage/2020/2020-08-27-fastly-agrees-to-acquire-signal-sciences-for-775-million)).';
+
+    const result = processAssistantMessage(assistantMessage, messageText);
+    expect(result).toBe(expectedOutput);
+
+    // Additional checks to verify citation processing
+    citations.forEach((citation) => {
+      // Verify each citation was replaced
+      const markdownLink = `([${citation.metadata.title}](${citation.metadata.url}))`;
+      expect(result).toContain(markdownLink);
+
+      // Verify original citation format is not present
+      const originalCitation = messageText.slice(citation.start_ix, citation.end_ix);
+      expect(result).not.toContain(originalCitation);
+    });
+  });
 });
