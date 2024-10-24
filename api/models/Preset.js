@@ -78,7 +78,8 @@ module.exports = {
       }
       
       const setter = { $set: {} };
-      const update = { presetId, ...preset, user };
+      const { user: _, ...cleanPreset } = preset;
+      const update = { presetId, ...cleanPreset };
       if (preset.tools && Array.isArray(preset.tools)) {
         update.tools =
           preset.tools

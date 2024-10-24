@@ -81,10 +81,10 @@ const CreatePromptForm = ({
       CreateFormValues,
       'name' | 'category' | 'oneliner' | 'command'
     >;
-    if ((oneliner?.length || 0) > 0) {
+    if ((oneliner?.length ?? 0) > 0) {
       groupData.oneliner = oneliner;
     }
-    if ((command?.length || 0) > 0) {
+    if ((command?.length ?? 0) > 0) {
       groupData.command = command;
     }
     createPromptMutation.mutate({
@@ -111,7 +111,7 @@ const CreatePromptForm = ({
                   <Input
                     {...field}
                     type="text"
-                    className="mr-2 w-full border border-border-medium p-2 text-2xl placeholder:text-text-tertiary dark:placeholder:text-text-secondary"
+                    className="mr-2 w-full border border-border-medium p-2 text-2xl text-text-primary placeholder:text-text-tertiary dark:placeholder:text-text-secondary"
                     placeholder={`${localize('com_ui_prompt_name')}*`}
                     tabIndex={0}
                   />

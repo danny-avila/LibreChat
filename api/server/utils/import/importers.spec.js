@@ -2,10 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const { EModelEndpoint, Constants, openAISettings } = require('librechat-data-provider');
 const { bulkSaveConvos: _bulkSaveConvos } = require('~/models/Conversation');
+const { getImporter, processAssistantMessage } = require('./importers');
 const { ImportBatchBuilder } = require('./importBatchBuilder');
 const { bulkSaveMessages } = require('~/models/Message');
 const getLogStores = require('~/cache/getLogStores');
-const { getImporter } = require('./importers');
 
 jest.mock('~/cache/getLogStores');
 const mockedCacheGet = jest.fn();
@@ -402,5 +402,236 @@ describe('getImporter', () => {
   it('should throw an error if the import type is not supported', () => {
     const jsonData = { unsupported: 'data' };
     expect(() => getImporter(jsonData)).toThrow('Unsupported import type');
+  });
+});
+
+describe('processAssistantMessage', () => {
+  const testMessage = 'This is a test citation 【3:0†source】【3:1†source】';
+
+  const messageData = {
+    metadata: {
+      citations: [
+        {
+          start_ix: 23, // Position of first "【3:0†source】"
+          end_ix: 36, // End of first citation (including closing bracket)
+          citation_format_type: 'tether_og',
+          metadata: {
+            type: 'webpage',
+            title: 'Signal Sciences - Crunchbase Company Profile & Funding',
+            url: 'https://www.crunchbase.com/organization/signal-sciences',
+            text: '',
+            pub_date: null,
+            extra: {
+              evidence_text: 'source',
+              cited_message_idx: 3,
+              search_result_idx: 0,
+            },
+          },
+        },
+        {
+          start_ix: 36, // Position of second "【3:1†source】"
+          end_ix: 49, // End of second citation (including closing bracket)
+          citation_format_type: 'tether_og',
+          metadata: {
+            type: 'webpage',
+            title: 'Demand More from Your WAF - Signal Sciences now part of Fastly',
+            url: 'https://www.signalsciences.com/',
+            text: '',
+            pub_date: null,
+            extra: {
+              evidence_text: 'source',
+              cited_message_idx: 3,
+              search_result_idx: 1,
+            },
+          },
+        },
+      ],
+    },
+  };
+
+  const messageText = testMessage;
+  const expectedOutput =
+    'This is a test citation ([Signal Sciences - Crunchbase Company Profile & Funding](https://www.crunchbase.com/organization/signal-sciences)) ([Demand More from Your WAF - Signal Sciences now part of Fastly](https://www.signalsciences.com/))';
+
+  test('should correctly process citations and replace them with markdown links', () => {
+    const result = processAssistantMessage(messageData, messageText);
+    expect(result).toBe(expectedOutput);
+  });
+
+  test('should handle message with no citations', () => {
+    const messageWithNoCitations = {
+      metadata: {},
+    };
+    const result = processAssistantMessage(messageWithNoCitations, messageText);
+    expect(result).toBe(messageText);
+  });
+
+  test('should handle citations with missing metadata', () => {
+    const messageWithBadCitation = {
+      metadata: {
+        citations: [
+          {
+            start_ix: 85,
+            end_ix: 97,
+          },
+        ],
+      },
+    };
+    const result = processAssistantMessage(messageWithBadCitation, messageText);
+    expect(result).toBe(messageText);
+  });
+
+  test('should handle citations with non-webpage type', () => {
+    const messageWithNonWebpage = {
+      metadata: {
+        citations: [
+          {
+            start_ix: 85,
+            end_ix: 97,
+            metadata: {
+              type: 'other',
+              title: 'Test',
+              url: 'http://test.com',
+            },
+          },
+        ],
+      },
+    };
+    const result = processAssistantMessage(messageWithNonWebpage, messageText);
+    expect(result).toBe(messageText);
+  });
+
+  test('should handle empty message text', () => {
+    const result = processAssistantMessage(messageData, '');
+    expect(result).toBe('');
+  });
+
+  test('should handle undefined message text', () => {
+    const result = processAssistantMessage(messageData, undefined);
+    expect(result).toBe(undefined);
+  });
+
+  test('should handle invalid citation indices', () => {
+    const messageWithBadIndices = {
+      metadata: {
+        citations: [
+          {
+            start_ix: 100,
+            end_ix: 90, // end before start
+            metadata: {
+              type: 'webpage',
+              title: 'Test',
+              url: 'http://test.com',
+            },
+          },
+        ],
+      },
+    };
+    const result = processAssistantMessage(messageWithBadIndices, messageText);
+    expect(result).toBe(messageText);
+  });
+
+  test('should correctly process citations from real ChatGPT data', () => {
+    const jsonData = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '__data__', 'chatgpt-citations.json'), 'utf8'),
+    );
+
+    // Get the message containing citations from the JSON data
+    const assistantMessage = jsonData[0].mapping['4b3aec6b-5146-4bad-ae8e-204fdb6accda'].message;
+
+    const messageText = assistantMessage.content.parts[0];
+    const citations = assistantMessage.metadata.citations;
+
+    // Expected output should have all citations replaced with markdown links
+    const expectedOutput =
+      'Signal Sciences is a web application security company that was founded on March 10, 2014, by Andrew Peterson, Nick Galbreath, and Zane Lackey. It operates as a for-profit company with its legal name being Signal Sciences Corp. The company has achieved significant growth and is recognized as the fastest-growing web application security company in the world. Signal Sciences developed a next-gen web application firewall (NGWAF) and runtime application self-protection (RASP) technologies designed to increase security and maintain reliability without compromising the performance of modern web applications distributed across cloud, on-premise, edge, or hybrid environments ([Signal Sciences - Crunchbase Company Profile & Funding](https://www.crunchbase.com/organization/signal-sciences)) ([Demand More from Your WAF - Signal Sciences now part of Fastly](https://www.signalsciences.com/)).\n\nIn a major development, Fastly, Inc., a provider of an edge cloud platform, announced the completion of its acquisition of Signal Sciences on October 1, 2020. This acquisition was valued at approximately $775 million in cash and stock. By integrating Signal Sciences\' powerful web application and API security solutions with Fastly\'s edge cloud platform and existing security offerings, they aimed to form a unified suite of security solutions. The merger was aimed at expanding Fastly\'s security portfolio, particularly at a time when digital security has become paramount for businesses operating online ([Fastly Completes Acquisition of Signal Sciences | Fastly](https://www.fastly.com/press/press-releases/fastly-completes-acquisition-signal-sciences)) ([Fastly Agrees to Acquire Signal Sciences for $775 Million - Cooley](https://www.cooley.com/news/coverage/2020/2020-08-27-fastly-agrees-to-acquire-signal-sciences-for-775-million)).';
+
+    const result = processAssistantMessage(assistantMessage, messageText);
+    expect(result).toBe(expectedOutput);
+
+    // Additional checks to verify citation processing
+    citations.forEach((citation) => {
+      // Verify each citation was replaced
+      const markdownLink = `([${citation.metadata.title}](${citation.metadata.url}))`;
+      expect(result).toContain(markdownLink);
+
+      // Verify original citation format is not present
+      const originalCitation = messageText.slice(citation.start_ix, citation.end_ix);
+      expect(result).not.toContain(originalCitation);
+    });
+  });
+
+  test('should handle potential ReDoS attack payloads', () => {
+    // Test with increasing input sizes to check for exponential behavior
+    const sizes = [32, 33, 34]; // Adding more sizes would increase test time
+    const regExp = '(a+)+';
+    const results = [];
+
+    sizes.forEach((size) => {
+      const startTime = process.hrtime();
+
+      const maliciousMessageData = {
+        metadata: {
+          citations: [
+            {
+              start_ix: 0,
+              end_ix: size,
+              citation_format_type: 'tether_og',
+              metadata: {
+                type: 'webpage',
+                title: 'Test',
+                url: 'http://test.com',
+                extra: {
+                  cited_message_idx: regExp,
+                },
+              },
+            },
+          ],
+        },
+      };
+
+      const maliciousText = '【' + 'a'.repeat(size) + '】';
+
+      processAssistantMessage(maliciousMessageData, maliciousText);
+
+      const endTime = process.hrtime(startTime);
+      const duration = endTime[0] * 1000 + endTime[1] / 1000000; // Convert to milliseconds
+      results.push(duration);
+    });
+
+    // Check if processing time increases exponentially
+    // In a ReDoS vulnerability, time would roughly double with each size increase
+    for (let i = 1; i < results.length; i++) {
+      const ratio = results[i] / results[i - 1];
+      expect(ratio).toBeLessThan(2); // Processing time should not double
+      console.log(`Size ${sizes[i]} processing time ratio: ${ratio}`);
+    }
+
+    // Also test with the exact payload from the security report
+    const maliciousPayload = {
+      metadata: {
+        citations: [
+          {
+            metadata: {
+              extra: {
+                cited_message_idx: '(a+)+',
+              },
+              type: 'webpage',
+              title: '1',
+              url: '2',
+            },
+          },
+        ],
+      },
+    };
+
+    const text = '【' + 'a'.repeat(32);
+    const startTime = process.hrtime();
+    processAssistantMessage(maliciousPayload, text);
+    const endTime = process.hrtime(startTime);
+    const duration = endTime[0] * 1000 + endTime[1] / 1000000;
+
+    // The processing should complete quickly (under 100ms)
+    expect(duration).toBeLessThan(100);
   });
 });
