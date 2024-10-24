@@ -396,4 +396,6 @@ export default {
   com_nav_lang_turkish: 'Türkçe',
   com_nav_lang_dutch: 'Nederlands',
   com_nav_lang_indonesia: 'Indonesia',
+  com_nav_lang_hebrew: 'עברית',
+  com_nav_lang_finnish: 'Suomi',
 };
