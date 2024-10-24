@@ -38,7 +38,7 @@ export default async function main(baseFilePath: string, compareFilePath: string
       };
 
       promises.push(handleMissingKey());
-      await sleep(2000);
+      await sleep(700);
     }
 
     await Promise.all(promises);
