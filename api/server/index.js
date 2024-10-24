@@ -45,6 +45,7 @@ const startServer = async () => {
   app.get('/health', (_req, res) => res.status(200).send('OK'));
 
   /* Middleware */
+  app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
   app.use(noIndex);
   app.use(errorController);
   app.use(express.json({ limit: '3mb' }));

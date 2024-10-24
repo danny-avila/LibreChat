@@ -1,177 +1,71 @@
 const express = require('express');
 const router = express.Router();
-const { MongoClient, ObjectId } = require('mongodb');
-const stripe = require('stripe')(process.env.NEXT_PUBLIC_STRIPE_SECRET_KEY);
-const getRawBody = require('raw-body');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const { logger } = require('~/config');
+const { upgradeSubscription, handleSubscriptionUpdated } = require('../services/SubscriptionService');
 
-const STRIPE_SIGNATURE_HEADER = 'stripe-signature';
-
-const StripeWebhooks = {
-  AsyncPaymentSuccess: 'checkout.session.async_payment_succeeded',
-  AsyncPaymentFailed: 'checkout.session.async_payment_failed',
-  Completed: 'checkout.session.completed',
-  SubscriptionDeleted: 'customer.subscription.deleted',
-  SubscriptionUpdated: 'customer.subscription.updated',
-  ChargeSuccess: 'charge.succeeded',
-};
-
-// MongoDB connection
-const uri = process.env.MONGO_URI;
-const client = new MongoClient(uri);
-
-router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
-  const signature = req.headers[STRIPE_SIGNATURE_HEADER];
-  const rawBody = await getRawBody(req);
-
-  if (!signature) {
-    return res.status(400).send('Webhook Error: No signature');
-  }
-  let event = null;
+router.post('/upgrade', async (req, res) => {
+  const { userId, priceId } = req.body;
 
   try {
-    event = stripe.webhooks.constructEvent(
-      rawBody,
-      signature,
-      process.env.PAYMENTS_SIGNING_SECRET,
-    );
-  } catch (err) {
-    logger.error('Stripe webhook error:', err);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
-  }
-
-  if (event) {
-    const { metadata } = event.data.object;
-
-    switch (event.type) {
-      case StripeWebhooks.ChargeSuccess:
-        logger.info('StripeWebhooks.ChargeSuccess', metadata);
-        break;
-      case StripeWebhooks.SubscriptionDeleted:
-        logger.info('StripeWebhooks.SubscriptionDeleted', metadata);
-        await handleSubscriptionDeleted(event.data.object);
-        break;
-      case StripeWebhooks.SubscriptionUpdated:
-        logger.info('StripeWebhooks.SubscriptionUpdated', metadata);
-        await handleSubscriptionUpdated(event.data.object);
-        break;
-      case StripeWebhooks.AsyncPaymentSuccess:
-        logger.info('StripeWebhooks.AsyncPaymentSuccess', metadata);
-        break;
-      case StripeWebhooks.Completed:
-        logger.info('StripeWebhooks.Completed', metadata);
-        if (metadata?.userId && metadata?.planType) {
-          await updateSubscription(metadata.userId, metadata.planType);
-        }
-        break;
-      case StripeWebhooks.AsyncPaymentFailed:
-        logger.info('StripeWebhooks.AsyncPaymentFailed', metadata);
-        break;
-      default:
-        return res
-          .status(400)
-          .send(`Webhook Error: Unhandled event type ${event.type}`);
-    }
-  } else {
-    return res.status(400).send('Webhook Error: Event not created');
-  }
-
-  res.status(200).send({ received: true });
-});
-
-router.post('/create-checkout-session', async (req, res) => {
-  const { priceId } = req.body;
-
-  try {
-    const session = await stripe.checkout.sessions.create({
-      line_items: [
-        {
-          price: priceId,
-          quantity: 1,
-        },
-      ],
-      mode: 'subscription',
-      success_url: `${process.env.DOMAIN_CLIENT}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.DOMAIN_CLIENT}/canceled`,
-    });
-
+    const session = await upgradeSubscription(userId, priceId);
     res.json({ sessionId: session.id });
   } catch (error) {
-    logger.error('Error creating checkout session:', error);
+    logger.error('[/upgrade] Error:', error);
     res.status(500).json({ error: 'Failed to create checkout session' });
   }
 });
 
-async function handleSubscriptionDeleted(subscription) {
-  const customerId = subscription.customer;
-  const cancelAt = new Date(subscription.current_period_end * 1000);
+router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  let event;
 
   try {
-    await client.connect();
-    const database = client.db(process.env.MONGODB_DATABASE);
-    const users = database.collection('users');
-
-    await users.updateOne(
-      { stripeCustomerId: customerId },
-      {
-        $set: {
-          subscriptionType: null,
-          cancelAtPeriodEnd: false,
-          cancelAt: cancelAt,
-        },
-      },
+    // Verify webhook signature
+    event = stripe.webhooks.constructEvent(
+      req.body,
+      sig,
+      process.env.STRIPE_WEBHOOK_SECRET,
     );
-    logger.info(`Subscription cancelled for customer ${customerId}`);
-  } catch (error) {
-    logger.error(`Error updating subscription for customer ${customerId}:`, error);
-  } finally {
-    await client.close();
+  } catch (err) {
+    logger.error('[webhook] Signature verification failed:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
   }
-}
-
-async function handleSubscriptionUpdated(subscription) {
-  const customerId = subscription.customer;
-  const newPlanId = subscription.items.data[0].price.id;
 
   try {
-    await client.connect();
-    const database = client.db(process.env.MONGODB_DATABASE);
-    const users = database.collection('users');
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object;
+        const subscription = await stripe.subscriptions.retrieve(session.subscription);
+        await handleSubscriptionUpdated({
+          ...subscription,
+          metadata: {
+            userId: session.client_reference_id,
+          },
+        });
+        break;
+      }
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated':
+        await handleSubscriptionUpdated(event.data.object);
+        break;
 
-    await users.updateOne(
-      { stripeCustomerId: customerId },
-      {
-        $set: {
-          subscriptionType: newPlanId,
-          cancelAtPeriodEnd: subscription.cancel_at_period_end,
-          cancelAt: subscription.cancel_at ? new Date(subscription.cancel_at * 1000) : null,
-        },
-      },
-    );
-    logger.info(`Subscription updated for customer ${customerId}`);
+      case 'customer.subscription.deleted':
+        await handleSubscriptionUpdated({
+          ...event.data.object,
+          status: 'canceled',
+        });
+        break;
+
+      default:
+        logger.info(`Unhandled event type ${event.type}`);
+    }
+
+    res.json({ received: true });
   } catch (error) {
-    logger.error(`Error updating subscription for customer ${customerId}:`, error);
-  } finally {
-    await client.close();
+    logger.error('[webhook] Error processing event:', error);
+    res.status(500).json({ error: 'Failed to process webhook' });
   }
-}
-
-async function updateSubscription(userId, planType) {
-  try {
-    await client.connect();
-    const database = client.db(process.env.MONGODB_DATABASE);
-    const users = database.collection('users');
-
-    await users.updateOne(
-      { _id: new ObjectId(userId) },
-      { $set: { subscriptionType: planType } },
-    );
-    logger.info(`Subscription updated for user ${userId}`);
-  } catch (error) {
-    logger.error(`Error updating subscription for user ${userId}:`, error);
-  } finally {
-    await client.close();
-  }
-}
+});
 
 module.exports = router;

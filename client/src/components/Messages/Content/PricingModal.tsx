@@ -3,10 +3,12 @@ import Modal from '../../ui/Modal';
 import { Button } from '../../ui/Button';
 import { cn } from '~/utils';
 import { redirectToCheckout } from '~/utils/stripe';
+import { useAuthContext } from '~/hooks/AuthContext';
 
 interface PricingModalProps {
   isOpen: boolean;
   onClose: () => void;
+  userId: string;
 }
 
 const plans = [
@@ -70,16 +72,18 @@ export const api = async (url: string, options: RequestInit & { body?: Record<st
   return { status: response.status, ...result, url };
 };
 
-const PricingModal: React.FC<PricingModalProps> = ({ isOpen, onClose }) => {
+const PricingModal: React.FC<PricingModalProps> = ({ isOpen, onClose, userId }) => {
+  const { token } = useAuthContext();
 
   const subscribe = async (priceId: string) => {
     try {
-      const response = await fetch('/api/stripe/create-checkout-session', {
+      const response = await fetch('/api/stripe/upgrade', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ priceId }),
+        body: JSON.stringify({ userId, priceId }),
       });
 
       const data = await response.json();

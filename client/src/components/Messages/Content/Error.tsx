@@ -8,6 +8,7 @@ import CodeBlock from './CodeBlock';
 import { useState } from 'react';
 import { Button } from '~/components/ui/Button';
 import PricingModal from './PricingModal';
+import { useAuthContext } from '~/hooks/AuthContext';
 
 const localizedErrorPrefix = 'com_error';
 
@@ -100,6 +101,7 @@ const errorMessages = {
 const Error = ({ text }: { text: string }) => {
   const [isPricingModalOpen, setIsPricingModalOpen] = useState(false);
   const localize = useLocalize();
+  const { user } = useAuthContext();
   const jsonString = extractJson(text);
   const errorMessage = text.length > 512 && !jsonString ? text.slice(0, 512) + '...' : text;
   const defaultResponse = `Something went wrong. Here's the specific error message we encountered: ${errorMessage}`;
@@ -132,10 +134,13 @@ const Error = ({ text }: { text: string }) => {
             />
           </>
         )}
-        <PricingModal
-          isOpen={isPricingModalOpen}
-          onClose={() => setIsPricingModalOpen(false)}
-        />
+        {user && (
+          <PricingModal
+            isOpen={isPricingModalOpen}
+            onClose={() => setIsPricingModalOpen(false)}
+            userId={user.id}
+          />
+        )}
       </>
     );
   };

@@ -184,6 +184,9 @@ const registerUser = async (user, additionalData = {}) => {
       avatar: null,
       role: isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER,
       password: bcrypt.hashSync(password, salt),
+      subscription: 'free',
+      subscriptionStatus: 'active',
+      tokenBalance: 1000,
       ...additionalData,
     };
 

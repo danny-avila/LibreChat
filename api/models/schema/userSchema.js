@@ -126,6 +126,28 @@ const userSchema = mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    stripeCustomerId: {
+      type: String,
+      sparse: true,
+      unique: true,
+    },
+    subscription: {
+      type: String,
+      enum: ['free', 'plus', 'pro', 'enterprise'],
+      default: 'free',
+    },
+    subscriptionStatus: {
+      type: String,
+      enum: ['active', 'canceled', 'past_due', 'incomplete'],
+      default: 'active',
+    },
+    subscriptionExpiresAt: {
+      type: Date,
+    },
+    tokenBalance: {
+      type: Number,
+      default: 0,
+    },
   },
 
   { timestamps: true },

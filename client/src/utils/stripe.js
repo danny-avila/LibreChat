@@ -4,7 +4,7 @@ let stripePromise;
 
 const getStripe = () => {
   if (!stripePromise) {
-    const key = process.env.VITE_STRIPE_PUBLISHABLE_KEY;
+    const key = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
     if (!key) {
       throw new Error('Stripe publishable key is not set');
     }
