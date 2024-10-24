@@ -618,4 +618,532 @@ export default {
   com_nav_lang_dutch: 'Holandés',
   com_nav_lang_indonesia: 'Indonesia',
   com_nav_lang_hebrew: 'עברית',
+  com_nav_convo_menu_options: 'Opciones del menú de conversación',
+
+  com_ui_artifacts: 'Artefactos',
+
+  com_ui_artifacts_toggle: 'Alternar Interfaz de Artefactos',
+
+  com_nav_info_code_artifacts: 'Permite mostrar artefactos de código experimentales junto al chat',
+
+  com_ui_include_shadcnui: 'Incluir instrucciones de componentes shadcn/ui',
+
+  com_ui_custom_prompt_mode: 'Modo de Prompt Personalizado',
+
+  com_nav_info_custom_prompt_mode:
+    'Cuando está habilitado, no se incluirá el mensaje del sistema predeterminado para artefactos. En este modo, todas las instrucciones para generar artefactos deberán proporcionarse manualmente.',
+
+  com_ui_artifact_click: 'Haga clic para abrir',
+
+  com_a11y_start: 'La IA ha comenzado su respuesta',
+
+  com_nav_info_include_shadcnui:
+    'Cuando está habilitado, se incluirán instrucciones para el uso de los componentes de shadcn/ui. shadcn/ui es una colección de componentes reutilizables construidos utilizando Radix UI y Tailwind CSS. Nota: estas son instrucciones extensas, debe habilitarlas solo si es importante para usted informar al LLM sobre las importaciones y componentes correctos. Para más información sobre estos componentes, visite: https://ui.shadcn.com/',
+
+  com_a11y_ai_composing: 'La IA está componiendo la respuesta',
+
+  com_a11y_end: 'La IA ha finalizado su respuesta',
+
+  com_warning_resubmit_unsupported:
+    'No se admite el reenvío del mensaje de IA para este punto de conexión.',
+
+  com_error_invalid_request_error:
+    'El servicio de IA rechazó la solicitud debido a un error. Esto puede deberse a una clave API no válida o a una solicitud con formato incorrecto.',
+
+  com_error_files_empty: 'No se permiten archivos vacíos.',
+
+  com_error_no_system_messages:
+    'El servicio o modelo de IA seleccionado no admite mensajes del sistema. Intente utilizar indicaciones en lugar de instrucciones personalizadas.',
+
+  com_error_input_length:
+    'El conteo de tokens del último mensaje es demasiado largo y excede el límite permitido ({0}). Por favor, acorte su mensaje, ajuste el tamaño máximo del contexto desde los parámetros de conversación, o bifurque la conversación para continuar.',
+
+  com_error_files_dupe: 'Se detectó un archivo duplicado',
+
+  com_error_files_validation: 'Se produjo un error durante la validación del archivo.',
+
+  com_error_files_process: 'Se produjo un error al procesar el archivo.',
+
+  com_error_files_upload: 'Se produjo un error durante la subida del archivo',
+
+  com_error_files_upload_canceled:
+    'La solicitud de carga del archivo fue cancelada. Nota: es posible que la carga del archivo aún esté en proceso y necesite ser eliminada manualmente.',
+
+  com_generated_files: 'Archivos generados:',
+
+  com_download_expired: 'Descarga expirada',
+
+  com_download_expires: '(haga clic aquí para descargar - expira el {0})',
+
+  com_click_to_download: '(haga clic aquí para descargar)',
+
+  com_assistants_conversation_starters: 'Iniciadores de Conversación',
+
+  com_assistants_code_interpreter_info:
+    'El Intérprete de Código permite al asistente escribir y ejecutar código. Esta herramienta puede procesar archivos con diversos formatos y datos, y generar archivos como gráficos.',
+
+  com_assistants_conversation_starters_placeholder: 'Ingrese un iniciador de conversación',
+
+  com_sidepanel_agent_builder: 'Constructor de Agentes',
+
+  com_agents_name_placeholder: 'Opcional: El nombre del agente',
+
+  com_agents_description_placeholder: 'Opcional: Describa su Agente aquí',
+
+  com_agents_instructions_placeholder: 'Las instrucciones del sistema que utiliza el agente',
+
+  com_agents_search_name: 'Buscar agentes por nombre',
+
+  com_agents_update_error: 'Hubo un error al actualizar su agente.',
+
+  com_agents_create_error: 'Hubo un error al crear su agente.',
+
+  com_agents_missing_provider_model:
+    'Por favor, seleccione un proveedor y un modelo antes de crear un agente.',
+
+  com_agents_not_available: 'Agente no disponible',
+
+  com_agents_no_access: 'No tiene acceso para editar este agente',
+
+  com_agents_enable_file_search: 'Habilitar búsqueda de archivos',
+
+  com_agents_allow_editing: 'Permitir que otros usuarios editen su agente',
+
+  com_agents_file_search_info:
+    'Cuando está habilitado, se informará al agente sobre los nombres exactos de los archivos listados a continuación, permitiéndole recuperar el contexto relevante de estos archivos.',
+
+  com_agents_file_search_disabled:
+    'Es necesario crear el Agente antes de subir archivos para la Búsqueda de Archivos.',
+
+  com_agents_execute_code: 'Ejecutar código',
+
+  com_ui_agent_already_shared_to_all: 'Este asistente ya está compartido con todos los usuarios',
+
+  com_ui_agent_editing_allowed: 'Otros usuarios ya pueden editar este agente',
+
+  com_ui_no_changes: 'No hay cambios para actualizar',
+
+  com_ui_error_connection: 'Error al conectarse al servidor. Intente actualizar la página.',
+
+  com_ui_endpoint: 'Punto de conexión',
+
+  com_ui_provider: 'Proveedor',
+
+  com_ui_region: 'Región',
+
+  com_ui_model_parameters: 'Parámetros del Modelo',
+
+  com_ui_select_region: 'Seleccionar una región',
+
+  com_ui_model_save_success: 'Los parámetros del modelo se han guardado correctamente',
+
+  com_ui_select_provider: 'Seleccionar un proveedor',
+
+  com_ui_select_provider_first: 'Seleccione un proveedor primero',
+
+  com_ui_select_search_region: 'Buscar región por nombre',
+
+  com_ui_prompt_name: 'Nombre del Prompt',
+
+  com_ui_delete_prompt: '¿Eliminar Prompt?',
+
+  com_ui_prompt: 'Prompt',
+
+  com_ui_prompts: 'Indicaciones',
+
+  com_ui_simple: 'Simple',
+
+  com_ui_admin: 'Administrador',
+
+  com_ui_versions: 'Versiones',
+
+  com_ui_version_var: 'Versión {0}',
+
+  com_ui_advanced: 'Avanzado',
+
+  com_ui_admin_settings: 'Configuración de Administrador',
+
+  com_ui_error_save_admin_settings:
+    'Se produjo un error al guardar su configuración de administrador.',
+
+  com_ui_prompt_preview_not_shared: 'El autor no ha permitido la colaboración para este prompt',
+
+  com_ui_prompt_name_required: 'El nombre del prompt es obligatorio',
+
+  com_ui_prompt_text_required: 'El texto es obligatorio',
+
+  com_ui_prompt_text: 'Texto',
+
+  com_ui_back_to_chat: 'Volver al Chat',
+
+  com_ui_back_to_prompts: 'Volver a Prompts',
+
+  com_ui_categories: 'Categorías',
+
+  com_ui_filter_prompts_name: 'Filtrar prompts por nombre',
+
+  com_ui_search_categories: 'Buscar Categorías',
+
+  com_ui_manage: 'Administrar',
+
+  com_ui_variables: 'Variables',
+
+  com_ui_variables_info:
+    'Utilice llaves dobles en su texto para crear variables, por ejemplo `{{variable de ejemplo}}`, para completarlas posteriormente al usar el prompt.',
+
+  com_ui_special_variables: 'Variables especiales:',
+
+  com_ui_special_variables_info:
+    'Utilice `{{current_date}}` para la fecha actual y `{{current_user}}` para su nombre de cuenta asignado.',
+
+  com_ui_dropdown_variables: 'Variables desplegables:',
+
+  com_ui_dropdown_variables_info:
+    'Cree menús desplegables personalizados para sus prompts: `{{nombre_variable:opción1|opción2|opción3}}`',
+
+  com_ui_upload_invalid:
+    'Archivo no válido para subir. Debe ser una imagen que no exceda el límite',
+
+  com_ui_latest_footer: 'IA para todos.',
+
+  com_ui_renaming_var: 'Renombrando "{0}"',
+
+  com_ui_upload_invalid_var:
+    'Archivo inválido para subir. Debe ser una imagen que no exceda los {0} MB',
+
+  com_ui_read_aloud: 'Leer en voz alta',
+
+  com_ui_add_model_preset:
+    'Agregar un modelo o configuración preestablecida para una respuesta adicional',
+
+  com_assistants_max_starters_reached: 'Se alcanzó el número máximo de iniciadores de conversación',
+
+  com_ui_loading: 'Cargando...',
+
+  com_ui_all_proper: 'Todos',
+
+  com_ui_revoke_keys: 'Revocar Claves',
+
+  com_ui_revoke_key_endpoint: 'Revocar clave para {0}',
+
+  com_ui_revoke_keys_confirm: '¿Está seguro de que desea revocar todas las claves?',
+
+  com_ui_revoke_key_confirm: '¿Está seguro de que desea revocar esta clave?',
+
+  com_ui_chat: 'Chat',
+
+  com_ui_controls: 'Controles',
+
+  com_ui_dashboard: 'Panel de control',
+
+  com_ui_agent: 'Agente',
+
+  com_ui_chat_history: 'Historial de Chat',
+
+  com_ui_agent_deleted: 'Asistente eliminado exitosamente',
+
+  com_ui_agent_delete_error: 'Se produjo un error al eliminar el agente',
+
+  com_ui_agents: 'Agentes',
+
+  com_ui_delete_agent_confirm: '¿Está seguro de que desea eliminar este agente?',
+
+  com_ui_create_prompt: 'Crear Prompt',
+
+  com_ui_share_var: 'Compartir {0}',
+
+  com_ui_share_to_all_users: 'Compartir con todos los usuarios',
+
+  com_ui_enter_var: 'Ingrese {0}',
+
+  com_ui_my_prompts: 'Mis Prompts',
+
+  com_ui_no_category: 'Sin categoría',
+
+  com_ui_shared_prompts: 'Prompts Compartidos',
+
+  com_ui_prompts_allow_use: 'Permitir uso de Prompts',
+
+  com_ui_prompts_allow_create: 'Permitir crear Prompts',
+
+  com_ui_prompts_allow_share_global: 'Permitir compartir plantillas con todos los usuarios',
+
+  com_ui_prompt_shared_to_all: 'Este prompt es compartido con todos los usuarios',
+
+  com_ui_prompt_update_error: 'Hubo un error al actualizar el prompt',
+
+  com_ui_prompt_already_shared_to_all: 'Este prompt ya está compartido con todos los usuarios',
+
+  com_ui_description_placeholder: 'Opcional: Ingrese una descripción para mostrar en el prompt',
+
+  com_ui_command_placeholder:
+    'Opcional: Ingrese un comando para el prompt o se utilizará el nombre',
+
+  com_ui_no_prompt_description: 'No se encontró descripción.',
+
+  com_ui_delete_tool: 'Eliminar Herramienta',
+
+  com_ui_delete_tool_confirm: '¿Está seguro de que desea eliminar esta herramienta?',
+
+  com_ui_command_usage_placeholder: 'Seleccione un Prompt por comando o nombre',
+
+  com_ui_delete_action: 'Eliminar Acción',
+
+  com_ui_delete_action_confirm: '¿Está seguro de que desea eliminar esta acción?',
+
+  com_ui_delete_confirm_prompt_version_var:
+    'Esto eliminará la versión seleccionada para "{0}". Si no existen otras versiones, el prompt será eliminado.',
+
+  com_ui_locked: 'Bloqueado',
+
+  com_ui_use_micrphone: 'Usar micrófono',
+
+  com_ui_bookmarks_create_exists: 'Este marcador ya existe',
+
+  com_ui_bookmarks_filter: 'Filtrar marcadores...',
+
+  com_ui_bookmarks_delete: 'Eliminar Marcador',
+
+  com_ui_no_bookmarks:
+    'Parece que aún no tiene marcadores. Haga clic en un chat y agregue uno nuevo',
+
+  com_ui_no_conversation_id: 'No se encontró el ID de la conversación',
+
+  com_ui_add_multi_conversation: 'Agregar múltiples conversaciones',
+
+  com_auth_error_login_unverified:
+    'Su cuenta no ha sido verificada. Por favor, revise su correo electrónico para encontrar el enlace de verificación.',
+
+  com_auth_registration_success_generic:
+    'Por favor, revise su correo electrónico para verificar su dirección.',
+
+  com_auth_registration_success_insecure: 'Registro completado exitosamente.',
+
+  com_auth_email_verification_failed: 'La verificación del correo electrónico ha fallado',
+
+  com_auth_reset_password_if_email_exists:
+    'Si existe una cuenta con ese correo electrónico, se le ha enviado un mensaje con instrucciones para restablecer su contraseña. Por favor, asegúrese de revisar su carpeta de correo no deseado.',
+
+  com_auth_email_verification_rate_limited:
+    'Demasiadas solicitudes. Por favor, inténtelo de nuevo más tarde',
+
+  com_auth_email_verification_success: 'Correo electrónico verificado exitosamente',
+
+  com_auth_email_resent_success:
+    'El correo electrónico de verificación ha sido reenviado exitosamente',
+
+  com_auth_email_resent_failed: 'No se pudo reenviar el correo electrónico de verificación',
+
+  com_auth_email_verification_failed_token_missing:
+    'La verificación falló, falta el token de seguridad',
+
+  com_auth_email_verification_invalid: 'Verificación de correo electrónico no válida',
+
+  com_auth_email_verification_in_progress: 'Verificando su correo electrónico, por favor espere',
+
+  com_auth_email_verification_resend_prompt: '¿No recibió el correo electrónico?',
+
+  com_auth_email_resend_link: 'Reenviar correo electrónico',
+
+  com_auth_email_verification_redirecting: 'Redirigiendo en {0} segundos...',
+
+  com_endpoint_anthropic_prompt_cache:
+    'El almacenamiento en caché de instrucciones permite reutilizar contextos o instrucciones extensas entre llamadas a la API, reduciendo costos y tiempo de respuesta',
+
+  com_endpoint_prompt_cache: 'Utilizar caché de instrucciones',
+
+  com_endpoint_export_share: 'Exportar/Compartir',
+
+  com_endpoint_search: 'Buscar punto de conexión por nombre',
+
+  com_endpoint_config_key_never_expires: 'Su clave nunca expirará',
+
+  com_nav_account_settings: 'Configuración de la cuenta',
+
+  com_nav_font_size_xs: 'Extra pequeño',
+
+  com_nav_font_size_sm: 'Pequeño',
+
+  com_nav_font_size_base: 'Mediano',
+
+  com_nav_font_size_lg: 'Grande',
+
+  com_nav_font_size_xl: 'Extra grande',
+
+  com_nav_user_msg_markdown: 'Mostrar mensajes de usuario en formato markdown',
+
+  com_nav_text_to_speech: 'Texto a voz',
+
+  com_nav_automatic_playback: 'Reproducción automática del último mensaje',
+
+  com_nav_tool_dialog_agents: 'Herramientas del agente',
+
+  com_ui_misc: 'Varios',
+
+  com_nav_speech_to_text: 'Voz a texto',
+
+  com_ui_write: 'Escritura',
+
+  com_ui_roleplay: 'Interpretación de rol',
+
+  com_ui_idea: 'Ideas',
+
+  com_ui_shop: 'Tienda',
+
+  com_ui_finance: 'Finanzas',
+
+  com_ui_code: 'Código',
+
+  com_ui_travel: 'Viajes',
+
+  com_ui_teach_or_explain: 'Enseñanza y Aprendizaje',
+
+  com_ui_select_file: 'Seleccionar un archivo',
+
+  com_ui_drag_drop_file: 'Arrastre y suelte un archivo aquí',
+
+  com_ui_upload_image: 'Subir una imagen',
+
+  com_ui_select_a_category: 'Ninguna categoría seleccionada',
+
+  com_ui_clear_all: 'Limpiar todo',
+
+  com_nav_chat_direction: 'Dirección del chat',
+
+  com_nav_auto_send_prompts: 'Envío automático de mensajes',
+
+  com_nav_always_make_prod: 'Convertir siempre las nuevas versiones en producción',
+
+  com_nav_stop_generating: 'Detener generación',
+
+  com_nav_clear_cache_confirm_message: '¿Está seguro de que desea borrar el caché?',
+
+  com_nav_delete_account: 'Eliminar cuenta',
+
+  com_nav_delete_account_confirm: 'Eliminar cuenta - ¿Está seguro?',
+
+  com_nav_delete_account_button: 'Eliminar mi cuenta permanentemente',
+
+  com_nav_delete_account_email_placeholder: 'Por favor ingrese el correo electrónico de su cuenta',
+
+  com_nav_delete_account_confirm_placeholder:
+    'Para continuar, escriba "DELETE" en el campo de entrada a continuación',
+
+  com_nav_delete_warning: 'ADVERTENCIA: Esta acción eliminará su cuenta de forma permanente.',
+
+  com_nav_delete_data_info: 'Se eliminarán todos sus datos',
+
+  com_nav_conversation_mode: 'Modo de conversación',
+
+  com_nav_auto_send_text: 'Envío automático de texto',
+
+  com_nav_auto_send_text_disabled: 'Establecer -1 para deshabilitar',
+
+  com_nav_auto_transcribe_audio: 'Transcribir audio automáticamente',
+
+  com_nav_db_sensitivity: 'Sensibilidad en decibelios',
+
+  com_nav_playback_rate: 'Velocidad de reproducción de audio',
+
+  com_nav_audio_play_error: 'Error al reproducir el audio: {0}',
+
+  com_nav_audio_process_error: 'Error al procesar el audio: {0}',
+
+  com_nav_long_audio_warning: 'Los textos más extensos tomarán más tiempo en procesarse.',
+
+  com_nav_tts_init_error: 'Error al inicializar la conversión de texto a voz: {0}',
+
+  com_nav_tts_unsupported_error:
+    'La función de texto a voz para el motor seleccionado no es compatible con este navegador.',
+
+  com_nav_source_buffer_error:
+    'Error al configurar la reproducción de audio. Por favor, actualice la página.',
+
+  com_nav_media_source_init_error:
+    'No se puede inicializar el reproductor de audio. Por favor, verifique la configuración de su navegador.',
+
+  com_nav_buffer_append_error:
+    'Problema con la transmisión de audio. La reproducción podría interrumpirse.',
+
+  com_nav_speech_cancel_error:
+    'No se pudo detener la reproducción de audio. Es posible que necesite actualizar la página.',
+
+  com_nav_voices_fetch_error:
+    'No se pudieron recuperar las opciones de voz. Por favor, verifique su conexión a Internet.',
+
+  com_nav_browser: 'Navegador',
+
+  com_nav_engine: 'Motor',
+
+  com_nav_edge: 'Edge',
+
+  com_nav_external: 'Externo',
+
+  com_nav_delete_cache_storage: 'Eliminar almacenamiento caché de TTS',
+
+  com_nav_enable_cache_tts: 'Habilitar caché de texto a voz',
+
+  com_nav_voice_select: 'Voz',
+
+  com_nav_enable_cloud_browser_voice: 'Usar voces basadas en la nube',
+
+  com_nav_info_enter_to_send:
+    'Cuando está habilitado, al presionar `ENTER` se enviará su mensaje. Cuando está deshabilitado, al presionar Enter se agregará una nueva línea, y necesitará presionar `CTRL + ENTER` / `⌘ + ENTER` para enviar su mensaje.',
+
+  com_nav_info_save_draft:
+    'Cuando está habilitado, el texto y los archivos adjuntos que ingrese en el formulario de chat se guardarán automáticamente como borradores en su dispositivo local. Estos borradores estarán disponibles incluso si recarga la página o cambia a una conversación diferente. Los borradores se almacenan localmente en su dispositivo y se eliminan una vez que el mensaje es enviado.',
+
+  com_nav_info_fork_change_default:
+    '"Mostrar únicamente mensajes visibles" incluye solo la ruta directa hacia el mensaje seleccionado. "Incluir ramas relacionadas" añade las ramificaciones a lo largo de la ruta. "Incluir todo desde/hacia aquí" incluye todos los mensajes y ramificaciones conectados.',
+
+  com_nav_info_fork_split_target_setting:
+    'Cuando está habilitado, la bifurcación comenzará desde el mensaje objetivo hasta el último mensaje de la conversación, según el comportamiento seleccionado.',
+
+  com_nav_info_user_name_display:
+    'Cuando está habilitado, se mostrará su nombre de usuario sobre cada mensaje que envíe. Cuando está deshabilitado, solo verá "Usted" sobre sus mensajes.',
+
+  com_nav_info_latex_parsing:
+    'Cuando está habilitado, el código LaTeX en los mensajes se mostrará como ecuaciones matemáticas. Si usted no necesita el renderizado de LaTeX, puede deshabilitarlo para mejorar el rendimiento.',
+
+  com_nav_info_revoke:
+    'Esta acción revocará y eliminará todas las claves API que usted ha proporcionado. Necesitará ingresar nuevamente estas credenciales para continuar utilizando esos puntos de conexión.',
+
+  com_nav_chat_commands: 'Comandos de chat',
+
+  com_nav_info_delete_cache_storage:
+    'Esta acción eliminará todos los archivos de audio TTS (texto a voz) almacenados en caché en su dispositivo. Los archivos de audio en caché se utilizan para acelerar la reproducción de audio TTS generado previamente, pero pueden consumir espacio de almacenamiento en su dispositivo.',
+
+  com_nav_commands: 'Comandos',
+
+  com_nav_chat_commands_info:
+    'Estos comandos se activan al escribir caracteres específicos al inicio de su mensaje. Cada comando se activa mediante su prefijo designado. Puede desactivarlos si utiliza frecuentemente estos caracteres para comenzar mensajes.',
+
+  com_nav_commands_tab: 'Configuración de comandos',
+
+  com_nav_at_command: 'Comando @',
+
+  com_nav_at_command_description:
+    'Alternar comando "@" para cambiar entre puntos de conexión, modelos, ajustes predefinidos, etc.',
+
+  com_nav_plus_command: '+ Comando',
+
+  com_nav_plus_command_description:
+    'Alternar comando ' + ' para agregar una configuración de respuestas múltiples',
+
+  com_nav_slash_command: 'Comando /',
+
+  com_nav_slash_command_description:
+    'Alternar comando \'/\' para seleccionar un mensaje predefinido mediante el teclado',
+
+  com_nav_command_settings: 'Configuración de comandos',
+
+  com_nav_command_settings_description: 'Personalice los comandos disponibles en el chat',
+
+  com_nav_no_search_results: 'No se encontraron resultados de búsqueda',
+
+  com_nav_setting_chat: 'Configuración del chat',
+
+  com_nav_setting_speech: 'Voz y habla',
+
+  com_nav_lang_finnish: 'Finlandés',
 };

@@ -602,4 +602,524 @@ export default {
   com_nav_lang_dutch: 'Голландский',
   com_nav_lang_indonesia: 'Индонезийский',
   com_nav_lang_hebrew: 'Иврит',
+  com_nav_convo_menu_options: 'Параметры диалога',
+
+  com_ui_artifacts: 'Артефакты',
+
+  com_ui_include_shadcnui: 'Включить компоненты shadcn/ui',
+
+  com_nav_info_code_artifacts:
+    'Включает отображение экспериментального программного кода рядом с чатом',
+
+  com_ui_artifacts_toggle: 'Показать/скрыть артефакты',
+
+  com_ui_custom_prompt_mode: 'Режим пользовательского промта',
+
+  com_nav_info_include_shadcnui:
+    'При включении будут добавлены инструкции по использованию компонентов shadcn/ui. shadcn/ui — это набор переиспользуемых компонентов, созданных на основе Radix UI и Tailwind CSS. Примечание: эти инструкции довольно объемные, включайте их только если для вас важно информировать LLM о правильных импортах и компонентах. Подробнее о компонентах можно узнать на сайте: https://ui.shadcn.com/',
+
+  com_nav_info_custom_prompt_mode:
+    'При включении этого режима системный промт по умолчанию для создания артефактов не будет использоваться. Все инструкции для генерации артефактов должны задаваться вручную.',
+
+  com_ui_artifact_click: 'Нажмите, чтобы открыть',
+
+  com_a11y_start: 'ИИ начал отвечать',
+
+  com_a11y_ai_composing: 'ИИ продолжает составлять ответ',
+
+  com_warning_resubmit_unsupported:
+    'Повторная отправка сообщения ИИ не поддерживается для данной конечной точки',
+
+  com_a11y_end: 'ИИ закончил свой ответ',
+
+  com_error_invalid_request_error:
+    'Сервис ИИ отклонил запрос из-за ошибки. Это может быть вызвано недействительным API-ключом или неправильно сформированным запросом.',
+
+  com_error_no_system_messages:
+    'Выбранный ИИ-сервис или модель не поддерживает системные сообщения. Попробуйте использовать промты вместо пользовательских инструкций.',
+
+  com_error_files_empty: 'Пустые файлы не допускаются',
+
+  com_error_files_dupe: 'Обнаружен дублирующийся файл',
+
+  com_error_files_validation: 'Произошла ошибка при проверке файла',
+
+  com_error_input_length:
+    'Последнее сообщение слишком длинное и превышает допустимый лимит токенов ({0}). Пожалуйста, сократите сообщение, измените максимальный размер контекста в параметрах беседы или создайте ответвление беседы для продолжения.',
+
+  com_error_files_process: 'Произошла ошибка при обработке файла',
+
+  com_error_files_upload: 'При загрузке файла произошла ошибка',
+
+  com_error_files_upload_canceled:
+    'Запрос на загрузку файла был отменен. Примечание: файл все еще может обрабатываться и потребуется удалить его вручную.',
+
+  com_generated_files: 'Сгенерированные файлы:',
+
+  com_download_expired: 'срок скачивания истек',
+
+  com_click_to_download: '(нажмите для скачивания)',
+
+  com_download_expires: '(нажмите здесь для скачивания - срок действия до {0})',
+
+  com_assistants_code_interpreter_info:
+    'Интерпретатор кода позволяет ассистенту создавать и выполнять код. Этот инструмент может обрабатывать файлы с различными данными и форматами, а также создавать файлы, например графики.',
+
+  com_assistants_conversation_starters_placeholder: 'Введите начальную фразу для разговора',
+
+  com_assistants_conversation_starters: 'Примеры запросов',
+
+  com_sidepanel_agent_builder: 'Конструктор агента',
+
+  com_agents_name_placeholder: 'Необязательно: имя агента',
+
+  com_agents_description_placeholder: 'Необязательно: описание вашего агента',
+
+  com_agents_instructions_placeholder: 'Системные инструкции, используемые агентом',
+
+  com_agents_search_name: 'Поиск агентов по имени',
+
+  com_agents_update_error: 'Произошла ошибка при обновлении вашего агента.',
+
+  com_agents_create_error: 'Произошла ошибка при создании вашего агента',
+
+  com_agents_allow_editing: 'Разрешить другим пользователям редактировать вашего агента',
+
+  com_agents_missing_provider_model: 'Выберите провайдера и модель перед созданием агента',
+
+  com_agents_not_available: 'Агент недоступен',
+
+  com_agents_no_access: 'У вас нет прав для редактирования этого агента',
+
+  com_agents_enable_file_search: 'Включить поиск файлов',
+
+  com_agents_file_search_info:
+    'При включении агент получит доступ к точным названиям файлов, перечисленным ниже, что позволит ему извлекать из них релевантный контекст.',
+
+  com_agents_file_search_disabled: 'Для загрузки файлов в Поиск необходимо сначала создать агента',
+
+  com_agents_execute_code: 'Выполнить код',
+
+  com_ui_agent_editing_allowed: 'Другие пользователи уже могут редактировать этого ассистента',
+
+  com_ui_agent_already_shared_to_all: 'Этот ассистент уже доступен всем пользователям',
+
+  com_ui_no_changes: 'Нет изменений для обновления',
+
+  com_ui_error_connection: 'Ошибка подключения к серверу. Попробуйте обновить страницу.',
+
+  com_ui_endpoint: 'Эндпоинт',
+
+  com_ui_provider: 'Провайдер',
+
+  com_ui_region: 'Регион',
+
+  com_ui_model_parameters: 'Параметры модели',
+
+  com_ui_model_save_success: 'Параметры модели успешно сохранены',
+
+  com_ui_select_region: 'Выберите регион',
+
+  com_ui_select_provider: 'Выберите провайдера',
+
+  com_ui_select_provider_first: 'Сначала выберите провайдера',
+
+  com_ui_select_search_region: 'Поиск региона по названию',
+
+  com_ui_prompt: 'Промт',
+
+  com_ui_prompt_name: 'Название промта',
+
+  com_ui_admin: 'Администратор',
+
+  com_ui_delete_prompt: 'Удалить промт?',
+
+  com_ui_prompts: 'Промты',
+
+  com_ui_versions: 'Версии',
+
+  com_ui_version_var: 'Версия {0}',
+
+  com_ui_simple: 'Простой',
+
+  com_ui_advanced: 'Расширенные',
+
+  com_ui_admin_settings: 'Настройки администратора',
+
+  com_ui_error_save_admin_settings: 'Произошла ошибка при сохранении настроек администратора',
+
+  com_ui_prompt_preview_not_shared: 'Автор не разрешил совместную работу с этим промтом',
+
+  com_ui_prompt_name_required: 'Необходимо указать название промта',
+
+  com_ui_prompt_text: 'Текст',
+
+  com_ui_back_to_chat: 'Вернуться к чату',
+
+  com_ui_prompt_text_required: 'Введите текст',
+
+  com_ui_categories: 'Категории',
+
+  com_ui_back_to_prompts: 'Вернуться к промтам',
+
+  com_ui_filter_prompts_name: 'Фильтровать промты по названию',
+
+  com_ui_search_categories: 'Поиск по категориям',
+
+  com_ui_manage: 'Управление',
+
+  com_ui_variables: 'Переменные',
+
+  com_ui_variables_info:
+    'Используйте двойные фигурные скобки в тексте для создания переменных, например `{{пример переменной}}`, чтобы заполнить их позже при использовании промта.',
+
+  com_ui_special_variables: 'Специальные переменные:',
+
+  com_ui_special_variables_info:
+    'Используйте `{{current_date}}` для отображения текущей даты и `{{current_user}}` для отображения имени вашей учетной записи.',
+
+  com_ui_dropdown_variables: 'Выпадающие переменные:',
+
+  com_ui_dropdown_variables_info:
+    'Создавайте пользовательские выпадающие списки для ваших промптов: `{{название_переменной:вариант1|вариант2|вариант3}}`',
+
+  com_ui_upload_invalid:
+    'Недопустимый файл для загрузки. Загружаемое изображение не должно превышать установленный размер',
+
+  com_ui_renaming_var: 'Переименование \'{0}\'',
+
+  com_ui_upload_invalid_var:
+    'Недопустимый файл. Загружаемое изображение не должно превышать {0} МБ',
+
+  com_ui_latest_footer: 'Искусственный интеллект для каждого',
+
+  com_ui_read_aloud: 'Прочитать вслух',
+
+  com_ui_add_model_preset: 'Добавить модель или пресет для дополнительного ответа',
+
+  com_assistants_max_starters_reached: 'Достигнуто максимальное количество начальных подсказок',
+
+  com_ui_all_proper: 'Все',
+
+  com_ui_loading: 'Загрузка...',
+
+  com_ui_revoke_keys: 'Отозвать ключи',
+
+  com_ui_revoke_keys_confirm: 'Вы действительно хотите отозвать все ключи?',
+
+  com_ui_revoke_key_endpoint: 'Отозвать ключ для {0}',
+
+  com_ui_revoke_key_confirm: 'Вы действительно хотите отозвать этот ключ?',
+
+  com_ui_chat_history: 'История чатов',
+
+  com_ui_chat: 'Чат',
+
+  com_ui_controls: 'Управление',
+
+  com_ui_agent: 'Агент',
+
+  com_ui_agent_delete_error: 'Произошла ошибка при удалении ассистента',
+
+  com_ui_dashboard: 'Главная панель',
+
+  com_ui_agent_deleted: 'Ассистент успешно удален',
+
+  com_ui_delete_agent_confirm: 'Вы действительно хотите удалить этого агента?',
+
+  com_ui_agents: 'Агенты',
+
+  com_ui_create_prompt: 'Создать промт',
+
+  com_ui_share_var: 'Поделиться {0}',
+
+  com_ui_enter_var: 'Введите {0}',
+
+  com_ui_share_to_all_users: 'Поделиться со всеми пользователями',
+
+  com_ui_my_prompts: 'Мои промты',
+
+  com_ui_no_category: 'Без категории',
+
+  com_ui_prompts_allow_create: 'Разрешить создание промтов',
+
+  com_ui_shared_prompts: 'Общие промты',
+
+  com_ui_prompts_allow_use: 'Разрешить использование промтов',
+
+  com_ui_prompts_allow_share_global: 'Разрешить доступ к промптам всем пользователям',
+
+  com_ui_prompt_shared_to_all: 'Этот промт доступен всем пользователям',
+
+  com_ui_prompt_update_error: 'Произошла ошибка при обновлении промта',
+
+  com_ui_prompt_already_shared_to_all: 'Этот промт уже доступен всем пользователям',
+
+  com_ui_command_placeholder:
+    'Необязательно: введите команду для промта или будет использовано название',
+
+  com_ui_description_placeholder: 'Дополнительно: введите описание для промта',
+
+  com_ui_command_usage_placeholder: 'Выберите промпт по команде или названию',
+
+  com_ui_no_prompt_description: 'Описание отсутствует',
+
+  com_ui_delete_tool: 'Удалить инструмент',
+
+  com_ui_delete_tool_confirm: 'Вы действительно хотите удалить этот инструмент?',
+
+  com_ui_delete_action: 'Удалить действие',
+
+  com_ui_locked: 'Заблокировано',
+
+  com_ui_delete_action_confirm: 'Вы действительно хотите удалить это действие?',
+
+  com_ui_use_micrphone: 'Использовать микрофон',
+
+  com_ui_bookmarks_create_exists: 'Такая закладка уже существует',
+
+  com_ui_delete_confirm_prompt_version_var:
+    'Это действие удалит выбранную версию для \'{0}\'. Если других версий не существует, промт будет полностью удален.',
+
+  com_ui_bookmarks_delete: 'Удалить закладку',
+
+  com_ui_bookmarks_filter: 'Поиск в закладках...',
+
+  com_ui_no_conversation_id: 'Идентификатор беседы не найден',
+
+  com_ui_no_bookmarks: 'Похоже, у вас пока нет закладок. Выберите чат и добавьте новую закладку',
+
+  com_ui_add_multi_conversation: 'Добавить несколько бесед',
+
+  com_auth_registration_success_insecure: 'Регистрация успешно завершена',
+
+  com_auth_registration_success_generic:
+    'Пожалуйста, проверьте вашу почту для подтверждения email-адреса',
+
+  com_auth_error_login_unverified:
+    'Ваша учетная запись не подтверждена. Пожалуйста, проверьте вашу электронную почту и перейдите по ссылке для подтверждения.',
+
+  com_auth_reset_password_if_email_exists:
+    'Если аккаунт с указанным адресом существует, мы отправили на него инструкции по сбросу пароля. Пожалуйста, проверьте также папку "Спам".',
+
+  com_auth_email_verification_failed: 'Не удалось выполнить проверку электронной почты',
+
+  com_auth_email_verification_rate_limited: 'Слишком много запросов. Пожалуйста, попробуйте позже',
+
+  com_auth_email_verification_success: 'Адрес электронной почты успешно подтвержден',
+
+  com_auth_email_resent_success: 'Письмо с подтверждением успешно отправлено повторно',
+
+  com_auth_email_verification_failed_token_missing:
+    'Ошибка верификации: отсутствует токен подтверждения',
+
+  com_auth_email_resent_failed: 'Не удалось повторно отправить письмо для подтверждения',
+
+  com_auth_email_verification_invalid: 'Неверная верификация электронной почты',
+
+  com_auth_email_verification_in_progress: 'Подождите, идет проверка вашего email',
+
+  com_auth_email_verification_resend_prompt: 'Не получили письмо?',
+
+  com_auth_email_resend_link: 'Отправить письмо повторно',
+
+  com_auth_email_verification_redirecting: 'Перенаправление через {0} сек...',
+
+  com_endpoint_anthropic_prompt_cache:
+    'Кэширование промтов позволяет повторно использовать большой контекст или инструкции между API-запросами, снижая затраты и задержки',
+
+  com_endpoint_export_share: 'Экспорт/Поделиться',
+
+  com_endpoint_prompt_cache: 'Использовать кэширование промтов',
+
+  com_endpoint_config_key_never_expires: 'Ваш ключ будет действовать бессрочно',
+
+  com_endpoint_search: 'Поиск эндпоинта по имени',
+
+  com_nav_account_settings: 'Настройки аккаунта',
+
+  com_nav_font_size_xs: 'Очень мелкий',
+
+  com_nav_font_size_sm: 'Мелкий',
+
+  com_nav_font_size_base: 'Средний',
+
+  com_nav_font_size_lg: 'Крупный',
+
+  com_nav_font_size_xl: 'Очень большой',
+
+  com_nav_text_to_speech: 'Синтез речи',
+
+  com_nav_user_msg_markdown: 'Отображать сообщения пользователя в формате Markdown',
+
+  com_nav_automatic_playback: 'Автовоспроизведение последнего сообщения',
+
+  com_nav_speech_to_text: 'Преобразование речи в текст',
+
+  com_ui_misc: 'Разное',
+
+  com_ui_write: 'Написать',
+
+  com_ui_roleplay: 'Ролевая игра',
+
+  com_nav_tool_dialog_agents: 'Инструменты агента',
+
+  com_ui_shop: 'Магазин',
+
+  com_ui_idea: 'Идеи',
+
+  com_ui_code: 'Код',
+
+  com_ui_travel: 'Путешествия',
+
+  com_ui_finance: 'Финансы',
+
+  com_ui_drag_drop_file: 'Перетащите файл сюда',
+
+  com_ui_select_file: 'Выберите файл',
+
+  com_ui_upload_image: 'Загрузить изображение',
+
+  com_ui_select_a_category: 'Категория не выбрана',
+
+  com_ui_clear_all: 'Очистить всё',
+
+  com_ui_teach_or_explain: 'Обучение',
+
+  com_nav_chat_direction: 'Направление чата',
+
+  com_nav_clear_cache_confirm_message: 'Вы уверены, что хотите очистить кэш?',
+
+  com_nav_stop_generating: 'Остановить генерацию',
+
+  com_nav_auto_send_prompts: 'Автоотправка промптов',
+
+  com_nav_always_make_prod: 'Автоматически публиковать новые версии',
+
+  com_nav_delete_account: 'Удалить аккаунт',
+
+  com_nav_delete_account_confirm: 'Вы уверены, что хотите удалить аккаунт?',
+
+  com_nav_delete_account_button: 'Удалить аккаунт навсегда',
+
+  com_nav_delete_account_email_placeholder: 'Введите email вашего аккаунта',
+
+  com_nav_delete_account_confirm_placeholder: 'Для подтверждения введите "DELETE" в поле ниже',
+
+  com_nav_delete_warning:
+    'ВНИМАНИЕ: Ваша учетная запись будет удалена без возможности восстановления.',
+
+  com_nav_conversation_mode: 'Режим диалога',
+
+  com_nav_delete_data_info: 'Все ваши данные будут удалены',
+
+  com_nav_auto_send_text: 'Автоотправка сообщений',
+
+  com_nav_auto_send_text_disabled: 'установите -1 для отключения',
+
+  com_nav_auto_transcribe_audio: 'Автоматическая транскрипция',
+
+  com_nav_db_sensitivity: 'Чувствительность в децибелах',
+
+  com_nav_audio_play_error: 'Ошибка воспроизведения аудио: {0}',
+
+  com_nav_playback_rate: 'Скорость воспроизведения',
+
+  com_nav_long_audio_warning: 'Обработка длинных текстов займет больше времени',
+
+  com_nav_tts_init_error: 'Не удалось инициализировать преобразование текста в речь: {0}',
+
+  com_nav_audio_process_error: 'Ошибка обработки аудио: {0}',
+
+  com_nav_source_buffer_error:
+    'Ошибка при настройке воспроизведения звука. Пожалуйста, обновите страницу.',
+
+  com_nav_buffer_append_error: 'Проблема с потоковым аудио. Воспроизведение может прерываться.',
+
+  com_nav_media_source_init_error:
+    'Не удалось подготовить аудиоплеер. Пожалуйста, проверьте настройки браузера.',
+
+  com_nav_tts_unsupported_error:
+    'Синтез речи для выбранного движка не поддерживается в этом браузере',
+
+  com_nav_voices_fetch_error:
+    'Не удалось загрузить варианты голосов. Проверьте подключение к интернету.',
+
+  com_nav_engine: 'Модель',
+
+  com_nav_speech_cancel_error:
+    'Не удалось остановить воспроизведение аудио. Попробуйте обновить страницу.',
+
+  com_nav_browser: 'Браузер',
+
+  com_nav_edge: 'Edge',
+
+  com_nav_external: 'Внешние',
+
+  com_nav_enable_cache_tts: 'Включить кэширование TTS',
+
+  com_nav_delete_cache_storage: 'Очистить кэш озвучивания',
+
+  com_nav_voice_select: 'Голос',
+
+  com_nav_enable_cloud_browser_voice: 'Использовать облачные голоса',
+
+  com_nav_info_enter_to_send:
+    'Если включено, нажатие клавиши Enter отправит ваше сообщение. Если отключено, Enter добавит новую строку, а для отправки сообщения нужно будет нажать CTRL + Enter или ⌘ + Enter.',
+
+  com_nav_info_user_name_display:
+    'Если включено, над каждым вашим сообщением будет отображаться ваше имя пользователя. Если отключено, над вашими сообщениями будет отображаться только "Вы".',
+
+  com_nav_info_fork_split_target_setting:
+    'Если включено, ветвление будет выполняться от целевого сообщения до последнего сообщения в диалоге в соответствии с выбранным поведением.',
+
+  com_nav_info_latex_parsing:
+    'При включении этой функции код LaTeX в сообщениях будет отображаться в виде математических формул. Если вам не требуется отображение LaTeX, отключение этой функции может улучшить производительность.',
+
+  com_nav_chat_commands: 'Команды чата',
+
+  com_nav_info_save_draft:
+    'При включении этой функции текст и прикрепленные файлы, введенные в форму чата, будут автоматически сохраняться локально как черновики. Эти черновики останутся доступными даже после перезагрузки страницы или перехода к другому разговору. Черновики хранятся локально на вашем устройстве и удаляются после отправки сообщения.',
+
+  com_nav_info_delete_cache_storage:
+    'Это действие удалит все кэшированные аудиофайлы TTS (синтеза речи), сохраненные на вашем устройстве. Кэшированные аудиофайлы используются для ускорения воспроизведения ранее сгенерированной речи, но они могут занимать место в памяти устройства.',
+
+  com_nav_info_revoke:
+    'Это действие отзовет и удалит все предоставленные вами API-ключи. Для дальнейшего использования этих конечных точек вам потребуется заново ввести учетные данные.',
+
+  com_nav_chat_commands_info:
+    'Эти команды активируются при вводе определенных символов в начале вашего сообщения. Каждая команда запускается своим префиксом. Вы можете отключить их, если часто используете эти символы для начала сообщений.',
+
+  com_nav_info_fork_change_default:
+    '«Только видимые сообщения» включает лишь прямой путь к выбранному сообщению. «Включить связанные ветки» добавляет ответвления вдоль этого пути. «Включить все сообщения до/от этой точки» охватывает все связанные сообщения и ветки.',
+
+  com_nav_commands_tab: 'Настройки команд',
+
+  com_nav_at_command: '@-команда',
+
+  com_nav_plus_command: 'Добавить команду',
+
+  com_nav_commands: 'Команды',
+
+  com_nav_plus_command_description: 'Переключить команду ' + ' для настройки множественных ответов',
+
+  com_nav_at_command_description:
+    'Переключение команды "@" для выбора эндпоинтов, моделей, пресетов и др.',
+
+  com_nav_slash_command_description:
+    'Вызов командной строки клавишей \'/\' для выбора промта с клавиатуры',
+
+  com_nav_slash_command: '/-Команда',
+
+  com_nav_command_settings: 'Настройки команд',
+
+  com_nav_command_settings_description: 'Настройте доступные в чате команды',
+
+  com_nav_setting_chat: 'Чат',
+
+  com_nav_no_search_results: 'Ничего не найдено',
+
+  com_nav_setting_speech: 'Голос',
+
+  com_nav_lang_finnish: 'Финский',
 };

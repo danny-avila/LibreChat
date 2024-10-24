@@ -807,4 +807,53 @@ export default {
   com_ui_decline: '同意しません',
   com_ui_terms_and_conditions: '利用規約',
   com_ui_no_terms_content: '表示する利用規約の内容はありません',
+  com_warning_resubmit_unsupported:
+    'このエンドポイントではAIメッセージの再送信はサポートされていません',
+  com_error_invalid_request_error:
+    'AIサービスがリクエストを処理できませんでした。APIキーが無効であるか、リクエストの形式が正しくない可能性があります。',
+  com_error_no_system_messages:
+    '選択されたAIサービスまたはモデルはシステムメッセージに対応していません。カスタム指示の代わりにプロンプトを使用してください。',
+  com_error_files_dupe: '重複したファイルが検出されました。',
+  com_error_files_empty: '空のファイルはアップロードできません',
+  com_error_files_upload: 'ファイルのアップロード中にエラーが発生しました。',
+  com_error_files_validation: 'ファイルの検証中にエラーが発生しました。',
+  com_generated_files: '生成されたファイル:',
+  com_download_expired: 'ダウンロードの期限が切れています',
+  com_error_files_upload_canceled:
+    'ファイルのアップロードがキャンセルされました。注意：アップロード処理が継続している可能性があるため、手動でファイルを削除する必要があるかもしれません。',
+  com_download_expires: 'ダウンロードはこちら（有効期限：{0}）',
+  com_agents_not_available: 'エージェントは利用できません',
+  com_click_to_download: '（ダウンロードするにはこちらをクリック）',
+  com_agents_missing_provider_model:
+    'エージェントを作成する前に、プロバイダーとモデルを選択してください。',
+  com_agents_allow_editing: '他のユーザーにエージェントの編集を許可する',
+  com_error_files_process: 'ファイルの処理中にエラーが発生しました。',
+  com_agents_enable_file_search: 'ファイル検索を有効にする',
+  com_agents_no_access: 'このエージェントを編集する権限がありません。',
+  com_agents_file_search_disabled:
+    'ファイル検索用のファイルをアップロードする前に、エージェントを作成する必要があります。',
+  com_agents_file_search_info:
+    '有効にすると、エージェントは以下に表示されているファイル名を正確に認識し、それらのファイルから関連する情報を取得することができます。',
+  com_agents_execute_code: 'コードを実行',
+  com_ui_agent_editing_allowed: 'このエージェントは他のユーザーが既に編集可能です',
+  com_ui_agent_already_shared_to_all: 'このアシスタントは既に全ユーザーに共有されています',
+  com_ui_no_changes: '更新する変更はありません',
+  com_ui_region: '地域',
+  com_ui_select_search_region: '地域名で検索',
+  com_ui_select_region: '地域を選択',
+  com_ui_revoke_key_endpoint: '{0}のキーを無効にする',
+  com_ui_revoke_keys_confirm: 'すべての認証情報を無効にしてもよろしいですか？',
+  com_ui_revoke_keys: '認証キーの無効化',
+  com_ui_bookmarks_delete: 'ブックマークを削除',
+  com_ui_revoke_key_confirm: 'この認証情報を無効にしてもよろしいですか？',
+  com_endpoint_search: 'エンドポイントを名前で検索',
+  com_ui_add_multi_conversation: '複数のチャットを追加',
+  com_nav_tool_dialog_agents: 'エージェントツール',
+  com_nav_user_msg_markdown: 'メッセージをマークダウン形式で表示する',
+  com_nav_clear_cache_confirm_message: 'キャッシュを削除してもよろしいですか？',
+  com_nav_chat_commands: 'チャットコマンド',
+  com_nav_stop_generating: '生成を停止',
+  com_nav_no_search_results: '検索結果が見つかりません',
+  com_nav_chat_commands_info:
+    'メッセージの先頭に特定の文字を入力することで、これらのコマンドが有効になります。各コマンドは、決められた文字（プレフィックス）で起動します。メッセージの先頭にこれらの文字をよく使用する場合は、コマンド機能を無効にすることができます。',
 };

@@ -380,8 +380,6 @@ export default {
 
   com_ui_read_aloud: '소리내어 읽기',
 
-  com_ui_add: '추가 응답을 위한 모델 또는 프리셋 추가',
-
   com_ui_loading: '로딩 중...',
 
   com_ui_all_proper: '모두',
@@ -935,4 +933,167 @@ export default {
   com_nav_lang_dutch: '네덜란드어',
   com_nav_lang_indonesia: '인도네시아',
   com_nav_lang_hebrew: '히브리어',
+  com_nav_convo_menu_options: '대화 메뉴 옵션',
+
+  com_ui_artifacts_toggle: '아티팩트 UI 표시/숨기기',
+
+  com_ui_include_shadcnui: 'shadcn/ui 컴포넌트 설치 안내',
+
+  com_ui_artifacts: '아티팩트',
+
+  com_ui_custom_prompt_mode: '사용자 지정 프롬프트 모드',
+
+  com_ui_artifact_click: '클릭하여 열기',
+
+  com_nav_info_include_shadcnui:
+    '활성화하면 shadcn/ui 컴포넌트 사용을 위한 설명이 포함됩니다. shadcn/ui는 Radix UI와 Tailwind CSS를 기반으로 구축된 재사용 가능한 컴포넌트 모음입니다. 참고: 이 설명은 매우 상세하므로, LLM에게 올바른 import문과 컴포넌트 사용법을 안내하는 것이 중요한 경우에만 활성화하시기 바랍니다. 컴포넌트에 대한 자세한 정보는 다음 웹사이트를 참조하세요: https://ui.shadcn.com/',
+
+  com_nav_info_custom_prompt_mode:
+    '활성화하면 기본 아티팩트 시스템 프롬프트가 포함되지 않습니다. 이 모드에서는 아티팩트 생성을 위한 모든 지시사항을 수동으로 입력해야 합니다.',
+
+  com_nav_info_code_artifacts: '채팅 옆에 실험적 코드 결과물 표시 활성화',
+
+  com_a11y_ai_composing: 'AI가 응답을 작성 중입니다',
+
+  com_warning_resubmit_unsupported: '이 엔드포인트에서는 AI 메시지 재전송이 지원되지 않습니다',
+
+  com_error_invalid_request_error:
+    'AI 서비스에서 오류로 인해 요청이 거부되었습니다. API 키가 유효하지 않거나 요청 형식이 올바르지 않은 것이 원인일 수 있습니다.',
+
+  com_error_no_system_messages:
+    '선택한 AI 서비스나 모델은 시스템 메시지를 지원하지 않습니다. 커스텀 지시사항 대신 프롬프트를 사용해 보세요.',
+
+  com_error_files_empty: '빈 파일은 허용되지 않습니다',
+
+  com_error_input_length:
+    '최근 메시지의 토큰 수가 제한({0})을 초과했습니다. 메시지를 줄이거나, 대화 설정에서 최대 컨텍스트 크기를 조정하거나, 새로운 대화를 시작해 주세요.',
+
+  com_error_files_dupe: '중복된 파일이 감지되었습니다',
+
+  com_error_files_validation: '파일 유효성 검사 중 오류가 발생했습니다',
+
+  com_error_files_process: '파일 처리 중 오류가 발생했습니다',
+
+  com_error_files_upload: '파일 업로드 중 오류가 발생했습니다',
+
+  com_generated_files: '생성된 파일:',
+
+  com_error_files_upload_canceled:
+    '파일 업로드가 취소되었습니다. 참고: 업로드 처리가 아직 진행 중일 수 있으며 수동으로 삭제해야 할 수 있습니다.',
+
+  com_download_expired: '다운로드가 만료되었습니다',
+
+  com_click_to_download: '(다운로드하려면 클릭하세요)',
+
+  com_assistants_conversation_starters_placeholder: '대화를 시작할 문구를 입력하세요',
+
+  com_download_expires: '(다운로드하려면 클릭하세요 - {0} 후 만료)',
+
+  com_agents_name_placeholder: '선택 사항: 에이전트의 이름',
+
+  com_sidepanel_agent_builder: '에이전트 제작기',
+
+  com_assistants_conversation_starters: '대화 시작하기',
+
+  com_agents_instructions_placeholder: '에이전트가 사용하는 시스템 지침',
+
+  com_agents_description_placeholder: '선택 사항: 여기에 에이전트를 설명하세요',
+
+  com_agents_search_name: '이름으로 에이전트 검색',
+
+  com_agents_update_error: '에이전트 업데이트 중 오류가 발생했습니다',
+
+  com_agents_create_error: '에이전트 생성 중 오류가 발생했습니다',
+
+  com_agents_missing_provider_model: '에이전트를 생성하기 전에 제공업체와 모델을 선택해 주세요',
+
+  com_agents_not_available: '에이전트를 사용할 수 없음',
+
+  com_agents_allow_editing: '다른 사용자가 내 에이전트를 수정할 수 있도록 허용',
+
+  com_agents_no_access: '이 에이전트를 수정할 권한이 없습니다',
+
+  com_agents_enable_file_search: '파일 검색 활성화',
+
+  com_agents_file_search_info:
+    '활성화하면 에이전트가 아래 나열된 파일명들을 정확히 인식하여 해당 파일들에서 관련 내용을 검색할 수 있습니다.',
+
+  com_agents_file_search_disabled:
+    '파일 검색을 위해 파일을 업로드하기 전에 에이전트를 먼저 생성해야 합니다',
+
+  com_agents_execute_code: '코드 실행',
+
+  com_ui_agent_already_shared_to_all: '이 에이전트는 이미 모든 사용자와 공유되어 있습니다',
+
+  com_ui_endpoint: '엔드포인트',
+
+  com_ui_no_changes: '업데이트할 변경 사항이 없습니다',
+
+  com_ui_agent_editing_allowed: '다른 사용자가 이미 이 에이전트를 편집할 수 있습니다',
+
+  com_ui_region: '지역',
+
+  com_ui_model_parameters: '모델 매개변수',
+
+  com_ui_provider: '제공자',
+
+  com_ui_model_save_success: '모델 설정이 성공적으로 저장되었습니다',
+
+  com_ui_select_region: '지역 선택',
+
+  com_ui_select_provider: '제공자 선택',
+
+  com_ui_select_provider_first: '서비스 제공자를 먼저 선택하세요',
+
+  com_ui_select_search_region: '이름으로 지역 검색',
+
+  com_ui_add_model_preset: '추가 응답을 위한 모델 또는 프리셋 추가',
+
+  com_assistants_max_starters_reached: '대화 시작 문구 최대 개수에 도달했습니다',
+
+  com_ui_revoke_keys: '키 취소',
+
+  com_ui_revoke_keys_confirm: '모든 키를 취소하시겠습니까?',
+
+  com_ui_revoke_key_endpoint: '{0} 키 취소',
+
+  com_ui_revoke_key_confirm: '이 키를 취소하시겠습니까?',
+
+  com_ui_agent_deleted: '에이전트가 삭제되었습니다',
+
+  com_ui_agent_delete_error: '에이전트 삭제 중 오류가 발생했습니다',
+
+  com_ui_agent: '에이전트',
+
+  com_ui_delete_agent_confirm: '이 에이전트를 삭제하시겠습니까?',
+
+  com_ui_agents: '에이전트',
+
+  com_auth_email_verification_redirecting: '{0}초 후 이동합니다...',
+
+  com_ui_add_multi_conversation: '다중 응답 대화 추가',
+
+  com_ui_bookmarks_delete: '북마크 삭제',
+
+  com_nav_user_msg_markdown: '사용자 메시지를 마크다운으로 렌더링',
+
+  com_endpoint_search: '이름으로 엔드포인트 검색',
+
+  com_nav_tool_dialog_agents: '에이전트 도구',
+
+  com_nav_chat_direction: '채팅 표시 방향',
+
+  com_nav_clear_cache_confirm_message: '캐시를 지우시겠습니까?',
+
+  com_nav_stop_generating: '생성 중단',
+
+  com_nav_info_delete_cache_storage:
+    '이 작업은 기기에 저장된 모든 TTS(음성 합성) 오디오 파일 캐시를 삭제합니다. 캐시된 오디오 파일은 이전에 생성된 TTS 오디오의 재생 속도를 높이는 데 사용되지만, 기기의 저장 공간을 차지할 수 있습니다.',
+
+  com_nav_chat_commands_info:
+    '이 명령어들은 메시지 시작 부분에 특정 문자를 입력하면 활성화됩니다. 각 명령어는 지정된 접두사로 실행됩니다. 메시지 작성 시 이러한 문자들을 자주 사용하신다면 명령어 기능을 비활성화할 수 있습니다.',
+
+  com_nav_no_search_results: '검색 결과가 없습니다',
+
+  com_nav_chat_commands: '채팅 명령어',
 };
