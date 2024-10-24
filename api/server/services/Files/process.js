@@ -339,59 +339,61 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
 const processFileUpload = async ({ req, res, file, metadata }) => {
   const isAssistantUpload = isAssistantsEndpoint(metadata.endpoint);
   const assistantSource =
-    metadata.endpoint === EModelEndpoint.azureAssistants ? FileSources.azure : FileSources.openai;
-  const source = isAssistantUpload ? assistantSource : FileSources.vectordb;
-  const { handleFileUpload } = getStrategyFunctions(source);
+  metadata.endpoint === EModelEndpoint.azureAssistants ? FileSources.azure : FileSources.openai;
   const { file_id, temp_file_id } = metadata;
+  let create_file_data = undefined;
+  if (process.env.RAG_API_URL || isAssistantUpload) {
 
-  /** @type {OpenAI | undefined} */
-  let openai;
-  if (checkOpenAIStorage(source)) {
-    ({ openai } = await getOpenAIClient({ req }));
-  }
+    const source = isAssistantUpload ? assistantSource :  FileSources.vectordb;
+    const { handleFileUpload } = getStrategyFunctions(source);
 
-  const {
-    id,
-    bytes,
-    filename,
-    filepath: _filepath,
-    embedded,
-    height,
-    width,
-  } = await handleFileUpload({
-    req,
-    file,
-    file_id,
-    openai,
-  });
+    /** @type {OpenAI | undefined} */
+    let openai;
+    if (checkOpenAIStorage(source)) {
+      ({ openai } = await getOpenAIClient({ req }));
+    }
 
-  if (isAssistantUpload && !metadata.message_file && !metadata.tool_resource) {
-    await openai.beta.assistants.files.create(metadata.assistant_id, {
-      file_id: id,
-    });
-  } else if (isAssistantUpload && !metadata.message_file) {
-    await addResourceFileId({
-      req,
-      openai,
-      file_id: id,
-      assistant_id: metadata.assistant_id,
-      tool_resource: metadata.tool_resource,
-    });
-  }
-
-  let filepath = isAssistantUpload ? `${openai.baseURL}/files/${id}` : _filepath;
-  if (isAssistantUpload && file.mimetype.startsWith('image')) {
-    const result = await processImageFile({
+    const {
+      id,
+      bytes,
+      filename,
+      filepath: _filepath,
+      embedded,
+      height,
+      width,
+    } = await handleFileUpload({
       req,
       file,
-      metadata: { file_id: v4() },
-      returnFile: true,
+      file_id,
+      openai,
     });
-    filepath = result.filepath;
-  }
 
-  const result = await createFile(
-    {
+    if (isAssistantUpload && !metadata.message_file && !metadata.tool_resource) {
+      await openai.beta.assistants.files.create(metadata.assistant_id, {
+        file_id: id,
+      });
+    } else if (isAssistantUpload && !metadata.message_file) {
+      await addResourceFileId({
+        req,
+        openai,
+        file_id: id,
+        assistant_id: metadata.assistant_id,
+        tool_resource: metadata.tool_resource,
+      });
+    }
+
+    let filepath = isAssistantUpload ? `${openai.baseURL}/files/${id}` : _filepath;
+    if (isAssistantUpload && file.mimetype.startsWith('image')) {
+      const result = await processImageFile({
+        req,
+        file,
+        metadata: { file_id: v4() },
+        returnFile: true,
+      });
+      filepath = result.filepath;
+    }
+
+    create_file_data = {
       user: req.user.id,
       file_id: id ?? file_id,
       temp_file_id,
@@ -405,9 +407,42 @@ const processFileUpload = async ({ req, res, file, metadata }) => {
       source,
       height,
       width,
+    };
+
+  } else {
+    const source = req.app.locals.fileStrategy;
+    const { handleFileUpload } = getStrategyFunctions(source);
+
+    const { filepath, bytes } = await handleFileUpload({
+      req,
+      file,
+      file_id,
+      upload_directory: req.app.locals.paths.filesOutput,
+    });
+
+    create_file_data = {
+      user: req.user.id,
+      file_id: file_id,
+      temp_file_id,
+      bytes,
+      filepath,
+      filename: file.originalname,
+      context: FileContext.message_attachment,
+      model: req.body.model,
+      type: file.mimetype,
+      embedded: false,
+      source,
+    };
+
+  };
+
+  const result = await createFile(
+    {
+      ...create_file_data,
     },
     true,
   );
+
   res.status(200).json({ message: 'File uploaded and processed successfully', ...result });
 };
 

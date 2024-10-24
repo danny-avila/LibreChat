@@ -3,7 +3,6 @@ const path = require('path');
 const sharp = require('sharp');
 const { resizeImageBuffer } = require('../images/resize');
 const { updateUser } = require('~/models/userMethods');
-const { updateFile } = require('~/models/File');
 
 /**
  * Converts an image file to the target format. The function first resizes the image based on the specified
@@ -67,45 +66,6 @@ async function uploadLocalImage({ req, file, file_id, endpoint, resolution = 'hi
 }
 
 /**
- * Encodes an image file to base64.
- * @param {string} imagePath - The path to the image file.
- * @returns {Promise<string>} A promise that resolves with the base64 encoded image data.
- */
-function encodeImage(imagePath) {
-  return new Promise((resolve, reject) => {
-    fs.readFile(imagePath, (err, data) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(data.toString('base64'));
-      }
-    });
-  });
-}
-
-/**
- * Local: Updates the file and encodes the image to base64,
- * for image payload handling: tuple order of [filepath, base64].
- * @param {Object} req - The request object.
- * @param {MongoFile} file - The file object.
- * @returns {Promise<[MongoFile, string]>} - A promise that resolves to an array of results from updateFile and encodeImage.
- */
-async function prepareImagesLocal(req, file) {
-  const { publicPath, imageOutput } = req.app.locals.paths;
-  const userPath = path.join(imageOutput, req.user.id);
-
-  if (!fs.existsSync(userPath)) {
-    fs.mkdirSync(userPath, { recursive: true });
-  }
-  const filepath = path.join(publicPath, file.filepath);
-
-  const promises = [];
-  promises.push(updateFile({ file_id: file.file_id }));
-  promises.push(encodeImage(filepath));
-  return await Promise.all(promises);
-}
-
-/**
  * Uploads a user's avatar to local server storage and returns the URL.
  * If the 'manual' flag is set to 'true', it also updates the user's avatar URL in the database.
  *
@@ -147,4 +107,4 @@ async function processLocalAvatar({ buffer, userId, manual }) {
   return url;
 }
 
-module.exports = { uploadLocalImage, encodeImage, prepareImagesLocal, processLocalAvatar };
+module.exports = { uploadLocalImage, processLocalAvatar };

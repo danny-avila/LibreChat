@@ -15,7 +15,8 @@ const {
   saveLocalBuffer,
   deleteLocalFile,
   uploadLocalImage,
-  prepareImagesLocal,
+  uploadLocalFile,
+  prepareFileLocal,
   processLocalAvatar,
   getLocalFileStream,
 } = require('./Local');
@@ -35,7 +36,7 @@ const firebaseStrategy = () => ({
   getFileURL: getFirebaseURL,
   deleteFile: deleteFirebaseFile,
   saveBuffer: saveBufferToFirebase,
-  prepareImagePayload: prepareImageURL,
+  prepareFilePayload: prepareImageURL,
   processAvatar: processFirebaseAvatar,
   handleImageUpload: uploadImageToFirebase,
   getDownloadStream: getFirebaseFileStream,
@@ -46,15 +47,14 @@ const firebaseStrategy = () => ({
  *
  * */
 const localStrategy = () => ({
-  /** @type {typeof uploadVectors | null} */
-  handleFileUpload: null,
+  handleFileUpload: uploadLocalFile,
   saveURL: saveFileFromURL,
   getFileURL: getLocalFileURL,
   saveBuffer: saveLocalBuffer,
   deleteFile: deleteLocalFile,
   processAvatar: processLocalAvatar,
   handleImageUpload: uploadLocalImage,
-  prepareImagePayload: prepareImagesLocal,
+  prepareFilePayload: prepareFileLocal,
   getDownloadStream: getLocalFileStream,
 });
 
@@ -73,8 +73,8 @@ const vectorStrategy = () => ({
   processAvatar: null,
   /** @type {typeof uploadLocalImage | null} */
   handleImageUpload: null,
-  /** @type {typeof prepareImagesLocal | null} */
-  prepareImagePayload: null,
+  /** @type {typeof prepareFileLocal | null} */
+  prepareFilePayload: null,
   /** @type {typeof getLocalFileStream | null} */
   getDownloadStream: null,
   handleFileUpload: uploadVectors,
@@ -97,8 +97,8 @@ const openAIStrategy = () => ({
   processAvatar: null,
   /** @type {typeof uploadLocalImage | null} */
   handleImageUpload: null,
-  /** @type {typeof prepareImagesLocal | null} */
-  prepareImagePayload: null,
+  /** @type {typeof prepareFileLocal | null} */
+  prepareFilePayload: null,
   deleteFile: deleteOpenAIFile,
   handleFileUpload: uploadOpenAIFile,
   getDownloadStream: getOpenAIFileStream,
@@ -120,8 +120,8 @@ const codeOutputStrategy = () => ({
   processAvatar: null,
   /** @type {typeof uploadLocalImage | null} */
   handleImageUpload: null,
-  /** @type {typeof prepareImagesLocal | null} */
-  prepareImagePayload: null,
+  /** @type {typeof prepareFileLocal | null} */
+  prepareFilePayload: null,
   /** @type {typeof deleteLocalFile | null} */
   deleteFile: null,
   /** @type {typeof uploadVectors | null} */
