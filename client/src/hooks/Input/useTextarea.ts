@@ -157,7 +157,7 @@ export default function useTextarea({
       checkHealth();
 
       const isNonShiftEnter = e.key === 'Enter' && !e.shiftKey;
-      const isCtrlEnter = e.key === 'Enter' && e.ctrlKey;
+      const isCtrlEnter = e.key === 'Enter' && (e.ctrlKey || e.metaKey);
 
       if (isNonShiftEnter && filesLoading) {
         e.preventDefault();

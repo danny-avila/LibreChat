@@ -755,7 +755,7 @@ export default {
   com_nav_voice_select: 'Voz',
   com_nav_enable_cloud_browser_voice: 'Usar vozes baseadas na nuvem',
   com_nav_info_enter_to_send:
-    'Quando habilitado, pressionar `ENTER` enviará sua mensagem. Quando desabilitado, pressionar Enter adicionará uma nova linha, e você precisará pressionar `CTRL + ENTER` para enviar sua mensagem.',
+    'Quando habilitado, pressionar `ENTER` enviará sua mensagem. Quando desabilitado, pressionar Enter adicionará uma nova linha, e você precisará pressionar `CTRL + ENTER` / `⌘ + ENTER` para enviar sua mensagem.',
   com_nav_info_save_draft:
     'Quando habilitado, o texto e os anexos que você inserir no formulário de chat serão salvos automaticamente localmente como rascunhos. Esses rascunhos estarão disponíveis mesmo se você recarregar a página ou mudar para uma conversa diferente. Os rascunhos são armazenados localmente no seu dispositivo e são excluídos uma vez que a mensagem é enviada.',
   com_nav_info_fork_change_default:
