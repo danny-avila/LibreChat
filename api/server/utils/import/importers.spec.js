@@ -2,10 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const { EModelEndpoint, Constants, openAISettings } = require('librechat-data-provider');
 const { bulkSaveConvos: _bulkSaveConvos } = require('~/models/Conversation');
+const { getImporter, processAssistantMessage } = require('./importers');
 const { ImportBatchBuilder } = require('./importBatchBuilder');
 const { bulkSaveMessages } = require('~/models/Message');
 const getLogStores = require('~/cache/getLogStores');
-const { getImporter } = require('./importers');
 
 jest.mock('~/cache/getLogStores');
 const mockedCacheGet = jest.fn();
@@ -402,5 +402,132 @@ describe('getImporter', () => {
   it('should throw an error if the import type is not supported', () => {
     const jsonData = { unsupported: 'data' };
     expect(() => getImporter(jsonData)).toThrow('Unsupported import type');
+  });
+});
+
+describe('processAssistantMessage', () => {
+  const testMessage = 'This is a test citation 【3:0†source】【3:1†source】';
+
+  const messageData = {
+    metadata: {
+      citations: [
+        {
+          start_ix: 23, // Position of first "【3:0†source】"
+          end_ix: 36, // End of first citation (including closing bracket)
+          citation_format_type: 'tether_og',
+          metadata: {
+            type: 'webpage',
+            title: 'Signal Sciences - Crunchbase Company Profile & Funding',
+            url: 'https://www.crunchbase.com/organization/signal-sciences',
+            text: '',
+            pub_date: null,
+            extra: {
+              evidence_text: 'source',
+              cited_message_idx: 3,
+              search_result_idx: 0,
+            },
+          },
+        },
+        {
+          start_ix: 36, // Position of second "【3:1†source】"
+          end_ix: 49, // End of second citation (including closing bracket)
+          citation_format_type: 'tether_og',
+          metadata: {
+            type: 'webpage',
+            title: 'Demand More from Your WAF - Signal Sciences now part of Fastly',
+            url: 'https://www.signalsciences.com/',
+            text: '',
+            pub_date: null,
+            extra: {
+              evidence_text: 'source',
+              cited_message_idx: 3,
+              search_result_idx: 1,
+            },
+          },
+        },
+      ],
+    },
+  };
+
+  const messageText = testMessage;
+  const expectedOutput =
+    'This is a test citation ([Signal Sciences - Crunchbase Company Profile & Funding](https://www.crunchbase.com/organization/signal-sciences)) ([Demand More from Your WAF - Signal Sciences now part of Fastly](https://www.signalsciences.com/))';
+
+  test('should correctly process citations and replace them with markdown links', () => {
+    const result = processAssistantMessage(messageData, messageText);
+    expect(result).toBe(expectedOutput);
+  });
+
+  test('should handle message with no citations', () => {
+    const messageWithNoCitations = {
+      metadata: {},
+    };
+    const result = processAssistantMessage(messageWithNoCitations, messageText);
+    expect(result).toBe(messageText);
+  });
+
+  test('should handle citations with missing metadata', () => {
+    const messageWithBadCitation = {
+      metadata: {
+        citations: [
+          {
+            start_ix: 85,
+            end_ix: 97,
+          },
+        ],
+      },
+    };
+    const result = processAssistantMessage(messageWithBadCitation, messageText);
+    expect(result).toBe(messageText);
+  });
+
+  test('should handle citations with non-webpage type', () => {
+    const messageWithNonWebpage = {
+      metadata: {
+        citations: [
+          {
+            start_ix: 85,
+            end_ix: 97,
+            metadata: {
+              type: 'other',
+              title: 'Test',
+              url: 'http://test.com',
+            },
+          },
+        ],
+      },
+    };
+    const result = processAssistantMessage(messageWithNonWebpage, messageText);
+    expect(result).toBe(messageText);
+  });
+
+  test('should handle empty message text', () => {
+    const result = processAssistantMessage(messageData, '');
+    expect(result).toBe('');
+  });
+
+  test('should handle undefined message text', () => {
+    const result = processAssistantMessage(messageData, undefined);
+    expect(result).toBe(undefined);
+  });
+
+  test('should handle invalid citation indices', () => {
+    const messageWithBadIndices = {
+      metadata: {
+        citations: [
+          {
+            start_ix: 100,
+            end_ix: 90, // end before start
+            metadata: {
+              type: 'webpage',
+              title: 'Test',
+              url: 'http://test.com',
+            },
+          },
+        ],
+      },
+    };
+    const result = processAssistantMessage(messageWithBadIndices, messageText);
+    expect(result).toBe(messageText);
   });
 });
