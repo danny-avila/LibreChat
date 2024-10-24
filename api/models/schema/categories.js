@@ -1,3 +1,4 @@
+const { logger } = require('~/config');
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
@@ -14,6 +15,12 @@ const categoriesSchema = new Schema({
   },
 });
 
-const categories = mongoose.model('categories', categoriesSchema);
+const Categories = mongoose.model('categories', categoriesSchema);
 
-module.exports = { Categories: categories };
+Categories.on('index', (error) => {
+  if (error) {
+    logger.error(`Failed to create Categories index ${error}`);
+  }
+});
+
+module.exports = Categories;
