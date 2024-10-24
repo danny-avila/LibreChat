@@ -88,6 +88,7 @@ module.exports = {
         /* These are test styles */
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
+        ['switch-unchecked']: 'hsl(var(--switch-unchecked))',
         ring: 'hsl(var(--ring))',
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
