@@ -32,7 +32,7 @@ export function getClient() {
  */
 export async function translateKeyPhrase({ key, baselineTranslation, translationPrompt, context }) {
   let translation: string | undefined;
-  const model = 'claude-3-5-sonnet-20240620';
+  const model = 'claude-3-5-sonnet-20241022';
   const prompt = genTranslationPrompt(translationPrompt);
   const system = prompt;
 
