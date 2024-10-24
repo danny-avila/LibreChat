@@ -764,4 +764,90 @@ export default {
   com_ui_decline: '我不接受',
   com_ui_terms_and_conditions: '条款和条件',
   com_ui_no_terms_content: '没有可显示的条款和条件内容',
+  com_warning_resubmit_unsupported: '此终端不支持重新提交AI消息',
+
+  com_error_files_empty: '不允许上传空文件',
+
+  com_error_files_dupe: '检测到重复文件',
+
+  com_error_invalid_request_error:
+    'AI服务因错误拒绝了请求。这可能是由于API密钥无效或请求格式不正确导致的。',
+
+  com_error_files_validation: '验证文件时出错。',
+
+  com_error_files_process: '处理文件时发生错误',
+
+  com_error_no_system_messages:
+    '所选的AI服务或模型不支持系统消息功能。请尝试使用提示词来替代自定义指令。',
+
+  com_error_files_upload: '上传文件时发生错误',
+
+  com_generated_files: '生成的文件',
+
+  com_error_files_upload_canceled:
+    '文件上传请求已取消。注意：文件上传可能仍在进行中，需要手动删除。',
+
+  com_download_expired: '下载已过期',
+
+  com_click_to_download: '（点击此处下载）',
+
+  com_agents_missing_provider_model: '请在创建代理前选择提供商和模型',
+
+  com_download_expires: '(点击此处下载 - {0}后过期)',
+
+  com_agents_not_available: '助手不可用',
+
+  com_agents_allow_editing: '允许其他用户编辑您的助手',
+
+  com_agents_no_access: '您没有权限编辑此Agent。',
+
+  com_agents_enable_file_search: '启用文件搜索',
+
+  com_agents_file_search_info:
+    '启用后，系统会告知Agent以下列出的具体文件名，使其能够从这些文件中检索相关内容。',
+
+  com_agents_execute_code: '运行代码',
+
+  com_agents_file_search_disabled: '必须先创建Agent，才能上传文件用于文件搜索。',
+
+  com_ui_agent_editing_allowed: '其他用户已可以编辑此助手',
+
+  com_ui_agent_already_shared_to_all: '该助手已对所有用户开放共享',
+
+  com_ui_no_changes: '无需更新',
+
+  com_ui_region: '区域',
+
+  com_ui_select_region: '选择地区',
+
+  com_ui_select_search_region: '以名称搜索区域',
+
+  com_ui_revoke_keys: '撤销密钥',
+
+  com_ui_revoke_key_endpoint: '撤销 {0} 的密钥',
+
+  com_ui_revoke_keys_confirm: '您确定要撤销所有密钥吗？',
+
+  com_ui_revoke_key_confirm: '您确定要撤销此密钥吗？',
+
+  com_ui_bookmarks_delete: '删除书签',
+
+  com_endpoint_search: '按名称搜索渠道',
+
+  com_ui_add_multi_conversation: '添加多个对话',
+
+  com_nav_tool_dialog_agents: 'Agent工具',
+
+  com_nav_stop_generating: '停止生成',
+
+  com_nav_user_msg_markdown: '以 Markdown 格式显示用户消息',
+
+  com_nav_chat_commands: '对话命令',
+
+  com_nav_clear_cache_confirm_message: '您确定要清除缓存吗？',
+
+  com_nav_no_search_results: '未找到搜索结果',
+
+  com_nav_chat_commands_info:
+    '这些命令通过在您的消息开头输入特定字符来激活。每个命令都由其指定的前缀触发。如果您经常在消息开头使用这些字符，可以选择禁用这些命令。',
 };
