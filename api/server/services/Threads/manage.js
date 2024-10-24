@@ -8,9 +8,9 @@ const {
 } = require('librechat-data-provider');
 const { retrieveAndProcessFile } = require('~/server/services/Files/process');
 const { recordMessage, getMessages } = require('~/models/Message');
+const { countTokens, escapeRegExp } = require('~/server/utils');
 const { spendTokens } = require('~/models/spendTokens');
 const { saveConvo } = require('~/models/Conversation');
-const { countTokens } = require('~/server/utils');
 
 /**
  * Initializes a new thread or adds messages to an existing thread.
@@ -517,14 +517,6 @@ const recordUsage = async ({
 
 const uniqueCitationStart = '^====||===';
 const uniqueCitationEnd = '==|||||^';
-
-/** Helper function to escape special characters in regex
- * @param {string} string - The string to escape.
- * @returns {string} The escaped string.
- */
-function escapeRegExp(string) {
-  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
 
 /**
  * Sorts, processes, and flattens messages to a single string.
