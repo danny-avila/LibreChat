@@ -560,4 +560,78 @@ describe('processAssistantMessage', () => {
       expect(result).not.toContain(originalCitation);
     });
   });
+
+  test('should handle potential ReDoS attack payloads', () => {
+    // Test with increasing input sizes to check for exponential behavior
+    const sizes = [32, 33, 34]; // Adding more sizes would increase test time
+    const regExp = '(a+)+';
+    const results = [];
+
+    sizes.forEach((size) => {
+      const startTime = process.hrtime();
+
+      const maliciousMessageData = {
+        metadata: {
+          citations: [
+            {
+              start_ix: 0,
+              end_ix: size,
+              citation_format_type: 'tether_og',
+              metadata: {
+                type: 'webpage',
+                title: 'Test',
+                url: 'http://test.com',
+                extra: {
+                  cited_message_idx: regExp,
+                },
+              },
+            },
+          ],
+        },
+      };
+
+      const maliciousText = '【' + 'a'.repeat(size) + '】';
+
+      processAssistantMessage(maliciousMessageData, maliciousText);
+
+      const endTime = process.hrtime(startTime);
+      const duration = endTime[0] * 1000 + endTime[1] / 1000000; // Convert to milliseconds
+      results.push(duration);
+    });
+
+    // Check if processing time increases exponentially
+    // In a ReDoS vulnerability, time would roughly double with each size increase
+    for (let i = 1; i < results.length; i++) {
+      const ratio = results[i] / results[i - 1];
+      expect(ratio).toBeLessThan(2); // Processing time should not double
+      console.log(`Size ${sizes[i]} processing time ratio: ${ratio}`);
+    }
+
+    // Also test with the exact payload from the security report
+    const maliciousPayload = {
+      metadata: {
+        citations: [
+          {
+            metadata: {
+              extra: {
+                cited_message_idx: '(a+)+',
+              },
+              type: 'webpage',
+              title: '1',
+              url: '2',
+            },
+          },
+        ],
+      },
+    };
+
+    const text = '【' + 'a'.repeat(32);
+    const startTime = process.hrtime();
+    processAssistantMessage(maliciousPayload, text);
+    const endTime = process.hrtime(startTime);
+    const duration = endTime[0] * 1000 + endTime[1] / 1000000;
+
+    // The processing should complete quickly (under 100ms)
+    expect(duration).toBeLessThan(100);
+  });
 });
