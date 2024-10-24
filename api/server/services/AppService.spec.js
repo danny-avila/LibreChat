@@ -220,6 +220,7 @@ describe('AppService', () => {
             pollIntervalMs: 5000,
             timeoutMs: 30000,
             supportedIds: ['id1', 'id2'],
+            orderBySupportIdsFirst: false,
             privateAssistants: false,
           },
         },
@@ -235,6 +236,7 @@ describe('AppService', () => {
         pollIntervalMs: 5000,
         timeoutMs: 30000,
         supportedIds: expect.arrayContaining(['id1', 'id2']),
+        orderBySupportIdsFirst: false,
         privateAssistants: false,
       }),
     );
@@ -473,6 +475,7 @@ describe('AppService updating app.locals and issuing warnings', () => {
           pollIntervalMs: 5000,
           timeoutMs: 30000,
           supportedIds: ['id1', 'id2'],
+          orderBySupportIdsFirst: false,
         },
       },
     };
@@ -487,6 +490,7 @@ describe('AppService updating app.locals and issuing warnings', () => {
     expect(assistants.pollIntervalMs).toBe(5000);
     expect(assistants.timeoutMs).toBe(30000);
     expect(assistants.supportedIds).toEqual(['id1', 'id2']);
+    expect(assistants.orderBySupportIdsFirst).toEqual(false);
     expect(assistants.excludedIds).toBeUndefined();
   });
 
@@ -498,6 +502,7 @@ describe('AppService updating app.locals and issuing warnings', () => {
           pollIntervalMs: 3000,
           timeoutMs: 20000,
           supportedIds: ['id1', 'id2'],
+          orderBySupportIdsFirst: false,
           excludedIds: ['id3'],
         },
       },
