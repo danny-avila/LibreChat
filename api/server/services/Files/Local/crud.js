@@ -202,8 +202,20 @@ const deleteLocalFile = async (req, file) => {
   }
 
   if (file.filepath.startsWith(`/uploads/${req.user.id}`)) {
-    const basePath = file.filepath.split('/uploads/')[1];
-    const filepath = path.join(uploads, basePath);
+    const userUploadDir = path.join(uploads, req.user.id);
+    const basePath = file.filepath.split(`/uploads/${req.user.id}/`)[1];
+
+    if (!basePath) {
+      throw new Error(`Invalid file path: ${file.filepath}`);
+    }
+
+    const filepath = path.join(userUploadDir, basePath);
+
+    const rel = path.relative(userUploadDir, filepath);
+    if (rel.startsWith('..') || path.isAbsolute(rel) || rel.includes(`..${path.sep}`)) {
+      throw new Error(`Invalid file path: ${file.filepath}`);
+    }
+
     await fs.promises.unlink(filepath);
     return;
   }
