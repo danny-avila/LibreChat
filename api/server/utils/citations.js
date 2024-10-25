@@ -1,6 +1,14 @@
 const citationRegex = /\[\^\d+?\^\]/g;
 const regex = / \[.*?]\(.*?\)/g;
 
+/** Helper function to escape special characters in regex
+ * @param {string} string - The string to escape.
+ * @returns {string} The escaped string.
+ */
+function escapeRegExp(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 const getCitations = (res) => {
   const adaptiveCards = res.details.adaptiveCards;
   const textBlocks = adaptiveCards && adaptiveCards[0].body;
@@ -47,4 +55,4 @@ const citeText = (res, noLinks = false) => {
   return result;
 };
 
-module.exports = { getCitations, citeText };
+module.exports = { getCitations, citeText, escapeRegExp };

@@ -134,7 +134,7 @@ const createPrompt = async (req, res) => {
   }
 };
 
-router.post('/', createPrompt);
+router.post('/', checkPromptCreate, createPrompt);
 
 /**
  * Updates a prompt group
