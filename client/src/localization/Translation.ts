@@ -1,4 +1,5 @@
 import English from './languages/Eng';
+import Farsi from './languages/Fa';
 import Arabic from './languages/Ar';
 import Chinese from './languages/Zh';
 import German from './languages/De';
@@ -44,6 +45,7 @@ const languageMap: Record<string, Language> = {
   'id-ID': Indonesia,
   'he-HE': Hebrew,
   'fi-FI': Finnish,
+  'fa-FA': Farsi,
   // Add additional language mappings here
 };
 
@@ -78,14 +80,14 @@ export const getTranslations = (langCode: string): Language => {
     return languageMap[matchingLangCode];
   }
 
-  return English;
+  return Farsi;
 };
 
 // input: language code in string & phrase key in string
 // returns an corresponding phrase value in string
 export const localize = (langCode: string, phraseKey: string, ...values: string[]): string => {
   const lang = getTranslations(langCode);
-  const phrase = lang[phraseKey] || English[phraseKey] || '';
+  const phrase = lang[phraseKey] || Farsi[phraseKey] || '';
 
   return phrase.format(...values);
 };

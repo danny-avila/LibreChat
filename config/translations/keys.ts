@@ -41,6 +41,6 @@ async function main(baseFilePath: string, languagesDir: string) {
 
 // Set the directory containing language files and specify the path to the base (English) language file.
 const languagesDir = './client/src/localization/languages';
-const baseFilePath = path.resolve(languagesDir, 'Eng.ts');
+const baseFilePath = path.resolve(languagesDir, 'Fa.ts');
 
 main(baseFilePath, languagesDir).catch(console.error);

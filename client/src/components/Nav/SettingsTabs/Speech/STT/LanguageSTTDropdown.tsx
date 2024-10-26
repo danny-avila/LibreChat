@@ -85,6 +85,7 @@ export default function LanguageSTTDropdown() {
     { value: 'sv-SE', label: 'Swedish' },
     { value: 'tr', label: 'Turkish' },
     { value: 'zu', label: 'Zulu' },
+    { value: 'fa', label: 'Farsi' },
   ];
 
   const handleSelect = (value: string) => {

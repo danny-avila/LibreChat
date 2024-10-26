@@ -14,7 +14,7 @@ if (args.length !== 1) {
 }
 
 const languagesDir = './client/src/localization/languages';
-const baseFilePath = path.resolve(languagesDir, 'Eng.ts');
+const baseFilePath = path.resolve(languagesDir, 'Fa.ts');
 
 const compareFilename = path.resolve(languagesDir, `${args[0]}.ts`);
 

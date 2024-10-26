@@ -50,6 +50,7 @@ export const LangSelector = ({
 
   const languageOptions = [
     { value: 'auto', label: localize('com_nav_lang_auto') },
+    { value: 'fa-Fa', label: localize('com_nav_lang_farsi') },
     { value: 'en-US', label: localize('com_nav_lang_english') },
     { value: 'zh-CN', label: localize('com_nav_lang_chinese') },
     { value: 'zh-TW', label: localize('com_nav_lang_traditionalchinese') },

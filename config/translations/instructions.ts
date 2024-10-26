@@ -63,7 +63,7 @@ async function createPromptsForTranslations() {
   const files = await fs.promises.readdir(baseDirPath);
 
   for (const file of files) {
-    if (!file.includes('Eng.ts')) {
+    if (!file.includes('Fa.ts')) {
       // Ensure English or base file is excluded
       const filePath = path.join(baseDirPath, file);
       const promptContent = await generatePromptForFile(filePath, file);

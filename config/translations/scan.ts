@@ -20,6 +20,6 @@ async function scanDirectory(baseFilePath: string, languagesDir: string) {
 }
 
 const languagesDir = './client/src/localization/languages';
-const baseFilePath = path.resolve(languagesDir, 'Eng.ts');
+const baseFilePath = path.resolve(languagesDir, 'Fa.ts');
 
 scanDirectory(baseFilePath, languagesDir).catch(console.error);

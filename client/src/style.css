@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@100..900&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -37,6 +39,9 @@
   --font-size-base: 1rem;
   --font-size-lg: 1.125rem;
   --font-size-xl: 1.25rem;
+}
+*{
+  font-family: 'Vazirmatn'!important;
 }
 html {
   --text-primary: var(--gray-800);
@@ -845,7 +850,7 @@ pre {
   border-radius: 0;
   border-width: 0;
   color: inherit;
-  font-family: inherit;
+  font-family: 'Vazirmatn', Arial, sans-serif;
   font-size: inherit;
   font-weight: inherit;
   line-height: inherit;
@@ -1076,7 +1081,7 @@ pre {
 
 code,
 pre {
-  font-family: Consolas, Söhne Mono, Monaco, Andale Mono, Ubuntu Mono, monospace !important;
+  font-family: 'Vazirmatn', Arial, sans-serif;
 }
 code[class='language-plaintext'] {
   white-space: pre-line;
@@ -1862,8 +1867,7 @@ button.scroll-convo {
   content: '⬤';
   width: 12px;
   height: 12px;
-  font-family: system-ui, Inter, Söhne Circle, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell,
-    Noto Sans, sans-serif;
+  font-family: 'Vazirmatn', Arial, sans-serif;
   line-height: normal;
   margin-left: 0.25rem;
   vertical-align: middle;
@@ -1873,8 +1877,7 @@ button.scroll-convo {
 @supports (selector(:has(*))) {
   .result-streaming > :is(ul, ol):last-child > li:last-child:not(:has(> :is(ul, ol, pre))):after {
     content: '⬤';
-    font-family: system-ui, Inter, Söhne Circle, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell,
-      Noto Sans, sans-serif;
+    font-family: 'Vazirmatn', Arial, sans-serif;
     line-height: normal;
     margin-left: 0.25rem;
     vertical-align: middle;
@@ -1889,8 +1892,7 @@ button.scroll-convo {
   .result-streaming > ol:last-child > li:last-child:after,
   .result-streaming > ul:last-child > li:last-child:after {
     content: '⬤';
-    font-family: system-ui, Inter, Söhne Circle, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell,
-      Noto Sans, sans-serif;
+    font-family: 'Vazirmatn', Arial, sans-serif;
     line-height: normal;
     margin-left: 0.25rem;
     vertical-align: middle;
