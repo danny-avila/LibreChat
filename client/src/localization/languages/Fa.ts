@@ -411,7 +411,7 @@ export default {
   com_auth_click_here: 'اینجا کلیک کن',
   com_auth_to_try_again: 'برای تلاش دوباره.',
   com_auth_submit_registration: 'ثبت نام رو ارسال کن',
-  com_auth_welcome_back: 'خوش برگشتی',
+  com_auth_welcome_back: '!  خوش برگشتی',
   com_auth_back_to_login: 'بازگشت به ورود',
   com_auth_email_verification_failed: 'تایید ایمیل ناموفق بود',
   com_auth_email_verification_rate_limited: 'درخواست‌های زیاد. لطفاً بعداً دوباره امتحان کن',
@@ -753,4 +753,5 @@ export default {
   com_ui_terms_and_conditions: 'شرایط و ضوابط',
   com_ui_no_terms_content: 'محتوای شرایط و ضوابط برای نمایش وجود ندارد',
   com_nav_lang_farsi: 'فارسی',
+  com_nav_subscription: 'اشتراک شما',
 };

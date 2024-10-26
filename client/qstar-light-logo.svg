@@ -5,16 +5,16 @@
      width="600.000000pt" height="400.000000pt" viewBox="0 0 600.000000 400.000000"
      preserveAspectRatio="xMidYMid meet">
 
-  <defs>
-    <linearGradient id="librechatGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#21facf;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#0970ef;stop-opacity:1" />
-    </linearGradient>
-  </defs>
+    <defs>
+        <linearGradient id="librechatGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#21facf;stop-opacity:1" />
+            <stop offset="100%" style="stop-color:#0970ef;stop-opacity:1" />
+        </linearGradient>
+    </defs>
 
-  <g transform="translate(0,400) scale(0.12,-0.12)"
-     fill="url(#librechatGradient)" stroke="none">
-    <path d="M2655 3289 c-152 -20 -345 -95 -480 -184 -78 -52 -193 -162 -258
+    <g transform="translate(0.000000,400.000000) scale(0.100000,-0.100000)"
+       fill="url(#librechatGradient)" stroke="none">
+        <path d="M2655 3289 c-152 -20 -345 -95 -480 -184 -78 -52 -193 -162 -258
 -247 -103 -135 -198 -360 -214 -506 -3 -29 -10 -55 -14 -58 -13 -7 -11 -221 1
 -229 6 -3 10 -21 10 -38 0 -48 46 -209 84 -298 113 -261 345 -485 607 -587
 167 -64 238 -77 429 -76 144 1 178 4 268 27 111 29 222 79 222 101 0 14 -103
@@ -37,5 +37,5 @@ l47 50 -30 63 c-38 79 -39 140 -5 223 14 33 25 67 25 76 0 18 -78 99 -96 99
 -68 -65 0 -65 0 -3 54 c-5 79 -2 81 73 81 l66 0 -3 -67z m1180 -1200 c3 -38 0
 -43 -21 -48 -14 -4 -36 -5 -48 -3 -26 3 -35 32 -24 75 5 21 10 24 48 21 42 -3
 42 -3 45 -45z"/>
-  </g>
+    </g>
 </svg>

@@ -24,6 +24,7 @@ import NavToggle from './NavToggle';
 import NewChat from './NewChat';
 import { cn } from '~/utils';
 import store from '~/store';
+import SubscriptionSettings from "~/components/Nav/SubscriptionSettings";
 
 const Nav = ({
   navVisible,
@@ -194,7 +195,9 @@ const Nav = ({
                       <Spinner className={cn('m-1 mx-auto mb-4 h-4 w-4 text-text-primary')} />
                     )}
                   </div>
+                  <SubscriptionSettings />
                   <AccountSettings />
+
                 </nav>
               </div>
             </div>

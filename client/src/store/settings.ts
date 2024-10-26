@@ -30,7 +30,7 @@ const localStorageAtoms = {
 
   // Messages settings
   enterToSend: atomWithLocalStorage('enterToSend', true),
-  chatDirection: atomWithLocalStorage('chatDirection', 'LTR'),
+  chatDirection: atomWithLocalStorage('chatDirection', 'RTL'),
   showCode: atomWithLocalStorage(LocalStorageKeys.SHOW_ANALYSIS_CODE, true),
   saveDrafts: atomWithLocalStorage('saveDrafts', true),
   forkSetting: atomWithLocalStorage('forkSetting', ''),
