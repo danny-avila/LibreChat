@@ -93,6 +93,7 @@ function enqueueDeleteOperation({ req, file, deleteFile, promises, resolvedFileI
  * @param {MongoFile[]} params.files - The file objects to delete.
  * @param {Express.Request} params.req - The express request object.
  * @param {DeleteFilesBody} params.req.body - The request body.
+ * @param {string} [params.req.body.agent_id] - The agent ID if file uploaded is associated to an agent.
  * @param {string} [params.req.body.assistant_id] - The assistant ID if file uploaded is associated to an assistant.
  * @param {string} [params.req.body.tool_resource] - The tool resource if assistant file uploaded is associated to a tool resource.
  *

@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
+const { EModelEndpoint } = require('librechat-data-provider');
 const { getBufferMetadata } = require('~/server/utils');
 const paths = require('~/config/paths');
 const { logger } = require('~/config');
@@ -222,6 +223,10 @@ const deleteLocalFile = async (req, file) => {
 
   const parts = file.filepath.split(path.sep);
   const subfolder = parts[1];
+  if (!subfolder && parts[0] === EModelEndpoint.agents) {
+    logger.warn(`Agent File ${file.file_id} is missing filepath, may have been deleted already`);
+    return;
+  }
   const filepath = path.join(publicPath, file.filepath);
 
   if (!isValidPath(req, publicPath, subfolder, filepath)) {
