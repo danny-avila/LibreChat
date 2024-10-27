@@ -34,7 +34,9 @@ export default function NavToggle({
     >
       <TooltipAnchor
         side={side === 'right' ? 'left' : 'right'}
-        aria-label={`toggle-${side === 'left' ? 'chat-history' : 'controls'}-nav`}
+        aria-label={side === 'left' ? localize('com_ui_chat_history') : localize('com_ui_controls')}
+        aria-expanded={navVisible}
+        aria-controls={side === 'left' ? 'chat-history-nav' : 'controls-nav'}
         id={`toggle-${side}-nav`}
         onClick={onToggle}
         role="button"
