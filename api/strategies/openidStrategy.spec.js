@@ -18,7 +18,6 @@ Issuer.discover = jest.fn().mockResolvedValue({
   Client: jest.fn(),
 });
 
-
 describe('setupOpenId', () => {
   const OLD_ENV = process.env;
   describe('OpenIDStrategy', () => {
@@ -167,9 +166,10 @@ describe('setupOpenId', () => {
       await validateFn(tokenset, userinfo, (err, user, details) => {
         expect(err).toBe(null);
         expect(user).toBe(false);
-        expect(details.message).toBe('You must have the "' + process.env.OPENID_REQUIRED_ROLE + '" role to log in.');
+        expect(details.message).toBe(
+          'You must have the "' + process.env.OPENID_REQUIRED_ROLE + '" role to log in.',
+        );
       });
     });
-
   });
 });
