@@ -28,6 +28,10 @@ class StableDiffusionAPI extends Tool {
 
     this.name = 'stable-diffusion';
     this.url = fields.SD_WEBUI_URL || this.getServerURL();
+    this.cfg_scale = parseFloat(process.env.SD_CFG_SCALE) || 4.5;
+    this.steps = parseInt(process.env.SD_STEPS) || 22;
+    this.width = parseInt(process.env.SD_WIDTH) || 1024;
+    this.height = parseInt(process.env.SD_HEIGHT) || 1024;
     this.description_for_model = `// Generate images and visuals using text.
 // Guidelines:
 // - ALWAYS use {{"prompt": "7+ detailed keywords", "negative_prompt": "7+ detailed keywords"}} structure for queries.
@@ -80,10 +84,10 @@ class StableDiffusionAPI extends Tool {
     const payload = {
       prompt,
       negative_prompt,
-      cfg_scale: 4.5,
-      steps: 22,
-      width: 1024,
-      height: 1024,
+      cfg_scale: this.cfg_scale,
+      steps: this.steps,
+      width: this.width,
+      height: this.height,
     };
     let generationResponse;
     try {
