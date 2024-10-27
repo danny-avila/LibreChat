@@ -35,7 +35,7 @@ export default {
     'Aşağıdaki dosyalar yalnızca Kod Yorumlayıcı için kullanılabilir:',
   com_assistants_retrieval: 'Geri Getirme',
   com_assistants_search_name: 'Asistan adında ara',
-  com_assistants_tools: 'Araçlar',
+  com_ui_tools: 'Araçlar',
   com_assistants_actions: 'Eylemler',
   com_assistants_add_tools: 'Araçları Ekle',
   com_assistants_add_actions: 'Eylem Ekle',
@@ -641,4 +641,5 @@ export default {
   com_nav_lang_dutch: 'Nederlands',
   com_nav_lang_indonesia: 'Indonesia',
   com_nav_lang_hebrew: 'עברית',
+  com_nav_lang_finnish: 'Suomi',
 };

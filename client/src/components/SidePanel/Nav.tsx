@@ -2,10 +2,9 @@ import { useState } from 'react';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import type { NavLink, NavProps } from '~/common';
 import { Accordion, AccordionItem, AccordionContent } from '~/components/ui/Accordion';
-import { buttonVariants } from '~/components/ui/Button';
 import { TooltipAnchor, Button } from '~/components';
-import { cn, removeFocusOutlines } from '~/utils';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 
 export default function Nav({ links, isCollapsed, resize, defaultActive }: NavProps) {
   const localize = useLocalize();
@@ -20,7 +19,7 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
   return (
     <div
       data-collapsed={isCollapsed}
-      className="bg-token-sidebar-surface-primary hide-scrollbar group flex-shrink-0 overflow-x-hidden py-2 data-[collapsed=true]:py-2"
+      className="bg-token-sidebar-surface-primary hide-scrollbar group flex-shrink-0 overflow-x-hidden"
     >
       <div className="h-full">
         <div className="flex h-full min-h-0 flex-col">
@@ -76,12 +75,11 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                             >
                               <link.icon className="mr-2 h-4 w-4" />
                               {localize(link.title)}
-                              {link.label && (
+                              {link.label != null && link.label && (
                                 <span
                                   className={cn(
-                                    'ml-auto transition-all duration-300 ease-in-out',
+                                    'ml-auto opacity-100 transition-all duration-300 ease-in-out',
                                     variant === 'default' ? 'text-background dark:text-white' : '',
-                                    isCollapsed ? 'opacity-0' : 'opacity-100',
                                   )}
                                 >
                                   {link.label}

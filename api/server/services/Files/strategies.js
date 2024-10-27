@@ -21,6 +21,7 @@ const {
 } = require('./Local');
 const { uploadOpenAIFile, deleteOpenAIFile, getOpenAIFileStream } = require('./OpenAI');
 const { uploadVectors, deleteVectors } = require('./VectorDB');
+const { getCodeOutputDownloadStream } = require('./Code');
 
 /**
  * Firebase Storage Strategy Functions
@@ -103,6 +104,31 @@ const openAIStrategy = () => ({
   getDownloadStream: getOpenAIFileStream,
 });
 
+/**
+ * Code Output Strategy Functions
+ *
+ * Note: null values mean that the strategy is not supported.
+ * */
+const codeOutputStrategy = () => ({
+  /** @type {typeof saveFileFromURL | null} */
+  saveURL: null,
+  /** @type {typeof getLocalFileURL | null} */
+  getFileURL: null,
+  /** @type {typeof saveLocalBuffer | null} */
+  saveBuffer: null,
+  /** @type {typeof processLocalAvatar | null} */
+  processAvatar: null,
+  /** @type {typeof uploadLocalImage | null} */
+  handleImageUpload: null,
+  /** @type {typeof prepareImagesLocal | null} */
+  prepareImagePayload: null,
+  /** @type {typeof deleteLocalFile | null} */
+  deleteFile: null,
+  /** @type {typeof uploadVectors | null} */
+  handleFileUpload: null,
+  getDownloadStream: getCodeOutputDownloadStream,
+});
+
 // Strategy Selector
 const getStrategyFunctions = (fileSource) => {
   if (fileSource === FileSources.firebase) {
@@ -115,6 +141,8 @@ const getStrategyFunctions = (fileSource) => {
     return openAIStrategy();
   } else if (fileSource === FileSources.vectordb) {
     return vectorStrategy();
+  } else if (fileSource === FileSources.execute_code) {
+    return codeOutputStrategy();
   } else {
     throw new Error('Invalid file source');
   }

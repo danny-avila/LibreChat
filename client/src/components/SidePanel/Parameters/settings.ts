@@ -572,3 +572,12 @@ export const presetSettings: Record<
   [`${EModelEndpoint.bedrock}-${BedrockProviders.AI21}`]: bedrockGeneralColumns,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Amazon}`]: bedrockGeneralColumns,
 };
+
+export const agentSettings: Record<string, SettingsConfiguration | undefined> = Object.entries(
+  presetSettings,
+).reduce((acc, [key, value]) => {
+  if (value) {
+    acc[key] = value.col2;
+  }
+  return acc;
+}, {});

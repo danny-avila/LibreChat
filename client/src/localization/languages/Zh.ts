@@ -6,8 +6,7 @@ export default {
   com_nav_convo_menu_options: '对话菜单选项',
   com_ui_artifacts: 'Artifacts',
   com_ui_artifacts_toggle: '切换至 Artifacts UI',
-  com_nav_info_code_artifacts:
-    '启用在对话旁显示的实验性代码工件',
+  com_nav_info_code_artifacts: '启用在对话旁显示的实验性代码工件',
   com_ui_include_shadcnui: '包含 shadcn/ui 组件指令',
   com_nav_info_include_shadcnui:
     '启用后，将包含使用 shadcn/ui 组件的指令。shadcn/ui 是一组使用 Radix UI 和 Tailwind CSS 构建的可重复使用的组件。注意：这些指令较长，仅在您需要向 LLM 提供正确的导入和组件信息时才应启用。有关这些组件的更多信息，请访问：https://ui.shadcn.com/',
@@ -23,8 +22,7 @@ export default {
   com_error_no_user_key: '没有找到密钥。请提供密钥后重试。',
   com_error_no_base_url: '未找到基础 URL，请提供一个后重试。',
   com_error_invalid_user_key: '提供的密钥无效。请提供有效的密钥后重试。',
-  com_error_expired_user_key:
-    '您提供的 {0} 密钥已于 {1} 过期。请提供新的密钥并重试。',
+  com_error_expired_user_key: '您提供的 {0} 密钥已于 {1} 过期。请提供新的密钥并重试。',
   com_error_input_length:
     '最新消息的令牌数过长，超出了令牌限制（分别为 {0}）。请缩短您的消息、调整对话参数中的最大上下文大小，或分叉对话以继续。',
   com_files_no_results: '无结果。',
@@ -44,8 +42,7 @@ export default {
   com_assistants_code_interpreter_info:
     '代码解释器使助手能够编写和运行代码。该工具可以处理具有多种数据和格式的文件，并生成图表等文件。',
   com_assistants_knowledge: '知识',
-  com_assistants_knowledge_info:
-    '如果您在 “知识” 中上传文件，与助手的对话可能包括文件内容。',
+  com_assistants_knowledge_info: '如果您在 “知识” 中上传文件，与助手的对话可能包括文件内容。',
   com_assistants_knowledge_disabled:
     '必须创建助手，且启用并保存代码解释器或检索，才能将文件作为知识上传。',
   com_assistants_image_vision: '识图',
@@ -53,12 +50,11 @@ export default {
   com_assistants_code_interpreter_files: '以下文件仅适用于代码解释器：',
   com_assistants_retrieval: '检索',
   com_assistants_search_name: '根据名称搜索助手',
-  com_assistants_tools: '工具',
+  com_ui_tools: '工具',
   com_assistants_actions: '操作',
   com_assistants_add_tools: '添加工具',
   com_assistants_add_actions: '添加操作',
-  com_assistants_non_retrieval_model:
-    '此模型未启用文件搜索功能。请选择其他模型。',
+  com_assistants_non_retrieval_model: '此模型未启用文件搜索功能。请选择其他模型。',
   com_assistants_available_actions: '可用操作',
   com_assistants_running_action: '正在运行操作',
   com_assistants_completed_action: '与 {0} 聊天',
@@ -109,8 +105,7 @@ export default {
   com_ui_attach_error_openai: '无法将助手文件附加到其他渠道',
   com_ui_attach_warn_endpoint: '不兼容的工具可能会忽略非助手文件',
   com_ui_attach_error_size: '超出渠道规定的文件大小：',
-  com_ui_attach_error:
-    '无法附加文件，请创建或选择一个对话，或尝试刷新页面。',
+  com_ui_attach_error: '无法附加文件，请创建或选择一个对话，或尝试刷新页面。',
   com_ui_examples: '示例',
   com_ui_new_chat: '创建新对话',
   com_ui_happy_birthday: '这是我的第一个生日！',
@@ -219,8 +214,7 @@ export default {
     '此选项会分叉所有导向目标消息的消息分支，包括其相邻消息；换句话说，无论是否可见或在同一路径上，所有消息分支都会被包含在内。',
   com_ui_fork_info_start:
     '如果勾选，则根据上述选择的行为，从此消息开始到对话中最新的消息将被分叉。',
-  com_ui_fork_info_remember:
-    '选中此项可记住您的选择，以便下次分叉对话时更快捷地使用您偏好的选项。',
+  com_ui_fork_info_remember: '选中此项可记住您的选择，以便下次分叉对话时更快捷地使用您偏好的选项。',
   com_ui_fork_success: '对话分叉成功',
   com_ui_fork_processing: '正在分叉对话...',
   com_ui_fork_error: '分叉对话时出现错误',
@@ -229,8 +223,7 @@ export default {
   com_ui_fork_remember: '记住',
   com_ui_fork_split_target_setting: '默认以目标消息开始分叉',
   com_ui_fork_split_target: '在此分叉',
-  com_ui_fork_remember_checked:
-    '您的选择将在使用后被记住。您可以随时在设置中更改。',
+  com_ui_fork_remember_checked: '您的选择将在使用后被记住。您可以随时在设置中更改。',
   com_ui_fork_all_target: '包含所有目标',
   com_ui_fork_branches: '包含相关分支',
   com_ui_fork_visible: '仅可见消息',
@@ -304,12 +297,9 @@ export default {
   com_ui_share_retrieve_error: '检索共享链接时出现错误',
   com_ui_share_delete_error: '删除共享链接时出现错误',
   com_ui_share_create_message: '您的姓名以及您在共享后添加的任何消息将保持私密。',
-  com_ui_share_created_message:
-    '已创建到您聊天的共享链接。可以通过设置随时管理以前共享的聊天。',
-  com_ui_share_update_message:
-    '您的姓名、自定义指令以及您在共享后添加的任何消息将保持私密。',
-  com_ui_share_updated_message:
-    '已更新到您聊天的共享链接。可以通过设置随时管理以前共享的聊天。',
+  com_ui_share_created_message: '已创建到您聊天的共享链接。可以通过设置随时管理以前共享的聊天。',
+  com_ui_share_update_message: '您的姓名、自定义指令以及您在共享后添加的任何消息将保持私密。',
+  com_ui_share_updated_message: '已更新到您聊天的共享链接。可以通过设置随时管理以前共享的聊天。',
   com_ui_shared_link_not_found: '未找到共享链接',
   com_ui_delete_conversation: '删除对话？',
   com_ui_delete_confirm: '这将删除',
@@ -319,8 +309,7 @@ export default {
   com_ui_delete_action_confirm: '您确定要删除此操作吗？',
   com_ui_delete_confirm_prompt_version_var:
     '这将删除选中版本的 “{0}”。如果没有其他版本，该提示词将被删除。',
-  com_ui_delete_assistant_confirm:
-    '您确定要删除此助手吗？该操作无法撤销。',
+  com_ui_delete_assistant_confirm: '您确定要删除此助手吗？该操作无法撤销。',
   com_ui_rename: '重命名',
   com_ui_archive: '归档',
   com_ui_archive_error: '归档对话失败',
@@ -331,8 +320,7 @@ export default {
   com_ui_upload: '上传',
   com_ui_connect: '连接',
   com_ui_locked: '已锁定',
-  com_ui_upload_delay:
-    '上传 “{0}” 时比预期花了更长时间。文件正在进行检索索引，请稍候。',
+  com_ui_upload_delay: '上传 “{0}” 时比预期花了更长时间。文件正在进行检索索引，请稍候。',
   com_ui_privacy_policy: '隐私政策',
   com_ui_terms_of_service: '服务政策',
   com_ui_use_micrphone: '使用麦克风',
@@ -355,16 +343,11 @@ export default {
   com_ui_bookmarks_filter: '筛选书签...',
   com_ui_no_bookmarks: '似乎您还没有书签。点击一个对话并添加一个新的书签',
   com_ui_no_conversation_id: '未找到对话 ID',
-  com_auth_error_login:
-    '无法登录，请确认提供的账户密码正确，并重新尝试。',
-  com_auth_error_login_rl:
-    '尝试登录次数过多，请稍后再试。',
-  com_auth_error_login_ban:
-    '根据我们的服务规则，您的帐号被暂时禁用。',
-  com_auth_error_login_server:
-    '内部服务器错误，请稍后再试。',
-  com_auth_error_login_unverified:
-    '您的账户尚未验证。请检查您的邮件以获取验证链接。',
+  com_auth_error_login: '无法登录，请确认提供的账户密码正确，并重新尝试。',
+  com_auth_error_login_rl: '尝试登录次数过多，请稍后再试。',
+  com_auth_error_login_ban: '根据我们的服务规则，您的帐号被暂时禁用。',
+  com_auth_error_login_server: '内部服务器错误，请稍后再试。',
+  com_auth_error_login_unverified: '您的账户尚未验证。请检查您的邮件以获取验证链接。',
   com_auth_no_account: '还没有账户？',
   com_auth_sign_up: '注册',
   com_auth_sign_in: '登录',
@@ -387,8 +370,7 @@ export default {
   com_auth_password_not_match: '密码不一致',
   com_auth_continue: '继续',
   com_auth_create_account: '创建账户',
-  com_auth_error_create:
-    '注册账户过程中出现错误，请重试。',
+  com_auth_error_create: '注册账户过程中出现错误，请重试。',
   com_auth_full_name: '姓名',
   com_auth_name_required: '姓名为必填项',
   com_auth_name_min_length: '姓名至少 3 个字符',
@@ -408,8 +390,7 @@ export default {
   com_auth_reset_password_link_sent: '密码重置链接已发送',
   com_auth_reset_password_if_email_exists:
     '如果存在使用该邮件地址的帐户，则会发送一封包含密码重置说明的邮件。请务必检查您的垃圾邮件文件夹。',
-  com_auth_reset_password_email_sent:
-    '如果用户已注册，将会发送一封邮件到收件箱。',
+  com_auth_reset_password_email_sent: '如果用户已注册，将会发送一封邮件到收件箱。',
   com_auth_reset_password_success: '密码重置成功',
   com_auth_login_with_new_password: '现在你可以使用你的新密码登录。',
   com_auth_error_invalid_reset_token: '重置密码的密钥已失效。',
@@ -482,8 +463,7 @@ export default {
     输入词元和生成词元的总长度受模型上下文长度的限制。如果该数值超过最大上下文词元数，您可能会遇到错误。`,
   com_endpoint_openai_temp:
     '值越高表示输出越随机，值越低表示输出越确定。建议不要同时改变此值和 Top P。',
-  com_endpoint_openai_max:
-    '最大生成词元数。输入词元长度由模型的上下文长度决定。',
+  com_endpoint_openai_max: '最大生成词元数。输入词元长度由模型的上下文长度决定。',
   com_endpoint_openai_topp:
     '相较于随机性的另一个取样方法，称为核采样，模型选取输出词元中大于 top_p（概率密度在整个概率分布中的比例）的结果。比如 top_p=0.1 表示只有概率占比为前 10% 的词元才会被考虑作为输出。建议不要同时改变此值和随机性。',
   com_endpoint_openai_freq:
@@ -498,8 +478,7 @@ export default {
     '发送给Vision的图像分辨率。 “Low” 更便宜且更快，“High” 更详细但更昂贵，“Auto” 将基于图像分辨率自动在两者之间进行选择。',
   com_endpoint_openai_stop: '最多 4 个序列，API 将停止生成更多词元。',
   com_endpoint_openai_custom_name_placeholder: '为 AI 设置一个名称',
-  com_endpoint_openai_prompt_prefix_placeholder:
-    '在系统消息中添加自定义指令，默认为空',
+  com_endpoint_openai_prompt_prefix_placeholder: '在系统消息中添加自定义指令，默认为空',
   com_endpoint_anthropic_temp:
     '值介于 0 到 1 之间。对于分析性/选择性任务，值应更接近 0；对于创造性和生成性任务，值应更接近 1。我们建议更改该参数或 Top P，但不要同时更改这两个参数。',
   com_endpoint_anthropic_topp:
@@ -556,8 +535,7 @@ export default {
   com_endpoint_use_active_assistant: '使用激活的助手',
   com_endpoint_assistant_model: '助手模型',
   com_endpoint_save_as_preset: '保存为预设',
-  com_endpoint_presets_clear_warning:
-    '确定要清除所有预设吗？此操作不可逆。',
+  com_endpoint_presets_clear_warning: '确定要清除所有预设吗？此操作不可逆。',
   com_endpoint_not_implemented: '未实现功能',
   com_endpoint_no_presets: '暂无预设，使用设置按钮创建一个',
   com_endpoint_not_available: '无可用渠道',
@@ -567,8 +545,7 @@ export default {
   com_endpoint_agent_model: '代理模型（推荐: GPT-3.5）',
   com_endpoint_completion_model: '补全模型（推荐: GPT-4）',
   com_endpoint_func_hover: '将插件作为 OpenAI 函数使用',
-  com_endpoint_skip_hover:
-    '跳过补全步骤，检查最终答案和生成步骤',
+  com_endpoint_skip_hover: '跳过补全步骤，检查最终答案和生成步骤',
   com_endpoint_config_key: '设置 API 密钥',
   com_endpoint_assistant_placeholder: '请从右侧面板中选择助手',
   com_endpoint_config_placeholder: '在顶部菜单设置 API 密钥。',
@@ -648,8 +625,7 @@ export default {
   com_show_examples: '显示示例',
   com_nav_plugin_search: '搜索插件',
   com_nav_tool_search: '搜索工具',
-  com_nav_plugin_auth_error:
-    '尝试验证此插件时出现错误。请重试。',
+  com_nav_plugin_auth_error: '尝试验证此插件时出现错误。请重试。',
   com_nav_export_filename: '文件名',
   com_nav_export_filename_placeholder: '设置文件名',
   com_nav_export_type: '类型',
@@ -694,8 +670,7 @@ export default {
   com_nav_archive_name: '名称',
   com_nav_archive_created_at: '归档时间',
   com_nav_clear_conversation: '清除对话',
-  com_nav_clear_conversation_confirm_message:
-    '您确定要删除所有对话吗？该操作无法撤销。',
+  com_nav_clear_conversation_confirm_message: '您确定要删除所有对话吗？该操作无法撤销。',
   com_nav_help_faq: '帮助',
   com_nav_settings: '设置',
   com_nav_search_placeholder: '搜索消息',
@@ -716,15 +691,12 @@ export default {
   com_nav_audio_process_error: '处理音频时发生错误：{0}',
   com_nav_long_audio_warning: '较长的文本将需要更长时间来处理。',
   com_nav_tts_init_error: '初始化文本转语音失败：{0}',
-  com_nav_tts_unsupported_error:
-    '所选引擎的文本转语音在此浏览器中不受支持。',
+  com_nav_tts_unsupported_error: '所选引擎的文本转语音在此浏览器中不受支持。',
   com_nav_source_buffer_error: '设置音频播放时发生错误。请刷新页面。',
-  com_nav_media_source_init_error:
-    '无法准备音频播放器。请检查您的浏览器设置。',
+  com_nav_media_source_init_error: '无法准备音频播放器。请检查您的浏览器设置。',
   com_nav_buffer_append_error: '音频流处理出现问题。播放可能会被中断。',
   com_nav_speech_cancel_error: '无法停止音频播放。您可能需要刷新页面。',
-  com_nav_voices_fetch_error:
-    '无法获取语音选项。请检查您的网络连接。',
+  com_nav_voices_fetch_error: '无法获取语音选项。请检查您的网络连接。',
   com_nav_engine: '引擎',
   com_nav_browser: '浏览器',
   com_nav_edge: '边缘端',
@@ -734,7 +706,7 @@ export default {
   com_nav_voice_select: '语音',
   com_nav_enable_cloud_browser_voice: '使用云端语音',
   com_nav_info_enter_to_send:
-    '启用后，按下 `ENTER` 将发送您的消息。禁用后，按下 `ENTER` 将添加新行，您需要按下 `CTRL + ENTER` 来发送消息。',
+    '启用后，按下 `ENTER` 将发送您的消息。禁用后，按下 `ENTER` 将添加新行，您需要按下 `CTRL + ENTER` / `⌘ + ENTER` 来发送消息。',
   com_nav_info_save_draft:
     '启用后，您在聊天表单中输入的文本和附件将自动本地保存为草稿。即使您重新加载页面或切换到不同的对话，这些草稿也将可用。草稿存储在您设备的本地，并在消息发送后删除。',
   com_nav_info_fork_change_default:
@@ -753,8 +725,7 @@ export default {
   com_nav_commands: '命令',
   com_nav_commands_tab: '命令设置',
   com_nav_at_command: '@-命令',
-  com_nav_at_command_description:
-    '切换至命令 “@” 以更改端点、模型、预设等',
+  com_nav_at_command_description: '切换至命令 “@” 以更改端点、模型、预设等',
   com_nav_plus_command: '+-命令',
   com_nav_plus_command_description: '切换至命令 “+” 以添加多响应设置',
   com_nav_slash_command: '/-命令',
@@ -793,4 +764,90 @@ export default {
   com_ui_decline: '我不接受',
   com_ui_terms_and_conditions: '条款和条件',
   com_ui_no_terms_content: '没有可显示的条款和条件内容',
+  com_warning_resubmit_unsupported: '此终端不支持重新提交AI消息',
+
+  com_error_files_empty: '不允许上传空文件',
+
+  com_error_files_dupe: '检测到重复文件',
+
+  com_error_invalid_request_error:
+    'AI服务因错误拒绝了请求。这可能是由于API密钥无效或请求格式不正确导致的。',
+
+  com_error_files_validation: '验证文件时出错。',
+
+  com_error_files_process: '处理文件时发生错误',
+
+  com_error_no_system_messages:
+    '所选的AI服务或模型不支持系统消息功能。请尝试使用提示词来替代自定义指令。',
+
+  com_error_files_upload: '上传文件时发生错误',
+
+  com_generated_files: '生成的文件',
+
+  com_error_files_upload_canceled:
+    '文件上传请求已取消。注意：文件上传可能仍在进行中，需要手动删除。',
+
+  com_download_expired: '下载已过期',
+
+  com_click_to_download: '（点击此处下载）',
+
+  com_agents_missing_provider_model: '请在创建代理前选择提供商和模型',
+
+  com_download_expires: '(点击此处下载 - {0}后过期)',
+
+  com_agents_not_available: '助手不可用',
+
+  com_agents_allow_editing: '允许其他用户编辑您的助手',
+
+  com_agents_no_access: '您没有权限编辑此Agent。',
+
+  com_agents_enable_file_search: '启用文件搜索',
+
+  com_agents_file_search_info:
+    '启用后，系统会告知Agent以下列出的具体文件名，使其能够从这些文件中检索相关内容。',
+
+  com_agents_execute_code: '运行代码',
+
+  com_agents_file_search_disabled: '必须先创建Agent，才能上传文件用于文件搜索。',
+
+  com_ui_agent_editing_allowed: '其他用户已可以编辑此助手',
+
+  com_ui_agent_already_shared_to_all: '该助手已对所有用户开放共享',
+
+  com_ui_no_changes: '无需更新',
+
+  com_ui_region: '区域',
+
+  com_ui_select_region: '选择地区',
+
+  com_ui_select_search_region: '以名称搜索区域',
+
+  com_ui_revoke_keys: '撤销密钥',
+
+  com_ui_revoke_key_endpoint: '撤销 {0} 的密钥',
+
+  com_ui_revoke_keys_confirm: '您确定要撤销所有密钥吗？',
+
+  com_ui_revoke_key_confirm: '您确定要撤销此密钥吗？',
+
+  com_ui_bookmarks_delete: '删除书签',
+
+  com_endpoint_search: '按名称搜索渠道',
+
+  com_ui_add_multi_conversation: '添加多个对话',
+
+  com_nav_tool_dialog_agents: 'Agent工具',
+
+  com_nav_stop_generating: '停止生成',
+
+  com_nav_user_msg_markdown: '以 Markdown 格式显示用户消息',
+
+  com_nav_chat_commands: '对话命令',
+
+  com_nav_clear_cache_confirm_message: '您确定要清除缓存吗？',
+
+  com_nav_no_search_results: '未找到搜索结果',
+
+  com_nav_chat_commands_info:
+    '这些命令通过在您的消息开头输入特定字符来激活。每个命令都由其指定的前缀触发。如果您经常在消息开头使用这些字符，可以选择禁用这些命令。',
 };

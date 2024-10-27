@@ -1,31 +1,38 @@
+import { alternateName } from 'librechat-data-provider';
 import { Content, Portal, Root } from '@radix-ui/react-popover';
-import { alternateName, isAssistantsEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { FC } from 'react';
-import { useChatContext, useAssistantsMapContext } from '~/Providers';
+import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
+import { mapEndpoints, getEntity } from '~/utils';
 import EndpointItems from './Endpoints/MenuItems';
 import TitleButton from './UI/TitleButton';
-import { mapEndpoints } from '~/utils';
 
 const EndpointsMenu: FC = () => {
   const { data: endpoints = [] } = useGetEndpointsQuery({
     select: mapEndpoints,
   });
 
-  const { conversation } = useChatContext();
-  const { endpoint = '', assistant_id = null } = conversation ?? {};
+  const agentsMap = useAgentsMapContext();
   const assistantMap = useAssistantsMapContext();
-
-  const assistant =
-    isAssistantsEndpoint(endpoint) && assistantMap?.[endpoint ?? '']?.[assistant_id ?? ''];
-  const assistantName = (assistant && assistant?.name) || 'Assistant';
+  const { conversation } = useChatContext();
+  const { endpoint = '' } = conversation ?? {};
 
   if (!endpoint) {
     console.warn('No endpoint selected');
     return null;
   }
 
-  const primaryText = assistant ? assistantName : (alternateName[endpoint] ?? endpoint ?? '') + ' ';
+  const { entity } = getEntity({
+    endpoint,
+    agentsMap,
+    assistantMap,
+    agent_id: conversation?.agent_id,
+    assistant_id: conversation?.assistant_id,
+  });
+
+  const primaryText = entity
+    ? entity.name
+    : (alternateName[endpoint] as string | undefined) ?? endpoint;
 
   return (
     <Root>
@@ -44,7 +51,7 @@ const EndpointsMenu: FC = () => {
           <Content
             side="bottom"
             align="start"
-            className="mt-2 max-h-[65vh] min-w-[340px] overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-700 dark:text-white lg:max-h-[75vh]"
+            className="mt-2 max-h-[65vh] min-w-[340px] overflow-y-auto rounded-lg border border-border-light bg-header-primary text-text-primary shadow-lg lg:max-h-[75vh]"
           >
             <EndpointItems endpoints={endpoints} selected={endpoint} />
           </Content>

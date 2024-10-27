@@ -1,9 +1,8 @@
 const fs = require('fs');
 const path = require('path');
-const { StructuredTool } = require('langchain/tools');
-const { tool: toolFn } = require('@langchain/core/tools');
 const { zodToJsonSchema } = require('zod-to-json-schema');
 const { Calculator } = require('langchain/tools/calculator');
+const { tool: toolFn, Tool } = require('@langchain/core/tools');
 const {
   Tools,
   ContentTypes,
@@ -70,7 +69,7 @@ function loadAndFormatTools({ directory, adminFilter = [], adminIncluded = [] })
       continue;
     }
 
-    if (!ToolClass || !(ToolClass.prototype instanceof StructuredTool)) {
+    if (!ToolClass || !(ToolClass.prototype instanceof Tool)) {
       continue;
     }
 
@@ -152,7 +151,7 @@ const processVisionRequest = async (client, currentAction) => {
 
   /** @type {ChatCompletion | undefined} */
   const completion = await client.visionPromise;
-  if (completion.usage) {
+  if (completion && completion.usage) {
     recordUsage({
       user: client.req.user.id,
       model: client.req.body.model,
@@ -378,11 +377,12 @@ async function processRequiredActions(client, requiredActions) {
  * @param {Object} params - Run params containing user and request information.
  * @param {ServerRequest} params.req - The request object.
  * @param {string} params.agent_id - The agent ID.
- * @param {string[]} params.tools - The agent's available tools.
+ * @param {Agent['tools']} params.tools - The agent's available tools.
+ * @param {Agent['tool_resources']} params.tool_resources - The agent's available tool resources.
  * @param {string | undefined} [params.openAIApiKey] - The OpenAI API key.
  * @returns {Promise<{ tools?: StructuredTool[]; toolMap?: Record<string, StructuredTool>}>} The combined toolMap.
  */
-async function loadAgentTools({ req, agent_id, tools, openAIApiKey }) {
+async function loadAgentTools({ req, agent_id, tools, tool_resources, openAIApiKey }) {
   if (!tools || tools.length === 0) {
     return {};
   }
@@ -394,6 +394,7 @@ async function loadAgentTools({ req, agent_id, tools, openAIApiKey }) {
     options: {
       req,
       openAIApiKey,
+      tool_resources,
       returnMetadata: true,
       processFileURL,
       uploadImageBuffer,
@@ -405,6 +406,10 @@ async function loadAgentTools({ req, agent_id, tools, openAIApiKey }) {
   const agentTools = [];
   for (let i = 0; i < loadedTools.length; i++) {
     const tool = loadedTools[i];
+    if (tool.name && (tool.name === Tools.execute_code || tool.name === Tools.file_search)) {
+      agentTools.push(tool);
+      continue;
+    }
 
     const toolInstance = toolFn(
       async (...args) => {

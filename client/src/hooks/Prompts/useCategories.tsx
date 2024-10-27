@@ -7,7 +7,7 @@ const loadingCategories = [
     label: 'Loading...',
     value: '',
   },
-];
+] as undefined | { label: string; value: string }[];
 
 const emptyCategory = {
   label: '-',

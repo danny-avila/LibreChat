@@ -1,7 +1,7 @@
 import { v4 } from 'uuid';
 import debounce from 'lodash/debounce';
 import { useQueryClient } from '@tanstack/react-query';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   megabyte,
   QueryKeys,
@@ -18,7 +18,9 @@ import { useUploadFileMutation, useGetFileConfig } from '~/data-provider';
 import { useDelayedUploadToast } from './useDelayedUploadToast';
 import { useToastContext } from '~/Providers/ToastContext';
 import { useChatContext } from '~/Providers/ChatContext';
+import useLocalize from '~/hooks/useLocalize';
 import useUpdateFiles from './useUpdateFiles';
+import { logger } from '~/utils';
 
 const { checkType } = defaultFileConfig;
 
@@ -30,15 +32,20 @@ type UseFileHandling = {
 };
 
 const useFileHandling = (params?: UseFileHandling) => {
+  const localize = useLocalize();
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
   const [errors, setErrors] = useState<string[]>([]);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const { startUploadTimer, clearUploadTimer } = useDelayedUploadToast();
   const { files, setFiles, setFilesLoading, conversation } = useChatContext();
   const setError = (error: string) => setErrors((prevErrors) => [...prevErrors, error]);
   const { addFile, replaceFile, updateFileById, deleteFileById } = useUpdateFiles(
     params?.fileSetter ?? setFiles,
   );
+
+  const agent_id = params?.additionalMetadata?.agent_id ?? '';
+  const assistant_id = params?.additionalMetadata?.assistant_id ?? '';
 
   const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
@@ -52,7 +59,7 @@ const useFileHandling = (params?: UseFileHandling) => {
   const displayToast = useCallback(() => {
     if (errors.length > 1) {
       const errorList = Array.from(new Set(errors))
-        .map((e, i) => `${i > 0 ? '• ' : ''}${e}\n`)
+        .map((e, i) => `${i > 0 ? '• ' : ''}${localize(e) || e}\n`)
         .join('');
       showToast({
         message: errorList,
@@ -60,15 +67,16 @@ const useFileHandling = (params?: UseFileHandling) => {
         duration: 5000,
       });
     } else if (errors.length === 1) {
+      const message = localize(errors[0]) || errors[0];
       showToast({
-        message: errors[0],
+        message,
         status: 'error',
         duration: 5000,
       });
     }
 
     setErrors([]);
-  }, [errors, showToast]);
+  }, [errors, showToast, localize]);
 
   const debouncedDisplayToast = debounce(displayToast, 250);
 
@@ -80,100 +88,117 @@ const useFileHandling = (params?: UseFileHandling) => {
     return () => debouncedDisplayToast.cancel();
   }, [errors, debouncedDisplayToast]);
 
-  const uploadFile = useUploadFileMutation({
-    onSuccess: (data) => {
-      clearUploadTimer(data.temp_file_id);
-      console.log('upload success', data);
-      updateFileById(
-        data.temp_file_id,
-        {
-          progress: 0.9,
-          filepath: data.filepath,
-        },
-        params?.additionalMetadata?.assistant_id ? true : false,
-      );
-
-      setTimeout(() => {
+  const uploadFile = useUploadFileMutation(
+    {
+      onSuccess: (data) => {
+        clearUploadTimer(data.temp_file_id);
+        console.log('upload success', data);
+        if (agent_id) {
+          queryClient.refetchQueries([QueryKeys.agent, agent_id]);
+          return;
+        }
         updateFileById(
           data.temp_file_id,
           {
-            progress: 1,
-            file_id: data.file_id,
-            temp_file_id: data.temp_file_id,
+            progress: 0.9,
             filepath: data.filepath,
-            type: data.type,
-            height: data.height,
-            width: data.width,
-            filename: data.filename,
-            source: data.source,
-            embedded: data.embedded,
           },
-          params?.additionalMetadata?.assistant_id ? true : false,
+          assistant_id ? true : false,
         );
-      }, 300);
+
+        setTimeout(() => {
+          updateFileById(
+            data.temp_file_id,
+            {
+              progress: 1,
+              file_id: data.file_id,
+              temp_file_id: data.temp_file_id,
+              filepath: data.filepath,
+              type: data.type,
+              height: data.height,
+              width: data.width,
+              filename: data.filename,
+              source: data.source,
+              embedded: data.embedded,
+            },
+            assistant_id ? true : false,
+          );
+        }, 300);
+      },
+      onError: (_error, body) => {
+        const error = _error as TError | undefined;
+        console.log('upload error', error);
+        const file_id = body.get('file_id');
+        clearUploadTimer(file_id as string);
+        deleteFileById(file_id as string);
+        const errorMessage =
+          error?.code === 'ERR_CANCELED'
+            ? 'com_error_files_upload_canceled'
+            : error?.response?.data?.message ?? 'com_error_files_upload';
+        setError(errorMessage);
+      },
     },
-    onError: (error, body) => {
-      console.log('upload error', error);
-      const file_id = body.get('file_id');
-      clearUploadTimer(file_id as string);
-      deleteFileById(file_id as string);
-      setError(
-        (error as TError)?.response?.data?.message ?? 'An error occurred while uploading the file.',
-      );
-    },
-  });
+    abortControllerRef.current?.signal,
+  );
 
   const startUpload = async (extendedFile: ExtendedFile) => {
-    if (!endpoint) {
-      setError('An error occurred while uploading the file: Endpoint is undefined');
-      return;
-    }
-
-    startUploadTimer(extendedFile.file_id, extendedFile.file?.name || 'File', extendedFile.size);
+    const filename = extendedFile.file?.name ?? 'File';
+    startUploadTimer(extendedFile.file_id, filename, extendedFile.size);
 
     const formData = new FormData();
-    formData.append(
-      'file',
-      extendedFile.file as File,
-      encodeURIComponent(extendedFile.file?.name || 'File'),
-    );
+    formData.append('file', extendedFile.file as File, encodeURIComponent(filename));
     formData.append('file_id', extendedFile.file_id);
-    if (extendedFile.width) {
-      formData.append('width', extendedFile.width?.toString());
+
+    const width = extendedFile.width ?? 0;
+    const height = extendedFile.height ?? 0;
+    if (width) {
+      formData.append('width', width.toString());
     }
-    if (extendedFile.height) {
-      formData.append('height', extendedFile.height?.toString());
+    if (height) {
+      formData.append('height', height.toString());
     }
 
+    const metadata = params?.additionalMetadata ?? {};
     if (params?.additionalMetadata) {
-      for (const [key, value] of Object.entries(params.additionalMetadata)) {
+      for (const [key, value = ''] of Object.entries(metadata)) {
         if (value) {
           formData.append(key, value);
         }
       }
     }
 
-    if (
-      isAssistantsEndpoint(endpoint) &&
-      !formData.get('assistant_id') &&
-      conversation?.assistant_id
-    ) {
-      const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
-      const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
-      formData.append('version', version);
-      formData.append('assistant_id', conversation.assistant_id);
-      formData.append('model', conversation?.model ?? '');
-      formData.append('message_file', 'true');
+    formData.append('endpoint', endpoint);
+
+    if (!isAssistantsEndpoint(endpoint)) {
+      uploadFile.mutate(formData);
+      return;
     }
-    if (isAssistantsEndpoint(endpoint) && !formData.get('version')) {
-      const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
-      const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
-      formData.append('version', version);
-      formData.append('model', conversation?.model ?? '');
+
+    const convoModel = conversation?.model ?? '';
+    const convoAssistantId = conversation?.assistant_id ?? '';
+
+    if (!assistant_id) {
       formData.append('message_file', 'true');
     }
 
-    formData.append('endpoint', endpoint);
+    const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
+    const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
+
+    if (!assistant_id && convoAssistantId) {
+      formData.append('version', version);
+      formData.append('model', convoModel);
+      formData.append('assistant_id', convoAssistantId);
+    }
+
+    const formVersion = (formData.get('version') ?? '') as string;
+    if (!formVersion) {
+      formData.append('version', version);
+    }
+
+    const formModel = (formData.get('model') ?? '') as string;
+    if (!formModel) {
+      formData.append('model', convoModel);
+    }
 
     uploadFile.mutate(formData);
   };
@@ -182,7 +207,7 @@ const useFileHandling = (params?: UseFileHandling) => {
     const existingFiles = Array.from(files.values());
     const incomingTotalSize = fileList.reduce((total, file) => total + file.size, 0);
     if (incomingTotalSize === 0) {
-      setError('Empty files are not allowed.');
+      setError('com_error_files_empty');
       return false;
     }
     const currentTotalSize = existingFiles.reduce((total, file) => total + file.size, 0);
@@ -238,13 +263,16 @@ const useFileHandling = (params?: UseFileHandling) => {
         (file) =>
           `${file.file?.name ?? file.filename}-${file.size}-${file.type?.split('/')[0] ?? 'file'}`,
       ),
-      ...fileList.map((file) => `${file.name}-${file.size}-${file.type?.split('/')[0] ?? 'file'}`),
+      ...fileList.map(
+        (file: File | undefined) =>
+          `${file?.name}-${file?.size}-${file?.type.split('/')[0] ?? 'file'}`,
+      ),
     ];
 
     const uniqueFilesSet = new Set(combinedFilesInfo);
 
     if (uniqueFilesSet.size !== combinedFilesInfo.length) {
-      setError('Duplicate file detected.');
+      setError('com_error_files_dupe');
       return false;
     }
 
@@ -269,6 +297,7 @@ const useFileHandling = (params?: UseFileHandling) => {
   };
 
   const handleFiles = async (_files: FileList | File[]) => {
+    abortControllerRef.current = new AbortController();
     const fileList = Array.from(_files);
     /* Validate files */
     let filesAreValid: boolean;
@@ -276,7 +305,7 @@ const useFileHandling = (params?: UseFileHandling) => {
       filesAreValid = validateFiles(fileList);
     } catch (error) {
       console.error('file validation error', error);
-      setError('An error occurred while validating the file.');
+      setError('com_error_files_validation');
       return;
     }
     if (!filesAreValid) {
@@ -300,7 +329,7 @@ const useFileHandling = (params?: UseFileHandling) => {
 
         addFile(extendedFile);
 
-        if (originalFile.type?.split('/')[0] === 'image') {
+        if (originalFile.type.split('/')[0] === 'image') {
           loadImage(extendedFile, preview);
           continue;
         }
@@ -309,7 +338,7 @@ const useFileHandling = (params?: UseFileHandling) => {
       } catch (error) {
         deleteFileById(file_id);
         console.log('file handling error', error);
-        setError('An error occurred while processing the file.');
+        setError('com_error_files_process');
       }
     }
   };
@@ -324,11 +353,20 @@ const useFileHandling = (params?: UseFileHandling) => {
     }
   };
 
+  const abortUpload = () => {
+    if (abortControllerRef.current) {
+      logger.log('files', 'Aborting upload');
+      abortControllerRef.current.abort('User aborted upload');
+      abortControllerRef.current = null;
+    }
+  };
+
   return {
     handleFileChange,
     handleFiles,
-    files,
+    abortUpload,
     setFiles,
+    files,
   };
 };
 

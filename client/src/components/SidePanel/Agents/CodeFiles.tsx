@@ -5,6 +5,7 @@ import {
   mergeFileConfig,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
+import type { EndpointFileConfig } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
 import { useGetFileConfig } from '~/data-provider';
@@ -40,9 +41,12 @@ export default function CodeFiles({
     }
   }, [_files]);
 
-  const endpointFileConfig = fileConfig.endpoints[EModelEndpoint.agents];
+  const endpointFileConfig = fileConfig.endpoints[EModelEndpoint.agents] as
+    | EndpointFileConfig
+    | undefined;
+  const isUploadDisabled = endpointFileConfig?.disabled ?? false;
 
-  if (endpointFileConfig?.disabled) {
+  if (isUploadDisabled) {
     return null;
   }
 

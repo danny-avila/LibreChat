@@ -35,7 +35,7 @@ export function FilterItem({
     >
       {icon}
       <span>{label}</span>
-      {isActive && (
+      {isActive === true && (
         <span className="absolute bottom-0 right-0 top-0 flex items-center">
           <Dot />
         </span>
@@ -122,7 +122,7 @@ export default function FilterPrompts({
         return setCategory('');
       }
       setCategory(category);
-      if (icon && React.isValidElement(icon)) {
+      if (icon != null && React.isValidElement(icon)) {
         setSelectedIcon(icon);
       }
     },
@@ -130,7 +130,7 @@ export default function FilterPrompts({
   );
 
   return (
-    <div className={cn('flex gap-2', className)}>
+    <div className={cn('flex gap-2 text-text-primary', className)}>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button

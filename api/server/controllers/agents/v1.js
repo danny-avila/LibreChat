@@ -1,5 +1,5 @@
 const { nanoid } = require('nanoid');
-const { FileContext, Constants } = require('librechat-data-provider');
+const { FileContext, Constants, Tools, SystemRoles } = require('librechat-data-provider');
 const {
   getAgent,
   createAgent,
@@ -14,6 +14,11 @@ const { updateAgentProjects } = require('~/models/Agent');
 const { deleteFileByFilter } = require('~/models/File');
 const { logger } = require('~/config');
 
+const systemTools = {
+  [Tools.execute_code]: true,
+  [Tools.file_search]: true,
+};
+
 /**
  * Creates an Agent.
  * @route POST /Agents
@@ -27,9 +32,17 @@ const createAgentHandler = async (req, res) => {
     const { tools = [], provider, name, description, instructions, model, ...agentData } = req.body;
     const { id: userId } = req.user;
 
-    agentData.tools = tools
-      .map((tool) => (typeof tool === 'string' ? req.app.locals.availableTools[tool] : tool))
-      .filter(Boolean);
+    agentData.tools = [];
+
+    for (const tool of tools) {
+      if (req.app.locals.availableTools[tool]) {
+        agentData.tools.push(tool);
+      }
+
+      if (systemTools[tool]) {
+        agentData.tools.push(tool);
+      }
+    }
 
     Object.assign(agentData, {
       author: userId,
@@ -80,8 +93,22 @@ const getAgentHandler = async (req, res) => {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
+    agent.author = agent.author.toString();
+    agent.isCollaborative = !!agent.isCollaborative;
+
     if (agent.author !== author) {
       delete agent.author;
+    }
+
+    if (!agent.isCollaborative && agent.author !== author && req.user.role !== SystemRoles.ADMIN) {
+      return res.status(200).json({
+        id: agent.id,
+        name: agent.name,
+        avatar: agent.avatar,
+        author: agent.author,
+        projectIds: agent.projectIds,
+        isCollaborative: agent.isCollaborative,
+      });
     }
 
     return res.status(200).json(agent);
@@ -106,12 +133,29 @@ const updateAgentHandler = async (req, res) => {
     const { projectIds, removeProjectIds, ...updateData } = req.body;
 
     let updatedAgent;
+    const query = { id, author: req.user.id };
+    if (req.user.role === SystemRoles.ADMIN) {
+      delete query.author;
+    }
     if (Object.keys(updateData).length > 0) {
-      updatedAgent = await updateAgent({ id, author: req.user.id }, updateData);
+      updatedAgent = await updateAgent(query, updateData);
     }
 
     if (projectIds || removeProjectIds) {
-      updatedAgent = await updateAgentProjects(id, projectIds, removeProjectIds);
+      updatedAgent = await updateAgentProjects({
+        user: req.user,
+        agentId: id,
+        projectIds,
+        removeProjectIds,
+      });
+    }
+
+    if (updatedAgent.author) {
+      updatedAgent.author = updatedAgent.author.toString();
+    }
+
+    if (updatedAgent.author !== req.user.id) {
+      delete updatedAgent.author;
     }
 
     return res.json(updatedAgent);
@@ -182,8 +226,6 @@ const uploadAgentAvatarHandler = async (req, res) => {
       return res.status(400).json({ message: 'Agent ID is required' });
     }
 
-    let { avatar: _avatar = '{}' } = req.body;
-
     const image = await uploadImageBuffer({
       req,
       context: FileContext.avatar,
@@ -192,10 +234,12 @@ const uploadAgentAvatarHandler = async (req, res) => {
       },
     });
 
+    let _avatar;
     try {
-      _avatar = JSON.parse(_avatar);
+      const agent = await getAgent({ id: agent_id });
+      _avatar = agent.avatar;
     } catch (error) {
-      logger.error('[/avatar/:agent_id] Error parsing avatar', error);
+      logger.error('[/avatar/:agent_id] Error fetching agent', error);
       _avatar = {};
     }
 
@@ -203,7 +247,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
       const { deleteFile } = getStrategyFunctions(_avatar.source);
       try {
         await deleteFile(req, { filepath: _avatar.filepath });
-        await deleteFileByFilter({ filepath: _avatar.filepath });
+        await deleteFileByFilter({ user: req.user.id, filepath: _avatar.filepath });
       } catch (error) {
         logger.error('[/avatar/:agent_id] Error deleting old avatar', error);
       }

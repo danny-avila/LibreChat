@@ -30,8 +30,9 @@ export enum EModelEndpoint {
 
 export const paramEndpoints = new Set<EModelEndpoint | string>([
   EModelEndpoint.agents,
-  EModelEndpoint.bedrock,
   EModelEndpoint.openAI,
+  EModelEndpoint.bedrock,
+  EModelEndpoint.azureOpenAI,
   EModelEndpoint.anthropic,
   EModelEndpoint.custom,
 ]);
@@ -140,9 +141,9 @@ export const defaultAgentFormValues = {
   tools: [],
   provider: {},
   projectIds: [],
-  code_interpreter: false,
-  image_vision: false,
-  retrieval: false,
+  isCollaborative: false,
+  [Tools.execute_code]: false,
+  [Tools.file_search]: false,
 };
 
 export const ImageVisionTool: FunctionTool = {
@@ -167,7 +168,7 @@ export const openAISettings = {
   },
   temperature: {
     min: 0,
-    max: 1,
+    max: 2,
     step: 0.01,
     default: 1,
   },
@@ -231,7 +232,7 @@ export const googleSettings = {
   topK: {
     min: 1,
     max: 40,
-    step: 0.01,
+    step: 1,
     default: 40,
   },
 };
@@ -240,7 +241,7 @@ const ANTHROPIC_MAX_OUTPUT = 8192;
 const LEGACY_ANTHROPIC_MAX_OUTPUT = 4096;
 export const anthropicSettings = {
   model: {
-    default: 'claude-3-5-sonnet-20240620',
+    default: 'claude-3-5-sonnet-20241022',
   },
   temperature: {
     min: 0,
@@ -468,6 +469,13 @@ export const tMessageSchema = z.object({
   iconURL: z.string().optional(),
 });
 
+export type TAttachmentMetadata = { messageId: string; toolCallId: string };
+export type TAttachment =
+  | (TFile & TAttachmentMetadata)
+  | (Pick<TFile, 'filename' | 'filepath' | 'conversationId'> & {
+      expiresAt: number;
+    } & TAttachmentMetadata);
+
 export type TMessage = z.input<typeof tMessageSchema> & {
   children?: TMessage[];
   plugin?: TResPlugin | null;
@@ -476,6 +484,7 @@ export type TMessage = z.input<typeof tMessageSchema> & {
   files?: Partial<TFile>[];
   depth?: number;
   siblingIndex?: number;
+  attachments?: TAttachment[];
 };
 
 export const coerceNumber = z.union([z.number(), z.string()]).transform((val) => {
@@ -822,7 +831,7 @@ export function removeNullishValues<T extends Record<string, unknown>>(obj: T): 
 
   (Object.keys(newObj) as Array<keyof T>).forEach((key) => {
     const value = newObj[key];
-    if (value === undefined || value === null || value === '') {
+    if (value === undefined || value === null) {
       delete newObj[key];
     }
   });

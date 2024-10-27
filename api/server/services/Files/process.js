@@ -8,6 +8,7 @@ const {
   FileSources,
   imageExtRegex,
   EModelEndpoint,
+  EToolResources,
   mergeFileConfig,
   hostImageIdSuffix,
   checkOpenAIStorage,
@@ -16,6 +17,7 @@ const {
 } = require('librechat-data-provider');
 const { addResourceFileId, deleteResourceFileId } = require('~/server/controllers/assistants/v2');
 const { convertImage, resizeAndConvert } = require('~/server/services/Files/images');
+const { addAgentResourceFile, removeAgentResourceFile } = require('~/models/Agent');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { createFile, updateFileUsage, deleteFiles } = require('~/models/File');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
@@ -123,6 +125,17 @@ const processDeleteRequest = async ({ req, files }) => {
 
   for (const file of files) {
     const source = file.source ?? FileSources.local;
+
+    if (req.body.agent_id && req.body.tool_resource) {
+      promises.push(
+        removeAgentResourceFile({
+          req,
+          file_id: file.file_id,
+          agent_id: req.body.agent_id,
+          tool_resource: req.body.tool_resource,
+        }),
+      );
+    }
 
     if (checkOpenAIStorage(source) && !client[source]) {
       await initializeClients();
@@ -399,6 +412,95 @@ const processFileUpload = async ({ req, res, file, metadata }) => {
 };
 
 /**
+ * Applies the current strategy for file uploads.
+ * Saves file metadata to the database with an expiry TTL.
+ * Files must be deleted from the server filesystem manually.
+ *
+ * @param {Object} params - The parameters object.
+ * @param {Express.Request} params.req - The Express request object.
+ * @param {Express.Response} params.res - The Express response object.
+ * @param {Express.Multer.File} params.file - The uploaded file.
+ * @param {FileMetadata} params.metadata - Additional metadata for the file.
+ * @returns {Promise<void>}
+ */
+const processAgentFileUpload = async ({ req, res, file, metadata }) => {
+  const { agent_id, tool_resource } = metadata;
+  if (agent_id && !tool_resource) {
+    throw new Error('No tool resource provided for agent file upload');
+  }
+
+  if (tool_resource === EToolResources.file_search && file.mimetype.startsWith('image')) {
+    throw new Error('Image uploads are not supported for file search tool resources');
+  }
+
+  let messageAttachment = !!metadata.message_file;
+  if (!messageAttachment && !agent_id) {
+    throw new Error('No agent ID provided for agent file upload');
+  }
+
+  const source =
+    tool_resource === EToolResources.file_search
+      ? FileSources.vectordb
+      : req.app.locals.fileStrategy;
+  const { handleFileUpload } = getStrategyFunctions(source);
+  const { file_id, temp_file_id } = metadata;
+
+  const {
+    bytes,
+    filename,
+    filepath: _filepath,
+    embedded,
+    height,
+    width,
+  } = await handleFileUpload({
+    req,
+    file,
+    file_id,
+  });
+
+  let filepath = _filepath;
+
+  if (!messageAttachment && tool_resource) {
+    await addAgentResourceFile({
+      req,
+      agent_id,
+      file_id,
+      tool_resource: tool_resource,
+    });
+  }
+
+  if (file.mimetype.startsWith('image')) {
+    const result = await processImageFile({
+      req,
+      file,
+      metadata: { file_id: v4() },
+      returnFile: true,
+    });
+    filepath = result.filepath;
+  }
+
+  const result = await createFile(
+    {
+      user: req.user.id,
+      file_id,
+      temp_file_id,
+      bytes,
+      filepath,
+      filename: filename ?? file.originalname,
+      context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
+      model: messageAttachment ? undefined : req.body.model,
+      type: file.mimetype,
+      embedded,
+      source,
+      height,
+      width,
+    },
+    true,
+  );
+  res.status(200).json({ message: 'Agent file uploaded and processed successfully', ...result });
+};
+
+/**
  * @param {object} params - The params object.
  * @param {OpenAI} params.openai - The OpenAI client instance.
  * @param {string} params.file_id - The ID of the file to retrieve.
@@ -654,5 +756,6 @@ module.exports = {
   uploadImageBuffer,
   processFileUpload,
   processDeleteRequest,
+  processAgentFileUpload,
   retrieveAndProcessFile,
 };

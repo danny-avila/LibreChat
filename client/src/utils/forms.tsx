@@ -1,7 +1,12 @@
 import { EarthIcon } from 'lucide-react';
-import { alternateName } from 'librechat-data-provider';
+import {
+  alternateName,
+  EModelEndpoint,
+  FileSources,
+  EToolResources,
+} from 'librechat-data-provider';
 import type { Agent, TFile } from 'librechat-data-provider';
-import type { DropdownValueSetter, TAgentOption } from '~/common';
+import type { DropdownValueSetter, TAgentOption, ExtendedFile } from '~/common';
 
 /**
  * Creates a Dropdown value setter that always passes a string value,
@@ -37,9 +42,6 @@ export const createProviderOption = (provider: string) => ({
   value: provider,
 });
 
-type FileTuple = [string, Partial<TFile>];
-type FileList = Array<FileTuple>;
-
 export const processAgentOption = ({
   agent: _agent,
   fileMap,
@@ -56,20 +58,49 @@ export const processAgentOption = ({
     label: _agent?.name ?? '',
     value: _agent?.id ?? '',
     icon: isGlobal ? <EarthIcon className="icon-md text-green-400" /> : null,
-    // files: _agent?.file_ids ? ([] as FileList) : undefined,
-    // code_files: _agent?.tool_resources?.code_interpreter?.file_ids
-    //   ? ([] as FileList)
-    //   : undefined,
+    knowledge_files: _agent?.tool_resources?.file_search?.file_ids
+      ? ([] as Array<[string, ExtendedFile]>)
+      : undefined,
+    code_files: _agent?.tool_resources?.execute_code?.file_ids
+      ? ([] as Array<[string, ExtendedFile]>)
+      : undefined,
   };
 
   if (!fileMap) {
     return agent;
   }
 
-  const handleFile = (file_id: string, list?: FileList) => {
+  const handleFile = ({
+    file_id,
+    tool_resource,
+    list,
+  }: {
+    file_id: string;
+    tool_resource: EToolResources;
+    list?: Array<[string, ExtendedFile]>;
+  }) => {
     const file = fileMap[file_id];
+    const source =
+      tool_resource === EToolResources.file_search
+        ? FileSources.vectordb
+        : file?.source ?? FileSources.local;
+
     if (file) {
-      list?.push([file_id, file]);
+      list?.push([
+        file_id,
+        {
+          file_id: file.file_id,
+          type: file.type,
+          filepath: file.filepath,
+          filename: file.filename,
+          width: file.width,
+          height: file.height,
+          size: file.bytes,
+          preview: file.filepath,
+          progress: 1,
+          source,
+        },
+      ]);
     } else {
       list?.push([
         file_id,
@@ -77,22 +108,28 @@ export const processAgentOption = ({
           file_id,
           type: '',
           filename: '',
-          bytes: 1,
-          // progress: 1,
-          // TODO: file handling
-          // filepath: endpoint,
+          size: 1,
+          progress: 1,
+          filepath: EModelEndpoint.agents,
+          source,
         },
       ]);
     }
   };
 
-  if (agent.files && _agent?.file_ids) {
-    _agent.file_ids.forEach((file_id) => handleFile(file_id, agent.files));
+  if (agent.knowledge_files && _agent?.tool_resources?.file_search?.file_ids) {
+    _agent.tool_resources.file_search.file_ids.forEach((file_id) =>
+      handleFile({
+        file_id,
+        list: agent.knowledge_files,
+        tool_resource: EToolResources.file_search,
+      }),
+    );
   }
 
-  if (agent.code_files && _agent?.tool_resources?.code_interpreter?.file_ids) {
-    _agent.tool_resources.code_interpreter.file_ids.forEach((file_id) =>
-      handleFile(file_id, agent.code_files),
+  if (agent.code_files && _agent?.tool_resources?.execute_code?.file_ids) {
+    _agent.tool_resources.execute_code.file_ids.forEach((file_id) =>
+      handleFile({ file_id, list: agent.code_files, tool_resource: EToolResources.execute_code }),
     );
   }
 

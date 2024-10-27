@@ -86,7 +86,7 @@ function SwitchItem({
         id={id}
         checked={checked}
         onCheckedChange={onCheckedChange}
-        className="ml-4 mt-2"
+        className="ml-4"
         data-testid={id}
         disabled={disabled}
       />

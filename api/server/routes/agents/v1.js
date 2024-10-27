@@ -2,6 +2,7 @@ const multer = require('multer');
 const express = require('express');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const { requireJwtAuth, generateCheckAccess } = require('~/server/middleware');
+const { getAvailableTools } = require('~/server/controllers/PluginController');
 const v1 = require('~/server/controllers/agents/v1');
 const actions = require('./actions');
 
@@ -36,9 +37,7 @@ router.use('/actions', actions);
  * @route GET /agents/tools
  * @returns {TPlugin[]} 200 - application/json
  */
-router.use('/tools', (req, res) => {
-  res.json([]);
-});
+router.use('/tools', getAvailableTools);
 
 /**
  * Creates an agent.

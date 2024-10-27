@@ -5,12 +5,12 @@ const path = require('path');
 const axios = require('axios');
 const sharp = require('sharp');
 const { v4: uuidv4 } = require('uuid');
-const { StructuredTool } = require('langchain/tools');
+const { Tool } = require('@langchain/core/tools');
 const { FileContext } = require('librechat-data-provider');
 const paths = require('~/config/paths');
 const { logger } = require('~/config');
 
-class StableDiffusionAPI extends StructuredTool {
+class StableDiffusionAPI extends Tool {
   constructor(fields) {
     super();
     /** @type {string} User ID */

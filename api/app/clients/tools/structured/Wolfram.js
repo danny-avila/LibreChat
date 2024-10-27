@@ -1,10 +1,10 @@
 /* eslint-disable no-useless-escape */
 const axios = require('axios');
 const { z } = require('zod');
-const { StructuredTool } = require('langchain/tools');
+const { Tool } = require('@langchain/core/tools');
 const { logger } = require('~/config');
 
-class WolframAlphaAPI extends StructuredTool {
+class WolframAlphaAPI extends Tool {
   constructor(fields) {
     super();
     /* Used to initialize the Tool without necessary variables. */

@@ -1,18 +1,22 @@
 const fs = require('fs').promises;
 const express = require('express');
+const { EnvVar } = require('@librechat/agents');
 const {
   isUUID,
-  checkOpenAIStorage,
   FileSources,
   EModelEndpoint,
+  isAgentsEndpoint,
+  checkOpenAIStorage,
 } = require('librechat-data-provider');
 const {
   filterFile,
   processFileUpload,
   processDeleteRequest,
+  processAgentFileUpload,
 } = require('~/server/services/Files/process');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
+const { loadAuthValues } = require('~/app/clients/tools/util');
 const { getFiles } = require('~/models/File');
 const { logger } = require('~/config');
 
@@ -62,12 +66,54 @@ router.delete('/', async (req, res) => {
       return;
     }
 
-    await processDeleteRequest({ req, files });
+    const fileIds = files.map((file) => file.file_id);
+    const userFiles = await getFiles({ file_id: { $in: fileIds }, user: req.user.id });
+    if (userFiles.length !== files.length) {
+      return res.status(403).json({ message: 'You can only delete your own files' });
+    }
 
+    await processDeleteRequest({ req, files: userFiles });
+
+    logger.debug(
+      `[/files] Files deleted successfully: ${files
+        .filter((f) => f.file_id)
+        .map((f) => f.file_id)
+        .join(', ')}`,
+    );
     res.status(200).json({ message: 'Files deleted successfully' });
   } catch (error) {
     logger.error('[/files] Error deleting files:', error);
     res.status(400).json({ message: 'Error in request', error: error.message });
+  }
+});
+
+router.get('/code/download/:sessionId/:fileId', async (req, res) => {
+  try {
+    const { sessionId, fileId } = req.params;
+    const logPrefix = `Session ID: ${sessionId} | File ID: ${fileId} | Code output download requested by user `;
+    logger.debug(logPrefix);
+
+    if (!sessionId || !fileId) {
+      return res.status(400).send('Bad request');
+    }
+
+    const { getDownloadStream } = getStrategyFunctions(FileSources.execute_code);
+    if (!getDownloadStream) {
+      logger.warn(
+        `${logPrefix} has no stream method implemented for ${FileSources.execute_code} source`,
+      );
+      return res.status(501).send('Not Implemented');
+    }
+
+    const result = await loadAuthValues({ userId: req.user.id, authFields: [EnvVar.CODE_API_KEY] });
+
+    /** @type {AxiosResponse<ReadableStream> | undefined} */
+    const response = await getDownloadStream(`${sessionId}/${fileId}`, result[EnvVar.CODE_API_KEY]);
+    res.set(response.headers);
+    response.data.pipe(res);
+  } catch (error) {
+    logger.error('Error downloading file:', error);
+    res.status(500).send('Error downloading file');
   }
 });
 
@@ -154,6 +200,10 @@ router.post('/', async (req, res) => {
     metadata.temp_file_id = metadata.file_id;
     metadata.file_id = req.file_id;
 
+    if (isAgentsEndpoint(metadata.endpoint)) {
+      return await processAgentFileUpload({ req, res, file, metadata });
+    }
+
     await processFileUpload({ req, res, file, metadata });
   } catch (error) {
     let message = 'Error processing file';
@@ -177,7 +227,7 @@ router.post('/', async (req, res) => {
     try {
       await fs.unlink(file.path);
     } catch (error) {
-      logger.error('[/files/images] Error deleting file after file processing:', error);
+      logger.error('[/files] Error deleting file after file processing:', error);
     }
   }
 });

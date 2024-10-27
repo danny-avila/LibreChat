@@ -155,10 +155,22 @@ const formatAgentMessages = (payload) => {
 
     for (const part of message.content) {
       if (part.type === ContentTypes.TEXT && part.tool_call_ids) {
-        // If there's pending content, add it as an AIMessage
+        /*
+        If there's pending content, it needs to be aggregated as a single string to prepare for tool calls.
+        For Anthropic models, the "tool_calls" field on a message is only respected if content is a string.
+         */
         if (currentContent.length > 0) {
-          messages.push(new AIMessage({ content: currentContent }));
+          let content = currentContent.reduce((acc, curr) => {
+            if (curr.type === ContentTypes.TEXT) {
+              return `${acc}${curr[ContentTypes.TEXT]}\n`;
+            }
+            return acc;
+          }, '');
+          content = `${content}\n${part[ContentTypes.TEXT] ?? ''}`.trim();
+          lastAIMessage = new AIMessage({ content });
+          messages.push(lastAIMessage);
           currentContent = [];
+          continue;
         }
 
         // Create a new AIMessage with this text and prepare for tool calls

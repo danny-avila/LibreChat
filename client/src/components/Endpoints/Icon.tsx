@@ -38,7 +38,7 @@ const UserAvatar = memo(({ size, user, avatarSrc, username, className }: UserAva
         <UserIcon />
       </div>
     ) : (
-      <img className="rounded-full" src={user?.avatar ?? avatarSrc} alt="avatar" />
+      <img className="rounded-full" src={(user?.avatar ?? '') || avatarSrc} alt="avatar" />
     )}
   </div>
 ));

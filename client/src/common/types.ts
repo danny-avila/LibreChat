@@ -194,6 +194,7 @@ export type AgentModelPanelProps = {
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
   providers: Option[];
   models: Record<string, string[]>;
+  agent_id?: string;
 };
 
 export type AugmentedColumnDef<TData, TValue> = ColumnDef<TData, TValue> & DataColumnMeta;
@@ -429,6 +430,8 @@ export type Option = Record<string, unknown> & {
   label?: string;
   value: string | number | null;
 };
+
+export type StringOption = Option & { value: string | null };
 
 export type VoiceOption = {
   value: string;

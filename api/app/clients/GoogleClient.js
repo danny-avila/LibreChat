@@ -28,7 +28,7 @@ const {
 } = require('./prompts');
 const BaseClient = require('./BaseClient');
 
-const loc = 'us-central1';
+const loc = process.env.GOOGLE_LOC || 'us-central1';
 const publisher = 'google';
 const endpointPrefix = `https://${loc}-aiplatform.googleapis.com`;
 // const apiEndpoint = loc + '-aiplatform.googleapis.com';
@@ -593,6 +593,8 @@ class GoogleClient extends BaseClient {
 
   createLLM(clientOptions) {
     const model = clientOptions.modelName ?? clientOptions.model;
+    clientOptions.location = loc;
+    clientOptions.endpoint = `${loc}-aiplatform.googleapis.com`;
     if (this.project_id && this.isTextModel) {
       logger.debug('Creating Google VertexAI client');
       return new GoogleVertexAI(clientOptions);

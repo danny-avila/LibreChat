@@ -1,3 +1,4 @@
+export * from './Files';
 export * from './connection';
 export * from './mutations';
 export * from './prompts';

@@ -2,12 +2,13 @@ import { useEffect } from 'react';
 import { Search, X } from 'lucide-react';
 import { Dialog, DialogPanel, DialogTitle, Description } from '@headlessui/react';
 import { useFormContext } from 'react-hook-form';
+import { isAgentsEndpoint } from 'librechat-data-provider';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import type {
   AssistantsEndpoint,
   EModelEndpoint,
-  TError,
   TPluginAction,
+  TError,
 } from 'librechat-data-provider';
 import type { TPluginStoreDialogProps } from '~/common/types';
 import { PluginPagination, PluginAuthForm } from '~/components/Plugins/Store';
@@ -26,7 +27,8 @@ function ToolSelectDialog({
 }) {
   const localize = useLocalize();
   const { getValues, setValue } = useFormContext();
-  const { data: tools = [] } = useAvailableToolsQuery(endpoint);
+  const { data: tools } = useAvailableToolsQuery(endpoint);
+  const isAgentTools = isAgentsEndpoint(endpoint);
 
   const {
     maxPage,
@@ -54,8 +56,9 @@ function ToolSelectDialog({
   const updateUserPlugins = useUpdateUserPluginsMutation();
   const handleInstallError = (error: TError) => {
     setError(true);
-    if (error.response?.data?.message) {
-      setErrorMessage(error.response?.data?.message);
+    const errorMessage = error.response?.data?.message ?? '';
+    if (errorMessage) {
+      setErrorMessage(errorMessage);
     }
     setTimeout(() => {
       setError(false);
@@ -105,7 +108,7 @@ function ToolSelectDialog({
     const getAvailablePluginFromKey = tools?.find((p) => p.pluginKey === pluginKey);
     setSelectedPlugin(getAvailablePluginFromKey);
 
-    const { authConfig, authenticated } = getAvailablePluginFromKey ?? {};
+    const { authConfig, authenticated = false } = getAvailablePluginFromKey ?? {};
 
     if (authConfig && authConfig.length > 0 && !authenticated) {
       setShowPluginAuthForm(true);
@@ -159,7 +162,9 @@ function ToolSelectDialog({
             <div className="flex items-center">
               <div className="text-center sm:text-left">
                 <DialogTitle className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
-                  {localize('com_nav_tool_dialog')}
+                  {isAgentTools
+                    ? localize('com_nav_tool_dialog_agents')
+                    : localize('com_nav_tool_dialog')}
                 </DialogTitle>
                 <Description className="text-sm text-gray-500 dark:text-gray-300">
                   {localize('com_nav_tool_dialog_description')}

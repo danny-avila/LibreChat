@@ -9,46 +9,40 @@ import { cn } from '~/utils';
 type SendButtonProps = {
   disabled: boolean;
   control: Control<{ text: string }>;
-  isRTL: boolean;
 };
 
 const SubmitButton = React.memo(
-  forwardRef(
-    (props: { disabled: boolean; isRTL: boolean }, ref: React.ForwardedRef<HTMLButtonElement>) => {
-      const localize = useLocalize();
-      return (
-        <TooltipAnchor
-          description={localize('com_nav_send_message')}
-          render={
-            <button
-              ref={ref}
-              aria-label={localize('com_nav_send_message')}
-              id="send-button"
-              disabled={props.disabled}
-              className={cn(
-                'absolute rounded-lg border border-black p-0.5 text-white outline-offset-4 transition-colors enabled:bg-black disabled:cursor-not-allowed disabled:bg-black disabled:text-gray-400 disabled:opacity-10 dark:border-white dark:bg-white dark:disabled:bg-white',
-                props.isRTL
-                  ? 'bottom-1.5 left-2 md:bottom-3 md:left-3'
-                  : 'bottom-1.5 right-2 md:bottom-3 md:right-3',
-              )}
-              data-testid="send-button"
-              type="submit"
-            >
-              <span className="" data-state="closed">
-                <SendIcon size={24} />
-              </span>
-            </button>
-          }
-        ></TooltipAnchor>
-      );
-    },
-  ),
+  forwardRef((props: { disabled: boolean }, ref: React.ForwardedRef<HTMLButtonElement>) => {
+    const localize = useLocalize();
+    return (
+      <TooltipAnchor
+        description={localize('com_nav_send_message')}
+        render={
+          <button
+            ref={ref}
+            aria-label={localize('com_nav_send_message')}
+            id="send-button"
+            disabled={props.disabled}
+            className={cn(
+              'rounded-full bg-text-primary p-2 text-text-primary outline-offset-4 transition-all duration-200 disabled:cursor-not-allowed disabled:text-text-secondary disabled:opacity-10',
+            )}
+            data-testid="send-button"
+            type="submit"
+          >
+            <span className="" data-state="closed">
+              <SendIcon size={24} />
+            </span>
+          </button>
+        }
+      ></TooltipAnchor>
+    );
+  }),
 );
 
 const SendButton = React.memo(
   forwardRef((props: SendButtonProps, ref: React.ForwardedRef<HTMLButtonElement>) => {
     const data = useWatch({ control: props.control });
-    return <SubmitButton ref={ref} disabled={props.disabled || !data.text} isRTL={props.isRTL} />;
+    return <SubmitButton ref={ref} disabled={props.disabled || !data.text} />;
   }),
 );
 
