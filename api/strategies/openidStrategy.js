@@ -5,7 +5,6 @@ const { HttpsProxyAgent } = require('https-proxy-agent');
 const { Issuer, Strategy: OpenIDStrategy, custom } = require('openid-client');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { findUser, createUser, updateUser } = require('~/models/userMethods');
-const { getFullName } = require('~/strategies/process');
 const { hashToken } = require('~/server/utils/crypto');
 const { logger } = require('~/config');
 
@@ -54,6 +53,36 @@ const downloadImage = async (url, accessToken) => {
     return '';
   }
 };
+
+/**
+ * Determines the full name of a user based on OpenID userinfo and environment configuration.
+ *
+ * @param {Object} userinfo - The user information object from OpenID Connect
+ * @param {string} [userinfo.given_name] - The user's first name
+ * @param {string} [userinfo.family_name] - The user's last name
+ * @param {string} [userinfo.username] - The user's username
+ * @param {string} [userinfo.email] - The user's email address
+ * @returns {string} The determined full name of the user
+ */
+function getFullName(userinfo) {
+  if (process.env.OPENID_NAME_CLAIM) {
+    return userinfo[process.env.OPENID_NAME_CLAIM];
+  }
+
+  if (userinfo.given_name && userinfo.family_name) {
+    return `${userinfo.given_name} ${userinfo.family_name}`;
+  }
+
+  if (userinfo.given_name) {
+    return userinfo.given_name;
+  }
+
+  if (userinfo.family_name) {
+    return userinfo.family_name;
+  }
+
+  return userinfo.username || userinfo.email;
+}
 
 /**
  * Converts an input into a string suitable for a username.
