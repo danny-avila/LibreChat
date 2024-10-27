@@ -95,7 +95,47 @@ const createSocialUser = async ({
   return await getUserById(newUserId);
 };
 
+/**
+ * Determines the full name of a user based on OpenID userinfo and environment configuration.
+ *
+ * @param {Object} userinfo - The user information object from OpenID Connect
+ * @param {string} [userinfo.given_name] - The user's first name
+ * @param {string} [userinfo.family_name] - The user's last name
+ * @param {string} [userinfo.username] - The user's username
+ * @param {string} [userinfo.email] - The user's email address
+ * @returns {string} The determined full name of the user
+ *
+ * @example
+ * const userinfo = {
+ *   given_name: 'John',
+ *   family_name: 'Doe',
+ *   username: 'johndoe',
+ *   email: 'john@example.com'
+ * };
+ * const fullName = getFullName(userinfo); // Returns "John Doe"
+ */
+function getFullName(userinfo) {
+  if (process.env.OPENID_NAME_CLAIM) {
+    return userinfo[process.env.OPENID_NAME_CLAIM];
+  }
+
+  if (userinfo.given_name && userinfo.family_name) {
+    return `${userinfo.given_name} ${userinfo.family_name}`;
+  }
+
+  if (userinfo.given_name) {
+    return userinfo.given_name;
+  }
+
+  if (userinfo.family_name) {
+    return userinfo.family_name;
+  }
+
+  return userinfo.username || userinfo.email;
+}
+
 module.exports = {
   handleExistingUser,
   createSocialUser,
+  getFullName,
 };

@@ -5,6 +5,7 @@ const { HttpsProxyAgent } = require('https-proxy-agent');
 const { Issuer, Strategy: OpenIDStrategy, custom } = require('openid-client');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { findUser, createUser, updateUser } = require('~/models/userMethods');
+const { getFullName } = require('~/strategies/process');
 const { hashToken } = require('~/server/utils/crypto');
 const { logger } = require('~/config');
 
@@ -14,6 +15,7 @@ try {
 } catch (err) {
   logger.error('[openidStrategy] crypto support is disabled!', err);
 }
+
 /**
  * Downloads an image from a URL using an access token.
  * @param {string} url
@@ -117,21 +119,7 @@ async function setupOpenId() {
             );
           }
 
-          let fullName = '';
-          if (process.env.OPENID_NAME_CLAIM) {
-            fullName = userinfo[process.env.OPENID_NAME_CLAIM];
-          }
-          else {
-            if (userinfo.given_name && userinfo.family_name) {
-              fullName = userinfo.given_name + ' ' + userinfo.family_name;
-            } else if (userinfo.given_name) {
-              fullName = userinfo.given_name;
-            } else if (userinfo.family_name) {
-              fullName = userinfo.family_name;
-            } else {
-              fullName = userinfo.username || userinfo.email;
-            }
-          }
+          const fullName = getFullName(userinfo);
 
           if (requiredRole) {
             let decodedToken = '';
@@ -166,8 +154,7 @@ async function setupOpenId() {
           let username = '';
           if (process.env.OPENID_USERNAME_CLAIM) {
             username = userinfo[process.env.OPENID_USERNAME_CLAIM];
-          }
-          else {
+          } else {
             username = convertToUsername(
               userinfo.username || userinfo.given_name || userinfo.email,
             );
