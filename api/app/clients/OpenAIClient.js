@@ -100,14 +100,14 @@ class OpenAIClient extends BaseClient {
       this.options.modelOptions,
     );
 
-    this.isO1Model = /\bo1\b/i.test(this.modelOptions.model);
-
     this.defaultVisionModel = this.options.visionModel ?? 'gpt-4-vision-preview';
     if (typeof this.options.attachments?.then === 'function') {
       this.options.attachments.then((attachments) => this.checkVisionRequest(attachments));
     } else {
       this.checkVisionRequest(this.options.attachments);
     }
+
+    this.isO1Model = /\bo1\b/i.test(this.modelOptions.model);
 
     const { OPENROUTER_API_KEY, OPENAI_FORCE_PROMPT } = process.env ?? {};
     if (OPENROUTER_API_KEY && !this.azure) {
