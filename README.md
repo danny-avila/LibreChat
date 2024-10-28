@@ -83,7 +83,7 @@ LibreChat brings together the future of assistant AIs with the revolutionary tec
 
 With LibreChat, you no longer need to opt for ChatGPT Plus and can instead use free or pay-per-call APIs. We welcome contributions, cloning, and forking to enhance the capabilities of this advanced chatbot platform.
 
-[![Watch the video](https://raw.githubusercontent.com/LibreChat-AI/librechat.ai/main/public/images/changelog/v0.7.4.png)](https://www.youtube.com/watch?v=cvosUxogdpI)
+[![Watch the video](https://raw.githubusercontent.com/LibreChat-AI/librechat.ai/main/public/images/changelog/v0.7.5.png)](https://www.youtube.com/watch?v=IDukQ7a2f3U)
 Click on the thumbnail to open the video☝️
 
 ---
