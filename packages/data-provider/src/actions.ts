@@ -266,6 +266,10 @@ class RequestExecutor {
       throw new Error(`Unsupported HTTP method: ${method}`);
     }
   }
+
+  getConfig() {
+    return this.config;
+  }
 }
 
 export class ActionRequest {
