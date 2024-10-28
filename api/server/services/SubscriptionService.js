@@ -63,6 +63,7 @@ const handleSubscriptionUpdated = async (subscription) => {
     // Fetch the product details to get the name
     const product = await stripe.products.retrieve(productId);
     const planName = product.name.toLowerCase();
+    const context = subscription.metadata?.context || 'update';
 
     const updatedData = {
       subscription: planName,
@@ -87,27 +88,33 @@ const handleSubscriptionUpdated = async (subscription) => {
     }
 
     // Create a transaction to add tokens
-    if (tokenAmount > 0) {
+    if (tokenAmount > 0 && (context === 'initial' || context === 'renewal')) {
       await Transaction.create({
         user: user._id,
         tokenType: 'credits',
-        context: 'subscription',
+        context: context === 'renewal' ? 'subscription_renewal' : 'subscription',
         rawAmount: tokenAmount,
         metadata: {
-          source: 'subscription',
+          source: context === 'renewal' ? 'subscription_renewal' : 'subscription',
           planType: planName,
+          previousBalance: user.tokenBalance,
         },
       });
+
+      // Update token balance only for initial subscription or renewal
+      updatedData.tokenBalance = tokenAmount;
+    } else if (subscription.status === 'canceled') {
+      // Set token balance to 0 for canceled subscriptions
+      updatedData.tokenBalance = 0;
     }
 
-    // Update user data including token balance
-    updatedData.tokenBalance = tokenAmount;
     await updateUser(user._id, updatedData);
 
-    logger.info(`[handleSubscriptionUpdated] Subscription updated for user ${user._id}`, {
+    logger.info(`[handleSubscriptionUpdated] Subscription ${context} for user ${user._id}`, {
       subscription: planName,
       tokenAmount,
       status: subscription.status,
+      context,
     });
   } catch (error) {
     logger.error('[handleSubscriptionUpdated] Error:', error);
