@@ -1,6 +1,7 @@
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const { updateUser, getUserById } = require('~/models/userMethods');
 const { Transaction } = require('~/models/Transaction');
+const Balance = require('~/models/Balance');
 const { logger } = require('~/config');
 
 const upgradeSubscription = async (userId, planId) => {
@@ -56,17 +57,14 @@ const handleSubscriptionUpdated = async (subscription) => {
       throw new Error('User not found');
     }
 
-    // Get the first item from the subscription items
     const subscriptionItem = subscription.items.data[0];
     const productId = subscriptionItem.price.product;
-
-    // Fetch the product details to get the name
     const product = await stripe.products.retrieve(productId);
     const planName = product.name.toLowerCase();
     const context = subscription.metadata?.context || 'update';
 
     const updatedData = {
-      subscription: planName,
+      subscription: subscription.status === 'canceled' ? 'free' : planName,
       subscriptionStatus: subscription.status,
       subscriptionExpiresAt: new Date(subscription.current_period_end * 1000),
     };
@@ -87,8 +85,12 @@ const handleSubscriptionUpdated = async (subscription) => {
         tokenAmount = 0; // Free plan
     }
 
-    // Create a transaction to add tokens
     if (tokenAmount > 0 && (context === 'initial' || context === 'renewal')) {
+      // Get current balance
+      const currentBalance = await Balance.findOne({ user: user._id }).lean();
+      const previousBalance = currentBalance?.tokenCredits || 0;
+
+      // Create transaction record
       await Transaction.create({
         user: user._id,
         tokenType: 'credits',
@@ -97,14 +99,33 @@ const handleSubscriptionUpdated = async (subscription) => {
         metadata: {
           source: context === 'renewal' ? 'subscription_renewal' : 'subscription',
           planType: planName,
-          previousBalance: user.tokenBalance,
+          previousBalance,
         },
       });
 
-      // Update token balance only for initial subscription or renewal
+      // Update or create Balance document
+      await Balance.findOneAndUpdate(
+        { user: user._id },
+        { $set: { tokenCredits: tokenAmount } },
+        { upsert: true, new: true },
+      );
+
+      // Update user's token balance field
       updatedData.tokenBalance = tokenAmount;
+
+      logger.info(`[handleSubscriptionUpdated] ${context === 'renewal' ? 'Reset' : 'Set'} token balance for user ${user._id}`, {
+        previousBalance,
+        newBalance: tokenAmount,
+        planName,
+        context,
+      });
     } else if (subscription.status === 'canceled') {
-      // Set token balance to 0 for canceled subscriptions
+      // Reset balance to 0 for canceled subscriptions
+      await Balance.findOneAndUpdate(
+        { user: user._id },
+        { $set: { tokenCredits: 0 } },
+        { upsert: true },
+      );
       updatedData.tokenBalance = 0;
     }
 
