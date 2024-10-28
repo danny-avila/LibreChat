@@ -2084,14 +2084,6 @@ button.scroll-convo {
   margin-bottom: 0.75em;
 }
 
-/* Remove extra spacing */
-/* .prose > ul > li > *:first-child,
-.prose > ol > li > *:first-child,
-.markdown > ul > li > *:first-child,
-.markdown > ol > li > *:first-child {
-  margin-top: 1.25em;
-} */
-
 .prose > ul > li > *:last-child,
 .prose > ol > li > *:last-child,
 .markdown > ul > li > *:last-child,
