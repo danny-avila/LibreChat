@@ -140,39 +140,31 @@ export class FunctionSignature {
     };
   }
 }
-
-export class ActionRequest {
-  domain: string;
-  path: string;
-  method: string;
-  operation: string;
-  operationHash?: string;
-  isConsequential: boolean;
-  contentType: string;
-  params?: object;
-
+class RequestConfig {
   constructor(
-    domain: string,
-    path: string,
-    method: string,
-    operation: string,
-    isConsequential: boolean,
-    contentType: string,
-  ) {
-    this.domain = domain;
-    this.path = path;
-    this.method = method;
-    this.operation = operation;
-    this.isConsequential = isConsequential;
-    this.contentType = contentType;
-  }
+    readonly domain: string,
+    readonly basePath: string,
+    readonly method: string,
+    readonly operation: string,
+    readonly isConsequential: boolean,
+    readonly contentType: string,
+  ) {}
+}
 
+class RequestExecutor {
+  path: string;
+  params?: object;
+  private operationHash?: string;
   private authHeaders: Record<string, string> = {};
   private authToken?: string;
 
+  constructor(private config: RequestConfig) {
+    this.path = config.basePath;
+  }
+
   setParams(params: object) {
     this.operationHash = sha1(JSON.stringify(params));
-    this.params = params;
+    this.params = Object.assign({}, params);
 
     for (const [key, value] of Object.entries(params)) {
       const paramPattern = `{${key}}`;
@@ -181,11 +173,12 @@ export class ActionRequest {
         delete (this.params as Record<string, unknown>)[key];
       }
     }
+    return this;
   }
 
   async setAuth(metadata: ActionMetadata) {
     if (!metadata.auth) {
-      return;
+      return this;
     }
 
     const {
@@ -230,7 +223,6 @@ export class ActionRequest {
     ) {
       this.authHeaders[custom_auth_header] = api_key;
     } else if (isOAuth) {
-      // TODO: WIP - OAuth support
       if (!this.authToken) {
         const tokenResponse = await axios.post(
           client_url,
@@ -248,16 +240,17 @@ export class ActionRequest {
       }
       this.authHeaders['Authorization'] = `Bearer ${this.authToken}`;
     }
+    return this;
   }
 
   async execute() {
-    const url = createURL(this.domain, this.path);
+    const url = createURL(this.config.domain, this.path);
     const headers = {
       ...this.authHeaders,
-      'Content-Type': this.contentType,
+      'Content-Type': this.config.contentType,
     };
 
-    const method = this.method.toLowerCase();
+    const method = this.config.method.toLowerCase();
 
     if (method === 'get') {
       return axios.get(url, { headers, params: this.params });
@@ -270,8 +263,64 @@ export class ActionRequest {
     } else if (method === 'patch') {
       return axios.patch(url, this.params, { headers });
     } else {
-      throw new Error(`Unsupported HTTP method: ${this.method}`);
+      throw new Error(`Unsupported HTTP method: ${method}`);
     }
+  }
+}
+
+export class ActionRequest {
+  private config: RequestConfig;
+
+  constructor(
+    domain: string,
+    path: string,
+    method: string,
+    operation: string,
+    isConsequential: boolean,
+    contentType: string,
+  ) {
+    this.config = new RequestConfig(domain, path, method, operation, isConsequential, contentType);
+  }
+
+  // Add getters to maintain backward compatibility
+  get domain() {
+    return this.config.domain;
+  }
+  get path() {
+    return this.config.basePath;
+  }
+  get method() {
+    return this.config.method;
+  }
+  get operation() {
+    return this.config.operation;
+  }
+  get isConsequential() {
+    return this.config.isConsequential;
+  }
+  get contentType() {
+    return this.config.contentType;
+  }
+
+  createExecutor() {
+    return new RequestExecutor(this.config);
+  }
+
+  // Maintain backward compatibility by delegating to a new executor
+  setParams(params: object) {
+    const executor = this.createExecutor();
+    executor.setParams(params);
+    return executor;
+  }
+
+  async setAuth(metadata: ActionMetadata) {
+    const executor = this.createExecutor();
+    return executor.setAuth(metadata);
+  }
+
+  async execute() {
+    const executor = this.createExecutor();
+    return executor.execute();
   }
 }
 

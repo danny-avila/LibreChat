@@ -169,7 +169,7 @@ describe('ActionRequest', () => {
         false,
         'application/json',
       );
-      await expect(actionRequest.execute()).rejects.toThrow('Unsupported HTTP method: INVALID');
+      await expect(actionRequest.execute()).rejects.toThrow('Unsupported HTTP method: invalid');
     });
 
     it('replaces path parameters with values from toolInput', async () => {
@@ -182,20 +182,21 @@ describe('ActionRequest', () => {
         'application/json',
       );
 
-      await actionRequest.setParams({
+      const executor = actionRequest.createExecutor();
+      executor.setParams({
         stocksTicker: 'AAPL',
         multiplier: 5,
         startDate: '2023-01-01',
         endDate: '2023-12-31',
       });
 
-      expect(actionRequest.path).toBe('/stocks/AAPL/bars/5');
-      expect(actionRequest.params).toEqual({
+      expect(executor.path).toBe('/stocks/AAPL/bars/5');
+      expect(executor.params).toEqual({
         startDate: '2023-01-01',
         endDate: '2023-12-31',
       });
 
-      await actionRequest.execute();
+      await executor.execute();
       expect(mockedAxios.get).toHaveBeenCalledWith('https://example.com/stocks/AAPL/bars/5', {
         headers: expect.anything(),
         params: {
@@ -215,7 +216,7 @@ describe('ActionRequest', () => {
       false,
       'application/json',
     );
-    await expect(actionRequest.execute()).rejects.toThrow('Unsupported HTTP method: INVALID');
+    await expect(actionRequest.execute()).rejects.toThrow('Unsupported HTTP method: invalid');
   });
 });
 
@@ -233,7 +234,8 @@ describe('Authentication Handling', () => {
     const api_key = 'user:pass';
     const encodedCredentials = Buffer.from('user:pass').toString('base64');
 
-    actionRequest.setAuth({
+    const executor = actionRequest.createExecutor();
+    await executor.setParams({ param1: 'value1' }).setAuth({
       auth: {
         type: AuthTypeEnum.ServiceHttp,
         authorization_type: AuthorizationTypeEnum.Basic,
@@ -241,13 +243,13 @@ describe('Authentication Handling', () => {
       api_key,
     });
 
-    await actionRequest.setParams({ param1: 'value1' });
-    await actionRequest.execute();
+    await executor.execute();
     expect(mockedAxios.get).toHaveBeenCalledWith('https://example.com/test', {
       headers: expect.objectContaining({
         Authorization: `Basic ${encodedCredentials}`,
+        'Content-Type': 'application/json',
       }),
-      params: expect.anything(),
+      params: { param1: 'value1' },
     });
   });
 
@@ -260,20 +262,23 @@ describe('Authentication Handling', () => {
       false,
       'application/json',
     );
-    actionRequest.setAuth({
+
+    const executor = actionRequest.createExecutor();
+    await executor.setParams({ param1: 'value1' }).setAuth({
       auth: {
         type: AuthTypeEnum.ServiceHttp,
         authorization_type: AuthorizationTypeEnum.Bearer,
       },
       api_key: 'token123',
     });
-    await actionRequest.setParams({ param1: 'value1' });
-    await actionRequest.execute();
+
+    await executor.execute();
     expect(mockedAxios.get).toHaveBeenCalledWith('https://example.com/test', {
       headers: expect.objectContaining({
         Authorization: 'Bearer token123',
+        'Content-Type': 'application/json',
       }),
-      params: expect.anything(),
+      params: { param1: 'value1' },
     });
   });
 
@@ -286,22 +291,24 @@ describe('Authentication Handling', () => {
       false,
       'application/json',
     );
-    // Updated to match ActionMetadata structure
-    actionRequest.setAuth({
+
+    const executor = actionRequest.createExecutor();
+    await executor.setParams({ param1: 'value1' }).setAuth({
       auth: {
-        type: AuthTypeEnum.ServiceHttp, // Assuming this is a valid enum or value for your context
-        authorization_type: AuthorizationTypeEnum.Custom, // Assuming Custom means using a custom header
+        type: AuthTypeEnum.ServiceHttp,
+        authorization_type: AuthorizationTypeEnum.Custom,
         custom_auth_header: 'X-API-KEY',
       },
       api_key: 'abc123',
     });
-    await actionRequest.setParams({ param1: 'value1' });
-    await actionRequest.execute();
+
+    await executor.execute();
     expect(mockedAxios.get).toHaveBeenCalledWith('https://example.com/test', {
       headers: expect.objectContaining({
         'X-API-KEY': 'abc123',
+        'Content-Type': 'application/json',
       }),
-      params: expect.anything(),
+      params: { param1: 'value1' },
     });
   });
 });
@@ -312,7 +319,7 @@ describe('resolveRef', () => {
     const flowchartRequestRef = (
       openapiSpec.paths['/ai.chatgpt.render-flowchart']?.post
         ?.requestBody as OpenAPIV3.RequestBodyObject
-    )?.content['application/json'].schema;
+    ).content['application/json'].schema;
     expect(flowchartRequestRef).toBeDefined();
     const resolvedFlowchartRequest = resolveRef(
       flowchartRequestRef as OpenAPIV3.RequestBodyObject,
