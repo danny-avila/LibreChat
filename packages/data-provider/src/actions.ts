@@ -33,6 +33,16 @@ export type OAuthCredentials = {
 
 export type Credentials = ApiKeyCredentials | OAuthCredentials;
 
+type MediaTypeObject =
+  | undefined
+  | {
+      [media: string]: OpenAPIV3.MediaTypeObject | undefined;
+    };
+
+type RequestBodyObject = Omit<OpenAPIV3.RequestBodyObject, 'content'> & {
+  content: MediaTypeObject;
+};
+
 export function sha1(input: string) {
   return crypto.createHash('sha1').update(input).digest('hex');
 }
@@ -266,7 +276,7 @@ export class ActionRequest {
 }
 
 export function resolveRef(
-  schema: OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject | OpenAPIV3.RequestBodyObject,
+  schema: OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject | RequestBodyObject,
   components?: OpenAPIV3.ComponentsObject,
 ): OpenAPIV3.SchemaObject {
   if ('$ref' in schema && components) {
@@ -324,17 +334,17 @@ export function openapiToFunction(
             openapiSpec.components,
           );
           parametersSchema.properties[paramObj.name] = resolvedSchema;
-          if (paramObj.required) {
+          if (paramObj.required === true) {
             parametersSchema.required.push(paramObj.name);
           }
         }
       }
 
       if (operationObj.requestBody) {
-        const requestBody = operationObj.requestBody as OpenAPIV3.RequestBodyObject;
+        const requestBody = operationObj.requestBody as RequestBodyObject;
         const content = requestBody.content;
-        const contentType = Object.keys(content)[0];
-        const schema = content[contentType]?.schema;
+        const contentType = Object.keys(content ?? {})[0];
+        const schema = content?.[contentType]?.schema;
         const resolvedSchema = resolveRef(
           schema as OpenAPIV3.ReferenceObject | OpenAPIV3.SchemaObject,
           openapiSpec.components,
@@ -356,7 +366,7 @@ export function openapiToFunction(
         path,
         method,
         operationId,
-        !!operationObj['x-openai-isConsequential'], // Custom extension for consequential actions
+        !!(operationObj['x-openai-isConsequential'] ?? false), // Custom extension for consequential actions
         operationObj.requestBody ? 'application/json' : 'application/x-www-form-urlencoded',
       );
 
@@ -414,10 +424,10 @@ export function validateAndParseOpenAPISpec(specString: string): ValidationResul
     for (const [path, methods] of Object.entries(paths)) {
       for (const [httpMethod, operation] of Object.entries(methods as OpenAPIV3.PathItemObject)) {
         // Ensure operation is a valid operation object
-        const { responses } = operation as OpenAPIV3.OperationObject;
+        const { responses } = operation as OpenAPIV3.OperationObject | { responses: undefined };
         if (typeof operation === 'object' && responses) {
           for (const [statusCode, response] of Object.entries(responses)) {
-            const content = (response as OpenAPIV3.ResponseObject).content;
+            const content = (response as OpenAPIV3.ResponseObject).content as MediaTypeObject;
             if (content && content['application/json'] && content['application/json'].schema) {
               const schema = content['application/json'].schema;
               if ('$ref' in schema && typeof schema.$ref === 'string') {
