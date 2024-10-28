@@ -2006,7 +2006,7 @@ button.scroll-convo {
   list-style-position: outside;
   margin-top: 1em;
   margin-bottom: 1em;
-  padding-left: 2em;
+  padding-left: 3em;
 }
 
 .prose li,
@@ -2085,12 +2085,12 @@ button.scroll-convo {
 }
 
 /* Remove extra spacing */
-.prose > ul > li > *:first-child,
+/* .prose > ul > li > *:first-child,
 .prose > ol > li > *:first-child,
 .markdown > ul > li > *:first-child,
 .markdown > ol > li > *:first-child {
   margin-top: 1.25em;
-}
+} */
 
 .prose > ul > li > *:last-child,
 .prose > ol > li > *:last-child,
