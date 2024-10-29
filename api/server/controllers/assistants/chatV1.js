@@ -399,7 +399,30 @@ const chatV1 = async (req, res) => {
     const initializeThread = async () => {
       /** @type {[ undefined | MongoFile[]]}*/
       const [processedFiles] = await Promise.all([addVisionPrompt(), getRequestFileIds()]);
-      // TODO: may allow multiple messages to be created beforehand in a future update
+
+      if (endpoint === EModelEndpoint.azureAssistants) {
+        userMessage = {
+          role: 'user',
+          content: text,
+          metadata: {
+            messageId: userMessageId,
+          },
+          attachments: files.map((file) => ({
+            file_id: file.file_id,
+            tools: [{ type: 'code_interpreter' }],
+          })),
+        };
+      } else {
+        userMessage = {
+          role: 'user',
+          content: text,
+          metadata: {
+            messageId: userMessageId,
+          },
+          ...(file_ids.length && { file_ids }),
+        };
+      }
+
       const initThreadBody = {
         messages: [userMessage],
         metadata: {
@@ -418,8 +441,6 @@ const chatV1 = async (req, res) => {
             }
           }
         }
-
-        userMessage.file_ids = file_ids;
       }
 
       const result = await initThread({ openai, body: initThreadBody, thread_id });
