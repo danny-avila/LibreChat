@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Custom Variables */ 
+/* Custom Variables */
 :root {
   --white: #fff;
   --black: #000;
