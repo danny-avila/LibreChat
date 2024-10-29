@@ -12,7 +12,6 @@ import { LiveAnnouncer } from '~/a11y';
 import { router } from './routes';
 
 const App = () => {
-  //
   const { setError } = useApiErrorBoundary();
 
   const queryClient = new QueryClient({
