@@ -10,7 +10,7 @@ endpoints:
     # Group-level configuration
     - group: "Azure OpenAI"
       instanceName: "blah"
-      apiKey: "${APIM_AZURE_API_KEY}"
+      apiKey: "${AZURE_OPENAI_API_KEY}"
       baseURL: "${AZURE_OPENAI_BASEURL}"
       version: "2024-02-01"
       # Model-level configuration
