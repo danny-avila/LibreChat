@@ -4,9 +4,18 @@ const { actionDelimiter } = require('librechat-data-provider');
 const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
 const { getAgent, updateAgent } = require('~/models/Agent');
+const { getRoleByName } = require('~/models/Role');
 const { logger } = require('~/config');
 
 const router = express.Router();
+
+// If the user has ADMIN role and the adminCanEditActions is enabled in assistants config 
+// then action edition is possible even if not owner of the assistant
+const isAdmin = async (req) => {
+  const userRole = await getRoleByName(req.user.role);
+  const adminCanEditActions = req.app.locals?.assistants?.adminCanEditActions ?? false;
+  return userRole?.name === 'ADMIN' && adminCanEditActions;
+};
 
 /**
  * Retrieves all user's actions
@@ -16,7 +25,10 @@ const router = express.Router();
  */
 router.get('/', async (req, res) => {
   try {
-    res.json(await getActions({ user: req.user.id }));
+    const admin = await isAdmin(req);
+    // If admin, get all actions, otherwise only user's actions
+    const searchParams = admin ? {} : { user: req.user.id };
+    res.json(await getActions(searchParams));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -52,9 +64,12 @@ router.post('/:agent_id', async (req, res) => {
 
     const action_id = _action_id ?? nanoid();
     const initialPromises = [];
+    const admin = await isAdmin(req);
 
+    // If admin, can edit any agent, otherwise only user's agents
+    const agentQuery = admin ? { id: agent_id } : { id: agent_id, author: req.user.id };
     // TODO: share agents
-    initialPromises.push(getAgent({ id: agent_id, author: req.user.id }));
+    initialPromises.push(getAgent(agentQuery));
     if (_action_id) {
       initialPromises.push(getActions({ action_id }, true));
     }
@@ -90,10 +105,7 @@ router.post('/:agent_id', async (req, res) => {
       .filter((tool) => !(tool && (tool.includes(domain) || tool.includes(action_id))))
       .concat(functions.map((tool) => `${tool.function.name}${actionDelimiter}${domain}`));
 
-    const updatedAgent = await updateAgent(
-      { id: agent_id, author: req.user.id },
-      { tools, actions },
-    );
+    const updatedAgent = await updateAgent(agentQuery, { tools, actions });
     /** @type {[Action]} */
     const updatedAction = await updateAction(
       { action_id },
@@ -125,8 +137,11 @@ router.post('/:agent_id', async (req, res) => {
 router.delete('/:agent_id/:action_id', async (req, res) => {
   try {
     const { agent_id, action_id } = req.params;
+    const admin = await isAdmin(req);
 
-    const agent = await getAgent({ id: agent_id, author: req.user.id });
+    // If admin, can delete any agent, otherwise only user's agents
+    const agentQuery = admin ? { id: agent_id } : { id: agent_id, author: req.user.id };
+    const agent = await getAgent(agentQuery);
     if (!agent) {
       return res.status(404).json({ message: 'Agent not found for deleting action' });
     }
@@ -150,11 +165,10 @@ router.delete('/:agent_id/:action_id', async (req, res) => {
 
     const updatedTools = tools.filter((tool) => !(tool && tool.includes(domain)));
 
-    await updateAgent(
-      { id: agent_id, author: req.user.id },
-      { tools: updatedTools, actions: updatedActions },
-    );
-    await deleteAction({ action_id });
+    await updateAgent(agentQuery, { tools: updatedTools, actions: updatedActions });
+    // If admin, can delete any action, otherwise only user's actions
+    const actionQuery = admin ? { action_id } : { action_id, user: req.user.id };
+    await deleteAction(actionQuery);
     res.status(200).json({ message: 'Action deleted successfully' });
   } catch (error) {
     const message = 'Trouble deleting the Agent Action';
