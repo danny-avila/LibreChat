@@ -54,6 +54,7 @@ const chatV1 = async (req, res) => {
     promptPrefix,
     assistant_id,
     instructions,
+    endpointOption,
     thread_id: _thread_id,
     messageId: _messageId,
     conversationId: convoId,
@@ -120,21 +121,22 @@ const chatV1 = async (req, res) => {
           ? ' If using Azure OpenAI, files are only available in the region of the assistant\'s model at the time of upload.'
           : ''
       }`;
-      return sendResponse(res, messageData, errorMessage);
+      return sendResponse(req, res, messageData, errorMessage);
     } else if (error?.message?.includes('string too long')) {
       return sendResponse(
+        req,
         res,
         messageData,
         'Message too long. The Assistants API has a limit of 32,768 characters per message. Please shorten it and try again.',
       );
     } else if (error?.message?.includes(ViolationTypes.TOKEN_BALANCE)) {
-      return sendResponse(res, messageData, error.message);
+      return sendResponse(req, res, messageData, error.message);
     } else {
       logger.error('[/assistants/chat/]', error);
     }
 
     if (!openai || !thread_id || !run_id) {
-      return sendResponse(res, messageData, defaultErrorMessage);
+      return sendResponse(req, res, messageData, defaultErrorMessage);
     }
 
     await sleep(2000);
@@ -221,10 +223,10 @@ const chatV1 = async (req, res) => {
       };
     } catch (error) {
       logger.error('[/assistants/chat/] Error finalizing error process', error);
-      return sendResponse(res, messageData, 'The Assistant run failed');
+      return sendResponse(req, res, messageData, 'The Assistant run failed');
     }
 
-    return sendResponse(res, finalEvent);
+    return sendResponse(req, res, finalEvent);
   };
 
   try {
@@ -282,7 +284,7 @@ const chatV1 = async (req, res) => {
     const { openai: _openai, client } = await getOpenAIClient({
       req,
       res,
-      endpointOption: req.body.endpointOption,
+      endpointOption,
       initAppClient: true,
     });
 
@@ -311,6 +313,12 @@ const chatV1 = async (req, res) => {
       body.additional_instructions = promptPrefix;
     }
 
+    if (typeof endpointOption.artifactsPrompt === 'string' && endpointOption.artifactsPrompt) {
+      body.additional_instructions = `${body.additional_instructions ?? ''}\n${
+        endpointOption.artifactsPrompt
+      }`.trim();
+    }
+
     if (instructions) {
       body.instructions = instructions;
     }
@@ -332,12 +340,12 @@ const chatV1 = async (req, res) => {
     };
 
     const addVisionPrompt = async () => {
-      if (!req.body.endpointOption.attachments) {
+      if (!endpointOption.attachments) {
         return;
       }
 
       /** @type {MongoFile[]} */
-      const attachments = await req.body.endpointOption.attachments;
+      const attachments = await endpointOption.attachments;
       if (attachments && attachments.every((attachment) => checkOpenAIStorage(attachment.source))) {
         return;
       }
@@ -365,11 +373,14 @@ const chatV1 = async (req, res) => {
       visionMessage.content = createVisionPrompt(plural);
       visionMessage = formatMessage({ message: visionMessage, endpoint: EModelEndpoint.openAI });
 
-      visionPromise = openai.chat.completions.create({
-        model: 'gpt-4-vision-preview',
-        messages: [visionMessage],
-        max_tokens: 4000,
-      });
+      visionPromise = openai.chat.completions
+        .create({
+          messages: [visionMessage],
+          max_tokens: 4000,
+        })
+        .catch((error) => {
+          logger.error('[/assistants/chat/] Error creating vision prompt', error);
+        });
 
       const pluralized = plural ? 's' : '';
       body.additional_instructions = `${
@@ -381,6 +392,9 @@ const chatV1 = async (req, res) => {
 
       return files;
     };
+
+    /** @type {Promise<Run>|undefined} */
+    let userMessagePromise;
 
     const initializeThread = async () => {
       /** @type {[ undefined | MongoFile[]]}*/
@@ -438,7 +452,7 @@ const chatV1 = async (req, res) => {
       previousMessages.push(requestMessage);
 
       /* asynchronous */
-      saveUserMessage({ ...requestMessage, model });
+      userMessagePromise = saveUserMessage(req, { ...requestMessage, model });
 
       conversation = {
         conversationId,
@@ -582,7 +596,10 @@ const chatV1 = async (req, res) => {
     });
     res.end();
 
-    await saveAssistantMessage({ ...responseMessage, model });
+    if (userMessagePromise) {
+      await userMessagePromise;
+    }
+    await saveAssistantMessage(req, { ...responseMessage, model });
 
     if (parentMessageId === Constants.NO_PARENT && !_thread_id) {
       addTitle(req, {

@@ -13,7 +13,7 @@ const requireLdapAuth = (req, res, next) => {
       console.log({
         title: '(requireLdapAuth) Error: No user',
       });
-      return res.status(422).send(info);
+      return res.status(404).send(info);
     }
     req.user = user;
     next();

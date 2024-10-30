@@ -4,32 +4,45 @@ import type { ExtendedFile } from '~/common';
 import { useDeleteFilesMutation } from '~/data-provider';
 import { useFileDeletion } from '~/hooks/Files';
 import FileContainer from './FileContainer';
+import { logger } from '~/utils';
 import Image from './Image';
 
 export default function FileRow({
   files: _files,
   setFiles,
+  abortUpload,
   setFilesLoading,
   assistant_id,
+  agent_id,
   tool_resource,
   fileFilter,
+  isRTL = false,
   Wrapper,
 }: {
-  files: Map<string, ExtendedFile>;
+  files: Map<string, ExtendedFile> | undefined;
+  abortUpload?: () => void;
   setFiles: React.Dispatch<React.SetStateAction<Map<string, ExtendedFile>>>;
   setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
   fileFilter?: (file: ExtendedFile) => boolean;
   assistant_id?: string;
+  agent_id?: string;
   tool_resource?: EToolResources;
+  isRTL?: boolean;
   Wrapper?: React.FC<{ children: React.ReactNode }>;
 }) {
-  const files = Array.from(_files.values()).filter((file) =>
+  const files = Array.from(_files?.values() ?? []).filter((file) =>
     fileFilter ? fileFilter(file) : true,
   );
 
   const { mutateAsync } = useDeleteFilesMutation({
     onMutate: async () =>
-      console.log('Deleting files: assistant_id, tool_resource', assistant_id, tool_resource),
+      logger.log(
+        'agents',
+        'Deleting files: agent_id, assistant_id, tool_resource',
+        agent_id,
+        assistant_id,
+        tool_resource,
+      ),
     onSuccess: () => {
       console.log('Files deleted');
     },
@@ -38,13 +51,9 @@ export default function FileRow({
     },
   });
 
-  const { deleteFile } = useFileDeletion({ mutateAsync, assistant_id, tool_resource });
+  const { deleteFile } = useFileDeletion({ mutateAsync, agent_id, assistant_id, tool_resource });
 
   useEffect(() => {
-    if (!files) {
-      return;
-    }
-
     if (files.length === 0) {
       return;
     }
@@ -64,8 +73,11 @@ export default function FileRow({
   }
 
   const renderFiles = () => {
+    // Inline style for RTL
+    const rowStyle = isRTL ? { display: 'flex', flexDirection: 'row-reverse' } : {};
+
     return (
-      <>
+      <div style={rowStyle as React.CSSProperties}>
         {files
           .reduce(
             (acc, current) => {
@@ -78,22 +90,27 @@ export default function FileRow({
             { map: new Map(), uniqueFiles: [] as ExtendedFile[] },
           )
           .uniqueFiles.map((file: ExtendedFile, index: number) => {
-            const handleDelete = () => deleteFile({ file, setFiles });
-            if (file.type?.startsWith('image')) {
+            const handleDelete = () => {
+              if (abortUpload && file.progress < 1) {
+                abortUpload();
+              }
+              deleteFile({ file, setFiles });
+            };
+            const isImage = file.type?.startsWith('image') ?? false;
+            if (isImage) {
               return (
                 <Image
                   key={index}
-                  url={file.preview}
+                  url={file.preview ?? file.filepath}
                   onDelete={handleDelete}
                   progress={file.progress}
                   source={file.source}
                 />
               );
             }
-
             return <FileContainer key={index} file={file} onDelete={handleDelete} />;
           })}
-      </>
+      </div>
     );
   };
 

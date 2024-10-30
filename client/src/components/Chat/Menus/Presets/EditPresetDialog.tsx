@@ -11,7 +11,7 @@ import {
   mapEndpoints,
   getConvoSwitchLogic,
 } from '~/utils';
-import { Input, Label, Dropdown, Dialog, DialogClose, DialogButton } from '~/components';
+import { Input, Label, SelectDropDown, Dialog, DialogClose, DialogButton } from '~/components';
 import { useSetIndexOptions, useLocalize, useDebouncedInput } from '~/hooks';
 import PopoverButtons from '~/components/Chat/Input/PopoverButtons';
 import DialogTemplate from '~/components/ui/DialogTemplate';
@@ -146,10 +146,13 @@ const EditPresetDialog = ({
                   <Label htmlFor="endpoint" className="mb-1 text-left text-sm font-medium">
                     {localize('com_endpoint')}
                   </Label>
-                  <Dropdown
+                  <SelectDropDown
                     value={endpoint || ''}
-                    onChange={switchEndpoint}
-                    options={availableEndpoints}
+                    setValue={switchEndpoint}
+                    showLabel={false}
+                    emptyTitle={true}
+                    searchPlaceholder={localize('com_endpoint_search')}
+                    availableValues={availableEndpoints}
                   />
                 </div>
               </div>

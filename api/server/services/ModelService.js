@@ -1,9 +1,24 @@
 const axios = require('axios');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { EModelEndpoint, defaultModels, CacheKeys } = require('librechat-data-provider');
-const { extractBaseURL, inputSchema, processModelData, logAxiosError } = require('~/utils');
+const { inputSchema, logAxiosError, extractBaseURL, processModelData } = require('~/utils');
 const { OllamaClient } = require('~/app/clients/OllamaClient');
 const getLogStores = require('~/cache/getLogStores');
+
+/**
+ * Splits a string by commas and trims each resulting value.
+ * @param {string} input - The input string to split.
+ * @returns {string[]} An array of trimmed values.
+ */
+const splitAndTrim = (input) => {
+  if (!input || typeof input !== 'string') {
+    return [];
+  }
+  return input
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+};
 
 const { openAIApiKey, userProvidedOpenAI } = require('./Config/EndpointService').config;
 
@@ -51,6 +66,7 @@ const fetchModels = async ({
       headers: {
         Authorization: `Bearer ${apiKey}`,
       },
+      timeout: 5000,
     };
 
     if (process.env.PROXY) {
@@ -134,6 +150,7 @@ const fetchOpenAIModels = async (opts, _models = []) => {
       baseURL,
       azure: opts.azure,
       user: opts.user,
+      name: baseURL,
     });
   }
 
@@ -142,7 +159,7 @@ const fetchOpenAIModels = async (opts, _models = []) => {
   }
 
   if (baseURL === openaiBaseURL) {
-    const regex = /(text-davinci-003|gpt-)/;
+    const regex = /(text-davinci-003|gpt-|o1-)/;
     models = models.filter((model) => regex.test(model));
     const instructModels = models.filter((model) => model.includes('instruct'));
     const otherModels = models.filter((model) => !model.includes('instruct'));
@@ -160,7 +177,8 @@ const fetchOpenAIModels = async (opts, _models = []) => {
  * @param {object} opts - The options for fetching the models.
  * @param {string} opts.user - The user ID to send to the API.
  * @param {boolean} [opts.azure=false] - Whether to fetch models from Azure.
- * @param {boolean} [opts.plugins=false] - Whether to fetch models from the plugins.
+ * @param {boolean} [opts.plugins=false] - Whether to fetch models for the plugins endpoint.
+ * @param {boolean} [opts.assistants=false] - Whether to fetch models for the Assistants endpoint.
  */
 const getOpenAIModels = async (opts) => {
   let models = defaultModels[EModelEndpoint.openAI];
@@ -194,7 +212,7 @@ const getOpenAIModels = async (opts) => {
   }
 
   if (process.env[key]) {
-    models = String(process.env[key]).split(',');
+    models = splitAndTrim(process.env[key]);
     return models;
   }
 
@@ -208,7 +226,7 @@ const getOpenAIModels = async (opts) => {
 const getChatGPTBrowserModels = () => {
   let models = ['text-davinci-002-render-sha', 'gpt-4'];
   if (process.env.CHATGPT_MODELS) {
-    models = String(process.env.CHATGPT_MODELS).split(',');
+    models = splitAndTrim(process.env.CHATGPT_MODELS);
   }
 
   return models;
@@ -217,7 +235,7 @@ const getChatGPTBrowserModels = () => {
 const getAnthropicModels = () => {
   let models = defaultModels[EModelEndpoint.anthropic];
   if (process.env.ANTHROPIC_MODELS) {
-    models = String(process.env.ANTHROPIC_MODELS).split(',');
+    models = splitAndTrim(process.env.ANTHROPIC_MODELS);
   }
 
   return models;
@@ -226,7 +244,16 @@ const getAnthropicModels = () => {
 const getGoogleModels = () => {
   let models = defaultModels[EModelEndpoint.google];
   if (process.env.GOOGLE_MODELS) {
-    models = String(process.env.GOOGLE_MODELS).split(',');
+    models = splitAndTrim(process.env.GOOGLE_MODELS);
+  }
+
+  return models;
+};
+
+const getBedrockModels = () => {
+  let models = defaultModels[EModelEndpoint.bedrock];
+  if (process.env.BEDROCK_AWS_MODELS) {
+    models = splitAndTrim(process.env.BEDROCK_AWS_MODELS);
   }
 
   return models;
@@ -234,7 +261,9 @@ const getGoogleModels = () => {
 
 module.exports = {
   fetchModels,
+  splitAndTrim,
   getOpenAIModels,
+  getBedrockModels,
   getChatGPTBrowserModels,
   getAnthropicModels,
   getGoogleModels,

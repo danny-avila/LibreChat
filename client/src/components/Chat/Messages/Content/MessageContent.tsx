@@ -1,24 +1,63 @@
-import { Fragment, Suspense } from 'react';
+import { Fragment, Suspense, useMemo } from 'react';
+import { useRecoilValue } from 'recoil';
 import type { TMessage, TResPlugin } from 'librechat-data-provider';
 import type { TMessageContentProps, TDisplayProps } from '~/common';
 import Plugin from '~/components/Messages/Content/Plugin';
 import Error from '~/components/Messages/Content/Error';
 import { DelayedRender } from '~/components/ui';
+import { useChatContext } from '~/Providers';
+import MarkdownLite from './MarkdownLite';
 import EditMessage from './EditMessage';
+import { useLocalize } from '~/hooks';
 import Container from './Container';
 import Markdown from './Markdown';
 import { cn } from '~/utils';
+import store from '~/store';
 
 export const ErrorMessage = ({
   text,
   message,
   className = '',
-}: Pick<TDisplayProps, 'text' | 'className' | 'message'>) => {
+}: Pick<TDisplayProps, 'text' | 'className'> & {
+  message?: TMessage;
+}) => {
+  const localize = useLocalize();
+  if (text === 'Error connecting to server, try refreshing the page.') {
+    console.log('error message', message);
+    return (
+      <Suspense
+        fallback={
+          <div className="text-message mb-[0.625rem] flex min-h-[20px] flex-col items-start gap-3 overflow-x-auto">
+            <div className="markdown prose dark:prose-invert light w-full break-words dark:text-gray-100">
+              <div className="absolute">
+                <p className="submitting relative">
+                  <span className="result-thinking" />
+                </p>
+              </div>
+            </div>
+          </div>
+        }
+      >
+        <DelayedRender delay={5500}>
+          <Container message={message}>
+            <div
+              className={cn(
+                'rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200',
+                className,
+              )}
+            >
+              {localize('com_ui_error_connection')}
+            </div>
+          </Container>
+        </DelayedRender>
+      </Suspense>
+    );
+  }
   return (
     <Container message={message}>
       <div
         className={cn(
-          'rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200',
+          'rounded-xl border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-gray-600 dark:text-gray-200',
           className,
         )}
       >
@@ -28,22 +67,40 @@ export const ErrorMessage = ({
   );
 };
 
-// Display Message Component
 const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplayProps) => {
+  const { isSubmitting, latestMessage } = useChatContext();
+  const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
+  const showCursorState = useMemo(
+    () => showCursor === true && isSubmitting,
+    [showCursor, isSubmitting],
+  );
+  const isLatestMessage = useMemo(
+    () => message.messageId === latestMessage?.messageId,
+    [message.messageId, latestMessage?.messageId],
+  );
+
+  let content: React.ReactElement;
+  if (!isCreatedByUser) {
+    content = (
+      <Markdown content={text} showCursor={showCursorState} isLatestMessage={isLatestMessage} />
+    );
+  } else if (enableUserMsgMarkdown) {
+    content = <MarkdownLite content={text} />;
+  } else {
+    content = <>{text}</>;
+  }
+
   return (
     <Container message={message}>
       <div
         className={cn(
-          showCursor && !!text?.length ? 'result-streaming' : '',
-          'markdown prose dark:prose-invert light w-full break-words',
+          isSubmitting ? 'submitting' : '',
+          showCursorState && !!text.length ? 'result-streaming' : '',
+          'markdown prose message-content dark:prose-invert light w-full break-words',
           isCreatedByUser ? 'whitespace-pre-wrap dark:text-gray-20' : 'dark:text-gray-100',
         )}
       >
-        {!isCreatedByUser ? (
-          <Markdown content={text} message={message} showCursor={showCursor} />
-        ) : (
-          <>{text}</>
-        )}
+        {content}
       </div>
     </Container>
   );

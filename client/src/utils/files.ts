@@ -27,6 +27,12 @@ const codeFile = {
   title: 'Code',
 };
 
+const artifact = {
+  paths: CodePaths,
+  fill: '#2D305C',
+  title: 'Code',
+};
+
 export const fileTypes = {
   /* Category matches */
   file: {
@@ -41,6 +47,7 @@ export const fileTypes = {
   csv: spreadsheet,
   pdf: textDocument,
   'text/x-': codeFile,
+  artifact: artifact,
 
   /* Exact matches */
   // 'application/json':,
@@ -107,7 +114,7 @@ export const getFileType = (
  * @example
  * formatDate('2020-01-01T00:00:00.000Z') // '1 Jan 2020'
  */
-export function formatDate(dateString) {
+export function formatDate(dateString: string) {
   const months = [
     'Jan',
     'Feb',
@@ -158,4 +165,14 @@ export function addFileToCache(queryClient: QueryClient, newfile: TFile) {
       ...currentFiles,
     ],
   );
+}
+
+export function formatBytes(bytes: number, decimals = 2) {
+  if (bytes === 0) {
+    return 0;
+  }
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm));
 }

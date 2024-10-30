@@ -44,6 +44,14 @@ async function endpointController(req, res) {
     };
   }
 
+  if (mergedConfig[EModelEndpoint.bedrock] && req.app.locals?.[EModelEndpoint.bedrock]) {
+    const { availableRegions } = req.app.locals[EModelEndpoint.bedrock];
+    mergedConfig[EModelEndpoint.bedrock] = {
+      ...mergedConfig[EModelEndpoint.bedrock],
+      availableRegions,
+    };
+  }
+
   const endpointsConfig = orderEndpointsConfig(mergedConfig);
 
   await cache.set(CacheKeys.ENDPOINT_CONFIG, endpointsConfig);

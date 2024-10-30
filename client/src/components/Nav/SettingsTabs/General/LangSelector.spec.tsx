@@ -1,6 +1,6 @@
 import 'test/matchMedia.mock';
 import React from 'react';
-import { render, fireEvent } from '@testing-library/react';
+import { render, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/extend-expect';
 import { LangSelector } from './General';
 import { RecoilRoot } from 'recoil';
@@ -13,36 +13,45 @@ describe('LangSelector', () => {
   });
 
   it('renders correctly', () => {
-    const { getByText } = render(
+    global.ResizeObserver = class MockedResizeObserver {
+      observe = jest.fn();
+      unobserve = jest.fn();
+      disconnect = jest.fn();
+    };
+    const { getByText, getByRole } = render(
       <RecoilRoot>
         <LangSelector langcode="en-US" onChange={mockOnChange} />
       </RecoilRoot>,
     );
 
     expect(getByText('Language')).toBeInTheDocument();
-    expect(getByText('English')).toBeInTheDocument();
+    const dropdownButton = getByRole('combobox');
+    expect(dropdownButton).toHaveTextContent('English');
   });
 
   it('calls onChange when the select value changes', async () => {
-    const { getByText, getByTestId } = render(
+    global.ResizeObserver = class MockedResizeObserver {
+      observe = jest.fn();
+      unobserve = jest.fn();
+      disconnect = jest.fn();
+    };
+    const { getByRole, getByTestId } = render(
       <RecoilRoot>
         <LangSelector langcode="en-US" onChange={mockOnChange} />
       </RecoilRoot>,
     );
 
-    expect(getByText('English')).toBeInTheDocument();
+    expect(getByRole('combobox')).toHaveTextContent('English');
 
-    // Find the dropdown button by data-testid
     const dropdownButton = getByTestId('dropdown-menu');
 
-    // Open the dropdown
     fireEvent.click(dropdownButton);
 
-    // Find the option by text and click it
-    const darkOption = getByText('Italiano');
-    fireEvent.click(darkOption);
+    const italianOption = getByRole('option', { name: 'Italiano' });
+    fireEvent.click(italianOption);
 
-    // Ensure that the onChange is called with the expected value after a short delay
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await waitFor(() => {
+      expect(mockOnChange).toHaveBeenCalledWith('it-IT');
+    });
   });
 });

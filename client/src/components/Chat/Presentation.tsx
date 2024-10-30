@@ -6,6 +6,7 @@ import type { ExtendedFile } from '~/common';
 import { useDragHelpers, useSetFilesToDelete } from '~/hooks';
 import DragDropOverlay from './Input/Files/DragDropOverlay';
 import { useDeleteFilesMutation } from '~/data-provider';
+import Artifacts from '~/components/Artifacts/Artifacts';
 import { SidePanel } from '~/components/SidePanel';
 import store from '~/store';
 
@@ -21,7 +22,11 @@ export default function Presentation({
   useSidePanel?: boolean;
 }) {
   const { data: startupConfig } = useGetStartupConfig();
+  const artifacts = useRecoilValue(store.artifactsState);
+  const codeArtifacts = useRecoilValue(store.codeArtifacts);
   const hideSidePanel = useRecoilValue(store.hideSidePanel);
+  const artifactsVisible = useRecoilValue(store.artifactsVisible);
+
   const interfaceConfig = useMemo(
     () => startupConfig?.interface ?? defaultInterface,
     [startupConfig],
@@ -44,12 +49,15 @@ export default function Presentation({
     const filesToDelete = localStorage.getItem(LocalStorageKeys.FILES_TO_DELETE);
     const map = JSON.parse(filesToDelete ?? '{}') as Record<string, ExtendedFile>;
     const files = Object.values(map)
-      .filter((file) => file.filepath && file.source && !file.embedded && file.temp_file_id)
+      .filter(
+        (file) =>
+          file.filepath != null && file.source && !(file.embedded ?? false) && file.temp_file_id,
+      )
       .map((file) => ({
         file_id: file.file_id,
         filepath: file.filepath as string,
         source: file.source as FileSources,
-        embedded: !!file.embedded,
+        embedded: !!(file.embedded ?? false),
       }));
 
     if (files.length === 0) {
@@ -62,24 +70,24 @@ export default function Presentation({
 
   const defaultLayout = useMemo(() => {
     const resizableLayout = localStorage.getItem('react-resizable-panels:layout');
-    return resizableLayout ? JSON.parse(resizableLayout) : undefined;
+    return typeof resizableLayout === 'string' ? JSON.parse(resizableLayout) : undefined;
   }, []);
   const defaultCollapsed = useMemo(() => {
     const collapsedPanels = localStorage.getItem('react-resizable-panels:collapsed');
-    return collapsedPanels ? JSON.parse(collapsedPanels) : undefined;
+    return typeof collapsedPanels === 'string' ? JSON.parse(collapsedPanels) : true;
   }, []);
   const fullCollapse = useMemo(() => localStorage.getItem('fullPanelCollapse') === 'true', []);
 
   const layout = () => (
     <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden bg-white pt-0 dark:bg-gray-800">
-      <div className="flex h-full flex-col" role="presentation" tabIndex={0}>
+      <div className="flex h-full flex-col" role="presentation">
         {children}
         {isActive && <DragDropOverlay />}
       </div>
     </div>
   );
 
-  if (useSidePanel && !hideSidePanel && interfaceConfig.sidePanel) {
+  if (useSidePanel && !hideSidePanel && interfaceConfig.sidePanel === true) {
     return (
       <div
         ref={drop}
@@ -89,11 +97,18 @@ export default function Presentation({
           defaultLayout={defaultLayout}
           defaultCollapsed={defaultCollapsed}
           fullPanelCollapse={fullCollapse}
+          artifacts={
+            artifactsVisible === true &&
+            codeArtifacts === true &&
+            Object.keys(artifacts ?? {}).length > 0 ? (
+                <Artifacts />
+              ) : null
+          }
         >
-          <div className="flex h-full flex-col" role="presentation" tabIndex={0}>
+          <main className="flex h-full flex-col" role="main">
             {children}
             {isActive && <DragDropOverlay />}
-          </div>
+          </main>
         </SidePanel>
       </div>
     );
@@ -102,7 +117,7 @@ export default function Presentation({
   return (
     <div ref={drop} className="relative flex w-full grow overflow-hidden bg-white dark:bg-gray-800">
       {layout()}
-      {panel && panel}
+      {panel != null && panel}
     </div>
   );
 }

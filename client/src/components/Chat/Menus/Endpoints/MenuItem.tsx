@@ -50,12 +50,12 @@ const MenuItem: FC<MenuItemProps> = ({
     }
 
     const {
+      template,
       shouldSwitch,
       isNewModular,
+      newEndpointType,
       isCurrentModular,
       isExistingConversation,
-      newEndpointType,
-      template,
     } = getConvoSwitchLogic({
       newEndpoint,
       modularChat,
@@ -63,7 +63,8 @@ const MenuItem: FC<MenuItemProps> = ({
       endpointsConfig,
     });
 
-    if (isExistingConversation && isCurrentModular && isNewModular && shouldSwitch) {
+    const isModular = isCurrentModular && isNewModular && shouldSwitch;
+    if (isExistingConversation && isModular) {
       template.endpointType = newEndpointType;
 
       const currentConvo = getDefaultConversation({
@@ -73,10 +74,18 @@ const MenuItem: FC<MenuItemProps> = ({
       });
 
       /* We don't reset the latest message, only when changing settings mid-converstion */
-      newConversation({ template: currentConvo, preset: currentConvo, keepLatestMessage: true });
+      newConversation({
+        template: currentConvo,
+        preset: currentConvo,
+        keepLatestMessage: true,
+        keepAddedConvos: true,
+      });
       return;
     }
-    newConversation({ template: { ...(template as Partial<TConversation>) } });
+    newConversation({
+      template: { ...(template as Partial<TConversation>) },
+      keepAddedConvos: isModular,
+    });
   };
 
   const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
@@ -88,10 +97,10 @@ const MenuItem: FC<MenuItemProps> = ({
       <div
         role="menuitem"
         className={cn(
-          'group m-1.5 flex max-h-[40px] cursor-pointer gap-2 rounded px-5 py-2.5 !pr-3 text-sm !opacity-100 hover:bg-black/5 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-600',
-          'focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 dark:focus:ring-gray-400 dark:focus:ring-offset-gray-900',
+          'group m-1.5 flex max-h-[40px] cursor-pointer gap-2 rounded px-5 py-2.5 !pr-3 text-sm !opacity-100 hover:bg-surface-hover',
+          'radix-disabled:pointer-events-none radix-disabled:opacity-50',
         )}
-        tabIndex={1}
+        tabIndex={0}
         {...rest}
         onClick={() => onSelectEndpoint(endpoint)}
         onKeyDown={(e) => {
@@ -104,7 +113,7 @@ const MenuItem: FC<MenuItemProps> = ({
         <div className="flex grow items-center justify-between gap-2">
           <div>
             <div className="flex items-center gap-2">
-              {Icon && (
+              {Icon != null && (
                 <Icon
                   size={18}
                   endpoint={endpoint}
@@ -126,10 +135,7 @@ const MenuItem: FC<MenuItemProps> = ({
                   className={cn(
                     'invisible flex gap-x-1 group-hover:visible',
                     selected ? 'visible' : '',
-                    expiryTime
-                      ? 'w-full rounded-lg p-2 hover:text-gray-400 dark:hover:text-gray-400'
-                      : '',
-                    'focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 dark:focus:ring-gray-400 dark:focus:ring-offset-gray-900',
+                    expiryTime ? 'text-token-text-primary w-full rounded-lg p-2' : '',
                   )}
                   onClick={(e) => {
                     e.preventDefault();

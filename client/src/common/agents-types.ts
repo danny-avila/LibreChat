@@ -1,0 +1,26 @@
+import { AgentCapabilities } from 'librechat-data-provider';
+import type { Agent, AgentProvider, AgentModelParameters } from 'librechat-data-provider';
+import type { OptionWithIcon, ExtendedFile } from './types';
+
+export type TAgentOption = OptionWithIcon &
+  Agent & {
+    knowledge_files?: Array<[string, ExtendedFile]>;
+    code_files?: Array<[string, ExtendedFile]>;
+  };
+
+export type TAgentCapabilities = {
+  [AgentCapabilities.execute_code]: boolean;
+  [AgentCapabilities.file_search]: boolean;
+};
+
+export type AgentForm = {
+  agent?: TAgentOption;
+  id: string;
+  name: string | null;
+  description: string | null;
+  instructions: string | null;
+  model: string | null;
+  model_parameters: AgentModelParameters;
+  tools?: string[];
+  provider?: AgentProvider | OptionWithIcon;
+} & TAgentCapabilities;

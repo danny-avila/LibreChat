@@ -77,7 +77,7 @@ class AzureAISearch extends StructuredTool {
     try {
       const searchOption = {
         queryType: this.queryType,
-        top: this.top,
+        top: typeof this.top === 'string' ? Number(this.top) : this.top,
       };
       if (this.select) {
         searchOption.select = this.select.split(',');

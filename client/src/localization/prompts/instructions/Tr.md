@@ -215,7 +215,7 @@ Write a prompt that is mindful of the nuances in the language with respect to it
   - **english**: Delete chat?
   - **translated**: Sohbet silinecek?
 
-- **com_ui_delete_conversation_confirm**:
+- **com_ui_delete_confirm**:
   - **english**: This will delete
   - **translated**: Bu silinecek
 

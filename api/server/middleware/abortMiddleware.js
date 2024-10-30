@@ -1,31 +1,39 @@
-const { isAssistantsEndpoint } = require('librechat-data-provider');
+const { isAssistantsEndpoint, ErrorTypes } = require('librechat-data-provider');
 const { sendMessage, sendError, countTokens, isEnabled } = require('~/server/utils');
 const { truncateText, smartTruncateText } = require('~/app/clients/prompts');
-const { saveMessage, getConvo, getConvoTitle } = require('~/models');
 const clearPendingReq = require('~/cache/clearPendingReq');
+const { spendTokens } = require('~/models/spendTokens');
 const abortControllers = require('./abortControllers');
-const spendTokens = require('~/models/spendTokens');
+const { saveMessage, getConvo } = require('~/models');
 const { abortRun } = require('./abortRun');
 const { logger } = require('~/config');
 
 async function abortMessage(req, res) {
-  let { abortKey, conversationId, endpoint } = req.body;
-
-  if (!abortKey && conversationId) {
-    abortKey = conversationId;
-  }
+  let { abortKey, endpoint } = req.body;
 
   if (isAssistantsEndpoint(endpoint)) {
     return await abortRun(req, res);
+  }
+
+  const conversationId = abortKey?.split(':')?.[0] ?? req.user.id;
+
+  if (!abortControllers.has(abortKey) && abortControllers.has(conversationId)) {
+    abortKey = conversationId;
   }
 
   if (!abortControllers.has(abortKey) && !res.headersSent) {
     return res.status(204).send({ message: 'Request not found' });
   }
 
-  const { abortController } = abortControllers.get(abortKey);
+  const { abortController } = abortControllers.get(abortKey) ?? {};
+  if (!abortController) {
+    return res.status(204).send({ message: 'Request not found' });
+  }
   const finalEvent = await abortController.abortCompletion();
-  logger.debug('[abortMessage] Aborted request', { abortKey });
+  logger.debug(
+    `[abortMessage] ID: ${req.user.id} | ${req.user.email} | Aborted request: ` +
+      JSON.stringify({ abortKey }),
+  );
   abortControllers.delete(abortKey);
 
   if (res.headersSent && finalEvent) {
@@ -50,12 +58,35 @@ const handleAbort = () => {
   };
 };
 
-const createAbortController = (req, res, getAbortData) => {
+const createAbortController = (req, res, getAbortData, getReqData) => {
   const abortController = new AbortController();
   const { endpointOption } = req.body;
-  const onStart = (userMessage) => {
+
+  abortController.getAbortData = function () {
+    return getAbortData();
+  };
+
+  /**
+   * @param {TMessage} userMessage
+   * @param {string} responseMessageId
+   */
+  const onStart = (userMessage, responseMessageId) => {
     sendMessage(res, { message: userMessage, created: true });
+
     const abortKey = userMessage?.conversationId ?? req.user.id;
+    const prevRequest = abortControllers.get(abortKey);
+
+    if (prevRequest && prevRequest?.abortController) {
+      const data = prevRequest.abortController.getAbortData();
+      getReqData({ userMessage: data?.userMessage });
+      const addedAbortKey = `${abortKey}:${responseMessageId}`;
+      abortControllers.set(addedAbortKey, { abortController, ...endpointOption });
+      res.on('finish', function () {
+        abortControllers.delete(addedAbortKey);
+      });
+      return;
+    }
+
     abortControllers.set(abortKey, { abortController, ...endpointOption });
 
     res.on('finish', function () {
@@ -65,7 +96,8 @@ const createAbortController = (req, res, getAbortData) => {
 
   abortController.abortCompletion = async function () {
     abortController.abort();
-    const { conversationId, userMessage, promptTokens, ...responseData } = getAbortData();
+    const { conversationId, userMessage, userMessagePromise, promptTokens, ...responseData } =
+      getAbortData();
     const completionTokens = await countTokens(responseData?.text ?? '');
     const user = req.user.id;
 
@@ -75,7 +107,7 @@ const createAbortController = (req, res, getAbortData) => {
       finish_reason: 'incomplete',
       endpoint: endpointOption.endpoint,
       iconURL: endpointOption.iconURL,
-      model: endpointOption.modelOptions.model,
+      model: endpointOption.modelOptions?.model ?? endpointOption.model_parameters?.model,
       unfinished: false,
       error: false,
       isCreatedByUser: false,
@@ -87,12 +119,26 @@ const createAbortController = (req, res, getAbortData) => {
       { promptTokens, completionTokens },
     );
 
-    saveMessage({ ...responseMessage, user });
+    saveMessage(
+      req,
+      { ...responseMessage, user },
+      { context: 'api/server/middleware/abortMiddleware.js' },
+    );
+
+    let conversation;
+    if (userMessagePromise) {
+      const resolved = await userMessagePromise;
+      conversation = resolved?.conversation;
+    }
+
+    if (!conversation) {
+      conversation = await getConvo(req.user.id, conversationId);
+    }
 
     return {
-      title: await getConvoTitle(user, conversationId),
+      title: conversation && !conversation.title ? null : conversation?.title || 'New Chat',
       final: true,
-      conversation: await getConvo(user, conversationId),
+      conversation,
       requestMessage: userMessage,
       responseMessage: responseMessage,
     };
@@ -119,9 +165,17 @@ const handleAbortError = async (res, req, error, data) => {
     );
   }
 
-  const errorText = error?.message?.includes('"type"')
+  let errorText = error?.message?.includes('"type"')
     ? error.message
     : 'An error occurred while processing your request. Please contact the Admin.';
+
+  if (error?.type === ErrorTypes.INVALID_REQUEST) {
+    errorText = `{"type":"${ErrorTypes.INVALID_REQUEST}"}`;
+  }
+
+  if (error?.message?.includes('does not support \'system\'')) {
+    errorText = `{"type":"${ErrorTypes.NO_SYSTEM_MESSAGES}"}`;
+  }
 
   const respondWithError = async (partialText) => {
     let options = {
@@ -151,7 +205,7 @@ const handleAbortError = async (res, req, error, data) => {
       }
     };
 
-    await sendError(res, options, callback);
+    await sendError(req, res, options, callback);
   };
 
   if (partialText && partialText.length > 5) {

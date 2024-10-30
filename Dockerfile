@@ -1,4 +1,4 @@
-# v0.7.2
+# v0.7.5
 
 # Base node image
 FROM node:20-alpine AS node

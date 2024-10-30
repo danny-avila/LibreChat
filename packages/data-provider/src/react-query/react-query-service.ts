@@ -124,6 +124,20 @@ export const useUpdateMessageMutation = (
   });
 };
 
+export const useUpdateMessageContentMutation = (
+  conversationId: string,
+): UseMutationResult<unknown, unknown, t.TUpdateMessageContent, unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    (payload: t.TUpdateMessageContent) => dataService.updateMessageContent(payload),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.messages, conversationId]);
+      },
+    },
+  );
+};
+
 export const useUpdateUserKeysMutation = (): UseMutationResult<
   t.TUser,
   unknown,
@@ -186,22 +200,6 @@ export const useRevokeAllUserKeysMutation = (): UseMutationResult<unknown> => {
       queryClient.invalidateQueries([QueryKeys.tools]);
     },
   });
-};
-
-export const useGetConversationsQuery = (
-  pageNumber: string,
-  config?: UseQueryOptions<t.TGetConversationsResponse>,
-): QueryObserverResult<t.TGetConversationsResponse> => {
-  return useQuery<t.TGetConversationsResponse>(
-    [QueryKeys.allConversations],
-    () => dataService.getConversations(pageNumber),
-    {
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      retry: 1,
-      ...config,
-    },
-  );
 };
 
 export const useGetSearchEnabledQuery = (
@@ -314,6 +312,8 @@ export const useLoginUserMutation = (): UseMutationResult<
     onMutate: () => {
       queryClient.removeQueries();
       localStorage.removeItem(LocalStorageKeys.LAST_CONVO_SETUP);
+      localStorage.removeItem(`${LocalStorageKeys.LAST_CONVO_SETUP}_0`);
+      localStorage.removeItem(`${LocalStorageKeys.LAST_CONVO_SETUP}_1`);
       localStorage.removeItem(LocalStorageKeys.LAST_MODEL);
       localStorage.removeItem(LocalStorageKeys.LAST_TOOLS);
       localStorage.removeItem(LocalStorageKeys.FILES_TO_DELETE);
@@ -435,4 +435,30 @@ export const useGetStartupConfig = (
       ...config,
     },
   );
+};
+
+export const useGetCustomConfigSpeechQuery = (
+  config?: UseQueryOptions<t.TCustomConfigSpeechResponse>,
+): QueryObserverResult<t.TCustomConfigSpeechResponse> => {
+  return useQuery<t.TCustomConfigSpeechResponse>(
+    [QueryKeys.customConfigSpeech],
+    () => dataService.getCustomConfigSpeech(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      ...config,
+    },
+  );
+};
+
+export const useGetBannerQuery = (
+  config?: UseQueryOptions<t.TBannerResponse>,
+): QueryObserverResult<t.TBannerResponse> => {
+  return useQuery<t.TBannerResponse>([QueryKeys.banner], () => dataService.getBanner(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    ...config,
+  });
 };

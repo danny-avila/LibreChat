@@ -207,7 +207,7 @@ Write a prompt that is mindful of the nuances in the language with respect to it
   - **english**: Delete chat?
   - **translated**: 채팅을 삭제하시겠습니까?
 
-- **com_ui_delete_conversation_confirm**:
+- **com_ui_delete_confirm**:
   - **english**: This will delete
   - **translated**: 이 채팅이 삭제됩니다
 
@@ -357,7 +357,7 @@ Write a prompt that is mindful of the nuances in the language with respect to it
 
 - **com_auth_username_min_length**:
   - **english**: Username must be at least 2 characters
-  - **translated**: 사용자명은 최소 3자 이상이어야 합니다
+  - **translated**: 사용자명은 최소 2자 이상이어야 합니다
 
 - **com_auth_username_max_length**:
   - **english**: Username must be less than 20 characters

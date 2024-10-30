@@ -11,6 +11,7 @@ import store from '~/store';
 
 export default function Message({ message }: Pick<TMessageProps, 'message'>) {
   const UsernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
+  const fontSize = useRecoilValue(store.fontSize);
   const { user } = useAuthContext();
   const localize = useLocalize();
 
@@ -18,11 +19,13 @@ export default function Message({ message }: Pick<TMessageProps, 'message'>) {
     return null;
   }
 
-  const { isCreatedByUser } = message ?? {};
+  const { isCreatedByUser } = message;
 
   let messageLabel = '';
   if (isCreatedByUser) {
-    messageLabel = UsernameDisplay ? user?.name || user?.username : localize('com_user_message');
+    messageLabel = UsernameDisplay
+      ? (user?.name ?? '') || user?.username
+      : localize('com_user_message');
   } else {
     messageLabel = message.sender;
   }
@@ -30,8 +33,8 @@ export default function Message({ message }: Pick<TMessageProps, 'message'>) {
   return (
     <>
       <div className="text-token-text-primary w-full border-0 bg-transparent dark:border-0 dark:bg-transparent">
-        <div className="m-auto justify-center p-4 py-2 text-base md:gap-6 ">
-          <div className="final-completion group mx-auto flex flex-1 gap-3 text-base md:max-w-3xl md:px-5 lg:max-w-[40rem] lg:px-1 xl:max-w-[48rem] xl:px-5">
+        <div className="m-auto justify-center p-4 py-2 md:gap-6 ">
+          <div className="final-completion group mx-auto flex flex-1 gap-3 md:max-w-3xl md:px-5 lg:max-w-[40rem] lg:px-1 xl:max-w-[48rem] xl:px-5">
             <div className="relative flex flex-shrink-0 flex-col items-end">
               <div>
                 <div className="pt-0.5">
@@ -44,7 +47,7 @@ export default function Message({ message }: Pick<TMessageProps, 'message'>) {
             <div
               className={cn('relative flex w-11/12 flex-col', isCreatedByUser ? '' : 'agent-turn')}
             >
-              <div className="select-none font-semibold">{messageLabel}</div>
+              <div className={cn('select-none font-semibold', fontSize)}>{messageLabel}</div>
               <div className="flex-col gap-1 md:gap-3">
                 <div className="flex max-w-full flex-grow flex-col gap-0">
                   <SearchContent message={message} />

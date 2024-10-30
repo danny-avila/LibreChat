@@ -91,7 +91,7 @@ Write a prompt that is mindful of the nuances in the language with respect to it
   - **english**: Search assistants by name
   - **translated**: Assistantの名前で検索
 
-- **com_assistants_tools**:
+- **com_ui_tools**:
   - **english**: Tools
   - **translated**: Tools
 
@@ -555,7 +555,7 @@ Write a prompt that is mindful of the nuances in the language with respect to it
   - **english**: Delete chat?
   - **translated**: チャットを削除しますか？
 
-- **com_ui_delete_conversation_confirm**:
+- **com_ui_delete_confirm**:
   - **english**: This will delete
   - **translated**: このチャットは削除されます。
 
@@ -1407,7 +1407,7 @@ Write a prompt that is mindful of the nuances in the language with respect to it
   - **english**: Uninstall
   - **translated**: アンインストール
 
-- **com_nav_tool_add**:
+- **com_ui_add**:
   - **english**: Add
   - **translated**: 追加
 

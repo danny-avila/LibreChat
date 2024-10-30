@@ -1,8 +1,9 @@
 const {
-  EModelEndpoint,
   CacheKeys,
-  defaultAssistantsVersion,
+  SystemRoles,
+  EModelEndpoint,
   defaultOrderQuery,
+  defaultAssistantsVersion,
 } = require('librechat-data-provider');
 const {
   initializeClient: initAzureClient,
@@ -63,7 +64,7 @@ const _listAssistants = async ({ req, res, version, query }) => {
  * @param {object} params.res - The response object, used for initializing the client.
  * @param {string} params.version - The API version to use.
  * @param {Omit<AssistantListParams, 'endpoint'>} params.query - The query parameters to list assistants (e.g., limit, order).
- * @returns {Promise<object>} A promise that resolves to the response from the `openai.beta.assistants.list` method call.
+ * @returns {Promise<Array<Assistant>>} A promise that resolves to the response from the `openai.beta.assistants.list` method call.
  */
 const listAllAssistants = async ({ req, res, version, query }) => {
   /** @type {{ openai: OpenAIClient }} */
@@ -227,7 +228,7 @@ const fetchAssistants = async ({ req, res, overrideEndpoint }) => {
     body = await listAssistantsForAzure({ req, res, version, azureConfig, query });
   }
 
-  if (req.user.role === 'ADMIN') {
+  if (req.user.role === SystemRoles.ADMIN) {
     return body;
   } else if (!req.app.locals[endpoint]) {
     return body;

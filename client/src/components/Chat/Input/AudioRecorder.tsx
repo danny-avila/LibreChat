@@ -1,19 +1,22 @@
 import { useEffect } from 'react';
-import type { UseFormReturn } from 'react-hook-form';
-import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui/';
 import { ListeningIcon, Spinner } from '~/components/svg';
 import { useLocalize, useSpeechToText } from '~/hooks';
+import { useChatFormContext } from '~/Providers';
+import { TooltipAnchor } from '~/components/ui';
 import { globalAudioId } from '~/common';
+import { cn } from '~/utils';
 
 export default function AudioRecorder({
   textAreaRef,
   methods,
   ask,
+  isRTL,
   disabled,
 }: {
   textAreaRef: React.RefObject<HTMLTextAreaElement>;
-  methods: UseFormReturn<{ text: string }>;
+  methods: ReturnType<typeof useChatFormContext>;
   ask: (data: { text: string }) => void;
+  isRTL: boolean;
   disabled: boolean;
 }) {
   const localize = useLocalize();
@@ -31,15 +34,26 @@ export default function AudioRecorder({
     }
   };
 
-  const { isListening, isLoading, startRecording, stopRecording, speechText, clearText } =
-    useSpeechToText(handleTranscriptionComplete);
+  const {
+    isListening,
+    isLoading,
+    startRecording,
+    stopRecording,
+    interimTranscript,
+    speechText,
+    clearText,
+  } = useSpeechToText(handleTranscriptionComplete);
 
   useEffect(() => {
-    if (textAreaRef.current) {
+    if (isListening && textAreaRef.current) {
+      methods.setValue('text', interimTranscript, {
+        shouldValidate: true,
+      });
+    } else if (textAreaRef.current) {
       textAreaRef.current.value = speechText;
       methods.setValue('text', speechText, { shouldValidate: true });
     }
-  }, [speechText, methods, textAreaRef]);
+  }, [interimTranscript, speechText, methods, textAreaRef]);
 
   const handleStartRecording = async () => {
     await startRecording();
@@ -60,22 +74,18 @@ export default function AudioRecorder({
   };
 
   return (
-    <TooltipProvider delayDuration={250}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            onClick={isListening ? handleStopRecording : handleStartRecording}
-            disabled={disabled}
-            className="absolute bottom-1.5 right-12 flex h-[30px] w-[30px] items-center justify-center rounded-lg p-0.5 transition-colors hover:bg-gray-200 dark:hover:bg-gray-700 md:bottom-3 md:right-12"
-            type="button"
-          >
-            {renderIcon()}
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="top" sideOffset={10}>
-          {localize('com_ui_use_micrphone')}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <TooltipAnchor
+      id="audio-recorder"
+      aria-label={localize('com_ui_use_micrphone')}
+      onClick={isListening ? handleStopRecording : handleStartRecording}
+      disabled={disabled}
+      className={cn(
+        'absolute flex size-[35px] items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover',
+        isRTL ? 'bottom-2 left-2' : 'bottom-2 right-2',
+      )}
+      description={localize('com_ui_use_micrphone')}
+    >
+      {renderIcon()}
+    </TooltipAnchor>
   );
 }

@@ -39,7 +39,7 @@ export default function HoverButtons({
   const { endpoint: _endpoint, endpointType } = conversation ?? {};
   const endpoint = endpointType ?? _endpoint;
   const [isCopied, setIsCopied] = useState(false);
-  const [TextToSpeech] = useRecoilState<boolean>(store.TextToSpeech);
+  const [TextToSpeech] = useRecoilState<boolean>(store.textToSpeech);
 
   const {
     hideEditButton,
@@ -58,7 +58,11 @@ export default function HoverButtons({
     return null;
   }
 
-  const { isCreatedByUser } = message;
+  const { isCreatedByUser, error } = message;
+
+  if (error) {
+    return null;
+  }
 
   const onEdit = () => {
     if (isEditing) {
@@ -68,12 +72,20 @@ export default function HoverButtons({
   };
 
   return (
-    <div className="visible mt-0 flex justify-center gap-1 self-end text-gray-400 lg:justify-start">
-      {TextToSpeech && <MessageAudio index={index} message={message} isLast={isLast} />}
+    <div className="visible mt-0 flex justify-center gap-1 self-end text-gray-500 lg:justify-start">
+      {TextToSpeech && (
+        <MessageAudio
+          index={index}
+          messageId={message.messageId}
+          content={message.content ?? message.text}
+          isLast={isLast}
+          className="hover-button rounded-md p-1 pl-0 text-gray-500 hover:bg-gray-100 hover:text-gray-500 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible"
+        />
+      )}
       {isEditableEndpoint && (
         <button
           className={cn(
-            'hover-button rounded-md p-1 text-gray-400 hover:text-gray-900 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
+            'hover-button rounded-md p-1 hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
             isCreatedByUser ? '' : 'active',
             hideEditButton ? 'opacity-0' : '',
             isEditing ? 'active text-gray-700 dark:text-gray-200' : '',
@@ -89,7 +101,7 @@ export default function HoverButtons({
       )}
       <button
         className={cn(
-          'ml-0 flex items-center gap-1.5 rounded-md p-1 text-xs hover:text-gray-900 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
+          'ml-0 flex items-center gap-1.5 rounded-md p-1 text-xs hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
           isSubmitting && isCreatedByUser ? 'md:opacity-0 md:group-hover:opacity-100' : '',
           !isLast ? 'md:opacity-0 md:group-hover:opacity-100' : '',
         )}
@@ -104,7 +116,7 @@ export default function HoverButtons({
       {regenerateEnabled ? (
         <button
           className={cn(
-            'hover-button active rounded-md p-1 text-gray-400 hover:text-gray-900 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible md:group-[.final-completion]:visible',
+            'hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible md:group-[.final-completion]:visible',
             !isLast ? 'md:opacity-0 md:group-hover:opacity-100' : '',
           )}
           onClick={regenerate}
@@ -112,7 +124,7 @@ export default function HoverButtons({
           title={localize('com_ui_regenerate')}
         >
           <RegenerateIcon
-            className="hover:text-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400"
+            className="hover:text-gray-500 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400"
             size="19"
           />
         </button>
@@ -124,17 +136,17 @@ export default function HoverButtons({
         forkingSupported={forkingSupported}
         latestMessage={latestMessage}
       />
-      {continueSupported ? (
+      {continueSupported === true ? (
         <button
           className={cn(
-            'hover-button active rounded-md p-1 hover:bg-gray-200 hover:text-gray-700 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible ',
+            'hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible',
             !isLast ? 'md:opacity-0 md:group-hover:opacity-100' : '',
           )}
           onClick={handleContinue}
           type="button"
           title={localize('com_ui_continue')}
         >
-          <ContinueIcon className="h-4 w-4 hover:text-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
+          <ContinueIcon className="h-4 w-4 hover:text-gray-500 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
         </button>
       ) : null}
     </div>

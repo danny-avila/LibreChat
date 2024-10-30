@@ -1,6 +1,7 @@
 import {
   QueryKeys,
   dataService,
+  EModelEndpoint,
   defaultOrderQuery,
   defaultAssistantsVersion,
 } from 'librechat-data-provider';
@@ -9,53 +10,27 @@ import type {
   UseInfiniteQueryOptions,
   QueryObserverResult,
   UseQueryOptions,
-  UseQueryResult,
 } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
 import type {
   Action,
   TPreset,
-  TFile,
   TPlugin,
-  FileConfig,
   ConversationListResponse,
   ConversationListParams,
   Assistant,
   AssistantListParams,
   AssistantListResponse,
   AssistantDocument,
+  Agent,
+  AgentListParams,
+  AgentListResponse,
   TEndpointsConfig,
   TCheckUserKeyResponse,
   SharedLinkListParams,
   SharedLinksResponse,
 } from 'librechat-data-provider';
-import { findPageForConversation, addFileToCache } from '~/utils';
-
-export const useGetFiles = <TData = TFile[] | boolean>(
-  config?: UseQueryOptions<TFile[], unknown, TData>,
-): QueryObserverResult<TData, unknown> => {
-  return useQuery<TFile[], unknown, TData>([QueryKeys.files], () => dataService.getFiles(), {
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
-    ...config,
-  });
-};
-
-export const useGetFileConfig = <TData = FileConfig>(
-  config?: UseQueryOptions<FileConfig, unknown, TData>,
-): QueryObserverResult<TData, unknown> => {
-  return useQuery<FileConfig, unknown, TData>(
-    [QueryKeys.fileConfig],
-    () => dataService.getFileConfig(),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      ...config,
-    },
-  );
-};
+import { findPageForConversation } from '~/utils';
 
 export const useGetPresetsQuery = (
   config?: UseQueryOptions<TPreset[]>,
@@ -144,12 +119,13 @@ export const useConversationsInfiniteQuery = (
   config?: UseInfiniteQueryOptions<ConversationListResponse, unknown>,
 ) => {
   return useInfiniteQuery<ConversationListResponse, unknown>(
-    params?.isArchived ? [QueryKeys.archivedConversations] : [QueryKeys.allConversations],
+    params?.isArchived === true ? [QueryKeys.archivedConversations] : [QueryKeys.allConversations],
     ({ pageParam = '' }) =>
       dataService.listConversations({
         ...params,
         pageNumber: pageParam?.toString(),
-        isArchived: params?.isArchived || false,
+        isArchived: params?.isArchived ?? false,
+        tags: params?.tags || [],
       }),
     {
       getNextPageParam: (lastPage) => {
@@ -193,6 +169,21 @@ export const useSharedLinksInfiniteQuery = (
   );
 };
 
+export const useConversationTagsQuery = (
+  config?: UseQueryOptions<t.TConversationTagsResponse>,
+): QueryObserverResult<t.TConversationTagsResponse> => {
+  return useQuery<t.TConversationTag[]>(
+    [QueryKeys.conversationTags],
+    () => dataService.getConversationTags(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      ...config,
+    },
+  );
+};
+
 /**
  * ASSISTANTS
  */
@@ -201,7 +192,7 @@ export const useSharedLinksInfiniteQuery = (
  * Hook for getting all available tools for Assistants
  */
 export const useAvailableToolsQuery = (
-  endpoint: t.AssistantsEndpoint,
+  endpoint: t.AssistantsEndpoint | EModelEndpoint.agents,
 ): QueryObserverResult<TPlugin[]> => {
   const queryClient = useQueryClient();
   const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
@@ -209,10 +200,11 @@ export const useAvailableToolsQuery = (
   const userProvidesKey = !!endpointsConfig?.[endpoint]?.userProvide;
   const keyProvided = userProvidesKey ? !!keyExpiry?.expiresAt : true;
   const enabled = !!endpointsConfig?.[endpoint] && keyProvided;
-  const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
+  const version: string | number | undefined =
+    endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
   return useQuery<TPlugin[]>(
     [QueryKeys.tools],
-    () => dataService.getAvailableTools(version, endpoint),
+    () => dataService.getAvailableTools(endpoint, version),
     {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
@@ -233,8 +225,8 @@ export const useListAssistantsQuery = <TData = AssistantListResponse>(
   const queryClient = useQueryClient();
   const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
   const keyExpiry = queryClient.getQueryData<TCheckUserKeyResponse>([QueryKeys.name, endpoint]);
-  const userProvidesKey = !!endpointsConfig?.[endpoint]?.userProvide;
-  const keyProvided = userProvidesKey ? !!keyExpiry?.expiresAt : true;
+  const userProvidesKey = !!(endpointsConfig?.[endpoint]?.userProvide ?? false);
+  const keyProvided = userProvidesKey ? !!(keyExpiry?.expiresAt ?? '') : true;
   const enabled = !!endpointsConfig?.[endpoint] && keyProvided;
   const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
   return useQuery<AssistantListResponse, unknown, TData>(
@@ -250,7 +242,7 @@ export const useListAssistantsQuery = <TData = AssistantListResponse>(
       refetchOnMount: false,
       retry: false,
       ...config,
-      enabled: config?.enabled !== undefined ? config?.enabled && enabled : enabled,
+      enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled,
     },
   );
 };
@@ -298,7 +290,7 @@ export const useGetAssistantByIdQuery = (
   const queryClient = useQueryClient();
   const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
   const keyExpiry = queryClient.getQueryData<TCheckUserKeyResponse>([QueryKeys.name, endpoint]);
-  const userProvidesKey = !!endpointsConfig?.[endpoint]?.userProvide;
+  const userProvidesKey = endpointsConfig?.[endpoint]?.userProvide ?? false;
   const keyProvided = userProvidesKey ? !!keyExpiry?.expiresAt : true;
   const enabled = !!endpointsConfig?.[endpoint] && keyProvided;
   const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
@@ -317,7 +309,7 @@ export const useGetAssistantByIdQuery = (
       retry: false,
       ...config,
       // Query will not execute until the assistant_id exists
-      enabled: config?.enabled !== undefined ? config?.enabled && enabled : enabled,
+      enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled,
     },
   );
 };
@@ -326,7 +318,7 @@ export const useGetAssistantByIdQuery = (
  * Hook for retrieving user's saved Assistant Actions
  */
 export const useGetActionsQuery = <TData = Action[]>(
-  endpoint: t.AssistantsEndpoint,
+  endpoint: t.AssistantsEndpoint | EModelEndpoint.agents,
   config?: UseQueryOptions<Action[], unknown, TData>,
 ): QueryObserverResult<TData> => {
   const queryClient = useQueryClient();
@@ -334,40 +326,35 @@ export const useGetActionsQuery = <TData = Action[]>(
   const keyExpiry = queryClient.getQueryData<TCheckUserKeyResponse>([QueryKeys.name, endpoint]);
   const userProvidesKey = !!endpointsConfig?.[endpoint]?.userProvide;
   const keyProvided = userProvidesKey ? !!keyExpiry?.expiresAt : true;
-  const enabled = !!endpointsConfig?.[endpoint] && keyProvided;
-  const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
-  return useQuery<Action[], unknown, TData>(
-    [QueryKeys.actions],
-    () =>
-      dataService.getActions({
-        endpoint,
-        version,
-      }),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      ...config,
-      enabled: config?.enabled !== undefined ? config?.enabled && enabled : enabled,
-    },
-  );
+  const enabled =
+    (!!endpointsConfig?.[endpoint] && keyProvided) || endpoint === EModelEndpoint.agents;
+
+  return useQuery<Action[], unknown, TData>([QueryKeys.actions], () => dataService.getActions(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    ...config,
+    enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled,
+  });
 };
+
 /**
  * Hook for retrieving user's saved Assistant Documents (metadata saved to Database)
  */
-export const useGetAssistantDocsQuery = (
-  endpoint: t.AssistantsEndpoint,
-  config?: UseQueryOptions<AssistantDocument[]>,
-): QueryObserverResult<AssistantDocument[], unknown> => {
+export const useGetAssistantDocsQuery = <TData = AssistantDocument[]>(
+  endpoint: t.AssistantsEndpoint | string,
+  config?: UseQueryOptions<AssistantDocument[], unknown, TData>,
+): QueryObserverResult<TData> => {
   const queryClient = useQueryClient();
   const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
   const keyExpiry = queryClient.getQueryData<TCheckUserKeyResponse>([QueryKeys.name, endpoint]);
-  const userProvidesKey = !!endpointsConfig?.[endpoint]?.userProvide;
-  const keyProvided = userProvidesKey ? !!keyExpiry?.expiresAt : true;
+  const userProvidesKey = !!(endpointsConfig?.[endpoint]?.userProvide ?? false);
+  const keyProvided = userProvidesKey ? !!(keyExpiry?.expiresAt ?? '') : true;
   const enabled = !!endpointsConfig?.[endpoint] && keyProvided;
   const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
-  return useQuery<AssistantDocument[]>(
-    [QueryKeys.assistantDocs],
+
+  return useQuery<AssistantDocument[], unknown, TData>(
+    [QueryKeys.assistantDocs, endpoint],
     () =>
       dataService.getAssistantDocs({
         endpoint,
@@ -378,40 +365,79 @@ export const useGetAssistantDocsQuery = (
       refetchOnReconnect: false,
       refetchOnMount: false,
       ...config,
-      enabled: config?.enabled !== undefined ? config?.enabled && enabled : enabled,
+      enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled,
     },
   );
 };
 
-export const useFileDownload = (userId?: string, file_id?: string): QueryObserverResult<string> => {
+/**
+ * AGENTS
+ */
+
+/**
+ * Hook for getting all available tools for A
+ */
+export const useAvailableAgentToolsQuery = (): QueryObserverResult<TPlugin[]> => {
   const queryClient = useQueryClient();
-  return useQuery(
-    [QueryKeys.fileDownload, file_id],
-    async () => {
-      if (!userId || !file_id) {
-        console.warn('No user ID provided for file download');
-        return;
-      }
-      const response = await dataService.getFileDownload(userId, file_id);
-      const blob = response.data;
-      const downloadURL = window.URL.createObjectURL(blob);
-      try {
-        const metadata: TFile | undefined = JSON.parse(response.headers['x-file-metadata']);
-        if (!metadata) {
-          console.warn('No metadata found for file download', response.headers);
-          return downloadURL;
-        }
+  const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
 
-        addFileToCache(queryClient, metadata);
-      } catch (e) {
-        console.error('Error parsing file metadata, skipped updating file query cache', e);
-      }
+  const enabled = !!endpointsConfig?.[EModelEndpoint.agents];
+  return useQuery<TPlugin[]>([QueryKeys.tools], () => dataService.getAvailableAgentTools(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    enabled,
+  });
+};
 
-      return downloadURL;
-    },
+/**
+ * Hook for listing all Agents, with optional parameters provided for pagination and sorting
+ */
+export const useListAgentsQuery = <TData = AgentListResponse>(
+  params: AgentListParams = defaultOrderQuery,
+  config?: UseQueryOptions<AgentListResponse, unknown, TData>,
+): QueryObserverResult<TData> => {
+  const queryClient = useQueryClient();
+  const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
+
+  const enabled = !!endpointsConfig?.[EModelEndpoint.agents];
+  return useQuery<AgentListResponse, unknown, TData>(
+    [QueryKeys.agents, params],
+    () => dataService.listAgents(params),
     {
-      enabled: false,
+      // Example selector to sort them by created_at
+      // select: (res) => {
+      //   return res.data.sort((a, b) => a.created_at - b.created_at);
+      // },
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
       retry: false,
+      ...config,
+      enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled,
+    },
+  );
+};
+
+/**
+ * Hook for retrieving details about a single agent
+ */
+export const useGetAgentByIdQuery = (
+  agent_id: string,
+  config?: UseQueryOptions<Agent>,
+): QueryObserverResult<Agent> => {
+  return useQuery<Agent>(
+    [QueryKeys.agent, agent_id],
+    () =>
+      dataService.getAgentById({
+        agent_id,
+      }),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: false,
+      ...config,
     },
   );
 };
@@ -419,6 +445,161 @@ export const useFileDownload = (userId?: string, file_id?: string): QueryObserve
 /** STT/TTS */
 
 /* Text to speech voices */
-export const useVoicesQuery = (): UseQueryResult<t.VoiceResponse> => {
-  return useQuery([QueryKeys.voices], () => dataService.getVoices());
+export const useVoicesQuery = (
+  config?: UseQueryOptions<t.VoiceResponse>,
+): QueryObserverResult<t.VoiceResponse> => {
+  return useQuery<t.VoiceResponse>([QueryKeys.voices], () => dataService.getVoices(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: false,
+    ...config,
+  });
+};
+
+/* Custom config speech */
+export const useCustomConfigSpeechQuery = (
+  config?: UseQueryOptions<t.TCustomConfigSpeechResponse>,
+): QueryObserverResult<t.TCustomConfigSpeechResponse> => {
+  return useQuery<t.TCustomConfigSpeechResponse>(
+    [QueryKeys.customConfigSpeech],
+    () => dataService.getCustomConfigSpeech(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: false,
+      ...config,
+    },
+  );
+};
+
+/** Prompt */
+
+export const usePromptGroupsInfiniteQuery = (
+  params?: t.TPromptGroupsWithFilterRequest,
+  config?: UseInfiniteQueryOptions<t.PromptGroupListResponse, unknown>,
+) => {
+  const { name, pageSize, category, ...rest } = params || {};
+  return useInfiniteQuery<t.PromptGroupListResponse, unknown>(
+    [QueryKeys.promptGroups, name, category, pageSize],
+    ({ pageParam = '1' }) =>
+      dataService.getPromptGroups({
+        ...rest,
+        name,
+        category: category || '',
+        pageNumber: pageParam?.toString(),
+        pageSize: (pageSize || 10).toString(),
+      }),
+    {
+      getNextPageParam: (lastPage) => {
+        const currentPageNumber = Number(lastPage.pageNumber);
+        const totalPages = Number(lastPage.pages);
+        return currentPageNumber < totalPages ? currentPageNumber + 1 : undefined;
+      },
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      ...config,
+    },
+  );
+};
+
+export const useGetPromptGroup = (
+  id: string,
+  config?: UseQueryOptions<t.TPromptGroup>,
+): QueryObserverResult<t.TPromptGroup> => {
+  return useQuery<t.TPromptGroup>(
+    [QueryKeys.promptGroup, id],
+    () => dataService.getPromptGroup(id),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: false,
+      ...config,
+      enabled: config?.enabled !== undefined ? config.enabled : true,
+    },
+  );
+};
+
+export const useGetPrompts = (
+  filter: t.TPromptsWithFilterRequest,
+  config?: UseQueryOptions<t.TPrompt[]>,
+): QueryObserverResult<t.TPrompt[]> => {
+  return useQuery<t.TPrompt[]>(
+    [QueryKeys.prompts, filter.groupId ?? ''],
+    () => dataService.getPrompts(filter),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: false,
+      ...config,
+      enabled: config?.enabled !== undefined ? config.enabled : true,
+    },
+  );
+};
+
+export const useGetAllPromptGroups = <TData = t.AllPromptGroupsResponse>(
+  filter?: t.AllPromptGroupsFilterRequest,
+  config?: UseQueryOptions<t.AllPromptGroupsResponse, unknown, TData>,
+): QueryObserverResult<TData> => {
+  return useQuery<t.AllPromptGroupsResponse, unknown, TData>(
+    [QueryKeys.allPromptGroups],
+    () => dataService.getAllPromptGroups(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: false,
+      ...config,
+    },
+  );
+};
+
+export const useGetCategories = <TData = t.TGetCategoriesResponse>(
+  config?: UseQueryOptions<t.TGetCategoriesResponse, unknown, TData>,
+): QueryObserverResult<TData> => {
+  return useQuery<t.TGetCategoriesResponse, unknown, TData>(
+    [QueryKeys.categories],
+    () => dataService.getCategories(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: false,
+      ...config,
+      enabled: config?.enabled !== undefined ? config.enabled : true,
+    },
+  );
+};
+
+export const useGetRandomPrompts = (
+  filter: t.TGetRandomPromptsRequest,
+  config?: UseQueryOptions<t.TGetRandomPromptsResponse>,
+): QueryObserverResult<t.TGetRandomPromptsResponse> => {
+  return useQuery<t.TGetRandomPromptsResponse>(
+    [QueryKeys.randomPrompts],
+    () => dataService.getRandomPrompts(filter),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: false,
+      ...config,
+      enabled: config?.enabled !== undefined ? config.enabled : true,
+    },
+  );
+};
+
+export const useUserTermsQuery = (
+  config?: UseQueryOptions<t.TUserTermsResponse>,
+): QueryObserverResult<t.TUserTermsResponse> => {
+  return useQuery<t.TUserTermsResponse>([QueryKeys.userTerms], () => dataService.getUserTerms(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    ...config,
+  });
 };

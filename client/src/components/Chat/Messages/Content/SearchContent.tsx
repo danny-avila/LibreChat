@@ -22,12 +22,13 @@ const SearchContent = ({ message }: { message: TMessage }) => {
                 key={`display-${messageId}-${idx}`}
                 showCursor={false}
                 isSubmitting={false}
+                isCreatedByUser={message.isCreatedByUser}
+                messageId={message.messageId}
                 part={part}
-                message={message}
               />
             );
           })}
-        {message.unfinished && (
+        {message.unfinished === true && (
           <Suspense>
             <DelayedRender delay={250}>
               <UnfinishedMessage message={message} key={`unfinished-${messageId}`} />
@@ -44,8 +45,9 @@ const SearchContent = ({ message }: { message: TMessage }) => {
         'markdown prose dark:prose-invert light w-full break-words',
         message.isCreatedByUser ? 'whitespace-pre-wrap dark:text-gray-20' : 'dark:text-gray-70',
       )}
+      dir="auto"
     >
-      <MarkdownLite content={message.text ?? ''} />
+      <MarkdownLite content={message.text || ''} />
     </div>
   );
 };

@@ -76,8 +76,28 @@ Please specify a correct \`imageOutputType\` value (case-sensitive).
     );
   }
   if (!result.success) {
-    i === 0 && logger.error(`Invalid custom config file at ${configPath}`, result.error);
-    i === 0 && i++;
+    let errorMessage = `Invalid custom config file at ${configPath}:
+${JSON.stringify(result.error, null, 2)}`;
+
+    if (i === 0) {
+      logger.error(errorMessage);
+      const speechError = result.error.errors.find(
+        (err) =>
+          err.code === 'unrecognized_keys' &&
+          (err.message?.includes('stt') || err.message?.includes('tts')),
+      );
+
+      if (speechError) {
+        logger.warn(`
+The Speech-to-text and Text-to-speech configuration format has recently changed.
+If you're getting this error, please refer to the latest documentation:
+
+https://www.librechat.ai/docs/configuration/stt_tts`);
+      }
+
+      i++;
+    }
+
     return null;
   } else {
     logger.info('Custom config file loaded:');

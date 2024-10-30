@@ -1,8 +1,9 @@
-const buildOptions = require('./buildOptions');
-const initializeClient = require('./initializeClient');
+const addTitle = require('./title');
+const buildOptions = require('./build');
+const initializeClient = require('./initialize');
 
 module.exports = {
-  // addTitle, // todo
+  addTitle,
   buildOptions,
   initializeClient,
 };

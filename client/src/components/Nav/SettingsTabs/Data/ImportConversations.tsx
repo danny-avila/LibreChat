@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Import } from 'lucide-react';
 import type { TError } from 'librechat-data-provider';
 import { useUploadConversationsMutation } from '~/data-provider';
@@ -9,6 +9,7 @@ import { cn } from '~/utils';
 
 function ImportConversations() {
   const localize = useLocalize();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { showToast } = useToastContext();
   const [, setErrors] = useState<string[]>([]);
@@ -26,7 +27,7 @@ function ImportConversations() {
       console.error('Error: ', error);
       setAllowImport(true);
       setError(
-        (error as TError)?.response?.data?.message ?? 'An error occurred while uploading the file.',
+        (error as TError).response?.data?.message ?? 'An error occurred while uploading the file.',
       );
       if (error?.toString().includes('Unsupported import type')) {
         showToast({
@@ -44,13 +45,12 @@ function ImportConversations() {
 
   const startUpload = async (file: File) => {
     const formData = new FormData();
-    formData.append('file', file, encodeURIComponent(file?.name || 'File'));
+    formData.append('file', file, encodeURIComponent(file.name || 'File'));
 
     uploadFile.mutate(formData);
   };
 
   const handleFiles = async (_file: File) => {
-    /* Process files */
     try {
       await startUpload(_file);
     } catch (error) {
@@ -59,19 +59,33 @@ function ImportConversations() {
     }
   };
 
-  const handleFileChange = (event) => {
-    const file = event.target.files[0];
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
     if (file) {
       handleFiles(file);
     }
   };
 
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      handleImportClick();
+    }
+  };
+
   return (
     <div className="flex items-center justify-between">
-      <span>{localize('com_ui_import_conversation_info')}</span>
-      <label
-        htmlFor={'import-conversations-file'}
-        className="flex h-auto cursor-pointer items-center rounded bg-transparent px-2 py-3 text-xs font-medium transition-colors hover:bg-gray-100 hover:text-green-700 dark:bg-transparent dark:text-white dark:hover:bg-gray-600 dark:hover:text-green-500"
+      <div>{localize('com_ui_import_conversation_info')}</div>
+      <button
+        onClick={handleImportClick}
+        onKeyDown={handleKeyDown}
+        disabled={!allowImport}
+        aria-label={localize('com_ui_import_conversation')}
+        className="btn btn-neutral relative"
       >
         {allowImport ? (
           <Import className="mr-1 flex h-4 w-4 items-center stroke-1" />
@@ -79,16 +93,15 @@ function ImportConversations() {
           <Spinner className="mr-1 w-4" />
         )}
         <span>{localize('com_ui_import_conversation')}</span>
-        <input
-          id={'import-conversations-file'}
-          disabled={!allowImport}
-          value=""
-          type="file"
-          className={cn('hidden')}
-          accept=".json"
-          onChange={handleFileChange}
-        />
-      </label>
+      </button>
+      <input
+        ref={fileInputRef}
+        type="file"
+        className={cn('hidden')}
+        accept=".json"
+        onChange={handleFileChange}
+        aria-hidden="true"
+      />
     </div>
   );
 }

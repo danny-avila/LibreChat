@@ -19,29 +19,29 @@ export default function MultiSearch({
   const localize = useLocalize();
   const onChangeHandler: React.ChangeEventHandler<HTMLInputElement> = useCallback(
     (e) => onChange(e.target.value),
-    [],
+    [onChange],
   );
 
   return (
     <div
       className={cn(
-        'group sticky left-0 top-0 z-10 flex h-12 items-center gap-2 bg-gradient-to-b from-white from-65% to-transparent px-2 px-3 py-2 text-black transition-colors duration-300 focus:bg-gradient-to-b focus:from-white focus:to-white/50 dark:from-gray-700 dark:to-transparent dark:text-white dark:focus:from-white/10 dark:focus:to-white/20',
+        'group sticky left-0 top-0 z-10 flex h-12 items-center gap-2 bg-gradient-to-b from-white from-65% to-transparent px-3 py-2 text-black transition-colors duration-300 focus:bg-gradient-to-b focus:from-white focus:to-white/50 dark:from-gray-700 dark:to-transparent dark:text-white dark:focus:from-white/10 dark:focus:to-white/20',
         className,
       )}
     >
       <Search className="h-4 w-4 text-gray-500 transition-colors duration-300 dark:group-focus-within:text-gray-300 dark:group-hover:text-gray-300" />
       <input
         type="text"
-        value={value || ''}
+        value={value ?? ''}
         onChange={onChangeHandler}
-        placeholder={placeholder || localize('com_ui_select_search_model')}
+        placeholder={placeholder ?? localize('com_ui_select_search_model')}
         className="flex-1 rounded-md border-none bg-transparent px-2.5 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gray-700/10 dark:focus:ring-gray-200/10"
       />
       <div className="relative flex h-5 w-5 items-center justify-end text-gray-500">
         <X
           className={cn(
             'text-gray-500 dark:text-gray-300',
-            value?.length ? 'cursor-pointer opacity-100' : 'opacity-0',
+            value?.length ?? 0 ? 'cursor-pointer opacity-100' : 'opacity-0',
           )}
           onClick={() => onChange('')}
         />
@@ -104,20 +104,24 @@ export function useMultiSearch<OptionsType extends unknown[]>({
 
   // Iterate said options
   const filteredOptions = useMemo(() => {
-    if (!shouldShowSearch || !filterValue || !availableOptions.length) {
+    const currentFilter = filterValue ?? '';
+    if (!shouldShowSearch || !currentFilter || !availableOptions.length) {
       // Don't render if available options aren't present, there's no filter active
       return availableOptions;
     }
     // Filter through the values, using a simple text-based search
     // nothing too fancy, but we can add a better search algo later if we need
-    const upperFilterValue = filterValue.toUpperCase();
+    const upperFilterValue = currentFilter.toUpperCase();
 
     return availableOptions.filter((value) =>
       getTextKeyHelper(value).includes(upperFilterValue),
     ) as OptionsType;
   }, [availableOptions, getTextKeyHelper, filterValue, shouldShowSearch]);
 
-  const onSearchChange = useCallback((nextFilterValue) => setFilterValue(nextFilterValue), []);
+  const onSearchChange = useCallback(
+    (nextFilterValue: string) => setFilterValue(nextFilterValue),
+    [],
+  );
 
   const searchRender = shouldShowSearch ? (
     <MultiSearch

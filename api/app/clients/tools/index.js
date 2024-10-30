@@ -25,7 +25,6 @@ module.exports = {
   // Basic Tools
   CodeBrew,
   AzureAiSearch,
-  GoogleSearchAPI,
   WolframAlphaAPI,
   OpenAICreateImage,
   StableDiffusionAPI,
@@ -37,8 +36,9 @@ module.exports = {
   CodeSherpa,
   StructuredSD,
   StructuredACS,
+  GoogleSearchAPI,
   CodeSherpaTools,
+  TraversaalSearch,
   StructuredWolfram,
   TavilySearchResults,
-  TraversaalSearch,
 };

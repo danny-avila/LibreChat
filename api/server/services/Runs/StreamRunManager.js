@@ -1,17 +1,19 @@
 const throttle = require('lodash/throttle');
 const {
+  Time,
+  CacheKeys,
   StepTypes,
   ContentTypes,
   ToolCallTypes,
-  // StepStatus,
   MessageContentTypes,
   AssistantStreamEvents,
+  Constants,
 } = require('librechat-data-provider');
 const { retrieveAndProcessFile } = require('~/server/services/Files/process');
 const { processRequiredActions } = require('~/server/services/ToolService');
-const { saveMessage, updateMessageText } = require('~/models/Message');
-const { createOnProgress, sendMessage } = require('~/server/utils');
+const { createOnProgress, sendMessage, sleep } = require('~/server/utils');
 const { processMessages } = require('~/server/services/Threads');
+const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
 
 /**
@@ -68,8 +70,8 @@ class StreamRunManager {
     this.attachedFileIds = fields.attachedFileIds;
     /** @type {undefined | Promise<ChatCompletion>} */
     this.visionPromise = fields.visionPromise;
-    /** @type {boolean} */
-    this.savedInitialMessage = false;
+    /** @type {number} */
+    this.streamRate = fields.streamRate ?? Constants.DEFAULT_STREAM_RATE;
 
     /**
      * @type {Object.<AssistantStreamEvents, (event: AssistantStreamEvent) => Promise<void>>}
@@ -139,11 +141,11 @@ class StreamRunManager {
     return this.intermediateText;
   }
 
-  /** Saves the initial intermediate message
-   * @returns {Promise<void>}
+  /** Returns the current, intermediate message
+   * @returns {TMessage}
    */
-  async saveInitialMessage() {
-    return saveMessage({
+  getIntermediateMessage() {
+    return {
       conversationId: this.finalMessage.conversationId,
       messageId: this.finalMessage.messageId,
       parentMessageId: this.parentMessageId,
@@ -155,7 +157,7 @@ class StreamRunManager {
       sender: 'Assistant',
       unfinished: true,
       error: false,
-    });
+    };
   }
 
   /* <------------------ Main Event Handlers ------------------> */
@@ -327,7 +329,7 @@ class StreamRunManager {
           }
         } else if (typeof delta[key] === 'string' && typeof data[key] === 'string') {
           // Concatenate strings
-          data[key] += delta[key];
+          // data[key] += delta[key];
         } else if (
           typeof delta[key] === 'object' &&
           delta[key] !== null &&
@@ -347,6 +349,8 @@ class StreamRunManager {
           type: ContentTypes.TOOL_CALL,
           index,
         });
+
+        await sleep(this.streamRate);
       }
     };
 
@@ -427,7 +431,7 @@ class StreamRunManager {
 
       const toolCallDelta = toolCall[toolCall.type];
       const progressCallback = this.progressCallbacks.get(stepKey);
-      await progressCallback(toolCallDelta);
+      progressCallback(toolCallDelta);
     }
   }
 
@@ -444,6 +448,7 @@ class StreamRunManager {
     if (content && content.type === MessageContentTypes.TEXT) {
       this.intermediateText += content.text.value;
       onProgress(content.text.value);
+      await sleep(this.streamRate);
     }
   }
 
@@ -589,21 +594,14 @@ class StreamRunManager {
       const index = this.getStepIndex(stepKey);
       this.orderedRunSteps.set(index, message_creation);
 
+      const messageCache = getLogStores(CacheKeys.MESSAGES);
       // Create the Factory Function to stream the message
       const { onProgress: progressCallback } = createOnProgress({
         onProgress: throttle(
           () => {
-            if (!this.savedInitialMessage) {
-              this.saveInitialMessage();
-              this.savedInitialMessage = true;
-            } else {
-              updateMessageText({
-                messageId: this.finalMessage.messageId,
-                text: this.getText(),
-              });
-            }
+            messageCache.set(this.finalMessage.messageId, this.getText(), Time.FIVE_MINUTES);
           },
-          2000,
+          3000,
           { trailing: false },
         ),
       });

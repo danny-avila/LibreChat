@@ -1,4 +1,4 @@
-const { getConvo } = require('../../models');
+const { getConvo } = require('~/models');
 
 // Middleware to validate conversationId and user relationship
 const validateMessageReq = async (req, res, next) => {

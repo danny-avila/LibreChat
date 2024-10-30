@@ -38,29 +38,31 @@ function useParameterEffects<T = unknown>({
 
   /** Resets the local state if conversationId changed */
   useEffect(() => {
-    if (!conversation?.conversationId) {
+    const conversationId = conversation?.conversationId ?? '';
+    if (!conversationId) {
       return;
     }
 
-    if (idRef.current === conversation?.conversationId) {
+    if (idRef.current === conversationId) {
       return;
     }
 
-    idRef.current = conversation?.conversationId;
+    idRef.current = conversationId;
     setInputValue(defaultValue as T);
   }, [setInputValue, conversation?.conversationId, defaultValue]);
 
   /** Resets the local state if presetId changed */
   useEffect(() => {
-    if (!preset?.presetId) {
+    const presetId = preset?.presetId ?? '';
+    if (!presetId) {
       return;
     }
 
-    if (presetIdRef.current === preset?.presetId) {
+    if (presetIdRef.current === presetId) {
       return;
     }
 
-    presetIdRef.current = preset?.presetId;
+    presetIdRef.current = presetId;
     setInputValue(defaultValue as T);
   }, [setInputValue, preset?.presetId, defaultValue]);
 }

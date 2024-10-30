@@ -45,7 +45,7 @@ const PresetItems: FC<{
         <div className="flex h-full grow items-center justify-end gap-2">
           <label
             htmlFor="default-preset"
-            className="w-40 truncate rounded bg-transparent py-1 text-xs font-medium font-normal text-gray-600 transition-colors dark:bg-transparent dark:text-gray-300 sm:w-72"
+            className="w-40 truncate rounded bg-transparent py-1 text-xs font-medium text-gray-600 transition-colors dark:bg-transparent dark:text-gray-300 sm:w-72"
           >
             {defaultPreset
               ? `${localize('com_endpoint_preset_default_item')} ${defaultPreset.title}`
@@ -55,7 +55,7 @@ const PresetItems: FC<{
             <DialogTrigger asChild>
               <label
                 htmlFor="file-upload"
-                className="mr-1 flex h-[32px] cursor-pointer items-center rounded bg-transparent px-2 py-1 text-xs font-medium font-normal text-gray-600 transition-colors hover:bg-gray-100 hover:text-red-700 dark:bg-transparent dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-green-500 dark:hover:text-red-700"
+                className="mr-1 flex h-[32px] cursor-pointer items-center rounded bg-transparent px-2 py-1 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-red-700 dark:bg-transparent dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-red-700"
               >
                 <svg
                   width="24"
@@ -78,7 +78,10 @@ const PresetItems: FC<{
                 <>
                   <div className="flex w-full flex-col items-center gap-2">
                     <div className="grid w-full items-center gap-2">
-                      <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
+                      <Label
+                        htmlFor="preset-item-clear-all"
+                        className="text-left text-sm font-medium"
+                      >
                         {localize('com_endpoint_presets_clear_warning')}
                       </Label>
                     </div>
@@ -156,7 +159,7 @@ const PresetItems: FC<{
                           <PinIcon unpin={defaultPreset?.presetId === preset.presetId} />
                         </button>
                         <button
-                          className="m-0 h-full rounded-md p-2 text-gray-400 hover:text-gray-700 dark:bg-gray-600 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:group-hover:visible"
+                          className="m-0 h-full rounded-md p-2 text-gray-400 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:group-hover:visible"
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
@@ -166,7 +169,7 @@ const PresetItems: FC<{
                           <EditIcon />
                         </button>
                         <button
-                          className="m-0 h-full rounded-md p-2 text-gray-400 hover:text-gray-600 dark:bg-gray-600 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:group-hover:visible"
+                          className="m-0 h-full rounded-md p-2 text-gray-400 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:group-hover:visible"
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();

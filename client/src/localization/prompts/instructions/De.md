@@ -75,7 +75,7 @@ Write a prompt that is mindful of the nuances in the language with respect to it
   - **english**: Search assistants by name
   - **translated**: Assistenten nach Namen suchen
 
-- **com_assistants_tools**:
+- **com_ui_tools**:
   - **english**: Tools
   - **translated**: Werkzeuge
 
@@ -539,7 +539,7 @@ Write a prompt that is mindful of the nuances in the language with respect to it
   - **english**: Delete chat?
   - **translated**: Chat löschen?
 
-- **com_ui_delete_conversation_confirm**:
+- **com_ui_delete_confirm**:
   - **english**: This will delete
   - **translated**: Damit wird gelöscht
 
@@ -1379,7 +1379,7 @@ Write a prompt that is mindful of the nuances in the language with respect to it
   - **english**: Uninstall
   - **translated**: Deinstallieren
 
-- **com_nav_tool_add**:
+- **com_ui_add**:
   - **english**: Add
   - **translated**: Hinzufügen
 

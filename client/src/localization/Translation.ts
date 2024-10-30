@@ -17,6 +17,7 @@ import Turkish from './languages/Tr';
 import Dutch from './languages/Nl';
 import Indonesia from './languages/Id';
 import Hebrew from './languages/He';
+import Finnish from './languages/Fi';
 
 // === import additional language files here === //
 
@@ -36,12 +37,13 @@ const languageMap: Record<string, Language> = {
   'ja-JP': Japanese,
   'sv-SE': Swedish,
   'ko-KR': Korean,
-  'zh-TC': TraditionalChinese,
+  'zh-TW': TraditionalChinese,
   'vi-VN': Vietnamese,
   'tr-TR': Turkish,
   'nl-NL': Dutch,
   'id-ID': Indonesia,
   'he-HE': Hebrew,
+  'fi-FI': Finnish,
   // Add additional language mappings here
 };
 
@@ -81,7 +83,7 @@ export const getTranslations = (langCode: string): Language => {
 
 // input: language code in string & phrase key in string
 // returns an corresponding phrase value in string
-export const localize = (langCode: string, phraseKey: string, ...values: string[]) => {
+export const localize = (langCode: string, phraseKey: string, ...values: string[]): string => {
   const lang = getTranslations(langCode);
   const phrase = lang[phraseKey] || English[phraseKey] || '';
 

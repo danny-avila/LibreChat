@@ -21,6 +21,10 @@ jest.mock('./Config/loadCustomConfig', () => {
 jest.mock('./Files/Firebase/initialize', () => ({
   initializeFirebase: jest.fn(),
 }));
+jest.mock('~/models/Role', () => ({
+  initializeRoles: jest.fn(),
+  updateAccessPermissions: jest.fn(),
+}));
 jest.mock('./ToolService', () => ({
   loadAndFormatTools: jest.fn().mockReturnValue({
     ExampleTool: {
@@ -94,8 +98,6 @@ describe('AppService', () => {
       socialLogins: ['testLogin'],
       fileStrategy: 'testStrategy',
       interfaceConfig: expect.objectContaining({
-        privacyPolicy: undefined,
-        termsOfService: undefined,
         endpointsMenu: true,
         modelSelect: true,
         parameters: true,

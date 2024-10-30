@@ -95,7 +95,7 @@ Write a prompt that is mindful of the nuances in the language with respect to it
   - **english**: Search assistants by name
   - **translated**: Cerca assistenti per nome
 
-- **com_assistants_tools**:
+- **com_ui_tools**:
   - **english**: Tools
   - **translated**: Strumenti
 
@@ -647,17 +647,17 @@ Write a prompt that is mindful of the nuances in the language with respect to it
   - **english**: Delete chat?
   - **translated**: Eliminare la chat?
 
-- **com_ui_delete_conversation_confirm**:
+- **com_ui_delete_confirm**:
   - **english**: This will delete
   - **translated**: Questo eliminerà
 
 - **com_ui_rename**:
   - **english**: Rename
-  - **translated**: Rinominare
+  - **translated**: Rinomina
 
 - **com_ui_archive**:
   - **english**: Archive
-  - **translated**: Arsip
+  - **translated**: Archivia
 
 - **com_ui_archive_error**:
   - **english**: Failed to archive conversation
@@ -950,10 +950,6 @@ Write a prompt that is mindful of the nuances in the language with respect to it
 - **com_endpoint_message**:
   - **english**: Message
   - **translated**: Messaggio
-
-- **com_endpoint_messages**:
-  - **english**: Messages
-  - **translated**: Messaggi
 
 - **com_endpoint_message_not_appendable**:
   - **english**: Edit your message or Regenerate.
@@ -1511,7 +1507,7 @@ Write a prompt that is mindful of the nuances in the language with respect to it
   - **english**: Uninstall
   - **translated**: Disinstalla
 
-- **com_nav_tool_add**:
+- **com_ui_add**:
   - **english**: Add
   - **translated**: Aggiungi
 

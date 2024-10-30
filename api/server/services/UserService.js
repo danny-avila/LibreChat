@@ -50,7 +50,7 @@ const getUserKey = async ({ userId, name }) => {
       }),
     );
   }
-  return decrypt(keyValue.value);
+  return await decrypt(keyValue.value);
 };
 
 /**
@@ -93,7 +93,7 @@ const getUserKeyExpiry = async ({ userId, name }) => {
   if (!keyValue) {
     return { expiresAt: null };
   }
-  return { expiresAt: keyValue.expiresAt };
+  return { expiresAt: keyValue.expiresAt || 'never' };
 };
 
 /**
@@ -103,23 +103,30 @@ const getUserKeyExpiry = async ({ userId, name }) => {
  * @param {string} params.userId - The unique identifier for the user.
  * @param {string} params.name - The name associated with the key.
  * @param {string} params.value - The value to be encrypted and stored as the key's value.
- * @param {Date} params.expiresAt - The expiry date for the key.
+ * @param {Date} params.expiresAt - The expiry date for the key [optional]
  * @returns {Promise<Object>} The updated or newly inserted key document.
  * @description This function either updates an existing user key or inserts a new one into the database,
- *              after encrypting the provided value. It sets the provided expiry date for the key.
+ *              after encrypting the provided value. It sets the provided expiry date for the key (or unsets for no expiry).
  */
-const updateUserKey = async ({ userId, name, value, expiresAt }) => {
-  const encryptedValue = encrypt(value);
-  return await Key.findOneAndUpdate(
-    { userId, name },
-    {
-      userId,
-      name,
-      value: encryptedValue,
-      expiresAt: new Date(expiresAt),
-    },
-    { upsert: true, new: true },
-  ).lean();
+const updateUserKey = async ({ userId, name, value, expiresAt = null }) => {
+  const encryptedValue = await encrypt(value);
+  let updateObject = {
+    userId,
+    name,
+    value: encryptedValue,
+  };
+  const updateQuery = { $set: updateObject };
+  // add expiresAt to the update object if it's not null
+  if (expiresAt) {
+    updateObject.expiresAt = new Date(expiresAt);
+  } else {
+    // make sure to remove if already present
+    updateQuery.$unset = { expiresAt };
+  }
+  return await Key.findOneAndUpdate({ userId, name }, updateQuery, {
+    upsert: true,
+    new: true,
+  }).lean();
 };
 
 /**

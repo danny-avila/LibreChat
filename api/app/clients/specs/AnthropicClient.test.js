@@ -1,4 +1,6 @@
-const AnthropicClient = require('../AnthropicClient');
+const { anthropicSettings } = require('librechat-data-provider');
+const AnthropicClient = require('~/app/clients/AnthropicClient');
+
 const HUMAN_PROMPT = '\n\nHuman:';
 const AI_PROMPT = '\n\nAssistant:';
 
@@ -22,7 +24,7 @@ describe('AnthropicClient', () => {
     const options = {
       modelOptions: {
         model,
-        temperature: 0.7,
+        temperature: anthropicSettings.temperature.default,
       },
     };
     client = new AnthropicClient('test-api-key');
@@ -33,7 +35,42 @@ describe('AnthropicClient', () => {
     it('should set the options correctly', () => {
       expect(client.apiKey).toBe('test-api-key');
       expect(client.modelOptions.model).toBe(model);
-      expect(client.modelOptions.temperature).toBe(0.7);
+      expect(client.modelOptions.temperature).toBe(anthropicSettings.temperature.default);
+    });
+
+    it('should set legacy maxOutputTokens for non-Claude-3 models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-2',
+          maxOutputTokens: anthropicSettings.maxOutputTokens.default,
+        },
+      });
+      expect(client.modelOptions.maxOutputTokens).toBe(
+        anthropicSettings.legacy.maxOutputTokens.default,
+      );
+    });
+    it('should not set maxOutputTokens if not provided', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-3',
+        },
+      });
+      expect(client.modelOptions.maxOutputTokens).toBeUndefined();
+    });
+
+    it('should not set legacy maxOutputTokens for Claude-3 models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-3-opus-20240229',
+          maxOutputTokens: anthropicSettings.legacy.maxOutputTokens.default,
+        },
+      });
+      expect(client.modelOptions.maxOutputTokens).toBe(
+        anthropicSettings.legacy.maxOutputTokens.default,
+      );
     });
   });
 
@@ -134,6 +171,238 @@ describe('AnthropicClient', () => {
       const { prompt } = result;
       expect(prompt).toContain('Human\'s name: John');
       expect(prompt).toContain('You are Claude-2');
+    });
+  });
+
+  describe('getClient', () => {
+    it('should set legacy maxOutputTokens for non-Claude-3 models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-2',
+          maxOutputTokens: anthropicSettings.legacy.maxOutputTokens.default,
+        },
+      });
+      expect(client.modelOptions.maxOutputTokens).toBe(
+        anthropicSettings.legacy.maxOutputTokens.default,
+      );
+    });
+
+    it('should not set legacy maxOutputTokens for Claude-3 models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-3-opus-20240229',
+          maxOutputTokens: anthropicSettings.legacy.maxOutputTokens.default,
+        },
+      });
+      expect(client.modelOptions.maxOutputTokens).toBe(
+        anthropicSettings.legacy.maxOutputTokens.default,
+      );
+    });
+
+    it('should add "max-tokens" & "prompt-caching" beta header for claude-3-5-sonnet model', () => {
+      const client = new AnthropicClient('test-api-key');
+      const modelOptions = {
+        model: 'claude-3-5-sonnet-20241022',
+      };
+      client.setOptions({ modelOptions, promptCache: true });
+      const anthropicClient = client.getClient(modelOptions);
+      expect(anthropicClient._options.defaultHeaders).toBeDefined();
+      expect(anthropicClient._options.defaultHeaders).toHaveProperty('anthropic-beta');
+      expect(anthropicClient._options.defaultHeaders['anthropic-beta']).toBe(
+        'max-tokens-3-5-sonnet-2024-07-15,prompt-caching-2024-07-31',
+      );
+    });
+
+    it('should add "prompt-caching" beta header for claude-3-haiku model', () => {
+      const client = new AnthropicClient('test-api-key');
+      const modelOptions = {
+        model: 'claude-3-haiku-2028',
+      };
+      client.setOptions({ modelOptions, promptCache: true });
+      const anthropicClient = client.getClient(modelOptions);
+      expect(anthropicClient._options.defaultHeaders).toBeDefined();
+      expect(anthropicClient._options.defaultHeaders).toHaveProperty('anthropic-beta');
+      expect(anthropicClient._options.defaultHeaders['anthropic-beta']).toBe(
+        'prompt-caching-2024-07-31',
+      );
+    });
+
+    it('should add "prompt-caching" beta header for claude-3-opus model', () => {
+      const client = new AnthropicClient('test-api-key');
+      const modelOptions = {
+        model: 'claude-3-opus-2028',
+      };
+      client.setOptions({ modelOptions, promptCache: true });
+      const anthropicClient = client.getClient(modelOptions);
+      expect(anthropicClient._options.defaultHeaders).toBeDefined();
+      expect(anthropicClient._options.defaultHeaders).toHaveProperty('anthropic-beta');
+      expect(anthropicClient._options.defaultHeaders['anthropic-beta']).toBe(
+        'prompt-caching-2024-07-31',
+      );
+    });
+
+    it('should not add beta header for claude-3-5-sonnet-latest model', () => {
+      const client = new AnthropicClient('test-api-key');
+      const modelOptions = {
+        model: 'anthropic/claude-3-5-sonnet-latest',
+      };
+      client.setOptions({ modelOptions, promptCache: true });
+      const anthropicClient = client.getClient(modelOptions);
+      expect(anthropicClient.defaultHeaders).not.toHaveProperty('anthropic-beta');
+    });
+
+    it('should not add beta header for other models', () => {
+      const client = new AnthropicClient('test-api-key');
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-2',
+        },
+      });
+      const anthropicClient = client.getClient();
+      expect(anthropicClient.defaultHeaders).not.toHaveProperty('anthropic-beta');
+    });
+  });
+
+  describe('calculateCurrentTokenCount', () => {
+    let client;
+
+    beforeEach(() => {
+      client = new AnthropicClient('test-api-key');
+    });
+
+    it('should calculate correct token count when usage is provided', () => {
+      const tokenCountMap = {
+        msg1: 10,
+        msg2: 20,
+        currentMsg: 30,
+      };
+      const currentMessageId = 'currentMsg';
+      const usage = {
+        input_tokens: 70,
+        output_tokens: 50,
+      };
+
+      const result = client.calculateCurrentTokenCount({ tokenCountMap, currentMessageId, usage });
+
+      expect(result).toBe(40); // 70 - (10 + 20) = 40
+    });
+
+    it('should return original estimate if calculation results in negative value', () => {
+      const tokenCountMap = {
+        msg1: 40,
+        msg2: 50,
+        currentMsg: 30,
+      };
+      const currentMessageId = 'currentMsg';
+      const usage = {
+        input_tokens: 80,
+        output_tokens: 50,
+      };
+
+      const result = client.calculateCurrentTokenCount({ tokenCountMap, currentMessageId, usage });
+
+      expect(result).toBe(30); // Original estimate
+    });
+
+    it('should handle cache creation and read input tokens', () => {
+      const tokenCountMap = {
+        msg1: 10,
+        msg2: 20,
+        currentMsg: 30,
+      };
+      const currentMessageId = 'currentMsg';
+      const usage = {
+        input_tokens: 50,
+        cache_creation_input_tokens: 10,
+        cache_read_input_tokens: 20,
+        output_tokens: 40,
+      };
+
+      const result = client.calculateCurrentTokenCount({ tokenCountMap, currentMessageId, usage });
+
+      expect(result).toBe(50); // (50 + 10 + 20) - (10 + 20) = 50
+    });
+
+    it('should handle missing usage properties', () => {
+      const tokenCountMap = {
+        msg1: 10,
+        msg2: 20,
+        currentMsg: 30,
+      };
+      const currentMessageId = 'currentMsg';
+      const usage = {
+        output_tokens: 40,
+      };
+
+      const result = client.calculateCurrentTokenCount({ tokenCountMap, currentMessageId, usage });
+
+      expect(result).toBe(30); // Original estimate
+    });
+
+    it('should handle empty tokenCountMap', () => {
+      const tokenCountMap = {};
+      const currentMessageId = 'currentMsg';
+      const usage = {
+        input_tokens: 50,
+        output_tokens: 40,
+      };
+
+      const result = client.calculateCurrentTokenCount({ tokenCountMap, currentMessageId, usage });
+
+      expect(result).toBe(50);
+      expect(Number.isNaN(result)).toBe(false);
+    });
+
+    it('should handle zero values in usage', () => {
+      const tokenCountMap = {
+        msg1: 10,
+        currentMsg: 20,
+      };
+      const currentMessageId = 'currentMsg';
+      const usage = {
+        input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+        output_tokens: 0,
+      };
+
+      const result = client.calculateCurrentTokenCount({ tokenCountMap, currentMessageId, usage });
+
+      expect(result).toBe(20); // Should return original estimate
+      expect(Number.isNaN(result)).toBe(false);
+    });
+
+    it('should handle undefined usage', () => {
+      const tokenCountMap = {
+        msg1: 10,
+        currentMsg: 20,
+      };
+      const currentMessageId = 'currentMsg';
+      const usage = undefined;
+
+      const result = client.calculateCurrentTokenCount({ tokenCountMap, currentMessageId, usage });
+
+      expect(result).toBe(20); // Should return original estimate
+      expect(Number.isNaN(result)).toBe(false);
+    });
+
+    it('should handle non-numeric values in tokenCountMap', () => {
+      const tokenCountMap = {
+        msg1: 'ten',
+        currentMsg: 20,
+      };
+      const currentMessageId = 'currentMsg';
+      const usage = {
+        input_tokens: 30,
+        output_tokens: 10,
+      };
+
+      const result = client.calculateCurrentTokenCount({ tokenCountMap, currentMessageId, usage });
+
+      expect(result).toBe(30); // Should return 30 (input_tokens) - 0 (ignored 'ten') = 30
+      expect(Number.isNaN(result)).toBe(false);
     });
   });
 });

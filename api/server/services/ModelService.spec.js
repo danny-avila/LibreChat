@@ -1,7 +1,16 @@
 const axios = require('axios');
+const { EModelEndpoint, defaultModels } = require('librechat-data-provider');
 const { logger } = require('~/config');
 
-const { fetchModels, getOpenAIModels } = require('./ModelService');
+const {
+  fetchModels,
+  splitAndTrim,
+  getOpenAIModels,
+  getGoogleModels,
+  getBedrockModels,
+  getAnthropicModels,
+} = require('./ModelService');
+
 jest.mock('~/utils', () => {
   const originalUtils = jest.requireActual('~/utils');
   return {
@@ -282,7 +291,9 @@ describe('fetchModels with Ollama specific logic', () => {
     });
 
     expect(models).toEqual(['Ollama-Base', 'Ollama-Advanced']);
-    expect(axios.get).toHaveBeenCalledWith('https://api.ollama.test.com/api/tags'); // Adjusted to expect only one argument if no options are passed
+    expect(axios.get).toHaveBeenCalledWith('https://api.ollama.test.com/api/tags', {
+      timeout: 5000,
+    });
   });
 
   it('should handle errors gracefully when fetching Ollama models fails', async () => {
@@ -327,5 +338,73 @@ describe('fetchModels with Ollama specific logic', () => {
       'https://api.test.com/models', // Ensure the correct API endpoint is called
       expect.any(Object), // Ensuring some object (headers, etc.) is passed
     );
+  });
+});
+
+describe('splitAndTrim', () => {
+  it('should split a string by commas and trim each value', () => {
+    const input = ' model1, model2 , model3,model4 ';
+    const expected = ['model1', 'model2', 'model3', 'model4'];
+    expect(splitAndTrim(input)).toEqual(expected);
+  });
+
+  it('should return an empty array for empty input', () => {
+    expect(splitAndTrim('')).toEqual([]);
+  });
+
+  it('should return an empty array for null input', () => {
+    expect(splitAndTrim(null)).toEqual([]);
+  });
+
+  it('should return an empty array for undefined input', () => {
+    expect(splitAndTrim(undefined)).toEqual([]);
+  });
+
+  it('should filter out empty values after trimming', () => {
+    const input = 'model1,,  ,model2,';
+    const expected = ['model1', 'model2'];
+    expect(splitAndTrim(input)).toEqual(expected);
+  });
+});
+
+describe('getAnthropicModels', () => {
+  it('returns default models when ANTHROPIC_MODELS is not set', () => {
+    delete process.env.ANTHROPIC_MODELS;
+    const models = getAnthropicModels();
+    expect(models).toEqual(defaultModels[EModelEndpoint.anthropic]);
+  });
+
+  it('returns models from ANTHROPIC_MODELS when set', () => {
+    process.env.ANTHROPIC_MODELS = 'claude-1, claude-2 ';
+    const models = getAnthropicModels();
+    expect(models).toEqual(['claude-1', 'claude-2']);
+  });
+});
+
+describe('getGoogleModels', () => {
+  it('returns default models when GOOGLE_MODELS is not set', () => {
+    delete process.env.GOOGLE_MODELS;
+    const models = getGoogleModels();
+    expect(models).toEqual(defaultModels[EModelEndpoint.google]);
+  });
+
+  it('returns models from GOOGLE_MODELS when set', () => {
+    process.env.GOOGLE_MODELS = 'gemini-pro, bard ';
+    const models = getGoogleModels();
+    expect(models).toEqual(['gemini-pro', 'bard']);
+  });
+});
+
+describe('getBedrockModels', () => {
+  it('returns default models when BEDROCK_AWS_MODELS is not set', () => {
+    delete process.env.BEDROCK_AWS_MODELS;
+    const models = getBedrockModels();
+    expect(models).toEqual(defaultModels[EModelEndpoint.bedrock]);
+  });
+
+  it('returns models from BEDROCK_AWS_MODELS when set', () => {
+    process.env.BEDROCK_AWS_MODELS = 'anthropic.claude-v2, ai21.j2-ultra ';
+    const models = getBedrockModels();
+    expect(models).toEqual(['anthropic.claude-v2', 'ai21.j2-ultra']);
   });
 });

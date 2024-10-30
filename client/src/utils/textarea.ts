@@ -31,13 +31,12 @@ export function insertTextAtCursor(element: HTMLTextAreaElement, textToInsert: s
 
  3) Reseting back to scrollHeight reads and applies the ideal height for the current content dynamically
  */
-export const forceResize = (textAreaRef: React.RefObject<HTMLTextAreaElement>) => {
-  if (!textAreaRef.current) {
+export const forceResize = (element: HTMLTextAreaElement | null) => {
+  if (!element) {
     return;
   }
-  textAreaRef.current.style.height = 'auto';
-  textAreaRef.current.offsetHeight;
-  textAreaRef.current.style.height = `${textAreaRef.current.scrollHeight}px`;
+  element.style.height = 'auto';
+  element.style.height = `${element.scrollHeight}px`;
 };
 
 /**
@@ -59,13 +58,14 @@ export const trimUndoneRange = (textAreaRef: React.RefObject<HTMLTextAreaElement
 };
 
 /**
- * Remove the "@" character from the end of the textarea's text if it's present.
- * This function ensures that the "@" is only removed if it's the last character.
+ * Remove the specified character from the end of the textarea's text if it's present.
+ * This function ensures that the specified character is only removed if it's the last character.
  *
  * @param {HTMLTextAreaElement} textarea - The textarea element where text manipulation will occur.
+ * @param {string} charToRemove - The character to remove if it's the last character in the textarea's value.
  */
-export function removeAtSymbolIfLast(textarea: HTMLTextAreaElement) {
-  if (textarea.value.endsWith('@')) {
+export function removeCharIfLast(textarea: HTMLTextAreaElement, charToRemove: string) {
+  if (textarea.value.endsWith(charToRemove)) {
     textarea.value = textarea.value.slice(0, -1);
     textarea.setSelectionRange(textarea.value.length, textarea.value.length);
     textarea.dispatchEvent(new Event('input', { bubbles: true }));

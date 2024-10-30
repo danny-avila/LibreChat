@@ -1,9 +1,9 @@
 import filenamify from 'filenamify';
 import exportFromJSON from 'export-from-json';
+import { QueryKeys } from 'librechat-data-provider';
 import { useCallback, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilState, useSetRecoilState, useRecoilValue } from 'recoil';
-import { QueryKeys, modularEndpoints, isAssistantsEndpoint } from 'librechat-data-provider';
 import { useCreatePresetMutation, useGetModelsQuery } from 'librechat-data-provider/react-query';
 import type { TPreset, TEndpointsConfig } from 'librechat-data-provider';
 import {
@@ -11,7 +11,7 @@ import {
   useDeletePresetMutation,
   useGetPresetsQuery,
 } from '~/data-provider';
-import { cleanupPreset, getEndpointField, removeUnavailableTools } from '~/utils';
+import { cleanupPreset, removeUnavailableTools, getConvoSwitchLogic } from '~/utils';
 import useDefaultConvo from '~/hooks/Conversations/useDefaultConvo';
 import { useChatContext, useToastContext } from '~/Providers';
 import { useAuthContext } from '~/hooks/AuthContext';
@@ -124,8 +124,6 @@ export default function usePresets() {
 
   const getDefaultConversation = useDefaultConvo();
 
-  const { endpoint } = conversation ?? {};
-
   const importPreset = (jsonPreset: TPreset) => {
     createPresetMutation.mutate(
       { ...jsonPreset },
@@ -171,34 +169,38 @@ export default function usePresets() {
 
     const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
 
-    const currentEndpointType = getEndpointField(endpointsConfig, endpoint, 'type');
-    const endpointType = getEndpointField(endpointsConfig, newPreset.endpoint, 'type');
-    const isAssistantSwitch =
-      isAssistantsEndpoint(newPreset.endpoint) &&
-      isAssistantsEndpoint(conversation?.endpoint) &&
-      conversation?.endpoint === newPreset.endpoint;
+    const {
+      shouldSwitch,
+      isNewModular,
+      newEndpointType,
+      isCurrentModular,
+      isExistingConversation,
+    } = getConvoSwitchLogic({
+      newEndpoint: newPreset.endpoint ?? '',
+      modularChat,
+      conversation,
+      endpointsConfig,
+    });
 
-    if (
-      (modularEndpoints.has(endpoint ?? '') ||
-        modularEndpoints.has(currentEndpointType ?? '') ||
-        isAssistantSwitch) &&
-      (modularEndpoints.has(newPreset?.endpoint ?? '') ||
-        modularEndpoints.has(endpointType ?? '') ||
-        isAssistantSwitch) &&
-      (endpoint === newPreset?.endpoint || modularChat || isAssistantSwitch)
-    ) {
+    const isModular = isCurrentModular && isNewModular && shouldSwitch;
+    if (isExistingConversation && isModular) {
       const currentConvo = getDefaultConversation({
         /* target endpointType is necessary to avoid endpoint mixing */
-        conversation: { ...(conversation ?? {}), endpointType },
-        preset: { ...newPreset, endpointType },
+        conversation: { ...(conversation ?? {}), endpointType: newEndpointType },
+        preset: { ...newPreset, endpointType: newEndpointType },
       });
 
       /* We don't reset the latest message, only when changing settings mid-converstion */
-      newConversation({ template: currentConvo, preset: currentConvo, keepLatestMessage: true });
+      newConversation({
+        template: currentConvo,
+        preset: currentConvo,
+        keepLatestMessage: true,
+        keepAddedConvos: true,
+      });
       return;
     }
 
-    newConversation({ preset: newPreset });
+    newConversation({ preset: newPreset, keepAddedConvos: isModular });
   };
 
   const onChangePreset = (preset: TPreset) => {
