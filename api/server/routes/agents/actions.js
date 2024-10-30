@@ -1,20 +1,18 @@
 const express = require('express');
 const { nanoid } = require('nanoid');
-const { actionDelimiter } = require('librechat-data-provider');
+const { actionDelimiter, SystemRoles } = require('librechat-data-provider');
 const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
 const { getAgent, updateAgent } = require('~/models/Agent');
-const { getRoleByName } = require('~/models/Role');
 const { logger } = require('~/config');
 
 const router = express.Router();
 
 // If the user has ADMIN role and the adminCanEditActions is enabled in assistants config 
 // then action edition is possible even if not owner of the assistant
-const isAdmin = async (req) => {
-  const userRole = await getRoleByName(req.user.role);
+const isAdmin = (req) => {
   const adminCanEditActions = req.app.locals?.assistants?.adminCanEditActions ?? false;
-  return userRole?.name === 'ADMIN' && adminCanEditActions;
+  return req.user.role === SystemRoles.ADMIN && adminCanEditActions;
 };
 
 /**
@@ -25,7 +23,7 @@ const isAdmin = async (req) => {
  */
 router.get('/', async (req, res) => {
   try {
-    const admin = await isAdmin(req);
+    const admin = isAdmin(req);
     // If admin, get all actions, otherwise only user's actions
     const searchParams = admin ? {} : { user: req.user.id };
     res.json(await getActions(searchParams));
@@ -64,7 +62,7 @@ router.post('/:agent_id', async (req, res) => {
 
     const action_id = _action_id ?? nanoid();
     const initialPromises = [];
-    const admin = await isAdmin(req);
+    const admin = isAdmin(req);
 
     // If admin, can edit any agent, otherwise only user's agents
     const agentQuery = admin ? { id: agent_id } : { id: agent_id, author: req.user.id };
@@ -137,7 +135,7 @@ router.post('/:agent_id', async (req, res) => {
 router.delete('/:agent_id/:action_id', async (req, res) => {
   try {
     const { agent_id, action_id } = req.params;
-    const admin = await isAdmin(req);
+    const admin = isAdmin(req);
 
     // If admin, can delete any agent, otherwise only user's agents
     const agentQuery = admin ? { id: agent_id } : { id: agent_id, author: req.user.id };
