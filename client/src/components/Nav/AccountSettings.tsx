@@ -30,7 +30,7 @@ function AccountSettings() {
       <Select.Select
         aria-label={localize('com_nav_account_settings')}
         data-testid="nav-user"
-        className="mt-text-sm flex h-auto w-full items-center gap-2 rounded-xl p-2 text-sm transition-all duration-200 ease-in-out hover:bg-accent"
+        className="mt-text-sm flex h-auto w-full items-center gap-2 rounded-xl p-2 text-sm transition-all duration-200 ease-in-out hover:bg-accent rtl:mr-1"
       >
         <div className="-ml-0.9 -mt-0.8 h-8 w-8 flex-shrink-0">
           <div className="relative flex">
@@ -71,7 +71,7 @@ function AccountSettings() {
           translate: '0px',
         }}
       >
-        <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm" role="note">
+        <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm text-center" role="note">
           {user?.email ?? localize('com_nav_user')}
         </div>
         <DropdownMenuSeparator />
@@ -79,7 +79,7 @@ function AccountSettings() {
           balanceQuery.data != null &&
           !isNaN(parseFloat(balanceQuery.data)) && (
           <>
-            <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm" role="note">
+            <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm text-center" role="note">
               {`Balance: ${parseFloat(balanceQuery.data).toFixed(2)}`}
             </div>
             <DropdownMenuSeparator />
@@ -89,6 +89,9 @@ function AccountSettings() {
           value=""
           onClick={() => setShowFiles(true)}
           className="select-item text-sm"
+          style={{
+            direction: 'rtl',
+          }}
         >
           <FileText className="icon-md" aria-hidden="true" />
           {localize('com_nav_my_files')}
@@ -98,6 +101,9 @@ function AccountSettings() {
             value=""
             onClick={() => window.open(startupConfig?.helpAndFaqURL, '_blank')}
             className="select-item text-sm"
+            style={{
+              direction: 'rtl',
+            }}
           >
             <LinkIcon aria-hidden="true" />
             {localize('com_nav_help_faq')}
@@ -107,6 +113,9 @@ function AccountSettings() {
           value=""
           onClick={() => setShowSettings(true)}
           className="select-item text-sm"
+          style={{
+            direction: 'rtl',
+          }}
         >
           <GearIcon className="icon-md" aria-hidden="true" />
           {localize('com_nav_settings')}
@@ -117,6 +126,9 @@ function AccountSettings() {
           onClick={() => logout()}
           value="logout"
           className="select-item text-sm"
+          style={{
+            direction: 'rtl',
+          }}
         >
           <LogOut className="icon-md" />
           {localize('com_nav_log_out')}

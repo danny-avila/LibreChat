@@ -1,9 +1,9 @@
 import { useRecoilState } from 'recoil';
 import * as Select from '@ariakit/react/select';
 import { Fragment, useState, memo } from 'react';
-import { FileText, LogOut } from 'lucide-react';
+import { FileText, LogOut, Package } from 'lucide-react';
 import { useGetUserBalance, useGetStartupConfig } from 'librechat-data-provider/react-query';
-import {LinkIcon, GearIcon, DropdownMenuSeparator, Panel} from '~/components';
+import { LinkIcon, GearIcon, DropdownMenuSeparator, Panel } from '~/components';
 import FilesView from '~/components/Chat/Input/Files/FilesView';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useAvatar from '~/hooks/Messages/useAvatar';
@@ -11,6 +11,7 @@ import { GPTIcon, ChatGPTMinimalIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 import Settings from './Settings';
 import store from '~/store';
+import SubscriptionView from './SubscriptionView';
 
 function SubscriptionSettings() {
   const localize = useLocalize();
@@ -20,7 +21,7 @@ function SubscriptionSettings() {
     enabled: !!isAuthenticated && startupConfig?.checkBalance,
   });
   const [showSettings, setShowSettings] = useState(false);
-  const [showFiles, setShowFiles] = useRecoilState(store.showFiles);
+  const [showSubscription, setshowSubscription] = useRecoilState(store.showSubscription);
 
   const avatarSrc = useAvatar(user);
   const name = user?.avatar ?? user?.username ?? '';
@@ -65,59 +66,24 @@ function SubscriptionSettings() {
           translate: '0px',
         }}
       >
-        <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm" role="note">
-          {user?.email ?? localize('com_nav_user')}
+        <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm text-center" role="note">
+            بسته پیشرفته کیو استار
         </div>
         <DropdownMenuSeparator/>
-        {startupConfig?.checkBalance === true &&
-                balanceQuery.data != null &&
-                !isNaN(parseFloat(balanceQuery.data)) && (
-          <>
-            <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm" role="note">
-              {`Balance: ${parseFloat(balanceQuery.data).toFixed(2)}`}
-            </div>
-            <DropdownMenuSeparator/>
-          </>
-        )}
         <Select.SelectItem
           value=""
-          onClick={() => setShowFiles(true)}
-          className="select-item text-sm"
+          onClick={() => setshowSubscription(true)}
+          className="select-item text-sm text-right rtl:mr-1"
+          style={{
+            direction: 'rtl',
+          }}
         >
-          <FileText className="icon-md" aria-hidden="true" />
-          {localize('com_nav_my_files')}
-        </Select.SelectItem>
-        {startupConfig?.helpAndFaqURL !== '/' && (
-          <Select.SelectItem
-            value=""
-            onClick={() => window.open(startupConfig?.helpAndFaqURL, '_blank')}
-            className="select-item text-sm"
-          >
-            <LinkIcon aria-hidden="true" />
-            {localize('com_nav_help_faq')}
-          </Select.SelectItem>
-        )}
-        <Select.SelectItem
-          value=""
-          onClick={() => setShowSettings(true)}
-          className="select-item text-sm"
-        >
-          <GearIcon className="icon-md" aria-hidden="true" />
-          {localize('com_nav_settings')}
-        </Select.SelectItem>
-        <DropdownMenuSeparator />
-        <Select.SelectItem
-          aria-selected={true}
-          onClick={() => logout()}
-          value="logout"
-          className="select-item text-sm"
-        >
-          <LogOut className="icon-md" />
-          {localize('com_nav_log_out')}
+          <Package className="icon-md" aria-hidden="true" />
+            {localize('com_nav_subscription')}
+
         </Select.SelectItem>
       </Select.SelectPopover>
-      {showFiles && <FilesView open={showFiles} onOpenChange={setShowFiles} />}
-      {showSettings && <Settings open={showSettings} onOpenChange={setShowSettings} />}
+      {showSubscription && <SubscriptionView open={showSubscription} onOpenChange={setshowSubscription} />}
     </Select.SelectProvider>
   );
 }

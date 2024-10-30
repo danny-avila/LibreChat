@@ -754,4 +754,6 @@ export default {
   com_ui_no_terms_content: 'محتوای شرایط و ضوابط برای نمایش وجود ندارد',
   com_nav_lang_farsi: 'فارسی',
   com_nav_subscription: 'اشتراک شما',
+  com_nav_subscription_plans: 'بسته های کیو استار',
+
 };
