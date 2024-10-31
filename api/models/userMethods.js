@@ -1,8 +1,8 @@
 const bcrypt = require('bcryptjs');
 const signPayload = require('~/server/services/signPayload');
 const { isEnabled } = require('~/server/utils/handleText');
-const User = require('./User');
 const Balance = require('./Balance');
+const User = require('./User');
 
 /**
  * Retrieve a user by ID and convert the found user document to a plain object.
