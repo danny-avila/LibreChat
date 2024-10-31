@@ -1,7 +1,6 @@
 const multer = require('multer');
 const express = require('express');
-const { CacheKeys } = require('librechat-data-provider');
-const { initializeClient } = require('~/server/services/Endpoints/assistants');
+const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
 const { getConvosByPage, deleteConvos, getConvo, saveConvo } = require('~/models/Conversation');
 const { storage, importFileFilter } = require('~/server/routes/files/multer');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
@@ -11,6 +10,10 @@ const { createImportLimiters } = require('~/server/middleware');
 const getLogStores = require('~/cache/getLogStores');
 const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
+const assistantClients = {
+  [EModelEndpoint.azureAssistants]: require('~/server/services/Endpoints/azureAssistants'),
+  [EModelEndpoint.assistants]: require('~/server/services/Endpoints/assistants'),
+};
 
 const router = express.Router();
 router.use(requireJwtAuth);
@@ -74,7 +77,7 @@ router.post('/gen_title', async (req, res) => {
 
 router.post('/clear', async (req, res) => {
   let filter = {};
-  const { conversationId, source, thread_id } = req.body.arg;
+  const { conversationId, source, thread_id, endpoint } = req.body.arg;
   if (conversationId) {
     filter = { conversationId };
   }
@@ -83,9 +86,12 @@ router.post('/clear', async (req, res) => {
     return res.status(200).send('No conversationId provided');
   }
 
-  if (thread_id) {
+  if (
+    typeof endpoint != 'undefined' &&
+    Object.prototype.propertyIsEnumerable.call(assistantClients, endpoint)
+  ) {
     /** @type {{ openai: OpenAI}} */
-    const { openai } = await initializeClient({ req, res });
+    const { openai } = await assistantClients[endpoint].initializeClient({ req, res });
     try {
       const response = await openai.beta.threads.del(thread_id);
       logger.debug('Deleted OpenAI thread:', response);
