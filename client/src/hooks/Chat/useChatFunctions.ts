@@ -19,13 +19,14 @@ import type {
 } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import type { TAskFunction, ExtendedFile } from '~/common';
+import { getEndpointField, replaceSpecialVars, logger } from '~/utils';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import store, { useGetEphemeralAgent } from '~/store';
 import { getArtifactsMode } from '~/utils/artifacts';
-import { getEndpointField, logger } from '~/utils';
 import useUserKey from '~/hooks/Input/useUserKey';
 import { useNavigate } from 'react-router-dom';
+import { useAuthContext } from '~/hooks';
 
 const logChatRequest = (request: Record<string, unknown>) => {
   logger.log('=====================================\nAsk function called with:');
@@ -66,19 +67,19 @@ export default function useChatFunctions({
   setSubmission: SetterOrUpdater<TSubmission | null>;
   setLatestMessage?: SetterOrUpdater<TMessage | null>;
 }) {
+  const navigate = useNavigate();
+  const getSender = useGetSender();
+  const { user } = useAuthContext();
+  const queryClient = useQueryClient();
+  const setFilesToDelete = useSetFilesToDelete();
   const getEphemeralAgent = useGetEphemeralAgent();
+  const isTemporary = useRecoilValue(store.isTemporary);
   const codeArtifacts = useRecoilValue(store.codeArtifacts);
   const includeShadcnui = useRecoilValue(store.includeShadcnui);
-  const customPromptMode = useRecoilValue(store.customPromptMode);
-  const navigate = useNavigate();
-  const resetLatestMultiMessage = useResetRecoilState(store.latestMessageFamily(index + 1));
-  const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
-  const setFilesToDelete = useSetFilesToDelete();
-  const getSender = useGetSender();
-  const isTemporary = useRecoilValue(store.isTemporary);
-
-  const queryClient = useQueryClient();
   const { getExpiry } = useUserKey(conversation?.endpoint ?? '');
+  const customPromptMode = useRecoilValue(store.customPromptMode);
+  const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
+  const resetLatestMultiMessage = useResetRecoilState(store.latestMessageFamily(index + 1));
 
   const ask: TAskFunction = (
     {
@@ -127,6 +128,13 @@ export default function useChatFunctions({
     const isEditOrContinue = isEdited || isContinued;
 
     let currentMessages: TMessage[] | null = overrideMessages ?? getMessages() ?? [];
+
+    if (conversation?.promptPrefix) {
+      conversation.promptPrefix = replaceSpecialVars({
+        text: conversation.promptPrefix,
+        user,
+      });
+    }
 
     // construct the query message
     // this is not a real messageId, it is used as placeholder before real messageId returned
