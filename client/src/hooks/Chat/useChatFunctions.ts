@@ -24,6 +24,8 @@ import { getArtifactsMode } from '~/utils/artifacts';
 import { getEndpointField, logger } from '~/utils';
 import useUserKey from '~/hooks/Input/useUserKey';
 import store from '~/store';
+import { replaceSpecialVars } from '~/utils/prompts';
+import { useAuthContext } from '~/hooks';
 
 const logChatRequest = (request: Record<string, unknown>) => {
   logger.log('=====================================\nAsk function called with:');
@@ -62,9 +64,9 @@ export default function useChatFunctions({
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const setFilesToDelete = useSetFilesToDelete();
   const getSender = useGetSender();
-
   const queryClient = useQueryClient();
   const { getExpiry } = useUserKey(conversation?.endpoint ?? '');
+  const { user } = useAuthContext();
 
   const ask: TAskFunction = (
     {
@@ -111,6 +113,14 @@ export default function useChatFunctions({
     const isEditOrContinue = isEdited || isContinued;
 
     let currentMessages: TMessage[] | null = overrideMessages ?? getMessages() ?? [];
+
+    // Check and replace special variables in promptPrefix
+    if (conversation?.promptPrefix) {
+      conversation.promptPrefix = replaceSpecialVars({
+        text: conversation.promptPrefix,
+        user
+      });
+    }
 
     // construct the query message
     // this is not a real messageId, it is used as placeholder before real messageId returned
