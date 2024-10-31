@@ -55,7 +55,7 @@ bower_components/
 .flooignore
 
 #config file
-librechat.yaml
+! librechat.yaml
 librechat.yml
 
 # Environment
