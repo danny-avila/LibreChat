@@ -39,8 +39,7 @@ export default function Footer({ className }: { className?: string }) {
       ? config.customFooter
       : '[LibreChat ' +
         Constants.VERSION +
-        '](https://librechat.ai) - ' +
-        localize('com_ui_latest_footer')
+        '](https://librechat.ai)'
   ).split('|');
 
   useEffect(() => {

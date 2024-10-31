@@ -1,19 +1,13 @@
-// const { fontFamily } = require('tailwindcss/defaultTheme');
-
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: ['./src/**/*.{js,jsx,ts,tsx}'],
-  // darkMode: 'class',
-  darkMode: ['class'],
+  darkMode: 'class',
+  darkMode: ['class', '[data-theme="dark"]'],
   theme: {
     fontFamily: {
       sans: ['Inter', 'sans-serif'],
       mono: ['Roboto Mono', 'monospace'],
     },
-    // fontFamily: {
-    //   sans: ['Söhne', 'sans-serif'],
-    //   mono: ['Söhne Mono', 'monospace'],
-    // },
     extend: {
       width: {
         authPageWidth: '370px',
