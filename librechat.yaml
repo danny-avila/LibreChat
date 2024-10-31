@@ -12,6 +12,6 @@ speech:
     elevenlabs:
       apiKey: '${TTS_API_KEY}'
       model: 'eleven_multilingual_v2'
-      voices: ['XrExE9yKIg1WjnnlVkGX', 'XrExE9yKIg1WjnnlVkGX', 'XrExE9yKIg1WjnnlVkGX']
+      voices: ['XrExE9yKIg1WjnnlVkGX', 'Xb7hH8MSUJpSbSDYk0k2', 'pqHfZKP75CvOlQylNhV4']
 
 includedTools: [web-browser, dalle, calculator]
