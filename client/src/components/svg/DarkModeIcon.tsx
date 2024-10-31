@@ -1,13 +1,6 @@
 import React, { useEffect } from 'react';
 
 export default function DarkModeIcon() {
-  useEffect(() => {
-    if (!document.documentElement.classList.contains('dark')) {
-      document.documentElement.classList.add('dark');
-    }
-    localStorage.setItem('theme', 'dark');
-  }, []);
-
   return (
     <svg
       stroke="currentColor"
