@@ -8,7 +8,7 @@ const { logger } = require('~/config');
  * Deletes a file from the vector database. This function takes a file object, constructs the full path, and
  * verifies the path's validity before deleting the file. If the path is invalid, an error is thrown.
  *
- * @param {Express.Request} req - The request object from Express. It should have an `app.locals.paths` object with
+ * @param {ServerRequest} req - The request object from Express. It should have an `app.locals.paths` object with
  *                       a `publicPath` property.
  * @param {MongoFile} file - The file object to be deleted. It should have a `filepath` property that is
  *                           a string representing the path of the file relative to the publicPath.

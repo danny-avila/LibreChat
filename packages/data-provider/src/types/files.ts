@@ -69,6 +69,7 @@ export type TFile = {
   height?: number;
   expiresAt?: string | Date;
   preview?: string;
+  metadata?: { fileIdentifier?: string };
   createdAt?: string | Date;
   updatedAt?: string | Date;
 };
