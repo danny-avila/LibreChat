@@ -313,7 +313,7 @@ export default function AgentConfig({
                 <div className="shadow-stroke relative flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-white text-black dark:bg-white">
                   <Icon
                     className="h-2/3 w-2/3"
-                    endpoint={provider as string}
+                    endpoint={providerValue as string}
                     endpointType={endpointType}
                     iconURL={endpointIconURL}
                   />
