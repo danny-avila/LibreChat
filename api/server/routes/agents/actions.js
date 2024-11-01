@@ -82,7 +82,7 @@ router.post('/:agent_id', async (req, res) => {
       metadata = { ...action.metadata, ...metadata };
     }
 
-    const { actions: _actions = [] } = agent ?? {};
+    const { actions: _actions = [], author: agent_author } = agent ?? {};
     const actions = [];
     for (const action of _actions) {
       const [_action_domain, current_action_id] = action.split(actionDelimiter);
@@ -104,10 +104,17 @@ router.post('/:agent_id', async (req, res) => {
 
     const updatedAgent = await updateAgent(agentQuery, { tools, actions });
 
+    // Only update user field for new actions
+    const actionUpdateData = { metadata, agent_id };
+    if (!actions_result || !actions_result.length) {
+      // For new actions, use the agent owner's user ID
+      actionUpdateData.user = agent_author || req.user.id;
+    }
+
     /** @type {[Action]} */
     const updatedAction = await updateAction(
       { action_id },
-      { metadata, agent_id, user: req.user.id },
+      actionUpdateData,
     );
 
     const sensitiveFields = ['api_key', 'oauth_client_id', 'oauth_client_secret'];
