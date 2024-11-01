@@ -93,7 +93,6 @@ registration:
 # Definition of custom endpoints
 endpoints:
   # assistants:
-  #   adminCanEditActions: false # Allow ADMIN users to see and edit all actions  
   #   disableBuilder: false # Disable Assistants Builder Interface by setting to `true`
   #   pollIntervalMs: 3000  # Polling interval for checking assistant updates
   #   timeoutMs: 180000  # Timeout for assistant operations

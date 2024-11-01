@@ -239,7 +239,6 @@ export type TConfig = {
   userProvide?: boolean | null;
   userProvideURL?: boolean | null;
   disableBuilder?: boolean;
-  adminCanEditActions?: boolean;
   retrievalModels?: string[];
   capabilities?: string[];
 };

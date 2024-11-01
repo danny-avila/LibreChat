@@ -8,11 +8,10 @@ const { logger } = require('~/config');
 
 const router = express.Router();
 
-// If the user has ADMIN role and the adminCanEditActions is enabled in assistants config 
+// If the user has ADMIN role
 // then action edition is possible even if not owner of the assistant
 const isAdmin = (req) => {
-  const adminCanEditActions = req.app.locals?.assistants?.adminCanEditActions ?? false;
-  return req.user.role === SystemRoles.ADMIN && adminCanEditActions;
+  return req.user.role === SystemRoles.ADMIN;
 };
 
 /**
@@ -104,6 +103,7 @@ router.post('/:agent_id', async (req, res) => {
       .concat(functions.map((tool) => `${tool.function.name}${actionDelimiter}${domain}`));
 
     const updatedAgent = await updateAgent(agentQuery, { tools, actions });
+
     /** @type {[Action]} */
     const updatedAction = await updateAction(
       { action_id },

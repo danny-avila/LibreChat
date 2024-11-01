@@ -170,7 +170,6 @@ export const assistantEndpointSchema = baseEndpointSchema.merge(
   z.object({
     /* assistants specific */
     disableBuilder: z.boolean().optional(),
-    adminCanEditActions: z.boolean().optional(),
     pollIntervalMs: z.number().optional(),
     timeoutMs: z.number().optional(),
     version: z.union([z.string(), z.number()]).default(2),
@@ -209,7 +208,6 @@ export const agentsEndpointSChema = baseEndpointSchema.merge(
   z.object({
     /* assistants specific */
     disableBuilder: z.boolean().optional(),
-    adminCanEditActions: z.boolean().optional(),
     pollIntervalMs: z.number().optional(),
     timeoutMs: z.number().optional(),
     version: z.union([z.string(), z.number()]).default(2),

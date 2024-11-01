@@ -50,7 +50,6 @@ function assistantsConfigSetup(config, assistantsEndpoint, prevConfig = {}) {
     capabilities: parsedConfig.capabilities,
     excludedIds: parsedConfig.excludedIds,
     privateAssistants: parsedConfig.privateAssistants,
-    adminCanEditActions: parsedConfig.adminCanEditActions,
     timeoutMs: parsedConfig.timeoutMs,
     streamRate: parsedConfig.streamRate,
   };
