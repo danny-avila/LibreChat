@@ -77,6 +77,15 @@ const anthropicModels = {
 };
 
 const metaModels = {
+  llama2: 4000,
+  llama3: 8000,
+  'llama2:70b': 4000,
+  'llama3:8b': 8000,
+  'llama3:70b': 8000,
+  'llama3.1': 127500,
+  'llama3.1:8b': 127500,
+  'llama3.1:70b': 127500,
+  'llama3.1:405b': 127500,
   'llama2-13b': 4000,
   'llama2-70b': 4000,
   'llama3-8b': 8000,
