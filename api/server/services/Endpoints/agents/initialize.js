@@ -11,7 +11,7 @@
 
 const { z } = require('zod');
 const { tool } = require('@langchain/core/tools');
-const { createContentAggregator } = require('@librechat/agents');
+const { createContentAggregator, Providers } = require('@librechat/agents');
 const {
   EModelEndpoint,
   getResponseSender,
@@ -22,8 +22,9 @@ const {
   createToolEndCallback,
 } = require('~/server/controllers/agents/callbacks');
 const initAnthropic = require('~/server/services/Endpoints/anthropic/initialize');
-const initOpenAI = require('~/server/services/Endpoints/openAI/initialize');
 const getBedrockOptions = require('~/server/services/Endpoints/bedrock/options');
+const initOpenAI = require('~/server/services/Endpoints/openAI/initialize');
+const initCustom = require('~/server/services/Endpoints/custom/initialize');
 const { loadAgentTools } = require('~/server/services/ToolService');
 const AgentClient = require('~/server/controllers/agents/client');
 const { getModelMaxTokens } = require('~/utils');
@@ -53,6 +54,7 @@ const providerConfigMap = {
   [EModelEndpoint.azureOpenAI]: initOpenAI,
   [EModelEndpoint.anthropic]: initAnthropic,
   [EModelEndpoint.bedrock]: getBedrockOptions,
+  [Providers.OLLAMA]: initCustom,
 };
 
 const initializeClient = async ({ req, res, endpointOption }) => {
@@ -92,7 +94,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   });
 
   let modelOptions = { model: agent.model };
-  const getOptions = providerConfigMap[agent.provider];
+  let getOptions = providerConfigMap[agent.provider];
   if (!getOptions) {
     throw new Error(`Provider ${agent.provider} not supported`);
   }

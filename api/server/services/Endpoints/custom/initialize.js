@@ -12,11 +12,14 @@ const { fetchModels } = require('~/server/services/ModelService');
 const getLogStores = require('~/cache/getLogStores');
 const { isUserProvided } = require('~/server/utils');
 const { OpenAIClient } = require('~/app');
+const { Providers } = require('@librechat/agents');
 
 const { PROXY } = process.env;
 
-const initializeClient = async ({ req, res, endpointOption }) => {
-  const { key: expiresAt, endpoint } = req.body;
+const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrideEndpoint }) => {
+  const { key: expiresAt } = req.body;
+  const endpoint = overrideEndpoint ?? req.body.endpoint;
+
   const customConfig = await getCustomConfig();
   if (!customConfig) {
     throw new Error(`Config not found for the ${endpoint} custom endpoint.`);
@@ -132,6 +135,17 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     ...customOptions,
     ...endpointOption,
   };
+
+  if (optionsOnly) {
+    const modelOptions = endpointOption.model_parameters;
+    if (endpoint === Providers.OLLAMA && clientOptions.reverseProxyUrl) {
+      modelOptions.baseUrl = clientOptions.reverseProxyUrl.split('/v1')[0];
+      delete clientOptions.reverseProxyUrl;
+    }
+    return {
+      llmConfig: modelOptions,
+    };
+  }
 
   const client = new OpenAIClient(apiKey, clientOptions);
   return {

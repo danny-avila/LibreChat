@@ -21,6 +21,8 @@ const mongoose = require('mongoose');
  * @property {string} [source] - The source of the file (e.g., from FileSources)
  * @property {number} [width] - Optional width of the file
  * @property {number} [height] - Optional height of the file
+ * @property {Object} [metadata] - Metadata related to the file
+ * @property {string} [metadata.fileIdentifier] - Unique identifier for the file in metadata
  * @property {Date} [expiresAt] - Optional expiration date of the file
  * @property {Date} [createdAt] - Date when the file was created
  * @property {Date} [updatedAt] - Date when the file was updated
@@ -91,6 +93,9 @@ const fileSchema = mongoose.Schema(
     },
     width: Number,
     height: Number,
+    metadata: {
+      fileIdentifier: String,
+    },
     expiresAt: {
       type: Date,
       expires: 3600, // 1 hour in seconds
