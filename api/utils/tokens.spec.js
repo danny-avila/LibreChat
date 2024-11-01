@@ -345,9 +345,17 @@ describe('Meta Models Tests', () => {
     });
 
     test('should handle partial matches for Meta models', () => {
-      expect(getModelMaxTokens('meta/llama2')).toBe(4000);
-      expect(getModelMaxTokens('meta/llama3')).toBe(8000);
+      // Test with full model names
+      expect(getModelMaxTokens('meta/llama3.1:405b')).toBe(127500);
+      expect(getModelMaxTokens('meta/llama3.1:70b')).toBe(127500);
+      expect(getModelMaxTokens('meta/llama3.1:8b')).toBe(127500);
+      expect(getModelMaxTokens('meta/llama3-1-8b')).toBe(127500);
+
+      // Test base versions
       expect(getModelMaxTokens('meta/llama3.1')).toBe(127500);
+      expect(getModelMaxTokens('meta/llama3-1')).toBe(127500);
+      expect(getModelMaxTokens('meta/llama3')).toBe(8000);
+      expect(getModelMaxTokens('meta/llama2')).toBe(4000);
     });
   });
 
@@ -359,9 +367,15 @@ describe('Meta Models Tests', () => {
     });
 
     test('should match LLaMa model variations', () => {
-      expect(matchModelName('meta/llama2-70b')).toBe('llama2-70b');
-      expect(matchModelName('meta/llama3-70b')).toBe('llama3-70b');
+      // Test full model names
       expect(matchModelName('meta/llama3.1:405b')).toBe('llama3.1:405b');
+      expect(matchModelName('meta/llama3.1:70b')).toBe('llama3.1:70b');
+      expect(matchModelName('meta/llama3.1:8b')).toBe('llama3.1:8b');
+      expect(matchModelName('meta/llama3-1-8b')).toBe('llama3-1-8b');
+
+      // Test base versions
+      expect(matchModelName('meta/llama3.1')).toBe('llama3.1');
+      expect(matchModelName('meta/llama3-1')).toBe('llama3-1');
     });
 
     test('should handle custom endpoint for Meta models', () => {
