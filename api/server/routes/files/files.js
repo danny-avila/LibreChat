@@ -17,6 +17,7 @@ const {
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { loadAuthValues } = require('~/app/clients/tools/util');
+const { getAgent } = require('~/models/Agent');
 const { getFiles } = require('~/models/File');
 const { logger } = require('~/config');
 
@@ -67,12 +68,31 @@ router.delete('/', async (req, res) => {
     }
 
     const fileIds = files.map((file) => file.file_id);
-    const userFiles = await getFiles({ file_id: { $in: fileIds }, user: req.user.id });
-    if (userFiles.length !== files.length) {
-      return res.status(403).json({ message: 'You can only delete your own files' });
+    const dbFiles = await getFiles({ file_id: { $in: fileIds } });
+    const unauthorizedFiles = dbFiles.filter((file) => file.user.toString() !== req.user.id);
+
+    if (unauthorizedFiles.length > 0) {
+      return res.status(403).json({
+        message: 'You can only delete your own files',
+        unauthorizedFiles: unauthorizedFiles.map((f) => f.file_id),
+      });
     }
 
-    await processDeleteRequest({ req, files: userFiles });
+    /* Handle entity unlinking even if no valid files to delete */
+    if (req.body.agent_id && req.body.tool_resource && dbFiles.length === 0) {
+      const agent = await getAgent({
+        id: req.body.agent_id,
+      });
+
+      const toolResourceFiles = agent.tool_resources?.[req.body.tool_resource]?.file_ids ?? [];
+      const agentFiles = files.filter((f) => toolResourceFiles.includes(f.file_id));
+
+      await processDeleteRequest({ req, files: agentFiles });
+      res.status(200).json({ message: 'File associations removed successfully' });
+      return;
+    }
+
+    await processDeleteRequest({ req, files: dbFiles });
 
     logger.debug(
       `[/files] Files deleted successfully: ${files
@@ -87,13 +107,13 @@ router.delete('/', async (req, res) => {
   }
 });
 
-router.get('/code/download/:sessionId/:fileId', async (req, res) => {
+router.get('/code/download/:session_id/:fileId', async (req, res) => {
   try {
-    const { sessionId, fileId } = req.params;
-    const logPrefix = `Session ID: ${sessionId} | File ID: ${fileId} | Code output download requested by user `;
+    const { session_id, fileId } = req.params;
+    const logPrefix = `Session ID: ${session_id} | File ID: ${fileId} | Code output download requested by user `;
     logger.debug(logPrefix);
 
-    if (!sessionId || !fileId) {
+    if (!session_id || !fileId) {
       return res.status(400).send('Bad request');
     }
 
@@ -108,7 +128,10 @@ router.get('/code/download/:sessionId/:fileId', async (req, res) => {
     const result = await loadAuthValues({ userId: req.user.id, authFields: [EnvVar.CODE_API_KEY] });
 
     /** @type {AxiosResponse<ReadableStream> | undefined} */
-    const response = await getDownloadStream(`${sessionId}/${fileId}`, result[EnvVar.CODE_API_KEY]);
+    const response = await getDownloadStream(
+      `${session_id}/${fileId}`,
+      result[EnvVar.CODE_API_KEY],
+    );
     res.set(response.headers);
     response.data.pipe(res);
   } catch (error) {

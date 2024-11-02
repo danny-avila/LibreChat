@@ -90,7 +90,7 @@ function ToolSelectDialog({
   const onRemoveTool = (tool: string) => {
     setShowPluginAuthForm(false);
     updateUserPlugins.mutate(
-      { pluginKey: tool, action: 'uninstall', auth: null, isAssistantTool: true },
+      { pluginKey: tool, action: 'uninstall', auth: null, isEntityTool: true },
       {
         onError: (error: unknown) => {
           handleInstallError(error as TError);
@@ -199,7 +199,7 @@ function ToolSelectDialog({
               <PluginAuthForm
                 plugin={selectedPlugin}
                 onSubmit={(installActionData: TPluginAction) => handleInstall(installActionData)}
-                isAssistantTool={true}
+                isEntityTool={true}
               />
             </div>
           )}

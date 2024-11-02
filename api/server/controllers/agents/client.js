@@ -15,7 +15,6 @@ const {
   EModelEndpoint,
   anthropicSchema,
   bedrockOutputParser,
-  providerEndpointMap,
   removeNullishValues,
 } = require('librechat-data-provider');
 const {
@@ -465,7 +464,6 @@ class AgentClient extends BaseClient {
 
       const config = {
         configurable: {
-          provider: providerEndpointMap[this.options.agent.provider],
           thread_id: this.conversationId,
         },
         signal: abortController.signal,

@@ -304,6 +304,16 @@ export const getAvailableTools = (
   return request.get(path);
 };
 
+export const getVerifyAgentToolAuth = (
+  params: q.VerifyToolAuthParams,
+): Promise<q.VerifyToolAuthResponse> => {
+  return request.get(
+    endpoints.agents({
+      path: `tools/${params.toolId}/auth`,
+    }),
+  );
+};
+
 /* Files */
 
 export const getFiles = (): Promise<f.TFile[]> => {

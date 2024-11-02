@@ -1,21 +1,25 @@
-import { TPlugin, TPluginAuthConfig, TPluginAction } from 'librechat-data-provider';
 import { Save } from 'lucide-react';
 import { useForm } from 'react-hook-form';
+import { TPlugin, TPluginAuthConfig, TPluginAction } from 'librechat-data-provider';
 import { HoverCard, HoverCardTrigger } from '~/components/ui';
 import PluginTooltip from './PluginTooltip';
+import { useLocalize } from '~/hooks';
 
 type TPluginAuthFormProps = {
   plugin: TPlugin | undefined;
   onSubmit: (installActionData: TPluginAction) => void;
-  isAssistantTool?: boolean;
+  isEntityTool?: boolean;
 };
 
-function PluginAuthForm({ plugin, onSubmit, isAssistantTool }: TPluginAuthFormProps) {
+function PluginAuthForm({ plugin, onSubmit, isEntityTool }: TPluginAuthFormProps) {
   const {
     register,
     handleSubmit,
     formState: { errors, isDirty, isValid, isSubmitting },
   } = useForm();
+
+  const localize = useLocalize();
+  const authConfig = plugin?.authConfig ?? [];
 
   return (
     <div className="flex w-full flex-col items-center gap-2">
@@ -28,11 +32,11 @@ function PluginAuthForm({ plugin, onSubmit, isAssistantTool }: TPluginAuthFormPr
               pluginKey: plugin?.pluginKey ?? '',
               action: 'install',
               auth,
-              isAssistantTool,
+              isEntityTool,
             }),
           )}
         >
-          {plugin?.authConfig?.map((config: TPluginAuthConfig, i: number) => {
+          {authConfig.map((config: TPluginAuthConfig, i: number) => {
             const authField = config.authField.split('||')[0];
             return (
               <div key={`${authField}-${i}`} className="flex w-full flex-col gap-1">
@@ -66,8 +70,7 @@ function PluginAuthForm({ plugin, onSubmit, isAssistantTool }: TPluginAuthFormPr
                 </HoverCard>
                 {errors[authField] && (
                   <span role="alert" className="mt-1 text-sm text-red-400">
-                    {/* @ts-ignore - Type 'string | FieldError | Merge<FieldError, FieldErrorsImpl<any>> | undefined' is not assignable to type 'ReactNode' */}
-                    {errors[authField].message}
+                    {errors[authField].message as string}
                   </span>
                 )}
               </div>
@@ -79,7 +82,7 @@ function PluginAuthForm({ plugin, onSubmit, isAssistantTool }: TPluginAuthFormPr
             className="btn btn-primary relative"
           >
             <div className="flex items-center justify-center gap-2">
-              Save
+              {localize('com_ui_save')}
               <Save className="flex h-4 w-4 items-center stroke-2" />
             </div>
           </button>

@@ -35,9 +35,10 @@ async function createRun({
   streaming = true,
   streamUsage = true,
 }) {
+  const provider = providerEndpointMap[agent.provider] ?? agent.provider;
   const llmConfig = Object.assign(
     {
-      provider: providerEndpointMap[agent.provider],
+      provider,
       streaming,
       streamUsage,
     },

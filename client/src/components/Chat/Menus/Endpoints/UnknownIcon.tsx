@@ -47,26 +47,28 @@ const getKnownClass = ({
 
 export default function UnknownIcon({
   className = '',
-  endpoint,
-  iconURL,
+  endpoint: _endpoint,
+  iconURL = '',
   context,
 }: {
   iconURL?: string;
   className?: string;
-  endpoint: EModelEndpoint | string | null;
+  endpoint?: EModelEndpoint | string | null;
   context?: 'landing' | 'menu-item' | 'nav' | 'message';
 }) {
+  const endpoint = _endpoint ?? '';
   if (!endpoint) {
     return <CustomMinimalIcon className={className} />;
   }
 
+  console.log('UnknownIcon', endpoint);
   const currentEndpoint = endpoint.toLowerCase();
 
   if (iconURL) {
     return <img className={className} src={iconURL} alt={`${endpoint} Icon`} />;
   }
 
-  const assetPath = knownEndpointAssets[currentEndpoint];
+  const assetPath: string = knownEndpointAssets[currentEndpoint] ?? '';
 
   if (!assetPath) {
     return <CustomMinimalIcon className={className} />;
