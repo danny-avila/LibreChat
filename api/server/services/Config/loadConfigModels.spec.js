@@ -253,13 +253,13 @@ describe('loadConfigModels', () => {
       }),
     );
 
-    // For groq and Ollama, since the apiKey is "user_provided", models should not be fetched
+    // For groq and ollama, since the apiKey is "user_provided", models should not be fetched
     // Depending on your implementation's behavior regarding "default" models without fetching,
     // you may need to adjust the following assertions:
     expect(result.groq).toBe(exampleConfig.endpoints.custom[2].models.default);
-    expect(result.Ollama).toBe(exampleConfig.endpoints.custom[3].models.default);
+    expect(result.ollama).toBe(exampleConfig.endpoints.custom[3].models.default);
 
-    // Verifying fetchModels was not called for groq and Ollama
+    // Verifying fetchModels was not called for groq and ollama
     expect(fetchModels).not.toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'groq',
@@ -267,7 +267,7 @@ describe('loadConfigModels', () => {
     );
     expect(fetchModels).not.toHaveBeenCalledWith(
       expect.objectContaining({
-        name: 'Ollama',
+        name: 'ollama',
       }),
     );
   });
@@ -334,5 +334,69 @@ describe('loadConfigModels', () => {
     );
 
     expect(result.FalsyFetchModel).toEqual(['defaultModel1', 'defaultModel2']);
+  });
+
+  it('normalizes Ollama endpoint name to lowercase', async () => {
+    const testCases = [
+      {
+        name: 'Ollama',
+        apiKey: 'user_provided',
+        baseURL: 'http://localhost:11434/v1/',
+        models: {
+          default: ['mistral', 'llama2'],
+          fetch: false,
+        },
+      },
+      {
+        name: 'OLLAMA',
+        apiKey: 'user_provided',
+        baseURL: 'http://localhost:11434/v1/',
+        models: {
+          default: ['mixtral', 'codellama'],
+          fetch: false,
+        },
+      },
+      {
+        name: 'OLLaMA',
+        apiKey: 'user_provided',
+        baseURL: 'http://localhost:11434/v1/',
+        models: {
+          default: ['phi', 'neural-chat'],
+          fetch: false,
+        },
+      },
+    ];
+
+    getCustomConfig.mockResolvedValue({
+      endpoints: {
+        custom: testCases,
+      },
+    });
+
+    const result = await loadConfigModels(mockRequest);
+
+    // All variations of "Ollama" should be normalized to lowercase "ollama"
+    // and the last config in the array should override previous ones
+    expect(result.Ollama).toBeUndefined();
+    expect(result.OLLAMA).toBeUndefined();
+    expect(result.OLLaMA).toBeUndefined();
+    expect(result.ollama).toEqual(['phi', 'neural-chat']);
+
+    // Verify fetchModels was not called since these are user_provided
+    expect(fetchModels).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Ollama',
+      }),
+    );
+    expect(fetchModels).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'OLLAMA',
+      }),
+    );
+    expect(fetchModels).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'OLLaMA',
+      }),
+    );
   });
 });

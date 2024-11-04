@@ -1,7 +1,16 @@
+const { Providers } = require('@librechat/agents');
 const { EModelEndpoint, extractEnvVariable } = require('librechat-data-provider');
 const { fetchModels } = require('~/server/services/ModelService');
 const { getCustomConfig } = require('./getCustomConfig');
 const { isUserProvided } = require('~/server/utils');
+
+/**
+ * @param {string} name
+ * @returns {string}
+ */
+function normalizeEndpointName(name = '') {
+  return name.toLowerCase() === Providers.OLLAMA ? Providers.OLLAMA : name;
+}
 
 /**
  * Load config endpoints from the cached configuration object
@@ -61,7 +70,8 @@ async function loadConfigModels(req) {
 
   for (let i = 0; i < customEndpoints.length; i++) {
     const endpoint = customEndpoints[i];
-    const { models, name, baseURL, apiKey } = endpoint;
+    const { models, name: configName, baseURL, apiKey } = endpoint;
+    const name = normalizeEndpointName(configName);
     endpointsMap[name] = endpoint;
 
     const API_KEY = extractEnvVariable(apiKey);
