@@ -1,7 +1,7 @@
 const { EModelEndpoint, extractEnvVariable } = require('librechat-data-provider');
 const { fetchModels } = require('~/server/services/ModelService');
+const { getCustomConfig } = require('./getCustomConfig');
 const { isUserProvided } = require('~/server/utils');
-const getCustomConfig = require('./getCustomConfig');
 
 /**
  * Load config endpoints from the cached configuration object
