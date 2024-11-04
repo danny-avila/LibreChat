@@ -7,17 +7,15 @@ const loadOverrideConfig = require('./loadOverrideConfig');
 const loadAsyncEndpoints = require('./loadAsyncEndpoints');
 const loadConfigEndpoints = require('./loadConfigEndpoints');
 const loadDefaultEndpointsConfig = require('./loadDefaultEConfig');
-const getCustomEndpointConfig = require('./getCustomEndpointConfig');
 
 module.exports = {
   config,
-  getCustomConfig,
   loadCustomConfig,
   loadConfigModels,
   loadDefaultModels,
   loadOverrideConfig,
   loadAsyncEndpoints,
+  ...getCustomConfig,
   loadConfigEndpoints,
-  getCustomEndpointConfig,
   loadDefaultEndpointsConfig,
 };

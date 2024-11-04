@@ -8,11 +8,11 @@ const {
   getDefaultHandlers,
   createToolEndCallback,
 } = require('~/server/controllers/agents/callbacks');
-const getCustomEndpointConfig = require('~/server/services/Config/getCustomEndpointConfig');
 const initAnthropic = require('~/server/services/Endpoints/anthropic/initialize');
 const getBedrockOptions = require('~/server/services/Endpoints/bedrock/options');
 const initOpenAI = require('~/server/services/Endpoints/openAI/initialize');
 const initCustom = require('~/server/services/Endpoints/custom/initialize');
+const { getCustomEndpointConfig } = require('~/server/services/Config');
 const { loadAgentTools } = require('~/server/services/ToolService');
 const AgentClient = require('~/server/controllers/agents/client');
 const { getModelMaxTokens } = require('~/utils');
