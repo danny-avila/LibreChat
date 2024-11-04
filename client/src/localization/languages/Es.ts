@@ -716,7 +716,7 @@ export default {
   com_agents_file_search_disabled:
     'Es necesario crear el Agente antes de subir archivos para la Búsqueda de Archivos.',
 
-  com_agents_execute_code: 'Ejecutar código',
+  com_ui_run_code: 'Ejecutar código',
 
   com_ui_agent_already_shared_to_all: 'Este asistente ya está compartido con todos los usuarios',
 

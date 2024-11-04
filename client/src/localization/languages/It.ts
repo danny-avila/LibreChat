@@ -676,7 +676,7 @@ export default {
   com_agents_enable_file_search: 'Abilita Ricerca File',
   com_agents_file_search_info:
     'Quando abilitato, l\'agente verrà informato dei nomi esatti dei file elencati di seguito, permettendogli di recuperare il contesto pertinente da questi file.',
-  com_agents_execute_code: 'Esegui Codice',
+  com_ui_run_code: 'Esegui Codice',
   com_agents_file_search_disabled:
     'L\'Agente deve essere creato prima di caricare file per la Ricerca File.',
   com_ui_agent_already_shared_to_all: 'Questo assistente è già condiviso con tutti gli utenti',

@@ -165,6 +165,10 @@ export interface ExecuteCodeResource {
    * There can be a maximum of 20 files associated with the tool.
    */
   file_ids?: Array<string>;
+  /**
+   * A list of files already fetched.
+   */
+  files?: Array<TFile>;
 }
 
 export interface AgentFileSearchResource {
@@ -178,6 +182,10 @@ export interface AgentFileSearchResource {
    * To be used before vector stores are implemented.
    */
   file_ids?: Array<string>;
+  /**
+   * A list of files already fetched.
+   */
+  files?: Array<TFile>;
 }
 
 export type Agent = {

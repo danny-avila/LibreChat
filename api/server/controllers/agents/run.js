@@ -17,6 +17,7 @@ const { providerEndpointMap } = require('librechat-data-provider');
  * @param {ServerRequest} [options.req] - The server request.
  * @param {string | undefined} [options.runId] - Optional run ID; otherwise, a new run ID will be generated.
  * @param {Agent} options.agent - The agent for this run.
+ * @param {AbortSignal} options.signal - The signal for this run.
  * @param {StructuredTool[] | undefined} [options.tools] - The tools to use in the run.
  * @param {Record<GraphEvents, EventHandler> | undefined} [options.customHandlers] - Custom event handlers.
  * @param {ClientOptions} [options.modelOptions] - Optional model to use; if not provided, it will use the default from modelMap.
@@ -28,6 +29,7 @@ async function createRun({
   runId,
   tools,
   agent,
+  signal,
   modelOptions,
   customHandlers,
   streaming = true,
@@ -45,6 +47,7 @@ async function createRun({
 
   const graphConfig = {
     tools,
+    signal,
     llmConfig,
     instructions: agent.instructions,
     additional_instructions: agent.additional_instructions,

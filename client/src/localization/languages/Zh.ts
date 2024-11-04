@@ -806,7 +806,7 @@ export default {
   com_agents_file_search_info:
     '启用后，系统会告知Agent以下列出的具体文件名，使其能够从这些文件中检索相关内容。',
 
-  com_agents_execute_code: '运行代码',
+  com_ui_run_code: '运行代码',
 
   com_agents_file_search_disabled: '必须先创建Agent，才能上传文件用于文件搜索。',
 

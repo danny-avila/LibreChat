@@ -834,7 +834,7 @@ export default {
     'ファイル検索用のファイルをアップロードする前に、エージェントを作成する必要があります。',
   com_agents_file_search_info:
     '有効にすると、エージェントは以下に表示されているファイル名を正確に認識し、それらのファイルから関連する情報を取得することができます。',
-  com_agents_execute_code: 'コードを実行',
+  com_ui_run_code: 'コードを実行',
   com_ui_agent_editing_allowed: 'このエージェントは他のユーザーが既に編集可能です',
   com_ui_agent_already_shared_to_all: 'このアシスタントは既に全ユーザーに共有されています',
   com_ui_no_changes: '更新する変更はありません',

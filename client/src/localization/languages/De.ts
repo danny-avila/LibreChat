@@ -801,7 +801,7 @@ export default {
   com_ui_endpoint: 'Endpunkt',
   com_ui_region: 'Region',
   com_ui_model_parameters: 'Modell-Parameter',
-  com_agents_execute_code: 'Code ausführen',
+  com_ui_run_code: 'Code ausführen',
   com_ui_provider: 'Anbieter',
   com_ui_model_save_success: 'Modellparameter erfolgreich gespeichert',
   com_ui_select_region: 'Wähle eine Region',

@@ -5,7 +5,7 @@ const {
   setHeaders,
   handleAbort,
   // validateModel,
-  // validateEndpoint,
+  validateConvoAccess,
   buildEndpointOption,
 } = require('~/server/middleware');
 const { initializeClient } = require('~/server/services/Endpoints/agents');
@@ -25,7 +25,7 @@ router.post('/abort', handleAbort());
 router.post(
   '/',
   // validateModel,
-  // validateEndpoint,
+  validateConvoAccess,
   buildEndpointOption,
   setHeaders,
   async (req, res, next) => {

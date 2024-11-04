@@ -18,6 +18,7 @@ const {
   updateFileUsage,
 } = require('./File');
 const {
+  getMessage,
   getMessages,
   saveMessage,
   recordMessage,
@@ -51,6 +52,7 @@ module.exports = {
   getFiles,
   updateFileUsage,
 
+  getMessage,
   getMessages,
   saveMessage,
   recordMessage,

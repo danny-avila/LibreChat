@@ -110,12 +110,20 @@ function checkIfActive(dateString) {
 async function getSessionInfo(fileIdentifier, apiKey) {
   try {
     const baseURL = getCodeBaseURL();
-    const session_id = fileIdentifier.split('/')[0];
+    const [path, queryString] = fileIdentifier.split('?');
+    const session_id = path.split('/')[0];
+
+    let queryParams = {};
+    if (queryString) {
+      queryParams = Object.fromEntries(new URLSearchParams(queryString).entries());
+    }
+
     const response = await axios({
       method: 'get',
       url: `${baseURL}/files/${session_id}`,
       params: {
         detail: 'summary',
+        ...queryParams,
       },
       headers: {
         'User-Agent': 'LibreChat/1.0',
@@ -124,7 +132,7 @@ async function getSessionInfo(fileIdentifier, apiKey) {
       timeout: 5000,
     });
 
-    return response.data.find((file) => file.name.startsWith(fileIdentifier))?.lastModified;
+    return response.data.find((file) => file.name.startsWith(path))?.lastModified;
   } catch (error) {
     logger.error(`Error fetching session info: ${error.message}`, error);
     return null;
@@ -142,13 +150,15 @@ async function getSessionInfo(fileIdentifier, apiKey) {
 const primeFiles = async (options, apiKey) => {
   const { tool_resources } = options;
   const file_ids = tool_resources?.[EToolResources.execute_code]?.file_ids ?? [];
-  const dbFiles = await getFiles({ file_id: { $in: file_ids } });
+  const resourceFiles = tool_resources?.[EToolResources.execute_code]?.files ?? [];
+  const dbFiles = ((await getFiles({ file_id: { $in: file_ids } })) ?? []).concat(resourceFiles);
 
   const files = [];
   const sessions = new Map();
   for (const file of dbFiles) {
     if (file.metadata.fileIdentifier) {
-      const [session_id, id] = file.metadata.fileIdentifier.split('/');
+      const [path, queryString] = file.metadata.fileIdentifier.split('?');
+      const [session_id, id] = path.split('/');
       const pushFile = () => {
         files.push({
           id,
@@ -160,6 +170,12 @@ const primeFiles = async (options, apiKey) => {
         pushFile();
         continue;
       }
+
+      let queryParams = {};
+      if (queryString) {
+        queryParams = Object.fromEntries(new URLSearchParams(queryString).entries());
+      }
+
       const reuploadFile = async () => {
         try {
           const { getDownloadStream } = getStrategyFunctions(file.source);
@@ -171,6 +187,7 @@ const primeFiles = async (options, apiKey) => {
             req: options.req,
             stream,
             filename: file.filename,
+            entity_id: queryParams.entity_id,
             apiKey,
           });
           await updateFile({ file_id: file.file_id, metadata: { fileIdentifier } });

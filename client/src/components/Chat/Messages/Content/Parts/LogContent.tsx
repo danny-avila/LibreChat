@@ -1,17 +1,26 @@
 import { isAfter } from 'date-fns';
 import React, { useMemo } from 'react';
 import { imageExtRegex } from 'librechat-data-provider';
-import type { TAttachment } from 'librechat-data-provider';
+import type { TFile, TAttachment, TAttachmentMetadata } from 'librechat-data-provider';
+import Image from '~/components/Chat/Messages/Content/Image';
 import { useLocalize } from '~/hooks';
 import LogLink from './LogLink';
 
 interface LogContentProps {
   output?: string;
+  renderImages?: boolean;
   attachments?: TAttachment[];
 }
 
-const LogContent: React.FC<LogContentProps> = ({ output = '', attachments }) => {
+type ImageAttachment = TFile &
+  TAttachmentMetadata & {
+    height: number;
+    width: number;
+  };
+
+const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, attachments }) => {
   const localize = useLocalize();
+
   const processedContent = useMemo(() => {
     if (!output) {
       return '';
@@ -21,8 +30,29 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', attachments }) => 
     return parts[0].trim();
   }, [output]);
 
-  const nonImageAttachments =
-    attachments?.filter((file) => !imageExtRegex.test(file.filename)) || [];
+  const { imageAttachments, nonImageAttachments } = useMemo(() => {
+    const imageAtts: ImageAttachment[] = [];
+    const nonImageAtts: TAttachment[] = [];
+
+    attachments?.forEach((attachment) => {
+      const { width, height, filepath = null } = attachment as TFile & TAttachmentMetadata;
+      const isImage =
+        imageExtRegex.test(attachment.filename) &&
+        width != null &&
+        height != null &&
+        filepath != null;
+      if (isImage) {
+        imageAtts.push(attachment as ImageAttachment);
+      } else {
+        nonImageAtts.push(attachment);
+      }
+    });
+
+    return {
+      imageAttachments: renderImages === true ? imageAtts : null,
+      nonImageAttachments: nonImageAtts,
+    };
+  }, [attachments, renderImages]);
 
   const renderAttachment = (file: TAttachment) => {
     const now = new Date();
@@ -59,6 +89,18 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', attachments }) => 
           ))}
         </div>
       )}
+      {imageAttachments?.map((attachment, index) => {
+        const { width, height, filepath } = attachment;
+        return (
+          <Image
+            key={index}
+            altText={attachment.filename}
+            imagePath={filepath}
+            height={height}
+            width={width}
+          />
+        );
+      })}
     </>
   );
 };

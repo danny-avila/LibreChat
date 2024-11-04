@@ -83,7 +83,7 @@ const validateTools = async (user, tools = []) => {
   }
 };
 
-const loadAuthValues = async ({ userId, authFields }) => {
+const loadAuthValues = async ({ userId, authFields, throwError = true }) => {
   let authValues = {};
 
   /**
@@ -98,7 +98,7 @@ const loadAuthValues = async ({ userId, authFields }) => {
         return { authField: field, authValue: value };
       }
       try {
-        value = await getUserPluginAuthValue(userId, field);
+        value = await getUserPluginAuthValue(userId, field, throwError);
       } catch (err) {
         if (field === fields[fields.length - 1] && !value) {
           throw err;
@@ -211,13 +211,17 @@ const loadTools = async ({
         userId: user,
         authFields: [EnvVar.CODE_API_KEY],
       });
-      const files = await primeFiles(options, authValues[EnvVar.CODE_API_KEY]);
-      requestedTools[tool] = () =>
-        createCodeExecutionTool({
+      const codeApiKey = authValues[EnvVar.CODE_API_KEY];
+      const files = await primeFiles(options, codeApiKey);
+      requestedTools[tool] = () => {
+        const CodeExecutionTool = createCodeExecutionTool({
           user_id: user,
           files,
           ...authValues,
         });
+        CodeExecutionTool.apiKey = codeApiKey;
+        return CodeExecutionTool;
+      };
       continue;
     } else if (tool === Tools.file_search) {
       requestedTools[tool] = () => createFileSearchTool(options);

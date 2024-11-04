@@ -15,10 +15,13 @@ const { logger } = require('~/config');
 const createFileSearchTool = async (options) => {
   const { req, tool_resources } = options;
   const file_ids = tool_resources?.[EToolResources.file_search]?.file_ids ?? [];
-  const files = (await getFiles({ file_id: { $in: file_ids } })).map((file) => ({
-    file_id: file.file_id,
-    filename: file.filename,
-  }));
+  const dbFiles = (await getFiles({ file_id: { $in: file_ids } })) ?? [];
+  const files = dbFiles
+    .concat(tool_resources?.[EToolResources.file_search]?.files ?? [])
+    .map((file) => ({
+      file_id: file.file_id,
+      filename: file.filename,
+    }));
 
   const fileList = files.map((file) => `- ${file.filename}`).join('\n');
   const toolDescription = `Performs a semantic search based on a natural language query across the following files:\n${fileList}`;

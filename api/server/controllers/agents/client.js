@@ -15,6 +15,7 @@ const {
   EModelEndpoint,
   KnownEndpoints,
   anthropicSchema,
+  isAgentsEndpoint,
   bedrockOutputParser,
   removeNullishValues,
 } = require('librechat-data-provider');
@@ -224,10 +225,32 @@ class AgentClient extends BaseClient {
     let promptTokens;
 
     /** @type {string} */
-    let systemContent = `${instructions ?? ''}${additional_instructions ?? ''}`;
+    let systemContent = [instructions ?? '', additional_instructions ?? '']
+      .filter(Boolean)
+      .join('\n')
+      .trim();
 
     if (this.options.attachments) {
       const attachments = await this.options.attachments;
+      if (this.options.req.body.files) {
+        const fileSet = new Set(this.options.req.body.files.map((file) => file.file_id));
+        let filePrefix = '';
+        for (const attachment of attachments) {
+          if (!attachment.metadata?.fileIdentifier) {
+            continue;
+          }
+          if (!fileSet.has(attachment.file_id)) {
+            continue;
+          }
+
+          if (!filePrefix) {
+            filePrefix = '\nThe user has just attached the following files:\n';
+          }
+          filePrefix += `- /mnt/data/${attachment.filename}\n`;
+        }
+
+        systemContent += filePrefix;
+      }
 
       if (this.message_file_map) {
         this.message_file_map[orderedMessages[orderedMessages.length - 1].messageId] = attachments;
@@ -245,7 +268,8 @@ class AgentClient extends BaseClient {
       this.options.attachments = files;
     }
 
-    if (this.message_file_map) {
+    /** Note: Bedrock uses legacy RAG API handling */
+    if (this.message_file_map && !isAgentsEndpoint(this.options.endpoint)) {
       this.contextHandlers = createContextHandlers(
         this.options.req,
         orderedMessages[orderedMessages.length - 1].text,
@@ -462,6 +486,7 @@ class AgentClient extends BaseClient {
         agent: this.options.agent,
         tools: this.options.tools,
         runId: this.responseMessageId,
+        signal: abortController.signal,
         modelOptions: this.modelOptions,
         customHandlers: this.options.eventHandlers,
       });

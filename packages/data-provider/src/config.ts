@@ -932,6 +932,10 @@ export enum ViolationTypes {
    * Verify Conversation Access violation.
    */
   CONVO_ACCESS = 'convo_access',
+  /**
+   * Tool Call Limit Violation.
+   */
+  TOOL_CALL_LIMIT = 'tool_call_limit',
 }
 
 /**
@@ -1086,6 +1090,8 @@ export enum Constants {
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value for the initial conversationId before a request is sent */
   NEW_CONVO = 'new',
+  /** Standard value for the conversationId used for search queries */
+  SEARCH = 'search',
   /** Fixed, encoded domain length for Azure OpenAI Assistants Function name parsing. */
   ENCODED_DOMAIN_LENGTH = 10,
   /** Identifier for using current_model in multi-model requests. */

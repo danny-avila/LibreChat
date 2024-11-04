@@ -1,6 +1,7 @@
 import * as types from '../types';
 import * as r from '../roles';
 import {
+  Tools,
   Assistant,
   AssistantCreateParams,
   AssistantUpdateParams,
@@ -251,3 +252,24 @@ export type AcceptTermsMutationOptions = MutationOptions<
 
 /* Tools */
 export type UpdatePluginAuthOptions = MutationOptions<types.TUser, types.TUpdateUserPlugins>;
+
+export type ToolParamsMap = {
+  [Tools.execute_code]: {
+    lang: string;
+    code: string;
+  };
+};
+
+export type ToolId = keyof ToolParamsMap;
+
+export type ToolParams<T extends ToolId> = ToolParamsMap[T] & {
+  messageId: string;
+  partIndex?: number;
+  blockIndex?: number;
+  conversationId: string;
+};
+export type ToolCallResponse = { result: unknown; attachments?: types.TAttachment[] };
+export type ToolCallMutationOptions<T extends ToolId> = MutationOptions<
+  ToolCallResponse,
+  ToolParams<T>
+>;

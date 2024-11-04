@@ -612,7 +612,7 @@ export default {
   com_agents_missing_provider_model: '請在建立代理前選擇供應商和模型。',
   com_agents_enable_file_search: '啟用檔案搜尋',
   com_agents_file_search_disabled: '必須先建立代理才能上傳檔案進行檔案搜尋。',
-  com_agents_execute_code: '執行程式碼',
+  com_ui_run_code: '執行程式碼',
   com_agents_no_access: '您沒有權限編輯此助理',
   com_ui_no_changes: '沒有需要更新的變更',
   com_ui_agent_already_shared_to_all: '此助理已與所有使用者共享',

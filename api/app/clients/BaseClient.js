@@ -50,6 +50,8 @@ class BaseClient {
     /** The key for the usage object's output tokens
      * @type {string} */
     this.outputTokensKey = 'completion_tokens';
+    /** @type {Set<string>} */
+    this.savedMessageIds = new Set();
   }
 
   setOptions() {
@@ -545,6 +547,7 @@ class BaseClient {
 
     if (!isEdited && !this.skipSaveUserMessage) {
       this.userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user);
+      this.savedMessageIds.add(userMessage.messageId);
       if (typeof opts?.getReqData === 'function') {
         opts.getReqData({
           userMessagePromise: this.userMessagePromise,
@@ -574,6 +577,7 @@ class BaseClient {
     const completion = await this.sendCompletion(payload, opts);
     this.abortController.requestCompleted = true;
 
+    /** @type {TMessage} */
     const responseMessage = {
       messageId: responseMessageId,
       conversationId,
@@ -635,7 +639,16 @@ class BaseClient {
       responseMessage.attachments = (await Promise.all(this.artifactPromises)).filter((a) => a);
     }
 
+    if (this.options.attachments) {
+      try {
+        saveOptions.files = this.options.attachments.map((attachments) => attachments.file_id);
+      } catch (error) {
+        logger.error('[BaseClient] Error mapping attachments for conversation', error);
+      }
+    }
+
     this.responsePromise = this.saveMessageToDatabase(responseMessage, saveOptions, user);
+    this.savedMessageIds.add(responseMessage.messageId);
     const messageCache = getLogStores(CacheKeys.MESSAGES);
     messageCache.set(
       responseMessageId,
@@ -961,6 +974,15 @@ class BaseClient {
       return _messages;
     }
 
+    const seen = new Set();
+    const attachmentsProcessed =
+      this.options.attachments && !(this.options.attachments instanceof Promise);
+    if (attachmentsProcessed) {
+      for (const attachment of this.options.attachments) {
+        seen.add(attachment.file_id);
+      }
+    }
+
     /**
      *
      * @param {TMessage} message
@@ -971,7 +993,19 @@ class BaseClient {
         this.message_file_map = {};
       }
 
-      const fileIds = message.files.map((file) => file.file_id);
+      const fileIds = [];
+      for (const file of message.files) {
+        if (seen.has(file.file_id)) {
+          continue;
+        }
+        fileIds.push(file.file_id);
+        seen.add(file.file_id);
+      }
+
+      if (fileIds.length === 0) {
+        return message;
+      }
+
       const files = await getFiles({
         file_id: { $in: fileIds },
       });

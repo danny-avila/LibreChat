@@ -644,7 +644,7 @@ export default {
   com_agents_file_search_info:
     'عند التمكين، سيتم إعلام الوكيل بأسماء الملفات المدرجة أدناه بالضبط، مما يتيح له استرجاع السياق ذي الصلة من هذه الملفات.',
   com_ui_agent_already_shared_to_all: 'هذا المساعد مشارك بالفعل مع جميع المستخدمين',
-  com_agents_execute_code: 'تنفيذ الشفرة',
+  com_ui_run_code: 'تنفيذ الشفرة',
   com_ui_no_changes: 'لا توجد تغييرات للتحديث',
   com_ui_agent_editing_allowed: 'يمكن للمستخدمين الآخرين تعديل هذا الوكيل بالفعل',
   com_ui_error_connection: 'خطأ في الاتصال بالخادم، حاول تحديث الصفحة.',

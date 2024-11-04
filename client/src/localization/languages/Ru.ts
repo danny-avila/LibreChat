@@ -699,7 +699,7 @@ export default {
 
   com_agents_file_search_disabled: 'Для загрузки файлов в Поиск необходимо сначала создать агента',
 
-  com_agents_execute_code: 'Выполнить код',
+  com_ui_run_code: 'Выполнить код',
 
   com_ui_agent_editing_allowed: 'Другие пользователи уже могут редактировать этого ассистента',
 

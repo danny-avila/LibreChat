@@ -690,6 +690,12 @@
  */
 
 /**
+ * @exports ToolCallData
+ * @typedef {import('~/models/schema/toolCallSchema.js').ToolCallData} ToolCallData
+ * @memberof typedefs
+ */
+
+/**
  * @exports MongoUser
  * @typedef {import('~/models/schema/userSchema.js').MongoUser} MongoUser
  * @memberof typedefs
@@ -800,6 +806,12 @@
 /**
  * @exports Agent
  * @typedef {import('librechat-data-provider').Agent} Agent
+ * @memberof typedefs
+ */
+
+/**
+ * @exports AgentToolResources
+ * @typedef {import('librechat-data-provider').AgentToolResources} AgentToolResources
  * @memberof typedefs
  */
 

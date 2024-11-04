@@ -86,7 +86,10 @@ export default function ExecuteCode({
       </div>
       {showCode && (
         <div className="code-analyze-block mb-3 mt-0.5 overflow-hidden rounded-xl bg-black">
-          <MarkdownLite content={code ? `\`\`\`${lang}\n${code}\n\`\`\`` : ''} />
+          <MarkdownLite
+            content={code ? `\`\`\`${lang}\n${code}\n\`\`\`` : ''}
+            codeExecution={false}
+          />
           {output.length > 0 && (
             <div className="bg-gray-700 p-4 text-xs">
               <div
@@ -104,7 +107,7 @@ export default function ExecuteCode({
         </div>
       )}
       {attachments?.map((attachment, index) => {
-        const { width, height, filepath } = attachment as TFile & TAttachmentMetadata;
+        const { width, height, filepath = null } = attachment as TFile & TAttachmentMetadata;
         const isImage =
           imageExtRegex.test(attachment.filename) &&
           width != null &&

@@ -112,7 +112,6 @@ export default {
   com_agents_file_search_info:
     'When enabled, the agent will be informed of the exact filenames listed below, allowing it to retrieve relevant context from these files.',
   com_agents_file_search_disabled: 'Agent must be created before uploading files for File Search.',
-  com_agents_execute_code: 'Run Code',
   com_ui_agent_already_shared_to_all: 'This agent is already shared to all users',
   com_ui_agent_editing_allowed: 'Other users can already edit this agent',
   com_ui_no_changes: 'No changes to update',
@@ -236,6 +235,7 @@ export default {
   com_ui_read_aloud: 'Read aloud',
   com_ui_copied: 'Copied!',
   com_ui_copy_code: 'Copy code',
+  com_ui_run_code: 'Run Code',
   com_ui_copy_to_clipboard: 'Copy to clipboard',
   com_ui_copied_to_clipboard: 'Copied to clipboard',
   com_ui_fork: 'Fork',
@@ -610,6 +610,7 @@ export default {
   com_endpoint_skip_hover:
     'Enable skipping the completion step, which reviews the final answer and generated steps',
   com_endpoint_config_key: 'Set API Key',
+  com_endpoint_agent_placeholder: 'Please select an Agent',
   com_endpoint_assistant_placeholder: 'Please select an Assistant from the right-hand Side Panel',
   com_endpoint_config_placeholder: 'Set your Key in the Header menu to chat.',
   com_endpoint_config_key_for: 'Set API Key for',

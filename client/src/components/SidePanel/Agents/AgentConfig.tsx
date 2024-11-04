@@ -18,7 +18,7 @@ import AgentAvatar from './AgentAvatar';
 import FileSearch from './FileSearch';
 import ShareAgent from './ShareAgent';
 import AgentTool from './AgentTool';
-// import CodeForm from './Code/Form';
+import CodeForm from './Code/Form';
 import { Panel } from '~/common';
 
 const labelClass = 'mb-2 text-token-text-primary block font-medium';
@@ -324,7 +324,7 @@ export default function AgentConfig({
           </button>
         </div>
         {/* Code Execution */}
-        {/* {codeEnabled && <CodeForm agent_id={agent_id} files={code_files} />} */}
+        {codeEnabled && <CodeForm agent_id={agent_id} files={code_files} />}
         {/* File Search */}
         {fileSearchEnabled && <FileSearch agent_id={agent_id} files={knowledge_files} />}
         {/* Agent Tools & Actions */}
