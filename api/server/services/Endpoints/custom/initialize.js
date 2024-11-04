@@ -2,17 +2,17 @@ const {
   CacheKeys,
   ErrorTypes,
   envVarRegex,
-  EModelEndpoint,
   FetchTokenConfig,
   extractEnvVariable,
 } = require('librechat-data-provider');
+const { Providers } = require('@librechat/agents');
+const getCustomEndpointConfig = require('~/server/services/Config/getCustomEndpointConfig');
 const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/UserService');
-const getCustomConfig = require('~/server/services/Config/getCustomConfig');
+const { getLLMConfig } = require('~/server/services/Endpoints/openAI/llm');
 const { fetchModels } = require('~/server/services/ModelService');
 const getLogStores = require('~/cache/getLogStores');
 const { isUserProvided } = require('~/server/utils');
 const { OpenAIClient } = require('~/app');
-const { Providers } = require('@librechat/agents');
 
 const { PROXY } = process.env;
 
@@ -20,14 +20,10 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
   const { key: expiresAt } = req.body;
   const endpoint = overrideEndpoint ?? req.body.endpoint;
 
-  const customConfig = await getCustomConfig();
-  if (!customConfig) {
+  const endpointConfig = await getCustomEndpointConfig(endpoint);
+  if (!endpointConfig) {
     throw new Error(`Config not found for the ${endpoint} custom endpoint.`);
   }
-
-  const { endpoints = {} } = customConfig;
-  const customEndpoints = endpoints[EModelEndpoint.custom] ?? [];
-  const endpointConfig = customEndpoints.find((endpointConfig) => endpointConfig.name === endpoint);
 
   const CUSTOM_API_KEY = extractEnvVariable(endpointConfig.apiKey);
   const CUSTOM_BASE_URL = extractEnvVariable(endpointConfig.baseURL);
@@ -138,10 +134,21 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
 
   if (optionsOnly) {
     const modelOptions = endpointOption.model_parameters;
-    if (endpoint === Providers.OLLAMA && clientOptions.reverseProxyUrl) {
+    if (endpoint !== Providers.OLLAMA) {
+      const requestOptions = Object.assign(
+        {
+          modelOptions,
+        },
+        clientOptions,
+      );
+      return getLLMConfig(apiKey, requestOptions);
+    }
+
+    if (clientOptions.reverseProxyUrl) {
       modelOptions.baseUrl = clientOptions.reverseProxyUrl.split('/v1')[0];
       delete clientOptions.reverseProxyUrl;
     }
+
     return {
       llmConfig: modelOptions,
     };
