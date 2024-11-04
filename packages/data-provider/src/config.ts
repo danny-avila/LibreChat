@@ -550,6 +550,7 @@ export enum KnownEndpoints {
   shuttleai = 'shuttleai',
   'together.ai' = 'together.ai',
   unify = 'unify',
+  xai = 'xai',
 }
 
 export enum FetchTokenConfig {
@@ -584,7 +585,8 @@ export const alternateName = {
   [EModelEndpoint.anthropic]: 'Anthropic',
   [EModelEndpoint.custom]: 'Custom',
   [EModelEndpoint.bedrock]: 'AWS Bedrock',
-  ollama: 'Ollama',
+  [KnownEndpoints.ollama]: 'Ollama',
+  [KnownEndpoints.xai]: 'xAI',
 };
 
 const sharedOpenAIModels = [
