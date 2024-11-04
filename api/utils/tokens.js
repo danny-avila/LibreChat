@@ -76,6 +76,10 @@ const anthropicModels = {
   'claude-3.5-sonnet-latest': 200000,
 };
 
+const deepseekModels = {
+  deepseek: 127500,
+};
+
 const metaModels = {
   llama3: 8000,
   llama2: 4000,
@@ -117,6 +121,7 @@ const bedrockModels = {
   ...mistralModels,
   ...cohereModels,
   ...ollamaModels,
+  ...deepseekModels,
   ...metaModels,
   ...ai21Models,
   ...amazonModels,

@@ -357,6 +357,11 @@ describe('Meta Models Tests', () => {
       expect(getModelMaxTokens('meta/llama3')).toBe(8000);
       expect(getModelMaxTokens('meta/llama2')).toBe(4000);
     });
+
+    test('should match Deepseek model variations', () => {
+      expect(getModelMaxTokens('deepseek-chat')).toBe(127500);
+      expect(getModelMaxTokens('deepseek-coder')).toBe(127500);
+    });
   });
 
   describe('matchModelName', () => {
@@ -382,6 +387,11 @@ describe('Meta Models Tests', () => {
       expect(matchModelName('llama2', EModelEndpoint.bedrock)).toBe('llama2');
       expect(matchModelName('llama3', EModelEndpoint.bedrock)).toBe('llama3');
       expect(matchModelName('llama3.1:8b', EModelEndpoint.bedrock)).toBe('llama3.1:8b');
+    });
+
+    test('should match Deepseek model variations', () => {
+      expect(matchModelName('deepseek-chat')).toBe('deepseek');
+      expect(matchModelName('deepseek-coder')).toBe('deepseek');
     });
   });
 
