@@ -2,7 +2,7 @@ const axios = require('axios');
 const FormData = require('form-data');
 const { Readable } = require('stream');
 const { extractEnvVariable, STTProviders } = require('librechat-data-provider');
-const getCustomConfig = require('~/server/services/Config/getCustomConfig');
+const { getCustomConfig } = require('~/server/services/Config');
 const { genAzureEndpoint } = require('~/utils');
 const { logger } = require('~/config');
 
