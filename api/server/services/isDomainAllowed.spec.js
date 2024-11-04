@@ -1,7 +1,7 @@
-const getCustomConfig = require('~/server/services/Config/getCustomConfig');
+const { getCustomConfig } = require('~/server/services/Config');
 const isDomainAllowed = require('./isDomainAllowed');
 
-jest.mock('~/server/services/Config/getCustomConfig', () => jest.fn());
+jest.mock('~/server/services/Config', () => jest.fn());
 
 describe('isDomainAllowed', () => {
   afterEach(() => {
