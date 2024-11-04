@@ -71,6 +71,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     }
     getOptions = initCustom;
     agent.provider = Providers.OPENAI;
+    agent.endpoint = provider.toLowerCase();
   }
 
   // TODO: pass-in override settings that are specific to current run
