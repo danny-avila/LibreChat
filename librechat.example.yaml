@@ -184,6 +184,24 @@ endpoints:
       # Recommended: Drop the stop parameter from the request as Openrouter models use a variety of stop tokens.
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
+      
+    # Portkey AI Example
+    - name: "Portkey"
+        apikey: "dummy"  
+        baseURL: 'https://api.portkey.ai/v1'
+        headers:
+            x-portkey-api-key: '${PORTKEY_API_KEY}'
+            x-portkey-virtual-key: '${PORTKEY_OPENAI_VIRTUAL_KEY}'
+        models:
+            default: ['gpt-4o-mini', 'gpt-4o', 'chatgpt-4o-latest']
+            fetch: true
+        titleConvo: true
+        titleModel: 'current_model'
+        summarize: false
+        summaryModel: 'current_model'
+        forcePrompt: false
+        modelDisplayLabel: 'Portkey'
+        iconURL: https://images.crunchbase.com/image/upload/c_pad,f_auto,q_auto:eco,dpr_1/rjqy7ghvjoiu4cd1xjbf
 # fileConfig:
 #   endpoints:
 #     assistants:
