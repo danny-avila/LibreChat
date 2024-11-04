@@ -1,6 +1,7 @@
 import { EModelEndpoint, KnownEndpoints } from 'librechat-data-provider';
 import { CustomMinimalIcon } from '~/components/svg';
 import { IconContext } from '~/common';
+import { cn } from '~/utils';
 
 const knownEndpointAssets = {
   [KnownEndpoints.anyscale]: '/assets/anyscale.png',
@@ -18,11 +19,18 @@ const knownEndpointAssets = {
   [KnownEndpoints.shuttleai]: '/assets/shuttleai.png',
   [KnownEndpoints['together.ai']]: '/assets/together.png',
   [KnownEndpoints.unify]: '/assets/unify.webp',
+  [KnownEndpoints.xai]: '/assets/xai.svg',
 };
 
 const knownEndpointClasses = {
   [KnownEndpoints.cohere]: {
     [IconContext.landing]: 'p-2',
+  },
+  [KnownEndpoints.xai]: {
+    [IconContext.landing]: 'p-2',
+    [IconContext.menuItem]: 'bg-white',
+    [IconContext.message]: 'bg-white',
+    [IconContext.nav]: 'bg-white',
   },
 };
 
@@ -39,10 +47,10 @@ const getKnownClass = ({
     return className;
   }
 
-  const match = knownEndpointClasses[currentEndpoint]?.[context];
+  const match = knownEndpointClasses[currentEndpoint]?.[context] ?? '';
   const defaultClass = context === IconContext.landing ? '' : className;
 
-  return match ?? defaultClass;
+  return cn(match, defaultClass);
 };
 
 export default function UnknownIcon({
@@ -61,7 +69,6 @@ export default function UnknownIcon({
     return <CustomMinimalIcon className={className} />;
   }
 
-  console.log('UnknownIcon', endpoint);
   const currentEndpoint = endpoint.toLowerCase();
 
   if (iconURL) {
