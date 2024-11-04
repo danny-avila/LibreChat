@@ -1,3 +1,4 @@
+const fs = require('fs');
 const path = require('path');
 const mime = require('mime');
 const { v4 } = require('uuid');
@@ -12,14 +13,17 @@ const {
   mergeFileConfig,
   hostImageIdSuffix,
   checkOpenAIStorage,
+  removeNullishValues,
   hostImageNamePrefix,
   isAssistantsEndpoint,
 } = require('librechat-data-provider');
+const { EnvVar } = require('@librechat/agents');
 const { addResourceFileId, deleteResourceFileId } = require('~/server/controllers/assistants/v2');
 const { convertImage, resizeAndConvert } = require('~/server/services/Files/images');
 const { addAgentResourceFile, removeAgentResourceFile } = require('~/models/Agent');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { createFile, updateFileUsage, deleteFiles } = require('~/models/File');
+const { loadAuthValues } = require('~/app/clients/tools/util');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
@@ -89,6 +93,7 @@ function enqueueDeleteOperation({ req, file, deleteFile, promises, resolvedFileI
  * @param {MongoFile[]} params.files - The file objects to delete.
  * @param {Express.Request} params.req - The express request object.
  * @param {DeleteFilesBody} params.req.body - The request body.
+ * @param {string} [params.req.body.agent_id] - The agent ID if file uploaded is associated to an agent.
  * @param {string} [params.req.body.assistant_id] - The assistant ID if file uploaded is associated to an assistant.
  * @param {string} [params.req.body.tool_resource] - The tool resource if assistant file uploaded is associated to a tool resource.
  *
@@ -438,10 +443,25 @@ const processAgentFileUpload = async ({ req, res, file, metadata }) => {
     throw new Error('No agent ID provided for agent file upload');
   }
 
+  let fileInfoMetadata;
+  if (tool_resource === EToolResources.execute_code) {
+    const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(FileSources.execute_code);
+    const result = await loadAuthValues({ userId: req.user.id, authFields: [EnvVar.CODE_API_KEY] });
+    const stream = fs.createReadStream(file.path);
+    const fileIdentifier = await uploadCodeEnvFile({
+      req,
+      stream,
+      filename: file.originalname,
+      apiKey: result[EnvVar.CODE_API_KEY],
+    });
+    fileInfoMetadata = { fileIdentifier };
+  }
+
   const source =
     tool_resource === EToolResources.file_search
       ? FileSources.vectordb
       : req.app.locals.fileStrategy;
+
   const { handleFileUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id } = metadata;
 
@@ -463,9 +483,9 @@ const processAgentFileUpload = async ({ req, res, file, metadata }) => {
   if (!messageAttachment && tool_resource) {
     await addAgentResourceFile({
       req,
-      agent_id,
       file_id,
-      tool_resource: tool_resource,
+      agent_id,
+      tool_resource,
     });
   }
 
@@ -479,24 +499,24 @@ const processAgentFileUpload = async ({ req, res, file, metadata }) => {
     filepath = result.filepath;
   }
 
-  const result = await createFile(
-    {
-      user: req.user.id,
-      file_id,
-      temp_file_id,
-      bytes,
-      filepath,
-      filename: filename ?? file.originalname,
-      context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
-      model: messageAttachment ? undefined : req.body.model,
-      type: file.mimetype,
-      embedded,
-      source,
-      height,
-      width,
-    },
-    true,
-  );
+  const fileInfo = removeNullishValues({
+    user: req.user.id,
+    file_id,
+    temp_file_id,
+    bytes,
+    filepath,
+    filename: filename ?? file.originalname,
+    context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
+    model: messageAttachment ? undefined : req.body.model,
+    metadata: fileInfoMetadata,
+    type: file.mimetype,
+    embedded,
+    source,
+    height,
+    width,
+  });
+
+  const result = await createFile(fileInfo, true);
   res.status(200).json({ message: 'Agent file uploaded and processed successfully', ...result });
 };
 

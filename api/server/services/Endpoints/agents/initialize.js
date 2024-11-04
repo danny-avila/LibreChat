@@ -1,17 +1,4 @@
-// const {
-//   ErrorTypes,
-//   EModelEndpoint,
-//   resolveHeaders,
-//   mapModelToAzureConfig,
-// } = require('librechat-data-provider');
-// const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/UserService');
-// const { isEnabled, isUserProvided } = require('~/server/utils');
-// const { getAzureCredentials } = require('~/utils');
-// const { OpenAIClient } = require('~/app');
-
-const { z } = require('zod');
-const { tool } = require('@langchain/core/tools');
-const { createContentAggregator } = require('@librechat/agents');
+const { createContentAggregator, Providers } = require('@librechat/agents');
 const {
   EModelEndpoint,
   getResponseSender,
@@ -22,37 +9,20 @@ const {
   createToolEndCallback,
 } = require('~/server/controllers/agents/callbacks');
 const initAnthropic = require('~/server/services/Endpoints/anthropic/initialize');
-const initOpenAI = require('~/server/services/Endpoints/openAI/initialize');
 const getBedrockOptions = require('~/server/services/Endpoints/bedrock/options');
+const initOpenAI = require('~/server/services/Endpoints/openAI/initialize');
+const initCustom = require('~/server/services/Endpoints/custom/initialize');
+const { getCustomEndpointConfig } = require('~/server/services/Config');
 const { loadAgentTools } = require('~/server/services/ToolService');
 const AgentClient = require('~/server/controllers/agents/client');
 const { getModelMaxTokens } = require('~/utils');
-
-/* For testing errors */
-const _getWeather = tool(
-  async ({ location }) => {
-    if (location === 'SAN FRANCISCO') {
-      return 'It\'s 60 degrees and foggy';
-    } else if (location.toLowerCase() === 'san francisco') {
-      throw new Error('Input queries must be all capitals');
-    } else {
-      throw new Error('Invalid input.');
-    }
-  },
-  {
-    name: 'get_weather',
-    description: 'Call to get the current weather',
-    schema: z.object({
-      location: z.string(),
-    }),
-  },
-);
 
 const providerConfigMap = {
   [EModelEndpoint.openAI]: initOpenAI,
   [EModelEndpoint.azureOpenAI]: initOpenAI,
   [EModelEndpoint.anthropic]: initAnthropic,
   [EModelEndpoint.bedrock]: getBedrockOptions,
+  [Providers.OLLAMA]: initCustom,
 };
 
 const initializeClient = async ({ req, res, endpointOption }) => {
@@ -83,18 +53,25 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   if (!agent) {
     throw new Error('Agent not found');
   }
+
   const { tools, toolMap } = await loadAgentTools({
     req,
     tools: agent.tools,
     agent_id: agent.id,
     tool_resources: agent.tool_resources,
-    // openAIApiKey: process.env.OPENAI_API_KEY,
   });
 
+  const provider = agent.provider;
   let modelOptions = { model: agent.model };
-  const getOptions = providerConfigMap[agent.provider];
+  let getOptions = providerConfigMap[provider];
   if (!getOptions) {
-    throw new Error(`Provider ${agent.provider} not supported`);
+    const customEndpointConfig = await getCustomEndpointConfig(provider);
+    if (!customEndpointConfig) {
+      throw new Error(`Provider ${provider} not supported`);
+    }
+    getOptions = initCustom;
+    agent.provider = Providers.OPENAI;
+    agent.endpoint = provider.toLowerCase();
   }
 
   // TODO: pass-in override settings that are specific to current run
@@ -104,10 +81,14 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     res,
     endpointOption,
     optionsOnly: true,
-    overrideEndpoint: agent.provider,
+    overrideEndpoint: provider,
     overrideModel: agent.model,
   });
+
   modelOptions = Object.assign(modelOptions, options.llmConfig);
+  if (options.configOptions) {
+    modelOptions.configuration = options.configOptions;
+  }
 
   const sender = getResponseSender({
     ...endpointOption,
@@ -126,11 +107,11 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     collectedUsage,
     artifactPromises,
     endpoint: EModelEndpoint.agents,
-    configOptions: options.configOptions,
     attachments: endpointOption.attachments,
     maxContextTokens:
       agent.max_context_tokens ??
-      getModelMaxTokens(modelOptions.model, providerEndpointMap[agent.provider]),
+      getModelMaxTokens(modelOptions.model, providerEndpointMap[provider]) ??
+      4000,
   });
   return { client };
 };

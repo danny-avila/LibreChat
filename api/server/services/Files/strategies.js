@@ -5,11 +5,13 @@ const {
   saveURLToFirebase,
   deleteFirebaseFile,
   saveBufferToFirebase,
+  uploadFileToFirebase,
   uploadImageToFirebase,
   processFirebaseAvatar,
   getFirebaseFileStream,
 } = require('./Firebase');
 const {
+  uploadLocalFile,
   getLocalFileURL,
   saveFileFromURL,
   saveLocalBuffer,
@@ -20,17 +22,15 @@ const {
   getLocalFileStream,
 } = require('./Local');
 const { uploadOpenAIFile, deleteOpenAIFile, getOpenAIFileStream } = require('./OpenAI');
+const { getCodeOutputDownloadStream, uploadCodeEnvFile } = require('./Code');
 const { uploadVectors, deleteVectors } = require('./VectorDB');
-const { getCodeOutputDownloadStream } = require('./Code');
 
 /**
  * Firebase Storage Strategy Functions
  *
  * */
 const firebaseStrategy = () => ({
-  // saveFile:
-  /** @type {typeof uploadVectors | null} */
-  handleFileUpload: null,
+  handleFileUpload: uploadFileToFirebase,
   saveURL: saveURLToFirebase,
   getFileURL: getFirebaseURL,
   deleteFile: deleteFirebaseFile,
@@ -46,8 +46,7 @@ const firebaseStrategy = () => ({
  *
  * */
 const localStrategy = () => ({
-  /** @type {typeof uploadVectors | null} */
-  handleFileUpload: null,
+  handleFileUpload: uploadLocalFile,
   saveURL: saveFileFromURL,
   getFileURL: getLocalFileURL,
   saveBuffer: saveLocalBuffer,
@@ -124,8 +123,7 @@ const codeOutputStrategy = () => ({
   prepareImagePayload: null,
   /** @type {typeof deleteLocalFile | null} */
   deleteFile: null,
-  /** @type {typeof uploadVectors | null} */
-  handleFileUpload: null,
+  handleFileUpload: uploadCodeEnvFile,
   getDownloadStream: getCodeOutputDownloadStream,
 });
 
