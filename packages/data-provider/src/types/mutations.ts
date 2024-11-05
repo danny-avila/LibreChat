@@ -249,20 +249,9 @@ export type AcceptTermsMutationOptions = MutationOptions<
   void
 >;
 
-// New types for buying a subscription
-export type TBuySubscriptionRequest = {
-  userId: string;
-  planId: string;
-};
-
-export type TBuySubscriptionResponse = {
-  success: boolean;
-  paymentUrl?: string; // URL to redirect the user to the payment gateway
-  message?: string;
-};
 
 // Mutation options for the buy subscription process
 export type BuySubscriptionOptions = MutationOptions<
-    TBuySubscriptionResponse,
-    TBuySubscriptionRequest
+    types.TBuySubscriptionResponse,
+    types.TBuySubscriptionRequest
 >;
