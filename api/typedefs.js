@@ -958,7 +958,6 @@
  * @property {Object} [headers] - Additional headers for requests
  * @property {string} [proxy] - Proxy configuration
  * @property {Object} [tools] - Available tools for the agent
- * @property {Object} [toolMap] - Mapping of tool configurations
  * @property {Object} [eventHandlers] - Custom event handlers
  * @property {Object} [addParams] - Additional parameters to add to requests
  * @property {string[]} [dropParams] - Parameters to remove from requests
