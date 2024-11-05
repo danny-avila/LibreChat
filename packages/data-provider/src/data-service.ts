@@ -9,6 +9,8 @@ import * as config from './config';
 import request from './request';
 import * as s from './schemas';
 import * as r from './roles';
+import {paymentHistory} from "./api-endpoints";
+import {TPaymentHistoryResponse} from "./types";
 
 export function abortRequestWithMessage(
   endpoint: string,
@@ -116,7 +118,7 @@ export function getUser(): Promise<t.TUser> {
   return request.get(endpoints.user());
 }
 
-export function getUserBalance(): Promise<string> {
+export function getUserBalance(): Promise<t.TBalance> {
   return request.get(endpoints.balance());
 }
 
@@ -710,3 +712,50 @@ export function acceptTerms(): Promise<t.TAcceptTermsResponse> {
 export function getBanner(): Promise<t.TBannerResponse> {
   return request.get(endpoints.banner());
 }
+
+
+// Fetch all subscription plans
+export function getSubscriptionPlans(): Promise<t.TSubscriptionPlan[]> {
+  return request.get(endpoints.subscriptionPlans());
+}
+
+// Fetch a specific subscription plan by ID
+export function getSubscriptionPlanById(id: string): Promise<t.TSubscriptionPlan> {
+  return request.get(endpoints.subscriptionPlanById(id));
+}
+
+// Create a new subscription plan
+export function createSubscriptionPlan(payload: t.TCreateSubscriptionPlan): Promise<t.TSubscriptionPlan> {
+  return request.post(endpoints.subscriptionPlans(), payload);
+}
+
+// Update an existing subscription plan
+export function updateSubscriptionPlan(id: string, payload: t.TUpdateSubscriptionPlan): Promise<t.TSubscriptionPlan> {
+  return request.put(endpoints.subscriptionPlanById(id), payload);
+}
+
+// Delete a subscription plan
+export function deleteSubscriptionPlan(id: string): Promise<void> {
+  return request.delete(endpoints.subscriptionPlanById(id));
+}
+
+
+// Initiate a new payment
+export function initiatePayment(payload: t.TPaymentRequest): Promise<t.TPaymentResponse> {
+  return request.post(endpoints.initiatePayment(), payload);
+}
+
+// Verify an existing payment
+export function verifyPayment(payload: t.TVerifyPaymentRequest): Promise<t.TVerifyPaymentResponse> {
+  return request.post(endpoints.verifyPayment(), payload);
+}
+
+// Function to initiate the subscription purchase
+export const buySubscriptionPlan = (planId: string): Promise<t.TBuySubscriptionResponse> => {
+  return request.post(endpoints.buySubscription(planId));
+};
+
+export function getUserPaymentHistory(): Promise<t.TPaymentHistoryResponse> {
+  return request.get(endpoints.paymentHistory());
+}
+

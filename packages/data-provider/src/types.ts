@@ -521,3 +521,126 @@ export type TAcceptTermsResponse = {
 };
 
 export type TBannerResponse = TBanner | null;
+
+// Subscription Plan Type
+export type TSubscriptionPlan = {
+  _id: string;
+  name: string;
+  description?: string;
+  price: number;
+  durationInDays: number;
+  tokenCredits: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  features: string[];
+};
+
+// Create Subscription Plan Payload
+export type TCreateSubscriptionPlan = {
+  name: string;
+  description?: string;
+  price: number;
+  durationInDays: number;
+  tokenCredits: number;
+  isActive?: boolean;
+};
+
+// Update Subscription Plan Payload
+export type TUpdateSubscriptionPlan = Partial<TCreateSubscriptionPlan>;
+
+// Payment Gateway Request Type
+export type TPaymentGatewayRequest = {
+  amount: number; // Payment amount
+  currency: string; // Currency code, e.g., 'USD', 'EUR', 'IRR'
+  description: string; // Description of the payment or product/service
+  userId: string; // ID of the user making the payment
+  callbackUrl: string; // URL to redirect after payment is completed
+};
+
+// Payment Gateway Response Type (for redirection)
+export type TPaymentGatewayResponse = {
+  redirectUrl: string; // URL to redirect the client to the payment gateway
+  paymentId: string; // Unique payment ID from the client system
+};
+
+// Payment Verification Request Type
+export type TPaymentVerificationRequest = {
+  paymentId: string; // Unique payment ID generated when the payment was created
+  authorityCode: string; // Unique code or token provided by the gateway for verification
+};
+
+// Payment Verification Response Type
+export type TPaymentVerificationResponse = {
+  isSuccess: boolean; // Whether the payment was successfully verified
+  transactionId?: string; // Unique transaction ID if payment is successful
+  amount?: number; // Confirmed amount of the payment
+  currency?: string; // Currency in which payment was made
+  message?: string; // Optional message about the verification result
+};
+// In `types.ts`
+
+export type TPaymentRequest = {
+  amount: number;
+  callbackUrl: string;
+  description: string;
+  email?: string;
+  mobile?: string;
+};
+
+export type TPaymentResponse = {
+  paymentUrl: string; // URL to which the client should redirect
+  authority: string;  // Unique identifier for the payment
+};
+
+export type TVerifyPaymentRequest = {
+  authority: string;  // Authority code from the payment gateway
+  amount: number;     // Amount of the transaction
+};
+
+export type TVerifyPaymentResponse = {
+  status: string;     // Status of the transaction
+  refId: string;      // Reference ID from the payment provider
+  success: boolean;
+};
+
+// types.ts
+
+export type TBuySubscriptionRequest = {
+  userId: string;
+  planId: string;
+};
+
+export type TBuySubscriptionResponse = {
+  success: boolean;
+  url?: string; // URL to redirect the user to the payment gateway
+  authority?: string;
+};
+
+// Add the TPaymentHistory type for user's payment history
+export type TPaymentHistoryItem = {
+  transactionId: string;       // Unique transaction ID
+  userId: string;               // ID of the user who made the payment
+  subscriptionPlanId?: string;  // ID of the subscription plan (if applicable)
+  amount: number;               // Amount paid
+  status: 'pending' | 'paid' | 'failed'; // Status of the payment
+  refId?: string;               // Reference ID from the payment provider
+  createdAt: string;            // Date and time of payment creation
+  updatedAt?: string;           // Date and time of payment update
+  provider: string;             // Payment provider, e.g., 'zarinpal'
+};
+
+// The payment history type is an array of payment history items
+export type TPaymentHistory = TPaymentHistoryItem[];
+
+export type TPaymentHistoryResponse = {
+  message: string,
+  payments: TPaymentHistory,
+};
+
+// Update TBalance type to include subscription plan information
+export type TBalance = {
+  balance: number;
+  subscription?: TSubscriptionPlan;
+};
+

@@ -82,6 +82,7 @@ const startServer = async () => {
   }
 
   app.use('/oauth', routes.oauth);
+
   /* API Endpoints */
   app.use('/api/auth', routes.auth);
   app.use('/api/keys', routes.keys);
@@ -108,8 +109,9 @@ const startServer = async () => {
   app.use('/api/agents', routes.agents);
   app.use('/api/banner', routes.banner);
   app.use('/api/bedrock', routes.bedrock);
-
   app.use('/api/tags', routes.tags);
+  app.use('/api/subscriptionPlans', routes.subscriptionPlans); // SubscriptionPlans route
+  app.use('/api/payment', routes.payment); // New payment route
 
   app.use((req, res) => {
     // Replace lang attribute in index.html with lang from cookies or accept-language header

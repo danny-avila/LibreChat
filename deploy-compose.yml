@@ -1,10 +1,6 @@
 version: "3.8"
 services:
   api:
-    # build:
-    #   context: .
-    #   dockerfile: Dockerfile.multi
-    #   target: api-build
     image: ghcr.io/danny-avila/librechat-dev-api:latest
     container_name: LibreChat-API
     ports:
@@ -14,7 +10,7 @@ services:
       - rag_api
     restart: always
     extra_hosts:
-    - "host.docker.internal:host-gateway"
+      - "host.docker.internal:host-gateway"
     env_file:
       - .env
     environment:
@@ -42,21 +38,36 @@ services:
     restart: always
     volumes:
       - ./client/nginx.conf:/etc/nginx/conf.d/default.conf
+
   mongodb:
     container_name: chat-mongodb
-    # ports:  # Uncomment this to access mongodb from outside docker, not safe in deployment
-    #   - 27018:27017
+    ports:
+      - 27017:27017
     image: mongo
     restart: always
     volumes:
       - ./data-node:/data/db
     command: mongod --noauth
+
+  mongo-express:
+    image: jfrog.exiraz.com/docker/mongo-express:latest
+    container_name: chat-mongo-express
+    restart: always
+    ports:
+      - 8081:8081
+    depends_on:
+      - mongodb
+    environment:
+       ME_CONFIG_MONGODB_ENABLE_ADMIN: true
+       ME_CONFIG_MONGODB_SERVER: mongodb
+       ME_CONFIG_MONGODB_URL: mongodb://mongodb:27017
+       ME_CONFIG_BASICAUTH_USERNAME: admin
+       ME_CONFIG_BASICAUTH_PASSWORD: admin
+
   meilisearch:
     container_name: chat-meilisearch
     image: getmeili/meilisearch:v1.7.3
     restart: always
-    # ports: # Uncomment this to access meilisearch from outside docker
-    #   - 7700:7700 # if exposing these ports, make sure your master key is not the default value
     env_file:
       - .env
     environment:
@@ -64,6 +75,7 @@ services:
       - MEILI_NO_ANALYTICS=true
     volumes:
       - ./meili_data_v1.7:/meili_data
+
   vectordb:
     image: ankane/pgvector:latest
     environment:
@@ -73,6 +85,7 @@ services:
     restart: always
     volumes:
       - pgdata2:/var/lib/postgresql/data
+
   rag_api:
     image: ghcr.io/danny-avila/librechat-rag-api-dev-lite:latest
     environment:

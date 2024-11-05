@@ -7,6 +7,7 @@ import {
   VerifyEmail,
   ApiErrorWatcher,
 } from '~/components/Auth';
+import { VerifyPayment } from '~/components/Payment';
 import { AuthContextProvider } from '~/hooks/AuthContext';
 import StartupLayout from './Layouts/Startup';
 import LoginLayout from './Layouts/Login';
@@ -49,6 +50,10 @@ export const router = createBrowserRouter([
   {
     path: 'verify',
     element: <VerifyEmail />,
+  },
+  {
+    path: 'verify-payment',
+    element: <VerifyPayment />,
   },
   {
     element: <AuthLayout />,

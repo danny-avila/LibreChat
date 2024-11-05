@@ -8,10 +8,12 @@ import { initialModelsConfig, LocalStorageKeys } from '../config';
 import { defaultOrderQuery } from '../types/assistants';
 import * as dataService from '../data-service';
 import * as m from '../types/mutations';
-import { QueryKeys } from '../keys';
+import { QueryKeys, MutationKeys } from '../keys';
 import request from '../request';
 import * as s from '../schemas';
 import * as t from '../types';
+import {getUserPaymentHistory} from "../data-service";
+import {TPaymentHistoryResponse} from "../types";
 
 export const useAbortRequestWithMessage = (): UseMutationResult<
   void,
@@ -75,9 +77,9 @@ export const useGetSharedMessages = (
 };
 
 export const useGetUserBalance = (
-  config?: UseQueryOptions<string>,
-): QueryObserverResult<string> => {
-  return useQuery<string>([QueryKeys.balance], () => dataService.getUserBalance(), {
+  config?: UseQueryOptions<t.TBalance>, // Updated type
+): QueryObserverResult<t.TBalance> => { // Updated type
+  return useQuery<t.TBalance>([QueryKeys.balance], () => dataService.getUserBalance(), {
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
     refetchOnMount: true,
@@ -461,4 +463,161 @@ export const useGetBannerQuery = (
     refetchOnMount: false,
     ...config,
   });
+};
+
+// Fetch all subscription plans
+export const useGetSubscriptionPlans = (
+  config?: UseQueryOptions<t.TSubscriptionPlan[]>,
+): QueryObserverResult<t.TSubscriptionPlan[]> => {
+  return useQuery<t.TSubscriptionPlan[]>(
+    [QueryKeys.subscriptionPlans],
+    () => dataService.getSubscriptionPlans(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      ...config,
+    },
+  );
+};
+
+// Fetch a specific subscription plan by ID
+export const useGetSubscriptionPlanById = (
+  id: string,
+  config?: UseQueryOptions<t.TSubscriptionPlan>,
+): QueryObserverResult<t.TSubscriptionPlan> => {
+  return useQuery<t.TSubscriptionPlan>(
+    [QueryKeys.subscriptionPlan, id],
+    () => dataService.getSubscriptionPlanById(id),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      ...config,
+    },
+  );
+};
+
+// Create a new subscription plan
+export const useCreateSubscriptionPlan = (): UseMutationResult<
+    t.TSubscriptionPlan,
+    unknown,
+    t.TCreateSubscriptionPlan,
+    unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation((payload: t.TCreateSubscriptionPlan) => dataService.createSubscriptionPlan(payload), {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.subscriptionPlans]);
+    },
+  });
+};
+
+// Update an existing subscription plan
+export const useUpdateSubscriptionPlan = (
+  id: string,
+): UseMutationResult<t.TSubscriptionPlan, unknown, t.TUpdateSubscriptionPlan, unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation((payload: t.TUpdateSubscriptionPlan) => dataService.updateSubscriptionPlan(id, payload), {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.subscriptionPlans]);
+      queryClient.invalidateQueries([QueryKeys.subscriptionPlan, id]);
+    },
+  });
+};
+
+// Delete a subscription plan
+export const useDeleteSubscriptionPlan = (id: string): UseMutationResult<void> => {
+  const queryClient = useQueryClient();
+  return useMutation(() => dataService.deleteSubscriptionPlan(id), {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.subscriptionPlans]);
+    },
+  });
+};
+
+// Hook to initiate a new payment
+export const useInitiatePayment = (): UseMutationResult<
+    t.TPaymentResponse,
+    unknown,
+    t.TPaymentRequest,
+    unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    (payload: t.TPaymentRequest) => dataService.initiatePayment(payload),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.balance]); // or any relevant cache keys to refresh
+      },
+    },
+  );
+};
+
+// Hook to verify an existing payment
+export const useVerifyPayment = (): UseMutationResult<
+    t.TVerifyPaymentResponse,
+    unknown,
+    t.TVerifyPaymentRequest,
+    unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    (payload: t.TVerifyPaymentRequest) => dataService.verifyPayment(payload),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.balance]); // or any relevant cache keys to refresh
+      },
+    },
+  );
+};
+
+export const useBuySubscriptionPlan = (): UseMutationResult<
+    t.TBuySubscriptionResponse,
+    Error,
+    { planId: string }
+> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    ({ planId }) => dataService.buySubscriptionPlan(planId), // planId passed here
+    {
+      mutationKey: [MutationKeys.buySubscription],
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.subscriptionPlans]);
+        queryClient.invalidateQueries([QueryKeys.subscriptionPlan]);
+      },
+    },
+  );
+};
+
+export const useVerifyPaymentMutation = (): UseMutationResult<
+    t.TVerifyPaymentResponse,
+    Error,
+    t.TVerifyPaymentRequest
+> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    (payload: t.TVerifyPaymentRequest) => dataService.verifyPayment(payload),
+    {
+      mutationKey: [MutationKeys.verifyPayment],
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.balance]);
+      },
+    },
+  );
+};
+
+export const useGetPaymentHistory = (
+  config?: UseQueryOptions<t.TPaymentHistoryResponse>,
+): QueryObserverResult<t.TPaymentHistoryResponse> => {
+  return useQuery<t.TPaymentHistoryResponse>(
+    [QueryKeys.paymentHistory],
+    () => dataService.getUserPaymentHistory(), // Assumes dataService has this function
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      ...config,
+    },
+  );
 };

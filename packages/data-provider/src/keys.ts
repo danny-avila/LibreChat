@@ -44,6 +44,12 @@ export enum QueryKeys {
   health = 'health',
   userTerms = 'userTerms',
   banner = 'banner',
+  subscriptionPlans = 'subscriptionPlans', // New key for fetching all subscription plans
+  subscriptionPlan = 'subscriptionPlan',   // New key for a specific subscription plan by ID
+  paymentStatus = 'paymentStatus', // For querying the status of an ongoing payment
+  buySubscription = 'buySubscription',
+  paymentHistory = 'paymentHistory',
+
 }
 
 export enum MutationKeys {
@@ -63,4 +69,8 @@ export enum MutationKeys {
   deleteAgentAction = 'deleteAgentAction',
   deleteUser = 'deleteUser',
   updateRole = 'updateRole',
+  initiatePayment = 'initiatePayment', // For initiating a payment request
+  verifyPayment = 'verifyPayment', // For verifying a payment after gateway redirection
+  buySubscription = 'buySubscription',
+
 }

@@ -222,3 +222,16 @@ export const addTagToConversation = (conversationId: string) =>
 export const userTerms = () => '/api/user/terms';
 export const acceptUserTerms = () => '/api/user/terms/accept';
 export const banner = () => '/api/banner';
+
+export const subscriptionPlans = () => '/api/subscriptionPlans';
+export const subscriptionPlanById = (id: string) => `/api/subscriptionPlans/${id}`;
+
+// Initiate payment endpoint
+export const initiatePayment = () => '/api/payment/initiate';
+
+// Verify payment endpoint
+export const verifyPayment = () => '/api/payment/verify';
+
+export const buySubscription = (planId: string) => `/api/subscriptionPlans/buy/${planId}`;
+
+export const paymentHistory = () => '/api/payment/history';
