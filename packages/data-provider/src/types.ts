@@ -525,7 +525,7 @@ export type TBannerResponse = TBanner | null;
 // Subscription Plan Type
 export type TSubscriptionPlan = {
   _id: string;
-  name: string;
+  planName: string;
   description?: string;
   price: number;
   durationInDays: number;
