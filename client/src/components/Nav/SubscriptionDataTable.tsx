@@ -44,7 +44,7 @@ const SubscriptionDataTable: React.FC<SubscriptionDataTableProps> = ({ plans }) 
   return (
     <div className="container mx-auto p-1">
       {/* Alert message */}
-      <div className="bg-yellow-50 border border-yellow-400 text-white-700 px-4 py-3 rounded relative mb-4 text-right rtl:mr-0 " role="alert">
+      <div className="bg-blue-100 border border-blue-400 text-black px-4 py-3 rounded relative mb-4 text-right rtl:mr-0 " role="alert">
         <strong className="font-bold">{localize('com_nav_warning')}</strong>
         <span className="block sm:inline rtl:mr-2">
           {localize('com_nav_purchase_warning')}

@@ -1,6 +1,6 @@
 var config = {
-  https: "https://payment.zarinpal.com/pg/v4/payment/",
-  sandbox: "https://sandbox.zarinpal.com/pg/v4/payment/",
+  https: process.env.ZARINPAL_PAYMENT_URL,
+  sandbox: process.env.ZARINPAL_PAYMENT_URL_SANDBOX,
   merchantIDLength: 36,
   API: {
     PR: "request.json",
@@ -9,9 +9,9 @@ var config = {
   },
   PG: function (sandbox) {
     if (sandbox) {
-      return "https://sandbox.zarinpal.com/pg/StartPay/";
+      return process.env.ZARINPAL_PAYMENT_URL_SANDBOX_PG;
     }
-    return "https://www.zarinpal.com/pg/StartPay/";
+    return process.env.ZARINPAL_PAYMENT_URL_PG;
   },
 };
 
