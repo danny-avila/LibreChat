@@ -189,10 +189,13 @@ const formatAgentMessages = (payload) => {
         // TODO: investigate; args as dictionary may need to be provider-or-tool-specific
         let args = _args;
         try {
-          args = JSON.parse(args);
+          args = JSON.parse(_args);
         } catch (e) {
-          // failed to parse, leave as is
+          if (typeof _args === 'string') {
+            args = { input: _args };
+          }
         }
+
         tool_call.args = args;
         lastAIMessage.tool_calls.push(tool_call);
 
