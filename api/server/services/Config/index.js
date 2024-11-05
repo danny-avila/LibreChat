@@ -10,12 +10,12 @@ const loadDefaultEndpointsConfig = require('./loadDefaultEConfig');
 
 module.exports = {
   config,
-  getCustomConfig,
   loadCustomConfig,
   loadConfigModels,
   loadDefaultModels,
   loadOverrideConfig,
   loadAsyncEndpoints,
+  ...getCustomConfig,
   loadConfigEndpoints,
   loadDefaultEndpointsConfig,
 };

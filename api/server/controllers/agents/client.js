@@ -13,9 +13,9 @@ const {
   VisionModes,
   openAISchema,
   EModelEndpoint,
+  KnownEndpoints,
   anthropicSchema,
   bedrockOutputParser,
-  providerEndpointMap,
   removeNullishValues,
 } = require('librechat-data-provider');
 const {
@@ -26,6 +26,7 @@ const {
 const {
   formatMessage,
   formatAgentMessages,
+  formatContentStrings,
   createContextHandlers,
 } = require('~/app/clients/prompts');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
@@ -44,6 +45,8 @@ const providerParsers = {
   [EModelEndpoint.anthropic]: anthropicSchema,
   [EModelEndpoint.bedrock]: bedrockOutputParser,
 };
+
+const legacyContentEndpoints = new Set([KnownEndpoints.groq, KnownEndpoints.deepseek]);
 
 class AgentClient extends BaseClient {
   constructor(options = {}) {
@@ -75,6 +78,7 @@ class AgentClient extends BaseClient {
     this.collectedUsage = collectedUsage;
     /** @type {ArtifactPromises} */
     this.artifactPromises = artifactPromises;
+    /** @type {AgentClientOptions} */
     this.options = Object.assign({ endpoint: options.endpoint }, clientOptions);
   }
 
@@ -465,7 +469,6 @@ class AgentClient extends BaseClient {
 
       const config = {
         configurable: {
-          provider: providerEndpointMap[this.options.agent.provider],
           thread_id: this.conversationId,
         },
         signal: abortController.signal,
@@ -480,6 +483,9 @@ class AgentClient extends BaseClient {
       this.run = run;
 
       const messages = formatAgentMessages(payload);
+      if (legacyContentEndpoints.has(this.options.agent.endpoint)) {
+        formatContentStrings(messages);
+      }
       await run.processStream({ messages }, config, {
         [Callback.TOOL_ERROR]: (graph, error, toolId) => {
           logger.error(

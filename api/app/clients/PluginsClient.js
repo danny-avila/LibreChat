@@ -458,7 +458,6 @@ class PluginsClient extends OpenAIClient {
 
     const instructionsPayload = {
       role: 'system',
-      name: 'instructions',
       content: promptPrefix,
     };
 
