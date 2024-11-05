@@ -54,7 +54,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     throw new Error('Agent not found');
   }
 
-  const { tools, toolMap } = await loadAgentTools({
+  const { tools } = await loadAgentTools({
     req,
     tools: agent.tools,
     agent_id: agent.id,
@@ -100,7 +100,6 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     agent,
     tools,
     sender,
-    toolMap,
     contentParts,
     modelOptions,
     eventHandlers,

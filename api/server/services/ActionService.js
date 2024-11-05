@@ -14,6 +14,7 @@ const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
 
 const toolNameRegex = /^[a-zA-Z0-9_-]+$/;
+const replaceSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
 
 /**
  * Validates tool name against regex pattern and updates if necessary.
@@ -82,8 +83,6 @@ async function domainParser(req, domain, inverse = false) {
     await domainsCache.set(key, modifiedDomain);
     return key;
   }
-
-  const replaceSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
 
   if (!cachedDomain) {
     return domain.replace(replaceSeparatorRegex, '.');
@@ -156,7 +155,7 @@ async function createActionTool({ action, requestBuilder, zodSchema, name, descr
 
   if (name) {
     return tool(_call, {
-      name,
+      name: name.replace(replaceSeparatorRegex, '_'),
       description: description || '',
       schema: zodSchema,
     });

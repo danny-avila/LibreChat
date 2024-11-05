@@ -373,14 +373,14 @@ async function processRequiredActions(client, requiredActions) {
 }
 
 /**
- * Processes the runtime tool calls and returns a combined toolMap.
+ * Processes the runtime tool calls and returns the tool classes.
  * @param {Object} params - Run params containing user and request information.
  * @param {ServerRequest} params.req - The request object.
  * @param {string} params.agent_id - The agent ID.
  * @param {Agent['tools']} params.tools - The agent's available tools.
  * @param {Agent['tool_resources']} params.tool_resources - The agent's available tool resources.
  * @param {string | undefined} [params.openAIApiKey] - The OpenAI API key.
- * @returns {Promise<{ tools?: StructuredTool[]; toolMap?: Record<string, StructuredTool>}>} The combined toolMap.
+ * @returns {Promise<{ tools?: StructuredTool[] }>} The agent tools.
  */
 async function loadAgentTools({ req, agent_id, tools, tool_resources, openAIApiKey }) {
   if (!tools || tools.length === 0) {
@@ -482,10 +482,8 @@ async function loadAgentTools({ req, agent_id, tools, tool_resources, openAIApiK
     throw new Error('No tools found for the specified tool calls.');
   }
 
-  const toolMap = { ...ToolMap, ...ActionToolMap };
   return {
     tools: agentTools,
-    toolMap,
   };
 }
 
