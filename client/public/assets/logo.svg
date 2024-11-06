@@ -2,7 +2,7 @@
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 20010904//EN"
         "http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd">
 <svg version="1.0" xmlns="http://www.w3.org/2000/svg"
-     width="600.000000pt" height="400.000000pt" viewBox="0 0 600.000000 400.000000"
+     width="1000.000000pt" height="1000.000000pt" viewBox="0 0 600.000000 400.000000"
      preserveAspectRatio="xMidYMid meet">
 
   <defs>
@@ -12,7 +12,7 @@
     </linearGradient>
   </defs>
 
-  <g transform="translate(0,400) scale(0.12,-0.12)"
+  <g transform="translate(-50,450) scale(0.12,-0.12)"
      fill="url(#librechatGradient)" stroke="none">
     <path d="M2655 3289 c-152 -20 -345 -95 -480 -184 -78 -52 -193 -162 -258
 -247 -103 -135 -198 -360 -214 -506 -3 -29 -10 -55 -14 -58 -13 -7 -11 -221 1
