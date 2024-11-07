@@ -1,5 +1,5 @@
 const { zodToJsonSchema } = require('zod-to-json-schema');
-const { PromptTemplate } = require('langchain/prompts');
+const { PromptTemplate } = require('@langchain/core/prompts');
 const { JsonKeyOutputFunctionsParser } = require('langchain/output_parsers');
 const { LLMChain } = require('langchain/chains');
 function getExtractionFunctions(schema) {

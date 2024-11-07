@@ -1,6 +1,6 @@
 const { Tools } = require('librechat-data-provider');
 const { ZapierToolKit } = require('langchain/agents');
-const { Calculator } = require('langchain/tools/calculator');
+const { Calculator } = require('@langchain/community/tools/calculator');
 const { SerpAPI, ZapierNLAWrapper } = require('langchain/tools');
 const { createCodeExecutionTool, EnvVar } = require('@librechat/agents');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');

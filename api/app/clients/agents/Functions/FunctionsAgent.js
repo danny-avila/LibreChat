@@ -1,12 +1,12 @@
 const { Agent } = require('langchain/agents');
 const { LLMChain } = require('langchain/chains');
-const { FunctionChatMessage, AIChatMessage } = require('langchain/schema');
+const { FunctionChatMessage, AIChatMessage } = require('@langchain/core/messages');
 const {
   ChatPromptTemplate,
   MessagesPlaceholder,
   SystemMessagePromptTemplate,
   HumanMessagePromptTemplate,
-} = require('langchain/prompts');
+} = require('@langchain/core/prompts');
 const { logger } = require('~/config');
 
 const PREFIX = 'You are a helpful AI assistant.';
