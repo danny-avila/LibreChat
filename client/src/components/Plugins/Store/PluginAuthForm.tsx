@@ -78,8 +78,18 @@ function PluginAuthForm({ plugin, onSubmit, isEntityTool }: TPluginAuthFormProps
           })}
           <button
             disabled={!isDirty || !isValid || isSubmitting}
-            type="submit"
+            type="button"
             className="btn btn-primary relative"
+            onClick={() => {
+              handleSubmit((auth) =>
+                onSubmit({
+                  pluginKey: plugin?.pluginKey ?? '',
+                  action: 'install',
+                  auth,
+                  isEntityTool,
+                }),
+              )();
+            }}
           >
             <div className="flex items-center justify-center gap-2">
               {localize('com_ui_save')}
