@@ -40,7 +40,7 @@ export type EndpointFileConfig = {
 
 export type FileConfig = {
   endpoints: {
-    [key: string]: EndpointFileConfig | undefined;
+    [key: string]: EndpointFileConfig;
   };
   serverFileSizeLimit?: number;
   avatarSizeLimit?: number;
