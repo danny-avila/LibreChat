@@ -18,8 +18,8 @@ jest.mock('~/models/User', () => {
 
 jest.mock('~/server/services/PluginService', () => mockPluginService);
 
-const { Calculator } = require('langchain/tools/calculator');
-const { BaseChatModel } = require('langchain/chat_models/openai');
+const { Calculator } = require('@langchain/community/tools/calculator');
+const { BaseChatModel } = require('@langchain/openai');
 
 const User = require('~/models/User');
 const PluginService = require('~/server/services/PluginService');

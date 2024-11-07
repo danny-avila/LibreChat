@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const { Constants } = require('librechat-data-provider');
-const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
+const { HumanChatMessage, AIChatMessage } = require('@langchain/core/messages');
 const PluginsClient = require('../PluginsClient');
 
 jest.mock('~/lib/db/connectDb');

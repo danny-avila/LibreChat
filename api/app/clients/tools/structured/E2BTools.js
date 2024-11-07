@@ -1,8 +1,8 @@
 const { z } = require('zod');
 const axios = require('axios');
 const { StructuredTool } = require('langchain/tools');
-const { PromptTemplate } = require('langchain/prompts');
-// const { ChatOpenAI } = require('langchain/chat_models/openai');
+const { PromptTemplate } = require('@langchain/core/prompts');
+// const { ChatOpenAI } = require('@langchain/openai');
 const { createExtractionChainFromZod } = require('./extractionChain');
 const { logger } = require('~/config');
 

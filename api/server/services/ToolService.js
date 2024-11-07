@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { zodToJsonSchema } = require('zod-to-json-schema');
-const { Calculator } = require('langchain/tools/calculator');
+const { Calculator } = require('@langchain/community/tools/calculator');
 const { tool: toolFn, Tool } = require('@langchain/core/tools');
 const {
   Tools,
