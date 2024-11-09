@@ -76,7 +76,7 @@ const verifyPayment = async ({ authority }) => {
       Authority: transactionId,
     });
 
-    if ((response.status === 100 && response.message === 'Paid') || (response.status === 101 && response.message === 'Verified')) {
+    if (response.status === 100 && response.message === 'Paid') {
       // Update payment status to 'paid' with the reference ID
       const updatedPayment = await Payment.findOneAndUpdate(
         { transactionId: authority },
