@@ -553,7 +553,6 @@ class OpenAIClient extends BaseClient {
       promptPrefix = `Instructions:\n${promptPrefix.trim()}`;
       instructions = {
         role: 'system',
-        name: 'instructions',
         content: promptPrefix,
       };
 

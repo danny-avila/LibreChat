@@ -2,6 +2,7 @@ const fs = require('fs');
 const axios = require('axios');
 const FormData = require('form-data');
 const { FileSources } = require('librechat-data-provider');
+const { logAxiosError } = require('~/utils');
 const { logger } = require('~/config');
 
 /**
@@ -32,7 +33,10 @@ const deleteVectors = async (req, file) => {
       data: [file.file_id],
     });
   } catch (error) {
-    logger.error('Error deleting vectors', error);
+    logAxiosError({
+      error,
+      message: 'Error deleting vectors',
+    });
     throw new Error(error.message || 'An error occurred during file deletion.');
   }
 };
@@ -91,7 +95,10 @@ async function uploadVectors({ req, file, file_id }) {
       embedded: Boolean(responseData.known_type),
     };
   } catch (error) {
-    logger.error('Error embedding file', error);
+    logAxiosError({
+      error,
+      message: 'Error uploading vectors',
+    });
     throw new Error(error.message || 'An error occurred during file upload.');
   }
 }

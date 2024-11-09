@@ -12,6 +12,7 @@ const getOptions = async ({ req, endpointOption }) => {
   const {
     BEDROCK_AWS_SECRET_ACCESS_KEY,
     BEDROCK_AWS_ACCESS_KEY_ID,
+    BEDROCK_AWS_SESSION_TOKEN,
     BEDROCK_REVERSE_PROXY,
     BEDROCK_AWS_DEFAULT_REGION,
     PROXY,
@@ -24,6 +25,7 @@ const getOptions = async ({ req, endpointOption }) => {
     : {
       accessKeyId: BEDROCK_AWS_ACCESS_KEY_ID,
       secretAccessKey: BEDROCK_AWS_SECRET_ACCESS_KEY,
+      ...(BEDROCK_AWS_SESSION_TOKEN && { sessionToken: BEDROCK_AWS_SESSION_TOKEN }),
     };
 
   if (!credentials) {
