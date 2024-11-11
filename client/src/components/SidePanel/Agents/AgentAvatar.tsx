@@ -21,7 +21,7 @@ import { useLocalize } from '~/hooks';
 import { formatBytes } from '~/utils';
 
 function Avatar({
-  agent_id,
+  agent_id = '',
   avatar,
   createMutation,
 }: {
@@ -31,9 +31,9 @@ function Avatar({
 }) {
   const queryClient = useQueryClient();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState('');
   const [progress, setProgress] = useState<number>(1);
   const [input, setInput] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const lastSeenCreatedId = useRef<string | null>(null);
   const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
@@ -54,7 +54,8 @@ function Avatar({
       }
 
       setInput(null);
-      setPreviewUrl(data.avatar?.filepath as string | null);
+      const newUrl = data.avatar?.filepath ?? '';
+      setPreviewUrl(newUrl);
 
       const res = queryClient.getQueryData<AgentListResponse>([
         QueryKeys.agents,
@@ -65,16 +66,15 @@ function Avatar({
         return;
       }
 
-      const agents =
-        res.data.map((agent) => {
-          if (agent.id === agent_id) {
-            return {
-              ...agent,
-              ...data,
-            };
-          }
-          return agent;
-        }) ?? [];
+      const agents = res.data.map((agent) => {
+        if (agent.id === agent_id) {
+          return {
+            ...agent,
+            ...data,
+          };
+        }
+        return agent;
+      });
 
       queryClient.setQueryData<AgentListResponse>([QueryKeys.agents, defaultOrderQuery], {
         ...res,
@@ -86,7 +86,7 @@ function Avatar({
     onError: (error) => {
       console.error('Error:', error);
       setInput(null);
-      setPreviewUrl(null);
+      setPreviewUrl('');
       showToast({ message: localize('com_ui_upload_error'), status: 'error' });
       setProgress(1);
     },
@@ -103,8 +103,10 @@ function Avatar({
   }, [input]);
 
   useEffect(() => {
-    if (avatar) {
-      setPreviewUrl((avatar.filepath as string | undefined) ?? null);
+    if (avatar && avatar.filepath) {
+      setPreviewUrl(avatar.filepath);
+    } else {
+      setPreviewUrl('');
     }
   }, [avatar]);
 
@@ -147,29 +149,31 @@ function Avatar({
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
     const file = event.target.files?.[0];
+    const sizeLimit = fileConfig.avatarSizeLimit ?? 0;
 
-    if (fileConfig.avatarSizeLimit && file && file.size <= fileConfig.avatarSizeLimit) {
+    if (sizeLimit && file && file.size <= sizeLimit) {
       setInput(file);
       setMenuOpen(false);
 
-      if (!agent_id) {
+      const currentId = agent_id ?? '';
+      if (!currentId) {
         return;
       }
 
       const formData = new FormData();
       formData.append('file', file, file.name);
-      formData.append('agent_id', agent_id);
+      formData.append('agent_id', currentId);
 
       if (typeof avatar === 'object') {
         formData.append('avatar', JSON.stringify(avatar));
       }
 
       uploadAvatar({
-        agent_id,
+        agent_id: currentId,
         formData,
       });
     } else {
-      const megabytes = fileConfig.avatarSizeLimit ? formatBytes(fileConfig.avatarSizeLimit) : 2;
+      const megabytes = sizeLimit ? formatBytes(sizeLimit) : 2;
       showToast({
         message: localize('com_ui_upload_invalid_var', megabytes + ''),
         status: 'error',

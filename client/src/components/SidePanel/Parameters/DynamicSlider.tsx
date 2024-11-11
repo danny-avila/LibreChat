@@ -47,7 +47,6 @@ function DynamicSlider({
     conversation,
     inputValue,
     setInputValue: setLocalValue,
-    preventDelayedUpdate: isEnum,
   });
 
   const selectedValue = useMemo(() => {

@@ -1,4 +1,4 @@
-import * as React from 'react';
+import { useState, useRef } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { MessageSquare, Command } from 'lucide-react';
 import { SettingsTabValues } from 'librechat-data-provider';
@@ -12,7 +12,8 @@ import { cn } from '~/utils';
 export default function Settings({ open, onOpenChange }: TDialogProps) {
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
   const localize = useLocalize();
-  const [activeTab, setActiveTab] = React.useState(SettingsTabValues.GENERAL);
+  const [activeTab, setActiveTab] = useState(SettingsTabValues.GENERAL);
+  const tabRefs = useRef({});
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
     const tabs = [
@@ -28,12 +29,10 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
 
     switch (event.key) {
       case 'ArrowDown':
-      case 'ArrowRight':
         event.preventDefault();
         setActiveTab(tabs[(currentIndex + 1) % tabs.length]);
         break;
       case 'ArrowUp':
-      case 'ArrowLeft':
         event.preventDefault();
         setActiveTab(tabs[(currentIndex - 1 + tabs.length) % tabs.length]);
         break;
@@ -48,6 +47,10 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
     }
   };
 
+  const handleTabChange = (value: string) => {
+    setActiveTab(value as SettingsTabValues);
+  };
+
   return (
     <Transition appear show={open}>
       <Dialog as="div" className="relative z-50" onClose={onOpenChange}>
@@ -55,7 +58,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
           enter="ease-out duration-200"
           enterFrom="opacity-0"
           enterTo="opacity-100"
-          leave="ease-in duration-100"
+          leave="ease-in duration-200"
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
@@ -70,15 +73,10 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
           leaveFrom="opacity-100 scale-100"
           leaveTo="opacity-0 scale-95"
         >
-          <div
-            className={cn(
-              'fixed inset-0 flex w-screen items-center justify-center p-4',
-              isSmallScreen ? '' : '',
-            )}
-          >
+          <div className={cn('fixed inset-0 flex w-screen items-center justify-center p-4')}>
             <DialogPanel
               className={cn(
-                'overflow-hidden rounded-xl rounded-b-lg bg-surface-tertiary-alt pb-6 shadow-2xl backdrop-blur-2xl animate-in sm:rounded-lg md:min-h-[373px] md:w-[680px]',
+                'min-h-[600px] overflow-hidden rounded-xl rounded-b-lg bg-background pb-6 shadow-2xl backdrop-blur-2xl animate-in sm:rounded-lg md:min-h-[373px] md:w-[680px]',
               )}
             >
               <DialogTitle
@@ -111,18 +109,18 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                   <span className="sr-only">Close</span>
                 </button>
               </DialogTitle>
-              <div className="max-h-[373px] overflow-auto px-6 md:min-h-[373px] md:w-[680px]">
+              <div className="max-h-[550px] overflow-auto px-6 md:max-h-[400px] md:min-h-[400px] md:w-[680px]">
                 <Tabs.Root
                   value={activeTab}
-                  onValueChange={(value: string) => setActiveTab(value as SettingsTabValues)}
+                  onValueChange={handleTabChange}
                   className="flex flex-col gap-10 md:flex-row"
-                  orientation="horizontal"
+                  orientation="vertical"
                 >
                   <Tabs.List
                     aria-label="Settings"
                     className={cn(
-                      'min-w-auto max-w-auto -ml-[8px] flex flex-shrink-0 flex-col flex-nowrap overflow-auto sm:max-w-none',
-                      isSmallScreen ? 'flex-row rounded-lg bg-surface-secondary' : '',
+                      'min-w-auto max-w-auto relative -ml-[8px] flex flex-shrink-0 flex-col flex-nowrap overflow-auto sm:max-w-none',
+                      isSmallScreen ? 'flex-row rounded-xl bg-surface-secondary' : '',
                     )}
                     onKeyDown={handleKeyDown}
                   >
@@ -166,19 +164,20 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                       <Tabs.Trigger
                         key={value}
                         className={cn(
-                          'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-text-primary transition-all duration-200 ease-in-out radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary dark:radix-state-active:bg-surface-active',
+                          'group relative z-10 m-1 flex items-center justify-start gap-2 px-2 py-1.5 transition-all duration-200 ease-in-out',
                           isSmallScreen
-                            ? 'flex-1 items-center justify-center text-nowrap p-1 px-3 text-sm text-text-secondary'
-                            : 'bg-surface-tertiary-alt',
+                            ? 'flex-1 justify-center text-nowrap rounded-xl p-1 px-3 text-sm text-text-secondary radix-state-active:bg-surface-hover radix-state-active:text-text-primary'
+                            : 'rounded-md bg-transparent text-text-primary radix-state-active:bg-surface-tertiary',
                         )}
                         value={value}
+                        ref={(el) => (tabRefs.current[value] = el)}
                       >
                         {icon}
                         {localize(label)}
                       </Tabs.Trigger>
                     ))}
                   </Tabs.List>
-                  <div className="max-h-[373px] overflow-auto sm:w-full sm:max-w-none md:pr-0.5 md:pt-0.5">
+                  <div className="overflow-auto sm:w-full sm:max-w-none md:pr-0.5 md:pt-0.5">
                     <Tabs.Content value={SettingsTabValues.GENERAL}>
                       <General />
                     </Tabs.Content>

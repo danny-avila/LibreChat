@@ -10,15 +10,12 @@ import type {
   UseInfiniteQueryOptions,
   QueryObserverResult,
   UseQueryOptions,
-  UseQueryResult,
 } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
 import type {
   Action,
   TPreset,
-  TFile,
   TPlugin,
-  FileConfig,
   ConversationListResponse,
   ConversationListParams,
   Assistant,
@@ -32,36 +29,8 @@ import type {
   TCheckUserKeyResponse,
   SharedLinkListParams,
   SharedLinksResponse,
-  TUserTermsResponse,
-  TAcceptTermsResponse,
 } from 'librechat-data-provider';
-import { findPageForConversation, addFileToCache } from '~/utils';
-
-export const useGetFiles = <TData = TFile[] | boolean>(
-  config?: UseQueryOptions<TFile[], unknown, TData>,
-): QueryObserverResult<TData, unknown> => {
-  return useQuery<TFile[], unknown, TData>([QueryKeys.files], () => dataService.getFiles(), {
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
-    ...config,
-  });
-};
-
-export const useGetFileConfig = <TData = FileConfig>(
-  config?: UseQueryOptions<FileConfig, unknown, TData>,
-): QueryObserverResult<TData, unknown> => {
-  return useQuery<FileConfig, unknown, TData>(
-    [QueryKeys.fileConfig],
-    () => dataService.getFileConfig(),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      ...config,
-    },
-  );
-};
+import { findPageForConversation } from '~/utils';
 
 export const useGetPresetsQuery = (
   config?: UseQueryOptions<TPreset[]>,
@@ -150,12 +119,12 @@ export const useConversationsInfiniteQuery = (
   config?: UseInfiniteQueryOptions<ConversationListResponse, unknown>,
 ) => {
   return useInfiniteQuery<ConversationListResponse, unknown>(
-    params?.isArchived ? [QueryKeys.archivedConversations] : [QueryKeys.allConversations],
+    params?.isArchived === true ? [QueryKeys.archivedConversations] : [QueryKeys.allConversations],
     ({ pageParam = '' }) =>
       dataService.listConversations({
         ...params,
         pageNumber: pageParam?.toString(),
-        isArchived: params?.isArchived || false,
+        isArchived: params?.isArchived ?? false,
         tags: params?.tags || [],
       }),
     {
@@ -321,7 +290,7 @@ export const useGetAssistantByIdQuery = (
   const queryClient = useQueryClient();
   const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
   const keyExpiry = queryClient.getQueryData<TCheckUserKeyResponse>([QueryKeys.name, endpoint]);
-  const userProvidesKey = !!endpointsConfig?.[endpoint]?.userProvide;
+  const userProvidesKey = endpointsConfig?.[endpoint]?.userProvide ?? false;
   const keyProvided = userProvidesKey ? !!keyExpiry?.expiresAt : true;
   const enabled = !!endpointsConfig?.[endpoint] && keyProvided;
   const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
@@ -397,39 +366,6 @@ export const useGetAssistantDocsQuery = <TData = AssistantDocument[]>(
       refetchOnMount: false,
       ...config,
       enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled,
-    },
-  );
-};
-
-export const useFileDownload = (userId?: string, file_id?: string): QueryObserverResult<string> => {
-  const queryClient = useQueryClient();
-  return useQuery(
-    [QueryKeys.fileDownload, file_id],
-    async () => {
-      if (!userId || !file_id) {
-        console.warn('No user ID provided for file download');
-        return;
-      }
-      const response = await dataService.getFileDownload(userId, file_id);
-      const blob = response.data;
-      const downloadURL = window.URL.createObjectURL(blob);
-      try {
-        const metadata: TFile | undefined = JSON.parse(response.headers['x-file-metadata']);
-        if (!metadata) {
-          console.warn('No metadata found for file download', response.headers);
-          return downloadURL;
-        }
-
-        addFileToCache(queryClient, metadata);
-      } catch (e) {
-        console.error('Error parsing file metadata, skipped updating file query cache', e);
-      }
-
-      return downloadURL;
-    },
-    {
-      enabled: false,
-      retry: false,
     },
   );
 };

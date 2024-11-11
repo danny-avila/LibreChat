@@ -361,7 +361,7 @@ export default {
   com_assistants_code_interpreter_files: '코드 인터프리터에서만 다음 파일을 사용할 수 있습니다:',
   com_assistants_retrieval: '검색',
   com_assistants_search_name: '이름으로 도우미 검색',
-  com_assistants_tools: '도구',
+  com_ui_tools: '도구',
   com_assistants_actions: '작업',
   com_assistants_add_tools: '도구 추가',
   com_assistants_add_actions: '작업 추가',
@@ -1910,7 +1910,7 @@ export const comparisons = {
     english: 'Search assistants by name',
     translated: '이름으로 도우미 검색',
   },
-  com_assistants_tools: {
+  com_ui_tools: {
     english: 'Tools',
     translated: '도구',
   },

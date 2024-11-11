@@ -16,7 +16,7 @@ const NavLink: FC<Props> = forwardRef<HTMLButtonElement, Props>((props, ref) => 
     onClick?: React.MouseEventHandler<HTMLButtonElement>;
   } = {
     className: cn(
-      'w-full flex gap-2 rounded p-2.5 text-sm cursor-pointer group items-center transition-colors duration-200 text-text-primary hover:bg-surface-hover',
+      'w-full flex gap-2 rounded p-2.5 text-sm cursor-pointer group items-center transition-colors duration-200 text-text-primary',
       className,
       {
         'opacity-50 pointer-events-none': disabled,

@@ -59,10 +59,7 @@ const OGDialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDi
       overlayClassName={overlayClassName}
       showCloseButton={showCloseButton}
       ref={ref}
-      className={cn(
-        'bg-white dark:border-gray-700 dark:bg-gray-850 dark:text-gray-300',
-        className ?? '',
-      )}
+      className={cn('border-none bg-background text-foreground', className ?? '')}
       onClick={(e) => e.stopPropagation()}
     >
       <OGDialogHeader className={cn(headerClassName ?? '')}>

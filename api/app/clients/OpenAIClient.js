@@ -199,8 +199,8 @@ class OpenAIClient extends BaseClient {
         model: this.modelOptions.model,
         endpoint: this.options.endpoint,
         endpointType: this.options.endpointType,
-        chatGptLabel: this.options.chatGptLabel,
         modelDisplayLabel: this.options.modelDisplayLabel,
+        chatGptLabel: this.options.chatGptLabel || this.options.modelLabel,
       });
 
     this.userLabel = this.options.userLabel || 'User';
@@ -644,6 +644,12 @@ class OpenAIClient extends BaseClient {
 
       if (completionResult && typeof completionResult === 'string') {
         reply = completionResult;
+      } else if (
+        completionResult &&
+        typeof completionResult === 'object' &&
+        Array.isArray(completionResult.choices)
+      ) {
+        reply = completionResult.choices[0]?.text?.replace(this.endToken, '');
       }
     } else if (typeof opts.onProgress === 'function' || this.options.useChatCompletion) {
       reply = await this.chatCompletion({
@@ -914,8 +920,12 @@ ${convo}
    */
   getStreamUsage() {
     if (
+      this.usage &&
       typeof this.usage === 'object' &&
-      typeof this.usage.completion_tokens_details === 'object'
+      'completion_tokens_details' in this.usage &&
+      this.usage.completion_tokens_details &&
+      typeof this.usage.completion_tokens_details === 'object' &&
+      'reasoning_tokens' in this.usage.completion_tokens_details
     ) {
       const outputTokens = Math.abs(
         this.usage.completion_tokens_details.reasoning_tokens - this.usage[this.outputTokensKey],
@@ -1094,7 +1104,12 @@ ${convo}
       { promptTokens, completionTokens },
     );
 
-    if (typeof usage === 'object' && typeof usage.reasoning_tokens === 'number') {
+    if (
+      usage &&
+      typeof usage === 'object' &&
+      'reasoning_tokens' in usage &&
+      typeof usage.reasoning_tokens === 'number'
+    ) {
       await spendTokens(
         {
           context: 'reasoning',
@@ -1288,6 +1303,7 @@ ${convo}
 
       if (modelOptions.stream && /\bo1\b/i.test(modelOptions.model)) {
         delete modelOptions.stream;
+        delete modelOptions.stop;
       }
 
       if (modelOptions.stream) {

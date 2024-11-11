@@ -10,7 +10,7 @@ import {
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import { useGetUserBalance, useGetStartupConfig } from 'librechat-data-provider/react-query';
-import type { TMessage, TSubmission, EventSubmission } from 'librechat-data-provider';
+import type { TMessage, TSubmission, TPayload, EventSubmission } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData } from '~/common';
 import { useGenTitleMutation } from '~/data-provider';
@@ -59,6 +59,7 @@ export default function useSSE(
     messageHandler,
     contentHandler,
     createdHandler,
+    attachmentHandler,
     abortConversation,
   } = useEventHandlers({
     genTitle,
@@ -88,7 +89,7 @@ export default function useSSE(
     const payloadData = createPayload(submission);
     let { payload } = payloadData;
     if (isAssistantsEndpoint(payload.endpoint) || isAgentsEndpoint(payload.endpoint)) {
-      payload = removeNullishValues(payload);
+      payload = removeNullishValues(payload) as TPayload;
     }
 
     let textIndex = null;
@@ -97,6 +98,15 @@ export default function useSSE(
       payload: JSON.stringify(payload),
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     });
+
+    events.onattachment = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data);
+        attachmentHandler({ data, submission: submission as EventSubmission });
+      } catch (error) {
+        console.error(error);
+      }
+    };
 
     events.onmessage = (e: MessageEvent) => {
       const data = JSON.parse(e.data);

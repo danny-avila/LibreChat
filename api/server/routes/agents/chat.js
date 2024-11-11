@@ -10,6 +10,7 @@ const {
 } = require('~/server/middleware');
 const { initializeClient } = require('~/server/services/Endpoints/agents');
 const AgentController = require('~/server/controllers/agents/request');
+const addTitle = require('~/server/services/Endpoints/agents/title');
 
 router.post('/abort', handleAbort());
 
@@ -28,7 +29,7 @@ router.post(
   buildEndpointOption,
   setHeaders,
   async (req, res, next) => {
-    await AgentController(req, res, next, initializeClient);
+    await AgentController(req, res, next, initializeClient, addTitle);
   },
 );
 

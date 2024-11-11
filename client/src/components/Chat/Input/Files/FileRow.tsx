@@ -11,14 +11,13 @@ export default function FileRow({
   setFiles,
   setFilesLoading,
   assistant_id,
-  // TODO: Agent file handling
   agent_id,
   tool_resource,
   fileFilter,
-  isRTL,
+  isRTL = false,
   Wrapper,
 }: {
-  files: Map<string, ExtendedFile>;
+  files: Map<string, ExtendedFile> | undefined;
   setFiles: React.Dispatch<React.SetStateAction<Map<string, ExtendedFile>>>;
   setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
   fileFilter?: (file: ExtendedFile) => boolean;
@@ -28,13 +27,18 @@ export default function FileRow({
   isRTL?: boolean;
   Wrapper?: React.FC<{ children: React.ReactNode }>;
 }) {
-  const files = Array.from(_files.values()).filter((file) =>
+  const files = Array.from(_files?.values() ?? []).filter((file) =>
     fileFilter ? fileFilter(file) : true,
   );
 
   const { mutateAsync } = useDeleteFilesMutation({
     onMutate: async () =>
-      console.log('Deleting files: assistant_id, tool_resource', assistant_id, tool_resource),
+      console.log(
+        'Deleting files: agent_id, assistant_id, tool_resource',
+        agent_id,
+        assistant_id,
+        tool_resource,
+      ),
     onSuccess: () => {
       console.log('Files deleted');
     },
@@ -43,13 +47,9 @@ export default function FileRow({
     },
   });
 
-  const { deleteFile } = useFileDeletion({ mutateAsync, assistant_id, tool_resource });
+  const { deleteFile } = useFileDeletion({ mutateAsync, agent_id, assistant_id, tool_resource });
 
   useEffect(() => {
-    if (!files) {
-      return;
-    }
-
     if (files.length === 0) {
       return;
     }
@@ -87,11 +87,12 @@ export default function FileRow({
           )
           .uniqueFiles.map((file: ExtendedFile, index: number) => {
             const handleDelete = () => deleteFile({ file, setFiles });
-            if (file.type?.startsWith('image')) {
+            const isImage = file.type?.startsWith('image') ?? false;
+            if (isImage) {
               return (
                 <Image
                   key={index}
-                  url={file.preview || file.filepath}
+                  url={file.preview ?? file.filepath}
                   onDelete={handleDelete}
                   progress={file.progress}
                   source={file.source}

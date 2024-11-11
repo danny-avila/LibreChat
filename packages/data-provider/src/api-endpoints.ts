@@ -208,7 +208,8 @@ export const updatePromptPermissions = (roleName: string) =>
   `${roles()}/${roleName.toLowerCase()}/prompts`;
 
 /* Conversation Tags */
-export const conversationTags = (tag?: string) => `/api/tags${tag ? `/${tag}` : ''}`;
+export const conversationTags = (tag?: string) =>
+  `/api/tags${tag != null && tag ? `/${encodeURIComponent(tag)}` : ''}`;
 
 export const conversationTagsList = (pageNumber: string, sort?: string, order?: string) =>
   `${conversationTags()}/list?pageNumber=${pageNumber}${sort ? `&sort=${sort}` : ''}${

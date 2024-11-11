@@ -20,6 +20,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
   const setSearchQuery = useSetRecoilState(store.searchQuery);
   const [showClearIcon, setShowClearIcon] = useState(false);
   const [text, setText] = useState('');
+  const setIsSearching = useSetRecoilState(store.isSearching);
   const localize = useLocalize();
 
   const clearText = useCallback(() => {
@@ -47,6 +48,8 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
     },
     [queryClient, clearConvoState, setSearchQuery],
   );
+
+  // TODO: make the debounce time configurable via yaml
   const debouncedSendRequest = useMemo(() => debounce(sendRequest, 350), [sendRequest]);
 
   const onChange = (e: React.FormEvent<HTMLInputElement>) => {
@@ -54,6 +57,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
     setShowClearIcon(value.length > 0);
     setText(value);
     debouncedSendRequest(value);
+    setIsSearching(true);
   };
 
   return (
@@ -61,7 +65,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
       ref={ref}
       className={cn(
         'group relative mt-1 flex h-10 cursor-pointer items-center gap-3 rounded-lg border-border-medium px-3 py-2 text-text-primary transition-colors duration-200 focus-within:bg-surface-hover hover:bg-surface-hover',
-        isSmallScreen === true ? 'h-16 rounded-2xl' : '',
+        isSmallScreen === true ? 'mb-2 h-14 rounded-2xl' : '',
       )}
     >
       {
@@ -78,6 +82,8 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
         aria-label={localize('com_nav_search_placeholder')}
         placeholder={localize('com_nav_search_placeholder')}
         onKeyUp={handleKeyUp}
+        onFocus={() => setIsSearching(true)}
+        onBlur={() => setIsSearching(true)}
         autoComplete="off"
         dir="auto"
       />

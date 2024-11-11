@@ -13,7 +13,7 @@ export default function BedrockSettings({
 }: TModelSelectProps) {
   const parameters = useMemo(() => {
     const [combinedKey, endpointKey] = getSettingsKeys(
-      conversation?.endpoint ?? '',
+      conversation?.endpointType ?? conversation?.endpoint ?? '',
       conversation?.model ?? '',
     );
     return presetSettings[combinedKey] ?? presetSettings[endpointKey];
@@ -23,8 +23,14 @@ export default function BedrockSettings({
     return null;
   }
 
-  const renderComponent = (setting: SettingDefinition) => {
+  const renderComponent = (setting: SettingDefinition | undefined) => {
+    if (!setting) {
+      return null;
+    }
     const Component = componentMapping[setting.component];
+    if (!Component) {
+      return null;
+    }
     const { key, default: defaultValue, ...rest } = setting;
 
     const props = {

@@ -14,14 +14,16 @@ const { tool } = require('@langchain/core/tools');
 const { createContentAggregator } = require('@librechat/agents');
 const {
   EModelEndpoint,
-  providerEndpointMap,
   getResponseSender,
+  providerEndpointMap,
 } = require('librechat-data-provider');
-const { getDefaultHandlers } = require('~/server/controllers/agents/callbacks');
-// for testing purposes
-// const createTavilySearchTool = require('~/app/clients/tools/structured/TavilySearch');
+const {
+  getDefaultHandlers,
+  createToolEndCallback,
+} = require('~/server/controllers/agents/callbacks');
 const initAnthropic = require('~/server/services/Endpoints/anthropic/initializeClient');
 const initOpenAI = require('~/server/services/Endpoints/openAI/initializeClient');
+const getBedrockOptions = require('~/server/services/Endpoints/bedrock/options');
 const { loadAgentTools } = require('~/server/services/ToolService');
 const AgentClient = require('~/server/controllers/agents/client');
 const { getModelMaxTokens } = require('~/utils');
@@ -50,6 +52,7 @@ const providerConfigMap = {
   [EModelEndpoint.openAI]: initOpenAI,
   [EModelEndpoint.azureOpenAI]: initOpenAI,
   [EModelEndpoint.anthropic]: initAnthropic,
+  [EModelEndpoint.bedrock]: getBedrockOptions,
 };
 
 const initializeClient = async ({ req, res, endpointOption }) => {
@@ -58,34 +61,33 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   }
 
   // TODO: use endpointOption to determine options/modelOptions
+  /** @type {Array<UsageMetadata>} */
+  const collectedUsage = [];
+  /** @type {ArtifactPromises} */
+  const artifactPromises = [];
   const { contentParts, aggregateContent } = createContentAggregator();
-  const eventHandlers = getDefaultHandlers({ res, aggregateContent });
-
-  // const tools = [createTavilySearchTool()];
-  // const tools = [_getWeather];
-  // const tool_calls = [{ name: 'getPeople_action_swapi---dev' }];
-  // const tool_calls = [{ name: 'dalle' }];
-  // const tool_calls = [{ name: 'getItmOptions_action_YWlhcGkzLn' }];
-  // const tool_calls = [{ name: 'tavily_search_results_json' }];
-  // const tool_calls = [
-  //   { name: 'searchListings_action_emlsbG93NT' },
-  //   { name: 'searchAddress_action_emlsbG93NT' },
-  //   { name: 'searchMLS_action_emlsbG93NT' },
-  //   { name: 'searchCoordinates_action_emlsbG93NT' },
-  //   { name: 'searchUrl_action_emlsbG93NT' },
-  //   { name: 'getPropertyDetails_action_emlsbG93NT' },
-  // ];
+  const toolEndCallback = createToolEndCallback({ req, res, artifactPromises });
+  const eventHandlers = getDefaultHandlers({
+    res,
+    aggregateContent,
+    toolEndCallback,
+    collectedUsage,
+  });
 
   if (!endpointOption.agent) {
     throw new Error('No agent promise provided');
   }
 
-  /** @type {Agent} */
+  /** @type {Agent | null} */
   const agent = await endpointOption.agent;
+  if (!agent) {
+    throw new Error('Agent not found');
+  }
   const { tools, toolMap } = await loadAgentTools({
     req,
     tools: agent.tools,
     agent_id: agent.id,
+    tool_resources: agent.tool_resources,
     // openAIApiKey: process.env.OPENAI_API_KEY,
   });
 
@@ -121,8 +123,11 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     contentParts,
     modelOptions,
     eventHandlers,
+    collectedUsage,
+    artifactPromises,
     endpoint: EModelEndpoint.agents,
     configOptions: options.configOptions,
+    attachments: endpointOption.attachments,
     maxContextTokens:
       agent.max_context_tokens ??
       getModelMaxTokens(modelOptions.model, providerEndpointMap[agent.provider]),

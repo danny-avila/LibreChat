@@ -33,7 +33,7 @@ const addTitle = async (req, { text, response, client }) => {
       conversationId: response.conversationId,
       title,
     },
-    { context: 'api/server/services/Endpoints/bedrock/title.js' },
+    { context: 'api/server/services/Endpoints/agents/title.js' },
   );
 };
 

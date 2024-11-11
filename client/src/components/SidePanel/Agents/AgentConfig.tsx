@@ -1,19 +1,22 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
-import { QueryKeys, Capabilities, EModelEndpoint } from 'librechat-data-provider';
+import { QueryKeys, AgentCapabilities, EModelEndpoint, SystemRoles } from 'librechat-data-provider';
 import type { TConfig, TPlugin } from 'librechat-data-provider';
 import type { AgentForm, AgentPanelProps } from '~/common';
 import { cn, defaultTextProps, removeFocusOutlines, getEndpointField, getIconKey } from '~/utils';
 import { useCreateAgentMutation, useUpdateAgentMutation } from '~/data-provider';
+import { useToastContext, useFileMapContext } from '~/Providers';
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 import Action from '~/components/SidePanel/Builder/Action';
-import { useLocalize } from '~/hooks';
 import { ToolSelectDialog } from '~/components/Tools';
-import { useToastContext } from '~/Providers';
+import { useLocalize, useAuthContext } from '~/hooks';
+import CapabilitiesForm from './CapabilitiesForm';
+import { processAgentOption } from '~/utils';
 import { Spinner } from '~/components/svg';
 import DeleteButton from './DeleteButton';
 import AgentAvatar from './AgentAvatar';
+import FileSearch from './FileSearch';
 import ShareAgent from './ShareAgent';
 import AgentTool from './AgentTool';
 import { Panel } from '~/common';
@@ -33,6 +36,8 @@ export default function AgentConfig({
   setActivePanel,
   setCurrentAgentId,
 }: AgentPanelProps & { agentsConfig?: TConfig | null }) {
+  const { user } = useAuthContext();
+  const fileMap = useFileMapContext();
   const queryClient = useQueryClient();
 
   const allTools = queryClient.getQueryData<TPlugin[]>([QueryKeys.tools]) ?? [];
@@ -51,21 +56,41 @@ export default function AgentConfig({
   const agent_id = useWatch({ control, name: 'id' });
 
   const toolsEnabled = useMemo(
-    () => agentsConfig?.capabilities?.includes(Capabilities.tools),
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.tools),
     [agentsConfig],
   );
   const actionsEnabled = useMemo(
-    () => agentsConfig?.capabilities?.includes(Capabilities.actions),
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.actions),
     [agentsConfig],
   );
-  // const retrievalEnabled = useMemo(
-  //   () => agentsConfig?.capabilities?.includes(Capabilities.retrieval),
-  //   [agentsConfig],
-  // );
-  // const codeEnabled = useMemo(
-  //   () => agentsConfig?.capabilities?.includes(Capabilities.code_interpreter),
-  //   [agentsConfig],
-  // );
+  const fileSearchEnabled = useMemo(
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.file_search) ?? false,
+    [agentsConfig],
+  );
+  const codeEnabled = useMemo(
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.execute_code) ?? false,
+    [agentsConfig],
+  );
+
+  const knowledge_files = useMemo(() => {
+    if (typeof agent === 'string') {
+      return [];
+    }
+
+    if (agent?.id !== agent_id) {
+      return [];
+    }
+
+    if (agent.knowledge_files) {
+      return agent.knowledge_files;
+    }
+
+    const _agent = processAgentOption({
+      agent,
+      fileMap,
+    });
+    return _agent.knowledge_files ?? [];
+  }, [agent, agent_id, fileMap]);
 
   /* Mutations */
   const update = useUpdateAgentMutation({
@@ -117,8 +142,6 @@ export default function AgentConfig({
     }
     setActivePanel(Panel.actions);
   }, [agent_id, setActivePanel, showToast, localize]);
-
-  // Provider Icon logic
 
   const providerValue = typeof provider === 'string' ? provider : provider?.value;
   let endpointType: EModelEndpoint | undefined;
@@ -280,10 +303,17 @@ export default function AgentConfig({
             </div>
           </button>
         </div>
+        <CapabilitiesForm
+          codeEnabled={codeEnabled}
+          agentsConfig={agentsConfig}
+          retrievalEnabled={false}
+        />
+        {/* File Search */}
+        {fileSearchEnabled && <FileSearch agent_id={agent_id} files={knowledge_files} />}
         {/* Agent Tools & Actions */}
         <div className="mb-6">
           <label className={labelClass}>
-            {`${toolsEnabled === true ? localize('com_assistants_tools') : ''}
+            {`${toolsEnabled === true ? localize('com_ui_tools') : ''}
               ${toolsEnabled === true && actionsEnabled === true ? ' + ' : ''}
               ${actionsEnabled === true ? localize('com_assistants_actions') : ''}`}
           </label>
@@ -344,11 +374,14 @@ export default function AgentConfig({
             setCurrentAgentId={setCurrentAgentId}
             createMutation={create}
           />
-          <ShareAgent
-            agent_id={agent_id}
-            agentName={agent?.name ?? ''}
-            projectIds={agent?.projectIds ?? []}
-          />
+          {(agent?.author === user?.id || user?.role === SystemRoles.ADMIN) && (
+            <ShareAgent
+              agent_id={agent_id}
+              agentName={agent?.name ?? ''}
+              projectIds={agent?.projectIds ?? []}
+              isCollaborative={agent?.isCollaborative}
+            />
+          )}
           {/* Submit Button */}
           <button
             className="btn btn-primary focus:shadow-outline flex w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"

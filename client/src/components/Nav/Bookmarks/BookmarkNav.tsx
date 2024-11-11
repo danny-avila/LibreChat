@@ -14,9 +14,10 @@ import store from '~/store';
 type BookmarkNavProps = {
   tags: string[];
   setTags: (tags: string[]) => void;
+  isSmallScreen: boolean;
 };
 
-const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) => {
+const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags, isSmallScreen }: BookmarkNavProps) => {
   const localize = useLocalize();
   const location = useLocation();
 
@@ -40,6 +41,7 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) 
             className={cn(
               'mt-text-sm flex h-10 w-full items-center gap-2 rounded-lg p-2 text-sm transition-colors duration-200 hover:bg-surface-hover',
               open ? 'bg-surface-hover' : '',
+              isSmallScreen ? 'h-14 rounded-2xl' : '',
             )}
             data-testid="bookmark-menu"
           >

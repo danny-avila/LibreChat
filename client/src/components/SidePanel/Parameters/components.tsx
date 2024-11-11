@@ -11,7 +11,10 @@ import {
   DynamicTags,
 } from './';
 
-export const componentMapping: Record<ComponentTypes, React.ComponentType<DynamicSettingProps>> = {
+export const componentMapping: Record<
+  ComponentTypes,
+  React.ComponentType<DynamicSettingProps> | undefined
+> = {
   [ComponentTypes.Slider]: DynamicSlider,
   [ComponentTypes.Dropdown]: DynamicDropdown,
   [ComponentTypes.Switch]: DynamicSwitch,

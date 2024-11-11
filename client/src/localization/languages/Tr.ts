@@ -35,7 +35,7 @@ export default {
     'Aşağıdaki dosyalar yalnızca Kod Yorumlayıcı için kullanılabilir:',
   com_assistants_retrieval: 'Geri Getirme',
   com_assistants_search_name: 'Asistan adında ara',
-  com_assistants_tools: 'Araçlar',
+  com_ui_tools: 'Araçlar',
   com_assistants_actions: 'Eylemler',
   com_assistants_add_tools: 'Araçları Ekle',
   com_assistants_add_actions: 'Eylem Ekle',

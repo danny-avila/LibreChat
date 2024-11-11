@@ -194,6 +194,7 @@ export type AgentModelPanelProps = {
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
   providers: Option[];
   models: Record<string, string[]>;
+  agent_id?: string;
 };
 
 export type AugmentedColumnDef<TData, TValue> = ColumnDef<TData, TValue> & DataColumnMeta;
@@ -430,6 +431,8 @@ export type Option = Record<string, unknown> & {
   value: string | number | null;
 };
 
+export type StringOption = Option & { value: string | null };
+
 export type VoiceOption = {
   value: string;
   label: string;
@@ -540,3 +543,9 @@ export type TVectorStore = {
 };
 
 export type TThread = { id: string; createdAt: string };
+
+declare global {
+  interface Window {
+    google_tag_manager?: unknown;
+  }
+}

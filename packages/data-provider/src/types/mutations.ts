@@ -165,6 +165,12 @@ export type UpdateSharedLinkOptions = MutationOptions<
   types.TSharedLink,
   Partial<types.TSharedLink>
 >;
+
+export type ArchiveConvoOptions = MutationOptions<
+  types.TArchiveConversationResponse,
+  types.TArchiveConversationRequest
+>;
+
 export type DeleteSharedLinkOptions = MutationOptions<types.TSharedLink, { shareId: string }>;
 
 export type TUpdatePromptContext =
@@ -235,3 +241,10 @@ export type UpdateConversationTagOptions = MutationOptions<
   types.TConversationTagRequest
 >;
 export type DeleteConversationTagOptions = MutationOptions<types.TConversationTag, string>;
+
+export type AcceptTermsMutationOptions = MutationOptions<
+  types.TAcceptTermsResponse,
+  void,
+  unknown,
+  void
+>;

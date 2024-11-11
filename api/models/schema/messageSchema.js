@@ -115,6 +115,29 @@ const messageSchema = mongoose.Schema(
     iconURL: {
       type: String,
     },
+    attachments: { type: [{ type: mongoose.Schema.Types.Mixed }], default: undefined },
+    /*
+    attachments: {
+      type: [
+        {
+          file_id: String,
+          filename: String,
+          filepath: String,
+          expiresAt: Date,
+          width: Number,
+          height: Number,
+          type: String,
+          conversationId: String,
+          messageId: {
+            type: String,
+            required: true,
+          },
+          toolCallId: String,
+        },
+      ],
+      default: undefined,
+    },
+    */
   },
   { timestamps: true },
 );
