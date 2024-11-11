@@ -14,6 +14,7 @@ const openAIModels = {
   'gpt-4-0125': 127500, // -500 from max
   'gpt-4o': 127500, // -500 from max
   'gpt-4o-mini': 127500, // -500 from max
+  'gpt-4o-2024-05-13': 127500, // -500 from max
   'gpt-4o-2024-08-06': 127500, // -500 from max
   'gpt-4-turbo': 127500, // -500 from max
   'gpt-4-vision': 127500, // -500 from max
@@ -69,18 +70,40 @@ const anthropicModels = {
   'claude-3-haiku': 200000,
   'claude-3-sonnet': 200000,
   'claude-3-opus': 200000,
+  'claude-3.5-haiku': 200000,
+  'claude-3-5-haiku': 200000,
   'claude-3-5-sonnet': 200000,
   'claude-3.5-sonnet': 200000,
+  'claude-3-5-sonnet-latest': 200000,
+  'claude-3.5-sonnet-latest': 200000,
+};
+
+const deepseekModels = {
+  deepseek: 127500,
 };
 
 const metaModels = {
-  'llama2-13b': 4000,
-  'llama2-70b': 4000,
-  'llama3-8b': 8000,
-  'llama3-70b': 8000,
-  'llama3-1-8b': 127500,
-  'llama3-1-70b': 127500,
+  llama3: 8000,
+  llama2: 4000,
+  'llama3.1': 127500,
+  'llama3-1': 127500,
+  'llama3.1:405b': 127500,
+  'llama3.1:70b': 127500,
+  'llama3.1:8b': 127500,
   'llama3-1-405b': 127500,
+  'llama3-1-70b': 127500,
+  'llama3-1-8b': 127500,
+  'llama3-70b': 8000,
+  'llama3-8b': 8000,
+  'llama2-70b': 4000,
+  'llama2-13b': 4000,
+  'llama3:70b': 8000,
+  'llama3:8b': 8000,
+  'llama2:70b': 4000,
+};
+
+const ollamaModels = {
+  'qwen2.5': 32000,
 };
 
 const ai21Models = {
@@ -99,6 +122,8 @@ const bedrockModels = {
   ...anthropicModels,
   ...mistralModels,
   ...cohereModels,
+  ...ollamaModels,
+  ...deepseekModels,
   ...metaModels,
   ...ai21Models,
   ...amazonModels,

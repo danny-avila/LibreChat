@@ -18,6 +18,17 @@
   --gray-800: #212121;
   --gray-850: #171717;
   --gray-900: #0d0d0d;
+  --green-50: #ecfdf5;
+  --green-100: #d1fae5;
+  --green-200: #a7f3d0;
+  --green-300: #6ee7b7;
+  --green-400: #34d399;
+  --green-500: #10b981;
+  --green-600: #059669;
+  --green-700: #047857;
+  --green-800: #065f46;
+  --green-900: #064e3b;
+  --green-950: #022c22;
   --gizmo-gray-500: #999;
   --gizmo-gray-600: #666;
   --gizmo-gray-950: #0f0f0f;
@@ -42,9 +53,11 @@ html {
   --surface-primary-alt: var(--gray-50);
   --surface-primary-contrast: var(--gray-100);
   --surface-secondary: var(--gray-50);
+  --surface-secondary-alt: var(--gray-300);
   --surface-tertiary: var(--gray-100);
   --surface-tertiary-alt: var(--white);
   --surface-dialog: var(--white);
+  --surface-submit: var(--green-500);
   --border-light: var(--gray-200);
   --border-medium-alt: var(--gray-300);
   --border-medium: var(--gray-300);
@@ -75,6 +88,7 @@ html {
   --chart-3: 197 37% 24%;
   --chart-4: 43 74% 66%;
   --chart-5: 27 87% 67%;
+  --switch-unchecked: 0 0% 58%;
 }
 .dark {
   --text-primary: var(--gray-100);
@@ -90,9 +104,11 @@ html {
   --surface-primary-alt: var(--gray-850);
   --surface-primary-contrast: var(--gray-850);
   --surface-secondary: var(--gray-800);
+  --surface-secondary-alt: var(--gray-800);
   --surface-tertiary: var(--gray-700);
   --surface-tertiary-alt: var(--gray-700);
   --surface-dialog: var(--gray-850);
+  --surface-submit: var(--green-600);
   --border-light: var(--gray-700);
   --border-medium-alt: var(--gray-600);
   --border-medium: var(--gray-600);
@@ -112,7 +128,7 @@ html {
   --muted-foreground: 0 0% 63.9%;
   --accent: 0 0% 14.9%;
   --accent-foreground: 0 0% 98%;
-  --destructive: 0 62.8% 30.6%;
+  --destructive: 0 62.8% 40.6%;
   --destructive-foreground: 0 0% 98%;
   --border: 0 0% 14.9%;
   --input: 0 0% 14.9%;
@@ -122,6 +138,7 @@ html {
   --chart-3: 30 80% 55%;
   --chart-4: 280 65% 60%;
   --chart-5: 340 75% 55%;
+  --switch-unchecked: 0 0% 40%;
 }
 .gizmo {
   --text-primary: var(--gizmo-gray-950);
@@ -1989,7 +2006,7 @@ button.scroll-convo {
   list-style-position: outside;
   margin-top: 1em;
   margin-bottom: 1em;
-  padding-left: 1.625em;
+  padding-left: 3em;
 }
 
 .prose li,
@@ -2002,19 +2019,16 @@ button.scroll-convo {
 .prose ol,
 .markdown ol {
   list-style-type: decimal;
-  counter-reset: list-counter;
 }
 
 .prose ol > li,
 .markdown ol > li {
   position: relative;
   padding-left: 0.375em;
-  counter-increment: list-counter;
 }
 
 .prose ol > li::marker,
 .markdown ol > li::marker {
-  content: counter(list-counter) '. ';
   color: var(--tw-prose-counters);
   font-weight: 400;
 }
@@ -2023,33 +2037,11 @@ button.scroll-convo {
 .prose ol ol,
 .markdown ol ol {
   list-style-type: lower-alpha;
-  counter-reset: list-counter-alpha;
-}
-
-.prose ol ol > li,
-.markdown ol ol > li {
-  counter-increment: list-counter-alpha;
-}
-
-.prose ol ol > li::marker,
-.markdown ol ol > li::marker {
-  content: counter(list-counter-alpha, lower-alpha) '. ';
 }
 
 .prose ol ol ol,
 .markdown ol ol ol {
   list-style-type: lower-roman;
-  counter-reset: list-counter-roman;
-}
-
-.prose ol ol ol > li,
-.markdown ol ol ol > li {
-  counter-increment: list-counter-roman;
-}
-
-.prose ol ol ol > li::marker,
-.markdown ol ol ol > li::marker {
-  content: counter(list-counter-roman, lower-roman) '. ';
 }
 
 /* Unordered lists */
@@ -2092,14 +2084,6 @@ button.scroll-convo {
   margin-bottom: 0.75em;
 }
 
-/* Remove extra spacing */
-.prose > ul > li > *:first-child,
-.prose > ol > li > *:first-child,
-.markdown > ul > li > *:first-child,
-.markdown > ol > li > *:first-child {
-  margin-top: 1.25em;
-}
-
 .prose > ul > li > *:last-child,
 .prose > ol > li > *:last-child,
 .markdown > ul > li > *:last-child,
@@ -2111,28 +2095,6 @@ button.scroll-convo {
 .prose li::marker,
 .markdown li::marker {
   color: currentColor;
-}
-
-/* Reset counter for new sections */
-.prose h1 + ol,
-.prose h2 + ol,
-.prose h3 + ol,
-.prose h4 + ol,
-.prose h5 + ol,
-.prose h6 + ol,
-.markdown h1 + ol,
-.markdown h2 + ol,
-.markdown h3 + ol,
-.markdown h4 + ol,
-.markdown h5 + ol,
-.markdown h6 + ol {
-  counter-reset: list-counter;
-}
-
-/* Reset counter after unordered lists */
-.prose ul + ol,
-.markdown ul + ol {
-  counter-reset: list-counter;
 }
 
 /* Keyframes */
@@ -2351,7 +2313,7 @@ button.scroll-convo {
   font-size: 1rem;
   line-height: 1.5rem;
   color: black;
-  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.25);
+  box-shadow: 0 2px 4px 0 rgb(0 0 0 / 0.25);
 }
 
 .tooltip:where(.dark, .dark *) {

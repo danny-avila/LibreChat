@@ -42,4 +42,4 @@ const logAxiosError = ({ message, error }) => {
   }
 };
 
-module.exports = logAxiosError;
+module.exports = { logAxiosError };

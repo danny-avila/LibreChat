@@ -2,13 +2,14 @@ const fs = require('fs');
 const axios = require('axios');
 const FormData = require('form-data');
 const { FileSources } = require('librechat-data-provider');
+const { logAxiosError } = require('~/utils');
 const { logger } = require('~/config');
 
 /**
  * Deletes a file from the vector database. This function takes a file object, constructs the full path, and
  * verifies the path's validity before deleting the file. If the path is invalid, an error is thrown.
  *
- * @param {Express.Request} req - The request object from Express. It should have an `app.locals.paths` object with
+ * @param {ServerRequest} req - The request object from Express. It should have an `app.locals.paths` object with
  *                       a `publicPath` property.
  * @param {MongoFile} file - The file object to be deleted. It should have a `filepath` property that is
  *                           a string representing the path of the file relative to the publicPath.
@@ -32,7 +33,10 @@ const deleteVectors = async (req, file) => {
       data: [file.file_id],
     });
   } catch (error) {
-    logger.error('Error deleting vectors', error);
+    logAxiosError({
+      error,
+      message: 'Error deleting vectors',
+    });
     throw new Error(error.message || 'An error occurred during file deletion.');
   }
 };
@@ -91,7 +95,10 @@ async function uploadVectors({ req, file, file_id }) {
       embedded: Boolean(responseData.known_type),
     };
   } catch (error) {
-    logger.error('Error embedding file', error);
+    logAxiosError({
+      error,
+      message: 'Error uploading vectors',
+    });
     throw new Error(error.message || 'An error occurred during file upload.');
   }
 }

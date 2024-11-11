@@ -87,22 +87,27 @@ const firstLocalConvoKey = LocalStorageKeys.LAST_CONVO_SETUP + '_0';
  * update without updating last convo setup when same endpoint */
 export function updateLastSelectedModel({
   endpoint,
-  model,
+  model = '',
 }: {
   endpoint: string;
-  model: string | undefined;
+  model?: string;
 }) {
   if (!model) {
     return;
   }
-  const lastConversationSetup = JSON.parse(localStorage.getItem(firstLocalConvoKey) || '{}');
+  /* Note: an empty string value is possible */
+  const lastConversationSetup = JSON.parse(
+    (localStorage.getItem(firstLocalConvoKey) ?? '{}') || '{}',
+  );
 
   if (lastConversationSetup.endpoint === endpoint) {
     lastConversationSetup.model = model;
     localStorage.setItem(firstLocalConvoKey, JSON.stringify(lastConversationSetup));
   }
 
-  const lastSelectedModels = JSON.parse(localStorage.getItem(LocalStorageKeys.LAST_MODEL) || '{}');
+  const lastSelectedModels = JSON.parse(
+    (localStorage.getItem(LocalStorageKeys.LAST_MODEL) ?? '{}') || '{}',
+  );
   lastSelectedModels[endpoint] = model;
   localStorage.setItem(LocalStorageKeys.LAST_MODEL, JSON.stringify(lastSelectedModels));
 }

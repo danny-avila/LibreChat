@@ -7,6 +7,7 @@ const {
   defaultRetrievalModels,
   defaultAssistantsVersion,
 } = require('librechat-data-provider');
+const { Providers } = require('@librechat/agents');
 const { getCitations, citeText } = require('./citations');
 const partialRight = require('lodash/partialRight');
 const { sendMessage } = require('./streamResponse');
@@ -212,13 +213,23 @@ function generateConfig(key, baseURL, endpoint) {
   return config;
 }
 
+/**
+ * Normalize the endpoint name to system-expected value.
+ * @param {string} name
+ * @returns {string}
+ */
+function normalizeEndpointName(name = '') {
+  return name.toLowerCase() === Providers.OLLAMA ? Providers.OLLAMA : name;
+}
+
 module.exports = {
-  createOnProgress,
   isEnabled,
   handleText,
   formatSteps,
   formatAction,
-  addSpaceIfNeeded,
   isUserProvided,
   generateConfig,
+  addSpaceIfNeeded,
+  createOnProgress,
+  normalizeEndpointName,
 };

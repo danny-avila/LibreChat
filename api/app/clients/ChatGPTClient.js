@@ -678,7 +678,6 @@ ${botMessage.message}
 
     const instructionsPayload = {
       role: 'system',
-      name: 'instructions',
       content: promptPrefix,
     };
 

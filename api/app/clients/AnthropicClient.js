@@ -98,8 +98,8 @@ class AnthropicClient extends BaseClient {
     );
 
     const modelMatch = matchModelName(this.modelOptions.model, EModelEndpoint.anthropic);
-    this.isClaude3 = modelMatch.startsWith('claude-3');
-    this.isLegacyOutput = !modelMatch.startsWith('claude-3-5-sonnet');
+    this.isClaude3 = modelMatch.includes('claude-3');
+    this.isLegacyOutput = !modelMatch.includes('claude-3-5-sonnet');
     this.supportsCacheControl =
       this.options.promptCache && this.checkPromptCacheSupport(modelMatch);
 
@@ -634,7 +634,7 @@ class AnthropicClient extends BaseClient {
       );
     };
 
-    if (this.modelOptions.model.startsWith('claude-3')) {
+    if (this.modelOptions.model.includes('claude-3')) {
       await buildMessagesPayload();
       processTokens();
       return {
@@ -682,8 +682,12 @@ class AnthropicClient extends BaseClient {
    */
   checkPromptCacheSupport(modelName) {
     const modelMatch = matchModelName(modelName, EModelEndpoint.anthropic);
+    if (modelMatch.includes('claude-3-5-sonnet-latest')) {
+      return false;
+    }
     if (
       modelMatch === 'claude-3-5-sonnet' ||
+      modelMatch === 'claude-3-5-haiku' ||
       modelMatch === 'claude-3-haiku' ||
       modelMatch === 'claude-3-opus'
     ) {

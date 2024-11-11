@@ -130,7 +130,7 @@ const initializeClient = async ({
   if (optionsOnly) {
     const requestOptions = Object.assign(
       {
-        modelOptions: endpointOption.modelOptions,
+        modelOptions: endpointOption.model_parameters,
       },
       clientOptions,
     );

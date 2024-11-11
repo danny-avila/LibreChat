@@ -1,7 +1,7 @@
 const { EModelEndpoint, extractEnvVariable, CacheKeys } = require('librechat-data-provider');
 const { fetchModels } = require('~/server/services/ModelService');
 const { getUserKeyWithExpiry } = require('../UserService');
-const { isUserProvided } = require('~/server/utils');
+const { isUserProvided, normalizeEndpointName } = require('~/server/utils');
 const getCustomConfig = require('./getCustomConfig');
 const getLogStores = require('~/cache/getLogStores');
 
@@ -63,7 +63,8 @@ async function loadConfigModels(req) {
 
   for (let i = 0; i < customEndpoints.length; i++) {
     const endpoint = customEndpoints[i];
-    const { models, name, baseURL, apiKey } = endpoint;
+    const { models, name: configName, baseURL, apiKey } = endpoint;
+    const name = normalizeEndpointName(configName);
     endpointsMap[name] = endpoint;
 
     let API_KEY = extractEnvVariable(apiKey);

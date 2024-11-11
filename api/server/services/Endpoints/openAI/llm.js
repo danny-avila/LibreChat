@@ -38,7 +38,6 @@ function getLLMConfig(apiKey, options = {}) {
   } = options;
 
   let llmConfig = {
-    model: 'gpt-4o-mini',
     streaming,
   };
 

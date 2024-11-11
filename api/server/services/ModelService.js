@@ -1,7 +1,7 @@
 const axios = require('axios');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { EModelEndpoint, defaultModels, CacheKeys } = require('librechat-data-provider');
-const { extractBaseURL, inputSchema, processModelData, logAxiosError } = require('~/utils');
+const { inputSchema, logAxiosError, extractBaseURL, processModelData } = require('~/utils');
 const { OllamaClient } = require('~/app/clients/OllamaClient');
 const getLogStores = require('~/cache/getLogStores');
 
@@ -66,6 +66,7 @@ const fetchModels = async ({
       headers: {
         Authorization: `Bearer ${apiKey}`,
       },
+      timeout: 5000,
     };
 
     if (process.env.PROXY) {
@@ -149,6 +150,7 @@ const fetchOpenAIModels = async (opts, _models = []) => {
       baseURL,
       azure: opts.azure,
       user: opts.user,
+      name: baseURL,
     });
   }
 
@@ -157,7 +159,7 @@ const fetchOpenAIModels = async (opts, _models = []) => {
   }
 
   if (baseURL === openaiBaseURL) {
-    const regex = /(text-davinci-003|gpt-)/;
+    const regex = /(text-davinci-003|gpt-|o1-)/;
     models = models.filter((model) => regex.test(model));
     const instructModels = models.filter((model) => model.includes('instruct'));
     const otherModels = models.filter((model) => !model.includes('instruct'));
@@ -175,7 +177,8 @@ const fetchOpenAIModels = async (opts, _models = []) => {
  * @param {object} opts - The options for fetching the models.
  * @param {string} opts.user - The user ID to send to the API.
  * @param {boolean} [opts.azure=false] - Whether to fetch models from Azure.
- * @param {boolean} [opts.plugins=false] - Whether to fetch models from the plugins.
+ * @param {boolean} [opts.plugins=false] - Whether to fetch models for the plugins endpoint.
+ * @param {boolean} [opts.assistants=false] - Whether to fetch models for the Assistants endpoint.
  */
 const getOpenAIModels = async (opts) => {
   let models = defaultModels[EModelEndpoint.openAI];
