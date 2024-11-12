@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { FileImage, RotateCw, Upload } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
 import AvatarEditor from 'react-avatar-editor';
+import { FileImage, RotateCw, Upload } from 'lucide-react';
 import { fileConfig as defaultFileConfig, mergeFileConfig } from 'librechat-data-provider';
 import type { TUser } from 'librechat-data-provider';
 import {
@@ -20,15 +20,22 @@ import { cn, formatBytes } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
+interface AvatarEditorRef {
+  getImageScaledToCanvas: () => HTMLCanvasElement;
+  getImage: () => HTMLImageElement;
+}
+
 function Avatar() {
   const setUser = useSetRecoilState(store.user);
-  const [image, setImage] = useState<string | File | null>(null);
-  const [isDialogOpen, setDialogOpen] = useState<boolean>(false);
+
   const [scale, setScale] = useState<number>(1);
   const [rotation, setRotation] = useState<number>(0);
-  const editorRef = useRef<AvatarEditor | null>(null);
+  const editorRef = useRef<AvatarEditorRef | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const openButtonRef = useRef<HTMLButtonElement>(null);
+
+  const [image, setImage] = useState<string | File | null>(null);
+  const [isDialogOpen, setDialogOpen] = useState<boolean>(false);
 
   const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
@@ -85,6 +92,8 @@ function Avatar() {
           const formData = new FormData();
           formData.append('file', blob, 'avatar.png');
           formData.append('manual', 'true');
+          formData.append('height', canvas.height.toString());
+          formData.append('width', canvas.width.toString());
           uploadAvatar(formData);
         }
       }, 'image/png');
