@@ -55,12 +55,13 @@ function Avatar() {
   };
 
   const handleFile = (file: File | undefined) => {
-    if (fileConfig.avatarSizeLimit && file && file.size <= fileConfig.avatarSizeLimit) {
+    if (fileConfig.avatarSizeLimit != null && file && file.size <= fileConfig.avatarSizeLimit) {
       setImage(file);
       setScale(1);
       setRotation(0);
     } else {
-      const megabytes = fileConfig.avatarSizeLimit ? formatBytes(fileConfig.avatarSizeLimit) : 2;
+      const megabytes =
+        fileConfig.avatarSizeLimit != null ? formatBytes(fileConfig.avatarSizeLimit) : 2;
       showToast({
         message: localize('com_ui_upload_invalid_var', megabytes + ''),
         status: 'error',
@@ -82,7 +83,7 @@ function Avatar() {
       canvas.toBlob((blob) => {
         if (blob) {
           const formData = new FormData();
-          formData.append('input', blob, 'avatar.png');
+          formData.append('file', blob, 'avatar.png');
           formData.append('manual', 'true');
           uploadAvatar(formData);
         }
@@ -134,11 +135,11 @@ function Avatar() {
       <OGDialogContent className="w-11/12 max-w-sm" style={{ borderRadius: '12px' }}>
         <OGDialogHeader>
           <OGDialogTitle className="text-lg font-medium leading-6 text-text-primary">
-            {image ? localize('com_ui_preview') : localize('com_ui_upload_image')}
+            {image != null ? localize('com_ui_preview') : localize('com_ui_upload_image')}
           </OGDialogTitle>
         </OGDialogHeader>
         <div className="flex flex-col items-center justify-center">
-          {image ? (
+          {image != null ? (
             <>
               <div className="relative overflow-hidden rounded-full">
                 <AvatarEditor
@@ -155,7 +156,7 @@ function Avatar() {
               </div>
               <div className="mt-4 flex w-full flex-col items-center space-y-4">
                 <div className="flex w-full items-center justify-center space-x-4">
-                  <span className="text-sm">Zoom:</span>
+                  <span className="text-sm">{localize('com_ui_zoom')}</span>
                   <Slider
                     value={[scale]}
                     min={1}

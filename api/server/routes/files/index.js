@@ -21,6 +21,7 @@ const initialize = async () => {
   router.post('*', fileUploadIpLimiter, fileUploadUserLimiter);
   router.post('/', upload.single('file'));
   router.post('/images', upload.single('file'));
+  router.post('/images/avatar', upload.single('file'));
 
   router.use('/', files);
   router.use('/images', images);
