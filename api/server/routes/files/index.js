@@ -1,5 +1,7 @@
 const express = require('express');
 const { uaParser, checkBan, requireJwtAuth, createFileLimiters } = require('~/server/middleware');
+const { avatar: asstAvatarRouter } = require('~/server/routes/assistants/v1');
+const { avatar: agentAvatarRouter } = require('~/server/routes/agents/v1');
 const { createMulterInstance } = require('./multer');
 
 const files = require('./files');
@@ -22,10 +24,14 @@ const initialize = async () => {
   router.post('/', upload.single('file'));
   router.post('/images', upload.single('file'));
   router.post('/images/avatar', upload.single('file'));
+  router.post('/images/agents/:agent_id/avatar', upload.single('file'));
+  router.post('/images/assistants/:assistant_id/avatar', upload.single('file'));
 
   router.use('/', files);
   router.use('/images', images);
   router.use('/images/avatar', avatar);
+  router.use('/images/agents', agentAvatarRouter);
+  router.use('/images/assistants', asstAvatarRouter);
   return router;
 };
 

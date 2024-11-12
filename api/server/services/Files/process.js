@@ -761,7 +761,7 @@ function filterFile({ req, file, image, isAvatar }) {
     throw new Error('Unsupported file type');
   }
 
-  if (!image) {
+  if (!image || isAvatar === true) {
     return;
   }
 
