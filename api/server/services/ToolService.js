@@ -20,8 +20,6 @@ const { redactMessage } = require('~/config/parsers');
 const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
 
-const filteredTools = new Set(['extractionChain.js']);
-
 /**
  * Loads and formats tools from the specified tool directory.
  *
@@ -37,7 +35,7 @@ const filteredTools = new Set(['extractionChain.js']);
  * @returns {Record<string, FunctionTool>} An object mapping each tool's plugin key to its instance.
  */
 function loadAndFormatTools({ directory, adminFilter = [], adminIncluded = [] }) {
-  const filter = new Set([...adminFilter, ...filteredTools]);
+  const filter = new Set([...adminFilter]);
   const included = new Set(adminIncluded);
   const tools = [];
   /* Structured Tools Directory */
