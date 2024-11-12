@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const multer = require('multer');
 const { fileConfig: defaultFileConfig, mergeFileConfig } = require('librechat-data-provider');
+const { sanitizeFilename } = require('~/server/utils/handleText');
 const { getCustomConfig } = require('~/server/services/Config');
 
 const storage = multer.diskStorage({
@@ -16,7 +17,7 @@ const storage = multer.diskStorage({
   filename: function (req, file, cb) {
     req.file_id = crypto.randomUUID();
     file.originalname = decodeURIComponent(file.originalname);
-    const sanitizedFilename = path.basename(file.originalname);
+    const sanitizedFilename = sanitizeFilename(file.originalname);
     cb(null, sanitizedFilename);
   },
 });
