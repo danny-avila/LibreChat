@@ -34,9 +34,9 @@ export const abortRequest = (endpoint: string) => `/api/ask/${endpoint}/abort`;
 export const conversationsRoot = '/api/convos';
 
 export const conversations = (pageNumber: string, isArchived?: boolean, tags?: string[]) =>
-  `${conversationsRoot}?pageNumber=${pageNumber}${isArchived ? '&isArchived=true' : ''}${tags
-    ?.map((tag) => `&tags=${tag}`)
-    .join('')}`;
+  `${conversationsRoot}?pageNumber=${pageNumber}${
+    isArchived === true ? '&isArchived=true' : ''
+  }${tags?.map((tag) => `&tags=${tag}`).join('')}`;
 
 export const conversationById = (id: string) => `${conversationsRoot}/${id}`;
 
@@ -77,7 +77,8 @@ export const loginFacebook = () => '/api/auth/facebook';
 
 export const loginGoogle = () => '/api/auth/google';
 
-export const refreshToken = (retry?: boolean) => `/api/auth/refresh${retry ? '?retry=true' : ''}`;
+export const refreshToken = (retry?: boolean) =>
+  `/api/auth/refresh${retry === true ? '?retry=true' : ''}`;
 
 export const requestPasswordReset = () => '/api/auth/requestPasswordReset';
 
@@ -94,19 +95,21 @@ export const config = () => '/api/config';
 export const prompts = () => '/api/prompts';
 
 export const assistants = ({
-  path,
+  path = '',
   options,
   version,
   endpoint,
+  isAvatar,
 }: {
   path?: string;
   options?: object;
   endpoint?: AssistantsEndpoint;
   version: number | string;
+  isAvatar?: boolean;
 }) => {
-  let url = `/api/assistants/v${version}`;
+  let url = isAvatar === true ? `${images()}/assistants` : `/api/assistants/v${version}`;
 
-  if (path) {
+  if (path && path !== '') {
     url += `/${path}`;
   }
 

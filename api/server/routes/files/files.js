@@ -231,7 +231,6 @@ router.post('/', async (req, res) => {
   } catch (error) {
     let message = 'Error processing file';
     logger.error('[/files] Error processing file:', error);
-    cleanup = false;
 
     if (error.message?.includes('file_ids')) {
       message += ': ' + error.message;
@@ -240,6 +239,7 @@ router.post('/', async (req, res) => {
     // TODO: delete remote file if it exists
     try {
       await fs.unlink(file.path);
+      cleanup = false;
     } catch (error) {
       logger.error('[/files] Error deleting file:', error);
     }

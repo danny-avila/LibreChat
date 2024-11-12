@@ -30,6 +30,13 @@ router.post('/', async (req, res) => {
       logger.error('[/files/images] Error deleting file:', error);
     }
     res.status(500).json({ message: 'Error processing file' });
+  } finally {
+    try {
+      await fs.unlink(req.file.path);
+      logger.debug('[/files/images] Temp. image upload file deleted');
+    } catch (error) {
+      logger.debug('[/files/images] Temp. image upload file already deleted');
+    }
   }
 });
 
