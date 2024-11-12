@@ -15,10 +15,12 @@ const initialize = async () => {
   router.use(checkBan);
   router.use(uaParser);
 
+  const upload = await createMulterInstance();
+  router.post('/speech/stt', upload.single('audio'));
+
   /* Important: speech route must be added before the upload limiters */
   router.use('/speech', speech);
 
-  const upload = await createMulterInstance();
   const { fileUploadIpLimiter, fileUploadUserLimiter } = createFileLimiters();
   router.post('*', fileUploadIpLimiter, fileUploadUserLimiter);
   router.post('/', upload.single('file'));

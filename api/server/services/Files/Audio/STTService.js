@@ -1,4 +1,5 @@
 const axios = require('axios');
+const fs = require('fs').promises;
 const FormData = require('form-data');
 const { Readable } = require('stream');
 const { extractEnvVariable, STTProviders } = require('librechat-data-provider');
@@ -200,11 +201,11 @@ class STTService {
    * @returns {Promise<void>}
    */
   async processTextToSpeech(req, res) {
-    if (!req.file || !req.file.buffer) {
+    if (!req.file) {
       return res.status(400).json({ message: 'No audio file provided in the FormData' });
     }
 
-    const audioBuffer = req.file.buffer;
+    const audioBuffer = await fs.readFile(req.file.path);
     const audioFile = {
       originalname: req.file.originalname,
       mimetype: req.file.mimetype,
@@ -218,6 +219,13 @@ class STTService {
     } catch (error) {
       logger.error('An error occurred while processing the audio:', error);
       res.sendStatus(500);
+    } finally {
+      try {
+        await fs.unlink(req.file.path);
+        logger.debug('[/speech/stt] Temp. audio upload file deleted');
+      } catch (error) {
+        logger.debug('[/speech/stt] Temp. audio upload file already deleted');
+      }
     }
   }
 }

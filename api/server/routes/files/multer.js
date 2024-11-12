@@ -46,6 +46,10 @@ const createFileFilter = (customFileConfig) => {
       return cb(new Error('No file provided'), false);
     }
 
+    if (req.originalUrl.endsWith('/speech/stt') && file.mimetype.startsWith('audio/')) {
+      return cb(null, true);
+    }
+
     const endpoint = req.body.endpoint;
     const supportedTypes =
       customFileConfig?.endpoints?.[endpoint]?.supportedMimeTypes ??
