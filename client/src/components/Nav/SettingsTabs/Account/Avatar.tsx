@@ -92,8 +92,6 @@ function Avatar() {
           const formData = new FormData();
           formData.append('file', blob, 'avatar.png');
           formData.append('manual', 'true');
-          formData.append('height', canvas.height.toString());
-          formData.append('width', canvas.width.toString());
           uploadAvatar(formData);
         }
       }, 'image/png');
