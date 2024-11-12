@@ -15,7 +15,6 @@ const {
   StableDiffusionAPI,
   // Structured Tools
   DALLE3,
-  E2BTools,
   StructuredSD,
   StructuredACS,
   TraversaalSearch,
@@ -24,7 +23,6 @@ const {
 } = require('../');
 const { primeFiles } = require('~/server/services/Files/Code/process');
 const createFileSearchTool = require('./createFileSearchTool');
-const { loadToolSuite } = require('./loadToolSuite');
 const { loadSpecs } = require('./loadSpecs');
 const { logger } = require('~/config');
 
@@ -169,21 +167,6 @@ const loadTools = async ({
   };
 
   const customConstructors = {
-    e2b_code_interpreter: async () => {
-      if (!functions) {
-        return null;
-      }
-
-      return await loadToolSuite({
-        pluginKey: 'e2b_code_interpreter',
-        tools: E2BTools,
-        user,
-        options: {
-          model,
-          ...options,
-        },
-      });
-    },
     serpapi: async () => {
       let apiKey = process.env.SERPAPI_API_KEY;
       if (!apiKey) {

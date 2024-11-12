@@ -10,7 +10,6 @@ const SelfReflectionTool = require('./SelfReflection');
 // Structured Tools
 const DALLE3 = require('./structured/DALLE3');
 const ChatTool = require('./structured/ChatTool');
-const E2BTools = require('./structured/E2BTools');
 const StructuredSD = require('./structured/StableDiffusion');
 const StructuredACS = require('./structured/AzureAISearch');
 const GoogleSearchAPI = require('./structured/GoogleSearch');
@@ -30,7 +29,6 @@ module.exports = {
   // Structured Tools
   DALLE3,
   ChatTool,
-  E2BTools,
   StructuredSD,
   StructuredACS,
   GoogleSearchAPI,
