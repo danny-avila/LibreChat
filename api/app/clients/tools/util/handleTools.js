@@ -7,7 +7,6 @@ const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const {
   availableTools,
   // Basic Tools
-  CodeBrew,
   AzureAISearch,
   GoogleSearchAPI,
   WolframAlphaAPI,
@@ -162,7 +161,6 @@ const loadTools = async ({
     'dall-e': OpenAICreateImage,
     'stable-diffusion': functions ? StructuredSD : StableDiffusionAPI,
     'azure-ai-search': functions ? StructuredACS : AzureAISearch,
-    CodeBrew: CodeBrew,
     traversaal_search: TraversaalSearch,
   };
 

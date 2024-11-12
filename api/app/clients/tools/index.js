@@ -1,6 +1,5 @@
 const availableTools = require('./manifest.json');
 // Basic Tools
-const CodeBrew = require('./CodeBrew');
 const WolframAlphaAPI = require('./Wolfram');
 const AzureAiSearch = require('./AzureAiSearch');
 const OpenAICreateImage = require('./DALL-E');
@@ -20,7 +19,6 @@ const TraversaalSearch = require('./structured/TraversaalSearch');
 module.exports = {
   availableTools,
   // Basic Tools
-  CodeBrew,
   AzureAiSearch,
   WolframAlphaAPI,
   OpenAICreateImage,
