@@ -11,10 +11,8 @@ const SelfReflectionTool = require('./SelfReflection');
 const DALLE3 = require('./structured/DALLE3');
 const ChatTool = require('./structured/ChatTool');
 const E2BTools = require('./structured/E2BTools');
-const CodeSherpa = require('./structured/CodeSherpa');
 const StructuredSD = require('./structured/StableDiffusion');
 const StructuredACS = require('./structured/AzureAISearch');
-const CodeSherpaTools = require('./structured/CodeSherpaTools');
 const GoogleSearchAPI = require('./structured/GoogleSearch');
 const StructuredWolfram = require('./structured/Wolfram');
 const TavilySearchResults = require('./structured/TavilySearchResults');
@@ -33,11 +31,9 @@ module.exports = {
   DALLE3,
   ChatTool,
   E2BTools,
-  CodeSherpa,
   StructuredSD,
   StructuredACS,
   GoogleSearchAPI,
-  CodeSherpaTools,
   TraversaalSearch,
   StructuredWolfram,
   TavilySearchResults,

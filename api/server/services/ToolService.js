@@ -20,13 +20,7 @@ const { redactMessage } = require('~/config/parsers');
 const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
 
-const filteredTools = new Set([
-  'ChatTool.js',
-  'CodeSherpa.js',
-  'CodeSherpaTools.js',
-  'E2BTools.js',
-  'extractionChain.js',
-]);
+const filteredTools = new Set(['ChatTool.js', 'E2BTools.js', 'extractionChain.js']);
 
 /**
  * Loads and formats tools from the specified tool directory.

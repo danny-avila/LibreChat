@@ -57,19 +57,6 @@
     ]
   },
   {
-    "name": "CodeSherpa",
-    "pluginKey": "codesherpa_tools",
-    "description": "[Experimental] A REPL for your chat. Requires https://github.com/iamgreggarcia/codesherpa",
-    "icon": "https://raw.githubusercontent.com/iamgreggarcia/codesherpa/main/localserver/_logo.png",
-    "authConfig": [
-      {
-        "authField": "CODESHERPA_SERVER_URL",
-        "label": "CodeSherpa Server URL",
-        "description": "Hosted endpoint must be provided"
-      }
-    ]
-  },
-  {
     "name": "Browser",
     "pluginKey": "web-browser",
     "description": "Scrape and summarize webpage data",

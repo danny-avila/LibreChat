@@ -16,10 +16,8 @@ const {
   // Structured Tools
   DALLE3,
   E2BTools,
-  CodeSherpa,
   StructuredSD,
   StructuredACS,
-  CodeSherpaTools,
   TraversaalSearch,
   StructuredWolfram,
   TavilySearchResults,
@@ -186,18 +184,6 @@ const loadTools = async ({
         },
       });
     },
-    codesherpa_tools: async () => {
-      if (!functions) {
-        return null;
-      }
-
-      return await loadToolSuite({
-        pluginKey: 'codesherpa_tools',
-        tools: CodeSherpaTools,
-        user,
-        options,
-      });
-    },
     serpapi: async () => {
       let apiKey = process.env.SERPAPI_API_KEY;
       if (!apiKey) {
@@ -223,7 +209,6 @@ const loadTools = async ({
 
   if (functions) {
     toolConstructors.dalle = DALLE3;
-    toolConstructors.codesherpa = CodeSherpa;
   }
 
   const imageGenOptions = {
