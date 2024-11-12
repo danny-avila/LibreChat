@@ -70,19 +70,6 @@
     ]
   },
   {
-    "name": "DALL-E",
-    "pluginKey": "dall-e",
-    "description": "Create realistic images and art from a description in natural language",
-    "icon": "https://i.imgur.com/u2TzXzH.png",
-    "authConfig": [
-      {
-        "authField": "DALLE2_API_KEY||DALLE_API_KEY",
-        "label": "OpenAI API Key",
-        "description": "You can use DALL-E with your API Key from OpenAI."
-      }
-    ]
-  },
-  {
     "name": "DALL-E-3",
     "pluginKey": "dalle",
     "description": "[DALL-E-3] Create realistic images and art from a description in natural language",

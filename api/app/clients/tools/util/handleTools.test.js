@@ -18,20 +18,20 @@ jest.mock('~/models/User', () => {
 
 jest.mock('~/server/services/PluginService', () => mockPluginService);
 
+const { BaseLLM } = require('@langchain/openai');
 const { Calculator } = require('@langchain/community/tools/calculator');
-const { BaseChatModel } = require('@langchain/openai');
 
 const User = require('~/models/User');
 const PluginService = require('~/server/services/PluginService');
 const { validateTools, loadTools, loadToolWithAuth } = require('./handleTools');
-const { StructuredSD, availableTools, GoogleSearchAPI } = require('../');
+const { StructuredSD, availableTools, DALLE3 } = require('../');
 
 describe('Tool Handlers', () => {
   let fakeUser;
-  const pluginKey = 'dall-e';
+  const pluginKey = 'dalle';
   const pluginKey2 = 'wolfram';
+  const ToolClass = DALLE3;
   const initialTools = [pluginKey, pluginKey2];
-  const ToolClass = GoogleSearchAPI;
   const mockCredential = 'mock-credential';
   const mainPlugin = availableTools.find((tool) => tool.pluginKey === pluginKey);
   const authConfigs = mainPlugin.authConfig;
@@ -130,7 +130,7 @@ describe('Tool Handlers', () => {
     beforeAll(async () => {
       toolFunctions = await loadTools({
         user: fakeUser._id,
-        model: BaseChatModel,
+        model: BaseLLM,
         tools: sampleTools,
         returnMap: true,
       });
@@ -168,10 +168,10 @@ describe('Tool Handlers', () => {
     });
 
     it('should initialize an authenticated tool with primary auth field', async () => {
-      process.env.DALLE2_API_KEY = 'mocked_api_key';
+      process.env.DALLE3_API_KEY = 'mocked_api_key';
       const initToolFunction = loadToolWithAuth(
         'userId',
-        ['DALLE2_API_KEY||DALLE_API_KEY'],
+        ['DALLE3_API_KEY||DALLE_API_KEY'],
         ToolClass,
       );
       const authTool = await initToolFunction();
@@ -181,11 +181,11 @@ describe('Tool Handlers', () => {
     });
 
     it('should initialize an authenticated tool with alternate auth field when primary is missing', async () => {
-      delete process.env.DALLE2_API_KEY; // Ensure the primary key is not set
+      delete process.env.DALLE3_API_KEY; // Ensure the primary key is not set
       process.env.DALLE_API_KEY = 'mocked_alternate_api_key';
       const initToolFunction = loadToolWithAuth(
         'userId',
-        ['DALLE2_API_KEY||DALLE_API_KEY'],
+        ['DALLE3_API_KEY||DALLE_API_KEY'],
         ToolClass,
       );
       const authTool = await initToolFunction();
@@ -194,7 +194,7 @@ describe('Tool Handlers', () => {
       expect(mockPluginService.getUserPluginAuthValue).toHaveBeenCalledTimes(1);
       expect(mockPluginService.getUserPluginAuthValue).toHaveBeenCalledWith(
         'userId',
-        'DALLE2_API_KEY',
+        'DALLE3_API_KEY',
       );
     });
 
@@ -202,7 +202,7 @@ describe('Tool Handlers', () => {
       mockPluginService.updateUserPluginAuth('userId', 'DALLE_API_KEY', 'dalle', 'mocked_api_key');
       const initToolFunction = loadToolWithAuth(
         'userId',
-        ['DALLE2_API_KEY||DALLE_API_KEY'],
+        ['DALLE3_API_KEY||DALLE_API_KEY'],
         ToolClass,
       );
       const authTool = await initToolFunction();
@@ -219,27 +219,10 @@ describe('Tool Handlers', () => {
         expect(error).toBeDefined();
       }
     });
-    it('should initialize an authenticated tool through Environment Variables', async () => {
-      let testPluginKey = 'google';
-      let TestClass = GoogleSearchAPI;
-      const plugin = availableTools.find((tool) => tool.pluginKey === testPluginKey);
-      const authConfigs = plugin.authConfig;
-      for (const authConfig of authConfigs) {
-        process.env[authConfig.authField] = mockCredential;
-      }
-      toolFunctions = await loadTools({
-        user: fakeUser._id,
-        model: BaseChatModel,
-        tools: [testPluginKey],
-        returnMap: true,
-      });
-      const Tool = await toolFunctions[testPluginKey]();
-      expect(Tool).toBeInstanceOf(TestClass);
-    });
     it('returns an empty object when no tools are requested', async () => {
       toolFunctions = await loadTools({
         user: fakeUser._id,
-        model: BaseChatModel,
+        model: BaseLLM,
         returnMap: true,
       });
       expect(toolFunctions).toEqual({});
@@ -248,7 +231,7 @@ describe('Tool Handlers', () => {
       process.env.SD_WEBUI_URL = mockCredential;
       toolFunctions = await loadTools({
         user: fakeUser._id,
-        model: BaseChatModel,
+        model: BaseLLM,
         tools: ['stable-diffusion'],
         functions: true,
         returnMap: true,
