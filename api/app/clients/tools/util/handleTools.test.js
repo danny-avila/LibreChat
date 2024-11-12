@@ -24,20 +24,14 @@ const { BaseChatModel } = require('@langchain/openai');
 const User = require('~/models/User');
 const PluginService = require('~/server/services/PluginService');
 const { validateTools, loadTools, loadToolWithAuth } = require('./handleTools');
-const {
-  availableTools,
-  OpenAICreateImage,
-  GoogleSearchAPI,
-  StructuredSD,
-  WolframAlphaAPI,
-} = require('../');
+const { StructuredSD, availableTools, GoogleSearchAPI } = require('../');
 
 describe('Tool Handlers', () => {
   let fakeUser;
   const pluginKey = 'dall-e';
   const pluginKey2 = 'wolfram';
   const initialTools = [pluginKey, pluginKey2];
-  const ToolClass = OpenAICreateImage;
+  const ToolClass = GoogleSearchAPI;
   const mockCredential = 'mock-credential';
   const mainPlugin = availableTools.find((tool) => tool.pluginKey === pluginKey);
   const authConfigs = mainPlugin.authConfig;
@@ -215,41 +209,6 @@ describe('Tool Handlers', () => {
 
       expect(authTool).toBeInstanceOf(ToolClass);
       expect(mockPluginService.getUserPluginAuthValue).toHaveBeenCalledTimes(2);
-    });
-
-    it('should initialize an authenticated tool with singular auth field', async () => {
-      process.env.WOLFRAM_APP_ID = 'mocked_app_id';
-      const initToolFunction = loadToolWithAuth('userId', ['WOLFRAM_APP_ID'], WolframAlphaAPI);
-      const authTool = await initToolFunction();
-
-      expect(authTool).toBeInstanceOf(WolframAlphaAPI);
-      expect(mockPluginService.getUserPluginAuthValue).not.toHaveBeenCalled();
-    });
-
-    it('should initialize an authenticated tool when env var is set', async () => {
-      process.env.WOLFRAM_APP_ID = 'mocked_app_id';
-      const initToolFunction = loadToolWithAuth('userId', ['WOLFRAM_APP_ID'], WolframAlphaAPI);
-      const authTool = await initToolFunction();
-
-      expect(authTool).toBeInstanceOf(WolframAlphaAPI);
-      expect(mockPluginService.getUserPluginAuthValue).not.toHaveBeenCalledWith(
-        'userId',
-        'WOLFRAM_APP_ID',
-      );
-    });
-
-    it('should fallback to getUserPluginAuthValue when singular env var is missing', async () => {
-      delete process.env.WOLFRAM_APP_ID; // Ensure the environment variable is not set
-      mockPluginService.getUserPluginAuthValue.mockResolvedValue('mocked_user_auth_value');
-      const initToolFunction = loadToolWithAuth('userId', ['WOLFRAM_APP_ID'], WolframAlphaAPI);
-      const authTool = await initToolFunction();
-
-      expect(authTool).toBeInstanceOf(WolframAlphaAPI);
-      expect(mockPluginService.getUserPluginAuthValue).toHaveBeenCalledTimes(1);
-      expect(mockPluginService.getUserPluginAuthValue).toHaveBeenCalledWith(
-        'userId',
-        'WOLFRAM_APP_ID',
-      );
     });
 
     it('should throw an error for an unauthenticated tool', async () => {

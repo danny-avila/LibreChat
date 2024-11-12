@@ -6,11 +6,7 @@ const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const {
   availableTools,
   // Basic Tools
-  AzureAISearch,
   GoogleSearchAPI,
-  WolframAlphaAPI,
-  OpenAICreateImage,
-  StableDiffusionAPI,
   // Structured Tools
   DALLE3,
   StructuredSD,
@@ -146,21 +142,20 @@ const loadToolWithAuth = (userId, authFields, ToolConstructor, options = {}) => 
 const loadTools = async ({
   user,
   model,
-  functions = null,
+  functions = true,
   returnMap = false,
   tools = [],
   options = {},
   skipSpecs = false,
 }) => {
   const toolConstructors = {
-    tavily_search_results_json: TavilySearchResults,
     calculator: Calculator,
     google: GoogleSearchAPI,
-    wolfram: functions ? StructuredWolfram : WolframAlphaAPI,
-    'dall-e': OpenAICreateImage,
-    'stable-diffusion': functions ? StructuredSD : StableDiffusionAPI,
-    'azure-ai-search': functions ? StructuredACS : AzureAISearch,
+    wolfram: StructuredWolfram,
+    'stable-diffusion': StructuredSD,
+    'azure-ai-search': StructuredACS,
     traversaal_search: TraversaalSearch,
+    tavily_search_results_json: TavilySearchResults,
   };
 
   const customConstructors = {
