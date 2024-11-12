@@ -20,7 +20,7 @@ const { redactMessage } = require('~/config/parsers');
 const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
 
-const filteredTools = new Set(['ChatTool.js', 'extractionChain.js']);
+const filteredTools = new Set(['extractionChain.js']);
 
 /**
  * Loads and formats tools from the specified tool directory.
