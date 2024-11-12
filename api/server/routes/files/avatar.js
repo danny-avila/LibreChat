@@ -34,6 +34,13 @@ router.post('/', async (req, res) => {
     const message = 'An error occurred while uploading the profile picture';
     logger.error(message, error);
     res.status(500).json({ message });
+  } finally {
+    try {
+      await fs.unlink(req.file.path);
+      logger.debug('[/files/images/avatar] Temp. image upload file deleted');
+    } catch (error) {
+      logger.debug('[/files/images/avatar] Temp. image upload file already deleted');
+    }
   }
 });
 
