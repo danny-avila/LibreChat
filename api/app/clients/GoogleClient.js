@@ -1,10 +1,10 @@
 const { google } = require('googleapis');
 const { Agent, ProxyAgent } = require('undici');
 const { ChatVertexAI } = require('@langchain/google-vertexai');
-const { ChatGoogleGenerativeAI } = require('@langchain/google-genai');
-const { GoogleGenerativeAI: GenAI } = require('@google/generative-ai');
 const { GoogleVertexAI } = require('@langchain/google-vertexai');
 const { ChatGoogleVertexAI } = require('@langchain/google-vertexai');
+const { ChatGoogleGenerativeAI } = require('@langchain/google-genai');
+const { GoogleGenerativeAI: GenAI } = require('@google/generative-ai');
 const { AIMessage, HumanMessage, SystemMessage } = require('@langchain/core/messages');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const {
