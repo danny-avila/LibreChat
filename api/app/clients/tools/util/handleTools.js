@@ -1,7 +1,6 @@
 const { Tools } = require('librechat-data-provider');
-const { ZapierToolKit } = require('langchain/agents');
+const { SerpAPI } = require('@langchain/community/tools/serpapi');
 const { Calculator } = require('@langchain/community/tools/calculator');
-const { SerpAPI, ZapierNLAWrapper } = require('langchain/tools');
 const { createCodeExecutionTool, EnvVar } = require('@librechat/agents');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const {
@@ -175,14 +174,6 @@ const loadTools = async ({
         hl: 'en',
         gl: 'us',
       });
-    },
-    zapier: async () => {
-      let apiKey = process.env.ZAPIER_NLA_API_KEY;
-      if (!apiKey) {
-        apiKey = await getUserPluginAuthValue(user, 'ZAPIER_NLA_API_KEY');
-      }
-      const zapier = new ZapierNLAWrapper({ apiKey });
-      return ZapierToolKit.fromZapierNLAWrapper(zapier);
     },
   };
 
