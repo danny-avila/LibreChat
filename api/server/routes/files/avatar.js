@@ -1,17 +1,18 @@
-const multer = require('multer');
+const fs = require('fs').promises;
 const express = require('express');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
+const { filterFile } = require('~/server/services/Files/process');
 const { logger } = require('~/config');
 
-const upload = multer();
 const router = express.Router();
 
-router.post('/', upload.single('input'), async (req, res) => {
+router.post('/', async (req, res) => {
   try {
+    filterFile({ req, file: req.file, image: true, isAvatar: true });
     const userId = req.user.id;
     const { manual } = req.body;
-    const input = req.file.buffer;
+    const input = await fs.readFile(req.file.path);
 
     if (!userId) {
       throw new Error('User ID is undefined');

@@ -716,14 +716,15 @@ async function retrieveAndProcessFile({
  * @param {number} [params.req.version]
  * @param {Express.Multer.File} params.file - The file uploaded to the server via multer.
  * @param {boolean} [params.image] - Whether the file expected is an image.
+ * @param {boolean} [params.isAvatar] - Whether the file expected is a user or entity avatar.
  * @returns {void}
  *
  * @throws {Error} If a file exception is caught (invalid file size or type, lack of metadata).
  */
-function filterFile({ req, file, image }) {
+function filterFile({ req, file, image, isAvatar }) {
   const { endpoint, file_id, width, height } = req.body;
 
-  if (!file_id) {
+  if (!file_id && !isAvatar) {
     throw new Error('No file_id provided');
   }
 
@@ -732,20 +733,25 @@ function filterFile({ req, file, image }) {
   }
 
   /* parse to validate api call, throws error on fail */
-  isUUID.parse(file_id);
+  if (!isAvatar) {
+    isUUID.parse(file_id);
+  }
 
-  if (!endpoint) {
+  if (!endpoint && !isAvatar) {
     throw new Error('No endpoint provided');
   }
 
   const fileConfig = mergeFileConfig(req.app.locals.fileConfig);
 
-  const { fileSizeLimit, supportedMimeTypes } =
+  const { fileSizeLimit: sizeLimit, supportedMimeTypes } =
     fileConfig.endpoints[endpoint] ?? fileConfig.endpoints.default;
+  const fileSizeLimit = isAvatar === true ? fileConfig.avatarSizeLimit : sizeLimit;
 
   if (file.size > fileSizeLimit) {
     throw new Error(
-      `File size limit of ${fileSizeLimit / megabyte} MB exceeded for ${endpoint} endpoint`,
+      `File size limit of ${fileSizeLimit / megabyte} MB exceeded for ${
+        isAvatar ? 'avatar upload' : `${endpoint} endpoint`
+      }`,
     );
   }
 
