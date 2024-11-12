@@ -2,7 +2,7 @@ const {
   ChatPromptTemplate,
   SystemMessagePromptTemplate,
   HumanMessagePromptTemplate,
-} = require('langchain/prompts');
+} = require('@langchain/core/prompts');
 
 const langPrompt = new ChatPromptTemplate({
   promptMessages: [
