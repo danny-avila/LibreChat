@@ -186,8 +186,29 @@ const debugTraverse = winston.format.printf(({ level, message, timestamp, ...met
   }
 });
 
+const jsonTruncateFormat = winston.format((info) => {
+  const truncateObject = (obj) => {
+    const newObj = {};
+    Object.entries(obj).forEach(([key, value]) => {
+      if (typeof value === 'string') {
+        newObj[key] = truncateLongStrings(value, 255);
+      } else if (Array.isArray(value)) {
+        newObj[key] = value.map(condenseArray);
+      } else if (typeof value === 'object' && value !== null) {
+        newObj[key] = truncateObject(value);
+      } else {
+        newObj[key] = value;
+      }
+    });
+    return newObj;
+  };
+
+  return truncateObject(info);
+});
+
 module.exports = {
   redactFormat,
   redactMessage,
   debugTraverse,
+  jsonTruncateFormat,
 };
