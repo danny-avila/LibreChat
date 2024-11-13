@@ -1,7 +1,7 @@
 const path = require('path');
 const winston = require('winston');
 require('winston-daily-rotate-file');
-const { redactFormat, redactMessage, debugTraverse } = require('./parsers');
+const { redactFormat, redactMessage, debugTraverse, jsonTruncateFormat } = require('./parsers');
 
 const logDir = path.join(__dirname, '..', 'logs');
 
@@ -112,7 +112,7 @@ if (useDebugConsole) {
     new winston.transports.Console({
       level: 'debug',
       format: useConsoleJson
-        ? winston.format.combine(fileFormat, debugTraverse, winston.format.json())
+        ? winston.format.combine(fileFormat, jsonTruncateFormat(), winston.format.json())
         : winston.format.combine(fileFormat, debugTraverse),
     }),
   );
@@ -120,7 +120,7 @@ if (useDebugConsole) {
   transports.push(
     new winston.transports.Console({
       level: 'info',
-      format: winston.format.combine(fileFormat, winston.format.json()),
+      format: winston.format.combine(fileFormat, jsonTruncateFormat(), winston.format.json()),
     }),
   );
 } else {
