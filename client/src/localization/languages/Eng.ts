@@ -222,6 +222,7 @@ export default {
   com_ui_latest_footer: 'Every AI for Everyone.',
   com_ui_enter: 'Enter',
   com_ui_submit: 'Submit',
+  com_ui_zoom: 'Zoom',
   com_ui_none_selected: 'None selected',
   com_ui_upload_success: 'Successfully uploaded file',
   com_ui_upload_error: 'There was an error uploading your file',

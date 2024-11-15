@@ -1,4 +1,4 @@
-const { ChatOpenAI } = require('langchain/chat_models/openai');
+const { ChatOpenAI } = require('@langchain/openai');
 const { sanitizeModelName, constructAzureURL } = require('~/utils');
 const { isEnabled } = require('~/server/utils');
 

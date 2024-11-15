@@ -34,7 +34,7 @@ jest.mock('~/models', () => ({
   updateFileUsage: jest.fn(),
 }));
 
-jest.mock('langchain/chat_models/openai', () => {
+jest.mock('@langchain/openai', () => {
   return {
     ChatOpenAI: jest.fn().mockImplementation(() => {
       return {};
