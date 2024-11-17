@@ -3,7 +3,7 @@ const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserServic
 const { getLLMConfig } = require('~/server/services/Endpoints/anthropic/llm');
 const { AnthropicClient } = require('~/app');
 
-const initializeClient = async ({ req, res, endpointOption, optionsOnly }) => {
+const initializeClient = async ({ req, res, endpointOption, overrideModel, optionsOnly }) => {
   const { ANTHROPIC_API_KEY, ANTHROPIC_REVERSE_PROXY, PROXY } = process.env;
   const expiresAt = req.body.key;
   const isUserProvided = ANTHROPIC_API_KEY === 'user_provided';
@@ -40,10 +40,13 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly }) => {
       {
         reverseProxyUrl: ANTHROPIC_REVERSE_PROXY ?? null,
         proxy: PROXY ?? null,
-        modelOptions: endpointOption.modelOptions,
+        modelOptions: endpointOption.model_parameters,
       },
       clientOptions,
     );
+    if (overrideModel) {
+      requestOptions.modelOptions.model = overrideModel;
+    }
     return getLLMConfig(anthropicApiKey, requestOptions);
   }
 
