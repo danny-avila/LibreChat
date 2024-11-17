@@ -304,6 +304,16 @@ export const getAvailableTools = (
   return request.get(path);
 };
 
+export const getVerifyAgentToolAuth = (
+  params: q.VerifyToolAuthParams,
+): Promise<q.VerifyToolAuthResponse> => {
+  return request.get(
+    endpoints.agents({
+      path: `tools/${params.toolId}/auth`,
+    }),
+  );
+};
+
 /* Files */
 
 export const getFiles = (): Promise<f.TFile[]> => {
@@ -461,7 +471,8 @@ export const uploadAvatar = (data: FormData): Promise<f.AvatarUploadResponse> =>
 export const uploadAssistantAvatar = (data: m.AssistantAvatarVariables): Promise<a.Assistant> => {
   return request.postMultiPart(
     endpoints.assistants({
-      path: `avatar/${data.assistant_id}`,
+      isAvatar: true,
+      path: `${data.assistant_id}/avatar`,
       options: { model: data.model, endpoint: data.endpoint },
       version: data.version,
     }),
@@ -471,9 +482,7 @@ export const uploadAssistantAvatar = (data: m.AssistantAvatarVariables): Promise
 
 export const uploadAgentAvatar = (data: m.AgentAvatarVariables): Promise<a.Agent> => {
   return request.postMultiPart(
-    endpoints.agents({
-      path: `avatar/${data.agent_id}`,
-    }),
+    `${endpoints.images()}/agents/${data.agent_id}/avatar`,
     data.formData,
   );
 };

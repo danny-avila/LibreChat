@@ -1,31 +1,22 @@
 const { Tools } = require('librechat-data-provider');
-const { ZapierToolKit } = require('langchain/agents');
-const { Calculator } = require('langchain/tools/calculator');
-const { SerpAPI, ZapierNLAWrapper } = require('langchain/tools');
+const { SerpAPI } = require('@langchain/community/tools/serpapi');
+const { Calculator } = require('@langchain/community/tools/calculator');
 const { createCodeExecutionTool, EnvVar } = require('@librechat/agents');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const {
   availableTools,
   // Basic Tools
-  CodeBrew,
-  AzureAISearch,
   GoogleSearchAPI,
-  WolframAlphaAPI,
-  OpenAICreateImage,
-  StableDiffusionAPI,
   // Structured Tools
   DALLE3,
-  E2BTools,
-  CodeSherpa,
   StructuredSD,
   StructuredACS,
-  CodeSherpaTools,
   TraversaalSearch,
   StructuredWolfram,
   TavilySearchResults,
 } = require('../');
+const { primeFiles } = require('~/server/services/Files/Code/process');
 const createFileSearchTool = require('./createFileSearchTool');
-const { loadToolSuite } = require('./loadToolSuite');
 const { loadSpecs } = require('./loadSpecs');
 const { logger } = require('~/config');
 
@@ -151,52 +142,23 @@ const loadToolWithAuth = (userId, authFields, ToolConstructor, options = {}) => 
 const loadTools = async ({
   user,
   model,
-  functions = null,
+  functions = true,
   returnMap = false,
   tools = [],
   options = {},
   skipSpecs = false,
 }) => {
   const toolConstructors = {
-    tavily_search_results_json: TavilySearchResults,
     calculator: Calculator,
     google: GoogleSearchAPI,
-    wolfram: functions ? StructuredWolfram : WolframAlphaAPI,
-    'dall-e': OpenAICreateImage,
-    'stable-diffusion': functions ? StructuredSD : StableDiffusionAPI,
-    'azure-ai-search': functions ? StructuredACS : AzureAISearch,
-    CodeBrew: CodeBrew,
+    wolfram: StructuredWolfram,
+    'stable-diffusion': StructuredSD,
+    'azure-ai-search': StructuredACS,
     traversaal_search: TraversaalSearch,
+    tavily_search_results_json: TavilySearchResults,
   };
 
   const customConstructors = {
-    e2b_code_interpreter: async () => {
-      if (!functions) {
-        return null;
-      }
-
-      return await loadToolSuite({
-        pluginKey: 'e2b_code_interpreter',
-        tools: E2BTools,
-        user,
-        options: {
-          model,
-          ...options,
-        },
-      });
-    },
-    codesherpa_tools: async () => {
-      if (!functions) {
-        return null;
-      }
-
-      return await loadToolSuite({
-        pluginKey: 'codesherpa_tools',
-        tools: CodeSherpaTools,
-        user,
-        options,
-      });
-    },
     serpapi: async () => {
       let apiKey = process.env.SERPAPI_API_KEY;
       if (!apiKey) {
@@ -208,21 +170,12 @@ const loadTools = async ({
         gl: 'us',
       });
     },
-    zapier: async () => {
-      let apiKey = process.env.ZAPIER_NLA_API_KEY;
-      if (!apiKey) {
-        apiKey = await getUserPluginAuthValue(user, 'ZAPIER_NLA_API_KEY');
-      }
-      const zapier = new ZapierNLAWrapper({ apiKey });
-      return ZapierToolKit.fromZapierNLAWrapper(zapier);
-    },
   };
 
   const requestedTools = {};
 
   if (functions) {
     toolConstructors.dalle = DALLE3;
-    toolConstructors.codesherpa = CodeSherpa;
   }
 
   const imageGenOptions = {
@@ -255,12 +208,14 @@ const loadTools = async ({
   for (const tool of tools) {
     if (tool === Tools.execute_code) {
       const authValues = await loadAuthValues({
-        userId: user.id,
+        userId: user,
         authFields: [EnvVar.CODE_API_KEY],
       });
+      const files = await primeFiles(options, authValues[EnvVar.CODE_API_KEY]);
       requestedTools[tool] = () =>
         createCodeExecutionTool({
-          user_id: user.id,
+          user_id: user,
+          files,
           ...authValues,
         });
       continue;

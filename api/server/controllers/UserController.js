@@ -61,10 +61,10 @@ const deleteUserFiles = async (req) => {
 
 const updateUserPluginsController = async (req, res) => {
   const { user } = req;
-  const { pluginKey, action, auth, isAssistantTool } = req.body;
+  const { pluginKey, action, auth, isEntityTool } = req.body;
   let authService;
   try {
-    if (!isAssistantTool) {
+    if (!isEntityTool) {
       const userPluginsService = await updateUserPluginsService(user, pluginKey, action);
 
       if (userPluginsService instanceof Error) {
