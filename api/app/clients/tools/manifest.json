@@ -157,7 +157,7 @@
     "name": "WebNavigator",
     "pluginKey": "WebNavigator",
     "description": "WebNavigator",
-    "icon": "/assets/flux.png",
+    "icon": "/assets/webnavigator.png",
     "isAuthRequired": "false",
     "authConfig": []
   }
