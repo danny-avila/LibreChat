@@ -12,6 +12,7 @@ const {
   Constants,
   VisionModes,
   openAISchema,
+  ContentTypes,
   EModelEndpoint,
   KnownEndpoints,
   anthropicSchema,
@@ -31,10 +32,10 @@ const {
   createContextHandlers,
 } = require('~/app/clients/prompts');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { getBufferString, HumanMessage } = require('@langchain/core/messages');
 const Tokenizer = require('~/server/services/Tokenizer');
 const { spendTokens } = require('~/models/spendTokens');
 const BaseClient = require('~/app/clients/BaseClient');
-// const { sleep } = require('~/server/utils');
 const { createRun } = require('./run');
 const { logger } = require('~/config');
 
@@ -48,6 +49,12 @@ const providerParsers = {
 };
 
 const legacyContentEndpoints = new Set([KnownEndpoints.groq, KnownEndpoints.deepseek]);
+
+const noSystemModelRegex = [/\bo1\b/gi];
+
+// const { processMemory, memoryInstructions } = require('~/server/services/Endpoints/agents/memory');
+// const { getFormattedMemories } = require('~/models/Memory');
+// const { getCurrentDateTime } = require('~/utils');
 
 class AgentClient extends BaseClient {
   constructor(options = {}) {
@@ -68,9 +75,11 @@ class AgentClient extends BaseClient {
       artifactPromises,
       maxContextTokens,
       modelOptions = {},
+      agentConfigs,
       ...clientOptions
     } = options;
 
+    this.agentConfigs = agentConfigs;
     this.modelOptions = modelOptions;
     this.maxContextTokens = maxContextTokens;
     /** @type {MessageContentComplex[]} */
@@ -229,6 +238,24 @@ class AgentClient extends BaseClient {
       .filter(Boolean)
       .join('\n')
       .trim();
+    // this.systemMessage = getCurrentDateTime();
+    // const { withKeys, withoutKeys } = await getFormattedMemories({
+    //   userId: this.options.req.user.id,
+    // });
+    // processMemory({
+    //   userId: this.options.req.user.id,
+    //   message: this.options.req.body.text,
+    //   parentMessageId,
+    //   memory: withKeys,
+    //   thread_id: this.conversationId,
+    // }).catch((error) => {
+    //   logger.error('Memory Agent failed to process memory', error);
+    // });
+
+    // this.systemMessage += '\n\n' + memoryInstructions;
+    // if (withoutKeys) {
+    //   this.systemMessage += `\n\n# Existing memory about the user:\n${withoutKeys}`;
+    // }
 
     if (this.options.attachments) {
       const attachments = await this.options.attachments;
@@ -363,10 +390,10 @@ class AgentClient extends BaseClient {
       await spendTokens(
         {
           context,
-          model: model ?? this.modelOptions.model,
           conversationId: this.conversationId,
           user: this.user ?? this.options.req.user?.id,
           endpointTokenConfig: this.options.endpointTokenConfig,
+          model: usage.model ?? model ?? this.modelOptions.model,
         },
         { promptTokens: usage.input_tokens, completionTokens: usage.output_tokens },
       );
@@ -481,44 +508,176 @@ class AgentClient extends BaseClient {
       //   });
       // }
 
-      const run = await createRun({
-        req: this.options.req,
-        agent: this.options.agent,
-        tools: this.options.tools,
-        runId: this.responseMessageId,
-        signal: abortController.signal,
-        modelOptions: this.modelOptions,
-        customHandlers: this.options.eventHandlers,
-      });
-
       const config = {
         configurable: {
           thread_id: this.conversationId,
+          model: this.modelOptions.model,
+          last_agent_index: this.agentConfigs.size,
+          hide_sequential_outputs: this.options.agent.hide_sequential_outputs,
         },
         signal: abortController.signal,
         streamMode: 'values',
         version: 'v2',
       };
 
-      if (!run) {
-        throw new Error('Failed to create run');
-      }
-
-      this.run = run;
-
-      const messages = formatAgentMessages(payload);
+      const initialMessages = formatAgentMessages(payload);
       if (legacyContentEndpoints.has(this.options.agent.endpoint)) {
-        formatContentStrings(messages);
+        formatContentStrings(initialMessages);
       }
-      await run.processStream({ messages }, config, {
-        [Callback.TOOL_ERROR]: (graph, error, toolId) => {
-          logger.error(
-            '[api/server/controllers/agents/client.js #chatCompletion] Tool Error',
-            error,
-            toolId,
-          );
-        },
+
+      /** @type {ReturnType<createRun>} */
+      let run;
+      const runAgent = async (agent, messages, i = 0, contentData = []) => {
+        config.configurable.model = agent.modelOptions.model;
+        config.configurable.agent_id = agent.id;
+        config.configurable.name = agent.name;
+        config.configurable.agent_index = i;
+        const noSystemMessages = noSystemModelRegex.some((regex) =>
+          agent.modelOptions.model.match(regex),
+        );
+
+        let systemContent = [
+          this.systemMessage,
+          agent.instructions ?? '',
+          i !== 0 ? agent.additional_instructions ?? '' : '',
+        ]
+          .join('\n')
+          .trim();
+
+        if (noSystemMessages === true) {
+          agent.instructions = undefined;
+          agent.additional_instructions = undefined;
+        } else {
+          agent.instructions = systemContent;
+          agent.additional_instructions = undefined;
+        }
+
+        if (noSystemMessages === true && systemContent?.length) {
+          let latestMessage = messages.pop().content;
+          if (typeof latestMessage !== 'string') {
+            latestMessage = latestMessage[0].text;
+          }
+          latestMessage = [systemContent, latestMessage].join('\n');
+          messages.push(new HumanMessage(latestMessage));
+        }
+
+        run = await createRun({
+          agent,
+          req: this.options.req,
+          runId: this.responseMessageId,
+          signal: abortController.signal,
+          customHandlers: this.options.eventHandlers,
+        });
+
+        if (!run) {
+          throw new Error('Failed to create run');
+        }
+
+        if (i === 0) {
+          this.run = run;
+        }
+
+        if (contentData.length) {
+          run.Graph.contentData = contentData;
+        }
+
+        await run.processStream({ messages }, config, {
+          keepContent: i !== 0,
+          callbacks: {
+            [Callback.TOOL_ERROR]: (graph, error, toolId) => {
+              logger.error(
+                '[api/server/controllers/agents/client.js #chatCompletion] Tool Error',
+                error,
+                toolId,
+              );
+            },
+          },
+        });
+      };
+
+      await runAgent(this.options.agent, initialMessages);
+
+      let finalContentStart = 0;
+      if (this.agentConfigs.size > 0) {
+        let latestMessage = initialMessages.pop().content;
+        if (typeof latestMessage !== 'string') {
+          latestMessage = latestMessage[0].text;
+        }
+        let i = 1;
+        let runMessages = [];
+
+        const lastFiveMessages = initialMessages.slice(-5);
+        for (const [agentId, agent] of this.agentConfigs) {
+          if (abortController.signal.aborted === true) {
+            break;
+          }
+          const currentRun = await run;
+
+          if (
+            i === this.agentConfigs.size &&
+            config.configurable.hide_sequential_outputs === true
+          ) {
+            const content = this.contentParts.filter(
+              (part) => part.type === ContentTypes.TOOL_CALL,
+            );
+
+            this.options.res.write(
+              `event: message\ndata: ${JSON.stringify({
+                event: 'on_content_update',
+                data: {
+                  runId: this.responseMessageId,
+                  content,
+                },
+              })}\n\n`,
+            );
+          }
+          const _runMessages = currentRun.Graph.getRunMessages();
+          finalContentStart = this.contentParts.length;
+          runMessages = runMessages.concat(_runMessages);
+          const contentData = currentRun.Graph.contentData.slice();
+          const bufferString = getBufferString([new HumanMessage(latestMessage), ...runMessages]);
+          if (i === this.agentConfigs.size) {
+            logger.debug(`SEQUENTIAL AGENTS: Last buffer string:\n${bufferString}`);
+          }
+          try {
+            const contextMessages = [];
+            for (const message of lastFiveMessages) {
+              const messageType = message._getType();
+              if (
+                (!agent.tools || agent.tools.length === 0) &&
+                (messageType === 'tool' || (message.tool_calls?.length ?? 0) > 0)
+              ) {
+                continue;
+              }
+
+              contextMessages.push(message);
+            }
+            const currentMessages = [...contextMessages, new HumanMessage(bufferString)];
+            await runAgent(agent, currentMessages, i, contentData);
+          } catch (err) {
+            logger.error(
+              `[api/server/controllers/agents/client.js #chatCompletion] Error running agent ${agentId} (${i})`,
+              err,
+            );
+          }
+          i++;
+        }
+      }
+
+      if (config.configurable.hide_sequential_outputs !== true) {
+        finalContentStart = 0;
+      }
+
+      this.contentParts = this.contentParts.filter((part, index) => {
+        // Include parts that are either:
+        // 1. At or after the finalContentStart index
+        // 2. Of type tool_call
+        // 3. Have tool_call_ids property
+        return (
+          index >= finalContentStart || part.type === ContentTypes.TOOL_CALL || part.tool_call_ids
+        );
       });
+
       this.recordCollectedUsage({ context: 'message' }).catch((err) => {
         logger.error(
           '[api/server/controllers/agents/client.js #chatCompletion] Error recording collected usage',

@@ -140,6 +140,8 @@ export enum Capabilities {
 }
 
 export enum AgentCapabilities {
+  hide_sequential_outputs = 'hide_sequential_outputs',
+  end_after_tools = 'end_after_tools',
   execute_code = 'execute_code',
   file_search = 'file_search',
   actions = 'actions',

@@ -21,7 +21,14 @@ type TUseStepHandler = {
 
 type TStepEvent = {
   event: string;
-  data: Agents.MessageDeltaEvent | Agents.RunStep | Agents.ToolEndEvent;
+  data:
+    | Agents.MessageDeltaEvent
+    | Agents.RunStep
+    | Agents.ToolEndEvent
+    | {
+        runId?: string;
+        message: string;
+      };
 };
 
 type MessageDeltaUpdate = { type: ContentTypes.TEXT; text: string; tool_call_ids?: string[] };
@@ -166,6 +173,30 @@ export default function useStepHandler({
             }
           });
         }
+      } else if (event === 'on_agent_update') {
+        const { runId, message } = data as { runId?: string; message: string };
+        const responseMessageId = runId ?? '';
+        if (!responseMessageId) {
+          console.warn('No message id found in agent update event');
+          return;
+        }
+
+        const responseMessage = messages[messages.length - 1] as TMessage;
+
+        const response = {
+          ...responseMessage,
+          parentMessageId: userMessage.messageId,
+          conversationId: userMessage.conversationId,
+          messageId: responseMessageId,
+          content: [
+            {
+              type: ContentTypes.TEXT,
+              text: message,
+            },
+          ],
+        } as TMessage;
+
+        setMessages([...messages.slice(0, -1), response]);
       } else if (event === 'on_message_delta') {
         const messageDelta = data as Agents.MessageDeltaEvent;
         const runStep = stepMap.current.get(messageDelta.id);

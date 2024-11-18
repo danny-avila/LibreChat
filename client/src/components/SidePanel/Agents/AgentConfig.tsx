@@ -275,7 +275,7 @@ export default function AgentConfig({
                 <textarea
                   {...field}
                   value={field.value ?? ''}
-                  maxLength={32768}
+                  // maxLength={32768}
                   className={cn(inputClass, 'min-h-[100px] resize-y')}
                   id="instructions"
                   placeholder={localize('com_agents_instructions_placeholder')}

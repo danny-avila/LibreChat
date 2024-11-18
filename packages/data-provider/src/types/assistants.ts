@@ -209,6 +209,9 @@ export type Agent = {
   conversation_starters?: string[];
   isCollaborative?: boolean;
   tool_resources?: AgentToolResources;
+  agent_ids?: string[];
+  end_after_tools?: boolean;
+  hide_sequential_outputs?: boolean;
 };
 
 export type TAgentsMap = Record<string, Agent | undefined>;
@@ -223,7 +226,7 @@ export type AgentCreateParams = {
   provider: AgentProvider;
   model: string | null;
   model_parameters: AgentModelParameters;
-};
+} & Pick<Agent, 'agent_ids' | 'end_after_tools' | 'hide_sequential_outputs'>;
 
 export type AgentUpdateParams = {
   name?: string | null;
@@ -239,7 +242,7 @@ export type AgentUpdateParams = {
   projectIds?: string[];
   removeProjectIds?: string[];
   isCollaborative?: boolean;
-};
+} & Pick<Agent, 'agent_ids' | 'end_after_tools' | 'hide_sequential_outputs'>;
 
 export type AgentListParams = {
   limit?: number;

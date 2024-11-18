@@ -16,6 +16,7 @@ const { getCustomEndpointConfig } = require('~/server/services/Config');
 const { loadAgentTools } = require('~/server/services/ToolService');
 const AgentClient = require('~/server/controllers/agents/client');
 const { getModelMaxTokens } = require('~/utils');
+const { getAgent } = require('~/models/Agent');
 const { logger } = require('~/config');
 
 const providerConfigMap = {
@@ -69,6 +70,67 @@ const primeResources = async (_attachments, _tool_resources) => {
   }
 };
 
+const initializeAgentOptions = async ({
+  req,
+  res,
+  agent,
+  endpointOption,
+  tool_resources,
+  isInitialAgent = false,
+}) => {
+  const { tools } = await loadAgentTools({
+    req,
+    tools: agent.tools,
+    agent_id: agent.id,
+    tool_resources,
+  });
+
+  const provider = agent.provider;
+  let modelOptions = { model: agent.model };
+  let getOptions = providerConfigMap[provider];
+
+  if (!getOptions) {
+    const customEndpointConfig = await getCustomEndpointConfig(provider);
+    if (!customEndpointConfig) {
+      throw new Error(`Provider ${provider} not supported`);
+    }
+    getOptions = initCustom;
+    agent.provider = Providers.OPENAI;
+    agent.endpoint = provider.toLowerCase();
+  }
+
+  const optionsEndpoint = isInitialAgent
+    ? endpointOption
+    : {
+      model_parameters: agent.model_parameters ?? {},
+    };
+
+  const options = await getOptions({
+    req,
+    res,
+    endpointOption: optionsEndpoint,
+    optionsOnly: true,
+    overrideEndpoint: provider,
+    overrideModel: agent.model,
+  });
+
+  modelOptions = Object.assign(modelOptions, options.llmConfig);
+  if (options.configOptions) {
+    modelOptions.configuration = options.configOptions;
+  }
+
+  return {
+    ...agent,
+    tools,
+    provider,
+    modelOptions,
+    maxContextTokens:
+      agent.max_context_tokens ??
+      getModelMaxTokens(modelOptions.model, providerEndpointMap[provider]) ??
+      4000,
+  };
+};
+
 const initializeClient = async ({ req, res, endpointOption }) => {
   if (!endpointOption) {
     throw new Error('Endpoint option not provided');
@@ -92,55 +154,48 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     throw new Error('No agent promise provided');
   }
 
-  /** @type {Agent | null} */
-  const agent = await endpointOption.agent;
-  if (!agent) {
+  // Initialize primary agent
+  const primaryAgent = await endpointOption.agent;
+  if (!primaryAgent) {
     throw new Error('Agent not found');
   }
 
   const { attachments, tool_resources } = await primeResources(
     endpointOption.attachments,
-    agent.tool_resources,
+    primaryAgent.tool_resources,
   );
 
-  const { tools } = await loadAgentTools({
-    req,
-    tools: agent.tools,
-    agent_id: agent.id,
-    tool_resources,
-  });
+  const agentConfigs = new Map();
 
-  const provider = agent.provider;
-  let modelOptions = { model: agent.model };
-  let getOptions = providerConfigMap[provider];
-  if (!getOptions) {
-    const customEndpointConfig = await getCustomEndpointConfig(provider);
-    if (!customEndpointConfig) {
-      throw new Error(`Provider ${provider} not supported`);
-    }
-    getOptions = initCustom;
-    agent.provider = Providers.OPENAI;
-    agent.endpoint = provider.toLowerCase();
-  }
-
-  // TODO: pass-in override settings that are specific to current run
-  endpointOption.model_parameters.model = agent.model;
-  const options = await getOptions({
+  // Handle primary agent
+  const primaryConfig = await initializeAgentOptions({
     req,
     res,
+    agent: primaryAgent,
     endpointOption,
-    optionsOnly: true,
-    overrideEndpoint: provider,
-    overrideModel: agent.model,
+    tool_resources,
+    isInitialAgent: true,
   });
 
-  modelOptions = Object.assign(modelOptions, options.llmConfig);
-  if (options.configOptions) {
-    modelOptions.configuration = options.configOptions;
+  const agent_ids = primaryConfig.agent_ids;
+  if (agent_ids?.length) {
+    for (const agentId of agent_ids) {
+      const agent = await getAgent({ id: agentId });
+      if (!agent) {
+        throw new Error(`Agent ${agentId} not found`);
+      }
+      const config = await initializeAgentOptions({
+        req,
+        res,
+        agent,
+        endpointOption,
+      });
+      agentConfigs.set(agentId, config);
+    }
   }
 
   const sender =
-    agent.name ??
+    primaryAgent.name ??
     getResponseSender({
       ...endpointOption,
       model: endpointOption.model_parameters.model,
@@ -148,24 +203,20 @@ const initializeClient = async ({ req, res, endpointOption }) => {
 
   const client = new AgentClient({
     req,
-    agent,
-    tools,
+    agent: primaryConfig,
     sender,
     attachments,
     contentParts,
-    modelOptions,
+    modelOptions: primaryConfig.modelOptions,
     eventHandlers,
     collectedUsage,
     artifactPromises,
     spec: endpointOption.spec,
+    agentConfigs,
     endpoint: EModelEndpoint.agents,
-    resendFiles: endpointOption.resendFiles,
-    maxContextTokens:
-      endpointOption.maxContextTokens ??
-      agent.max_context_tokens ??
-      getModelMaxTokens(modelOptions.model, providerEndpointMap[provider]) ??
-      4000,
+    maxContextTokens: primaryConfig.maxContextTokens,
   });
+
   return { client };
 };
 

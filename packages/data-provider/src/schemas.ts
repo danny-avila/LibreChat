@@ -1097,7 +1097,7 @@ export type TBanner = z.infer<typeof tBannerSchema>;
 export const compactAgentsSchema = tConversationSchema
   .pick({
     spec: true,
-    model: true,
+    // model: true,
     iconURL: true,
     greeting: true,
     agent_id: true,

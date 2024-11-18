@@ -1,5 +1,5 @@
 import { ContentTypes, Constants } from 'librechat-data-provider';
-import type { TMessage } from 'librechat-data-provider';
+import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
 
 export const getLengthAndLastTenChars = (str?: string): string => {
   if (typeof str !== 'string' || str.length === 0) {
@@ -20,12 +20,12 @@ export const getLatestText = (message?: TMessage | null, includeIndex?: boolean)
   }
   if (message.content && message.content.length > 0) {
     for (let i = message.content.length - 1; i >= 0; i--) {
-      const part = message.content[i];
-      if (part.type !== ContentTypes.TEXT) {
+      const part = message.content[i] as TMessageContentParts | undefined;
+      if (part && part.type !== ContentTypes.TEXT) {
         continue;
       }
 
-      const text = (typeof part.text === 'string' ? part.text : part.text.value) || '';
+      const text = (typeof part?.text === 'string' ? part.text : part?.text.value) ?? '';
       if (text.length > 0) {
         if (includeIndex === true) {
           return `${text}-${i}`;
@@ -52,7 +52,7 @@ export const getAllContentText = (message?: TMessage | null): string => {
   if (message.content && message.content.length > 0) {
     return message.content
       .filter((part) => part.type === ContentTypes.TEXT)
-      .map((part) => (typeof part.text === 'string' ? part.text : part.text.value) ?? '')
+      .map((part) => (typeof part.text === 'string' ? part.text : part.text.value) || '')
       .filter((text) => text.length > 0)
       .join('\n');
   }

@@ -63,6 +63,21 @@
  */
 
 /**
+ * @exports GraphRunnableConfig
+ * @typedef {import('@langchain/core/runnables').RunnableConfig<{
+ *  req: ServerRequest;
+ * thread_id: string;
+ * run_id: string;
+ * agent_id: string;
+ * name: string;
+ * agent_index: number;
+ * last_agent_index: number;
+ * hide_sequential_outputs: boolean;
+ * }>} GraphRunnableConfig
+ * @memberof typedefs
+ */
+
+/**
  * @exports Ollama
  * @typedef {import('ollama').Ollama} Ollama
  * @memberof typedefs

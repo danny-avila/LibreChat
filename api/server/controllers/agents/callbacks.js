@@ -1,4 +1,4 @@
-const { Tools } = require('librechat-data-provider');
+const { Tools, StepTypes } = require('librechat-data-provider');
 const {
   EnvVar,
   GraphEvents,
@@ -57,6 +57,9 @@ class ModelEndHandler {
     }
 
     const usage = data?.output?.usage_metadata;
+    if (metadata?.model) {
+      usage.model = metadata.model;
+    }
 
     if (usage) {
       this.collectedUsage.push(usage);
@@ -89,9 +92,27 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
        * Handle ON_RUN_STEP event.
        * @param {string} event - The event name.
        * @param {StreamEventData} data - The event data.
+       * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
-      handle: (event, data) => {
-        sendEvent(res, { event, data });
+      handle: (event, data, metadata) => {
+        if (data?.stepDetails.type === StepTypes.TOOL_CALLS) {
+          sendEvent(res, { event, data });
+        } else if (metadata?.last_agent_index === metadata?.agent_index) {
+          sendEvent(res, { event, data });
+        } else if (!metadata?.hide_sequential_outputs) {
+          sendEvent(res, { event, data });
+        } else {
+          const agentName = metadata?.name ?? 'Agent';
+          const isToolCall = data?.stepDetails.type === StepTypes.TOOL_CALLS;
+          const action = isToolCall ? 'performing a task...' : 'thinking...';
+          sendEvent(res, {
+            event: 'on_agent_update',
+            data: {
+              runId: metadata?.run_id,
+              message: `${agentName} is ${action}`,
+            },
+          });
+        }
         aggregateContent({ event, data });
       },
     },
@@ -100,9 +121,16 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
        * Handle ON_RUN_STEP_DELTA event.
        * @param {string} event - The event name.
        * @param {StreamEventData} data - The event data.
+       * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
-      handle: (event, data) => {
-        sendEvent(res, { event, data });
+      handle: (event, data, metadata) => {
+        if (data?.delta.type === StepTypes.TOOL_CALLS) {
+          sendEvent(res, { event, data });
+        } else if (metadata?.last_agent_index === metadata?.agent_index) {
+          sendEvent(res, { event, data });
+        } else if (!metadata?.hide_sequential_outputs) {
+          sendEvent(res, { event, data });
+        }
         aggregateContent({ event, data });
       },
     },
@@ -111,9 +139,16 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
        * Handle ON_RUN_STEP_COMPLETED event.
        * @param {string} event - The event name.
        * @param {StreamEventData & { result: ToolEndData }} data - The event data.
+       * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
-      handle: (event, data) => {
-        sendEvent(res, { event, data });
+      handle: (event, data, metadata) => {
+        if (data?.result != null) {
+          sendEvent(res, { event, data });
+        } else if (metadata?.last_agent_index === metadata?.agent_index) {
+          sendEvent(res, { event, data });
+        } else if (!metadata?.hide_sequential_outputs) {
+          sendEvent(res, { event, data });
+        }
         aggregateContent({ event, data });
       },
     },
@@ -122,9 +157,14 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
        * Handle ON_MESSAGE_DELTA event.
        * @param {string} event - The event name.
        * @param {StreamEventData} data - The event data.
+       * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
-      handle: (event, data) => {
-        sendEvent(res, { event, data });
+      handle: (event, data, metadata) => {
+        if (metadata?.last_agent_index === metadata?.agent_index) {
+          sendEvent(res, { event, data });
+        } else if (!metadata?.hide_sequential_outputs) {
+          sendEvent(res, { event, data });
+        }
         aggregateContent({ event, data });
       },
     },
