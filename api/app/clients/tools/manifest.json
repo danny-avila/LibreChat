@@ -152,5 +152,13 @@
         "description": "Provide your Flux API key from your user profile."
       }
     ]
+  },
+  {
+    "name": "CurlPlugin",
+    "pluginKey": "CurlPlugin",
+    "description": "curl!",
+    "icon": "/assets/flux.png",
+    "isAuthRequired": "false",
+    "authConfig": []
   }
 ]
