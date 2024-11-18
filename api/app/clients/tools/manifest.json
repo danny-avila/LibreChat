@@ -143,7 +143,7 @@
     "name": "Flux",
     "pluginKey": "flux",
     "description": "Generate images using text with the Flux API.",
-    "icon": "https://i.imgur.com/YourImageID.png",
+    "icon": "/assets/flux.png",
     "isAuthRequired": "true",
     "authConfig": [
       {
@@ -152,5 +152,5 @@
         "description": "Provide your Flux API key from your user profile."
       }
     ]
-  }  
+  }
 ]
