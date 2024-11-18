@@ -11,17 +11,21 @@ class CurlSimulationTool extends Tool {
     this.name = 'CurlPlugin';
     this.description =
       'Simulates a curl action. Useful for making HTTP requests with various methods and parameters. Accepts an array of commands similar to curl.';
-    this.description_for_model = `Simulates a curl action. Useful for making HTTP requests with various methods and parameters. Accepts an array of commands similar to curl.
-    Guidelines:
-    - If you don't need all of the webpage tags, exclude them, or choose text only
-    - You may always fetch a list of links regardless of the other options
-    - You can return markdown if it would be helpful to the user. For example, if they want to see the logo of a website, you can return the markdown for the image.
-    - You may also return HTML as an artifact if it would be helpful to the user. For example, if they want to see a portion of the javascript
-    - You can fetch all related resources, but do so VERY carefully, it will be a LOT of content!
-    - ALWAYS list your sources at the end of the response. If it makes sense to do so, you can also include the source in the response itself. You can do so
-    as footnotes or links to the source on the appropriate words. 
+    this.description_for_model = `Simulates a curl action by making HTTP requests with various methods and parameters. Accepts input similar to curl commands.
 
-    `;
+Guidelines:
+- **Default Behavior:** By default, the response will exclude \`<style>\` and \`<script>\` tags, as well as links to JavaScript and CSS files.
+- Use \`excludeTags\` to specify additional HTML tags to exclude from the response.
+- Use \`returnOnlyTags\` to include only certain HTML tags in the response.
+- If you want to retrieve only the text content without any HTML markup, set \`returnTextOnly\` to true.
+- Set \`fetchRelated\` to true to fetch related resources (like CSS or JavaScript files). Be cautious, as this can return a lot of content.
+- To include a list of hyperlinks (\`hrefTargets\`) found in the response body, set \`includeHrefTargets\` to true.
+- You can return content in markdown or HTML format if it would be helpful to the user. For example, if they want to see the logo of a website, you can return the markdown for the image.
+- You may also return HTML as an artifact if it would be helpful to the user. For example, if they want to see a portion of the JavaScript.
+- **Caution:** When fetching related resources, do so very carefully to avoid overwhelming the response with data.
+- **Sources:** Always list your sources at the end of the response. Include sources as footnotes or inline links where appropriate.
+`;
+
     this.schema = z.object({
       method: z
         .enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])
@@ -38,9 +42,7 @@ class CurlSimulationTool extends Tool {
       params: z
         .record(z.string())
         .optional()
-        .describe(
-          'Query parameters to include in the URL as key-value pairs.'
-        ),
+        .describe('Query parameters to include in the URL as key-value pairs.'),
       data: z
         .any()
         .optional()
@@ -61,7 +63,7 @@ class CurlSimulationTool extends Tool {
         .array(z.string())
         .optional()
         .describe(
-          'Array of HTML tags to exclude from the response body. Example: ["script", "style"].'
+          'Array of HTML tags to exclude from the response body. Defaults to ["style", "script", "link[rel=\'stylesheet\']", "link[rel=\'javascript\']"].'
         ),
       returnTextOnly: z
         .boolean()
@@ -74,6 +76,12 @@ class CurlSimulationTool extends Tool {
         .optional()
         .describe(
           'If true, fetches related non-binary links (HTML, CSS, JavaScript) and includes them in the response.'
+        ),
+      includeHrefTargets: z
+        .boolean()
+        .optional()
+        .describe(
+          'If true, includes a list of href targets extracted from the response body.'
         ),
     });
   }
@@ -90,6 +98,7 @@ class CurlSimulationTool extends Tool {
       excludeTags,
       returnTextOnly = false,
       fetchRelated = false,
+      includeHrefTargets = false,
       ...rest
     } = input;
 
@@ -123,50 +132,88 @@ class CurlSimulationTool extends Tool {
         fetchOptions.headers['Content-Type'] || 'application/json';
     }
 
-    // Perform the HTTP request
-    const response = await fetch(urlObject.toString(), fetchOptions);
+    // Default excludeTags if not provided
+    const defaultExcludeTags = [
+      'style',
+      'script',
+      'link[rel="stylesheet"]',
+      'link[rel="javascript"]',
+    ];
+    const excludeTagsArray = Array.isArray(excludeTags)
+      ? excludeTags
+      : defaultExcludeTags;
 
-    // Capture response headers
-    const responseHeaders = {};
-    response.headers.forEach((value, name) => {
-      responseHeaders[name] = value;
-    });
+    // Helper function to process a request and return result object
+    const processRequest = async (requestUrl) => {
+      const response = await fetch(requestUrl, fetchOptions);
 
-    let responseBody = await response.text();
-
-    // Load response into Cheerio for parsing
-    const $ = cheerio.load(responseBody);
-
-    // Ensure excludeTags is an array
-    const excludeTagsArray = Array.isArray(excludeTags) ? excludeTags : [];
-
-    // Exclude specified tags
-    if (excludeTagsArray.length > 0) {
-      excludeTagsArray.forEach((tag) => {
-        $(tag).remove();
+      // Capture response headers
+      const responseHeaders = {};
+      response.headers.forEach((value, name) => {
+        responseHeaders[name] = value;
       });
-    }
 
-    // Ensure returnOnlyTags is an array
-    const returnOnlyTagsArray = Array.isArray(returnOnlyTags)
-      ? returnOnlyTags
-      : [];
+      let responseBody = await response.text();
 
-    // Include only specified tags
-    if (returnOnlyTagsArray.length > 0) {
-      responseBody = $(returnOnlyTagsArray.join(',')).toString();
-    } else if (excludeTagsArray.length > 0) {
-      responseBody = $.html();
-    }
+      // Load response into Cheerio for parsing
+      const $ = cheerio.load(responseBody);
 
-    // Return text only
-    if (returnTextOnly) {
-      responseBody = $.root().text();
-    }
+      // Exclude specified tags
+      if (excludeTagsArray.length > 0) {
+        excludeTagsArray.forEach((tag) => {
+          $(tag).remove();
+        });
+      }
+
+      // Ensure returnOnlyTags is an array
+      const returnOnlyTagsArray = Array.isArray(returnOnlyTags)
+        ? returnOnlyTags
+        : [];
+
+      // Include only specified tags
+      if (returnOnlyTagsArray.length > 0) {
+        responseBody = $(returnOnlyTagsArray.join(',')).toString();
+      } else if (excludeTagsArray.length > 0) {
+        responseBody = $.html();
+      }
+
+      // Return text only
+      if (returnTextOnly) {
+        responseBody = $.root().text();
+      }
+
+      // Extract 'a href' targets if requested
+      let hrefTargets = [];
+      if (includeHrefTargets) {
+        hrefTargets = $('a[href]')
+          .map((i, el) => $(el).attr('href'))
+          .get();
+      }
+
+      // Build the result object
+      const result = {
+        requestUrl: requestUrl,
+        requestHeaders: fetchOptions.headers,
+        ...(fetchOptions.body && { requestBody: fetchOptions.body }),
+        responseStatus: response.status,
+        responseStatusText: response.statusText,
+        responseHeaders: responseHeaders,
+        responseBody: responseBody,
+        ...(hrefTargets.length > 0 && { hrefTargets }),
+      };
+
+      return result;
+    };
+
+    // Process the main request
+    const mainResult = await processRequest(urlObject.toString());
 
     // Fetch related resources if requested
     let relatedResources = [];
     if (fetchRelated) {
+      // Load main response body into Cheerio
+      const $ = cheerio.load(mainResult.responseBody);
+
       const resourceLinks = $('a[href], link[href], script[src]')
         .map((i, el) => $(el).attr('href') || $(el).attr('src'))
         .get()
@@ -181,46 +228,21 @@ class CurlSimulationTool extends Tool {
       for (const link of resourceLinks) {
         try {
           const absoluteUrl = new URL(link, urlObject).toString();
-          const resourceResponse = await fetch(absoluteUrl);
-          const contentType =
-            resourceResponse.headers.get('content-type') || '';
-          const isTextType = /^text\/|application\/(javascript|json)/i.test(
-            contentType
-          );
-
-          if (isTextType) {
-            const resourceContent = await resourceResponse.text();
-            relatedResources.push({
-              url: absoluteUrl,
-              contentType,
-              content: resourceContent,
-            });
-          }
+          const resourceResult = await processRequest(absoluteUrl);
+          relatedResources.push(resourceResult);
         } catch (error) {
           // Ignore errors for individual resources
         }
       }
     }
 
-    // Extract 'a href' targets
-    const hrefTargets = $('a[href]')
-      .map((i, el) => $(el).attr('href'))
-      .get();
-
-    // Build the result object
-    const result = {
-      requestUrl: urlObject.toString(),
-      requestHeaders: fetchOptions.headers,
-      ...(fetchOptions.body && { requestBody: fetchOptions.body }),
-      responseStatus: response.status,
-      responseStatusText: response.statusText,
-      responseHeaders: responseHeaders,
-      responseBody: responseBody,
-      hrefTargets: hrefTargets,
+    // Include related resources in the final result
+    const finalResult = {
+      ...mainResult,
       ...(fetchRelated && { relatedResources }),
     };
 
-    return JSON.stringify(result);
+    return JSON.stringify(finalResult);
   }
 }
 
