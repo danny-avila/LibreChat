@@ -9,7 +9,7 @@ const GoogleSearchAPI = require('./structured/GoogleSearch');
 const TraversaalSearch = require('./structured/TraversaalSearch');
 const TavilySearchResults = require('./structured/TavilySearchResults');
 const FluxAPI = require('./structured/FluxAPI');
-const CurlPlugin = require('./structured/CurlPlugin');
+const WebNavigator = require('./structured/WebNavigator');
 
 module.exports = {
   availableTools,
@@ -22,5 +22,5 @@ module.exports = {
   StructuredWolfram,
   TavilySearchResults,
   FluxAPI,
-  CurlPlugin,
+  WebNavigator,
 };

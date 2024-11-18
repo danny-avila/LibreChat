@@ -154,9 +154,9 @@
     ]
   },
   {
-    "name": "CurlPlugin",
-    "pluginKey": "CurlPlugin",
-    "description": "curl!",
+    "name": "WebNavigator",
+    "pluginKey": "WebNavigator",
+    "description": "WebNavigator",
     "icon": "/assets/flux.png",
     "isAuthRequired": "false",
     "authConfig": []

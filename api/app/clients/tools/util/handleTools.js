@@ -15,7 +15,7 @@ const {
   StructuredWolfram,
   TavilySearchResults,
   FluxAPI,
-  CurlPlugin,
+  WebNavigator,
 } = require('../');
 const { primeFiles } = require('~/server/services/Files/Code/process');
 const createFileSearchTool = require('./createFileSearchTool');
@@ -159,7 +159,7 @@ const loadTools = async ({
     traversaal_search: TraversaalSearch,
     tavily_search_results_json: TavilySearchResults,
     flux: FluxAPI,
-    CurlPlugin: CurlPlugin,
+    WebNavigator: WebNavigator,
   };
 
   const customConstructors = {

@@ -4,11 +4,11 @@ const fetch = require('node-fetch');
 const { URL, URLSearchParams } = require('url');
 const cheerio = require('cheerio');
 
-class CurlSimulationTool extends Tool {
+class WebNavigator extends Tool {
   constructor(fields = {}) {
     super();
 
-    this.name = 'CurlPlugin';
+    this.name = 'WebNavigator';
     this.description =
       'Simulates a curl action. Useful for making HTTP requests with various methods and parameters. Accepts an array of commands similar to curl.';
     this.description_for_model = `Simulates a curl action by making HTTP requests with various methods and parameters. Accepts input similar to curl commands.
@@ -278,4 +278,4 @@ Suggestions:
   }
 }
 
-module.exports = CurlSimulationTool;
+module.exports = WebNavigator;
