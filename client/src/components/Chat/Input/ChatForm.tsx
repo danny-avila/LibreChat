@@ -19,6 +19,7 @@ import {
   useHandleKeyUp,
   useQueryParams,
   useSubmitMessage,
+  useWebSearch,
 } from '~/hooks';
 import FileFormWrapper from './Files/FileFormWrapper';
 import { TextareaAutosize } from '~/components/ui';
@@ -41,6 +42,7 @@ const ChatForm = ({ index = 0 }) => {
   useQueryParams({ textAreaRef });
 
   const [isSearchEnabled, setIsSearchEnabled] = useRecoilState(store.isSearchEnabled);
+  const { performWebSearch } = useWebSearch();
 
   const SpeechToText = useRecoilValue(store.speechToText);
   const TextToSpeech = useRecoilValue(store.textToSpeech);
@@ -142,8 +144,21 @@ const ChatForm = ({ index = 0 }) => {
     ? `pr-${uploadActive ? '12' : '4'} pl-12`
     : `pl-${uploadActive ? '12' : '4'} pr-12`;
 
-  const handleSubmit = (data) => {
-    submitMessage({ ...data, isSearchEnabled });
+  const handleSubmit = async (data) => {
+    if (isSearchEnabled) {
+      try {
+        const searchResults = await performWebSearch(data.text);
+        const enhancedText = `${data.text}\n\nWeb Search Results:\n${searchResults
+          .map((result) => `- ${result.title}: ${result.snippet}\n${result.link}`)
+          .join('\n\n')}`;
+        submitMessage({ ...data, text: enhancedText });
+      } catch (error) {
+        console.error('Error performing web search:', error);
+        submitMessage(data);
+      }
+    } else {
+      submitMessage(data);
+    }
   };
 
   return (
