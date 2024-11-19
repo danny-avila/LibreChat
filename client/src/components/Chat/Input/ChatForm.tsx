@@ -33,11 +33,14 @@ import StopButton from './StopButton';
 import SendButton from './SendButton';
 import Mention from './Mention';
 import store from '~/store';
+import ToggleSwitch from '../../Input/ToggleSwitch';
 
 const ChatForm = ({ index = 0 }) => {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
   useQueryParams({ textAreaRef });
+
+  const [isSearchEnabled, setIsSearchEnabled] = useRecoilState(store.isSearchEnabled);
 
   const SpeechToText = useRecoilValue(store.speechToText);
   const TextToSpeech = useRecoilValue(store.textToSpeech);
@@ -139,9 +142,13 @@ const ChatForm = ({ index = 0 }) => {
     ? `pr-${uploadActive ? '12' : '4'} pl-12`
     : `pl-${uploadActive ? '12' : '4'} pr-12`;
 
+  const handleSubmit = (data) => {
+    submitMessage({ ...data, isSearchEnabled });
+  };
+
   return (
     <form
-      onSubmit={methods.handleSubmit((data) => submitMessage(data))}
+      onSubmit={methods.handleSubmit(handleSubmit)}
       className="stretch mx-2 flex flex-row gap-3 last:mb-2 md:mx-4 md:last:mb-6 lg:mx-auto lg:max-w-2xl xl:max-w-3xl"
     >
       <div className="relative flex h-full flex-1 items-stretch md:flex-col">
@@ -166,6 +173,14 @@ const ChatForm = ({ index = 0 }) => {
           <PromptsCommand index={index} textAreaRef={textAreaRef} submitPrompt={submitPrompt} />
           <div className="transitional-all relative flex w-full flex-grow flex-col overflow-hidden rounded-3xl bg-surface-tertiary text-text-primary duration-200">
             <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
+            <div className="flex items-center px-4 py-2">
+              <ToggleSwitch
+                isEnabled={isSearchEnabled}
+                onChange={setIsSearchEnabled}
+                label="Web Search"
+                className="mr-2"
+              />
+            </div>
             <FileFormWrapper disableInputs={disableInputs}>
               {endpoint && (
                 <TextareaAutosize
