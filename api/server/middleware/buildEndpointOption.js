@@ -27,7 +27,12 @@ const buildFunction = {
 
 async function buildEndpointOption(req, res, next) {
   const { endpoint, endpointType } = req.body;
-  let parsedBody = parseCompactConvo({ endpoint, endpointType, conversation: req.body });
+  let parsedBody;
+  try {
+    parsedBody = parseCompactConvo({ endpoint, endpointType, conversation: req.body });
+  } catch (error) {
+    return handleError(res, { text: 'Error parsing conversation' });
+  }
 
   if (req.app.locals.modelSpecs?.list && req.app.locals.modelSpecs?.enforce) {
     /** @type {{ list: TModelSpec[] }}*/
@@ -56,11 +61,15 @@ async function buildEndpointOption(req, res, next) {
       });
     }
 
-    parsedBody = parseCompactConvo({
-      endpoint,
-      endpointType,
-      conversation: currentModelSpec.preset,
-    });
+    try {
+      parsedBody = parseCompactConvo({
+        endpoint,
+        endpointType,
+        conversation: currentModelSpec.preset,
+      });
+    } catch (error) {
+      return handleError(res, { text: 'Error parsing model spec' });
+    }
   }
 
   const endpointFn = buildFunction[endpointType ?? endpoint];

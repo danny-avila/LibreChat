@@ -2399,3 +2399,10 @@ button.scroll-convo {
   scale: 1;
   translate: 0;
 }
+
+/** Note: ensure KaTeX can spread across visible space */
+.message-content pre:has(> span.katex) {
+  overflow: visible !important;
+  height: auto !important;
+  max-height: none !important;
+}

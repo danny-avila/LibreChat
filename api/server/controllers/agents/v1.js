@@ -1,3 +1,4 @@
+const fs = require('fs').promises;
 const { nanoid } = require('nanoid');
 const { FileContext, Constants, Tools, SystemRoles } = require('librechat-data-provider');
 const {
@@ -7,8 +8,8 @@ const {
   deleteAgent,
   getListAgents,
 } = require('~/models/Agent');
+const { uploadImageBuffer, filterFile } = require('~/server/services/Files/process');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { uploadImageBuffer } = require('~/server/services/Files/process');
 const { getProjectByName } = require('~/models/Project');
 const { updateAgentProjects } = require('~/models/Agent');
 const { deleteFileByFilter } = require('~/models/File');
@@ -210,7 +211,7 @@ const getListAgentsHandler = async (req, res) => {
 
 /**
  * Uploads and updates an avatar for a specific agent.
- * @route POST /avatar/:agent_id
+ * @route POST /:agent_id/avatar
  * @param {object} req - Express Request
  * @param {object} req.params - Request params
  * @param {string} req.params.agent_id - The ID of the agent.
@@ -221,17 +222,17 @@ const getListAgentsHandler = async (req, res) => {
  */
 const uploadAgentAvatarHandler = async (req, res) => {
   try {
+    filterFile({ req, file: req.file, image: true, isAvatar: true });
     const { agent_id } = req.params;
     if (!agent_id) {
       return res.status(400).json({ message: 'Agent ID is required' });
     }
 
+    const buffer = await fs.readFile(req.file.path);
     const image = await uploadImageBuffer({
       req,
       context: FileContext.avatar,
-      metadata: {
-        buffer: req.file.buffer,
-      },
+      metadata: { buffer },
     });
 
     let _avatar;
@@ -239,7 +240,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
       const agent = await getAgent({ id: agent_id });
       _avatar = agent.avatar;
     } catch (error) {
-      logger.error('[/avatar/:agent_id] Error fetching agent', error);
+      logger.error('[/:agent_id/avatar] Error fetching agent', error);
       _avatar = {};
     }
 
@@ -249,7 +250,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
         await deleteFile(req, { filepath: _avatar.filepath });
         await deleteFileByFilter({ user: req.user.id, filepath: _avatar.filepath });
       } catch (error) {
-        logger.error('[/avatar/:agent_id] Error deleting old avatar', error);
+        logger.error('[/:agent_id/avatar] Error deleting old avatar', error);
       }
     }
 
@@ -270,6 +271,13 @@ const uploadAgentAvatarHandler = async (req, res) => {
     const message = 'An error occurred while updating the Agent Avatar';
     logger.error(message, error);
     res.status(500).json({ message });
+  } finally {
+    try {
+      await fs.unlink(req.file.path);
+      logger.debug('[/:agent_id/avatar] Temp. image upload file deleted');
+    } catch (error) {
+      logger.debug('[/:agent_id/avatar] Temp. image upload file already deleted');
+    }
   }
 };
 

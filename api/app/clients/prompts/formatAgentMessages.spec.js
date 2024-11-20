@@ -1,6 +1,6 @@
 const { ToolMessage } = require('@langchain/core/messages');
 const { ContentTypes } = require('librechat-data-provider');
-const { HumanMessage, AIMessage, SystemMessage } = require('langchain/schema');
+const { HumanMessage, AIMessage, SystemMessage } = require('@langchain/core/messages');
 const { formatAgentMessages } = require('./formatMessages');
 
 describe('formatAgentMessages', () => {
@@ -120,7 +120,7 @@ describe('formatAgentMessages', () => {
     ];
     const result = formatAgentMessages(payload);
     expect(result).toHaveLength(2);
-    expect(result[0].tool_calls[0].args).toBe('non-json-string');
+    expect(result[0].tool_calls[0].args).toStrictEqual({ input: 'non-json-string' });
   });
 
   it('should handle complex tool calls with multiple steps', () => {

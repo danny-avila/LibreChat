@@ -38,7 +38,7 @@ export default function DashGroupItem({
   const [nameInputField, setNameInputField] = useState(group.name);
   const isOwner = useMemo(() => user?.id === group.author, [user, group]);
   const groupIsGlobal = useMemo(
-    () => instanceProjectId && group.projectIds?.includes(instanceProjectId),
+    () => instanceProjectId != null && group.projectIds?.includes(instanceProjectId),
     [group, instanceProjectId],
   );
 

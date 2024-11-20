@@ -60,7 +60,6 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     agent,
     sender,
     // tools,
-    // toolMap,
     modelOptions,
     contentParts,
     eventHandlers,
