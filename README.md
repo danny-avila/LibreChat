@@ -97,7 +97,7 @@ Click on the thumbnail to open the video☝️
 **Other:**
   - **Website:** [librechat.ai](https://librechat.ai)
   - **Documentation:** [docs.librechat.ai](https://docs.librechat.ai)
-  - **Blog:** [blog.librechat.ai](https://docs.librechat.ai)
+  - **Blog:** [blog.librechat.ai](https://blog.librechat.ai)
 
 ---
 
