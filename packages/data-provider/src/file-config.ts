@@ -45,6 +45,7 @@ export const fullMimeTypesList = [
   'text/x-tex',
   'text/plain',
   'text/css',
+  'text/vtt',
   'image/jpeg',
   'text/javascript',
   'image/gif',
@@ -180,7 +181,6 @@ export const fileConfig = {
   serverFileSizeLimit: defaultSizeLimit,
   avatarSizeLimit: mbToBytes(2),
   checkType: function (fileType: string, supportedTypes: RegExp[] = supportedMimeTypes) {
-    console.log('!!!!!!!!! Checking file type for:', fileType);
     return supportedTypes.some((regex) => regex.test(fileType));
   },
 };
