@@ -61,7 +61,7 @@
     "express-rate-limit": "^7.4.1",
     "express-session": "^1.18.1",
     "file-type": "^18.7.0",
-    "firebase": "^10.6.0",
+    "firebase": "^11.0.2",
     "googleapis": "^126.0.1",
     "handlebars": "^4.7.7",
     "html": "^1.0.0",
