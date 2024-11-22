@@ -1,4 +1,3 @@
-// client/src/components/SidePanel/Parameters/DynamicInput.tsx
 import { OptionTypes } from 'librechat-data-provider';
 import type { DynamicSettingProps } from 'librechat-data-provider';
 import { useLocalize, useDebouncedInput, useParameterEffects } from '~/hooks';

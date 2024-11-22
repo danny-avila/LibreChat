@@ -1,4 +1,3 @@
-// client/src/components/SidePanel/Parameters/DynamicTags.tsx
 import { useState, useMemo, useCallback, useRef } from 'react';
 import { OptionTypes } from 'librechat-data-provider';
 import type { DynamicSettingProps } from 'librechat-data-provider';
@@ -140,7 +139,7 @@ function DynamicTags({
             </Label>
           </div>
           <div>
-            <div className="bg-muted mb-2 flex flex-wrap gap-1 break-all rounded-lg">
+            <div className="mb-2 flex flex-wrap gap-1 break-all rounded-lg bg-muted">
               {currentTags?.map((tag: string, index: number) => (
                 <Tag
                   key={`${tag}-${index}`}
