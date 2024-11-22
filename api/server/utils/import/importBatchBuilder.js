@@ -99,7 +99,7 @@ class ImportBatchBuilder {
   async saveBatch() {
     try {
       await bulkSaveConvos(this.conversations);
-      await bulkSaveMessages(this.messages);
+      await bulkSaveMessages(this.messages, true);
       logger.debug(
         `user: ${this.requestUserId} | Added ${this.conversations.length} conversations and ${this.messages.length} messages to the DB.`,
       );

@@ -67,11 +67,11 @@ export default function useExportConversation({
     };
 
     if (!message.content) {
-      return formatText(message.sender, message.text);
+      return formatText(message.sender || '', message.text);
     }
 
     return message.content
-      .map((content) => getMessageContent(message.sender, content))
+      .map((content) => getMessageContent(message.sender || '', content))
       .map((text) => {
         return formatText(text[0], text[1]);
       })
