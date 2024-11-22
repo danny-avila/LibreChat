@@ -88,7 +88,9 @@ function DynamicInput({
             value={inputValue ?? ''}
             onChange={handleInputChange}
             placeholder={placeholderCode ? localize(placeholder) ?? placeholder : placeholder}
-            className={cn(defaultTextProps, 'flex h-10 max-h-10 w-full resize-none px-3 py-2')}
+            className={cn(
+              'flex h-10 max-h-10 w-full resize-none border-none bg-surface-secondary px-3 py-2',
+            )}
           />
         </HoverCardTrigger>
         {description && (
