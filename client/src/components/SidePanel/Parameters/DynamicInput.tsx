@@ -12,6 +12,7 @@ function DynamicInput({
   settingKey,
   defaultValue,
   description = '',
+  type = 'string',
   columnSpan,
   setOption,
   optionType,
@@ -45,6 +46,17 @@ function DynamicInput({
     setInputValue: setLocalValue,
   });
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    if (type === 'number') {
+      if (!isNaN(Number(value))) {
+        setInputValue(e);
+      }
+    } else {
+      setInputValue(e);
+    }
+  };
+
   return (
     <div
       className={`flex flex-col items-center justify-start gap-6 ${
@@ -74,7 +86,7 @@ function DynamicInput({
             id={`${settingKey}-dynamic-input`}
             disabled={readonly}
             value={inputValue ?? ''}
-            onChange={setInputValue}
+            onChange={handleInputChange}
             placeholder={placeholderCode ? localize(placeholder) ?? placeholder : placeholder}
             className={cn(defaultTextProps, 'flex h-10 max-h-10 w-full resize-none px-3 py-2')}
           />
