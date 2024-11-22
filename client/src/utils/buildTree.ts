@@ -32,6 +32,11 @@ export default function buildTree({
     }
 
     messageMap[message.messageId] = extendedMessage;
+  });
+
+  messages.forEach((message) => {
+    const parentId = message.parentMessageId ?? '';
+    const extendedMessage = messageMap[message.messageId];
 
     const parentMessage = messageMap[parentId];
     if (parentMessage) {
