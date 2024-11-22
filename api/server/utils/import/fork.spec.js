@@ -104,7 +104,7 @@ describe('forkConversation', () => {
     expect(bulkSaveMessages).toHaveBeenCalledWith(
       expect.arrayContaining(
         expectedMessagesTexts.map((text) => expect.objectContaining({ text })),
-      ),
+      ), true,
     );
   });
 
@@ -122,7 +122,7 @@ describe('forkConversation', () => {
     expect(bulkSaveMessages).toHaveBeenCalledWith(
       expect.arrayContaining(
         expectedMessagesTexts.map((text) => expect.objectContaining({ text })),
-      ),
+      ), true,
     );
   });
 
@@ -141,7 +141,7 @@ describe('forkConversation', () => {
     expect(bulkSaveMessages).toHaveBeenCalledWith(
       expect.arrayContaining(
         expectedMessagesTexts.map((text) => expect.objectContaining({ text })),
-      ),
+      ), true,
     );
   });
 
@@ -160,7 +160,7 @@ describe('forkConversation', () => {
     expect(bulkSaveMessages).toHaveBeenCalledWith(
       expect.arrayContaining(
         expectedMessagesTexts.map((text) => expect.objectContaining({ text })),
-      ),
+      ), true,
     );
   });
 
