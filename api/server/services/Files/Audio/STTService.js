@@ -158,7 +158,15 @@ class STTService {
     return [url, formData, { ...headers, ...formData.getHeaders() }];
   }
 
-  async deepgramSDKProvider(sttSchema, audioReadStream, audioFile) {
+  /**
+   * Transcribes audio using the Deepgram SDK.
+   * @async
+   * @param {Object} sttSchema - The STT schema for Deepgram.
+   * @param {Stream} audioReadStream - The audio data to be transcribed.
+   * @returns {Promise<string>} A promise that resolves to the transcribed text.
+   * @throws {Error} If the transcription fails.
+   */
+  async deepgramSDKProvider(sttSchema, audioReadStream) {
     const apiKey = extractEnvVariable(sttSchema.apiKey) || '';
     const deepgram = createClient(apiKey);
 
@@ -194,7 +202,7 @@ class STTService {
     [configOptions].forEach(this.removeUndefined);
 
     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
-      Buffer.isBuffer(audioFile) ? audioFile : audioReadStream,
+      audioReadStream,
       configOptions,
     );
 
