@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import type { DynamicSettingProps, TConversation, TPreset } from 'librechat-data-provider';
+import type { DynamicSettingProps, TPreset } from 'librechat-data-provider';
 import { defaultDebouncedDelay } from '~/common';
 
 function useParameterEffects<T = unknown>({
@@ -10,9 +10,8 @@ function useParameterEffects<T = unknown>({
   inputValue,
   setInputValue,
   preventDelayedUpdate = false,
-}: Pick<DynamicSettingProps, 'settingKey' | 'defaultValue'> & {
+}: Pick<DynamicSettingProps, 'settingKey' | 'defaultValue' | 'conversation'> & {
   preset: TPreset | null;
-  conversation?: TConversation | TPreset | null;
   inputValue: T;
   setInputValue: (inputValue: T) => void;
   preventDelayedUpdate?: boolean;

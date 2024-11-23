@@ -73,15 +73,17 @@ async function saveMessage(req, params, metadata) {
  * @async
  * @function bulkSaveMessages
  * @param {Object[]} messages - An array of message objects to save.
+ * @param {boolean} [overrideTimestamp=false] - Indicates whether to override the timestamps of the messages. Defaults to false.
  * @returns {Promise<Object>} The result of the bulk write operation.
  * @throws {Error} If there is an error in saving messages in bulk.
  */
-async function bulkSaveMessages(messages) {
+async function bulkSaveMessages(messages, overrideTimestamp=false) {
   try {
     const bulkOps = messages.map((message) => ({
       updateOne: {
         filter: { messageId: message.messageId },
         update: message,
+        timestamps: !overrideTimestamp,
         upsert: true,
       },
     }));

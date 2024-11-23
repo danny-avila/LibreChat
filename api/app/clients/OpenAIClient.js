@@ -1308,11 +1308,6 @@ ${convo}
       /** @type {(value: void | PromiseLike<void>) => void} */
       let streamResolve;
 
-      if (modelOptions.stream && this.isO1Model) {
-        delete modelOptions.stream;
-        delete modelOptions.stop;
-      }
-
       if (modelOptions.stream) {
         streamPromise = new Promise((resolve) => {
           streamResolve = resolve;
