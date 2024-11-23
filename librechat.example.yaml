@@ -187,7 +187,7 @@ endpoints:
       
     # Portkey AI Example
     - name: "Portkey"
-        apikey: "dummy"  
+        apiKey: "dummy"  
         baseURL: 'https://api.portkey.ai/v1'
         headers:
             x-portkey-api-key: '${PORTKEY_API_KEY}'
