@@ -21,7 +21,7 @@ export default function DecibelSelector() {
         <Slider
           value={[decibelValue ?? -45]}
           onValueChange={(value) => setDecibelValue(value[0])}
-          doubleClickHandler={() => setDecibelValue(-45)}
+          onDoubleClick={() => setDecibelValue(-45)}
           min={-100}
           max={-30}
           step={1}
