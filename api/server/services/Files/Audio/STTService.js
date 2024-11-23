@@ -199,7 +199,7 @@ class STTService {
       topics: sttSchema.intelligence?.topics,
     };
 
-    [configOptions].forEach(this.removeUndefined);
+    this.removeUndefined(configOptions);
 
     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
       audioReadStream,
@@ -213,6 +213,7 @@ class STTService {
     return result.results?.channels[0]?.alternatives[0]?.transcript || '';
   }
 
+  // TODO: Implement a better way to determine if the SDK should be used
   shouldUseSDK(provider, sttSchema) {
     if (provider !== STTProviders.OPENAI && provider !== STTProviders.AZURE_OPENAI) {
       return true;
