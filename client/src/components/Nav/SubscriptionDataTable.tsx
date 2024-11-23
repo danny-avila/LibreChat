@@ -42,7 +42,7 @@ const SubscriptionDataTable: React.FC<SubscriptionDataTableProps> = ({ plans }) 
   };
 
   return (
-    <div className="container mx-auto p-4">
+    <div className="container mx-auto p-4 max-h-[100vh]">
       {/* Alert message */}
       <div
         className="bg-blue-100 border border-blue-400 text-black px-4 py-3 rounded relative mb-4 text-right rtl:mr-0"
