@@ -57,7 +57,7 @@ const SubscriptionDataTable: React.FC<SubscriptionDataTableProps> = ({ plans }) 
         {plans.map((plan) => (
           <div
             key={plan.id}
-            className="p-6 border rounded-lg shadow-md bg-white dark:bg-gray-800 mb-10"
+            className="p-6 border rounded-lg shadow-md bg-white dark:bg-gray-800 mb-8"
           >
             <div className="flex flex-col h-full">
               <h3 className="text-2xl font-semibold text-center text-blue-600 dark:text-blue-400">
