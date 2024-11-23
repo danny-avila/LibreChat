@@ -42,7 +42,7 @@ const SubscriptionDataTable: React.FC<SubscriptionDataTableProps> = ({ plans }) 
   };
 
   return (
-    <div className="container mx-auto p-4 max-h-[100vh]">
+    <div className="container mx-auto p-5 max-h-[100vh]">
       {/* Alert message */}
       <div
         className="bg-blue-100 border border-blue-400 text-black px-4 py-3 rounded relative mb-4 text-right rtl:mr-0"
@@ -57,7 +57,7 @@ const SubscriptionDataTable: React.FC<SubscriptionDataTableProps> = ({ plans }) 
         {plans.map((plan) => (
           <div
             key={plan.id}
-            className="p-6 border rounded-lg shadow-md bg-white dark:bg-gray-800 mb-[5vh]"
+            className="p-6 border rounded-lg shadow-md bg-white dark:bg-gray-800 mb-8"
           >
             <div className="flex flex-col h-full">
               <h3 className="text-2xl font-semibold text-center text-blue-600 dark:text-blue-400">
