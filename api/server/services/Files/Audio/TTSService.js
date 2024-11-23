@@ -21,6 +21,7 @@ class TTSService {
       [TTSProviders.AZURE_OPENAI]: this.azureOpenAIProvider.bind(this),
       [TTSProviders.ELEVENLABS]: this.elevenLabsProvider.bind(this),
       [TTSProviders.LOCALAI]: this.localAIProvider.bind(this),
+      [TTSProviders.ELEVENLABS]: this.elevenLabsProvider.bind(this),
     };
   }
 
@@ -233,6 +234,52 @@ class TTSService {
       input,
       model: ttsSchema?.voices && ttsSchema.voices.length > 0 ? voice : undefined,
       backend: ttsSchema?.backend,
+    };
+
+    const headers = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${extractEnvVariable(ttsSchema?.apiKey)}`,
+    };
+
+    if (extractEnvVariable(ttsSchema.apiKey) === '') {
+      delete headers.Authorization;
+    }
+
+    return [url, data, headers];
+  }
+
+  deepgramProvider(ttsSchema, input, voice) {
+    const baseUrl = ttsSchema?.url || 'https://api.deepgram.com/v1/speak';
+    const params = {
+      model: ttsSchema.model,
+      voice: voice,
+      language: ttsSchema.language,
+    };
+
+    const queryParams = Object.entries(params)
+      .filter(([, value]) => value)
+      .map(([key, value]) => `${key}=${value}`)
+      .join('&');
+
+    const url = queryParams ? `${baseUrl}?${queryParams}` : baseUrl;
+
+    if (
+      ttsSchema?.voices &&
+      ttsSchema.voices.length > 0 &&
+      !ttsSchema.voices.includes(voice) &&
+      !ttsSchema.voices.includes('ALL')
+    ) {
+      throw new Error(`Voice ${voice} is not available.`);
+    }
+
+    const data = {
+      input,
+      model: ttsSchema?.voices && ttsSchema.voices.length > 0 ? voice : undefined,
+      language: ttsSchema?.language,
+      media_settings: {
+        bit_rate: ttsSchema?.media_settings?.bit_rate,
+        sample_rate: ttsSchema?.media_settings?.sample_rate,
+      },
     };
 
     const headers = {
