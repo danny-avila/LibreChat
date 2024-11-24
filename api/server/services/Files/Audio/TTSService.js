@@ -23,7 +23,6 @@ class TTSService {
       [TTSProviders.AZURE_OPENAI]: this.azureOpenAIProvider.bind(this),
       [TTSProviders.ELEVENLABS]: this.elevenLabsProvider.bind(this),
       [TTSProviders.LOCALAI]: this.localAIProvider.bind(this),
-      [TTSProviders.ELEVENLABS]: this.elevenLabsProvider.bind(this),
     };
 
     this.sdkStrategies = {
@@ -129,7 +128,9 @@ class TTSService {
 
     const headers = {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${extractEnvVariable(ttsSchema?.apiKey)}`,
+      Authorization: `${
+        ttsSchema.apiKey ? 'Bearer ' + extractEnvVariable(ttsSchema.apiKey) : undefined
+      }`,
     };
 
     return [url, data, headers];
@@ -199,7 +200,7 @@ class TTSService {
 
     const headers = {
       'Content-Type': 'application/json',
-      'xi-api-key': extractEnvVariable(ttsSchema?.apiKey),
+      'xi-api-key': ttsSchema.apiKey ? extractEnvVariable(ttsSchema.apiKey) : '',
       Accept: 'audio/mpeg',
     };
 
@@ -229,12 +230,10 @@ class TTSService {
 
     const headers = {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${extractEnvVariable(ttsSchema?.apiKey)}`,
+      Authorization: `${
+        ttsSchema.apiKey ? 'Bearer ' + extractEnvVariable(ttsSchema.apiKey) : undefined
+      }`,
     };
-
-    if (extractEnvVariable(ttsSchema.apiKey) === '') {
-      delete headers.Authorization;
-    }
 
     return [url, data, headers];
   }
@@ -314,12 +313,12 @@ class TTSService {
   }
 
   // TODO: Implement a better way to determine if the SDK should be used
-  shouldUseSDK(provider, sttSchema) {
+  shouldUseSDK(provider) {
     if (provider == TTSProviders.DEEPGRAM) {
       return true;
     }
 
-    return typeof sttSchema.url === 'string' && sttSchema.url.trim().length > 0;
+    return false;
   }
 
   /**
@@ -335,7 +334,7 @@ class TTSService {
    * @throws {Error} If the provider is invalid or the request fails.
    */
   async ttsRequest(provider, ttsSchema, { input, voice, stream = true }) {
-    const useSDK = this.shouldUseSDK(provider, ttsSchema);
+    const useSDK = this.shouldUseSDK(provider);
     const strategy = useSDK ? this.sdkStrategies[provider] : this.apiStrategies[provider];
 
     if (!strategy) {

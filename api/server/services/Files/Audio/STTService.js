@@ -214,12 +214,12 @@ class STTService {
   }
 
   // TODO: Implement a better way to determine if the SDK should be used
-  shouldUseSDK(provider, sttSchema) {
-    if (provider !== STTProviders.OPENAI && provider !== STTProviders.AZURE_OPENAI) {
+  shouldUseSDK(provider) {
+    if (provider === STTProviders.DEEPGRAM) {
       return true;
     }
 
-    return typeof sttSchema.url === 'string' && sttSchema.url.trim().length > 0;
+    return false;
   }
 
   /**
