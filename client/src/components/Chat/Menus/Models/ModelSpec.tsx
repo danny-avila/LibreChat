@@ -71,7 +71,7 @@ const MenuItem: FC<MenuItemProps> = ({
           <div>
             <div className="flex items-center gap-2">
               {showIconInMenu && <SpecIcon currentSpec={spec} endpointsConfig={endpointsConfig} />}
-              <div className="break-all">
+              <div>
                 {title}
                 <div className="text-token-text-tertiary">{description}</div>
               </div>
