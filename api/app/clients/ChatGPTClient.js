@@ -227,6 +227,16 @@ class ChatGPTClient extends BaseClient {
       this.azure = !serverless && azureOptions;
       this.azureEndpoint =
         !serverless && genAzureChatCompletion(this.azure, modelOptions.model, this);
+      if (serverless === true) {
+        this.options.defaultQuery = azureOptions.azureOpenAIApiVersion
+          ? { 'api-version': azureOptions.azureOpenAIApiVersion }
+          : undefined;
+        this.options.headers['api-key'] = this.apiKey;
+      }
+    }
+
+    if (this.options.defaultQuery) {
+      opts.defaultQuery = this.options.defaultQuery;
     }
 
     if (this.options.headers) {

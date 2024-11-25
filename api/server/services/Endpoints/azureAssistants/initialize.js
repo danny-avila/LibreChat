@@ -135,6 +135,12 @@ const initializeClient = async ({ req, res, version, endpointOption, initAppClie
       clientOptions.reverseProxyUrl = baseURL ?? clientOptions.reverseProxyUrl;
       clientOptions.headers = opts.defaultHeaders;
       clientOptions.azure = !serverless && azureOptions;
+      if (serverless === true) {
+        clientOptions.defaultQuery = azureOptions.azureOpenAIApiVersion
+          ? { 'api-version': azureOptions.azureOpenAIApiVersion }
+          : undefined;
+        clientOptions.headers['api-key'] = apiKey;
+      }
     }
   }
 
