@@ -114,10 +114,10 @@ export type TAzureModelMapSchema = {
   group: string;
 };
 
-export type TAzureModelGroupMap = Record<string, TAzureModelMapSchema>;
+export type TAzureModelGroupMap = Record<string, TAzureModelMapSchema | undefined>;
 export type TAzureGroupMap = Record<
   string,
-  TAzureBaseSchema & { models: Record<string, TAzureModelConfig> }
+  (TAzureBaseSchema & { models: Record<string, TAzureModelConfig | undefined> }) | undefined
 >;
 
 export type TValidatedAzureConfig = {
