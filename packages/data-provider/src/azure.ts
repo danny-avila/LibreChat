@@ -209,6 +209,7 @@ export function mapModelToAzureConfig({
   if (groupConfig.serverless === true) {
     const result: MappedAzureConfig = {
       azureOptions: {
+        azureOpenAIApiVersion: extractEnvVariable(groupConfig.version ?? ''),
         azureOpenAIApiKey: extractEnvVariable(groupConfig.apiKey),
       },
       baseURL: extractEnvVariable(baseURL),
@@ -315,6 +316,7 @@ export function mapGroupToAzureConfig({
   const modelDetails = groupConfig.models[firstModelName];
 
   const azureOptions: AzureOptions = {
+    azureOpenAIApiVersion: extractEnvVariable(groupConfig.version ?? ''),
     azureOpenAIApiKey: extractEnvVariable(groupConfig.apiKey),
     azureOpenAIApiInstanceName: extractEnvVariable(instanceName),
     // DeploymentName and Version set below
