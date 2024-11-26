@@ -83,7 +83,7 @@ const callTool = async (req, res) => {
       return;
     }
     logger.debug(`[${toolId}/call] User: ${req.user.id}`);
-    const [tool] = await loadTools({
+    const { loadedTools } = await loadTools({
       user: req.user.id,
       tools: [toolId],
       functions: true,
@@ -94,9 +94,9 @@ const callTool = async (req, res) => {
         uploadImageBuffer,
         fileStrategy: req.app.locals.fileStrategy,
       },
-      skipSpecs: true,
     });
 
+    const tool = loadedTools[0];
     const toolCallId = `${req.user.id}_${nanoid()}`;
     const result = await tool.invoke({
       args,

@@ -78,7 +78,7 @@ const initializeAgentOptions = async ({
   tool_resources,
   isInitialAgent = false,
 }) => {
-  const { tools } = await loadAgentTools({
+  const { tools, toolContextMap } = await loadAgentTools({
     req,
     tools: agent.tools,
     agent_id: agent.id,
@@ -124,6 +124,7 @@ const initializeAgentOptions = async ({
     tools,
     provider,
     modelOptions,
+    toolContextMap,
     maxContextTokens:
       agent.max_context_tokens ??
       getModelMaxTokens(modelOptions.model, providerEndpointMap[provider]) ??

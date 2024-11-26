@@ -3,10 +3,11 @@ const { v4 } = require('uuid');
 const axios = require('axios');
 const { getCodeBaseURL } = require('@librechat/agents');
 const {
-  EToolResources,
+  Tools,
   FileContext,
-  imageExtRegex,
   FileSources,
+  imageExtRegex,
+  EToolResources,
 } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
@@ -145,27 +146,46 @@ async function getSessionInfo(fileIdentifier, apiKey) {
  * @param {ServerRequest} options.req
  * @param {Agent['tool_resources']} options.tool_resources
  * @param {string} apiKey
- * @returns {Promise<Array<{ id: string; session_id: string; name: string }>>}
+ * @returns {Promise<{
+ * files: Array<{ id: string; session_id: string; name: string }>,
+ * toolContext: string,
+ * }>}
  */
 const primeFiles = async (options, apiKey) => {
   const { tool_resources } = options;
   const file_ids = tool_resources?.[EToolResources.execute_code]?.file_ids ?? [];
+  const agentResourceIds = new Set(file_ids);
   const resourceFiles = tool_resources?.[EToolResources.execute_code]?.files ?? [];
   const dbFiles = ((await getFiles({ file_id: { $in: file_ids } })) ?? []).concat(resourceFiles);
 
   const files = [];
   const sessions = new Map();
-  for (const file of dbFiles) {
+  let toolContext = '';
+
+  for (let i = 0; i < dbFiles.length; i++) {
+    const file = dbFiles[i];
+    if (!file) {
+      continue;
+    }
+
     if (file.metadata.fileIdentifier) {
       const [path, queryString] = file.metadata.fileIdentifier.split('?');
       const [session_id, id] = path.split('/');
+
       const pushFile = () => {
+        if (!toolContext) {
+          toolContext = `- Note: The following files are available in the "${Tools.execute_code}" tool environment:`;
+        }
+        toolContext += `\n\t- /mnt/data/${file.filename}${
+          agentResourceIds.has(file.file_id) ? '' : ' (just attached by user)'
+        }`;
         files.push({
           id,
           session_id,
           name: file.filename,
         });
       };
+
       if (sessions.has(session_id)) {
         pushFile();
         continue;
@@ -215,7 +235,7 @@ const primeFiles = async (options, apiKey) => {
     }
   }
 
-  return files;
+  return { files, toolContext };
 };
 
 module.exports = {

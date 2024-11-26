@@ -57,6 +57,12 @@
  */
 
 /**
+ * @exports BaseMessage
+ * @typedef {import('@langchain/core/messages').BaseMessage} BaseMessage
+ * @memberof typedefs
+ */
+
+/**
  * @exports UsageMetadata
  * @typedef {import('@langchain/core/messages').UsageMetadata} UsageMetadata
  * @memberof typedefs

@@ -10,23 +10,50 @@ const { logger } = require('~/config');
  * @param {Object} options
  * @param {ServerRequest} options.req
  * @param {Agent['tool_resources']} options.tool_resources
- * @returns
+ * @returns {Promise<{
+ *   files: Array<{ file_id: string; filename: string }>,
+ *   toolContext: string
+ * }>}
  */
-const createFileSearchTool = async (options) => {
-  const { req, tool_resources } = options;
+const primeFiles = async (options) => {
+  const { tool_resources } = options;
   const file_ids = tool_resources?.[EToolResources.file_search]?.file_ids ?? [];
-  const dbFiles = (await getFiles({ file_id: { $in: file_ids } })) ?? [];
-  const files = dbFiles
-    .concat(tool_resources?.[EToolResources.file_search]?.files ?? [])
-    .map((file) => ({
+  const agentResourceIds = new Set(file_ids);
+  const resourceFiles = tool_resources?.[EToolResources.file_search]?.files ?? [];
+  const dbFiles = ((await getFiles({ file_id: { $in: file_ids } })) ?? []).concat(resourceFiles);
+
+  let toolContext = `- Note: Semantic search is available through the ${Tools.file_search} tool but no files are currently loaded. Request the user to upload documents to search through.`;
+
+  const files = [];
+  for (let i = 0; i < dbFiles.length; i++) {
+    const file = dbFiles[i];
+    if (!file) {
+      continue;
+    }
+    if (i === 0) {
+      toolContext = `- Note: Use the ${Tools.file_search} tool to find relevant information within:`;
+    }
+    toolContext += `\n\t- ${file.filename}${
+      agentResourceIds.has(file.file_id) ? '' : ' (just attached by user)'
+    }`;
+    files.push({
       file_id: file.file_id,
       filename: file.filename,
-    }));
+    });
+  }
 
-  const fileList = files.map((file) => `- ${file.filename}`).join('\n');
-  const toolDescription = `Performs a semantic search based on a natural language query across the following files:\n${fileList}`;
+  return { files, toolContext };
+};
 
-  const FileSearch = tool(
+/**
+ *
+ * @param {Object} options
+ * @param {ServerRequest} options.req
+ * @param {Array<{ file_id: string; filename: string }>} options.files
+ * @returns
+ */
+const createFileSearchTool = async ({ req, files }) => {
+  return tool(
     async ({ query }) => {
       if (files.length === 0) {
         return 'No files to search. Instruct the user to add files for the search.';
@@ -90,7 +117,7 @@ const createFileSearchTool = async (options) => {
     },
     {
       name: Tools.file_search,
-      description: toolDescription,
+      description: `Performs semantic search across attached "${Tools.file_search}" documents using natural language queries. This tool analyzes the content of uploaded files to find relevant information, quotes, and passages that best match your query. Use this to extract specific information or find relevant sections within the available documents.`,
       schema: z.object({
         query: z
           .string()
@@ -100,8 +127,6 @@ const createFileSearchTool = async (options) => {
       }),
     },
   );
-
-  return FileSearch;
 };
 
-module.exports = createFileSearchTool;
+module.exports = { createFileSearchTool, primeFiles };

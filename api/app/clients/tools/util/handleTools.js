@@ -15,8 +15,8 @@ const {
   StructuredWolfram,
   TavilySearchResults,
 } = require('../');
-const { primeFiles } = require('~/server/services/Files/Code/process');
-const createFileSearchTool = require('./createFileSearchTool');
+const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
+const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
 const { loadSpecs } = require('./loadSpecs');
 const { logger } = require('~/config');
 
@@ -122,15 +122,18 @@ const loadAuthValues = async ({ userId, authFields, throwError = true }) => {
   return authValues;
 };
 
+/** @typedef {typeof import('@langchain/core/tools').Tool} ToolConstructor */
+/** @typedef {import('@langchain/core/tools').Tool} Tool */
+
 /**
  * Initializes a tool with authentication values for the given user, supporting alternate authentication fields.
  * Authentication fields can have alternates separated by "||", and the first defined variable will be used.
  *
  * @param {string} userId The user ID for which the tool is being loaded.
  * @param {Array<string>} authFields Array of strings representing the authentication fields. Supports alternate fields delimited by "||".
- * @param {typeof import('langchain/tools').Tool} ToolConstructor The constructor function for the tool to be initialized.
+ * @param {ToolConstructor} ToolConstructor The constructor function for the tool to be initialized.
  * @param {Object} options Optional parameters to be passed to the tool constructor alongside authentication values.
- * @returns {Function} An Async function that, when called, asynchronously initializes and returns an instance of the tool with authentication.
+ * @returns {() => Promise<Tool>} An Async function that, when called, asynchronously initializes and returns an instance of the tool with authentication.
  */
 const loadToolWithAuth = (userId, authFields, ToolConstructor, options = {}) => {
   return async function () {
@@ -146,7 +149,7 @@ const loadTools = async ({
   returnMap = false,
   tools = [],
   options = {},
-  skipSpecs = false,
+  useSpecs,
 }) => {
   const toolConstructors = {
     calculator: Calculator,
@@ -174,7 +177,7 @@ const loadTools = async ({
 
   const requestedTools = {};
 
-  if (functions) {
+  if (functions === true) {
     toolConstructors.dalle = DALLE3;
   }
 
@@ -189,7 +192,6 @@ const loadTools = async ({
   const toolOptions = {
     serpapi: { location: 'Austin,Texas,United States', hl: 'en', gl: 'us' },
     dalle: imageGenOptions,
-    'dall-e': imageGenOptions,
     'stable-diffusion': imageGenOptions,
   };
 
@@ -203,17 +205,21 @@ const loadTools = async ({
     toolAuthFields[tool.pluginKey] = tool.authConfig.map((auth) => auth.authField);
   });
 
+  const toolContextMap = {};
   const remainingTools = [];
 
   for (const tool of tools) {
     if (tool === Tools.execute_code) {
-      const authValues = await loadAuthValues({
-        userId: user,
-        authFields: [EnvVar.CODE_API_KEY],
-      });
-      const codeApiKey = authValues[EnvVar.CODE_API_KEY];
-      const files = await primeFiles(options, codeApiKey);
-      requestedTools[tool] = () => {
+      requestedTools[tool] = async () => {
+        const authValues = await loadAuthValues({
+          userId: user,
+          authFields: [EnvVar.CODE_API_KEY],
+        });
+        const codeApiKey = authValues[EnvVar.CODE_API_KEY];
+        const { files, toolContext } = await primeCodeFiles(options, codeApiKey);
+        if (toolContext) {
+          toolContextMap[tool] = toolContext;
+        }
         const CodeExecutionTool = createCodeExecutionTool({
           user_id: user,
           files,
@@ -224,7 +230,13 @@ const loadTools = async ({
       };
       continue;
     } else if (tool === Tools.file_search) {
-      requestedTools[tool] = () => createFileSearchTool(options);
+      requestedTools[tool] = async () => {
+        const { files, toolContext } = await primeSearchFiles(options);
+        if (toolContext) {
+          toolContextMap[tool] = toolContext;
+        }
+        return createFileSearchTool({ req: options.req, files });
+      };
       continue;
     }
 
@@ -245,13 +257,13 @@ const loadTools = async ({
       continue;
     }
 
-    if (functions) {
+    if (functions === true) {
       remainingTools.push(tool);
     }
   }
 
   let specs = null;
-  if (functions && remainingTools.length > 0 && skipSpecs !== true) {
+  if (useSpecs === true && functions === true && remainingTools.length > 0) {
     specs = await loadSpecs({
       llm: model,
       user,
@@ -274,23 +286,21 @@ const loadTools = async ({
     return requestedTools;
   }
 
-  // load tools
-  let result = [];
+  const toolPromises = [];
   for (const tool of tools) {
     const validTool = requestedTools[tool];
-    if (!validTool) {
-      continue;
-    }
-    const plugin = await validTool();
-
-    if (Array.isArray(plugin)) {
-      result = [...result, ...plugin];
-    } else if (plugin) {
-      result.push(plugin);
+    if (validTool) {
+      toolPromises.push(
+        validTool().catch((error) => {
+          logger.error(`Error loading tool ${tool}:`, error);
+          return null;
+        }),
+      );
     }
   }
 
-  return result;
+  const loadedTools = (await Promise.all(toolPromises)).flatMap((plugin) => plugin || []);
+  return { loadedTools, toolContextMap };
 };
 
 module.exports = {

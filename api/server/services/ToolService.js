@@ -170,7 +170,7 @@ async function processRequiredActions(client, requiredActions) {
     requiredActions,
   );
   const tools = requiredActions.map((action) => action.tool);
-  const loadedTools = await loadTools({
+  const { loadedTools } = await loadTools({
     user: client.req.user.id,
     model: client.req.body.model ?? 'gpt-4o-mini',
     tools,
@@ -183,7 +183,6 @@ async function processRequiredActions(client, requiredActions) {
       fileStrategy: client.req.app.locals.fileStrategy,
       returnMetadata: true,
     },
-    skipSpecs: true,
   });
 
   const ToolMap = loadedTools.reduce((map, tool) => {
@@ -378,7 +377,7 @@ async function loadAgentTools({ req, agent_id, tools, tool_resources, openAIApiK
   if (!tools || tools.length === 0) {
     return {};
   }
-  const loadedTools = await loadTools({
+  const { loadedTools, toolContextMap } = await loadTools({
     user: req.user.id,
     // model: req.body.model ?? 'gpt-4o-mini',
     tools,
@@ -392,7 +391,6 @@ async function loadAgentTools({ req, agent_id, tools, tool_resources, openAIApiK
       uploadImageBuffer,
       fileStrategy: req.app.locals.fileStrategy,
     },
-    skipSpecs: true,
   });
 
   const agentTools = [];
@@ -476,6 +474,7 @@ async function loadAgentTools({ req, agent_id, tools, tool_resources, openAIApiK
 
   return {
     tools: agentTools,
+    toolContextMap,
   };
 }
 

@@ -70,12 +70,12 @@ class AgentClient extends BaseClient {
     this.run;
 
     const {
+      agentConfigs,
       contentParts,
       collectedUsage,
       artifactPromises,
       maxContextTokens,
       modelOptions = {},
-      agentConfigs,
       ...clientOptions
     } = options;
 
@@ -259,25 +259,6 @@ class AgentClient extends BaseClient {
 
     if (this.options.attachments) {
       const attachments = await this.options.attachments;
-      if (this.options.req.body.files) {
-        const fileSet = new Set(this.options.req.body.files.map((file) => file.file_id));
-        let filePrefix = '';
-        for (const attachment of attachments) {
-          if (!attachment.metadata?.fileIdentifier) {
-            continue;
-          }
-          if (!fileSet.has(attachment.file_id)) {
-            continue;
-          }
-
-          if (!filePrefix) {
-            filePrefix = '\nThe user has just attached the following files:\n';
-          }
-          filePrefix += `- /mnt/data/${attachment.filename}\n`;
-        }
-
-        systemContent += filePrefix;
-      }
 
       if (this.message_file_map) {
         this.message_file_map[orderedMessages[orderedMessages.length - 1].messageId] = attachments;
@@ -527,6 +508,14 @@ class AgentClient extends BaseClient {
 
       /** @type {ReturnType<createRun>} */
       let run;
+
+      /**
+       *
+       * @param {Agent} agent
+       * @param {BaseMessage[]} messages
+       * @param {number} [i]
+       * @param {TMessageContentParts[]} [contentData]
+       */
       const runAgent = async (agent, messages, i = 0, contentData = []) => {
         config.configurable.model = agent.modelOptions.model;
         config.configurable.agent_id = agent.id;
@@ -536,8 +525,12 @@ class AgentClient extends BaseClient {
           agent.modelOptions.model.match(regex),
         );
 
+        const systemMessage = Object.values(agent.toolContextMap ?? {})
+          .join('\n')
+          .trim();
+
         let systemContent = [
-          this.systemMessage,
+          systemMessage,
           agent.instructions ?? '',
           i !== 0 ? agent.additional_instructions ?? '' : '',
         ]
