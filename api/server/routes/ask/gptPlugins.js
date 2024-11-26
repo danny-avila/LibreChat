@@ -21,8 +21,8 @@ const { logger } = require('~/config');
 
 const router = express.Router();
 
-router.use(moderateText);
 router.post('/abort', handleAbort());
+router.use(moderateText);
 
 router.post(
   '/',

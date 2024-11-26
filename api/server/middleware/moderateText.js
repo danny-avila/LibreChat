@@ -1,41 +1,70 @@
-const axios = require('axios');
+const OpenAI = require('openai');
 const { ErrorTypes } = require('librechat-data-provider');
+const { isEnabled } = require('~/server/utils');
 const denyRequest = require('./denyRequest');
 const { logger } = require('~/config');
 
+/**
+ * Middleware to moderate text content using OpenAI's moderation API
+ * @param {Express.Request} req - Express request object
+ * @param {Express.Response} res - Express response object
+ * @param {Express.NextFunction} next - Express next middleware function
+ * @returns {Promise<void>}
+ */
 async function moderateText(req, res, next) {
-  if (process.env.OPENAI_MODERATION === 'true') {
-    try {
-      const { text } = req.body;
-
-      const response = await axios.post(
-        process.env.OPENAI_MODERATION_REVERSE_PROXY || 'https://api.openai.com/v1/moderations',
-        {
-          input: text,
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${process.env.OPENAI_MODERATION_API_KEY}`,
-          },
-        },
-      );
-
-      const results = response.data.results;
-      const flagged = results.some((result) => result.flagged);
-
-      if (flagged) {
-        const type = ErrorTypes.MODERATION;
-        const errorMessage = { type };
-        return await denyRequest(req, res, errorMessage);
-      }
-    } catch (error) {
-      logger.error('Error in moderateText:', error);
-      const errorMessage = 'error in moderation check';
-      return await denyRequest(req, res, errorMessage);
-    }
+  if (!isEnabled(process.env.OPENAI_MODERATION)) {
+    return next();
   }
-  next();
+
+  try {
+    const moderationKey = process.env.OPENAI_MODERATION_API_KEY;
+
+    if (!moderationKey) {
+      logger.error('Missing OpenAI moderation API key');
+      return denyRequest(req, res, { message: 'Moderation configuration error' });
+    }
+
+    const openai = new OpenAI({
+      apiKey: moderationKey,
+    });
+
+    const { text } = req.body;
+
+    if (!text || typeof text !== 'string') {
+      return denyRequest(req, res, { type: ErrorTypes.VALIDATION, message: 'Invalid text input' });
+    }
+
+    const response = await openai.moderations.create({
+      model: 'omni-moderation-latest',
+      input: text,
+    });
+
+    if (!Array.isArray(response.results)) {
+      throw new Error('Invalid moderation API response format');
+    }
+
+    const flagged = response.results.some((result) => result.flagged);
+
+    if (flagged) {
+      return denyRequest(req, res, {
+        type: ErrorTypes.MODERATION,
+        message: 'Content violates moderation policies',
+      });
+    }
+
+    next();
+  } catch (error) {
+    logger.error('Moderation error:', {
+      error: error.message,
+      stack: error.stack,
+      status: error.response?.status,
+    });
+
+    return denyRequest(req, res, {
+      type: ErrorTypes.MODERATION,
+      message: 'Content moderation check failed',
+    });
+  }
 }
 
 module.exports = moderateText;
