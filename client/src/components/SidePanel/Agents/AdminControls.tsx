@@ -4,7 +4,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { Permissions, SystemRoles, roleDefaults, PermissionTypes } from 'librechat-data-provider';
 import type { Control, UseFormSetValue, UseFormGetValues } from 'react-hook-form';
 import { OGDialog, OGDialogTitle, OGDialogContent, OGDialogTrigger } from '~/components/ui';
-import { useUpdatePromptPermissionsMutation } from '~/data-provider';
+import { useUpdateAgentPermissionsMutation } from '~/data-provider';
 import { useLocalize, useAuthContext } from '~/hooks';
 import { Button, Switch } from '~/components/ui';
 import { useToastContext } from '~/Providers';
@@ -13,7 +13,7 @@ type FormValues = Record<Permissions, boolean>;
 
 type LabelControllerProps = {
   label: string;
-  promptPerm: Permissions;
+  agentPerm: Permissions;
   control: Control<FormValues, unknown, FormValues>;
   setValue: UseFormSetValue<FormValues>;
   getValues: UseFormGetValues<FormValues>;
@@ -23,7 +23,7 @@ const defaultValues = roleDefaults[SystemRoles.USER];
 
 const LabelController: React.FC<LabelControllerProps> = ({
   control,
-  promptPerm,
+  agentPerm,
   label,
   getValues,
   setValue,
@@ -32,9 +32,8 @@ const LabelController: React.FC<LabelControllerProps> = ({
     <button
       className="cursor-pointer select-none"
       type="button"
-      // htmlFor={promptPerm}
       onClick={() =>
-        setValue(promptPerm, !getValues(promptPerm), {
+        setValue(agentPerm, !getValues(agentPerm), {
           shouldDirty: true,
         })
       }
@@ -43,7 +42,7 @@ const LabelController: React.FC<LabelControllerProps> = ({
       {label}
     </button>
     <Controller
-      name={promptPerm}
+      name={agentPerm}
       control={control}
       render={({ field }) => (
         <Switch
@@ -57,11 +56,11 @@ const LabelController: React.FC<LabelControllerProps> = ({
   </div>
 );
 
-const AdminSettings = () => {
+const AdminControls = () => {
   const localize = useLocalize();
   const { user, roles } = useAuthContext();
   const { showToast } = useToastContext();
-  const { mutate, isLoading } = useUpdatePromptPermissionsMutation({
+  const { mutate, isLoading } = useUpdateAgentPermissionsMutation({
     onSuccess: () => {
       showToast({ status: 'success', message: localize('com_ui_saved') });
     },
@@ -81,16 +80,16 @@ const AdminSettings = () => {
     mode: 'onChange',
     defaultValues: useMemo(() => {
       if (roles?.[SystemRoles.USER]) {
-        return roles[SystemRoles.USER][PermissionTypes.PROMPTS];
+        return roles[SystemRoles.USER][PermissionTypes.AGENTS];
       }
 
-      return defaultValues[PermissionTypes.PROMPTS];
+      return defaultValues[PermissionTypes.AGENTS];
     }, [roles]),
   });
 
   useEffect(() => {
-    if (roles?.[SystemRoles.USER]?.[PermissionTypes.PROMPTS]) {
-      reset(roles[SystemRoles.USER][PermissionTypes.PROMPTS]);
+    if (roles?.[SystemRoles.USER]?.[PermissionTypes.AGENTS]) {
+      reset(roles[SystemRoles.USER][PermissionTypes.AGENTS]);
     }
   }, [roles, reset]);
 
@@ -100,16 +99,16 @@ const AdminSettings = () => {
 
   const labelControllerData = [
     {
-      promptPerm: Permissions.SHARED_GLOBAL,
-      label: localize('com_ui_prompts_allow_share_global'),
+      agentPerm: Permissions.SHARED_GLOBAL,
+      label: localize('com_ui_agents_allow_share_global'),
     },
     {
-      promptPerm: Permissions.USE,
-      label: localize('com_ui_prompts_allow_use'),
+      agentPerm: Permissions.USE,
+      label: localize('com_ui_agents_allow_use'),
     },
     {
-      promptPerm: Permissions.CREATE,
-      label: localize('com_ui_prompts_allow_create'),
+      agentPerm: Permissions.CREATE,
+      label: localize('com_ui_agents_allow_create'),
     },
   ];
 
@@ -120,26 +119,22 @@ const AdminSettings = () => {
   return (
     <OGDialog>
       <OGDialogTrigger asChild>
-        <Button
-          size={'sm'}
-          variant={'outline'}
-          className="h-10 w-fit gap-1 border transition-all dark:bg-transparent"
-        >
+        <Button className="btn btn-neutral border-token-border-light relative my-1 h-9 w-full rounded-lg font-medium">
           <ShieldEllipsis className="cursor-pointer" />
-          <span className="hidden sm:flex">{localize('com_ui_admin')}</span>
+          {localize('com_ui_admin_settings')}
         </Button>
       </OGDialogTrigger>
-      <OGDialogContent className="bg-white dark:border-gray-700 dark:bg-gray-850 dark:text-gray-300">
+      <OGDialogContent className="w-1/4 bg-white dark:border-gray-700 dark:bg-gray-850 dark:text-gray-300">
         <OGDialogTitle>{`${localize('com_ui_admin_settings')} - ${localize(
-          'com_ui_prompts',
+          'com_ui_agents',
         )}`}</OGDialogTitle>
         <form className="p-2" onSubmit={handleSubmit(onSubmit)}>
           <div className="py-5">
-            {labelControllerData.map(({ promptPerm, label }) => (
+            {labelControllerData.map(({ agentPerm, label }) => (
               <LabelController
-                key={promptPerm}
+                key={agentPerm}
                 control={control}
-                promptPerm={promptPerm}
+                agentPerm={agentPerm}
                 label={label}
                 getValues={getValues}
                 setValue={setValue}
@@ -161,4 +156,4 @@ const AdminSettings = () => {
   );
 };
 
-export default AdminSettings;
+export default AdminControls;

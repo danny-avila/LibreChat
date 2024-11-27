@@ -528,7 +528,7 @@ export default {
   com_endpoint_preset_default_item: 'الافتراضي:',
   com_endpoint_preset_default_none: 'لا يوجد إعداد مسبق افتراضي نشط.',
   com_endpoint_preset_title: 'إعداد مسبق',
-  com_endpoint_preset_saved: 'تم الحفظ!',
+  com_ui_saved: 'تم الحفظ!',
   com_endpoint_preset_default: 'أصبح الإعداد المسبق الافتراضي الآن.',
   com_endpoint_preset_selected: 'الإعداد المسبق نشط!',
   com_endpoint_preset_selected_title: 'مُحدَّد!',

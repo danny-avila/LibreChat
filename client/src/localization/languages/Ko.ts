@@ -859,7 +859,7 @@ export default {
   com_endpoint_preset_default_item: '기본값:',
   com_endpoint_preset_default_none: '기본 프리셋이 설정되지 않았습니다.',
   com_endpoint_preset_title: '프리셋',
-  com_endpoint_preset_saved: '저장되었습니다!',
+  com_ui_saved: '저장되었습니다!',
   com_endpoint_preset_default: '이제 기본 프리셋입니다.',
   com_endpoint_preset_selected: '프리셋 활성화됨',
   com_endpoint_preset_selected_title: '활성화됨',

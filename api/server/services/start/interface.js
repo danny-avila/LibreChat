@@ -38,11 +38,13 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
     [PermissionTypes.PROMPTS]: { [Permissions.USE]: loadedInterface.prompts },
     [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: loadedInterface.bookmarks },
     [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: loadedInterface.multiConvo },
+    [PermissionTypes.AGENTS]: { [Permissions.USE]: loadedInterface.agents },
   });
   await updateAccessPermissions(SystemRoles.ADMIN, {
     [PermissionTypes.PROMPTS]: { [Permissions.USE]: loadedInterface.prompts },
     [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: loadedInterface.bookmarks },
     [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: loadedInterface.multiConvo },
+    [PermissionTypes.AGENTS]: { [Permissions.USE]: loadedInterface.agents },
   });
 
   let i = 0;

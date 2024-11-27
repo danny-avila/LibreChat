@@ -1,17 +1,25 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
-import { QueryKeys, AgentCapabilities, EModelEndpoint, SystemRoles } from 'librechat-data-provider';
+import {
+  QueryKeys,
+  SystemRoles,
+  Permissions,
+  EModelEndpoint,
+  PermissionTypes,
+  AgentCapabilities,
+} from 'librechat-data-provider';
 import type { TConfig, TPlugin } from 'librechat-data-provider';
 import type { AgentForm, AgentPanelProps } from '~/common';
 import { cn, defaultTextProps, removeFocusOutlines, getEndpointField, getIconKey } from '~/utils';
 import { useCreateAgentMutation, useUpdateAgentMutation } from '~/data-provider';
+import { useLocalize, useAuthContext, useHasAccess } from '~/hooks';
 import { useToastContext, useFileMapContext } from '~/Providers';
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 import Action from '~/components/SidePanel/Builder/Action';
 import { ToolSelectDialog } from '~/components/Tools';
-import { useLocalize, useAuthContext } from '~/hooks';
 import { processAgentOption } from '~/utils';
+import AdminControls from './AdminControls';
 import { Spinner } from '~/components/svg';
 import DeleteButton from './DeleteButton';
 import AgentAvatar from './AgentAvatar';
@@ -54,6 +62,11 @@ export default function AgentConfig({
   const agent = useWatch({ control, name: 'agent' });
   const tools = useWatch({ control, name: 'tools' });
   const agent_id = useWatch({ control, name: 'id' });
+
+  const hasAccessToShareAgents = useHasAccess({
+    permissionType: PermissionTypes.AGENTS,
+    permission: Permissions.SHARED_GLOBAL,
+  });
 
   const toolsEnabled = useMemo(
     () => agentsConfig?.capabilities?.includes(AgentCapabilities.tools),
@@ -384,6 +397,7 @@ export default function AgentConfig({
             </div>
           </div>
         </div>
+        {user?.role === SystemRoles.ADMIN && <AdminControls />}
         {/* Context Button */}
         <div className="flex items-center justify-end gap-2">
           <DeleteButton
@@ -391,7 +405,8 @@ export default function AgentConfig({
             setCurrentAgentId={setCurrentAgentId}
             createMutation={create}
           />
-          {(agent?.author === user?.id || user?.role === SystemRoles.ADMIN) && (
+          {(agent?.author === user?.id || user?.role === SystemRoles.ADMIN) &&
+            hasAccessToShareAgents && (
             <ShareAgent
               agent_id={agent_id}
               agentName={agent?.name ?? ''}

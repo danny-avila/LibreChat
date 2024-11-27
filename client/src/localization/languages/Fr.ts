@@ -257,7 +257,7 @@ export default {
   com_endpoint_preset_default_item: 'Par défaut :',
   com_endpoint_preset_default_none: 'Aucun préréglage par défaut actif.',
   com_endpoint_preset_title: 'Préréglage',
-  com_endpoint_preset_saved: 'Enregistré!',
+  com_ui_saved: 'Enregistré!',
   com_endpoint_preset_default: 'est maintenant le préréglage par défaut.',
   com_endpoint_preset: 'préréglage',
   com_endpoint_presets: 'préréglages',

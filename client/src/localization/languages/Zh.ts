@@ -514,7 +514,7 @@ export default {
   com_endpoint_preset_default_item: '默认：',
   com_endpoint_preset_default_none: '无默认预设可用。',
   com_endpoint_preset_title: '预设',
-  com_endpoint_preset_saved: '保存成功！',
+  com_ui_saved: '保存成功！',
   com_endpoint_preset_default: '现在是默认预设。',
   com_endpoint_preset: '预设',
   com_endpoint_presets: '预设',

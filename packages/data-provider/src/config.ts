@@ -477,6 +477,7 @@ export const configSchema = z.object({
       bookmarks: z.boolean().optional(),
       presets: z.boolean().optional(),
       prompts: z.boolean().optional(),
+      agents: z.boolean().optional(),
     })
     .default({
       endpointsMenu: true,
@@ -487,6 +488,7 @@ export const configSchema = z.object({
       multiConvo: true,
       bookmarks: true,
       prompts: true,
+      agents: true,
     }),
   fileStrategy: fileSourceSchema.default(FileSources.local),
   registration: z

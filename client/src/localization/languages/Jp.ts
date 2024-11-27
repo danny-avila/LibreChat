@@ -541,7 +541,7 @@ export default {
   com_endpoint_preset_default_item: 'デフォルト:',
   com_endpoint_preset_default_none: '現在有効なプリセットはありません。',
   com_endpoint_preset_title: 'プリセット',
-  com_endpoint_preset_saved: '保存しました!',
+  com_ui_saved: '保存しました!',
   com_endpoint_preset_default: 'が有効化されました。',
   com_endpoint_preset: 'プリセット',
   com_endpoint_presets: 'プリセット',

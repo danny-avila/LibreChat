@@ -223,18 +223,29 @@ export type RegistrationOptions = MutationOptions<
   types.TError
 >;
 
-export type UpdatePromptPermVars = {
+export type UpdatePermVars<T> = {
   roleName: string;
-  updates: Partial<r.TPromptPermissions>;
+  updates: Partial<T>;
 };
 
-export type UpdatePromptPermResponse = r.TRole;
+export type UpdatePromptPermVars = UpdatePermVars<r.TPromptPermissions>;
+
+export type UpdateAgentPermVars = UpdatePermVars<r.TAgentPermissions>;
+
+export type UpdatePermResponse = r.TRole;
 
 export type UpdatePromptPermOptions = MutationOptions<
-  UpdatePromptPermResponse,
+  UpdatePermResponse,
   UpdatePromptPermVars,
   unknown,
-  types.TError
+  types.TError | null | undefined
+>;
+
+export type UpdateAgentPermOptions = MutationOptions<
+  UpdatePermResponse,
+  UpdateAgentPermVars,
+  unknown,
+  types.TError | null | undefined
 >;
 
 export type UpdateConversationTagOptions = MutationOptions<

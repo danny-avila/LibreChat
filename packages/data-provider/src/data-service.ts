@@ -693,8 +693,14 @@ export function getRole(roleName: string): Promise<r.TRole> {
 
 export function updatePromptPermissions(
   variables: m.UpdatePromptPermVars,
-): Promise<m.UpdatePromptPermResponse> {
+): Promise<m.UpdatePermResponse> {
   return request.put(endpoints.updatePromptPermissions(variables.roleName), variables.updates);
+}
+
+export function updateAgentPermissions(
+  variables: m.UpdateAgentPermVars,
+): Promise<m.UpdatePermResponse> {
+  return request.put(endpoints.updateAgentPermissions(variables.roleName), variables.updates);
 }
 
 /* Tags */

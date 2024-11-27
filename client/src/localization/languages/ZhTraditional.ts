@@ -502,7 +502,7 @@ export default {
   com_endpoint_preset_default_item: '預設值',
   com_endpoint_preset_default_none: '無啟用的預設設定。',
   com_endpoint_preset_title: '預設項目',
-  com_endpoint_preset_saved: '已儲存！',
+  com_ui_saved: '已儲存！',
   com_endpoint_preset_default: '現在是預設的預設設定。',
   com_endpoint_preset_selected: '已選擇預設設定！',
   com_endpoint_preset_selected_title: '已選取！',

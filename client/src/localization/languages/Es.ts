@@ -350,7 +350,7 @@ export default {
   com_endpoint_preset_default_item: 'Predeterminado:',
   com_endpoint_preset_default_none: 'No hay configuración preestablecida predeterminada activa.',
   com_endpoint_preset_title: 'Configuración preestablecida',
-  com_endpoint_preset_saved: '¡Guardado!',
+  com_ui_saved: '¡Guardado!',
   com_endpoint_preset_default: 'es ahora la configuración preestablecida predeterminada.',
   com_endpoint_preset: 'configuración preestablecida',
   com_endpoint_presets: 'configuraciones preestablecidas',

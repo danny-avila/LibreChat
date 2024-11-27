@@ -28,7 +28,7 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }: TEditPresetProps) =>
     createPresetMutation.mutate(_preset, {
       onSuccess: () => {
         showToast({
-          message: `${toastTitle} ${localize('com_endpoint_preset_saved')}`,
+          message: `${toastTitle} ${localize('com_ui_saved')}`,
         });
         onOpenChange(false); // Close the dialog on success
       },

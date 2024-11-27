@@ -402,7 +402,7 @@ export default {
   com_endpoint_preset_default_item: 'Predefinita:',
   com_endpoint_preset_default_none: 'Nessuna preimpostazione predefinita attiva.',
   com_endpoint_preset_title: 'Preimpostazione',
-  com_endpoint_preset_saved: 'Salvata!',
+  com_ui_saved: 'Salvata!',
   com_endpoint_preset_default: 'è ora la preimpostazione predefinita.',
   com_endpoint_preset: 'preimpostazione',
   com_endpoint_presets: 'preimpostazioni',

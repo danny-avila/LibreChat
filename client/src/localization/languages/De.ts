@@ -509,7 +509,7 @@ export default {
   com_endpoint_preset_default_item: 'Standard:',
   com_endpoint_preset_default_none: 'Keine Standardvoreinstellung aktiv.',
   com_endpoint_preset_title: 'Voreinstellung',
-  com_endpoint_preset_saved: 'Gespeichert!',
+  com_ui_saved: 'Gespeichert!',
   com_endpoint_preset_default: 'ist jetzt die Standardvoreinstellung.',
   com_endpoint_preset: 'Voreinstellung',
   com_endpoint_presets: 'Voreinstellungen',
