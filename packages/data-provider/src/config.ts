@@ -490,6 +490,7 @@ export const configSchema = z.object({
   registration: z
     .object({
       socialLogins: z.array(z.string()).optional(),
+      disableFakeEmails: z.boolean().optional(),
       allowedDomains: z.array(z.string()).optional(),
     })
     .default({ socialLogins: defaultSocialLogins }),
