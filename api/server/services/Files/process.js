@@ -20,7 +20,7 @@ const {
 const { EnvVar } = require('@librechat/agents');
 const { addResourceFileId, deleteResourceFileId } = require('~/server/controllers/assistants/v2');
 const { convertImage, resizeAndConvert } = require('~/server/services/Files/images');
-const { addAgentResourceFile, removeAgentResourceFile } = require('~/models/Agent');
+const { addAgentResourceFile, removeAgentResourceFiles } = require('~/models/Agent');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { createFile, updateFileUsage, deleteFiles } = require('~/models/File');
 const { loadAuthValues } = require('~/app/clients/tools/util');
@@ -152,18 +152,16 @@ const processDeleteRequest = async ({ req, files }) => {
     await initializeClients();
   }
 
+  const agentFiles = [];
+
   for (const file of files) {
     const source = file.source ?? FileSources.local;
 
     if (req.body.agent_id && req.body.tool_resource) {
-      promises.push(
-        removeAgentResourceFile({
-          req,
-          file_id: file.file_id,
-          agent_id: req.body.agent_id,
-          tool_resource: req.body.tool_resource,
-        }),
-      );
+      agentFiles.push({
+        tool_resource: req.body.tool_resource,
+        file_id: file.file_id,
+      });
     }
 
     if (checkOpenAIStorage(source) && !client[source]) {
@@ -205,6 +203,15 @@ const processDeleteRequest = async ({ req, files }) => {
 
     deletionMethods[source] = deleteFile;
     enqueueDeleteOperation({ req, file, deleteFile, promises, resolvedFileIds, openai });
+  }
+
+  if (agentFiles.length > 0) {
+    promises.push(
+      removeAgentResourceFiles({
+        agent_id: req.body.agent_id,
+        files: agentFiles,
+      }),
+    );
   }
 
   await Promise.allSettled(promises);
