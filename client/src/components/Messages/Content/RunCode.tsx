@@ -3,15 +3,21 @@ import { Tools, AuthType } from 'librechat-data-provider';
 import { TerminalSquareIcon, Loader } from 'lucide-react';
 import React, { useMemo, useCallback, useEffect } from 'react';
 import type { CodeBarProps } from '~/common';
-import ApiKeyDialog from '~/components/SidePanel/Agents/Code/ApiKeyDialog';
 import { useVerifyAgentToolAuth, useToolCallMutation } from '~/data-provider';
+import ApiKeyDialog from '~/components/SidePanel/Agents/Code/ApiKeyDialog';
 import { useLocalize, useCodeApiKeyForm } from '~/hooks';
 import { useMessageContext } from '~/Providers';
 import { cn, normalizeLanguage } from '~/utils';
+import { useToastContext } from '~/Providers';
 
 const RunCode: React.FC<CodeBarProps> = React.memo(({ lang, codeRef, blockIndex }) => {
   const localize = useLocalize();
-  const execute = useToolCallMutation(Tools.execute_code);
+  const { showToast } = useToastContext();
+  const execute = useToolCallMutation(Tools.execute_code, {
+    onError: () => {
+      showToast({ message: localize('com_ui_run_code_error'), status: 'error' });
+    },
+  });
 
   const { messageId, conversationId, partIndex } = useMessageContext();
   const normalizedLang = useMemo(() => normalizeLanguage(lang), [lang]);
