@@ -10,7 +10,7 @@ import {
   alternateName,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import type { AssistantsEndpoint, TAssistantsMap, TEndpointsConfig } from 'librechat-data-provider';
+import type { TAssistantsMap, TEndpointsConfig } from 'librechat-data-provider';
 import type { MentionOption } from '~/common';
 import useAssistantListMap from '~/hooks/Assistants/useAssistantListMap';
 import { mapEndpoints, getPresetTitle } from '~/utils';
@@ -25,7 +25,7 @@ const assistantMapFn =
     assistantMap,
     endpointsConfig,
   }: {
-    endpoint: AssistantsEndpoint;
+    endpoint: EModelEndpoint | string;
     assistantMap: TAssistantsMap;
     endpointsConfig: TEndpointsConfig;
   }) =>
@@ -101,7 +101,7 @@ export default function useMentions({
       validEndpoints = endpoints.filter((endpoint) => !isAssistantsEndpoint(endpoint));
     }
     const mentions = [
-      ...(modelSpecs?.length > 0 ? modelSpecs : []).map((modelSpec) => ({
+      ...(modelSpecs.length > 0 ? modelSpecs : []).map((modelSpec) => ({
         value: modelSpec.name,
         label: modelSpec.label,
         description: modelSpec.description,
@@ -116,9 +116,9 @@ export default function useMentions({
         }),
         type: 'modelSpec' as const,
       })),
-      ...(interfaceConfig.endpointsMenu ? validEndpoints : []).map((endpoint) => ({
+      ...(interfaceConfig.endpointsMenu === true ? validEndpoints : []).map((endpoint) => ({
         value: endpoint,
-        label: alternateName[endpoint] ?? endpoint ?? '',
+        label: alternateName[endpoint as string] ?? endpoint ?? '',
         type: 'endpoint' as const,
         icon: EndpointIcon({
           conversation: { endpoint },
@@ -133,7 +133,7 @@ export default function useMentions({
       ...(endpointsConfig?.[EModelEndpoint.azureAssistants] && includeAssistants
         ? assistantListMap[EModelEndpoint.azureAssistants] || []
         : []),
-      ...((interfaceConfig.presets ? presets : [])?.map((preset, index) => ({
+      ...((interfaceConfig.presets === true ? presets : [])?.map((preset, index) => ({
         value: preset.presetId ?? `preset-${index}`,
         label: preset.title ?? preset.modelLabel ?? preset.chatGptLabel ?? '',
         description: getPresetTitle(preset, true),
