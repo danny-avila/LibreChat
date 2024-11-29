@@ -122,7 +122,6 @@ const initializeAgentOptions = async ({
   return {
     ...agent,
     tools,
-    provider,
     modelOptions,
     toolContextMap,
     maxContextTokens:
