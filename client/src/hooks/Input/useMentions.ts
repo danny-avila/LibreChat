@@ -5,17 +5,17 @@ import {
   useGetEndpointsQuery,
 } from 'librechat-data-provider/react-query';
 import {
-  getConfigDefaults,
-  EModelEndpoint,
   alternateName,
+  EModelEndpoint,
+  getConfigDefaults,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type { TAssistantsMap, TEndpointsConfig } from 'librechat-data-provider';
 import type { MentionOption } from '~/common';
 import useAssistantListMap from '~/hooks/Assistants/useAssistantListMap';
+import { useGetPresetsQuery, useListAgentsQuery } from '~/data-provider';
 import { mapEndpoints, getPresetTitle } from '~/utils';
 import { EndpointIcon } from '~/components/Endpoints';
-import { useGetPresetsQuery } from '~/data-provider';
 
 const defaultInterface = getConfigDefaults().interface;
 
@@ -65,6 +65,27 @@ export default function useMentions({
       description,
     })),
   );
+  const { data: agentsList = null } = useListAgentsQuery(undefined, {
+    select: (res) => {
+      const { data } = res;
+      return data.map(({ id, name, avatar }) => ({
+        value: id,
+        label: name ?? '',
+        type: EModelEndpoint.agents,
+        icon: EndpointIcon({
+          conversation: {
+            agent_id: id,
+            endpoint: EModelEndpoint.agents,
+            iconURL: avatar?.filepath,
+          },
+          containerClassName: 'shadow-stroke overflow-hidden rounded-full',
+          endpointsConfig: endpointsConfig,
+          context: 'menu-item',
+          size: 20,
+        }),
+      }));
+    },
+  });
   const assistantListMap = useMemo(
     () => ({
       [EModelEndpoint.assistants]: listMap[EModelEndpoint.assistants]
@@ -127,6 +148,7 @@ export default function useMentions({
           size: 20,
         }),
       })),
+      ...(agentsList ?? []),
       ...(endpointsConfig?.[EModelEndpoint.assistants] && includeAssistants
         ? assistantListMap[EModelEndpoint.assistants] || []
         : []),
@@ -154,6 +176,7 @@ export default function useMentions({
     presets,
     endpoints,
     modelSpecs,
+    agentsList,
     assistantMap,
     endpointsConfig,
     assistantListMap,
@@ -166,6 +189,7 @@ export default function useMentions({
     options,
     presets,
     modelSpecs,
+    agentsList,
     modelsConfig,
     endpointsConfig,
     assistantListMap,
