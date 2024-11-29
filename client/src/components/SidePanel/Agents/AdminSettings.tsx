@@ -56,7 +56,7 @@ const LabelController: React.FC<LabelControllerProps> = ({
   </div>
 );
 
-const AdminControls = () => {
+const AdminSettings = () => {
   const localize = useLocalize();
   const { user, roles } = useAuthContext();
   const { showToast } = useToastContext();
@@ -156,4 +156,4 @@ const AdminControls = () => {
   );
 };
 
-export default AdminControls;
+export default AdminSettings;

@@ -19,7 +19,7 @@ import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 import Action from '~/components/SidePanel/Builder/Action';
 import { ToolSelectDialog } from '~/components/Tools';
 import { processAgentOption } from '~/utils';
-import AdminControls from './AdminControls';
+import AdminSettings from './AdminSettings';
 import { Spinner } from '~/components/svg';
 import DeleteButton from './DeleteButton';
 import AgentAvatar from './AgentAvatar';
@@ -397,7 +397,7 @@ export default function AgentConfig({
             </div>
           </div>
         </div>
-        {user?.role === SystemRoles.ADMIN && <AdminControls />}
+        {user?.role === SystemRoles.ADMIN && <AdminSettings />}
         {/* Context Button */}
         <div className="flex items-center justify-end gap-2">
           <DeleteButton
