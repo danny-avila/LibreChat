@@ -60,6 +60,7 @@ interface:
 # Example Registration Object Structure (optional)
 registration:
   socialLogins: ['github', 'google', 'discord', 'openid', 'facebook']
+  disableFakeEmails: true # Disable fake/temporary emails
   # allowedDomains:
   # - "gmail.com"
 
