@@ -1,5 +1,5 @@
 const { ZeroShotAgent } = require('langchain/agents');
-const { PromptTemplate, renderTemplate } = require('langchain/prompts');
+const { PromptTemplate, renderTemplate } = require('@langchain/core/prompts');
 const { gpt3, gpt4 } = require('./instructions');
 
 class CustomAgent extends ZeroShotAgent {

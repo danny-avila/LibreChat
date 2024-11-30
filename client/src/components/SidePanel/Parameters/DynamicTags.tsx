@@ -1,4 +1,3 @@
-// client/src/components/SidePanel/Parameters/DynamicTags.tsx
 import { useState, useMemo, useCallback, useRef } from 'react';
 import { OptionTypes } from 'librechat-data-provider';
 import type { DynamicSettingProps } from 'librechat-data-provider';
@@ -140,20 +139,24 @@ function DynamicTags({
             </Label>
           </div>
           <div>
-            <div className="bg-muted mb-2 flex flex-wrap gap-1 break-all rounded-lg">
-              {currentTags?.map((tag: string, index: number) => (
-                <Tag
-                  key={`${tag}-${index}`}
-                  label={tag}
-                  onClick={onTagClick}
-                  onRemove={() => {
-                    onTagRemove(index);
-                    if (inputRef.current) {
-                      inputRef.current.focus();
-                    }
-                  }}
-                />
-              ))}
+            <div className="mb-2 flex flex-wrap break-all rounded-lg bg-surface-secondary">
+              {currentTags && currentTags.length > 0 && (
+                <div className="flex w-full gap-1 p-1">
+                  {currentTags.map((tag: string, index: number) => (
+                    <Tag
+                      key={`${tag}-${index}`}
+                      label={tag}
+                      onClick={onTagClick}
+                      onRemove={() => {
+                        onTagRemove(index);
+                        if (inputRef.current) {
+                          inputRef.current.focus();
+                        }
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
               <Input
                 ref={inputRef}
                 id={`${settingKey}-dynamic-input`}
@@ -172,7 +175,7 @@ function DynamicTags({
                 }}
                 onChange={(e) => setTagText(e.target.value)}
                 placeholder={placeholderCode ? localize(placeholder) ?? placeholder : placeholder}
-                className={cn(defaultTextProps, 'flex h-10 max-h-10 px-3 py-2')}
+                className={cn('flex h-10 max-h-10 border-none bg-surface-secondary px-3 py-2')}
               />
             </div>
           </div>

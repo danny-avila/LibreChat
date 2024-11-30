@@ -408,16 +408,16 @@ export const useAvailablePluginsQuery = <TData = s.TPlugin[]>(
   );
 };
 
-export const useUpdateUserPluginsMutation = (): UseMutationResult<
-  t.TUser,
-  unknown,
-  t.TUpdateUserPlugins,
-  unknown
-> => {
+export const useUpdateUserPluginsMutation = (
+  _options?: m.UpdatePluginAuthOptions,
+): UseMutationResult<t.TUser, unknown, t.TUpdateUserPlugins, unknown> => {
   const queryClient = useQueryClient();
+  const { onSuccess, ...options } = _options ?? {};
   return useMutation((payload: t.TUpdateUserPlugins) => dataService.updateUserPlugins(payload), {
-    onSuccess: () => {
+    ...options,
+    onSuccess: (...args) => {
       queryClient.invalidateQueries([QueryKeys.user]);
+      onSuccess?.(...args);
     },
   });
 };

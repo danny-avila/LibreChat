@@ -28,13 +28,20 @@ export default function Message(props: TMessageProps) {
     return null;
   }
 
-  const { text, children, messageId = null, isCreatedByUser, error, unfinished } = message ?? {};
+  const {
+    text = '',
+    children,
+    messageId = null,
+    isCreatedByUser = true,
+    error = false,
+    unfinished = false,
+  } = message;
 
   let messageLabel = '';
   if (isCreatedByUser) {
     messageLabel = 'anonymous';
   } else {
-    messageLabel = message.sender;
+    messageLabel = message.sender || '';
   }
 
   return (
@@ -67,12 +74,12 @@ export default function Message(props: TMessageProps) {
                       error={error}
                       isLast={false}
                       ask={() => ({})}
-                      text={text ?? ''}
+                      text={text}
                       message={message}
                       isSubmitting={false}
                       enterEdit={() => ({})}
                       unfinished={!!unfinished}
-                      isCreatedByUser={isCreatedByUser ?? true}
+                      isCreatedByUser={isCreatedByUser}
                       siblingIdx={siblingIdx ?? 0}
                       setSiblingIdx={setSiblingIdx ?? (() => ({}))}
                     />

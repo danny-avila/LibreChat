@@ -1,9 +1,10 @@
+const fs = require('fs').promises;
 const { FileContext } = require('librechat-data-provider');
+const { uploadImageBuffer, filterFile } = require('~/server/services/Files/process');
 const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { deleteAssistantActions } = require('~/server/services/ActionService');
 const { updateAssistantDoc, getAssistants } = require('~/models/Assistant');
-const { uploadImageBuffer } = require('~/server/services/Files/process');
 const { getOpenAIClient, fetchAssistants } = require('./helpers');
 const { deleteFileByFilter } = require('~/models/File');
 const { logger } = require('~/config');
@@ -235,38 +236,41 @@ const getAssistantDocuments = async (req, res) => {
 
 /**
  * Uploads and updates an avatar for a specific assistant.
- * @route POST /avatar/:assistant_id
+ * @route POST /:assistant_id/avatar
  * @param {object} req - Express Request
  * @param {object} req.params - Request params
  * @param {string} req.params.assistant_id - The ID of the assistant.
  * @param {Express.Multer.File} req.file - The avatar image file.
  * @param {object} req.body - Request body
- * @param {string} [req.body.metadata] - Optional metadata for the assistant's avatar.
  * @returns {Object} 200 - success response - application/json
  */
 const uploadAssistantAvatar = async (req, res) => {
   try {
+    filterFile({ req, file: req.file, image: true, isAvatar: true });
     const { assistant_id } = req.params;
     if (!assistant_id) {
       return res.status(400).json({ message: 'Assistant ID is required' });
     }
 
-    let { metadata: _metadata = '{}' } = req.body;
     const { openai } = await getOpenAIClient({ req, res });
     await validateAuthor({ req, openai });
 
+    const buffer = await fs.readFile(req.file.path);
     const image = await uploadImageBuffer({
       req,
       context: FileContext.avatar,
-      metadata: {
-        buffer: req.file.buffer,
-      },
+      metadata: { buffer },
     });
 
+    let _metadata;
+
     try {
-      _metadata = JSON.parse(_metadata);
+      const assistant = await openai.beta.assistants.retrieve(assistant_id);
+      if (assistant) {
+        _metadata = assistant.metadata;
+      }
     } catch (error) {
-      logger.error('[/avatar/:assistant_id] Error parsing metadata', error);
+      logger.error('[/:assistant_id/avatar] Error fetching assistant', error);
       _metadata = {};
     }
 
@@ -274,9 +278,9 @@ const uploadAssistantAvatar = async (req, res) => {
       const { deleteFile } = getStrategyFunctions(_metadata.avatar_source);
       try {
         await deleteFile(req, { filepath: _metadata.avatar });
-        await deleteFileByFilter({ filepath: _metadata.avatar });
+        await deleteFileByFilter({ user: req.user.id, filepath: _metadata.avatar });
       } catch (error) {
-        logger.error('[/avatar/:assistant_id] Error deleting old avatar', error);
+        logger.error('[/:assistant_id/avatar] Error deleting old avatar', error);
       }
     }
 
@@ -307,6 +311,13 @@ const uploadAssistantAvatar = async (req, res) => {
     const message = 'An error occurred while updating the Assistant Avatar';
     logger.error(message, error);
     res.status(500).json({ message });
+  } finally {
+    try {
+      await fs.unlink(req.file.path);
+      logger.debug('[/:agent_id/avatar] Temp. image upload file deleted');
+    } catch (error) {
+      logger.debug('[/:agent_id/avatar] Temp. image upload file already deleted');
+    }
   }
 };
 

@@ -5,6 +5,7 @@ import { Permissions } from 'librechat-data-provider';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { TStartupConfig, AgentUpdateParams } from 'librechat-data-provider';
 import {
+  Button,
   Switch,
   OGDialog,
   OGDialogTitle,
@@ -146,7 +147,7 @@ export default function ShareAgent({
           </div>
         </button>
       </OGDialogTrigger>
-      <OGDialogContent className="w-1/4 border-border-light bg-surface-primary-alt text-text-secondary">
+      <OGDialogContent className="w-11/12 md:max-w-xl">
         <OGDialogTitle>
           {localize(
             'com_ui_share_var',
@@ -255,13 +256,14 @@ export default function ShareAgent({
           </div>
           <div className="flex justify-end">
             <OGDialogClose asChild>
-              <button
+              <Button
+                variant="submit"
+                size="sm"
                 type="submit"
                 disabled={isSubmitting || isFetching}
-                className="btn rounded bg-green-500 font-bold text-white transition-all hover:bg-green-600"
               >
                 {localize('com_ui_save')}
-              </button>
+              </Button>
             </OGDialogClose>
           </div>
         </form>

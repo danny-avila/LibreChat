@@ -7,6 +7,7 @@ const {
   removeGroupFromAllProjects,
 } = require('./Project');
 const { Prompt, PromptGroup } = require('./schema/promptSchema');
+const { escapeRegExp } = require('~/server/utils');
 const { logger } = require('~/config');
 
 /**
@@ -91,7 +92,7 @@ const createAllGroupsPipeline = (
 
 /**
  * Get all prompt groups with filters
- * @param {Object} req
+ * @param {ServerRequest} req
  * @param {TPromptGroupsWithFilterRequest} filter
  * @returns {Promise<PromptGroupListResponse>}
  */
@@ -106,7 +107,7 @@ const getAllPromptGroups = async (req, filter) => {
     let searchShared = true;
     let searchSharedOnly = false;
     if (name) {
-      query.name = new RegExp(name, 'i');
+      query.name = new RegExp(escapeRegExp(name), 'i');
     }
     if (!query.category) {
       delete query.category;
@@ -141,7 +142,7 @@ const getAllPromptGroups = async (req, filter) => {
 
 /**
  * Get prompt groups with filters
- * @param {Object} req
+ * @param {ServerRequest} req
  * @param {TPromptGroupsWithFilterRequest} filter
  * @returns {Promise<PromptGroupListResponse>}
  */
@@ -159,7 +160,7 @@ const getPromptGroups = async (req, filter) => {
     let searchShared = true;
     let searchSharedOnly = false;
     if (name) {
-      query.name = new RegExp(name, 'i');
+      query.name = new RegExp(escapeRegExp(name), 'i');
     }
     if (!query.category) {
       delete query.category;
@@ -212,8 +213,34 @@ const getPromptGroups = async (req, filter) => {
   }
 };
 
+/**
+ * @param {Object} fields
+ * @param {string} fields._id
+ * @param {string} fields.author
+ * @param {string} fields.role
+ * @returns {Promise<TDeletePromptGroupResponse>}
+ */
+const deletePromptGroup = async ({ _id, author, role }) => {
+  const query = { _id, author };
+  const groupQuery = { groupId: new ObjectId(_id), author };
+  if (role === SystemRoles.ADMIN) {
+    delete query.author;
+    delete groupQuery.author;
+  }
+  const response = await PromptGroup.deleteOne(query);
+
+  if (!response || response.deletedCount === 0) {
+    throw new Error('Prompt group not found');
+  }
+
+  await Prompt.deleteMany(groupQuery);
+  await removeGroupFromAllProjects(_id);
+  return { message: 'Prompt group deleted successfully' };
+};
+
 module.exports = {
   getPromptGroups,
+  deletePromptGroup,
   getAllPromptGroups,
   /**
    * Create a prompt and its respective group
@@ -507,22 +534,6 @@ module.exports = {
     } catch (error) {
       logger.error('Error updating prompt labels', error);
       return { message: 'Error updating prompt labels' };
-    }
-  },
-  deletePromptGroup: async (_id) => {
-    try {
-      const response = await PromptGroup.deleteOne({ _id });
-
-      if (response.deletedCount === 0) {
-        return { promptGroup: 'Prompt group not found' };
-      }
-
-      await Prompt.deleteMany({ groupId: new ObjectId(_id) });
-      await removeGroupFromAllProjects(_id);
-      return { promptGroup: 'Prompt group deleted successfully' };
-    } catch (error) {
-      logger.error('Error deleting prompt group', error);
-      return { message: 'Error deleting prompt group' };
     }
   },
 };

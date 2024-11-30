@@ -34,7 +34,7 @@ jest.mock('~/models', () => ({
   updateFileUsage: jest.fn(),
 }));
 
-jest.mock('langchain/chat_models/openai', () => {
+jest.mock('@langchain/openai', () => {
   return {
     ChatOpenAI: jest.fn().mockImplementation(() => {
       return {};
@@ -446,7 +446,7 @@ describe('OpenAIClient', () => {
         promptPrefix: 'Test Prefix',
       });
       expect(result).toHaveProperty('prompt');
-      const instructions = result.prompt.find((item) => item.name === 'instructions');
+      const instructions = result.prompt.find((item) => item.content.includes('Test Prefix'));
       expect(instructions).toBeDefined();
       expect(instructions.content).toContain('Test Prefix');
     });
@@ -476,7 +476,9 @@ describe('OpenAIClient', () => {
       const result = await client.buildMessages(messages, parentMessageId, {
         isChatCompletion: true,
       });
-      const instructions = result.prompt.find((item) => item.name === 'instructions');
+      const instructions = result.prompt.find((item) =>
+        item.content.includes('Test Prefix from options'),
+      );
       expect(instructions.content).toContain('Test Prefix from options');
     });
 
@@ -484,7 +486,7 @@ describe('OpenAIClient', () => {
       const result = await client.buildMessages(messages, parentMessageId, {
         isChatCompletion: true,
       });
-      const instructions = result.prompt.find((item) => item.name === 'instructions');
+      const instructions = result.prompt.find((item) => item.content.includes('Test Prefix'));
       expect(instructions).toBeUndefined();
     });
 

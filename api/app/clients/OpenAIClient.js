@@ -68,6 +68,8 @@ class OpenAIClient extends BaseClient {
 
     /** @type {OpenAIUsageMetadata | undefined} */
     this.usage;
+    /** @type {boolean|undefined} */
+    this.isO1Model;
   }
 
   // TODO: PluginsClient calls this 3x, unneeded
@@ -104,6 +106,8 @@ class OpenAIClient extends BaseClient {
     } else {
       this.checkVisionRequest(this.options.attachments);
     }
+
+    this.isO1Model = /\bo1\b/i.test(this.modelOptions.model);
 
     const { OPENROUTER_API_KEY, OPENAI_FORCE_PROMPT } = process.env ?? {};
     if (OPENROUTER_API_KEY && !this.azure) {
@@ -545,12 +549,10 @@ class OpenAIClient extends BaseClient {
       promptPrefix = this.augmentedPrompt + promptPrefix;
     }
 
-    const isO1Model = /\bo1\b/i.test(this.modelOptions.model);
-    if (promptPrefix && !isO1Model) {
+    if (promptPrefix && this.isO1Model !== true) {
       promptPrefix = `Instructions:\n${promptPrefix.trim()}`;
       instructions = {
         role: 'system',
-        name: 'instructions',
         content: promptPrefix,
       };
 
@@ -575,7 +577,7 @@ class OpenAIClient extends BaseClient {
     };
 
     /** EXPERIMENTAL */
-    if (promptPrefix && isO1Model) {
+    if (promptPrefix && this.isO1Model === true) {
       const lastUserMessageIndex = payload.findLastIndex((message) => message.role === 'user');
       if (lastUserMessageIndex !== -1) {
         payload[
@@ -836,30 +838,36 @@ class OpenAIClient extends BaseClient {
       this.options.dropParams = azureConfig.groupMap[groupName].dropParams;
       this.options.forcePrompt = azureConfig.groupMap[groupName].forcePrompt;
       this.azure = !serverless && azureOptions;
+      if (serverless === true) {
+        this.options.defaultQuery = azureOptions.azureOpenAIApiVersion
+          ? { 'api-version': azureOptions.azureOpenAIApiVersion }
+          : undefined;
+        this.options.headers['api-key'] = this.apiKey;
+      }
     }
 
     const titleChatCompletion = async () => {
-      modelOptions.model = model;
+      try {
+        modelOptions.model = model;
 
-      if (this.azure) {
-        modelOptions.model = process.env.AZURE_OPENAI_DEFAULT_MODEL ?? modelOptions.model;
-        this.azureEndpoint = genAzureChatCompletion(this.azure, modelOptions.model, this);
-      }
+        if (this.azure) {
+          modelOptions.model = process.env.AZURE_OPENAI_DEFAULT_MODEL ?? modelOptions.model;
+          this.azureEndpoint = genAzureChatCompletion(this.azure, modelOptions.model, this);
+        }
 
-      const instructionsPayload = [
-        {
-          role: this.options.titleMessageRole ?? (this.isOllama ? 'user' : 'system'),
-          content: `Please generate ${titleInstruction}
+        const instructionsPayload = [
+          {
+            role: this.options.titleMessageRole ?? (this.isOllama ? 'user' : 'system'),
+            content: `Please generate ${titleInstruction}
 
 ${convo}
 
 ||>Title:`,
-        },
-      ];
+          },
+        ];
 
-      const promptTokens = this.getTokenCountForMessage(instructionsPayload[0]);
+        const promptTokens = this.getTokenCountForMessage(instructionsPayload[0]);
 
-      try {
         let useChatCompletion = true;
 
         if (this.options.reverseProxyUrl === CohereConstants.API_URL) {
@@ -1167,6 +1175,10 @@ ${convo}
         opts.defaultHeaders = { ...opts.defaultHeaders, ...this.options.headers };
       }
 
+      if (this.options.defaultQuery) {
+        opts.defaultQuery = this.options.defaultQuery;
+      }
+
       if (this.options.proxy) {
         opts.httpAgent = new HttpsProxyAgent(this.options.proxy);
       }
@@ -1205,6 +1217,12 @@ ${convo}
         this.azure = !serverless && azureOptions;
         this.azureEndpoint =
           !serverless && genAzureChatCompletion(this.azure, modelOptions.model, this);
+        if (serverless === true) {
+          this.options.defaultQuery = azureOptions.azureOpenAIApiVersion
+            ? { 'api-version': azureOptions.azureOpenAIApiVersion }
+            : undefined;
+          this.options.headers['api-key'] = this.apiKey;
+        }
       }
 
       if (this.azure || this.options.azure) {
@@ -1225,6 +1243,11 @@ ${convo}
 
         opts.defaultQuery = { 'api-version': this.azure.azureOpenAIApiVersion };
         opts.defaultHeaders = { ...opts.defaultHeaders, 'api-key': this.apiKey };
+      }
+
+      if (this.isO1Model === true && modelOptions.max_tokens != null) {
+        modelOptions.max_completion_tokens = modelOptions.max_tokens;
+        delete modelOptions.max_tokens;
       }
 
       if (process.env.OPENAI_ORGANIZATION) {
@@ -1300,11 +1323,6 @@ ${convo}
       let streamPromise;
       /** @type {(value: void | PromiseLike<void>) => void} */
       let streamResolve;
-
-      if (modelOptions.stream && /\bo1\b/i.test(modelOptions.model)) {
-        delete modelOptions.stream;
-        delete modelOptions.stop;
-      }
 
       if (modelOptions.stream) {
         streamPromise = new Promise((resolve) => {

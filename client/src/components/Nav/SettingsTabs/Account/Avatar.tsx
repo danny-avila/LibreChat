@@ -1,33 +1,41 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { FileImage, RotateCw, Upload } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
 import AvatarEditor from 'react-avatar-editor';
+import { FileImage, RotateCw, Upload } from 'lucide-react';
 import { fileConfig as defaultFileConfig, mergeFileConfig } from 'librechat-data-provider';
 import type { TUser } from 'librechat-data-provider';
 import {
+  Slider,
+  Button,
+  Spinner,
   OGDialog,
   OGDialogContent,
   OGDialogHeader,
   OGDialogTitle,
   OGDialogTrigger,
-  Slider,
-} from '~/components/ui';
+} from '~/components';
 import { useUploadAvatarMutation, useGetFileConfig } from '~/data-provider';
 import { useToastContext } from '~/Providers';
-import { Spinner } from '~/components/svg';
 import { cn, formatBytes } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
+interface AvatarEditorRef {
+  getImageScaledToCanvas: () => HTMLCanvasElement;
+  getImage: () => HTMLImageElement;
+}
+
 function Avatar() {
   const setUser = useSetRecoilState(store.user);
-  const [image, setImage] = useState<string | File | null>(null);
-  const [isDialogOpen, setDialogOpen] = useState<boolean>(false);
+
   const [scale, setScale] = useState<number>(1);
   const [rotation, setRotation] = useState<number>(0);
-  const editorRef = useRef<AvatarEditor | null>(null);
+  const editorRef = useRef<AvatarEditorRef | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const openButtonRef = useRef<HTMLButtonElement>(null);
+
+  const [image, setImage] = useState<string | File | null>(null);
+  const [isDialogOpen, setDialogOpen] = useState<boolean>(false);
 
   const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
@@ -54,12 +62,13 @@ function Avatar() {
   };
 
   const handleFile = (file: File | undefined) => {
-    if (fileConfig.avatarSizeLimit && file && file.size <= fileConfig.avatarSizeLimit) {
+    if (fileConfig.avatarSizeLimit != null && file && file.size <= fileConfig.avatarSizeLimit) {
       setImage(file);
       setScale(1);
       setRotation(0);
     } else {
-      const megabytes = fileConfig.avatarSizeLimit ? formatBytes(fileConfig.avatarSizeLimit) : 2;
+      const megabytes =
+        fileConfig.avatarSizeLimit != null ? formatBytes(fileConfig.avatarSizeLimit) : 2;
       showToast({
         message: localize('com_ui_upload_invalid_var', megabytes + ''),
         status: 'error',
@@ -81,7 +90,7 @@ function Avatar() {
       canvas.toBlob((blob) => {
         if (blob) {
           const formData = new FormData();
-          formData.append('input', blob, 'avatar.png');
+          formData.append('file', blob, 'avatar.png');
           formData.append('manual', 'true');
           uploadAvatar(formData);
         }
@@ -130,17 +139,14 @@ function Avatar() {
         </OGDialogTrigger>
       </div>
 
-      <OGDialogContent
-        className={cn('bg-surface-tertiary text-text-primary shadow-2xl  md:h-auto md:w-[450px]')}
-        style={{ borderRadius: '12px' }}
-      >
+      <OGDialogContent className="w-11/12 max-w-sm" style={{ borderRadius: '12px' }}>
         <OGDialogHeader>
           <OGDialogTitle className="text-lg font-medium leading-6 text-text-primary">
-            {image ? localize('com_ui_preview') : localize('com_ui_upload_image')}
+            {image != null ? localize('com_ui_preview') : localize('com_ui_upload_image')}
           </OGDialogTitle>
         </OGDialogHeader>
         <div className="flex flex-col items-center justify-center">
-          {image ? (
+          {image != null ? (
             <>
               <div className="relative overflow-hidden rounded-full">
                 <AvatarEditor
@@ -157,7 +163,7 @@ function Avatar() {
               </div>
               <div className="mt-4 flex w-full flex-col items-center space-y-4">
                 <div className="flex w-full items-center justify-center space-x-4">
-                  <span className="text-sm">Zoom:</span>
+                  <span className="text-sm">{localize('com_ui_zoom')}</span>
                   <Slider
                     value={[scale]}
                     min={1}
@@ -174,10 +180,10 @@ function Avatar() {
                   <RotateCw className="h-5 w-5" />
                 </button>
               </div>
-              <button
+              <Button
                 className={cn(
-                  'mt-4 flex items-center rounded px-4 py-2 text-white transition-colors hover:bg-green-600 hover:text-gray-200',
-                  isUploading ? 'cursor-not-allowed bg-green-600' : 'bg-green-500',
+                  'btn btn-primary mt-4 flex w-full hover:bg-green-600',
+                  isUploading ? 'cursor-not-allowed opacity-90' : '',
                 )}
                 onClick={handleUpload}
                 disabled={isUploading}
@@ -188,24 +194,21 @@ function Avatar() {
                   <Upload className="mr-2 h-5 w-5" />
                 )}
                 {localize('com_ui_upload')}
-              </button>
+              </Button>
             </>
           ) : (
             <div
-              className="flex h-64 w-64 flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 dark:border-gray-600 dark:bg-gray-700"
+              className="flex h-64 w-11/12 flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-transparent dark:border-gray-600"
               onDrop={handleDrop}
               onDragOver={handleDragOver}
             >
-              <FileImage className="mb-4 h-12 w-12 text-gray-400" />
+              <FileImage className="mb-4 size-12 text-gray-400" />
               <p className="mb-2 text-center text-sm text-gray-500 dark:text-gray-400">
                 {localize('com_ui_drag_drop')}
               </p>
-              <button
-                onClick={openFileDialog}
-                className="rounded bg-gray-200 px-4 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500"
-              >
+              <Button variant="secondary" onClick={openFileDialog}>
                 {localize('com_ui_select_file')}
-              </button>
+              </Button>
               <input
                 ref={fileInputRef}
                 type="file"

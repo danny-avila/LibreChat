@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { useFormContext } from 'react-hook-form';
 import {
   EModelEndpoint,
@@ -9,12 +9,11 @@ import {
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
 import type { ExtendedFile, AgentForm } from '~/common';
+import { useFileHandling, useLocalize, useLazyEffect } from '~/hooks';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
 import FileSearchCheckbox from './FileSearchCheckbox';
 import { useGetFileConfig } from '~/data-provider';
 import { AttachmentIcon } from '~/components/svg';
-import { useFileHandling } from '~/hooks/Files';
-import useLocalize from '~/hooks/useLocalize';
 import { useChatContext } from '~/Providers';
 
 export default function FileSearch({
@@ -40,18 +39,22 @@ export default function FileSearch({
     fileSetter: setFiles,
   });
 
-  useEffect(() => {
-    if (_files) {
-      setFiles(new Map(_files));
-    }
-  }, [_files]);
+  useLazyEffect(
+    () => {
+      if (_files) {
+        setFiles(new Map(_files));
+      }
+    },
+    [_files],
+    750,
+  );
 
   const fileSearchChecked = watch(AgentCapabilities.file_search);
 
   const endpointFileConfig = fileConfig.endpoints[EModelEndpoint.agents];
-  const disabled = endpointFileConfig.disabled ?? false;
+  const isUploadDisabled = endpointFileConfig.disabled ?? false;
 
-  if (disabled === true) {
+  if (isUploadDisabled) {
     return null;
   }
 
@@ -78,7 +81,7 @@ export default function FileSearch({
           <button
             type="button"
             disabled={!agent_id || fileSearchChecked === false}
-            className="btn btn-neutral border-token-border-light relative h-8 rounded-lg font-medium"
+            className="btn btn-neutral border-token-border-light relative h-8 w-full rounded-lg font-medium"
             onClick={handleButtonClick}
           >
             <div className="flex w-full items-center justify-center gap-1">
