@@ -97,6 +97,12 @@ const initializeClient = async ({
 
     apiKey = azureOptions.azureOpenAIApiKey;
     clientOptions.azure = !serverless && azureOptions;
+    if (serverless === true) {
+      clientOptions.defaultQuery = azureOptions.azureOpenAIApiVersion
+        ? { 'api-version': azureOptions.azureOpenAIApiVersion }
+        : undefined;
+      clientOptions.headers['api-key'] = apiKey;
+    }
   } else if (isAzureOpenAI) {
     clientOptions.azure = userProvidesKey ? JSON.parse(userValues.apiKey) : getAzureCredentials();
     apiKey = clientOptions.azure.azureOpenAIApiKey;
