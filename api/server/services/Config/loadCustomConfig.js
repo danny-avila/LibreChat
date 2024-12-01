@@ -1,120 +1,140 @@
 const path = require('path');
+const axios = require('axios');
+const yaml = require('js-yaml');
 const { CacheKeys, configSchema, EImageOutputType } = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
 const loadYaml = require('~/utils/loadYaml');
 const { logger } = require('~/config');
-const axios = require('axios');
-const yaml = require('js-yaml');
 
-const projectRoot = path.resolve(__dirname, '..', '..', '..', '..');
-const defaultConfigPath = path.resolve(projectRoot, 'librechat.yaml');
+const CONFIG = {
+  PROJECT_ROOT: path.resolve(__dirname, '..', '..', '..', '..'),
+  CACHE_TTL: 1000 * 60 * 5, // 5 minutes
+  HTTP_TIMEOUT: 5000, // 5 seconds
+  MAX_RETRIES: 3,
+};
 
-let i = 0;
+const defaultConfigPath = path.resolve(CONFIG.PROJECT_ROOT, 'librechat.yaml');
+const CONFIG_URL_REGEX = /^https?:\/\//;
+const IMAGE_OUTPUT_ERROR = `Please specify a correct \`imageOutputType\` value (case-sensitive).
+Available options: ${Object.values(EImageOutputType).join(', ')}
+See: https://www.librechat.ai/docs/configuration/librechat_yaml`;
 
-/**
- * Load custom configuration files and caches the object if the `cache` field at root is true.
- * Validation via parsing the config file with the config schema.
- * @function loadCustomConfig
- * @returns {Promise<TCustomConfig | null>} A promise that resolves to null or the custom config object.
- * */
-async function loadCustomConfig() {
-  // Use CONFIG_PATH if set, otherwise fallback to defaultConfigPath
-  const configPath = process.env.CONFIG_PATH || defaultConfigPath;
-
-  let customConfig;
-
-  if (/^https?:\/\//.test(configPath)) {
-    try {
-      const response = await axios.get(configPath);
-      customConfig = response.data;
-    } catch (error) {
-      i === 0 && logger.error(`Failed to fetch the remote config file from ${configPath}`, error);
-      i === 0 && i++;
-      return null;
-    }
-  } else {
-    customConfig = loadYaml(configPath);
-    if (!customConfig) {
-      i === 0 &&
-        logger.info(
-          'Custom config file missing or YAML format invalid.\n\nCheck out the latest config file guide for configurable options and features.\nhttps://www.librechat.ai/docs/configuration/librechat_yaml\n\n',
-        );
-      i === 0 && i++;
-      return null;
-    }
-
-    if (customConfig.reason || customConfig.stack) {
-      i === 0 && logger.error('Config file YAML format is invalid:', customConfig);
-      i === 0 && i++;
-      return null;
-    }
+// Cache management
+class ConfigCache {
+  constructor() {
+    this.data = null;
+    this.timestamp = null;
   }
 
-  if (typeof customConfig === 'string') {
-    try {
-      customConfig = yaml.load(customConfig);
-    } catch (parseError) {
-      i === 0 && logger.info(`Failed to parse the YAML config from ${configPath}`, parseError);
-      i === 0 && i++;
-      return null;
-    }
+  set(data) {
+    this.data = data;
+    this.timestamp = Date.now();
   }
 
-  const result = configSchema.strict().safeParse(customConfig);
-  if (result?.error?.errors?.some((err) => err?.path && err.path?.includes('imageOutputType'))) {
-    throw new Error(
-      `
-Please specify a correct \`imageOutputType\` value (case-sensitive).
+  get() {
+    if (!this.data || !this.timestamp) {
+      return null;
+    }
+    if (Date.now() - this.timestamp > CONFIG.CACHE_TTL) {
+      this.clear();
+      return null;
+    }
+    return this.data;
+  }
 
-      The available options are:
-      - ${EImageOutputType.JPEG}
-      - ${EImageOutputType.PNG}
-      - ${EImageOutputType.WEBP}
-      
-      Refer to the latest config file guide for more information:
-      https://www.librechat.ai/docs/configuration/librechat_yaml`,
+  clear() {
+    this.data = null;
+    this.timestamp = null;
+  }
+}
+
+const configCache = new ConfigCache();
+
+// Error handling
+class ConfigError extends Error {
+  constructor(message, type) {
+    super(message);
+    this.name = 'ConfigError';
+    this.type = type;
+  }
+}
+
+// Validation
+const validateConfig = (config, configPath) => {
+  const result = configSchema.strict().safeParse(config);
+
+  if (result?.error?.errors?.some((err) => err?.path?.includes('imageOutputType'))) {
+    throw new ConfigError(IMAGE_OUTPUT_ERROR, 'invalid_image_type');
+  }
+
+  if (!result.success) {
+    throw new ConfigError(
+      `Invalid config at ${configPath}:\n${JSON.stringify(result.error, null, 2)}`,
+      'validation_error',
     );
   }
-  if (!result.success) {
-    let errorMessage = `Invalid custom config file at ${configPath}:
-${JSON.stringify(result.error, null, 2)}`;
 
-    if (i === 0) {
-      logger.error(errorMessage);
-      const speechError = result.error.errors.find(
-        (err) =>
-          err.code === 'unrecognized_keys' &&
-          (err.message?.includes('stt') || err.message?.includes('tts')),
-      );
+  return result;
+};
 
-      if (speechError) {
-        logger.warn(`
-The Speech-to-text and Text-to-speech configuration format has recently changed.
-If you're getting this error, please refer to the latest documentation:
+// HTTP config loading with retries
+const fetchConfig = async (url, retries = CONFIG.MAX_RETRIES) => {
+  try {
+    const { data } = await axios.get(url, { timeout: CONFIG.HTTP_TIMEOUT });
+    return data;
+  } catch (error) {
+    if (retries > 0) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      return fetchConfig(url, retries - 1);
+    }
+    throw error;
+  }
+};
 
-https://www.librechat.ai/docs/configuration/stt_tts`);
-      }
-
-      i++;
+// Main function
+async function loadCustomConfig() {
+  try {
+    const cachedConfig = configCache.get();
+    if (cachedConfig) {
+      return cachedConfig;
     }
 
+    const configPath = process.env.CONFIG_PATH || defaultConfigPath;
+    let customConfig;
+
+    if (CONFIG_URL_REGEX.test(configPath)) {
+      customConfig = await fetchConfig(configPath);
+    } else {
+      customConfig = loadYaml(configPath);
+      if (!customConfig) {
+        throw new ConfigError('Config file missing or invalid YAML format', 'invalid_yaml');
+      }
+    }
+
+    if (typeof customConfig === 'string') {
+      customConfig = yaml.load(customConfig);
+    }
+
+    const result = validateConfig(customConfig, configPath);
+
+    if (customConfig.cache) {
+      const cache = getLogStores(CacheKeys.CONFIG_STORE);
+      await cache.set(CacheKeys.CUSTOM_CONFIG, customConfig);
+    }
+
+    if (result.data.modelSpecs) {
+      customConfig.modelSpecs = result.data.modelSpecs;
+    }
+
+    configCache.set(customConfig);
+    logger.info('Config loaded successfully');
+    logger.debug('Config details:', customConfig);
+
+    return customConfig;
+  } catch (error) {
+    logger.error(`Config loading failed: ${error.message}`);
     return null;
-  } else {
-    logger.info('Custom config file loaded:');
-    logger.info(JSON.stringify(customConfig, null, 2));
-    logger.debug('Custom config:', customConfig);
   }
-
-  if (customConfig.cache) {
-    const cache = getLogStores(CacheKeys.CONFIG_STORE);
-    await cache.set(CacheKeys.CUSTOM_CONFIG, customConfig);
-  }
-
-  if (result.data.modelSpecs) {
-    customConfig.modelSpecs = result.data.modelSpecs;
-  }
-
-  return customConfig;
 }
 
 module.exports = loadCustomConfig;
