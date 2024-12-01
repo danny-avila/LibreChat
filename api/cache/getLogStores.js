@@ -78,6 +78,7 @@ const namespaces = {
   [ViolationTypes.ILLEGAL_MODEL_REQUEST]: createViolationInstance(
     ViolationTypes.ILLEGAL_MODEL_REQUEST,
   ),
+  [ViolationTypes.MODERATION]: createViolationInstance(ViolationTypes.MODERATION),
   logins: createViolationInstance('logins'),
   [CacheKeys.ABORT_KEYS]: abortKeys,
   [CacheKeys.TOKEN_CONFIG]: tokenConfig,

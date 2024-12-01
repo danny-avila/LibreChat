@@ -437,6 +437,100 @@ export const rateLimitSchema = z.object({
     .optional(),
 });
 
+const moderationSchema = z
+  .object({
+    categories: z
+      .object({
+        sexual: z
+          .object({
+            enabled: z.boolean().default(true),
+            threshold: z.number().min(0).max(1).default(0.7),
+          })
+          .optional(),
+        'sexual/minors': z
+          .object({
+            enabled: z.boolean().default(true),
+            threshold: z.number().min(0).max(1).default(0),
+          })
+          .optional(),
+        harassment: z
+          .object({
+            enabled: z.boolean().default(true),
+            threshold: z.number().min(0).max(1).default(0.7),
+          })
+          .optional(),
+        'harassment/threatening': z
+          .object({
+            enabled: z.boolean().default(true),
+            threshold: z.number().min(0).max(1).default(0.7),
+          })
+          .optional(),
+        hate: z
+          .object({
+            enabled: z.boolean().default(true),
+            threshold: z.number().min(0).max(1).default(0.7),
+          })
+          .optional(),
+        'hate/threatening': z
+          .object({
+            enabled: z.boolean().default(true),
+            threshold: z.number().min(0).max(1).default(0.7),
+          })
+          .optional(),
+        illicit: z
+          .object({
+            enabled: z.boolean().default(true),
+            threshold: z.number().min(0).max(1).default(0.7),
+          })
+          .optional(),
+        'illicit/violent': z
+          .object({
+            enabled: z.boolean().default(true),
+            threshold: z.number().min(0).max(1).default(0.7),
+          })
+          .optional(),
+        'self-harm': z
+          .object({
+            enabled: z.boolean().default(true),
+            threshold: z.number().min(0).max(1).default(0.7),
+          })
+          .optional(),
+        'self-harm/intent': z
+          .object({
+            enabled: z.boolean().default(true),
+            threshold: z.number().min(0).max(1).default(0.7),
+          })
+          .optional(),
+        'self-harm/instructions': z
+          .object({
+            enabled: z.boolean().default(true),
+            threshold: z.number().min(0).max(1).default(0.7),
+          })
+          .optional(),
+        violence: z
+          .object({
+            enabled: z.boolean().default(true),
+            threshold: z.number().min(0).max(1).default(0.7),
+          })
+          .optional(),
+        'violence/graphic': z
+          .object({
+            enabled: z.boolean().default(true),
+            threshold: z.number().min(0).max(1).default(0.7),
+          })
+          .optional(),
+      })
+      .optional(),
+    actions: z
+      .object({
+        violation: z.number().default(2),
+        blockMessage: z.boolean().default(true),
+        log: z.boolean().default(false),
+      })
+      .optional(),
+  })
+  .optional();
+
 export enum EImageOutputType {
   PNG = 'png',
   WEBP = 'webp',
@@ -487,6 +581,7 @@ export const configSchema = z.object({
       prompts: true,
     }),
   fileStrategy: fileSourceSchema.default(FileSources.local),
+  moderation: moderationSchema.optional(),
   registration: z
     .object({
       socialLogins: z.array(z.string()).optional(),
@@ -931,6 +1026,10 @@ export enum ViolationTypes {
    * Verify Conversation Access violation.
    */
   CONVO_ACCESS = 'convo_access',
+  /**
+   * Verify moderation LLM violation.
+   */
+  MODERATION = 'moderation',
 }
 
 /**
