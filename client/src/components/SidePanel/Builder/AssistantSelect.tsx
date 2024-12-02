@@ -37,6 +37,7 @@ const keys = new Set([
   'instructions',
   'conversation_starters',
   'model',
+  'append_today_date',
 ]);
 
 export default function AssistantSelect({
@@ -125,8 +126,11 @@ export default function AssistantSelect({
 
         const assistantDoc = documentsMap?.get(_assistant.id);
         /* If no user updates, use the latest assistant docs */
-        if (assistantDoc && !assistant.conversation_starters) {
-          assistant.conversation_starters = assistantDoc.conversation_starters;
+        if (assistantDoc) {
+          if (!assistant.conversation_starters) {
+            assistant.conversation_starters = assistantDoc.conversation_starters;
+          }
+          assistant.append_today_date = assistantDoc.append_today_date ?? false;
         }
 
         return assistant;
@@ -181,6 +185,11 @@ export default function AssistantSelect({
 
       Object.entries(assistant).forEach(([name, value]) => {
         if (!keys.has(name)) {
+          return;
+        }
+
+        if (name === 'append_today_date') {
+          formValues[name] = !!value;
           return;
         }
 

@@ -1,7 +1,8 @@
 const { removeNullishValues } = require('librechat-data-provider');
 const generateArtifactsPrompt = require('~/app/clients/prompts/artifacts');
+const { getAssistant } = require('~/models/Assistant');
 
-const buildOptions = (endpoint, parsedBody) => {
+const buildOptions = async (endpoint, parsedBody) => {
   // eslint-disable-next-line no-unused-vars
   const { promptPrefix, assistant_id, iconURL, greeting, spec, artifacts, ...modelOptions } =
     parsedBody;
@@ -14,6 +15,19 @@ const buildOptions = (endpoint, parsedBody) => {
     spec,
     modelOptions,
   });
+
+  if (assistant_id) {
+    const assistantDoc = await getAssistant({ assistant_id });
+    if (assistantDoc) {
+      endpointOption.assistant = {
+        append_today_date: assistantDoc.append_today_date,
+        assistant_id: assistantDoc.assistant_id,
+        conversation_starters: assistantDoc.conversation_starters,
+        createdAt: assistantDoc.createdAt,
+        updatedAt: assistantDoc.updatedAt,
+      };
+    }
+  }
 
   if (typeof artifacts === 'string') {
     endpointOption.artifactsPrompt = generateArtifactsPrompt({ endpoint, artifacts });
