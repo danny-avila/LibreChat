@@ -75,12 +75,10 @@ class AgentClient extends BaseClient {
       collectedUsage,
       artifactPromises,
       maxContextTokens,
-      modelOptions = {},
       ...clientOptions
     } = options;
 
     this.agentConfigs = agentConfigs;
-    this.modelOptions = modelOptions;
     this.maxContextTokens = maxContextTokens;
     /** @type {MessageContentComplex[]} */
     this.contentParts = contentParts;
@@ -90,6 +88,8 @@ class AgentClient extends BaseClient {
     this.artifactPromises = artifactPromises;
     /** @type {AgentClientOptions} */
     this.options = Object.assign({ endpoint: options.endpoint }, clientOptions);
+    /** @type {string} */
+    this.model = this.options.agent.model_parameters.model;
   }
 
   /**
@@ -179,7 +179,7 @@ class AgentClient extends BaseClient {
         : {};
 
     if (parseOptions) {
-      runOptions = parseOptions(this.modelOptions);
+      runOptions = parseOptions(this.options.agent.model_parameters);
     }
 
     return removeNullishValues(
@@ -351,7 +351,6 @@ class AgentClient extends BaseClient {
 
   /** @type {sendCompletion} */
   async sendCompletion(payload, opts = {}) {
-    this.modelOptions.user = this.user;
     await this.chatCompletion({
       payload,
       onProgress: opts.onProgress,
@@ -374,7 +373,7 @@ class AgentClient extends BaseClient {
           conversationId: this.conversationId,
           user: this.user ?? this.options.req.user?.id,
           endpointTokenConfig: this.options.endpointTokenConfig,
-          model: usage.model ?? model ?? this.modelOptions.model,
+          model: usage.model ?? model ?? this.model ?? this.options.agent.model_parameters.model,
         },
         { promptTokens: usage.input_tokens, completionTokens: usage.output_tokens },
       );
@@ -492,8 +491,7 @@ class AgentClient extends BaseClient {
       const config = {
         configurable: {
           thread_id: this.conversationId,
-          model: this.modelOptions.model,
-          last_agent_index: this.agentConfigs.size,
+          last_agent_index: this.agentConfigs?.size ?? 0,
           hide_sequential_outputs: this.options.agent.hide_sequential_outputs,
         },
         signal: abortController.signal,
@@ -517,12 +515,15 @@ class AgentClient extends BaseClient {
        * @param {TMessageContentParts[]} [contentData]
        */
       const runAgent = async (agent, messages, i = 0, contentData = []) => {
-        config.configurable.model = agent.modelOptions.model;
+        config.configurable.model = agent.model_parameters.model;
+        if (i > 0) {
+          this.model = agent.model_parameters.model;
+        }
         config.configurable.agent_id = agent.id;
         config.configurable.name = agent.name;
         config.configurable.agent_index = i;
         const noSystemMessages = noSystemModelRegex.some((regex) =>
-          agent.modelOptions.model.match(regex),
+          agent.model_parameters.model.match(regex),
         );
 
         const systemMessage = Object.values(agent.toolContextMap ?? {})
@@ -591,7 +592,7 @@ class AgentClient extends BaseClient {
       await runAgent(this.options.agent, initialMessages);
 
       let finalContentStart = 0;
-      if (this.agentConfigs.size > 0) {
+      if (this.agentConfigs && this.agentConfigs.size > 0) {
         let latestMessage = initialMessages.pop().content;
         if (typeof latestMessage !== 'string') {
           latestMessage = latestMessage[0].text;
@@ -763,7 +764,7 @@ class AgentClient extends BaseClient {
   }
 
   getEncoding() {
-    return this.modelOptions.model?.includes('gpt-4o') ? 'o200k_base' : 'cl100k_base';
+    return this.model?.includes('gpt-4o') ? 'o200k_base' : 'cl100k_base';
   }
 
   /**

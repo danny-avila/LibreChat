@@ -86,7 +86,7 @@ class BaseClient {
       return this.options.agent.id;
     }
 
-    return this.modelOptions.model;
+    return this.modelOptions?.model ?? this.model;
   }
 
   /**
@@ -510,7 +510,7 @@ class BaseClient {
           conversationId,
           parentMessageId: userMessage.messageId,
           isCreatedByUser: false,
-          model: this.modelOptions.model,
+          model: this.modelOptions?.model ?? this.model,
           sender: this.sender,
           text: generation,
         };
@@ -566,8 +566,8 @@ class BaseClient {
           user: this.user,
           tokenType: 'prompt',
           amount: promptTokens,
-          model: this.modelOptions.model,
           endpoint: this.options.endpoint,
+          model: this.modelOptions?.model ?? this.model,
           endpointTokenConfig: this.options.endpointTokenConfig,
         },
       });
@@ -915,8 +915,9 @@ class BaseClient {
     // Note: gpt-3.5-turbo and gpt-4 may update over time. Use default for these as well as for unknown models
     let tokensPerMessage = 3;
     let tokensPerName = 1;
+    const model = this.modelOptions?.model ?? this.model;
 
-    if (this.modelOptions.model === 'gpt-3.5-turbo-0301') {
+    if (model === 'gpt-3.5-turbo-0301') {
       tokensPerMessage = 4;
       tokensPerName = -1;
     }

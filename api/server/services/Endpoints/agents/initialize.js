@@ -86,7 +86,6 @@ const initializeAgentOptions = async ({
   });
 
   const provider = agent.provider;
-  let modelOptions = { model: agent.model };
   let getOptions = providerConfigMap[provider];
 
   if (!getOptions) {
@@ -99,34 +98,38 @@ const initializeAgentOptions = async ({
     agent.endpoint = provider.toLowerCase();
   }
 
-  const optionsEndpoint = isInitialAgent
+  const model_parameters = agent.model_parameters ?? { model: agent.model };
+  const _endpointOption = isInitialAgent
     ? endpointOption
     : {
-      model_parameters: agent.model_parameters ?? {},
+      model_parameters,
     };
 
   const options = await getOptions({
     req,
     res,
-    endpointOption: optionsEndpoint,
     optionsOnly: true,
     overrideEndpoint: provider,
     overrideModel: agent.model,
+    endpointOption: _endpointOption,
   });
 
-  modelOptions = Object.assign(modelOptions, options.llmConfig);
+  agent.model_parameters = Object.assign(model_parameters, options.llmConfig);
   if (options.configOptions) {
-    modelOptions.configuration = options.configOptions;
+    agent.model_parameters.configuration = options.configOptions;
+  }
+
+  if (!agent.model_parameters.model) {
+    agent.model_parameters.model = agent.model;
   }
 
   return {
     ...agent,
     tools,
-    modelOptions,
     toolContextMap,
     maxContextTokens:
       agent.max_context_tokens ??
-      getModelMaxTokens(modelOptions.model, providerEndpointMap[provider]) ??
+      getModelMaxTokens(agent.model_parameters.model, providerEndpointMap[provider]) ??
       4000,
   };
 };
@@ -207,7 +210,6 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     sender,
     attachments,
     contentParts,
-    modelOptions: primaryConfig.modelOptions,
     eventHandlers,
     collectedUsage,
     artifactPromises,

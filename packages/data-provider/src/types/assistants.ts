@@ -147,6 +147,7 @@ export type File = {
 export type AgentParameterValue = number | null;
 
 export type AgentModelParameters = {
+  model?: string;
   temperature: AgentParameterValue;
   max_context_tokens: AgentParameterValue;
   max_output_tokens: AgentParameterValue;

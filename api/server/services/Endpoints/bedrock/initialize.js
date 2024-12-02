@@ -33,8 +33,6 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     agent.instructions = `${agent.instructions ?? ''}\n${endpointOption.artifactsPrompt}`.trim();
   }
 
-  let modelOptions = { model: agent.model };
-
   // TODO: pass-in override settings that are specific to current run
   const options = await getOptions({
     req,
@@ -42,7 +40,10 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     endpointOption,
   });
 
-  modelOptions = Object.assign(modelOptions, options.llmConfig);
+  agent.model_parameters = Object.assign(agent.model_parameters, options.llmConfig);
+  if (options.configOptions) {
+    agent.model_parameters.configuration = options.configOptions;
+  }
 
   const sender =
     agent.name ??
@@ -56,7 +57,6 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     agent,
     sender,
     // tools,
-    modelOptions,
     contentParts,
     eventHandlers,
     collectedUsage,
@@ -66,7 +66,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     maxContextTokens:
       endpointOption.maxContextTokens ??
       agent.max_context_tokens ??
-      getModelMaxTokens(modelOptions.model, providerEndpointMap[agent.provider]) ??
+      getModelMaxTokens(agent.model_parameters.model, providerEndpointMap[agent.provider]) ??
       4000,
     attachments: endpointOption.attachments,
   });

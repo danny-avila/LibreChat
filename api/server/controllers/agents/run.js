@@ -38,7 +38,7 @@ async function createRun({
       streaming,
       streamUsage,
     },
-    agent.modelOptions,
+    agent.model_parameters,
   );
 
   /** @type {StandardGraphConfig} */
@@ -48,7 +48,7 @@ async function createRun({
     tools: agent.tools,
     instructions: agent.instructions,
     additional_instructions: agent.additional_instructions,
-    toolEnd: agent.end_after_tools,
+    // toolEnd: agent.end_after_tools,
   };
 
   // TEMPORARY FOR TESTING
