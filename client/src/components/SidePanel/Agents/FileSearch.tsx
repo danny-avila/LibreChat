@@ -67,7 +67,7 @@ export default function FileSearch({
   };
 
   return (
-    <div className="mb-6">
+    <div className="mb-4">
       <div className="mb-1.5 flex items-center gap-2">
         <span>
           <label className="text-token-text-primary block font-medium">
@@ -81,7 +81,7 @@ export default function FileSearch({
           <button
             type="button"
             disabled={!agent_id || fileSearchChecked === false}
-            className="btn btn-neutral border-token-border-light relative h-8 w-full rounded-lg font-medium"
+            className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
             onClick={handleButtonClick}
           >
             <div className="flex w-full items-center justify-center gap-1">

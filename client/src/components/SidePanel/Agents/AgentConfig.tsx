@@ -276,7 +276,7 @@ export default function AgentConfig({
           />
         </div>
         {/* Instructions */}
-        <div className="mb-6">
+        <div className="mb-4">
           <label className={labelClass} htmlFor="instructions">
             {localize('com_ui_instructions')}
           </label>
@@ -310,7 +310,7 @@ export default function AgentConfig({
           />
         </div>
         {/* Model and Provider */}
-        <div className="mb-6">
+        <div className="mb-4">
           <label className={labelClass} htmlFor="provider">
             {localize('com_ui_model')} <span className="text-red-500">*</span>
           </label>
@@ -341,7 +341,7 @@ export default function AgentConfig({
         {/* File Search */}
         {fileSearchEnabled && <FileSearch agent_id={agent_id} files={knowledge_files} />}
         {/* Agent Tools & Actions */}
-        <div className="mb-6">
+        <div className="mb-4">
           <label className={labelClass}>
             {`${toolsEnabled === true ? localize('com_ui_tools') : ''}
               ${toolsEnabled === true && actionsEnabled === true ? ' + ' : ''}
@@ -373,7 +373,7 @@ export default function AgentConfig({
                 <button
                   type="button"
                   onClick={() => setShowToolDialog(true)}
-                  className="btn btn-neutral border-token-border-light relative h-8 w-full rounded-lg font-medium"
+                  className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
                   aria-haspopup="dialog"
                 >
                   <div className="flex w-full items-center justify-center gap-2">
@@ -386,7 +386,7 @@ export default function AgentConfig({
                   type="button"
                   disabled={!agent_id}
                   onClick={handleAddActions}
-                  className="btn btn-neutral border-token-border-light relative h-8 w-full rounded-lg font-medium"
+                  className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
                   aria-haspopup="dialog"
                 >
                   <div className="flex w-full items-center justify-center gap-2">
@@ -416,7 +416,7 @@ export default function AgentConfig({
           )}
           {/* Submit Button */}
           <button
-            className="btn btn-primary focus:shadow-outline flex w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"
+            className="btn btn-primary focus:shadow-outline flex h-9 w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"
             type="submit"
             disabled={create.isLoading || update.isLoading}
             aria-busy={create.isLoading || update.isLoading}
