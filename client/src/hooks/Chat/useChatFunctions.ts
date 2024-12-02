@@ -174,6 +174,7 @@ export default function useChatFunctions({
     const currentMsg: TMessage = {
       text,
       sender: 'User',
+      clientTimestamp: new Date().toLocaleString('sv').replace(' ', 'T'),
       isCreatedByUser: true,
       parentMessageId,
       conversationId,

@@ -703,6 +703,9 @@ export default {
   com_assistants_knowledge_disabled:
     '지식으로 파일을 업로드하기 전에 Assistant를 생성하고 Code Interpreter 또는 Retrieval을 활성화한 후 저장해야 합니다.',
   com_assistants_image_vision: '이미지 인식',
+  com_assistants_append_date: '현재 날짜와 시간 추가',
+  com_assistants_append_date_tooltip:
+    '활성화하면 현재 클라이언트의 날짜와 시간이 어시스턴트의 시스템 지침에 추가됩니다.',
   com_assistants_code_interpreter: '코드 인터프리터',
   com_assistants_code_interpreter_files: '코드 인터프리터에서만 다음 파일을 사용할 수 있습니다:',
   com_assistants_retrieval: '검색',

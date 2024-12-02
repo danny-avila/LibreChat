@@ -30,6 +30,9 @@ export default {
   com_assistants_knowledge_disabled:
     'Bilgi olarak dosya yüklemeden önce, Asistan oluşturulmalı ve Kod Yorumlayıcı veya Geri Getirme etkinleştirilip kaydedilmelidir.',
   com_assistants_image_vision: 'Görüntü Vizyonu',
+  com_assistants_append_date: 'Şu anki tarih ve saati ekleyin',
+  com_assistants_append_date_tooltip:
+    'Etkinleştirildiğinde, şu anki müşteri tarihi ve saati, Asistanın sistem talimatlarına eklenir.',
   com_assistants_code_interpreter: 'Kod Yorumlayıcı',
   com_assistants_code_interpreter_files:
     'Aşağıdaki dosyalar yalnızca Kod Yorumlayıcı için kullanılabilir:',
