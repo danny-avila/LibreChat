@@ -76,7 +76,7 @@ export default function FileSearch({
         </span>
       </div>
       <FileSearchCheckbox />
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3">
         <div>
           <button
             type="button"
@@ -95,13 +95,13 @@ export default function FileSearch({
                 disabled={!agent_id || fileSearchChecked === false}
                 onChange={handleFileChange}
               />
-              {localize('com_ui_upload_files')}
+              {localize('com_ui_upload_file_search')}
             </div>
           </button>
         </div>
         {/* Disabled Message */}
         {agent_id ? null : (
-          <div className="text-sm text-text-secondary">
+          <div className="text-xs text-text-secondary">
             {localize('com_agents_file_search_disabled')}
           </div>
         )}
