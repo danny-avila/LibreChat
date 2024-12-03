@@ -332,7 +332,7 @@ export default function AgentConfig({
                   />
                 </div>
               )}
-              <span>{model != null ? model : localize('com_ui_select_model')}</span>
+              <span>{model != null && model ? model : localize('com_ui_select_model')}</span>
             </div>
           </button>
         </div>
