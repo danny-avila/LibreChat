@@ -31,14 +31,17 @@ export default function Parameters({
         : (providerOption as StringOption | undefined)?.value;
     return value ?? '';
   }, [providerOption]);
-  const models = useMemo(() => (provider ? modelsData[provider] : []), [modelsData, provider]);
+  const models = useMemo(
+    () => (provider ? modelsData[provider] ?? [] : []),
+    [modelsData, provider],
+  );
 
   useEffect(() => {
     const _model = model ?? '';
     if (provider && _model) {
       const modelExists = models.includes(_model);
       if (!modelExists) {
-        const newModels = modelsData[provider];
+        const newModels = modelsData[provider] ?? [];
         setValue('model', newModels[0] ?? '');
       }
     }
