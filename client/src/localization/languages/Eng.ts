@@ -106,6 +106,7 @@ export default {
   com_agents_description_placeholder: 'Optional: Describe your Agent here',
   com_agents_instructions_placeholder: 'The system instructions that the agent uses',
   com_agents_search_name: 'Search agents by name',
+  com_sidepanel_select_agent: 'Select an Agent',
   com_agents_update_error: 'There was an error updating your agent.',
   com_agents_create_error: 'There was an error creating your agent.',
   com_agents_missing_provider_model: 'Please select a provider and model before creating an agent.',
