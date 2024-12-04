@@ -111,7 +111,7 @@ class STTService {
       'Content-Type': 'multipart/form-data',
       ...(apiKey && { Authorization: `Bearer ${apiKey}` }),
     };
-    [headers].forEach(this.removeUndefined);
+    this.removeUndefined(headers);
 
     return [url, data, headers];
   }
@@ -234,7 +234,7 @@ class STTService {
    * @throws {Error} If the provider is invalid, the response status is not 200, or the response data is missing.
    */
   async sttRequest(provider, sttSchema, { audioBuffer, audioFile }) {
-    const useSDK = this.shouldUseSDK(provider, sttSchema);
+    const useSDK = this.shouldUseSDK(provider);
     const strategy = useSDK ? this.sdkStrategies[provider] : this.apiStrategies[provider];
 
     if (!strategy) {
@@ -242,26 +242,25 @@ class STTService {
     }
 
     const audioReadStream = Readable.from(audioBuffer);
-    audioReadStream.path = 'audio.wav';
 
     if (useSDK) {
       return strategy.call(this, sttSchema, audioReadStream, audioFile);
-    } else {
-      const [url, data, headers] = strategy.call(this, sttSchema, audioReadStream, audioFile);
+    }
 
-      try {
-        const response = await axios.post(url, data, { headers });
-        if (response.status !== 200) {
-          throw new Error('Invalid response from the STT API');
-        }
-        if (!response.data || !response.data.text) {
-          throw new Error('Missing data in response from the STT API');
-        }
-        return response.data.text.trim();
-      } catch (error) {
-        logger.error(`STT request failed for provider ${provider}:`, error);
-        throw error;
+    const [url, data, headers] = strategy.call(this, sttSchema, audioReadStream);
+
+    try {
+      const response = await axios.post(url, data, { headers });
+      if (response.status !== 200) {
+        throw new Error('Invalid response from the STT API');
       }
+      if (!response.data || !response.data.text) {
+        throw new Error('Missing data in response from the STT API');
+      }
+      return response.data.text.trim();
+    } catch (error) {
+      logger.error(`STT request failed for provider ${provider}:`, error);
+      throw error;
     }
   }
 
@@ -294,9 +293,9 @@ class STTService {
     } finally {
       try {
         await fs.unlink(req.file.path);
-        logger.debug('[/speech/stt] Temp. audio upload file deleted');
+        logger.debug('[/speech/stt] Temporary audio upload file deleted');
       } catch (error) {
-        logger.debug('[/speech/stt] Temp. audio upload file already deleted');
+        logger.debug('[/speech/stt] Temporary audio upload file already deleted');
       }
     }
   }
