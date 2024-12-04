@@ -528,7 +528,7 @@ export default {
   com_endpoint_preset_default_item: 'الافتراضي:',
   com_endpoint_preset_default_none: 'لا يوجد إعداد مسبق افتراضي نشط.',
   com_endpoint_preset_title: 'إعداد مسبق',
-  com_endpoint_preset_saved: 'تم الحفظ!',
+  com_ui_saved: 'تم الحفظ!',
   com_endpoint_preset_default: 'أصبح الإعداد المسبق الافتراضي الآن.',
   com_endpoint_preset_selected: 'الإعداد المسبق نشط!',
   com_endpoint_preset_selected_title: 'مُحدَّد!',
@@ -644,7 +644,7 @@ export default {
   com_agents_file_search_info:
     'عند التمكين، سيتم إعلام الوكيل بأسماء الملفات المدرجة أدناه بالضبط، مما يتيح له استرجاع السياق ذي الصلة من هذه الملفات.',
   com_ui_agent_already_shared_to_all: 'هذا المساعد مشارك بالفعل مع جميع المستخدمين',
-  com_agents_execute_code: 'تنفيذ الشفرة',
+  com_ui_run_code: 'تنفيذ الشفرة',
   com_ui_no_changes: 'لا توجد تغييرات للتحديث',
   com_ui_agent_editing_allowed: 'يمكن للمستخدمين الآخرين تعديل هذا الوكيل بالفعل',
   com_ui_error_connection: 'خطأ في الاتصال بالخادم، حاول تحديث الصفحة.',

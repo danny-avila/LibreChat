@@ -875,7 +875,7 @@ Write a prompt that is mindful of the nuances in the language with respect to it
   - **english**: Preset
   - **translated**: הגדרה מראש
 
-- **com_endpoint_preset_saved**:
+- **com_ui_saved**:
   - **english**: Saved!
   - **translated**: שמור!
 

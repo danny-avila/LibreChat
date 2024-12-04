@@ -7,6 +7,7 @@ const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { forkConversation } = require('~/server/utils/import/fork');
 const { importConversations } = require('~/server/utils/import');
 const { createImportLimiters } = require('~/server/middleware');
+const { deleteToolCalls } = require('~/models/ToolCall');
 const getLogStores = require('~/cache/getLogStores');
 const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
@@ -105,6 +106,7 @@ router.post('/clear', async (req, res) => {
 
   try {
     const dbResponse = await deleteConvos(req.user.id, filter);
+    await deleteToolCalls(req.user.id, filter.conversationId);
     res.status(201).json(dbResponse);
   } catch (error) {
     logger.error('Error clearing conversations', error);

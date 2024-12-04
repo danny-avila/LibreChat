@@ -257,7 +257,7 @@ export default {
   com_endpoint_preset_default_item: 'Par défaut :',
   com_endpoint_preset_default_none: 'Aucun préréglage par défaut actif.',
   com_endpoint_preset_title: 'Préréglage',
-  com_endpoint_preset_saved: 'Enregistré!',
+  com_ui_saved: 'Enregistré!',
   com_endpoint_preset_default: 'est maintenant le préréglage par défaut.',
   com_endpoint_preset: 'préréglage',
   com_endpoint_presets: 'préréglages',
@@ -794,7 +794,7 @@ export default {
   com_agents_enable_file_search: 'Activer la recherche de fichiers',
   com_agents_file_search_info:
     'Lorsque cette option est activée, l\'agent sera informé des noms exacts des fichiers listés ci-dessous, lui permettant d\'extraire le contexte pertinent de ces fichiers.',
-  com_agents_execute_code: 'Exécuter le code',
+  com_ui_run_code: 'Exécuter le code',
   com_agents_file_search_disabled:
     'L\'agent doit être créé avant de pouvoir télécharger des fichiers pour la Recherche de Fichiers.',
   com_ui_agent_already_shared_to_all: 'Cet agent est déjà partagé avec tous les utilisateurs',

@@ -82,11 +82,12 @@ export default function Message(props: TMessageProps) {
               <div className="flex-col gap-1 md:gap-3">
                 <div className="flex max-w-full flex-grow flex-col gap-0">
                   <ContentParts
-                    content={message.content as Array<TMessageContentParts | undefined>}
-                    messageId={message.messageId}
-                    isCreatedByUser={message.isCreatedByUser}
                     isLast={isLast}
                     isSubmitting={isSubmitting}
+                    messageId={message.messageId}
+                    isCreatedByUser={message.isCreatedByUser}
+                    conversationId={conversation?.conversationId}
+                    content={message.content as Array<TMessageContentParts | undefined>}
                   />
                 </div>
               </div>

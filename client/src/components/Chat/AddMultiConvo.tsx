@@ -5,7 +5,6 @@ import { useChatContext, useAddedChatContext } from '~/Providers';
 import { TooltipAnchor } from '~/components';
 import { mainTextareaId } from '~/common';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 
 function AddMultiConvo() {
   const { conversation } = useChatContext();

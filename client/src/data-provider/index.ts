@@ -1,3 +1,4 @@
+export * from './Agents';
 export * from './Files';
 export * from './Tools';
 export * from './connection';

@@ -350,7 +350,7 @@ export default {
   com_endpoint_preset_default_item: 'Predeterminado:',
   com_endpoint_preset_default_none: 'No hay configuración preestablecida predeterminada activa.',
   com_endpoint_preset_title: 'Configuración preestablecida',
-  com_endpoint_preset_saved: '¡Guardado!',
+  com_ui_saved: '¡Guardado!',
   com_endpoint_preset_default: 'es ahora la configuración preestablecida predeterminada.',
   com_endpoint_preset: 'configuración preestablecida',
   com_endpoint_presets: 'configuraciones preestablecidas',
@@ -716,7 +716,7 @@ export default {
   com_agents_file_search_disabled:
     'Es necesario crear el Agente antes de subir archivos para la Búsqueda de Archivos.',
 
-  com_agents_execute_code: 'Ejecutar código',
+  com_ui_run_code: 'Ejecutar código',
 
   com_ui_agent_already_shared_to_all: 'Este asistente ya está compartido con todos los usuarios',
 
