@@ -145,11 +145,12 @@ const loadToolWithAuth = (userId, authFields, ToolConstructor, options = {}) => 
 const loadTools = async ({
   user,
   model,
-  functions = true,
-  returnMap = false,
+  isAgent,
+  useSpecs,
   tools = [],
   options = {},
-  useSpecs,
+  functions = true,
+  returnMap = false,
 }) => {
   const toolConstructors = {
     calculator: Calculator,
@@ -182,6 +183,7 @@ const loadTools = async ({
   }
 
   const imageGenOptions = {
+    isAgent,
     req: options.req,
     fileStrategy: options.fileStrategy,
     processFileURL: options.processFileURL,

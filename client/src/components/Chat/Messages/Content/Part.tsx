@@ -26,7 +26,6 @@ type PartProps = {
 };
 
 const Part = memo(({ part, isSubmitting, attachments, showCursor, isCreatedByUser }: PartProps) => {
-  attachments && console.log(attachments);
   if (!part) {
     return null;
   }
@@ -70,10 +69,11 @@ const Part = memo(({ part, isSubmitting, attachments, showCursor, isCreatedByUse
       return (
         <ToolCall
           args={toolCall.args ?? ''}
-          name={toolCall.name ?? ''}
+          name={toolCall.name || ''}
           output={toolCall.output ?? ''}
           initialProgress={toolCall.progress ?? 0.1}
           isSubmitting={isSubmitting}
+          attachments={attachments}
         />
       );
     } else if (toolCall.type === ToolCallTypes.CODE_INTERPRETER) {

@@ -1,8 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const { zodToJsonSchema } = require('zod-to-json-schema');
-const { Calculator } = require('@langchain/community/tools/calculator');
 const { tool: toolFn, Tool } = require('@langchain/core/tools');
+const { Calculator } = require('@langchain/community/tools/calculator');
 const {
   Tools,
   ContentTypes,
@@ -382,13 +382,14 @@ async function loadAgentTools({ req, agent_id, tools, tool_resources, openAIApiK
     // model: req.body.model ?? 'gpt-4o-mini',
     tools,
     functions: true,
+    isAgent: agent_id != null,
     options: {
       req,
       openAIApiKey,
       tool_resources,
-      returnMetadata: true,
       processFileURL,
       uploadImageBuffer,
+      returnMetadata: true,
       fileStrategy: req.app.locals.fileStrategy,
     },
   });
@@ -401,16 +402,19 @@ async function loadAgentTools({ req, agent_id, tools, tool_resources, openAIApiK
       continue;
     }
 
-    const toolInstance = toolFn(
-      async (...args) => {
-        return tool['_call'](...args);
-      },
-      {
-        name: tool.name,
-        description: tool.description,
-        schema: tool.schema,
-      },
-    );
+    const toolDefinition = {
+      name: tool.name,
+      schema: tool.schema,
+      description: tool.description,
+    };
+
+    if (imageGenTools.has(tool.name)) {
+      toolDefinition.responseFormat = 'content_and_artifact';
+    }
+
+    const toolInstance = toolFn(async (...args) => {
+      return tool['_call'](...args);
+    }, toolDefinition);
 
     agentTools.push(toolInstance);
   }

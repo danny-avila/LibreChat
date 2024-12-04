@@ -1,12 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { useRecoilValue } from 'recoil';
-import { CodeInProgress } from './CodeProgress';
-import { imageExtRegex } from 'librechat-data-provider';
-import type { TFile, TAttachment, TAttachmentMetadata } from 'librechat-data-provider';
+import type { TAttachment } from 'librechat-data-provider';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
 import FinishedIcon from '~/components/Chat/Messages/Content/FinishedIcon';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
-import Image from '~/components/Chat/Messages/Content/Image';
+import { CodeInProgress } from './CodeProgress';
+import Attachment from './Attachment';
 import LogContent from './LogContent';
 import { useProgress } from '~/hooks';
 import store from '~/store';
@@ -106,25 +105,9 @@ export default function ExecuteCode({
           )}
         </div>
       )}
-      {attachments?.map((attachment, index) => {
-        const { width, height, filepath = null } = attachment as TFile & TAttachmentMetadata;
-        const isImage =
-          imageExtRegex.test(attachment.filename) &&
-          width != null &&
-          height != null &&
-          filepath != null;
-        if (isImage) {
-          return (
-            <Image
-              key={index}
-              altText={attachment.filename}
-              imagePath={filepath}
-              height={height}
-              width={width}
-            />
-          );
-        }
-      })}
+      {attachments?.map((attachment, index) => (
+        <Attachment attachment={attachment} key={index} />
+      ))}
     </>
   );
 }

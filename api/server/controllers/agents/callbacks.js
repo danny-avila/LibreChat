@@ -1,4 +1,4 @@
-const { Tools, StepTypes } = require('librechat-data-provider');
+const { Tools, StepTypes, imageGenTools } = require('librechat-data-provider');
 const {
   EnvVar,
   GraphEvents,
@@ -191,16 +191,41 @@ function createToolEndCallback({ req, res, artifactPromises }) {
       return;
     }
 
+    if (imageGenTools.has(output.name) && output.artifact) {
+      artifactPromises.push(
+        (async () => {
+          const fileMetadata = Object.assign(output.artifact, {
+            messageId: metadata.run_id,
+            toolCallId: output.tool_call_id,
+            conversationId: metadata.thread_id,
+          });
+          if (!res.headersSent) {
+            return fileMetadata;
+          }
+
+          if (!fileMetadata) {
+            return null;
+          }
+
+          res.write(`event: attachment\ndata: ${JSON.stringify(fileMetadata)}\n\n`);
+          return fileMetadata;
+        })().catch((error) => {
+          logger.error('Error processing code output:', error);
+          return null;
+        }),
+      );
+      return;
+    }
+
     if (output.name !== Tools.execute_code) {
       return;
     }
 
-    const { tool_call_id, artifact } = output;
-    if (!artifact.files) {
+    if (!output.artifact.files) {
       return;
     }
 
-    for (const file of artifact.files) {
+    for (const file of output.artifact.files) {
       const { id, name } = file;
       artifactPromises.push(
         (async () => {
@@ -213,10 +238,10 @@ function createToolEndCallback({ req, res, artifactPromises }) {
             id,
             name,
             apiKey: result[EnvVar.CODE_API_KEY],
-            toolCallId: tool_call_id,
             messageId: metadata.run_id,
-            session_id: artifact.session_id,
+            toolCallId: output.tool_call_id,
             conversationId: metadata.thread_id,
+            session_id: output.artifact.session_id,
           });
           if (!res.headersSent) {
             return fileMetadata;
