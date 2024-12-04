@@ -211,4 +211,11 @@ const getCacheMultiplier = ({ valueKey, cacheType, model, endpoint, endpointToke
   return cacheTokenValues[valueKey]?.[cacheType] ?? null;
 };
 
-module.exports = { tokenValues, getValueKey, getMultiplier, getCacheMultiplier, defaultRate };
+module.exports = {
+  tokenValues,
+  getValueKey,
+  getMultiplier,
+  getCacheMultiplier,
+  defaultRate,
+  cacheTokenValues,
+};
