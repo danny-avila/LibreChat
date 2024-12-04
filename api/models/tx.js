@@ -30,6 +30,9 @@ const bedrockValues = {
   'amazon.titan-text-lite-v1': { prompt: 0.15, completion: 0.2 },
   'amazon.titan-text-express-v1': { prompt: 0.2, completion: 0.6 },
   'amazon.titan-text-premier-v1:0': { prompt: 0.5, completion: 1.5 },
+  'amazon.nova-micro-v1:0': { prompt: 0.035, completion: 0.14 },
+  'amazon.nova-lite-v1:0': { prompt: 0.06, completion: 0.24 },
+  'amazon.nova-pro-v1:0': { prompt: 0.8, completion: 3.2 },
 };
 
 /**
