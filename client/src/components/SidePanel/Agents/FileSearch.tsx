@@ -67,7 +67,7 @@ export default function FileSearch({
   };
 
   return (
-    <div className="mb-4">
+    <div className="w-full">
       <div className="mb-1.5 flex items-center gap-2">
         <span>
           <label className="text-token-text-primary block font-medium">

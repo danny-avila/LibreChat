@@ -336,10 +336,17 @@ export default function AgentConfig({
             </div>
           </button>
         </div>
-        {/* Code Execution */}
-        {codeEnabled && <CodeForm agent_id={agent_id} files={code_files} />}
-        {/* File Search */}
-        {fileSearchEnabled && <FileSearch agent_id={agent_id} files={knowledge_files} />}
+        {(codeEnabled || fileSearchEnabled) && (
+          <div className="mb-4 flex w-full flex-col items-start gap-3">
+            <label className="text-token-text-primary block font-medium">
+              {localize('com_assistants_capabilities')}
+            </label>
+            {/* Code Execution */}
+            {codeEnabled && <CodeForm agent_id={agent_id} files={code_files} />}
+            {/* File Search */}
+            {fileSearchEnabled && <FileSearch agent_id={agent_id} files={knowledge_files} />}
+          </div>
+        )}
         {/* Agent Tools & Actions */}
         <div className="mb-4">
           <label className={labelClass}>

@@ -93,7 +93,7 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
             <HoverCardContent side={ESide.Top} className="w-80">
               <div className="space-y-2">
                 <p className="text-sm text-text-secondary">
-                  {/* // TODO: add a Code Interpreter description */}
+                  {localize('com_agents_code_interpreter')}
                 </p>
               </div>
             </HoverCardContent>
