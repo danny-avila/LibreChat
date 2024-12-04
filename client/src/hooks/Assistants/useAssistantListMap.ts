@@ -16,7 +16,7 @@ export default function useAssistantListMap<T = AssistantListItem[] | null>(
   selector: (res: AssistantListResponse) => T = selectAssistantsResponse as (
     res: AssistantListResponse,
   ) => T,
-): Record<AssistantsEndpoint, T> {
+): Record<AssistantsEndpoint, T | null> {
   const { data: assistantsList = null } = useListAssistantsQuery(
     EModelEndpoint.assistants,
     undefined,

@@ -314,6 +314,30 @@ export const getVerifyAgentToolAuth = (
   );
 };
 
+export const callTool = <T extends m.ToolId>({
+  toolId,
+  toolParams,
+}: {
+  toolId: T;
+  toolParams: m.ToolParams<T>;
+}): Promise<m.ToolCallResponse> => {
+  return request.post(
+    endpoints.agents({
+      path: `tools/${toolId}/call`,
+    }),
+    toolParams,
+  );
+};
+
+export const getToolCalls = (params: q.GetToolCallParams): Promise<q.ToolCallResults> => {
+  return request.get(
+    endpoints.agents({
+      path: 'tools/calls',
+      options: params,
+    }),
+  );
+};
+
 /* Files */
 
 export const getFiles = (): Promise<f.TFile[]> => {
@@ -669,8 +693,14 @@ export function getRole(roleName: string): Promise<r.TRole> {
 
 export function updatePromptPermissions(
   variables: m.UpdatePromptPermVars,
-): Promise<m.UpdatePromptPermResponse> {
+): Promise<m.UpdatePermResponse> {
   return request.put(endpoints.updatePromptPermissions(variables.roleName), variables.updates);
+}
+
+export function updateAgentPermissions(
+  variables: m.UpdateAgentPermVars,
+): Promise<m.UpdatePermResponse> {
+  return request.put(endpoints.updateAgentPermissions(variables.roleName), variables.updates);
 }
 
 /* Tags */

@@ -251,7 +251,7 @@ export default {
   com_endpoint_preset_default_item: 'По умолчанию:',
   com_endpoint_preset_default_none: 'Активных пресетов по умолчанию нет.',
   com_endpoint_preset_title: 'Пресет',
-  com_endpoint_preset_saved: 'Сохранено!',
+  com_ui_saved: 'Сохранено!',
   com_endpoint_preset_default: 'теперь пресет "По умолчаанию".',
   com_endpoint_preset: 'пресет',
   com_endpoint_presets: 'пресеты',
@@ -699,7 +699,7 @@ export default {
 
   com_agents_file_search_disabled: 'Для загрузки файлов в Поиск необходимо сначала создать агента',
 
-  com_agents_execute_code: 'Выполнить код',
+  com_ui_run_code: 'Выполнить код',
 
   com_ui_agent_editing_allowed: 'Другие пользователи уже могут редактировать этого ассистента',
 

@@ -57,8 +57,29 @@
  */
 
 /**
+ * @exports BaseMessage
+ * @typedef {import('@langchain/core/messages').BaseMessage} BaseMessage
+ * @memberof typedefs
+ */
+
+/**
  * @exports UsageMetadata
  * @typedef {import('@langchain/core/messages').UsageMetadata} UsageMetadata
+ * @memberof typedefs
+ */
+
+/**
+ * @exports GraphRunnableConfig
+ * @typedef {import('@langchain/core/runnables').RunnableConfig<{
+ *  req: ServerRequest;
+ * thread_id: string;
+ * run_id: string;
+ * agent_id: string;
+ * name: string;
+ * agent_index: number;
+ * last_agent_index: number;
+ * hide_sequential_outputs: boolean;
+ * }>} GraphRunnableConfig
  * @memberof typedefs
  */
 
@@ -690,6 +711,12 @@
  */
 
 /**
+ * @exports ToolCallData
+ * @typedef {import('~/models/schema/toolCallSchema.js').ToolCallData} ToolCallData
+ * @memberof typedefs
+ */
+
+/**
  * @exports MongoUser
  * @typedef {import('~/models/schema/userSchema.js').MongoUser} MongoUser
  * @memberof typedefs
@@ -800,6 +827,12 @@
 /**
  * @exports Agent
  * @typedef {import('librechat-data-provider').Agent} Agent
+ * @memberof typedefs
+ */
+
+/**
+ * @exports AgentToolResources
+ * @typedef {import('librechat-data-provider').AgentToolResources} AgentToolResources
  * @memberof typedefs
  */
 

@@ -283,7 +283,7 @@ export default {
   com_endpoint_preset_default_item: 'ברירת מחדל:',
   com_endpoint_preset_default_none: 'אין ברירת מחדל פעילה.',
   com_endpoint_preset_title: 'הגדרה מראש',
-  com_endpoint_preset_saved: 'שמור!',
+  com_ui_saved: 'שמור!',
   com_endpoint_preset_default: 'הוא כעת ברירת המחדל המוגדרת מראש.',
   com_endpoint_preset: 'preset',
   com_endpoint_presets: 'presets',

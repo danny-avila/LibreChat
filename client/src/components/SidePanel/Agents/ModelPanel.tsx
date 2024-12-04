@@ -31,14 +31,17 @@ export default function Parameters({
         : (providerOption as StringOption | undefined)?.value;
     return value ?? '';
   }, [providerOption]);
-  const models = useMemo(() => (provider ? modelsData[provider] : []), [modelsData, provider]);
+  const models = useMemo(
+    () => (provider ? modelsData[provider] ?? [] : []),
+    [modelsData, provider],
+  );
 
   useEffect(() => {
     const _model = model ?? '';
     if (provider && _model) {
       const modelExists = models.includes(_model);
       if (!modelExists) {
-        const newModels = modelsData[provider];
+        const newModels = modelsData[provider] ?? [];
         setValue('model', newModels[0] ?? '');
       }
     }
@@ -105,14 +108,16 @@ export default function Parameters({
                 <SelectDropDown
                   emptyTitle={true}
                   value={field.value ?? ''}
+                  title={localize('com_ui_provider')}
                   placeholder={localize('com_ui_select_provider')}
+                  searchPlaceholder={localize('com_ui_select_search_provider')}
                   setValue={field.onChange}
                   availableValues={providers}
                   showAbove={false}
                   showLabel={false}
                   className={cn(
                     cardStyle,
-                    'flex h-[40px] w-full flex-none items-center justify-center border-none px-4 hover:cursor-pointer',
+                    'flex h-9 w-full flex-none items-center justify-center border-none px-4 hover:cursor-pointer',
                     (field.value === undefined || field.value === '') &&
                       'border-2 border-yellow-400',
                   )}
