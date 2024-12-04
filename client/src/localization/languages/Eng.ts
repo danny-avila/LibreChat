@@ -185,6 +185,7 @@ export default {
   com_ui_select_provider: 'Select a provider',
   com_ui_select_provider_first: 'Select a provider first',
   com_ui_select_search_model: 'Search model by name',
+  com_ui_select_search_provider: 'Search provider by name',
   com_ui_select_search_region: 'Search region by name',
   com_ui_select_search_plugin: 'Search plugin by name',
   com_ui_use_prompt: 'Use prompt',
