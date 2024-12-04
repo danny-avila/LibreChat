@@ -7,8 +7,15 @@ jest.mock('~/models/Role', () => ({
 }));
 
 describe('loadDefaultInterface', () => {
-  it('should call updateAccessPermissions with the correct parameters when prompts and bookmarks are true', async () => {
-    const config = { interface: { prompts: true, bookmarks: true } };
+  it('should call updateAccessPermissions with the correct parameters when permission types are true', async () => {
+    const config = {
+      interface: {
+        prompts: true,
+        bookmarks: true,
+        multiConvo: true,
+        agents: true,
+      },
+    };
     const configDefaults = { interface: {} };
 
     await loadDefaultInterface(config, configDefaults);
@@ -16,12 +23,20 @@ describe('loadDefaultInterface', () => {
     expect(updateAccessPermissions).toHaveBeenCalledWith(SystemRoles.USER, {
       [PermissionTypes.PROMPTS]: { [Permissions.USE]: true },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
-      [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: undefined },
+      [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
+      [PermissionTypes.AGENTS]: { [Permissions.USE]: true },
     });
   });
 
-  it('should call updateAccessPermissions with false when prompts and bookmarks are false', async () => {
-    const config = { interface: { prompts: false, bookmarks: false } };
+  it('should call updateAccessPermissions with false when permission types are false', async () => {
+    const config = {
+      interface: {
+        prompts: false,
+        bookmarks: false,
+        multiConvo: false,
+        agents: false,
+      },
+    };
     const configDefaults = { interface: {} };
 
     await loadDefaultInterface(config, configDefaults);
@@ -29,11 +44,12 @@ describe('loadDefaultInterface', () => {
     expect(updateAccessPermissions).toHaveBeenCalledWith(SystemRoles.USER, {
       [PermissionTypes.PROMPTS]: { [Permissions.USE]: false },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
-      [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: undefined },
+      [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: false },
+      [PermissionTypes.AGENTS]: { [Permissions.USE]: false },
     });
   });
 
-  it('should call updateAccessPermissions with undefined when prompts and bookmarks are not specified in config', async () => {
+  it('should call updateAccessPermissions with undefined when permission types are not specified in config', async () => {
     const config = {};
     const configDefaults = { interface: {} };
 
@@ -43,11 +59,19 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.PROMPTS]: { [Permissions.USE]: undefined },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: undefined },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: undefined },
+      [PermissionTypes.AGENTS]: { [Permissions.USE]: undefined },
     });
   });
 
-  it('should call updateAccessPermissions with undefined when prompts and bookmarks are explicitly undefined', async () => {
-    const config = { interface: { prompts: undefined, bookmarks: undefined } };
+  it('should call updateAccessPermissions with undefined when permission types are explicitly undefined', async () => {
+    const config = {
+      interface: {
+        prompts: undefined,
+        bookmarks: undefined,
+        multiConvo: undefined,
+        agents: undefined,
+      },
+    };
     const configDefaults = { interface: {} };
 
     await loadDefaultInterface(config, configDefaults);
@@ -56,11 +80,19 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.PROMPTS]: { [Permissions.USE]: undefined },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: undefined },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: undefined },
+      [PermissionTypes.AGENTS]: { [Permissions.USE]: undefined },
     });
   });
 
-  it('should call updateAccessPermissions with mixed values for prompts and bookmarks', async () => {
-    const config = { interface: { prompts: true, bookmarks: false } };
+  it('should call updateAccessPermissions with mixed values for permission types', async () => {
+    const config = {
+      interface: {
+        prompts: true,
+        bookmarks: false,
+        multiConvo: undefined,
+        agents: true,
+      },
+    };
     const configDefaults = { interface: {} };
 
     await loadDefaultInterface(config, configDefaults);
@@ -69,19 +101,28 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.PROMPTS]: { [Permissions.USE]: true },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: undefined },
+      [PermissionTypes.AGENTS]: { [Permissions.USE]: true },
     });
   });
 
   it('should call updateAccessPermissions with true when config is undefined', async () => {
     const config = undefined;
-    const configDefaults = { interface: { prompts: true, bookmarks: true } };
+    const configDefaults = {
+      interface: {
+        prompts: true,
+        bookmarks: true,
+        multiConvo: true,
+        agents: true,
+      },
+    };
 
     await loadDefaultInterface(config, configDefaults);
 
     expect(updateAccessPermissions).toHaveBeenCalledWith(SystemRoles.USER, {
       [PermissionTypes.PROMPTS]: { [Permissions.USE]: true },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
-      [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: undefined },
+      [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
+      [PermissionTypes.AGENTS]: { [Permissions.USE]: true },
     });
   });
 
@@ -95,6 +136,7 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.PROMPTS]: { [Permissions.USE]: undefined },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: undefined },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
+      [PermissionTypes.AGENTS]: { [Permissions.USE]: undefined },
     });
   });
 
@@ -108,6 +150,7 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.PROMPTS]: { [Permissions.USE]: undefined },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: undefined },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: false },
+      [PermissionTypes.AGENTS]: { [Permissions.USE]: undefined },
     });
   });
 
@@ -121,11 +164,19 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.PROMPTS]: { [Permissions.USE]: undefined },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: undefined },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: undefined },
+      [PermissionTypes.AGENTS]: { [Permissions.USE]: undefined },
     });
   });
 
   it('should call updateAccessPermissions with all interface options including multiConvo', async () => {
-    const config = { interface: { prompts: true, bookmarks: false, multiConvo: true } };
+    const config = {
+      interface: {
+        prompts: true,
+        bookmarks: false,
+        multiConvo: true,
+        agents: false,
+      },
+    };
     const configDefaults = { interface: {} };
 
     await loadDefaultInterface(config, configDefaults);
@@ -134,12 +185,20 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.PROMPTS]: { [Permissions.USE]: true },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
+      [PermissionTypes.AGENTS]: { [Permissions.USE]: false },
     });
   });
 
   it('should use default values for multiConvo when config is undefined', async () => {
     const config = undefined;
-    const configDefaults = { interface: { prompts: true, bookmarks: true, multiConvo: false } };
+    const configDefaults = {
+      interface: {
+        prompts: true,
+        bookmarks: true,
+        multiConvo: false,
+        agents: undefined,
+      },
+    };
 
     await loadDefaultInterface(config, configDefaults);
 
@@ -147,6 +206,7 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.PROMPTS]: { [Permissions.USE]: true },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: false },
+      [PermissionTypes.AGENTS]: { [Permissions.USE]: undefined },
     });
   });
 });

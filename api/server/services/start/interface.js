@@ -32,6 +32,7 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
     bookmarks: interfaceConfig?.bookmarks ?? defaults.bookmarks,
     prompts: interfaceConfig?.prompts ?? defaults.prompts,
     multiConvo: interfaceConfig?.multiConvo ?? defaults.multiConvo,
+    agents: interfaceConfig?.agents ?? defaults.agents,
   });
 
   await updateAccessPermissions(roleName, {
