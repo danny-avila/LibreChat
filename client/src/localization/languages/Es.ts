@@ -19,6 +19,9 @@ export default {
   com_assistants_knowledge_disabled:
     'El Asistente debe ser creado, y el Intérprete de Código o la Recuperación deben estar habilitados y guardados antes de subir archivos como Conocimiento.',
   com_assistants_image_vision: 'Visión de Imagen',
+  com_assistants_append_date: 'Añadir Fecha y Hora Actual',
+  com_assistants_append_date_tooltip:
+    'Cuando está habilitado, la fecha y hora actual del cliente se adjuntarán a las instrucciones del sistema del asistente.',
   com_assistants_code_interpreter: 'Intérprete de Código',
   com_assistants_code_interpreter_files:
     'Los siguientes archivos solo están disponibles para el Intérprete de Código:',

@@ -479,6 +479,9 @@ export default {
   com_assistants_knowledge_disabled:
     'L\'assistant doit être créé, et l\'interpréteur de code ou la récupération doivent être activés et enregistrés avant de pouvoir importer des fichiers en tant que connaissances.',
   com_assistants_image_vision: 'Vision d\'image',
+  com_assistants_append_date: 'Ajouter la date et l\'heure actuelles',
+  com_assistants_append_date_tooltip:
+    'Lorsque activé, la date et l\'heure actuelles du client seront ajoutées aux instructions du système de l\'assistant.',
   com_assistants_code_interpreter: 'Interpréteur de code',
   com_assistants_code_interpreter_files:
     'Les fichiers suivants sont disponibles uniquement pour l\'interpréteur de code :',

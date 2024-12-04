@@ -27,6 +27,9 @@ export default {
   com_assistants_knowledge_disabled:
     'L\'Assistente deve essere creato, e Code Interpreter o Retrieval devono essere abilitati e salvati prima di caricare file come Conoscenza.',
   com_assistants_image_vision: 'Visione Immagine',
+  com_assistants_append_date: 'Aggiungi Data e Ora Attuali',
+  com_assistants_append_date_tooltip:
+    'Quando attivo, la data e l\'ora attuali del cliente saranno aggiunte alle istruzioni del sistema dell\'Assistente.',
   com_assistants_code_interpreter: 'Interprete Codice',
   com_assistants_code_interpreter_files:
     'I seguenti file sono disponibili solo per Code Interpreter:',

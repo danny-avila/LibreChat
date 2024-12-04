@@ -48,6 +48,9 @@ export default {
   com_assistants_knowledge_disabled:
     'ファイルをナレッジとしてアップロードする前に、アシスタントを作成し、コードインタプリタまたは検索を有効にして保存する必要があります。',
   com_assistants_image_vision: 'イメージビジョン',
+  com_assistants_append_date: '現在の日付と時刻を追加',
+  com_assistants_append_date_tooltip:
+    '有効にすると、現在のクライアントの日付と時刻がアシスタントのシステム指示に追加されます。',
   com_assistants_code_interpreter: 'コードインタプリタ',
   com_assistants_code_interpreter_files: '次のファイルはコードインタプリタでのみ使用できます。',
   com_assistants_retrieval: '検索',

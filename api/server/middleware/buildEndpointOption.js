@@ -76,7 +76,7 @@ async function buildEndpointOption(req, res, next) {
   const builder = isAgentsEndpoint(endpoint) ? (...args) => endpointFn(req, ...args) : endpointFn;
 
   // TODO: use object params
-  req.body.endpointOption = builder(endpoint, parsedBody, endpointType);
+  req.body.endpointOption = await builder(endpoint, parsedBody, endpointType);
 
   // TODO: use `getModelsConfig` only when necessary
   const modelsConfig = await getModelsConfig(req);

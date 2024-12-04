@@ -46,6 +46,8 @@ export default {
   com_assistants_knowledge_disabled:
     '必须创建助手，且启用并保存代码解释器或检索，才能将文件作为知识上传。',
   com_assistants_image_vision: '识图',
+  com_assistants_append_date: '添加当前日期和时间',
+  com_assistants_append_date_tooltip: '启用后，当前客户的日期和时间将附加到助手的系统指令中。',
   com_assistants_code_interpreter: '代码解释器',
   com_assistants_code_interpreter_files: '以下文件仅适用于代码解释器：',
   com_assistants_retrieval: '检索',
