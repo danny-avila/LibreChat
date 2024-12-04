@@ -117,6 +117,10 @@ const amazonModels = {
   'amazon.titan-text-lite-v1': 4000,
   'amazon.titan-text-express-v1': 8000,
   'amazon.titan-text-premier-v1:0': 31500, // -500 from max
+  // https://aws.amazon.com/ai/generative-ai/nova/
+  'amazon.nova-micro-v1:0': 127000, // -1000 from max,
+  'amazon.nova-lite-v1:0': 295000, // -5000 from max,
+  'amazon.nova-pro-v1:0': 295000, // -5000 from max,
 };
 
 const bedrockModels = {
