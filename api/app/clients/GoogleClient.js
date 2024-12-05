@@ -31,7 +31,6 @@ const BaseClient = require('./BaseClient');
 const loc = process.env.GOOGLE_LOC || 'us-central1';
 const publisher = 'google';
 const endpointPrefix = `https://${loc}-aiplatform.googleapis.com`;
-// const apiEndpoint = loc + '-aiplatform.googleapis.com';
 const tokenizersCache = {};
 
 const settings = endpointSettings[EModelEndpoint.google];
@@ -58,15 +57,14 @@ class GoogleClient extends BaseClient {
 
     this.apiKey = creds[AuthKeys.GOOGLE_API_KEY];
 
+    this.reverseProxyUrl = options.reverseProxyUrl;
+
+    this.authHeader = options.authHeader;
+
     if (options.skipSetOptions) {
       return;
     }
     this.setOptions(options);
-  }
-
-  /* Google specific methods */
-  constructUrl() {
-    return `${endpointPrefix}/v1/projects/${this.project_id}/locations/${loc}/publishers/${publisher}/models/${this.modelOptions.model}:serverStreamingPredict`;
   }
 
   async getClient() {
@@ -204,12 +202,6 @@ class GoogleClient extends BaseClient {
       stopTokens.push('<|diff_marker|>');
       // I chose not to do one for `modelLabel` because I've never seen it happen
       this.modelOptions.stop = stopTokens;
-    }
-
-    if (this.options.reverseProxyUrl) {
-      this.completionsUrl = this.options.reverseProxyUrl;
-    } else {
-      this.completionsUrl = this.constructUrl();
     }
 
     return this;
@@ -595,22 +587,39 @@ class GoogleClient extends BaseClient {
   createLLM(clientOptions) {
     const model = clientOptions.modelName ?? clientOptions.model;
     clientOptions.location = loc;
-    clientOptions.endpoint = `${loc}-aiplatform.googleapis.com`;
+    clientOptions.endpoint = endpointPrefix;
+
+    let requestOptions = null;
+    if (this.reverseProxyUrl) {
+      requestOptions = {
+        baseUrl: this.reverseProxyUrl,
+      };
+
+      if (this.authHeader) {
+        requestOptions.customHeaders = {
+          'Authorization': `Bearer ${this.apiKey}`,
+        };
+      }
+    }
+
     if (this.project_id && this.isTextModel) {
       logger.debug('Creating Google VertexAI client');
       return new GoogleVertexAI(clientOptions);
-    } else if (this.project_id && this.isChatModel) {
+    }
+    else if (this.project_id && this.isChatModel) {
       logger.debug('Creating Chat Google VertexAI client');
       return new ChatGoogleVertexAI(clientOptions);
-    } else if (this.project_id) {
+    }
+    else if (this.project_id) {
       logger.debug('Creating VertexAI client');
       return new ChatVertexAI(clientOptions);
-    } else if (!EXCLUDED_GENAI_MODELS.test(model)) {
+    }
+    else if (!EXCLUDED_GENAI_MODELS.test(model)) {
       logger.debug('Creating GenAI client');
-      return new GenAI(this.apiKey).getGenerativeModel({
-        ...clientOptions,
-        model,
-      });
+      return new GenAI(this.apiKey).getGenerativeModel(
+        { ...clientOptions, model },
+        requestOptions,
+      );
     }
 
     logger.debug('Creating Chat Google Generative AI client');
@@ -890,16 +899,23 @@ class GoogleClient extends BaseClient {
       },
       {
         category: 'HARM_CATEGORY_HATE_SPEECH',
-        threshold: process.env.GOOGLE_SAFETY_HATE_SPEECH || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+        threshold:
+          process.env.GOOGLE_SAFETY_HATE_SPEECH || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
       },
       {
         category: 'HARM_CATEGORY_HARASSMENT',
-        threshold: process.env.GOOGLE_SAFETY_HARASSMENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+        threshold:
+          process.env.GOOGLE_SAFETY_HARASSMENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
       },
       {
         category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
         threshold:
           process.env.GOOGLE_SAFETY_DANGEROUS_CONTENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+      },
+      {
+        category: 'HARM_CATEGORY_CIVIC_INTEGRITY',
+        threshold:
+          process.env.GOOGLE_SAFETY_CIVIC_INTEGRITY || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
       },
     ];
   }
