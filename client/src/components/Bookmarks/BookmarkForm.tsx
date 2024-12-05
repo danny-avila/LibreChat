@@ -7,12 +7,12 @@ import type {
   TConversationTag,
   TConversationTagRequest,
 } from 'librechat-data-provider';
-import { cn, removeFocusOutlines, defaultTextProps, logger } from '~/utils';
-import { Checkbox, Label, TextareaAutosize } from '~/components/ui';
+import { Checkbox, Label, TextareaAutosize, Input } from '~/components';
 import { useBookmarkContext } from '~/Providers/BookmarkContext';
 import { useConversationTagMutation } from '~/data-provider';
 import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
+import { cn, logger } from '~/utils';
 
 type TBookmarkFormProps = {
   tags?: string[];
@@ -100,7 +100,7 @@ const BookmarkForm = ({
           <Label htmlFor="bookmark-tag" className="text-left text-sm font-medium">
             {localize('com_ui_bookmarks_title')}
           </Label>
-          <input
+          <Input
             type="text"
             id="bookmark-tag"
             aria-label="Bookmark"
@@ -119,17 +119,12 @@ const BookmarkForm = ({
               },
             })}
             aria-invalid={!!errors.tag}
-            className={cn(
-              defaultTextProps,
-              'flex h-10 max-h-10 w-full resize-none px-3 py-2',
-              removeFocusOutlines,
-            )}
-            placeholder=" "
+            placeholder="Bookmark"
           />
           {errors.tag && <span className="text-sm text-red-500">{errors.tag.message}</span>}
         </div>
 
-        <div className="grid w-full items-center gap-2">
+        <div className="mt-4 grid w-full items-center gap-2">
           <Label htmlFor="bookmark-description" className="text-left text-sm font-medium">
             {localize('com_ui_bookmarks_description')}
           </Label>
@@ -143,8 +138,7 @@ const BookmarkForm = ({
             id="bookmark-description"
             disabled={false}
             className={cn(
-              defaultTextProps,
-              'flex max-h-[138px] min-h-[100px] w-full resize-none px-3 py-2',
+              'flex h-10 max-h-[250px] min-h-[100px] w-full resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm ring-offset-background focus-visible:outline-none',
             )}
           />
         </div>

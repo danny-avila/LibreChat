@@ -1,6 +1,6 @@
 {
   "name": "LibreChat",
-  "version": "v0.7.5-rc2",
+  "version": "v0.7.5",
   "description": "",
   "workspaces": [
     "api",
@@ -10,6 +10,7 @@
   "scripts": {
     "update": "node config/update.js",
     "add-balance": "node config/add-balance.js",
+    "set-balance": "node config/set-balance.js",
     "list-balances": "node config/list-balances.js",
     "user-stats": "node config/user-stats.js",
     "rebuild:package-lock": "node config/packages",
@@ -102,7 +103,8 @@
   "overrides": {
     "vite-plugin-pwa": {
       "rollup": "^4.22.4"
-    }
+    },
+    "mdast-util-gfm-autolink-literal": "2.0.0"
   },
   "nodemonConfig": {
     "ignore": [

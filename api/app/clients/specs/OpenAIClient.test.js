@@ -34,7 +34,7 @@ jest.mock('~/models', () => ({
   updateFileUsage: jest.fn(),
 }));
 
-jest.mock('langchain/chat_models/openai', () => {
+jest.mock('@langchain/openai', () => {
   return {
     ChatOpenAI: jest.fn().mockImplementation(() => {
       return {};
@@ -221,7 +221,7 @@ describe('OpenAIClient', () => {
 
     it('should set isChatCompletion based on useOpenRouter, reverseProxyUrl, or model', () => {
       client.setOptions({ reverseProxyUrl: null });
-      // true by default since default model will be gpt-3.5-turbo
+      // true by default since default model will be gpt-4o-mini
       expect(client.isChatCompletion).toBe(true);
       client.isChatCompletion = undefined;
 
@@ -230,7 +230,7 @@ describe('OpenAIClient', () => {
       expect(client.isChatCompletion).toBe(false);
       client.isChatCompletion = undefined;
 
-      client.setOptions({ modelOptions: { model: 'gpt-3.5-turbo' }, reverseProxyUrl: null });
+      client.setOptions({ modelOptions: { model: 'gpt-4o-mini' }, reverseProxyUrl: null });
       expect(client.isChatCompletion).toBe(true);
     });
 
@@ -446,7 +446,7 @@ describe('OpenAIClient', () => {
         promptPrefix: 'Test Prefix',
       });
       expect(result).toHaveProperty('prompt');
-      const instructions = result.prompt.find((item) => item.name === 'instructions');
+      const instructions = result.prompt.find((item) => item.content.includes('Test Prefix'));
       expect(instructions).toBeDefined();
       expect(instructions.content).toContain('Test Prefix');
     });
@@ -476,7 +476,9 @@ describe('OpenAIClient', () => {
       const result = await client.buildMessages(messages, parentMessageId, {
         isChatCompletion: true,
       });
-      const instructions = result.prompt.find((item) => item.name === 'instructions');
+      const instructions = result.prompt.find((item) =>
+        item.content.includes('Test Prefix from options'),
+      );
       expect(instructions.content).toContain('Test Prefix from options');
     });
 
@@ -484,7 +486,7 @@ describe('OpenAIClient', () => {
       const result = await client.buildMessages(messages, parentMessageId, {
         isChatCompletion: true,
       });
-      const instructions = result.prompt.find((item) => item.name === 'instructions');
+      const instructions = result.prompt.find((item) => item.content.includes('Test Prefix'));
       expect(instructions).toBeUndefined();
     });
 

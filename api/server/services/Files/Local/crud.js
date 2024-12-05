@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
+const { EModelEndpoint } = require('librechat-data-provider');
 const { getBufferMetadata } = require('~/server/utils');
 const paths = require('~/config/paths');
 const { logger } = require('~/config');
@@ -202,14 +203,30 @@ const deleteLocalFile = async (req, file) => {
   }
 
   if (file.filepath.startsWith(`/uploads/${req.user.id}`)) {
-    const basePath = file.filepath.split('/uploads/')[1];
-    const filepath = path.join(uploads, basePath);
+    const userUploadDir = path.join(uploads, req.user.id);
+    const basePath = file.filepath.split(`/uploads/${req.user.id}/`)[1];
+
+    if (!basePath) {
+      throw new Error(`Invalid file path: ${file.filepath}`);
+    }
+
+    const filepath = path.join(userUploadDir, basePath);
+
+    const rel = path.relative(userUploadDir, filepath);
+    if (rel.startsWith('..') || path.isAbsolute(rel) || rel.includes(`..${path.sep}`)) {
+      throw new Error(`Invalid file path: ${file.filepath}`);
+    }
+
     await fs.promises.unlink(filepath);
     return;
   }
 
   const parts = file.filepath.split(path.sep);
   const subfolder = parts[1];
+  if (!subfolder && parts[0] === EModelEndpoint.agents) {
+    logger.warn(`Agent File ${file.file_id} is missing filepath, may have been deleted already`);
+    return;
+  }
   const filepath = path.join(publicPath, file.filepath);
 
   if (!isValidPath(req, publicPath, subfolder, filepath)) {
@@ -223,7 +240,7 @@ const deleteLocalFile = async (req, file) => {
  * Uploads a file to the specified upload directory.
  *
  * @param {Object} params - The params object.
- * @param {Object} params.req - The request object from Express. It should have a `user` property with an `id`
+ * @param {ServerRequest} params.req - The request object from Express. It should have a `user` property with an `id`
  *                       representing the user, and an `app.locals.paths` object with an `uploads` path.
  * @param {Express.Multer.File} params.file - The file object, which is part of the request. The file object should
  *                                     have a `path` property that points to the location of the uploaded file.

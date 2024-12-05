@@ -1,4 +1,4 @@
-const { TokenTextSplitter } = require('langchain/text_splitter');
+const { TokenTextSplitter } = require('@langchain/textsplitters');
 
 /**
  * Splits a given text by token chunks, based on the provided parameters for the TokenTextSplitter.

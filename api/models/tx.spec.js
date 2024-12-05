@@ -4,6 +4,7 @@ const {
   tokenValues,
   getValueKey,
   getMultiplier,
+  cacheTokenValues,
   getCacheMultiplier,
 } = require('./tx');
 
@@ -91,6 +92,20 @@ describe('getValueKey', () => {
     expect(getValueKey('anthropic/claude-3.5-sonnet')).toBe('claude-3.5-sonnet');
     expect(getValueKey('claude-3.5-sonnet-turbo')).toBe('claude-3.5-sonnet');
     expect(getValueKey('claude-3.5-sonnet-0125')).toBe('claude-3.5-sonnet');
+  });
+
+  it('should return "claude-3-5-haiku" for model type of "claude-3-5-haiku-"', () => {
+    expect(getValueKey('claude-3-5-haiku-20240620')).toBe('claude-3-5-haiku');
+    expect(getValueKey('anthropic/claude-3-5-haiku')).toBe('claude-3-5-haiku');
+    expect(getValueKey('claude-3-5-haiku-turbo')).toBe('claude-3-5-haiku');
+    expect(getValueKey('claude-3-5-haiku-0125')).toBe('claude-3-5-haiku');
+  });
+
+  it('should return "claude-3.5-haiku" for model type of "claude-3.5-haiku-"', () => {
+    expect(getValueKey('claude-3.5-haiku-20240620')).toBe('claude-3.5-haiku');
+    expect(getValueKey('anthropic/claude-3.5-haiku')).toBe('claude-3.5-haiku');
+    expect(getValueKey('claude-3.5-haiku-turbo')).toBe('claude-3.5-haiku');
+    expect(getValueKey('claude-3.5-haiku-0125')).toBe('claude-3.5-haiku');
   });
 });
 
@@ -197,6 +212,7 @@ describe('getMultiplier', () => {
 
 describe('AWS Bedrock Model Tests', () => {
   const awsModels = [
+    'anthropic.claude-3-5-haiku-20241022-v1:0',
     'anthropic.claude-3-haiku-20240307-v1:0',
     'anthropic.claude-3-sonnet-20240229-v1:0',
     'anthropic.claude-3-opus-20240229-v1:0',
@@ -223,6 +239,9 @@ describe('AWS Bedrock Model Tests', () => {
     'ai21.j2-ultra-v1',
     'amazon.titan-text-lite-v1',
     'amazon.titan-text-express-v1',
+    'amazon.nova-micro-v1:0',
+    'amazon.nova-lite-v1:0',
+    'amazon.nova-pro-v1:0',
   ];
 
   it('should return the correct prompt multipliers for all models', () => {
@@ -246,10 +265,24 @@ describe('AWS Bedrock Model Tests', () => {
 
 describe('getCacheMultiplier', () => {
   it('should return the correct cache multiplier for a given valueKey and cacheType', () => {
-    expect(getCacheMultiplier({ valueKey: 'claude-3-5-sonnet', cacheType: 'write' })).toBe(3.75);
-    expect(getCacheMultiplier({ valueKey: 'claude-3-5-sonnet', cacheType: 'read' })).toBe(0.3);
-    expect(getCacheMultiplier({ valueKey: 'claude-3-haiku', cacheType: 'write' })).toBe(0.3);
-    expect(getCacheMultiplier({ valueKey: 'claude-3-haiku', cacheType: 'read' })).toBe(0.03);
+    expect(getCacheMultiplier({ valueKey: 'claude-3-5-sonnet', cacheType: 'write' })).toBe(
+      cacheTokenValues['claude-3-5-sonnet'].write,
+    );
+    expect(getCacheMultiplier({ valueKey: 'claude-3-5-sonnet', cacheType: 'read' })).toBe(
+      cacheTokenValues['claude-3-5-sonnet'].read,
+    );
+    expect(getCacheMultiplier({ valueKey: 'claude-3-5-haiku', cacheType: 'write' })).toBe(
+      cacheTokenValues['claude-3-5-haiku'].write,
+    );
+    expect(getCacheMultiplier({ valueKey: 'claude-3-5-haiku', cacheType: 'read' })).toBe(
+      cacheTokenValues['claude-3-5-haiku'].read,
+    );
+    expect(getCacheMultiplier({ valueKey: 'claude-3-haiku', cacheType: 'write' })).toBe(
+      cacheTokenValues['claude-3-haiku'].write,
+    );
+    expect(getCacheMultiplier({ valueKey: 'claude-3-haiku', cacheType: 'read' })).toBe(
+      cacheTokenValues['claude-3-haiku'].read,
+    );
   });
 
   it('should return null if cacheType is provided but not found in cacheTokenValues', () => {

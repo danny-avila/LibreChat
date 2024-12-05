@@ -168,36 +168,24 @@ const Nav = ({
                     onMouseLeave={handleMouseLeave}
                     ref={containerRef}
                   >
-                    {isSmallScreen == true ? (
-                      <div className="pt-3.5">
-                        {isSearchEnabled === true && (
-                          <SearchBar clearSearch={clearSearch} isSmallScreen={isSmallScreen} />
-                        )}
-                        {hasAccessToBookmarks === true && (
-                          <BookmarkNav
-                            tags={tags}
-                            setTags={setTags}
-                            isSmallScreen={isSmallScreen}
-                          />
-                        )}
-                      </div>
-                    ) : (
-                      <NewChat
-                        toggleNav={itemToggleNav}
-                        subHeaders={
-                          <>
-                            {isSearchEnabled === true && (
-                              <SearchBar clearSearch={clearSearch} isSmallScreen={isSmallScreen} />
-                            )}
+                    <NewChat
+                      toggleNav={itemToggleNav}
+                      isSmallScreen={isSmallScreen}
+                      subHeaders={
+                        <>
+                          {isSearchEnabled === true && (
+                            <SearchBar clearSearch={clearSearch} isSmallScreen={isSmallScreen} />
+                          )}
+                          {hasAccessToBookmarks === true && (
                             <BookmarkNav
                               tags={tags}
                               setTags={setTags}
                               isSmallScreen={isSmallScreen}
                             />
-                          </>
-                        }
-                      />
-                    )}
+                          )}
+                        </>
+                      }
+                    />
 
                     <Conversations
                       conversations={conversations}

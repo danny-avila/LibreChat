@@ -201,10 +201,10 @@ describe('AnthropicClient', () => {
       );
     });
 
-    it('should add beta header for claude-3-5-sonnet model', () => {
+    it('should add "max-tokens" & "prompt-caching" beta header for claude-3-5-sonnet model', () => {
       const client = new AnthropicClient('test-api-key');
       const modelOptions = {
-        model: 'claude-3-5-sonnet-20240307',
+        model: 'claude-3-5-sonnet-20241022',
       };
       client.setOptions({ modelOptions, promptCache: true });
       const anthropicClient = client.getClient(modelOptions);
@@ -215,7 +215,7 @@ describe('AnthropicClient', () => {
       );
     });
 
-    it('should add beta header for claude-3-haiku model', () => {
+    it('should add "prompt-caching" beta header for claude-3-haiku model', () => {
       const client = new AnthropicClient('test-api-key');
       const modelOptions = {
         model: 'claude-3-haiku-2028',
@@ -227,6 +227,30 @@ describe('AnthropicClient', () => {
       expect(anthropicClient._options.defaultHeaders['anthropic-beta']).toBe(
         'prompt-caching-2024-07-31',
       );
+    });
+
+    it('should add "prompt-caching" beta header for claude-3-opus model', () => {
+      const client = new AnthropicClient('test-api-key');
+      const modelOptions = {
+        model: 'claude-3-opus-2028',
+      };
+      client.setOptions({ modelOptions, promptCache: true });
+      const anthropicClient = client.getClient(modelOptions);
+      expect(anthropicClient._options.defaultHeaders).toBeDefined();
+      expect(anthropicClient._options.defaultHeaders).toHaveProperty('anthropic-beta');
+      expect(anthropicClient._options.defaultHeaders['anthropic-beta']).toBe(
+        'prompt-caching-2024-07-31',
+      );
+    });
+
+    it('should not add beta header for claude-3-5-sonnet-latest model', () => {
+      const client = new AnthropicClient('test-api-key');
+      const modelOptions = {
+        model: 'anthropic/claude-3-5-sonnet-latest',
+      };
+      client.setOptions({ modelOptions, promptCache: true });
+      const anthropicClient = client.getClient(modelOptions);
+      expect(anthropicClient.defaultHeaders).not.toHaveProperty('anthropic-beta');
     });
 
     it('should not add beta header for other models', () => {

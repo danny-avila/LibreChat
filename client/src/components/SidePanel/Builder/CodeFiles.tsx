@@ -4,7 +4,7 @@ import {
   mergeFileConfig,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
-import type { AssistantsEndpoint } from 'librechat-data-provider';
+import type { AssistantsEndpoint, EndpointFileConfig } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
 import { useGetFileConfig } from '~/data-provider';
@@ -43,9 +43,10 @@ export default function CodeFiles({
     }
   }, [_files]);
 
-  const endpointFileConfig = fileConfig.endpoints[endpoint];
+  const endpointFileConfig = fileConfig.endpoints[endpoint] as EndpointFileConfig | undefined;
+  const isUploadDisabled = endpointFileConfig?.disabled ?? false;
 
-  if (endpointFileConfig.disabled) {
+  if (isUploadDisabled) {
     return null;
   }
 
@@ -75,7 +76,7 @@ export default function CodeFiles({
           <button
             type="button"
             disabled={!assistant_id}
-            className="btn btn-neutral border-token-border-light relative h-8 w-full rounded-lg font-medium"
+            className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
             onClick={handleButtonClick}
           >
             <div className="flex w-full items-center justify-center gap-2">

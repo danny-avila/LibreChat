@@ -1,6 +1,12 @@
-const { Tools } = require('librechat-data-provider');
-const { GraphEvents, ToolEndHandler, ChatModelStreamHandler } = require('@librechat/agents');
+const { Tools, StepTypes, imageGenTools } = require('librechat-data-provider');
+const {
+  EnvVar,
+  GraphEvents,
+  ToolEndHandler,
+  ChatModelStreamHandler,
+} = require('@librechat/agents');
 const { processCodeOutput } = require('~/server/services/Files/Code/process');
+const { loadAuthValues } = require('~/app/clients/tools/util');
 const { logger } = require('~/config');
 
 /** @typedef {import('@librechat/agents').Graph} Graph */
@@ -51,6 +57,9 @@ class ModelEndHandler {
     }
 
     const usage = data?.output?.usage_metadata;
+    if (metadata?.model) {
+      usage.model = metadata.model;
+    }
 
     if (usage) {
       this.collectedUsage.push(usage);
@@ -83,9 +92,27 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
        * Handle ON_RUN_STEP event.
        * @param {string} event - The event name.
        * @param {StreamEventData} data - The event data.
+       * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
-      handle: (event, data) => {
-        sendEvent(res, { event, data });
+      handle: (event, data, metadata) => {
+        if (data?.stepDetails.type === StepTypes.TOOL_CALLS) {
+          sendEvent(res, { event, data });
+        } else if (metadata?.last_agent_index === metadata?.agent_index) {
+          sendEvent(res, { event, data });
+        } else if (!metadata?.hide_sequential_outputs) {
+          sendEvent(res, { event, data });
+        } else {
+          const agentName = metadata?.name ?? 'Agent';
+          const isToolCall = data?.stepDetails.type === StepTypes.TOOL_CALLS;
+          const action = isToolCall ? 'performing a task...' : 'thinking...';
+          sendEvent(res, {
+            event: 'on_agent_update',
+            data: {
+              runId: metadata?.run_id,
+              message: `${agentName} is ${action}`,
+            },
+          });
+        }
         aggregateContent({ event, data });
       },
     },
@@ -94,9 +121,16 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
        * Handle ON_RUN_STEP_DELTA event.
        * @param {string} event - The event name.
        * @param {StreamEventData} data - The event data.
+       * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
-      handle: (event, data) => {
-        sendEvent(res, { event, data });
+      handle: (event, data, metadata) => {
+        if (data?.delta.type === StepTypes.TOOL_CALLS) {
+          sendEvent(res, { event, data });
+        } else if (metadata?.last_agent_index === metadata?.agent_index) {
+          sendEvent(res, { event, data });
+        } else if (!metadata?.hide_sequential_outputs) {
+          sendEvent(res, { event, data });
+        }
         aggregateContent({ event, data });
       },
     },
@@ -105,9 +139,16 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
        * Handle ON_RUN_STEP_COMPLETED event.
        * @param {string} event - The event name.
        * @param {StreamEventData & { result: ToolEndData }} data - The event data.
+       * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
-      handle: (event, data) => {
-        sendEvent(res, { event, data });
+      handle: (event, data, metadata) => {
+        if (data?.result != null) {
+          sendEvent(res, { event, data });
+        } else if (metadata?.last_agent_index === metadata?.agent_index) {
+          sendEvent(res, { event, data });
+        } else if (!metadata?.hide_sequential_outputs) {
+          sendEvent(res, { event, data });
+        }
         aggregateContent({ event, data });
       },
     },
@@ -116,9 +157,14 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
        * Handle ON_MESSAGE_DELTA event.
        * @param {string} event - The event name.
        * @param {StreamEventData} data - The event data.
+       * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
-      handle: (event, data) => {
-        sendEvent(res, { event, data });
+      handle: (event, data, metadata) => {
+        if (metadata?.last_agent_index === metadata?.agent_index) {
+          sendEvent(res, { event, data });
+        } else if (!metadata?.hide_sequential_outputs) {
+          sendEvent(res, { event, data });
+        }
         aggregateContent({ event, data });
       },
     },
@@ -145,27 +191,57 @@ function createToolEndCallback({ req, res, artifactPromises }) {
       return;
     }
 
+    if (imageGenTools.has(output.name) && output.artifact) {
+      artifactPromises.push(
+        (async () => {
+          const fileMetadata = Object.assign(output.artifact, {
+            messageId: metadata.run_id,
+            toolCallId: output.tool_call_id,
+            conversationId: metadata.thread_id,
+          });
+          if (!res.headersSent) {
+            return fileMetadata;
+          }
+
+          if (!fileMetadata) {
+            return null;
+          }
+
+          res.write(`event: attachment\ndata: ${JSON.stringify(fileMetadata)}\n\n`);
+          return fileMetadata;
+        })().catch((error) => {
+          logger.error('Error processing code output:', error);
+          return null;
+        }),
+      );
+      return;
+    }
+
     if (output.name !== Tools.execute_code) {
       return;
     }
 
-    const { tool_call_id, artifact } = output;
-    if (!artifact.files) {
+    if (!output.artifact.files) {
       return;
     }
 
-    for (const file of artifact.files) {
+    for (const file of output.artifact.files) {
       const { id, name } = file;
       artifactPromises.push(
         (async () => {
+          const result = await loadAuthValues({
+            userId: req.user.id,
+            authFields: [EnvVar.CODE_API_KEY],
+          });
           const fileMetadata = await processCodeOutput({
             req,
             id,
             name,
-            toolCallId: tool_call_id,
+            apiKey: result[EnvVar.CODE_API_KEY],
             messageId: metadata.run_id,
-            sessionId: artifact.session_id,
+            toolCallId: output.tool_call_id,
             conversationId: metadata.thread_id,
+            session_id: output.artifact.session_id,
           });
           if (!res.headersSent) {
             return fileMetadata;

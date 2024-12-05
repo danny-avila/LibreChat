@@ -4,7 +4,6 @@ import type { TConversation } from 'librechat-data-provider';
 import { OGDialog, Button, Input, Label, Checkbox, Dropdown } from '~/components/ui';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { useLocalize, useExportConversation } from '~/hooks';
-import { cn, defaultTextProps } from '~/utils';
 
 export default function ExportModal({
   open,
@@ -78,10 +77,6 @@ export default function ExportModal({
                   value={filename}
                   onChange={(e) => setFileName(filenamify(e.target.value || ''))}
                   placeholder={localize('com_nav_export_filename_placeholder')}
-                  className={cn(
-                    defaultTextProps,
-                    'flex h-10 max-h-10 w-full resize-none px-3 py-2',
-                  )}
                 />
               </div>
               <div className="col-span-1 flex w-full flex-col items-start justify-start gap-2">
@@ -164,7 +159,7 @@ export default function ExportModal({
         }
         buttons={
           <>
-            <Button onClick={exportConversation} variant="success">
+            <Button onClick={exportConversation} variant="submit">
               {localize('com_endpoint_export')}
             </Button>
           </>

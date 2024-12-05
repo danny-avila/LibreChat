@@ -21,7 +21,7 @@ export default function DecibelSelector() {
         <Slider
           value={[playbackRate ?? 1]}
           onValueChange={(value) => setPlaybackRate(value[0])}
-          doubleClickHandler={() => setPlaybackRate(null)}
+          onDoubleClick={() => setPlaybackRate(null)}
           min={0.1}
           max={2}
           step={0.1}

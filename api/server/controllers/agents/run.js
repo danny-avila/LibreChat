@@ -3,8 +3,8 @@ const { providerEndpointMap } = require('librechat-data-provider');
 
 /**
  * @typedef {import('@librechat/agents').t} t
+ * @typedef {import('@librechat/agents').StandardGraphConfig} StandardGraphConfig
  * @typedef {import('@librechat/agents').StreamEventData} StreamEventData
- * @typedef {import('@librechat/agents').ClientOptions} ClientOptions
  * @typedef {import('@librechat/agents').EventHandler} EventHandler
  * @typedef {import('@librechat/agents').GraphEvents} GraphEvents
  * @typedef {import('@librechat/agents').IState} IState
@@ -17,39 +17,38 @@ const { providerEndpointMap } = require('librechat-data-provider');
  * @param {ServerRequest} [options.req] - The server request.
  * @param {string | undefined} [options.runId] - Optional run ID; otherwise, a new run ID will be generated.
  * @param {Agent} options.agent - The agent for this run.
- * @param {StructuredTool[] | undefined} [options.tools] - The tools to use in the run.
- * @param {Record<string, StructuredTool[]> | undefined} [options.toolMap] - The tool map for the run.
+ * @param {AbortSignal} options.signal - The signal for this run.
  * @param {Record<GraphEvents, EventHandler> | undefined} [options.customHandlers] - Custom event handlers.
- * @param {ClientOptions} [options.modelOptions] - Optional model to use; if not provided, it will use the default from modelMap.
  * @param {boolean} [options.streaming=true] - Whether to use streaming.
  * @param {boolean} [options.streamUsage=true] - Whether to stream usage information.
  * @returns {Promise<Run<IState>>} A promise that resolves to a new Run instance.
  */
 async function createRun({
   runId,
-  tools,
   agent,
-  toolMap,
-  modelOptions,
+  signal,
   customHandlers,
   streaming = true,
   streamUsage = true,
 }) {
+  const provider = providerEndpointMap[agent.provider] ?? agent.provider;
   const llmConfig = Object.assign(
     {
-      provider: providerEndpointMap[agent.provider],
+      provider,
       streaming,
       streamUsage,
     },
-    modelOptions,
+    agent.model_parameters,
   );
 
+  /** @type {StandardGraphConfig} */
   const graphConfig = {
-    tools,
-    toolMap,
+    signal,
     llmConfig,
+    tools: agent.tools,
     instructions: agent.instructions,
     additional_instructions: agent.additional_instructions,
+    // toolEnd: agent.end_after_tools,
   };
 
   // TEMPORARY FOR TESTING

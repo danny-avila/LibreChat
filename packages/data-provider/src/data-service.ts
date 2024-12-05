@@ -44,8 +44,8 @@ export function getSharedMessages(shareId: string): Promise<t.TSharedMessagesRes
 export const listSharedLinks = (
   params?: q.SharedLinkListParams,
 ): Promise<q.SharedLinksResponse> => {
-  const pageNumber = params?.pageNumber || '1'; // Default to page 1 if not provided
-  const isPublic = params?.isPublic || true; // Default to true if not provided
+  const pageNumber = (params?.pageNumber ?? '1') || '1'; // Default to page 1 if not provided
+  const isPublic = params?.isPublic ?? true; // Default to true if not provided
   return request.get(endpoints.getSharedLinks(pageNumber, isPublic));
 };
 
@@ -304,6 +304,40 @@ export const getAvailableTools = (
   return request.get(path);
 };
 
+export const getVerifyAgentToolAuth = (
+  params: q.VerifyToolAuthParams,
+): Promise<q.VerifyToolAuthResponse> => {
+  return request.get(
+    endpoints.agents({
+      path: `tools/${params.toolId}/auth`,
+    }),
+  );
+};
+
+export const callTool = <T extends m.ToolId>({
+  toolId,
+  toolParams,
+}: {
+  toolId: T;
+  toolParams: m.ToolParams<T>;
+}): Promise<m.ToolCallResponse> => {
+  return request.post(
+    endpoints.agents({
+      path: `tools/${toolId}/call`,
+    }),
+    toolParams,
+  );
+};
+
+export const getToolCalls = (params: q.GetToolCallParams): Promise<q.ToolCallResults> => {
+  return request.get(
+    endpoints.agents({
+      path: 'tools/calls',
+      options: params,
+    }),
+  );
+};
+
 /* Files */
 
 export const getFiles = (): Promise<f.TFile[]> => {
@@ -314,12 +348,17 @@ export const getFileConfig = (): Promise<f.FileConfig> => {
   return request.get(`${endpoints.files()}/config`);
 };
 
-export const uploadImage = (data: FormData): Promise<f.TFileUpload> => {
-  return request.postMultiPart(endpoints.images(), data);
+export const uploadImage = (
+  data: FormData,
+  signal?: AbortSignal | null,
+): Promise<f.TFileUpload> => {
+  const requestConfig = signal ? { signal } : undefined;
+  return request.postMultiPart(endpoints.images(), data, requestConfig);
 };
 
-export const uploadFile = (data: FormData): Promise<f.TFileUpload> => {
-  return request.postMultiPart(endpoints.files(), data);
+export const uploadFile = (data: FormData, signal?: AbortSignal | null): Promise<f.TFileUpload> => {
+  const requestConfig = signal ? { signal } : undefined;
+  return request.postMultiPart(endpoints.files(), data, requestConfig);
 };
 
 /* actions */
@@ -456,7 +495,8 @@ export const uploadAvatar = (data: FormData): Promise<f.AvatarUploadResponse> =>
 export const uploadAssistantAvatar = (data: m.AssistantAvatarVariables): Promise<a.Assistant> => {
   return request.postMultiPart(
     endpoints.assistants({
-      path: `avatar/${data.assistant_id}`,
+      isAvatar: true,
+      path: `${data.assistant_id}/avatar`,
       options: { model: data.model, endpoint: data.endpoint },
       version: data.version,
     }),
@@ -466,9 +506,7 @@ export const uploadAssistantAvatar = (data: m.AssistantAvatarVariables): Promise
 
 export const uploadAgentAvatar = (data: m.AgentAvatarVariables): Promise<a.Agent> => {
   return request.postMultiPart(
-    endpoints.agents({
-      path: `avatar/${data.agent_id}`,
-    }),
+    `${endpoints.images()}/agents/${data.agent_id}/avatar`,
     data.formData,
   );
 };
@@ -538,8 +576,8 @@ export const listConversations = (
   params?: q.ConversationListParams,
 ): Promise<q.ConversationListResponse> => {
   // Assuming params has a pageNumber property
-  const pageNumber = params?.pageNumber || '1'; // Default to page 1 if not provided
-  const isArchived = params?.isArchived || false; // Default to false if not provided
+  const pageNumber = (params?.pageNumber ?? '1') || '1'; // Default to page 1 if not provided
+  const isArchived = params?.isArchived ?? false; // Default to false if not provided
   const tags = params?.tags || []; // Default to an empty array if not provided
   return request.get(endpoints.conversations(pageNumber, isArchived, tags));
 };
@@ -547,8 +585,8 @@ export const listConversations = (
 export const listConversationsByQuery = (
   params?: q.ConversationListParams & { searchQuery?: string },
 ): Promise<q.ConversationListResponse> => {
-  const pageNumber = params?.pageNumber || '1'; // Default to page 1 if not provided
-  const searchQuery = params?.searchQuery || ''; // If no search query is provided, default to an empty string
+  const pageNumber = (params?.pageNumber ?? '1') || '1'; // Default to page 1 if not provided
+  const searchQuery = params?.searchQuery ?? ''; // If no search query is provided, default to an empty string
   // Update the endpoint to handle a search query
   if (searchQuery !== '') {
     return request.get(endpoints.search(searchQuery, pageNumber));
@@ -655,8 +693,14 @@ export function getRole(roleName: string): Promise<r.TRole> {
 
 export function updatePromptPermissions(
   variables: m.UpdatePromptPermVars,
-): Promise<m.UpdatePromptPermResponse> {
+): Promise<m.UpdatePermResponse> {
   return request.put(endpoints.updatePromptPermissions(variables.roleName), variables.updates);
+}
+
+export function updateAgentPermissions(
+  variables: m.UpdateAgentPermVars,
+): Promise<m.UpdatePermResponse> {
+  return request.put(endpoints.updateAgentPermissions(variables.roleName), variables.updates);
 }
 
 /* Tags */

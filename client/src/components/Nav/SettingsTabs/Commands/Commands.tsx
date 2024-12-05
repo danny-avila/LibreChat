@@ -28,16 +28,16 @@ function Commands() {
         <HoverCardSettings side="bottom" text="com_nav_chat_commands_info" />
       </div>
       <div className="flex flex-col gap-3 text-sm text-text-primary">
-        <div className="border-b border-border-light pb-3 last-of-type:border-b-0">
+        <div className="pb-3">
           <AtCommandSwitch />
         </div>
         {hasAccessToMultiConvo === true && (
-          <div className="border-b border-border-light pb-3 last-of-type:border-b-0">
+          <div className="pb-3">
             <PlusCommandSwitch />
           </div>
         )}
         {hasAccessToPrompts === true && (
-          <div className="border-b border-border-light pb-3 last-of-type:border-b-0">
+          <div className="pb-3">
             <SlashCommandSwitch />
           </div>
         )}

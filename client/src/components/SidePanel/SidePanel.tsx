@@ -6,8 +6,8 @@ import {
   useGetStartupConfig,
   useUserKeyQuery,
 } from 'librechat-data-provider/react-query';
+import type { TEndpointsConfig, TInterfaceConfig } from 'librechat-data-provider';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
-import type { TEndpointsConfig } from 'librechat-data-provider';
 import { ResizableHandleAlt, ResizablePanel, ResizablePanelGroup } from '~/components/ui/Resizable';
 import { useMediaQuery, useLocalStorage, useLocalize } from '~/hooks';
 import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
@@ -65,7 +65,7 @@ const SidePanel = ({
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
   const { data: startupConfig } = useGetStartupConfig();
   const interfaceConfig = useMemo(
-    () => startupConfig?.interface ?? defaultInterface,
+    () => (startupConfig?.interface ?? defaultInterface) as Partial<TInterfaceConfig>,
     [startupConfig],
   );
 
@@ -117,17 +117,17 @@ const SidePanel = ({
   });
 
   const calculateLayout = useCallback(() => {
-    if (!artifacts) {
+    if (artifacts == null) {
       const navSize = defaultLayout.length === 2 ? defaultLayout[1] : defaultLayout[2];
       return [100 - navSize, navSize];
     } else {
-      const navSize = Math.max(minSize, navCollapsedSize);
+      const navSize = 0;
       const remainingSpace = 100 - navSize;
       const newMainSize = Math.floor(remainingSpace / 2);
       const artifactsSize = remainingSpace - newMainSize;
       return [newMainSize, artifactsSize, navSize];
     }
-  }, [artifacts, defaultLayout, minSize, navCollapsedSize]);
+  }, [artifacts, defaultLayout]);
 
   const currentLayout = useMemo(() => normalizeLayout(calculateLayout()), [calculateLayout]);
 
@@ -261,7 +261,7 @@ const SidePanel = ({
               : 'opacity-100',
           )}
         >
-          {interfaceConfig.modelSelect && (
+          {interfaceConfig.modelSelect === true && (
             <div
               className={cn(
                 'sticky left-0 right-0 top-0 z-[100] flex h-[52px] flex-wrap items-center justify-center bg-background',

@@ -26,7 +26,7 @@ export default function AutoScrollSwitch({
         checked={autoScroll}
         aria-label="Auto-Scroll to latest message on chat open"
         onCheckedChange={handleCheckedChange}
-        className="ml-4 mt-2 ring-ring-primary"
+        className="ml-4"
         data-testid="autoScroll"
       />
     </div>

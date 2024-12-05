@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import axios, { AxiosRequestConfig, AxiosError } from 'axios';
-import { setTokenHeader } from './headers-helpers';
+import axios, { AxiosError, AxiosRequestConfig } from 'axios';
 import * as endpoints from './api-endpoints';
+import { setTokenHeader } from './headers-helpers';
 
 async function _get<T>(url: string, options?: AxiosRequestConfig): Promise<T> {
   const response = await axios.get(url, { ...options });
@@ -65,6 +65,11 @@ let failedQueue: { resolve: (value?: any) => void; reject: (reason?: any) => voi
 
 const refreshToken = (retry?: boolean) => _post(endpoints.refreshToken(retry));
 
+const dispatchTokenUpdatedEvent = (token: string) => {
+  setTokenHeader(token);
+  window.dispatchEvent(new CustomEvent('tokenUpdated', { detail: token }));
+};
+
 const processQueue = (error: AxiosError | null, token: string | null = null) => {
   failedQueue.forEach((prom) => {
     if (error) {
@@ -80,6 +85,9 @@ axios.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
+    if (!error.response) {
+      return Promise.reject(error);
+    }
 
     if (error.response.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
@@ -106,8 +114,7 @@ axios.interceptors.response.use(
 
         if (token) {
           originalRequest.headers['Authorization'] = 'Bearer ' + token;
-          setTokenHeader(token);
-          window.dispatchEvent(new CustomEvent('tokenUpdated', { detail: token }));
+          dispatchTokenUpdatedEvent(token);
           processQueue(null, token);
           return await axios(originalRequest);
         } else {
@@ -136,4 +143,5 @@ export default {
   deleteWithOptions: _deleteWithOptions,
   patch: _patch,
   refreshToken,
+  dispatchTokenUpdatedEvent,
 };

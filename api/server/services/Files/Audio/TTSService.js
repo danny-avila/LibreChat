@@ -1,9 +1,9 @@
 const axios = require('axios');
 const { extractEnvVariable, TTSProviders } = require('librechat-data-provider');
-const { logger } = require('~/config');
-const getCustomConfig = require('~/server/services/Config/getCustomConfig');
-const { genAzureEndpoint } = require('~/utils');
 const { getRandomVoiceId, createChunkProcessor, splitTextIntoChunks } = require('./streamAudio');
+const { getCustomConfig } = require('~/server/services/Config');
+const { genAzureEndpoint } = require('~/utils');
+const { logger } = require('~/config');
 
 /**
  * Service class for handling Text-to-Speech (TTS) operations.
@@ -143,9 +143,9 @@ class TTSService {
    */
   azureOpenAIProvider(ttsSchema, input, voice) {
     const url = `${genAzureEndpoint({
-      azureOpenAIApiInstanceName: ttsSchema?.instanceName,
-      azureOpenAIApiDeploymentName: ttsSchema?.deploymentName,
-    })}/audio/speech?api-version=${ttsSchema?.apiVersion}`;
+      azureOpenAIApiInstanceName: extractEnvVariable(ttsSchema?.instanceName),
+      azureOpenAIApiDeploymentName: extractEnvVariable(ttsSchema?.deploymentName),
+    })}/audio/speech?api-version=${extractEnvVariable(ttsSchema?.apiVersion)}`;
 
     if (
       ttsSchema?.voices &&
@@ -157,7 +157,7 @@ class TTSService {
     }
 
     const data = {
-      model: ttsSchema?.model,
+      model: extractEnvVariable(ttsSchema?.model),
       input,
       voice: ttsSchema?.voices && ttsSchema.voices.length > 0 ? voice : undefined,
     };

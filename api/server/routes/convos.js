@@ -1,16 +1,20 @@
 const multer = require('multer');
 const express = require('express');
-const { CacheKeys } = require('librechat-data-provider');
-const { initializeClient } = require('~/server/services/Endpoints/assistants');
+const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
 const { getConvosByPage, deleteConvos, getConvo, saveConvo } = require('~/models/Conversation');
 const { storage, importFileFilter } = require('~/server/routes/files/multer');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { forkConversation } = require('~/server/utils/import/fork');
 const { importConversations } = require('~/server/utils/import');
 const { createImportLimiters } = require('~/server/middleware');
+const { deleteToolCalls } = require('~/models/ToolCall');
 const getLogStores = require('~/cache/getLogStores');
 const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
+const assistantClients = {
+  [EModelEndpoint.azureAssistants]: require('~/server/services/Endpoints/azureAssistants'),
+  [EModelEndpoint.assistants]: require('~/server/services/Endpoints/assistants'),
+};
 
 const router = express.Router();
 router.use(requireJwtAuth);
@@ -74,7 +78,7 @@ router.post('/gen_title', async (req, res) => {
 
 router.post('/clear', async (req, res) => {
   let filter = {};
-  const { conversationId, source, thread_id } = req.body.arg;
+  const { conversationId, source, thread_id, endpoint } = req.body.arg;
   if (conversationId) {
     filter = { conversationId };
   }
@@ -83,9 +87,12 @@ router.post('/clear', async (req, res) => {
     return res.status(200).send('No conversationId provided');
   }
 
-  if (thread_id) {
+  if (
+    typeof endpoint != 'undefined' &&
+    Object.prototype.propertyIsEnumerable.call(assistantClients, endpoint)
+  ) {
     /** @type {{ openai: OpenAI}} */
-    const { openai } = await initializeClient({ req, res });
+    const { openai } = await assistantClients[endpoint].initializeClient({ req, res });
     try {
       const response = await openai.beta.threads.del(thread_id);
       logger.debug('Deleted OpenAI thread:', response);
@@ -99,6 +106,7 @@ router.post('/clear', async (req, res) => {
 
   try {
     const dbResponse = await deleteConvos(req.user.id, filter);
+    await deleteToolCalls(req.user.id, filter.conversationId);
     res.status(201).json(dbResponse);
   } catch (error) {
     logger.error('Error clearing conversations', error);

@@ -100,14 +100,14 @@ class OpenAIClient extends BaseClient {
       this.options.modelOptions,
     );
 
-    this.isO1Model = /\bo1\b/i.test(this.modelOptions.model);
-
     this.defaultVisionModel = this.options.visionModel ?? 'gpt-4-vision-preview';
     if (typeof this.options.attachments?.then === 'function') {
       this.options.attachments.then((attachments) => this.checkVisionRequest(attachments));
     } else {
       this.checkVisionRequest(this.options.attachments);
     }
+
+    this.isO1Model = /\bo1\b/i.test(this.modelOptions.model);
 
     const { OPENROUTER_API_KEY, OPENAI_FORCE_PROMPT } = process.env ?? {};
     if (OPENROUTER_API_KEY && !this.azure) {
@@ -553,7 +553,6 @@ class OpenAIClient extends BaseClient {
       promptPrefix = `Instructions:\n${promptPrefix.trim()}`;
       instructions = {
         role: 'system',
-        name: 'instructions',
         content: promptPrefix,
       };
 
@@ -689,7 +688,7 @@ class OpenAIClient extends BaseClient {
   }
 
   initializeLLM({
-    model = 'gpt-3.5-turbo',
+    model = 'gpt-4o-mini',
     modelName,
     temperature = 0.2,
     presence_penalty = 0,
@@ -794,7 +793,7 @@ class OpenAIClient extends BaseClient {
 
     const { OPENAI_TITLE_MODEL } = process.env ?? {};
 
-    let model = this.options.titleModel ?? OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo';
+    let model = this.options.titleModel ?? OPENAI_TITLE_MODEL ?? 'gpt-4o-mini';
     if (model === Constants.CURRENT_MODEL) {
       model = this.modelOptions.model;
     }
@@ -839,30 +838,36 @@ class OpenAIClient extends BaseClient {
       this.options.dropParams = azureConfig.groupMap[groupName].dropParams;
       this.options.forcePrompt = azureConfig.groupMap[groupName].forcePrompt;
       this.azure = !serverless && azureOptions;
+      if (serverless === true) {
+        this.options.defaultQuery = azureOptions.azureOpenAIApiVersion
+          ? { 'api-version': azureOptions.azureOpenAIApiVersion }
+          : undefined;
+        this.options.headers['api-key'] = this.apiKey;
+      }
     }
 
     const titleChatCompletion = async () => {
-      modelOptions.model = model;
+      try {
+        modelOptions.model = model;
 
-      if (this.azure) {
-        modelOptions.model = process.env.AZURE_OPENAI_DEFAULT_MODEL ?? modelOptions.model;
-        this.azureEndpoint = genAzureChatCompletion(this.azure, modelOptions.model, this);
-      }
+        if (this.azure) {
+          modelOptions.model = process.env.AZURE_OPENAI_DEFAULT_MODEL ?? modelOptions.model;
+          this.azureEndpoint = genAzureChatCompletion(this.azure, modelOptions.model, this);
+        }
 
-      const instructionsPayload = [
-        {
-          role: this.options.titleMessageRole ?? (this.isOllama ? 'user' : 'system'),
-          content: `Please generate ${titleInstruction}
+        const instructionsPayload = [
+          {
+            role: this.options.titleMessageRole ?? (this.isOllama ? 'user' : 'system'),
+            content: `Please generate ${titleInstruction}
 
 ${convo}
 
 ||>Title:`,
-        },
-      ];
+          },
+        ];
 
-      const promptTokens = this.getTokenCountForMessage(instructionsPayload[0]);
+        const promptTokens = this.getTokenCountForMessage(instructionsPayload[0]);
 
-      try {
         let useChatCompletion = true;
 
         if (this.options.reverseProxyUrl === CohereConstants.API_URL) {
@@ -977,7 +982,7 @@ ${convo}
     let prompt;
 
     // TODO: remove the gpt fallback and make it specific to endpoint
-    const { OPENAI_SUMMARY_MODEL = 'gpt-3.5-turbo' } = process.env ?? {};
+    const { OPENAI_SUMMARY_MODEL = 'gpt-4o-mini' } = process.env ?? {};
     let model = this.options.summaryModel ?? OPENAI_SUMMARY_MODEL;
     if (model === Constants.CURRENT_MODEL) {
       model = this.modelOptions.model;
@@ -1170,6 +1175,10 @@ ${convo}
         opts.defaultHeaders = { ...opts.defaultHeaders, ...this.options.headers };
       }
 
+      if (this.options.defaultQuery) {
+        opts.defaultQuery = this.options.defaultQuery;
+      }
+
       if (this.options.proxy) {
         opts.httpAgent = new HttpsProxyAgent(this.options.proxy);
       }
@@ -1208,6 +1217,12 @@ ${convo}
         this.azure = !serverless && azureOptions;
         this.azureEndpoint =
           !serverless && genAzureChatCompletion(this.azure, modelOptions.model, this);
+        if (serverless === true) {
+          this.options.defaultQuery = azureOptions.azureOpenAIApiVersion
+            ? { 'api-version': azureOptions.azureOpenAIApiVersion }
+            : undefined;
+          this.options.headers['api-key'] = this.apiKey;
+        }
       }
 
       if (this.azure || this.options.azure) {
@@ -1308,11 +1323,6 @@ ${convo}
       let streamPromise;
       /** @type {(value: void | PromiseLike<void>) => void} */
       let streamResolve;
-
-      if (modelOptions.stream && this.isO1Model) {
-        delete modelOptions.stream;
-        delete modelOptions.stop;
-      }
 
       if (modelOptions.stream) {
         streamPromise = new Promise((resolve) => {

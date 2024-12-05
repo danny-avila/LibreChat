@@ -57,8 +57,29 @@
  */
 
 /**
+ * @exports BaseMessage
+ * @typedef {import('@langchain/core/messages').BaseMessage} BaseMessage
+ * @memberof typedefs
+ */
+
+/**
  * @exports UsageMetadata
  * @typedef {import('@langchain/core/messages').UsageMetadata} UsageMetadata
+ * @memberof typedefs
+ */
+
+/**
+ * @exports GraphRunnableConfig
+ * @typedef {import('@langchain/core/runnables').RunnableConfig<{
+ *  req: ServerRequest;
+ * thread_id: string;
+ * run_id: string;
+ * agent_id: string;
+ * name: string;
+ * agent_index: number;
+ * last_agent_index: number;
+ * hide_sequential_outputs: boolean;
+ * }>} GraphRunnableConfig
  * @memberof typedefs
  */
 
@@ -690,6 +711,12 @@
  */
 
 /**
+ * @exports ToolCallData
+ * @typedef {import('~/models/schema/toolCallSchema.js').ToolCallData} ToolCallData
+ * @memberof typedefs
+ */
+
+/**
  * @exports MongoUser
  * @typedef {import('~/models/schema/userSchema.js').MongoUser} MongoUser
  * @memberof typedefs
@@ -800,6 +827,12 @@
 /**
  * @exports Agent
  * @typedef {import('librechat-data-provider').Agent} Agent
+ * @memberof typedefs
+ */
+
+/**
+ * @exports AgentToolResources
+ * @typedef {import('librechat-data-provider').AgentToolResources} AgentToolResources
  * @memberof typedefs
  */
 
@@ -939,6 +972,28 @@
 /**
  * @exports TAgentClient
  * @typedef {import('./server/controllers/agents/client')} TAgentClient
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Object} AgentClientOptions
+ * @property {Agent} agent - The agent configuration object
+ * @property {string} endpoint - The endpoint identifier for the agent
+ * @property {Object} req - The request object
+ * @property {string} [name] - The username
+ * @property {string} [modelLabel] - The label for the model being used
+ * @property {number} [maxContextTokens] - Maximum number of tokens allowed in context
+ * @property {Object} [endpointTokenConfig] - Token configuration for the endpoint
+ * @property {boolean} [resendFiles] - Whether to resend files
+ * @property {string} [imageDetail] - Detail level for image processing
+ * @property {Object} [spec] - Specification object
+ * @property {Promise<MongoFile[]>} [attachments] - Promise resolving to file attachments
+ * @property {Object} [headers] - Additional headers for requests
+ * @property {string} [proxy] - Proxy configuration
+ * @property {Object} [tools] - Available tools for the agent
+ * @property {Object} [eventHandlers] - Custom event handlers
+ * @property {Object} [addParams] - Additional parameters to add to requests
+ * @property {string[]} [dropParams] - Parameters to remove from requests
  * @memberof typedefs
  */
 

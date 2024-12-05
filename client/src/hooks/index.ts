@@ -6,6 +6,7 @@ export * from './Config';
 export * from './Conversations';
 export * from './Nav';
 export * from './Files';
+export * from './Generic';
 export * from './Input';
 export * from './Messages';
 export * from './Plugins';

@@ -122,7 +122,7 @@ export default {
   com_auth_name_max_length: '이름은 80자를 초과할 수 없습니다',
   com_auth_username: '사용자명',
   com_auth_username_required: '사용자명이 필요합니다',
-  com_auth_username_min_length: '사용자명은 최소 3자 이상이어야 합니다',
+  com_auth_username_min_length: '사용자명은 최소 2자 이상이어야 합니다',
   com_auth_username_max_length: '사용자명은 20자를 초과할 수 없습니다',
   com_auth_already_have_account: '이미 계정이 있으신가요?',
   com_auth_login: '로그인',
@@ -303,6 +303,352 @@ export default {
   com_nav_setting_general: '일반',
   com_nav_setting_data: '데이터 제어',
   /* The following are AI Translated */
+  com_a11y_start: 'AI가 응답 중입니다',
+
+  com_a11y_end: 'AI의 답변이 끝났습니다.',
+
+  com_assistants_code_interpreter_info:
+    '코드 인터프리터를 사용하면 어시스턴트가 코드를 작성하고 실행할 수 있습니다. 이 도구는 다양한 데이터와 형식의 파일을 처리하고, 그래프와 같은 파일을 생성할 수 있습니다.',
+
+  com_ui_error_connection: '서버 연결 오류가 발생했습니다. 페이지를 새로고침해 주세요.',
+
+  com_ui_prompt: '프롬프트',
+
+  com_ui_prompts: '프롬프트',
+
+  com_ui_prompt_name: '프롬프트 이름',
+
+  com_ui_delete_prompt: '프롬프트를 삭제하시겠습니까?',
+
+  com_ui_admin: '관리자',
+
+  com_ui_simple: '간단',
+
+  com_ui_versions: '버전',
+
+  com_ui_version_var: '버전 {0}',
+
+  com_ui_advanced: '고급',
+
+  com_ui_admin_settings: '관리자 설정',
+
+  com_ui_error_save_admin_settings: '관리자 설정을 저장하는 중 오류가 발생했습니다.',
+
+  com_ui_prompt_preview_not_shared: '작성자가 이 프롬프트에 대한 협업을 허용하지 않았습니다.',
+
+  com_ui_prompt_name_required: '프롬프트 이름을 입력해주세요',
+
+  com_ui_prompt_text_required: '텍스트를 입력해주세요',
+
+  com_ui_prompt_text: '프롬프트 텍스트',
+
+  com_ui_back_to_chat: '채팅으로 돌아가기',
+
+  com_ui_back_to_prompts: '프롬프트로 돌아가기',
+
+  com_ui_categories: '카테고리',
+
+  com_ui_filter_prompts_name: '이름으로 프롬프트 필터링',
+
+  com_ui_search_categories: '카테고리 검색',
+
+  com_ui_manage: '관리',
+
+  com_ui_variables: '변수',
+
+  com_ui_variables_info:
+    '텍스트에 이중 중괄호를 사용하여 변수를 만들 수 있습니다. 예를 들어 `{{예시 변수}}`와 같이 작성하면 나중에 프롬프트를 사용할 때 해당 부분을 채울 수 있습니다.',
+
+  com_ui_special_variables: '특수 변수:',
+
+  com_ui_special_variables_info:
+    '현재 날짜는 `{{current_date}}`, 계정 이름은 `{{current_user}}`로 표시됩니다.',
+
+  com_ui_dropdown_variables: '드롭다운 변수:',
+
+  com_ui_dropdown_variables_info:
+    '프롬프트에 사용자 정의 드롭다운 메뉴 만들기: `{{변수명:옵션1|옵션2|옵션3}}`',
+
+  com_ui_latest_footer: '모두를 위한 AI, 한곳에서',
+
+  com_ui_upload_invalid:
+    '업로드할 수 없는 파일입니다. 이미지 파일이어야 하며 용량 제한을 초과하지 않아야 합니다',
+
+  com_ui_upload_invalid_var: '업로드할 수 없는 파일입니다. {0} MB 이하의 이미지 파일만 가능합니다',
+
+  com_ui_renaming_var: '"{0}" 이름 변경 중',
+
+  com_ui_read_aloud: '소리내어 읽기',
+
+  com_ui_loading: '로딩 중...',
+
+  com_ui_all_proper: '모두',
+
+  com_ui_chat: '채팅',
+
+  com_ui_chat_history: '대화 기록',
+
+  com_ui_controls: '컨트롤',
+
+  com_ui_dashboard: '대시보드',
+
+  com_ui_create_prompt: '프롬프트 만들기',
+
+  com_ui_share_var: '{0} 공유하기',
+
+  com_ui_enter_var: '{0} 입력',
+
+  com_ui_share_to_all_users: '모든 사용자와 공유',
+
+  com_ui_my_prompts: '내 프롬프트',
+
+  com_ui_no_category: '카테고리 없음',
+
+  com_ui_shared_prompts: '공유된 프롬프트',
+
+  com_ui_prompts_allow_use: '프롬프트 사용 허용',
+
+  com_ui_prompts_allow_create: '프롬프트 생성 허용',
+
+  com_ui_prompts_allow_share_global: '모든 사용자와 프롬프트 공유 허용',
+
+  com_ui_prompt_shared_to_all: '이 프롬프트는 모든 사용자에게 공유됩니다',
+
+  com_ui_prompt_update_error: '프롬프트 업데이트 중 오류가 발생했습니다',
+
+  com_ui_prompt_already_shared_to_all: '이 프롬프트는 이미 모든 사용자와 공유되었습니다',
+
+  com_ui_description_placeholder: '선택 사항: 프롬프트에 표시할 설명을 입력하세요',
+
+  com_ui_command_placeholder:
+    '선택 사항: 프롬프트에 대한 명령어를 입력하세요. 입력하지 않으면 이름이 사용됩니다.',
+
+  com_ui_command_usage_placeholder: '명령어나 이름으로 프롬프트 선택',
+
+  com_ui_no_prompt_description: '설명을 찾을 수 없습니다',
+
+  com_ui_delete_tool: '도구 삭제',
+
+  com_ui_delete_tool_confirm: '이 도구를 삭제하시겠습니까?',
+
+  com_ui_delete_action: '작업 삭제',
+
+  com_ui_delete_action_confirm: '이 작업을 삭제하시겠습니까?',
+
+  com_ui_delete_confirm_prompt_version_var:
+    '선택한 "{0}"의 버전이 삭제됩니다. 다른 버전이 없다면 프롬프트도 함께 삭제됩니다.',
+
+  com_ui_locked: '잠김',
+
+  com_ui_use_micrphone: '마이크 사용',
+
+  com_ui_bookmarks_create_exists: '이미 존재하는 북마크입니다',
+
+  com_ui_bookmarks_filter: '북마크 필터링...',
+
+  com_ui_no_bookmarks: '아직 북마크가 없는 것 같습니다. 채팅을 선택하고 새 북마크를 추가해보세요',
+
+  com_ui_no_conversation_id: '대화 ID를 찾을 수 없습니다',
+
+  com_auth_error_login_unverified:
+    '계정이 아직 인증되지 않았습니다. 이메일에서 인증 링크를 확인해 주세요.',
+
+  com_auth_registration_success_insecure: '등록이 완료되었습니다.',
+
+  com_auth_registration_success_generic: '이메일 주소를 확인하기 위해 메일함을 확인해 주세요.',
+
+  com_auth_reset_password_if_email_exists:
+    '해당 이메일 주소로 등록된 계정이 있다면, 비밀번호 재설정 안내 메일을 발송했습니다. 스팸 폴더도 확인해 주세요.',
+
+  com_auth_email_verification_failed: '이메일 인증에 실패했습니다',
+
+  com_auth_email_verification_rate_limited: '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요',
+
+  com_auth_email_verification_success: '이메일 인증 완료',
+
+  com_auth_email_resent_success: '인증 이메일이 성공적으로 재전송되었습니다',
+
+  com_auth_email_resent_failed: '인증 이메일 재전송 실패',
+
+  com_auth_email_verification_failed_token_missing: '인증 실패: 토큰이 없습니다',
+
+  com_auth_email_verification_invalid: '이메일 인증이 유효하지 않습니다',
+
+  com_auth_email_verification_in_progress: '이메일 주소 확인 중입니다. 잠시만 기다려 주세요.',
+
+  com_auth_email_verification_resend_prompt: '이메일을 받지 못하셨나요?',
+
+  com_auth_email_resend_link: '이메일 다시 보내기',
+
+  com_endpoint_anthropic_prompt_cache:
+    '프롬프트 캐싱을 사용하면 API 호출 간에 큰 맥락이나 지시사항을 재사용할 수 있어 비용과 지연 시간을 줄일 수 있습니다',
+
+  com_endpoint_prompt_cache: '프롬프트 캐싱 사용',
+
+  com_endpoint_export_share: '내보내기/공유',
+
+  com_endpoint_config_key_never_expires: '키가 만료되지 않습니다',
+
+  com_nav_account_settings: '계정 설정',
+
+  com_nav_font_size_xs: '아주 작게',
+
+  com_nav_font_size_sm: '작게',
+
+  com_nav_font_size_base: '중간',
+
+  com_nav_font_size_lg: '큰 글자',
+
+  com_nav_font_size_xl: '아주 큰 글자',
+
+  com_nav_text_to_speech: '텍스트 음성 변환',
+
+  com_nav_automatic_playback: '최신 메시지 자동 재생',
+
+  com_nav_speech_to_text: '음성을 텍스트로 변환',
+
+  com_ui_misc: '기타',
+
+  com_ui_roleplay: '역할놀이',
+
+  com_ui_write: '작성 중',
+
+  com_ui_idea: '아이디어',
+
+  com_ui_shop: '쇼핑',
+
+  com_ui_finance: '재무',
+
+  com_ui_code: '코드',
+
+  com_ui_travel: '여행',
+
+  com_ui_teach_or_explain: '학습 또는 설명',
+
+  com_ui_select_file: '파일 선택',
+
+  com_ui_drag_drop_file: '파일을 여기에 끌어다 놓으세요',
+
+  com_ui_upload_image: '이미지 업로드',
+
+  com_ui_select_a_category: '카테고리를 선택해주세요',
+
+  com_ui_clear_all: '모두 지우기',
+
+  com_nav_auto_send_prompts: '프롬프트 자동 전송',
+
+  com_nav_always_make_prod: '항상 새 버전을 프로덕션으로 설정',
+
+  com_nav_delete_account: '계정 삭제',
+
+  com_nav_delete_account_confirm: '계정 삭제 - 정말 삭제하시겠습니까?',
+
+  com_nav_delete_account_button: '내 계정 영구 삭제',
+
+  com_nav_delete_account_email_placeholder: '계정 이메일을 입력해 주세요',
+
+  com_nav_delete_account_confirm_placeholder: '계속하려면 아래 입력란에 "삭제"라고 입력하세요',
+
+  com_nav_delete_warning: '경고: 이 작업은 계정을 영구적으로 삭제합니다.',
+
+  com_nav_delete_data_info: '모든 데이터가 삭제됩니다.',
+
+  com_nav_conversation_mode: '대화 모드',
+
+  com_nav_auto_send_text: '자동 메시지 전송',
+
+  com_nav_auto_send_text_disabled: '자동 전송 비활성화는 -1로 설정',
+
+  com_nav_auto_transcribe_audio: '오디오 자동 변환',
+
+  com_nav_db_sensitivity: '데시벨 감도',
+
+  com_nav_playback_rate: '오디오 재생 속도',
+
+  com_nav_audio_play_error: '오디오 재생 오류: {0}',
+
+  com_nav_audio_process_error: '오디오 처리 오류: {0}',
+
+  com_nav_long_audio_warning: '긴 텍스트일수록 처리 시간이 더 오래 걸립니다.',
+
+  com_nav_tts_init_error: '음성 합성 초기화 실패: {0}',
+
+  com_nav_tts_unsupported_error:
+    '선택한 엔진의 텍스트 음성 변환 기능이 이 브라우저에서 지원되지 않습니다.',
+
+  com_nav_source_buffer_error:
+    '오디오 재생 설정 중 오류가 발생했습니다. 페이지를 새로고침해 주세요.',
+
+  com_nav_media_source_init_error:
+    '오디오 플레이어를 준비할 수 없습니다. 브라우저 설정을 확인해 주세요.',
+
+  com_nav_buffer_append_error: '오디오 스트리밍에 문제가 발생했습니다. 재생이 중단될 수 있습니다.',
+
+  com_nav_speech_cancel_error:
+    '오디오 재생을 중지할 수 없습니다. 페이지를 새로 고침해야 할 수 있습니다.',
+
+  com_nav_voices_fetch_error: '음성 옵션을 불러올 수 없습니다. 인터넷 연결을 확인해 주세요.',
+
+  com_nav_engine: '엔진',
+
+  com_nav_browser: '브라우저',
+
+  com_nav_edge: 'Edge',
+
+  com_nav_external: '외부',
+
+  com_nav_delete_cache_storage: 'TTS 캐시 저장소 삭제',
+
+  com_nav_enable_cache_tts: 'TTS 캐시 사용',
+
+  com_nav_voice_select: '음성 선택',
+
+  com_nav_enable_cloud_browser_voice: '클라우드 기반 음성 사용',
+
+  com_nav_info_enter_to_send:
+    '활성화되면 `Enter` 키를 눌러 메시지를 보낼 수 있습니다. 비활성화 시 Enter 키는 줄바꿈을 하며, 메시지를 보내려면 `Ctrl + Enter`를 눌러야 합니다.',
+
+  com_nav_info_save_draft:
+    '활성화하면 채팅 양식에 입력한 텍스트와 첨부 파일이 자동으로 로컬에 임시 저장됩니다. 페이지를 새로고침하거나 다른 대화로 전환해도 이 임시 저장 내용을 계속 사용할 수 있습니다. 임시 저장 내용은 사용자의 기기에 로컬로 저장되며, 메시지를 보내면 삭제됩니다.',
+
+  com_nav_info_fork_change_default:
+    '\'표시된 메시지만\'은 선택한 메시지로 가는 직접 경로만 포함합니다. \'관련 브랜치 포함\'은 경로상의 브랜치도 추가합니다. \'이 메시지 전후 모두 포함\'은 연결된 모든 메시지와 브랜치를 포함합니다.',
+
+  com_nav_info_fork_split_target_setting:
+    '활성화되면 선택한 동작에 따라 대상 메시지부터 대화의 최신 메시지까지 포킹이 시작됩니다.',
+
+  com_nav_info_user_name_display:
+    '활성화하면 보내는 각 메시지 위에 사용자 이름이 표시됩니다. 비활성화하면 내 메시지 위에 "나"라고만 표시됩니다.',
+
+  com_nav_info_latex_parsing:
+    '활성화하면 메시지의 LaTeX 코드가 수학 방정식으로 렌더링됩니다. LaTeX 렌더링이 필요하지 않은 경우 이 기능을 비활성화하면 성능이 향상될 수 있습니다.',
+
+  com_nav_info_revoke:
+    '이 작업은 제공한 모든 API 키를 취소하고 제거합니다. 해당 엔드포인트를 계속 사용하려면 이 인증 정보를 다시 입력해야 합니다.',
+
+  com_nav_commands: '명령어',
+
+  com_nav_commands_tab: '명령어 설정',
+
+  com_nav_at_command: '@ 명령어',
+
+  com_nav_at_command_description: '엔드포인트, 모델, 프리셋 등을 전환하는 "@" 명령어 토글',
+
+  com_nav_plus_command: '명령어 추가',
+
+  com_nav_plus_command_description: '다중 응답 설정을 추가하는 ' + ' 명령 토글',
+
+  com_nav_slash_command: '슬래시 명령어',
+
+  com_nav_slash_command_description: '키보드로 프롬프트를 선택하려면 "/" 명령어 토글',
+
+  com_nav_command_settings: '명령어 설정',
+
+  com_nav_command_settings_description: '채팅에서 사용 가능한 명령어 설정하기',
+
+  com_nav_setting_chat: '채팅',
+
+  com_nav_setting_speech: '음성',
   com_assistants_file_search: '파일 검색',
   com_assistants_file_search_info:
     '파일 검색을 위한 벡터 저장소 연결은 아직 지원되지 않습니다. Provider Playground에서 연결하거나 스레드 기반으로 메시지에 파일을 첨부하여 파일 검색을 할 수 있습니다.',
@@ -513,7 +859,7 @@ export default {
   com_endpoint_preset_default_item: '기본값:',
   com_endpoint_preset_default_none: '기본 프리셋이 설정되지 않았습니다.',
   com_endpoint_preset_title: '프리셋',
-  com_endpoint_preset_saved: '저장되었습니다!',
+  com_ui_saved: '저장되었습니다!',
   com_endpoint_preset_default: '이제 기본 프리셋입니다.',
   com_endpoint_preset_selected: '프리셋 활성화됨',
   com_endpoint_preset_selected_title: '활성화됨',
@@ -566,2185 +912,187 @@ export default {
   com_nav_setting_account: '계정',
   com_nav_language: '언어',
   com_nav_lang_auto: '자동 감지',
-  com_nav_lang_english: '영어',
-  com_nav_lang_chinese: '중국어',
-  com_nav_lang_german: '독일어',
-  com_nav_lang_spanish: '스페인어',
-  com_nav_lang_french: '프랑스어',
-  com_nav_lang_italian: '이탈리아어',
-  com_nav_lang_polish: '폴란드어',
-  com_nav_lang_brazilian_portuguese: '브라질 포르투갈어',
-  com_nav_lang_russian: '러시아어',
-  com_nav_lang_japanese: '일본어',
-  com_nav_lang_swedish: '스웨덴어',
+  com_nav_lang_english: 'English',
+  com_nav_lang_chinese: '中文',
+  com_nav_lang_german: 'Deutsch',
+  com_nav_lang_spanish: 'Español',
+  com_nav_lang_french: 'Français ',
+  com_nav_lang_italian: 'Italiano',
+  com_nav_lang_polish: 'Polski',
+  com_nav_lang_brazilian_portuguese: 'Português Brasileiro',
+  com_nav_lang_russian: 'Русский',
+  com_nav_lang_japanese: '日本語',
+  com_nav_lang_swedish: 'Svenska',
   com_nav_lang_korean: '한국어',
-  com_nav_lang_vietnamese: '베트남어',
-  com_nav_lang_traditionalchinese: '번체 중국어',
-  com_nav_lang_arabic: '아랍어',
-  com_nav_lang_turkish: '터키어',
-  com_nav_lang_dutch: '네덜란드어',
-  com_nav_lang_indonesia: '인도네시아',
-  com_nav_lang_hebrew: '히브리어',
-};
+  com_nav_lang_vietnamese: 'Tiếng Việt',
+  com_nav_lang_traditionalchinese: '繁體中文',
+  com_nav_lang_arabic: 'العربية',
+  com_nav_lang_turkish: 'Türkçe',
+  com_nav_lang_dutch: 'Nederlands',
+  com_nav_lang_indonesia: 'Indonesia',
+  com_nav_lang_hebrew: 'עברית',
+  com_nav_lang_finnish: 'Suomi',
+  com_nav_convo_menu_options: '대화 메뉴 옵션',
 
-export const comparisons = {
-  com_ui_examples: {
-    english: 'Examples',
-    translated: '예시',
-  },
-  com_ui_new_chat: {
-    english: 'New chat',
-    translated: '새 채팅',
-  },
-  com_ui_happy_birthday: {
-    english: 'It\'s my 1st birthday!',
-    translated: '내 첫 생일이야!',
-  },
-  com_ui_example_quantum_computing: {
-    english: 'Explain quantum computing in simple terms',
-    translated: '양자 컴퓨팅을 간단하게 설명해줄래?',
-  },
-  com_ui_example_10_year_old_b_day: {
-    english: 'Got any creative ideas for a 10 year old\'s birthday?',
-    translated: '10살 아이 생일 파티를 위한 참신한 아이디어 있을까?',
-  },
-  com_ui_example_http_in_js: {
-    english: 'How do I make an HTTP request in Javascript?',
-    translated: '자바스크립트에서 HTTP 요청을 어떻게 만드나요?',
-  },
-  com_ui_capabilities: {
-    english: 'Capabilities',
-    translated: '기능',
-  },
-  com_ui_capability_remember: {
-    english: 'Remembers what user said earlier in the conversation',
-    translated: '대화 중 사용자가 이전에 말한 것을 기억해요.',
-  },
-  com_ui_capability_correction: {
-    english: 'Allows user to provide follow-up corrections',
-    translated: '사용자가 수정 사항을 제공할 수 있어요.',
-  },
-  com_ui_capability_decline_requests: {
-    english: 'Trained to decline inappropriate requests',
-    translated: '부적절한 요청을 거부하도록 훈련되었어요.',
-  },
-  com_ui_limitations: {
-    english: 'Limitations',
-    translated: '제한사항',
-  },
-  com_ui_limitation_incorrect_info: {
-    english: 'May occasionally generate incorrect information',
-    translated: '간혹 잘못된 정보를 생성할 수 있습니다.',
-  },
-  com_ui_limitation_harmful_biased: {
-    english: 'May occasionally produce harmful instructions or biased content',
-    translated: '간혹 해로운 지시나 편향된 내용을 제공할 수 있습니다.',
-  },
-  com_ui_limitation_limited_2021: {
-    english: 'Limited knowledge of world and events after 2021',
-    translated: '2021년 이후의 세계 및 이벤트에 대한 지식이 제한적입니다.',
-  },
-  com_ui_input: {
-    english: 'Input',
-    translated: '입력',
-  },
-  com_ui_close: {
-    english: 'Close',
-    translated: '닫기',
-  },
-  com_ui_model: {
-    english: 'Model',
-    translated: '모델',
-  },
-  com_ui_select_model: {
-    english: 'Select a model',
-    translated: '모델 선택',
-  },
-  com_ui_use_prompt: {
-    english: 'Use prompt',
-    translated: '프롬프트 사용',
-  },
-  com_ui_prev: {
-    english: 'Prev',
-    translated: '이전',
-  },
-  com_ui_next: {
-    english: 'Next',
-    translated: '다음',
-  },
-  com_ui_prompt_templates: {
-    english: 'Prompt Templates',
-    translated: '프롬프트 템플릿',
-  },
-  com_ui_hide_prompt_templates: {
-    english: 'Hide Prompt Templates',
-    translated: '프롬프트 템플릿 숨기기',
-  },
-  com_ui_showing: {
-    english: 'Showing',
-    translated: '표시 중',
-  },
-  com_ui_of: {
-    english: 'of',
-    translated: '/',
-  },
-  com_ui_entries: {
-    english: 'Entries',
-    translated: '개',
-  },
-  com_ui_pay_per_call: {
-    english: 'All AI conversations in one place. Pay per call and not per month',
-    translated: '모든 AI 대화를 한 곳에서. 월별이 아닌 호출 당 지불',
-  },
-  com_ui_enter: {
-    english: 'Enter',
-    translated: 'Enter',
-  },
-  com_ui_submit: {
-    english: 'Submit',
-    translated: '제출',
-  },
-  com_ui_upload_success: {
-    english: 'Successfully uploaded file',
-    translated: '파일 업로드 성공',
-  },
-  com_ui_upload_invalid: {
-    english: 'Invalid file for upload. Must be an image not exceeding 2 MB',
-    translated: '잘못된 파일입니다',
-  },
-  com_ui_cancel: {
-    english: 'Cancel',
-    translated: '취소',
-  },
-  com_ui_save: {
-    english: 'Save',
-    translated: '저장',
-  },
-  com_ui_copy_to_clipboard: {
-    english: 'Copy to clipboard',
-    translated: '클립보드에 복사',
-  },
-  com_ui_copied_to_clipboard: {
-    english: 'Copied to clipboard',
-    translated: '클립보드에 복사되었습니다',
-  },
-  com_ui_regenerate: {
-    english: 'Regenerate',
-    translated: '재생성',
-  },
-  com_ui_continue: {
-    english: 'Continue',
-    translated: '계속',
-  },
-  com_ui_edit: {
-    english: 'Edit',
-    translated: '편집',
-  },
-  com_ui_success: {
-    english: 'Success',
-    translated: '성공',
-  },
-  com_ui_all: {
-    english: 'all',
-    translated: '전체',
-  },
-  com_ui_clear: {
-    english: 'Clear',
-    translated: '지우기',
-  },
-  com_ui_revoke: {
-    english: 'Revoke',
-    translated: '취소',
-  },
-  com_ui_revoke_info: {
-    english: 'Revoke all user provided credentials',
-    translated: '사용자가 제공한 자격 증명을 모두 취소합니다.',
-  },
-  com_ui_import_conversation: {
-    english: 'Import',
-    translated: '가져오기',
-  },
-  com_ui_import_conversation_info: {
-    english: 'Import conversations from a JSON file',
-    translated: 'JSON 파일에서 대화 가져오기',
-  },
-  com_ui_import_conversation_success: {
-    english: 'Conversations imported successfully',
-    translated: '대화가 성공적으로 가져와졌습니다',
-  },
-  com_ui_import_conversation_error: {
-    english: 'There was an error importing your conversations',
-    translated: '대화를 가져오는 동안 오류가 발생했습니다',
-  },
-  com_ui_confirm_action: {
-    english: 'Confirm Action',
-    translated: '작업 확인',
-  },
-  com_ui_chats: {
-    english: 'chats',
-    translated: '채팅',
-  },
-  com_ui_share: {
-    english: 'Share',
-    translated: '공유하기',
-  },
-  com_ui_copy_link: {
-    english: 'Copy link',
-    translated: '링크 복사',
-  },
-  com_ui_update_link: {
-    english: 'Update link',
-    translated: '링크 업데이트',
-  },
-  com_ui_create_link: {
-    english: 'Create link',
-    translated: '링크 만들기',
-  },
-  com_ui_share_link_to_chat: {
-    english: 'Share link to chat',
-    translated: '채팅으로 링크 공유하기',
-  },
-  com_ui_share_retrieve_error: {
-    english: 'There was an error deleting the shared link.',
-    translated: '공유 링크를 삭제하는 중에 오류가 발생했습니다.',
-  },
-  com_ui_share_delete_error: {
-    english: 'There was an error deleting the shared link.',
-    translated: '공유 링크를 삭제하는 중에 오류가 발생했습니다.',
-  },
-  com_ui_share_error: {
-    english: 'There was an error sharing the chat link',
-    translated: '채팅 링크를 공유하는 동안 오류가 발생했습니다',
-  },
-  com_ui_share_create_message: {
-    english: 'Your name and any messages you add after sharing stay private.',
-    translated: '이름과 공유 후에 추가하는 메시지는 비공개로 유지됩니다.',
-  },
-  com_ui_share_created_message: {
-    english:
-      'A shared link to your chat has been created. Manage previously shared chats at any time via Settings.',
-    translated:
-      '귀하의 채팅에 대한 공유 링크가 생성되었습니다. 설정을 통해 언제든지 이전에 공유한 채팅을 관리할 수 있습니다.',
-  },
-  com_ui_share_update_message: {
-    english: 'Your name, custom instructions, and any messages you add after sharing stay private.',
-    translated: '이름, 사용자 지정 지침 및 공유 후 추가하는 메시지는 비공개로 유지됩니다.',
-  },
-  com_ui_share_updated_message: {
-    english:
-      'A shared link to your chat has been updated. Manage previously shared chats at any time via Settings.',
-    translated:
-      '귀하의 채팅에 대한 공유 링크가 업데이트되었습니다. 설정을 통해 언제든지 이전에 공유한 채팅을 관리할 수 있습니다.',
-  },
-  com_ui_shared_link_not_found: {
-    english: 'Shared link not found',
-    translated: '공유 링크를 찾을 수 없습니다',
-  },
-  com_ui_delete: {
-    english: 'Delete',
-    translated: '삭제',
-  },
-  com_ui_delete_conversation: {
-    english: 'Delete chat?',
-    translated: '채팅을 삭제하시겠습니까?',
-  },
-  com_ui_delete_confirm: {
-    english: 'This will delete',
-    translated: '이 채팅이 삭제됩니다',
-  },
-  com_ui_rename: {
-    english: 'Rename',
-    translated: '이름 바꾸기',
-  },
-  com_ui_archive: {
-    english: 'Archive',
-    translated: '아카이브',
-  },
-  com_ui_archive_error: {
-    english: 'Failed to archive conversation',
-    translated: '대화 아카이브 실패',
-  },
-  com_ui_unarchive: {
-    english: 'Unarchive',
-    translated: '아카이브 해제',
-  },
-  com_ui_unarchive_error: {
-    english: 'Failed to unarchive conversation',
-    translated: '대화 아카이브 해제 실패',
-  },
-  com_ui_more_options: {
-    english: 'More',
-    translated: '더 보기',
-  },
-  com_ui_bookmarks: {
-    english: 'Bookmarks',
-    translated: '북마크',
-  },
-  com_ui_bookmarks_rebuild: {
-    english: 'Rebuild',
-    translated: '재구축',
-  },
-  com_ui_bookmarks_new: {
-    english: 'New Bookmark',
-    translated: '새 북마크',
-  },
-  com_ui_bookmark_delete_confirm: {
-    english: 'Are you sure you want to delete this bookmark?',
-    translated: '이 북마크를 삭제하시겠습니까?',
-  },
-  com_ui_bookmarks_title: {
-    english: 'Title',
-    translated: '제목',
-  },
-  com_ui_bookmarks_count: {
-    english: 'Count',
-    translated: '개수',
-  },
-  com_ui_bookmarks_description: {
-    english: 'Description',
-    translated: '설명',
-  },
-  com_ui_bookmarks_create_success: {
-    english: 'Bookmark created successfully',
-    translated: '북마크가 성공적으로 생성되었습니다',
-  },
-  com_ui_bookmarks_update_success: {
-    english: 'Bookmark updated successfully',
-    translated: '북마크가 성공적으로 업데이트되었습니다',
-  },
-  com_ui_bookmarks_delete_success: {
-    english: 'Bookmark deleted successfully',
-    translated: '북마크가 성공적으로 삭제되었습니다',
-  },
-  com_ui_bookmarks_create_error: {
-    english: 'There was an error creating the bookmark',
-    translated: '북마크 생성 중 오류가 발생했습니다',
-  },
-  com_ui_bookmarks_update_error: {
-    english: 'There was an error updating the bookmark',
-    translated: '북마 업데이트 중 오류가 발생했습니다',
-  },
-  com_ui_bookmarks_delete_error: {
-    english: 'There was an error deleting the bookmark',
-    translated: '북마크 삭제 중 오류가 발생했습니다',
-  },
-  com_ui_bookmarks_add_to_conversation: {
-    english: 'Add to current conversation',
-    translated: '현재 대화에 추가',
-  },
-  com_auth_error_login: {
-    english:
-      'Unable to login with the information provided. Please check your credentials and try again.',
-    translated: '제공된 정보로 로그인할 수 없습니다. 자격 증명을 확인하고 다시 시도하세요.',
-  },
-  com_auth_no_account: {
-    english: 'Don\'t have an account?',
-    translated: '계정이 없으신가요?',
-  },
-  com_auth_sign_up: {
-    english: 'Sign up',
-    translated: '가입하기',
-  },
-  com_auth_sign_in: {
-    english: 'Sign in',
-    translated: '로그인',
-  },
-  com_auth_google_login: {
-    english: 'Continue with Google',
-    translated: 'Google로 로그인',
-  },
-  com_auth_facebook_login: {
-    english: 'Continue with Facebook',
-    translated: 'Facebook으로 로그인',
-  },
-  com_auth_github_login: {
-    english: 'Continue with Github',
-    translated: 'Github으로 로그인',
-  },
-  com_auth_discord_login: {
-    english: 'Continue with Discord',
-    translated: 'Discord로 로그인',
-  },
-  com_auth_email: {
-    english: 'Email',
-    translated: '이메일',
-  },
-  com_auth_email_required: {
-    english: 'Email is required',
-    translated: '이메일은 필수입니다',
-  },
-  com_auth_email_min_length: {
-    english: 'Email must be at least 6 characters',
-    translated: '이메일은 최소 6자 이상이어야 합니다',
-  },
-  com_auth_email_max_length: {
-    english: 'Email should not be longer than 120 characters',
-    translated: '이메일은 120자를 넘을 수 없습니다',
-  },
-  com_auth_email_pattern: {
-    english: 'You must enter a valid email address',
-    translated: '유효한 이메일 주소를 입력하세요',
-  },
-  com_auth_email_address: {
-    english: 'Email address',
-    translated: '이메일 주소',
-  },
-  com_auth_password: {
-    english: 'Password',
-    translated: '비밀번호',
-  },
-  com_auth_password_required: {
-    english: 'Password is required',
-    translated: '비밀번호는 필수입니다',
-  },
-  com_auth_password_min_length: {
-    english: 'Password must be at least 8 characters',
-    translated: '비밀번호는 최소 8자 이상이어야 합니다',
-  },
-  com_auth_password_max_length: {
-    english: 'Password must be less than 128 characters',
-    translated: '비밀번호는 128자를 넘을 수 없습니다',
-  },
-  com_auth_password_forgot: {
-    english: 'Forgot Password?',
-    translated: '비밀번호를 잊으셨나요?',
-  },
-  com_auth_password_confirm: {
-    english: 'Confirm password',
-    translated: '비밀번호 확인',
-  },
-  com_auth_password_not_match: {
-    english: 'Passwords do not match',
-    translated: '비밀번호가 일치하지 않습니다',
-  },
-  com_auth_continue: {
-    english: 'Continue',
-    translated: '계속',
-  },
-  com_auth_create_account: {
-    english: 'Create your account',
-    translated: '계정 만들기',
-  },
-  com_auth_error_create: {
-    english: 'There was an error attempting to register your account. Please try again.',
-    translated: '계정을 등록하는 중에 오류가 발생했습니다. 다시 시도하세요.',
-  },
-  com_auth_full_name: {
-    english: 'Full name',
-    translated: '이름',
-  },
-  com_auth_name_required: {
-    english: 'Name is required',
-    translated: '이름은 필수입니다',
-  },
-  com_auth_name_min_length: {
-    english: 'Name must be at least 3 characters',
-    translated: '이름은 최소 3자 이상이어야 합니다',
-  },
-  com_auth_name_max_length: {
-    english: 'Name must be less than 80 characters',
-    translated: '이름은 80자를 초과할 수 없습니다',
-  },
-  com_auth_username: {
-    english: 'Username (optional)',
-    translated: '사용자명',
-  },
-  com_auth_username_required: {
-    english: 'Username is required',
-    translated: '사용자명이 필요합니다',
-  },
-  com_auth_username_min_length: {
-    english: 'Username must be at least 2 characters',
-    translated: '사용자명은 최소 3자 이상이어야 합니다',
-  },
-  com_auth_username_max_length: {
-    english: 'Username must be less than 20 characters',
-    translated: '사용자명은 20자를 초과할 수 없습니다',
-  },
-  com_auth_already_have_account: {
-    english: 'Already have an account?',
-    translated: '이미 계정이 있으신가요?',
-  },
-  com_auth_login: {
-    english: 'Login',
-    translated: '로그인',
-  },
-  com_auth_reset_password: {
-    english: 'Reset your password',
-    translated: '비밀번호 재설정',
-  },
-  com_auth_click: {
-    english: 'Click',
-    translated: '클릭',
-  },
-  com_auth_here: {
-    english: 'HERE',
-    translated: '여기',
-  },
-  com_auth_to_reset_your_password: {
-    english: 'to reset your password.',
-    translated: '비밀번호를 재설정하려면',
-  },
-  com_auth_reset_password_link_sent: {
-    english: 'Email Sent',
-    translated: '이메일 전송',
-  },
-  com_auth_reset_password_email_sent: {
-    english: 'An email has been sent to you with further instructions to reset your password.',
-    translated: '비밀번호 재설정에 대한 지침이 포함된 이메일이 전송되었습니다.',
-  },
-  com_auth_error_reset_password: {
-    english:
-      'There was a problem resetting your password. There was no user found with the email address provided. Please try again.',
-    translated:
-      '비밀번호 재설정 중에 문제가 발생했습니다. 제공된 이메일 주소로 사용자를 찾을 수 없습니다. 다시 시도하세요.',
-  },
-  com_auth_reset_password_success: {
-    english: 'Password Reset Success',
-    translated: '비밀번호 재설정 성공',
-  },
-  com_auth_login_with_new_password: {
-    english: 'You may now login with your new password.',
-    translated: '새로운 비밀번호로 로그인할 수 있습니다.',
-  },
-  com_auth_error_invalid_reset_token: {
-    english: 'This password reset token is no longer valid.',
-    translated: '이 비밀번호 재설정 토큰은 더 이상 유효하지 않습니다.',
-  },
-  com_auth_click_here: {
-    english: 'Click here',
-    translated: '여기를 클릭하세요',
-  },
-  com_auth_to_try_again: {
-    english: 'to try again.',
-    translated: '다시 시도하세요.',
-  },
-  com_auth_submit_registration: {
-    english: 'Submit registration',
-    translated: '등록하기',
-  },
-  com_auth_welcome_back: {
-    english: 'Welcome back',
-    translated: '다시 오신 것을 환영합니다',
-  },
-  com_endpoint_open_menu: {
-    english: 'Open Menu',
-    translated: '메뉴 열기',
-  },
-  com_endpoint_bing_enable_sydney: {
-    english: 'Enable Sydney',
-    translated: '시드니 활성화',
-  },
-  com_endpoint_bing_to_enable_sydney: {
-    english: 'To enable Sydney',
-    translated: '시드니를 활성화하려면',
-  },
-  com_endpoint_bing_jailbreak: {
-    english: 'Jailbreak',
-    translated: 'Jailbreak',
-  },
-  com_endpoint_bing_context_placeholder: {
-    english:
-      'Bing can use up to 7k tokens for \'context\', which it can reference for the conversation. The specific limit is not known but may run into errors exceeding 7k tokens',
-    translated:
-      'Bing은 \'컨텍스트\'로 최대 7,000개의 토큰을 사용할 수 있으며, 대화에서 참조할 수 있습니다. 구체적인 제한은 알려져 있지 않지만, 7,000개의 토큰을 초과하면 오류가 발생할 수 있습니다.',
-  },
-  com_endpoint_bing_system_message_placeholder: {
-    english:
-      'WARNING: Misuse of this feature can get you BANNED from using Bing! Click on \'System Message\' for full instructions and the default message if omitted, which is the \'Sydney\' preset that is considered safe.',
-    translated:
-      '경고: 이 기능의 오용으로 인해 Bing의 사용이 \'금지\'될 수 있습니다. 모든 내용을 보려면 \'시스템 메시지\'를 클릭하세요. 생략된 경우 \'시드니\' 프리셋이 사용됩니다.',
-  },
-  com_endpoint_system_message: {
-    english: 'System Message',
-    translated: '시스템 메시지',
-  },
-  com_endpoint_default_blank: {
-    english: 'default: blank',
-    translated: '기본값: 공백',
-  },
-  com_endpoint_default_false: {
-    english: 'default: false',
-    translated: '기본값: false',
-  },
-  com_endpoint_default_creative: {
-    english: 'default: creative',
-    translated: '기본값: 창의적',
-  },
-  com_endpoint_default_empty: {
-    english: 'default: empty',
-    translated: '기본값: 비어 있음',
-  },
-  com_endpoint_default_with_num: {
-    english: 'default: {0}',
-    translated: '기본값: {0}',
-  },
-  com_endpoint_context: {
-    english: 'Context',
-    translated: '컨텍스트',
-  },
-  com_endpoint_tone_style: {
-    english: 'Tone Style',
-    translated: '톤 스타일',
-  },
-  com_endpoint_token_count: {
-    english: 'Token count',
-    translated: '토큰 수',
-  },
-  com_endpoint_output: {
-    english: 'Output',
-    translated: '출력',
-  },
-  com_endpoint_google_temp: {
-    english:
-      'Higher values = more random, while lower values = more focused and deterministic. We recommend altering this or Top P but not both.',
-    translated:
-      '높은 값 = 더 무작위, 낮은 값 = 더 집중적이고 결정적입니다. 이 값을 변경하거나 Top P 중 하나만 변경하는 것을 권장합니다.',
-  },
-  com_endpoint_google_topp: {
-    english:
-      'Top-p changes how the model selects tokens for output. Tokens are selected from most K (see topK parameter) probable to least until the sum of their probabilities equals the top-p value.',
-    translated:
-      'Top-p는 모델이 출력에 사용할 토큰을 선택하는 방식을 변경합니다. 토큰은 가장 높은 확률부터 가장 낮은 확률까지 선택됩니다. 선택된 토큰의 확률의 합이 top-p 값과 같아질 때까지 선택됩니다.',
-  },
-  com_endpoint_google_topk: {
-    english:
-      'Top-k changes how the model selects tokens for output. A top-k of 1 means the selected token is the most probable among all tokens in the model\'s vocabulary (also called greedy decoding), while a top-k of 3 means that the next token is selected from among the 3 most probable tokens (using temperature).',
-    translated:
-      'Top-k는 모델이 출력에 사용할 토큰을 선택하는 방식을 변경합니다. top-k가 1인 경우 모델의 어휘 중 가장 확률이 높은 토큰이 선택됩니다(greedy decoding). top-k가 3인 경우 다음 토큰은 가장 확률이 높은 3개의 토큰 중에서 선택됩니다(temperature 사용).',
-  },
-  com_endpoint_google_maxoutputtokens: {
-    english:
-      ' \tMaximum number of tokens that can be generated in the response. Specify a lower value for shorter responses and a higher value for longer responses.',
-    translated:
-      '응답에서 생성할 수 있는 최대 토큰 수입니다. 짧은 응답에는 낮은 값을, 긴 응답에는 높은 값을 지정하세요.',
-  },
-  com_endpoint_google_custom_name_placeholder: {
-    english: 'Set a custom name for Google',
-    translated: 'Google에 대한 사용자 정의 이름 설정',
-  },
-  com_endpoint_prompt_prefix_placeholder: {
-    english: 'Set custom instructions or context. Ignored if empty.',
-    translated: '사용자 정의 지시사항 또는 컨텍스트를 설정하세요. 비어 있으면 무시됩니다.',
-  },
-  com_endpoint_custom_name: {
-    english: 'Custom Name',
-    translated: '사용자 정의 이름',
-  },
-  com_endpoint_prompt_prefix: {
-    english: 'Custom Instructions',
-    translated: '프롬프트 접두사',
-  },
-  com_endpoint_temperature: {
-    english: 'Temperature',
-    translated: '온도',
-  },
-  com_endpoint_default: {
-    english: 'default',
-    translated: '기본값',
-  },
-  com_endpoint_top_p: {
-    english: 'Top P',
-    translated: 'Top P',
-  },
-  com_endpoint_top_k: {
-    english: 'Top K',
-    translated: 'Top K',
-  },
-  com_endpoint_max_output_tokens: {
-    english: 'Max Output Tokens',
-    translated: '최대 출력 토큰 수',
-  },
-  com_endpoint_openai_temp: {
-    english:
-      'Higher values = more random, while lower values = more focused and deterministic. We recommend altering this or Top P but not both.',
-    translated:
-      '높은 값 = 더 무작위, 낮은 값 = 더 집중적이고 결정적입니다. 이 값을 변경하거나 Top P 중 하나만 변경하는 것을 권장합니다.',
-  },
-  com_endpoint_openai_max: {
-    english:
-      'The max tokens to generate. The total length of input tokens and generated tokens is limited by the model\'s context length.',
-    translated:
-      '생성할 최대 토큰 수입니다. 입력 토큰과 생성된 토큰의 총 길이는 모델의 컨텍스트 길이로 제한됩니다.',
-  },
-  com_endpoint_openai_topp: {
-    english:
-      'An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with top_p probability mass. So 0.1 means only the tokens comprising the top 10% probability mass are considered. We recommend altering this or temperature but not both.',
-    translated:
-      '온도를 사용한 샘플링 대신, top_p 확률 질량을 고려하는 nucleus 샘플링입니다. 따라서 0.1은 상위 10% 확률 질량을 구성하는 토큰만 고려합니다. 이 값을 변경하거나 온도를 변경하는 것을 권장하지만, 둘 다 변경하지는 마세요.',
-  },
-  com_endpoint_openai_freq: {
-    english:
-      'Number between -2.0 and 2.0. Positive values penalize new tokens based on their existing frequency in the text so far, decreasing the model\'s likelihood to repeat the same line verbatim.',
-    translated:
-      '텍스트에서 토큰의 빈도수에 따라 새로운 토큰에 패널티를 부여합니다. 이전에 나온 텍스트의 빈도수에 따라 새로운 토큰의 확률이 감소하여 동일한 문장을 반복할 가능성을 줄입니다.',
-  },
-  com_endpoint_openai_pres: {
-    english:
-      'Number between -2.0 and 2.0. Positive values penalize new tokens based on whether they appear in the text so far, increasing the model\'s likelihood to talk about new topics.',
-    translated:
-      '텍스트에서 토큰이 나타나는지 여부에 따라 새로운 토큰에 패널티를 부여합니다. 이전에 나온 텍스트에 나타나는 토큰에 대한 패널티를 증가시켜 새로운 주제에 대해 이야기할 가능성을 높입니다.',
-  },
-  com_endpoint_openai_custom_name_placeholder: {
-    english: 'Set a custom name for the AI',
-    translated: 'ChatGPT에 대한 사용자 정의 이름을 설정하세요.',
-  },
-  com_endpoint_openai_prompt_prefix_placeholder: {
-    english: 'Set custom instructions to include in System Message. Default: none',
-    translated: '시스템 메시지에 포함할 사용자 정의 지시사항을 설정하세요. 기본값: 없음',
-  },
-  com_endpoint_anthropic_temp: {
-    english:
-      'Ranges from 0 to 1. Use temp closer to 0 for analytical / multiple choice, and closer to 1 for creative and generative tasks. We recommend altering this or Top P but not both.',
-    translated:
-      '0에서 1 사이의 값으로, 분석/다중 선택에는 0에 가까운 값을 사용하고, 창의적이고 생성적인 작업에는 1에 가까운 값을 사용하세요. 이 값을 변경하거나 Top P 중 하나만 변경하는 것을 권장합니다.',
-  },
-  com_endpoint_anthropic_topp: {
-    english:
-      'Top-p changes how the model selects tokens for output. Tokens are selected from most K (see topK parameter) probable to least until the sum of their probabilities equals the top-p value.',
-    translated:
-      'Top-p는 모델이 출력에 사용할 토큰을 선택하는 방식을 변경합니다. 토큰은 가장 높은 확률부터 가장 낮은 확률까지 선택됩니다. 선택된 토큰의 확률의 합이 top-p 값과 같아질 때까지 선택됩니다.',
-  },
-  com_endpoint_anthropic_topk: {
-    english:
-      'Top-k changes how the model selects tokens for output. A top-k of 1 means the selected token is the most probable among all tokens in the model\'s vocabulary (also called greedy decoding), while a top-k of 3 means that the next token is selected from among the 3 most probable tokens (using temperature).',
-    translated:
-      'Top-k는 모델이 출력에 사용할 토큰을 선택하는 방식을 변경합니다. top-k가 1인 경우 모델의 어휘 중 가장 확률이 높은 토큰이 선택됩니다(greedy decoding). top-k가 3인 경우 다음 토큰은 가장 확률이 높은 3개의 토큰 중에서 선택됩니다(temperature 사용).',
-  },
-  com_endpoint_anthropic_maxoutputtokens: {
-    english:
-      'Maximum number of tokens that can be generated in the response. Specify a lower value for shorter responses and a higher value for longer responses.',
-    translated:
-      '응답에서 생성할 수 있는 최대 토큰 수입니다. 짧은 응답에는 낮은 값을, 긴 응답에는 높은 값을 지정하세요.',
-  },
-  com_endpoint_anthropic_custom_name_placeholder: {
-    english: 'Set a custom name for Anthropic',
-    translated: 'Anthropic에 대한 사용자 정의 이름 설정',
-  },
-  com_endpoint_frequency_penalty: {
-    english: 'Frequency Penalty',
-    translated: '빈도 패널티',
-  },
-  com_endpoint_presence_penalty: {
-    english: 'Presence Penalty',
-    translated: '존재 패널티',
-  },
-  com_endpoint_plug_use_functions: {
-    english: 'Use Functions',
-    translated: '함수 사용',
-  },
-  com_endpoint_plug_skip_completion: {
-    english: 'Skip Completion',
-    translated: '완료 단계 건너뛰기',
-  },
-  com_endpoint_disabled_with_tools: {
-    english: 'disabled with tools',
-    translated: '도구 사용 불가',
-  },
-  com_endpoint_disabled_with_tools_placeholder: {
-    english: 'Disabled with Tools Selected',
-    translated: '도구 선택 시 사용 불가',
-  },
-  com_endpoint_plug_set_custom_instructions_for_gpt_placeholder: {
-    english: 'Set custom instructions to include in System Message. Default: none',
-    translated: '시스템 메시지에 포함할 사용자 정의 지시사항을 설정하세요. 기본값: 없음',
-  },
-  com_endpoint_import: {
-    english: 'Import',
-    translated: '가져오기',
-  },
-  com_endpoint_set_custom_name: {
-    english: 'Set a custom name, in case you can find this preset',
-    translated: '프리셋을 쉽게 찾을 수 있도록 사용자 정의 이름을 설정하세요',
-  },
-  com_endpoint_preset: {
-    english: 'preset',
-    translated: '프리셋',
-  },
-  com_endpoint_presets: {
-    english: 'presets',
-    translated: '프리셋',
-  },
-  com_endpoint_preset_name: {
-    english: 'Preset Name',
-    translated: '프리셋 이름',
-  },
-  com_endpoint_new_topic: {
-    english: 'New Topic',
-    translated: '새로운 주제',
-  },
-  com_endpoint: {
-    english: 'Endpoint',
-    translated: '엔드포인트',
-  },
-  com_endpoint_hide: {
-    english: 'Hide',
-    translated: '숨기기',
-  },
-  com_endpoint_show: {
-    english: 'Show',
-    translated: '표시',
-  },
-  com_endpoint_examples: {
-    english: ' Presets',
-    translated: ' 프리셋',
-  },
-  com_endpoint_completion: {
-    english: 'Completion',
-    translated: '완료',
-  },
-  com_endpoint_agent: {
-    english: 'Agent',
-    translated: '에이전트',
-  },
-  com_endpoint_show_what_settings: {
-    english: 'Show {0} Settings',
-    translated: '{0} 설정 표시',
-  },
-  com_endpoint_export: {
-    english: 'Export',
-    translated: '내보내기',
-  },
-  com_endpoint_save_as_preset: {
-    english: 'Save As Preset',
-    translated: '프리셋으로 저장',
-  },
-  com_endpoint_presets_clear_warning: {
-    english: 'Are you sure you want to clear all presets? This is irreversible.',
-    translated: '모든 프리셋을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.',
-  },
-  com_endpoint_not_implemented: {
-    english: 'Not implemented',
-    translated: '구현되지 않았습니다',
-  },
-  com_endpoint_no_presets: {
-    english: 'No presets yet, use the settings button to create one',
-    translated: '아직 프리셋이 없습니다',
-  },
-  com_endpoint_not_available: {
-    english: 'No endpoint available',
-    translated: '사용할 수 없는 엔드포인트입니다',
-  },
-  com_endpoint_view_options: {
-    english: 'View Options',
-    translated: '옵션 보기',
-  },
-  com_endpoint_save_convo_as_preset: {
-    english: 'Save Conversation as Preset',
-    translated: '대화를 프리셋으로 저장',
-  },
-  com_endpoint_my_preset: {
-    english: 'My Preset',
-    translated: '내 프리셋',
-  },
-  com_endpoint_agent_model: {
-    english: 'Agent Model (Recommended: GPT-3.5)',
-    translated: '에이전트 모델 (권장: GPT-3.5)',
-  },
-  com_endpoint_completion_model: {
-    english: 'Completion Model (Recommended: GPT-4)',
-    translated: '완료 모델 (권장: GPT-4)',
-  },
-  com_endpoint_func_hover: {
-    english: 'Enable use of Plugins as OpenAI Functions',
-    translated: '플러그인을 OpenAI 함수로 사용할 수 있도록 합니다.',
-  },
-  com_endpoint_skip_hover: {
-    english:
-      'Enable skipping the completion step, which reviews the final answer and generated steps',
-    translated: '완료 단계를 건너뛰도록 합니다. 최종 답변과 생성된 단계를 검토하는 단계입니다.',
-  },
-  com_endpoint_config_key: {
-    english: 'Set API Key',
-    translated: 'API 키 설정',
-  },
-  com_endpoint_config_key_for: {
-    english: 'Set API Key for',
-    translated: 'API 키 설정: ',
-  },
-  com_endpoint_config_key_name: {
-    english: 'Key',
-    translated: '키',
-  },
-  com_endpoint_config_value: {
-    english: 'Enter value for',
-    translated: '값 입력',
-  },
-  com_endpoint_config_key_name_placeholder: {
-    english: 'Set API key first',
-    translated: '먼저 API 키를 설정하세요',
-  },
-  com_endpoint_config_key_encryption: {
-    english: 'Your key will be encrypted and deleted at',
-    translated: '키는 암호화되어 저장되며, 만료 시간에 삭제됩니다',
-  },
-  com_endpoint_config_key_expiry: {
-    english: 'the expiry time',
-    translated: '만료 시간',
-  },
-  com_endpoint_config_key_import_json_key: {
-    english: 'Import Service Account JSON Key.',
-    translated: '서비스 계정 JSON 키 가져오기',
-  },
-  com_endpoint_config_key_import_json_key_success: {
-    english: 'Successfully Imported Service Account JSON Key',
-    translated: '서비스 계정 JSON 키 가져오기 성공',
-  },
-  com_endpoint_config_key_import_json_key_invalid: {
-    english: 'Invalid Service Account JSON Key, Did you import the correct file?',
-    translated: '유효하지 않은 서비스 계정 JSON 키입니다. 올바른 파일을 가져왔는지 확인하세요',
-  },
-  com_endpoint_config_key_get_edge_key: {
-    english: 'To get your Access token for Bing, login to',
-    translated: 'Bing 액세스 토큰을 얻으려면 다음 사이트에 로그인하세요',
-  },
-  com_endpoint_config_key_get_edge_key_dev_tool: {
-    english:
-      'Use dev tools or an extension while logged into the site to copy the content of the _U cookie. If this fails, follow these',
-    translated:
-      '로그인한 상태에서 개발 도구 또는 확장 프로그램을 사용하여 _U 쿠키의 내용을 복사합니다. 실패하는 경우 다음',
-  },
-  com_endpoint_config_key_edge_instructions: {
-    english: 'instructions',
-    translated: '지침',
-  },
-  com_endpoint_config_key_edge_full_key_string: {
-    english: 'to provide the full cookie strings.',
-    translated: '전체 쿠키 문자열을 제공하세요',
-  },
-  com_nav_plugin_store: {
-    english: 'Plugin store',
-    translated: '플러그인 스토어',
-  },
-  com_nav_plugin_search: {
-    english: 'Search plugins',
-    translated: '플러그인 검색',
-  },
-  com_nav_plugin_auth_error: {
-    english: 'There was an error attempting to authenticate this plugin. Please try again.',
-    translated: '이 플러그인을 인증하려는 중에 오류가 발생했습니다. 다시 시도해주세요.',
-  },
-  com_nav_export_filename: {
-    english: 'Filename',
-    translated: '파일 이름',
-  },
-  com_nav_export_filename_placeholder: {
-    english: 'Set the filename',
-    translated: '파일 이름을 설정하세요',
-  },
-  com_nav_export_type: {
-    english: 'Type',
-    translated: '유형',
-  },
-  com_nav_export_include_endpoint_options: {
-    english: 'Include endpoint options',
-    translated: '엔드포인트 옵션 포함',
-  },
-  com_nav_enabled: {
-    english: 'Enabled',
-    translated: '활성화됨',
-  },
-  com_nav_not_supported: {
-    english: 'Not Supported',
-    translated: '지원되지 않음',
-  },
-  com_nav_export_all_message_branches: {
-    english: 'Export all message branches',
-    translated: '모든 메시지 브랜치 내보내기',
-  },
-  com_nav_export_recursive_or_sequential: {
-    english: 'Recursive or sequential?',
-    translated: '재귀적 또는 순차적?',
-  },
-  com_nav_export_recursive: {
-    english: 'Recursive',
-    translated: '재귀적',
-  },
-  com_nav_export_conversation: {
-    english: 'Export conversation',
-    translated: '대화 내보내기',
-  },
-  com_nav_export: {
-    english: 'Export',
-    translated: '내보내기',
-  },
-  com_nav_shared_links: {
-    english: 'Shared links',
-    translated: '공유 링크',
-  },
-  com_nav_shared_links_manage: {
-    english: 'Manage',
-    translated: '관리',
-  },
-  com_nav_shared_links_empty: {
-    english: 'You have no shared links.',
-    translated: '공유 링크가 없습니다.',
-  },
-  com_nav_shared_links_name: {
-    english: 'Name',
-    translated: '이름',
-  },
-  com_nav_shared_links_date_shared: {
-    english: 'Date shared',
-    translated: '공유 날짜',
-  },
-  com_nav_theme: {
-    english: 'Theme',
-    translated: '테마',
-  },
-  com_nav_theme_system: {
-    english: 'System',
-    translated: '시스템',
-  },
-  com_nav_theme_dark: {
-    english: 'Dark',
-    translated: '다크',
-  },
-  com_nav_theme_light: {
-    english: 'Light',
-    translated: '라이트',
-  },
-  com_nav_clear_all_chats: {
-    english: 'Clear all chats',
-    translated: '모든 채팅 지우기',
-  },
-  com_nav_confirm_clear: {
-    english: 'Confirm Clear',
-    translated: '지우기 확인',
-  },
-  com_nav_close_sidebar: {
-    english: 'Close sidebar',
-    translated: '사이드바 닫기',
-  },
-  com_nav_open_sidebar: {
-    english: 'Open sidebar',
-    translated: '사이드바 열기',
-  },
-  com_nav_send_message: {
-    english: 'Send message',
-    translated: '메시지 보내기',
-  },
-  com_nav_log_out: {
-    english: 'Log out',
-    translated: '로그아웃',
-  },
-  com_nav_user: {
-    english: 'USER',
-    translated: '사용자',
-  },
-  com_nav_archived_chats: {
-    english: 'Archived chats',
-    translated: '아카이브된 채팅',
-  },
-  com_nav_archived_chats_manage: {
-    english: 'Manage',
-    translated: '관리',
-  },
-  com_nav_archived_chats_empty: {
-    english: 'You have no archived conversations.',
-    translated: '아카이브된 채팅이 없습니다',
-  },
-  com_nav_archive_all_chats: {
-    english: 'Archive all chats',
-    translated: '모든 채팅 아카이브',
-  },
-  com_nav_archive_all: {
-    english: 'Archive all',
-    translated: '모든 채팅 아카이브',
-  },
-  com_nav_archive_name: {
-    english: 'Name',
-    translated: '이름',
-  },
-  com_nav_archive_created_at: {
-    english: 'DateCreated',
-    translated: '생성 날짜',
-  },
-  com_nav_clear_conversation: {
-    english: 'Clear conversations',
-    translated: '대화 지우기',
-  },
-  com_nav_clear_conversation_confirm_message: {
-    english: 'Are you sure you want to clear all conversations? This is irreversible.',
-    translated: '모든 대화를 지우시겠습니까? 이 작업은 되돌릴 수 없습니다.',
-  },
-  com_nav_help_faq: {
-    english: 'Help & FAQ',
-    translated: '도움말 및 FAQ',
-  },
-  com_nav_settings: {
-    english: 'Settings',
-    translated: '설정',
-  },
-  com_nav_search_placeholder: {
-    english: 'Search messages',
-    translated: '메시지 검색',
-  },
-  com_nav_info_bookmarks_rebuild: {
-    english:
-      'If the bookmark count is incorrect, please rebuild the bookmark information. The bookmark count will be recalculated and the data will be restored to its correct state.',
-    translated:
-      '북마크 수가 정확하지 않은 경우 북마크 정보를 재구축하십시오. 북마크 수가 다시 계산되고 데이터가 올바른 상태로 복원됩니다.',
-  },
-  com_nav_setting_general: {
-    english: 'General',
-    translated: '일반',
-  },
-  com_nav_setting_data: {
-    english: 'Data controls',
-    translated: '데이터 제어',
-  },
-  com_assistants_file_search: {
-    english: 'File Search',
-    translated: '파일 검색',
-  },
-  com_assistants_file_search_info: {
-    english:
-      'Attaching vector stores for File Search is not yet supported. You can attach them from the Provider Playground or attach files to messages for file search on a thread basis.',
-    translated:
-      '파일 검색을 위한 벡터 저장소 연결은 아직 지원되지 않습니다. Provider Playground에서 연결하거나 스레드 기반으로 메시지에 파일을 첨부하여 파일 검색을 할 수 있습니다.',
-  },
-  com_assistants_non_retrieval_model: {
-    english: 'File search is not enabled on this model. Please select another model.',
-    translated: '이 모델에서는 파일 검색 기능을 사용할 수 없습니다. 다른 모델을 선택하세요.',
-  },
-  com_ui_attach_error_openai: {
-    english: 'Cannot attach Assistant files to other endpoints',
-    translated: '어시스턴트 파일을 다른 엔드포인트에 첨부할 수 없습니다.',
-  },
-  com_ui_attach_warn_endpoint: {
-    english: 'Non-Assistant files may be ignored without a compatible tool',
-    translated: '호환되는 도구가 없으면 비어시스턴트 파일이 무시될 수 있습니다.',
-  },
-  com_ui_assistant_deleted: {
-    english: 'Successfully deleted assistant',
-    translated: '어시스턴트가 성공적으로 삭제되었습니다',
-  },
-  com_ui_assistant_delete_error: {
-    english: 'There was an error deleting the assistant',
-    translated: '어시스턴트 삭제 중 오류가 발생했습니다.',
-  },
-  com_ui_copied: {
-    english: 'Copied!',
-    translated: '복사됨',
-  },
-  com_ui_copy_code: {
-    english: 'Copy code',
-    translated: '코드 복사',
-  },
-  com_nav_source_chat: {
-    english: 'View source chat',
-    translated: '소스 채팅 보기',
-  },
-  com_ui_date_today: {
-    english: 'Today',
-    translated: '오늘',
-  },
-  com_ui_date_yesterday: {
-    english: 'Yesterday',
-    translated: '어제',
-  },
-  com_ui_date_previous_7_days: {
-    english: 'Previous 7 days',
-    translated: '지난 7일',
-  },
-  com_ui_date_previous_30_days: {
-    english: 'Previous 30 days',
-    translated: '지난 30일',
-  },
-  com_ui_date_january: {
-    english: 'January',
-    translated: '1월',
-  },
-  com_ui_date_february: {
-    english: 'February',
-    translated: '2월',
-  },
-  com_ui_date_march: {
-    english: 'March',
-    translated: '3월',
-  },
-  com_ui_date_april: {
-    english: 'April',
-    translated: '4월',
-  },
-  com_ui_date_may: {
-    english: 'May',
-    translated: '5월',
-  },
-  com_ui_date_june: {
-    english: 'June',
-    translated: '6월',
-  },
-  com_ui_date_july: {
-    english: 'July',
-    translated: '7월',
-  },
-  com_ui_date_august: {
-    english: 'August',
-    translated: '8월',
-  },
-  com_ui_date_september: {
-    english: 'September',
-    translated: '9월',
-  },
-  com_ui_date_october: {
-    english: 'October',
-    translated: '10월',
-  },
-  com_ui_date_november: {
-    english: 'November',
-    translated: '11월',
-  },
-  com_ui_date_december: {
-    english: 'December',
-    translated: '12월',
-  },
-  com_assistants_domain_info: {
-    english: 'Assistant sent this info to {0}',
-    translated: '어시스턴트가 {0}에게 이 정보를 보냈습니다',
-  },
-  com_assistants_delete_actions_success: {
-    english: 'Successfully deleted Action from Assistant',
-    translated: '어시스턴트에서 작업이 성공적으로 삭제되었습니다',
-  },
-  com_error_moderation: {
-    english:
-      'It appears that the content submitted has been flagged by our moderation system for not aligning with our community guidelines. We\'re unable to proceed with this specific topic. If you have any other questions or topics you\'d like to explore, please edit your message, or create a new conversation.',
-    translated:
-      '제출된 내용이 커뮤니티 가이드라인에 부합하지 않는다고 판단되어 모더레이션 시스템에 의해 차단되었습니다. 해당 주제로는 진행할 수 없습니다. 다른 질문이나 탐구하고 싶은 주제가 있다면 메시지를 수정하거나 새 대화를 시작해 주세요.',
-  },
-  com_error_no_user_key: {
-    english: 'No key found. Please provide a key and try again.',
-    translated: '키를 찾을 수 없습니다. 키를 제공하고 다시 시도해주세요.',
-  },
-  com_error_no_base_url: {
-    english: 'No base URL found. Please provide one and try again.',
-    translated: '기본 URL이 없습니다. URL을 제공한 후 다시 시도해 주세요.',
-  },
-  com_error_invalid_user_key: {
-    english: 'Invalid key provided. Please provide a key and try again.',
-    translated: '제공된 키가 유효하지 않습니다. 키를 제공하고 다시 시도해주세요.',
-  },
-  com_error_expired_user_key: {
-    english: 'Provided key for {0} expired at {1}. Please provide a key and try again.',
-    translated: '{0}에 대한 키가 {1}에 만료되었습니다. 새 키를 제공하고 다시 시도해주세요.',
-  },
-  com_files_no_results: {
-    english: 'No results.',
-    translated: '결과가 없습니다.',
-  },
-  com_files_filter: {
-    english: 'Filter files...',
-    translated: '파일 필터링...',
-  },
-  com_files_number_selected: {
-    english: '{0} of {1} file(s) selected',
-    translated: '{0}개의 파일({1}개 중)이 선택되었습니다',
-  },
-  com_sidepanel_select_assistant: {
-    english: 'Select an Assistant',
-    translated: '어시스턴트 선택',
-  },
-  com_sidepanel_parameters: {
-    english: 'Parameters',
-    translated: '매개변수',
-  },
-  com_sidepanel_assistant_builder: {
-    english: 'Assistant Builder',
-    translated: '어시스턴트 제작기',
-  },
-  com_sidepanel_hide_panel: {
-    english: 'Hide Panel',
-    translated: '패널 숨기기',
-  },
-  com_sidepanel_attach_files: {
-    english: 'Attach Files',
-    translated: '파일 첨부',
-  },
-  com_sidepanel_manage_files: {
-    english: 'Manage Files',
-    translated: '파일 관리',
-  },
-  com_sidepanel_conversation_tags: {
-    english: 'Bookmarks',
-    translated: '북마크',
-  },
-  com_assistants_capabilities: {
-    english: 'Capabilities',
-    translated: '기능',
-  },
-  com_assistants_knowledge: {
-    english: 'Knowledge',
-    translated: '지식',
-  },
-  com_assistants_knowledge_info: {
-    english:
-      'If you upload files under Knowledge, conversations with your Assistant may include file contents.',
-    translated:
-      'Knowledge에 파일을 업로드하면 어시스턴트와의 대화에서 파일 내용이 포함될 수 있습니다.',
-  },
-  com_assistants_knowledge_disabled: {
-    english:
-      'Assistant must be created, and Code Interpreter or Retrieval must be enabled and saved before uploading files as Knowledge.',
-    translated:
-      '지식으로 파일을 업로드하기 전에 Assistant를 생성하고 Code Interpreter 또는 Retrieval을 활성화한 후 저장해야 합니다.',
-  },
-  com_assistants_image_vision: {
-    english: 'Image Vision',
-    translated: '이미지 인식',
-  },
-  com_assistants_code_interpreter: {
-    english: 'Code Interpreter',
-    translated: '코드 인터프리터',
-  },
-  com_assistants_code_interpreter_files: {
-    english: 'The following files are only available for Code Interpreter:',
-    translated: '코드 인터프리터에서만 다음 파일을 사용할 수 있습니다:',
-  },
-  com_assistants_retrieval: {
-    english: 'Retrieval',
-    translated: '검색',
-  },
-  com_assistants_search_name: {
-    english: 'Search assistants by name',
-    translated: '이름으로 도우미 검색',
-  },
-  com_ui_tools: {
-    english: 'Tools',
-    translated: '도구',
-  },
-  com_assistants_actions: {
-    english: 'Actions',
-    translated: '작업',
-  },
-  com_assistants_add_tools: {
-    english: 'Add Tools',
-    translated: '도구 추가',
-  },
-  com_assistants_add_actions: {
-    english: 'Add Actions',
-    translated: '작업 추가',
-  },
-  com_assistants_available_actions: {
-    english: 'Available Actions',
-    translated: '사용 가능한 작업',
-  },
-  com_assistants_running_action: {
-    english: 'Running action',
-    translated: '작업 진행 중',
-  },
-  com_assistants_completed_action: {
-    english: 'Talked to {0}',
-    translated: '{0}과 대화했습니다',
-  },
-  com_assistants_completed_function: {
-    english: 'Ran {0}',
-    translated: '{0}을(를) 실행했습니다',
-  },
-  com_assistants_function_use: {
-    english: 'Assistant used {0}',
-    translated: '어시스턴트는 {0}을(를) 사용했습니다.',
-  },
-  com_assistants_update_actions_success: {
-    english: 'Successfully created or updated Action',
-    translated: '액션이 성공적으로 생성 또는 업데이트되었습니다',
-  },
-  com_assistants_update_actions_error: {
-    english: 'There was an error creating or updating the action.',
-    translated: '작업을 생성하거나 업데이트하는 중에 오류가 발생했습니다.',
-  },
-  com_assistants_delete_actions_error: {
-    english: 'There was an error deleting the action.',
-    translated: '작업 삭제 중 오류가 발생했습니다',
-  },
-  com_assistants_actions_info: {
-    english: 'Let your Assistant retrieve information or take actions via API\'s',
-    translated: '어시스턴트가 API를 통해 정보를 검색하거나 작업을 수행할 수 있게 해줍니다.',
-  },
-  com_assistants_name_placeholder: {
-    english: 'Optional: The name of the assistant',
-    translated: '선택 사항: 어시스턴트의 이름',
-  },
-  com_assistants_instructions_placeholder: {
-    english: 'The system instructions that the assistant uses',
-    translated: '보조 지침은 보조가 사용하는 시스템 지침입니다.',
-  },
-  com_assistants_description_placeholder: {
-    english: 'Optional: Describe your Assistant here',
-    translated: '옵션: 여기에 어시스턴트를 설명하세요',
-  },
-  com_assistants_actions_disabled: {
-    english: 'You need to create an assistant before adding actions.',
-    translated: '어시스턴트를 만들어야 작업을 추가할 수 있습니다.',
-  },
-  com_assistants_update_success: {
-    english: 'Successfully updated',
-    translated: '업데이트 성공',
-  },
-  com_assistants_update_error: {
-    english: 'There was an error updating your assistant.',
-    translated: '어시스턴트 업데이트 중 오류가 발생했습니다.',
-  },
-  com_assistants_create_success: {
-    english: 'Successfully created',
-    translated: '계정이 성공적으로 생성되었습니다',
-  },
-  com_assistants_create_error: {
-    english: 'There was an error creating your assistant.',
-    translated: '어시스턴트 생성 중 오류가 발생했습니다.',
-  },
-  com_ui_field_required: {
-    english: 'This field is required',
-    translated: '이 필드는 필수입니다',
-  },
-  com_ui_download_error: {
-    english: 'Error downloading file. The file may have been deleted.',
-    translated: '파일 다운로드 중 오류가 발생했습니다. 파일이 삭제되었을 수 있습니다.',
-  },
-  com_ui_attach_error_type: {
-    english: 'Unsupported file type for endpoint:',
-    translated: '엔드포인트에서 지원하지 않는 파일 형식입니다.',
-  },
-  com_ui_attach_error_size: {
-    english: 'File size limit exceeded for endpoint:',
-    translated: '엔드포인트에 대한 파일 크기 제한을 초과했습니다.',
-  },
-  com_ui_attach_error: {
-    english: 'Cannot attach file. Create or select a conversation, or try refreshing the page.',
-    translated:
-      '파일을 첨부할 수 없습니다. 대화를 생성하거나 선택하시거나 페이지를 새로고침해 보세요.',
-  },
-  com_ui_experimental: {
-    english: 'Experimental Features',
-    translated: '실험적 기능',
-  },
-  com_ui_on: {
-    english: 'On',
-    translated: '켜기',
-  },
-  com_ui_off: {
-    english: 'Off',
-    translated: '꺼짐',
-  },
-  com_ui_yes: {
-    english: 'Yes',
-    translated: '네',
-  },
-  com_ui_no: {
-    english: 'No',
-    translated: '아니요',
-  },
-  com_ui_ascending: {
-    english: 'Asc',
-    translated: '오름차순',
-  },
-  com_ui_descending: {
-    english: 'Desc',
-    translated: '내림차순',
-  },
-  com_ui_show_all: {
-    english: 'Show All',
-    translated: '전체 보기',
-  },
-  com_ui_name: {
-    english: 'Name',
-    translated: '이름',
-  },
-  com_ui_date: {
-    english: 'Date',
-    translated: '날짜',
-  },
-  com_ui_storage: {
-    english: 'Storage',
-    translated: '저장소',
-  },
-  com_ui_context: {
-    english: 'Context',
-    translated: '맥락',
-  },
-  com_ui_size: {
-    english: 'Size',
-    translated: '크기',
-  },
-  com_ui_host: {
-    english: 'Host',
-    translated: '호스트',
-  },
-  com_ui_update: {
-    english: 'Update',
-    translated: '업데이트',
-  },
-  com_ui_authentication: {
-    english: 'Authentication',
-    translated: '인증',
-  },
-  com_ui_instructions: {
-    english: 'Instructions',
-    translated: '설명',
-  },
-  com_ui_description: {
-    english: 'Description',
-    translated: '설명',
-  },
-  com_ui_error: {
-    english: 'Error',
-    translated: '오류',
-  },
-  com_ui_select: {
-    english: 'Select',
-    translated: '선택',
-  },
-  com_ui_select_search_model: {
-    english: 'Search model by name',
-    translated: '이름으로 모델 검색',
-  },
-  com_ui_select_search_plugin: {
-    english: 'Search plugin by name',
-    translated: '이름으로 플러그인 검색',
-  },
-  com_ui_stop: {
-    english: 'Stop',
-    translated: '중지',
-  },
-  com_ui_upload_files: {
-    english: 'Upload files',
-    translated: '파일 업로드',
-  },
-  com_ui_new_footer: {
-    english: 'All AI conversations in one place.',
-    translated: '모든 AI 대화를 한 곳에 모아놓았습니다.',
-  },
-  com_ui_none_selected: {
-    english: 'None selected',
-    translated: '선택된 항목 없음',
-  },
-  com_ui_upload_error: {
-    english: 'There was an error uploading your file',
-    translated: '파일 업로드 중 오류가 발생했습니다',
-  },
-  com_ui_save_submit: {
-    english: 'Save & Submit',
-    translated: '저장 및 제출',
-  },
-  com_user_message: {
-    english: 'You',
-    translated: '당신',
-  },
-  com_ui_fork: {
-    english: 'Fork',
-    translated: '포크',
-  },
-  com_ui_fork_info_1: {
-    english: 'Use this setting to fork messages with the desired behavior.',
-    translated: '이 설정을 사용하면 원하는 동작으로 메시지를 분기할 수 있습니다.',
-  },
-  com_ui_fork_info_2: {
-    english:
-      '"Forking" refers to creating a new conversation that start/end from specific messages in the current conversation, creating a copy according to the options selected.',
-    translated:
-      '"포킹(Forking)"은 현재 대화에서 특정 메시지를 시작/종료 지점으로 하여 새로운 대화를 생성하고, 선택한 옵션에 따라 복사본을 만드는 것을 의미합니다.',
-  },
-  com_ui_fork_info_3: {
-    english:
-      'The "target message" refers to either the message this popup was opened from, or, if you check "{0}", the latest message in the conversation.',
-    translated:
-      '"대상 메시지"는 이 팝업이 열린 메시지 또는 "{0}"에 체크하면 대화의 최신 메시지를 의미합니다.',
-  },
-  com_ui_fork_info_visible: {
-    english:
-      'This option forks only the visible messages; in other words, the direct path to the target message, without any branches.',
-    translated:
-      '이 옵션은 표시된 메시지만 분기하여 복사합니다. 즉, 대상 메시지로 가는 직접 경로만 복사하고 다른 분기는 복사하지 않습니다.',
-  },
-  com_ui_fork_info_branches: {
-    english:
-      'This option forks the visible messages, along with related branches; in other words, the direct path to the target message, including branches along the path.',
-    translated:
-      '이 옵션은 표시된 메시지와 관련 브랜치를 분기시킵니다. 즉, 대상 메시지에 이르는 직접 경로와 그 경로에 있는 브랜치를 포함합니다.',
-  },
-  com_ui_fork_info_target: {
-    english:
-      'This option forks all messages leading up to the target message, including its neighbors; in other words, all message branches, whether or not they are visible or along the same path, are included.',
-    translated:
-      '이 옵션은 대상 메시지와 그 주변 메시지를 포함하여 대상 메시지에 이르는 모든 메시지 분기를 포크합니다. 다시 말해, 표시 여부나 동일한 경로 상에 있는지 여부와 상관없이 모든 메시지 분기가 포함됩니다.',
-  },
-  com_ui_fork_info_start: {
-    english:
-      'If checked, forking will commence from this message to the latest message in the conversation, according to the behavior selected above.',
-    translated:
-      '선택 시 이 메시지부터 대화의 최신 메시지까지 위에서 선택한 동작에 따라 포크가 시작됩니다.',
-  },
-  com_ui_fork_info_remember: {
-    english:
-      'Check this to remember the options you select for future usage, making it quicker to fork conversations as preferred.',
-    translated:
-      '이 옵션을 선택하면 향후 대화를 더 빠르게 분기할 수 있도록 선택한 옵션을 기억합니다.',
-  },
-  com_ui_fork_success: {
-    english: 'Successfully forked conversation',
-    translated: '대화 복제 성공',
-  },
-  com_ui_fork_processing: {
-    english: 'Forking conversation...',
-    translated: '대화 분기 중...',
-  },
-  com_ui_fork_error: {
-    english: 'There was an error forking the conversation',
-    translated: '대화 분기 중 오류가 발생했습니다',
-  },
-  com_ui_fork_change_default: {
-    english: 'Default fork option',
-    translated: '기본 포크 옵션',
-  },
-  com_ui_fork_default: {
-    english: 'Use default fork option',
-    translated: '기본 포크 옵션 사용',
-  },
-  com_ui_fork_remember: {
-    english: 'Remember',
-    translated: '기억하기',
-  },
-  com_ui_fork_split_target_setting: {
-    english: 'Start fork from target message by default',
-    translated: '기본적으로 대상 메시지에서 포크 시작',
-  },
-  com_ui_fork_split_target: {
-    english: 'Start fork here',
-    translated: '여기서 포크 시작',
-  },
-  com_ui_fork_remember_checked: {
-    english:
-      'Your selection will be remembered after usage. Change this at any time in the settings.',
-    translated: '선택한 내용은 사용 후에도 기억됩니다. 설정에서 언제든 변경할 수 있습니다.',
-  },
-  com_ui_fork_all_target: {
-    english: 'Include all to/from here',
-    translated: '여기부터 전체 포함',
-  },
-  com_ui_fork_branches: {
-    english: 'Include related branches',
-    translated: '관련 브랜치 포함',
-  },
-  com_ui_fork_visible: {
-    english: 'Visible messages only',
-    translated: '공개 메시지만 표시',
-  },
-  com_ui_fork_from_message: {
-    english: 'Select a fork option',
-    translated: '포크 옵션 선택',
-  },
-  com_ui_mention: {
-    english: 'Mention an endpoint, assistant, or preset to quickly switch to it',
-    translated: '엔드포인트, 어시스턴트 또는 프리셋을 언급하여 빠르게 전환하세요',
-  },
-  com_ui_nothing_found: {
-    english: 'Nothing found',
-    translated: '찾을 수 없습니다',
-  },
-  com_ui_go_to_conversation: {
-    english: 'Go to conversation',
-    translated: '대화로 이동',
-  },
-  com_ui_import_conversation_file_type_error: {
-    english: 'Unsupported import type',
-    translated: '가져올 수 없는 파일 형식입니다',
-  },
-  com_ui_avatar: {
-    english: 'Avatar',
-    translated: '프로필 사진',
-  },
-  com_ui_unknown: {
-    english: 'Unknown',
-    translated: '알 수 없음',
-  },
-  com_ui_result: {
-    english: 'Result',
-    translated: '결과',
-  },
-  com_ui_image_gen: {
-    english: 'Image Gen',
-    translated: '이미지 생성',
-  },
-  com_ui_assistant: {
-    english: 'Assistant',
-    translated: '어시스턴트',
-  },
-  com_ui_assistants: {
-    english: 'Assistants',
-    translated: '어시스턴트',
-  },
-  com_ui_attachment: {
-    english: 'Attachment',
-    translated: '첨부 파일',
-  },
-  com_ui_assistants_output: {
-    english: 'Assistants Output',
-    translated: '어시스턴트 출력',
-  },
-  com_ui_create: {
-    english: 'Create',
-    translated: '만들기',
-  },
-  com_ui_delete_assistant_confirm: {
-    english: 'Are you sure you want to delete this Assistant? This cannot be undone.',
-    translated: '이 Assistant를 삭제하시겠습니까? 이 작업은 취소할 수 없습니다.',
-  },
-  com_ui_preview: {
-    english: 'Preview',
-    translated: '미리보기',
-  },
-  com_ui_upload: {
-    english: 'Upload',
-    translated: '업로드',
-  },
-  com_ui_connect: {
-    english: 'Connect',
-    translated: '연결',
-  },
-  com_ui_upload_delay: {
-    english:
-      'Uploading "{0}" is taking more time than anticipated. Please wait while the file finishes indexing for retrieval.',
-    translated:
-      '"{0}" 파일 업로드에 예상보다 시간이 더 걸리고 있습니다. 파일 인덱싱이 완료될 때까지 기다려 주세요.',
-  },
-  com_ui_privacy_policy: {
-    english: 'Privacy policy',
-    translated: '개인정보 보호정책',
-  },
-  com_ui_terms_of_service: {
-    english: 'Terms of service',
-    translated: '이용 약관',
-  },
-  com_ui_min_tags: {
-    english: 'Cannot remove more values, a minimum of {0} are required.',
-    translated: '최소 {0}개는 필수로 입력해야 합니다. 더 이상 값을 제거할 수 없습니다.',
-  },
-  com_ui_max_tags: {
-    english: 'Maximum number allowed is {0}, using latest values.',
-    translated: '최대 {0}개까지만 허용됩니다. 최신 값을 사용 중입니다.',
-  },
-  com_auth_error_login_rl: {
-    english: 'Too many login attempts in a short amount of time. Please try again later.',
-    translated: '짧은 시간 동안 너무 많은 로그인 시도가 있었습니다. 잠시 후 다시 시도해 주세요.',
-  },
-  com_auth_error_login_ban: {
-    english: 'Your account has been temporarily banned due to violations of our service.',
-    translated: '서비스 이용 규정을 위반하여 계정이 일시적으로 제한되었습니다.',
-  },
-  com_auth_error_login_server: {
-    english: 'There was an internal server error. Please wait a few moments and try again.',
-    translated: '내부 서버 오류가 발생했습니다. 잠시 기다렸다가 다시 시도해 주세요.',
-  },
-  com_auth_back_to_login: {
-    english: 'Back to Login',
-    translated: '로그인 화면으로 돌아가기',
-  },
-  com_endpoint_message: {
-    english: 'Message',
-    translated: '메시지',
-  },
-  com_endpoint_message_not_appendable: {
-    english: 'Edit your message or Regenerate.',
-    translated: '메시지를 수정하거나 다시 생성하세요.',
-  },
-  com_endpoint_context_tokens: {
-    english: 'Max Context Tokens',
-    translated: '최대 컨텍스트 토큰 수',
-  },
-  com_endpoint_context_info: {
-    english:
-      'The maximum number of tokens that can be used for context. Use this for control of how many tokens are sent per request.\n  If unspecified, will use system defaults based on known models\' context size. Setting higher values may result in errors and/or higher token cost.',
-    translated:
-      '컨텍스트로 사용할 수 있는 최대 토큰 수입니다. 요청마다 보내는 토큰 수를 제어하는 데 사용할 수 있습니다. 지정하지 않으면 알려진 모델의 컨텍스트 크기를 기반으로 시스템 기본값을 사용합니다. 더 높은 값을 설정하면 오류가 발생하거나 토큰 비용이 더 높아질 수 있습니다.',
-  },
-  com_endpoint_instructions_assistants_placeholder: {
-    english:
-      'Overrides the instructions of the assistant. This is useful for modifying the behavior on a per-run basis.',
-    translated: '어시스턴트의 지침을 재정의합니다. 이를 통해 실행마다 동작을 수정할 수 있습니다.',
-  },
-  com_endpoint_prompt_prefix_assistants_placeholder: {
-    english:
-      'Set additional instructions or context on top of the Assistant\'s main instructions. Ignored if empty.',
-    translated:
-      '추가 지시사항 또는 컨텍스트를 Assistant의 기본 지시사항에 추가합니다. 비어 있으면 무시됩니다.',
-  },
-  com_endpoint_prompt_prefix_assistants: {
-    english: 'Additional Instructions',
-    translated: '추가 지시사항',
-  },
-  com_endpoint_instructions_assistants: {
-    english: 'Override Instructions',
-    translated: '에이전트 지침 재정의',
-  },
-  com_endpoint_stop: {
-    english: 'Stop Sequences',
-    translated: '중지 시퀀스',
-  },
-  com_endpoint_stop_placeholder: {
-    english: 'Separate values by pressing `Enter`',
-    translated: 'Enter 키를 눌러 값을 구분하세요',
-  },
-  com_endpoint_openai_max_tokens: {
-    english:
-      'Optional `max_tokens` field, representing the maximum number of tokens that can be generated in the chat completion.\n    \n    The total length of input tokens and generated tokens is limited by the models context length. You may experience errors if this number exceeds the max context tokens.',
-    translated:
-      '선택적 `max_tokens` 필드로, 채팅 완성에서 생성할 수 있는 최대 토큰 수를 나타냅니다. 입력 토큰과 생성된 토큰의 총 길이는 모델의 컨텍스트 길이로 제한됩니다. 이 숫자가 최대 컨텍스트 토큰 수를 초과하면 오류가 발생할 수 있습니다.',
-  },
-  com_endpoint_openai_resend: {
-    english:
-      'Resend all previously attached images. Note: this can significantly increase token cost and you may experience errors with many image attachments.',
-    translated:
-      '이전에 첨부한 모든 이미지를 다시 전송합니다. 참고: 이렇게 하면 토큰 비용이 크게 증가할 수 있으며, 많은 이미지를 첨부하면 오류가 발생할 수 있습니다.',
-  },
-  com_endpoint_openai_resend_files: {
-    english:
-      'Resend all previously attached files. Note: this will increase token cost and you may experience errors with many attachments.',
-    translated:
-      '이전에 첨부한 모든 파일을 다시 보내세요. 참고: 이렇게 하면 토큰 비용이 증가하고 많은 첨부 파일로 인해 오류가 발생할 수 있습니다.',
-  },
-  com_endpoint_openai_detail: {
-    english:
-      'The resolution for Vision requests. "Low" is cheaper and faster, "High" is more detailed and expensive, and "Auto" will automatically choose between the two based on the image resolution.',
-    translated:
-      '비전 요청의 해상도입니다. "낮음"은 저렴하고 빠르며, "높음"은 더 상세하지만 비용이 많이 듭니다. "자동"은 이미지 해상도에 따라 두 가지 중 하나를 자동으로 선택합니다.',
-  },
-  com_endpoint_openai_stop: {
-    english: 'Up to 4 sequences where the API will stop generating further tokens.',
-    translated: 'API가 추가 토큰 생성을 중지할 최대 4개의 시퀀스입니다.',
-  },
-  com_endpoint_plug_resend_files: {
-    english: 'Resend Files',
-    translated: '파일 재전송',
-  },
-  com_endpoint_plug_resend_images: {
-    english: 'Resend Images',
-    translated: '이미지 재전송',
-  },
-  com_endpoint_plug_image_detail: {
-    english: 'Image Detail',
-    translated: '이미지 상세 정보',
-  },
-  com_endpoint_preset_delete_confirm: {
-    english: 'Are you sure you want to delete this preset?',
-    translated: '이 프리셋을 삭제하시겠습니까?',
-  },
-  com_endpoint_preset_clear_all_confirm: {
-    english: 'Are you sure you want to delete all of your presets?',
-    translated: '모든 프리셋을 삭제하시겠습니까?',
-  },
-  com_endpoint_preset_import: {
-    english: 'Preset Imported!',
-    translated: '프리셋 가져왔습니다!',
-  },
-  com_endpoint_preset_import_error: {
-    english: 'There was an error importing your preset. Please try again.',
-    translated: '프리셋을 가져오는 중에 오류가 발생했습니다. 다시 시도해주세요.',
-  },
-  com_endpoint_preset_save_error: {
-    english: 'There was an error saving your preset. Please try again.',
-    translated: '프리셋을 저장하는 중에 오류가 발생했습니다. 다시 시도해 주세요.',
-  },
-  com_endpoint_preset_delete_error: {
-    english: 'There was an error deleting your preset. Please try again.',
-    translated: '프리셋을 삭제하는 중에 오류가 발생했습니다. 다시 시도해 주세요.',
-  },
-  com_endpoint_preset_default_removed: {
-    english: 'is no longer the default preset.',
-    translated: '더 이상 기본 프리셋이 아닙니다',
-  },
-  com_endpoint_preset_default_item: {
-    english: 'Default:',
-    translated: '기본값:',
-  },
-  com_endpoint_preset_default_none: {
-    english: 'No default preset active.',
-    translated: '기본 프리셋이 설정되지 않았습니다.',
-  },
-  com_endpoint_preset_title: {
-    english: 'Preset',
-    translated: '프리셋',
-  },
-  com_endpoint_preset_saved: {
-    english: 'Saved!',
-    translated: '저장되었습니다!',
-  },
-  com_endpoint_preset_default: {
-    english: 'is now the default preset.',
-    translated: '이제 기본 프리셋입니다.',
-  },
-  com_endpoint_preset_selected: {
-    english: 'Preset Active!',
-    translated: '프리셋 활성화됨',
-  },
-  com_endpoint_preset_selected_title: {
-    english: 'Active!',
-    translated: '활성화됨',
-  },
-  com_endpoint_assistant: {
-    english: 'Assistant',
-    translated: '어시스턴트',
-  },
-  com_endpoint_use_active_assistant: {
-    english: 'Use Active Assistant',
-    translated: '활성 에이전트 사용',
-  },
-  com_endpoint_assistant_model: {
-    english: 'Assistant Model',
-    translated: '에이전트 모델',
-  },
-  com_endpoint_assistant_placeholder: {
-    english: 'Please select an Assistant from the right-hand Side Panel',
-    translated: '오른쪽 사이드 패널에서 에이전트를 선택하세요',
-  },
-  com_endpoint_config_placeholder: {
-    english: 'Set your Key in the Header menu to chat.',
-    translated: '헤더 메뉴에서 키를 설정하여 채팅하세요.',
-  },
-  com_endpoint_config_click_here: {
-    english: 'Click Here',
-    translated: '여기를 클릭하세요',
-  },
-  com_endpoint_config_google_service_key: {
-    english: 'Google Service Account Key',
-    translated: 'Google 서비스 계정 키',
-  },
-  com_endpoint_config_google_cloud_platform: {
-    english: '(from Google Cloud Platform)',
-    translated: 'Google Cloud Platform 엔드포인트 설정',
-  },
-  com_endpoint_config_google_api_key: {
-    english: 'Google API Key',
-    translated: 'Google API 키',
-  },
-  com_endpoint_config_google_gemini_api: {
-    english: '(Gemini API)',
-    translated: 'Gemini API 설정',
-  },
-  com_endpoint_config_google_api_info: {
-    english: 'To get your Generative Language API key (for Gemini),',
-    translated: 'Gemini에서 Generative Language API 키를 얻으려면',
-  },
-  com_endpoint_config_key_chatgpt: {
-    english: 'To get your Access token For ChatGPT \'Free Version\', login to',
-    translated: 'ChatGPT \'무료 버전\'의 액세스 토큰을 얻으려면 다음 사이트에 로그인하세요',
-  },
-  com_endpoint_config_key_chatgpt_then_visit: {
-    english: 'then visit',
-    translated: '그런 다음 방문하세요',
-  },
-  com_endpoint_config_key_chatgpt_copy_token: {
-    english: 'Copy access token.',
-    translated: '액세스 토큰 복사',
-  },
-  com_endpoint_config_key_google_need_to: {
-    english: 'You need to',
-    translated: 'API 키를 설정해야 합니다',
-  },
-  com_endpoint_config_key_google_vertex_ai: {
-    english: 'Enable Vertex AI',
-    translated: 'Vertex AI 사용',
-  },
-  com_endpoint_config_key_google_vertex_api: {
-    english: 'API on Google Cloud, then',
-    translated: 'Google Cloud에서 제공하는 API',
-  },
-  com_endpoint_config_key_google_service_account: {
-    english: 'Create a Service Account',
-    translated: '서비스 계정 생성',
-  },
-  com_endpoint_config_key_google_vertex_api_role: {
-    english:
-      'Make sure to click \'Create and Continue\' to give at least the \'Vertex AI User\' role. Lastly, create a JSON key to import here.',
-    translated:
-      '\'Vertex AI 사용자\' 역할을 부여하려면 반드시 \'생성 및 계속\'을 클릭하세요. 마지막으로 여기에 가져올 JSON 키를 생성하세요.',
-  },
-  com_nav_welcome_assistant: {
-    english: 'Please Select an Assistant',
-    translated: '어시스턴트 선택하기',
-  },
-  com_nav_welcome_message: {
-    english: 'How can I help you today?',
-    translated: '오늘 무엇을 도와드릴까요?',
-  },
-  com_nav_auto_scroll: {
-    english: 'Auto-Scroll to latest message on chat open',
-    translated: '채팅 열렸을 때 최신 메시지로 자동 스크롤',
-  },
-  com_nav_hide_panel: {
-    english: 'Hide right-most side panel',
-    translated: '오른쪽 사이드 패널 숨기기',
-  },
-  com_nav_modular_chat: {
-    english: 'Enable switching Endpoints mid-conversation',
-    translated: '대화 중간에 엔드포인트 전환 허용',
-  },
-  com_nav_latex_parsing: {
-    english: 'Parsing LaTeX in messages (may affect performance)',
-    translated: '메시지에서 LaTeX 구문 분석(성능에 영향을 줄 수 있음)',
-  },
-  com_nav_profile_picture: {
-    english: 'Profile Picture',
-    translated: '프로필 사진',
-  },
-  com_nav_change_picture: {
-    english: 'Change picture',
-    translated: '프로필 사진 변경',
-  },
-  com_nav_plugin_install: {
-    english: 'Install',
-    translated: '플러그인 설치',
-  },
-  com_nav_plugin_uninstall: {
-    english: 'Uninstall',
-    translated: '플러그인 제거',
-  },
-  com_ui_add: {
-    english: 'Add',
-    translated: '추가',
-  },
-  com_nav_tool_remove: {
-    english: 'Remove',
-    translated: '제거',
-  },
-  com_nav_tool_dialog: {
-    english: 'Assistant Tools',
-    translated: '어시스턴트 도구',
-  },
-  com_nav_tool_dialog_description: {
-    english: 'Assistant must be saved to persist tool selections.',
-    translated: 'Assistant를 저장해야 도구 선택이 유지됩니다.',
-  },
-  com_show_agent_settings: {
-    english: 'Show Agent Settings',
-    translated: '에이전트 설정 표시',
-  },
-  com_show_completion_settings: {
-    english: 'Show Completion Settings',
-    translated: '완료 설정 표시',
-  },
-  com_hide_examples: {
-    english: 'Hide Examples',
-    translated: '예시 숨기기',
-  },
-  com_show_examples: {
-    english: 'Show Examples',
-    translated: '예시 보기',
-  },
-  com_nav_tool_search: {
-    english: 'Search tools',
-    translated: '도구 검색',
-  },
-  com_nav_my_files: {
-    english: 'My Files',
-    translated: '내 파일',
-  },
-  com_nav_enter_to_send: {
-    english: 'Press Enter to send messages',
-    translated: '엔터키를 눌러 메시지 보내기',
-  },
-  com_nav_user_name_display: {
-    english: 'Display username in messages',
-    translated: '메시지에서 사용자 이름 표시',
-  },
-  com_nav_save_drafts: {
-    english: 'Save drafts locally',
-    translated: '초안을 로컬에 저장',
-  },
-  com_nav_show_code: {
-    english: 'Always show code when using code interpreter',
-    translated: '코드 인터프리터 사용 시 항상 코드 표시',
-  },
-  com_nav_setting_beta: {
-    english: 'Beta features',
-    translated: '베타 기능',
-  },
-  com_nav_setting_account: {
-    english: 'Account',
-    translated: '계정',
-  },
-  com_nav_language: {
-    english: 'Language',
-    translated: '언어',
-  },
-  com_nav_lang_auto: {
-    english: 'Auto detect',
-    translated: '자동 감지',
-  },
-  com_nav_lang_english: {
-    english: 'English',
-    translated: '영어',
-  },
-  com_nav_lang_chinese: {
-    english: '中文',
-    translated: '중국어',
-  },
-  com_nav_lang_german: {
-    english: 'Deutsch',
-    translated: '독일어',
-  },
-  com_nav_lang_spanish: {
-    english: 'Español',
-    translated: '스페인어',
-  },
-  com_nav_lang_french: {
-    english: 'Français ',
-    translated: '프랑스어',
-  },
-  com_nav_lang_italian: {
-    english: 'Italiano',
-    translated: '이탈리아어',
-  },
-  com_nav_lang_polish: {
-    english: 'Polski',
-    translated: '폴란드어',
-  },
-  com_nav_lang_brazilian_portuguese: {
-    english: 'Português Brasileiro',
-    translated: '브라질 포르투갈어',
-  },
-  com_nav_lang_russian: {
-    english: 'Русский',
-    translated: '러시아어',
-  },
-  com_nav_lang_japanese: {
-    english: '日本語',
-    translated: '일본어',
-  },
-  com_nav_lang_swedish: {
-    english: 'Svenska',
-    translated: '스웨덴어',
-  },
-  com_nav_lang_korean: {
-    english: '한국어',
-    translated: '한국어',
-  },
-  com_nav_lang_vietnamese: {
-    english: 'Tiếng Việt',
-    translated: '베트남어',
-  },
-  com_nav_lang_traditionalchinese: {
-    english: '繁體中文',
-    translated: '번체 중국어',
-  },
-  com_nav_lang_arabic: {
-    english: 'العربية',
-    translated: '아랍어',
-  },
-  com_nav_lang_turkish: {
-    english: 'Türkçe',
-    translated: '터키어',
-  },
-  com_nav_lang_dutch: {
-    english: 'Nederlands',
-    translated: '네덜란드어',
-  },
-  com_nav_lang_indonesia: {
-    english: 'Indonesia',
-    translated: '인도네시아',
-  },
-  com_nav_lang_hebrew: {
-    english: 'עברית',
-    translated: '히브리어',
-  },
+  com_ui_artifacts_toggle: '아티팩트 UI 표시/숨기기',
+
+  com_ui_include_shadcnui: 'shadcn/ui 컴포넌트 설치 안내',
+
+  com_ui_artifacts: '아티팩트',
+
+  com_ui_custom_prompt_mode: '사용자 지정 프롬프트 모드',
+
+  com_ui_artifact_click: '클릭하여 열기',
+
+  com_nav_info_include_shadcnui:
+    '활성화하면 shadcn/ui 컴포넌트 사용을 위한 설명이 포함됩니다. shadcn/ui는 Radix UI와 Tailwind CSS를 기반으로 구축된 재사용 가능한 컴포넌트 모음입니다. 참고: 이 설명은 매우 상세하므로, LLM에게 올바른 import문과 컴포넌트 사용법을 안내하는 것이 중요한 경우에만 활성화하시기 바랍니다. 컴포넌트에 대한 자세한 정보는 다음 웹사이트를 참조하세요: https://ui.shadcn.com/',
+
+  com_nav_info_custom_prompt_mode:
+    '활성화하면 기본 아티팩트 시스템 프롬프트가 포함되지 않습니다. 이 모드에서는 아티팩트 생성을 위한 모든 지시사항을 수동으로 입력해야 합니다.',
+
+  com_nav_info_code_artifacts: '채팅 옆에 실험적 코드 결과물 표시 활성화',
+
+  com_a11y_ai_composing: 'AI가 응답을 작성 중입니다',
+
+  com_warning_resubmit_unsupported: '이 엔드포인트에서는 AI 메시지 재전송이 지원되지 않습니다',
+
+  com_error_invalid_request_error:
+    'AI 서비스에서 오류로 인해 요청이 거부되었습니다. API 키가 유효하지 않거나 요청 형식이 올바르지 않은 것이 원인일 수 있습니다.',
+
+  com_error_no_system_messages:
+    '선택한 AI 서비스나 모델은 시스템 메시지를 지원하지 않습니다. 커스텀 지시사항 대신 프롬프트를 사용해 보세요.',
+
+  com_error_files_empty: '빈 파일은 허용되지 않습니다',
+
+  com_error_input_length:
+    '최근 메시지의 토큰 수가 제한({0})을 초과했습니다. 메시지를 줄이거나, 대화 설정에서 최대 컨텍스트 크기를 조정하거나, 새로운 대화를 시작해 주세요.',
+
+  com_error_files_dupe: '중복된 파일이 감지되었습니다',
+
+  com_error_files_validation: '파일 유효성 검사 중 오류가 발생했습니다',
+
+  com_error_files_process: '파일 처리 중 오류가 발생했습니다',
+
+  com_error_files_upload: '파일 업로드 중 오류가 발생했습니다',
+
+  com_generated_files: '생성된 파일:',
+
+  com_error_files_upload_canceled:
+    '파일 업로드가 취소되었습니다. 참고: 업로드 처리가 아직 진행 중일 수 있으며 수동으로 삭제해야 할 수 있습니다.',
+
+  com_download_expired: '다운로드가 만료되었습니다',
+
+  com_click_to_download: '(다운로드하려면 클릭하세요)',
+
+  com_assistants_conversation_starters_placeholder: '대화를 시작할 문구를 입력하세요',
+
+  com_download_expires: '(다운로드하려면 클릭하세요 - {0} 후 만료)',
+
+  com_agents_name_placeholder: '선택 사항: 에이전트의 이름',
+
+  com_sidepanel_agent_builder: '에이전트 제작기',
+
+  com_assistants_conversation_starters: '대화 시작하기',
+
+  com_agents_instructions_placeholder: '에이전트가 사용하는 시스템 지침',
+
+  com_agents_description_placeholder: '선택 사항: 여기에 에이전트를 설명하세요',
+
+  com_agents_search_name: '이름으로 에이전트 검색',
+
+  com_agents_update_error: '에이전트 업데이트 중 오류가 발생했습니다',
+
+  com_agents_create_error: '에이전트 생성 중 오류가 발생했습니다',
+
+  com_agents_missing_provider_model: '에이전트를 생성하기 전에 제공업체와 모델을 선택해 주세요',
+
+  com_agents_not_available: '에이전트를 사용할 수 없음',
+
+  com_agents_allow_editing: '다른 사용자가 내 에이전트를 수정할 수 있도록 허용',
+
+  com_agents_no_access: '이 에이전트를 수정할 권한이 없습니다',
+
+  com_agents_enable_file_search: '파일 검색 활성화',
+
+  com_agents_file_search_info:
+    '활성화하면 에이전트가 아래 나열된 파일명들을 정확히 인식하여 해당 파일들에서 관련 내용을 검색할 수 있습니다.',
+
+  com_agents_file_search_disabled:
+    '파일 검색을 위해 파일을 업로드하기 전에 에이전트를 먼저 생성해야 합니다',
+
+  com_ui_run_code: '코드 실행',
+
+  com_ui_agent_already_shared_to_all: '이 에이전트는 이미 모든 사용자와 공유되어 있습니다',
+
+  com_ui_endpoint: '엔드포인트',
+
+  com_ui_no_changes: '업데이트할 변경 사항이 없습니다',
+
+  com_ui_agent_editing_allowed: '다른 사용자가 이미 이 에이전트를 편집할 수 있습니다',
+
+  com_ui_region: '지역',
+
+  com_ui_model_parameters: '모델 매개변수',
+
+  com_ui_provider: '제공자',
+
+  com_ui_model_save_success: '모델 설정이 성공적으로 저장되었습니다',
+
+  com_ui_select_region: '지역 선택',
+
+  com_ui_select_provider: '제공자 선택',
+
+  com_ui_select_provider_first: '서비스 제공자를 먼저 선택하세요',
+
+  com_ui_select_search_region: '이름으로 지역 검색',
+
+  com_ui_add_model_preset: '추가 응답을 위한 모델 또는 프리셋 추가',
+
+  com_assistants_max_starters_reached: '대화 시작 문구 최대 개수에 도달했습니다',
+
+  com_ui_revoke_keys: '키 취소',
+
+  com_ui_revoke_keys_confirm: '모든 키를 취소하시겠습니까?',
+
+  com_ui_revoke_key_endpoint: '{0} 키 취소',
+
+  com_ui_revoke_key_confirm: '이 키를 취소하시겠습니까?',
+
+  com_ui_agent_deleted: '에이전트가 삭제되었습니다',
+
+  com_ui_agent_delete_error: '에이전트 삭제 중 오류가 발생했습니다',
+
+  com_ui_agent: '에이전트',
+
+  com_ui_delete_agent_confirm: '이 에이전트를 삭제하시겠습니까?',
+
+  com_ui_agents: '에이전트',
+
+  com_auth_email_verification_redirecting: '{0}초 후 이동합니다...',
+
+  com_ui_add_multi_conversation: '다중 응답 대화 추가',
+
+  com_ui_bookmarks_delete: '북마크 삭제',
+
+  com_nav_user_msg_markdown: '사용자 메시지를 마크다운으로 렌더링',
+
+  com_endpoint_search: '이름으로 엔드포인트 검색',
+
+  com_nav_tool_dialog_agents: '에이전트 도구',
+
+  com_nav_chat_direction: '채팅 표시 방향',
+
+  com_nav_clear_cache_confirm_message: '캐시를 지우시겠습니까?',
+
+  com_nav_stop_generating: '생성 중단',
+
+  com_nav_info_delete_cache_storage:
+    '이 작업은 기기에 저장된 모든 TTS(음성 합성) 오디오 파일 캐시를 삭제합니다. 캐시된 오디오 파일은 이전에 생성된 TTS 오디오의 재생 속도를 높이는 데 사용되지만, 기기의 저장 공간을 차지할 수 있습니다.',
+
+  com_nav_chat_commands_info:
+    '이 명령어들은 메시지 시작 부분에 특정 문자를 입력하면 활성화됩니다. 각 명령어는 지정된 접두사로 실행됩니다. 메시지 작성 시 이러한 문자들을 자주 사용하신다면 명령어 기능을 비활성화할 수 있습니다.',
+
+  com_nav_no_search_results: '검색 결과가 없습니다',
+
+  com_nav_chat_commands: '채팅 명령어',
 };

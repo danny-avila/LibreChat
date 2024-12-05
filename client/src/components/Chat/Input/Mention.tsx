@@ -26,8 +26,15 @@ export default function Mention({
 }) {
   const localize = useLocalize();
   const assistantMap = useAssistantsMapContext();
-  const { options, presets, modelSpecs, modelsConfig, endpointsConfig, assistantListMap } =
-    useMentions({ assistantMap: assistantMap || {}, includeAssistants });
+  const {
+    options,
+    presets,
+    modelSpecs,
+    agentsList,
+    modelsConfig,
+    endpointsConfig,
+    assistantListMap,
+  } = useMentions({ assistantMap: assistantMap || {}, includeAssistants });
   const { onSelectMention } = useSelectMention({
     presets,
     modelSpecs,
@@ -62,18 +69,23 @@ export default function Mention({
       }
     };
 
-    if (mention.type === 'endpoint' && mention.value === EModelEndpoint.assistants) {
+    if (mention.type === 'endpoint' && mention.value === EModelEndpoint.agents) {
       setSearchValue('');
-      setInputOptions(assistantListMap[EModelEndpoint.assistants]);
+      setInputOptions(agentsList ?? []);
+      setActiveIndex(0);
+      inputRef.current?.focus();
+    } else if (mention.type === 'endpoint' && mention.value === EModelEndpoint.assistants) {
+      setSearchValue('');
+      setInputOptions(assistantListMap[EModelEndpoint.assistants] ?? []);
       setActiveIndex(0);
       inputRef.current?.focus();
     } else if (mention.type === 'endpoint' && mention.value === EModelEndpoint.azureAssistants) {
       setSearchValue('');
-      setInputOptions(assistantListMap[EModelEndpoint.azureAssistants]);
+      setInputOptions(assistantListMap[EModelEndpoint.azureAssistants] ?? []);
       setActiveIndex(0);
       inputRef.current?.focus();
     } else if (mention.type === 'endpoint') {
-      const models = (modelsConfig?.[mention.value ?? ''] ?? []).map((model) => ({
+      const models = (modelsConfig?.[mention.value || ''] ?? []).map((model) => ({
         value: mention.value,
         label: model,
         type: 'model',

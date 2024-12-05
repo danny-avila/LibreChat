@@ -4,7 +4,7 @@ dotenv.config({
 });
 import { OpenAIEmbeddings } from '@langchain/openai';
 import { HNSWLib } from '@langchain/community/vectorstores/hnswlib';
-import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
+import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
 import * as fs from 'fs';
 import * as path from 'path';
 

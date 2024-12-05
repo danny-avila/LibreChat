@@ -8,7 +8,6 @@ const { loadDefaultInterface } = require('./start/interface');
 const { azureConfigSetup } = require('./start/azureOpenAI');
 const { loadAndFormatTools } = require('./ToolService');
 const { initializeRoles } = require('~/models/Role');
-const { cleanup } = require('./cleanup');
 const paths = require('~/config/paths');
 
 /**
@@ -18,7 +17,6 @@ const paths = require('~/config/paths');
  * @param {Express.Application} app - The Express application object.
  */
 const AppService = async (app) => {
-  cleanup();
   await initializeRoles();
   /** @type {TCustomConfig}*/
   const config = (await loadCustomConfig()) ?? {};

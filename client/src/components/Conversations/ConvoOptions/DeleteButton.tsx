@@ -44,15 +44,16 @@ export function DeleteConversationDialog({
   const confirmDelete = useCallback(() => {
     const messages = queryClient.getQueryData<TMessage[]>([QueryKeys.messages, conversationId]);
     const thread_id = messages?.[messages.length - 1]?.thread_id;
+    const endpoint = messages?.[messages.length - 1]?.endpoint;
 
-    deleteConvoMutation.mutate({ conversationId, thread_id, source: 'button' });
+    deleteConvoMutation.mutate({ conversationId, thread_id, endpoint, source: 'button' });
   }, [conversationId, deleteConvoMutation, queryClient]);
 
   return (
     <OGDialogTemplate
       showCloseButton={false}
       title={localize('com_ui_delete_conversation')}
-      className="z-[1000] max-w-[450px]"
+      className="max-w-[450px]"
       main={
         <>
           <div className="flex w-full flex-col items-center gap-2">
