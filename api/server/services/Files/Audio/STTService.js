@@ -6,6 +6,7 @@ const { extractEnvVariable, STTProviders } = require('librechat-data-provider');
 const { getCustomConfig } = require('~/server/services/Config');
 const { genAzureEndpoint } = require('~/utils');
 const { logger } = require('~/config');
+const { getUserKeyValues } = require('~/server/services/UserService');
 
 /**
  * Service class for handling Speech-to-Text (STT) operations.
@@ -161,10 +162,11 @@ class STTService {
    * @param {Object} requestData - The data required for the STT request.
    * @param {Buffer} requestData.audioBuffer - The audio data to be transcribed.
    * @param {Object} requestData.audioFile - The audio file object containing originalname, mimetype, and size.
+   * @param {String} userId - The user ID.
    * @returns {Promise<string>} A promise that resolves to the transcribed text.
    * @throws {Error} If the provider is invalid, the response status is not 200, or the response data is missing.
    */
-  async sttRequest(provider, sttSchema, { audioBuffer, audioFile }) {
+  async sttRequest(provider, sttSchema, { audioBuffer, audioFile }, userId) {
     const strategy = this.providerStrategies[provider];
     if (!strategy) {
       throw new Error('Invalid provider');
@@ -173,7 +175,37 @@ class STTService {
     const audioReadStream = Readable.from(audioBuffer);
     audioReadStream.path = 'audio.wav';
 
-    const [url, data, headers] = strategy.call(this, sttSchema, audioReadStream, audioFile);
+    let [url, data, headers] = strategy.call(this, sttSchema, audioReadStream, audioFile);
+
+    const schemaApiKey = extractEnvVariable(sttSchema.apiKey);
+
+    if (schemaApiKey == "user_provided"){
+      if (provider == STTProviders.OPENAI){
+        const userValues = await getUserKeyValues({ userId: userId, name: 'openAI' });
+        const apiKey = userValues?.apiKey;
+        if (apiKey){
+          headers = {
+            'Content-Type': 'multipart/form-data',
+            ...(apiKey && { Authorization: `Bearer ${apiKey}` }),
+          };
+          [headers].forEach(this.removeUndefined);
+        } else {
+          throw new Error(`Missing ${provider} API key`);
+        }
+      } else if (provider == STTProviders.AZURE_OPENAI){
+        const userValues = await getUserKeyValues({ userId: userId, name: 'azureOpenAI' });
+        const apiKey = userValues?.apiKey;
+        if (apiKey){
+          headers = {
+            'Content-Type': 'multipart/form-data',
+            ...(apiKey && { 'api-key': apiKey }),
+          };
+          [headers].forEach(this.removeUndefined);
+        } else {
+          throw new Error(`Missing ${provider} API key`);
+        }
+      }
+    }
 
     try {
       const response = await axios.post(url, data, { headers });
@@ -214,7 +246,8 @@ class STTService {
 
     try {
       const [provider, sttSchema] = await this.getProviderSchema();
-      const text = await this.sttRequest(provider, sttSchema, { audioBuffer, audioFile });
+      const userId = req?.user?.id;
+      const text = await this.sttRequest(provider, sttSchema, { audioBuffer, audioFile }, userId);
       res.json({ text });
     } catch (error) {
       logger.error('An error occurred while processing the audio:', error);
