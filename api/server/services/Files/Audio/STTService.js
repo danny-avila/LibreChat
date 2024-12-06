@@ -177,7 +177,7 @@ class STTService {
 
     let [url, data, headers] = strategy.call(this, sttSchema, audioReadStream, audioFile);
 
-    const schemaApiKey = extractEnvVariable(sttSchema.apiKey);
+    const schemaApiKey = extractEnvVariable(sttSchema?.apiKey);
 
     if (schemaApiKey == "user_provided"){
       if (provider == STTProviders.OPENAI){
