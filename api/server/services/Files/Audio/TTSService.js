@@ -268,7 +268,7 @@ class TTSService {
 
     let [url, data, headers] = strategy.call(this, ttsSchema, input, voice, stream);
 
-    const schemaApiKey = extractEnvVariable(ttsSchema.apiKey);
+    const schemaApiKey = extractEnvVariable(ttsSchema?.apiKey);
 
     if (schemaApiKey == "user_provided"){
       if (provider == TTSProviders.OPENAI){
