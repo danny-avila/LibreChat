@@ -4,6 +4,7 @@ const { getRandomVoiceId, createChunkProcessor, splitTextIntoChunks } = require(
 const { getCustomConfig } = require('~/server/services/Config');
 const { genAzureEndpoint } = require('~/utils');
 const { logger } = require('~/config');
+const { getUserKeyValues } = require('~/server/services/UserService');
 
 /**
  * Service class for handling Text-to-Speech (TTS) operations.
@@ -259,13 +260,41 @@ class TTSService {
    * @returns {Promise<Object>} The axios response object.
    * @throws {Error} If the provider is invalid or the request fails.
    */
-  async ttsRequest(provider, ttsSchema, { input, voice, stream = true }) {
+  async ttsRequest(provider, ttsSchema, { input, voice, stream = true }, userId) {
     const strategy = this.providerStrategies[provider];
     if (!strategy) {
       throw new Error('Invalid provider');
     }
 
-    const [url, data, headers] = strategy.call(this, ttsSchema, input, voice, stream);
+    let [url, data, headers] = strategy.call(this, ttsSchema, input, voice, stream);
+
+    const schemaApiKey = extractEnvVariable(ttsSchema.apiKey);
+
+    if (schemaApiKey == "user_provided"){
+      if (provider == TTSProviders.OPENAI){
+        const userValues = await getUserKeyValues({ userId: userId, name: 'openAI' });
+        const apiKey = userValues?.apiKey;
+        if (apiKey){
+          headers = {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+          };
+        } else {
+          throw new Error(`Missing ${provider} API key`);
+        }
+      } else if (provider == TTSProviders.AZURE_OPENAI){
+        const userValues = await getUserKeyValues({ userId: userId, name: 'azureOpenAI' });
+        const apiKey = userValues?.apiKey;
+        if (apiKey){
+          headers = {
+            'Content-Type': 'application/json',
+            'api-key': apiKey,
+          };
+        } else {
+          throw new Error(`Missing ${provider} API key`);
+        }
+      }
+    }
 
     [data, headers].forEach(this.removeUndefined.bind(this));
 
@@ -298,9 +327,10 @@ class TTSService {
       const provider = this.getProvider();
       const ttsSchema = this.customConfig.speech.tts[provider];
       const voice = await this.getVoice(ttsSchema, requestVoice);
+      const userId = req?.user?.id;
 
       if (input.length < 4096) {
-        const response = await this.ttsRequest(provider, ttsSchema, { input, voice });
+        const response = await this.ttsRequest(provider, ttsSchema, { input, voice }, userId);
         response.data.pipe(res);
         return;
       }
@@ -313,7 +343,7 @@ class TTSService {
             voice,
             input: chunk.text,
             stream: true,
-          });
+          }, userId);
 
           logger.debug(`[textToSpeech] user: ${req?.user?.id} | writing audio stream`);
           await new Promise((resolve) => {
@@ -385,7 +415,7 @@ class TTSService {
               voice,
               input: update.text,
               stream: true,
-            });
+            }, userId);
 
             if (!shouldContinue) {
               break;
