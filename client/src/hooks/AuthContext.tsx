@@ -107,8 +107,8 @@ const AuthContextProvider = ({
       return;
     }
     refreshToken.mutate(undefined, {
-      onSuccess: (data: TLoginResponse) => {
-        const { user, token } = data;
+      onSuccess: (data: TLoginResponse | undefined) => {
+        const { user, token = '' } = data ?? {};
         if (token) {
           setUserContext({ token, isAuthenticated: true, user });
         } else {
