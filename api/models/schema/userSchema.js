@@ -96,6 +96,10 @@ const userSchema = mongoose.Schema(
       unique: true,
       sparse: true,
     },
+    customOpenIdData: {
+      type: Map,
+      of: String
+    },
     ldapId: {
       type: String,
       unique: true,
