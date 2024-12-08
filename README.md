@@ -45,8 +45,9 @@
 - 🤖 **AI Model Selection**:  
   - Anthropic (Claude), AWS Bedrock, OpenAI, Azure OpenAI, Google Vertex AI, Plugins, OpenAI Assistants API (including Azure Assistants)
   - [Custom Endpoints](https://www.librechat.ai/docs/quick_start/custom_endpoints): Use any OpenAI-compatible API with LibreChat, no proxy required
-  - Compatible across both [Remote & Local AI Providers](https://www.librechat.ai/docs/configuration/librechat_yaml/ai_endpoints):
-    - Ollama, groq, Cohere, Mistral AI, Apple MLX, koboldcpp, OpenRouter, together.ai, Perplexity, ShuttleAI, Deepseek, Qwen, and more
+  - Compatible with [Local & Remote AI Providers](https://www.librechat.ai/docs/configuration/librechat_yaml/ai_endpoints):
+    - Ollama, groq, Cohere, Mistral AI, Apple MLX, koboldcpp, together.ai,
+    - OpenRouter, Perplexity, ShuttleAI, Deepseek, Qwen, and more
 
 - 🔧 **[Code Interpreter API](https://www.librechat.ai/docs/features/code_interpreter)**: 
   - Secure, Sandboxed Execution in Python, Node.js (JS/TS), Go, C/C++, Java, PHP, Rust, and Fortran
@@ -56,16 +57,16 @@
 - 🔦 **Agents & Tools Integration**:  
   - **[LibreChat Agents](https://www.librechat.ai/docs/features/agents)**:
     - No-Code Custom Assistants: Build specialized, AI-driven helpers without coding  
-    - Flexible & Extensible: Attach tools like DALL-E-3, semantic search, calculators, file management, code execution, and more  
+    - Flexible & Extensible: Attach tools like DALL-E-3, file search, code execution, and more  
     - Compatible with Custom Endpoints, OpenAI, Azure, Anthropic, AWS Bedrock, and more
-  - Use LibreChat Agents and/or OpenAI Assistants with Files, Code Interpreter, Tools, and API Actions
+  - Use LibreChat Agents and OpenAI Assistants with Files, Code Interpreter, Tools, and API Actions
 
 - 🪄 **Generative UI with Code Artifacts**:  
   - [Code Artifacts](https://youtu.be/GfTj7O4gmd0?si=WJbdnemZpJzBrJo3) allow creation of React, HTML, and Mermaid diagrams directly in chat
 
 - 💾 **Presets & Context Management**:  
   - Create, Save, & Share Custom Presets  
-  - Switch between AI Endpoints and Presets mid-chat  
+  - Switch between AI Endpoints and Presets mid-chat
   - Edit, Resubmit, and Continue Messages with Conversation branching  
   - [Fork Messages & Conversations](https://www.librechat.ai/docs/features/fork) for Advanced Context control
 
@@ -74,7 +75,8 @@
   - Chat with Files using Custom Endpoints, OpenAI, Azure, Anthropic, AWS Bedrock, & Google 🗃️
 
 - 🌎 **Multilingual UI**:  
-  - English, 中文, Deutsch, Español, Français, Italiano, Polski, Português Brasileiro, Русский, 日本語, Svenska, 한국어, Tiếng Việt, 繁體中文, العربية, Türkçe, Nederlands, עברית
+  - English, 中文, Deutsch, Español, Français, Italiano, Polski, Português Brasileiro
+  - Русский, 日本語, Svenska, 한국어, Tiếng Việt, 繁體中文, العربية, Türkçe, Nederlands, עברית
 
 - 🎨 **Customizable Interface**:  
   - Customizable Dropdown & Interface that adapts to both power users and newcomers
