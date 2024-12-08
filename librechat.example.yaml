@@ -56,7 +56,7 @@ interface:
       If you have any questions about these Terms, please contact us at contact@librechat.ai.
 
       By using the Website, you acknowledge that you have read these Terms of Service and agree to be bound by them.
-    
+
 # Example Registration Object Structure (optional)
 registration:
   socialLogins: ['github', 'google', 'discord', 'openid', 'facebook']
@@ -71,7 +71,7 @@ registration:
 #       model: ''
 #       voices: ['']
 
-#  
+#
 #   stt:
 #     openai:
 #       url: ''
@@ -98,6 +98,7 @@ endpoints:
   #   timeoutMs: 180000  # Timeout for assistant operations
   #   # Should only be one or the other, either `supportedIds` or `excludedIds`
   #   supportedIds: ["asst_supportedAssistantId1", "asst_supportedAssistantId2"]
+  #   orderBySupportIdsFirst: false # Sort by supportedIds array first
   #   # excludedIds: ["asst_excludedAssistantId"]
   #   Only show assistants that the user created or that were created externally (e.g. in Assistants playground).
   #   # privateAssistants: false # Does not work with `supportedIds` or `excludedIds`

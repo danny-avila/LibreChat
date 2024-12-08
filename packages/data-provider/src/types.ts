@@ -238,6 +238,7 @@ export type TConfig = {
   userProvide?: boolean | null;
   userProvideURL?: boolean | null;
   disableBuilder?: boolean;
+  orderBySupportIdsFirst?: boolean;
   retrievalModels?: string[];
   capabilities?: string[];
 };

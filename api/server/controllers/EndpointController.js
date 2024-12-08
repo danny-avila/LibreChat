@@ -16,7 +16,7 @@ async function endpointController(req, res) {
   /** @type {TEndpointsConfig} */
   const mergedConfig = { ...defaultEndpointsConfig, ...customConfigEndpoints };
   if (mergedConfig[EModelEndpoint.assistants] && req.app.locals?.[EModelEndpoint.assistants]) {
-    const { disableBuilder, retrievalModels, capabilities, version, ..._rest } =
+    const { disableBuilder, orderBySupportIdsFirst, retrievalModels, capabilities, version, ..._rest } =
       req.app.locals[EModelEndpoint.assistants];
 
     mergedConfig[EModelEndpoint.assistants] = {
@@ -24,6 +24,7 @@ async function endpointController(req, res) {
       version,
       retrievalModels,
       disableBuilder,
+      orderBySupportIdsFirst,
       capabilities,
     };
   }
@@ -32,7 +33,7 @@ async function endpointController(req, res) {
     mergedConfig[EModelEndpoint.azureAssistants] &&
     req.app.locals?.[EModelEndpoint.azureAssistants]
   ) {
-    const { disableBuilder, retrievalModels, capabilities, version, ..._rest } =
+    const { disableBuilder, orderBySupportIdsFirst, retrievalModels, capabilities, version, ..._rest } =
       req.app.locals[EModelEndpoint.azureAssistants];
 
     mergedConfig[EModelEndpoint.azureAssistants] = {
@@ -40,6 +41,7 @@ async function endpointController(req, res) {
       version,
       retrievalModels,
       disableBuilder,
+      orderBySupportIdsFirst,
       capabilities,
     };
   }
