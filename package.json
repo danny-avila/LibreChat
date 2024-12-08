@@ -114,5 +114,8 @@
       "admin/",
       "packages/"
     ]
+  },
+  "dependencies": {
+    "@deepgram/sdk": "^3.9.0"
   }
 }

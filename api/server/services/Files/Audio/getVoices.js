@@ -37,6 +37,9 @@ async function getVoices(req, res) {
       case TTSProviders.LOCALAI:
         voices = ttsSchema.localai?.voices;
         break;
+      case TTSProviders.DEEPGRAM:
+        voices = ttsSchema.deepgram?.voices;
+        break;
       default:
         throw new Error('Invalid provider');
     }
