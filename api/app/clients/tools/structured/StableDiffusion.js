@@ -7,6 +7,7 @@ const sharp = require('sharp');
 const { v4: uuidv4 } = require('uuid');
 const { Tool } = require('@langchain/core/tools');
 const { FileContext } = require('librechat-data-provider');
+const getCustomConfig = require('~/server/services/Config/getCustomConfig');
 const paths = require('~/config/paths');
 const { logger } = require('~/config');
 
@@ -28,6 +29,7 @@ class StableDiffusionAPI extends Tool {
 
     this.name = 'stable-diffusion';
     this.url = fields.SD_WEBUI_URL || this.getServerURL();
+    this.spec = fields.spec;
     this.description_for_model = `// Generate images and visuals using text.
 // Guidelines:
 // - ALWAYS use {{"prompt": "7+ detailed keywords", "negative_prompt": "7+ detailed keywords"}} structure for queries.
@@ -75,8 +77,11 @@ class StableDiffusionAPI extends Tool {
   }
 
   async _call(data) {
-    const url = this.url;
+    const spec = this.spec;
     const { prompt, negative_prompt } = data;
+    const customConfig = await getCustomConfig();
+    const sdConfig = customConfig.tools.stableDiffusion.find(item => item.specs.includes(spec));
+    const url = sdConfig.WebUI ? sdConfig.WebUI : this.url;
     const payload = {
       prompt,
       negative_prompt,
@@ -85,6 +90,14 @@ class StableDiffusionAPI extends Tool {
       width: 1024,
       height: 1024,
     };
+    for (const parameter of Object.keys(sdConfig.parameters)) {
+      payload[parameter] = sdConfig.parameters[parameter];
+    }
+    logger.debug('[Stable Diffusion] name:',sdConfig.name);
+    logger.debug('[Stable Diffusion] url:',url);
+    logger.debug('[Stable Diffusion] spec:',spec);
+    logger.debug('[Stable Diffusion] payload:',payload);
+
     let generationResponse;
     try {
       generationResponse = await axios.post(`${url}/sdapi/v1/txt2img`, payload);
