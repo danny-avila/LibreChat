@@ -97,7 +97,7 @@
   - Search all messages/conversations
 
 - 👥 **Multi-User & Secure**:
-  - Multi-User, Secure Authentication with OAuth2 Support
+  - Multi-User, Secure Authentication with OAuth2 & Email Login Support
   - Built-in Moderation, and Token spend tools
 
 - ⚙️ **Configuration & Deployment**:  
