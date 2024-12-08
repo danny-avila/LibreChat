@@ -202,6 +202,18 @@ endpoints:
         forcePrompt: false
         modelDisplayLabel: 'Portkey'
         iconURL: https://images.crunchbase.com/image/upload/c_pad,f_auto,q_auto:eco,dpr_1/rjqy7ghvjoiu4cd1xjbf
+
+    # NanoGPT Example
+    - name: 'NanoGPT'
+      apiKey: '${NANO_GPT_API_KEY}'
+      baseURL: 'https://nano-gpt.com/api/v1/'
+      models:
+        default: ['gpt-4o-mini', 'gpt-4o']
+        fetch: true
+      titleConvo: true
+      titleModel: 'gpt-4o-mini'
+      modelDisplayLabel: 'NanoGPT'
+      iconURL: https://nano-gpt.com/logo.png
 # fileConfig:
 #   endpoints:
 #     assistants:
