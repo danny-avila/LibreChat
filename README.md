@@ -40,28 +40,13 @@
 
 # ✨ Features
 
-- 🖥️ **UI & Experience**:  
-  - UI matching ChatGPT, including Dark mode, Streaming, and latest updates
+- 🖥️ **UI & Experience** inspired by ChatGPT with enhanced design and features
 
 - 🤖 **AI Model Selection**:  
-  - Anthropic (Claude), AWS Bedrock, OpenAI, Azure OpenAI, BingAI, ChatGPT, Google Vertex AI, Plugins, OpenAI Assistants API (including Azure Assistants)
-
-- ✅ **Remote & Local AI Services**:  
-  - Compatible across both [Remote & Local AI services](https://www.librechat.ai/docs/configuration/librechat_yaml/ai_endpoints):
-    - groq, Ollama, Cohere, Mistral AI, Apple MLX, koboldcpp, OpenRouter, together.ai, Perplexity, ShuttleAI, Deepseek, Qwen, and more
-
-- 🪄 **Generative UI with Code Artifacts**:  
-  - [Code Artifacts](https://youtu.be/GfTj7O4gmd0?si=WJbdnemZpJzBrJo3) allow creation of React, HTML, and Mermaid diagrams directly in chat
-
-- 💾 **Presets & Context Management**:  
-  - Create, Save, & Share Custom Presets  
-  - Switch between AI Endpoints and Presets mid-chat  
-  - Edit, Resubmit, and Continue Messages with Conversation branching  
-  - Fork Messages & Conversations for Advanced Context control
-
-- 💬 **Multimodal & File Interactions**:  
-  - Upload and analyze images with Claude 3, GPT-4 (including `gpt-4o` and `gpt-4o-mini`), and Gemini Vision 📸  
-  - Chat with Files using Custom Endpoints, OpenAI, Azure, Anthropic, AWS Bedrock, & Google 🗃️
+  - Anthropic (Claude), AWS Bedrock, OpenAI, Azure OpenAI, Google Vertex AI, Plugins, OpenAI Assistants API (including Azure Assistants)
+  - [Custom Endpoints](https://www.librechat.ai/docs/quick_start/custom_endpoints): Use any OpenAI-compatible API with LibreChat, no proxy required
+  - Compatible across both [Remote & Local AI Providers](https://www.librechat.ai/docs/configuration/librechat_yaml/ai_endpoints):
+    - Ollama, groq, Cohere, Mistral AI, Apple MLX, koboldcpp, OpenRouter, together.ai, Perplexity, ShuttleAI, Deepseek, Qwen, and more
 
 - 🔧 **[Code Interpreter API](https://www.librechat.ai/docs/features/code_interpreter)**: 
   - Secure, Sandboxed Execution in Python, Node.js (JS/TS), Go, C/C++, Java, PHP, Rust, and Fortran
@@ -74,6 +59,19 @@
     - Flexible & Extensible: Attach tools like DALL-E-3, semantic search, calculators, file management, code execution, and more  
     - Compatible with Custom Endpoints, OpenAI, Azure, Anthropic, AWS Bedrock, and more
   - Use LibreChat Agents and/or OpenAI Assistants with Files, Code Interpreter, Tools, and API Actions
+
+- 🪄 **Generative UI with Code Artifacts**:  
+  - [Code Artifacts](https://youtu.be/GfTj7O4gmd0?si=WJbdnemZpJzBrJo3) allow creation of React, HTML, and Mermaid diagrams directly in chat
+
+- 💾 **Presets & Context Management**:  
+  - Create, Save, & Share Custom Presets  
+  - Switch between AI Endpoints and Presets mid-chat  
+  - Edit, Resubmit, and Continue Messages with Conversation branching  
+  - [Fork Messages & Conversations](https://www.librechat.ai/docs/features/fork) for Advanced Context control
+
+- 💬 **Multimodal & File Interactions**:  
+  - Upload and analyze images with Claude 3, GPT-4o, o1, Llama-Vision, and Gemini 📸  
+  - Chat with Files using Custom Endpoints, OpenAI, Azure, Anthropic, AWS Bedrock, & Google 🗃️
 
 - 🌎 **Multilingual UI**:  
   - English, 中文, Deutsch, Español, Français, Italiano, Polski, Português Brasileiro, Русский, 日本語, Svenska, 한국어, Tiếng Việt, 繁體中文, العربية, Türkçe, Nederlands, עברית
@@ -96,11 +94,9 @@
 - 🔍 **Search & Discovery**:  
   - Search all messages/conversations
 
-- 🔌 **Plugins & Extensions**:  
-  - Plugins, including web access, image generation with DALL-E-3, and more
-
-- 👥 **Multi-User & Moderation**:  
-  - Multi-User, Secure Authentication with Moderation and Token spend tools
+- 👥 **Multi-User & Secure**:
+  - Multi-User, Secure Authentication with OAuth2 Support
+  - Built-in Moderation, and Token spend tools
 
 - ⚙️ **Configuration & Deployment**:  
   - Configure Proxy, Reverse Proxy, Docker, & many Deployment options  
