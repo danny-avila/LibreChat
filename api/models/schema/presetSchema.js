@@ -1,3 +1,4 @@
+const { logger } = require('~/config');
 const mongoose = require('mongoose');
 const { conversationPreset } = require('./defaults');
 const presetSchema = mongoose.Schema(
@@ -35,5 +36,11 @@ const presetSchema = mongoose.Schema(
 );
 
 const Preset = mongoose.models.Preset || mongoose.model('Preset', presetSchema);
+
+Preset.on('index', (error) => {
+  if (error) {
+    logger.error(`Failed to create Preset index ${error}`);
+  }
+});
 
 module.exports = Preset;

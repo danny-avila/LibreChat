@@ -1,3 +1,4 @@
+const { logger } = require('~/config');
 const mongoose = require('mongoose');
 
 const bannerSchema = mongoose.Schema(
@@ -33,4 +34,11 @@ const bannerSchema = mongoose.Schema(
 );
 
 const Banner = mongoose.model('Banner', bannerSchema);
+
+Banner.on('index', (error) => {
+  if (error) {
+    logger.error(`Failed to create Banner index ${error}`);
+  }
+});
+
 module.exports = Banner;

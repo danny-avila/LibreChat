@@ -1,3 +1,4 @@
+const { logger } = require('~/config');
 const mongoose = require('mongoose');
 const mongoMeili = require('../plugins/mongoMeili');
 const { conversationPreset } = require('./defaults');
@@ -70,5 +71,11 @@ convoSchema.index({ createdAt: 1, updatedAt: 1 });
 convoSchema.index({ conversationId: 1, user: 1 }, { unique: true });
 
 const Conversation = mongoose.models.Conversation || mongoose.model('Conversation', convoSchema);
+
+Conversation.on('index', (error) => {
+  if (error) {
+    logger.error(`Failed to create Conversation index ${error}`);
+  }
+});
 
 module.exports = Conversation;

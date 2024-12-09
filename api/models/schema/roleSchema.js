@@ -1,3 +1,4 @@
+const { logger } = require('~/config');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const mongoose = require('mongoose');
 
@@ -51,5 +52,11 @@ const roleSchema = new mongoose.Schema({
 });
 
 const Role = mongoose.model('Role', roleSchema);
+
+Role.on('index', (error) => {
+  if (error) {
+    logger.error(`Failed to create Role index ${error}`);
+  }
+});
 
 module.exports = Role;
