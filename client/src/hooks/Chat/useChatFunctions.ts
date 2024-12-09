@@ -138,9 +138,9 @@ export default function useChatFunctions({
       (msg) => msg.messageId === latestMessage?.parentMessageId,
     );
 
-    let thread_id = parentMessage?.thread_id ?? latestMessage?.thread_id ?? '';
-    if (!thread_id) {
-      thread_id = currentMessages.find((message) => message.thread_id)?.thread_id ?? '';
+    let thread_id = parentMessage?.thread_id ?? latestMessage?.thread_id;
+    if (thread_id == null) {
+      thread_id = currentMessages.find((message) => message.thread_id)?.thread_id;
     }
 
     const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
