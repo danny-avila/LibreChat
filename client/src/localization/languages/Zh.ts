@@ -516,7 +516,7 @@ export default {
   com_endpoint_preset_default_item: '默认：',
   com_endpoint_preset_default_none: '无默认预设可用。',
   com_endpoint_preset_title: '预设',
-  com_endpoint_preset_saved: '保存成功！',
+  com_ui_saved: '保存成功！',
   com_endpoint_preset_default: '现在是默认预设。',
   com_endpoint_preset: '预设',
   com_endpoint_presets: '预设',
@@ -808,7 +808,7 @@ export default {
   com_agents_file_search_info:
     '启用后，系统会告知Agent以下列出的具体文件名，使其能够从这些文件中检索相关内容。',
 
-  com_agents_execute_code: '运行代码',
+  com_ui_run_code: '运行代码',
 
   com_agents_file_search_disabled: '必须先创建Agent，才能上传文件用于文件搜索。',
 

@@ -688,7 +688,7 @@ class OpenAIClient extends BaseClient {
   }
 
   initializeLLM({
-    model = 'gpt-3.5-turbo',
+    model = 'gpt-4o-mini',
     modelName,
     temperature = 0.2,
     presence_penalty = 0,
@@ -793,7 +793,7 @@ class OpenAIClient extends BaseClient {
 
     const { OPENAI_TITLE_MODEL } = process.env ?? {};
 
-    let model = this.options.titleModel ?? OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo';
+    let model = this.options.titleModel ?? OPENAI_TITLE_MODEL ?? 'gpt-4o-mini';
     if (model === Constants.CURRENT_MODEL) {
       model = this.modelOptions.model;
     }
@@ -982,7 +982,7 @@ ${convo}
     let prompt;
 
     // TODO: remove the gpt fallback and make it specific to endpoint
-    const { OPENAI_SUMMARY_MODEL = 'gpt-3.5-turbo' } = process.env ?? {};
+    const { OPENAI_SUMMARY_MODEL = 'gpt-4o-mini' } = process.env ?? {};
     let model = this.options.summaryModel ?? OPENAI_SUMMARY_MODEL;
     if (model === Constants.CURRENT_MODEL) {
       model = this.modelOptions.model;
@@ -1323,6 +1323,11 @@ ${convo}
       let streamPromise;
       /** @type {(value: void | PromiseLike<void>) => void} */
       let streamResolve;
+
+      if (this.isO1Model === true && this.azure && modelOptions.stream) {
+        delete modelOptions.stream;
+        delete modelOptions.stop;
+      }
 
       if (modelOptions.stream) {
         streamPromise = new Promise((resolve) => {

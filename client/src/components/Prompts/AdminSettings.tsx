@@ -29,17 +29,19 @@ const LabelController: React.FC<LabelControllerProps> = ({
   setValue,
 }) => (
   <div className="mb-4 flex items-center justify-between gap-2">
-    <label
+    <button
       className="cursor-pointer select-none"
-      htmlFor={promptPerm}
+      type="button"
+      // htmlFor={promptPerm}
       onClick={() =>
         setValue(promptPerm, !getValues(promptPerm), {
           shouldDirty: true,
         })
       }
+      tabIndex={0}
     >
       {label}
-    </label>
+    </button>
     <Controller
       name={promptPerm}
       control={control}
@@ -48,7 +50,7 @@ const LabelController: React.FC<LabelControllerProps> = ({
           {...field}
           checked={field.value}
           onCheckedChange={field.onChange}
-          value={field?.value?.toString()}
+          value={field.value.toString()}
         />
       )}
     />
@@ -61,7 +63,7 @@ const AdminSettings = () => {
   const { showToast } = useToastContext();
   const { mutate, isLoading } = useUpdatePromptPermissionsMutation({
     onSuccess: () => {
-      showToast({ status: 'success', message: localize('com_endpoint_preset_saved') });
+      showToast({ status: 'success', message: localize('com_ui_saved') });
     },
     onError: () => {
       showToast({ status: 'error', message: localize('com_ui_error_save_admin_settings') });

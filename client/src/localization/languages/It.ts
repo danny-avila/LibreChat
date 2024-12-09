@@ -405,7 +405,7 @@ export default {
   com_endpoint_preset_default_item: 'Predefinita:',
   com_endpoint_preset_default_none: 'Nessuna preimpostazione predefinita attiva.',
   com_endpoint_preset_title: 'Preimpostazione',
-  com_endpoint_preset_saved: 'Salvata!',
+  com_ui_saved: 'Salvata!',
   com_endpoint_preset_default: 'è ora la preimpostazione predefinita.',
   com_endpoint_preset: 'preimpostazione',
   com_endpoint_presets: 'preimpostazioni',
@@ -679,7 +679,7 @@ export default {
   com_agents_enable_file_search: 'Abilita Ricerca File',
   com_agents_file_search_info:
     'Quando abilitato, l\'agente verrà informato dei nomi esatti dei file elencati di seguito, permettendogli di recuperare il contesto pertinente da questi file.',
-  com_agents_execute_code: 'Esegui Codice',
+  com_ui_run_code: 'Esegui Codice',
   com_agents_file_search_disabled:
     'L\'Agente deve essere creato prima di caricare file per la Ricerca File.',
   com_ui_agent_already_shared_to_all: 'Questo assistente è già condiviso con tutti gli utenti',

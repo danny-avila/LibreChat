@@ -551,7 +551,7 @@ export default {
   com_endpoint_preset_default_item: 'Padrão:',
   com_endpoint_preset_default_none: 'Nenhum preset padrão ativo.',
   com_endpoint_preset_title: 'Preset',
-  com_endpoint_preset_saved: 'Salvo!',
+  com_ui_saved: 'Salvo!',
   com_endpoint_preset_default: 'é agora o preset padrão.',
   com_endpoint_preset: 'preset',
   com_endpoint_presets: 'presets',

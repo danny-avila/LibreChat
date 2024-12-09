@@ -46,7 +46,7 @@ export default function usePresets() {
       return;
     }
 
-    if (presets && presets.length > 0 && user && presets[0].user !== user?.id) {
+    if (presets && presets.length > 0 && user && presets[0].user !== user.id) {
       presetsQuery.refetch();
       return;
     }
@@ -80,7 +80,7 @@ export default function usePresets() {
       }
       const previousPresets = presetsQuery.data ?? [];
       if (previousPresets) {
-        setPresets(previousPresets.filter((p) => p.presetId !== preset?.presetId));
+        setPresets(previousPresets.filter((p) => p.presetId !== preset.presetId));
       }
     },
     onSuccess: () => {
@@ -99,12 +99,12 @@ export default function usePresets() {
   const updatePreset = useUpdatePresetMutation({
     onSuccess: (data, preset) => {
       const toastTitle = data.title ? `"${data.title}"` : localize('com_endpoint_preset_title');
-      let message = `${toastTitle} ${localize('com_endpoint_preset_saved')}`;
+      let message = `${toastTitle} ${localize('com_ui_saved')}`;
       if (data.defaultPreset && data.presetId !== _defaultPreset?.presetId) {
         message = `${toastTitle} ${localize('com_endpoint_preset_default')}`;
         setDefaultPreset(data);
         newConversation({ preset: data });
-      } else if (preset?.defaultPreset === false) {
+      } else if (preset.defaultPreset === false) {
         setDefaultPreset(null);
         message = `${toastTitle} ${localize('com_endpoint_preset_default_removed')}`;
       }
@@ -233,7 +233,7 @@ export default function usePresets() {
     if (!preset) {
       return;
     }
-    const fileName = filenamify(preset?.title || 'preset');
+    const fileName = filenamify(preset.title || 'preset');
     exportFromJSON({
       data: cleanupPreset({ preset }),
       fileName,

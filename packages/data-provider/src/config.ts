@@ -140,6 +140,8 @@ export enum Capabilities {
 }
 
 export enum AgentCapabilities {
+  hide_sequential_outputs = 'hide_sequential_outputs',
+  end_after_tools = 'end_after_tools',
   execute_code = 'execute_code',
   file_search = 'file_search',
   actions = 'actions',
@@ -475,6 +477,7 @@ export const configSchema = z.object({
       bookmarks: z.boolean().optional(),
       presets: z.boolean().optional(),
       prompts: z.boolean().optional(),
+      agents: z.boolean().optional(),
     })
     .default({
       endpointsMenu: true,
@@ -485,6 +488,7 @@ export const configSchema = z.object({
       multiConvo: true,
       bookmarks: true,
       prompts: true,
+      agents: true,
     }),
   fileStrategy: fileSourceSchema.default(FileSources.local),
   registration: z
@@ -629,6 +633,7 @@ const sharedAnthropicModels = [
 export const bedrockModels = [
   'anthropic.claude-3-5-sonnet-20241022-v2:0',
   'anthropic.claude-3-5-sonnet-20240620-v1:0',
+  'anthropic.claude-3-5-haiku-20241022-v1:0',
   'anthropic.claude-3-haiku-20240307-v1:0',
   'anthropic.claude-3-opus-20240229-v1:0',
   'anthropic.claude-3-sonnet-20240229-v1:0',
@@ -756,6 +761,13 @@ export const visionModels = [
   'gemini-pro-vision',
   'claude-3',
   'gemini-1.5',
+  'gemini-exp',
+  'moondream',
+  'llama3.2-vision',
+  'llama-3.2-90b-vision',
+  'llama-3.2-11b-vision',
+  'llama-3-2-90b-vision',
+  'llama-3-2-11b-vision',
 ];
 export enum VisionModes {
   generative = 'generative',
@@ -931,6 +943,10 @@ export enum ViolationTypes {
    * Verify Conversation Access violation.
    */
   CONVO_ACCESS = 'convo_access',
+  /**
+   * Tool Call Limit Violation.
+   */
+  TOOL_CALL_LIMIT = 'tool_call_limit',
 }
 
 /**
@@ -1085,6 +1101,8 @@ export enum Constants {
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value for the initial conversationId before a request is sent */
   NEW_CONVO = 'new',
+  /** Standard value for the conversationId used for search queries */
+  SEARCH = 'search',
   /** Fixed, encoded domain length for Azure OpenAI Assistants Function name parsing. */
   ENCODED_DOMAIN_LENGTH = 10,
   /** Identifier for using current_model in multi-model requests. */

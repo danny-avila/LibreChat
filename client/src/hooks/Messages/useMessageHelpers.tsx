@@ -22,7 +22,7 @@ export default function useMessageHelpers(props: TMessageProps) {
     setLatestMessage,
   } = useChatContext();
   const assistantMap = useAssistantsMapContext();
-  const agentMap = useAgentsMapContext();
+  const agentsMap = useAgentsMapContext();
 
   const { text, content, children, messageId = null, isCreatedByUser } = message ?? {};
   const edit = messageId === currentEditId;
@@ -102,8 +102,8 @@ export default function useMessageHelpers(props: TMessageProps) {
 
     const modelKey = message?.model ?? '';
 
-    return agentMap ? agentMap[modelKey] : undefined;
-  }, [agentMap, conversation?.endpoint, message?.model]);
+    return agentsMap ? agentsMap[modelKey] : undefined;
+  }, [agentsMap, conversation?.endpoint, message?.model]);
 
   const regenerateMessage = () => {
     if ((isSubmitting && isCreatedByUser === true) || !message) {

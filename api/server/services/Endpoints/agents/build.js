@@ -2,8 +2,14 @@ const { loadAgent } = require('~/models/Agent');
 const { logger } = require('~/config');
 
 const buildOptions = (req, endpoint, parsedBody) => {
-  const { agent_id, instructions, spec, ...model_parameters } = parsedBody;
-
+  const {
+    agent_id,
+    instructions,
+    spec,
+    maxContextTokens,
+    resendFiles = true,
+    ...model_parameters
+  } = parsedBody;
   const agentPromise = loadAgent({
     req,
     agent_id,
@@ -13,12 +19,14 @@ const buildOptions = (req, endpoint, parsedBody) => {
   });
 
   const endpointOption = {
-    agent: agentPromise,
+    spec,
     endpoint,
     agent_id,
+    resendFiles,
     instructions,
-    spec,
+    maxContextTokens,
     model_parameters,
+    agent: agentPromise,
   };
 
   return endpointOption;

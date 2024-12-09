@@ -492,7 +492,7 @@ export default {
   com_endpoint_preset_default_item: 'Oletus:',
   com_endpoint_preset_default_none: 'Oletus-esiasetusta ei ole käytössä',
   com_endpoint_preset_title: 'Esiasetus',
-  com_endpoint_preset_saved: 'Tallennettu!',
+  com_ui_saved: 'Tallennettu!',
   com_endpoint_preset_default: 'on nyt oletus-esiasetus.',
   com_endpoint_preset: 'esiasetus',
   com_endpoint_presets: 'esiasetukset',
