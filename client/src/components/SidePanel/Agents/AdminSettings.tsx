@@ -108,12 +108,12 @@ const AdminSettings = () => {
       label: localize('com_ui_agents_allow_share_global'),
     },
     {
-      agentPerm: Permissions.USE,
-      label: localize('com_ui_agents_allow_use'),
-    },
-    {
       agentPerm: Permissions.CREATE,
       label: localize('com_ui_agents_allow_create'),
+    },
+    {
+      agentPerm: Permissions.USE,
+      label: localize('com_ui_agents_allow_use'),
     },
   ];
 
@@ -175,14 +175,31 @@ const AdminSettings = () => {
           <form onSubmit={handleSubmit(onSubmit)}>
             <div className="py-5">
               {labelControllerData.map(({ agentPerm, label }) => (
-                <LabelController
-                  key={agentPerm}
-                  control={control}
-                  agentPerm={agentPerm}
-                  label={label}
-                  getValues={getValues}
-                  setValue={setValue}
-                />
+                <div key={agentPerm}>
+                  <LabelController
+                    control={control}
+                    agentPerm={agentPerm}
+                    label={label}
+                    getValues={getValues}
+                    setValue={setValue}
+                  />
+                  {selectedRole === SystemRoles.ADMIN && agentPerm === Permissions.USE && (
+                    <>
+                      <div className="mb-2 max-w-full whitespace-normal break-words text-sm text-red-600">
+                        <span>{localize('com_ui_admin_access_warning')}</span>
+                        {'\n'}
+                        <a
+                          href="https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/interface"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-blue-500 underline"
+                        >
+                          {localize('com_ui_more_info')}
+                        </a>
+                      </div>
+                    </>
+                  )}
+                </div>
               ))}
             </div>
             <div className="flex justify-end">

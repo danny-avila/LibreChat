@@ -206,6 +206,8 @@ export default {
   com_ui_version_var: 'Version {0}',
   com_ui_advanced: 'Advanced',
   com_ui_admin_settings: 'Admin Settings',
+  com_ui_admin_access_warning:
+    'Disabling Admin access to this feature may cause unexpected UI issues requiring refresh. If saved, the only way to revert is via the interface setting in librechat.yaml config which affects all roles.',
   com_ui_role_select: 'Role',
   com_ui_error_save_admin_settings: 'There was an error saving your admin settings.',
   com_ui_prompt_preview_not_shared: 'The author has not allowed collaboration for this prompt.',
@@ -382,6 +384,7 @@ export default {
   com_ui_unarchive: 'Unarchive',
   com_ui_unarchive_error: 'Failed to unarchive conversation',
   com_ui_more_options: 'More',
+  com_ui_more_info: 'More info',
   com_ui_preview: 'Preview',
   com_ui_upload: 'Upload',
   com_ui_connect: 'Connect',
