@@ -18,6 +18,9 @@ module.exports = {
     'client/dist/**/*',
     'client/public/**/*',
     'e2e/playwright-report/**/*',
+    'packages/mcp/types/**/*',
+    'packages/mcp/dist/**/*',
+    'packages/mcp/test_bundle/**/*',
     'packages/data-provider/types/**/*',
     'packages/data-provider/dist/**/*',
     'packages/data-provider/test_bundle/**/*',
@@ -137,6 +140,18 @@ module.exports = {
       ],
     },
     {
+      files: './packages/mcp/**/*.ts',
+      overrides: [
+        {
+          files: '**/*.ts',
+          parser: '@typescript-eslint/parser',
+          parserOptions: {
+            project: './packages/mcp/tsconfig.json',
+          },
+        },
+      ],
+    },
+    {
       files: './config/translations/**/*.ts',
       parser: '@typescript-eslint/parser',
       parserOptions: {
@@ -147,6 +162,12 @@ module.exports = {
       files: ['./packages/data-provider/specs/**/*.ts'],
       parserOptions: {
         project: './packages/data-provider/tsconfig.spec.json',
+      },
+    },
+    {
+      files: ['./packages/mcp/specs/**/*.ts'],
+      parserOptions: {
+        project: './packages/mcp/tsconfig.spec.json',
       },
     },
   ],

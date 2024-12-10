@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "declaration": true,
+    "declarationDir": "./dist/types",
+    "module": "esnext",
+    "noImplicitAny": true,
+    "outDir": "./types",
+    "target": "es5",
+    "moduleResolution": "node",
+    "allowSyntheticDefaultImports": true,
+    "lib": ["es2017", "dom", "ES2021.String"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "sourceMap": true,
+    "baseUrl": "." // This should be the root of your package
+  },
+  "exclude": ["node_modules", "dist", "types"],
+  "include": ["src/**/*", "types/index.d.ts", "types/react-query/index.d.ts"]
+}
