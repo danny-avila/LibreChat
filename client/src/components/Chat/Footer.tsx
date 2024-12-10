@@ -37,7 +37,7 @@ export default function Footer({ className }: { className?: string }) {
   const mainContentParts = (
     typeof config?.customFooter === 'string'
       ? config.customFooter
-      : 'Powered by [Crystalflow AI](https://your-website.com)'
+      : 'Powered by [Crystalflow AI](https://crystalflow.ai)'
   ).split('|');
 
   useEffect(() => {
