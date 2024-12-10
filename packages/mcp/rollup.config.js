@@ -5,7 +5,6 @@ import peerDepsExternal from 'rollup-plugin-peer-deps-external';
 import commonjs from '@rollup/plugin-commonjs';
 import replace from '@rollup/plugin-replace';
 import terser from '@rollup/plugin-terser';
-import generatePackageJson from 'rollup-plugin-generate-package-json';
 
 const plugins = [
   peerDepsExternal(),
@@ -19,19 +18,6 @@ const plugins = [
     useTsconfigDeclarationDir: true,
   }),
   terser(),
-];
-
-const subfolderPlugins = (folderName) => [
-  ...plugins,
-  generatePackageJson({
-    baseContents: {
-      name: `${pkg.name}/${folderName}`,
-      private: true,
-      main: '../index.js',
-      module: './index.es.js', // Adjust to match the output file
-      types: `../types/${folderName}/index.d.ts`, // Point to correct types file
-    },
-  }),
 ];
 
 export default [
@@ -56,24 +42,5 @@ export default [
       preserveSymlinks: true,
       plugins,
     },
-  },
-  // Separate bundle for react-query related part
-  {
-    input: 'src/react-query/index.ts',
-    output: [
-      {
-        file: 'dist/react-query/index.es.js',
-        format: 'esm',
-        exports: 'named',
-        sourcemap: true,
-      },
-    ],
-    external: [
-      ...Object.keys(pkg.dependencies || {}),
-      ...Object.keys(pkg.devDependencies || {}),
-      // 'mcp', // Marking main part as external
-    ],
-    preserveSymlinks: true,
-    plugins: subfolderPlugins('react-query'),
   },
 ];

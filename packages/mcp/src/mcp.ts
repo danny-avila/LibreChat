@@ -29,7 +29,7 @@ interface MCPPrompt {
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';
 
-class MCPConnectionSingleton extends EventEmitter {
+export class MCPConnectionSingleton extends EventEmitter {
   private static instance: MCPConnectionSingleton | null = null;
   public client: Client;
   private transport: Transport;
@@ -310,5 +310,3 @@ class MCPConnectionSingleton extends EventEmitter {
     return this.lastError;
   }
 }
-
-export default MCPConnectionSingleton;
