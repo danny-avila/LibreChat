@@ -32,7 +32,7 @@ type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';
 export class MCPConnectionSingleton extends EventEmitter {
   private static instance: MCPConnectionSingleton | null = null;
   public client: Client;
-  private transport: Transport;
+  private transport: Transport | null = null; // Make this nullable
   private connectionState: ConnectionState = 'disconnected';
   private connectPromise: Promise<void> | null = null;
   private lastError: Error | null = null;
@@ -48,18 +48,16 @@ export class MCPConnectionSingleton extends EventEmitter {
     private readonly clientFactory?: (transport: Transport) => Client,
   ) {
     super();
-    this.transport = this.constructTransport(options);
-    this.client =
-      clientFactory?.(this.transport) ??
-      new Client(
-        {
-          name: 'librechat-client',
-          version: '1.0.0',
-        },
-        {
-          capabilities: {},
-        },
-      );
+    // Don't create transport here, wait until connection is needed
+    this.client = new Client(
+      {
+        name: 'librechat-client',
+        version: '1.0.0',
+      },
+      {
+        capabilities: {},
+      },
+    );
 
     // Set up event listeners
     this.setupEventListeners();
@@ -166,25 +164,65 @@ export class MCPConnectionSingleton extends EventEmitter {
 
     this.connectPromise = (async () => {
       try {
-        await this.client.connect(this.transport);
+        // Clean up existing connection if any
+        if (this.transport) {
+          try {
+            await this.client.close();
+            this.transport = null;
+          } catch (error) {
+            console.warn('Error closing existing connection:', error);
+          }
+        }
+
+        console.log('Creating new transport...');
+        this.transport = this.constructTransport(this.options);
+
+        // Debug transport events
+        this.transport.onmessage = (msg) => {
+          console.log('Transport received message:', JSON.stringify(msg, null, 2));
+        };
+
+        const originalSend = this.transport.send.bind(this.transport);
+        this.transport.send = async (msg) => {
+          console.log('Transport sending message:', JSON.stringify(msg, null, 2));
+          return originalSend(msg);
+        };
+
+        // Connect with longer timeout for debugging
+        console.log('Connecting to transport...');
+        const connectPromise = this.client.connect(this.transport);
+        const timeoutPromise = new Promise((_resolve, reject) => {
+          setTimeout(() => reject(new Error('Connection timeout')), 10000);
+        });
+
+        await Promise.race([connectPromise, timeoutPromise]);
+        console.log('Successfully connected to transport');
+
+        this.connectionState = 'connected';
         this.emit('connectionChange', 'connected');
+        this.reconnectAttempts = 0;
       } catch (error) {
+        console.error('Connection error:', error);
+        this.connectionState = 'error';
         this.emit('connectionChange', 'error');
+        this.lastError = error instanceof Error ? error : new Error(String(error));
         throw error;
       } finally {
         this.connectPromise = null;
       }
     })();
 
-    await this.connectPromise;
+    return this.connectPromise;
   }
 
   public async disconnect(): Promise<void> {
     try {
-      if (this.connectionState === 'connected') {
+      if (this.transport) {
         await this.client.close();
-        this.emit('connectionChange', 'disconnected');
+        this.transport = null;
       }
+      this.connectionState = 'disconnected';
+      this.emit('connectionChange', 'disconnected');
     } catch (error) {
       this.emit('error', error);
       throw error;
