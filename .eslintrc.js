@@ -21,6 +21,7 @@ module.exports = {
     'packages/mcp/types/**/*',
     'packages/mcp/dist/**/*',
     'packages/mcp/test_bundle/**/*',
+    'api/demo/**/*',
     'packages/data-provider/types/**/*',
     'packages/data-provider/dist/**/*',
     'packages/data-provider/test_bundle/**/*',
@@ -140,6 +141,18 @@ module.exports = {
       ],
     },
     {
+      files: './api/demo/**/*.ts',
+      overrides: [
+        {
+          files: '**/*.ts',
+          parser: '@typescript-eslint/parser',
+          parserOptions: {
+            project: './packages/data-provider/tsconfig.json',
+          },
+        },
+      ],
+    },
+    {
       files: './packages/mcp/**/*.ts',
       overrides: [
         {
@@ -160,6 +173,12 @@ module.exports = {
     },
     {
       files: ['./packages/data-provider/specs/**/*.ts'],
+      parserOptions: {
+        project: './packages/data-provider/tsconfig.spec.json',
+      },
+    },
+    {
+      files: ['./api/demo/specs/**/*.ts'],
       parserOptions: {
         project: './packages/data-provider/tsconfig.spec.json',
       },

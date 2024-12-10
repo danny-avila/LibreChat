@@ -43,6 +43,8 @@
     "@rollup/plugin-node-resolve": "^15.1.0",
     "@rollup/plugin-replace": "^5.0.5",
     "@rollup/plugin-terser": "^0.4.4",
+    "@types/diff": "^6.0.0",
+    "@types/express": "^5.0.0",
     "@types/jest": "^29.5.2",
     "@types/node": "^20.3.0",
     "@types/react": "^18.2.18",
@@ -59,6 +61,9 @@
     "registry": "https://registry.npmjs.org/"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.3"
+    "@modelcontextprotocol/sdk": "^1.0.3",
+    "diff": "^7.0.0",
+    "eventsource": "^3.0.1",
+    "express": "^4.21.2"
   }
 }
