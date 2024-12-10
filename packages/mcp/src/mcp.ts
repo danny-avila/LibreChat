@@ -150,7 +150,7 @@ export class MCPConnectionSingleton extends EventEmitter {
     this.lastConfigUpdate = 0;
   }
 
-  private async connectClient(): Promise<void> {
+  async connectClient(): Promise<void> {
     if (this.connectionState === 'connected') {
       return;
     }
@@ -232,7 +232,7 @@ export class MCPConnectionSingleton extends EventEmitter {
     }
   }
 
-  private async fetchResources(): Promise<MCPResource[]> {
+  async fetchResources(): Promise<MCPResource[]> {
     try {
       const { resources } = await this.client.listResources();
       return resources;
@@ -242,7 +242,7 @@ export class MCPConnectionSingleton extends EventEmitter {
     }
   }
 
-  private async fetchTools(): Promise<MCPTool[]> {
+  async fetchTools(): Promise<MCPTool[]> {
     try {
       const { tools } = await this.client.listTools();
       return tools;
@@ -252,7 +252,7 @@ export class MCPConnectionSingleton extends EventEmitter {
     }
   }
 
-  private async fetchPrompts(): Promise<MCPPrompt[]> {
+  async fetchPrompts(): Promise<MCPPrompt[]> {
     try {
       const { prompts } = await this.client.listPrompts();
       return prompts;
