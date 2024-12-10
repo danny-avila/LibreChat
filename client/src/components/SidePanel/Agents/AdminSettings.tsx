@@ -1,12 +1,13 @@
-import { useMemo, useEffect } from 'react';
+import * as Ariakit from '@ariakit/react';
+import { useMemo, useEffect, useState } from 'react';
 import { ShieldEllipsis } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import { Permissions, SystemRoles, roleDefaults, PermissionTypes } from 'librechat-data-provider';
 import type { Control, UseFormSetValue, UseFormGetValues } from 'react-hook-form';
 import { OGDialog, OGDialogTitle, OGDialogContent, OGDialogTrigger } from '~/components/ui';
 import { useUpdateAgentPermissionsMutation } from '~/data-provider';
+import { Button, Switch, DropdownPopup } from '~/components/ui';
 import { useLocalize, useAuthContext } from '~/hooks';
-import { Button, Switch } from '~/components/ui';
 import { useToastContext } from '~/Providers';
 
 type FormValues = Record<Permissions, boolean>;
@@ -18,8 +19,6 @@ type LabelControllerProps = {
   setValue: UseFormSetValue<FormValues>;
   getValues: UseFormGetValues<FormValues>;
 };
-
-const defaultValues = roleDefaults[SystemRoles.USER];
 
 const LabelController: React.FC<LabelControllerProps> = ({
   control,
@@ -69,6 +68,16 @@ const AdminSettings = () => {
     },
   });
 
+  const [isRoleMenuOpen, setIsRoleMenuOpen] = useState(false);
+  const [selectedRole, setSelectedRole] = useState<SystemRoles>(SystemRoles.USER);
+
+  const defaultValues = useMemo(() => {
+    if (roles?.[selectedRole]) {
+      return roles[selectedRole][PermissionTypes.AGENTS];
+    }
+    return roleDefaults[selectedRole][PermissionTypes.AGENTS];
+  }, [roles, selectedRole]);
+
   const {
     reset,
     control,
@@ -78,20 +87,16 @@ const AdminSettings = () => {
     formState: { isSubmitting },
   } = useForm<FormValues>({
     mode: 'onChange',
-    defaultValues: useMemo(() => {
-      if (roles?.[SystemRoles.USER]) {
-        return roles[SystemRoles.USER][PermissionTypes.AGENTS];
-      }
-
-      return defaultValues[PermissionTypes.AGENTS];
-    }, [roles]),
+    defaultValues,
   });
 
   useEffect(() => {
-    if (roles?.[SystemRoles.USER]?.[PermissionTypes.AGENTS]) {
-      reset(roles[SystemRoles.USER][PermissionTypes.AGENTS]);
+    if (roles?.[selectedRole]?.[PermissionTypes.AGENTS]) {
+      reset(roles[selectedRole][PermissionTypes.AGENTS]);
+    } else {
+      reset(roleDefaults[selectedRole][PermissionTypes.AGENTS]);
     }
-  }, [roles, reset]);
+  }, [roles, selectedRole, reset]);
 
   if (user?.role !== SystemRoles.ADMIN) {
     return null;
@@ -113,8 +118,23 @@ const AdminSettings = () => {
   ];
 
   const onSubmit = (data: FormValues) => {
-    mutate({ roleName: SystemRoles.USER, updates: data });
+    mutate({ roleName: selectedRole, updates: data });
   };
+
+  const roleDropdownItems = [
+    {
+      label: SystemRoles.USER,
+      onClick: () => {
+        setSelectedRole(SystemRoles.USER);
+      },
+    },
+    {
+      label: SystemRoles.ADMIN,
+      onClick: () => {
+        setSelectedRole(SystemRoles.ADMIN);
+      },
+    },
+  ];
 
   return (
     <OGDialog>
@@ -132,29 +152,50 @@ const AdminSettings = () => {
         <OGDialogTitle>{`${localize('com_ui_admin_settings')} - ${localize(
           'com_ui_agents',
         )}`}</OGDialogTitle>
-        <form className="p-2" onSubmit={handleSubmit(onSubmit)}>
-          <div className="py-5">
-            {labelControllerData.map(({ agentPerm, label }) => (
-              <LabelController
-                key={agentPerm}
-                control={control}
-                agentPerm={agentPerm}
-                label={label}
-                getValues={getValues}
-                setValue={setValue}
-              />
-            ))}
+        <div className="p-2">
+          {/* Role selection dropdown */}
+          <div className="flex items-center gap-2">
+            <span className="font-medium">{localize('com_ui_role_select')}:</span>
+            <DropdownPopup
+              menuId="role-dropdown"
+              isOpen={isRoleMenuOpen}
+              setIsOpen={setIsRoleMenuOpen}
+              trigger={
+                <Ariakit.MenuButton className="inline-flex w-1/4 items-center justify-center rounded-lg border border-border-light bg-transparent px-2 py-1 text-text-primary transition-all ease-in-out hover:bg-surface-tertiary">
+                  {selectedRole}
+                </Ariakit.MenuButton>
+              }
+              items={roleDropdownItems}
+              className="border border-border-light bg-surface-primary"
+              itemClassName="hover:bg-surface-tertiary items-center justify-center"
+              sameWidth={true}
+            />
           </div>
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              disabled={isSubmitting || isLoading}
-              className="btn rounded bg-green-500 font-bold text-white transition-all hover:bg-green-600"
-            >
-              {localize('com_ui_save')}
-            </button>
-          </div>
-        </form>
+          {/* Permissions form */}
+          <form onSubmit={handleSubmit(onSubmit)}>
+            <div className="py-5">
+              {labelControllerData.map(({ agentPerm, label }) => (
+                <LabelController
+                  key={agentPerm}
+                  control={control}
+                  agentPerm={agentPerm}
+                  label={label}
+                  getValues={getValues}
+                  setValue={setValue}
+                />
+              ))}
+            </div>
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                disabled={isSubmitting || isLoading}
+                className="btn rounded bg-green-500 font-bold text-white transition-all hover:bg-green-600"
+              >
+                {localize('com_ui_save')}
+              </button>
+            </div>
+          </form>
+        </div>
       </OGDialogContent>
     </OGDialog>
   );
