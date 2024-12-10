@@ -99,8 +99,7 @@
     "prettier": "^2.8.8",
     "prettier-eslint": "^15.0.1",
     "prettier-eslint-cli": "^7.1.0",
-    "prettier-plugin-tailwindcss": "^0.2.2",
-    "ts-node": "^10.9.2"
+    "prettier-plugin-tailwindcss": "^0.2.2"
   },
   "overrides": {
     "vite-plugin-pwa": {
