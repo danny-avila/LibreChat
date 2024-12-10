@@ -206,6 +206,7 @@ export default {
   com_ui_version_var: 'Version {0}',
   com_ui_advanced: 'Advanced',
   com_ui_admin_settings: 'Admin Settings',
+  com_ui_role_select: 'Role',
   com_ui_error_save_admin_settings: 'There was an error saving your admin settings.',
   com_ui_prompt_preview_not_shared: 'The author has not allowed collaboration for this prompt.',
   com_ui_prompt_name_required: 'Prompt Name is required',
