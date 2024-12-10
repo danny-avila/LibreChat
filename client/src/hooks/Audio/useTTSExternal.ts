@@ -1,4 +1,3 @@
-// client/src/hooks/Audio/useTTSExternal.ts
 import { useRef, useEffect, useState } from 'react';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import { parseTextParts } from 'librechat-data-provider';
