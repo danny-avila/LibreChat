@@ -1,7 +1,7 @@
 import express from 'express';
 import { EventSource } from 'eventsource';
-import { MCPConnectionSingleton } from 'librechat-mcp';
-import type { MCPOptions } from 'librechat-mcp';
+import { MCPConnectionSingleton } from '../mcp';
+import type { MCPOptions } from '../types/mcp';
 
 // Set up EventSource for Node environment
 global.EventSource = EventSource;
@@ -16,8 +16,11 @@ const initializeMCP = async () => {
 
   const mcpOptions: MCPOptions = {
     transport: {
-      type: 'sse' as const,
-      url: 'http://localhost:3001/sse', // Point to our Everything MCP Server
+      // type: 'sse' as const,
+      // url: 'http://localhost:3001/sse',
+      type: 'stdio' as const,
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-everything'],
     },
   };
 
@@ -219,7 +222,7 @@ process.on('SIGINT', async () => {
 });
 
 // Start server
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.MCP_PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });

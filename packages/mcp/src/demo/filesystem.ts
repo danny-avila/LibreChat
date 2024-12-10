@@ -1,7 +1,7 @@
 import express from 'express';
 import { EventSource } from 'eventsource';
-import { MCPConnectionSingleton } from 'librechat-mcp';
-import type { MCPOptions } from 'librechat-mcp';
+import { MCPConnectionSingleton } from '../mcp';
+import type { MCPOptions } from '../types/mcp';
 
 // Set up EventSource for Node environment
 global.EventSource = EventSource;

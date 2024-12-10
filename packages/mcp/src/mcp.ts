@@ -96,8 +96,22 @@ export class MCPConnectionSingleton extends EventEmitter {
           });
         case 'websocket':
           return new WebSocketClientTransport(new URL(options.transport.url));
-        case 'sse':
-          return new SSEClientTransport(new URL(options.transport.url));
+        case 'sse': {
+          const url = new URL(options.transport.url);
+          console.log('Creating SSE transport with URL:', url.toString());
+          const transport = new SSEClientTransport(url);
+
+          // Add debug listeners
+          transport.onclose = () => {
+            console.log('SSE transport closed');
+          };
+
+          transport.onerror = (error) => {
+            console.error('SSE transport error:', error);
+          };
+
+          return transport;
+        }
         default: {
           const transportType = (options.transport as { type: string }).type;
           throw new Error(`Unsupported transport type: ${transportType}`);

@@ -20,6 +20,11 @@
     "sourceMap": true,
     "baseUrl": "." // This should be the root of your package
   },
+  "ts-node": {
+    "experimentalSpecifierResolution": "node",
+    "transpileOnly": true,
+    "esm": true
+  },
   "exclude": ["node_modules", "dist", "types"],
   "include": ["src/**/*", "types/index.d.ts", "types/react-query/index.d.ts"]
 }
