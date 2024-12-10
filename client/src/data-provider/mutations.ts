@@ -833,11 +833,12 @@ export const useUpdateAssistantMutation = (
             if (!prev) {
               return prev;
             }
-            prev.map((doc) => {
+            return prev.map((doc) => {
               if (doc.assistant_id === variables.assistant_id) {
                 return {
                   ...doc,
                   conversation_starters: updatedAssistant.conversation_starters,
+                  append_today_date: variables.data.append_today_date,
                 };
               }
               return doc;

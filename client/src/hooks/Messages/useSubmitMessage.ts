@@ -45,17 +45,22 @@ export default function useSubmitMessage(helpers?: { clearDraft?: () => void }) 
       const overrideConvoId = isNewMultiConvo ? v4() : undefined;
       const overrideUserMessageId = hasAdded ? v4() : undefined;
       const rootIndex = addedIndex - 1;
+      const clientTimestamp = new Date().toISOString();
+
       ask({
         text: data.text,
         overrideConvoId: appendIndex(rootIndex, overrideConvoId),
         overrideUserMessageId: appendIndex(rootIndex, overrideUserMessageId),
+        clientTimestamp,
       });
+
       if (hasAdded) {
         askAdditional(
           {
             text: data.text,
             overrideConvoId: appendIndex(addedIndex, overrideConvoId),
             overrideUserMessageId: appendIndex(addedIndex, overrideUserMessageId),
+            clientTimestamp,
           },
           { overrideMessages: rootMessages },
         );

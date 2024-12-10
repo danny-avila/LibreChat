@@ -30,6 +30,7 @@ const getLogStores = require('~/cache/getLogStores');
 const { getModelMaxTokens } = require('~/utils');
 const { getOpenAIClient } = require('./helpers');
 const { logger } = require('~/config');
+const { createRunBody } = require('~/server/services/createRunBody');
 
 const ten_minutes = 1000 * 60 * 10;
 
@@ -58,6 +59,7 @@ const chatV2 = async (req, res) => {
     messageId: _messageId,
     conversationId: convoId,
     parentMessageId: _parentId = Constants.NO_PARENT,
+    clientTimestamp,
   } = req.body;
 
   /** @type {OpenAIClient} */
@@ -186,22 +188,14 @@ const chatV2 = async (req, res) => {
     };
 
     /** @type {CreateRunBody | undefined} */
-    const body = {
+    const body = createRunBody({
       assistant_id,
       model,
-    };
-
-    if (promptPrefix) {
-      body.additional_instructions = promptPrefix;
-    }
-
-    if (typeof endpointOption.artifactsPrompt === 'string' && endpointOption.artifactsPrompt) {
-      body.additional_instructions = `${body.additional_instructions ?? ''}\n${endpointOption.artifactsPrompt}`.trim();
-    }
-
-    if (instructions) {
-      body.instructions = instructions;
-    }
+      promptPrefix,
+      instructions,
+      endpointOption,
+      clientTimestamp,
+    });
 
     const getRequestFileIds = async () => {
       let thread_file_ids = [];

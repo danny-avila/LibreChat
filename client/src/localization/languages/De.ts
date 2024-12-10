@@ -34,6 +34,9 @@ export default {
   com_assistants_knowledge_disabled:
     'Der Assistent muss erstellt und Code-Interpreter oder Abruf müssen aktiviert und gespeichert werden, bevor Dateien als Wissen hochgeladen werden können.',
   com_assistants_image_vision: 'Bildanalyse',
+  com_assistants_append_date: 'Aktuelles Datum & Uhrzeit anhängen',
+  com_assistants_append_date_tooltip:
+    'Wenn aktiviert, werden das aktuelle Client-Datum und die Uhrzeit an die Systemanweisungen des Assistenten angehängt.',
   com_assistants_code_interpreter: 'Code-Interpreter',
   com_assistants_code_interpreter_files: 'Die folgenden Dateien sind nur für den Code-Interpreter:',
   com_assistants_retrieval: 'Abruf',

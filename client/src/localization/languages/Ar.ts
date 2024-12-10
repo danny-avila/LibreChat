@@ -372,6 +372,9 @@ export default {
   com_assistants_knowledge_disabled:
     'يجب إنشاء المساعد وتمكين المفسر البرمجي أو الاسترجاع وحفظهما قبل تحميل الملفات كمعرفة.',
   com_assistants_image_vision: 'رؤية الصورة',
+  com_assistants_append_date: 'إضافة التاريخ والوقت الحالي',
+  com_assistants_append_date_tooltip:
+    'عند التفعيل، سيتم إضافة التاريخ والوقت الحالي للعميل إلى تعليمات نظام المساعد.',
   com_assistants_code_interpreter: 'مُفسِّر الشفرة',
   com_assistants_code_interpreter_files: 'الملفات التالية متاحة فقط لمفسر الشفرة:',
   com_assistants_retrieval: 'استرداد',

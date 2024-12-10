@@ -70,6 +70,9 @@ export default {
   com_assistants_knowledge_disabled:
     'Assistant must be created, and Code Interpreter or Retrieval must be enabled and saved before uploading files as Knowledge.',
   com_assistants_image_vision: 'Image Vision',
+  com_assistants_append_date: 'Append Current Date & Time',
+  com_assistants_append_date_tooltip:
+    'When enabled, the current client date and time will be appended to the assistant system instructions.',
   com_assistants_code_interpreter: 'Code Interpreter',
   com_assistants_code_interpreter_files: 'Files below are for Code Interpreter only:',
   com_assistants_retrieval: 'Retrieval',
