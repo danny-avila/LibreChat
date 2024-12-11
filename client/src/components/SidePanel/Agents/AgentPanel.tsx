@@ -8,7 +8,6 @@ import {
   isAssistantsEndpoint,
   defaultAgentFormValues,
 } from 'librechat-data-provider';
-import type { TConfig } from 'librechat-data-provider';
 import type { AgentForm, AgentPanelProps, StringOption } from '~/common';
 import {
   useCreateAgentMutation,
@@ -33,7 +32,7 @@ export default function AgentPanel({
   setCurrentAgentId,
   agentsConfig,
   endpointsConfig,
-}: AgentPanelProps & { agentsConfig?: TConfig | null }) {
+}: AgentPanelProps) {
   const localize = useLocalize();
   const { user } = useAuthContext();
   const { showToast } = useToastContext();
