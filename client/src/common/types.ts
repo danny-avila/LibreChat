@@ -278,6 +278,7 @@ export type TAskProps = {
   parentMessageId?: string | null;
   conversationId?: string | null;
   messageId?: string | null;
+  clientTimestamp?: string;
 };
 
 export type TOptions = {

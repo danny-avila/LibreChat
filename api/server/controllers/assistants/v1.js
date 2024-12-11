@@ -19,8 +19,15 @@ const createAssistant = async (req, res) => {
   try {
     const { openai } = await getOpenAIClient({ req, res });
 
-    const { tools = [], endpoint, conversation_starters, ...assistantData } = req.body;
+    const {
+      tools = [],
+      endpoint,
+      conversation_starters,
+      append_current_datetime,
+      ...assistantData
+    } = req.body;
     delete assistantData.conversation_starters;
+    delete assistantData.append_current_datetime;
 
     assistantData.tools = tools
       .map((tool) => {
@@ -49,6 +56,9 @@ const createAssistant = async (req, res) => {
     if (conversation_starters) {
       createData.conversation_starters = conversation_starters;
     }
+    if (append_current_datetime !== undefined) {
+      createData.append_current_datetime = append_current_datetime;
+    }
 
     const document = await updateAssistantDoc({ assistant_id: assistant.id }, createData);
 
@@ -58,6 +68,10 @@ const createAssistant = async (req, res) => {
 
     if (document.conversation_starters) {
       assistant.conversation_starters = document.conversation_starters;
+    }
+
+    if (append_current_datetime !== undefined) {
+      assistant.append_current_datetime = append_current_datetime;
     }
 
     logger.debug('/assistants/', assistant);
@@ -102,7 +116,12 @@ const patchAssistant = async (req, res) => {
     await validateAuthor({ req, openai });
 
     const assistant_id = req.params.id;
-    const { endpoint: _e, conversation_starters, ...updateData } = req.body;
+    const {
+      endpoint: _e,
+      conversation_starters,
+      append_current_datetime,
+      ...updateData
+    } = req.body;
     updateData.tools = (updateData.tools ?? [])
       .map((tool) => {
         if (typeof tool !== 'string') {
@@ -125,6 +144,11 @@ const patchAssistant = async (req, res) => {
         { conversation_starters },
       );
       updatedAssistant.conversation_starters = conversationStartersUpdate.conversation_starters;
+    }
+
+    if (append_current_datetime !== undefined) {
+      await updateAssistantDoc({ assistant_id }, { append_current_datetime });
+      updatedAssistant.append_current_datetime = append_current_datetime;
     }
 
     res.json(updatedAssistant);
@@ -219,6 +243,7 @@ const getAssistantDocuments = async (req, res) => {
         conversation_starters: 1,
         createdAt: 1,
         updatedAt: 1,
+        append_current_datetime: 1,
       },
     );
 
