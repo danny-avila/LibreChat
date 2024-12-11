@@ -5,6 +5,9 @@ export default {
   com_sidepanel_assistant_builder: 'Конструктор Ассистента',
   com_sidepanel_attach_files: 'Прикрепить файлы',
   com_sidepanel_manage_files: 'Управление файлами',
+  com_assistants_append_date: 'Добавить текущую дату и время',
+  com_assistants_append_date_tooltip:
+    'Когда включено, текущая дата и время клиента будут добавлены к инструкциям системы Ассистента.',
   com_assistants_code_interpreter: 'Интерпретатор кода',
   com_assistants_code_interpreter_files: 'Следующие файлы доступны только для Интерпретатора кода:',
   com_ui_examples: 'Примеры',
