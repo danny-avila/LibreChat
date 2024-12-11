@@ -29,8 +29,8 @@ interface MCPPrompt {
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';
 
-export class MCPConnectionSingleton extends EventEmitter {
-  private static instance: MCPConnectionSingleton | null = null;
+export class MCPConnection extends EventEmitter {
+  private static instance: MCPConnection | null = null;
   public client: Client;
   private transport: Transport | null = null; // Make this nullable
   private connectionState: ConnectionState = 'disconnected';
@@ -63,21 +63,21 @@ export class MCPConnectionSingleton extends EventEmitter {
     this.setupEventListeners();
   }
 
-  public static getInstance(options: MCPOptions): MCPConnectionSingleton {
-    if (!MCPConnectionSingleton.instance) {
-      MCPConnectionSingleton.instance = new MCPConnectionSingleton(options);
+  public static getInstance(options: MCPOptions): MCPConnection {
+    if (!MCPConnection.instance) {
+      MCPConnection.instance = new MCPConnection(options);
     }
-    return MCPConnectionSingleton.instance;
+    return MCPConnection.instance;
   }
 
-  public static getExistingInstance(): MCPConnectionSingleton | null {
-    return MCPConnectionSingleton.instance;
+  public static getExistingInstance(): MCPConnection | null {
+    return MCPConnection.instance;
   }
 
   public static async destroyInstance(): Promise<void> {
-    if (MCPConnectionSingleton.instance) {
-      await MCPConnectionSingleton.instance.disconnect();
-      MCPConnectionSingleton.instance = null;
+    if (MCPConnection.instance) {
+      await MCPConnection.instance.disconnect();
+      MCPConnection.instance = null;
     }
   }
 
