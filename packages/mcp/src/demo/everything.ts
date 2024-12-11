@@ -1,6 +1,6 @@
 import express from 'express';
 import { EventSource } from 'eventsource';
-import { MCPConnectionSingleton } from '../mcp';
+import { MCPConnection } from '../mcp';
 import type { MCPOptions } from '../types/mcp';
 
 // Set up EventSource for Node environment
@@ -9,7 +9,7 @@ global.EventSource = EventSource;
 const app = express();
 app.use(express.json());
 
-let mcp: MCPConnectionSingleton;
+let mcp: MCPConnection;
 
 const initializeMCP = async () => {
   console.log('Initializing MCP with SSE transport...');
@@ -28,8 +28,8 @@ const initializeMCP = async () => {
   };
 
   try {
-    await MCPConnectionSingleton.destroyInstance();
-    mcp = MCPConnectionSingleton.getInstance(mcpOptions);
+    await MCPConnection.destroyInstance();
+    mcp = MCPConnection.getInstance(mcpOptions);
 
     mcp.on('connectionChange', (state) => {
       console.log(`MCP connection state changed to: ${state}`);
@@ -221,7 +221,7 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
 // Cleanup on shutdown
 process.on('SIGINT', async () => {
   console.log('Shutting down...');
-  await MCPConnectionSingleton.destroyInstance();
+  await MCPConnection.destroyInstance();
   process.exit(0);
 });
 
