@@ -7,6 +7,7 @@ const handleRateLimits = require('./Config/handleRateLimits');
 const { loadDefaultInterface } = require('./start/interface');
 const { azureConfigSetup } = require('./start/azureOpenAI');
 const { loadAndFormatTools } = require('./ToolService');
+const { agentsConfigSetup } = require('./start/agents');
 const { initializeRoles } = require('~/models/Role');
 const paths = require('~/config/paths');
 
@@ -92,6 +93,10 @@ const AppService = async (app) => {
       EModelEndpoint.assistants,
       endpointLocals[EModelEndpoint.assistants],
     );
+  }
+
+  if (endpoints?.[EModelEndpoint.agents]) {
+    endpointLocals[EModelEndpoint.agents] = agentsConfigSetup(config);
   }
 
   const endpointKeys = [

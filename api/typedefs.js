@@ -819,8 +819,14 @@
  */
 
 /**
- * @exports TAssistantEndpoint
+ * @exports TAgentsEndpoint
  * @typedef {import('librechat-data-provider').TAssistantEndpoint} TAssistantEndpoint
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TAgentsEndpoint
+ * @typedef {import('librechat-data-provider').TAgentsEndpoint} TAgentsEndpoint
  * @memberof typedefs
  */
 

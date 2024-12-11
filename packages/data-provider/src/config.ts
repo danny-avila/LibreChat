@@ -208,37 +208,17 @@ export type TAssistantEndpoint = z.infer<typeof assistantEndpointSchema>;
 
 export const agentsEndpointSChema = baseEndpointSchema.merge(
   z.object({
-    /* assistants specific */
+    /* agents specific */
     disableBuilder: z.boolean().optional(),
-    pollIntervalMs: z.number().optional(),
-    timeoutMs: z.number().optional(),
-    version: z.union([z.string(), z.number()]).default(2),
-    supportedIds: z.array(z.string()).min(1).optional(),
-    excludedIds: z.array(z.string()).min(1).optional(),
-    privateAssistants: z.boolean().optional(),
-    retrievalModels: z.array(z.string()).min(1).optional().default(defaultRetrievalModels),
     capabilities: z
-      .array(z.nativeEnum(Capabilities))
+      .array(z.nativeEnum(AgentCapabilities))
       .optional()
       .default([
-        Capabilities.code_interpreter,
-        Capabilities.image_vision,
-        Capabilities.retrieval,
-        Capabilities.actions,
-        Capabilities.tools,
+        AgentCapabilities.execute_code,
+        AgentCapabilities.file_search,
+        AgentCapabilities.actions,
+        AgentCapabilities.tools,
       ]),
-    /* general */
-    apiKey: z.string().optional(),
-    models: z
-      .object({
-        default: z.array(z.string()).min(1),
-        fetch: z.boolean().optional(),
-        userIdQuery: z.boolean().optional(),
-      })
-      .optional(),
-    titleConvo: z.boolean().optional(),
-    titleMethod: z.union([z.literal('completion'), z.literal('functions')]).optional(),
-    headers: z.record(z.any()).optional(),
   }),
 );
 
@@ -1097,7 +1077,7 @@ export enum Constants {
   /** Key for the app's version. */
   VERSION = 'v0.7.5',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.1.8',
+  CONFIG_VERSION = '1.1.9',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value for the initial conversationId before a request is sent */
