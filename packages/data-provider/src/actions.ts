@@ -11,6 +11,7 @@ export type ParametersSchema = {
   type: string;
   properties: Record<string, Reference | Schema>;
   required: string[];
+  additionalProperties?: boolean;
 };
 
 export type OpenAPISchema = OpenAPIV3.SchemaObject &
@@ -122,24 +123,33 @@ export class FunctionSignature {
   name: string;
   description: string;
   parameters: ParametersSchema;
+  strict: boolean;
 
-  constructor(name: string, description: string, parameters: ParametersSchema) {
+  constructor(name: string, description: string, parameters: ParametersSchema, strict?: boolean) {
     this.name = name;
     this.description = description;
     this.parameters = parameters;
+    this.strict = strict || false;
   }
 
   toObjectTool(): FunctionTool {
+    const parameters = { 
+      ...this.parameters,
+      additionalProperties: this.strict ? false : undefined
+    };
+
     return {
       type: Tools.function,
       function: {
         name: this.name,
         description: this.description,
-        parameters: this.parameters,
+        parameters,
+        strict: this.strict
       },
     };
   }
 }
+
 class RequestConfig {
   constructor(
     readonly domain: string,
@@ -366,13 +376,16 @@ export function openapiToFunction(
     for (const [method, operation] of Object.entries(methods as OpenAPIV3.PathsObject)) {
       const operationObj = operation as OpenAPIV3.OperationObject & {
         'x-openai-isConsequential'?: boolean;
+      } & {
+        'x-strict'?: boolean
       };
 
       // Operation ID is used as the function name
       const defaultOperationId = `${method}_${path}`;
       const operationId = operationObj.operationId || sanitizeOperationId(defaultOperationId);
       const description = operationObj.summary || operationObj.description || '';
-
+      const isStrict = operationObj['x-strict'] || false;
+      
       const parametersSchema: OpenAPISchema = {
         type: 'object',
         properties: {},
@@ -411,7 +424,7 @@ export function openapiToFunction(
         }
       }
 
-      const functionSignature = new FunctionSignature(operationId, description, parametersSchema);
+      const functionSignature = new FunctionSignature(operationId, description, parametersSchema, isStrict);
       functionSignatures.push(functionSignature);
 
       const actionRequest = new ActionRequest(
