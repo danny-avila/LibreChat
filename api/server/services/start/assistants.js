@@ -47,6 +47,7 @@ function assistantsConfigSetup(config, assistantsEndpoint, prevConfig = {}) {
     disableBuilder: parsedConfig.disableBuilder,
     pollIntervalMs: parsedConfig.pollIntervalMs,
     supportedIds: parsedConfig.supportedIds,
+    orderBySupportIdsFirst: parsedConfig.orderBySupportIdsFirst ?? assistantsConfig.orderBySupportIdsFirst,
     capabilities: parsedConfig.capabilities,
     excludedIds: parsedConfig.excludedIds,
     privateAssistants: parsedConfig.privateAssistants,

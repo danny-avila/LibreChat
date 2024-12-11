@@ -69,6 +69,7 @@ const _listAssistants = async ({ req, res, version, query }) => {
 const listAllAssistants = async ({ req, res, version, query }) => {
   /** @type {{ openai: OpenAIClient }} */
   const { openai } = await getOpenAIClient({ req, res, version });
+  const { supportedIds, orderBySupportIdsFirst } = req.app.locals[EModelEndpoint.assistants];
   const allAssistants = [];
 
   let first_id;
@@ -96,6 +97,18 @@ const listAllAssistants = async ({ req, res, version, query }) => {
     } else {
       last_id = body.last_id;
     }
+  }
+
+  if (true === orderBySupportIdsFirst) {
+    supportedIds.forEach((supportedId, key) => {
+      const idx = allAssistants.findIndex(({id}) => id === supportedId);
+
+      if (idx > -1 && idx !== key) {
+        allAssistants.splice(key, 0, ...allAssistants.splice(idx, 1));
+      }
+    });
+    first_id = allAssistants[0].id;
+    last_id = allAssistants[allAssistants.length - 1].id;
   }
 
   return {
