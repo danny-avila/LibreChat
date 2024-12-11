@@ -83,6 +83,7 @@ export class MCPConnectionSingleton extends EventEmitter {
 
   private emitError(error: unknown, errorPrefix: string): void {
     const errorMessage = error instanceof Error ? error.message : String(error);
+    console.dir(error, { depth: null });
     this.emit('error', new Error(`${errorPrefix} ${errorMessage}`));
   }
 
@@ -104,10 +105,16 @@ export class MCPConnectionSingleton extends EventEmitter {
           // Add debug listeners
           transport.onclose = () => {
             console.log('SSE transport closed');
+            this.emit('connectionChange', 'disconnected');
           };
 
           transport.onerror = (error) => {
             console.error('SSE transport error:', error);
+            this.emitError(error, 'SSE transport error:');
+          };
+
+          transport.onmessage = (message) => {
+            console.log('SSE transport received message:', message);
           };
 
           return transport;

@@ -16,22 +16,21 @@ const initializeMCP = async () => {
 
   const mcpOptions: MCPOptions = {
     transport: {
-      // type: 'sse' as const,
-      // url: 'http://localhost:3001/sse',
-      type: 'stdio' as const,
-      command: 'npx',
-      args: ['-y', '@modelcontextprotocol/server-everything'],
+      type: 'sse' as const,
+      url: 'http://localhost:3001/sse',
+      // type: 'stdio' as const,
+      // 'command': 'npx',
+      // 'args': [
+      //   '-y',
+      //   '@modelcontextprotocol/server-everything',
+      // ],
     },
   };
 
   try {
-    // Clean up any existing instance
     await MCPConnectionSingleton.destroyInstance();
-
-    // Get singleton instance
     mcp = MCPConnectionSingleton.getInstance(mcpOptions);
 
-    // Add event listeners
     mcp.on('connectionChange', (state) => {
       console.log(`MCP connection state changed to: ${state}`);
     });
@@ -40,17 +39,21 @@ const initializeMCP = async () => {
       console.error('MCP error:', error);
     });
 
-    // Connect to server
     console.log('Connecting to MCP server...');
     await mcp.connectClient();
     console.log('Connected to MCP server');
+
+    // Test the connection
+    try {
+      const resources = await mcp.fetchResources();
+      console.log('Available resources:', resources);
+    } catch (error) {
+      console.error('Error fetching resources:', error);
+    }
   } catch (error) {
     console.error('Failed to connect to MCP server:', error);
   }
 };
-
-// Initialize MCP connection
-initializeMCP();
 
 // API Endpoints
 app.get('/status', (req, res) => {
@@ -206,6 +209,7 @@ app.post('/resources/unsubscribe', async (req, res) => {
 });
 
 // Error handling
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('Unhandled error:', err);
   res.status(500).json({
@@ -222,7 +226,8 @@ process.on('SIGINT', async () => {
 });
 
 // Start server
-const PORT = process.env.MCP_PORT || 3000;
+const PORT = process.env.MCP_PORT ?? 3000;
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
+  initializeMCP();
 });

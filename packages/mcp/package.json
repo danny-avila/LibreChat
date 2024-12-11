@@ -23,7 +23,7 @@
     "verify": "npm run test:ci",
     "b:clean": "bun run rimraf dist",
     "b:build": "bun run b:clean && bun run rollup -c --silent --bundleConfigAsCjs",
-    "start:everything-mcp": "node -r dotenv/config --loader ./tsconfig-paths-bootstrap.mjs --experimental-specifier-resolution=node ./src/examples/everything/sse.ts",
+    "start:everything-sse": "node -r dotenv/config --loader ./tsconfig-paths-bootstrap.mjs --experimental-specifier-resolution=node ./src/examples/everything/sse.ts",
     "start:everything": "node -r dotenv/config --loader ./tsconfig-paths-bootstrap.mjs --experimental-specifier-resolution=node ./src/demo/everything.ts",
     "start:filesystem": "node -r dotenv/config --loader ./tsconfig-paths-bootstrap.mjs --experimental-specifier-resolution=node ./src/demo/filesystem.ts"
   },
