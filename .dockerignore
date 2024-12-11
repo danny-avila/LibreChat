@@ -11,6 +11,8 @@ data-node
 meili_data*
 librechat*
 Dockerfile*
+heroku.yml
+.env
 docs
 
 # Ignore all hidden files
