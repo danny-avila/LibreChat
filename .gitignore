@@ -59,7 +59,6 @@ librechat.yaml
 librechat.yml
 
 # Environment
-heroku.yml
 .npmrc
 .env*
 my.secrets
