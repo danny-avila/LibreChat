@@ -760,6 +760,7 @@ export const visionModels = [
   'llava-13b',
   'gemini-pro-vision',
   'claude-3',
+  'gemini-2.0',
   'gemini-1.5',
   'gemini-exp',
   'moondream',
