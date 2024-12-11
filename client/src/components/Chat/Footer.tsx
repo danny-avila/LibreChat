@@ -37,7 +37,10 @@ export default function Footer({ className }: { className?: string }) {
   const mainContentParts = (
     typeof config?.customFooter === 'string'
       ? config.customFooter
-      : 'Powered by [Crystalflow AI](https://crystalflow.ai)'
+      : '[LibreChat ' +
+        Constants.VERSION +
+        '](https://librechat.ai) - ' +
+        localize('com_ui_latest_footer')
   ).split('|');
 
   useEffect(() => {
