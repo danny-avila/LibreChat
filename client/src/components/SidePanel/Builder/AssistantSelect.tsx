@@ -1,5 +1,5 @@
 import { Plus } from 'lucide-react';
-import { useCallback, useEffect, useRef, useMemo } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import {
   Tools,
   FileSources,
@@ -37,7 +37,7 @@ const keys = new Set([
   'instructions',
   'conversation_starters',
   'model',
-  'append_today_date',
+  'append_current_datetime',
 ]);
 
 export default function AssistantSelect({
@@ -70,7 +70,7 @@ export default function AssistantSelect({
       res.data.map((_assistant) => {
         const source =
           endpoint === EModelEndpoint.assistants ? FileSources.openai : FileSources.azure;
-        const assistant = {
+        const assistant: TAssistantOption = {
           ..._assistant,
           label: _assistant.name ?? '',
           value: _assistant.id,
@@ -130,7 +130,7 @@ export default function AssistantSelect({
           if (!assistant.conversation_starters) {
             assistant.conversation_starters = assistantDoc.conversation_starters;
           }
-          assistant.append_today_date = assistantDoc.append_today_date ?? false;
+          assistant.append_current_datetime = assistantDoc.append_current_datetime ?? false;
         }
 
         return assistant;
@@ -188,7 +188,7 @@ export default function AssistantSelect({
           return;
         }
 
-        if (name === 'append_today_date') {
+        if (name === 'append_current_datetime') {
           formValues[name] = !!value;
           return;
         }

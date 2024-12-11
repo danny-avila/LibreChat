@@ -128,7 +128,7 @@ export const defaultAssistantFormValues = {
   code_interpreter: false,
   image_vision: false,
   retrieval: false,
-  append_today_date: false,
+  append_current_datetime: false,
 };
 
 export const defaultAgentFormValues = {
@@ -599,7 +599,7 @@ export const tConversationSchema = z.object({
   agentOptions: tAgentOptionsSchema.nullable().optional(),
   /** @deprecated Prefer `modelLabel` over `chatGptLabel` */
   chatGptLabel: z.string().nullable().optional(),
-  append_today_date: z.boolean().optional(),
+  append_current_datetime: z.boolean().optional(),
 });
 
 export const tPresetSchema = tConversationSchema
@@ -853,7 +853,7 @@ export const assistantSchema = tConversationSchema
     iconURL: true,
     greeting: true,
     spec: true,
-    append_today_date: true,
+    append_current_datetime: true,
   })
   .transform((obj) => ({
     ...obj,
@@ -864,7 +864,7 @@ export const assistantSchema = tConversationSchema
     iconURL: obj.iconURL ?? undefined,
     greeting: obj.greeting ?? undefined,
     spec: obj.spec ?? undefined,
-    append_today_date: obj.append_today_date ?? false,
+    append_current_datetime: obj.append_current_datetime ?? false,
   }))
   .catch(() => ({
     model: openAISettings.model.default,
@@ -874,7 +874,7 @@ export const assistantSchema = tConversationSchema
     iconURL: undefined,
     greeting: undefined,
     spec: undefined,
-    append_today_date: false,
+    append_current_datetime: false,
   }));
 
 export const compactAssistantSchema = tConversationSchema

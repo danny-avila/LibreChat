@@ -17,15 +17,11 @@ interface AppendDateCheckboxProps {
   getValues: UseFormGetValues<AssistantForm>;
 }
 
-export default function AppendDateCheckbox({
-  control,
-  setValue,
-  getValues,
-}: AppendDateCheckboxProps) {
+export default function AppendDateCheckbox({ control, setValue }: AppendDateCheckboxProps) {
   const localize = useLocalize();
 
   const handleChange = (checked: boolean) => {
-    setValue('append_today_date', checked, {
+    setValue('append_current_datetime', checked, {
       shouldDirty: true,
     });
   };
@@ -35,12 +31,12 @@ export default function AppendDateCheckbox({
       <HoverCard openDelay={50}>
         <div className="flex items-center">
           <Controller
-            name="append_today_date"
+            name="append_current_datetime"
             control={control}
             render={({ field }) => (
               <Checkbox
                 {...field}
-                id="append_today_date"
+                id="append_current_datetime"
                 checked={field.value}
                 onCheckedChange={handleChange}
                 className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
@@ -52,7 +48,7 @@ export default function AppendDateCheckbox({
           <div className="flex items-center space-x-2">
             <label
               id="append-date-label"
-              htmlFor="append_today_date"
+              htmlFor="append_current_datetime"
               className="form-check-label text-token-text-primary w-full cursor-pointer"
             >
               {localize('com_assistants_append_date')}

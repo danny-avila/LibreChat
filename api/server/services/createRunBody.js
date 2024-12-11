@@ -13,7 +13,7 @@ const createRunBody = ({
 
   let systemInstructions = '';
 
-  if (endpointOption.assistant?.append_today_date) {
+  if (endpointOption.assistant?.append_current_datetime) {
     const dateStr = clientTimestamp
       ? clientTimestamp.split('T')[0]
       : new Date().toISOString().split('T')[0];

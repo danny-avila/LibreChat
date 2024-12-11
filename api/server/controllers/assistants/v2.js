@@ -20,11 +20,11 @@ const createAssistant = async (req, res) => {
       tools = [],
       endpoint,
       conversation_starters,
-      append_today_date,
+      append_current_datetime,
       ...assistantData
     } = req.body;
     delete assistantData.conversation_starters;
-    delete assistantData.append_today_date;
+    delete assistantData.append_current_datetime;
 
     assistantData.tools = tools
       .map((tool) => {
@@ -53,8 +53,8 @@ const createAssistant = async (req, res) => {
     if (conversation_starters) {
       createData.conversation_starters = conversation_starters;
     }
-    if (append_today_date !== undefined) {
-      createData.append_today_date = append_today_date;
+    if (append_current_datetime !== undefined) {
+      createData.append_current_datetime = append_current_datetime;
     }
 
     const document = await updateAssistantDoc({ assistant_id: assistant.id }, createData);
@@ -66,8 +66,8 @@ const createAssistant = async (req, res) => {
     if (document.conversation_starters) {
       assistant.conversation_starters = document.conversation_starters;
     }
-    if (append_today_date !== undefined) {
-      assistant.append_today_date = append_today_date;
+    if (append_current_datetime !== undefined) {
+      assistant.append_current_datetime = append_current_datetime;
     }
 
     logger.debug('/assistants/', assistant);
@@ -102,12 +102,12 @@ const updateAssistant = async ({ req, openai, assistant_id, updateData }) => {
     delete updateData.conversation_starters;
   }
 
-  if (updateData?.append_today_date !== undefined) {
+  if (updateData?.append_current_datetime !== undefined) {
     await updateAssistantDoc(
       { assistant_id: assistant_id },
-      { append_today_date: updateData.append_today_date },
+      { append_current_datetime: updateData.append_current_datetime },
     );
-    delete updateData.append_today_date;
+    delete updateData.append_current_datetime;
   }
 
   let hasFileSearch = false;

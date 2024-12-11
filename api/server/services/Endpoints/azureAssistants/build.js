@@ -20,7 +20,7 @@ const buildOptions = async (endpoint, parsedBody) => {
     const assistantDoc = await getAssistant({ assistant_id });
     if (assistantDoc) {
       endpointOption.assistant = {
-        append_today_date: assistantDoc.append_today_date,
+        append_current_datetime: assistantDoc.append_current_datetime,
         assistant_id: assistantDoc.assistant_id,
         conversation_starters: assistantDoc.conversation_starters,
         createdAt: assistantDoc.createdAt,

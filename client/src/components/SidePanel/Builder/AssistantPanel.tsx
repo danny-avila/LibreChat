@@ -168,7 +168,7 @@ export default function AssistantPanel({
       instructions,
       conversation_starters: starters,
       model,
-      append_today_date,
+      append_current_datetime,
     } = data;
 
     if (assistant_id) {
@@ -182,7 +182,7 @@ export default function AssistantPanel({
           model,
           tools,
           endpoint,
-          append_today_date,
+          append_current_datetime,
         },
       });
       return;
@@ -197,7 +197,7 @@ export default function AssistantPanel({
       tools,
       endpoint,
       version,
-      append_today_date,
+      append_current_datetime,
     });
   };
 
