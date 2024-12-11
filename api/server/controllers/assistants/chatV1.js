@@ -1,5 +1,6 @@
 const { v4 } = require('uuid');
 const {
+  Time,
   Constants,
   RunStatus,
   CacheKeys,
@@ -24,6 +25,7 @@ const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { formatMessage, createVisionPrompt } = require('~/app/clients/prompts');
 const { createRun, StreamRunManager } = require('~/server/services/Runs');
 const { addTitle } = require('~/server/services/Endpoints/assistants');
+const { createRunBody } = require('~/server/services/createRunBody');
 const { getTransactions } = require('~/models/Transaction');
 const checkBalance = require('~/models/checkBalance');
 const { getConvo } = require('~/models/Conversation');
@@ -31,9 +33,6 @@ const getLogStores = require('~/cache/getLogStores');
 const { getModelMaxTokens } = require('~/utils');
 const { getOpenAIClient } = require('./helpers');
 const { logger } = require('~/config');
-const { createRunBody } = require('~/server/services/createRunBody');
-
-const ten_minutes = 1000 * 60 * 10;
 
 /**
  * @route POST /
@@ -510,7 +509,7 @@ const chatV1 = async (req, res) => {
         });
 
         run_id = run.id;
-        await cache.set(cacheKey, `${thread_id}:${run_id}`, ten_minutes);
+        await cache.set(cacheKey, `${thread_id}:${run_id}`, Time.TEN_MINUTES);
         sendInitialResponse();
 
         // todo: retry logic
@@ -521,7 +520,7 @@ const chatV1 = async (req, res) => {
       /** @type {{[AssistantStreamEvents.ThreadRunCreated]: (event: ThreadRunCreated) => Promise<void>}} */
       const handlers = {
         [AssistantStreamEvents.ThreadRunCreated]: async (event) => {
-          await cache.set(cacheKey, `${thread_id}:${event.data.id}`, ten_minutes);
+          await cache.set(cacheKey, `${thread_id}:${event.data.id}`, Time.TEN_MINUTES);
           run_id = event.data.id;
           sendInitialResponse();
         },
