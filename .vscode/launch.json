@@ -11,7 +11,7 @@
         "NODE_ENV": "production"
       },
       "console": "integratedTerminal",
-      "envFile": "${workspaceFolder}/.env" // explicitly specify .env file
+      "envFile": "${workspaceFolder}/.env"
     }
   ]
 }
