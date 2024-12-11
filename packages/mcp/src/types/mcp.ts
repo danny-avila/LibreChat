@@ -17,7 +17,9 @@ interface SSEOptions {
   url: string;
 }
 
-type TransportOptions = StdioOptions | WebSocketOptions | SSEOptions;
+export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';
+
+export type TransportOptions = StdioOptions | WebSocketOptions | SSEOptions;
 
 export interface MCPOptions {
   transport: TransportOptions;

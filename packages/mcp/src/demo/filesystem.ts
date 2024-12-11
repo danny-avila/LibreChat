@@ -1,6 +1,6 @@
 import express from 'express';
 import { EventSource } from 'eventsource';
-import { MCPConnection } from '../mcp';
+import { MCPConnection } from '../connection';
 import type { MCPOptions } from '../types/mcp';
 
 // Set up EventSource for Node environment

@@ -43,7 +43,7 @@ export class MCPConnection extends EventEmitter {
   private readonly MAX_RECONNECT_ATTEMPTS = 3;
   private readonly RECONNECT_DELAY = 1000; // 1 second
 
-  private constructor(
+  constructor(
     private readonly options: MCPOptions,
     private readonly clientFactory?: (transport: Transport) => Client,
   ) {

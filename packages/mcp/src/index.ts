@@ -1,4 +1,4 @@
 /* MCP */
-export * from './mcp';
+export * from './manager';
 /* types */
 export type * from './types/mcp';
