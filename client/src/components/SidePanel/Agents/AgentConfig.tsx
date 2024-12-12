@@ -9,7 +9,7 @@ import {
   PermissionTypes,
   AgentCapabilities,
 } from 'librechat-data-provider';
-import type { TConfig, TPlugin } from 'librechat-data-provider';
+import type { TPlugin } from 'librechat-data-provider';
 import type { AgentForm, AgentPanelProps } from '~/common';
 import { cn, defaultTextProps, removeFocusOutlines, getEndpointField, getIconKey } from '~/utils';
 import { useCreateAgentMutation, useUpdateAgentMutation } from '~/data-provider';
@@ -43,7 +43,7 @@ export default function AgentConfig({
   endpointsConfig,
   setActivePanel,
   setCurrentAgentId,
-}: AgentPanelProps & { agentsConfig?: TConfig | null }) {
+}: AgentPanelProps) {
   const { user } = useAuthContext();
   const fileMap = useFileMapContext();
   const queryClient = useQueryClient();
@@ -69,19 +69,19 @@ export default function AgentConfig({
   });
 
   const toolsEnabled = useMemo(
-    () => agentsConfig?.capabilities?.includes(AgentCapabilities.tools),
+    () => agentsConfig?.capabilities.includes(AgentCapabilities.tools),
     [agentsConfig],
   );
   const actionsEnabled = useMemo(
-    () => agentsConfig?.capabilities?.includes(AgentCapabilities.actions),
+    () => agentsConfig?.capabilities.includes(AgentCapabilities.actions),
     [agentsConfig],
   );
   const fileSearchEnabled = useMemo(
-    () => agentsConfig?.capabilities?.includes(AgentCapabilities.file_search) ?? false,
+    () => agentsConfig?.capabilities.includes(AgentCapabilities.file_search) ?? false,
     [agentsConfig],
   );
   const codeEnabled = useMemo(
-    () => agentsConfig?.capabilities?.includes(AgentCapabilities.execute_code) ?? false,
+    () => agentsConfig?.capabilities.includes(AgentCapabilities.execute_code) ?? false,
     [agentsConfig],
   );
 
