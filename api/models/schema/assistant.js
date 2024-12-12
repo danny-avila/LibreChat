@@ -28,6 +28,10 @@ const assistantSchema = mongoose.Schema(
     },
     file_ids: { type: [String], default: undefined },
     actions: { type: [String], default: undefined },
+    append_current_datetime: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,

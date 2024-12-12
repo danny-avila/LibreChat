@@ -1,4 +1,4 @@
-const { isDomainAllowed } = require('~/server/services/AuthService');
+const { isEmailDomainAllowed } = require('~/server/services/domains');
 const { logger } = require('~/config');
 
 /**
@@ -14,7 +14,7 @@ const { logger } = require('~/config');
  */
 const checkDomainAllowed = async (req, res, next = () => {}) => {
   const email = req?.user?.email;
-  if (email && !(await isDomainAllowed(email))) {
+  if (email && !(await isEmailDomainAllowed(email))) {
     logger.error(`[Social Login] [Social Login not allowed] [Email: ${email}]`);
     return res.redirect('/login');
   } else {

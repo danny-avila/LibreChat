@@ -50,12 +50,12 @@ export default function ExportAndShareMenu({
     {
       label: localize('com_endpoint_export'),
       onClick: exportHandler,
-      icon: <Upload className="icon-md mr-2 dark:text-gray-300" />,
+      icon: <Upload className="icon-md mr-2 text-text-secondary" />,
     },
     {
       label: localize('com_ui_share'),
       onClick: shareHandler,
-      icon: <Share2 className="icon-md mr-2 dark:text-gray-300" />,
+      icon: <Share2 className="icon-md mr-2 text-text-secondary" />,
       show: isSharedButtonEnabled,
     },
   ];
@@ -72,7 +72,7 @@ export default function ExportAndShareMenu({
             aria-label="Export options"
             className="inline-flex size-10 items-center justify-center rounded-lg border border-border-light bg-transparent text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
           >
-            <Upload className="icon-md dark:text-gray-300" aria-hidden="true" focusable="false" />
+            <Upload className="icon-md text-text-secondary" aria-hidden="true" focusable="false" />
           </Ariakit.MenuButton>
         }
         items={dropdownItems}
