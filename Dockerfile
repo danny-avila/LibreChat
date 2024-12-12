@@ -1,7 +1,7 @@
 # v0.7.5
 
 # Base node image
-FROM node:20-alpine AS node
+FROM node:22-alpine AS node
 
 RUN apk --no-cache add curl
 

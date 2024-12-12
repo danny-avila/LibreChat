@@ -2,7 +2,7 @@
 # v0.7.5
 
 # Base for all builds
-FROM node:20-alpine AS base
+FROM node:22-alpine AS base
 WORKDIR /app
 RUN apk --no-cache add curl
 RUN npm config set fetch-retry-maxtimeout 600000 && \
