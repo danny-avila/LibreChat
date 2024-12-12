@@ -119,7 +119,7 @@ export default {
   com_agents_enable_file_search: 'Enable File Search',
   com_agents_file_search_info:
     'When enabled, the agent will be informed of the exact filenames listed below, allowing it to retrieve relevant context from these files.',
-  com_agents_code_interpreter_title: 'Code Interpreter',
+  com_agents_code_interpreter_title: 'Code Interpreter API',
   com_agents_by_librechat: 'by LibreChat',
   com_agents_code_interpreter:
     'When enabled, allows your agent to leverage the LibreChat Code Interpreter API to run generated code, including file processing, securely. Requires a valid API key.',
