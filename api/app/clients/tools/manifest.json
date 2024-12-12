@@ -174,5 +174,13 @@
         "description": "Provide your Flux API key from your user profile."
       }
     ]
+  },
+  {
+    "name": "E2BCode",
+    "pluginKey": "E2BCode",
+    "description": "Run code in an E2B sandbox",
+    "icon": "/assets/flux.png",
+    "isAuthRequired": "false",
+    "authConfig": []
   }
 ]

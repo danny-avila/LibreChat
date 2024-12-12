@@ -10,6 +10,7 @@ const TraversaalSearch = require('./structured/TraversaalSearch');
 const TavilySearchResults = require('./structured/TavilySearchResults');
 const FluxAPI = require('./structured/FluxAPI');
 const WebNavigator = require('./structured/WebNavigator');
+const E2BCode = require('./structured/E2BCode');
 
 module.exports = {
   availableTools,
@@ -23,4 +24,5 @@ module.exports = {
   TavilySearchResults,
   FluxAPI,
   WebNavigator,
+  E2BCode,
 };

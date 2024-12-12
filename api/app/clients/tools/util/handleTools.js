@@ -16,6 +16,7 @@ const {
   TavilySearchResults,
   FluxAPI,
   WebNavigator,
+  E2BCode,
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
@@ -164,6 +165,7 @@ const loadTools = async ({
     tavily_search_results_json: TavilySearchResults,
     flux: FluxAPI,
     WebNavigator: WebNavigator,
+    E2BCode: E2BCode,
   };
 
   const customConstructors = {
