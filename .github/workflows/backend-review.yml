@@ -24,10 +24,10 @@ jobs:
       NODE_ENV: CI
     steps:
       - uses: actions/checkout@v4
-      - name: Use Node.js 20.x
+      - name: Use Node.js 22.x
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: Install dependencies
@@ -35,7 +35,7 @@ jobs:
 
       - name: Install Data Provider
         run: npm run build:data-provider
-      
+
       - name: Create empty auth.json file
         run: |
           mkdir -p api/data
