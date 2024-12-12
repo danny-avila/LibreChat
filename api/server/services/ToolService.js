@@ -5,6 +5,7 @@ const { tool: toolFn, Tool } = require('@langchain/core/tools');
 const { Calculator } = require('@langchain/community/tools/calculator');
 const {
   Tools,
+  ErrorTypes,
   ContentTypes,
   imageGenTools,
   actionDelimiter,
@@ -327,6 +328,12 @@ async function processRequiredActions(client, requiredActions) {
       }
 
       tool = await createActionTool({ action: actionSet, requestBuilder });
+      if (!tool) {
+        logger.warn(
+          `Invalid action: user: ${client.req.user.id} | thread_id: ${requiredActions[0].thread_id} | run_id: ${requiredActions[0].run_id} | toolName: ${currentAction.tool}`,
+        );
+        throw new Error(`{"type":"${ErrorTypes.INVALID_ACTION}"}`);
+      }
       isActionTool = !!tool;
       ActionToolMap[currentAction.tool] = tool;
     }
@@ -464,6 +471,12 @@ async function loadAgentTools({ req, agent_id, tools, tool_resources, openAIApiK
               name: toolName,
               description: functionSig.description,
             });
+            if (!tool) {
+              logger.warn(
+                `Invalid action: user: ${req.user.id} | agent_id: ${agent_id} | toolName: ${toolName}`,
+              );
+              throw new Error(`{"type":"${ErrorTypes.INVALID_ACTION}"}`);
+            }
             agentTools.push(tool);
             ActionToolMap[toolName] = tool;
           }
