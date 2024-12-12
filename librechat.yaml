@@ -1,0 +1,201 @@
+# For more information, see the Configuration Guide:
+# https://www.librechat.ai/docs/configuration/librechat_yaml
+
+# Configuration version (required)
+version: 1.1.5
+
+# Cache settings: Set to true to enable caching
+cache: true
+
+# Custom interface configuration
+interface:
+  endpointsMenu: true
+  modelSelect: true
+  parameters: false
+  sidePanel: true
+  presets: false
+  prompts: false
+  bookmarks: true
+  multiConvo: true
+  # # Privacy policy settings
+  # privacyPolicy:
+  #   externalUrl: 'https://librechat.ai/privacy-policy'
+  #   openNewTab: true
+
+  # # Terms of service
+  # termsOfService:
+  #   externalUrl: 'https://librechat.ai/tos'
+  #   openNewTab: true
+  #   modalAcceptance: true
+  #   modalTitle: "Terms of Service for LibreChat"
+  #   modalContent: |
+  #     # Terms and Conditions for LibreChat
+    
+# Example Registration Object Structure (optional)
+registration:
+#  socialLogins: ['google']
+  allowedDomains:
+  - "ames-foundation.com"
+  - "crystalflowai.de"
+  - "crystalflow.ai"
+
+# speech:
+#   tts:
+#     openai:
+#       url: ''
+#       apiKey: '${TTS_API_KEY}'
+#       model: ''
+#       voices: ['']
+
+#  
+#   stt:
+#     openai:
+#       url: ''
+#       apiKey: '${STT_API_KEY}'
+#       model: ''
+
+# rateLimits:
+#   fileUploads:
+#     ipMax: 100
+#     ipWindowInMinutes: 60  # Rate limit window for file uploads per IP
+#     userMax: 50
+#     userWindowInMinutes: 60  # Rate limit window for file uploads per user
+#   conversationsImport:
+#     ipMax: 100
+#     ipWindowInMinutes: 60  # Rate limit window for conversation imports per IP
+#     userMax: 50
+#     userWindowInMinutes: 60  # Rate limit window for conversation imports per user
+
+# Definition of custom endpoints
+endpoints:
+  assistants:
+    disableBuilder: true # Disable Assistants Builder Interface by setting to `true`
+    pollIntervalMs: 3000  # Polling interval for checking assistant updates
+    timeoutMs: 180000  # Timeout for assistant operations
+    # Should only be one or the other, either `supportedIds` or `excludedIds`
+    supportedIds: ["asst_YngmPje1iTdgDZCF8pL6uZqD"]
+    # excludedIds: ["asst_excludedAssistantId"]
+    # Only show assistants that the user created or that were created externally (e.g. in Assistants playground).
+    # privateAssistants: false # Does not work with `supportedIds` or `excludedIds`
+    # (optional) Models that support retrieval, will default to latest known OpenAI models that support the feature
+    # retrievalModels: ["gpt-4-turbo-preview"]
+    # (optional) Assistant Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
+    # capabilities: ["code_interpreter", "retrieval", "actions", "tools", "image_vision"]
+
+  # custom:
+  #   # Groq Example
+  #   - name: 'groq'
+  #     apiKey: '${GROQ_API_KEY}'
+  #     baseURL: 'https://api.groq.com/openai/v1/'
+  #     models:
+  #       default:
+  #         [
+  #           'llama3-70b-8192',
+  #           'llama3-8b-8192',
+  #           'llama2-70b-4096',
+  #           'mixtral-8x7b-32768',
+  #           'gemma-7b-it',
+  #         ]
+  #       fetch: false
+  #     titleConvo: true
+  #     titleModel: 'mixtral-8x7b-32768'
+  #     modelDisplayLabel: 'groq'
+
+  #   # Mistral AI Example
+  #   - name: 'Mistral' # Unique name for the endpoint
+  #     # For `apiKey` and `baseURL`, you can use environment variables that you define.
+  #     # recommended environment variables:
+  #     apiKey: '${MISTRAL_API_KEY}'
+  #     baseURL: 'https://api.mistral.ai/v1'
+
+  #     # Models configuration
+  #     models:
+  #       # List of default models to use. At least one value is required.
+  #       default: ['mistral-tiny', 'mistral-small', 'mistral-medium']
+  #       # Fetch option: Set to true to fetch models from API.
+  #       fetch: true # Defaults to false.
+
+  #     # Optional configurations
+
+  #     # Title Conversation setting
+  #     titleConvo: true # Set to true to enable title conversation
+
+  #     # Title Method: Choose between "completion" or "functions".
+  #     # titleMethod: "completion"  # Defaults to "completion" if omitted.
+
+  #     # Title Model: Specify the model to use for titles.
+  #     titleModel: 'mistral-tiny' # Defaults to "gpt-3.5-turbo" if omitted.
+
+  #     # Summarize setting: Set to true to enable summarization.
+  #     # summarize: false
+
+  #     # Summary Model: Specify the model to use if summarization is enabled.
+  #     # summaryModel: "mistral-tiny"  # Defaults to "gpt-3.5-turbo" if omitted.
+
+  #     # Force Prompt setting: If true, sends a `prompt` parameter instead of `messages`.
+  #     # forcePrompt: false
+
+  #     # The label displayed for the AI model in messages.
+  #     modelDisplayLabel: 'Mistral' # Default is "AI" when not set.
+
+  #     # Add additional parameters to the request. Default params will be overwritten.
+  #     # addParams:
+  #     # safe_prompt: true # This field is specific to Mistral AI: https://docs.mistral.ai/api/
+
+  #     # Drop Default params parameters from the request. See default params in guide linked below.
+  #     # NOTE: For Mistral, it is necessary to drop the following parameters or you will encounter a 422 Error:
+  #     dropParams: ['stop', 'user', 'frequency_penalty', 'presence_penalty']
+
+  #   # OpenRouter Example
+  #   - name: 'OpenRouter'
+  #     # For `apiKey` and `baseURL`, you can use environment variables that you define.
+  #     # recommended environment variables:
+  #     # Known issue: you should not use `OPENROUTER_API_KEY` as it will then override the `openAI` endpoint to use OpenRouter as well.
+  #     apiKey: '${OPENROUTER_KEY}'
+  #     baseURL: 'https://openrouter.ai/api/v1'
+  #     models:
+  #       default: ['meta-llama/llama-3-70b-instruct']
+  #       fetch: true
+  #     titleConvo: true
+  #     titleModel: 'meta-llama/llama-3-70b-instruct'
+  #     # Recommended: Drop the stop parameter from the request as Openrouter models use a variety of stop tokens.
+  #     dropParams: ['stop']
+  #     modelDisplayLabel: 'OpenRouter'
+      
+  #   # Portkey AI Example
+  #   - name: "Portkey"
+  #       apiKey: "dummy"  
+  #       baseURL: 'https://api.portkey.ai/v1'
+  #       headers:
+  #           x-portkey-api-key: '${PORTKEY_API_KEY}'
+  #           x-portkey-virtual-key: '${PORTKEY_OPENAI_VIRTUAL_KEY}'
+  #       models:
+  #           default: ['gpt-4o-mini', 'gpt-4o', 'chatgpt-4o-latest']
+  #           fetch: true
+  #       titleConvo: true
+  #       titleModel: 'current_model'
+  #       summarize: false
+  #       summaryModel: 'current_model'
+  #       forcePrompt: false
+  #       modelDisplayLabel: 'Portkey'
+  #       iconURL: https://images.crunchbase.com/image/upload/c_pad,f_auto,q_auto:eco,dpr_1/rjqy7ghvjoiu4cd1xjbf
+# fileConfig:
+#   endpoints:
+#     assistants:
+#       fileLimit: 5
+#       fileSizeLimit: 10  # Maximum size for an individual file in MB
+#       totalSizeLimit: 50  # Maximum total size for all files in a single request in MB
+#       supportedMimeTypes:
+#         - "image/.*"
+#         - "application/pdf"
+#     openAI:
+#       disabled: true  # Disables file uploading to the OpenAI endpoint
+#     default:
+#       totalSizeLimit: 20
+#     YourCustomEndpointName:
+#       fileLimit: 2
+#       fileSizeLimit: 5
+#   serverFileSizeLimit: 100  # Global server file size limit in MB
+#   avatarSizeLimit: 2  # Limit for user avatar image size in MB
+# See the Custom Configuration Guide for more information on Assistants Config:
+# https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/assistants_endpoint
