@@ -30,6 +30,7 @@ export default {
     'Resubmitting the AI message is not supported for this endpoint.',
   com_error_invalid_request_error:
     'The AI service rejected the request due to an error. This could be caused by an invalid API key or an improperly formatted request.',
+  com_error_invalid_action_error: 'Request denied: The specified action domain is not allowed.',
   com_error_no_system_messages:
     'The selected AI service or model does not support system messages. Try using prompts instead of custom instructions.',
   com_error_invalid_user_key: 'Invalid key provided. Please provide a valid key and try again.',

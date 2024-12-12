@@ -471,6 +471,11 @@ export const configSchema = z.object({
       agents: true,
     }),
   fileStrategy: fileSourceSchema.default(FileSources.local),
+  actions: z
+    .object({
+      allowedDomains: z.array(z.string()).optional(),
+    })
+    .optional(),
   registration: z
     .object({
       socialLogins: z.array(z.string()).optional(),
@@ -962,6 +967,10 @@ export enum ErrorTypes {
    * Invalid request error, API rejected request
    */
   INVALID_REQUEST = 'invalid_request_error',
+  /**
+   * Invalid action request error, likely not on list of allowed domains
+   */
+  INVALID_ACTION = 'invalid_action_error',
   /**
    * Invalid request error, API rejected request
    */
