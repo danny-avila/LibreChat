@@ -5,8 +5,8 @@ import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import { EModelEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TModelSpec, TConversation, TEndpointsConfig } from 'librechat-data-provider';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
+import { useDefaultConvo, useNewConvo, useLocalize } from '~/hooks';
 import { getConvoSwitchLogic, getModelSpecIconURL } from '~/utils';
-import { useDefaultConvo, useNewConvo } from '~/hooks';
 import MenuButton from './MenuButton';
 import ModelSpecs from './ModelSpecs';
 import store from '~/store';
@@ -15,6 +15,7 @@ export default function ModelSpecsMenu({ modelSpecs }: { modelSpecs?: TModelSpec
   const { conversation } = useChatContext();
   const { newConversation } = useNewConvo();
 
+  const localize = useLocalize();
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
   const modularChat = useRecoilValue(store.modularChat);
   const getDefaultConversation = useDefaultConvo();
@@ -111,6 +112,9 @@ export default function ModelSpecsMenu({ modelSpecs }: { modelSpecs?: TModelSpec
             <Content
               side="bottom"
               align="start"
+              id="llm-menu"
+              role="listbox"
+              aria-label={localize('com_ui_llms_available')}
               className="models-scrollbar mt-2 max-h-[65vh] min-w-[340px] max-w-xs overflow-y-auto rounded-lg border border-gray-100 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-700 dark:text-white lg:max-h-[75vh]"
             >
               <ModelSpecs
