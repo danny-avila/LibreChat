@@ -74,6 +74,27 @@ const formatInstructionsOutro = dedent`2. Assign an identifier to the \`identifi
 
 // Dictionary of all available artifact types. Includes a description and usage examples
 const artifactTypes = {
+  'text/markdown': {
+    name: 'Documents',
+    instructions: ['Plain text, Markdown, or other formatted text documents'],
+    example: {
+      user: 'Can you create a document that contains a list of my favorite fruits?',
+      assistant: dedent`
+      
+      :::artifact{identifier="favorite-fruits" type="text/markdown" title="My Favorite Fruits"}
+      \`\`\`
+      # My Favorite Fruits
+
+      Here's a list of my favorite fruits:
+
+      * Apples
+      * Bananas
+      * Strawberries
+      \`\`\`
+      :::
+      `,
+    },
+  },
   'text/html': {
     name: 'HTML',
     instructions: [
