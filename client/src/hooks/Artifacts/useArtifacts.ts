@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useRef } from 'react';
 import { Constants } from 'librechat-data-provider';
 import { useRecoilState, useRecoilValue, useResetRecoilState } from 'recoil';
 import { useChatContext } from '~/Providers';
-import { getKey } from '~/utils/artifacts';
+import { getKey, needsPreview } from '~/utils/artifacts';
 import { getLatestText } from '~/utils';
 import store from '~/store';
 
@@ -70,7 +70,7 @@ export default function useArtifacts() {
         );
 
         if (hasEnclosedArtifact && !hasEnclosedArtifactRef.current) {
-          setActiveTab('preview');
+          setActiveTab(needsPreview(latestArtifact?.type) ? 'preview' : 'code');
           hasEnclosedArtifactRef.current = true;
           hasAutoSwitchedToCodeRef.current = false;
         } else if (!hasEnclosedArtifactRef.current && !hasAutoSwitchedToCodeRef.current) {
@@ -93,6 +93,14 @@ export default function useArtifacts() {
   }, [latestMessage]);
 
   const currentArtifact = currentArtifactId != null ? artifacts?.[currentArtifactId] : null;
+
+  // Prevent non-previewable artifacts from using the preview tab
+  useEffect(() => {
+    if(!needsPreview(currentArtifact?.type) && activeTab == "preview") {
+      setActiveTab("code");
+    }
+  }, [currentArtifact])
+
 
   const currentIndex = orderedArtifactIds.indexOf(currentArtifactId ?? '');
   const cycleArtifact = (direction: 'next' | 'prev') => {

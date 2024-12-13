@@ -37,6 +37,14 @@ const artifactFilename = {
   // 'tsx': 'tsx',
 };
 
+// Artifacts that need to render an HTML preview window
+const previewableArtifacts = {
+  'application/vnd.mermaid': true,
+  'application/vnd.react': true,
+  'text/html': true,
+  default: false,
+};
+
 const artifactTemplate: Record<
   keyof typeof artifactFilename,
   SandpackPredefinedTemplate | undefined
@@ -83,9 +91,26 @@ export function getArtifactFilename(type: string, language?: string): string {
   return artifactFilename[key] ?? artifactFilename.default;
 }
 
+export function needsPreview(type?: string): boolean {
+  return (type && previewableArtifacts[type]) ?? previewableArtifacts.default;
+}
+
 export function getTemplate(type: string, language?: string): SandpackPredefinedTemplate {
   const key = getKey(type, language);
   return artifactTemplate[key] ?? (artifactTemplate.default as SandpackPredefinedTemplate);
+}
+
+export function isProse(type?: string) {
+  return type === 'text/markdown';
+}
+
+export function formatContent(content: string, type?: string, ) {
+  if(isProse(type)) {
+    // If rendering markdown, no need to add a code block
+    return content;
+  }
+  // Else return a markdown code block
+  return `\`\`\`${getFileExtension(type)}\n${content}\`\`\``;
 }
 
 const standardDependencies = {
