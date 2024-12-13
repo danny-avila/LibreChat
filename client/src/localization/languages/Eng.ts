@@ -301,6 +301,7 @@ export default {
   com_ui_edit: 'Edit',
   com_ui_loading: 'Loading...',
   com_ui_success: 'Success',
+  com_ui_logo: '{0} Logo',
   com_ui_all: 'all',
   com_ui_all_proper: 'All',
   com_ui_clear: 'Clear',
