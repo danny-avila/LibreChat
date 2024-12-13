@@ -63,6 +63,10 @@ async function buildEndpointOption(req, res, next) {
     }
 
     try {
+      currentModelSpec.preset.spec = spec;
+      if (currentModelSpec.iconURL != null && currentModelSpec.iconURL !== '') {
+        currentModelSpec.preset.iconURL = currentModelSpec.iconURL;
+      }
       parsedBody = parseCompactConvo({
         endpoint,
         endpointType,
