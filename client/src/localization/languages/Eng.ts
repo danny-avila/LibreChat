@@ -181,6 +181,7 @@ export default {
   com_ui_endpoint: 'Endpoint',
   com_ui_endpoint_menu: 'LLM Endpoint Menu',
   com_ui_endpoints_available: 'Available Endpoints',
+  com_ui_export_convo_modal: 'Export Conversation Modal',
   com_ui_llms_available: 'Available LLMs',
   com_ui_llm_menu: 'LLM Menu',
   com_ui_provider: 'Provider',
