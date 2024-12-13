@@ -825,6 +825,12 @@
  */
 
 /**
+ * @exports TAgentsEndpoint
+ * @typedef {import('librechat-data-provider').TAgentsEndpoint} TAgentsEndpoint
+ * @memberof typedefs
+ */
+
+/**
  * @exports Agent
  * @typedef {import('librechat-data-provider').Agent} Agent
  * @memberof typedefs

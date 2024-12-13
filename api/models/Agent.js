@@ -200,6 +200,7 @@ const getListAgents = async (searchParameter) => {
       avatar: 1,
       author: 1,
       projectIds: 1,
+      description: 1,
       isCollaborative: 1,
     }).lean()
   ).map((agent) => {

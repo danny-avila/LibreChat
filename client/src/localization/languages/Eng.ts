@@ -30,6 +30,7 @@ export default {
     'Resubmitting the AI message is not supported for this endpoint.',
   com_error_invalid_request_error:
     'The AI service rejected the request due to an error. This could be caused by an invalid API key or an improperly formatted request.',
+  com_error_invalid_action_error: 'Request denied: The specified action domain is not allowed.',
   com_error_no_system_messages:
     'The selected AI service or model does not support system messages. Try using prompts instead of custom instructions.',
   com_error_invalid_user_key: 'Invalid key provided. Please provide a valid key and try again.',
@@ -70,6 +71,9 @@ export default {
   com_assistants_knowledge_disabled:
     'Assistant must be created, and Code Interpreter or Retrieval must be enabled and saved before uploading files as Knowledge.',
   com_assistants_image_vision: 'Image Vision',
+  com_assistants_append_date: 'Append Current Date & Time',
+  com_assistants_append_date_tooltip:
+    'When enabled, the current client date and time will be appended to the assistant system instructions.',
   com_assistants_code_interpreter: 'Code Interpreter',
   com_assistants_code_interpreter_files: 'Files below are for Code Interpreter only:',
   com_assistants_retrieval: 'Retrieval',
@@ -116,7 +120,7 @@ export default {
   com_agents_enable_file_search: 'Enable File Search',
   com_agents_file_search_info:
     'When enabled, the agent will be informed of the exact filenames listed below, allowing it to retrieve relevant context from these files.',
-  com_agents_code_interpreter_title: 'Code Interpreter',
+  com_agents_code_interpreter_title: 'Code Interpreter API',
   com_agents_by_librechat: 'by LibreChat',
   com_agents_code_interpreter:
     'When enabled, allows your agent to leverage the LibreChat Code Interpreter API to run generated code, including file processing, securely. Requires a valid API key.',
@@ -175,6 +179,11 @@ export default {
   com_ui_input: 'Input',
   com_ui_close: 'Close',
   com_ui_endpoint: 'Endpoint',
+  com_ui_endpoint_menu: 'LLM Endpoint Menu',
+  com_ui_endpoints_available: 'Available Endpoints',
+  com_ui_export_convo_modal: 'Export Conversation Modal',
+  com_ui_llms_available: 'Available LLMs',
+  com_ui_llm_menu: 'LLM Menu',
   com_ui_provider: 'Provider',
   com_ui_model: 'Model',
   com_ui_region: 'Region',
@@ -206,6 +215,9 @@ export default {
   com_ui_version_var: 'Version {0}',
   com_ui_advanced: 'Advanced',
   com_ui_admin_settings: 'Admin Settings',
+  com_ui_admin_access_warning:
+    'Disabling Admin access to this feature may cause unexpected UI issues requiring refresh. If saved, the only way to revert is via the interface setting in librechat.yaml config which affects all roles.',
+  com_ui_role_select: 'Role',
   com_ui_error_save_admin_settings: 'There was an error saving your admin settings.',
   com_ui_prompt_preview_not_shared: 'The author has not allowed collaboration for this prompt.',
   com_ui_prompt_name_required: 'Prompt Name is required',
@@ -290,6 +302,7 @@ export default {
   com_ui_edit: 'Edit',
   com_ui_loading: 'Loading...',
   com_ui_success: 'Success',
+  com_ui_logo: '{0} Logo',
   com_ui_all: 'all',
   com_ui_all_proper: 'All',
   com_ui_clear: 'Clear',
@@ -381,6 +394,7 @@ export default {
   com_ui_unarchive: 'Unarchive',
   com_ui_unarchive_error: 'Failed to unarchive conversation',
   com_ui_more_options: 'More',
+  com_ui_more_info: 'More info',
   com_ui_preview: 'Preview',
   com_ui_upload: 'Upload',
   com_ui_connect: 'Connect',
