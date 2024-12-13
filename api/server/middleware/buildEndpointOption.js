@@ -63,6 +63,10 @@ async function buildEndpointOption(req, res, next) {
     }
 
     try {
+      currentModelSpec.preset.spec = spec;
+      if (currentModelSpec.iconURL != null && currentModelSpec.iconURL !== '') {
+        currentModelSpec.preset.iconURL = currentModelSpec.iconURL;
+      }
       parsedBody = parseCompactConvo({
         endpoint,
         endpointType,
@@ -79,7 +83,7 @@ async function buildEndpointOption(req, res, next) {
     const builder = isAgents ? (...args) => endpointFn(req, ...args) : endpointFn;
 
     // TODO: use object params
-    req.body.endpointOption = builder(endpoint, parsedBody, endpointType);
+    req.body.endpointOption = await builder(endpoint, parsedBody, endpointType);
 
     // TODO: use `getModelsConfig` only when necessary
     const modelsConfig = await getModelsConfig(req);

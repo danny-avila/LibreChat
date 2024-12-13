@@ -76,7 +76,7 @@ export default function useSideNavLinks({
       hasAccessToCreateAgents &&
       isAgentsEndpoint(endpoint) &&
       agents &&
-      // agents.disableBuilder !== true &&
+      agents.disableBuilder !== true &&
       keyProvided &&
       interfaceConfig.parameters === true
     ) {

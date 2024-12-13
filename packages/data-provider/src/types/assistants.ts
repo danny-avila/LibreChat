@@ -100,6 +100,7 @@ export type AssistantCreateParams = {
   tools?: Array<FunctionTool | string>;
   endpoint: AssistantsEndpoint;
   version: number | string;
+  append_current_datetime?: boolean;
 };
 
 export type AssistantUpdateParams = {
@@ -113,6 +114,7 @@ export type AssistantUpdateParams = {
   tools?: Array<FunctionTool | string>;
   tool_resources?: ToolResources;
   endpoint: AssistantsEndpoint;
+  append_current_datetime?: boolean;
 };
 
 export type AssistantListParams = {
@@ -528,6 +530,7 @@ export type AssistantDocument = {
   actions?: string[];
   createdAt?: Date;
   updatedAt?: Date;
+  append_current_datetime?: boolean;
 };
 
 /* Agent types */

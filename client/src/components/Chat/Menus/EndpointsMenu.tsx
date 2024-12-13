@@ -5,6 +5,7 @@ import type { FC } from 'react';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
 import { mapEndpoints, getEntity } from '~/utils';
 import EndpointItems from './Endpoints/MenuItems';
+import useLocalize from '~/hooks/useLocalize';
 import TitleButton from './UI/TitleButton';
 
 const EndpointsMenu: FC = () => {
@@ -12,6 +13,7 @@ const EndpointsMenu: FC = () => {
     select: mapEndpoints,
   });
 
+  const localize = useLocalize();
   const agentsMap = useAgentsMapContext();
   const assistantMap = useAssistantsMapContext();
   const { conversation } = useChatContext();
@@ -51,6 +53,9 @@ const EndpointsMenu: FC = () => {
           <Content
             side="bottom"
             align="start"
+            role="listbox"
+            id="llm-endpoint-menu"
+            aria-label={localize('com_ui_endpoints_available')}
             className="mt-2 max-h-[65vh] min-w-[340px] overflow-y-auto rounded-lg border border-border-light bg-header-primary text-text-primary shadow-lg lg:max-h-[75vh]"
           >
             <EndpointItems endpoints={endpoints} selected={endpoint} />

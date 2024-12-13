@@ -17,7 +17,10 @@ interface DropdownProps {
   setIsOpen: (isOpen: boolean) => void;
   className?: string;
   iconClassName?: string;
+  itemClassName?: string;
+  sameWidth?: boolean;
   anchor?: { x: string; y: string };
+  gutter?: number;
   modal?: boolean;
   menuId: string;
 }
@@ -29,7 +32,11 @@ const DropdownPopup: React.FC<DropdownProps> = ({
   setIsOpen,
   menuId,
   modal,
+  gutter = 8,
+  sameWidth,
+  className,
   iconClassName,
+  itemClassName,
 }) => {
   const menu = Ariakit.useMenuStore({ open: isOpen, setOpen: setIsOpen });
 
@@ -38,9 +45,13 @@ const DropdownPopup: React.FC<DropdownProps> = ({
       {trigger}
       <Ariakit.Menu
         id={menuId}
-        className="absolute z-50 mt-2 overflow-hidden rounded-lg bg-header-primary p-1.5 shadow-lg outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
-        gutter={8}
+        className={cn(
+          'absolute z-50 mt-2 overflow-hidden rounded-lg bg-header-primary p-1.5 shadow-lg outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
+          className,
+        )}
+        gutter={gutter}
         modal={modal}
+        sameWidth={sameWidth}
       >
         {items
           .filter((item) => item.show !== false)
@@ -50,7 +61,10 @@ const DropdownPopup: React.FC<DropdownProps> = ({
             ) : (
               <Ariakit.MenuItem
                 key={index}
-                className="group flex w-full cursor-pointer items-center gap-2 rounded-lg p-2.5 text-sm text-text-primary outline-none transition-colors duration-200 hover:bg-surface-hover focus:bg-surface-hover"
+                className={cn(
+                  'group flex w-full cursor-pointer items-center gap-2 rounded-lg p-2.5 text-sm text-text-primary outline-none transition-colors duration-200 hover:bg-surface-hover focus:bg-surface-hover',
+                  itemClassName,
+                )}
                 disabled={item.disabled}
                 onClick={(event) => {
                   event.preventDefault();
