@@ -174,6 +174,43 @@ const updateAgentHandler = async (req, res) => {
 };
 
 /**
+ * Duplicates an Agent based on the provided ID.
+ * @route POST /Agents/:id/duplicate
+ * @param {object} req - Express Request
+ * @param {object} req.params - Request params
+ * @param {string} req.params.id - Agent identifier.
+ * @returns {Agent} 201 - success response - application/json
+ */
+const duplicateAgentHandler = async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { id: userId } = req.user;
+
+    const agent = await getAgent({ id });
+    if (!agent) {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    const { name, description, instructions, tools, provider, model } = agent;
+    const newAgent = await createAgent({
+      id: `agent_${nanoid()}`,
+      author: userId,
+      name: `${name} (Copy)`,
+      description,
+      instructions,
+      tools,
+      provider,
+      model,
+    });
+
+    return res.status(201).json(newAgent);
+  } catch (error) {
+    logger.error('[/Agents/:id/duplicate] Error duplicating Agent', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
  * Deletes an Agent based on the provided ID.
  * @route DELETE /Agents/:id
  * @param {object} req - Express Request
@@ -292,6 +329,7 @@ module.exports = {
   createAgent: createAgentHandler,
   getAgent: getAgentHandler,
   updateAgent: updateAgentHandler,
+  duplicateAgent: duplicateAgentHandler,
   deleteAgent: deleteAgentHandler,
   getListAgents: getListAgentsHandler,
   uploadAgentAvatar: uploadAgentAvatarHandler,

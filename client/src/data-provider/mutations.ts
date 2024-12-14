@@ -1136,6 +1136,37 @@ export const useUpdateAgentMutation = (
 };
 
 /**
+ * Hook for duplicating an agent
+ */
+export const useDuplicateAgentMutation = (
+  options?: t.DuplicateAgentMutationOptions,
+): UseMutationResult<t.Agent, Error, t.DuplicateAgentBody> => {
+  const queryClient = useQueryClient();
+  return useMutation((params: t.DuplicateAgentBody) => dataService.duplicateAgent(params), {
+    onMutate: (variables) => options?.onMutate?.(variables),
+    onError: (error, variables, context) => options?.onError?.(error, variables, context),
+    onSuccess: (newAgent, variables, context) => {
+      const listRes = queryClient.getQueryData<t.AgentListResponse>([
+        QueryKeys.agents,
+        defaultOrderQuery,
+      ]);
+
+      if (!listRes) {
+        options?.onSuccess?.(newAgent, variables, context);
+        return;
+      }
+
+      const currentAgents: t.Agent[] = [newAgent, ...listRes.data];
+
+      queryClient.setQueryData<t.AgentListResponse>([QueryKeys.agents, defaultOrderQuery], {
+        ...listRes,
+        data: currentAgents,
+      });
+      options?.onSuccess?.(newAgent, variables, context);
+    },
+  });
+};
+/**
  * Hook for deleting an agent
  */
 export const useDeleteAgentMutation = (

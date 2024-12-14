@@ -20,6 +20,7 @@ import { createProviderOption } from '~/utils';
 import { useToastContext } from '~/Providers';
 import AgentConfig from './AgentConfig';
 import AgentSelect from './AgentSelect';
+import { Button } from '~/components';
 import ModelPanel from './ModelPanel';
 import { Panel } from '~/common';
 
@@ -208,7 +209,7 @@ export default function AgentPanel({
         className="scrollbar-gutter-stable h-auto w-full flex-shrink-0 overflow-x-hidden"
         aria-label="Agent configuration form"
       >
-        <div className="flex w-full flex-wrap">
+        <div className="mt-2 flex w-full flex-wrap gap-2">
           <Controller
             name="agent"
             control={control}
@@ -225,15 +226,14 @@ export default function AgentPanel({
           />
           {/* Select Button */}
           {agent_id && (
-            <button
-              className="btn btn-primary focus:shadow-outline mx-2 mt-1 h-[40px] rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0"
-              type="button"
+            <Button
+              variant="submit"
               disabled={!agent_id}
               onClick={handleSelectAgent}
               aria-label="Select agent"
             >
               {localize('com_ui_select')}
-            </button>
+            </Button>
           )}
         </div>
         {!canEditAgent && (

@@ -18,9 +18,10 @@ import { useToastContext, useFileMapContext } from '~/Providers';
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 import Action from '~/components/SidePanel/Builder/Action';
 import { ToolSelectDialog } from '~/components/Tools';
+import { Spinner, TooltipAnchor } from '~/components';
+import DuplicateAgent from './DuplicateAgent';
 import { processAgentOption } from '~/utils';
 import AdminSettings from './AdminSettings';
-import { Spinner } from '~/components/svg';
 import DeleteButton from './DeleteButton';
 import AgentAvatar from './AgentAvatar';
 import FileSearch from './FileSearch';
@@ -66,6 +67,11 @@ export default function AgentConfig({
   const hasAccessToShareAgents = useHasAccess({
     permissionType: PermissionTypes.AGENTS,
     permission: Permissions.SHARED_GLOBAL,
+  });
+
+  const hasAccessToDuplicateAgents = useHasAccess({
+    permissionType: PermissionTypes.AGENTS,
+    permission: Permissions.DUPLICATE,
   });
 
   const toolsEnabled = useMemo(
@@ -407,10 +413,15 @@ export default function AgentConfig({
         {user?.role === SystemRoles.ADMIN && <AdminSettings />}
         {/* Context Button */}
         <div className="flex items-center justify-end gap-2">
-          <DeleteButton
-            agent_id={agent_id}
-            setCurrentAgentId={setCurrentAgentId}
-            createMutation={create}
+          <TooltipAnchor
+            description="Delete Agent"
+            render={
+              <DeleteButton
+                agent_id={agent_id}
+                setCurrentAgentId={setCurrentAgentId}
+                createMutation={create}
+              />
+            }
           />
           {(agent?.author === user?.id || user?.role === SystemRoles.ADMIN) &&
             hasAccessToShareAgents && (
@@ -420,6 +431,9 @@ export default function AgentConfig({
               projectIds={agent?.projectIds ?? []}
               isCollaborative={agent?.isCollaborative}
             />
+          )}
+          {agent && agent.author === user?.id && hasAccessToDuplicateAgents && (
+            <DuplicateAgent agent_id={agent_id} />
           )}
           {/* Submit Button */}
           <button
