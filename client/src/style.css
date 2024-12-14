@@ -2369,7 +2369,7 @@ button.scroll-convo {
 }
 
 .popover-ui:where(.dark, .dark *) {
-  background-color: hsl(var(--background));
+  background-color: hsl(var(--secondary));
   color: var(--text-secondary);
   box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.25), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 }

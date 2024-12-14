@@ -21,7 +21,7 @@ export default function SharedLinks() {
           title={localize('com_nav_shared_links')}
           className="max-w-[1000px]"
           showCancelButton={false}
-          main={<ShareLinkTable />}
+          main={<ShareLinkTable className="w-full" />}
         />
       </OGDialog>
     </div>
