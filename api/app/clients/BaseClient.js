@@ -50,6 +50,8 @@ class BaseClient {
     /** The key for the usage object's output tokens
      * @type {string} */
     this.outputTokensKey = 'completion_tokens';
+    /** @type {Set<string>} */
+    this.savedMessageIds = new Set();
   }
 
   setOptions() {
@@ -84,7 +86,7 @@ class BaseClient {
       return this.options.agent.id;
     }
 
-    return this.modelOptions.model;
+    return this.modelOptions?.model ?? this.model;
   }
 
   /**
@@ -508,7 +510,7 @@ class BaseClient {
           conversationId,
           parentMessageId: userMessage.messageId,
           isCreatedByUser: false,
-          model: this.modelOptions.model,
+          model: this.modelOptions?.model ?? this.model,
           sender: this.sender,
           text: generation,
         };
@@ -545,6 +547,7 @@ class BaseClient {
 
     if (!isEdited && !this.skipSaveUserMessage) {
       this.userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user);
+      this.savedMessageIds.add(userMessage.messageId);
       if (typeof opts?.getReqData === 'function') {
         opts.getReqData({
           userMessagePromise: this.userMessagePromise,
@@ -563,8 +566,8 @@ class BaseClient {
           user: this.user,
           tokenType: 'prompt',
           amount: promptTokens,
-          model: this.modelOptions.model,
           endpoint: this.options.endpoint,
+          model: this.modelOptions?.model ?? this.model,
           endpointTokenConfig: this.options.endpointTokenConfig,
         },
       });
@@ -574,6 +577,7 @@ class BaseClient {
     const completion = await this.sendCompletion(payload, opts);
     this.abortController.requestCompleted = true;
 
+    /** @type {TMessage} */
     const responseMessage = {
       messageId: responseMessageId,
       conversationId,
@@ -635,7 +639,16 @@ class BaseClient {
       responseMessage.attachments = (await Promise.all(this.artifactPromises)).filter((a) => a);
     }
 
+    if (this.options.attachments) {
+      try {
+        saveOptions.files = this.options.attachments.map((attachments) => attachments.file_id);
+      } catch (error) {
+        logger.error('[BaseClient] Error mapping attachments for conversation', error);
+      }
+    }
+
     this.responsePromise = this.saveMessageToDatabase(responseMessage, saveOptions, user);
+    this.savedMessageIds.add(responseMessage.messageId);
     const messageCache = getLogStores(CacheKeys.MESSAGES);
     messageCache.set(
       responseMessageId,
@@ -902,8 +915,9 @@ class BaseClient {
     // Note: gpt-3.5-turbo and gpt-4 may update over time. Use default for these as well as for unknown models
     let tokensPerMessage = 3;
     let tokensPerName = 1;
+    const model = this.modelOptions?.model ?? this.model;
 
-    if (this.modelOptions.model === 'gpt-3.5-turbo-0301') {
+    if (model === 'gpt-3.5-turbo-0301') {
       tokensPerMessage = 4;
       tokensPerName = -1;
     }
@@ -961,6 +975,15 @@ class BaseClient {
       return _messages;
     }
 
+    const seen = new Set();
+    const attachmentsProcessed =
+      this.options.attachments && !(this.options.attachments instanceof Promise);
+    if (attachmentsProcessed) {
+      for (const attachment of this.options.attachments) {
+        seen.add(attachment.file_id);
+      }
+    }
+
     /**
      *
      * @param {TMessage} message
@@ -971,7 +994,19 @@ class BaseClient {
         this.message_file_map = {};
       }
 
-      const fileIds = message.files.map((file) => file.file_id);
+      const fileIds = [];
+      for (const file of message.files) {
+        if (seen.has(file.file_id)) {
+          continue;
+        }
+        fileIds.push(file.file_id);
+        seen.add(file.file_id);
+      }
+
+      if (fileIds.length === 0) {
+        return message;
+      }
+
       const files = await getFiles({
         file_id: { $in: fileIds },
       });

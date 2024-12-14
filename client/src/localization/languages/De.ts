@@ -34,6 +34,9 @@ export default {
   com_assistants_knowledge_disabled:
     'Der Assistent muss erstellt und Code-Interpreter oder Abruf müssen aktiviert und gespeichert werden, bevor Dateien als Wissen hochgeladen werden können.',
   com_assistants_image_vision: 'Bildanalyse',
+  com_assistants_append_date: 'Aktuelles Datum & Uhrzeit anhängen',
+  com_assistants_append_date_tooltip:
+    'Wenn aktiviert, werden das aktuelle Client-Datum und die Uhrzeit an die Systemanweisungen des Assistenten angehängt.',
   com_assistants_code_interpreter: 'Code-Interpreter',
   com_assistants_code_interpreter_files: 'Die folgenden Dateien sind nur für den Code-Interpreter:',
   com_assistants_retrieval: 'Abruf',
@@ -509,7 +512,7 @@ export default {
   com_endpoint_preset_default_item: 'Standard:',
   com_endpoint_preset_default_none: 'Keine Standardvoreinstellung aktiv.',
   com_endpoint_preset_title: 'Voreinstellung',
-  com_endpoint_preset_saved: 'Gespeichert!',
+  com_ui_saved: 'Gespeichert!',
   com_endpoint_preset_default: 'ist jetzt die Standardvoreinstellung.',
   com_endpoint_preset: 'Voreinstellung',
   com_endpoint_presets: 'Voreinstellungen',
@@ -801,7 +804,7 @@ export default {
   com_ui_endpoint: 'Endpunkt',
   com_ui_region: 'Region',
   com_ui_model_parameters: 'Modell-Parameter',
-  com_agents_execute_code: 'Code ausführen',
+  com_ui_run_code: 'Code ausführen',
   com_ui_provider: 'Anbieter',
   com_ui_model_save_success: 'Modellparameter erfolgreich gespeichert',
   com_ui_select_region: 'Wähle eine Region',

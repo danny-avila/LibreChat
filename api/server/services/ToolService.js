@@ -1,10 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 const { zodToJsonSchema } = require('zod-to-json-schema');
-const { Calculator } = require('@langchain/community/tools/calculator');
 const { tool: toolFn, Tool } = require('@langchain/core/tools');
+const { Calculator } = require('@langchain/community/tools/calculator');
 const {
   Tools,
+  ErrorTypes,
   ContentTypes,
   imageGenTools,
   actionDelimiter,
@@ -170,7 +171,7 @@ async function processRequiredActions(client, requiredActions) {
     requiredActions,
   );
   const tools = requiredActions.map((action) => action.tool);
-  const loadedTools = await loadTools({
+  const { loadedTools } = await loadTools({
     user: client.req.user.id,
     model: client.req.body.model ?? 'gpt-4o-mini',
     tools,
@@ -183,7 +184,6 @@ async function processRequiredActions(client, requiredActions) {
       fileStrategy: client.req.app.locals.fileStrategy,
       returnMetadata: true,
     },
-    skipSpecs: true,
   });
 
   const ToolMap = loadedTools.reduce((map, tool) => {
@@ -328,6 +328,12 @@ async function processRequiredActions(client, requiredActions) {
       }
 
       tool = await createActionTool({ action: actionSet, requestBuilder });
+      if (!tool) {
+        logger.warn(
+          `Invalid action: user: ${client.req.user.id} | thread_id: ${requiredActions[0].thread_id} | run_id: ${requiredActions[0].run_id} | toolName: ${currentAction.tool}`,
+        );
+        throw new Error(`{"type":"${ErrorTypes.INVALID_ACTION}"}`);
+      }
       isActionTool = !!tool;
       ActionToolMap[currentAction.tool] = tool;
     }
@@ -378,21 +384,21 @@ async function loadAgentTools({ req, agent_id, tools, tool_resources, openAIApiK
   if (!tools || tools.length === 0) {
     return {};
   }
-  const loadedTools = await loadTools({
+  const { loadedTools, toolContextMap } = await loadTools({
     user: req.user.id,
     // model: req.body.model ?? 'gpt-4o-mini',
     tools,
     functions: true,
+    isAgent: agent_id != null,
     options: {
       req,
       openAIApiKey,
       tool_resources,
-      returnMetadata: true,
       processFileURL,
       uploadImageBuffer,
+      returnMetadata: true,
       fileStrategy: req.app.locals.fileStrategy,
     },
-    skipSpecs: true,
   });
 
   const agentTools = [];
@@ -403,16 +409,19 @@ async function loadAgentTools({ req, agent_id, tools, tool_resources, openAIApiK
       continue;
     }
 
-    const toolInstance = toolFn(
-      async (...args) => {
-        return tool['_call'](...args);
-      },
-      {
-        name: tool.name,
-        description: tool.description,
-        schema: tool.schema,
-      },
-    );
+    const toolDefinition = {
+      name: tool.name,
+      schema: tool.schema,
+      description: tool.description,
+    };
+
+    if (imageGenTools.has(tool.name)) {
+      toolDefinition.responseFormat = 'content_and_artifact';
+    }
+
+    const toolInstance = toolFn(async (...args) => {
+      return tool['_call'](...args);
+    }, toolDefinition);
 
     agentTools.push(toolInstance);
   }
@@ -462,6 +471,12 @@ async function loadAgentTools({ req, agent_id, tools, tool_resources, openAIApiK
               name: toolName,
               description: functionSig.description,
             });
+            if (!tool) {
+              logger.warn(
+                `Invalid action: user: ${req.user.id} | agent_id: ${agent_id} | toolName: ${toolName}`,
+              );
+              throw new Error(`{"type":"${ErrorTypes.INVALID_ACTION}"}`);
+            }
             agentTools.push(tool);
             ActionToolMap[toolName] = tool;
           }
@@ -476,6 +491,7 @@ async function loadAgentTools({ req, agent_id, tools, tool_resources, openAIApiK
 
   return {
     tools: agentTools,
+    toolContextMap,
   };
 }
 

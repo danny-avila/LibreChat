@@ -10,8 +10,8 @@ const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/User
 const { getLLMConfig } = require('~/server/services/Endpoints/openAI/llm');
 const { getCustomEndpointConfig } = require('~/server/services/Config');
 const { fetchModels } = require('~/server/services/ModelService');
+const { isUserProvided, sleep } = require('~/server/utils');
 const getLogStores = require('~/cache/getLogStores');
-const { isUserProvided } = require('~/server/utils');
 const { OpenAIClient } = require('~/app');
 
 const { PROXY } = process.env;
@@ -141,7 +141,18 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
         },
         clientOptions,
       );
-      return getLLMConfig(apiKey, requestOptions);
+      const options = getLLMConfig(apiKey, requestOptions);
+      if (!customOptions.streamRate) {
+        return options;
+      }
+      options.llmConfig.callbacks = [
+        {
+          handleLLMNewToken: async () => {
+            await sleep(customOptions.streamRate);
+          },
+        },
+      ];
+      return options;
     }
 
     if (clientOptions.reverseProxyUrl) {

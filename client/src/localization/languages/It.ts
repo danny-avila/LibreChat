@@ -27,6 +27,9 @@ export default {
   com_assistants_knowledge_disabled:
     'L\'Assistente deve essere creato, e Code Interpreter o Retrieval devono essere abilitati e salvati prima di caricare file come Conoscenza.',
   com_assistants_image_vision: 'Visione Immagine',
+  com_assistants_append_date: 'Aggiungi Data e Ora Attuali',
+  com_assistants_append_date_tooltip:
+    'Quando attivo, la data e l\'ora attuali del cliente saranno aggiunte alle istruzioni del sistema dell\'Assistente.',
   com_assistants_code_interpreter: 'Interprete Codice',
   com_assistants_code_interpreter_files:
     'I seguenti file sono disponibili solo per Code Interpreter:',
@@ -402,7 +405,7 @@ export default {
   com_endpoint_preset_default_item: 'Predefinita:',
   com_endpoint_preset_default_none: 'Nessuna preimpostazione predefinita attiva.',
   com_endpoint_preset_title: 'Preimpostazione',
-  com_endpoint_preset_saved: 'Salvata!',
+  com_ui_saved: 'Salvata!',
   com_endpoint_preset_default: 'è ora la preimpostazione predefinita.',
   com_endpoint_preset: 'preimpostazione',
   com_endpoint_presets: 'preimpostazioni',
@@ -676,7 +679,7 @@ export default {
   com_agents_enable_file_search: 'Abilita Ricerca File',
   com_agents_file_search_info:
     'Quando abilitato, l\'agente verrà informato dei nomi esatti dei file elencati di seguito, permettendogli di recuperare il contesto pertinente da questi file.',
-  com_agents_execute_code: 'Esegui Codice',
+  com_ui_run_code: 'Esegui Codice',
   com_agents_file_search_disabled:
     'L\'Agente deve essere creato prima di caricare file per la Ricerca File.',
   com_ui_agent_already_shared_to_all: 'Questo assistente è già condiviso con tutti gli utenti',

@@ -7,8 +7,8 @@ const handleRateLimits = require('./Config/handleRateLimits');
 const { loadDefaultInterface } = require('./start/interface');
 const { azureConfigSetup } = require('./start/azureOpenAI');
 const { loadAndFormatTools } = require('./ToolService');
+const { agentsConfigSetup } = require('./start/agents');
 const { initializeRoles } = require('~/models/Role');
-const { cleanup } = require('./cleanup');
 const paths = require('~/config/paths');
 
 /**
@@ -18,7 +18,6 @@ const paths = require('~/config/paths');
  * @param {Express.Application} app - The Express application object.
  */
 const AppService = async (app) => {
-  cleanup();
   await initializeRoles();
   /** @type {TCustomConfig}*/
   const config = (await loadCustomConfig()) ?? {};
@@ -94,6 +93,10 @@ const AppService = async (app) => {
       EModelEndpoint.assistants,
       endpointLocals[EModelEndpoint.assistants],
     );
+  }
+
+  if (endpoints?.[EModelEndpoint.agents]) {
+    endpointLocals[EModelEndpoint.agents] = agentsConfigSetup(config);
   }
 
   const endpointKeys = [

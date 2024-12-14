@@ -266,6 +266,26 @@ async function getMessages(filter, select) {
 }
 
 /**
+ * Retrieves a single message from the database.
+ * @async
+ * @function getMessage
+ * @param {{ user: string, messageId: string }} params - The search parameters
+ * @returns {Promise<TMessage | null>} The message that matches the criteria or null if not found
+ * @throws {Error} If there is an error in retrieving the message
+ */
+async function getMessage({ user, messageId }) {
+  try {
+    return await Message.findOne({
+      user,
+      messageId,
+    }).lean();
+  } catch (err) {
+    logger.error('Error getting message:', err);
+    throw err;
+  }
+}
+
+/**
  * Deletes messages from the database.
  *
  * @async
@@ -292,5 +312,6 @@ module.exports = {
   updateMessage,
   deleteMessagesSince,
   getMessages,
+  getMessage,
   deleteMessages,
 };

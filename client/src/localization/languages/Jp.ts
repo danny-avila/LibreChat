@@ -48,6 +48,9 @@ export default {
   com_assistants_knowledge_disabled:
     'ファイルをナレッジとしてアップロードする前に、アシスタントを作成し、コードインタプリタまたは検索を有効にして保存する必要があります。',
   com_assistants_image_vision: 'イメージビジョン',
+  com_assistants_append_date: '現在の日付と時刻を追加',
+  com_assistants_append_date_tooltip:
+    '有効にすると、現在のクライアントの日付と時刻がアシスタントのシステム指示に追加されます。',
   com_assistants_code_interpreter: 'コードインタプリタ',
   com_assistants_code_interpreter_files: '次のファイルはコードインタプリタでのみ使用できます。',
   com_assistants_retrieval: '検索',
@@ -541,7 +544,7 @@ export default {
   com_endpoint_preset_default_item: 'デフォルト:',
   com_endpoint_preset_default_none: '現在有効なプリセットはありません。',
   com_endpoint_preset_title: 'プリセット',
-  com_endpoint_preset_saved: '保存しました!',
+  com_ui_saved: '保存しました!',
   com_endpoint_preset_default: 'が有効化されました。',
   com_endpoint_preset: 'プリセット',
   com_endpoint_presets: 'プリセット',
@@ -834,7 +837,7 @@ export default {
     'ファイル検索用のファイルをアップロードする前に、エージェントを作成する必要があります。',
   com_agents_file_search_info:
     '有効にすると、エージェントは以下に表示されているファイル名を正確に認識し、それらのファイルから関連する情報を取得することができます。',
-  com_agents_execute_code: 'コードを実行',
+  com_ui_run_code: 'コードを実行',
   com_ui_agent_editing_allowed: 'このエージェントは他のユーザーが既に編集可能です',
   com_ui_agent_already_shared_to_all: 'このアシスタントは既に全ユーザーに共有されています',
   com_ui_no_changes: '更新する変更はありません',

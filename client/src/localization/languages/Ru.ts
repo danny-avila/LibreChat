@@ -5,6 +5,9 @@ export default {
   com_sidepanel_assistant_builder: 'Конструктор Ассистента',
   com_sidepanel_attach_files: 'Прикрепить файлы',
   com_sidepanel_manage_files: 'Управление файлами',
+  com_assistants_append_date: 'Добавить текущую дату и время',
+  com_assistants_append_date_tooltip:
+    'Когда включено, текущая дата и время клиента будут добавлены к инструкциям системы Ассистента.',
   com_assistants_code_interpreter: 'Интерпретатор кода',
   com_assistants_code_interpreter_files: 'Следующие файлы доступны только для Интерпретатора кода:',
   com_ui_examples: 'Примеры',
@@ -251,7 +254,7 @@ export default {
   com_endpoint_preset_default_item: 'По умолчанию:',
   com_endpoint_preset_default_none: 'Активных пресетов по умолчанию нет.',
   com_endpoint_preset_title: 'Пресет',
-  com_endpoint_preset_saved: 'Сохранено!',
+  com_ui_saved: 'Сохранено!',
   com_endpoint_preset_default: 'теперь пресет "По умолчаанию".',
   com_endpoint_preset: 'пресет',
   com_endpoint_presets: 'пресеты',
@@ -699,7 +702,7 @@ export default {
 
   com_agents_file_search_disabled: 'Для загрузки файлов в Поиск необходимо сначала создать агента',
 
-  com_agents_execute_code: 'Выполнить код',
+  com_ui_run_code: 'Выполнить код',
 
   com_ui_agent_editing_allowed: 'Другие пользователи уже могут редактировать этого ассистента',
 

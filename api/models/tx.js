@@ -30,6 +30,9 @@ const bedrockValues = {
   'amazon.titan-text-lite-v1': { prompt: 0.15, completion: 0.2 },
   'amazon.titan-text-express-v1': { prompt: 0.2, completion: 0.6 },
   'amazon.titan-text-premier-v1:0': { prompt: 0.5, completion: 1.5 },
+  'amazon.nova-micro-v1:0': { prompt: 0.035, completion: 0.14 },
+  'amazon.nova-lite-v1:0': { prompt: 0.06, completion: 0.24 },
+  'amazon.nova-pro-v1:0': { prompt: 0.8, completion: 3.2 },
 };
 
 /**
@@ -56,8 +59,8 @@ const tokenValues = Object.assign(
     'claude-3-sonnet': { prompt: 3, completion: 15 },
     'claude-3-5-sonnet': { prompt: 3, completion: 15 },
     'claude-3.5-sonnet': { prompt: 3, completion: 15 },
-    'claude-3-5-haiku': { prompt: 1, completion: 5 },
-    'claude-3.5-haiku': { prompt: 1, completion: 5 },
+    'claude-3-5-haiku': { prompt: 0.8, completion: 4 },
+    'claude-3.5-haiku': { prompt: 0.8, completion: 4 },
     'claude-3-haiku': { prompt: 0.25, completion: 1.25 },
     'claude-2.1': { prompt: 8, completion: 24 },
     'claude-2': { prompt: 8, completion: 24 },
@@ -68,6 +71,7 @@ const tokenValues = Object.assign(
     /* cohere doesn't have rates for the older command models,
   so this was from https://artificialanalysis.ai/models/command-light/providers */
     command: { prompt: 0.38, completion: 0.38 },
+    'gemini-2.0': { prompt: 0, completion: 0 }, // https://ai.google.dev/pricing
     'gemini-1.5': { prompt: 7, completion: 21 }, // May 2nd, 2024 pricing
     gemini: { prompt: 0.5, completion: 1.5 }, // May 2nd, 2024 pricing
   },
@@ -83,8 +87,8 @@ const tokenValues = Object.assign(
 const cacheTokenValues = {
   'claude-3.5-sonnet': { write: 3.75, read: 0.3 },
   'claude-3-5-sonnet': { write: 3.75, read: 0.3 },
-  'claude-3.5-haiku': { write: 1.25, read: 0.1 },
-  'claude-3-5-haiku': { write: 1.25, read: 0.1 },
+  'claude-3.5-haiku': { write: 1, read: 0.08 },
+  'claude-3-5-haiku': { write: 1, read: 0.08 },
   'claude-3-haiku': { write: 0.3, read: 0.03 },
 };
 
@@ -208,4 +212,11 @@ const getCacheMultiplier = ({ valueKey, cacheType, model, endpoint, endpointToke
   return cacheTokenValues[valueKey]?.[cacheType] ?? null;
 };
 
-module.exports = { tokenValues, getValueKey, getMultiplier, getCacheMultiplier, defaultRate };
+module.exports = {
+  tokenValues,
+  getValueKey,
+  getMultiplier,
+  getCacheMultiplier,
+  defaultRate,
+  cacheTokenValues,
+};
