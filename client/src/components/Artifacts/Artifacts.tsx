@@ -136,7 +136,7 @@ export default function Artifacts() {
             className={cn('flex-grow overflow-x-auto overflow-y-scroll p-4', isProse(currentArtifact.type) ? 'prose dark:prose-invert light' : 'bg-gray-900')}
           >
             <CodeMarkdown
-              content={formatContent(currentArtifact.content ?? '', currentArtifact.type)}
+              content={formatContent(currentArtifact.content ?? '', currentArtifact.type, currentArtifact.language)}
               isCode={isProse(currentArtifact.type)}
               isSubmitting={isSubmitting}
             />
