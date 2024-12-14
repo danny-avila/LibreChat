@@ -14,7 +14,7 @@ app.use(express.json());
 const mcpManager = MCPManager.getInstance();
 
 // Define server configurations
-const serverConfigs: Record<string, MCPOptions> = {
+const mcpServers: Record<string, MCPOptions> = {
   everything: {
     transport: {
       type: 'sse' as const,
@@ -28,28 +28,6 @@ const serverConfigs: Record<string, MCPOptions> = {
       args: ['-y', '@modelcontextprotocol/server-filesystem', '/home/danny/LibreChat/'],
     },
   },
-};
-
-const initializeMCP = async () => {
-  console.log('Initializing MCP servers...');
-
-  try {
-    for (const [serverName, config] of Object.entries(serverConfigs)) {
-      console.log(`Initializing ${serverName} server...`);
-      const connection = await mcpManager.initializeServer(serverName, config);
-
-      // Test the connection
-      try {
-        // const resources = await connection.fetchResources();
-        const serverCapabilities = connection.client.getServerCapabilities();
-        console.log(`Available resources for ${serverName}:`, serverCapabilities);
-      } catch (error) {
-        console.error(`Error fetching resources for ${serverName}:`, error);
-      }
-    }
-  } catch (error) {
-    console.error('Failed to initialize MCP servers:', error);
-  }
 };
 
 // Generic helper to get connection and handle errors
@@ -247,7 +225,7 @@ process.on('SIGINT', async () => {
 
 // Start server
 const PORT = process.env.MCP_PORT ?? 3000;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Server running on http://localhost:${PORT}`);
-  initializeMCP();
+  await mcpManager.initializeMCP(mcpServers);
 });

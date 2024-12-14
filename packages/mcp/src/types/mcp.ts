@@ -45,3 +45,5 @@ export interface MCPOptions {
 }
 
 export type Tool = z.infer<typeof ToolSchema>;
+
+export type MCPServers = Record<string, MCPOptions>;

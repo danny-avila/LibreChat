@@ -53,6 +53,7 @@
     "@types/jest": "^29.5.2",
     "@types/node": "^20.3.0",
     "@types/react": "^18.2.18",
+    "@types/winston": "^2.4.4",
     "jest": "^29.5.0",
     "jest-junit": "^16.0.0",
     "rimraf": "^5.0.1",
