@@ -2390,7 +2390,7 @@ button.scroll-convo {
 }
 
 .select-item[data-active-item] {
-  background-color: hsl(var(--accent));
+  background-color: var(--surface-hover);
   color: var(--text-primary);
 }
 
