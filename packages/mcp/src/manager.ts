@@ -20,9 +20,9 @@ export class MCPManager {
     this.logger = logger || MCPManager.getDefaultLogger();
   }
 
-  public static getInstance(): MCPManager {
+  public static getInstance(logger?: Logger): MCPManager {
     if (!MCPManager.instance) {
-      MCPManager.instance = new MCPManager();
+      MCPManager.instance = new MCPManager(logger);
     }
     return MCPManager.instance;
   }
