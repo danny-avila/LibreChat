@@ -43,6 +43,7 @@ class PluginsClient extends OpenAIClient {
     return {
       artifacts: this.options.artifacts,
       chatGptLabel: this.options.chatGptLabel,
+      modelLabel: this.options.modelLabel,
       promptPrefix: this.options.promptPrefix,
       tools: this.options.tools,
       ...this.modelOptions,
