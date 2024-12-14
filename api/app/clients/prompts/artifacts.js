@@ -95,12 +95,21 @@ const artifactTypes = {
       `,
     },
   },
+  'application/vnd.code': {
+    name: 'Code',
+    instructions: [
+      'Use for code snippets or scripts in any programming language.',
+      'Include the language name as the value of the `language` attribute (e.g., `language="python"`)',
+    ],
+  },
   'text/html': {
     name: 'HTML',
     instructions: [
       'The user interface can render single file HTML pages placed within the artifact tags. HTML, JS, and CSS should be in a single file when using the `text/html` type',
       'Images from the web are not allowed, but you can use placeholder images by specifying the width and height like so `<img src="/api/placeholder/400/320" alt="placeholder" />`',
       'The only place external scripts can be imported from is https://cdnjs.cloudflare.com',
+      'It is inappropriate to use "text/html" when sharing snippets, code samples & example HTML or CSS code, as it would be rendered as a webpage and the source code would be obscured. The assistant should instead use "application/vnd.code" defined above.',
+      'If the assistant is unable to follow the above requirements for any reason, use "application/vnd.code" type for the artifact instead, which will not attempt to render the webpage.',
     ],
     example: {
       user: 'Create a basic HTML structure for a blog post',
