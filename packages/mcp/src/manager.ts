@@ -58,7 +58,7 @@ export class MCPManager {
     // Clean up existing connection if any
     await this.disconnectServer(serverName);
 
-    const connection = new MCPConnection(options);
+    const connection = new MCPConnection(options, this.logger);
 
     // Set up event forwarding
     connection.on('connectionChange', (state) => {

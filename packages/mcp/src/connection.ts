@@ -5,7 +5,9 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { WebSocketClientTransport } from '@modelcontextprotocol/sdk/client/websocket.js';
 import { ResourceListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import type { Logger } from 'winston';
 import type * as t from './types/mcp.js';
+
 export class MCPConnection extends EventEmitter {
   private static instance: MCPConnection | null = null;
   public client: Client;
@@ -19,11 +21,9 @@ export class MCPConnection extends EventEmitter {
   private readonly MAX_RECONNECT_ATTEMPTS = 3;
   private readonly RECONNECT_DELAY = 1000; // 1 second
 
-  constructor(
-    private readonly options: t.MCPOptions,
-    private readonly clientFactory?: (transport: Transport) => Client,
-  ) {
+  constructor(private readonly options: t.MCPOptions, private logger?: Logger) {
     super();
+    this.logger = logger;
     this.client = new Client(
       {
         name: 'librechat-client',
@@ -57,7 +57,7 @@ export class MCPConnection extends EventEmitter {
 
   private emitError(error: unknown, errorPrefix: string): void {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.dir(error, { depth: null });
+    this.logger?.error(`${errorPrefix} ${errorMessage}`, error);
     this.emit('error', new Error(`${errorPrefix} ${errorMessage}`));
   }
 
@@ -73,22 +73,22 @@ export class MCPConnection extends EventEmitter {
           return new WebSocketClientTransport(new URL(options.transport.url));
         case 'sse': {
           const url = new URL(options.transport.url);
-          console.log('Creating SSE transport with URL:', url.toString());
+          this.logger?.info('Creating SSE transport with URL:', url.toString());
           const transport = new SSEClientTransport(url);
 
           // Add debug listeners
           transport.onclose = () => {
-            console.log('SSE transport closed');
+            this.logger?.info('SSE transport closed');
             this.emit('connectionChange', 'disconnected');
           };
 
           transport.onerror = (error) => {
-            console.error('SSE transport error:', error);
+            this.logger?.error('SSE transport error:', error);
             this.emitError(error, 'SSE transport error:');
           };
 
           transport.onmessage = (message) => {
-            console.log('SSE transport received message:', message);
+            this.logger?.info('SSE transport received message:', message);
           };
 
           return transport;
@@ -164,39 +164,39 @@ export class MCPConnection extends EventEmitter {
             await this.client.close();
             this.transport = null;
           } catch (error) {
-            console.warn('Error closing existing connection:', error);
+            this.logger?.warn('Error closing existing connection:', error);
           }
         }
 
-        console.log('Creating new transport...');
+        this.logger?.info('Creating new transport...');
         this.transport = this.constructTransport(this.options);
 
         // Debug transport events
         this.transport.onmessage = (msg) => {
-          console.log('Transport received message:', JSON.stringify(msg, null, 2));
+          this.logger?.info('Transport received message:', JSON.stringify(msg, null, 2));
         };
 
         const originalSend = this.transport.send.bind(this.transport);
         this.transport.send = async (msg) => {
-          console.log('Transport sending message:', JSON.stringify(msg, null, 2));
+          this.logger?.info('Transport sending message:', JSON.stringify(msg, null, 2));
           return originalSend(msg);
         };
 
         // Connect with longer timeout for debugging
-        console.log('Connecting to transport...');
+        this.logger?.info('Connecting to transport...');
         const connectPromise = this.client.connect(this.transport);
         const timeoutPromise = new Promise((_resolve, reject) => {
           setTimeout(() => reject(new Error('Connection timeout')), 10000);
         });
 
         await Promise.race([connectPromise, timeoutPromise]);
-        console.log('Successfully connected to transport');
+        this.logger?.info('Successfully connected to transport');
 
         this.connectionState = 'connected';
         this.emit('connectionChange', 'connected');
         this.reconnectAttempts = 0;
       } catch (error) {
-        console.error('Connection error:', error);
+        this.logger?.error('Connection error:', error);
         this.connectionState = 'error';
         this.emit('connectionChange', 'error');
         this.lastError = error instanceof Error ? error : new Error(String(error));
