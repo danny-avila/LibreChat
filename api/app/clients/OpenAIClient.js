@@ -423,6 +423,7 @@ class OpenAIClient extends BaseClient {
       promptPrefix: this.options.promptPrefix,
       resendFiles: this.options.resendFiles,
       imageDetail: this.options.imageDetail,
+      modelLabel: this.options.modelLabel,
       iconURL: this.options.iconURL,
       greeting: this.options.greeting,
       spec: this.options.spec,
