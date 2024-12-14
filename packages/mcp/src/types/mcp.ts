@@ -1,20 +1,39 @@
 import { z } from 'zod';
 import { ToolSchema } from '@modelcontextprotocol/sdk/types.js';
 
-interface StdioOptions {
+export interface StdioOptions {
   type: 'stdio';
   command: string;
   args: string[];
 }
 
-interface WebSocketOptions {
+export interface WebSocketOptions {
   type: 'websocket';
   url: string;
 }
 
-interface SSEOptions {
+export interface SSEOptions {
   type: 'sse';
   url: string;
+}
+
+export interface MCPResource {
+  uri: string;
+  name: string;
+  description?: string;
+  mimeType?: string;
+}
+
+export interface MCPTool {
+  name: string;
+  description?: string;
+  inputSchema: Record<string, unknown>;
+}
+
+export interface MCPPrompt {
+  name: string;
+  description?: string;
+  arguments?: Array<{ name: string }>;
 }
 
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';

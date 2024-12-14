@@ -5,38 +5,14 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { WebSocketClientTransport } from '@modelcontextprotocol/sdk/client/websocket.js';
 import { ResourceListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
-import type { MCPOptions } from './types/mcp.js';
-
-// Type definitions
-interface MCPResource {
-  uri: string;
-  name: string;
-  description?: string;
-  mimeType?: string;
-}
-
-interface MCPTool {
-  name: string;
-  description?: string;
-  inputSchema: Record<string, unknown>;
-}
-
-interface MCPPrompt {
-  name: string;
-  description?: string;
-  arguments?: Array<{ name: string }>;
-}
-
-type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';
-
+import type * as t from './types/mcp.js';
 export class MCPConnection extends EventEmitter {
   private static instance: MCPConnection | null = null;
   public client: Client;
   private transport: Transport | null = null; // Make this nullable
-  private connectionState: ConnectionState = 'disconnected';
+  private connectionState: t.ConnectionState = 'disconnected';
   private connectPromise: Promise<void> | null = null;
   private lastError: Error | null = null;
-  // private cachedConfig: ContinueConfig | null = null;
   private lastConfigUpdate = 0;
   private readonly CONFIG_TTL = 5 * 60 * 1000; // 5 minutes
   private reconnectAttempts = 0;
@@ -44,11 +20,10 @@ export class MCPConnection extends EventEmitter {
   private readonly RECONNECT_DELAY = 1000; // 1 second
 
   constructor(
-    private readonly options: MCPOptions,
+    private readonly options: t.MCPOptions,
     private readonly clientFactory?: (transport: Transport) => Client,
   ) {
     super();
-    // Don't create transport here, wait until connection is needed
     this.client = new Client(
       {
         name: 'librechat-client',
@@ -59,11 +34,10 @@ export class MCPConnection extends EventEmitter {
       },
     );
 
-    // Set up event listeners
     this.setupEventListeners();
   }
 
-  public static getInstance(options: MCPOptions): MCPConnection {
+  public static getInstance(options: t.MCPOptions): MCPConnection {
     if (!MCPConnection.instance) {
       MCPConnection.instance = new MCPConnection(options);
     }
@@ -87,7 +61,7 @@ export class MCPConnection extends EventEmitter {
     this.emit('error', new Error(`${errorPrefix} ${errorMessage}`));
   }
 
-  private constructTransport(options: MCPOptions): Transport {
+  private constructTransport(options: t.MCPOptions): Transport {
     try {
       switch (options.transport.type) {
         case 'stdio':
@@ -131,14 +105,13 @@ export class MCPConnection extends EventEmitter {
   }
 
   private setupEventListeners(): void {
-    this.on('connectionChange', (state: ConnectionState) => {
+    this.on('connectionChange', (state: t.ConnectionState) => {
       this.connectionState = state;
       if (state === 'error') {
         this.handleReconnection();
       }
     });
 
-    // Set up resource change notification handler
     this.subscribeToResources();
   }
 
@@ -253,7 +226,7 @@ export class MCPConnection extends EventEmitter {
     }
   }
 
-  async fetchResources(): Promise<MCPResource[]> {
+  async fetchResources(): Promise<t.MCPResource[]> {
     try {
       const { resources } = await this.client.listResources();
       return resources;
@@ -263,7 +236,7 @@ export class MCPConnection extends EventEmitter {
     }
   }
 
-  async fetchTools(): Promise<MCPTool[]> {
+  async fetchTools(): Promise<t.MCPTool[]> {
     try {
       const { tools } = await this.client.listTools();
       return tools;
@@ -273,7 +246,7 @@ export class MCPConnection extends EventEmitter {
     }
   }
 
-  async fetchPrompts(): Promise<MCPPrompt[]> {
+  async fetchPrompts(): Promise<t.MCPPrompt[]> {
     try {
       const { prompts } = await this.client.listPrompts();
       return prompts;
@@ -357,7 +330,7 @@ export class MCPConnection extends EventEmitter {
   // }
 
   // Public getters for state information
-  public getConnectionState(): ConnectionState {
+  public getConnectionState(): t.ConnectionState {
     return this.connectionState;
   }
 
