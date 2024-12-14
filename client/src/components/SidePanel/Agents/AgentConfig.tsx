@@ -413,15 +413,10 @@ export default function AgentConfig({
         {user?.role === SystemRoles.ADMIN && <AdminSettings />}
         {/* Context Button */}
         <div className="flex items-center justify-end gap-2">
-          <TooltipAnchor
-            description="Delete Agent"
-            render={
-              <DeleteButton
-                agent_id={agent_id}
-                setCurrentAgentId={setCurrentAgentId}
-                createMutation={create}
-              />
-            }
+          <DeleteButton
+            agent_id={agent_id}
+            setCurrentAgentId={setCurrentAgentId}
+            createMutation={create}
           />
           {(agent?.author === user?.id || user?.role === SystemRoles.ADMIN) &&
             hasAccessToShareAgents && (
