@@ -61,14 +61,16 @@ const artifactTemplate: Record<
   // 'tsx': 'tsx',
 };
 
-export function getFileExtension(language?: string): string {
-  switch (language) {
+export function getArtifactLanguage(type?: string, language?: string): string {
+  switch (type) {
     case 'application/vnd.react':
       return 'tsx';
     case 'application/vnd.mermaid':
       return 'mermaid';
     case 'text/html':
       return 'html';
+    case 'application/vnd.code':
+      return language ?? 'txt';
     // case 'jsx':
     //   return 'jsx';
     // case 'tsx':
@@ -104,13 +106,13 @@ export function isProse(type?: string) {
   return type === 'text/markdown';
 }
 
-export function formatContent(content: string, type?: string, ) {
-  if(isProse(type)) {
+export function formatContent(content: string, type?: string, language?: string) {
+  if (isProse(type)) {
     // If rendering markdown, no need to add a code block
     return content;
   }
   // Else return a markdown code block
-  return `\`\`\`${getFileExtension(type)}\n${content}\`\`\``;
+  return `\`\`\`${getArtifactLanguage(type, language)}\n${content}\`\`\``;
 }
 
 const standardDependencies = {
