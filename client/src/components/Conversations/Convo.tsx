@@ -215,16 +215,17 @@ export default function Conversation({
             : 'hidden group-focus-within:flex group-hover:flex',
         )}
       >
-        <ConvoOptions
-          title={title}
-          renaming={renaming}
-          retainView={retainView}
-          renameHandler={renameHandler}
-          isActiveConvo={isActiveConvo}
-          conversationId={conversationId}
-          isPopoverActive={isPopoverActive}
-          setIsPopoverActive={setIsPopoverActive}
-        />
+        {!renaming && (
+          <ConvoOptions
+            title={title}
+            retainView={retainView}
+            renameHandler={renameHandler}
+            isActiveConvo={isActiveConvo}
+            conversationId={conversationId}
+            isPopoverActive={isPopoverActive}
+            setIsPopoverActive={setIsPopoverActive}
+          />
+        )}
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 import { useState, useId } from 'react';
-import * as Ariakit from '@ariakit/react';
-import { Ellipsis, Share2, Archive, Pen, Trash } from 'lucide-react';
+import * as Menu from '@ariakit/react/menu';
+import { Ellipsis, Share2, Copy, Archive, Pen, Trash } from 'lucide-react';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { MouseEvent } from 'react';
 import { useLocalize, useArchiveHandler } from '~/hooks';
@@ -12,7 +12,6 @@ import { cn } from '~/utils';
 export default function ConvoOptions({
   conversationId,
   title,
-  renaming,
   retainView,
   renameHandler,
   isPopoverActive,
@@ -21,7 +20,6 @@ export default function ConvoOptions({
 }: {
   conversationId: string | null;
   title: string | null;
-  renaming: boolean;
   retainView: () => void;
   renameHandler: (e: MouseEvent) => void;
   isPopoverActive: boolean;
@@ -44,27 +42,37 @@ export default function ConvoOptions({
     setShowDeleteDialog(true);
   };
 
+  const duplicateHandler = () => {
+    setIsPopoverActive(false);
+    console.log('Duplicate conversation');
+  };
+
   const dropdownItems = [
-    {
-      label: localize('com_ui_rename'),
-      onClick: renameHandler,
-      icon: <Pen className="icon-md mr-2 text-text-secondary" />,
-    },
     {
       label: localize('com_ui_share'),
       onClick: shareHandler,
-      icon: <Share2 className="icon-md mr-2 text-text-secondary" />,
+      icon: <Share2 className="icon-sm mr-2 text-text-primary" />,
       show: startupConfig && startupConfig.sharedLinksEnabled,
+    },
+    {
+      label: localize('com_ui_rename'),
+      onClick: renameHandler,
+      icon: <Pen className="icon-sm mr-2 text-text-primary" />,
+    },
+    {
+      label: localize('com_ui_duplicate'),
+      onClick: duplicateHandler,
+      icon: <Copy className="icon-sm mr-2 text-text-primary" />,
     },
     {
       label: localize('com_ui_archive'),
       onClick: archiveHandler,
-      icon: <Archive className="icon-md mr-2 text-text-secondary" />,
+      icon: <Archive className="icon-sm mr-2 text-text-primary" />,
     },
     {
       label: localize('com_ui_delete'),
       onClick: deleteHandler,
-      icon: <Trash className="icon-md mr-2 text-text-secondary" />,
+      icon: <Trash className="icon-sm mr-2 text-text-primary" />,
     },
   ];
 
@@ -76,7 +84,7 @@ export default function ConvoOptions({
         isOpen={isPopoverActive}
         setIsOpen={setIsPopoverActive}
         trigger={
-          <Ariakit.MenuButton
+          <Menu.MenuButton
             id="conversation-menu-button"
             aria-label={localize('com_nav_convo_menu_options')}
             className={cn(
@@ -84,11 +92,10 @@ export default function ConvoOptions({
               isActiveConvo === true
                 ? 'opacity-100'
                 : 'opacity-0 focus:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[open]:opacity-100',
-              renaming === true ? 'pointer-events-none opacity-0' : '',
             )}
           >
             <Ellipsis className="icon-md text-text-secondary" aria-hidden={true} />
-          </Ariakit.MenuButton>
+          </Menu.MenuButton>
         }
         items={dropdownItems}
         menuId={menuId}
