@@ -126,8 +126,8 @@ export class MCPManager {
         for (const tool of tools) {
           const pluginKey = `${tool.name}${CONSTANTS.mcp_delimiter}${serverName}`;
           manifestTools.push({
-            pluginKey,
             name: tool.name,
+            pluginKey,
             description: tool.description ?? '',
           });
         }

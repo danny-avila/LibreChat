@@ -1111,6 +1111,8 @@ export enum Constants {
   MAX_CONVO_STARTERS = 4,
   /** Global/instance Project Name */
   GLOBAL_PROJECT_NAME = 'instance',
+  /** Delimiter for MCP tools */
+  mcp_delimiter = '_mcp_',
 }
 
 export enum LocalStorageKeys {
