@@ -1,4 +1,4 @@
-const { Tools } = require('librechat-data-provider');
+const { Tools, Constants } = require('librechat-data-provider');
 const { SerpAPI } = require('@langchain/community/tools/serpapi');
 const { Calculator } = require('@langchain/community/tools/calculator');
 const { createCodeExecutionTool, EnvVar } = require('@librechat/agents');
@@ -17,8 +17,11 @@ const {
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
+const { createMCPTool } = require('~/server/services/MCP');
 const { loadSpecs } = require('./loadSpecs');
 const { logger } = require('~/config');
+
+const mcpToolPattern = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
 
 /**
  * Validates the availability and authentication of tools for a user based on environment variables or user-specific plugin authentication values.
@@ -239,6 +242,9 @@ const loadTools = async ({
         }
         return createFileSearchTool({ req: options.req, files });
       };
+      continue;
+    } else if (mcpToolPattern.test(tool)) {
+      requestedTools[tool] = async () => createMCPTool({ req: options.req, toolKey: tool });
       continue;
     }
 

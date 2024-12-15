@@ -867,6 +867,12 @@
  */
 
 /**
+ * @exports JsonSchemaType
+ * @typedef {import('librechat-data-provider').JsonSchemaType} JsonSchemaType
+ * @memberof typedefs
+ */
+
+/**
  * @exports MCPServers
  * @typedef {import('librechat-mcp').MCPServers} MCPServers
  * @memberof typedefs
@@ -875,6 +881,18 @@
 /**
  * @exports MCPManager
  * @typedef {import('librechat-mcp').MCPManager} MCPManager
+ * @memberof typedefs
+ */
+
+/**
+ * @exports LCAvailableTools
+ * @typedef {import('librechat-mcp').LCAvailableTools} LCAvailableTools
+ * @memberof typedefs
+ */
+
+/**
+ * @exports LCTool
+ * @typedef {import('librechat-mcp').LCTool} LCTool
  * @memberof typedefs
  */
 

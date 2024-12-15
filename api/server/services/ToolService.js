@@ -409,6 +409,11 @@ async function loadAgentTools({ req, agent_id, tools, tool_resources, openAIApiK
       continue;
     }
 
+    if (tool.mcp === true) {
+      agentTools.push(tool);
+      continue;
+    }
+
     const toolDefinition = {
       name: tool.name,
       schema: tool.schema,
