@@ -1,11 +1,10 @@
 import { z } from 'zod';
 import {
-  StdioOptionsSchema,
-  WebSocketOptionsSchema,
   SSEOptionsSchema,
-  TransportOptionsSchema,
   MCPOptionsSchema,
   MCPServersSchema,
+  StdioOptionsSchema,
+  WebSocketOptionsSchema,
 } from 'librechat-data-provider';
 import type { JsonSchemaType, TPlugin } from 'librechat-data-provider';
 import { ToolSchema, ListToolsResultSchema } from '@modelcontextprotocol/sdk/types.js';
@@ -13,7 +12,6 @@ import { ToolSchema, ListToolsResultSchema } from '@modelcontextprotocol/sdk/typ
 export type StdioOptions = z.infer<typeof StdioOptionsSchema>;
 export type WebSocketOptions = z.infer<typeof WebSocketOptionsSchema>;
 export type SSEOptions = z.infer<typeof SSEOptionsSchema>;
-export type TransportOptions = z.infer<typeof TransportOptionsSchema>;
 export type MCPOptions = z.infer<typeof MCPOptionsSchema>;
 export type MCPServers = z.infer<typeof MCPServersSchema>;
 export interface MCPResource {

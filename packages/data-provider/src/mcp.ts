@@ -36,14 +36,10 @@ export const SSEOptionsSchema = z.object({
   url: z.string().url(),
 });
 
-export const TransportOptionsSchema = z.discriminatedUnion('type', [
+export const MCPOptionsSchema = z.discriminatedUnion('type', [
   StdioOptionsSchema,
   WebSocketOptionsSchema,
   SSEOptionsSchema,
 ]);
-
-export const MCPOptionsSchema = z.object({
-  transport: TransportOptionsSchema,
-});
 
 export const MCPServersSchema = z.record(z.string(), MCPOptionsSchema);

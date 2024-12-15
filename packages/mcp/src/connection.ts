@@ -63,16 +63,17 @@ export class MCPConnection extends EventEmitter {
 
   private constructTransport(options: t.MCPOptions): Transport {
     try {
-      switch (options.transport.type) {
+      switch (options.type) {
         case 'stdio':
           return new StdioClientTransport({
-            command: options.transport.command,
-            args: options.transport.args,
+            command: options.command,
+            args: options.args,
+            env: options.env,
           });
         case 'websocket':
-          return new WebSocketClientTransport(new URL(options.transport.url));
+          return new WebSocketClientTransport(new URL(options.url));
         case 'sse': {
-          const url = new URL(options.transport.url);
+          const url = new URL(options.url);
           this.logger?.info('Creating SSE transport with URL:', url.toString());
           const transport = new SSEClientTransport(url);
 
@@ -94,7 +95,7 @@ export class MCPConnection extends EventEmitter {
           return transport;
         }
         default: {
-          const transportType = (options.transport as { type: string }).type;
+          const transportType = (options as { type: string }).type;
           throw new Error(`Unsupported transport type: ${transportType}`);
         }
       }
