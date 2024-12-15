@@ -1,6 +1,9 @@
-import { MCPConnection } from './connection';
+import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
+import type { JsonSchemaType } from 'librechat-data-provider';
 import type { Logger } from 'winston';
 import type * as t from './types/mcp';
+import { MCPConnection } from './connection';
+import { CONSTANTS } from './enum';
 
 export class MCPManager {
   private static instance: MCPManager | null = null;
@@ -85,6 +88,55 @@ export class MCPManager {
 
   public getAllConnections(): Map<string, MCPConnection> {
     return this.connections;
+  }
+
+  public async mapAvailableTools(availableTools: t.LCAvailableTools): Promise<void> {
+    for (const [serverName, connection] of this.connections.entries()) {
+      try {
+        if (connection.isConnected() !== true) {
+          this.logger.warn(`Connection ${serverName} is not connected. Skipping tool fetch.`);
+          continue;
+        }
+
+        const tools = await connection.fetchTools();
+        for (const tool of tools) {
+          const name = `${tool.name}${CONSTANTS.mcp_delimiter}${serverName}`;
+          availableTools[name] = {
+            type: 'function',
+            ['function']: {
+              name,
+              description: tool.description,
+              parameters: tool.inputSchema as JsonSchemaType,
+            },
+          };
+        }
+      } catch (error) {
+        this.logger.error(`Error fetching tools for ${serverName}:`, error);
+      }
+    }
+  }
+
+  async callTool(
+    serverName: string,
+    toolName: string,
+    toolArguments?: Record<string, unknown>,
+  ): Promise<t.MCPToolCallResponse> {
+    const connection = this.connections.get(serverName);
+    if (!connection) {
+      throw new Error(
+        `No connection found for server: ${serverName}. Please make sure to use MCP servers available under 'Connected MCP Servers'.`,
+      );
+    }
+    return await connection.client.request(
+      {
+        method: 'tools/call',
+        params: {
+          name: toolName,
+          arguments: toolArguments,
+        },
+      },
+      CallToolResultSchema,
+    );
   }
 
   public async disconnectServer(serverName: string): Promise<void> {

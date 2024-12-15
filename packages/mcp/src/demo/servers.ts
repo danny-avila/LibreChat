@@ -3,7 +3,7 @@ import express from 'express';
 import { EventSource } from 'eventsource';
 import { MCPManager } from '../manager';
 import { MCPConnection } from '../connection';
-import type { MCPOptions } from '../types/mcp';
+import type * as t from '../types/mcp';
 
 // Set up EventSource for Node environment
 global.EventSource = EventSource;
@@ -13,8 +13,7 @@ app.use(express.json());
 
 const mcpManager = MCPManager.getInstance();
 
-// Define server configurations
-const mcpServers: Record<string, MCPOptions> = {
+const mcpServers: t.MCPServers = {
   everything: {
     transport: {
       type: 'sse' as const,

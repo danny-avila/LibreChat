@@ -867,6 +867,18 @@
  */
 
 /**
+ * @exports MCPServers
+ * @typedef {import('librechat-mcp').MCPServers} MCPServers
+ * @memberof typedefs
+ */
+
+/**
+ * @exports MCPManager
+ * @typedef {import('librechat-mcp').MCPManager} MCPManager
+ * @memberof typedefs
+ */
+
+/**
  * Represents details of the message creation by the run step, including the ID of the created message.
  *
  * @exports MessageCreationStepDetails

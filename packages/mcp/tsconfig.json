@@ -5,7 +5,7 @@
     "module": "esnext",
     "noImplicitAny": true,
     "outDir": "./types",
-    "target": "es5",
+    "target": "es2015",
     "moduleResolution": "node",
     "allowSyntheticDefaultImports": true,
     "lib": ["es2017", "dom", "ES2021.String"],

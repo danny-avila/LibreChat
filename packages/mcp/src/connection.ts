@@ -236,7 +236,7 @@ export class MCPConnection extends EventEmitter {
     }
   }
 
-  async fetchTools(): Promise<t.MCPTool[]> {
+  async fetchTools() {
     try {
       const { tools } = await this.client.listTools();
       return tools;

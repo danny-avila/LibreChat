@@ -1,5 +1,4 @@
 import { z } from 'zod';
-
 export const StdioOptionsSchema = z.object({
   type: z.literal('stdio'),
   command: z.string(),
