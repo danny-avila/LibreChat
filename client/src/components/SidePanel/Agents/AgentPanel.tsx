@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import { Controller, useWatch, useForm, FormProvider } from 'react-hook-form';
 import {
@@ -8,6 +8,7 @@ import {
   isAssistantsEndpoint,
   defaultAgentFormValues,
 } from 'librechat-data-provider';
+import type { Agent } from 'librechat-data-provider';
 import type { AgentForm, AgentPanelProps, StringOption } from '~/common';
 import {
   useCreateAgentMutation,
@@ -40,9 +41,14 @@ export default function AgentPanel({
   const { onSelect: onSelectAgent } = useSelectAgent();
 
   const modelsQuery = useGetModelsQuery();
+  const [shouldFetch, setShouldFetch] = useState(true);
   const agentQuery = useGetAgentByIdQuery(current_agent_id ?? '', {
-    enabled: !!(current_agent_id ?? ''),
+    enabled: !!(current_agent_id ?? '') && shouldFetch,
   });
+
+  const handleCacheCheck = useCallback((id: string, agent: Agent | null) => {
+    setShouldFetch(!agent);
+  }, []);
 
   const models = useMemo(() => modelsQuery.data ?? {}, [modelsQuery.data]);
   const methods = useForm<AgentForm>({
@@ -217,6 +223,7 @@ export default function AgentPanel({
                 reset={reset}
                 value={field.value}
                 agentQuery={agentQuery}
+                onCacheCheck={handleCacheCheck}
                 setCurrentAgentId={setCurrentAgentId}
                 selectedAgentId={current_agent_id ?? null}
                 createMutation={create}

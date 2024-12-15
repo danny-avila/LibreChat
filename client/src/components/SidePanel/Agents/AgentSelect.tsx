@@ -20,6 +20,7 @@ export default function AgentSelect({
   selectedAgentId = null,
   setCurrentAgentId,
   createMutation,
+  onCacheCheck,
 }: {
   reset: UseFormReset<AgentForm>;
   value?: TAgentOption;
@@ -27,9 +28,12 @@ export default function AgentSelect({
   agentQuery: QueryObserverResult<Agent>;
   setCurrentAgentId: React.Dispatch<React.SetStateAction<string | undefined>>;
   createMutation: UseMutationResult<Agent, Error, AgentCreateParams>;
+  onCacheCheck?: (id: string, agent: Agent | null) => void;
 }) {
   const localize = useLocalize();
   const lastSelectedAgent = useRef<string | null>(null);
+  const agentCache = useRef<Record<string, Agent>>({});
+  const currentAgent = useRef<string | null>(null);
 
   const { data: startupConfig } = useGetStartupConfig();
   const { data: agents = null } = useListAgentsQuery(undefined, {
@@ -99,8 +103,23 @@ export default function AgentSelect({
     [reset, startupConfig],
   );
 
+  const checkCache = useCallback(
+    (id: string) => {
+      const agent = agentCache.current[id];
+      if (onCacheCheck) {
+        onCacheCheck(id, agent || null);
+      }
+      return agent;
+    },
+    [onCacheCheck],
+  );
+
   const onSelect = useCallback(
     (selectedId: string) => {
+      if (currentAgent.current === selectedId) {
+        return;
+      }
+
       const agentExists = !!(selectedId
         ? (agents ?? []).find((agent) => agent.id === selectedId)
         : undefined);
@@ -108,26 +127,40 @@ export default function AgentSelect({
       createMutation.reset();
       if (!agentExists) {
         setCurrentAgentId(undefined);
+        currentAgent.current = null;
         return reset({
           ...defaultAgentFormValues,
         });
       }
 
       setCurrentAgentId(selectedId);
-      const agent = agentQuery.data;
-      if (!agent) {
-        console.warn('Agent not found');
+      const cachedAgent = checkCache(selectedId);
+      if (cachedAgent) {
+        currentAgent.current = selectedId;
+        resetAgentForm(cachedAgent);
         return;
       }
 
+      const agent = agentQuery.data;
+      if (!agent || agent.id !== selectedId) {
+        console.warn('Agent not found or mismatch');
+        return;
+      }
+
+      currentAgent.current = selectedId;
+      agentCache.current[agent.id] = agent;
       resetAgentForm(agent);
     },
-    [agents, createMutation, setCurrentAgentId, agentQuery.data, resetAgentForm, reset],
+    [agents, createMutation, setCurrentAgentId, agentQuery.data, resetAgentForm, reset, checkCache],
   );
 
   useEffect(() => {
     if (agentQuery.data && agentQuery.isSuccess) {
-      resetAgentForm(agentQuery.data);
+      const agent = agentQuery.data;
+      if (agent.id === currentAgent.current) {
+        agentCache.current[agent.id] = agent;
+        resetAgentForm(agent);
+      }
     }
   }, [agentQuery.data, agentQuery.isSuccess, resetAgentForm]);
 
