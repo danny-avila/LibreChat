@@ -143,7 +143,7 @@ export class MCPManager {
     toolName: string,
     provider: t.Provider,
     toolArguments?: Record<string, unknown>,
-  ) {
+  ): Promise<t.FormattedToolResponse> {
     const connection = this.connections.get(serverName);
     if (!connection) {
       throw new Error(

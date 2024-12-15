@@ -102,3 +102,8 @@ export type FormattedContent =
     };
 
 export type ImageFormatter = (item: ImageContent) => FormattedContent;
+
+export type FormattedToolResponse = [
+  string | FormattedContent[],
+  { content: FormattedContent[] } | undefined,
+];

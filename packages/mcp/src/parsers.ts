@@ -2,21 +2,21 @@ import type * as t from './types/mcp';
 const RECOGNIZED_PROVIDERS = new Set(['google', 'anthropic', 'openAI']);
 
 const imageFormatters: Record<string, undefined | t.ImageFormatter> = {
-  google: (item) => ({
-    type: 'image',
-    inlineData: {
-      mimeType: item.mimeType,
-      data: item.data,
-    },
-  }),
-  anthropic: (item) => ({
-    type: 'image',
-    source: {
-      type: 'base64',
-      media_type: item.mimeType,
-      data: item.data,
-    },
-  }),
+  // google: (item) => ({
+  //   type: 'image',
+  //   inlineData: {
+  //     mimeType: item.mimeType,
+  //     data: item.data,
+  //   },
+  // }),
+  // anthropic: (item) => ({
+  //   type: 'image',
+  //   source: {
+  //     type: 'base64',
+  //     media_type: item.mimeType,
+  //     data: item.data,
+  //   },
+  // }),
   default: (item) => ({
     type: 'image_url',
     image_url: {
@@ -69,19 +69,30 @@ function parseAsString(result: t.MCPToolCallResponse): string {
  * @param {string} provider - The provider name (google, anthropic, openai)
  * @returns {Array<Object>} Formatted content blocks
  */
+/**
+ * Converts MCPToolCallResponse content into recognized content block types
+ * First element: string or formatted content (excluding image_url)
+ * Second element: image_url content if any
+ *
+ * @param {t.MCPToolCallResponse} result - The MCPToolCallResponse object
+ * @param {string} provider - The provider name (google, anthropic, openai)
+ * @returns {t.FormattedToolResponse} Tuple of content and image_urls
+ */
 export function formatToolContent(
   result: t.MCPToolCallResponse,
   provider: t.Provider,
-): string | t.FormattedContent[] {
+): t.FormattedToolResponse {
   if (!RECOGNIZED_PROVIDERS.has(provider)) {
-    return parseAsString(result);
+    return [parseAsString(result), undefined];
   }
+
   const content = result?.content ?? [];
   if (!content.length) {
-    return [{ type: 'text', text: '(No response)' }];
+    return [[{ type: 'text', text: '(No response)' }], undefined];
   }
 
   const formattedContent: t.FormattedContent[] = [];
+  const imageUrls: t.FormattedContent[] = [];
   let currentTextBlock = '';
 
   type ContentHandler = undefined | ((item: t.ToolContentPart) => void);
@@ -103,11 +114,14 @@ export function formatToolContent(
         formattedContent.push({ type: 'text', text: currentTextBlock });
         currentTextBlock = '';
       }
-      let formatter = imageFormatters[provider];
-      if (!formatter) {
-        formatter = imageFormatters.default as t.ImageFormatter;
+      const formatter = imageFormatters.default as t.ImageFormatter;
+      const formattedImage = formatter(item);
+
+      if (formattedImage.type === 'image_url') {
+        imageUrls.push(formattedImage);
+      } else {
+        formattedContent.push(formattedImage);
       }
-      formattedContent.push(formatter(item));
     },
 
     resource: (item) => {
@@ -139,5 +153,5 @@ export function formatToolContent(
     formattedContent.push({ type: 'text', text: currentTextBlock });
   }
 
-  return formattedContent;
+  return [formattedContent, imageUrls.length ? { content: imageUrls } : undefined];
 }
