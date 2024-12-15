@@ -221,6 +221,8 @@ const duplicateAgentHandler = async (req, res) => {
         const newActionId = nanoid();
         const [domain] = action.action_id.split(actionDelimiter);
 
+        const fullActionId = `${domain}${actionDelimiter}${newActionId}`;
+
         await updateAction(
           { action_id: newActionId },
           {
@@ -230,9 +232,10 @@ const duplicateAgentHandler = async (req, res) => {
           },
         );
 
-        newActions.push(`${domain}${actionDelimiter}${newActionId}`);
+        newActions.push(fullActionId);
         actionsData.push({
           id: newActionId,
+          action_id: fullActionId,
           metadata: action.metadata,
           domain,
         });

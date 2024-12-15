@@ -229,7 +229,10 @@ export default function AgentPanel({
             <Button
               variant="submit"
               disabled={!agent_id}
-              onClick={handleSelectAgent}
+              onClick={(e) => {
+                e.preventDefault();
+                handleSelectAgent();
+              }}
               aria-label="Select agent"
             >
               {localize('com_ui_select')}

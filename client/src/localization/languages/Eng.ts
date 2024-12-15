@@ -362,6 +362,8 @@ export default {
   com_ui_agents_allow_use: 'Allow using Agents',
   com_ui_agents_allow_create: 'Allow creating Agents',
   com_ui_agents_allow_duplicate: 'Allow duplicating shared Agents',
+  com_ui_agent_duplicated: 'Agent duplicated successfully',
+  com_ui_agent_duplicate_error: 'There was an error duplicating the agent',
   com_ui_prompt_already_shared_to_all: 'This prompt is already shared to all users',
   com_ui_description_placeholder: 'Optional: Enter a description to display for the prompt',
   com_ui_command_placeholder: 'Optional: Enter a command for the prompt or name will be used.',

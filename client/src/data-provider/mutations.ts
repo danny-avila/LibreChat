@@ -1086,6 +1086,7 @@ export const useCreateAgentMutation = (
         ...listRes,
         data: currentAgents,
       });
+
       return options?.onSuccess?.(newAgent, variables, context);
     },
   });
@@ -1142,30 +1143,41 @@ export const useDuplicateAgentMutation = (
   options?: t.DuplicateAgentMutationOptions,
 ): UseMutationResult<{ agent: t.Agent; actions: t.Action[] }, Error, t.DuplicateAgentBody> => {
   const queryClient = useQueryClient();
-  return useMutation((params: t.DuplicateAgentBody) => dataService.duplicateAgent(params), {
-    onMutate: (variables) => options?.onMutate?.(variables),
-    onError: (error, variables, context) => options?.onError?.(error, variables, context),
-    onSuccess: ({ agent, actions }, variables, context) => {
-      const listRes = queryClient.getQueryData<t.AgentListResponse>([
-        QueryKeys.agents,
-        defaultOrderQuery,
-      ]);
 
-      if (listRes) {
-        const currentAgents = [agent, ...JSON.parse(JSON.stringify(listRes.data))];
-        queryClient.setQueryData<t.AgentListResponse>([QueryKeys.agents, defaultOrderQuery], {
-          ...listRes,
-          data: currentAgents,
+  return useMutation<{ agent: t.Agent; actions: t.Action[] }, Error, t.DuplicateAgentBody>(
+    (params: t.DuplicateAgentBody) => dataService.duplicateAgent(params),
+    {
+      onMutate: options?.onMutate,
+      onError: options?.onError,
+      onSuccess: ({ agent, actions }, variables, context) => {
+        const listRes = queryClient.getQueryData<t.AgentListResponse>([
+          QueryKeys.agents,
+          defaultOrderQuery,
+        ]);
+
+        if (listRes) {
+          const currentAgents = [agent, ...listRes.data];
+          queryClient.setQueryData<t.AgentListResponse>([QueryKeys.agents, defaultOrderQuery], {
+            ...listRes,
+            data: currentAgents,
+          });
+        }
+
+        const existingActions = queryClient.getQueryData<t.Action[]>([QueryKeys.actions]) || [];
+        const actionsMap = new Map(existingActions.map((a) => [a.action_id, a]));
+
+        actions.forEach((action) => {
+          const { assistant_id, ...actionWithoutAssistant } = action;
+          const updatedAction = { ...actionWithoutAssistant, agent_id: agent.id };
+          actionsMap.set(updatedAction.action_id, updatedAction);
         });
-      }
 
-      queryClient.setQueryData<t.Action[]>([QueryKeys.actions], (prev) => {
-        return prev ? [...prev, ...actions] : actions;
-      });
+        queryClient.setQueryData<t.Action[]>([QueryKeys.actions], Array.from(actionsMap.values()));
 
-      return options?.onSuccess?.(agent, variables, context);
+        return options?.onSuccess?.({ agent, actions }, variables, context);
+      },
     },
-  });
+  );
 };
 
 /**
