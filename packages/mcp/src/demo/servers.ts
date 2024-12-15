@@ -15,17 +15,13 @@ const mcpManager = MCPManager.getInstance();
 
 const mcpServers: t.MCPServers = {
   everything: {
-    transport: {
-      type: 'sse' as const,
-      url: 'http://localhost:3001/sse',
-    },
+    type: 'sse' as const,
+    url: 'http://localhost:3001/sse',
   },
   filesystem: {
-    transport: {
-      type: 'stdio' as const,
-      command: 'npx',
-      args: ['-y', '@modelcontextprotocol/server-filesystem', '/home/danny/LibreChat/'],
-    },
+    type: 'stdio' as const,
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-filesystem', '/home/danny/LibreChat/'],
   },
 };
 

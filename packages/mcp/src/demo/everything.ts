@@ -15,16 +15,14 @@ const initializeMCP = async () => {
   console.log('Initializing MCP with SSE transport...');
 
   const mcpOptions: MCPOptions = {
-    transport: {
-      type: 'sse' as const,
-      url: 'http://localhost:3001/sse',
-      // type: 'stdio' as const,
-      // 'command': 'npx',
-      // 'args': [
-      //   '-y',
-      //   '@modelcontextprotocol/server-everything',
-      // ],
-    },
+    type: 'sse' as const,
+    url: 'http://localhost:3001/sse',
+    // type: 'stdio' as const,
+    // 'command': 'npx',
+    // 'args': [
+    //   '-y',
+    //   '@modelcontextprotocol/server-everything',
+    // ],
   };
 
   try {
