@@ -105,12 +105,23 @@
 # # ADD OLLAMA
 #  ollama:
 #    image: ollama/ollama:latest
+#    restart: always
 #    deploy:
 #      resources:
 #        reservations:
 #          devices:
 #            - driver: nvidia
 #              capabilities: [compute, utility]
+#    ports:
+#      - "11434:11434"
+#    volumes:
+#      - ./ollama:/root/.ollama
+
+# # ADD OLLAMA without nvidia support
+#  ollama:
+#    image: ollama/ollama:latest
+#    restart: always
+#    deploy:
 #    ports:
 #      - "11434:11434"
 #    volumes:
