@@ -12,8 +12,6 @@ import type {
 } from './schemas';
 import type { TSpecsConfig } from './models';
 export type TOpenAIMessage = OpenAI.Chat.ChatCompletionMessageParam;
-export type TOpenAIFunction = OpenAI.Chat.ChatCompletionCreateParams.Function;
-export type TOpenAIFunctionCall = OpenAI.Chat.ChatCompletionCreateParams.FunctionCallOption;
 
 export * from './schemas';
 

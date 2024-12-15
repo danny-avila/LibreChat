@@ -37,7 +37,7 @@
     "backend:stop": "node config/stop-backend.js",
     "build:data-provider": "cd packages/data-provider && npm run build",
     "build:mcp": "cd packages/mcp && npm run build",
-    "frontend": "npm run build:mcp && npm run build:data-provider && cd client && npm run build",
+    "frontend": "npm run build:data-provider && npm run build:mcp && cd client && npm run build",
     "frontend:ci": "npm run build:data-provider && cd client && npm run build:ci",
     "frontend:dev": "cd client && npm run dev",
     "e2e": "playwright test --config=e2e/playwright.config.local.ts",
