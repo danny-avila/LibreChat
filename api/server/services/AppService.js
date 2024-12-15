@@ -45,7 +45,7 @@ const AppService = async (app) => {
     directory: paths.structuredTools,
   });
 
-  if (config.mcpServers) {
+  if (config.mcpServers != null) {
     const mcpManager = await getMCPManager();
     await mcpManager.initializeMCP(config.mcpServers);
     await mcpManager.mapAvailableTools(availableTools);

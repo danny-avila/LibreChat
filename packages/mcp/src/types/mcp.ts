@@ -7,7 +7,7 @@ import {
   MCPOptionsSchema,
   MCPServersSchema,
 } from 'librechat-data-provider';
-import type { JsonSchemaType } from 'librechat-data-provider';
+import type { JsonSchemaType, TPlugin } from 'librechat-data-provider';
 import { ToolSchema, ListToolsResultSchema } from '@modelcontextprotocol/sdk/types.js';
 
 export type StdioOptions = z.infer<typeof StdioOptionsSchema>;
@@ -35,6 +35,7 @@ export interface LCFunctionTool {
 
 export type LCAvailableTools = Record<string, LCFunctionTool>;
 
+export type LCToolManifest = TPlugin[];
 export interface MCPPrompt {
   name: string;
   description?: string;

@@ -38,9 +38,7 @@ export class MCPManager {
         this.logger.info(`Initializing ${serverName} server...`);
         const connection = await this.initializeServer(serverName, config);
 
-        // Test the connection
         try {
-          // const resources = await connection.fetchResources();
           const serverCapabilities = connection.client.getServerCapabilities();
           this.logger.info(`Available capabilities for ${serverName}:`, serverCapabilities);
           if (serverCapabilities?.tools) {
@@ -109,6 +107,29 @@ export class MCPManager {
               parameters: tool.inputSchema as JsonSchemaType,
             },
           };
+        }
+      } catch (error) {
+        this.logger.error(`Error fetching tools for ${serverName}:`, error);
+      }
+    }
+  }
+
+  public async loadManifestTools(manifestTools: t.LCToolManifest): Promise<void> {
+    for (const [serverName, connection] of this.connections.entries()) {
+      try {
+        if (connection.isConnected() !== true) {
+          this.logger.warn(`Connection ${serverName} is not connected. Skipping tool fetch.`);
+          continue;
+        }
+
+        const tools = await connection.fetchTools();
+        for (const tool of tools) {
+          const pluginKey = `${tool.name}${CONSTANTS.mcp_delimiter}${serverName}`;
+          manifestTools.push({
+            pluginKey,
+            name: tool.name,
+            description: tool.description ?? '',
+          });
         }
       } catch (error) {
         this.logger.error(`Error fetching tools for ${serverName}:`, error);

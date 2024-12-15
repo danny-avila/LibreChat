@@ -1,3 +1,3 @@
 export enum CONSTANTS {
-  mcp_delimiter = '_t_',
+  mcp_delimiter = '_mcp_',
 }
