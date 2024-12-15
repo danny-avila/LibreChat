@@ -2,6 +2,7 @@ import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { JsonSchemaType } from 'librechat-data-provider';
 import type { Logger } from 'winston';
 import type * as t from './types/mcp';
+import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
 import { CONSTANTS } from './enum';
 
@@ -140,15 +141,16 @@ export class MCPManager {
   async callTool(
     serverName: string,
     toolName: string,
+    provider: t.Provider,
     toolArguments?: Record<string, unknown>,
-  ): Promise<t.MCPToolCallResponse> {
+  ) {
     const connection = this.connections.get(serverName);
     if (!connection) {
       throw new Error(
         `No connection found for server: ${serverName}. Please make sure to use MCP servers available under 'Connected MCP Servers'.`,
       );
     }
-    return await connection.client.request(
+    const result = await connection.client.request(
       {
         method: 'tools/call',
         params: {
@@ -158,6 +160,7 @@ export class MCPManager {
       },
       CallToolResultSchema,
     );
+    return formatToolContent(result, provider);
   }
 
   public async disconnectServer(serverName: string): Promise<void> {

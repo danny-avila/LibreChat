@@ -44,28 +44,61 @@ export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'err
 
 export type MCPTool = z.infer<typeof ToolSchema>;
 export type MCPToolListResponse = z.infer<typeof ListToolsResultSchema>;
+export type ToolContentPart =
+  | {
+      type: 'text';
+      text: string;
+    }
+  | {
+      type: 'image';
+      data: string;
+      mimeType: string;
+    }
+  | {
+      type: 'resource';
+      resource: {
+        uri: string;
+        mimeType?: string;
+        text?: string;
+        blob?: string;
+      };
+    };
+export type ImageContent = Extract<ToolContentPart, { type: 'image' }>;
+export type MCPToolCallResponse =
+  | undefined
+  | {
+      _meta?: Record<string, unknown>;
+      content?: Array<ToolContentPart>;
+      isError?: boolean;
+    };
 
-export type MCPToolCallResponse = {
-  _meta?: Record<string, unknown>;
-  content: Array<
-    | {
-        type: 'text';
-        text: string;
-      }
-    | {
-        type: 'image';
-        data: string;
+export type Provider = 'google' | 'anthropic' | 'openAI';
+
+export type FormattedContent =
+  | {
+      type: 'text';
+      text: string;
+    }
+  | {
+      type: 'image';
+      inlineData: {
         mimeType: string;
-      }
-    | {
-        type: 'resource';
-        resource: {
-          uri: string;
-          mimeType?: string;
-          text?: string;
-          blob?: string;
-        };
-      }
-  >;
-  isError?: boolean;
-};
+        data: string;
+      };
+    }
+  | {
+      type: 'image';
+      source: {
+        type: 'base64';
+        media_type: string;
+        data: string;
+      };
+    }
+  | {
+      type: 'image_url';
+      image_url: {
+        url: string;
+      };
+    };
+
+export type ImageFormatter = (item: ImageContent) => FormattedContent;

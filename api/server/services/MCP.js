@@ -8,9 +8,11 @@ const { logger, getMCPManager } = require('~/config');
  * @param {Object} params - The parameters for loading action sets.
  * @param {ServerRequest} params.req - The name of the tool.
  * @param {string} params.toolKey - The toolKey for the tool.
+ * @param {import('@librechat/agents').Providers} params.provider - The provider for the tool.
+ * @param {string} params.model - The model for the tool.
  * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
  */
-async function createMCPTool({ req, toolKey }) {
+async function createMCPTool({ req, toolKey, provider }) {
   const toolDefinition = req.app.locals.availableTools[toolKey]?.function;
   if (!toolDefinition) {
     logger.error(`Tool ${toolKey} not found in available tools`);
@@ -24,23 +26,8 @@ async function createMCPTool({ req, toolKey }) {
   const _call = async (toolInput) => {
     try {
       const mcpManager = await getMCPManager();
-      const result = await mcpManager.callTool(serverName, toolName, toolInput);
-      return (
-        (result?.isError ? 'Error:\n' : '') +
-          result?.content
-            .map((item) => {
-              if (item.type === 'text') {
-                return item.text;
-              }
-              if (item.type === 'resource') {
-                const { blob: _b, ...rest } = item.resource;
-                return JSON.stringify(rest, null, 2);
-              }
-              return '';
-            })
-            .filter(Boolean)
-            .join('\n\n') || '(No response)'
-      );
+      const result = await mcpManager.callTool(serverName, toolName, provider, toolInput);
+      return result;
     } catch (error) {
       logger.error(`${toolName} MCP server tool call failed`, error);
       return `${toolName} MCP server tool call failed.`;

@@ -374,22 +374,19 @@ async function processRequiredActions(client, requiredActions) {
  * Processes the runtime tool calls and returns the tool classes.
  * @param {Object} params - Run params containing user and request information.
  * @param {ServerRequest} params.req - The request object.
- * @param {string} params.agent_id - The agent ID.
- * @param {Agent['tools']} params.tools - The agent's available tools.
- * @param {Agent['tool_resources']} params.tool_resources - The agent's available tool resources.
+ * @param {Agent} params.agent - The agent to load tools for.
  * @param {string | undefined} [params.openAIApiKey] - The OpenAI API key.
  * @returns {Promise<{ tools?: StructuredTool[] }>} The agent tools.
  */
-async function loadAgentTools({ req, agent_id, tools, tool_resources, openAIApiKey }) {
-  if (!tools || tools.length === 0) {
+async function loadAgentTools({ req, agent, tool_resources, openAIApiKey }) {
+  if (!agent.tools || agent.tools.length === 0) {
     return {};
   }
   const { loadedTools, toolContextMap } = await loadTools({
-    user: req.user.id,
-    // model: req.body.model ?? 'gpt-4o-mini',
-    tools,
+    agent,
     functions: true,
-    isAgent: agent_id != null,
+    user: req.user.id,
+    tools: agent.tools,
     options: {
       req,
       openAIApiKey,
@@ -439,10 +436,10 @@ async function loadAgentTools({ req, agent_id, tools, tool_resources, openAIApiK
   let actionSets = [];
   const ActionToolMap = {};
 
-  for (const toolName of tools) {
+  for (const toolName of agent.tools) {
     if (!ToolMap[toolName]) {
       if (!actionSets.length) {
-        actionSets = (await loadActionSets({ agent_id })) ?? [];
+        actionSets = (await loadActionSets({ agent_id: agent.id })) ?? [];
       }
 
       let actionSet = null;
@@ -478,7 +475,7 @@ async function loadAgentTools({ req, agent_id, tools, tool_resources, openAIApiK
             });
             if (!tool) {
               logger.warn(
-                `Invalid action: user: ${req.user.id} | agent_id: ${agent_id} | toolName: ${toolName}`,
+                `Invalid action: user: ${req.user.id} | agent_id: ${agent.id} | toolName: ${toolName}`,
               );
               throw new Error(`{"type":"${ErrorTypes.INVALID_ACTION}"}`);
             }
@@ -490,7 +487,7 @@ async function loadAgentTools({ req, agent_id, tools, tool_resources, openAIApiK
     }
   }
 
-  if (tools.length > 0 && agentTools.length === 0) {
+  if (agent.tools.length > 0 && agentTools.length === 0) {
     throw new Error('No tools found for the specified tool calls.');
   }
 

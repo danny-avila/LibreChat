@@ -1,3 +1,4 @@
+const { Providers } = require('@librechat/agents');
 const { Tools, Constants } = require('librechat-data-provider');
 const { SerpAPI } = require('@langchain/community/tools/serpapi');
 const { Calculator } = require('@langchain/community/tools/calculator');
@@ -145,10 +146,23 @@ const loadToolWithAuth = (userId, authFields, ToolConstructor, options = {}) => 
   };
 };
 
+/**
+ *
+ * @param {object} object
+ * @param {string} object.user
+ * @param {Agent} [object.agent]
+ * @param {string} [object.model]
+ * @param {LoadToolOptions} [object.options]
+ * @param {boolean} [object.useSpecs]
+ * @param {Array<string>} object.tools
+ * @param {boolean} [object.functions]
+ * @param {boolean} [object.returnMap]
+ * @returns {Promise<{ loadedTools: Tool[], toolContextMap: Object<string, any> } | Record<string,Tool>>}
+ */
 const loadTools = async ({
   user,
+  agent,
   model,
-  isAgent,
   useSpecs,
   tools = [],
   options = {},
@@ -185,8 +199,9 @@ const loadTools = async ({
     toolConstructors.dalle = DALLE3;
   }
 
+  /** @type {ImageGenOptions} */
   const imageGenOptions = {
-    isAgent,
+    isAgent: !!agent,
     req: options.req,
     fileStrategy: options.fileStrategy,
     processFileURL: options.processFileURL,
@@ -244,7 +259,13 @@ const loadTools = async ({
       };
       continue;
     } else if (mcpToolPattern.test(tool)) {
-      requestedTools[tool] = async () => createMCPTool({ req: options.req, toolKey: tool });
+      requestedTools[tool] = async () =>
+        createMCPTool({
+          req: options.req,
+          toolKey: tool,
+          model: agent?.model ?? model,
+          provider: agent?.provider ?? Providers.OPENAI,
+        });
       continue;
     }
 
