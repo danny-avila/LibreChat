@@ -131,7 +131,7 @@ export type DuplicateAgentBody = {
 };
 
 export type DuplicateAgentMutationOptions = MutationOptions<
-  void,
+  Agent,
   Pick<DuplicateAgentBody, 'agent_id'>
 >;
 

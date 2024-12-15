@@ -428,7 +428,9 @@ export const updateAgent = ({
   );
 };
 
-export const duplicateAgent = ({ agent_id }: m.DuplicateAgentBody): Promise<a.Agent> => {
+export const duplicateAgent = ({
+  agent_id,
+}: m.DuplicateAgentBody): Promise<{ agent: a.Agent; actions: a.Action[] }> => {
   return request.post(
     endpoints.agents({
       path: `${agent_id}/duplicate`,

@@ -1140,32 +1140,34 @@ export const useUpdateAgentMutation = (
  */
 export const useDuplicateAgentMutation = (
   options?: t.DuplicateAgentMutationOptions,
-): UseMutationResult<t.Agent, Error, t.DuplicateAgentBody> => {
+): UseMutationResult<{ agent: t.Agent; actions: t.Action[] }, Error, t.DuplicateAgentBody> => {
   const queryClient = useQueryClient();
   return useMutation((params: t.DuplicateAgentBody) => dataService.duplicateAgent(params), {
     onMutate: (variables) => options?.onMutate?.(variables),
     onError: (error, variables, context) => options?.onError?.(error, variables, context),
-    onSuccess: (newAgent, variables, context) => {
+    onSuccess: ({ agent, actions }, variables, context) => {
       const listRes = queryClient.getQueryData<t.AgentListResponse>([
         QueryKeys.agents,
         defaultOrderQuery,
       ]);
 
-      if (!listRes) {
-        options?.onSuccess?.(newAgent, variables, context);
-        return;
+      if (listRes) {
+        const currentAgents = [agent, ...JSON.parse(JSON.stringify(listRes.data))];
+        queryClient.setQueryData<t.AgentListResponse>([QueryKeys.agents, defaultOrderQuery], {
+          ...listRes,
+          data: currentAgents,
+        });
       }
 
-      const currentAgents: t.Agent[] = [newAgent, ...listRes.data];
-
-      queryClient.setQueryData<t.AgentListResponse>([QueryKeys.agents, defaultOrderQuery], {
-        ...listRes,
-        data: currentAgents,
+      queryClient.setQueryData<t.Action[]>([QueryKeys.actions], (prev) => {
+        return prev ? [...prev, ...actions] : actions;
       });
-      options?.onSuccess?.(newAgent, variables, context);
+
+      return options?.onSuccess?.(agent, variables, context);
     },
   });
 };
+
 /**
  * Hook for deleting an agent
  */

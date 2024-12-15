@@ -1,6 +1,12 @@
 const fs = require('fs').promises;
 const { nanoid } = require('nanoid');
-const { FileContext, Constants, Tools, SystemRoles } = require('librechat-data-provider');
+const {
+  FileContext,
+  Constants,
+  Tools,
+  SystemRoles,
+  actionDelimiter,
+} = require('librechat-data-provider');
 const {
   getAgent,
   createAgent,
@@ -10,6 +16,7 @@ const {
 } = require('~/models/Agent');
 const { uploadImageBuffer, filterFile } = require('~/server/services/Files/process');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { updateAction, getActions } = require('~/models/Action');
 const { getProjectByName } = require('~/models/Project');
 const { updateAgentProjects } = require('~/models/Agent');
 const { deleteFileByFilter } = require('~/models/File');
@@ -201,9 +208,44 @@ const duplicateAgentHandler = async (req, res) => {
       tools,
       provider,
       model,
+      actions: [],
     });
 
-    return res.status(201).json(newAgent);
+    const originalActions = await getActions({ agent_id: id }, true);
+    let actionsData = [];
+
+    if (originalActions && originalActions.length > 0) {
+      const newActions = [];
+
+      for (const action of originalActions) {
+        const newActionId = nanoid();
+        const [domain] = action.action_id.split(actionDelimiter);
+
+        await updateAction(
+          { action_id: newActionId },
+          {
+            metadata: action.metadata,
+            agent_id: newAgent.id,
+            user: userId,
+          },
+        );
+
+        newActions.push(`${domain}${actionDelimiter}${newActionId}`);
+        actionsData.push({
+          id: newActionId,
+          metadata: action.metadata,
+          domain,
+        });
+      }
+
+      await updateAgent({ id: newAgent.id }, { actions: newActions });
+    }
+
+    const finalAgent = await getAgent({ id: newAgent.id });
+    return res.status(201).json({
+      agent: finalAgent,
+      actions: actionsData,
+    });
   } catch (error) {
     logger.error('[/Agents/:id/duplicate] Error duplicating Agent', error);
     res.status(500).json({ error: error.message });
