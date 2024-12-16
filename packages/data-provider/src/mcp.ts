@@ -1,7 +1,11 @@
 import { z } from 'zod';
 
-export const StdioOptionsSchema = z.object({
-  type: z.literal('stdio'),
+const BaseOptionsSchema = z.object({
+  iconPath: z.string().optional(),
+});
+
+export const StdioOptionsSchema = BaseOptionsSchema.extend({
+  type: z.literal('stdio').optional(),
   /**
    * The executable to run to start the server.
    */
@@ -26,17 +30,39 @@ export const StdioOptionsSchema = z.object({
   stderr: z.any().optional(),
 });
 
-export const WebSocketOptionsSchema = z.object({
-  type: z.literal('websocket'),
-  url: z.string().url(),
+export const WebSocketOptionsSchema = BaseOptionsSchema.extend({
+  type: z.literal('websocket').optional(),
+  url: z
+    .string()
+    .url()
+    .refine(
+      (val) => {
+        const protocol = new URL(val).protocol;
+        return protocol === 'ws:' || protocol === 'wss:';
+      },
+      {
+        message: 'WebSocket URL must start with ws:// or wss://',
+      },
+    ),
 });
 
-export const SSEOptionsSchema = z.object({
-  type: z.literal('sse'),
-  url: z.string().url(),
+export const SSEOptionsSchema = BaseOptionsSchema.extend({
+  type: z.literal('sse').optional(),
+  url: z
+    .string()
+    .url()
+    .refine(
+      (val) => {
+        const protocol = new URL(val).protocol;
+        return protocol !== 'ws:' && protocol !== 'wss:';
+      },
+      {
+        message: 'SSE URL must not start with ws:// or wss://',
+      },
+    ),
 });
 
-export const MCPOptionsSchema = z.discriminatedUnion('type', [
+export const MCPOptionsSchema = z.union([
   StdioOptionsSchema,
   WebSocketOptionsSchema,
   SSEOptionsSchema,

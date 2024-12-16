@@ -130,6 +130,7 @@ export class MCPManager {
             name: tool.name,
             pluginKey,
             description: tool.description ?? '',
+            icon: connection.iconPath,
           });
         }
       } catch (error) {

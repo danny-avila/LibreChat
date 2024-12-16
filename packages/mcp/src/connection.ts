@@ -8,6 +8,25 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { Logger } from 'winston';
 import type * as t from './types/mcp.js';
 
+function isStdioOptions(options: t.MCPOptions): options is t.StdioOptions {
+  return 'command' in options;
+}
+
+function isWebSocketOptions(options: t.MCPOptions): options is t.WebSocketOptions {
+  if ('url' in options) {
+    const protocol = new URL(options.url).protocol;
+    return protocol === 'ws:' || protocol === 'wss:';
+  }
+  return false;
+}
+
+function isSSEOptions(options: t.MCPOptions): options is t.SSEOptions {
+  if ('url' in options) {
+    const protocol = new URL(options.url).protocol;
+    return protocol !== 'ws:' && protocol !== 'wss:';
+  }
+  return false;
+}
 export class MCPConnection extends EventEmitter {
   private static instance: MCPConnection | null = null;
   public client: Client;
@@ -20,17 +39,21 @@ export class MCPConnection extends EventEmitter {
   private reconnectAttempts = 0;
   private readonly MAX_RECONNECT_ATTEMPTS = 3;
   private readonly RECONNECT_DELAY = 1000; // 1 second
+  readonly iconPath?: string;
 
   constructor(private readonly options: t.MCPOptions, private logger?: Logger) {
     super();
     this.logger = logger;
+    this.iconPath = options.iconPath;
     this.client = new Client(
       {
-        name: 'librechat-client',
+        name: 'librechat-mcp-client',
         version: '1.0.0',
       },
       {
-        capabilities: {},
+        capabilities: {
+          tools: {},
+        },
       },
     );
 
@@ -63,21 +86,44 @@ export class MCPConnection extends EventEmitter {
 
   private constructTransport(options: t.MCPOptions): Transport {
     try {
-      switch (options.type) {
+      let type: t.MCPOptions['type'];
+      if (isStdioOptions(options)) {
+        type = 'stdio';
+      } else if (isWebSocketOptions(options)) {
+        type = 'websocket';
+      } else if (isSSEOptions(options)) {
+        type = 'sse';
+      } else {
+        throw new Error(
+          'Cannot infer transport type: options.type is not provided and cannot be inferred from other properties.',
+        );
+      }
+
+      switch (type) {
         case 'stdio':
+          if (!isStdioOptions(options)) {
+            throw new Error('Invalid options for stdio transport.');
+          }
           return new StdioClientTransport({
             command: options.command,
             args: options.args,
             env: options.env,
           });
+
         case 'websocket':
+          if (!isWebSocketOptions(options)) {
+            throw new Error('Invalid options for websocket transport.');
+          }
           return new WebSocketClientTransport(new URL(options.url));
+
         case 'sse': {
+          if (!isSSEOptions(options)) {
+            throw new Error('Invalid options for sse transport.');
+          }
           const url = new URL(options.url);
           this.logger?.info('Creating SSE transport with URL:', url.toString());
           const transport = new SSEClientTransport(url);
 
-          // Add debug listeners
           transport.onclose = () => {
             this.logger?.info('SSE transport closed');
             this.emit('connectionChange', 'disconnected');
@@ -94,9 +140,9 @@ export class MCPConnection extends EventEmitter {
 
           return transport;
         }
+
         default: {
-          const transportType = (options as { type: string }).type;
-          throw new Error(`Unsupported transport type: ${transportType}`);
+          throw new Error(`Unsupported transport type: ${type}`);
         }
       }
     } catch (error) {
