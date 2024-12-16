@@ -772,6 +772,7 @@ async function saveBase64Image(
   const file_id = _file_id ?? v4();
 
   let filename = _filename;
+  const { buffer: inputBuffer, type } = base64ToBuffer(url);
   if (!path.extname(_filename)) {
     const extension = mime.extension(type);
     if (extension) {
@@ -781,7 +782,6 @@ async function saveBase64Image(
     }
   }
 
-  const { buffer: inputBuffer, type } = base64ToBuffer(url);
   const image = await resizeImageBuffer(inputBuffer, resolution, endpoint);
   const source = req.app.locals.fileStrategy;
   const { saveBuffer } = getStrategyFunctions(source);
