@@ -767,9 +767,20 @@ function base64ToBuffer(base64String) {
 
 async function saveBase64Image(
   url,
-  { req, file_id: _file_id, filename, endpoint, context, resolution = 'high' },
+  { req, file_id: _file_id, filename: _filename, endpoint, context, resolution = 'high' },
 ) {
   const file_id = _file_id ?? v4();
+
+  let filename = _filename;
+  if (!path.extname(_filename)) {
+    const extension = mime.extension(type);
+    if (extension) {
+      filename += `.${extension}`;
+    } else {
+      throw new Error(`Could not determine file extension from MIME type: ${type}`);
+    }
+  }
+
   const { buffer: inputBuffer, type } = base64ToBuffer(url);
   const image = await resizeImageBuffer(inputBuffer, resolution, endpoint);
   const source = req.app.locals.fileStrategy;
@@ -781,16 +792,16 @@ async function saveBase64Image(
   });
   return await createFile(
     {
-      user: req.user.id,
+      type,
+      source,
+      context,
       file_id,
       filepath,
       filename,
-      context,
-      source,
-      type,
+      user: req.user.id,
+      bytes: image.bytes,
       width: image.width,
       height: image.height,
-      bytes: image.bytes,
     },
     true,
   );
