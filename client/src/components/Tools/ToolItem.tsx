@@ -61,9 +61,7 @@ function ToolItem({ tool, onAddTool, onRemoveTool, isInstalled = false }: ToolIt
           )}
         </div>
       </div>
-      <div className="line-clamp-3 h-[60px] text-sm text-gray-700/70 dark:text-gray-50/70">
-        {tool.description}
-      </div>
+      <div className="line-clamp-3 h-[60px] text-sm text-text-secondary">{tool.description}</div>
     </div>
   );
 }
