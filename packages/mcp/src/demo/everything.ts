@@ -27,7 +27,7 @@ const initializeMCP = async () => {
 
   try {
     await MCPConnection.destroyInstance();
-    mcp = MCPConnection.getInstance(mcpOptions);
+    mcp = MCPConnection.getInstance('everything', mcpOptions);
 
     mcp.on('connectionChange', (state) => {
       console.log(`MCP connection state changed to: ${state}`);

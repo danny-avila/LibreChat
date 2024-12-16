@@ -27,7 +27,7 @@ const initializeMCP = async () => {
     await MCPConnection.destroyInstance();
 
     // Get singleton instance
-    mcp = MCPConnection.getInstance(mcpOptions);
+    mcp = MCPConnection.getInstance('filesystem', mcpOptions);
 
     // Add event listeners
     mcp.on('connectionChange', (state) => {

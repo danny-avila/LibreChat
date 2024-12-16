@@ -32,7 +32,7 @@ export class MCPManager {
   }
 
   public async initializeMCP(mcpServers: t.MCPServers): Promise<void> {
-    this.logger.info('Initializing MCP servers...');
+    this.logger.info('[MCP] Initializing servers');
 
     try {
       const initPromises = Object.entries(mcpServers).map(([serverName, config]) =>
@@ -40,22 +40,24 @@ export class MCPManager {
           .then(async (connection) => {
             try {
               const serverCapabilities = connection.client.getServerCapabilities();
-              this.logger.info(`Available capabilities for ${serverName}:`, serverCapabilities);
+              this.logger.info(
+                `[MCP][${serverName}] Capabilities: ${JSON.stringify(serverCapabilities)}`,
+              );
               if (serverCapabilities?.tools) {
                 const tools = await connection.client.listTools();
-                this.logger.info(`Available tools for ${serverName}:`, tools);
+                this.logger.info(`[MCP][${serverName}] Available tools: ${JSON.stringify(tools)}`);
               }
             } catch (error) {
-              this.logger.error(`Error fetching capabilities for ${serverName}:`, error);
+              this.logger.error(`[MCP][${serverName}] Error fetching capabilities: ${error}`);
             }
           })
           .catch((error) => {
-            this.logger.error(`Failed to initialize ${serverName}:`, error);
+            this.logger.error(`[MCP][${serverName}] Initialization failed: ${error}`);
           }),
       );
       await Promise.all(initPromises);
     } catch (error) {
-      this.logger.error('Failed to initialize MCP servers:', error);
+      this.logger.error(`[MCP] Server initialization failed: ${error}`);
       throw error;
     }
   }
@@ -64,15 +66,15 @@ export class MCPManager {
     // Clean up existing connection if any
     await this.disconnectServer(serverName);
 
-    const connection = new MCPConnection(options, this.logger);
+    const connection = new MCPConnection(serverName, options, this.logger);
 
     // Set up event forwarding
     connection.on('connectionChange', (state) => {
-      this.logger.info(`MCP connection state changed for ${serverName} to: ${state}`);
+      this.logger.info(`[MCP][${serverName}] Connection state: ${state}`);
     });
 
     connection.on('error', (error) => {
-      this.logger.error(`MCP error for ${serverName}:`, error);
+      this.logger.error(`[MCP][${serverName}] Error: ${error}`);
     });
 
     try {
@@ -80,7 +82,7 @@ export class MCPManager {
       this.connections.set(serverName, connection);
       return connection;
     } catch (error) {
-      this.logger.error(`Failed to initialize ${serverName}:`, error);
+      this.logger.error(`[MCP][${serverName}] Initialization failed: ${error}`);
       throw error;
     }
   }
@@ -114,7 +116,7 @@ export class MCPManager {
           };
         }
       } catch (error) {
-        this.logger.error(`Error fetching tools for ${serverName}:`, error);
+        this.logger.warn(`[MCP][${serverName}] Not connected, skipping tool fetch`);
       }
     }
   }
@@ -138,7 +140,7 @@ export class MCPManager {
           });
         }
       } catch (error) {
-        this.logger.error(`Error fetching tools for ${serverName}:`, error);
+        this.logger.error(`[MCP][${serverName}] Error fetching tools: ${error}`);
       }
     }
   }
