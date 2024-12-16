@@ -163,20 +163,31 @@ export class MCPConnection extends EventEmitter {
   }
 
   private async handleReconnection(): Promise<void> {
-    if (this.reconnectAttempts >= this.MAX_RECONNECT_ATTEMPTS) {
-      this.emit('error', new Error('Max reconnection attempts reached'));
-      return;
+    const backoffDelay = (attempt: number) => Math.min(1000 * Math.pow(2, attempt), 30000);
+
+    while (this.reconnectAttempts < this.MAX_RECONNECT_ATTEMPTS) {
+      this.reconnectAttempts++;
+      const delay = backoffDelay(this.reconnectAttempts);
+
+      this.logger?.info(
+        `Attempting reconnection ${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS} after ${delay}ms`,
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, delay));
+
+      try {
+        await this.connectClient();
+        this.reconnectAttempts = 0;
+        this.logger?.info('Reconnection successful');
+        return;
+      } catch (error) {
+        this.logger?.error(`Reconnection attempt ${this.reconnectAttempts} failed:`, error);
+      }
     }
 
-    this.reconnectAttempts++;
-    await new Promise((resolve) => setTimeout(resolve, this.RECONNECT_DELAY));
-
-    try {
-      await this.connectClient();
-      this.reconnectAttempts = 0;
-    } catch (error) {
-      this.emit('error', error);
-    }
+    const error = new Error(`Failed to reconnect after ${this.MAX_RECONNECT_ATTEMPTS} attempts`);
+    this.emit('error', error);
+    throw error;
   }
 
   private subscribeToResources(): void {
@@ -197,15 +208,13 @@ export class MCPConnection extends EventEmitter {
     }
 
     if (this.connectPromise) {
-      await this.connectPromise;
-      return;
+      return this.connectPromise;
     }
 
     this.emit('connectionChange', 'connecting');
 
     this.connectPromise = (async () => {
       try {
-        // Clean up existing connection if any
         if (this.transport) {
           try {
             await this.client.close();
@@ -215,35 +224,21 @@ export class MCPConnection extends EventEmitter {
           }
         }
 
-        this.logger?.info('Creating new transport...');
         this.transport = this.constructTransport(this.options);
+        this.setupTransportDebugHandlers();
 
-        // Debug transport events
-        this.transport.onmessage = (msg) => {
-          this.logger?.info('Transport received message:', JSON.stringify(msg, null, 2));
-        };
-
-        const originalSend = this.transport.send.bind(this.transport);
-        this.transport.send = async (msg) => {
-          this.logger?.info('Transport sending message:', JSON.stringify(msg, null, 2));
-          return originalSend(msg);
-        };
-
-        // Connect with longer timeout for debugging
-        this.logger?.info('Connecting to transport...');
-        const connectPromise = this.client.connect(this.transport);
-        const timeoutPromise = new Promise((_resolve, reject) => {
-          setTimeout(() => reject(new Error('Connection timeout')), 10000);
-        });
-
-        await Promise.race([connectPromise, timeoutPromise]);
-        this.logger?.info('Successfully connected to transport');
+        const connectTimeout = 10000; // 10 seconds
+        await Promise.race([
+          this.client.connect(this.transport),
+          new Promise((_resolve, reject) =>
+            setTimeout(() => reject(new Error('Connection timeout')), connectTimeout),
+          ),
+        ]);
 
         this.connectionState = 'connected';
         this.emit('connectionChange', 'connected');
         this.reconnectAttempts = 0;
       } catch (error) {
-        this.logger?.error('Connection error:', error);
         this.connectionState = 'error';
         this.emit('connectionChange', 'error');
         this.lastError = error instanceof Error ? error : new Error(String(error));
@@ -254,6 +249,22 @@ export class MCPConnection extends EventEmitter {
     })();
 
     return this.connectPromise;
+  }
+
+  private setupTransportDebugHandlers(): void {
+    if (!this.transport) {
+      return;
+    }
+
+    this.transport.onmessage = (msg) => {
+      this.logger?.debug('Transport received message:', msg);
+    };
+
+    const originalSend = this.transport.send.bind(this.transport);
+    this.transport.send = async (msg) => {
+      this.logger?.debug('Transport sending message:', msg);
+      return originalSend(msg);
+    };
   }
 
   public async disconnect(): Promise<void> {

@@ -35,24 +35,28 @@ export class MCPManager {
     this.logger.info('Initializing MCP servers...');
 
     try {
-      for (const [serverName, config] of Object.entries(mcpServers)) {
-        this.logger.info(`Initializing ${serverName} server...`);
-        const connection = await this.initializeServer(serverName, config);
-
-        try {
-          const serverCapabilities = connection.client.getServerCapabilities();
-          this.logger.info(`Available capabilities for ${serverName}:`, serverCapabilities);
-          if (serverCapabilities?.tools) {
-            connection.client.listTools().then((tools) => {
-              this.logger.info(`Available tools for ${serverName}:`, tools);
-            });
-          }
-        } catch (error) {
-          this.logger.error(`Error fetching capabilities for ${serverName}:`, error);
-        }
-      }
+      const initPromises = Object.entries(mcpServers).map(([serverName, config]) =>
+        this.initializeServer(serverName, config)
+          .then(async (connection) => {
+            try {
+              const serverCapabilities = connection.client.getServerCapabilities();
+              this.logger.info(`Available capabilities for ${serverName}:`, serverCapabilities);
+              if (serverCapabilities?.tools) {
+                const tools = await connection.client.listTools();
+                this.logger.info(`Available tools for ${serverName}:`, tools);
+              }
+            } catch (error) {
+              this.logger.error(`Error fetching capabilities for ${serverName}:`, error);
+            }
+          })
+          .catch((error) => {
+            this.logger.error(`Failed to initialize ${serverName}:`, error);
+          }),
+      );
+      await Promise.all(initPromises);
     } catch (error) {
       this.logger.error('Failed to initialize MCP servers:', error);
+      throw error;
     }
   }
 
