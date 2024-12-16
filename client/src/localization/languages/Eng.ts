@@ -297,6 +297,9 @@ export default {
   com_ui_mention: 'Mention an endpoint, assistant, or preset to quickly switch to it',
   com_ui_add_model_preset: 'Add a model or preset for an additional response',
   com_assistants_max_starters_reached: 'Max number of conversation starters reached',
+  com_ui_duplication_success: 'Successfully duplicated conversation',
+  com_ui_duplication_processing: 'Duplicating conversation...',
+  com_ui_duplication_error: 'There was an error duplicating the conversation',
   com_ui_regenerate: 'Regenerate',
   com_ui_continue: 'Continue',
   com_ui_edit: 'Edit',
@@ -431,7 +434,6 @@ export default {
   com_ui_no_bookmarks: 'it seems like you have no bookmarks yet. Click on a chat and add a new one',
   com_ui_no_conversation_id: 'No conversation ID found',
   com_ui_add_multi_conversation: 'Add multi-conversation',
-  com_ui_duplicate: 'Duplicate',
   com_ui_duplicate_agent_confirm: 'Are you sure you want to duplicate this agent?',
   com_auth_error_login:
     'Unable to login with the information provided. Please check your credentials and try again.',
