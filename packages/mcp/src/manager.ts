@@ -45,7 +45,11 @@ export class MCPManager {
               );
               if (serverCapabilities?.tools) {
                 const tools = await connection.client.listTools();
-                this.logger.info(`[MCP][${serverName}] Available tools: ${JSON.stringify(tools)}`);
+                this.logger.info(
+                  `[MCP][${serverName}] Available tools: ${tools.tools
+                    .map((tool) => tool.name)
+                    .join(', ')}`,
+                );
               }
             } catch (error) {
               this.logger.error(`[MCP][${serverName}] Error fetching capabilities: ${error}`);
