@@ -150,6 +150,11 @@ export type DeleteConversationOptions = MutationOptions<
   types.TDeleteConversationRequest
 >;
 
+export type DuplicateConvoOptions = MutationOptions<
+  types.TDuplicateConvoResponse,
+  types.TDuplicateConvoRequest
+>;
+
 export type ForkConvoOptions = MutationOptions<types.TForkConvoResponse, types.TForkConvoRequest>;
 
 export type CreateSharedLinkOptions = MutationOptions<

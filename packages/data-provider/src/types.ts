@@ -203,6 +203,15 @@ export type TTagConversationRequest = {
 };
 export type TTagConversationResponse = string[];
 
+export type TDuplicateConvoRequest = {
+  conversationId: string;
+};
+
+export type TDuplicateConvoResponse = {
+  conversation: TConversation;
+  messages: TMessage[];
+};
+
 export type TForkConvoRequest = {
   messageId: string;
   conversationId: string;

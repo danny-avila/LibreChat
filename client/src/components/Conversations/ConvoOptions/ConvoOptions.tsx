@@ -1,8 +1,11 @@
 import { useState, useId } from 'react';
 import * as Menu from '@ariakit/react/menu';
+import { ForkOptions } from 'librechat-data-provider';
 import { Ellipsis, Share2, Copy, Archive, Pen, Trash } from 'lucide-react';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
-import { useLocalize, useArchiveHandler } from '~/hooks';
+import { useLocalize, useArchiveHandler, useNavigateToConvo } from '~/hooks';
+import { useToastContext, useChatContext } from '~/Providers';
+import { useDuplicateConversationMutation } from '~/data-provider';
 import { DropdownPopup } from '~/components/ui';
 import DeleteButton from './DeleteButton';
 import ShareButton from './ShareButton';
@@ -17,11 +20,38 @@ export default function ConvoOptions({
   isActiveConvo,
 }) {
   const localize = useLocalize();
+  const { index } = useChatContext();
   const { data: startupConfig } = useGetStartupConfig();
   const { conversationId, title } = conversation;
+  const archiveHandler = useArchiveHandler(conversationId, true, retainView);
+  const { navigateToConvo } = useNavigateToConvo(index);
+  const { showToast } = useToastContext();
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const archiveHandler = useArchiveHandler(conversationId, true, retainView);
+
+  const duplicateConversation = useDuplicateConversationMutation({
+    onSuccess: (data) => {
+      if (data) {
+        navigateToConvo(data.conversation);
+        showToast({
+          message: localize('com_ui_duplication_success'),
+          status: 'success',
+        });
+      }
+    },
+    onMutate: () => {
+      showToast({
+        message: localize('com_ui_duplication_processing'),
+        status: 'info',
+      });
+    },
+    onError: () => {
+      showToast({
+        message: localize('com_ui_duplication_error'),
+        status: 'error',
+      });
+    },
+  });
 
   const shareHandler = () => {
     setIsPopoverActive(false);
@@ -35,7 +65,9 @@ export default function ConvoOptions({
 
   const duplicateHandler = () => {
     setIsPopoverActive(false);
-    console.log('Duplicate conversation');
+    duplicateConversation.mutate({
+      conversationId,
+    });
   };
 
   const dropdownItems = [

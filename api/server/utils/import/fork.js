@@ -306,9 +306,79 @@ function splitAtTargetLevel(messages, targetMessageId) {
   return filteredMessages;
 }
 
+/**
+ * Duplicates a conversation and all its messages.
+ * @param {object} params - The parameters for duplicating the conversation.
+ * @param {string} params.userId - The ID of the user duplicating the conversation.
+ * @param {string} params.conversationId - The ID of the conversation to duplicate.
+ * @returns {Promise<{ conversation: TConversation, messages: TMessage[] }>} The duplicated conversation and messages.
+ */
+async function duplicateConversation({ userId, conversationId }) {
+  // Get original conversation
+  const originalConvo = await getConvo(userId, conversationId);
+  if (!originalConvo) {
+    throw new Error('Conversation not found');
+  }
+
+  // Get original messages
+  const originalMessages = await getMessages({
+    user: userId,
+    conversationId,
+  });
+
+  const messagesToClone = getMessagesUpToTargetLevel(
+    originalMessages,
+    originalMessages[originalMessages.length - 1].messageId,
+  );
+
+  const idMapping = new Map();
+  const importBatchBuilder = createImportBatchBuilder(userId);
+  importBatchBuilder.startConversation(originalConvo.endpoint ?? EModelEndpoint.openAI);
+
+  for (const message of messagesToClone) {
+    const newMessageId = uuidv4();
+    idMapping.set(message.messageId, newMessageId);
+
+    const clonedMessage = {
+      ...message,
+      messageId: newMessageId,
+      parentMessageId:
+        message.parentMessageId && message.parentMessageId !== Constants.NO_PARENT
+          ? idMapping.get(message.parentMessageId)
+          : Constants.NO_PARENT,
+    };
+
+    importBatchBuilder.saveMessage(clonedMessage);
+  }
+
+  const result = importBatchBuilder.finishConversation(
+    originalConvo.title + ' (Copy)',
+    new Date(),
+    originalConvo,
+  );
+  await importBatchBuilder.saveBatch();
+  logger.debug(
+    `user: ${userId} | New conversation "${
+      originalConvo.title + ' (Copy)'
+    }" duplicated from conversation ID ${conversationId}`,
+  );
+
+  const conversation = await getConvo(userId, result.conversation.conversationId);
+  const messages = await getMessages({
+    user: userId,
+    conversationId: conversation.conversationId,
+  });
+
+  return {
+    conversation,
+    messages,
+  };
+}
+
 module.exports = {
   forkConversation,
   splitAtTargetLevel,
   getAllMessagesUpToParent,
   getMessagesUpToTargetLevel,
+  duplicateConversation,
 };
