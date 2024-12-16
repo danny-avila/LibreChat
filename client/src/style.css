@@ -48,6 +48,7 @@ html {
   --header-hover: var(--gray-50);
   --header-button-hover: var(--gray-50);
   --surface-active: var(--gray-100);
+  --surface-active-alt: var(--gray-200);
   --surface-hover: var(--gray-200);
   --surface-primary: var(--white);
   --surface-primary-alt: var(--gray-50);
@@ -99,6 +100,7 @@ html {
   --header-hover: var(--gray-600);
   --header-button-hover: var(--gray-700);
   --surface-active: var(--gray-500);
+  --surface-active-alt: var(--gray-700);
   --surface-hover: var(--gray-600);
   --surface-primary: var(--gray-900);
   --surface-primary-alt: var(--gray-850);

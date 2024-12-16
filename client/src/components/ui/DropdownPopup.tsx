@@ -6,7 +6,7 @@ interface DropdownProps {
   trigger: React.ReactNode;
   items: {
     label?: string;
-    onClick?: () => void;
+    onClick?: (e: React.MouseEvent<HTMLButtonElement | HTMLDivElement>) => void;
     icon?: React.ReactNode;
     kbd?: string;
     show?: boolean;
@@ -69,7 +69,7 @@ const DropdownPopup: React.FC<DropdownProps> = ({
                 onClick={(event) => {
                   event.preventDefault();
                   if (item.onClick) {
-                    item.onClick();
+                    item.onClick(event);
                   }
                   menu.hide();
                 }}
