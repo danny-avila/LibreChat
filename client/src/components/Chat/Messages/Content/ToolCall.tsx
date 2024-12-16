@@ -44,15 +44,17 @@ export default function ToolCall({
       const [func, server] = name.split(Constants.mcp_delimiter);
       return {
         function_name: func || '',
-        domain: server.replaceAll(actionDomainSeparator, '.') || null,
+        domain: server && (server.replaceAll(actionDomainSeparator, '.') || null),
         isMCPToolCall: true,
       };
     }
 
-    const [func, _domain] = name.split(actionDelimiter);
+    const [func, _domain] = name.includes(actionDelimiter)
+      ? name.split(actionDelimiter)
+      : [name, ''];
     return {
       function_name: func || '',
-      domain: _domain.replaceAll(actionDomainSeparator, '.') || null,
+      domain: _domain && (_domain.replaceAll(actionDomainSeparator, '.') || null),
       isMCPToolCall: false,
     };
   }, [name]);
