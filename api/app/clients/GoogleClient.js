@@ -596,6 +596,9 @@ class GoogleClient extends BaseClient {
     const model = clientOptions.modelName ?? clientOptions.model;
     clientOptions.location = loc;
     clientOptions.endpoint = `${loc}-aiplatform.googleapis.com`;
+    if (this.options.reverseProxyUrl) {
+      clientOptions.baseUrl = this.options.reverseProxyUrl;
+    }
     if (this.project_id && this.isTextModel) {
       logger.debug('Creating Google VertexAI client');
       return new GoogleVertexAI(clientOptions);
