@@ -211,7 +211,7 @@ function ToolSelectDialog({
                   type="text"
                   value={searchValue}
                   onChange={handleSearch}
-                  placeholder={localize('com_nav_plugin_search')}
+                  placeholder={localize('com_nav_tool_search')}
                   className="w-64 rounded border border-gray-300 px-2 py-1 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
                 />
               </div>
