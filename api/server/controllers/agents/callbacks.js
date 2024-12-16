@@ -233,11 +233,16 @@ function createToolEndCallback({ req, res, artifactPromises }) {
         artifactPromises.push(
           (async () => {
             const filename = `${output.tool_call_id}-image-${new Date().getTime()}`;
-            const fileMetadata = await saveBase64Image(url, {
+            const file = await saveBase64Image(url, {
               req,
               filename,
               endpoint: metadata.provider,
               context: FileContext.image_generation,
+            });
+            const fileMetadata = Object.assign(file, {
+              messageId: metadata.run_id,
+              toolCallId: output.tool_call_id,
+              conversationId: metadata.thread_id,
             });
             if (!res.headersSent) {
               return fileMetadata;
@@ -250,7 +255,7 @@ function createToolEndCallback({ req, res, artifactPromises }) {
             res.write(`event: attachment\ndata: ${JSON.stringify(fileMetadata)}\n\n`);
             return fileMetadata;
           })().catch((error) => {
-            logger.error('Error processing code output:', error);
+            logger.error('Error processing artifact content:', error);
             return null;
           }),
         );
