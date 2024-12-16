@@ -774,7 +774,7 @@ async function saveBase64Image(
   let filename = _filename;
   const { buffer: inputBuffer, type } = base64ToBuffer(url);
   if (!path.extname(_filename)) {
-    const extension = mime.extension(type);
+    const extension = mime.getExtension(type);
     if (extension) {
       filename += `.${extension}`;
     } else {
