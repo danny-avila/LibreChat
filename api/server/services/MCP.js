@@ -1,3 +1,4 @@
+const { Constants: AgentConstants } = require('@librechat/agents');
 const { Constants, convertJsonSchemaToZod } = require('librechat-data-provider');
 const { tool } = require('@langchain/core/tools');
 const { logger, getMCPManager } = require('~/config');
@@ -26,8 +27,7 @@ async function createMCPTool({ req, toolKey, provider }) {
   const _call = async (toolInput) => {
     try {
       const mcpManager = await getMCPManager();
-      const result = await mcpManager.callTool(serverName, toolName, provider, toolInput);
-      return result;
+      return await mcpManager.callTool(serverName, toolName, provider, toolInput);
     } catch (error) {
       logger.error(`${toolName} MCP server tool call failed`, error);
       return `${toolName} MCP server tool call failed.`;
@@ -35,9 +35,10 @@ async function createMCPTool({ req, toolKey, provider }) {
   };
 
   const toolInstance = tool(_call, {
+    schema,
     name: toolKey,
     description: description || '',
-    schema,
+    responseFormat: AgentConstants.CONTENT_AND_ARTIFACT,
   });
   toolInstance.mcp = true;
   return toolInstance;

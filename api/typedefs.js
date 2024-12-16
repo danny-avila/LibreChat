@@ -924,6 +924,12 @@
  */
 
 /**
+ * @exports FormattedContent
+ * @typedef {import('librechat-mcp').FormattedContent} FormattedContent
+ * @memberof typedefs
+ */
+
+/**
  * Represents details of the message creation by the run step, including the ID of the created message.
  *
  * @exports MessageCreationStepDetails
