@@ -1,5 +1,5 @@
 import { TPlugin } from 'librechat-data-provider';
-import { XCircle, PlusCircleIcon } from 'lucide-react';
+import { XCircle, PlusCircleIcon, Wrench } from 'lucide-react';
 import { useLocalize } from '~/hooks';
 
 type ToolItemProps = {
@@ -24,11 +24,17 @@ function ToolItem({ tool, onAddTool, onRemoveTool, isInstalled = false }: ToolIt
       <div className="flex gap-4">
         <div className="h-[70px] w-[70px] shrink-0">
           <div className="relative h-full w-full">
-            <img
-              src={tool.icon}
-              alt={localize('com_ui_logo', tool.name)}
-              className="h-full w-full rounded-[5px] bg-white"
-            />
+            {tool.icon != null && tool.icon ? (
+              <img
+                src={tool.icon}
+                alt={localize('com_ui_logo', tool.name)}
+                className="h-full w-full rounded-[5px] bg-white"
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center rounded-[5px] border border-border-medium bg-transparent">
+                <Wrench className="h-8 w-8 text-text-secondary" />
+              </div>
+            )}
             <div className="absolute inset-0 rounded-[5px] ring-1 ring-inset ring-black/10"></div>
           </div>
         </div>
