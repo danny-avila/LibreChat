@@ -155,16 +155,16 @@ export default function ActionsPanel({
             )}
 
             <div className="text-xl font-medium">{(action ? 'Edit' : 'Add') + ' ' + 'actions'}</div>
-            <div className="text-token-text-tertiary text-sm">
+            <div className="text-xs text-text-secondary">
               {localize('com_assistants_actions_info')}
             </div>
-            {/* <div className="text-sm text-token-text-tertiary">
+            {/* <div className="text-sm text-text-secondary">
             <a href="https://help.openai.com/en/articles/8554397-creating-a-gpt" target="_blank" rel="noreferrer" className="font-medium">Learn more.</a>
           </div> */}
           </div>
           <Dialog open={openAuthDialog} onOpenChange={setOpenAuthDialog}>
             <DialogTrigger asChild>
-              <div className="relative mb-6">
+              <div className="relative mb-4">
                 <div className="mb-1.5 flex items-center">
                   <label className="text-token-text-primary block font-medium">
                     {localize('com_ui_authentication')}

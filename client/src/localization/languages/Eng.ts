@@ -401,7 +401,10 @@ export default {
   com_ui_locked: 'Locked',
   com_ui_upload_delay:
     'Uploading "{0}" is taking more time than anticipated. Please wait while the file finishes indexing for retrieval.',
+  com_ui_schema: 'Schema',
+  com_ui_enter_openapi_schema: 'Enter your OpenAPI schema here',
   com_ui_privacy_policy: 'Privacy policy',
+  com_ui_privacy_policy_url: 'Privacy Policy URL',
   com_ui_terms_of_service: 'Terms of service',
   com_ui_use_micrphone: 'Use microphone',
   com_ui_min_tags: 'Cannot remove more values, a minimum of {0} are required.',
