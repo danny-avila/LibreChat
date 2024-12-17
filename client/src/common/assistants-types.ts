@@ -10,12 +10,14 @@ export type TAssistantOption =
       Assistant & {
         files?: Array<[string, ExtendedFile]>;
         code_files?: Array<[string, ExtendedFile]>;
+        search_files?: Array<[string, ExtendedFile]>;
       });
 
 export type Actions = {
   [Capabilities.code_interpreter]: boolean;
   [Capabilities.image_vision]: boolean;
   [Capabilities.retrieval]: boolean;
+  [Capabilities.file_search]: boolean;
 };
 
 export type AssistantForm = {

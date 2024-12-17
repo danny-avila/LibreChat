@@ -12,17 +12,19 @@ import { useFileHandling } from '~/hooks/Files';
 import useLocalize from '~/hooks/useLocalize';
 import { useChatContext } from '~/Providers';
 
-const tool_resource = EToolResources.code_interpreter;
+const default_tool_resource = EToolResources.code_interpreter;
 
 export default function CodeFiles({
   endpoint,
   assistant_id,
   files: _files,
+  tool_resource = default_tool_resource,
 }: {
   version: number | string;
   endpoint: AssistantsEndpoint;
   assistant_id: string;
   files?: [string, ExtendedFile][];
+  tool_resource?: EToolResources;
 }) {
   const localize = useLocalize();
   const { setFilesLoading } = useChatContext();
@@ -61,9 +63,9 @@ export default function CodeFiles({
   return (
     <div className="mb-2 w-full">
       <div className="flex flex-col gap-4">
-        <div className="rounded-lg text-xs text-text-secondary">
+        {/* <div className="rounded-lg text-xs text-text-secondary">
           {localize('com_assistants_code_interpreter_files')}
-        </div>
+        </div> */}
         <FileRow
           files={files}
           setFiles={setFiles}
@@ -89,7 +91,12 @@ export default function CodeFiles({
                 disabled={!assistant_id}
                 onChange={handleFileChange}
               />
-              {localize('com_ui_upload_files')}
+
+              {tool_resource === EToolResources.code_interpreter
+                ? localize('com_ui_upload_code_files')
+                : tool_resource === EToolResources.file_search
+                ? localize('com_ui_upload_file_search')
+                : null}
             </div>
           </button>
         </div>

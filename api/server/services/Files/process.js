@@ -18,7 +18,12 @@ const {
   isAssistantsEndpoint,
 } = require('librechat-data-provider');
 const { EnvVar } = require('@librechat/agents');
-const { addResourceFileId, deleteResourceFileId } = require('~/server/controllers/assistants/v2');
+const {
+  addResourceFileId,
+  deleteResourceFileId,
+  addResourceVectorId,
+  deleteResourceVectorId,
+} = require('~/server/controllers/assistants/v2');
 const { convertImage, resizeAndConvert } = require('~/server/services/Files/images');
 const { addAgentResourceFile, removeAgentResourceFiles } = require('~/models/Agent');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
@@ -375,14 +380,21 @@ const processFileUpload = async ({ req, res, metadata }) => {
   const isAssistantUpload = isAssistantsEndpoint(metadata.endpoint);
   const assistantSource =
     metadata.endpoint === EModelEndpoint.azureAssistants ? FileSources.azure : FileSources.openai;
-  const source = isAssistantUpload ? assistantSource : FileSources.vectordb;
-  const { handleFileUpload } = getStrategyFunctions(source);
+  const fileSource =
+    isAssistantUpload && metadata.tool_resource === EToolResources.file_search
+      ? FileSources.vector_store
+      : assistantSource;
+  const source = isAssistantUpload ? fileSource : FileSources.vectordb;
+  const { handleFileUpload, createStore } = getStrategyFunctions(source);
   const { file_id, temp_file_id } = metadata;
 
-  /** @type {OpenAI | undefined} */
-  let openai;
-  if (checkOpenAIStorage(source)) {
-    ({ openai } = await getOpenAIClient({ req }));
+  /** @type {{ openai: OpenAIClient }} */
+  let { openai } = await getOpenAIClient({ req, res });
+
+  let vector_id;
+
+  if (source === FileSources.vector_store && typeof createStore === 'function') {
+    vector_id = await createStore(openai);
   }
 
   const { file } = req;
@@ -399,11 +411,20 @@ const processFileUpload = async ({ req, res, metadata }) => {
     file,
     file_id,
     openai,
+    ...(source === FileSources.vector_store && { vectorStoreId: vector_id }),
   });
 
   if (isAssistantUpload && !metadata.message_file && !metadata.tool_resource) {
     await openai.beta.assistants.files.create(metadata.assistant_id, {
       file_id: id,
+    });
+  } else if (isAssistantUpload && metadata.tool_resource === EToolResources.file_search) {
+    await addResourceVectorId({
+      req,
+      openai,
+      vector_store_id: id,
+      assistant_id: metadata.assistant_id,
+      tool_resource: metadata.tool_resource,
     });
   } else if (isAssistantUpload && !metadata.message_file) {
     await addResourceFileId({

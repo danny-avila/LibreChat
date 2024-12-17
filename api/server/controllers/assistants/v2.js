@@ -232,6 +232,90 @@ const deleteResourceFileId = async ({ req, openai, assistant_id, tool_resource, 
 };
 
 /**
+ * Modifies an assistant with the resource vector store ID.
+ * @param {object} params
+ * @param {Express.Request} params.req
+ * @param {OpenAIClient} params.openai
+ * @param {string} params.assistant_id
+ * @param {string} params.tool_resource
+ * @param {string} params.vector_store_id
+ * @returns {Promise<Assistant>} The updated assistant.
+ */
+const addResourceVectorId = async ({
+  req,
+  openai,
+  assistant_id,
+  tool_resource,
+  vector_store_id,
+}) => {
+  const assistant = await openai.beta.assistants.retrieve(assistant_id);
+  const { tool_resources = {} } = assistant;
+
+  if (tool_resources[tool_resource]) {
+    // Replace the vector_store_id if already exists
+    tool_resources[tool_resource].vector_store_ids.push(vector_store_id);
+  } else {
+    // Initialize with the new vector_store_id
+    tool_resources[tool_resource] = { vector_store_ids: [vector_store_id] };
+  }
+
+  delete assistant.id;
+  return await updateAssistant({
+    req,
+    openai,
+    assistant_id,
+    updateData: { tools: assistant.tools, tool_resources },
+  });
+};
+
+/**
+ * Deletes a vector store ID from an assistant's resource.
+ * @param {object} params
+ * @param {Express.Request} params.req
+ * @param {OpenAIClient} params.openai
+ * @param {string} params.assistant_id
+ * @param {string} [params.tool_resource]
+ * @param {string} params.vector_store_id
+ * @param {AssistantUpdateParams} params.updateData
+ * @returns {Promise<Assistant>} The updated assistant.
+ */
+const deleteResourceVectorId = async ({
+  req,
+  openai,
+  assistant_id,
+  tool_resource,
+  vector_store_id,
+}) => {
+  const assistant = await openai.beta.assistants.retrieve(assistant_id);
+  const { tool_resources = {} } = assistant;
+
+  if (tool_resource && tool_resources[tool_resource]) {
+    const resource = tool_resources[tool_resource];
+    const index = resource.vector_store_ids?.indexOf(vector_store_id);
+    if (index !== -1) {
+      resource.vector_store_ids.splice(index, 1);
+    }
+  } else {
+    for (const resourceKey in tool_resources) {
+      const resource = tool_resources[resourceKey];
+      const index = resource.vector_store_ids?.indexOf(vector_store_id);
+      if (index !== -1) {
+        resource.vector_store_ids.splice(index, 1);
+        break;
+      }
+    }
+  }
+
+  delete assistant.id;
+  return await updateAssistant({
+    req,
+    openai,
+    assistant_id,
+    updateData: { tools: assistant.tools, tool_resources },
+  });
+};
+
+/**
  * Modifies an assistant.
  * @route PATCH /assistants/:id
  * @param {object} req - Express Request
@@ -260,4 +344,6 @@ module.exports = {
   updateAssistant,
   addResourceFileId,
   deleteResourceFileId,
+  addResourceVectorId,
+  deleteResourceVectorId,
 };

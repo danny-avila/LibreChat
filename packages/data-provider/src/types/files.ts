@@ -8,6 +8,7 @@ export enum FileSources {
   s3 = 's3',
   vectordb = 'vectordb',
   execute_code = 'execute_code',
+  vector_store = "vector_store",
 }
 
 export const checkOpenAIStorage = (source: string) =>
