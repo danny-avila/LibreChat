@@ -26,6 +26,7 @@ import PromptsCommand from './PromptsCommand';
 import AudioRecorder from './AudioRecorder';
 import CollapseChat from './CollapseChat';
 import StreamAudio from './StreamAudio';
+import CallButton from './CallButton';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
 import { BadgeRow } from './BadgeRow';
