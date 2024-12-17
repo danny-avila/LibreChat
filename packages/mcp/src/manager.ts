@@ -34,60 +34,99 @@ export class MCPManager {
   public async initializeMCP(mcpServers: t.MCPServers): Promise<void> {
     this.logger.info('[MCP] Initializing servers');
 
-    try {
-      const initPromises = Object.entries(mcpServers).map(([serverName, config]) =>
-        this.initializeServer(serverName, config)
-          .then(async (connection) => {
-            try {
-              const serverCapabilities = connection.client.getServerCapabilities();
-              this.logger.info(
-                `[MCP][${serverName}] Capabilities: ${JSON.stringify(serverCapabilities)}`,
-              );
-              if (serverCapabilities?.tools) {
-                const tools = await connection.client.listTools();
+    const entries = Object.entries(mcpServers);
+    const initializedServers = new Set();
+    const connectionResults = await Promise.allSettled(
+      entries.map(async ([serverName, config], i) => {
+        const connection = new MCPConnection(serverName, config, this.logger);
+
+        connection.on('connectionChange', (state) => {
+          this.logger.info(`[MCP][${serverName}] Connection state: ${state}`);
+        });
+
+        try {
+          const connectionTimeout = new Promise<void>((_, reject) =>
+            setTimeout(() => reject(new Error('Connection timeout')), 30000),
+          );
+
+          const connectionAttempt = this.initializeServer(connection, serverName);
+          await Promise.race([connectionAttempt, connectionTimeout]);
+
+          if (connection.isConnected()) {
+            initializedServers.add(i);
+            this.connections.set(serverName, connection);
+
+            const serverCapabilities = connection.client.getServerCapabilities();
+            this.logger.info(
+              `[MCP][${serverName}] Capabilities: ${JSON.stringify(serverCapabilities)}`,
+            );
+
+            if (serverCapabilities?.tools) {
+              const tools = await connection.client.listTools();
+              if (tools.tools.length) {
                 this.logger.info(
                   `[MCP][${serverName}] Available tools: ${tools.tools
                     .map((tool) => tool.name)
                     .join(', ')}`,
                 );
               }
-            } catch (error) {
-              this.logger.error(`[MCP][${serverName}] Error fetching capabilities: ${error}`);
             }
-          })
-          .catch((error) => {
-            this.logger.error(`[MCP][${serverName}] Initialization failed: ${error}`);
-          }),
+          }
+        } catch (error) {
+          this.logger.error(`[MCP][${serverName}] Initialization failed`, error);
+          throw error;
+        }
+      }),
+    );
+
+    const failedConnections = connectionResults.filter(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+
+    this.logger.info(`[MCP] Initialized ${initializedServers.size}/${entries.length} server(s)`);
+
+    if (failedConnections.length > 0) {
+      this.logger.warn(
+        `[MCP] ${failedConnections.length}/${entries.length} server(s) failed to initialize`,
       );
-      await Promise.all(initPromises);
-    } catch (error) {
-      this.logger.error(`[MCP] Server initialization failed: ${error}`);
-      throw error;
+    }
+
+    entries.forEach(([serverName], index) => {
+      if (initializedServers.has(index)) {
+        this.logger.info(`[MCP][${serverName}] ✓ Initialized`);
+      } else {
+        this.logger.info(`[MCP][${serverName}] ✗ Failed`);
+      }
+    });
+
+    if (initializedServers.size === entries.length) {
+      this.logger.info('[MCP] All servers initialized successfully');
+    } else if (initializedServers.size === 0) {
+      this.logger.error('[MCP] No servers initialized');
     }
   }
 
-  public async initializeServer(serverName: string, options: t.MCPOptions): Promise<MCPConnection> {
-    // Clean up existing connection if any
-    await this.disconnectServer(serverName);
+  private async initializeServer(connection: MCPConnection, serverName: string): Promise<void> {
+    const maxAttempts = 3;
+    let attempts = 0;
 
-    const connection = new MCPConnection(serverName, options, this.logger);
+    while (attempts < maxAttempts) {
+      try {
+        await connection.connect();
 
-    // Set up event forwarding
-    connection.on('connectionChange', (state) => {
-      this.logger.info(`[MCP][${serverName}] Connection state: ${state}`);
-    });
+        if (connection.isConnected()) {
+          return;
+        }
+      } catch (error) {
+        attempts++;
 
-    connection.on('error', (error) => {
-      this.logger.error(`[MCP][${serverName}] Error: ${error}`);
-    });
+        if (attempts === maxAttempts) {
+          this.logger.error(`[MCP][${serverName}] Failed after ${maxAttempts} attempts`);
+          throw error;
+        }
 
-    try {
-      await connection.connectClient();
-      this.connections.set(serverName, connection);
-      return connection;
-    } catch (error) {
-      this.logger.error(`[MCP][${serverName}] Initialization failed: ${error}`);
-      throw error;
+        await new Promise((resolve) => setTimeout(resolve, 2000 * attempts));
+      }
     }
   }
 
@@ -144,7 +183,7 @@ export class MCPManager {
           });
         }
       } catch (error) {
-        this.logger.error(`[MCP][${serverName}] Error fetching tools: ${error}`);
+        this.logger.error(`[MCP][${serverName}] Error fetching tools`, error);
       }
     }
   }

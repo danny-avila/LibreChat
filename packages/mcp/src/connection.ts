@@ -36,10 +36,12 @@ export class MCPConnection extends EventEmitter {
   private lastError: Error | null = null;
   private lastConfigUpdate = 0;
   private readonly CONFIG_TTL = 5 * 60 * 1000; // 5 minutes
-  private reconnectAttempts = 0;
   private readonly MAX_RECONNECT_ATTEMPTS = 3;
-  private readonly RECONNECT_DELAY = 1000; // 1 second
   public readonly serverName: string;
+  private shouldStopReconnecting = false;
+  private isReconnecting = false;
+  private isInitializing = false;
+  private reconnectAttempts = 0;
   iconPath?: string;
 
   constructor(serverName: string, private readonly options: t.MCPOptions, private logger?: Logger) {
@@ -136,7 +138,7 @@ export class MCPConnection extends EventEmitter {
           };
 
           transport.onerror = (error) => {
-            this.logger?.error(`[MCP][${this.serverName}] SSE transport error: ${error}`);
+            this.logger?.error(`[MCP][${this.serverName}] SSE transport error:`, error);
             this.emitError(error, 'SSE transport error:');
           };
 
@@ -146,6 +148,7 @@ export class MCPConnection extends EventEmitter {
             );
           };
 
+          this.setupTransportErrorHandlers(transport);
           return transport;
         }
 
@@ -160,10 +163,18 @@ export class MCPConnection extends EventEmitter {
   }
 
   private setupEventListeners(): void {
+    this.isInitializing = true;
     this.on('connectionChange', (state: t.ConnectionState) => {
       this.connectionState = state;
-      if (state === 'error') {
-        this.handleReconnection();
+      if (state === 'connected') {
+        this.isReconnecting = false;
+        this.isInitializing = false;
+        this.shouldStopReconnecting = false;
+        this.reconnectAttempts = 0;
+      } else if (state === 'error' && !this.isReconnecting && !this.isInitializing) {
+        this.handleReconnection().catch((error) => {
+          this.logger?.error(`[MCP][${this.serverName}] Reconnection handler failed:`, error);
+        });
       }
     });
 
@@ -171,33 +182,46 @@ export class MCPConnection extends EventEmitter {
   }
 
   private async handleReconnection(): Promise<void> {
-    const backoffDelay = (attempt: number) => Math.min(1000 * Math.pow(2, attempt), 30000);
-
-    while (this.reconnectAttempts < this.MAX_RECONNECT_ATTEMPTS) {
-      this.reconnectAttempts++;
-      const delay = backoffDelay(this.reconnectAttempts);
-
-      this.logger?.info(
-        `[MCP][${this.serverName}] Reconnecting ${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS} (delay: ${delay}ms)`,
-      );
-
-      await new Promise((resolve) => setTimeout(resolve, delay));
-
-      try {
-        await this.connectClient();
-        this.reconnectAttempts = 0;
-        this.logger?.info(`[MCP][${this.serverName}] Reconnection successful`);
-        return;
-      } catch (error) {
-        this.logger?.error(
-          `[MCP][${this.serverName}] Reconnection attempt ${this.reconnectAttempts} failed: ${error}`,
-        );
-      }
+    if (this.isReconnecting || this.shouldStopReconnecting || this.isInitializing) {
+      return;
     }
 
-    const error = new Error(`Failed to reconnect after ${this.MAX_RECONNECT_ATTEMPTS} attempts`);
-    this.emit('error', error);
-    throw error;
+    this.isReconnecting = true;
+    const backoffDelay = (attempt: number) => Math.min(1000 * Math.pow(2, attempt), 30000);
+
+    try {
+      while (
+        this.reconnectAttempts < this.MAX_RECONNECT_ATTEMPTS &&
+        !(this.shouldStopReconnecting as boolean)
+      ) {
+        this.reconnectAttempts++;
+        const delay = backoffDelay(this.reconnectAttempts);
+
+        this.logger?.info(
+          `[MCP][${this.serverName}] Reconnecting ${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS} (delay: ${delay}ms)`,
+        );
+
+        await new Promise((resolve) => setTimeout(resolve, delay));
+
+        try {
+          await this.connect();
+          this.reconnectAttempts = 0;
+          return;
+        } catch (error) {
+          this.logger?.error(`[MCP][${this.serverName}] Reconnection attempt failed:`, error);
+
+          if (
+            this.reconnectAttempts === this.MAX_RECONNECT_ATTEMPTS ||
+            (this.shouldStopReconnecting as boolean)
+          ) {
+            this.logger?.error(`[MCP][${this.serverName}] Stopping reconnection attempts`);
+            return;
+          }
+        }
+      }
+    } finally {
+      this.isReconnecting = false;
+    }
   }
 
   private subscribeToResources(): void {
@@ -221,6 +245,10 @@ export class MCPConnection extends EventEmitter {
       return this.connectPromise;
     }
 
+    if (this.shouldStopReconnecting) {
+      return;
+    }
+
     this.emit('connectionChange', 'connecting');
 
     this.connectPromise = (async () => {
@@ -230,14 +258,14 @@ export class MCPConnection extends EventEmitter {
             await this.client.close();
             this.transport = null;
           } catch (error) {
-            this.logger?.warn(`[MCP][${this.serverName}] Error closing connection: ${error}`);
+            this.logger?.warn(`[MCP][${this.serverName}] Error closing connection:`, error);
           }
         }
 
         this.transport = this.constructTransport(this.options);
         this.setupTransportDebugHandlers();
 
-        const connectTimeout = 10000; // 10 seconds
+        const connectTimeout = 10000;
         await Promise.race([
           this.client.connect(this.transport),
           new Promise((_resolve, reject) =>
@@ -277,11 +305,46 @@ export class MCPConnection extends EventEmitter {
     };
   }
 
+  async connect(): Promise<void> {
+    try {
+      await this.disconnect();
+      await this.connectClient();
+      if (!this.isConnected()) {
+        throw new Error('Connection not established');
+      }
+    } catch (error) {
+      this.logger?.error(`[MCP][${this.serverName}] Connection failed:`, error);
+      throw error;
+    }
+  }
+
+  private setupTransportErrorHandlers(transport: Transport): void {
+    transport.onerror = (error) => {
+      this.logger?.error(`[MCP][${this.serverName}] Transport error:`, error);
+      this.emit('connectionChange', 'error');
+    };
+
+    const errorHandler = (error: Error) => {
+      try {
+        this.logger?.error(`[MCP][${this.serverName}] Uncaught transport error:`, error);
+      } catch {
+        console.error(`[MCP][${this.serverName}] Critical error logging failed`, error);
+      }
+      this.emit('connectionChange', 'error');
+    };
+
+    process.on('uncaughtException', errorHandler);
+    process.on('unhandledRejection', errorHandler);
+  }
+
   public async disconnect(): Promise<void> {
     try {
       if (this.transport) {
         await this.client.close();
         this.transport = null;
+      }
+      if (this.connectionState === 'disconnected') {
+        return;
       }
       this.connectionState = 'disconnected';
       this.emit('connectionChange', 'disconnected');
