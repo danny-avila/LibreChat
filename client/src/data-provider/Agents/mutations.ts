@@ -113,6 +113,8 @@ export const useDeleteAgentMutation = (
           data,
         });
 
+        queryClient.removeQueries([QueryKeys.agent, variables.agent_id]);
+
         return options?.onSuccess?.(_data, variables, data);
       },
     },
@@ -193,6 +195,7 @@ export const useUpdateAgentAction = (
           );
       });
 
+      queryClient.setQueryData<t.Agent>([QueryKeys.agent, variables.agent_id], updatedAgent);
       return options?.onSuccess?.(updateAgentActionResponse, variables, context);
     },
   });
@@ -246,6 +249,16 @@ export const useDeleteAgentAction = (
         },
       );
 
+      queryClient.setQueryData<t.Agent>([QueryKeys.agent, variables.agent_id], (prev) => {
+        if (!prev) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          tools: prev.tools?.filter((tool) => !tool.includes(domain ?? '')),
+        };
+      });
       return options?.onSuccess?.(_data, variables, context);
     },
   });
