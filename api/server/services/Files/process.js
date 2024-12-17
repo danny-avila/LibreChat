@@ -18,8 +18,12 @@ const {
   isAssistantsEndpoint,
 } = require('librechat-data-provider');
 const { EnvVar } = require('@librechat/agents');
+const {
+  convertImage,
+  resizeAndConvert,
+  resizeImageBuffer,
+} = require('~/server/services/Files/images');
 const { addResourceFileId, deleteResourceFileId } = require('~/server/controllers/assistants/v2');
-const { convertImage, resizeAndConvert } = require('~/server/services/Files/images');
 const { addAgentResourceFile, removeAgentResourceFiles } = require('~/models/Agent');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { createFile, updateFileUsage, deleteFiles } = require('~/models/File');
@@ -737,6 +741,73 @@ async function retrieveAndProcessFile({
 }
 
 /**
+ * Converts a base64 string to a buffer.
+ * @param {string} base64String
+ * @returns {Buffer<ArrayBufferLike>}
+ */
+function base64ToBuffer(base64String) {
+  try {
+    const typeMatch = base64String.match(/^data:([A-Za-z-+/]+);base64,/);
+    const type = typeMatch ? typeMatch[1] : '';
+
+    const base64Data = base64String.replace(/^data:([A-Za-z-+/]+);base64,/, '');
+
+    if (!base64Data) {
+      throw new Error('Invalid base64 string');
+    }
+
+    return {
+      buffer: Buffer.from(base64Data, 'base64'),
+      type,
+    };
+  } catch (error) {
+    throw new Error(`Failed to convert base64 to buffer: ${error.message}`);
+  }
+}
+
+async function saveBase64Image(
+  url,
+  { req, file_id: _file_id, filename: _filename, endpoint, context, resolution = 'high' },
+) {
+  const file_id = _file_id ?? v4();
+
+  let filename = _filename;
+  const { buffer: inputBuffer, type } = base64ToBuffer(url);
+  if (!path.extname(_filename)) {
+    const extension = mime.getExtension(type);
+    if (extension) {
+      filename += `.${extension}`;
+    } else {
+      throw new Error(`Could not determine file extension from MIME type: ${type}`);
+    }
+  }
+
+  const image = await resizeImageBuffer(inputBuffer, resolution, endpoint);
+  const source = req.app.locals.fileStrategy;
+  const { saveBuffer } = getStrategyFunctions(source);
+  const filepath = await saveBuffer({
+    userId: req.user.id,
+    fileName: filename,
+    buffer: image.buffer,
+  });
+  return await createFile(
+    {
+      type,
+      source,
+      context,
+      file_id,
+      filepath,
+      filename,
+      user: req.user.id,
+      bytes: image.bytes,
+      width: image.width,
+      height: image.height,
+    },
+    true,
+  );
+}
+
+/**
  * Filters a file based on its size and the endpoint origin.
  *
  * @param {Object} params - The parameters for the function.
@@ -810,6 +881,7 @@ module.exports = {
   filterFile,
   processFiles,
   processFileURL,
+  saveBase64Image,
   processImageFile,
   uploadImageBuffer,
   processFileUpload,

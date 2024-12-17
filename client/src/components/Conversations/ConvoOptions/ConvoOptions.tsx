@@ -2,6 +2,7 @@ import { useState, useId } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { Ellipsis, Share2, Archive, Pen, Trash } from 'lucide-react';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
+import type { MouseEvent } from 'react';
 import { useLocalize, useArchiveHandler } from '~/hooks';
 import { DropdownPopup } from '~/components/ui';
 import DeleteButton from './DeleteButton';
@@ -9,16 +10,26 @@ import ShareButton from './ShareButton';
 import { cn } from '~/utils';
 
 export default function ConvoOptions({
-  conversation,
+  conversationId,
+  title,
+  renaming,
   retainView,
   renameHandler,
   isPopoverActive,
   setIsPopoverActive,
   isActiveConvo,
+}: {
+  conversationId: string | null;
+  title: string | null;
+  renaming: boolean;
+  retainView: () => void;
+  renameHandler: (e: MouseEvent) => void;
+  isPopoverActive: boolean;
+  setIsPopoverActive: React.Dispatch<React.SetStateAction<boolean>>;
+  isActiveConvo: boolean;
 }) {
   const localize = useLocalize();
   const { data: startupConfig } = useGetStartupConfig();
-  const { conversationId, title } = conversation;
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const archiveHandler = useArchiveHandler(conversationId, true, retainView);
@@ -73,6 +84,7 @@ export default function ConvoOptions({
               isActiveConvo === true
                 ? 'opacity-100'
                 : 'opacity-0 focus:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[open]:opacity-100',
+              renaming === true ? 'pointer-events-none opacity-0' : '',
             )}
           >
             <Ellipsis className="icon-md text-text-secondary" aria-hidden={true} />
@@ -83,17 +95,17 @@ export default function ConvoOptions({
       />
       {showShareDialog && (
         <ShareButton
-          conversationId={conversationId}
-          title={title}
+          title={title ?? ''}
+          conversationId={conversationId ?? ''}
           showShareDialog={showShareDialog}
           setShowShareDialog={setShowShareDialog}
         />
       )}
       {showDeleteDialog && (
         <DeleteButton
-          conversationId={conversationId}
+          title={title ?? ''}
           retainView={retainView}
-          title={title}
+          conversationId={conversationId ?? ''}
           showDeleteDialog={showDeleteDialog}
           setShowDeleteDialog={setShowDeleteDialog}
         />
