@@ -22,7 +22,6 @@ const {
   addResourceFileId,
   deleteResourceFileId,
   addResourceVectorId,
-  deleteResourceVectorId,
 } = require('~/server/controllers/assistants/v2');
 const { convertImage, resizeAndConvert } = require('~/server/services/Files/images');
 const { addAgentResourceFile, removeAgentResourceFiles } = require('~/models/Agent');
