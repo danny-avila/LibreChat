@@ -70,6 +70,7 @@ module.exports = {
         'header-hover': 'var(--header-hover)',
         'header-button-hover': 'var(--header-button-hover)',
         'surface-active': 'var(--surface-active)',
+        'surface-active-alt': 'var(--surface-active-alt)',
         'surface-hover': 'var(--surface-hover)',
         'surface-primary': 'var(--surface-primary)',
         'surface-primary-alt': 'var(--surface-primary-alt)',

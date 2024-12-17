@@ -80,8 +80,7 @@ const initializeAgentOptions = async ({
 }) => {
   const { tools, toolContextMap } = await loadAgentTools({
     req,
-    tools: agent.tools,
-    agent_id: agent.id,
+    agent,
     tool_resources,
   });
 
