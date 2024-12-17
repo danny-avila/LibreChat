@@ -189,18 +189,24 @@ const updateAgentHandler = async (req, res) => {
  * @returns {Agent} 201 - success response - application/json
  */
 const duplicateAgentHandler = async (req, res) => {
-  try {
-    const id = req.params.id;
-    const { id: userId } = req.user;
+  const { id } = req.params;
+  const { id: userId } = req.user;
 
+  try {
     const agent = await getAgent({ id });
     if (!agent) {
-      return res.status(404).json({ error: 'Agent not found' });
+      return res.status(404).json({
+        error: 'Agent not found',
+        status: 'error',
+      });
     }
 
     const { name, description, instructions, tools, provider, model } = agent;
-    const newAgent = await createAgent({
-      id: `agent_${nanoid()}`,
+
+    const newAgentId = `agent_${nanoid()}`;
+
+    await createAgent({
+      id: newAgentId,
       author: userId,
       name: `${name} (Copy)`,
       description,
@@ -211,46 +217,65 @@ const duplicateAgentHandler = async (req, res) => {
       actions: [],
     });
 
+    const actionsData = [];
     const originalActions = await getActions({ agent_id: id }, true);
-    let actionsData = [];
 
-    if (originalActions && originalActions.length > 0) {
-      const newActions = [];
+    const sensitiveFields = ['api_key', 'oauth_client_id', 'oauth_client_secret'];
 
-      for (const action of originalActions) {
-        const newActionId = nanoid();
-        const [domain] = action.action_id.split(actionDelimiter);
+    if (originalActions?.length) {
+      const newActions = await Promise.all(
+        originalActions.map(async (action) => {
+          const newActionId = nanoid();
+          const [domain] = action.action_id.split(actionDelimiter);
+          const fullActionId = `${domain}${actionDelimiter}${newActionId}`;
 
-        const fullActionId = `${domain}${actionDelimiter}${newActionId}`;
+          const filteredMetadata = { ...action.metadata };
+          for (const field of sensitiveFields) {
+            delete filteredMetadata[field];
+          }
 
-        await updateAction(
-          { action_id: newActionId },
-          {
-            metadata: action.metadata,
-            agent_id: newAgent.id,
-            user: userId,
-          },
-        );
+          await updateAction(
+            { action_id: newActionId },
+            {
+              metadata: filteredMetadata,
+              agent_id: newAgentId,
+              user: userId,
+            },
+          );
 
-        newActions.push(fullActionId);
-        actionsData.push({
-          id: newActionId,
-          action_id: fullActionId,
-          metadata: action.metadata,
-          domain,
-        });
-      }
+          actionsData.push({
+            id: newActionId,
+            action_id: fullActionId,
+            metadata: filteredMetadata,
+            domain,
+          });
 
-      await updateAgent({ id: newAgent.id }, { actions: newActions });
+          return fullActionId;
+        }),
+      );
+
+      await updateAgent({ id: newAgentId }, { actions: newActions });
     }
 
-    const finalAgent = await getAgent({ id: newAgent.id });
+    const finalAgent = await getAgent({ id: newAgentId });
+
+    const filteredActions = actionsData.map((action) => {
+      const filteredMetadata = { ...action.metadata };
+      for (const field of sensitiveFields) {
+        delete filteredMetadata[field];
+      }
+      return { ...action, metadata: filteredMetadata };
+    });
+
     return res.status(201).json({
       agent: finalAgent,
-      actions: actionsData,
+      actions: filteredActions,
     });
   } catch (error) {
-    logger.error('[/Agents/:id/duplicate] Error duplicating Agent', error);
+    logger.error('[/Agents/:id/duplicate] Error duplicating Agent:', {
+      error,
+    });
+
     res.status(500).json({ error: error.message });
   }
 };

@@ -149,15 +149,16 @@ export const useDuplicateAgentMutation = (
         }
 
         const existingActions = queryClient.getQueryData<t.Action[]>([QueryKeys.actions]) || [];
-        const actionsMap = new Map(existingActions.map((a) => [a.action_id, a]));
 
-        actions.forEach((action) => {
-          const { assistant_id, ...actionWithoutAssistant } = action;
-          const updatedAction = { ...actionWithoutAssistant, agent_id: agent.id };
-          actionsMap.set(updatedAction.action_id, updatedAction);
-        });
-
-        queryClient.setQueryData<t.Action[]>([QueryKeys.actions], Array.from(actionsMap.values()));
+        queryClient.setQueryData<t.Action[]>(
+          [QueryKeys.actions],
+          existingActions.concat(
+            actions.map(({ assistant_id, ...action }) => ({
+              ...action,
+              agent_id: agent.id,
+            })),
+          ),
+        );
 
         return options?.onSuccess?.({ agent, actions }, variables, context);
       },
