@@ -44,7 +44,7 @@
     "@langchain/google-genai": "^0.1.4",
     "@langchain/google-vertexai": "^0.1.2",
     "@langchain/textsplitters": "^0.1.0",
-    "@librechat/agents": "^1.8.7",
+    "@librechat/agents": "^1.8.8",
     "axios": "^1.7.7",
     "bcryptjs": "^2.4.3",
     "cheerio": "^1.0.0-rc.12",
