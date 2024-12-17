@@ -115,6 +115,10 @@ const AdminSettings = () => {
       agentPerm: Permissions.USE,
       label: localize('com_ui_agents_allow_use'),
     },
+    {
+      agentPerm: Permissions.DUPLICATE,
+      label: localize('com_ui_agents_allow_duplicate'),
+    },
   ];
 
   const onSubmit = (data: FormValues) => {
@@ -142,7 +146,7 @@ const AdminSettings = () => {
         <Button
           size={'sm'}
           variant={'outline'}
-          className="btn btn-neutral border-token-border-light relative my-1 h-9 w-full gap-1 rounded-lg font-medium"
+          className="btn btn-neutral border-token-border-light relative mb-4 h-9 w-full gap-1 rounded-lg font-medium"
         >
           <ShieldEllipsis className="cursor-pointer" />
           {localize('com_ui_admin_settings')}
