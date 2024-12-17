@@ -1,49 +1,71 @@
 import React, { forwardRef } from 'react';
 import { useWatch } from 'react-hook-form';
 import type { Control } from 'react-hook-form';
-import { TooltipAnchor } from '~/components/ui';
-import { SendIcon } from '~/components/svg';
+import { TooltipAnchor, SendIcon, CallIcon } from '~/components';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
-type SendButtonProps = {
+type ButtonProps = {
   disabled: boolean;
   control: Control<{ text: string }>;
 };
 
-const SubmitButton = React.memo(
-  forwardRef((props: { disabled: boolean }, ref: React.ForwardedRef<HTMLButtonElement>) => {
-    const localize = useLocalize();
+const ActionButton = forwardRef(
+  (
+    props: {
+      disabled: boolean;
+      icon: React.ReactNode;
+      tooltip: string;
+      testId: string;
+    },
+    ref: React.ForwardedRef<HTMLButtonElement>,
+  ) => {
     return (
       <TooltipAnchor
-        description={localize('com_nav_send_message')}
+        description={props.tooltip}
         render={
           <button
             ref={ref}
-            aria-label={localize('com_nav_send_message')}
-            id="send-button"
+            aria-label={props.tooltip}
+            id="action-button"
             disabled={props.disabled}
             className={cn(
-              'rounded-full bg-text-primary p-2 text-text-primary outline-offset-4 transition-all duration-200 disabled:cursor-not-allowed disabled:text-text-secondary disabled:opacity-10',
+              'rounded-full bg-text-primary p-2 text-text-primary outline-offset-4',
+              'transition-all duration-200',
+              'disabled:cursor-not-allowed disabled:text-text-secondary disabled:opacity-10',
             )}
-            data-testid="send-button"
+            data-testid={props.testId}
             type="submit"
           >
             <span className="" data-state="closed">
-              <SendIcon size={24} />
+              {props.icon}
             </span>
           </button>
         }
-      ></TooltipAnchor>
+      />
     );
-  }),
+  },
 );
 
-const SendButton = React.memo(
-  forwardRef((props: SendButtonProps, ref: React.ForwardedRef<HTMLButtonElement>) => {
-    const data = useWatch({ control: props.control });
-    return <SubmitButton ref={ref} disabled={props.disabled || !data.text} />;
-  }),
-);
+const SendButton = forwardRef((props: ButtonProps, ref: React.ForwardedRef<HTMLButtonElement>) => {
+  const localize = useLocalize();
+  const { text } = useWatch({ control: props.control });
+
+  const buttonProps = text
+    ? {
+      icon: <SendIcon size={24} />,
+      tooltip: localize('com_nav_send_message'),
+      testId: 'send-button',
+    }
+    : {
+      icon: <CallIcon size={24} />,
+      tooltip: localize('com_nav_call'),
+      testId: 'call-button',
+    };
+
+  return <ActionButton ref={ref} disabled={props.disabled} {...buttonProps} />;
+});
+
+SendButton.displayName = 'SendButton';
 
 export default SendButton;
