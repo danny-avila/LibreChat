@@ -191,6 +191,7 @@ const updateAgentHandler = async (req, res) => {
 const duplicateAgentHandler = async (req, res) => {
   const { id } = req.params;
   const { id: userId } = req.user;
+  const sensitiveFields = ['api_key', 'oauth_client_id', 'oauth_client_secret'];
 
   try {
     const agent = await getAgent({ id });
@@ -219,8 +220,6 @@ const duplicateAgentHandler = async (req, res) => {
 
     const actionsData = [];
     const originalActions = await getActions({ agent_id: id }, true);
-
-    const sensitiveFields = ['api_key', 'oauth_client_id', 'oauth_client_secret'];
 
     if (originalActions?.length) {
       const newActions = await Promise.all(
@@ -272,9 +271,7 @@ const duplicateAgentHandler = async (req, res) => {
       actions: filteredActions,
     });
   } catch (error) {
-    logger.error('[/Agents/:id/duplicate] Error duplicating Agent:', {
-      error,
-    });
+    logger.error('[/Agents/:id/duplicate] Error duplicating Agent:', error);
 
     res.status(500).json({ error: error.message });
   }
