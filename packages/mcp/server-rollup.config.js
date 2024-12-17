@@ -10,7 +10,7 @@ const entryPath = path.resolve(rootPath, 'api/server/index.js');
 
 console.log('entryPath', entryPath);
 
-// Define your custom aliases here
+// Define custom aliases here
 const customAliases = {
   entries: [{ find: '~', replacement: rootServerPath }],
 };
