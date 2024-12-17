@@ -1,4 +1,3 @@
-const { Providers } = require('@librechat/agents');
 const { Tools, Constants } = require('librechat-data-provider');
 const { SerpAPI } = require('@langchain/community/tools/serpapi');
 const { Calculator } = require('@langchain/community/tools/calculator');
@@ -152,6 +151,7 @@ const loadToolWithAuth = (userId, authFields, ToolConstructor, options = {}) => 
  * @param {string} object.user
  * @param {Agent} [object.agent]
  * @param {string} [object.model]
+ * @param {EModelEndpoint} [object.endpoint]
  * @param {LoadToolOptions} [object.options]
  * @param {boolean} [object.useSpecs]
  * @param {Array<string>} object.tools
@@ -163,6 +163,7 @@ const loadTools = async ({
   user,
   agent,
   model,
+  endpoint,
   useSpecs,
   tools = [],
   options = {},
@@ -264,7 +265,7 @@ const loadTools = async ({
           req: options.req,
           toolKey: tool,
           model: agent?.model ?? model,
-          provider: agent?.provider ?? Providers.OPENAI,
+          provider: agent?.provider ?? endpoint,
         });
       continue;
     }

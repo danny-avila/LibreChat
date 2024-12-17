@@ -1,6 +1,10 @@
-const { Constants: AgentConstants } = require('@librechat/agents');
-const { Constants, convertJsonSchemaToZod } = require('librechat-data-provider');
 const { tool } = require('@langchain/core/tools');
+const { Constants: AgentConstants } = require('@librechat/agents');
+const {
+  Constants,
+  convertJsonSchemaToZod,
+  isAssistantsEndpoint,
+} = require('librechat-data-provider');
 const { logger, getMCPManager } = require('~/config');
 
 /**
@@ -9,7 +13,7 @@ const { logger, getMCPManager } = require('~/config');
  * @param {Object} params - The parameters for loading action sets.
  * @param {ServerRequest} params.req - The name of the tool.
  * @param {string} params.toolKey - The toolKey for the tool.
- * @param {import('@librechat/agents').Providers} params.provider - The provider for the tool.
+ * @param {import('@librechat/agents').Providers | EModelEndpoint} params.provider - The provider for the tool.
  * @param {string} params.model - The model for the tool.
  * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
  */
@@ -27,7 +31,11 @@ async function createMCPTool({ req, toolKey, provider }) {
   const _call = async (toolInput) => {
     try {
       const mcpManager = await getMCPManager();
-      return await mcpManager.callTool(serverName, toolName, provider, toolInput);
+      const result = await mcpManager.callTool(serverName, toolName, provider, toolInput);
+      if (isAssistantsEndpoint(provider) && Array.isArray(result)) {
+        return result[0];
+      }
+      return result;
     } catch (error) {
       logger.error(`${toolName} MCP server tool call failed`, error);
       return `${toolName} MCP server tool call failed.`;

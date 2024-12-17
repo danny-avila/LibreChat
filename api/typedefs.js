@@ -774,6 +774,12 @@
  */
 
 /**
+ * @exports EModelEndpoint
+ * @typedef {import('librechat-data-provider').EModelEndpoint} EModelEndpoint
+ * @memberof typedefs
+ */
+
+/**
  * @exports TAttachment
  * @typedef {import('librechat-data-provider').TAttachment} TAttachment
  * @memberof typedefs
