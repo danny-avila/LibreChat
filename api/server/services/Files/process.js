@@ -479,6 +479,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   }
 
   let fileInfoMetadata;
+  const entity_id = messageAttachment === true ? undefined : agent_id;
   if (tool_resource === EToolResources.execute_code) {
     const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(FileSources.execute_code);
     const result = await loadAuthValues({ userId: req.user.id, authFields: [EnvVar.CODE_API_KEY] });
@@ -488,7 +489,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       stream,
       filename: file.originalname,
       apiKey: result[EnvVar.CODE_API_KEY],
-      entity_id: messageAttachment === true ? undefined : agent_id,
+      entity_id,
     });
     fileInfoMetadata = { fileIdentifier };
   }
@@ -512,6 +513,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     req,
     file,
     file_id,
+    entity_id,
   });
 
   let filepath = _filepath;
