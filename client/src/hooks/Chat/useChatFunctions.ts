@@ -139,7 +139,7 @@ export default function useChatFunctions({
     );
 
     let thread_id = parentMessage?.thread_id ?? latestMessage?.thread_id;
-    if (!thread_id) {
+    if (thread_id == null) {
       thread_id = currentMessages.find((message) => message.thread_id)?.thread_id;
     }
 
@@ -168,22 +168,26 @@ export default function useChatFunctions({
       endpointOption.key = getExpiry();
       endpointOption.thread_id = thread_id;
       endpointOption.modelDisplayLabel = modelDisplayLabel;
+    } else {
+      endpointOption.key = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     }
     const responseSender = getSender({ model: conversation?.model, ...endpointOption });
 
     const currentMsg: TMessage = {
       text,
       sender: 'User',
+      clientTimestamp: new Date().toLocaleString('sv').replace(' ', 'T'),
       isCreatedByUser: true,
       parentMessageId,
       conversationId,
-      messageId: isContinued && messageId ? messageId : intermediateId,
+      messageId: isContinued && messageId != null && messageId ? messageId : intermediateId,
       thread_id,
       error: false,
     };
 
-    const reuseFiles = (isRegenerate || resubmitFiles) && parentMessage?.files;
-    if (setFiles && reuseFiles && parentMessage.files?.length) {
+    const reuseFiles =
+      (isRegenerate || resubmitFiles) && parentMessage?.files && parentMessage.files.length > 0;
+    if (setFiles && reuseFiles === true) {
       currentMsg.files = parentMessage.files;
       setFiles(new Map());
       setFilesToDelete({});

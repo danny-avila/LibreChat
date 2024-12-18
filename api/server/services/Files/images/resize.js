@@ -58,7 +58,12 @@ async function resizeImageBuffer(inputBuffer, resolution, endpoint) {
   const resizedBuffer = await sharp(inputBuffer).rotate().resize(resizeOptions).toBuffer();
 
   const resizedMetadata = await sharp(resizedBuffer).metadata();
-  return { buffer: resizedBuffer, width: resizedMetadata.width, height: resizedMetadata.height };
+  return {
+    buffer: resizedBuffer,
+    bytes: resizedMetadata.size,
+    width: resizedMetadata.width,
+    height: resizedMetadata.height,
+  };
 }
 
 /**

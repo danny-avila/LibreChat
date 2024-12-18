@@ -1,22 +1,50 @@
 const { matchModelName } = require('../utils');
 const defaultRate = 6;
 
-/** AWS Bedrock pricing */
+/**
+ * AWS Bedrock pricing
+ * source: https://aws.amazon.com/bedrock/pricing/
+ * */
 const bedrockValues = {
+  // Basic llama2 patterns
   'llama2-13b': { prompt: 0.75, completion: 1.0 },
-  'llama2-70b': { prompt: 1.95, completion: 2.56 },
-  'llama3-8b': { prompt: 0.3, completion: 0.6 },
-  'llama3-70b': { prompt: 2.65, completion: 3.5 },
-  'llama3-1-8b': { prompt: 0.3, completion: 0.6 },
-  'llama3-1-70b': { prompt: 2.65, completion: 3.5 },
-  'llama3-1-405b': { prompt: 5.32, completion: 16.0 },
   'llama2:13b': { prompt: 0.75, completion: 1.0 },
   'llama2:70b': { prompt: 1.95, completion: 2.56 },
+  'llama2-70b': { prompt: 1.95, completion: 2.56 },
+
+  // Basic llama3 patterns
+  'llama3-8b': { prompt: 0.3, completion: 0.6 },
   'llama3:8b': { prompt: 0.3, completion: 0.6 },
+  'llama3-70b': { prompt: 2.65, completion: 3.5 },
   'llama3:70b': { prompt: 2.65, completion: 3.5 },
-  'llama3.1:8b': { prompt: 0.3, completion: 0.6 },
-  'llama3.1:70b': { prompt: 2.65, completion: 3.5 },
-  'llama3.1:405b': { prompt: 5.32, completion: 16.0 },
+
+  // llama3-x-Nb pattern
+  'llama3-1-8b': { prompt: 0.22, completion: 0.22 },
+  'llama3-1-70b': { prompt: 0.72, completion: 0.72 },
+  'llama3-1-405b': { prompt: 2.4, completion: 2.4 },
+  'llama3-2-1b': { prompt: 0.1, completion: 0.1 },
+  'llama3-2-3b': { prompt: 0.15, completion: 0.15 },
+  'llama3-2-11b': { prompt: 0.16, completion: 0.16 },
+  'llama3-2-90b': { prompt: 0.72, completion: 0.72 },
+
+  // llama3.x:Nb pattern
+  'llama3.1:8b': { prompt: 0.22, completion: 0.22 },
+  'llama3.1:70b': { prompt: 0.72, completion: 0.72 },
+  'llama3.1:405b': { prompt: 2.4, completion: 2.4 },
+  'llama3.2:1b': { prompt: 0.1, completion: 0.1 },
+  'llama3.2:3b': { prompt: 0.15, completion: 0.15 },
+  'llama3.2:11b': { prompt: 0.16, completion: 0.16 },
+  'llama3.2:90b': { prompt: 0.72, completion: 0.72 },
+
+  // llama-3.x-Nb pattern
+  'llama-3.1-8b': { prompt: 0.22, completion: 0.22 },
+  'llama-3.1-70b': { prompt: 0.72, completion: 0.72 },
+  'llama-3.1-405b': { prompt: 2.4, completion: 2.4 },
+  'llama-3.2-1b': { prompt: 0.1, completion: 0.1 },
+  'llama-3.2-3b': { prompt: 0.15, completion: 0.15 },
+  'llama-3.2-11b': { prompt: 0.16, completion: 0.16 },
+  'llama-3.2-90b': { prompt: 0.72, completion: 0.72 },
+  'llama-3.3-70b': { prompt: 2.65, completion: 3.5 },
   'mistral-7b': { prompt: 0.15, completion: 0.2 },
   'mistral-small': { prompt: 0.15, completion: 0.2 },
   'mixtral-8x7b': { prompt: 0.45, completion: 0.7 },
@@ -71,6 +99,7 @@ const tokenValues = Object.assign(
     /* cohere doesn't have rates for the older command models,
   so this was from https://artificialanalysis.ai/models/command-light/providers */
     command: { prompt: 0.38, completion: 0.38 },
+    'gemini-2.0': { prompt: 0, completion: 0 }, // https://ai.google.dev/pricing
     'gemini-1.5': { prompt: 7, completion: 21 }, // May 2nd, 2024 pricing
     gemini: { prompt: 0.5, completion: 1.5 }, // May 2nd, 2024 pricing
   },

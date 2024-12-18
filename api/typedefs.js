@@ -63,6 +63,12 @@
  */
 
 /**
+ * @exports ConversationSummaryBufferMemory
+ * @typedef {import('langchain/memory').ConversationSummaryBufferMemory} ConversationSummaryBufferMemory
+ * @memberof typedefs
+ */
+
+/**
  * @exports UsageMetadata
  * @typedef {import('@langchain/core/messages').UsageMetadata} UsageMetadata
  * @memberof typedefs
@@ -747,6 +753,33 @@
  */
 
 /**
+ *
+ * @typedef {Object} ImageGenOptions
+ * @property {ServerRequest} req - The request object.
+ * @property {boolean} isAgent - Whether the request is from an agent.
+ * @property {FileSources} fileStrategy - The file strategy to use.
+ * @property {processFileURL} processFileURL - The function to process a file URL.
+ * @property {boolean} returnMetadata - Whether to return metadata.
+ * @property {uploadImageBuffer} uploadImageBuffer - The function to upload an image buffer.
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Partial<ImageGenOptions> & {
+ *   message?: string,
+ *   signal?: AbortSignal
+ *   memory?: ConversationSummaryBufferMemory
+ * }} LoadToolOptions
+ * @memberof typedefs
+ */
+
+/**
+ * @exports EModelEndpoint
+ * @typedef {import('librechat-data-provider').EModelEndpoint} EModelEndpoint
+ * @memberof typedefs
+ */
+
+/**
  * @exports TAttachment
  * @typedef {import('librechat-data-provider').TAttachment} TAttachment
  * @memberof typedefs
@@ -825,6 +858,12 @@
  */
 
 /**
+ * @exports TAgentsEndpoint
+ * @typedef {import('librechat-data-provider').TAgentsEndpoint} TAgentsEndpoint
+ * @memberof typedefs
+ */
+
+/**
  * @exports Agent
  * @typedef {import('librechat-data-provider').Agent} Agent
  * @memberof typedefs
@@ -857,6 +896,42 @@
 /**
  * @exports AgentListResponse
  * @typedef {import('librechat-data-provider').AgentListResponse} AgentListResponse
+ * @memberof typedefs
+ */
+
+/**
+ * @exports JsonSchemaType
+ * @typedef {import('librechat-data-provider').JsonSchemaType} JsonSchemaType
+ * @memberof typedefs
+ */
+
+/**
+ * @exports MCPServers
+ * @typedef {import('librechat-mcp').MCPServers} MCPServers
+ * @memberof typedefs
+ */
+
+/**
+ * @exports MCPManager
+ * @typedef {import('librechat-mcp').MCPManager} MCPManager
+ * @memberof typedefs
+ */
+
+/**
+ * @exports LCAvailableTools
+ * @typedef {import('librechat-mcp').LCAvailableTools} LCAvailableTools
+ * @memberof typedefs
+ */
+
+/**
+ * @exports LCTool
+ * @typedef {import('librechat-mcp').LCTool} LCTool
+ * @memberof typedefs
+ */
+
+/**
+ * @exports FormattedContent
+ * @typedef {import('librechat-mcp').FormattedContent} FormattedContent
  * @memberof typedefs
  */
 

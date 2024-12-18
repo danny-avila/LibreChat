@@ -48,6 +48,7 @@ html {
   --header-hover: var(--gray-50);
   --header-button-hover: var(--gray-50);
   --surface-active: var(--gray-100);
+  --surface-active-alt: var(--gray-200);
   --surface-hover: var(--gray-200);
   --surface-primary: var(--white);
   --surface-primary-alt: var(--gray-50);
@@ -99,6 +100,7 @@ html {
   --header-hover: var(--gray-600);
   --header-button-hover: var(--gray-700);
   --surface-active: var(--gray-500);
+  --surface-active-alt: var(--gray-700);
   --surface-hover: var(--gray-600);
   --surface-primary: var(--gray-900);
   --surface-primary-alt: var(--gray-850);
@@ -2369,7 +2371,7 @@ button.scroll-convo {
 }
 
 .popover-ui:where(.dark, .dark *) {
-  background-color: hsl(var(--background));
+  background-color: hsl(var(--secondary));
   color: var(--text-secondary);
   box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.25), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 }
@@ -2390,7 +2392,7 @@ button.scroll-convo {
 }
 
 .select-item[data-active-item] {
-  background-color: hsl(var(--accent));
+  background-color: var(--surface-hover);
   color: var(--text-primary);
 }
 

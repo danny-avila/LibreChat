@@ -7,6 +7,7 @@ const {
   actionDomainSeparator,
 } = require('librechat-data-provider');
 const { tool } = require('@langchain/core/tools');
+const { isActionDomainAllowed } = require('~/server/services/domains');
 const { encryptV2, decryptV2 } = require('~/server/utils/crypto');
 const { getActions, deleteActions } = require('~/models/Action');
 const { deleteAssistant } = require('~/models/Assistant');
@@ -122,6 +123,10 @@ async function loadActionSets(searchParams) {
  */
 async function createActionTool({ action, requestBuilder, zodSchema, name, description }) {
   action.metadata = await decryptMetadata(action.metadata);
+  const isDomainAllowed = await isActionDomainAllowed(action.metadata.domain);
+  if (!isDomainAllowed) {
+    return null;
+  }
   /** @type {(toolInput: Object | string) => Promise<unknown>} */
   const _call = async (toolInput) => {
     try {

@@ -423,6 +423,7 @@ class OpenAIClient extends BaseClient {
       promptPrefix: this.options.promptPrefix,
       resendFiles: this.options.resendFiles,
       imageDetail: this.options.imageDetail,
+      modelLabel: this.options.modelLabel,
       iconURL: this.options.iconURL,
       greeting: this.options.greeting,
       spec: this.options.spec,
@@ -1323,6 +1324,11 @@ ${convo}
       let streamPromise;
       /** @type {(value: void | PromiseLike<void>) => void} */
       let streamResolve;
+
+      if (this.isO1Model === true && this.azure && modelOptions.stream) {
+        delete modelOptions.stream;
+        delete modelOptions.stop;
+      }
 
       if (modelOptions.stream) {
         streamPromise = new Promise((resolve) => {

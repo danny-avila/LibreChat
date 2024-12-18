@@ -428,6 +428,16 @@ export const updateAgent = ({
   );
 };
 
+export const duplicateAgent = ({
+  agent_id,
+}: m.DuplicateAgentBody): Promise<{ agent: a.Agent; actions: a.Action[] }> => {
+  return request.post(
+    endpoints.agents({
+      path: `${agent_id}/duplicate`,
+    }),
+  );
+};
+
 export const deleteAgent = ({ agent_id }: m.DeleteAgentBody): Promise<void> => {
   return request.delete(
     endpoints.agents({
@@ -558,6 +568,12 @@ export const getCustomConfigSpeech = (): Promise<t.TCustomConfigSpeechResponse> 
 };
 
 /* conversations */
+
+export function duplicateConversation(
+  payload: t.TDuplicateConvoRequest,
+): Promise<t.TDuplicateConvoResponse> {
+  return request.post(endpoints.duplicateConversation(), payload);
+}
 
 export function forkConversation(payload: t.TForkConvoRequest): Promise<t.TForkConvoResponse> {
   return request.post(endpoints.forkConversation(), payload);

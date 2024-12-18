@@ -356,6 +356,8 @@ export default {
   com_assistants_knowledge_disabled:
     '助理必須先建立，並啟用及儲存「程式碼解譯器」或「資訊檢索」功能，才能上傳檔案作為知識庫。',
   com_assistants_image_vision: '影像視覺',
+  com_assistants_append_date: '添加當前日期和時間',
+  com_assistants_append_date_tooltip: '啟用後，當前客戶的日期和時間將附加到助手的系統指令中。',
   com_assistants_code_interpreter: '程式碼解譯器',
   com_assistants_code_interpreter_files: '以下檔案僅適用於程式碼解譯器：',
   com_assistants_retrieval: '檢索',

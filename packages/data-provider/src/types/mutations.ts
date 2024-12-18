@@ -126,6 +126,15 @@ export type UpdateAgentVariables = {
 
 export type UpdateAgentMutationOptions = MutationOptions<Agent, UpdateAgentVariables>;
 
+export type DuplicateAgentBody = {
+  agent_id: string;
+};
+
+export type DuplicateAgentMutationOptions = MutationOptions<
+  { agent: Agent; actions: Action[] },
+  Pick<DuplicateAgentBody, 'agent_id'>
+>;
+
 export type DeleteAgentBody = {
   agent_id: string;
 };
@@ -148,6 +157,11 @@ export type DeleteAgentActionOptions = MutationOptions<void, DeleteAgentActionVa
 export type DeleteConversationOptions = MutationOptions<
   types.TDeleteConversationResponse,
   types.TDeleteConversationRequest
+>;
+
+export type DuplicateConvoOptions = MutationOptions<
+  types.TDuplicateConvoResponse,
+  types.TDuplicateConvoRequest
 >;
 
 export type ForkConvoOptions = MutationOptions<types.TForkConvoResponse, types.TForkConvoRequest>;

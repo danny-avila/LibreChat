@@ -20,7 +20,7 @@ const Agent = mongoose.model('agent', agentSchema);
  * @throws {Error} If the agent creation fails.
  */
 const createAgent = async (agentData) => {
-  return await Agent.create(agentData);
+  return (await Agent.create(agentData)).toObject();
 };
 
 /**
@@ -200,6 +200,7 @@ const getListAgents = async (searchParameter) => {
       avatar: 1,
       author: 1,
       projectIds: 1,
+      description: 1,
       isCollaborative: 1,
     }).lean()
   ).map((agent) => {
