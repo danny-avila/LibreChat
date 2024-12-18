@@ -361,6 +361,8 @@ export default {
   com_ui_agents_allow_share_global: 'Allow sharing Agents to all users',
   com_ui_agents_allow_use: 'Allow using Agents',
   com_ui_agents_allow_create: 'Allow creating Agents',
+  com_ui_agent_duplicated: 'Agent duplicated successfully',
+  com_ui_agent_duplicate_error: 'There was an error duplicating the agent',
   com_ui_prompt_already_shared_to_all: 'This prompt is already shared to all users',
   com_ui_description_placeholder: 'Optional: Enter a description to display for the prompt',
   com_ui_command_placeholder: 'Optional: Enter a command for the prompt or name will be used.',
@@ -428,6 +430,8 @@ export default {
   com_ui_no_bookmarks: 'it seems like you have no bookmarks yet. Click on a chat and add a new one',
   com_ui_no_conversation_id: 'No conversation ID found',
   com_ui_add_multi_conversation: 'Add multi-conversation',
+  com_ui_duplicate: 'Duplicate',
+  com_ui_duplicate_agent_confirm: 'Are you sure you want to duplicate this agent?',
   com_auth_error_login:
     'Unable to login with the information provided. Please check your credentials and try again.',
   com_auth_error_login_rl:

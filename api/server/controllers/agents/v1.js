@@ -1,6 +1,12 @@
 const fs = require('fs').promises;
 const { nanoid } = require('nanoid');
-const { FileContext, Constants, Tools, SystemRoles } = require('librechat-data-provider');
+const {
+  FileContext,
+  Constants,
+  Tools,
+  SystemRoles,
+  actionDelimiter,
+} = require('librechat-data-provider');
 const {
   getAgent,
   createAgent,
@@ -10,6 +16,7 @@ const {
 } = require('~/models/Agent');
 const { uploadImageBuffer, filterFile } = require('~/server/services/Files/process');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { updateAction, getActions } = require('~/models/Action');
 const { getProjectByName } = require('~/models/Project');
 const { updateAgentProjects } = require('~/models/Agent');
 const { deleteFileByFilter } = require('~/models/File');
@@ -174,6 +181,99 @@ const updateAgentHandler = async (req, res) => {
 };
 
 /**
+ * Duplicates an Agent based on the provided ID.
+ * @route POST /Agents/:id/duplicate
+ * @param {object} req - Express Request
+ * @param {object} req.params - Request params
+ * @param {string} req.params.id - Agent identifier.
+ * @returns {Agent} 201 - success response - application/json
+ */
+const duplicateAgentHandler = async (req, res) => {
+  const { id } = req.params;
+  const { id: userId } = req.user;
+  const sensitiveFields = ['api_key', 'oauth_client_id', 'oauth_client_secret'];
+
+  try {
+    const agent = await getAgent({ id });
+    if (!agent) {
+      return res.status(404).json({
+        error: 'Agent not found',
+        status: 'error',
+      });
+    }
+
+    const {
+      _id: __id,
+      id: _id,
+      author: _author,
+      createdAt: _createdAt,
+      updatedAt: _updatedAt,
+      ...cloneData
+    } = agent;
+
+    const newAgentId = `agent_${nanoid()}`;
+    const newAgentData = Object.assign(cloneData, {
+      id: newAgentId,
+      author: userId,
+    });
+
+    const newActionsList = [];
+    const originalActions = (await getActions({ agent_id: id }, true)) ?? [];
+    const promises = [];
+
+    /**
+     * Duplicates an action and returns the new action ID.
+     * @param {Action} action
+     * @returns {Promise<string>}
+     */
+    const duplicateAction = async (action) => {
+      const newActionId = nanoid();
+      const [domain] = action.action_id.split(actionDelimiter);
+      const fullActionId = `${domain}${actionDelimiter}${newActionId}`;
+
+      const newAction = await updateAction(
+        { action_id: newActionId },
+        {
+          metadata: action.metadata,
+          agent_id: newAgentId,
+          user: userId,
+        },
+      );
+
+      const filteredMetadata = { ...newAction.metadata };
+      for (const field of sensitiveFields) {
+        delete filteredMetadata[field];
+      }
+
+      newAction.metadata = filteredMetadata;
+      newActionsList.push(newAction);
+      return fullActionId;
+    };
+
+    for (const action of originalActions) {
+      promises.push(
+        duplicateAction(action).catch((error) => {
+          logger.error('[/agents/:id/duplicate] Error duplicating Action:', error);
+        }),
+      );
+    }
+
+    const agentActions = await Promise.all(promises);
+    newAgentData.actions = agentActions;
+    const newAgent = await createAgent(newAgentData);
+
+    return res.status(201).json({
+      agent: newAgent,
+      actions: newActionsList,
+    });
+  } catch (error) {
+    logger.error('[/Agents/:id/duplicate] Error duplicating Agent:', error);
+
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
  * Deletes an Agent based on the provided ID.
  * @route DELETE /Agents/:id
  * @param {object} req - Express Request
@@ -292,6 +392,7 @@ module.exports = {
   createAgent: createAgentHandler,
   getAgent: getAgentHandler,
   updateAgent: updateAgentHandler,
+  duplicateAgent: duplicateAgentHandler,
   deleteAgent: deleteAgentHandler,
   getListAgents: getListAgentsHandler,
   uploadAgentAvatar: uploadAgentAvatarHandler,
