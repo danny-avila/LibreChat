@@ -4,7 +4,7 @@ const { ChatVertexAI } = require('@langchain/google-vertexai');
 const { GoogleVertexAI } = require('@langchain/google-vertexai');
 const { ChatGoogleVertexAI } = require('@langchain/google-vertexai');
 const { ChatGoogleGenerativeAI } = require('@langchain/google-genai');
-const { GoogleGenerativeAI: GenAI } = require('@google/generative-ai');
+const { GoogleGenerativeAI: GenAI, DynamicRetrievalMode } = require('@google/generative-ai');
 const { AIMessage, HumanMessage, SystemMessage } = require('@langchain/core/messages');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const {
@@ -35,6 +35,12 @@ const tokenizersCache = {};
 
 const settings = endpointSettings[EModelEndpoint.google];
 const EXCLUDED_GENAI_MODELS = /gemini-(?:1\.0|1-0|pro)/;
+
+
+const isNewGeminiModel = (model) => {
+  return model.includes('gemini-exp-1206') || 
+         model.includes('gemini-2.');
+};
 
 class GoogleClient extends BaseClient {
   constructor(credentials, options = {}) {
@@ -124,7 +130,11 @@ class GoogleClient extends BaseClient {
       .filter((ex) => ex)
       .filter((obj) => obj.input.content !== '' && obj.output.content !== '');
 
-    this.modelOptions = this.options.modelOptions || {};
+    // Set modelOptions, ensuring enableSearch is included
+    this.modelOptions = {
+      ...(this.options.modelOptions || {}),
+      enableSearch: this.options.enableSearch,
+    };
 
     this.options.attachments?.then((attachments) => this.checkVisionRequest(attachments));
 
@@ -420,9 +430,9 @@ class GoogleClient extends BaseClient {
 
     logger.debug('[GoogleClient]', {
       orderedMessages,
-      parentMessageId,
+      parentMessageId, 
     });
-
+      
     const formattedMessages = orderedMessages.map((message) => ({
       author: message.isCreatedByUser ? this.userLabel : this.modelLabel,
       content: message?.content ?? message.text,
@@ -624,7 +634,29 @@ class GoogleClient extends BaseClient {
       return new ChatVertexAI(clientOptions);
     } else if (!EXCLUDED_GENAI_MODELS.test(model)) {
       logger.debug('Creating GenAI client');
-      return new GenAI(this.apiKey).getGenerativeModel({ ...clientOptions, model }, requestOptions);
+      const tools = [];
+      if (this.modelOptions.enableSearch) {
+        logger.debug('[GoogleClient] Adding search tool');
+        if (isNewGeminiModel(model)) {
+          tools.push({
+            googleSearch: {}
+          });
+        } else {
+          tools.push({
+            googleSearchRetrieval: {
+              dynamicRetrievalConfig: {
+                mode: DynamicRetrievalMode.MODE_DYNAMIC,
+                dynamicThreshold: 0.7,
+              },
+            },
+          });
+        }
+      }
+      return new GenAI(this.apiKey).getGenerativeModel({
+        ...clientOptions,
+        model,
+        tools,
+      }, requestOptions );
     }
 
     logger.debug('Creating Chat Google Generative AI client');
