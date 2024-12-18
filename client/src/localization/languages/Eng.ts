@@ -187,6 +187,7 @@ export default {
   com_ui_provider: 'Provider',
   com_ui_model: 'Model',
   com_ui_region: 'Region',
+  com_ui_reset_var: 'Reset {0}',
   com_ui_model_parameters: 'Model Parameters',
   com_ui_model_save_success: 'Model parameters saved successfully',
   com_ui_select_model: 'Select a model',
