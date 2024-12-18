@@ -115,10 +115,6 @@ const AdminSettings = () => {
       agentPerm: Permissions.USE,
       label: localize('com_ui_agents_allow_use'),
     },
-    {
-      agentPerm: Permissions.DUPLICATE,
-      label: localize('com_ui_agents_allow_duplicate'),
-    },
   ];
 
   const onSubmit = (data: FormValues) => {

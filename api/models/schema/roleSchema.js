@@ -41,10 +41,6 @@ const roleSchema = new mongoose.Schema({
       type: Boolean,
       default: true,
     },
-    [Permissions.DUPLICATE]: {
-      type: Boolean,
-      default: false,
-    },
   },
   [PermissionTypes.MULTI_CONVO]: {
     [Permissions.USE]: {

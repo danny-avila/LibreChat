@@ -14,8 +14,6 @@ const checkAgentCreate = generateCheckAccess(PermissionTypes.AGENTS, [
   Permissions.CREATE,
 ]);
 
-const checkAgentDuplicate = generateCheckAccess(PermissionTypes.AGENTS, [Permissions.DUPLICATE]);
-
 const checkGlobalAgentShare = generateCheckAccess(
   PermissionTypes.AGENTS,
   [Permissions.USE, Permissions.CREATE],
@@ -70,7 +68,7 @@ router.patch('/:id', checkGlobalAgentShare, v1.updateAgent);
  * @param {string} req.params.id - Agent identifier.
  * @returns {Agent} 201 - Success response - application/json
  */
-router.post('/:id/duplicate', checkAgentDuplicate, v1.duplicateAgent);
+router.post('/:id/duplicate', checkAgentCreate, v1.duplicateAgent);
 
 /**
  * Deletes an agent.

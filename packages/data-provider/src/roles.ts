@@ -47,7 +47,6 @@ export enum Permissions {
   READ = 'READ',
   READ_AUTHOR = 'READ_AUTHOR',
   SHARE = 'SHARE',
-  DUPLICATE = 'DUPLICATE',
 }
 
 export const promptPermissionsSchema = z.object({
@@ -65,7 +64,6 @@ export const agentPermissionsSchema = z.object({
   [Permissions.SHARED_GLOBAL]: z.boolean().default(false),
   [Permissions.USE]: z.boolean().default(true),
   [Permissions.CREATE]: z.boolean().default(true),
-  [Permissions.DUPLICATE]: z.boolean().default(false),
   // [Permissions.SHARE]: z.boolean().default(false),
 });
 
@@ -103,7 +101,6 @@ const defaultRolesSchema = z.object({
       [Permissions.SHARED_GLOBAL]: z.boolean().default(true),
       [Permissions.USE]: z.boolean().default(true),
       [Permissions.CREATE]: z.boolean().default(true),
-      [Permissions.DUPLICATE]: z.boolean().default(true),
       // [Permissions.SHARE]: z.boolean().default(true),
     }),
     [PermissionTypes.MULTI_CONVO]: multiConvoPermissionsSchema.extend({
