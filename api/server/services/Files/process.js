@@ -135,21 +135,29 @@ const processDeleteRequest = async ({ req, files }) => {
   /** @type {Record<string, OpenAI | undefined>} */
   const client = { [FileSources.openai]: undefined, [FileSources.azure]: undefined };
   const initializeClients = async () => {
-    const openAIClient = await getOpenAIClient({
-      req,
-      overrideEndpoint: EModelEndpoint.assistants,
-    });
-    client[FileSources.openai] = openAIClient.openai;
+    try {
+      const openAIClient = await getOpenAIClient({
+        req,
+        overrideEndpoint: EModelEndpoint.assistants,
+      });
+      client[FileSources.openai] = openAIClient.openai;
+    } catch (error) {
+      logger.warn(`Could not init OpenAI client: ${error}`);
+    }
 
     if (!req.app.locals[EModelEndpoint.azureOpenAI]?.assistants) {
       return;
     }
 
-    const azureClient = await getOpenAIClient({
-      req,
-      overrideEndpoint: EModelEndpoint.azureAssistants,
-    });
-    client[FileSources.azure] = azureClient.openai;
+    try {
+      const azureClient = await getOpenAIClient({
+        req,
+        overrideEndpoint: EModelEndpoint.azureAssistants,
+      });
+      client[FileSources.azure] = azureClient.openai;
+    } catch (error) {
+      logger.warn(`Could not init Azure OpenAI client: ${error}`);
+    }
   };
 
   if (req.body.assistant_id !== undefined) {
