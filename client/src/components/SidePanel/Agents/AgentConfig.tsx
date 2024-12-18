@@ -18,11 +18,12 @@ import { useToastContext, useFileMapContext } from '~/Providers';
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 import Action from '~/components/SidePanel/Builder/Action';
 import { ToolSelectDialog } from '~/components/Tools';
+import DuplicateAgent from './DuplicateAgent';
 import { processAgentOption } from '~/utils';
 import AdminSettings from './AdminSettings';
-import { Spinner } from '~/components/svg';
 import DeleteButton from './DeleteButton';
 import AgentAvatar from './AgentAvatar';
+import { Spinner } from '~/components';
 import FileSearch from './FileSearch';
 import ShareAgent from './ShareAgent';
 import AgentTool from './AgentTool';
@@ -421,6 +422,7 @@ export default function AgentConfig({
               isCollaborative={agent?.isCollaborative}
             />
           )}
+          {agent && agent.author === user?.id && <DuplicateAgent agent_id={agent_id} />}
           {/* Submit Button */}
           <button
             className="btn btn-primary focus:shadow-outline flex h-9 w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"

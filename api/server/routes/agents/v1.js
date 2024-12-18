@@ -63,6 +63,14 @@ router.get('/:id', checkAgentAccess, v1.getAgent);
 router.patch('/:id', checkGlobalAgentShare, v1.updateAgent);
 
 /**
+ * Duplicates an agent.
+ * @route POST /agents/:id/duplicate
+ * @param {string} req.params.id - Agent identifier.
+ * @returns {Agent} 201 - Success response - application/json
+ */
+router.post('/:id/duplicate', checkAgentCreate, v1.duplicateAgent);
+
+/**
  * Deletes an agent.
  * @route DELETE /agents/:id
  * @param {string} req.params.id - Agent identifier.
