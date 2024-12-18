@@ -30,7 +30,7 @@ export const code: React.ElementType = memo(({ inline, className, children }: TC
 });
 
 export const CodeMarkdown = memo(
-  ({ content = '', isSubmitting }: { content: string; isSubmitting: boolean }) => {
+  ({ content = '', isSubmitting }: { content: string; isSubmitting: boolean, isCode: boolean }) => {
     const scrollRef = useRef<HTMLDivElement>(null);
     const [userScrolled, setUserScrolled] = useState(false);
     const currentContent = content;
