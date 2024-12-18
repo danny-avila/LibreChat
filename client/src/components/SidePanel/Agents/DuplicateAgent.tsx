@@ -4,7 +4,7 @@ import { cn, removeFocusOutlines } from '~/utils';
 import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 
-export default function DuplicateButton({ agent_id }: { agent_id: string }) {
+export default function DuplicateAgent({ agent_id }: { agent_id: string }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
 
