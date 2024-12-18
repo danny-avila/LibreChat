@@ -697,7 +697,7 @@ class GoogleClient extends BaseClient {
         promptPrefix = `${promptPrefix ?? ''}\n${this.options.artifactsPrompt}`.trim();
       }
 
-      if (this.options?.promptPrefix?.length) {
+      if (promptPrefix.length) {
         requestOptions.systemInstruction = {
           parts: [
             {
