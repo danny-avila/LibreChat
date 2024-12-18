@@ -88,7 +88,7 @@ function ShareLinkRow({ sharedLink }: { sharedLink: TSharedLink }) {
             </OGDialogTrigger>
             <OGDialogTemplate
               showCloseButton={false}
-              title={localize('com_ui_delete_conversation')}
+              title={localize('com_ui_delete_shared_link')}
               className="max-w-[450px]"
               main={
                 <>

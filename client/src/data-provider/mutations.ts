@@ -573,6 +573,43 @@ export const useDeleteConversationMutation = (
   );
 };
 
+export const useDuplicateConversationMutation = (
+  options?: t.DuplicateConvoOptions,
+): UseMutationResult<t.TDuplicateConvoResponse, unknown, t.TDuplicateConvoRequest, unknown> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, ..._options } = options ?? {};
+  return useMutation(
+    (payload: t.TDuplicateConvoRequest) => dataService.duplicateConversation(payload),
+    {
+      onSuccess: (data, vars, context) => {
+        const originalId = vars.conversationId ?? '';
+        if (originalId.length === 0) {
+          return;
+        }
+        if (data == null) {
+          return;
+        }
+        queryClient.setQueryData(
+          [QueryKeys.conversation, data.conversation.conversationId],
+          data.conversation,
+        );
+        queryClient.setQueryData<t.ConversationData>([QueryKeys.allConversations], (convoData) => {
+          if (!convoData) {
+            return convoData;
+          }
+          return addConversation(convoData, data.conversation);
+        });
+        queryClient.setQueryData<t.TMessage[]>(
+          [QueryKeys.messages, data.conversation.conversationId],
+          data.messages,
+        );
+        onSuccess?.(data, vars, context);
+      },
+      ..._options,
+    },
+  );
+};
+
 export const useForkConvoMutation = (
   options?: t.ForkConvoOptions,
 ): UseMutationResult<t.TForkConvoResponse, unknown, t.TForkConvoRequest, unknown> => {

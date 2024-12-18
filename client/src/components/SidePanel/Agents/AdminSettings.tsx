@@ -166,8 +166,7 @@ const AdminSettings = () => {
                 </Ariakit.MenuButton>
               }
               items={roleDropdownItems}
-              className="border border-border-light bg-surface-primary"
-              itemClassName="hover:bg-surface-tertiary items-center justify-center"
+              itemClassName="items-center justify-center"
               sameWidth={true}
             />
           </div>

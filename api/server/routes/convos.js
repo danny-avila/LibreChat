@@ -2,9 +2,9 @@ const multer = require('multer');
 const express = require('express');
 const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
 const { getConvosByPage, deleteConvos, getConvo, saveConvo } = require('~/models/Conversation');
+const { forkConversation, duplicateConversation } = require('~/server/utils/import/fork');
 const { storage, importFileFilter } = require('~/server/routes/files/multer');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
-const { forkConversation } = require('~/server/utils/import/fork');
 const { importConversations } = require('~/server/utils/import');
 const { createImportLimiters } = require('~/server/middleware');
 const { deleteToolCalls } = require('~/models/ToolCall');
@@ -182,8 +182,24 @@ router.post('/fork', async (req, res) => {
 
     res.json(result);
   } catch (error) {
-    logger.error('Error forking conversation', error);
+    logger.error('Error forking conversation:', error);
     res.status(500).send('Error forking conversation');
+  }
+});
+
+router.post('/duplicate', async (req, res) => {
+  const { conversationId, title } = req.body;
+
+  try {
+    const result = await duplicateConversation({
+      userId: req.user.id,
+      conversationId,
+      title,
+    });
+    res.status(201).json(result);
+  } catch (error) {
+    logger.error('Error duplicating conversation:', error);
+    res.status(500).send('Error duplicating conversation');
   }
 });
 
