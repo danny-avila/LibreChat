@@ -82,7 +82,7 @@ export default function AssistantPanel({
     [assistantsConfig],
   );
   const retrievalEnabled = useMemo(
-    () => assistantsConfig?.capabilities?.includes(Capabilities.retrieval),
+    () => assistantsConfig?.capabilities?.includes(Capabilities.file_search),
     [assistantsConfig],
   );
   const codeEnabled = useMemo(
@@ -154,6 +154,9 @@ export default function AssistantPanel({
 
     if (data.code_interpreter) {
       tools.push({ type: Tools.code_interpreter });
+    }
+    if (data.file_search) {
+      tools.push({ type: Tools.file_search });
     }
     if (data.retrieval) {
       tools.push({ type: version == 2 ? Tools.file_search : Tools.retrieval });
