@@ -7,6 +7,69 @@ const { getMessages } = require('~/models/Message');
 const logger = require('~/config/winston');
 
 /**
+ * Helper function to clone messages with proper parent-child relationships and timestamps
+ * @param {TMessage[]} messagesToClone - Original messages to clone
+ * @param {ImportBatchBuilder} importBatchBuilder - Instance of ImportBatchBuilder
+ * @returns {Map<string, string>} Map of original messageIds to new messageIds
+ */
+function cloneMessagesWithTimestamps(messagesToClone, importBatchBuilder) {
+  const idMapping = new Map();
+
+  // First pass: create ID mapping and sort messages by parentMessageId
+  const sortedMessages = [...messagesToClone].sort((a, b) => {
+    if (a.parentMessageId === Constants.NO_PARENT) {
+      return -1;
+    }
+    if (b.parentMessageId === Constants.NO_PARENT) {
+      return 1;
+    }
+    return 0;
+  });
+
+  // Helper function to ensure date object
+  const ensureDate = (dateValue) => {
+    if (!dateValue) {
+      return new Date();
+    }
+    return dateValue instanceof Date ? dateValue : new Date(dateValue);
+  };
+
+  // Second pass: clone messages while maintaining proper timestamps
+  for (const message of sortedMessages) {
+    const newMessageId = uuidv4();
+    idMapping.set(message.messageId, newMessageId);
+
+    const parentId =
+      message.parentMessageId && message.parentMessageId !== Constants.NO_PARENT
+        ? idMapping.get(message.parentMessageId)
+        : Constants.NO_PARENT;
+
+    // If this message has a parent, ensure its timestamp is after the parent's
+    let createdAt = ensureDate(message.createdAt);
+    if (parentId !== Constants.NO_PARENT) {
+      const parentMessage = importBatchBuilder.messages.find((msg) => msg.messageId === parentId);
+      if (parentMessage) {
+        const parentDate = ensureDate(parentMessage.createdAt);
+        if (createdAt <= parentDate) {
+          createdAt = new Date(parentDate.getTime() + 1);
+        }
+      }
+    }
+
+    const clonedMessage = {
+      ...message,
+      messageId: newMessageId,
+      parentMessageId: parentId,
+      createdAt,
+    };
+
+    importBatchBuilder.saveMessage(clonedMessage);
+  }
+
+  return idMapping;
+}
+
+/**
  *
  * @param {object} params - The parameters for the importer.
  * @param {string} params.originalConvoId - The ID of the conversation to fork.
@@ -65,23 +128,7 @@ async function forkConversation({
       messagesToClone = getMessagesUpToTargetLevel(originalMessages, targetMessageId);
     }
 
-    const idMapping = new Map();
-
-    for (const message of messagesToClone) {
-      const newMessageId = uuidv4();
-      idMapping.set(message.messageId, newMessageId);
-
-      const clonedMessage = {
-        ...message,
-        messageId: newMessageId,
-        parentMessageId:
-          message.parentMessageId && message.parentMessageId !== Constants.NO_PARENT
-            ? idMapping.get(message.parentMessageId)
-            : Constants.NO_PARENT,
-      };
-
-      importBatchBuilder.saveMessage(clonedMessage);
-    }
+    cloneMessagesWithTimestamps(messagesToClone, importBatchBuilder);
 
     const result = importBatchBuilder.finishConversation(
       newTitle || originalConvo.title,
@@ -331,25 +378,10 @@ async function duplicateConversation({ userId, conversationId }) {
     originalMessages[originalMessages.length - 1].messageId,
   );
 
-  const idMapping = new Map();
   const importBatchBuilder = createImportBatchBuilder(userId);
   importBatchBuilder.startConversation(originalConvo.endpoint ?? EModelEndpoint.openAI);
 
-  for (const message of messagesToClone) {
-    const newMessageId = uuidv4();
-    idMapping.set(message.messageId, newMessageId);
-
-    const clonedMessage = {
-      ...message,
-      messageId: newMessageId,
-      parentMessageId:
-        message.parentMessageId && message.parentMessageId !== Constants.NO_PARENT
-          ? idMapping.get(message.parentMessageId)
-          : Constants.NO_PARENT,
-    };
-
-    importBatchBuilder.saveMessage(clonedMessage);
-  }
+  cloneMessagesWithTimestamps(messagesToClone, importBatchBuilder);
 
   const result = importBatchBuilder.finishConversation(
     originalConvo.title,
@@ -376,7 +408,8 @@ async function duplicateConversation({ userId, conversationId }) {
 module.exports = {
   forkConversation,
   splitAtTargetLevel,
+  duplicateConversation,
   getAllMessagesUpToParent,
   getMessagesUpToTargetLevel,
-  duplicateConversation,
+  cloneMessagesWithTimestamps,
 };
