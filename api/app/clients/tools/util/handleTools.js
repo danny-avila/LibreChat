@@ -256,7 +256,7 @@ const loadTools = async ({
         if (toolContext) {
           toolContextMap[tool] = toolContext;
         }
-        return createFileSearchTool({ req: options.req, files });
+        return createFileSearchTool({ req: options.req, files, entity_id: agent?.id });
       };
       continue;
     } else if (mcpToolPattern.test(tool)) {
