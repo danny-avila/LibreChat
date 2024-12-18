@@ -49,7 +49,11 @@ export enum BedrockProviders {
 
 export const getModelKey = (endpoint: EModelEndpoint | string, model: string) => {
   if (endpoint === EModelEndpoint.bedrock) {
-    return model.split('.')[0] as BedrockProviders;
+    const parts = model.split('.');
+    const provider = [parts[0], parts[1]].find((part) =>
+      Object.values(BedrockProviders).includes(part as BedrockProviders),
+    );
+    return (provider ?? parts[0]) as BedrockProviders;
   }
   return model;
 };
