@@ -11,6 +11,8 @@ export * from './zod';
 /* custom/dynamic configurations  */
 export * from './generate';
 export * from './models';
+/* mcp */
+export * from './mcp';
 /* RBAC */
 export * from './roles';
 /* types (exports schemas from `./types` as they contain needed in other defs) */

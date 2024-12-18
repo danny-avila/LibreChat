@@ -49,7 +49,11 @@ export enum BedrockProviders {
 
 export const getModelKey = (endpoint: EModelEndpoint | string, model: string) => {
   if (endpoint === EModelEndpoint.bedrock) {
-    return model.split('.')[0] as BedrockProviders;
+    const parts = model.split('.');
+    const provider = [parts[0], parts[1]].find((part) =>
+      Object.values(BedrockProviders).includes(part as BedrockProviders),
+    );
+    return (provider ?? parts[0]) as BedrockProviders;
   }
   return model;
 };
@@ -369,7 +373,7 @@ export const tPluginSchema = z.object({
   name: z.string(),
   pluginKey: z.string(),
   description: z.string(),
-  icon: z.string(),
+  icon: z.string().optional(),
   authConfig: z.array(tPluginAuthConfigSchema).optional(),
   authenticated: z.boolean().optional(),
   isButton: z.boolean().optional(),

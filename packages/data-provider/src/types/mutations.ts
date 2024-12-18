@@ -126,6 +126,15 @@ export type UpdateAgentVariables = {
 
 export type UpdateAgentMutationOptions = MutationOptions<Agent, UpdateAgentVariables>;
 
+export type DuplicateAgentBody = {
+  agent_id: string;
+};
+
+export type DuplicateAgentMutationOptions = MutationOptions<
+  { agent: Agent; actions: Action[] },
+  Pick<DuplicateAgentBody, 'agent_id'>
+>;
+
 export type DeleteAgentBody = {
   agent_id: string;
 };
