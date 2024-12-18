@@ -703,6 +703,9 @@ export default {
   com_assistants_knowledge_disabled:
     '지식으로 파일을 업로드하기 전에 Assistant를 생성하고 Code Interpreter 또는 Retrieval을 활성화한 후 저장해야 합니다.',
   com_assistants_image_vision: '이미지 인식',
+  com_assistants_append_date: '현재 날짜와 시간 추가',
+  com_assistants_append_date_tooltip:
+    '활성화하면 현재 클라이언트의 날짜와 시간이 어시스턴트의 시스템 지침에 추가됩니다.',
   com_assistants_code_interpreter: '코드 인터프리터',
   com_assistants_code_interpreter_files: '코드 인터프리터에서만 다음 파일을 사용할 수 있습니다:',
   com_assistants_retrieval: '검색',
@@ -859,7 +862,7 @@ export default {
   com_endpoint_preset_default_item: '기본값:',
   com_endpoint_preset_default_none: '기본 프리셋이 설정되지 않았습니다.',
   com_endpoint_preset_title: '프리셋',
-  com_endpoint_preset_saved: '저장되었습니다!',
+  com_ui_saved: '저장되었습니다!',
   com_endpoint_preset_default: '이제 기본 프리셋입니다.',
   com_endpoint_preset_selected: '프리셋 활성화됨',
   com_endpoint_preset_selected_title: '활성화됨',
@@ -1020,7 +1023,7 @@ export default {
   com_agents_file_search_disabled:
     '파일 검색을 위해 파일을 업로드하기 전에 에이전트를 먼저 생성해야 합니다',
 
-  com_agents_execute_code: '코드 실행',
+  com_ui_run_code: '코드 실행',
 
   com_ui_agent_already_shared_to_all: '이 에이전트는 이미 모든 사용자와 공유되어 있습니다',
 

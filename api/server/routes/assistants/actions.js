@@ -1,10 +1,11 @@
 const express = require('express');
 const { nanoid } = require('nanoid');
-const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
 const { actionDelimiter, EModelEndpoint } = require('librechat-data-provider');
+const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
 const { updateAssistantDoc, getAssistant } = require('~/models/Assistant');
+const { isActionDomainAllowed } = require('~/server/services/domains');
 const { logger } = require('~/config');
 
 const router = express.Router();
@@ -29,6 +30,10 @@ router.post('/:assistant_id', async (req, res) => {
     }
 
     let metadata = await encryptMetadata(_metadata);
+    const isDomainAllowed = await isActionDomainAllowed(metadata.domain);
+    if (!isDomainAllowed) {
+      return res.status(400).json({ message: 'Domain not allowed' });
+    }
 
     let { domain } = metadata;
     domain = await domainParser(req, domain, true);

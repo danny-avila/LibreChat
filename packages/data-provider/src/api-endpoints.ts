@@ -50,6 +50,8 @@ export const importConversation = () => `${conversationsRoot}/import`;
 
 export const forkConversation = () => `${conversationsRoot}/fork`;
 
+export const duplicateConversation = () => `${conversationsRoot}/duplicate`;
+
 export const search = (q: string, pageNumber: string) =>
   `/api/search?q=${q}&pageNumber=${pageNumber}`;
 
@@ -207,8 +209,8 @@ export const getAllPromptGroups = () => `${prompts()}/all`;
 /* Roles */
 export const roles = () => '/api/roles';
 export const getRole = (roleName: string) => `${roles()}/${roleName.toLowerCase()}`;
-export const updatePromptPermissions = (roleName: string) =>
-  `${roles()}/${roleName.toLowerCase()}/prompts`;
+export const updatePromptPermissions = (roleName: string) => `${getRole(roleName)}/prompts`;
+export const updateAgentPermissions = (roleName: string) => `${getRole(roleName)}/agents`;
 
 /* Conversation Tags */
 export const conversationTags = (tag?: string) =>

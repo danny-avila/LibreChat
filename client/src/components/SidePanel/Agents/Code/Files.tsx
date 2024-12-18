@@ -12,6 +12,7 @@ import type { ExtendedFile, AgentForm } from '~/common';
 import { useFileHandling, useLocalize, useLazyEffect } from '~/hooks';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
 import { useGetFileConfig } from '~/data-provider';
+import { AttachmentIcon } from '~/components/svg';
 import { useChatContext } from '~/Providers';
 
 const tool_resource = EToolResources.execute_code;
@@ -68,8 +69,8 @@ export default function Files({
 
   return (
     <div className="mb-2 w-full">
-      <div className="flex flex-col gap-4">
-        <div className="text-token-text-tertiary rounded-lg text-xs">
+      <div className="flex flex-col gap-3">
+        <div className="rounded-lg text-xs text-text-secondary">
           {localize('com_assistants_code_interpreter_files')}
         </div>
         <FileRow
@@ -85,10 +86,10 @@ export default function Files({
           <button
             type="button"
             disabled={!agent_id || codeChecked === false}
-            className="btn btn-neutral border-token-border-light relative h-8 w-full rounded-lg font-medium"
+            className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
             onClick={handleButtonClick}
           >
-            <div className="flex w-full items-center justify-center gap-2">
+            <div className="flex w-full items-center justify-center gap-1">
               <input
                 multiple={true}
                 type="file"
@@ -98,7 +99,8 @@ export default function Files({
                 disabled={!agent_id || codeChecked === false}
                 onChange={handleFileChange}
               />
-              {localize('com_ui_upload_files')}
+              <AttachmentIcon className="text-token-text-primary h-4 w-4" />
+              {localize('com_ui_upload_code_files')}
             </div>
           </button>
         </div>

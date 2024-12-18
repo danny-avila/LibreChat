@@ -1,38 +1,39 @@
-import { useState } from 'react';
 import { KeyRoundIcon } from 'lucide-react';
 import { AuthType, AgentCapabilities } from 'librechat-data-provider';
-import { useFormContext, Controller, useForm, useWatch } from 'react-hook-form';
+import { useFormContext, Controller, useWatch } from 'react-hook-form';
 import type { AgentForm } from '~/common';
 import {
-  Input,
-  OGDialog,
   Checkbox,
   HoverCard,
   HoverCardContent,
   HoverCardPortal,
   HoverCardTrigger,
-  Button,
 } from '~/components/ui';
-import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
-import { useLocalize, useAuthCodeTool } from '~/hooks';
+import { useLocalize, useCodeApiKeyForm } from '~/hooks';
 import { CircleHelpIcon } from '~/components/svg';
+import ApiKeyDialog from './ApiKeyDialog';
 import { ESide } from '~/common';
-
-type ApiKeyFormData = {
-  apiKey: string;
-  authType?: string | AuthType;
-};
 
 export default function Action({ authType = '', isToolAuthenticated = false }) {
   const localize = useLocalize();
   const methods = useFormContext<AgentForm>();
   const { control, setValue, getValues } = methods;
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const {
+    onSubmit,
+    isDialogOpen,
+    setIsDialogOpen,
+    handleRevokeApiKey,
+    methods: keyFormMethods,
+  } = useCodeApiKeyForm({
+    onSubmit: () => {
+      setValue(AgentCapabilities.execute_code, true, { shouldDirty: true });
+    },
+    onRevoke: () => {
+      setValue(AgentCapabilities.execute_code, false, { shouldDirty: true });
+    },
+  });
+
   const runCodeIsEnabled = useWatch({ control, name: AgentCapabilities.execute_code });
-
-  const { installTool, removeTool } = useAuthCodeTool({ isEntityTool: true });
-
-  const { reset, register, handleSubmit } = useForm<ApiKeyFormData>();
   const isUserProvided = authType === AuthType.USER_PROVIDED;
 
   const handleCheckboxChange = (checked: boolean) => {
@@ -43,18 +44,6 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
     } else {
       setIsDialogOpen(true);
     }
-  };
-
-  const onSubmit = (data: { apiKey: string }) => {
-    reset();
-    installTool(data.apiKey);
-    setIsDialogOpen(false);
-  };
-
-  const handleRevokeApiKey = () => {
-    reset();
-    removeTool();
-    setIsDialogOpen(false);
   };
 
   return (
@@ -87,7 +76,7 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
               className="form-check-label text-token-text-primary w-full cursor-pointer"
               htmlFor={AgentCapabilities.execute_code}
             >
-              {localize('com_agents_execute_code')}
+              {localize('com_ui_run_code')}
             </label>
           </button>
           <div className="ml-2 flex gap-2">
@@ -104,48 +93,23 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
             <HoverCardContent side={ESide.Top} className="w-80">
               <div className="space-y-2">
                 <p className="text-sm text-text-secondary">
-                  {/* // TODO: add a Code Interpreter description */}
+                  {localize('com_agents_code_interpreter')}
                 </p>
               </div>
             </HoverCardContent>
           </HoverCardPortal>
         </div>
       </HoverCard>
-      <OGDialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <OGDialogTemplate
-          className="w-11/12 sm:w-1/4"
-          title={localize('com_agents_tool_not_authenticated')}
-          main={
-            <form onSubmit={handleSubmit(onSubmit)}>
-              <Input
-                type="password"
-                placeholder="Enter API Key"
-                autoComplete="one-time-code"
-                readOnly={true}
-                onFocus={(e) => (e.target.readOnly = false)}
-                {...register('apiKey', { required: true })}
-              />
-            </form>
-          }
-          selection={{
-            selectHandler: handleSubmit(onSubmit),
-            selectClasses: 'bg-green-500 hover:bg-green-600 text-white',
-            selectText: localize('com_ui_save'),
-          }}
-          buttons={
-            isUserProvided &&
-            isToolAuthenticated && (
-              <Button
-                onClick={handleRevokeApiKey}
-                className="bg-destructive text-white transition-all duration-200 hover:bg-destructive/80"
-              >
-                {localize('com_ui_revoke')}
-              </Button>
-            )
-          }
-          showCancelButton={true}
-        />
-      </OGDialog>
+      <ApiKeyDialog
+        isOpen={isDialogOpen}
+        onSubmit={onSubmit}
+        onRevoke={handleRevokeApiKey}
+        onOpenChange={setIsDialogOpen}
+        register={keyFormMethods.register}
+        isToolAuthenticated={isToolAuthenticated}
+        handleSubmit={keyFormMethods.handleSubmit}
+        isUserProvided={authType === AuthType.USER_PROVIDED}
+      />
     </>
   );
 }

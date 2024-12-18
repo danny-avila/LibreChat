@@ -19,6 +19,9 @@ export default {
   com_assistants_knowledge_disabled:
     'El Asistente debe ser creado, y el Intérprete de Código o la Recuperación deben estar habilitados y guardados antes de subir archivos como Conocimiento.',
   com_assistants_image_vision: 'Visión de Imagen',
+  com_assistants_append_date: 'Añadir Fecha y Hora Actual',
+  com_assistants_append_date_tooltip:
+    'Cuando está habilitado, la fecha y hora actual del cliente se adjuntarán a las instrucciones del sistema del asistente.',
   com_assistants_code_interpreter: 'Intérprete de Código',
   com_assistants_code_interpreter_files:
     'Los siguientes archivos solo están disponibles para el Intérprete de Código:',
@@ -350,7 +353,7 @@ export default {
   com_endpoint_preset_default_item: 'Predeterminado:',
   com_endpoint_preset_default_none: 'No hay configuración preestablecida predeterminada activa.',
   com_endpoint_preset_title: 'Configuración preestablecida',
-  com_endpoint_preset_saved: '¡Guardado!',
+  com_ui_saved: '¡Guardado!',
   com_endpoint_preset_default: 'es ahora la configuración preestablecida predeterminada.',
   com_endpoint_preset: 'configuración preestablecida',
   com_endpoint_presets: 'configuraciones preestablecidas',
@@ -716,7 +719,7 @@ export default {
   com_agents_file_search_disabled:
     'Es necesario crear el Agente antes de subir archivos para la Búsqueda de Archivos.',
 
-  com_agents_execute_code: 'Ejecutar código',
+  com_ui_run_code: 'Ejecutar código',
 
   com_ui_agent_already_shared_to_all: 'Este asistente ya está compartido con todos los usuarios',
 

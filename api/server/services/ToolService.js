@@ -1,10 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 const { zodToJsonSchema } = require('zod-to-json-schema');
-const { Calculator } = require('@langchain/community/tools/calculator');
 const { tool: toolFn, Tool } = require('@langchain/core/tools');
+const { Calculator } = require('@langchain/community/tools/calculator');
 const {
   Tools,
+  ErrorTypes,
   ContentTypes,
   imageGenTools,
   actionDelimiter,
@@ -170,11 +171,12 @@ async function processRequiredActions(client, requiredActions) {
     requiredActions,
   );
   const tools = requiredActions.map((action) => action.tool);
-  const loadedTools = await loadTools({
+  const { loadedTools } = await loadTools({
     user: client.req.user.id,
     model: client.req.body.model ?? 'gpt-4o-mini',
     tools,
     functions: true,
+    endpoint: client.req.body.endpoint,
     options: {
       processFileURL,
       req: client.req,
@@ -183,7 +185,6 @@ async function processRequiredActions(client, requiredActions) {
       fileStrategy: client.req.app.locals.fileStrategy,
       returnMetadata: true,
     },
-    skipSpecs: true,
   });
 
   const ToolMap = loadedTools.reduce((map, tool) => {
@@ -328,6 +329,12 @@ async function processRequiredActions(client, requiredActions) {
       }
 
       tool = await createActionTool({ action: actionSet, requestBuilder });
+      if (!tool) {
+        logger.warn(
+          `Invalid action: user: ${client.req.user.id} | thread_id: ${requiredActions[0].thread_id} | run_id: ${requiredActions[0].run_id} | toolName: ${currentAction.tool}`,
+        );
+        throw new Error(`{"type":"${ErrorTypes.INVALID_ACTION}"}`);
+      }
       isActionTool = !!tool;
       ActionToolMap[currentAction.tool] = tool;
     }
@@ -368,31 +375,28 @@ async function processRequiredActions(client, requiredActions) {
  * Processes the runtime tool calls and returns the tool classes.
  * @param {Object} params - Run params containing user and request information.
  * @param {ServerRequest} params.req - The request object.
- * @param {string} params.agent_id - The agent ID.
- * @param {Agent['tools']} params.tools - The agent's available tools.
- * @param {Agent['tool_resources']} params.tool_resources - The agent's available tool resources.
+ * @param {Agent} params.agent - The agent to load tools for.
  * @param {string | undefined} [params.openAIApiKey] - The OpenAI API key.
  * @returns {Promise<{ tools?: StructuredTool[] }>} The agent tools.
  */
-async function loadAgentTools({ req, agent_id, tools, tool_resources, openAIApiKey }) {
-  if (!tools || tools.length === 0) {
+async function loadAgentTools({ req, agent, tool_resources, openAIApiKey }) {
+  if (!agent.tools || agent.tools.length === 0) {
     return {};
   }
-  const loadedTools = await loadTools({
-    user: req.user.id,
-    // model: req.body.model ?? 'gpt-4o-mini',
-    tools,
+  const { loadedTools, toolContextMap } = await loadTools({
+    agent,
     functions: true,
+    user: req.user.id,
+    tools: agent.tools,
     options: {
       req,
       openAIApiKey,
       tool_resources,
-      returnMetadata: true,
       processFileURL,
       uploadImageBuffer,
+      returnMetadata: true,
       fileStrategy: req.app.locals.fileStrategy,
     },
-    skipSpecs: true,
   });
 
   const agentTools = [];
@@ -403,16 +407,24 @@ async function loadAgentTools({ req, agent_id, tools, tool_resources, openAIApiK
       continue;
     }
 
-    const toolInstance = toolFn(
-      async (...args) => {
-        return tool['_call'](...args);
-      },
-      {
-        name: tool.name,
-        description: tool.description,
-        schema: tool.schema,
-      },
-    );
+    if (tool.mcp === true) {
+      agentTools.push(tool);
+      continue;
+    }
+
+    const toolDefinition = {
+      name: tool.name,
+      schema: tool.schema,
+      description: tool.description,
+    };
+
+    if (imageGenTools.has(tool.name)) {
+      toolDefinition.responseFormat = 'content_and_artifact';
+    }
+
+    const toolInstance = toolFn(async (...args) => {
+      return tool['_call'](...args);
+    }, toolDefinition);
 
     agentTools.push(toolInstance);
   }
@@ -425,10 +437,10 @@ async function loadAgentTools({ req, agent_id, tools, tool_resources, openAIApiK
   let actionSets = [];
   const ActionToolMap = {};
 
-  for (const toolName of tools) {
+  for (const toolName of agent.tools) {
     if (!ToolMap[toolName]) {
       if (!actionSets.length) {
-        actionSets = (await loadActionSets({ agent_id })) ?? [];
+        actionSets = (await loadActionSets({ agent_id: agent.id })) ?? [];
       }
 
       let actionSet = null;
@@ -462,6 +474,12 @@ async function loadAgentTools({ req, agent_id, tools, tool_resources, openAIApiK
               name: toolName,
               description: functionSig.description,
             });
+            if (!tool) {
+              logger.warn(
+                `Invalid action: user: ${req.user.id} | agent_id: ${agent.id} | toolName: ${toolName}`,
+              );
+              throw new Error(`{"type":"${ErrorTypes.INVALID_ACTION}"}`);
+            }
             agentTools.push(tool);
             ActionToolMap[toolName] = tool;
           }
@@ -470,12 +488,13 @@ async function loadAgentTools({ req, agent_id, tools, tool_resources, openAIApiK
     }
   }
 
-  if (tools.length > 0 && agentTools.length === 0) {
+  if (agent.tools.length > 0 && agentTools.length === 0) {
     throw new Error('No tools found for the specified tool calls.');
   }
 
   return {
     tools: agentTools,
+    toolContextMap,
   };
 }
 

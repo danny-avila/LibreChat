@@ -27,6 +27,15 @@ async function endpointController(req, res) {
       capabilities,
     };
   }
+  if (mergedConfig[EModelEndpoint.agents] && req.app.locals?.[EModelEndpoint.agents]) {
+    const { disableBuilder, capabilities, ..._rest } = req.app.locals[EModelEndpoint.agents];
+
+    mergedConfig[EModelEndpoint.agents] = {
+      ...mergedConfig[EModelEndpoint.agents],
+      disableBuilder,
+      capabilities,
+    };
+  }
 
   if (
     mergedConfig[EModelEndpoint.azureAssistants] &&

@@ -6,7 +6,7 @@ import remarkMath from 'remark-math';
 import supersub from 'remark-supersub';
 import rehypeHighlight from 'rehype-highlight';
 import type { TPromptGroup } from 'librechat-data-provider';
-import { code } from '~/components/Chat/Messages/Content/Markdown';
+import { codeNoExecution } from '~/components/Chat/Messages/Content/Markdown';
 import { useLocalize, useAuthContext } from '~/hooks';
 import CategoryIcon from './Groups/CategoryIcon';
 import PromptVariables from './PromptVariables';
@@ -50,12 +50,20 @@ const PromptDetails = ({ group }: { group?: TPromptGroup }) => {
             </h2>
             <div className="group relative min-h-32 rounded-b-lg border border-gray-300 p-4 transition-all duration-150 dark:border-gray-600 sm:max-w-full">
               <ReactMarkdown
-                remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
+                remarkPlugins={[
+                  /** @ts-ignore */
+                  supersub,
+                  remarkGfm,
+                  [remarkMath, { singleDollarTextMath: true }],
+                ]}
                 rehypePlugins={[
+                  /** @ts-ignore */
                   [rehypeKatex, { output: 'mathml' }],
+                  /** @ts-ignore */
                   [rehypeHighlight, { ignoreMissing: true }],
                 ]}
-                components={{ p: PromptVariableGfm, code }}
+                /** @ts-ignore */
+                components={{ p: PromptVariableGfm, code: codeNoExecution }}
                 className="prose dark:prose-invert light dark:text-gray-70 my-1"
               >
                 {mainText}

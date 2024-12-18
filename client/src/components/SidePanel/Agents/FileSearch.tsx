@@ -67,7 +67,7 @@ export default function FileSearch({
   };
 
   return (
-    <div className="mb-6">
+    <div className="w-full">
       <div className="mb-1.5 flex items-center gap-2">
         <span>
           <label className="text-token-text-primary block font-medium">
@@ -76,12 +76,12 @@ export default function FileSearch({
         </span>
       </div>
       <FileSearchCheckbox />
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3">
         <div>
           <button
             type="button"
             disabled={!agent_id || fileSearchChecked === false}
-            className="btn btn-neutral border-token-border-light relative h-8 w-full rounded-lg font-medium"
+            className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
             onClick={handleButtonClick}
           >
             <div className="flex w-full items-center justify-center gap-1">
@@ -95,13 +95,13 @@ export default function FileSearch({
                 disabled={!agent_id || fileSearchChecked === false}
                 onChange={handleFileChange}
               />
-              {localize('com_ui_upload_files')}
+              {localize('com_ui_upload_file_search')}
             </div>
           </button>
         </div>
         {/* Disabled Message */}
         {agent_id ? null : (
-          <div className="text-sm text-text-secondary">
+          <div className="text-xs text-text-secondary">
             {localize('com_agents_file_search_disabled')}
           </div>
         )}

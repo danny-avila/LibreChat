@@ -46,6 +46,8 @@ export default {
   com_assistants_knowledge_disabled:
     '必须创建助手，且启用并保存代码解释器或检索，才能将文件作为知识上传。',
   com_assistants_image_vision: '识图',
+  com_assistants_append_date: '添加当前日期和时间',
+  com_assistants_append_date_tooltip: '启用后，当前客户的日期和时间将附加到助手的系统指令中。',
   com_assistants_code_interpreter: '代码解释器',
   com_assistants_code_interpreter_files: '以下文件仅适用于代码解释器：',
   com_assistants_retrieval: '检索',
@@ -514,7 +516,7 @@ export default {
   com_endpoint_preset_default_item: '默认：',
   com_endpoint_preset_default_none: '无默认预设可用。',
   com_endpoint_preset_title: '预设',
-  com_endpoint_preset_saved: '保存成功！',
+  com_ui_saved: '保存成功！',
   com_endpoint_preset_default: '现在是默认预设。',
   com_endpoint_preset: '预设',
   com_endpoint_presets: '预设',
@@ -806,7 +808,7 @@ export default {
   com_agents_file_search_info:
     '启用后，系统会告知Agent以下列出的具体文件名，使其能够从这些文件中检索相关内容。',
 
-  com_agents_execute_code: '运行代码',
+  com_ui_run_code: '运行代码',
 
   com_agents_file_search_disabled: '必须先创建Agent，才能上传文件用于文件搜索。',
 

@@ -22,9 +22,6 @@ import type {
   AssistantListParams,
   AssistantListResponse,
   AssistantDocument,
-  Agent,
-  AgentListParams,
-  AgentListResponse,
   TEndpointsConfig,
   TCheckUserKeyResponse,
   SharedLinkListParams,
@@ -366,78 +363,6 @@ export const useGetAssistantDocsQuery = <TData = AssistantDocument[]>(
       refetchOnMount: false,
       ...config,
       enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled,
-    },
-  );
-};
-
-/**
- * AGENTS
- */
-
-/**
- * Hook for getting all available tools for A
- */
-export const useAvailableAgentToolsQuery = (): QueryObserverResult<TPlugin[]> => {
-  const queryClient = useQueryClient();
-  const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
-
-  const enabled = !!endpointsConfig?.[EModelEndpoint.agents];
-  return useQuery<TPlugin[]>([QueryKeys.tools], () => dataService.getAvailableAgentTools(), {
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
-    enabled,
-  });
-};
-
-/**
- * Hook for listing all Agents, with optional parameters provided for pagination and sorting
- */
-export const useListAgentsQuery = <TData = AgentListResponse>(
-  params: AgentListParams = defaultOrderQuery,
-  config?: UseQueryOptions<AgentListResponse, unknown, TData>,
-): QueryObserverResult<TData> => {
-  const queryClient = useQueryClient();
-  const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
-
-  const enabled = !!endpointsConfig?.[EModelEndpoint.agents];
-  return useQuery<AgentListResponse, unknown, TData>(
-    [QueryKeys.agents, params],
-    () => dataService.listAgents(params),
-    {
-      // Example selector to sort them by created_at
-      // select: (res) => {
-      //   return res.data.sort((a, b) => a.created_at - b.created_at);
-      // },
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      retry: false,
-      ...config,
-      enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled,
-    },
-  );
-};
-
-/**
- * Hook for retrieving details about a single agent
- */
-export const useGetAgentByIdQuery = (
-  agent_id: string,
-  config?: UseQueryOptions<Agent>,
-): QueryObserverResult<Agent> => {
-  return useQuery<Agent>(
-    [QueryKeys.agent, agent_id],
-    () =>
-      dataService.getAgentById({
-        agent_id,
-      }),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      retry: false,
-      ...config,
     },
   );
 };
