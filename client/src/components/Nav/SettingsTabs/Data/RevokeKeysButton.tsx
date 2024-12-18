@@ -54,7 +54,7 @@ export const RevokeKeysButton = ({
       <OGDialogTrigger asChild>
         <Button
           variant="destructive"
-          className="duration-200w flex w-full items-center justify-center rounded-lg transition-colors"
+          className="flex items-center justify-center rounded-lg transition-colors duration-200"
           onClick={() => setOpen(true)}
           disabled={disabled}
         >
