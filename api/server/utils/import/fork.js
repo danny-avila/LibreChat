@@ -352,15 +352,13 @@ async function duplicateConversation({ userId, conversationId }) {
   }
 
   const result = importBatchBuilder.finishConversation(
-    originalConvo.title + ' (Copy)',
+    originalConvo.title,
     new Date(),
     originalConvo,
   );
   await importBatchBuilder.saveBatch();
   logger.debug(
-    `user: ${userId} | New conversation "${
-      originalConvo.title + ' (Copy)'
-    }" duplicated from conversation ID ${conversationId}`,
+    `user: ${userId} | New conversation "${originalConvo.title}" duplicated from conversation ID ${conversationId}`,
   );
 
   const conversation = await getConvo(userId, result.conversation.conversationId);
