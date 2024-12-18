@@ -107,7 +107,8 @@ class OpenAIClient extends BaseClient {
       this.checkVisionRequest(this.options.attachments);
     }
 
-    this.isO1Model = /\bo1\b/i.test(this.modelOptions.model);
+    const o1Pattern = /\bo1\b/i;
+    this.isO1Model = o1Pattern.test(this.modelOptions.model);
 
     const { OPENROUTER_API_KEY, OPENAI_FORCE_PROMPT } = process.env ?? {};
     if (OPENROUTER_API_KEY && !this.azure) {
@@ -147,7 +148,7 @@ class OpenAIClient extends BaseClient {
     const { model } = this.modelOptions;
 
     this.isChatCompletion =
-      /\bo1\b/i.test(model) || model.includes('gpt') || this.useOpenRouter || !!reverseProxy;
+      o1Pattern.test(model) || model.includes('gpt') || this.useOpenRouter || !!reverseProxy;
     this.isChatGptModel = this.isChatCompletion;
     if (
       model.includes('text-davinci') ||
@@ -1325,7 +1326,11 @@ ${convo}
       /** @type {(value: void | PromiseLike<void>) => void} */
       let streamResolve;
 
-      if (this.isO1Model === true && this.azure && modelOptions.stream) {
+      if (
+        this.isO1Model === true &&
+        (this.azure || /o1(?!-(?:mini|preview)).*$/.test(modelOptions.model)) &&
+        modelOptions.stream
+      ) {
         delete modelOptions.stream;
         delete modelOptions.stop;
       }
