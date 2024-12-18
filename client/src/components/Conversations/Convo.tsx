@@ -53,6 +53,7 @@ export default function Conversation({
     }
 
     event.preventDefault();
+
     if (currentConvoId === conversationId || isPopoverActive) {
       return;
     }
@@ -155,7 +156,7 @@ export default function Conversation({
           <input
             ref={inputRef}
             type="text"
-            className="w-full rounded bg-transparent p-0.5 text-sm leading-tight outline-none"
+            className="w-full rounded bg-transparent p-0.5 text-sm leading-tight focus-visible:outline-none"
             value={titleInput ?? ''}
             onChange={(e) => setTitleInput(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -199,7 +200,17 @@ export default function Conversation({
             size={20}
             context="menu-item"
           />
-          <div className="relative line-clamp-1 flex-1 grow overflow-hidden">{title}</div>
+          <div
+            className="relative line-clamp-1 flex-1 grow overflow-hidden"
+            onDoubleClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setTitleInput(title);
+              setRenaming(true);
+            }}
+          >
+            {title}
+          </div>
           {isActiveConvo ? (
             <div className="absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-gradient-to-l" />
           ) : (
@@ -215,16 +226,17 @@ export default function Conversation({
             : 'hidden group-focus-within:flex group-hover:flex',
         )}
       >
-        <ConvoOptions
-          title={title}
-          renaming={renaming}
-          retainView={retainView}
-          renameHandler={renameHandler}
-          isActiveConvo={isActiveConvo}
-          conversationId={conversationId}
-          isPopoverActive={isPopoverActive}
-          setIsPopoverActive={setIsPopoverActive}
-        />
+        {!renaming && (
+          <ConvoOptions
+            title={title}
+            retainView={retainView}
+            renameHandler={renameHandler}
+            isActiveConvo={isActiveConvo}
+            conversationId={conversationId}
+            isPopoverActive={isPopoverActive}
+            setIsPopoverActive={setIsPopoverActive}
+          />
+        )}
       </div>
     </div>
   );

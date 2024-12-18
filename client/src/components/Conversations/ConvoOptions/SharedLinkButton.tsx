@@ -6,7 +6,6 @@ import { useUpdateSharedLinkMutation } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
 import { Spinner } from '~/components/svg';
-import { Button } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 
 export default function SharedLinkButton({
@@ -112,7 +111,7 @@ export default function SharedLinkButton({
       onClick={() => {
         handlers.handler();
       }}
-      className="btn btn-primary flex items-center"
+      className="btn btn-primary flex items-center justify-center"
     >
       {isCopying && (
         <>

@@ -82,7 +82,7 @@ const AttachFile = ({ isRTL, disabled, setToolResource, handleFileChange }: Atta
 
   return (
     <FileUpload ref={inputRef} handleFileChange={handleFileChange}>
-      <div className="relative">
+      <div className="relative select-none">
         <DropdownPopup
           menuId="attach-file-menu"
           isOpen={isPopoverActive}
