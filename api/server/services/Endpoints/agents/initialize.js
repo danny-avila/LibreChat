@@ -122,13 +122,16 @@ const initializeAgentOptions = async ({
     agent.model_parameters.model = agent.model;
   }
 
+  const tokensModel =
+    agent.provider === EModelEndpoint.azureOpenAI ? agent.model : agent.model_parameters.model;
+
   return {
     ...agent,
     tools,
     toolContextMap,
     maxContextTokens:
       agent.max_context_tokens ??
-      getModelMaxTokens(agent.model_parameters.model, providerEndpointMap[provider]) ??
+      getModelMaxTokens(tokensModel, providerEndpointMap[provider]) ??
       4000,
   };
 };
