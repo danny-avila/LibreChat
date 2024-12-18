@@ -97,12 +97,15 @@ const initializeAgentOptions = async ({
     agent.endpoint = provider.toLowerCase();
   }
 
-  const model_parameters = agent.model_parameters ?? { model: agent.model };
-  const _endpointOption = isInitialAgent
-    ? endpointOption
-    : {
-      model_parameters,
-    };
+  const model_parameters = Object.assign(
+    {},
+    agent.model_parameters ?? { model: agent.model },
+    isInitialAgent === true ? endpointOption?.model_parameters : {},
+  );
+  const _endpointOption =
+    isInitialAgent === true
+      ? Object.assign({}, endpointOption, { model_parameters })
+      : { model_parameters };
 
   const options = await getOptions({
     req,
