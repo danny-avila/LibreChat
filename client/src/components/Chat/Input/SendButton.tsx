@@ -1,7 +1,10 @@
 import React, { forwardRef } from 'react';
 import { useWatch } from 'react-hook-form';
+import type { TRealtimeEphemeralTokenResponse } from 'librechat-data-provider';
 import type { Control } from 'react-hook-form';
+import { useRealtimeEphemeralTokenMutation } from '~/data-provider';
 import { TooltipAnchor, SendIcon, CallIcon } from '~/components';
+import { useToastContext } from '~/Providers/ToastContext';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -17,6 +20,7 @@ const ActionButton = forwardRef(
       icon: React.ReactNode;
       tooltip: string;
       testId: string;
+      onClick?: () => void;
     },
     ref: React.ForwardedRef<HTMLButtonElement>,
   ) => {
@@ -36,6 +40,7 @@ const ActionButton = forwardRef(
             )}
             data-testid={props.testId}
             type="submit"
+            onClick={props.onClick}
           >
             <span className="" data-state="closed">
               {props.icon}
@@ -49,19 +54,43 @@ const ActionButton = forwardRef(
 
 const SendButton = forwardRef((props: ButtonProps, ref: React.ForwardedRef<HTMLButtonElement>) => {
   const localize = useLocalize();
-  const { text } = useWatch({ control: props.control });
+  const { showToast } = useToastContext();
+  const { text = '' } = useWatch({ control: props.control });
 
-  const buttonProps = text
-    ? {
-      icon: <SendIcon size={24} />,
-      tooltip: localize('com_nav_send_message'),
-      testId: 'send-button',
+  const { mutate: startCall, isLoading: isProcessing } = useRealtimeEphemeralTokenMutation({
+    onSuccess: async (data: TRealtimeEphemeralTokenResponse) => {
+      showToast({
+        message: 'IT WORKS!!',
+        status: 'success',
+      });
+    },
+    onError: (error: unknown) => {
+      showToast({
+        message: localize('com_nav_audio_process_error', (error as Error).message),
+        status: 'error',
+      });
+    },
+  });
+
+  const handleClick = () => {
+    if (text.trim() === '') {
+      startCall({ voice: 'verse' });
     }
-    : {
-      icon: <CallIcon size={24} />,
-      tooltip: localize('com_nav_call'),
-      testId: 'call-button',
-    };
+  };
+
+  const buttonProps =
+    text.trim() !== ''
+      ? {
+        icon: <SendIcon size={24} />,
+        tooltip: localize('com_nav_send_message'),
+        testId: 'send-button',
+      }
+      : {
+        icon: <CallIcon size={24} />,
+        tooltip: localize('com_nav_call'),
+        testId: 'call-button',
+        onClick: handleClick,
+      };
 
   return <ActionButton ref={ref} disabled={props.disabled} {...buttonProps} />;
 });

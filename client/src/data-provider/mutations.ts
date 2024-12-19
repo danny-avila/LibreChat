@@ -726,6 +726,21 @@ export const useTextToSpeechMutation = (
   });
 };
 
+export const useRealtimeEphemeralTokenMutation = (
+  options?: t.MutationOptions<t.TRealtimeEphemeralTokenResponse, t.TRealtimeEphemeralTokenRequest>,
+): UseMutationResult<
+  t.TRealtimeEphemeralTokenResponse,
+  unknown,
+  t.TRealtimeEphemeralTokenRequest,
+  unknown
+> => {
+  return useMutation([MutationKeys.realtimeEphemeralToken], {
+    mutationFn: (data: t.TRealtimeEphemeralTokenRequest) =>
+      dataService.getRealtimeEphemeralToken(data),
+    ...(options || {}),
+  });
+};
+
 /**
  * ASSISTANTS
  */

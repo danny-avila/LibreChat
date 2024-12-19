@@ -379,6 +379,18 @@ const speechTab = z
   })
   .optional();
 
+const realtime = z
+  .object({
+    openai: z
+      .object({
+        url: z.string().optional(),
+        apiKey: z.string().optional(),
+        voices: z.array(z.string()).optional(),
+      })
+      .optional(),
+  })
+  .optional();
+
 export enum RateLimitPrefix {
   FILE_UPLOAD = 'FILE_UPLOAD',
   IMPORT = 'IMPORT',
@@ -534,6 +546,7 @@ export const configSchema = z.object({
       tts: ttsSchema.optional(),
       stt: sttSchema.optional(),
       speechTab: speechTab.optional(),
+      realtime: realtime.optional(),
     })
     .optional(),
   rateLimits: rateLimitSchema.optional(),
@@ -1133,6 +1146,13 @@ export enum TTSProviders {
    * Provider for LocalAI TTS
    */
   LOCALAI = 'localai',
+}
+
+export enum RealtimeVoiceProviders {
+  /**
+   * Provider for OpenAI Realtime Voice API
+   */
+  OPENAI = 'openai',
 }
 
 /** Enum for app-wide constants */

@@ -576,6 +576,12 @@ export const getCustomConfigSpeech = (): Promise<t.TCustomConfigSpeechResponse> 
   return request.get(endpoints.getCustomConfigSpeech());
 };
 
+export const getRealtimeEphemeralToken = (
+  data: t.TRealtimeEphemeralTokenRequest,
+): Promise<t.TRealtimeEphemeralTokenResponse> => {
+  return request.get(endpoints.getRealtimeEphemeralToken(), { params: data });
+};
+
 /* conversations */
 
 export function duplicateConversation(

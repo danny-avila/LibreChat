@@ -171,7 +171,9 @@ export const textToSpeechManual = () => `${textToSpeech()}/manual`;
 
 export const textToSpeechVoices = () => `${textToSpeech()}/voices`;
 
-export const getCustomConfigSpeech = () => `${speech()}/config/get`;
+export const getCustomConfigSpeech = () => `${speech()}/config`;
+
+export const getRealtimeEphemeralToken = () => `${speech()}/realtime`;
 
 export const getPromptGroup = (_id: string) => `${prompts()}/groups/${_id}`;
 
