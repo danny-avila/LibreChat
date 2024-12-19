@@ -25,9 +25,11 @@ const {
   splitAtTargetLevel,
   getAllMessagesUpToParent,
   getMessagesUpToTargetLevel,
+  cloneMessagesWithTimestamps,
 } = require('./fork');
 const { getConvo, bulkSaveConvos } = require('~/models/Conversation');
 const { getMessages, bulkSaveMessages } = require('~/models/Message');
+const { createImportBatchBuilder } = require('./importBatchBuilder');
 const BaseClient = require('~/app/clients/BaseClient');
 
 /**
@@ -104,7 +106,8 @@ describe('forkConversation', () => {
     expect(bulkSaveMessages).toHaveBeenCalledWith(
       expect.arrayContaining(
         expectedMessagesTexts.map((text) => expect.objectContaining({ text })),
-      ), true,
+      ),
+      true,
     );
   });
 
@@ -122,7 +125,8 @@ describe('forkConversation', () => {
     expect(bulkSaveMessages).toHaveBeenCalledWith(
       expect.arrayContaining(
         expectedMessagesTexts.map((text) => expect.objectContaining({ text })),
-      ), true,
+      ),
+      true,
     );
   });
 
@@ -141,7 +145,8 @@ describe('forkConversation', () => {
     expect(bulkSaveMessages).toHaveBeenCalledWith(
       expect.arrayContaining(
         expectedMessagesTexts.map((text) => expect.objectContaining({ text })),
-      ), true,
+      ),
+      true,
     );
   });
 
@@ -160,7 +165,8 @@ describe('forkConversation', () => {
     expect(bulkSaveMessages).toHaveBeenCalledWith(
       expect.arrayContaining(
         expectedMessagesTexts.map((text) => expect.objectContaining({ text })),
-      ), true,
+      ),
+      true,
     );
   });
 
@@ -570,5 +576,310 @@ describe('splitAtTargetLevel', () => {
     // Non-existent message ID
     const result = splitAtTargetLevel(mockMessagesComplex, '99');
     expect(result.length).toBe(0);
+  });
+});
+
+describe('cloneMessagesWithTimestamps', () => {
+  test('should maintain proper timestamp order between parent and child messages', () => {
+    // Create messages with out-of-order timestamps
+    const messagesToClone = [
+      {
+        messageId: 'parent',
+        parentMessageId: Constants.NO_PARENT,
+        text: 'Parent Message',
+        createdAt: '2023-01-01T00:02:00Z', // Later timestamp
+      },
+      {
+        messageId: 'child1',
+        parentMessageId: 'parent',
+        text: 'Child Message 1',
+        createdAt: '2023-01-01T00:01:00Z', // Earlier timestamp
+      },
+      {
+        messageId: 'child2',
+        parentMessageId: 'parent',
+        text: 'Child Message 2',
+        createdAt: '2023-01-01T00:03:00Z',
+      },
+    ];
+
+    const importBatchBuilder = createImportBatchBuilder('testUser');
+    importBatchBuilder.startConversation();
+
+    cloneMessagesWithTimestamps(messagesToClone, importBatchBuilder);
+
+    // Verify timestamps are properly ordered
+    const clonedMessages = importBatchBuilder.messages;
+    expect(clonedMessages.length).toBe(3);
+
+    // Find cloned messages (they'll have new IDs)
+    const parent = clonedMessages.find((msg) => msg.parentMessageId === Constants.NO_PARENT);
+    const children = clonedMessages.filter((msg) => msg.parentMessageId === parent.messageId);
+
+    // Verify parent timestamp is earlier than all children
+    children.forEach((child) => {
+      expect(new Date(child.createdAt).getTime()).toBeGreaterThan(
+        new Date(parent.createdAt).getTime(),
+      );
+    });
+  });
+
+  test('should handle multi-level message chains', () => {
+    const messagesToClone = [
+      {
+        messageId: 'root',
+        parentMessageId: Constants.NO_PARENT,
+        text: 'Root',
+        createdAt: '2023-01-01T00:03:00Z', // Latest
+      },
+      {
+        messageId: 'parent',
+        parentMessageId: 'root',
+        text: 'Parent',
+        createdAt: '2023-01-01T00:01:00Z', // Earliest
+      },
+      {
+        messageId: 'child',
+        parentMessageId: 'parent',
+        text: 'Child',
+        createdAt: '2023-01-01T00:02:00Z', // Middle
+      },
+    ];
+
+    const importBatchBuilder = createImportBatchBuilder('testUser');
+    importBatchBuilder.startConversation();
+
+    cloneMessagesWithTimestamps(messagesToClone, importBatchBuilder);
+
+    const clonedMessages = importBatchBuilder.messages;
+    expect(clonedMessages.length).toBe(3);
+
+    // Verify the chain of timestamps
+    const root = clonedMessages.find((msg) => msg.parentMessageId === Constants.NO_PARENT);
+    const parent = clonedMessages.find((msg) => msg.parentMessageId === root.messageId);
+    const child = clonedMessages.find((msg) => msg.parentMessageId === parent.messageId);
+
+    expect(new Date(parent.createdAt).getTime()).toBeGreaterThan(
+      new Date(root.createdAt).getTime(),
+    );
+    expect(new Date(child.createdAt).getTime()).toBeGreaterThan(
+      new Date(parent.createdAt).getTime(),
+    );
+  });
+
+  test('should handle messages with identical timestamps', () => {
+    const sameTimestamp = '2023-01-01T00:00:00Z';
+    const messagesToClone = [
+      {
+        messageId: 'parent',
+        parentMessageId: Constants.NO_PARENT,
+        text: 'Parent',
+        createdAt: sameTimestamp,
+      },
+      {
+        messageId: 'child',
+        parentMessageId: 'parent',
+        text: 'Child',
+        createdAt: sameTimestamp,
+      },
+    ];
+
+    const importBatchBuilder = createImportBatchBuilder('testUser');
+    importBatchBuilder.startConversation();
+
+    cloneMessagesWithTimestamps(messagesToClone, importBatchBuilder);
+
+    const clonedMessages = importBatchBuilder.messages;
+    const parent = clonedMessages.find((msg) => msg.parentMessageId === Constants.NO_PARENT);
+    const child = clonedMessages.find((msg) => msg.parentMessageId === parent.messageId);
+
+    expect(new Date(child.createdAt).getTime()).toBeGreaterThan(
+      new Date(parent.createdAt).getTime(),
+    );
+  });
+
+  test('should preserve original timestamps when already properly ordered', () => {
+    const messagesToClone = [
+      {
+        messageId: 'parent',
+        parentMessageId: Constants.NO_PARENT,
+        text: 'Parent',
+        createdAt: '2023-01-01T00:00:00Z',
+      },
+      {
+        messageId: 'child',
+        parentMessageId: 'parent',
+        text: 'Child',
+        createdAt: '2023-01-01T00:01:00Z',
+      },
+    ];
+
+    const importBatchBuilder = createImportBatchBuilder('testUser');
+    importBatchBuilder.startConversation();
+
+    cloneMessagesWithTimestamps(messagesToClone, importBatchBuilder);
+
+    const clonedMessages = importBatchBuilder.messages;
+    const parent = clonedMessages.find((msg) => msg.parentMessageId === Constants.NO_PARENT);
+    const child = clonedMessages.find((msg) => msg.parentMessageId === parent.messageId);
+
+    expect(parent.createdAt).toEqual(new Date(messagesToClone[0].createdAt));
+    expect(child.createdAt).toEqual(new Date(messagesToClone[1].createdAt));
+  });
+
+  test('should handle complex multi-branch scenario with out-of-order timestamps', () => {
+    const complexMessages = [
+      // Branch 1: Root -> A -> (B, C) -> D
+      {
+        messageId: 'root1',
+        parentMessageId: Constants.NO_PARENT,
+        text: 'Root 1',
+        createdAt: '2023-01-01T00:05:00Z', // Root is later than children
+      },
+      {
+        messageId: 'A1',
+        parentMessageId: 'root1',
+        text: 'A1',
+        createdAt: '2023-01-01T00:02:00Z',
+      },
+      {
+        messageId: 'B1',
+        parentMessageId: 'A1',
+        text: 'B1',
+        createdAt: '2023-01-01T00:01:00Z', // Earlier than parent
+      },
+      {
+        messageId: 'C1',
+        parentMessageId: 'A1',
+        text: 'C1',
+        createdAt: '2023-01-01T00:03:00Z',
+      },
+      {
+        messageId: 'D1',
+        parentMessageId: 'B1',
+        text: 'D1',
+        createdAt: '2023-01-01T00:04:00Z',
+      },
+
+      // Branch 2: Root -> (X, Y, Z) where Z has children but X is latest
+      {
+        messageId: 'root2',
+        parentMessageId: Constants.NO_PARENT,
+        text: 'Root 2',
+        createdAt: '2023-01-01T00:06:00Z',
+      },
+      {
+        messageId: 'X2',
+        parentMessageId: 'root2',
+        text: 'X2',
+        createdAt: '2023-01-01T00:09:00Z', // Latest of siblings
+      },
+      {
+        messageId: 'Y2',
+        parentMessageId: 'root2',
+        text: 'Y2',
+        createdAt: '2023-01-01T00:07:00Z',
+      },
+      {
+        messageId: 'Z2',
+        parentMessageId: 'root2',
+        text: 'Z2',
+        createdAt: '2023-01-01T00:08:00Z',
+      },
+      {
+        messageId: 'Z2Child',
+        parentMessageId: 'Z2',
+        text: 'Z2 Child',
+        createdAt: '2023-01-01T00:04:00Z', // Earlier than all parents
+      },
+
+      // Branch 3: Root with alternating early/late timestamps
+      {
+        messageId: 'root3',
+        parentMessageId: Constants.NO_PARENT,
+        text: 'Root 3',
+        createdAt: '2023-01-01T00:15:00Z', // Latest of all
+      },
+      {
+        messageId: 'E3',
+        parentMessageId: 'root3',
+        text: 'E3',
+        createdAt: '2023-01-01T00:10:00Z',
+      },
+      {
+        messageId: 'F3',
+        parentMessageId: 'E3',
+        text: 'F3',
+        createdAt: '2023-01-01T00:14:00Z', // Later than parent
+      },
+      {
+        messageId: 'G3',
+        parentMessageId: 'F3',
+        text: 'G3',
+        createdAt: '2023-01-01T00:11:00Z', // Earlier than parent
+      },
+      {
+        messageId: 'H3',
+        parentMessageId: 'G3',
+        text: 'H3',
+        createdAt: '2023-01-01T00:13:00Z',
+      },
+    ];
+
+    const importBatchBuilder = createImportBatchBuilder('testUser');
+    importBatchBuilder.startConversation();
+
+    cloneMessagesWithTimestamps(complexMessages, importBatchBuilder);
+
+    const clonedMessages = importBatchBuilder.messages;
+    console.debug(
+      'Complex multi-branch scenario\nOriginal messages:\n',
+      printMessageTree(complexMessages),
+    );
+    console.debug('Cloned messages:\n', printMessageTree(clonedMessages));
+
+    // Helper function to verify timestamp order
+    const verifyTimestampOrder = (parentId, messages) => {
+      const parent = messages.find((msg) => msg.messageId === parentId);
+      const children = messages.filter((msg) => msg.parentMessageId === parentId);
+
+      children.forEach((child) => {
+        const parentTime = new Date(parent.createdAt).getTime();
+        const childTime = new Date(child.createdAt).getTime();
+        expect(childTime).toBeGreaterThan(parentTime);
+        // Recursively verify child's children
+        verifyTimestampOrder(child.messageId, messages);
+      });
+    };
+
+    // Verify each branch
+    const roots = clonedMessages.filter((msg) => msg.parentMessageId === Constants.NO_PARENT);
+    roots.forEach((root) => verifyTimestampOrder(root.messageId, clonedMessages));
+
+    // Additional specific checks
+    const getMessageByText = (text) => clonedMessages.find((msg) => msg.text === text);
+
+    // Branch 1 checks
+    const root1 = getMessageByText('Root 1');
+    const b1 = getMessageByText('B1');
+    const d1 = getMessageByText('D1');
+    expect(new Date(b1.createdAt).getTime()).toBeGreaterThan(new Date(root1.createdAt).getTime());
+    expect(new Date(d1.createdAt).getTime()).toBeGreaterThan(new Date(b1.createdAt).getTime());
+
+    // Branch 2 checks
+    const root2 = getMessageByText('Root 2');
+    const x2 = getMessageByText('X2');
+    const z2Child = getMessageByText('Z2 Child');
+    const z2 = getMessageByText('Z2');
+    expect(new Date(x2.createdAt).getTime()).toBeGreaterThan(new Date(root2.createdAt).getTime());
+    expect(new Date(z2Child.createdAt).getTime()).toBeGreaterThan(new Date(z2.createdAt).getTime());
+
+    // Branch 3 checks
+    const f3 = getMessageByText('F3');
+    const g3 = getMessageByText('G3');
+    expect(new Date(g3.createdAt).getTime()).toBeGreaterThan(new Date(f3.createdAt).getTime());
+
+    // Verify all messages are present
+    expect(clonedMessages.length).toBe(complexMessages.length);
   });
 });

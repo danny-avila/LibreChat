@@ -97,12 +97,15 @@ const initializeAgentOptions = async ({
     agent.endpoint = provider.toLowerCase();
   }
 
-  const model_parameters = agent.model_parameters ?? { model: agent.model };
-  const _endpointOption = isInitialAgent
-    ? endpointOption
-    : {
-      model_parameters,
-    };
+  const model_parameters = Object.assign(
+    {},
+    agent.model_parameters ?? { model: agent.model },
+    isInitialAgent === true ? endpointOption?.model_parameters : {},
+  );
+  const _endpointOption =
+    isInitialAgent === true
+      ? Object.assign({}, endpointOption, { model_parameters })
+      : { model_parameters };
 
   const options = await getOptions({
     req,
@@ -122,13 +125,16 @@ const initializeAgentOptions = async ({
     agent.model_parameters.model = agent.model;
   }
 
+  const tokensModel =
+    agent.provider === EModelEndpoint.azureOpenAI ? agent.model : agent.model_parameters.model;
+
   return {
     ...agent,
     tools,
     toolContextMap,
     maxContextTokens:
       agent.max_context_tokens ??
-      getModelMaxTokens(agent.model_parameters.model, providerEndpointMap[provider]) ??
+      getModelMaxTokens(tokensModel, providerEndpointMap[provider]) ??
       4000,
   };
 };
