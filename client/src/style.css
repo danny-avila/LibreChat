@@ -39,6 +39,7 @@
   --font-size-xl: 1.25rem;
 }
 html {
+  --presentation: var(--white);
   --text-primary: var(--gray-800);
   --text-secondary: var(--gray-600);
   --text-secondary-alt: var(--gray-500);
@@ -92,6 +93,7 @@ html {
   --switch-unchecked: 0 0% 58%;
 }
 .dark {
+  --presentation: var(--gray-800);
   --text-primary: var(--gray-100);
   --text-secondary: var(--gray-300);
   --text-secondary-alt: var(--gray-400);
