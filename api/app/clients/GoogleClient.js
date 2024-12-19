@@ -917,7 +917,7 @@ class GoogleClient extends BaseClient {
       },
       {
         category: 'HARM_CATEGORY_CIVIC_INTEGRITY',
-        threshold: process.env.GOOGLE_SAFETY_CIVIC_INTEGRITY || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+        threshold: process.env.GOOGLE_SAFETY_CIVIC_INTEGRITY || 'BLOCK_NONE',
       },
     ];
   }
