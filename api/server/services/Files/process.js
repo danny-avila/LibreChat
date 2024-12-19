@@ -478,6 +478,12 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     throw new Error('No agent ID provided for agent file upload');
   }
 
+  const isImage = file.mimetype.startsWith('image');
+  if (!isImage && !tool_resource) {
+    /** Note: this needs to be removed when we can support files to providers */
+    throw new Error('No tool resource provided for non-image agent file upload');
+  }
+
   let fileInfoMetadata;
   const entity_id = messageAttachment === true ? undefined : agent_id;
   if (tool_resource === EToolResources.execute_code) {
@@ -527,7 +533,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     });
   }
 
-  if (file.mimetype.startsWith('image')) {
+  if (isImage) {
     const result = await processImageFile({
       req,
       file,
