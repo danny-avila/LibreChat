@@ -1,7 +1,8 @@
 import * as Ariakit from '@ariakit/react';
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useMemo } from 'react';
 import { FileSearch, ImageUpIcon, TerminalSquareIcon } from 'lucide-react';
-import { EToolResources } from 'librechat-data-provider';
+import { EToolResources, EModelEndpoint } from 'librechat-data-provider';
+import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import { FileUpload, TooltipAnchor, DropdownPopup } from '~/components/ui';
 import { AttachmentIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
@@ -19,6 +20,12 @@ const AttachFile = ({ isRTL, disabled, setToolResource, handleFileChange }: Atta
   const isUploadDisabled = disabled ?? false;
   const inputRef = useRef<HTMLInputElement>(null);
   const [isPopoverActive, setIsPopoverActive] = useState(false);
+  const { data: endpointsConfig } = useGetEndpointsQuery();
+
+  const capabilities = useMemo(
+    () => endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? [],
+    [endpointsConfig],
+  );
 
   const handleUploadClick = (isImage?: boolean) => {
     if (!inputRef.current) {
@@ -30,32 +37,42 @@ const AttachFile = ({ isRTL, disabled, setToolResource, handleFileChange }: Atta
     inputRef.current.accept = '';
   };
 
-  const dropdownItems = [
-    {
-      label: localize('com_ui_upload_image_input'),
-      onClick: () => {
-        setToolResource?.(undefined);
-        handleUploadClick(true);
+  const dropdownItems = useMemo(() => {
+    const items = [
+      {
+        label: localize('com_ui_upload_image_input'),
+        onClick: () => {
+          setToolResource?.(undefined);
+          handleUploadClick(true);
+        },
+        icon: <ImageUpIcon className="icon-md" />,
       },
-      icon: <ImageUpIcon className="icon-md" />,
-    },
-    {
-      label: localize('com_ui_upload_file_search'),
-      onClick: () => {
-        setToolResource?.(EToolResources.file_search);
-        handleUploadClick();
-      },
-      icon: <FileSearch className="icon-md" />,
-    },
-    {
-      label: localize('com_ui_upload_code_files'),
-      onClick: () => {
-        setToolResource?.(EToolResources.execute_code);
-        handleUploadClick();
-      },
-      icon: <TerminalSquareIcon className="icon-md" />,
-    },
-  ];
+    ];
+
+    if (capabilities.includes(EToolResources.file_search)) {
+      items.push({
+        label: localize('com_ui_upload_file_search'),
+        onClick: () => {
+          setToolResource?.(EToolResources.file_search);
+          handleUploadClick();
+        },
+        icon: <FileSearch className="icon-md" />,
+      });
+    }
+
+    if (capabilities.includes(EToolResources.execute_code)) {
+      items.push({
+        label: localize('com_ui_upload_code_files'),
+        onClick: () => {
+          setToolResource?.(EToolResources.execute_code);
+          handleUploadClick();
+        },
+        icon: <TerminalSquareIcon className="icon-md" />,
+      });
+    }
+
+    return items;
+  }, [capabilities, localize, setToolResource]);
 
   const menuTrigger = (
     <TooltipAnchor

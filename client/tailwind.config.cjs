@@ -61,6 +61,7 @@ module.exports = {
           900: '#031f29',
         },
         'brand-purple': '#ab68ff',
+        'presentation': 'var(--presentation)',
         'text-primary': 'var(--text-primary)',
         'text-secondary': 'var(--text-secondary)',
         'text-secondary-alt': 'var(--text-secondary-alt)',
