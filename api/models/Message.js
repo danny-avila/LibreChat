@@ -204,6 +204,7 @@ async function updateMessage(req, message, metadata) {
       isCreatedByUser: updatedMessage.isCreatedByUser,
       tokenCount: updatedMessage.tokenCount,
       isEdited: true,
+      groundingMetadata: updatedMessage.groundingMetadata,
     };
   } catch (err) {
     logger.error('Error updating message:', err);

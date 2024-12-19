@@ -544,6 +544,9 @@ export default {
   com_endpoint_google_maxoutputtokens:
     'Maximum number of tokens that can be generated in the response. Specify a lower value for shorter responses and a higher value for longer responses. Note: models may stop before reaching this maximum.',
   com_endpoint_google_custom_name_placeholder: 'Set a custom name for Google',
+  com_endpoint_google_enable_search: 'Enable Google Search',
+  com_endpoint_google_search_info: 'Enable Google Search functionality for enhanced responses',
+  com_endpoint_google_search_info_unavailable: 'Search is only available for Gemini 1.5 and 2.0 models',
   com_endpoint_prompt_prefix_placeholder: 'Set custom instructions or context. Ignored if empty.',
   com_endpoint_instructions_assistants_placeholder:
     'Overrides the instructions of the assistant. This is useful for modifying the behavior on a per-run basis.',

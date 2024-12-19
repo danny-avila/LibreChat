@@ -147,6 +147,9 @@ export default {
   com_endpoint_google_custom_name_placeholder: 'Ustaw niestandardową nazwę dla Google',
   com_endpoint_google_prompt_prefix_placeholder:
     'Ustaw niestandardowe instrukcje lub kontekst. Jeśli puste, zostanie zignorowane.',
+  com_endpoint_google_enable_search: 'Włącz wyszukiwarkę Google',
+  com_endpoint_google_search_info: 'Włącz funkcję wyszukiwania Google dla lepszych odpowiedzi',
+  com_endpoint_google_search_info_unavailable: 'Wyszukiwanie jest dostępne tylko dla modeli Gemini 1.5 i 2.0',
   com_endpoint_custom_name: 'Niestandardowa nazwa',
   com_endpoint_prompt_prefix: 'Prefiks promptu',
   com_endpoint_temperature: 'Temperatura',

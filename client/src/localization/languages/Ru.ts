@@ -199,6 +199,9 @@ export default {
   com_endpoint_google_maxoutputtokens:
     ' 	Максимальное количество токенов, которые могут быть сгенерированы в ответе. Укажите меньшее значение для более коротких ответов и большее значение для более длинных ответов.',
   com_endpoint_google_custom_name_placeholder: 'Задайте кастомное имя для Google',
+  com_endpoint_google_enable_search: 'Включить поиск Google',
+  com_endpoint_google_search_info: 'Включить функцию поиска Google для улучшенных ответов',
+  com_endpoint_google_search_info_unavailable: 'Поиск доступен только для моделей Gemini 1.5 и 2.0',
   com_endpoint_prompt_prefix_placeholder:
     'Задайте пользовательские инструкции или контекст. Игнорируется, если пусто.',
   com_endpoint_custom_name: 'Кастомное имя',

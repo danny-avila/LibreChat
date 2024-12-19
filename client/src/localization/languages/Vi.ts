@@ -180,6 +180,9 @@ export default {
   com_endpoint_google_maxoutputtokens:
     'Số mã thông báo tối đa có thể được tạo ra trong phản hồi. Chỉ định một giá trị thấp hơn cho các phản hồi ngắn hơn và một giá trị cao hơn cho các phản hồi dài hơn.',
   com_endpoint_google_custom_name_placeholder: 'Đặt tên tùy chỉnh cho Google',
+  com_endpoint_google_enable_search: 'Bật Tìm kiếm Google',
+  com_endpoint_google_search_info: 'Bật chức năng tìm kiếm Google để có câu trả lời nâng cao',
+  com_endpoint_google_search_info_unavailable: 'Tìm kiếm chỉ khả dụng cho các mô hình Gemini 1.5 và 2.0',
   com_endpoint_prompt_prefix_placeholder:
     'Đặt hướng dẫn hoặc ngữ cảnh tùy chỉnh. Bỏ qua nếu trống.',
   com_endpoint_custom_name: 'Tên tùy chỉnh',

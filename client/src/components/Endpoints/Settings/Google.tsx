@@ -53,6 +53,8 @@ export default function Settings({ conversation, setOption, models, readonly }: 
   const setMaxOutputTokens = setOption('maxOutputTokens');
   const setEnableSearch = setOption('enableSearch');
 
+  const isSearchEnabled = model?.startsWith('gemini-1.5-') || model?.startsWith('gemini-2.');
+
   return (
     <div className="grid grid-cols-5 gap-6">
       <div className="col-span-5 flex flex-col items-center justify-start gap-6 sm:col-span-3">
@@ -107,21 +109,23 @@ export default function Settings({ conversation, setOption, models, readonly }: 
           <HoverCardTrigger className="grid w-full items-center gap-2">
             <div className="flex justify-between">
               <Label htmlFor="enable-search" className="text-left text-sm font-medium">
-                Enable Search{' '}
+                {localize('com_endpoint_google_enable_search')}{' '}
                 <small className="opacity-40">
                   ({localize('com_endpoint_default')}: {google.enableSearch.default ? 'Yes' : 'No'})
                 </small>
               </Label>
               <Switch
                 id="enable-search"
-                disabled={readonly}
+                disabled={readonly || !isSearchEnabled}
                 checked={enableSearch ?? google.enableSearch.default}
                 onCheckedChange={(checked) => setEnableSearch(checked)}
               />
             </div>
           </HoverCardTrigger>
           <OptionHoverAlt
-            description="Enable Google Search functionality for enhanced responses"
+            description={isSearchEnabled ? 
+              localize('com_endpoint_google_search_info') : 
+              localize('com_endpoint_google_search_info_unavailable')}
             side={ESide.Left}
           />
         </HoverCard>

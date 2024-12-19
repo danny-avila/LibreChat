@@ -27,19 +27,16 @@ const {
   truncateText,
 } = require('./prompts');
 const BaseClient = require('./BaseClient');
-
 const loc = process.env.GOOGLE_LOC || 'us-central1';
 const publisher = 'google';
 const endpointPrefix = `${loc}-aiplatform.googleapis.com`;
 const tokenizersCache = {};
-
 const settings = endpointSettings[EModelEndpoint.google];
 const EXCLUDED_GENAI_MODELS = /gemini-(?:1\.0|1-0|pro)/;
 
 
 const isNewGeminiModel = (model) => {
-  return model.includes('gemini-exp-1206') || 
-         model.includes('gemini-2.');
+  return model.includes('gemini-2.');
 };
 
 class GoogleClient extends BaseClient {
@@ -743,17 +740,48 @@ class GoogleClient extends BaseClient {
 
       const delay = modelName.includes('flash') ? 8 : 15;
       const result = await client.generateContentStream(requestOptions);
-      for await (const chunk of result.stream) {
-        const chunkText = chunk.text();
-        await this.generateTextStream(chunkText, onProgress, {
-          delay,
-        });
-        reply += chunkText;
-        await sleep(streamRate);
-      }
-      return reply;
-    }
+      let lastGroundingMetadata = null;
 
+      for await (const chunk of result.stream) {
+        // Get the text content from the first candidate's content parts
+        const text = chunk.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+        
+        // Store the grounding metadata from the last chunk that has it
+        if (chunk.candidates?.[0]?.groundingMetadata) {
+          lastGroundingMetadata = chunk.candidates[0].groundingMetadata;
+        }
+
+        // Only send text content if there is any
+        if (text) {
+          await this.generateTextStream(text, onProgress, {
+            delay,
+            metadata: lastGroundingMetadata ? { groundingMetadata: lastGroundingMetadata } : undefined
+          });
+          reply += text;
+          await sleep(streamRate);
+        }
+      }
+
+      // Send final completion message with metadata
+      const finalMessage = {
+        text: reply,
+        isComplete: true,
+        metadata: lastGroundingMetadata ? { groundingMetadata: lastGroundingMetadata } : undefined
+      };
+
+      await onProgress(finalMessage);
+
+      // Set metadata for BaseClient to save
+      if (lastGroundingMetadata) {
+        this.metadata = { groundingMetadata: lastGroundingMetadata };
+      }
+
+      return {
+        text: reply,
+        groundingMetadata: lastGroundingMetadata
+      };
+
+    }
     const stream = await model.stream(messages, {
       signal: abortController.signal,
       safetySettings: _payload.safetySettings,
@@ -922,10 +950,25 @@ class GoogleClient extends BaseClient {
   async sendCompletion(payload, opts = {}) {
     payload.safetySettings = this.getSafetySettings();
 
-    let reply = '';
-    reply = await this.getCompletion(payload, opts);
-    return reply.trim();
+    const response = await this.getCompletion(payload, opts);
+    
+    // Handle both string and object responses
+    if (typeof response === 'string') {
+      return response.trim();
+    }
+
+    // If response is an object with text and metadata
+    if (response && typeof response === 'object') {
+      const { text, groundingMetadata } = response;
+      if (groundingMetadata) {
+        this.metadata = { groundingMetadata };
+      }
+      return text.trim();
+    }
+
+    return '';
   }
+
 
   getSafetySettings() {
     return [
@@ -975,3 +1018,4 @@ class GoogleClient extends BaseClient {
 }
 
 module.exports = GoogleClient;
+

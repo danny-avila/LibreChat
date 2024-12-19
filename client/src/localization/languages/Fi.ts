@@ -419,6 +419,9 @@ export default {
   com_endpoint_google_maxoutputtokens:
     'Maksimimäärä tokeneillre, joita generoidaan tulokseen. Valitse pienempi arvo saadaksesi lyhyempiä vastauksia, ja suurempi arvo pitkiä vastauksia varten.',
   com_endpoint_google_custom_name_placeholder: 'Aseta Googlelle mukautettu nimi',
+  com_endpoint_google_enable_search: 'Ota Google-haku käyttöön',
+  com_endpoint_google_search_info: 'Ota Google-hakutoiminto käyttöön parannettuja vastauksia varten',
+  com_endpoint_google_search_info_unavailable: 'Haku on käytettävissä vain Gemini 1.5- ja 2.0-malleissa',
   com_endpoint_prompt_prefix_placeholder:
     'Aseta mukautetut ohjeet tai konteksti. Jätetään huomiotta, jos tyhjä.',
   com_endpoint_instructions_assistants_placeholder:

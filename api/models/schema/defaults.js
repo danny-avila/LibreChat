@@ -130,6 +130,11 @@ const conversationPreset = {
   max_tokens: {
     type: Number,
   },
+  // for google only
+  enableSearch: {
+    type: Boolean,
+    required: false,
+  },
 };
 
 const agentOptions = {

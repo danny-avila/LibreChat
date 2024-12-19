@@ -182,6 +182,9 @@ export default {
   com_endpoint_google_maxoutputtokens:
     '	Maximum aantal tokens dat kan worden gegenereerd in de reactie. Geef een lagere waarde op voor kortere reacties en een hogere waarde voor langere reacties.',
   com_endpoint_google_custom_name_placeholder: 'Stel een aangepaste naam in voor Google',
+  com_endpoint_google_enable_search: 'Google Zoeken inschakelen',
+  com_endpoint_google_search_info: 'Schakel Google Zoeken-functionaliteit in voor verbeterde antwoorden',
+  com_endpoint_google_search_info_unavailable: 'Zoeken is alleen beschikbaar voor Gemini 1.5 en 2.0 modellen',
   com_endpoint_prompt_prefix_placeholder:
     'Stel aangepaste instructies of context in. Wordt genegeerd indien leeg.',
   com_endpoint_custom_name: 'Aangepaste naam',

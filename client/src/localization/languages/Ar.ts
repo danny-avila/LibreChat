@@ -172,6 +172,9 @@ export default {
   com_endpoint_google_maxoutputtokens:
     'الحد الأقصى لعدد الرموز التي يمكن إنشاؤها في الرد. حدد قيمة أقل للردود الأقصر وقيمة أعلى للردود الأطول.',
   com_endpoint_google_custom_name_placeholder: 'قم بتعيين اسم مخصص لـ Google',
+  com_endpoint_google_enable_search: 'تمكين بحث Google',
+  com_endpoint_google_search_info: 'تمكين وظائف بحث Google للحصول على ردود محسنة',
+  com_endpoint_google_search_info_unavailable: 'البحث متاح فقط لنماذج Gemini 1.5 و 2.0',
   com_endpoint_prompt_prefix_placeholder:
     'قم بتعيين تعليمات مخصصة أو سياق. يتم تجاهله إذا كان فارغًا.',
   com_endpoint_custom_name: 'اسم مخصص',

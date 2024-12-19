@@ -171,6 +171,9 @@ export default {
   com_endpoint_google_custom_name_placeholder: 'Google에 대한 사용자 정의 이름 설정',
   com_endpoint_prompt_prefix_placeholder:
     '사용자 정의 지시사항 또는 컨텍스트를 설정하세요. 비어 있으면 무시됩니다.',
+  com_endpoint_google_enable_search: 'Google 검색 활성화',
+  com_endpoint_google_search_info: '향상된 응답을 위해 Google 검색 기능 활성화',
+  com_endpoint_google_search_info_unavailable: '검색은 Gemini 1.5 및 2.0 모델에서만 사용 가능합니다',
   com_endpoint_custom_name: '사용자 정의 이름',
   com_endpoint_prompt_prefix: '프롬프트 접두사',
   com_endpoint_temperature: '온도',

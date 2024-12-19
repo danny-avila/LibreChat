@@ -191,6 +191,9 @@ export default {
   com_endpoint_google_maxoutputtokens:
     'Jumlah maksimum token yang dapat dihasilkan dalam respons. Tentukan nilai yang lebih rendah untuk respons yang lebih pendek dan nilai yang lebih tinggi untuk respons yang lebih panjang.',
   com_endpoint_google_custom_name_placeholder: 'Tetapkan nama kustom untuk Google',
+  com_endpoint_google_enable_search: 'Aktifkan Pencarian Google',
+  com_endpoint_google_search_info: 'Aktifkan fungsi pencarian Google untuk respons yang lebih baik',
+  com_endpoint_google_search_info_unavailable: 'Pencarian hanya tersedia untuk model Gemini 1.5 dan 2.0',
   com_endpoint_prompt_prefix_placeholder:
     'Tetapkan instruksi kustom atau konteks. Diabaikan jika kosong.',
   com_endpoint_custom_name: 'Nama Kustom',

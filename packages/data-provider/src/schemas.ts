@@ -476,6 +476,15 @@ export const tMessageSchema = z.object({
   thread_id: z.string().optional(),
   /* frontend components */
   iconURL: z.string().optional(),
+  /* google grounding metadata */
+  groundingMetadata: z.object({
+    webSearchQueries: z.array(z.string()).optional(),
+    retrievalQueries: z.array(z.string()).optional(),
+    groundingChunks: z.array(z.record(z.any())).optional(),
+    groundingSupports: z.array(z.record(z.any())).optional(),
+    searchEntryPoint: z.record(z.any()).optional(),
+    retrievalMetadata: z.record(z.any()).optional(),
+  }).optional(),
 });
 
 export type TAttachmentMetadata = { messageId: string; toolCallId: string };
@@ -1129,4 +1138,5 @@ export const compactAgentsSchema = tConversationSchema
   })
   .transform(removeNullishValues)
   .catch(() => ({}));
+
 

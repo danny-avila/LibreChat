@@ -223,6 +223,9 @@ export default {
   com_endpoint_google_maxoutputtokens:
     ' המספר המרבי של אסימונים שניתן להפיק בתגובה. ציין ערך נמוך יותר עבור תגובות קצרות יותר וערך גבוה יותר עבור תגובות ארוכות יותר.',
   com_endpoint_google_custom_name_placeholder: 'הגדר שם מותאם אישית עבור Google',
+  com_endpoint_google_enable_search: 'הפעל חיפוש Google',
+  com_endpoint_google_search_info: 'הפעל פונקציונליות חיפוש Google לתשובות משופרות',
+  com_endpoint_google_search_info_unavailable: 'החיפוש זמין רק עבור דגמי Gemini 1.5 ו-2.0',
   com_endpoint_prompt_prefix_placeholder: 'הגדר הוראות מותאמות אישית או הקשר. התעלמו אם ריק.',
   com_endpoint_instructions_assistants_placeholder:
     'עובר את הוראות הסייען. זה שימושי לשינוי ההתנהגות על בסיס ריצה.',
