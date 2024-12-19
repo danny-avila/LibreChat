@@ -328,7 +328,7 @@ const useFileHandling = (params?: UseFileHandling) => {
     img.src = preview;
   };
 
-  const handleFiles = async (_files: FileList | File[], toolResource?: string) => {
+  const handleFiles = async (_files: FileList | File[], _toolResource?: string) => {
     abortControllerRef.current = new AbortController();
     const fileList = Array.from(_files);
     /* Validate files */
@@ -359,12 +359,14 @@ const useFileHandling = (params?: UseFileHandling) => {
           size: originalFile.size,
         };
 
-        if (toolResource != null && toolResource !== '') {
-          extendedFile.tool_resource = toolResource;
+        if (_toolResource != null && _toolResource !== '') {
+          extendedFile.tool_resource = _toolResource;
         }
 
         const isImage = originalFile.type.split('/')[0] === 'image';
-        if (isAgentsEndpoint(endpoint) && !isImage && extendedFile.tool_resource == null) {
+        const tool_resource =
+          extendedFile.tool_resource ?? params?.additionalMetadata?.tool_resource ?? toolResource;
+        if (isAgentsEndpoint(endpoint) && !isImage && tool_resource == null) {
           /** Note: this needs to be removed when we can support files to providers */
           setError('com_error_files_unsupported_capability');
           continue;
