@@ -378,6 +378,9 @@ export default {
   com_endpoint_google_maxoutputtokens:
     'Yanıttaki maksimum token sayısı. Daha kısa yanıtlar için düşük bir değer, daha uzun yanıtlar için yüksek bir değer belirtin.',
   com_endpoint_google_custom_name_placeholder: 'Google için özel bir ad ayarlayın',
+  com_endpoint_google_enable_search: 'Google Aramayı Etkinleştir',
+  com_endpoint_google_search_info: 'Gelişmiş yanıtlar için Google Arama işlevini etkinleştir',
+  com_endpoint_google_search_info_unavailable: 'Arama yalnızca Gemini 1.5 ve 2.0 modelleri için kullanılabilir',
   com_endpoint_prompt_prefix_placeholder:
     'Özel talimatlar veya bağlam ayarlayın. Boşsa yok sayılır.',
   com_endpoint_instructions_assistants_placeholder:

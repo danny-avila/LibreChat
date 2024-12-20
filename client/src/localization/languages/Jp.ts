@@ -468,6 +468,9 @@ export default {
   com_endpoint_google_maxoutputtokens:
     ' 	生成されるレスポンスの最大トークン数。短いレスポンスには低い値を、長いレスポンスには高い値を指定します。',
   com_endpoint_google_custom_name_placeholder: 'Googleのカスタム名を設定する',
+  com_endpoint_google_enable_search: 'Google検索を有効にする',
+  com_endpoint_google_search_info: 'より良い応答のためにGoogle検索機能を有効にする',
+  com_endpoint_google_search_info_unavailable: '検索はGemini 1.5および2.0モデルでのみ利用可能です', 
   com_endpoint_prompt_prefix_placeholder:
     'custom instructions か context を設定する。空の場合は無視されます。',
   com_endpoint_instructions_assistants_placeholder:

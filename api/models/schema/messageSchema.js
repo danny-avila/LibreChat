@@ -116,6 +116,7 @@ const messageSchema = mongoose.Schema(
       type: String,
     },
     attachments: { type: [{ type: mongoose.Schema.Types.Mixed }], default: undefined },
+    groundingMetadata: { type: mongoose.Schema.Types.Mixed, default: undefined },
     /*
     attachments: {
       type: [

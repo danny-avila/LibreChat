@@ -5,6 +5,7 @@ import {
   Input,
   Label,
   Slider,
+  Switch,
   HoverCard,
   InputNumber,
   SelectDropDown,
@@ -28,6 +29,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
     topK,
     maxContextTokens,
     maxOutputTokens,
+    enableSearch,
   } = conversation ?? {};
 
   const [setMaxContextTokens, maxContextTokensValue] = useDebouncedInput<number | null | undefined>(
@@ -49,6 +51,9 @@ export default function Settings({ conversation, setOption, models, readonly }: 
   const setTopP = setOption('topP');
   const setTopK = setOption('topK');
   const setMaxOutputTokens = setOption('maxOutputTokens');
+  const setEnableSearch = setOption('enableSearch');
+
+  const isSearchEnabled = model?.startsWith('gemini-1.5-') || model?.startsWith('gemini-2.');
 
   return (
     <div className="grid grid-cols-5 gap-6">
@@ -100,6 +105,30 @@ export default function Settings({ conversation, setOption, models, readonly }: 
         </div>
       </div>
       <div className="col-span-5 flex flex-col items-center justify-start gap-6 px-3 sm:col-span-2">
+        <HoverCard openDelay={300}>
+          <HoverCardTrigger className="grid w-full items-center gap-2">
+            <div className="flex justify-between">
+              <Label htmlFor="enable-search" className="text-left text-sm font-medium">
+                {localize('com_endpoint_google_enable_search')}{' '}
+                <small className="opacity-40">
+                  ({localize('com_endpoint_default')}: {google.enableSearch.default ? 'Yes' : 'No'})
+                </small>
+              </Label>
+              <Switch
+                id="enable-search"
+                disabled={readonly || !isSearchEnabled}
+                checked={enableSearch ?? google.enableSearch.default}
+                onCheckedChange={(checked) => setEnableSearch(checked)}
+              />
+            </div>
+          </HoverCardTrigger>
+          <OptionHoverAlt
+            description={isSearchEnabled ? 
+              localize('com_endpoint_google_search_info') : 
+              localize('com_endpoint_google_search_info_unavailable')}
+            side={ESide.Left}
+          />
+        </HoverCard>
         <HoverCard openDelay={300}>
           <HoverCardTrigger className="grid w-full items-center gap-2">
             <div className="mt-1 flex w-full justify-between">

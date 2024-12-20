@@ -444,6 +444,9 @@ export default {
   com_endpoint_google_maxoutputtokens:
     '响应中可以生成的最大令牌数。指定较低的值以获得较短的响应，指定较高的值以获得较长的响应。注意：模型可能会在达到此最大值之前停止。',
   com_endpoint_google_custom_name_placeholder: '为 Google 设置一个名称',
+  com_endpoint_google_enable_search: '启用 Google 搜索',
+  com_endpoint_google_search_info: '启用 Google 搜索功能以获得增强的响应',
+  com_endpoint_google_search_info_unavailable: '搜索功能仅适用于 Gemini 1.5 和 2.0 模型',
   com_endpoint_prompt_prefix_placeholder: '自定义指令和上下文，默认为空。',
   com_endpoint_instructions_assistants_placeholder:
     '覆盖助手的指令。这对于需要逐次修改行为非常有用。',

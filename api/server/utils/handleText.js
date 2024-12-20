@@ -21,13 +21,32 @@ const base = { message: true, initial: true };
 const createOnProgress = ({ generation = '', onProgress: _onProgress }) => {
   let i = 0;
   let tokens = addSpaceIfNeeded(generation);
+  let currentMetadata = null;
 
   const basePayload = Object.assign({}, base, { text: tokens || '' });
 
   const progressCallback = (chunk, { res, ...rest }) => {
-    basePayload.text = basePayload.text + chunk;
+    // If chunk is an object with text and metadata
+    if (typeof chunk === 'object' && chunk.text !== undefined) {
+      basePayload.text = basePayload.text + chunk.text;
+      if (chunk.metadata) {
+        currentMetadata = chunk.metadata;
+      }
+    } else {
+      // Handle plain text chunks
+      basePayload.text = basePayload.text + chunk;
+    }
 
+    // Always include current metadata in the payload if available
     const payload = Object.assign({}, basePayload, rest);
+    if (currentMetadata) {
+      if (currentMetadata.metadata?.groundingMetadata) {
+        payload.groundingMetadata = currentMetadata.metadata.groundingMetadata;
+      } else if (currentMetadata.groundingMetadata) {
+        payload.groundingMetadata = currentMetadata.groundingMetadata;
+      }
+    }
+
     sendMessage(res, payload);
     if (_onProgress) {
       _onProgress(payload);
@@ -41,6 +60,13 @@ const createOnProgress = ({ generation = '', onProgress: _onProgress }) => {
   const sendIntermediateMessage = (res, payload, extraTokens = '') => {
     basePayload.text = basePayload.text + extraTokens;
     const message = Object.assign({}, basePayload, payload);
+    if (currentMetadata) {
+      if (currentMetadata.metadata?.groundingMetadata) {
+        message.groundingMetadata = currentMetadata.metadata.groundingMetadata;
+      } else if (currentMetadata.groundingMetadata) {
+        message.groundingMetadata = currentMetadata.groundingMetadata;
+      }
+    }
     sendMessage(res, message);
     if (i === 0) {
       basePayload.initial = false;

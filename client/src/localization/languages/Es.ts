@@ -280,6 +280,9 @@ export default {
   com_endpoint_google_maxoutputtokens:
     'Número máximo de tokens que se pueden generar en la respuesta. Especifique un valor más bajo para respuestas más cortas y un valor más alto para respuestas más largas.',
   com_endpoint_google_custom_name_placeholder: 'Establecer un nombre personalizado para Google',
+  com_endpoint_google_enable_search: 'Activar Búsqueda de Google',
+  com_endpoint_google_search_info: 'Activar la funcionalidad de búsqueda de Google para respuestas mejoradas',
+  com_endpoint_google_search_info_unavailable: 'La búsqueda solo está disponible para los modelos Gemini 1.5 y 2.0',
   com_endpoint_prompt_prefix_placeholder:
     'Configurar instrucciones personalizadas o contexto. Se ignora si está vacío.',
   com_endpoint_instructions_assistants_placeholder:

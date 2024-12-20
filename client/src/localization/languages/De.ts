@@ -443,6 +443,9 @@ export default {
     'Maximale Anzahl von Token, die in der Antwort generiert werden können. Gib einen niedrigeren Wert für kürzere Antworten und einen höheren Wert für längere Antworten an. Hinweis: Modelle können möglicherweise vor Erreichen dieses Maximums stoppen.',
   com_endpoint_google_custom_name_placeholder:
     'Lege einen benutzerdefinierten Namen für Google fest',
+  com_endpoint_google_enable_search: 'Google-Suche aktivieren',
+  com_endpoint_google_search_info: 'Google-Suchfunktionalität für verbesserte Antworten aktivieren',
+  com_endpoint_google_search_info_unavailable: 'Suche ist nur für Gemini 1.5 und 2.0 Modelle verfügbar',
   com_endpoint_prompt_prefix_placeholder:
     'Lege benutzerdefinierte Anweisungen oder Kontext fest. Wird ignoriert, wenn leer.',
   com_endpoint_instructions_assistants_placeholder:
