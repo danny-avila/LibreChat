@@ -79,7 +79,13 @@ export default function HoverButtons({
           messageId={message.messageId}
           content={message.content ?? message.text}
           isLast={isLast}
-          className="hover-button rounded-md p-1 pl-0 text-gray-500 hover:bg-gray-100 hover:text-gray-500 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible"
+          className={cn(
+            'hover-button rounded-md p-1 hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
+            isCreatedByUser ? '' : 'active',
+            hideEditButton ? 'opacity-0' : '',
+            isEditing ? 'active text-gray-700 dark:text-gray-200' : '',
+            !isLast ? 'md:opacity-0 md:group-hover:opacity-100' : '',
+        )}
         />
       )}
       {isEditableEndpoint && (
