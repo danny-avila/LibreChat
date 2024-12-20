@@ -917,6 +917,10 @@ class GoogleClient extends BaseClient {
       },
       {
         category: 'HARM_CATEGORY_CIVIC_INTEGRITY',
+        /**
+         * Note: this was added since `gemini-2.0-flash-thinking-exp-1219` does not
+         * accept 'HARM_BLOCK_THRESHOLD_UNSPECIFIED' for 'HARM_CATEGORY_CIVIC_INTEGRITY'
+         * */
         threshold: process.env.GOOGLE_SAFETY_CIVIC_INTEGRITY || 'BLOCK_NONE',
       },
     ];
