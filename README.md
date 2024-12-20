@@ -59,6 +59,7 @@
     - No-Code Custom Assistants: Build specialized, AI-driven helpers without coding  
     - Flexible & Extensible: Attach tools like DALL-E-3, file search, code execution, and more  
     - Compatible with Custom Endpoints, OpenAI, Azure, Anthropic, AWS Bedrock, and more
+    - [Model Context Protocol (MCP) Support](https://modelcontextprotocol.io/clients#librechat) for Tools
   - Use LibreChat Agents and OpenAI Assistants with Files, Code Interpreter, Tools, and API Actions
 
 - 🪄 **Generative UI with Code Artifacts**:  
@@ -81,9 +82,6 @@
 - 🎨 **Customizable Interface**:  
   - Customizable Dropdown & Interface that adapts to both power users and newcomers
 
-- 📧 **Secure Access**:  
-  - Verify your email to ensure secure access
-
 - 🗣️ **Speech & Audio**:  
   - Chat hands-free with Speech-to-Text and Text-to-Speech  
   - Automatically send and play Audio  
@@ -96,8 +94,8 @@
 - 🔍 **Search & Discovery**:  
   - Search all messages/conversations
 
-- 👥 **Multi-User & Secure**:
-  - Multi-User, Secure Authentication with OAuth2 & Email Login Support
+- 👥 **Multi-User & Secure Access**:
+  - Multi-User, Secure Authentication with OAuth2, LDAP, & Email Login Support
   - Built-in Moderation, and Token spend tools
 
 - ⚙️ **Configuration & Deployment**:  
