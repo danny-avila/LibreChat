@@ -48,6 +48,17 @@ export type AudioChunk = {
   };
 };
 
+export interface RTCMessage {
+  type:
+    | 'audio-chunk'
+    | 'audio-received'
+    | 'transcription'
+    | 'llm-response'
+    | 'tts-chunk'
+    | 'call-ended';
+  data?: string | ArrayBuffer | null;
+}
+
 export type AssistantListItem = {
   id: string;
   name: string;
