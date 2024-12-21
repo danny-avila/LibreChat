@@ -2,7 +2,7 @@
 # v0.7.6
 
 # Base for all builds
-FROM node:20-alpine AS base
+FROM node:20-alpine AS base-min
 WORKDIR /app
 RUN apk --no-cache add curl
 RUN npm config set fetch-retry-maxtimeout 600000 && \
@@ -13,6 +13,10 @@ COPY packages/data-provider/package*.json ./packages/data-provider/
 COPY packages/mcp/package*.json ./packages/mcp/
 COPY client/package*.json ./client/
 COPY api/package*.json ./api/
+
+# Install all deps to for builds
+FROM base-min AS base
+WORKDIR /app
 RUN npm ci
 
 # Build data-provider
@@ -20,7 +24,6 @@ FROM base AS data-provider-build
 WORKDIR /app/packages/data-provider
 COPY packages/data-provider ./
 RUN npm run build
-RUN npm prune --production
 
 # Build mcp package
 FROM base AS mcp-build
@@ -28,7 +31,6 @@ WORKDIR /app/packages/mcp
 COPY packages/mcp ./
 COPY --from=data-provider-build /app/packages/data-provider/dist /app/packages/data-provider/dist
 RUN npm run build
-RUN npm prune --production
 
 # Client build
 FROM base AS client-build
@@ -37,18 +39,18 @@ COPY client ./
 COPY --from=data-provider-build /app/packages/data-provider/dist /app/packages/data-provider/dist
 ENV NODE_OPTIONS="--max-old-space-size=2048"
 RUN npm run build
-RUN npm prune --production
 
 # API setup (including client dist)
-FROM base AS api-build
+FROM base-min AS api-build
 WORKDIR /app
+# Install only production deps
+RUN npm ci --omit=dev
 COPY api ./api
 COPY config ./config
 COPY --from=data-provider-build /app/packages/data-provider/dist ./packages/data-provider/dist
 COPY --from=mcp-build /app/packages/mcp/dist ./packages/mcp/dist
 COPY --from=client-build /app/client/dist ./client/dist
 WORKDIR /app/api
-RUN npm prune --production
 EXPOSE 3080
 ENV HOST=0.0.0.0
 CMD ["node", "server/index.js"]
