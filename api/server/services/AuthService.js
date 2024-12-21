@@ -17,6 +17,7 @@ const {
   findSession,
   deleteSession,
   createSession,
+  generateRefreshToken,
 } = require('~/models');
 const { isEnabled, checkEmailConfig, sendEmail } = require('~/server/utils');
 const { isEmailDomainAllowed } = require('~/server/services/domains');
@@ -338,18 +339,19 @@ const setAuthTokens = async (userId, res, sessionId = null) => {
     const token = await generateToken(user);
 
     let session;
+    let refreshToken;
     let refreshTokenExpires;
+
     if (sessionId) {
       session = await findSession({ sessionId: sessionId });
       refreshTokenExpires = session.expiration.getTime();
+      refreshToken = await generateRefreshToken(session);
     } else {
-      session = createSession({ userId: userId });
-      const { REFRESH_TOKEN_EXPIRY } = process.env ?? {};
-      const expires = eval(REFRESH_TOKEN_EXPIRY) ?? 1000 * 60 * 60 * 24 * 7;
-      refreshTokenExpires = Date.now() + expires;
+      const result = await createSession(userId);
+      session = result.session;
+      refreshToken = result.refreshToken;
+      refreshTokenExpires = session.expiration.getTime();
     }
-
-    const refreshToken = await session.generateRefreshToken();
 
     res.cookie('refreshToken', refreshToken, {
       expires: new Date(refreshTokenExpires),
