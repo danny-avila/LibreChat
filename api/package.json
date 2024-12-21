@@ -111,6 +111,7 @@
     "winston": "^3.11.0",
     "winston-daily-rotate-file": "^4.7.1",
     "youtube-transcript": "^1.2.1",
+    "wrtc": "^0.4.7",
     "ws": "^8.18.0",
     "zod": "^3.22.4"
   },
