@@ -10,7 +10,14 @@ const {
   generateToken,
   deleteUserById,
 } = require('~/models/userMethods');
-const { createToken, findToken, deleteTokens, Session } = require('~/models');
+const {
+  createToken,
+  findToken,
+  deleteTokens,
+  findSession,
+  deleteSession,
+  createSession,
+} = require('~/models');
 const { isEnabled, checkEmailConfig, sendEmail } = require('~/server/utils');
 const { isEmailDomainAllowed } = require('~/server/services/domains');
 const { registerSchema } = require('~/strategies/validators');
@@ -37,10 +44,11 @@ const logoutUser = async (userId, refreshToken) => {
     const hash = await hashToken(refreshToken);
 
     // Find the session with the matching user and refreshTokenHash
-    const session = await Session.findOne({ user: userId, refreshTokenHash: hash });
+    const session = await findSession({ userId: userId, refreshToken: hash });
+
     if (session) {
       try {
-        await Session.deleteOne({ _id: session._id });
+        await deleteSession({ sessionId: session._id });
       } catch (deleteErr) {
         logger.error('[logoutUser] Failed to delete session.', deleteErr);
         return { status: 500, message: 'Failed to delete session.' };
@@ -332,10 +340,10 @@ const setAuthTokens = async (userId, res, sessionId = null) => {
     let session;
     let refreshTokenExpires;
     if (sessionId) {
-      session = await Session.findById(sessionId);
+      session = await findSession({ sessionId: sessionId });
       refreshTokenExpires = session.expiration.getTime();
     } else {
-      session = new Session({ user: userId });
+      session = createSession({ userId: userId });
       const { REFRESH_TOKEN_EXPIRY } = process.env ?? {};
       const expires = eval(REFRESH_TOKEN_EXPIRY) ?? 1000 * 60 * 60 * 24 * 7;
       refreshTokenExpires = Date.now() + expires;
