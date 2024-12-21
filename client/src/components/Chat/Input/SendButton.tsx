@@ -1,11 +1,13 @@
 import React, { forwardRef } from 'react';
 import { useWatch } from 'react-hook-form';
+import { useSetRecoilState } from 'recoil';
 import type { TRealtimeEphemeralTokenResponse } from 'librechat-data-provider';
 import type { Control } from 'react-hook-form';
 import { useRealtimeEphemeralTokenMutation } from '~/data-provider';
 import { TooltipAnchor, SendIcon, CallIcon } from '~/components';
 import { useToastContext } from '~/Providers/ToastContext';
 import { useLocalize } from '~/hooks';
+import store from '~/store';
 import { cn } from '~/utils';
 
 type ButtonProps = {
@@ -56,25 +58,27 @@ const SendButton = forwardRef((props: ButtonProps, ref: React.ForwardedRef<HTMLB
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { text = '' } = useWatch({ control: props.control });
+  const setCallOpen = useSetRecoilState(store.callDialogOpen(0));
 
-  const { mutate: startCall, isLoading: isProcessing } = useRealtimeEphemeralTokenMutation({
-    onSuccess: async (data: TRealtimeEphemeralTokenResponse) => {
-      showToast({
-        message: 'IT WORKS!!',
-        status: 'success',
-      });
-    },
-    onError: (error: unknown) => {
-      showToast({
-        message: localize('com_nav_audio_process_error', (error as Error).message),
-        status: 'error',
-      });
-    },
-  });
+  // const { mutate: startCall, isLoading: isProcessing } = useRealtimeEphemeralTokenMutation({
+  //   onSuccess: async (data: TRealtimeEphemeralTokenResponse) => {
+  //     showToast({
+  //       message: 'IT WORKS!!',
+  //       status: 'success',
+  //     });
+  //   },
+  //   onError: (error: unknown) => {
+  //     showToast({
+  //       message: localize('com_nav_audio_process_error', (error as Error).message),
+  //       status: 'error',
+  //     });
+  //   },
+  // });
 
   const handleClick = () => {
     if (text.trim() === '') {
-      startCall({ voice: 'verse' });
+      setCallOpen(true);
+      // startCall({ voice: 'verse' });
     }
   };
 

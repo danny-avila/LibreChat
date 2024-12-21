@@ -780,3 +780,7 @@ export function acceptTerms(): Promise<t.TAcceptTermsResponse> {
 export function getBanner(): Promise<t.TBannerResponse> {
   return request.get(endpoints.banner());
 }
+
+export function getWebsocketUrl(): Promise<t.TWebsocketUrlResponse> {
+  return request.get(endpoints.websocket());
+}

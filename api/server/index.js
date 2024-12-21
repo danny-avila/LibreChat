@@ -4,6 +4,7 @@ require('module-alias')({ base: path.resolve(__dirname, '..') });
 const cors = require('cors');
 const axios = require('axios');
 const express = require('express');
+const { createServer } = require('http');
 const compression = require('compression');
 const passport = require('passport');
 const mongoSanitize = require('express-mongo-sanitize');
@@ -14,6 +15,7 @@ const { connectDb, indexSync } = require('~/lib/db');
 const { isEnabled } = require('~/server/utils');
 const { ldapLogin } = require('~/strategies');
 const { logger } = require('~/config');
+const { WebSocketService } = require('./services/WebSocket/WebSocketServer');
 const validateImageRequest = require('./middleware/validateImageRequest');
 const errorController = require('./controllers/ErrorController');
 const configureSocialLogins = require('./socialLogins');
@@ -36,7 +38,18 @@ const startServer = async () => {
   await indexSync();
 
   const app = express();
+  const server = createServer(app);
+
   app.disable('x-powered-by');
+  app.use(
+    cors({
+      origin: true,
+      credentials: true,
+    }),
+  );
+
+  new WebSocketService(server);
+
   await AppService(app);
 
   const indexPath = path.join(app.locals.paths.dist, 'index.html');
@@ -109,6 +122,7 @@ const startServer = async () => {
   app.use('/api/agents', routes.agents);
   app.use('/api/banner', routes.banner);
   app.use('/api/bedrock', routes.bedrock);
+  app.use('/api/websocket', routes.websocket);
 
   app.use('/api/tags', routes.tags);
 
@@ -126,7 +140,7 @@ const startServer = async () => {
     res.send(updatedIndexHtml);
   });
 
-  app.listen(port, host, () => {
+  server.listen(port, host, () => {
     if (host == '0.0.0.0') {
       logger.info(
         `Server listening on all interfaces at port ${port}. Use http://localhost:${port} to access it`,
@@ -134,6 +148,8 @@ const startServer = async () => {
     } else {
       logger.info(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
     }
+
+    logger.info(`WebSocket endpoint: ws://${host}:${port}`);
   });
 };
 
