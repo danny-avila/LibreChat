@@ -810,3 +810,7 @@ export function verifyTwoFactorTemp(
 ): Promise<t.TVerify2FATempResponse> {
   return request.post(endpoints.verifyTwoFactorTemp(), payload);
 }
+
+export function getWebsocketUrl(): Promise<t.TWebsocketUrlResponse> {
+  return request.get(endpoints.websocket());
+}

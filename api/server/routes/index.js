@@ -2,6 +2,7 @@ const assistants = require('./assistants');
 const categories = require('./categories');
 const tokenizer = require('./tokenizer');
 const endpoints = require('./endpoints');
+const websocket = require('./websocket');
 const staticRoute = require('./static');
 const messages = require('./messages');
 const presets = require('./presets');
@@ -15,6 +16,7 @@ const models = require('./models');
 const convos = require('./convos');
 const config = require('./config');
 const agents = require('./agents');
+const banner = require('./banner');
 const roles = require('./roles');
 const oauth = require('./oauth');
 const files = require('./files');
@@ -25,7 +27,6 @@ const edit = require('./edit');
 const keys = require('./keys');
 const user = require('./user');
 const ask = require('./ask');
-const banner = require('./banner');
 
 module.exports = {
   ask,
@@ -39,6 +40,7 @@ module.exports = {
   files,
   share,
   agents,
+  banner,
   bedrock,
   convos,
   search,
@@ -50,10 +52,10 @@ module.exports = {
   presets,
   balance,
   messages,
+  websocket,
   endpoints,
   tokenizer,
   assistants,
   categories,
   staticRoute,
-  banner,
 };
