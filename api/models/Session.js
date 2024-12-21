@@ -75,7 +75,11 @@ const findSession = async (params, options = { lean: true }) => {
     }
 
     if (params.sessionId) {
-      query._id = params.sessionId;
+      const sessionId = params.sessionId.sessionId || params.sessionId;
+      if (!mongoose.Types.ObjectId.isValid(sessionId)) {
+        throw new SessionError('Invalid session ID format', 'INVALID_SESSION_ID');
+      }
+      query._id = sessionId;
     }
 
     // Add expiration check to only return valid sessions
@@ -172,7 +176,14 @@ const deleteAllUserSessions = async (userId, options = {}) => {
       throw new SessionError('User ID is required', 'INVALID_USER_ID');
     }
 
-    const query = { user: userId };
+    // Extract userId if it's passed as an object
+    const userIdString = userId.userId || userId;
+
+    if (!mongoose.Types.ObjectId.isValid(userIdString)) {
+      throw new SessionError('Invalid user ID format', 'INVALID_USER_ID_FORMAT');
+    }
+
+    const query = { user: userIdString };
 
     if (options.excludeCurrentSession && options.currentSessionId) {
       query._id = { $ne: options.currentSessionId };
@@ -182,7 +193,7 @@ const deleteAllUserSessions = async (userId, options = {}) => {
 
     if (result.deletedCount > 0) {
       logger.debug(
-        `[deleteAllUserSessions] Deleted ${result.deletedCount} sessions for user ${userId}.`,
+        `[deleteAllUserSessions] Deleted ${result.deletedCount} sessions for user ${userIdString}.`,
       );
     }
 
