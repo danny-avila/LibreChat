@@ -42,6 +42,7 @@ export default {
   com_error_files_dupe: 'Duplicate file detected.',
   com_error_files_validation: 'An error occurred while validating the file.',
   com_error_files_process: 'An error occurred while processing the file.',
+  com_error_files_unsupported_capability: 'No capabilities enabled that support this file type.',
   com_error_files_upload: 'An error occurred while uploading the file.',
   com_error_files_upload_canceled:
     'The file upload request was canceled. Note: the file upload may still be processing and will need to be manually deleted.',
@@ -203,6 +204,7 @@ export default {
   com_ui_next: 'Next',
   com_ui_stop: 'Stop',
   com_ui_upload_files: 'Upload files',
+  com_ui_upload_type: 'Select Upload Type',
   com_ui_upload_image_input: 'Upload Image',
   com_ui_upload_file_search: 'Upload for File Search',
   com_ui_upload_code_files: 'Upload for Code Interpreter',

@@ -12,6 +12,7 @@ const {
   EToolResources,
   mergeFileConfig,
   hostImageIdSuffix,
+  AgentCapabilities,
   checkOpenAIStorage,
   removeNullishValues,
   hostImageNamePrefix,
@@ -27,6 +28,7 @@ const { addResourceFileId, deleteResourceFileId } = require('~/server/controller
 const { addAgentResourceFile, removeAgentResourceFiles } = require('~/models/Agent');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { createFile, updateFileUsage, deleteFiles } = require('~/models/File');
+const { getEndpointsConfig } = require('~/server/services/Config');
 const { loadAuthValues } = require('~/app/clients/tools/util');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getStrategyFunctions } = require('./strategies');
@@ -452,6 +454,17 @@ const processFileUpload = async ({ req, res, metadata }) => {
 };
 
 /**
+ * @param {ServerRequest} req
+ * @param {AgentCapabilities} capability
+ * @returns {Promise<boolean>}
+ */
+const checkCapability = async (req, capability) => {
+  const endpointsConfig = await getEndpointsConfig(req);
+  const capabilities = endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? [];
+  return capabilities.includes(capability);
+};
+
+/**
  * Applies the current strategy for file uploads.
  * Saves file metadata to the database with an expiry TTL.
  * Files must be deleted from the server filesystem manually.
@@ -478,9 +491,20 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     throw new Error('No agent ID provided for agent file upload');
   }
 
+  const isImage = file.mimetype.startsWith('image');
+  if (!isImage && !tool_resource) {
+    /** Note: this needs to be removed when we can support files to providers */
+    throw new Error('No tool resource provided for non-image agent file upload');
+  }
+
   let fileInfoMetadata;
   const entity_id = messageAttachment === true ? undefined : agent_id;
+
   if (tool_resource === EToolResources.execute_code) {
+    const isCodeEnabled = await checkCapability(req, AgentCapabilities.execute_code);
+    if (!isCodeEnabled) {
+      throw new Error('Code execution is not enabled for Agents');
+    }
     const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(FileSources.execute_code);
     const result = await loadAuthValues({ userId: req.user.id, authFields: [EnvVar.CODE_API_KEY] });
     const stream = fs.createReadStream(file.path);
@@ -492,6 +516,11 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       entity_id,
     });
     fileInfoMetadata = { fileIdentifier };
+  } else if (tool_resource === EToolResources.file_search) {
+    const isFileSearchEnabled = await checkCapability(req, AgentCapabilities.file_search);
+    if (!isFileSearchEnabled) {
+      throw new Error('File search is not enabled for Agents');
+    }
   }
 
   const source =
@@ -527,7 +556,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     });
   }
 
-  if (file.mimetype.startsWith('image')) {
+  if (isImage) {
     const result = await processImageFile({
       req,
       file,

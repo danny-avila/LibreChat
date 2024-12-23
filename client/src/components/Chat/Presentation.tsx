@@ -3,11 +3,11 @@ import { useEffect, useMemo } from 'react';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { FileSources, LocalStorageKeys, getConfigDefaults } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
-import { useDragHelpers, useSetFilesToDelete } from '~/hooks';
-import DragDropOverlay from './Input/Files/DragDropOverlay';
+import DragDropWrapper from '~/components/Chat/Input/Files/DragDropWrapper';
 import { useDeleteFilesMutation } from '~/data-provider';
 import Artifacts from '~/components/Artifacts/Artifacts';
 import { SidePanel } from '~/components/SidePanel';
+import { useSetFilesToDelete } from '~/hooks';
 import store from '~/store';
 
 const defaultInterface = getConfigDefaults().interface;
@@ -33,7 +33,6 @@ export default function Presentation({
   );
 
   const setFilesToDelete = useSetFilesToDelete();
-  const { isOver, canDrop, drop } = useDragHelpers();
 
   const { mutateAsync } = useDeleteFilesMutation({
     onSuccess: () => {
@@ -66,8 +65,6 @@ export default function Presentation({
     mutateAsync({ files });
   }, [mutateAsync]);
 
-  const isActive = canDrop && isOver;
-
   const defaultLayout = useMemo(() => {
     const resizableLayout = localStorage.getItem('react-resizable-panels:layout');
     return typeof resizableLayout === 'string' ? JSON.parse(resizableLayout) : undefined;
@@ -79,20 +76,16 @@ export default function Presentation({
   const fullCollapse = useMemo(() => localStorage.getItem('fullPanelCollapse') === 'true', []);
 
   const layout = () => (
-    <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden bg-white pt-0 dark:bg-gray-800">
+    <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden bg-presentation pt-0">
       <div className="flex h-full flex-col" role="presentation">
         {children}
-        {isActive && <DragDropOverlay />}
       </div>
     </div>
   );
 
   if (useSidePanel && !hideSidePanel && interfaceConfig.sidePanel === true) {
     return (
-      <div
-        ref={drop}
-        className="relative flex w-full grow overflow-hidden bg-white dark:bg-gray-800"
-      >
+      <DragDropWrapper className="relative flex w-full grow overflow-hidden bg-presentation">
         <SidePanel
           defaultLayout={defaultLayout}
           defaultCollapsed={defaultCollapsed}
@@ -107,17 +100,16 @@ export default function Presentation({
         >
           <main className="flex h-full flex-col" role="main">
             {children}
-            {isActive && <DragDropOverlay />}
           </main>
         </SidePanel>
-      </div>
+      </DragDropWrapper>
     );
   }
 
   return (
-    <div ref={drop} className="relative flex w-full grow overflow-hidden bg-white dark:bg-gray-800">
+    <DragDropWrapper className="relative flex w-full grow overflow-hidden bg-presentation">
       {layout()}
       {panel != null && panel}
-    </div>
+    </DragDropWrapper>
   );
 }
