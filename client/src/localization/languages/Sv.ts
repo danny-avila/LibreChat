@@ -177,6 +177,9 @@ export default {
   com_endpoint_google_custom_name_placeholder: 'Ange ett anpassat namn för Google',
   com_endpoint_prompt_prefix_placeholder:
     'Ange anpassade instruktioner eller kontext. Ignoreras om tom.',
+  com_endpoint_google_enable_search: 'Aktivera Google-sökning',
+  com_endpoint_google_search_info: 'Aktivera Google-sökfunktionalitet för förbättrade svar',
+  com_endpoint_google_search_info_unavailable: 'Sökning är endast tillgänglig för Gemini 1.5 och 2.0 modeller',
   com_endpoint_custom_name: 'Anpassat namn',
   com_endpoint_prompt_prefix: 'Uppmaningsprefix',
   com_endpoint_temperature: 'Temperatur',

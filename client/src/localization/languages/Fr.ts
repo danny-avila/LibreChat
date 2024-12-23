@@ -199,6 +199,9 @@ export default {
   com_endpoint_google_custom_name_placeholder: 'Définir un nom personnalisé pour Google',
   com_endpoint_google_prompt_prefix_placeholder:
     'Définir des instructions ou un contexte personnalisés. Ignoré si vide.',
+  com_endpoint_google_enable_search: 'Activer la Recherche Google',
+  com_endpoint_google_search_info: 'Activer la fonctionnalité de recherche Google pour des réponses améliorées',
+  com_endpoint_google_search_info_unavailable: 'La recherche est uniquement disponible pour les modèles Gemini 1.5 et 2.0',
   com_endpoint_custom_name: 'Nom personnalisé',
   com_endpoint_prompt_prefix: 'Préfixe du prompt',
   com_endpoint_temperature: 'Température',

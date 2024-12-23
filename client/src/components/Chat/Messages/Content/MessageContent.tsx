@@ -80,11 +80,22 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
     () => message.messageId === latestMessage?.messageId,
     [message.messageId, latestMessage?.messageId],
   );
-
   let content: React.ReactElement;
   if (!isCreatedByUser) {
     content = (
-      <Markdown content={text} showCursor={showCursorState} isLatestMessage={isLatestMessage} />
+      <>
+        <Markdown content={text} showCursor={showCursorState} isLatestMessage={isLatestMessage} />
+        {message.groundingMetadata?.searchEntryPoint?.renderedContent && (
+          <div className="mt-4 rounded-lg border border-token-border-light bg-token-surface-secondary p-4">
+            <div 
+              className="prose dark:prose-invert"
+              dangerouslySetInnerHTML={{ 
+                __html: message.groundingMetadata.searchEntryPoint.renderedContent 
+              }} 
+            />
+          </div>
+        )}
+      </>
     );
   } else if (enableUserMsgMarkdown) {
     content = <MarkdownLite content={text} />;

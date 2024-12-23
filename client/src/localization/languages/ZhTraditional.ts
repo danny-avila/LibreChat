@@ -169,6 +169,9 @@ export default {
   com_endpoint_google_maxoutputtokens:
     '設定回應中可生成的最大 token 數。若希望回應簡短，請設定較低的數值；若需較長的回應，則設定較高的數值。',
   com_endpoint_google_custom_name_placeholder: '為 Google 設定自訂名稱',
+  com_endpoint_google_enable_search: '啟用 Google 搜尋',
+  com_endpoint_google_search_info: '啟用 Google 搜尋功能以獲得增強的回應',
+  com_endpoint_google_search_info_unavailable: '搜尋功能僅適用於 Gemini 1.5 和 2.0 模型',
   com_endpoint_prompt_prefix_placeholder: '設定自訂提示或前後文。如果為空則忽略。',
   com_endpoint_custom_name: '自訂名稱',
   com_endpoint_prompt_prefix: '提示起始字串',

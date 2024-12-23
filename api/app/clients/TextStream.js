@@ -9,6 +9,7 @@ class TextStream extends Readable {
     this.minChunkSize = options.minChunkSize ?? 2;
     this.maxChunkSize = options.maxChunkSize ?? 4;
     this.delay = options.delay ?? 20; // Time in milliseconds
+    this.metadata = options.metadata;
   }
 
   _read() {
@@ -35,7 +36,13 @@ class TextStream extends Readable {
   async processTextStream(onProgressCallback) {
     const streamPromise = new Promise((resolve, reject) => {
       this.on('data', (chunk) => {
-        onProgressCallback(chunk.toString());
+        const payload = {
+          text: chunk.toString(),
+        };
+        if (this.metadata) {
+          payload.metadata = this.metadata;
+        }
+        onProgressCallback(payload);
       });
 
       this.on('end', () => {
