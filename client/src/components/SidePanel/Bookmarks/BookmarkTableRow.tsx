@@ -73,7 +73,7 @@ const BookmarkTableRow: React.FC<BookmarkTableRowProps> = ({ row, moveRow, posit
   return (
     <TableRow
       ref={ref}
-      className="cursor-move hover:bg-surface-tertiary"
+      className="cursor-move hover:bg-surface-secondary"
       style={{ opacity: isDragging ? 0.5 : 1 }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
@@ -82,30 +82,30 @@ const BookmarkTableRow: React.FC<BookmarkTableRowProps> = ({ row, moveRow, posit
         <div className="truncate">{row.tag}</div>
       </TableCell>
       <TableCell className="w-full px-3 py-3.5 sm:pl-6">
-        <div className="flex items-center justify-between py-1">
-          <div>{row.count}</div>
-          <div
-            className="flex items-center gap-2"
-            style={{
-              opacity: isHovered ? 1 : 0,
-              transition: 'opacity 0.1s ease-in-out',
-            }}
+        <div className="text-center">{row.count}</div>
+      </TableCell>
+      <TableCell className="w-full px-3 py-3.5 sm:pl-6">
+        <div
+          className="flex items-center justify-center gap-2"
+          style={{
+            opacity: isHovered ? 1 : 0,
+            transition: 'opacity 0.1s ease-in-out',
+          }}
+          onFocus={() => setIsHovered(true)}
+          onBlur={() => setIsHovered(false)}
+        >
+          <EditBookmarkButton
+            bookmark={row}
+            tabIndex={0}
             onFocus={() => setIsHovered(true)}
             onBlur={() => setIsHovered(false)}
-          >
-            <EditBookmarkButton
-              bookmark={row}
-              tabIndex={0}
-              onFocus={() => setIsHovered(true)}
-              onBlur={() => setIsHovered(false)}
-            />
-            <DeleteBookmarkButton
-              bookmark={row.tag}
-              tabIndex={0}
-              onFocus={() => setIsHovered(true)}
-              onBlur={() => setIsHovered(false)}
-            />
-          </div>
+          />
+          <DeleteBookmarkButton
+            bookmark={row.tag}
+            tabIndex={0}
+            onFocus={() => setIsHovered(true)}
+            onBlur={() => setIsHovered(false)}
+          />
         </div>
       </TableCell>
     </TableRow>
