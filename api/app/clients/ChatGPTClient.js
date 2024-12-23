@@ -275,7 +275,7 @@ class ChatGPTClient extends BaseClient {
       opts.headers['X-Title'] = 'LibreChat';
     }
     if (this.useNovita) {
-      opts.headers['HTTP-Referer'] = 'https://novita.ai';
+      opts.headers['HTTP-Referer'] = 'https://librechat.ai';
       opts.headers['X-Title'] = 'LibreChat';
     }
 
