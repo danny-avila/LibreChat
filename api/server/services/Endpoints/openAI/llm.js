@@ -29,6 +29,7 @@ function getLLMConfig(apiKey, options = {}) {
     modelOptions = {},
     reverseProxyUrl,
     useOpenRouter,
+    defaultQuery,
     headers,
     proxy,
     azure,
@@ -72,6 +73,10 @@ function getLLMConfig(apiKey, options = {}) {
     if (headers) {
       configOptions.baseOptions = { headers };
     }
+  }
+
+  if (defaultQuery) {
+    configOptions.baseOptions.defaultQuery = defaultQuery;
   }
 
   if (proxy) {

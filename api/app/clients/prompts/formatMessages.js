@@ -204,7 +204,7 @@ const formatAgentMessages = (payload) => {
           new ToolMessage({
             tool_call_id: tool_call.id,
             name: tool_call.name,
-            content: output,
+            content: output || '',
           }),
         );
       } else {

@@ -1,4 +1,3 @@
-// client/src/components/SidePanel/Parameters/DynamicInput.tsx
 import { OptionTypes } from 'librechat-data-provider';
 import type { DynamicSettingProps } from 'librechat-data-provider';
 import { useLocalize, useDebouncedInput, useParameterEffects } from '~/hooks';
@@ -13,6 +12,7 @@ function DynamicInput({
   settingKey,
   defaultValue,
   description = '',
+  type = 'string',
   columnSpan,
   setOption,
   optionType,
@@ -46,6 +46,17 @@ function DynamicInput({
     setInputValue: setLocalValue,
   });
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    if (type === 'number') {
+      if (!isNaN(Number(value))) {
+        setInputValue(e);
+      }
+    } else {
+      setInputValue(e);
+    }
+  };
+
   return (
     <div
       className={`flex flex-col items-center justify-start gap-6 ${
@@ -75,9 +86,11 @@ function DynamicInput({
             id={`${settingKey}-dynamic-input`}
             disabled={readonly}
             value={inputValue ?? ''}
-            onChange={setInputValue}
+            onChange={handleInputChange}
             placeholder={placeholderCode ? localize(placeholder) ?? placeholder : placeholder}
-            className={cn(defaultTextProps, 'flex h-10 max-h-10 w-full resize-none px-3 py-2')}
+            className={cn(
+              'flex h-10 max-h-10 w-full resize-none border-none bg-surface-secondary px-3 py-2',
+            )}
           />
         </HoverCardTrigger>
         {description && (

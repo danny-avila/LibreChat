@@ -1,7 +1,7 @@
 import React, { useMemo, useEffect } from 'react';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, RotateCcw } from 'lucide-react';
 import { getSettingsKeys } from 'librechat-data-provider';
-import { useFormContext, Controller } from 'react-hook-form';
+import { useFormContext, useWatch, Controller } from 'react-hook-form';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type * as t from 'librechat-data-provider';
 import type { AgentForm, AgentModelPanelProps, StringOption } from '~/common';
@@ -19,10 +19,11 @@ export default function Parameters({
 }: AgentModelPanelProps) {
   const localize = useLocalize();
 
-  const { control, setValue, watch } = useFormContext<AgentForm>();
-  const modelParameters = watch('model_parameters');
-  const providerOption = watch('provider');
-  const model = watch('model');
+  const { control, setValue } = useFormContext<AgentForm>();
+
+  const model = useWatch({ control, name: 'model' });
+  const providerOption = useWatch({ control, name: 'provider' });
+  const modelParameters = useWatch({ control, name: 'model_parameters' });
 
   const provider = useMemo(() => {
     const value =
@@ -31,14 +32,17 @@ export default function Parameters({
         : (providerOption as StringOption | undefined)?.value;
     return value ?? '';
   }, [providerOption]);
-  const models = useMemo(() => (provider ? modelsData[provider] : []), [modelsData, provider]);
+  const models = useMemo(
+    () => (provider ? modelsData[provider] ?? [] : []),
+    [modelsData, provider],
+  );
 
   useEffect(() => {
     const _model = model ?? '';
     if (provider && _model) {
       const modelExists = models.includes(_model);
       if (!modelExists) {
-        const newModels = modelsData[provider];
+        const newModels = modelsData[provider] ?? [];
         setValue('model', newModels[0] ?? '');
       }
     }
@@ -66,6 +70,10 @@ export default function Parameters({
 
   const setOption = (optionKey: keyof t.AgentModelParameters) => (value: t.AgentParameterValue) => {
     setValue(`model_parameters.${optionKey}`, value);
+  };
+
+  const handleResetParameters = () => {
+    setValue('model_parameters', {} as t.AgentModelParameters);
   };
 
   return (
@@ -105,14 +113,16 @@ export default function Parameters({
                 <SelectDropDown
                   emptyTitle={true}
                   value={field.value ?? ''}
+                  title={localize('com_ui_provider')}
                   placeholder={localize('com_ui_select_provider')}
+                  searchPlaceholder={localize('com_ui_select_search_provider')}
                   setValue={field.onChange}
                   availableValues={providers}
                   showAbove={false}
                   showLabel={false}
                   className={cn(
                     cardStyle,
-                    'flex h-[40px] w-full flex-none items-center justify-center border-none px-4 hover:cursor-pointer',
+                    'flex h-9 w-full flex-none items-center justify-center border-none px-4 hover:cursor-pointer',
                     (field.value === undefined || field.value === '') &&
                       'border-2 border-yellow-400',
                   )}
@@ -203,6 +213,17 @@ export default function Parameters({
                 />
               );
             })}
+          </div>
+          {/* Reset Parameters Button */}
+          <div className="mt-6 flex justify-center">
+            <button
+              type="button"
+              onClick={handleResetParameters}
+              className="btn btn-neutral flex w-full items-center justify-center gap-2 px-4 py-2 text-sm"
+            >
+              <RotateCcw className="h-4 w-4" />
+              {localize('com_ui_reset_var', localize('com_ui_model_parameters'))}
+            </button>
           </div>
         </div>
       )}

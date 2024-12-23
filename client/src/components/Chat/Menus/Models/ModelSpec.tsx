@@ -54,7 +54,9 @@ const MenuItem: FC<MenuItemProps> = ({
   return (
     <>
       <div
-        role="menuitem"
+        id={selected ? 'selected-llm' : undefined}
+        role="option"
+        aria-selected={selected}
         className="group m-1.5 flex cursor-pointer gap-2 rounded px-1 py-2.5 !pr-3 text-sm !opacity-100 hover:bg-black/5 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-white/5"
         tabIndex={0}
         {...rest}
@@ -71,7 +73,7 @@ const MenuItem: FC<MenuItemProps> = ({
           <div>
             <div className="flex items-center gap-2">
               {showIconInMenu && <SpecIcon currentSpec={spec} endpointsConfig={endpointsConfig} />}
-              <div className="break-all">
+              <div>
                 {title}
                 <div className="text-token-text-tertiary">{description}</div>
               </div>

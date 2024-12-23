@@ -167,12 +167,11 @@ function DynamicSlider({
                 : (inputValue as number) ?? (defaultValue as number),
             ]}
             onValueChange={(value) => handleValueChange(value[0])}
-            doubleClickHandler={() => setInputValue(defaultValue as string | number)}
+            onDoubleClick={() => setInputValue(defaultValue as string | number)}
             max={max}
             min={range ? range.min : 0}
             step={range ? range.step ?? 1 : 1}
             className="flex h-4 w-full"
-            trackClassName="bg-surface-hover"
           />
         </HoverCardTrigger>
         {description && (

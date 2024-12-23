@@ -128,12 +128,14 @@ describe('Tool Handlers', () => {
     );
 
     beforeAll(async () => {
-      toolFunctions = await loadTools({
+      const toolMap = await loadTools({
         user: fakeUser._id,
         model: BaseLLM,
         tools: sampleTools,
         returnMap: true,
+        useSpecs: true,
       });
+      toolFunctions = toolMap;
       loadTool1 = toolFunctions[sampleTools[0]];
       loadTool2 = toolFunctions[sampleTools[1]];
       loadTool3 = toolFunctions[sampleTools[2]];
@@ -195,6 +197,7 @@ describe('Tool Handlers', () => {
       expect(mockPluginService.getUserPluginAuthValue).toHaveBeenCalledWith(
         'userId',
         'DALLE3_API_KEY',
+        true,
       );
     });
 
@@ -224,6 +227,7 @@ describe('Tool Handlers', () => {
         user: fakeUser._id,
         model: BaseLLM,
         returnMap: true,
+        useSpecs: true,
       });
       expect(toolFunctions).toEqual({});
     });
@@ -235,6 +239,7 @@ describe('Tool Handlers', () => {
         tools: ['stable-diffusion'],
         functions: true,
         returnMap: true,
+        useSpecs: true,
       });
       const structuredTool = await toolFunctions['stable-diffusion']();
       expect(structuredTool).toBeInstanceOf(StructuredSD);

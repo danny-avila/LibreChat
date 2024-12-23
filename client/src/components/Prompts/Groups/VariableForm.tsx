@@ -14,9 +14,9 @@ import {
   replaceSpecialVars,
   extractVariableInfo,
 } from '~/utils';
+import { codeNoExecution } from '~/components/Chat/Messages/Content/Markdown';
 import { useAuthContext, useLocalize, useSubmitMessage } from '~/hooks';
 import { TextareaAutosize, InputCombobox } from '~/components/ui';
-import { code } from '~/components/Chat/Messages/Content/Markdown';
 
 type FieldType = 'text' | 'select';
 
@@ -143,12 +143,16 @@ export default function VariableForm({
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <div className="mb-6 max-h-screen max-w-[90vw] overflow-auto rounded-md bg-gray-100 p-4 text-text-secondary dark:bg-gray-700/50 sm:max-w-full md:max-h-80">
           <ReactMarkdown
+            /** @ts-ignore */
             remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
             rehypePlugins={[
+              /** @ts-ignore */
               [rehypeKatex, { output: 'mathml' }],
+              /** @ts-ignore */
               [rehypeHighlight, { ignoreMissing: true }],
             ]}
-            components={{ code }}
+            /** @ts-ignore */
+            components={{ code: codeNoExecution }}
             className="prose dark:prose-invert light dark:text-gray-70 my-1 max-h-[50vh] break-words"
           >
             {generateHighlightedMarkdown()}

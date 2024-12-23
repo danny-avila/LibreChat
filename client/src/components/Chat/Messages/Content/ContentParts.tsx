@@ -4,12 +4,14 @@ import { ContentTypes } from 'librechat-data-provider';
 import type { TMessageContentParts, TAttachment, Agents } from 'librechat-data-provider';
 import EditTextPart from './Parts/EditTextPart';
 import { mapAttachments } from '~/utils/map';
+import { MessageContext } from '~/Providers';
 import store from '~/store';
 import Part from './Part';
 
 type ContentPartsProps = {
   content: Array<TMessageContentParts | undefined> | undefined;
   messageId: string;
+  conversationId?: string | null;
   attachments?: TAttachment[];
   isCreatedByUser: boolean;
   isLast: boolean;
@@ -27,6 +29,7 @@ const ContentParts = memo(
   ({
     content,
     messageId,
+    conversationId,
     attachments,
     isCreatedByUser,
     isLast,
@@ -79,15 +82,23 @@ const ContentParts = memo(
             const attachments = attachmentMap[toolCallId];
 
             return (
-              <Part
-                part={part}
-                isSubmitting={isSubmitting}
-                attachments={attachments}
-                key={`display-${messageId}-${idx}`}
-                showCursor={idx === content.length - 1 && isLast}
-                messageId={messageId}
-                isCreatedByUser={isCreatedByUser}
-              />
+              <MessageContext.Provider
+                key={`provider-${messageId}-${idx}`}
+                value={{
+                  messageId,
+                  conversationId,
+                  partIndex: idx,
+                }}
+              >
+                <Part
+                  part={part}
+                  attachments={attachments}
+                  isSubmitting={isSubmitting}
+                  key={`part-${messageId}-${idx}`}
+                  isCreatedByUser={isCreatedByUser}
+                  showCursor={idx === content.length - 1 && isLast}
+                />
+              </MessageContext.Provider>
             );
           })}
       </>

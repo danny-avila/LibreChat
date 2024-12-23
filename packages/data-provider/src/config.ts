@@ -1,11 +1,12 @@
 /* eslint-disable max-len */
 import { z } from 'zod';
 import type { ZodError } from 'zod';
+import type { TModelsConfig } from './types';
 import { EModelEndpoint, eModelEndpointSchema } from './schemas';
 import { fileConfigSchema } from './file-config';
 import { specsConfigSchema } from './models';
 import { FileSources } from './types/files';
-import { TModelsConfig } from './types';
+import { MCPServersSchema } from './mcp';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord'];
 
@@ -114,10 +115,10 @@ export type TAzureModelMapSchema = {
   group: string;
 };
 
-export type TAzureModelGroupMap = Record<string, TAzureModelMapSchema>;
+export type TAzureModelGroupMap = Record<string, TAzureModelMapSchema | undefined>;
 export type TAzureGroupMap = Record<
   string,
-  TAzureBaseSchema & { models: Record<string, TAzureModelConfig> }
+  (TAzureBaseSchema & { models: Record<string, TAzureModelConfig | undefined> }) | undefined
 >;
 
 export type TValidatedAzureConfig = {
@@ -140,6 +141,8 @@ export enum Capabilities {
 }
 
 export enum AgentCapabilities {
+  hide_sequential_outputs = 'hide_sequential_outputs',
+  end_after_tools = 'end_after_tools',
   execute_code = 'execute_code',
   file_search = 'file_search',
   actions = 'actions',
@@ -206,37 +209,17 @@ export type TAssistantEndpoint = z.infer<typeof assistantEndpointSchema>;
 
 export const agentsEndpointSChema = baseEndpointSchema.merge(
   z.object({
-    /* assistants specific */
+    /* agents specific */
     disableBuilder: z.boolean().optional(),
-    pollIntervalMs: z.number().optional(),
-    timeoutMs: z.number().optional(),
-    version: z.union([z.string(), z.number()]).default(2),
-    supportedIds: z.array(z.string()).min(1).optional(),
-    excludedIds: z.array(z.string()).min(1).optional(),
-    privateAssistants: z.boolean().optional(),
-    retrievalModels: z.array(z.string()).min(1).optional().default(defaultRetrievalModels),
     capabilities: z
-      .array(z.nativeEnum(Capabilities))
+      .array(z.nativeEnum(AgentCapabilities))
       .optional()
       .default([
-        Capabilities.code_interpreter,
-        Capabilities.image_vision,
-        Capabilities.retrieval,
-        Capabilities.actions,
-        Capabilities.tools,
+        AgentCapabilities.execute_code,
+        AgentCapabilities.file_search,
+        AgentCapabilities.actions,
+        AgentCapabilities.tools,
       ]),
-    /* general */
-    apiKey: z.string().optional(),
-    models: z
-      .object({
-        default: z.array(z.string()).min(1),
-        fetch: z.boolean().optional(),
-        userIdQuery: z.boolean().optional(),
-      })
-      .optional(),
-    titleConvo: z.boolean().optional(),
-    titleMethod: z.union([z.literal('completion'), z.literal('functions')]).optional(),
-    headers: z.record(z.any()).optional(),
   }),
 );
 
@@ -450,6 +433,7 @@ export const configSchema = z.object({
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
   includedTools: z.array(z.string()).optional(),
   filteredTools: z.array(z.string()).optional(),
+  mcpServers: MCPServersSchema.optional(),
   interface: z
     .object({
       privacyPolicy: z
@@ -475,6 +459,7 @@ export const configSchema = z.object({
       bookmarks: z.boolean().optional(),
       presets: z.boolean().optional(),
       prompts: z.boolean().optional(),
+      agents: z.boolean().optional(),
     })
     .default({
       endpointsMenu: true,
@@ -485,8 +470,14 @@ export const configSchema = z.object({
       multiConvo: true,
       bookmarks: true,
       prompts: true,
+      agents: true,
     }),
   fileStrategy: fileSourceSchema.default(FileSources.local),
+  actions: z
+    .object({
+      allowedDomains: z.array(z.string()).optional(),
+    })
+    .optional(),
   registration: z
     .object({
       socialLogins: z.array(z.string()).optional(),
@@ -629,6 +620,7 @@ const sharedAnthropicModels = [
 export const bedrockModels = [
   'anthropic.claude-3-5-sonnet-20241022-v2:0',
   'anthropic.claude-3-5-sonnet-20240620-v1:0',
+  'anthropic.claude-3-5-haiku-20241022-v1:0',
   'anthropic.claude-3-haiku-20240307-v1:0',
   'anthropic.claude-3-opus-20240229-v1:0',
   'anthropic.claude-3-sonnet-20240229-v1:0',
@@ -755,7 +747,15 @@ export const visionModels = [
   'llava-13b',
   'gemini-pro-vision',
   'claude-3',
+  'gemini-2.0',
   'gemini-1.5',
+  'gemini-exp',
+  'moondream',
+  'llama3.2-vision',
+  'llama-3.2-90b-vision',
+  'llama-3.2-11b-vision',
+  'llama-3-2-90b-vision',
+  'llama-3-2-11b-vision',
 ];
 export enum VisionModes {
   generative = 'generative',
@@ -931,6 +931,10 @@ export enum ViolationTypes {
    * Verify Conversation Access violation.
    */
   CONVO_ACCESS = 'convo_access',
+  /**
+   * Tool Call Limit Violation.
+   */
+  TOOL_CALL_LIMIT = 'tool_call_limit',
 }
 
 /**
@@ -965,6 +969,10 @@ export enum ErrorTypes {
    * Invalid request error, API rejected request
    */
   INVALID_REQUEST = 'invalid_request_error',
+  /**
+   * Invalid action request error, likely not on list of allowed domains
+   */
+  INVALID_ACTION = 'invalid_action_error',
   /**
    * Invalid request error, API rejected request
    */
@@ -1078,13 +1086,15 @@ export enum TTSProviders {
 /** Enum for app-wide constants */
 export enum Constants {
   /** Key for the app's version. */
-  VERSION = 'v0.7.5',
+  VERSION = 'v0.7.6',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.1.7',
+  CONFIG_VERSION = '1.2.0',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value for the initial conversationId before a request is sent */
   NEW_CONVO = 'new',
+  /** Standard value for the conversationId used for search queries */
+  SEARCH = 'search',
   /** Fixed, encoded domain length for Azure OpenAI Assistants Function name parsing. */
   ENCODED_DOMAIN_LENGTH = 10,
   /** Identifier for using current_model in multi-model requests. */
@@ -1101,6 +1111,8 @@ export enum Constants {
   MAX_CONVO_STARTERS = 4,
   /** Global/instance Project Name */
   GLOBAL_PROJECT_NAME = 'instance',
+  /** Delimiter for MCP tools */
+  mcp_delimiter = '_mcp_',
 }
 
 export enum LocalStorageKeys {

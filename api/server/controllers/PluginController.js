@@ -1,6 +1,8 @@
 const { promises: fs } = require('fs');
 const { CacheKeys, AuthType } = require('librechat-data-provider');
 const { addOpenAPISpecs } = require('~/app/clients/tools/util/addOpenAPISpecs');
+const { getCustomConfig } = require('~/server/services/Config');
+const { getMCPManager } = require('~/config');
 const { getLogStores } = require('~/cache');
 
 /**
@@ -107,6 +109,12 @@ const getAvailableTools = async (req, res) => {
     const pluginManifest = await fs.readFile(req.app.locals.paths.pluginManifest, 'utf8');
 
     const jsonData = JSON.parse(pluginManifest);
+    const customConfig = await getCustomConfig();
+    if (customConfig?.mcpServers != null) {
+      const mcpManager = await getMCPManager();
+      await mcpManager.loadManifestTools(jsonData);
+    }
+
     /** @type {TPlugin[]} */
     const uniquePlugins = filterUniquePlugins(jsonData);
 

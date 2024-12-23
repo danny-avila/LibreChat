@@ -9,8 +9,8 @@ import rehypeKatex from 'rehype-katex';
 import remarkMath from 'remark-math';
 import supersub from 'remark-supersub';
 import ReactMarkdown from 'react-markdown';
+import { codeNoExecution } from '~/components/Chat/Messages/Content/Markdown';
 import AlwaysMakeProd from '~/components/Prompts/Groups/AlwaysMakeProd';
-import { code } from '~/components/Chat/Messages/Content/Markdown';
 import { SaveIcon, CrossIcon } from '~/components/svg';
 import { TextareaAutosize } from '~/components/ui';
 import { PromptVariableGfm } from './Markdown';
@@ -75,7 +75,7 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
         role="button"
         className={cn(
           'min-h-[8rem] w-full rounded-b-lg border border-border-medium p-4 transition-all duration-150',
-          { 'bg-surface-secondary-alt cursor-pointer hover:bg-surface-tertiary': !isEditing },
+          { 'cursor-pointer bg-surface-secondary-alt hover:bg-surface-tertiary': !isEditing },
         )}
         onClick={() => !isEditing && setIsEditing(true)}
         onKeyDown={(e) => {
@@ -107,9 +107,12 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
               />
             ) : (
               <ReactMarkdown
+                /** @ts-ignore */
                 remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
+                /** @ts-ignore */
                 rehypePlugins={rehypePlugins}
-                components={{ p: PromptVariableGfm, code }}
+                /** @ts-ignore */
+                components={{ p: PromptVariableGfm, code: codeNoExecution }}
                 className="markdown prose dark:prose-invert light my-1 w-full break-words text-text-primary"
               >
                 {field.value}

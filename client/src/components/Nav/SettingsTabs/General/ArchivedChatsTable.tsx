@@ -227,7 +227,7 @@ export default function ArchivedChatsTable() {
 
           <div className="flex items-center justify-end gap-6 px-2 py-4">
             <div className="text-sm font-bold text-text-primary">
-              Page {currentPage} of {totalPages}
+              {localize('com_ui_page')} {currentPage} {localize('com_ui_of')} {totalPages}
             </div>
             <div className="flex space-x-2">
               {/* <Button

@@ -33,7 +33,7 @@ export default function ToolPopover({
         <div tabIndex={-1}>
           <div className="bg-token-surface-primary max-w-sm rounded-md p-2 shadow-[0_0_24px_0_rgba(0,0,0,0.05),inset_0_0.5px_0_0_rgba(0,0,0,0.05),0_2px_8px_0_rgba(0,0,0,0.05)]">
             <div className="mb-2 text-sm font-medium dark:text-gray-100">
-              {domain
+              {domain != null && domain
                 ? localize('com_assistants_domain_info', domain)
                 : localize('com_assistants_function_use', function_name)}
             </div>
@@ -42,7 +42,7 @@ export default function ToolPopover({
                 <code className="!whitespace-pre-wrap ">{formatText(input)}</code>
               </div>
             </div>
-            {output && (
+            {output != null && output && (
               <>
                 <div className="mb-2 mt-2 text-sm font-medium dark:text-gray-100">
                   {localize('com_ui_result')}

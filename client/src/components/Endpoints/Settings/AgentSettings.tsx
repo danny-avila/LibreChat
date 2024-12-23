@@ -77,7 +77,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               disabled={readonly}
               value={[temperature ?? 0]}
               onValueChange={(value: number[]) => setTemperature(value[0])}
-              doubleClickHandler={() => setTemperature(1)}
+              onDoubleClick={() => setTemperature(1)}
               max={2}
               min={0}
               step={0.01}

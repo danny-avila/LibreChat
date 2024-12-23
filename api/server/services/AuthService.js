@@ -10,11 +10,19 @@ const {
   generateToken,
   deleteUserById,
 } = require('~/models/userMethods');
-const { createToken, findToken, deleteTokens, Session } = require('~/models');
+const {
+  createToken,
+  findToken,
+  deleteTokens,
+  findSession,
+  deleteSession,
+  createSession,
+  generateRefreshToken,
+} = require('~/models');
 const { isEnabled, checkEmailConfig, sendEmail } = require('~/server/utils');
+const { isEmailDomainAllowed } = require('~/server/services/domains');
 const { registerSchema } = require('~/strategies/validators');
 const { hashToken } = require('~/server/utils/crypto');
-const isDomainAllowed = require('./isDomainAllowed');
 const { logger } = require('~/config');
 
 const domains = {
@@ -37,10 +45,11 @@ const logoutUser = async (userId, refreshToken) => {
     const hash = await hashToken(refreshToken);
 
     // Find the session with the matching user and refreshTokenHash
-    const session = await Session.findOne({ user: userId, refreshTokenHash: hash });
+    const session = await findSession({ userId: userId, refreshToken: hash });
+
     if (session) {
       try {
-        await Session.deleteOne({ _id: session._id });
+        await deleteSession({ sessionId: session._id });
       } catch (deleteErr) {
         logger.error('[logoutUser] Failed to delete session.', deleteErr);
         return { status: 500, message: 'Failed to delete session.' };
@@ -165,7 +174,7 @@ const registerUser = async (user, additionalData = {}) => {
       return { status: 200, message: genericVerificationMessage };
     }
 
-    if (!(await isDomainAllowed(email))) {
+    if (!(await isEmailDomainAllowed(email))) {
       const errorMessage =
         'The email address provided cannot be used. Please use a different email address.';
       logger.error(`[registerUser] [Registration not allowed] [Email: ${user.email}]`);
@@ -330,18 +339,19 @@ const setAuthTokens = async (userId, res, sessionId = null) => {
     const token = await generateToken(user);
 
     let session;
+    let refreshToken;
     let refreshTokenExpires;
-    if (sessionId) {
-      session = await Session.findById(sessionId);
-      refreshTokenExpires = session.expiration.getTime();
-    } else {
-      session = new Session({ user: userId });
-      const { REFRESH_TOKEN_EXPIRY } = process.env ?? {};
-      const expires = eval(REFRESH_TOKEN_EXPIRY) ?? 1000 * 60 * 60 * 24 * 7;
-      refreshTokenExpires = Date.now() + expires;
-    }
 
-    const refreshToken = await session.generateRefreshToken();
+    if (sessionId) {
+      session = await findSession({ sessionId: sessionId });
+      refreshTokenExpires = session.expiration.getTime();
+      refreshToken = await generateRefreshToken(session);
+    } else {
+      const result = await createSession(userId);
+      session = result.session;
+      refreshToken = result.refreshToken;
+      refreshTokenExpires = session.expiration.getTime();
+    }
 
     res.cookie('refreshToken', refreshToken, {
       expires: new Date(refreshTokenExpires),
@@ -422,7 +432,6 @@ module.exports = {
   registerUser,
   setAuthTokens,
   resetPassword,
-  isDomainAllowed,
   requestPasswordReset,
   resendVerificationEmail,
 };

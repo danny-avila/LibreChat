@@ -1,4 +1,3 @@
-// client/src/components/SidePanel/Parameters/DynamicTextarea.tsx
 import { OptionTypes } from 'librechat-data-provider';
 import type { DynamicSettingProps } from 'librechat-data-provider';
 import { Label, TextareaAutosize, HoverCard, HoverCardTrigger } from '~/components/ui';
@@ -78,9 +77,8 @@ function DynamicTextarea({
             onChange={setInputValue}
             placeholder={placeholderCode ? localize(placeholder) ?? placeholder : placeholder}
             className={cn(
-              defaultTextProps,
               // TODO: configurable max height
-              'flex max-h-[138px] min-h-[100px] w-full resize-none px-3 py-2',
+              'flex max-h-[138px] min-h-[100px] w-full resize-none rounded-lg bg-surface-secondary px-3 py-2 focus:outline-none',
             )}
           />
         </HoverCardTrigger>

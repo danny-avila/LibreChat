@@ -1,4 +1,5 @@
 import type { InfiniteData } from '@tanstack/react-query';
+import type * as a from '../types/agents';
 import type * as s from '../schemas';
 import type * as t from '../types';
 
@@ -75,3 +76,6 @@ export type ConversationTagsResponse = s.TConversationTag[];
 
 export type VerifyToolAuthParams = { toolId: string };
 export type VerifyToolAuthResponse = { authenticated: boolean; message?: string | s.AuthType };
+
+export type GetToolCallParams = { conversationId: string };
+export type ToolCallResults = a.ToolCallResult[];

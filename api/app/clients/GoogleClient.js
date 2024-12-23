@@ -30,11 +30,11 @@ const BaseClient = require('./BaseClient');
 
 const loc = process.env.GOOGLE_LOC || 'us-central1';
 const publisher = 'google';
-const endpointPrefix = `https://${loc}-aiplatform.googleapis.com`;
-// const apiEndpoint = loc + '-aiplatform.googleapis.com';
+const endpointPrefix = `${loc}-aiplatform.googleapis.com`;
 const tokenizersCache = {};
 
 const settings = endpointSettings[EModelEndpoint.google];
+const EXCLUDED_GENAI_MODELS = /gemini-(?:1\.0|1-0|pro)/;
 
 class GoogleClient extends BaseClient {
   constructor(credentials, options = {}) {
@@ -57,6 +57,10 @@ class GoogleClient extends BaseClient {
 
     this.apiKey = creds[AuthKeys.GOOGLE_API_KEY];
 
+    this.reverseProxyUrl = options.reverseProxyUrl;
+
+    this.authHeader = options.authHeader;
+
     if (options.skipSetOptions) {
       return;
     }
@@ -65,7 +69,7 @@ class GoogleClient extends BaseClient {
 
   /* Google specific methods */
   constructUrl() {
-    return `${endpointPrefix}/v1/projects/${this.project_id}/locations/${loc}/publishers/${publisher}/models/${this.modelOptions.model}:serverStreamingPredict`;
+    return `https://${endpointPrefix}/v1/projects/${this.project_id}/locations/${loc}/publishers/${publisher}/models/${this.modelOptions.model}:serverStreamingPredict`;
   }
 
   async getClient() {
@@ -366,7 +370,7 @@ class GoogleClient extends BaseClient {
       );
     }
 
-    if (!this.project_id && this.modelOptions.model.includes('1.5')) {
+    if (!this.project_id && !EXCLUDED_GENAI_MODELS.test(this.modelOptions.model)) {
       return await this.buildGenerativeMessages(messages);
     }
 
@@ -594,7 +598,21 @@ class GoogleClient extends BaseClient {
   createLLM(clientOptions) {
     const model = clientOptions.modelName ?? clientOptions.model;
     clientOptions.location = loc;
-    clientOptions.endpoint = `${loc}-aiplatform.googleapis.com`;
+    clientOptions.endpoint = endpointPrefix;
+
+    let requestOptions = null;
+    if (this.reverseProxyUrl) {
+      requestOptions = {
+        baseUrl: this.reverseProxyUrl,
+      };
+
+      if (this.authHeader) {
+        requestOptions.customHeaders = {
+          Authorization: `Bearer ${this.apiKey}`,
+        };
+      }
+    }
+
     if (this.project_id && this.isTextModel) {
       logger.debug('Creating Google VertexAI client');
       return new GoogleVertexAI(clientOptions);
@@ -604,15 +622,9 @@ class GoogleClient extends BaseClient {
     } else if (this.project_id) {
       logger.debug('Creating VertexAI client');
       return new ChatVertexAI(clientOptions);
-    } else if (model.includes('1.5')) {
+    } else if (!EXCLUDED_GENAI_MODELS.test(model)) {
       logger.debug('Creating GenAI client');
-      return new GenAI(this.apiKey).getGenerativeModel(
-        {
-          ...clientOptions,
-          model,
-        },
-        { apiVersion: 'v1beta' },
-      );
+      return new GenAI(this.apiKey).getGenerativeModel({ ...clientOptions, model }, requestOptions);
     }
 
     logger.debug('Creating Chat Google Generative AI client');
@@ -674,7 +686,7 @@ class GoogleClient extends BaseClient {
     }
 
     const modelName = clientOptions.modelName ?? clientOptions.model ?? '';
-    if (modelName?.includes('1.5') && !this.project_id) {
+    if (!EXCLUDED_GENAI_MODELS.test(modelName) && !this.project_id) {
       const client = model;
       const requestOptions = {
         contents: _payload,
@@ -685,7 +697,7 @@ class GoogleClient extends BaseClient {
         promptPrefix = `${promptPrefix ?? ''}\n${this.options.artifactsPrompt}`.trim();
       }
 
-      if (this.options?.promptPrefix?.length) {
+      if (promptPrefix.length) {
         requestOptions.systemInstruction = {
           parts: [
             {
@@ -697,7 +709,7 @@ class GoogleClient extends BaseClient {
 
       requestOptions.safetySettings = _payload.safetySettings;
 
-      const delay = modelName.includes('flash') ? 8 : 14;
+      const delay = modelName.includes('flash') ? 8 : 15;
       const result = await client.generateContentStream(requestOptions);
       for await (const chunk of result.stream) {
         const chunkText = chunk.text();
@@ -712,7 +724,6 @@ class GoogleClient extends BaseClient {
 
     const stream = await model.stream(messages, {
       signal: abortController.signal,
-      timeout: 7000,
       safetySettings: _payload.safetySettings,
     });
 
@@ -720,7 +731,7 @@ class GoogleClient extends BaseClient {
 
     if (!this.options.streamRate) {
       if (this.isGenerativeModel) {
-        delay = 12;
+        delay = 15;
       }
       if (modelName.includes('flash')) {
         delay = 5;
@@ -774,8 +785,8 @@ class GoogleClient extends BaseClient {
     const messages = this.isTextModel ? _payload.trim() : _messages;
 
     const modelName = clientOptions.modelName ?? clientOptions.model ?? '';
-    if (modelName?.includes('1.5') && !this.project_id) {
-      logger.debug('Identified titling model as 1.5 version');
+    if (!EXCLUDED_GENAI_MODELS.test(modelName) && !this.project_id) {
+      logger.debug('Identified titling model as GenAI version');
       /** @type {GenerativeModel} */
       const client = model;
       const requestOptions = {
@@ -903,6 +914,14 @@ class GoogleClient extends BaseClient {
         category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
         threshold:
           process.env.GOOGLE_SAFETY_DANGEROUS_CONTENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+      },
+      {
+        category: 'HARM_CATEGORY_CIVIC_INTEGRITY',
+        /**
+         * Note: this was added since `gemini-2.0-flash-thinking-exp-1219` does not
+         * accept 'HARM_BLOCK_THRESHOLD_UNSPECIFIED' for 'HARM_CATEGORY_CIVIC_INTEGRITY'
+         * */
+        threshold: process.env.GOOGLE_SAFETY_CIVIC_INTEGRITY || 'BLOCK_NONE',
       },
     ];
   }

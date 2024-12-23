@@ -25,7 +25,7 @@ export const useDelayedUploadToast = () => {
       showToast({
         message,
         status: 'warning',
-        duration: 7000,
+        duration: 10000,
       });
     }, delay);
 
