@@ -24,6 +24,7 @@ const {
 const { uploadOpenAIFile, deleteOpenAIFile, getOpenAIFileStream } = require('./OpenAI');
 const { getCodeOutputDownloadStream, uploadCodeEnvFile } = require('./Code');
 const { uploadVectors, deleteVectors } = require('./VectorDB');
+const { uploadToVectorStore, deleteFromVectorStore, createVectorStore } = require('./VectorStore');
 
 /**
  * Firebase Storage Strategy Functions
@@ -103,6 +104,12 @@ const openAIStrategy = () => ({
   getDownloadStream: getOpenAIFileStream,
 });
 
+const vectorStoreStrategy = () => ({
+  createStore: createVectorStore,
+  handleFileUpload: uploadToVectorStore,
+  deleteFile: deleteFromVectorStore,
+});
+
 /**
  * Code Output Strategy Functions
  *
@@ -139,6 +146,8 @@ const getStrategyFunctions = (fileSource) => {
     return openAIStrategy();
   } else if (fileSource === FileSources.vectordb) {
     return vectorStrategy();
+  } else if (fileSource === FileSources.vector_store) {
+    return vectorStoreStrategy();
   } else if (fileSource === FileSources.execute_code) {
     return codeOutputStrategy();
   } else {

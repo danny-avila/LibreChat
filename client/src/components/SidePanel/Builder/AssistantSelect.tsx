@@ -1,5 +1,5 @@
 import { Plus } from 'lucide-react';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   Tools,
   FileSources,
@@ -78,6 +78,9 @@ export default function AssistantSelect({
           code_files: _assistant.tool_resources?.code_interpreter?.file_ids
             ? ([] as Array<[string, ExtendedFile]>)
             : undefined,
+          search_files: _assistant.tool_resources?.file_search?.vector_store_ids
+            ? ([] as Array<[string, ExtendedFile]>)
+            : undefined,
         };
 
         const handleFile = (file_id: string, list?: Array<[string, ExtendedFile]>) => {
@@ -124,6 +127,12 @@ export default function AssistantSelect({
           );
         }
 
+        if (assistant.search_files && _assistant.tool_resources?.file_search?.vector_store_ids) {
+          _assistant.tool_resources.file_search.vector_store_ids.forEach((file_id) =>
+            handleFile(file_id, assistant.search_files),
+          );
+        }
+
         const assistantDoc = documentsMap?.get(_assistant.id);
         /* If no user updates, use the latest assistant docs */
         if (assistantDoc) {
@@ -159,6 +168,7 @@ export default function AssistantSelect({
       const actions: Actions = {
         [Capabilities.code_interpreter]: false,
         [Capabilities.image_vision]: false,
+        [Capabilities.file_search]: false,
         [Capabilities.retrieval]: false,
       };
 
@@ -167,7 +177,7 @@ export default function AssistantSelect({
         .map((tool) => tool.function?.name || tool.type)
         .forEach((tool) => {
           if (tool === Tools.file_search) {
-            actions[Capabilities.retrieval] = true;
+            actions[Capabilities.file_search] = true;
           }
           actions[tool] = true;
         });

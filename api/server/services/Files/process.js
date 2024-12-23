@@ -20,11 +20,15 @@ const {
 } = require('librechat-data-provider');
 const { EnvVar } = require('@librechat/agents');
 const {
+  addResourceFileId,
+  deleteResourceFileId,
+  addResourceVectorId,
+} = require('~/server/controllers/assistants/v2');
+const {
   convertImage,
   resizeAndConvert,
-  resizeImageBuffer,
+  resizeImageBuffer
 } = require('~/server/services/Files/images');
-const { addResourceFileId, deleteResourceFileId } = require('~/server/controllers/assistants/v2');
 const { addAgentResourceFile, removeAgentResourceFiles } = require('~/models/Agent');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { createFile, updateFileUsage, deleteFiles } = require('~/models/File');
@@ -343,9 +347,8 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
       inputBuffer: buffer,
       desiredFormat: req.app.locals.imageOutputType,
     }));
-    filename = `${path.basename(req.file.originalname, path.extname(req.file.originalname))}.${
-      req.app.locals.imageOutputType
-    }`;
+    filename = `${path.basename(req.file.originalname, path.extname(req.file.originalname))}.${req.app.locals.imageOutputType
+      }`;
   }
 
   const filepath = await saveBuffer({ userId: req.user.id, fileName: filename, buffer });
@@ -381,14 +384,21 @@ const processFileUpload = async ({ req, res, metadata }) => {
   const isAssistantUpload = isAssistantsEndpoint(metadata.endpoint);
   const assistantSource =
     metadata.endpoint === EModelEndpoint.azureAssistants ? FileSources.azure : FileSources.openai;
-  const source = isAssistantUpload ? assistantSource : FileSources.vectordb;
-  const { handleFileUpload } = getStrategyFunctions(source);
+  const fileSource =
+    isAssistantUpload && metadata.tool_resource === EToolResources.file_search
+      ? FileSources.vector_store
+      : assistantSource;
+  const source = isAssistantUpload ? fileSource : FileSources.vectordb;
+  const { handleFileUpload, createStore } = getStrategyFunctions(source);
   const { file_id, temp_file_id } = metadata;
 
-  /** @type {OpenAI | undefined} */
-  let openai;
-  if (checkOpenAIStorage(source)) {
-    ({ openai } = await getOpenAIClient({ req }));
+  /** @type {{ openai: OpenAIClient }} */
+  let { openai } = await getOpenAIClient({ req, res });
+
+  let vector_id;
+
+  if (source === FileSources.vector_store && typeof createStore === 'function') {
+    vector_id = await createStore(openai);
   }
 
   const { file } = req;
@@ -405,11 +415,20 @@ const processFileUpload = async ({ req, res, metadata }) => {
     file,
     file_id,
     openai,
+    ...(source === FileSources.vector_store && { vectorStoreId: vector_id }),
   });
 
   if (isAssistantUpload && !metadata.message_file && !metadata.tool_resource) {
     await openai.beta.assistants.files.create(metadata.assistant_id, {
       file_id: id,
+    });
+  } else if (isAssistantUpload && metadata.tool_resource === EToolResources.file_search) {
+    await addResourceVectorId({
+      req,
+      openai,
+      vector_store_id: id,
+      assistant_id: metadata.assistant_id,
+      tool_resource: metadata.tool_resource,
     });
   } else if (isAssistantUpload && !metadata.message_file) {
     await addResourceFileId({
@@ -606,9 +625,8 @@ const processOpenAIFile = async ({
 }) => {
   const _file = await openai.files.retrieve(file_id);
   const originalName = filename ?? (_file.filename ? path.basename(_file.filename) : undefined);
-  const filepath = `${openai.baseURL}/files/${userId}/${file_id}${
-    originalName ? `/${originalName}` : ''
-  }`;
+  const filepath = `${openai.baseURL}/files/${userId}/${file_id}${originalName ? `/${originalName}` : ''
+    }`;
   const type = mime.getType(originalName ?? file_id);
   const source =
     openai.req.body.endpoint === EModelEndpoint.azureAssistants
@@ -883,8 +901,7 @@ function filterFile({ req, image, isAvatar }) {
 
   if (file.size > fileSizeLimit) {
     throw new Error(
-      `File size limit of ${fileSizeLimit / megabyte} MB exceeded for ${
-        isAvatar ? 'avatar upload' : `${endpoint} endpoint`
+      `File size limit of ${fileSizeLimit / megabyte} MB exceeded for ${isAvatar ? 'avatar upload' : `${endpoint} endpoint`
       }`,
     );
   }
