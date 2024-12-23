@@ -22,7 +22,6 @@ const {
 const { isEnabled, checkEmailConfig, sendEmail } = require('~/server/utils');
 const { isEmailDomainAllowed } = require('~/server/services/domains');
 const { registerSchema } = require('~/strategies/validators');
-const { hashToken } = require('~/server/utils/crypto');
 const { logger } = require('~/config');
 
 const domains = {
@@ -42,10 +41,7 @@ const genericVerificationMessage = 'Please check your email to verify your email
  */
 const logoutUser = async (userId, refreshToken) => {
   try {
-    const hash = await hashToken(refreshToken);
-
-    // Find the session with the matching user and refreshTokenHash
-    const session = await findSession({ userId: userId, refreshToken: hash });
+    const session = await findSession({ userId: userId, refreshToken: refreshToken });
 
     if (session) {
       try {
