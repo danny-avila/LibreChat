@@ -12,6 +12,11 @@ type styleProps = {
   backgroundRepeat?: string;
 };
 
+interface CloseModalEvent {
+  stopPropagation: () => void;
+  preventDefault: () => void;
+}
+
 const ImagePreview = ({
   imageBase64,
   url,
@@ -36,17 +41,26 @@ const ImagePreview = ({
     setIsModalOpen(true);
   }, []);
 
-  const closeModal = useCallback(() => {
-    setIsModalOpen(false);
-    if (previousActiveElement instanceof HTMLElement) {
-      previousActiveElement.focus();
-    }
-  }, [previousActiveElement]);
+  const closeModal = useCallback(
+    (e: CloseModalEvent): void => {
+      setIsModalOpen(false);
+      e.stopPropagation();
+      e.preventDefault();
+
+      if (
+        previousActiveElement instanceof HTMLElement &&
+        !previousActiveElement.closest('[data-skip-refocus="true"]')
+      ) {
+        previousActiveElement.focus();
+      }
+    },
+    [previousActiveElement],
+  );
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        closeModal();
+        closeModal(e);
       }
     },
     [closeModal],
@@ -157,7 +171,7 @@ const ImagePreview = ({
               className="absolute right-4 top-4 z-[1000] rounded-full p-2 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
               onClick={(e) => {
                 e.stopPropagation();
-                closeModal();
+                closeModal(e);
               }}
               aria-label="Close full view"
             >

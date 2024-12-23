@@ -212,19 +212,17 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
 
                       return (
                         <TableCell
+                          data-skip-refocus="true"
                           key={cell.id}
                           role={isFilenameCell ? 'button' : undefined}
                           tabIndex={isFilenameCell ? 0 : undefined}
                           onClick={(e) => {
                             if (isFilenameCell) {
-                              const target = e.target as Node;
-                              const cell = e.currentTarget as Node;
-                              // Check if click was directly on cell or text content
+                              const clickedElement = e.target as HTMLElement;
+                              // Check if clicked element is within cell and not a button/link
                               if (
-                                target === cell ||
-                                (cell.contains(target) &&
-                                  (target.nodeType === Node.TEXT_NODE ||
-                                    (target as HTMLElement).tagName === 'TD'))
+                                clickedElement.closest('td') &&
+                                !clickedElement.closest('button, a')
                               ) {
                                 e.preventDefault();
                                 e.stopPropagation();
@@ -234,14 +232,10 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                           }}
                           onKeyDown={(e) => {
                             if (isFilenameCell && (e.key === 'Enter' || e.key === ' ')) {
-                              const target = e.target as Node;
-                              const cell = e.currentTarget as Node;
-                              // Check if click was directly on cell or text content
+                              const clickedElement = e.target as HTMLElement;
                               if (
-                                target === cell ||
-                                (cell.contains(target) &&
-                                  (target.nodeType === Node.TEXT_NODE ||
-                                    (target as HTMLElement).tagName === 'TD'))
+                                clickedElement.closest('td') &&
+                                !clickedElement.closest('button, a')
                               ) {
                                 e.preventDefault();
                                 e.stopPropagation();
