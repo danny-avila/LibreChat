@@ -343,7 +343,7 @@ const setAuthTokens = async (userId, res, sessionId = null) => {
     let refreshTokenExpires;
 
     if (sessionId) {
-      session = await findSession({ sessionId: sessionId });
+      session = await findSession({ sessionId: sessionId }, { lean: false });
       refreshTokenExpires = session.expiration.getTime();
       refreshToken = await generateRefreshToken(session);
     } else {
