@@ -78,9 +78,9 @@ const ImagePreview = ({
 
   const style: styleProps = imageUrl
     ? {
-        ...baseStyle,
-        backgroundImage: `url(${imageUrl})`,
-      }
+      ...baseStyle,
+      backgroundImage: `url(${imageUrl})`,
+    }
     : baseStyle;
 
   if (typeof style.backgroundImage !== 'string' || style.backgroundImage.length === 0) {
@@ -103,37 +103,42 @@ const ImagePreview = ({
       >
         <button
           type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            openModal();
-          }}
-          className="h-full w-full"
+          className="size-full overflow-hidden rounded-lg"
           style={style}
-          aria-label={`Open ${alt} in full view`}
+          aria-label={`View ${alt} in full size`}
           aria-haspopup="dialog"
-        />
-        <button
           onClick={(e) => {
+            e.preventDefault();
             e.stopPropagation();
             openModal();
           }}
-          className={cn(
-            'absolute inset-0 flex transform-gpu items-center justify-center bg-black/20 transition-all duration-200 hover:scale-125',
-            isHovered ? 'opacity-100' : 'opacity-0',
-          )}
-          aria-label={`Expand ${alt}`}
-          aria-hidden={!isHovered}
-          tabIndex={isHovered ? 0 : -1}
-        >
-          <Maximize2 className="size-5 text-white drop-shadow-lg" aria-hidden="true" />
-        </button>
-        {progress < 1 && (
+        />
+        {progress < 1 ? (
           <ProgressCircle
             circumference={circumference}
             offset={offset}
             circleCSSProperties={circleCSSProperties}
             aria-label={`Loading progress: ${Math.round(progress * 100)}%`}
           />
+        ) : (
+          <div
+            className={cn(
+              'absolute inset-0 flex cursor-pointer items-center justify-center rounded-lg transition-opacity duration-200 ease-in-out',
+              isHovered ? 'bg-black/20 opacity-100' : 'opacity-0',
+            )}
+            onClick={(e) => {
+              e.stopPropagation();
+              openModal();
+            }}
+            aria-hidden="true"
+          >
+            <Maximize2
+              className={cn(
+                'size-5 transform-gpu text-white drop-shadow-lg transition-all duration-200',
+                isHovered ? 'scale-110' : '',
+              )}
+            />
+          </div>
         )}
         <SourceIcon source={source} aria-label={source ? `Source: ${source}` : undefined} />
       </div>
@@ -149,7 +154,7 @@ const ImagePreview = ({
           <div className="flex h-full w-full cursor-default items-center justify-center">
             <button
               type="button"
-              className="absolute right-4 top-4 z-[1000] rounded-full p-2 text-white focus:outline-none focus:ring-2 focus:ring-white"
+              className="absolute right-4 top-4 z-[1000] rounded-full p-2 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
               onClick={(e) => {
                 e.stopPropagation();
                 closeModal();
@@ -178,7 +183,7 @@ const ImagePreview = ({
               <img
                 src={imageUrl}
                 alt={alt}
-                className="max-h-full max-w-full object-contain"
+                className="max-w-screen max-h-screen object-contain"
                 onClick={(e) => e.stopPropagation()}
               />
             </div>

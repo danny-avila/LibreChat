@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { ArrowUpLeft } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
 import {
@@ -8,12 +8,10 @@ import {
   getPaginationRowModel,
   getSortedRowModel,
   useReactTable,
-} from '@tanstack/react-table';
-import type {
-  ColumnDef,
-  SortingState,
-  VisibilityState,
-  ColumnFiltersState,
+  type ColumnDef,
+  type SortingState,
+  type VisibilityState,
+  type ColumnFiltersState,
 } from '@tanstack/react-table';
 import {
   fileConfig as defaultFileConfig,
@@ -21,8 +19,9 @@ import {
   mergeFileConfig,
   megabyte,
   isAssistantsEndpoint,
+  type TFile,
 } from 'librechat-data-provider';
-import type { AugmentedColumnDef } from '~/common';
+
 import {
   Button,
   Input,
@@ -45,16 +44,29 @@ interface DataTableProps<TData, TValue> {
 
 export default function DataTable<TData, TValue>({ columns, data }: DataTableProps<TData, TValue>) {
   const localize = useLocalize();
-  const [rowSelection, setRowSelection] = useState({});
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
-  const [paginationState, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
+  const [{ pageIndex, pageSize }, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
   const setShowFiles = useSetRecoilState(store.showFiles);
+
+  const pagination = useMemo(
+    () => ({
+      pageIndex,
+      pageSize,
+    }),
+    [pageIndex, pageSize],
+  );
 
   const table = useReactTable({
     data,
     columns,
+    state: {
+      sorting,
+      columnFilters,
+      columnVisibility,
+      pagination,
+    },
     onSortingChange: setSorting,
     onPaginationChange: setPagination,
     getCoreRowModel: getCoreRowModel(),
@@ -63,14 +75,6 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
     getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
     getPaginationRowModel: getPaginationRowModel(),
-    onRowSelectionChange: setRowSelection,
-    state: {
-      sorting,
-      columnFilters,
-      columnVisibility,
-      rowSelection,
-      pagination: paginationState,
-    },
     defaultColumn: {
       minSize: 0,
       size: 10,
@@ -78,6 +82,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
       enableResizing: true,
     },
   });
+
   const fileMap = useFileMapContext();
   const { showToast } = useToastContext();
   const { setFiles, conversation } = useChatContext();
@@ -86,76 +91,87 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
   });
   const { addFile } = useUpdateFiles(setFiles);
 
-  const handleFileClick = useCallback((file: any) => {
-    const endpoint = conversation?.endpoint;
-    const fileData = fileMap?.[file.file_id];
+  const handleFileClick = useCallback(
+    (file: TFile) => {
+      if (!fileMap?.[file.file_id] || !conversation?.endpoint) {
+        showToast({
+          message: localize('com_ui_attach_error'),
+          status: 'error',
+        });
+        return;
+      }
 
-    if (!fileData) {
-      return;
-    }
+      const fileData = fileMap[file.file_id];
+      const endpoint = conversation.endpoint;
 
-    if (!endpoint) {
-      return showToast({ message: localize('com_ui_attach_error'), status: 'error' });
-    }
+      if (!fileData.source) {
+        return;
+      }
 
-    if (!fileData.source) {
-      return;
-    }
+      const isOpenAIStorage = checkOpenAIStorage(fileData.source);
+      const isAssistants = isAssistantsEndpoint(endpoint);
 
-    if (checkOpenAIStorage(fileData.source) && !isAssistantsEndpoint(endpoint)) {
-      return showToast({
-        message: localize('com_ui_attach_error_openai'),
-        status: 'error',
+      if (isOpenAIStorage && !isAssistants) {
+        showToast({
+          message: localize('com_ui_attach_error_openai'),
+          status: 'error',
+        });
+        return;
+      }
+
+      if (!isOpenAIStorage && isAssistants) {
+        showToast({
+          message: localize('com_ui_attach_warn_endpoint'),
+          status: 'warning',
+        });
+      }
+
+      const { fileSizeLimit, supportedMimeTypes } =
+        fileConfig.endpoints[endpoint] ?? fileConfig.endpoints.default;
+
+      if (fileData.bytes > fileSizeLimit) {
+        showToast({
+          message: `${localize('com_ui_attach_error_size')} ${
+            fileSizeLimit / megabyte
+          } MB (${endpoint})`,
+          status: 'error',
+        });
+        return;
+      }
+
+      if (!defaultFileConfig.checkType(file.type, supportedMimeTypes)) {
+        showToast({
+          message: `${localize('com_ui_attach_error_type')} ${file.type} (${endpoint})`,
+          status: 'error',
+        });
+        return;
+      }
+
+      addFile({
+        progress: 1,
+        attached: true,
+        file_id: fileData.file_id,
+        filepath: fileData.filepath,
+        preview: fileData.filepath,
+        type: fileData.type,
+        height: fileData.height,
+        width: fileData.width,
+        filename: fileData.filename,
+        source: fileData.source,
+        size: fileData.bytes,
       });
-    } else if (!checkOpenAIStorage(fileData.source) && isAssistantsEndpoint(endpoint)) {
-      showToast({
-        message: localize('com_ui_attach_warn_endpoint'),
-        status: 'warning',
-      });
-    }
+    },
+    [addFile, fileMap, conversation, localize, showToast, fileConfig.endpoints],
+  );
 
-    const { fileSizeLimit, supportedMimeTypes } =
-      fileConfig.endpoints[endpoint] ?? fileConfig.endpoints.default;
-
-    if (fileData.bytes > fileSizeLimit) {
-      return showToast({
-        message: `${localize('com_ui_attach_error_size')} ${
-          fileSizeLimit / megabyte
-        } MB (${endpoint})`,
-        status: 'error',
-      });
-    }
-
-    const isSupportedMimeType = defaultFileConfig.checkType(file.type, supportedMimeTypes);
-
-    if (!isSupportedMimeType) {
-      return showToast({
-        message: `${localize('com_ui_attach_error_type')} ${file.type} (${endpoint})`,
-        status: 'error',
-      });
-    }
-
-    addFile({
-      progress: 1,
-      attached: true,
-      file_id: fileData.file_id,
-      filepath: fileData.filepath,
-      preview: fileData.filepath,
-      type: fileData.type,
-      height: fileData.height,
-      width: fileData.width,
-      filename: fileData.filename,
-      source: fileData.source,
-      size: fileData.bytes,
-    });
-  }, [addFile, fileMap, conversation, localize, showToast, fileConfig.endpoints]);
+  const filenameFilter = table.getColumn('filename')?.getFilterValue() as string;
 
   return (
     <div role="region" aria-label={localize('com_files_table')} className="mt-2 space-y-2">
       <div className="flex items-center gap-4">
         <Input
           placeholder={localize('com_files_filter')}
-          value={table.getColumn('filename')?.getFilterValue() as string}
+          value={filenameFilter ?? ''}
           onChange={(event) => table.getColumn('filename')?.setFilterValue(event.target.value)}
           aria-label={localize('com_files_filter')}
         />
@@ -165,14 +181,13 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
-              {table.getHeaderGroups().map((headerGroup, index) => (
+              {table.getHeaderGroups().map((headerGroup) => (
                 <TableRow key={headerGroup.id} className="border-b border-border-light">
-                  {headerGroup.headers.map((header) => (
+                  {headerGroup.headers.map((header, index) => (
                     <TableHead
                       key={header.id}
                       style={{ width: index === 0 ? '75%' : '25%' }}
                       className="bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary"
-                      scope="col"
                     >
                       <div className="px-4">
                         {header.isPlaceholder
@@ -190,23 +205,55 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                   <TableRow
                     key={row.id}
                     data-state={row.getIsSelected() && 'selected'}
-                    className="border-b border-border-light transition-colors hover:bg-surface-secondary [&:last-child]:border-0 cursor-pointer"
+                    className="border-b border-border-light transition-colors hover:bg-surface-secondary [&:last-child]:border-0"
                   >
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell
-                        key={cell.id}
-                        onClick={() => handleFileClick(row.original)}
-                        className="rounded-lg p-4 text-sm text-text-primary outline-none focus-visible:bg-surface-active"
-                        style={{
-                          maxWidth: (cell.column.columnDef as AugmentedColumnDef<TData, TValue>)
-                            .meta?.size,
-                        }}
-                        tabIndex={0}
-                        role="gridcell"
-                      >
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </TableCell>
-                    ))}
+                    {row.getVisibleCells().map((cell) => {
+                      const isFilenameCell = cell.column.id === 'filename';
+
+                      return (
+                        <TableCell
+                          key={cell.id}
+                          role={isFilenameCell ? 'button' : undefined}
+                          tabIndex={isFilenameCell ? 0 : undefined}
+                          onClick={(e) => {
+                            if (isFilenameCell) {
+                              const target = e.target as Node;
+                              const cell = e.currentTarget as Node;
+                              // Check if click was directly on cell or text content
+                              if (
+                                target === cell ||
+                                (cell.contains(target) &&
+                                  (target.nodeType === Node.TEXT_NODE ||
+                                    (target as HTMLElement).tagName === 'TD'))
+                              ) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleFileClick(row.original as TFile);
+                              }
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (isFilenameCell && (e.key === 'Enter' || e.key === ' ')) {
+                              const target = e.target as Node;
+                              const cell = e.currentTarget as Node;
+                              // Check if click was directly on cell or text content
+                              if (
+                                target === cell ||
+                                (cell.contains(target) &&
+                                  (target.nodeType === Node.TEXT_NODE ||
+                                    (target as HTMLElement).tagName === 'TD'))
+                              ) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleFileClick(row.original as TFile);
+                              }
+                            }
+                          }}
+                        >
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </TableCell>
+                      );
+                    })}
                   </TableRow>
                 ))
               ) : (
@@ -232,10 +279,10 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           aria-label={localize('com_sidepanel_manage_files')}
         >
           <ArrowUpLeft className="h-4 w-4" />
-          {localize('com_sidepanel_manage_files')}
+          <span className="ml-2">{localize('com_sidepanel_manage_files')}</span>
         </Button>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2" role="navigation" aria-label="Pagination">
           <Button
             variant="outline"
             size="sm"
@@ -245,6 +292,9 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           >
             {localize('com_ui_prev')}
           </Button>
+          <div aria-live="polite" className="text-sm">
+            {`${pageIndex + 1} / ${table.getPageCount()}`}
+          </div>
           <Button
             variant="outline"
             size="sm"

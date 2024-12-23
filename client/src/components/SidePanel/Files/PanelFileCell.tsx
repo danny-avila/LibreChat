@@ -6,24 +6,20 @@ import { getFileType } from '~/utils';
 
 export default function PanelFileCell({ row }: { row: Row<TFile> }) {
   const file = row.original;
-  if (file.type?.startsWith('image')) {
-    return (
-      <div className="flex gap-2">
+
+  return (
+    <div className="flex items-center gap-2">
+      {file.type.startsWith('image') ? (
         <ImagePreview
           url={file.filepath}
-          className="relative h-10 w-10 shrink-0 overflow-hidden"
+          className="h-10 w-10"
           source={file.source}
+          alt={file.filename}
         />
-        <span className="self-center truncate text-xs">{file.filename}</span>
-      </div>
-    );
-  }
-
-  const fileType = getFileType(file.type);
-  return (
-    <div className="flex gap-2">
-      {fileType && <FilePreview fileType={fileType} className="relative" file={file} />}
-      <span className="self-center truncate">{file.filename}</span>
+      ) : (
+        <FilePreview fileType={getFileType(file.type)} file={file} />
+      )}
+      <span className="truncate text-xs">{file.filename}</span>
     </div>
   );
 }
