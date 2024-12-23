@@ -34,6 +34,7 @@ const BookmarkTable = () => {
   const pageSize = 10;
 
   const { bookmarks = [] } = useBookmarkContext();
+
   useEffect(() => {
     const _bookmarks = removeDuplicates(bookmarks).sort((a, b) => a.position - b.position);
     setRows(_bookmarks);
@@ -49,9 +50,9 @@ const BookmarkTable = () => {
   }, []);
 
   const renderRow = useCallback(
-    (row: TConversationTag) => {
-      return <BookmarkTableRow key={row._id} moveRow={moveRow} row={row} position={row.position} />;
-    },
+    (row: TConversationTag) => (
+      <BookmarkTableRow key={row._id} moveRow={moveRow} row={row} position={row.position} />
+    ),
     [moveRow],
   );
 
@@ -74,43 +75,32 @@ const BookmarkTable = () => {
         </div>
 
         <div className="rounded-lg border border-border-light bg-transparent shadow-sm transition-colors">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-b border-border-light">
-                  <TableHead
-                    style={{ width: '50%' }}
-                    className="bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary"
-                  >
-                    <div className="px-4">{localize('com_ui_bookmarks_title')}</div>
-                  </TableHead>
-                  <TableHead
-                    style={{ width: '25%' }}
-                    className="bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary"
-                  >
-                    <div className="px-4">{localize('com_ui_bookmarks_count')}</div>
-                  </TableHead>
-                  <TableHead
-                    style={{ width: '25%' }}
-                    className="bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary"
-                  >
-                    <div className="px-4">{localize('com_assistants_actions')}</div>
-                  </TableHead>
+          <Table className="w-full table-fixed">
+            <TableHeader>
+              <TableRow className="border-b border-border-light">
+                <TableHead className="w-[70%] bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary">
+                  <div className="px-4">{localize('com_ui_bookmarks_title')}</div>
+                </TableHead>
+                <TableHead className="w-[30%] bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary">
+                  <div className="px-4">{localize('com_ui_bookmarks_count')}</div>
+                </TableHead>
+                <TableHead className="w-[40%] bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary">
+                  <div className="px-4">{localize('com_assistants_actions')}</div>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {currentRows.length ? (
+                currentRows.map(renderRow)
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={3} className="h-24 text-center text-sm text-text-secondary">
+                    {localize('com_ui_no_bookmarks')}
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {currentRows.length ? (
-                  currentRows.map((row) => renderRow(row))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={2} className="h-24 text-center text-sm text-text-secondary">
-                      {localize('com_ui_no_bookmarks')}
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
+              )}
+            </TableBody>
+          </Table>
         </div>
 
         <div className="flex items-center justify-between">

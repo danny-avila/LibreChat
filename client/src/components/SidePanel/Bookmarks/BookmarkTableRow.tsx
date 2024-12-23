@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useRef } from 'react';
 import { useDrag, useDrop } from 'react-dnd';
 import type { TConversationTag } from 'librechat-data-provider';
 import { DeleteBookmarkButton, EditBookmarkButton } from '~/components/Bookmarks';
@@ -21,42 +21,32 @@ interface DragItem {
 }
 
 const BookmarkTableRow: React.FC<BookmarkTableRowProps> = ({ row, moveRow, position }) => {
-  const [isHovered, setIsHovered] = useState(false);
   const ref = useRef<HTMLTableRowElement>(null);
-
   const mutation = useConversationTagMutation({ context: 'BookmarkTableRow', tag: row.tag });
   const localize = useLocalize();
   const { showToast } = useToastContext();
 
   const handleDrop = (item: DragItem) => {
-    const data = {
-      ...row,
-      position: item.index,
-    };
-    mutation.mutate(data, {
-      onError: () => {
-        showToast({
-          message: localize('com_ui_bookmarks_update_error'),
-          severity: NotificationSeverity.ERROR,
-        });
+    mutation.mutate(
+      { ...row, position: item.index },
+      {
+        onError: () => {
+          showToast({
+            message: localize('com_ui_bookmarks_update_error'),
+            severity: NotificationSeverity.ERROR,
+          });
+        },
       },
-    });
+    );
   };
 
   const [, drop] = useDrop({
     accept: 'bookmark',
-    drop: (item: DragItem) => handleDrop(item),
+    drop: handleDrop,
     hover(item: DragItem) {
-      if (!ref.current) {
-        return;
-      }
-      const dragIndex = item.index;
-      const hoverIndex = position;
-      if (dragIndex === hoverIndex) {
-        return;
-      }
-      moveRow(dragIndex, hoverIndex);
-      item.index = hoverIndex;
+      if (!ref.current || item.index === position) {return;}
+      moveRow(item.index, position);
+      item.index = position;
     },
   });
 
@@ -75,37 +65,15 @@ const BookmarkTableRow: React.FC<BookmarkTableRowProps> = ({ row, moveRow, posit
       ref={ref}
       className="cursor-move hover:bg-surface-secondary"
       style={{ opacity: isDragging ? 0.5 : 1 }}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
     >
-      <TableCell className="w-full px-3 py-3.5 pl-6">
-        <div className="truncate">{row.tag}</div>
+      <TableCell className="w-[70%] px-4 py-4">
+        <div className="overflow-hidden text-ellipsis whitespace-nowrap">{row.tag}</div>
       </TableCell>
-      <TableCell className="w-full px-3 py-3.5 sm:pl-6">
-        <div className="text-center">{row.count}</div>
-      </TableCell>
-      <TableCell className="w-full px-3 py-3.5 sm:pl-6">
-        <div
-          className="flex items-center justify-center gap-2"
-          style={{
-            opacity: isHovered ? 1 : 0,
-            transition: 'opacity 0.1s ease-in-out',
-          }}
-          onFocus={() => setIsHovered(true)}
-          onBlur={() => setIsHovered(false)}
-        >
-          <EditBookmarkButton
-            bookmark={row}
-            tabIndex={0}
-            onFocus={() => setIsHovered(true)}
-            onBlur={() => setIsHovered(false)}
-          />
-          <DeleteBookmarkButton
-            bookmark={row.tag}
-            tabIndex={0}
-            onFocus={() => setIsHovered(true)}
-            onBlur={() => setIsHovered(false)}
-          />
+      <TableCell className="w-[10%] px-12 py-4">{row.count}</TableCell>
+      <TableCell className="w-[20%] px-4 py-4">
+        <div className="flex gap-2">
+          <EditBookmarkButton bookmark={row} tabIndex={0} />
+          <DeleteBookmarkButton bookmark={row.tag} tabIndex={0} />
         </div>
       </TableCell>
     </TableRow>
