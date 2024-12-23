@@ -109,10 +109,14 @@ class OpenAIClient extends BaseClient {
 
     this.isO1Model = /\bo1\b/i.test(this.modelOptions.model);
 
-    const { OPENROUTER_API_KEY, OPENAI_FORCE_PROMPT } = process.env ?? {};
+    const { OPENROUTER_API_KEY, NOVITA_API_KEY, OPENAI_FORCE_PROMPT } = process.env ?? {};
     if (OPENROUTER_API_KEY && !this.azure) {
       this.apiKey = OPENROUTER_API_KEY;
       this.useOpenRouter = true;
+    }
+    if (NOVITA_API_KEY && !this.azure) {
+      this.apiKey = NOVITA_API_KEY;
+      this.useNovita = true;
     }
 
     const { reverseProxyUrl: reverseProxy } = this.options;
@@ -123,6 +127,14 @@ class OpenAIClient extends BaseClient {
       reverseProxy.includes('https://openrouter.ai/api/v1')
     ) {
       this.useOpenRouter = true;
+    }
+    
+    if (
+      !this.useNovita &&
+      reverseProxy &&
+      reverseProxy.includes('https://api.novita.ai/v3')
+    ) {
+      this.useNovita = true;
     }
 
     if (this.options.endpoint?.toLowerCase() === 'ollama') {
@@ -147,7 +159,7 @@ class OpenAIClient extends BaseClient {
     const { model } = this.modelOptions;
 
     this.isChatCompletion =
-      /\bo1\b/i.test(model) || model.includes('gpt') || this.useOpenRouter || !!reverseProxy;
+      /\bo1\b/i.test(model) || model.includes('gpt') || this.useOpenRouter || this.useNovita || !!reverseProxy;
     this.isChatGptModel = this.isChatCompletion;
     if (
       model.includes('text-davinci') ||
@@ -230,6 +242,11 @@ class OpenAIClient extends BaseClient {
     }
 
     if (this.useOpenRouter) {
+      this.completionsUrl = 'https://openrouter.ai/api/v1/chat/completions';
+    }
+
+    if (this.useNovita) {
+      // todo: yexiu chat api
       this.completionsUrl = 'https://openrouter.ai/api/v1/chat/completions';
     }
 
@@ -627,7 +644,7 @@ class OpenAIClient extends BaseClient {
             token = progressMessage.choices?.[0]?.text;
           }
 
-          if (!token && this.useOpenRouter) {
+          if (!token && (this.useOpenRouter || this.useNovita)) {
             token = progressMessage.choices?.[0]?.message?.content;
           }
           // first event's delta content is always undefined
@@ -724,6 +741,16 @@ class OpenAIClient extends BaseClient {
       configOptions.baseOptions = {
         headers: {
           'HTTP-Referer': 'https://librechat.ai',
+          'X-Title': 'LibreChat',
+        },
+      };
+    }
+    
+    if (this.useNovita) {
+      configOptions.basePath = 'https://api.novita.ai/v3';
+      configOptions.baseOptions = {
+        headers: {
+          'HTTP-Referer': 'https://novita.ai',
           'X-Title': 'LibreChat',
         },
       };
@@ -1165,7 +1192,7 @@ ${convo}
         baseURL,
       };
 
-      if (this.useOpenRouter) {
+      if (this.useOpenRouter || this.useNovita) {
         opts.defaultHeaders = {
           'HTTP-Referer': 'https://librechat.ai',
           'X-Title': 'LibreChat',

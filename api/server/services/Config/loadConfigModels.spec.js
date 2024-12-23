@@ -29,6 +29,16 @@ const exampleConfig = {
         dropParams: ['stop'],
       },
       {
+        name: 'Novita',
+        apiKey: '${MY_NOVITA_API_KEY}',
+        baseURL: 'https://api.novita.ai/v3',
+        models: {
+          default: ['gpt-3.5-turbo'],
+          fetch: true,
+        },
+        dropParams: ['stop'],
+      },
+      {
         name: 'groq',
         apiKey: 'user_provided',
         baseURL: 'https://api.groq.com/openai/v1/',
@@ -208,11 +218,12 @@ describe('loadConfigModels', () => {
   it('loads models based on custom endpoint configuration respecting fetch rules', async () => {
     process.env.MY_PRECIOUS_MISTRAL_KEY = 'actual_mistral_api_key';
     process.env.MY_OPENROUTER_API_KEY = 'actual_openrouter_api_key';
-    // Setup custom configuration with specific API keys for Mistral and OpenRouter
+    process.env.MY_NOVITA_API_KEY = 'actual_novita_api_key';
+    // Setup custom configuration with specific API keys for Mistral, OpenRouter and Novita
     // and "user_provided" for groq and Ollama, indicating no fetch for the latter two
     getCustomConfig.mockResolvedValue(exampleConfig);
 
-    // Assuming fetchModels would be called only for Mistral and OpenRouter
+    // Assuming fetchModels would be called only for Mistral, OpenRouter and Novita
     fetchModels.mockImplementation(({ name }) => {
       switch (name) {
         case 'Mistral':
@@ -224,6 +235,8 @@ describe('loadConfigModels', () => {
           ]);
         case 'OpenRouter':
           return Promise.resolve(['gpt-3.5-turbo']);
+        case 'Novita':
+          return Promise.resolve(['llama-3-70b-instruct']);
         default:
           return Promise.resolve([]);
       }
@@ -231,7 +244,7 @@ describe('loadConfigModels', () => {
 
     const result = await loadConfigModels(mockRequest);
 
-    // Since fetch is true and apiKey is not "user_provided", fetching occurs for Mistral and OpenRouter
+    // Since fetch is true and apiKey is not "user_provided", fetching occurs for Mistral, OpenRouter and Novita
     expect(result.Mistral).toEqual([
       'mistral-tiny',
       'mistral-small',
@@ -250,6 +263,14 @@ describe('loadConfigModels', () => {
       expect.objectContaining({
         name: 'OpenRouter',
         apiKey: process.env.MY_OPENROUTER_API_KEY,
+      }),
+    );
+
+    expect(result.Novita).toEqual(['llama-3-70b-instruct']);
+    expect(fetchModels).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Novita',
+        apiKey: process.env.MY_NOVITA_API_KEY,
       }),
     );
 

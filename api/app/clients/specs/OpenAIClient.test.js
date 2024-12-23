@@ -204,6 +204,14 @@ describe('OpenAIClient', () => {
       delete process.env.OPENROUTER_API_KEY; // Cleanup
     });
 
+    it('should set apiKey and useNovita if NOVITA_API_KEY is present', () => {
+      process.env.NOVITA_API_KEY = 'novita-key';
+      client.setOptions({});
+      expect(client.apiKey).toBe('novita-key');
+      expect(client.useNovita).toBe(true);
+      delete process.env.NOVITA_API_KEY; // Cleanup
+    });
+
     it('should set FORCE_PROMPT based on OPENAI_FORCE_PROMPT or reverseProxyUrl', () => {
       process.env.OPENAI_FORCE_PROMPT = 'true';
       client.setOptions({});
@@ -219,7 +227,7 @@ describe('OpenAIClient', () => {
       expect(client.FORCE_PROMPT).toBe(false);
     });
 
-    it('should set isChatCompletion based on useOpenRouter, reverseProxyUrl, or model', () => {
+    it('should set isChatCompletion based on useOpenRouter, useNovita, reverseProxyUrl, or model', () => {
       client.setOptions({ reverseProxyUrl: null });
       // true by default since default model will be gpt-4o-mini
       expect(client.isChatCompletion).toBe(true);
@@ -597,6 +605,7 @@ describe('OpenAIClient', () => {
       delete process.env.AZURE_OPENAI_DEFAULT_MODEL;
       delete process.env.AZURE_USE_MODEL_AS_DEPLOYMENT_NAME;
       delete process.env.OPENROUTER_API_KEY;
+      delete process.env.NOVITA_API_KEY;
     });
 
     it('should call getCompletion and fetchEventSource when using a text/instruct model', async () => {

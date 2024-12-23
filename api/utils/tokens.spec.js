@@ -19,6 +19,12 @@ describe('getModelMaxTokens', () => {
       maxTokensMap[EModelEndpoint.openAI]['gpt-4-32k'],
     );
   });
+  // todo: yexiu
+  test('should return correct tokens for partial match (Novita)', () => {
+    expect(getModelMaxTokens('openai/gpt-4-32k')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-4-32k'],
+    );
+  });
 
   test('should return undefined for no match', () => {
     expect(getModelMaxTokens('unknown-model')).toBeUndefined();

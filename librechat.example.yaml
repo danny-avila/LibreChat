@@ -185,6 +185,22 @@ endpoints:
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
       
+    # Novita Example
+    - name: 'Novita'
+      # For `apiKey` and `baseURL`, you can use environment variables that you define.
+      # recommended environment variables:
+      # Known issue: you should not use `NOVITA_API_KEY` as it will then override the `openAI` endpoint to use Novita as well.
+      apiKey: '${NOVITA_API_KEY}'
+      baseURL: 'https://api.novita.ai/v3'
+      models:
+        default: ['meta-llama/llama-3-70b-instruct']
+        fetch: true
+      titleConvo: true
+      titleModel: 'meta-llama/llama-3-70b-instruct'
+      # Recommended: Drop the stop parameter from the request as Novita models use a variety of stop tokens.
+      dropParams: ['stop']
+      modelDisplayLabel: 'Novita'
+      
     # Portkey AI Example
     - name: "Portkey"
       apiKey: "dummy"  

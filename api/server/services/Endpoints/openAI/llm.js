@@ -16,6 +16,7 @@ const { isEnabled } = require('~/server/utils');
  * @param {string[]} [options.modelOptions.stop] - Sequences where the API will stop generating further tokens.
  * @param {string} [options.reverseProxyUrl] - URL for a reverse proxy, if used.
  * @param {boolean} [options.useOpenRouter] - Flag to use OpenRouter API.
+ * @param {boolean} [options.useNovita] - Flag to use Novita API.
  * @param {Object} [options.headers] - Additional headers for API requests.
  * @param {string} [options.proxy] - Proxy server URL.
  * @param {Object} [options.azure] - Azure-specific configurations.
@@ -29,6 +30,7 @@ function getLLMConfig(apiKey, options = {}) {
     modelOptions = {},
     reverseProxyUrl,
     useOpenRouter,
+    useNovita,
     defaultQuery,
     headers,
     proxy,
@@ -59,6 +61,17 @@ function getLLMConfig(apiKey, options = {}) {
   // Handle OpenRouter or custom reverse proxy
   if (useOpenRouter || reverseProxyUrl === 'https://openrouter.ai/api/v1') {
     configOptions.basePath = 'https://openrouter.ai/api/v1';
+    configOptions.baseOptions = {
+      headers: Object.assign(
+        {
+          'HTTP-Referer': 'https://librechat.ai',
+          'X-Title': 'LibreChat',
+        },
+        headers,
+      ),
+    };
+  } else if (useNovita || reverseProxyUrl === 'https://api.novita.ai/v3') {
+    configOptions.basePath = 'https://api.novita.ai/v3';
     configOptions.baseOptions = {
       headers: Object.assign(
         {

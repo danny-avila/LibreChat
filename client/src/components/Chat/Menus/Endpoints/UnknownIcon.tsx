@@ -15,6 +15,7 @@ const knownEndpointAssets = {
   [KnownEndpoints.mlx]: '/assets/mlx.png',
   [KnownEndpoints.ollama]: '/assets/ollama.png',
   [KnownEndpoints.openrouter]: '/assets/openrouter.png',
+  [KnownEndpoints.novita]: '/assets/novita.png',
   [KnownEndpoints.perplexity]: '/assets/perplexity.png',
   [KnownEndpoints.shuttleai]: '/assets/shuttleai.png',
   [KnownEndpoints['together.ai']]: '/assets/together.png',
@@ -43,7 +44,7 @@ const getKnownClass = ({
   context?: string;
   className: string;
 }) => {
-  if (currentEndpoint === KnownEndpoints.openrouter) {
+  if (currentEndpoint === KnownEndpoints.openrouter || currentEndpoint === KnownEndpoints.novita) {
     return className;
   }
 
