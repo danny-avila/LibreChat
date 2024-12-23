@@ -3,24 +3,20 @@ cache: true
 endpoints:
   azureOpenAI:
     # Endpoint-level configuration
-    titleModel: "gpt-3.5-turbo-16k"
-    plugins: true
+    titleModel: "gpt-4o"
+    plugins: false
     assistants: false
     groups:
     # Group-level configuration
-    - group: "Azure OpenAI"
-      instanceName: "blah"
+    - group: "N2A East US"
+      instanceName: "N2A OpenAI"
       apiKey: "${AZURE_OPENAI_API_KEY}"
-      baseURL: "${AZURE_OPENAI_BASEURL}"
+      baseURL: "https://service-internal.n2a.paychex.com/is/shared/azure"
       version: "2024-02-01"
       # Model-level configuration
       models:
-        gpt-3.5-turbo-16k:
-          deploymentName: gpt-35-turbo-16k
-          version: "2024-02-01"
-        gpt-3.5-turbo:
-          deploymentName: gpt-35-turbo
-          version: "2024-02-01"
         gpt-4o:
           deploymentName: gpt-4o
           version: "2024-02-01"
+registration:
+  socialLogins: ["openid"]
