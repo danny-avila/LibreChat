@@ -438,6 +438,7 @@ export default {
   com_ui_no_conversation_id: 'No conversation ID found',
   com_ui_add_multi_conversation: 'Add multi-conversation',
   com_ui_duplicate_agent_confirm: 'Are you sure you want to duplicate this agent?',
+  com_ui_page: 'Page',
   com_auth_error_login:
     'Unable to login with the information provided. Please check your credentials and try again.',
   com_auth_error_login_rl:
