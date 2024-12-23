@@ -73,8 +73,9 @@ export default function FileRow({
   }
 
   const renderFiles = () => {
-    // Inline style for RTL
-    const rowStyle = isRTL ? { display: 'flex', flexDirection: 'row-reverse' } : {};
+    const rowStyle = isRTL
+      ? { display: 'flex', flexDirection: 'row-reverse', gap: '4px' }
+      : { display: 'flex', gap: '4px' };
 
     return (
       <div style={rowStyle as React.CSSProperties}>

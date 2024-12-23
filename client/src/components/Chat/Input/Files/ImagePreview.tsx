@@ -191,7 +191,7 @@ const ImagePreview = ({
               </svg>
             </button>
             <div
-              className="max-h-[90vh] max-w-[90vw] transform transition-transform duration-200 ease-in-out"
+              className="max-h-[90vh] max-w-[90vw] transform transition-transform duration-50 ease-in-out animate-in zoom-in-90"
               role="presentation"
             >
               <img
