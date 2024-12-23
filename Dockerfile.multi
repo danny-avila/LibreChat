@@ -14,7 +14,7 @@ COPY packages/mcp/package*.json ./packages/mcp/
 COPY client/package*.json ./client/
 COPY api/package*.json ./api/
 
-# Install all deps to for builds
+# Install all dependencies for every build
 FROM base-min AS base
 WORKDIR /app
 RUN npm ci
