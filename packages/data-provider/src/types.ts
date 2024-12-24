@@ -1,4 +1,4 @@
-import OpenAI from 'openai';
+import type OpenAI from 'openai';
 import type { InfiniteData } from '@tanstack/react-query';
 import type {
   TMessage,
@@ -12,8 +12,6 @@ import type {
 } from './schemas';
 import type { TSpecsConfig } from './models';
 export type TOpenAIMessage = OpenAI.Chat.ChatCompletionMessageParam;
-export type TOpenAIFunction = OpenAI.Chat.ChatCompletionCreateParams.Function;
-export type TOpenAIFunctionCall = OpenAI.Chat.ChatCompletionCreateParams.FunctionCallOption;
 
 export * from './schemas';
 
@@ -64,6 +62,7 @@ export type TSubmission = {
   initialResponse?: TMessage;
   conversation: Partial<TConversation>;
   endpointOption: TEndpointOption;
+  clientTimestamp?: string;
 };
 
 export type EventSubmission = Omit<TSubmission, 'initialResponse'> & { initialResponse: TMessage };
@@ -201,6 +200,15 @@ export type TTagConversationRequest = {
   tags: string[];
 };
 export type TTagConversationResponse = string[];
+
+export type TDuplicateConvoRequest = {
+  conversationId?: string;
+};
+
+export type TDuplicateConvoResponse = {
+  conversation: TConversation;
+  messages: TMessage[];
+} | undefined;
 
 export type TForkConvoRequest = {
   messageId: string;
@@ -491,9 +499,7 @@ export type TUpdatePromptLabelsResponse = {
   message: string;
 };
 
-export type TDeletePromptGroupResponse = {
-  promptGroup: string;
-};
+export type TDeletePromptGroupResponse = TUpdatePromptLabelsResponse;
 
 export type TDeletePromptGroupRequest = {
   id: string;

@@ -1,4 +1,4 @@
-const { ChatOpenAI } = require('langchain/chat_models/openai');
+const { ChatOpenAI } = require('@langchain/openai');
 const { sanitizeModelName, constructAzureURL } = require('~/utils');
 const { isEnabled } = require('~/server/utils');
 
@@ -17,7 +17,7 @@ const { isEnabled } = require('~/server/utils');
  *
  * @example
  * const llm = createLLM({
- *   modelOptions: { modelName: 'gpt-3.5-turbo', temperature: 0.2 },
+ *   modelOptions: { modelName: 'gpt-4o-mini', temperature: 0.2 },
  *   configOptions: { basePath: 'https://example.api/path' },
  *   callbacks: { onMessage: handleMessage },
  *   openAIApiKey: 'your-api-key'

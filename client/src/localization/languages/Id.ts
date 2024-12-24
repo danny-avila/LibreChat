@@ -248,7 +248,7 @@ export default {
   com_endpoint_preset_default_item: 'Default:',
   com_endpoint_preset_default_none: 'Tidak ada preset default yang aktif.',
   com_endpoint_preset_title: 'Preset',
-  com_endpoint_preset_saved: 'Tersimpan!',
+  com_ui_saved: 'Tersimpan!',
   com_endpoint_preset_default: 'sekarang menjadi preset default.',
   com_endpoint_preset: 'preset',
   com_endpoint_presets: 'presets',

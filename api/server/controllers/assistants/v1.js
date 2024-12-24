@@ -1,9 +1,10 @@
+const fs = require('fs').promises;
 const { FileContext } = require('librechat-data-provider');
+const { uploadImageBuffer, filterFile } = require('~/server/services/Files/process');
 const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { deleteAssistantActions } = require('~/server/services/ActionService');
 const { updateAssistantDoc, getAssistants } = require('~/models/Assistant');
-const { uploadImageBuffer } = require('~/server/services/Files/process');
 const { getOpenAIClient, fetchAssistants } = require('./helpers');
 const { deleteFileByFilter } = require('~/models/File');
 const { logger } = require('~/config');
@@ -18,8 +19,15 @@ const createAssistant = async (req, res) => {
   try {
     const { openai } = await getOpenAIClient({ req, res });
 
-    const { tools = [], endpoint, conversation_starters, ...assistantData } = req.body;
+    const {
+      tools = [],
+      endpoint,
+      conversation_starters,
+      append_current_datetime,
+      ...assistantData
+    } = req.body;
     delete assistantData.conversation_starters;
+    delete assistantData.append_current_datetime;
 
     assistantData.tools = tools
       .map((tool) => {
@@ -48,6 +56,9 @@ const createAssistant = async (req, res) => {
     if (conversation_starters) {
       createData.conversation_starters = conversation_starters;
     }
+    if (append_current_datetime !== undefined) {
+      createData.append_current_datetime = append_current_datetime;
+    }
 
     const document = await updateAssistantDoc({ assistant_id: assistant.id }, createData);
 
@@ -57,6 +68,10 @@ const createAssistant = async (req, res) => {
 
     if (document.conversation_starters) {
       assistant.conversation_starters = document.conversation_starters;
+    }
+
+    if (append_current_datetime !== undefined) {
+      assistant.append_current_datetime = append_current_datetime;
     }
 
     logger.debug('/assistants/', assistant);
@@ -101,7 +116,12 @@ const patchAssistant = async (req, res) => {
     await validateAuthor({ req, openai });
 
     const assistant_id = req.params.id;
-    const { endpoint: _e, conversation_starters, ...updateData } = req.body;
+    const {
+      endpoint: _e,
+      conversation_starters,
+      append_current_datetime,
+      ...updateData
+    } = req.body;
     updateData.tools = (updateData.tools ?? [])
       .map((tool) => {
         if (typeof tool !== 'string') {
@@ -124,6 +144,11 @@ const patchAssistant = async (req, res) => {
         { conversation_starters },
       );
       updatedAssistant.conversation_starters = conversationStartersUpdate.conversation_starters;
+    }
+
+    if (append_current_datetime !== undefined) {
+      await updateAssistantDoc({ assistant_id }, { append_current_datetime });
+      updatedAssistant.append_current_datetime = append_current_datetime;
     }
 
     res.json(updatedAssistant);
@@ -218,6 +243,7 @@ const getAssistantDocuments = async (req, res) => {
         conversation_starters: 1,
         createdAt: 1,
         updatedAt: 1,
+        append_current_datetime: 1,
       },
     );
 
@@ -235,7 +261,7 @@ const getAssistantDocuments = async (req, res) => {
 
 /**
  * Uploads and updates an avatar for a specific assistant.
- * @route POST /avatar/:assistant_id
+ * @route POST /:assistant_id/avatar
  * @param {object} req - Express Request
  * @param {object} req.params - Request params
  * @param {string} req.params.assistant_id - The ID of the assistant.
@@ -245,6 +271,7 @@ const getAssistantDocuments = async (req, res) => {
  */
 const uploadAssistantAvatar = async (req, res) => {
   try {
+    filterFile({ req, file: req.file, image: true, isAvatar: true });
     const { assistant_id } = req.params;
     if (!assistant_id) {
       return res.status(400).json({ message: 'Assistant ID is required' });
@@ -253,12 +280,11 @@ const uploadAssistantAvatar = async (req, res) => {
     const { openai } = await getOpenAIClient({ req, res });
     await validateAuthor({ req, openai });
 
+    const buffer = await fs.readFile(req.file.path);
     const image = await uploadImageBuffer({
       req,
       context: FileContext.avatar,
-      metadata: {
-        buffer: req.file.buffer,
-      },
+      metadata: { buffer },
     });
 
     let _metadata;
@@ -269,7 +295,7 @@ const uploadAssistantAvatar = async (req, res) => {
         _metadata = assistant.metadata;
       }
     } catch (error) {
-      logger.error('[/avatar/:assistant_id] Error fetching assistant', error);
+      logger.error('[/:assistant_id/avatar] Error fetching assistant', error);
       _metadata = {};
     }
 
@@ -279,7 +305,7 @@ const uploadAssistantAvatar = async (req, res) => {
         await deleteFile(req, { filepath: _metadata.avatar });
         await deleteFileByFilter({ user: req.user.id, filepath: _metadata.avatar });
       } catch (error) {
-        logger.error('[/avatar/:assistant_id] Error deleting old avatar', error);
+        logger.error('[/:assistant_id/avatar] Error deleting old avatar', error);
       }
     }
 
@@ -310,6 +336,13 @@ const uploadAssistantAvatar = async (req, res) => {
     const message = 'An error occurred while updating the Assistant Avatar';
     logger.error(message, error);
     res.status(500).json({ message });
+  } finally {
+    try {
+      await fs.unlink(req.file.path);
+      logger.debug('[/:agent_id/avatar] Temp. image upload file deleted');
+    } catch (error) {
+      logger.debug('[/:agent_id/avatar] Temp. image upload file already deleted');
+    }
   }
 };
 

@@ -62,6 +62,7 @@ export default defineConfig({
       workbox: {
         globPatterns: ['assets/**/*.{png,jpg,svg,ico}', '**/*.{js,css,html,ico,woff2}'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+        navigateFallbackDenylist: [/^\/oauth/],
       },
       manifest: {
         name: 'LibreChat',

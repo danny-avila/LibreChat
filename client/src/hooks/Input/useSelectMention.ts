@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
-import { EModelEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type {
   TPreset,
   TModelSpec,
@@ -110,6 +110,7 @@ export default function useSelectMention({
 
   type Kwargs = {
     model?: string;
+    agent_id?: string;
     assistant_id?: string;
   };
 
@@ -238,6 +239,10 @@ export default function useSelectMention({
         onSelectEndpoint(option.type, {
           assistant_id: key,
           model: assistantMap?.[option.type]?.[key]?.model ?? '',
+        });
+      } else if (isAgentsEndpoint(option.type)) {
+        onSelectEndpoint(option.type, {
+          agent_id: key,
         });
       }
     },

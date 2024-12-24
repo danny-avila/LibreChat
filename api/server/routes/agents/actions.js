@@ -3,6 +3,7 @@ const { nanoid } = require('nanoid');
 const { actionDelimiter } = require('librechat-data-provider');
 const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
+const { isActionDomainAllowed } = require('~/server/services/domains');
 const { getAgent, updateAgent } = require('~/models/Agent');
 const { logger } = require('~/config');
 
@@ -42,6 +43,10 @@ router.post('/:agent_id', async (req, res) => {
     }
 
     let metadata = await encryptMetadata(_metadata);
+    const isDomainAllowed = await isActionDomainAllowed(metadata.domain);
+    if (!isDomainAllowed) {
+      return res.status(400).json({ message: 'Domain not allowed' });
+    }
 
     let { domain } = metadata;
     domain = await domainParser(req, domain, true);

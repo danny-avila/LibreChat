@@ -81,13 +81,13 @@ function defaultGetStringKey(node: unknown): string {
  * @returns
  */
 export function useMultiSearch<OptionsType extends unknown[]>({
-  availableOptions,
+  availableOptions = [] as unknown as OptionsType,
   placeholder,
   getTextKeyOverride,
   className,
   disabled = false,
 }: {
-  availableOptions: OptionsType;
+  availableOptions?: OptionsType;
   placeholder?: string;
   getTextKeyOverride?: (node: OptionsType[0]) => string;
   className?: string;

@@ -186,8 +186,45 @@ const debugTraverse = winston.format.printf(({ level, message, timestamp, ...met
   }
 });
 
+const jsonTruncateFormat = winston.format((info) => {
+  const truncateLongStrings = (str, maxLength) => {
+    return str.length > maxLength ? str.substring(0, maxLength) + '...' : str;
+  };
+
+  const seen = new WeakSet();
+
+  const truncateObject = (obj) => {
+    if (typeof obj !== 'object' || obj === null) {
+      return obj;
+    }
+
+    // Handle circular references
+    if (seen.has(obj)) {
+      return '[Circular]';
+    }
+    seen.add(obj);
+
+    if (Array.isArray(obj)) {
+      return obj.map(item => truncateObject(item));
+    }
+
+    const newObj = {};
+    Object.entries(obj).forEach(([key, value]) => {
+      if (typeof value === 'string') {
+        newObj[key] = truncateLongStrings(value, 255);
+      } else {
+        newObj[key] = truncateObject(value);
+      }
+    });
+    return newObj;
+  };
+
+  return truncateObject(info);
+});
+
 module.exports = {
   redactFormat,
   redactMessage,
   debugTraverse,
+  jsonTruncateFormat,
 };

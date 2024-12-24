@@ -51,6 +51,9 @@ export default {
   com_assistants_knowledge_disabled:
     'O assistente deve ser criado, e o Interpretador de Código ou Recuperação deve ser habilitado e salvo antes de carregar arquivos como Conhecimento.',
   com_assistants_image_vision: 'Visão de Imagem',
+  com_assistants_append_date: 'Anexar Data e Hora Atual',
+  com_assistants_append_date_tooltip:
+    'Quando ativado, a data e hora atual do cliente serão anexadas às instruções do sistema do assistente.',
   com_assistants_code_interpreter: 'Interpretador de Código',
   com_assistants_code_interpreter_files:
     'Os arquivos abaixo são apenas para o Interpretador de Código:',
@@ -548,7 +551,7 @@ export default {
   com_endpoint_preset_default_item: 'Padrão:',
   com_endpoint_preset_default_none: 'Nenhum preset padrão ativo.',
   com_endpoint_preset_title: 'Preset',
-  com_endpoint_preset_saved: 'Salvo!',
+  com_ui_saved: 'Salvo!',
   com_endpoint_preset_default: 'é agora o preset padrão.',
   com_endpoint_preset: 'preset',
   com_endpoint_presets: 'presets',

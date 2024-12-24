@@ -27,7 +27,7 @@ export const ErrorMessage = ({
     return (
       <Suspense
         fallback={
-          <div className="text-message mb-[0.625rem] flex min-h-[20px] flex-col items-start gap-3 overflow-x-auto">
+          <div className="text-message mb-[0.625rem] flex min-h-[20px] flex-col items-start gap-3 overflow-visible">
             <div className="markdown prose dark:prose-invert light w-full break-words dark:text-gray-100">
               <div className="absolute">
                 <p className="submitting relative">
@@ -56,6 +56,8 @@ export const ErrorMessage = ({
   return (
     <Container message={message}>
       <div
+        role="alert"
+        aria-live="assertive"
         className={cn(
           'rounded-xl border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-gray-600 dark:text-gray-200',
           className,
@@ -97,7 +99,8 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
           isSubmitting ? 'submitting' : '',
           showCursorState && !!text.length ? 'result-streaming' : '',
           'markdown prose message-content dark:prose-invert light w-full break-words',
-          isCreatedByUser ? 'whitespace-pre-wrap dark:text-gray-20' : 'dark:text-gray-100',
+          isCreatedByUser && !enableUserMsgMarkdown && 'whitespace-pre-wrap',
+          isCreatedByUser ? 'dark:text-gray-20' : 'dark:text-gray-100',
         )}
       >
         {content}

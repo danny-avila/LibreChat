@@ -20,7 +20,7 @@ type SelectDropDownProps = {
   value: string | null | Option | OptionWithIcon;
   setValue: DropdownValueSetter | ((value: string) => void);
   tabIndex?: number;
-  availableValues: string[] | Option[] | OptionWithIcon[];
+  availableValues?: string[] | Option[] | OptionWithIcon[];
   emptyTitle?: boolean;
   showAbove?: boolean;
   showLabel?: boolean;
@@ -89,18 +89,20 @@ function SelectDropDown({
     title = localize('com_ui_model');
   }
 
+  const values = availableValues ?? [];
+
   // Detemine if we should to convert this component into a searchable select.  If we have enough elements, a search
   // input will appear near the top of the menu, allowing correct filtering of different model menu items. This will
   // reset once the component is unmounted (as per a normal search)
   const [filteredValues, searchRender] = useMultiSearch<string[] | Option[]>({
-    availableOptions: availableValues,
+    availableOptions: values,
     placeholder: searchPlaceholder,
     getTextKeyOverride: (option) => getOptionText(option).toUpperCase(),
     className: searchClassName,
     disabled,
   });
   const hasSearchRender = searchRender != null;
-  const options = hasSearchRender ? filteredValues : availableValues;
+  const options = hasSearchRender ? filteredValues : values;
 
   const renderIcon = showOptionIcon && value != null && (value as OptionWithIcon).icon != null;
 

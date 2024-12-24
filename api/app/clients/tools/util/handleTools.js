@@ -1,34 +1,27 @@
-const { Tools } = require('librechat-data-provider');
-const { ZapierToolKit } = require('langchain/agents');
-const { Calculator } = require('langchain/tools/calculator');
-const { SerpAPI, ZapierNLAWrapper } = require('langchain/tools');
+const { Tools, Constants } = require('librechat-data-provider');
+const { SerpAPI } = require('@langchain/community/tools/serpapi');
+const { Calculator } = require('@langchain/community/tools/calculator');
 const { createCodeExecutionTool, EnvVar } = require('@librechat/agents');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const {
   availableTools,
   // Basic Tools
-  CodeBrew,
-  AzureAISearch,
   GoogleSearchAPI,
-  WolframAlphaAPI,
-  OpenAICreateImage,
-  StableDiffusionAPI,
   // Structured Tools
   DALLE3,
-  E2BTools,
-  CodeSherpa,
   StructuredSD,
   StructuredACS,
-  CodeSherpaTools,
   TraversaalSearch,
   StructuredWolfram,
   TavilySearchResults,
 } = require('../');
-const { primeFiles } = require('~/server/services/Files/Code/process');
-const createFileSearchTool = require('./createFileSearchTool');
-const { loadToolSuite } = require('./loadToolSuite');
+const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
+const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
+const { createMCPTool } = require('~/server/services/MCP');
 const { loadSpecs } = require('./loadSpecs');
 const { logger } = require('~/config');
+
+const mcpToolPattern = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
 
 /**
  * Validates the availability and authentication of tools for a user based on environment variables or user-specific plugin authentication values.
@@ -93,7 +86,7 @@ const validateTools = async (user, tools = []) => {
   }
 };
 
-const loadAuthValues = async ({ userId, authFields }) => {
+const loadAuthValues = async ({ userId, authFields, throwError = true }) => {
   let authValues = {};
 
   /**
@@ -108,7 +101,7 @@ const loadAuthValues = async ({ userId, authFields }) => {
         return { authField: field, authValue: value };
       }
       try {
-        value = await getUserPluginAuthValue(userId, field);
+        value = await getUserPluginAuthValue(userId, field, throwError);
       } catch (err) {
         if (field === fields[fields.length - 1] && !value) {
           throw err;
@@ -132,15 +125,18 @@ const loadAuthValues = async ({ userId, authFields }) => {
   return authValues;
 };
 
+/** @typedef {typeof import('@langchain/core/tools').Tool} ToolConstructor */
+/** @typedef {import('@langchain/core/tools').Tool} Tool */
+
 /**
  * Initializes a tool with authentication values for the given user, supporting alternate authentication fields.
  * Authentication fields can have alternates separated by "||", and the first defined variable will be used.
  *
  * @param {string} userId The user ID for which the tool is being loaded.
  * @param {Array<string>} authFields Array of strings representing the authentication fields. Supports alternate fields delimited by "||".
- * @param {typeof import('langchain/tools').Tool} ToolConstructor The constructor function for the tool to be initialized.
+ * @param {ToolConstructor} ToolConstructor The constructor function for the tool to be initialized.
  * @param {Object} options Optional parameters to be passed to the tool constructor alongside authentication values.
- * @returns {Function} An Async function that, when called, asynchronously initializes and returns an instance of the tool with authentication.
+ * @returns {() => Promise<Tool>} An Async function that, when called, asynchronously initializes and returns an instance of the tool with authentication.
  */
 const loadToolWithAuth = (userId, authFields, ToolConstructor, options = {}) => {
   return async function () {
@@ -149,55 +145,42 @@ const loadToolWithAuth = (userId, authFields, ToolConstructor, options = {}) => 
   };
 };
 
+/**
+ *
+ * @param {object} object
+ * @param {string} object.user
+ * @param {Agent} [object.agent]
+ * @param {string} [object.model]
+ * @param {EModelEndpoint} [object.endpoint]
+ * @param {LoadToolOptions} [object.options]
+ * @param {boolean} [object.useSpecs]
+ * @param {Array<string>} object.tools
+ * @param {boolean} [object.functions]
+ * @param {boolean} [object.returnMap]
+ * @returns {Promise<{ loadedTools: Tool[], toolContextMap: Object<string, any> } | Record<string,Tool>>}
+ */
 const loadTools = async ({
   user,
+  agent,
   model,
-  functions = null,
-  returnMap = false,
+  endpoint,
+  useSpecs,
   tools = [],
   options = {},
-  skipSpecs = false,
+  functions = true,
+  returnMap = false,
 }) => {
   const toolConstructors = {
-    tavily_search_results_json: TavilySearchResults,
     calculator: Calculator,
     google: GoogleSearchAPI,
-    wolfram: functions ? StructuredWolfram : WolframAlphaAPI,
-    'dall-e': OpenAICreateImage,
-    'stable-diffusion': functions ? StructuredSD : StableDiffusionAPI,
-    'azure-ai-search': functions ? StructuredACS : AzureAISearch,
-    CodeBrew: CodeBrew,
+    wolfram: StructuredWolfram,
+    'stable-diffusion': StructuredSD,
+    'azure-ai-search': StructuredACS,
     traversaal_search: TraversaalSearch,
+    tavily_search_results_json: TavilySearchResults,
   };
 
   const customConstructors = {
-    e2b_code_interpreter: async () => {
-      if (!functions) {
-        return null;
-      }
-
-      return await loadToolSuite({
-        pluginKey: 'e2b_code_interpreter',
-        tools: E2BTools,
-        user,
-        options: {
-          model,
-          ...options,
-        },
-      });
-    },
-    codesherpa_tools: async () => {
-      if (!functions) {
-        return null;
-      }
-
-      return await loadToolSuite({
-        pluginKey: 'codesherpa_tools',
-        tools: CodeSherpaTools,
-        user,
-        options,
-      });
-    },
     serpapi: async () => {
       let apiKey = process.env.SERPAPI_API_KEY;
       if (!apiKey) {
@@ -209,24 +192,17 @@ const loadTools = async ({
         gl: 'us',
       });
     },
-    zapier: async () => {
-      let apiKey = process.env.ZAPIER_NLA_API_KEY;
-      if (!apiKey) {
-        apiKey = await getUserPluginAuthValue(user, 'ZAPIER_NLA_API_KEY');
-      }
-      const zapier = new ZapierNLAWrapper({ apiKey });
-      return ZapierToolKit.fromZapierNLAWrapper(zapier);
-    },
   };
 
   const requestedTools = {};
 
-  if (functions) {
+  if (functions === true) {
     toolConstructors.dalle = DALLE3;
-    toolConstructors.codesherpa = CodeSherpa;
   }
 
+  /** @type {ImageGenOptions} */
   const imageGenOptions = {
+    isAgent: !!agent,
     req: options.req,
     fileStrategy: options.fileStrategy,
     processFileURL: options.processFileURL,
@@ -237,7 +213,6 @@ const loadTools = async ({
   const toolOptions = {
     serpapi: { location: 'Austin,Texas,United States', hl: 'en', gl: 'us' },
     dalle: imageGenOptions,
-    'dall-e': imageGenOptions,
     'stable-diffusion': imageGenOptions,
   };
 
@@ -251,24 +226,48 @@ const loadTools = async ({
     toolAuthFields[tool.pluginKey] = tool.authConfig.map((auth) => auth.authField);
   });
 
+  const toolContextMap = {};
   const remainingTools = [];
+  const appTools = options.req?.app?.locals?.availableTools ?? {};
 
   for (const tool of tools) {
     if (tool === Tools.execute_code) {
-      const authValues = await loadAuthValues({
-        userId: user,
-        authFields: [EnvVar.CODE_API_KEY],
-      });
-      const files = await primeFiles(options, authValues[EnvVar.CODE_API_KEY]);
-      requestedTools[tool] = () =>
-        createCodeExecutionTool({
+      requestedTools[tool] = async () => {
+        const authValues = await loadAuthValues({
+          userId: user,
+          authFields: [EnvVar.CODE_API_KEY],
+        });
+        const codeApiKey = authValues[EnvVar.CODE_API_KEY];
+        const { files, toolContext } = await primeCodeFiles(options, codeApiKey);
+        if (toolContext) {
+          toolContextMap[tool] = toolContext;
+        }
+        const CodeExecutionTool = createCodeExecutionTool({
           user_id: user,
           files,
           ...authValues,
         });
+        CodeExecutionTool.apiKey = codeApiKey;
+        return CodeExecutionTool;
+      };
       continue;
     } else if (tool === Tools.file_search) {
-      requestedTools[tool] = () => createFileSearchTool(options);
+      requestedTools[tool] = async () => {
+        const { files, toolContext } = await primeSearchFiles(options);
+        if (toolContext) {
+          toolContextMap[tool] = toolContext;
+        }
+        return createFileSearchTool({ req: options.req, files, entity_id: agent?.id });
+      };
+      continue;
+    } else if (tool && appTools[tool] && mcpToolPattern.test(tool)) {
+      requestedTools[tool] = async () =>
+        createMCPTool({
+          req: options.req,
+          toolKey: tool,
+          model: agent?.model ?? model,
+          provider: agent?.provider ?? endpoint,
+        });
       continue;
     }
 
@@ -289,13 +288,13 @@ const loadTools = async ({
       continue;
     }
 
-    if (functions) {
+    if (functions === true) {
       remainingTools.push(tool);
     }
   }
 
   let specs = null;
-  if (functions && remainingTools.length > 0 && skipSpecs !== true) {
+  if (useSpecs === true && functions === true && remainingTools.length > 0) {
     specs = await loadSpecs({
       llm: model,
       user,
@@ -318,23 +317,21 @@ const loadTools = async ({
     return requestedTools;
   }
 
-  // load tools
-  let result = [];
+  const toolPromises = [];
   for (const tool of tools) {
     const validTool = requestedTools[tool];
-    if (!validTool) {
-      continue;
-    }
-    const plugin = await validTool();
-
-    if (Array.isArray(plugin)) {
-      result = [...result, ...plugin];
-    } else if (plugin) {
-      result.push(plugin);
+    if (validTool) {
+      toolPromises.push(
+        validTool().catch((error) => {
+          logger.error(`Error loading tool ${tool}:`, error);
+          return null;
+        }),
+      );
     }
   }
 
-  return result;
+  const loadedTools = (await Promise.all(toolPromises)).flatMap((plugin) => plugin || []);
+  return { loadedTools, toolContextMap };
 };
 
 module.exports = {

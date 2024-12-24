@@ -38,42 +38,73 @@
 </a>
 </p>
 
-# 📃 Features
+# ✨ Features
 
-- 🖥️ UI matching ChatGPT, including Dark mode, Streaming, and latest updates
-- 🤖 AI model selection:
-  - Anthropic (Claude), AWS Bedrock, OpenAI, Azure OpenAI, BingAI, ChatGPT, Google Vertex AI, Plugins, Assistants API (including Azure Assistants)
-- ✅ Compatible across both **[Remote & Local AI services](https://www.librechat.ai/docs/configuration/librechat_yaml/ai_endpoints):**
-  - groq, Ollama, Cohere, Mistral AI, Apple MLX, koboldcpp, OpenRouter, together.ai, Perplexity, ShuttleAI, and more
-- 🪄 Generative UI with **[Code Artifacts](https://youtu.be/GfTj7O4gmd0?si=WJbdnemZpJzBrJo3)**
-   - Create React, HTML code, and Mermaid diagrams right in chat
-- 💾 Create, Save, & Share Custom Presets
-- 🔀 Switch between AI Endpoints and Presets, mid-chat
-- 🔄 Edit, Resubmit, and Continue Messages with Conversation branching
-- 🌿 Fork Messages & Conversations for Advanced Context control
-- 💬 Multimodal Chat:
-    - Upload and analyze images with Claude 3, GPT-4 (including `gpt-4o` and `gpt-4o-mini`), and Gemini Vision 📸
-    - Chat with Files using Custom Endpoints, OpenAI, Azure, Anthropic, & Google. 🗃️
-    - Advanced Agents with Files, Code Interpreter, Tools, and API Actions 🔦
-      - Available through the [OpenAI Assistants API](https://platform.openai.com/docs/assistants/overview) 🌤️
-      - Non-OpenAI Agents in Active Development 🚧
-- 🌎 Multilingual UI:
-  - English, 中文, Deutsch, Español, Français, Italiano, Polski, Português Brasileiro,
+- 🖥️ **UI & Experience** inspired by ChatGPT with enhanced design and features
+
+- 🤖 **AI Model Selection**:  
+  - Anthropic (Claude), AWS Bedrock, OpenAI, Azure OpenAI, Google, Vertex AI, OpenAI Assistants API (incl. Azure)
+  - [Custom Endpoints](https://www.librechat.ai/docs/quick_start/custom_endpoints): Use any OpenAI-compatible API with LibreChat, no proxy required
+  - Compatible with [Local & Remote AI Providers](https://www.librechat.ai/docs/configuration/librechat_yaml/ai_endpoints):
+    - Ollama, groq, Cohere, Mistral AI, Apple MLX, koboldcpp, together.ai,
+    - OpenRouter, Perplexity, ShuttleAI, Deepseek, Qwen, and more
+
+- 🔧 **[Code Interpreter API](https://www.librechat.ai/docs/features/code_interpreter)**: 
+  - Secure, Sandboxed Execution in Python, Node.js (JS/TS), Go, C/C++, Java, PHP, Rust, and Fortran
+  - Seamless File Handling: Upload, process, and download files directly
+  - No Privacy Concerns: Fully isolated and secure execution
+
+- 🔦 **Agents & Tools Integration**:  
+  - **[LibreChat Agents](https://www.librechat.ai/docs/features/agents)**:
+    - No-Code Custom Assistants: Build specialized, AI-driven helpers without coding  
+    - Flexible & Extensible: Attach tools like DALL-E-3, file search, code execution, and more  
+    - Compatible with Custom Endpoints, OpenAI, Azure, Anthropic, AWS Bedrock, and more
+    - [Model Context Protocol (MCP) Support](https://modelcontextprotocol.io/clients#librechat) for Tools
+  - Use LibreChat Agents and OpenAI Assistants with Files, Code Interpreter, Tools, and API Actions
+
+- 🪄 **Generative UI with Code Artifacts**:  
+  - [Code Artifacts](https://youtu.be/GfTj7O4gmd0?si=WJbdnemZpJzBrJo3) allow creation of React, HTML, and Mermaid diagrams directly in chat
+
+- 💾 **Presets & Context Management**:  
+  - Create, Save, & Share Custom Presets  
+  - Switch between AI Endpoints and Presets mid-chat
+  - Edit, Resubmit, and Continue Messages with Conversation branching  
+  - [Fork Messages & Conversations](https://www.librechat.ai/docs/features/fork) for Advanced Context control
+
+- 💬 **Multimodal & File Interactions**:  
+  - Upload and analyze images with Claude 3, GPT-4o, o1, Llama-Vision, and Gemini 📸  
+  - Chat with Files using Custom Endpoints, OpenAI, Azure, Anthropic, AWS Bedrock, & Google 🗃️
+
+- 🌎 **Multilingual UI**:  
+  - English, 中文, Deutsch, Español, Français, Italiano, Polski, Português Brasileiro
   - Русский, 日本語, Svenska, 한국어, Tiếng Việt, 繁體中文, العربية, Türkçe, Nederlands, עברית
-- 🎨 Customizable Dropdown & Interface: Adapts to both power users and newcomers
-- 📧 Verify your email to ensure secure access
-- 🗣️ Chat hands-free with Speech-to-Text and Text-to-Speech magic
-  - Automatically send and play Audio
+
+- 🎨 **Customizable Interface**:  
+  - Customizable Dropdown & Interface that adapts to both power users and newcomers
+
+- 🗣️ **Speech & Audio**:  
+  - Chat hands-free with Speech-to-Text and Text-to-Speech  
+  - Automatically send and play Audio  
   - Supports OpenAI, Azure OpenAI, and Elevenlabs
-- 📥 Import Conversations from LibreChat, ChatGPT, Chatbot UI
-- 📤 Export conversations as screenshots, markdown, text, json
-- 🔍 Search all messages/conversations
-- 🔌 Plugins, including web access, image generation with DALL-E-3 and more
-- 👥 Multi-User, Secure Authentication with Moderation and Token spend tools
-- ⚙️ Configure Proxy, Reverse Proxy, Docker, & many Deployment options:
+
+- 📥 **Import & Export Conversations**:  
+  - Import Conversations from LibreChat, ChatGPT, Chatbot UI  
+  - Export conversations as screenshots, markdown, text, json
+
+- 🔍 **Search & Discovery**:  
+  - Search all messages/conversations
+
+- 👥 **Multi-User & Secure Access**:
+  - Multi-User, Secure Authentication with OAuth2, LDAP, & Email Login Support
+  - Built-in Moderation, and Token spend tools
+
+- ⚙️ **Configuration & Deployment**:  
+  - Configure Proxy, Reverse Proxy, Docker, & many Deployment options  
   - Use completely local or deploy on the cloud
-- 📖 Completely Open-Source & Built in Public
-- 🧑‍🤝‍🧑 Community-driven development, support, and feedback
+
+- 📖 **Open-Source & Community**:  
+  - Completely Open-Source & Built in Public  
+  - Community-driven development, support, and feedback
 
 [For a thorough review of our features, see our docs here](https://docs.librechat.ai/) 📚
 
@@ -97,7 +128,7 @@ Click on the thumbnail to open the video☝️
 **Other:**
   - **Website:** [librechat.ai](https://librechat.ai)
   - **Documentation:** [docs.librechat.ai](https://docs.librechat.ai)
-  - **Blog:** [blog.librechat.ai](https://docs.librechat.ai)
+  - **Blog:** [blog.librechat.ai](https://blog.librechat.ai)
 
 ---
 

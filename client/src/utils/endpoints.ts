@@ -9,17 +9,19 @@ import {
 import type * as t from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
 
-export const getAssistantName = ({
+export const getEntityName = ({
   name = '',
   localize,
+  isAgent,
 }: {
   name?: string;
+  isAgent?: boolean;
   localize: LocalizeFunction;
 }) => {
   if (name && name.length > 0) {
     return name;
   } else {
-    return localize('com_ui_assistant');
+    return isAgent === true ? localize('com_ui_agent') : localize('com_ui_assistant');
   }
 };
 
