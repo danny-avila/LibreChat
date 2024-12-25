@@ -58,13 +58,14 @@ class ModelEndHandler {
     }
 
     const usage = data?.output?.usage_metadata;
+    if (!usage) {
+      return;
+    }
     if (metadata?.model) {
       usage.model = metadata.model;
     }
 
-    if (usage) {
-      this.collectedUsage.push(usage);
-    }
+    this.collectedUsage.push(usage);
   }
 }
 
