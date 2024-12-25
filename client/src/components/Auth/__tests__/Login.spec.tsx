@@ -1,6 +1,6 @@
 import reactRouter from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
-import { render, waitFor } from 'test/layout-test-utils';
+import { getByTestId, render, waitFor } from 'test/layout-test-utils';
 import * as mockDataProvider from 'librechat-data-provider/react-query';
 import type { TStartupConfig } from 'librechat-data-provider';
 import AuthLayout from '~/components/Auth/AuthLayout';
@@ -117,7 +117,7 @@ test('renders login form', () => {
   const { getByLabelText, getByRole } = setup();
   expect(getByLabelText(/email/i)).toBeInTheDocument();
   expect(getByLabelText(/password/i)).toBeInTheDocument();
-  expect(getByRole('button', { name: /Sign in/i })).toBeInTheDocument();
+  expect(getByTestId(document.body, 'login-button')).toBeInTheDocument();
   expect(getByRole('link', { name: /Sign up/i })).toBeInTheDocument();
   expect(getByRole('link', { name: /Sign up/i })).toHaveAttribute('href', '/register');
   expect(getByRole('link', { name: /Continue with Google/i })).toBeInTheDocument();
@@ -144,7 +144,7 @@ test('renders login form', () => {
 
 test('calls loginUser.mutate on login', async () => {
   const mutate = jest.fn();
-  const { getByLabelText, getByRole } = setup({
+  const { getByLabelText } = setup({
     // @ts-ignore - we don't need all parameters of the QueryObserverResult
     useLoginUserReturnValue: {
       isLoading: false,
@@ -155,7 +155,7 @@ test('calls loginUser.mutate on login', async () => {
 
   const emailInput = getByLabelText(/email/i);
   const passwordInput = getByLabelText(/password/i);
-  const submitButton = getByRole('button', { name: /Sign in/i });
+  const submitButton = getByTestId(document.body, 'login-button');
 
   await userEvent.type(emailInput, 'test@test.com');
   await userEvent.type(passwordInput, 'password');
@@ -165,7 +165,7 @@ test('calls loginUser.mutate on login', async () => {
 });
 
 test('Navigates to / on successful login', async () => {
-  const { getByLabelText, getByRole, history } = setup({
+  const { getByLabelText, history } = setup({
     // @ts-ignore - we don't need all parameters of the QueryObserverResult
     useLoginUserReturnValue: {
       isLoading: false,
@@ -185,7 +185,7 @@ test('Navigates to / on successful login', async () => {
 
   const emailInput = getByLabelText(/email/i);
   const passwordInput = getByLabelText(/password/i);
-  const submitButton = getByRole('button', { name: /Sign in/i });
+  const submitButton = getByTestId(document.body, 'login-button');
 
   await userEvent.type(emailInput, 'test@test.com');
   await userEvent.type(passwordInput, 'password');
