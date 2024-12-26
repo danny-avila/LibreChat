@@ -7,7 +7,7 @@ const {
   getResponseSender,
   validateVisionModel,
 } = require('librechat-data-provider');
-const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { encodeAndFormat } = require('~/server/services/Files/encode');
 const {
   truncateText,
   formatMessage,

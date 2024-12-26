@@ -27,7 +27,7 @@ const {
   titleInstruction,
   createContextHandlers,
 } = require('./prompts');
-const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { encodeAndFormat } = require('~/server/services/Files/encode');
 const Tokenizer = require('~/server/services/Tokenizer');
 const { spendTokens } = require('~/models/spendTokens');
 const { isEnabled, sleep } = require('~/server/utils');

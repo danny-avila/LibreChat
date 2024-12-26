@@ -31,7 +31,7 @@ const {
   formatContentStrings,
   createContextHandlers,
 } = require('~/app/clients/prompts');
-const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { encodeAndFormat } = require('~/server/services/Files/encode');
 const { getBufferString, HumanMessage } = require('@langchain/core/messages');
 const Tokenizer = require('~/server/services/Tokenizer');
 const { spendTokens } = require('~/models/spendTokens');
