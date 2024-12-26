@@ -60,7 +60,8 @@ async function encodeAndFormat(req, files, endpoint, mode) {
   for (let file of files) {
     const source = file.source ?? FileSources.local;
 
-    if (!file.height) {
+    if (source == FileSources.vectordb) {
+      // Do not try to base-64 encode the file if RAG needs to be performed
       promises.push([file, null]);
       continue;
     }

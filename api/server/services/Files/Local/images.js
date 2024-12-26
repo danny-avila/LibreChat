@@ -91,13 +91,11 @@ function encodeImage(imagePath) {
  * @returns {Promise<[MongoFile, string]>} - A promise that resolves to an array of results from updateFile and encodeImage.
  */
 async function prepareImagesLocal(req, file) {
-  const { publicPath, imageOutput } = req.app.locals.paths;
-  const userPath = path.join(imageOutput, req.user.id);
+  const { publicPath, root } = req.app.locals.paths;
 
-  if (!fs.existsSync(userPath)) {
-    fs.mkdirSync(userPath, { recursive: true });
-  }
-  const filepath = path.join(publicPath, file.filepath);
+  const startPath = file.width ? publicPath : root;
+
+  const filepath = path.join(startPath, file.filepath);
 
   const promises = [];
   promises.push(updateFile({ file_id: file.file_id }));
