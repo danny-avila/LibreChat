@@ -16,7 +16,7 @@ const {
   Constants,
   AuthKeys,
 } = require('librechat-data-provider');
-const { encodeAndFormat } = require('~/server/services/Files/images');
+const { encodeAndFormat } = require('~/server/services/Files/encode');
 const { getModelMaxTokens } = require('~/utils');
 const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
