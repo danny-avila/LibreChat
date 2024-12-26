@@ -7,10 +7,7 @@ const { getLogStores } = require('~/cache');
  */
 const getModelsConfig = async (req) => {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
-  let modelsConfig = await cache.get(CacheKeys.MODELS_CONFIG);
-  if (!modelsConfig) {
-    modelsConfig = await loadModels(req);
-  }
+  let modelsConfig = await loadModels(req);
 
   return modelsConfig;
 };
@@ -23,9 +20,9 @@ const getModelsConfig = async (req) => {
 async function loadModels(req) {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
   const cachedModelsConfig = await cache.get(CacheKeys.MODELS_CONFIG);
-  if (cachedModelsConfig) {
-    return cachedModelsConfig;
-  }
+  // if (cachedModelsConfig) {
+  //   return cachedModelsConfig;
+  // }
   const defaultModelsConfig = await loadDefaultModels(req);
   const customModelsConfig = await loadConfigModels(req);
 
