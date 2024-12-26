@@ -79,7 +79,7 @@ function initializeLLM(options) {
   }
 
   if (useNovita) {
-    configOptions.basePath = 'https://api.novita.ai/v3';
+    configOptions.basePath = 'https://api.novita.ai/v3/openai';
     configOptions.baseOptions = {
       headers: {
         'HTTP-Referer': 'https://librechat.ai',

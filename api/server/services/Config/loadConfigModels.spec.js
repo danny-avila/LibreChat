@@ -31,7 +31,7 @@ const exampleConfig = {
       {
         name: 'Novita',
         apiKey: '${MY_NOVITA_API_KEY}',
-        baseURL: 'https://api.novita.ai/v3',
+        baseURL: 'https://api.novita.ai/v3/openai',
         models: {
           default: ['gpt-3.5-turbo'],
           fetch: true,

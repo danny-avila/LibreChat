@@ -70,8 +70,8 @@ function getLLMConfig(apiKey, options = {}) {
         headers,
       ),
     };
-  } else if (useNovita || reverseProxyUrl === 'https://api.novita.ai/v3') {
-    configOptions.basePath = 'https://api.novita.ai/v3';
+  } else if (useNovita || reverseProxyUrl === 'https://api.novita.ai/v3/openai') {
+    configOptions.basePath = 'https://api.novita.ai/v3/openai';
     configOptions.baseOptions = {
       headers: Object.assign(
         {

@@ -132,7 +132,7 @@ const fetchOpenAIModels = async (opts, _models = []) => {
     reverseProxyUrl = 'https://openrouter.ai/api/v1';
     apiKey = process.env.OPENROUTER_API_KEY;
   } else if (process.env.NOVITA_API_KEY) {
-    reverseProxyUrl = 'https://api.novita.ai/v3';
+    reverseProxyUrl = 'https://api.novita.ai/v3/openai';
     apiKey = process.env.NOVITA_API_KEY;
   }
 
