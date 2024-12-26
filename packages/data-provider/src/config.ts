@@ -14,6 +14,7 @@ export const defaultRetrievalModels = [
   'gpt-4o',
   'o1-preview-2024-09-12',
   'o1-preview',
+  'o1',
   'o1-mini-2024-09-12',
   'o1-mini',
   'chatgpt-4o-latest',
