@@ -20,7 +20,6 @@ const { createLLM } = require('~/app/clients/llm');
  * @param {string} options.user - The user identifier.
  * @param {string} options.langchainProxy - The langchain proxy URL.
  * @param {boolean} options.useOpenRouter - Whether to use OpenRouter.
- * @param {boolean} options.useNovita - Whether to use Novita.
  * @param {Object} options.options - Additional options.
  * @param {Object} options.options.headers - Custom headers for the request.
  * @param {string} options.options.proxy - Proxy URL.
@@ -44,7 +43,6 @@ function initializeLLM(options) {
     user,
     langchainProxy,
     useOpenRouter,
-    useNovita,
     options: { headers, proxy },
     apiKey,
     azure,
@@ -70,16 +68,6 @@ function initializeLLM(options) {
 
   if (useOpenRouter) {
     configOptions.basePath = 'https://openrouter.ai/api/v1';
-    configOptions.baseOptions = {
-      headers: {
-        'HTTP-Referer': 'https://librechat.ai',
-        'X-Title': 'LibreChat',
-      },
-    };
-  }
-
-  if (useNovita) {
-    configOptions.basePath = 'https://api.novita.ai/v3/openai';
     configOptions.baseOptions = {
       headers: {
         'HTTP-Referer': 'https://librechat.ai',

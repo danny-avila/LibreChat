@@ -29,7 +29,7 @@ const exampleConfig = {
         dropParams: ['stop'],
       },
       {
-        name: 'Novita',
+        name: 'NovitaAI',
         apiKey: '${MY_NOVITA_API_KEY}',
         baseURL: 'https://api.novita.ai/v3/openai',
         models: {
@@ -235,7 +235,7 @@ describe('loadConfigModels', () => {
           ]);
         case 'OpenRouter':
           return Promise.resolve(['gpt-3.5-turbo']);
-        case 'Novita':
+        case 'NovitaAI':
           return Promise.resolve(['meta-llama/llama-3.3-70b-instruct']);
         default:
           return Promise.resolve([]);
@@ -273,7 +273,6 @@ describe('loadConfigModels', () => {
         apiKey: process.env.MY_NOVITA_API_KEY,
       }),
     );
-
     // For groq and ollama, since the apiKey is "user_provided", models should not be fetched
     // Depending on your implementation's behavior regarding "default" models without fetching,
     // you may need to adjust the following assertions:

@@ -47,7 +47,7 @@
   - [Custom Endpoints](https://www.librechat.ai/docs/quick_start/custom_endpoints): Use any OpenAI-compatible API with LibreChat, no proxy required
   - Compatible with [Local & Remote AI Providers](https://www.librechat.ai/docs/configuration/librechat_yaml/ai_endpoints):
     - Ollama, groq, Cohere, Mistral AI, Apple MLX, koboldcpp, together.ai,
-    - OpenRouter, [Novita](https://novita.ai/llm-api?utm_source=github_librecha&utm_medium=github_readme&utm_campaign=link), Perplexity, ShuttleAI, Deepseek, Qwen, and more
+    - OpenRouter, [NovitaAI](https://novita.ai/llm-api?utm_source=github_librecha&utm_medium=github_readme&utm_campaign=github_link), Perplexity, ShuttleAI, Deepseek, Qwen, and more
 
 - 🔧 **[Code Interpreter API](https://www.librechat.ai/docs/features/code_interpreter)**: 
   - Secure, Sandboxed Execution in Python, Node.js (JS/TS), Go, C/C++, Java, PHP, Rust, and Fortran

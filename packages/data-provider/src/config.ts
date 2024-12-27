@@ -535,7 +535,7 @@ export enum KnownEndpoints {
   mlx = 'mlx',
   ollama = 'ollama',
   openrouter = 'openrouter',
-  novita = 'novita',
+  novitaai = 'novitaai',
   perplexity = 'perplexity',
   shuttleai = 'shuttleai',
   'together.ai' = 'together.ai',
@@ -545,7 +545,6 @@ export enum KnownEndpoints {
 
 export enum FetchTokenConfig {
   openrouter = KnownEndpoints.openrouter,
-  novita = KnownEndpoints.novita,
 }
 
 export const defaultEndpoints: EModelEndpoint[] = [

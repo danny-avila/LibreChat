@@ -168,7 +168,7 @@ class ChatGPTClient extends BaseClient {
       modelOptions.prompt = input;
     }
 
-    if ((this.useOpenRouter || this.useNovita) && modelOptions.prompt) {
+    if (this.useOpenRouter && modelOptions.prompt) {
       delete modelOptions.stop;
     }
 
@@ -271,10 +271,6 @@ class ChatGPTClient extends BaseClient {
     }
 
     if (this.useOpenRouter) {
-      opts.headers['HTTP-Referer'] = 'https://librechat.ai';
-      opts.headers['X-Title'] = 'LibreChat';
-    }
-    if (this.useNovita) {
       opts.headers['HTTP-Referer'] = 'https://librechat.ai';
       opts.headers['X-Title'] = 'LibreChat';
     }

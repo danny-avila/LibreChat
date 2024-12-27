@@ -15,7 +15,7 @@ const knownEndpointAssets = {
   [KnownEndpoints.mlx]: '/assets/mlx.png',
   [KnownEndpoints.ollama]: '/assets/ollama.png',
   [KnownEndpoints.openrouter]: '/assets/openrouter.png',
-  [KnownEndpoints.novita]: '/assets/novita.png',
+  [KnownEndpoints.novitaai]: '/assets/novita.png',
   [KnownEndpoints.perplexity]: '/assets/perplexity.png',
   [KnownEndpoints.shuttleai]: '/assets/shuttleai.png',
   [KnownEndpoints['together.ai']]: '/assets/together.png',
@@ -44,7 +44,7 @@ const getKnownClass = ({
   context?: string;
   className: string;
 }) => {
-  if (currentEndpoint === KnownEndpoints.openrouter || currentEndpoint === KnownEndpoints.novita) {
+  if (currentEndpoint === KnownEndpoints.openrouter || currentEndpoint === KnownEndpoints.novitaai) {
     return className;
   }
 
@@ -65,6 +65,7 @@ export default function UnknownIcon({
   endpoint?: EModelEndpoint | string | null;
   context?: 'landing' | 'menu-item' | 'nav' | 'message';
 }) {
+  debugger
   const endpoint = _endpoint ?? '';
   if (!endpoint) {
     return <CustomMinimalIcon className={className} />;
