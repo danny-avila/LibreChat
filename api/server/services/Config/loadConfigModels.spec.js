@@ -219,7 +219,7 @@ describe('loadConfigModels', () => {
     process.env.MY_PRECIOUS_MISTRAL_KEY = 'actual_mistral_api_key';
     process.env.MY_OPENROUTER_API_KEY = 'actual_openrouter_api_key';
     process.env.MY_NOVITA_API_KEY = 'actual_novita_api_key';
-    // Setup custom configuration with specific API keys for Mistral, OpenRouter and Novita
+    // Setup custom configuration with specific API keys for Mistral, OpenRouter and Novita AI
     // and "user_provided" for groq and Ollama, indicating no fetch for the latter two
     getCustomConfig.mockResolvedValue(exampleConfig);
 
