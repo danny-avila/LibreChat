@@ -131,9 +131,6 @@ const fetchOpenAIModels = async (opts, _models = []) => {
   } else if (process.env.OPENROUTER_API_KEY) {
     reverseProxyUrl = 'https://openrouter.ai/api/v1';
     apiKey = process.env.OPENROUTER_API_KEY;
-  } else if (process.env.NOVITA_API_KEY) {
-    reverseProxyUrl = 'https://api.novita.ai/v3/openai';
-    apiKey = process.env.NOVITA_API_KEY;
   }
 
   if (reverseProxyUrl) {
@@ -219,7 +216,7 @@ const getOpenAIModels = async (opts) => {
     return models;
   }
 
-  if (userProvidedOpenAI && !process.env.OPENROUTER_API_KEY && !process.env.NOVITA_API_KEY) {
+  if (userProvidedOpenAI && !process.env.OPENROUTER_API_KEY) {
     return models;
   }
 
