@@ -223,7 +223,7 @@ describe('loadConfigModels', () => {
     // and "user_provided" for groq and Ollama, indicating no fetch for the latter two
     getCustomConfig.mockResolvedValue(exampleConfig);
 
-    // Assuming fetchModels would be called only for Mistral, OpenRouter and Novita
+    // Assuming fetchModels would be called only for Mistral, OpenRouter and NovitaAI
     fetchModels.mockImplementation(({ name }) => {
       switch (name) {
         case 'Mistral':
@@ -244,7 +244,7 @@ describe('loadConfigModels', () => {
 
     const result = await loadConfigModels(mockRequest);
 
-    // Since fetch is true and apiKey is not "user_provided", fetching occurs for Mistral, OpenRouter and Novita
+    // Since fetch is true and apiKey is not "user_provided", fetching occurs for Mistral, OpenRouter and NovitaAI
     expect(result.Mistral).toEqual([
       'mistral-tiny',
       'mistral-small',
@@ -266,10 +266,10 @@ describe('loadConfigModels', () => {
       }),
     );
 
-    expect(result.Novita).toEqual(['meta-llama/llama-3.3-70b-instruct']);
+    expect(result.NovitaAI).toEqual(['meta-llama/llama-3.3-70b-instruct']);
     expect(fetchModels).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: 'Novita',
+        name: 'NovitaAI',
         apiKey: process.env.MY_NOVITA_API_KEY,
       }),
     );

@@ -596,7 +596,7 @@ describe('OpenAIClient', () => {
     afterEach(() => {
       delete process.env.AZURE_OPENAI_DEFAULT_MODEL;
       delete process.env.AZURE_USE_MODEL_AS_DEPLOYMENT_NAME;
-      delete process.env.OPENROUTER_API_KEY;      
+      delete process.env.OPENROUTER_API_KEY;
     });
 
     it('should call getCompletion and fetchEventSource when using a text/instruct model', async () => {

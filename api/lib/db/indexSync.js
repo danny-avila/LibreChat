@@ -30,24 +30,17 @@ async function indexSync(req, res, next) {
   }
 
   try {
-    logger.info("err 1");
     const client = MeiliSearchClient.getInstance();
-    logger.info("err 2");
 
     const { status } = await client.health();
-    logger.info("err 3");
     if (status !== 'available' || !process.env.SEARCH) {
       throw new Error('Meilisearch not available');
     }
 
     const messageCount = await Message.countDocuments();
-    logger.info("err 4");
     const convoCount = await Conversation.countDocuments();
-    logger.info("err 5");
     const messages = await client.index('messages').getStats();
-    logger.info("err 6");
     const convos = await client.index('convos').getStats();
-    logger.info("err 7");
     const messagesIndexed = messages.numberOfDocuments;
     const convosIndexed = convos.numberOfDocuments;
 
@@ -64,7 +57,6 @@ async function indexSync(req, res, next) {
       Conversation.syncWithMeili();
     }
   } catch (err) {
-    logger.info("err:", err);
     if (err.message.includes('not found')) {
       logger.debug('[indexSync] Creating indices...');
       currentTimeout = setTimeout(async () => {
