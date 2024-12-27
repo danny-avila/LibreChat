@@ -65,7 +65,6 @@ export default function UnknownIcon({
   endpoint?: EModelEndpoint | string | null;
   context?: 'landing' | 'menu-item' | 'nav' | 'message';
 }) {
-  debugger
   const endpoint = _endpoint ?? '';
   if (!endpoint) {
     return <CustomMinimalIcon className={className} />;

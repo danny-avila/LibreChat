@@ -75,7 +75,7 @@ export const convoData: ConversationData = {
             '55bec2e67cb605e374190490',
             '55bec2e77cb605e3741907df',
           ],
-          model: 'meta-llama/llama-3-70b-instruct',
+          model: 'meta-llama/llama-3.3-70b-instruct',
           presence_penalty: 0,
           promptPrefix: null,
           resendFiles: false,

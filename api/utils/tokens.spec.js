@@ -20,8 +20,8 @@ describe('getModelMaxTokens', () => {
     );
   });
   test('should return correct tokens for partial match (NovitaAI)', () => {
-    expect(getModelMaxTokens('meta-llama/llama-3-70b-instruct')).toBe(
-      maxTokensMap[EModelEndpoint.openAI]['meta-llama/llama-3-70b-instruct'],
+    expect(getModelMaxTokens('meta-llama/llama-3.3-70b-instruct')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['meta-llama/llama-3.3-70b-instruct'],
     );
   });
 
