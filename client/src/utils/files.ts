@@ -114,7 +114,21 @@ export const getFileType = (
  * @example
  * formatDate('2020-01-01T00:00:00.000Z') // '1 Jan 2020'
  */
-export function formatDate(dateString: string) {
+export function formatDate(dateString: string, isSmallScreen = false) {
+  if (!dateString) {
+    return '';
+  }
+
+  const date = new Date(dateString);
+
+  if (isSmallScreen) {
+    return date.toLocaleDateString('en-US', {
+      month: 'numeric',
+      day: 'numeric',
+      year: '2-digit',
+    });
+  }
+
   const months = [
     'Jan',
     'Feb',
@@ -129,7 +143,6 @@ export function formatDate(dateString: string) {
     'Nov',
     'Dec',
   ];
-  const date = new Date(dateString);
 
   const day = date.getDate();
   const month = months[date.getMonth()];
