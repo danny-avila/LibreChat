@@ -638,7 +638,7 @@ ${botMessage.message}
         };
       }
 
-      const files = await this.addImageURLs(lastMessage, attachments);
+      const files = await this.addFileURLs(lastMessage, attachments);
       this.options.attachments = files;
 
       this.contextHandlers = createContextHandlers(this.options.req, lastMessage.text);
