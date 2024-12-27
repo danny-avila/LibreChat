@@ -142,7 +142,7 @@ const AdminSettings = () => {
         <Button
           size={'sm'}
           variant={'outline'}
-          className="btn btn-neutral border-token-border-light relative my-1 h-9 w-full gap-1 rounded-lg font-medium"
+          className="btn btn-neutral border-token-border-light relative mb-4 h-9 w-full gap-1 rounded-lg font-medium"
         >
           <ShieldEllipsis className="cursor-pointer" />
           {localize('com_ui_admin_settings')}
@@ -166,8 +166,7 @@ const AdminSettings = () => {
                 </Ariakit.MenuButton>
               }
               items={roleDropdownItems}
-              className="border border-border-light bg-surface-primary"
-              itemClassName="hover:bg-surface-tertiary items-center justify-center"
+              itemClassName="items-center justify-center"
               sameWidth={true}
             />
           </div>

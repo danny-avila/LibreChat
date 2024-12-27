@@ -59,6 +59,7 @@
     - No-Code Custom Assistants: Build specialized, AI-driven helpers without coding  
     - Flexible & Extensible: Attach tools like DALL-E-3, file search, code execution, and more  
     - Compatible with Custom Endpoints, OpenAI, Azure, Anthropic, AWS Bedrock, and more
+    - [Model Context Protocol (MCP) Support](https://modelcontextprotocol.io/clients#librechat) for Tools
   - Use LibreChat Agents and OpenAI Assistants with Files, Code Interpreter, Tools, and API Actions
 
 - 🪄 **Generative UI with Code Artifacts**:  
@@ -81,9 +82,6 @@
 - 🎨 **Customizable Interface**:  
   - Customizable Dropdown & Interface that adapts to both power users and newcomers
 
-- 📧 **Secure Access**:  
-  - Verify your email to ensure secure access
-
 - 🗣️ **Speech & Audio**:  
   - Chat hands-free with Speech-to-Text and Text-to-Speech  
   - Automatically send and play Audio  
@@ -96,8 +94,8 @@
 - 🔍 **Search & Discovery**:  
   - Search all messages/conversations
 
-- 👥 **Multi-User & Secure**:
-  - Multi-User, Secure Authentication with OAuth2 & Email Login Support
+- 👥 **Multi-User & Secure Access**:
+  - Multi-User, Secure Authentication with OAuth2, LDAP, & Email Login Support
   - Built-in Moderation, and Token spend tools
 
 - ⚙️ **Configuration & Deployment**:  
@@ -116,7 +114,8 @@ LibreChat brings together the future of assistant AIs with the revolutionary tec
 
 With LibreChat, you no longer need to opt for ChatGPT Plus and can instead use free or pay-per-call APIs. We welcome contributions, cloning, and forking to enhance the capabilities of this advanced chatbot platform.
 
-[![Watch the video](https://raw.githubusercontent.com/LibreChat-AI/librechat.ai/main/public/images/changelog/v0.7.5.png)](https://www.youtube.com/watch?v=IDukQ7a2f3U)
+[![Watch the video](https://raw.githubusercontent.com/LibreChat-AI/librechat.ai/main/public/images/changelog/v0.7.6.gif)](https://www.youtube.com/watch?v=ilfwGQtJNlI)
+
 Click on the thumbnail to open the video☝️
 
 ---

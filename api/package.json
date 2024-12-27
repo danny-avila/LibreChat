@@ -1,6 +1,6 @@
 {
   "name": "@librechat/backend",
-  "version": "v0.7.5",
+  "version": "v0.7.6",
   "description": "",
   "scripts": {
     "start": "echo 'please run this from the root directory'",
@@ -42,9 +42,9 @@
     "@langchain/community": "^0.3.14",
     "@langchain/core": "^0.3.18",
     "@langchain/google-genai": "^0.1.4",
-    "@langchain/google-vertexai": "^0.1.2",
+    "@langchain/google-vertexai": "^0.1.4",
     "@langchain/textsplitters": "^0.1.0",
-    "@librechat/agents": "^1.8.5",
+    "@librechat/agents": "^1.8.8",
     "axios": "^1.7.7",
     "bcryptjs": "^2.4.3",
     "cheerio": "^1.0.0-rc.12",
@@ -73,6 +73,7 @@
     "klona": "^2.0.6",
     "langchain": "^0.2.19",
     "librechat-data-provider": "*",
+    "librechat-mcp": "*",
     "lodash": "^4.17.21",
     "meilisearch": "^0.38.0",
     "mime": "^3.0.0",

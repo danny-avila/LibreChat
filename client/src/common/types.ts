@@ -177,10 +177,10 @@ export type AgentPanelProps = {
 };
 
 export type AgentModelPanelProps = {
-  setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
-  providers: Option[];
-  models: Record<string, string[]>;
   agent_id?: string;
+  providers: Option[];
+  models: Record<string, string[] | undefined>;
+  setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
 };
 
 export type AugmentedColumnDef<TData, TValue> = ColumnDef<TData, TValue> & DataColumnMeta;
@@ -464,6 +464,7 @@ export interface ExtendedFile {
   source?: FileSources;
   attached?: boolean;
   embedded?: boolean;
+  tool_resource?: string;
 }
 
 export type ContextType = { navVisible: boolean; setNavVisible: (visible: boolean) => void };
