@@ -109,10 +109,11 @@ class OpenAIClient extends BaseClient {
 
     this.isO1Model = /\bo1\b/i.test(this.modelOptions.model);
     const { OPENROUTER_API_KEY, NOVITA_API_KEY, OPENAI_FORCE_PROMPT } = process.env ?? {};
-    if (OPENROUTER_API_KEY && !this.azure) {
+    if (OPENROUTER_API_KEY && !this.azure && options && options.endpoint === "OpenRouter") {
       this.apiKey = OPENROUTER_API_KEY;
       this.useOpenRouter = true;
-    } else if (NOVITA_API_KEY && !this.azure) {
+    }
+    if (NOVITA_API_KEY && !this.azure && options && options.endpoint === "Novita") {
       this.apiKey = NOVITA_API_KEY;
       this.useNovita = true;
     }

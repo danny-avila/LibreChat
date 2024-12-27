@@ -33,7 +33,7 @@ const exampleConfig = {
         apiKey: '${MY_NOVITA_API_KEY}',
         baseURL: 'https://api.novita.ai/v3/openai',
         models: {
-          default: ['gpt-3.5-turbo'],
+          default: ['meta-llama/llama-3.3-70b-instruct'],
           fetch: true,
         },
         dropParams: ['stop'],
@@ -236,7 +236,7 @@ describe('loadConfigModels', () => {
         case 'OpenRouter':
           return Promise.resolve(['gpt-3.5-turbo']);
         case 'Novita':
-          return Promise.resolve(['llama-3-70b-instruct']);
+          return Promise.resolve(['meta-llama/llama-3.3-70b-instruct']);
         default:
           return Promise.resolve([]);
       }
@@ -266,7 +266,7 @@ describe('loadConfigModels', () => {
       }),
     );
 
-    expect(result.Novita).toEqual(['llama-3-70b-instruct']);
+    expect(result.Novita).toEqual(['meta-llama/llama-3.3-70b-instruct']);
     expect(fetchModels).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'Novita',
