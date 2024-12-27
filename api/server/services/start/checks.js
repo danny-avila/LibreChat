@@ -51,14 +51,6 @@ function checkVariables() {
     );
   }
 
-  if (process.env.NOVITA_API_KEY) {
-    logger.warn(
-      `The \`NOVITA_API_KEY\` environment variable is deprecated and its functionality will be removed soon.
-      Use of this environment variable is highly discouraged as it can lead to unexpected errors when using custom endpoints.
-      Please use the config (\`librechat.yaml\`) file for setting up Novita, and use \`NOVITA_API_KEY\` or another environment variable instead.`,
-    );
-  }
-
   checkPasswordReset();
 }
 
