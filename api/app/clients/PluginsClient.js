@@ -256,15 +256,17 @@ class PluginsClient extends OpenAIClient {
     }
 
     this.responsePromise = this.saveMessageToDatabase(responseMessage, saveOptions, user);
-    const messageCache = getLogStores(CacheKeys.MESSAGES);
-    messageCache.set(
-      responseMessage.messageId,
-      {
-        text: responseMessage.text,
-        complete: true,
-      },
-      Time.FIVE_MINUTES,
-    );
+    if (responseMessage.text) {
+      const messageCache = getLogStores(CacheKeys.MESSAGES);
+      messageCache.set(
+        responseMessage.messageId,
+        {
+          text: responseMessage.text,
+          complete: true,
+        },
+        Time.FIVE_MINUTES,
+      );
+    }
     delete responseMessage.tokenCount;
     return { ...responseMessage, ...result };
   }
