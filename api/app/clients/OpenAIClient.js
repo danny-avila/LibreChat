@@ -448,7 +448,7 @@ class OpenAIClient extends BaseClient {
    * @param {MongoFile[]} files
    * @returns {Promise<MongoFile[]>}
    */
-  async addImageURLs(message, attachments) {
+  async addFileURLs(message, attachments) {
     const { files, image_urls } = await encodeAndFormat(
       this.options.req,
       attachments,
@@ -497,7 +497,7 @@ class OpenAIClient extends BaseClient {
         };
       }
 
-      const files = await this.addImageURLs(
+      const files = await this.addFileURLs(
         orderedMessages[orderedMessages.length - 1],
         attachments,
       );

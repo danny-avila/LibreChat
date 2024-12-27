@@ -1013,7 +1013,7 @@ class BaseClient {
         file_id: { $in: fileIds },
       });
 
-      await this.addImageURLs(message, files);
+      await this.addFileURLs(message, files);
 
       this.message_file_map[message.messageId] = files;
       return message;

@@ -261,7 +261,7 @@ class GoogleClient extends BaseClient {
     const formattedMessages = [];
     const attachments = await this.options.attachments;
     const latestMessage = { ...messages[messages.length - 1] };
-    const files = await this.addImageURLs(latestMessage, attachments, VisionModes.generative);
+    const files = await this.addFileURLs(latestMessage, attachments, VisionModes.generative);
     this.options.attachments = files;
     messages[messages.length - 1] = latestMessage;
 
@@ -288,13 +288,13 @@ class GoogleClient extends BaseClient {
 
   /**
    *
-   * Adds image URLs to the message object and returns the files
+   * Adds file URLs to the message object and returns the files
    *
    * @param {TMessage[]} messages
    * @param {MongoFile[]} files
    * @returns {Promise<MongoFile[]>}
    */
-  async addImageURLs(message, attachments, mode = '') {
+  async addFileURLs(message, attachments, mode = '') {
     const { files, image_urls } = await encodeAndFormat(
       this.options.req,
       attachments,
@@ -335,7 +335,7 @@ class GoogleClient extends BaseClient {
 
     const { prompt } = await this.buildMessagesPrompt(messages, parentMessageId);
 
-    const files = await this.addImageURLs(latestMessage, attachments);
+    const files = await this.addFileURLs(latestMessage, attachments);
 
     this.options.attachments = files;
 
