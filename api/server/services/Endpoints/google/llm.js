@@ -123,6 +123,10 @@ function getLLMConfig(credentials, options = {}) {
   }
 
   if (authHeader) {
+    /**
+     * NOTE: NOT SUPPORTED BY LANGCHAIN GENAI CLIENT,
+     * REQUIRES PR IN https://github.com/langchain-ai/langchainjs
+     */
     llmConfig.customHeaders = {
       Authorization: `Bearer ${apiKey}`,
     };
