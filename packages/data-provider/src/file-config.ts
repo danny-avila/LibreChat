@@ -115,6 +115,10 @@ export const textMimeTypes =
 export const applicationMimeTypes =
   /^(application\/(epub\+zip|csv|json|pdf|x-tar|typescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|xml|zip))$/;
 
+export const pdfMimeType = /^(application\/(pdf))$/;
+
+export const audioMimeTypes = /^(audio\/(wav|mp3|aiff|aac|ogg|flac|mpeg))$/;
+
 export const imageMimeTypes = /^image\/(jpeg|gif|png|webp)$/;
 
 export const supportedMimeTypes = [
@@ -130,6 +134,10 @@ export const codeInterpreterMimeTypes = [
   applicationMimeTypes,
   imageMimeTypes,
 ];
+
+export const googleMimeTypes = [textMimeTypes, pdfMimeType, imageMimeTypes, audioMimeTypes];
+
+export const anthropicMimeTypes = [pdfMimeType, imageMimeTypes];
 
 export const codeTypeMapping: { [key: string]: string } = {
   c: 'text/x-c',
@@ -165,11 +173,29 @@ const assistantsFileConfig = {
   disabled: false,
 };
 
+const googleFileConfig = {
+  fileLimit: 10,
+  fileSizeLimit: mbToBytes(20), // Limit for inline files
+  totalSizeLimit: mbToBytes(20),
+  supportedMimeTypes: googleMimeTypes,
+  disabled: false,
+};
+
+const anthropicFileConfig = {
+  fileLimit: 10,
+  fileSizeLimit: mbToBytes(20), // Limit for inline files
+  totalSizeLimit: mbToBytes(20),
+  supportedMimeTypes: anthropicMimeTypes,
+  disabled: false,
+};
+
 export const fileConfig = {
   endpoints: {
     [EModelEndpoint.assistants]: assistantsFileConfig,
     [EModelEndpoint.azureAssistants]: assistantsFileConfig,
     [EModelEndpoint.agents]: assistantsFileConfig,
+    [EModelEndpoint.google]: googleFileConfig,
+    [EModelEndpoint.anthropic]: anthropicFileConfig,
     default: {
       fileLimit: 10,
       fileSizeLimit: defaultSizeLimit,
