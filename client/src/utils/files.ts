@@ -45,6 +45,7 @@ export const fileTypes = {
 
   /* Partial matches */
   csv: spreadsheet,
+  'application/pdf': textDocument,
   pdf: textDocument,
   'text/x-': codeFile,
   artifact: artifact,
