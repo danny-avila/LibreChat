@@ -112,13 +112,13 @@ const ImagePreview = ({
   return (
     <>
       <div
-        className={cn('relative size-14 rounded-lg', className)}
+        className={cn('relative size-14 rounded-xl', className)}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
         <button
           type="button"
-          className="size-full overflow-hidden rounded-lg"
+          className="size-full overflow-hidden rounded-xl"
           style={style}
           aria-label={`View ${alt} in full size`}
           aria-haspopup="dialog"
@@ -138,7 +138,7 @@ const ImagePreview = ({
         ) : (
           <div
             className={cn(
-              'absolute inset-0 flex transform-gpu cursor-pointer items-center justify-center rounded-lg transition-opacity duration-200 ease-in-out',
+              'absolute inset-0 flex transform-gpu cursor-pointer items-center justify-center rounded-xl transition-opacity duration-200 ease-in-out',
               isHovered ? 'bg-black/20 opacity-100' : 'opacity-0',
             )}
             onClick={(e) => {
