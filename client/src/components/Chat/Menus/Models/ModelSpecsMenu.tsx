@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
+import { useMemo, useCallback, useRef } from 'react';
 import { Content, Portal, Root } from '@radix-ui/react-popover';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import { EModelEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TModelSpec, TConversation, TEndpointsConfig } from 'librechat-data-provider';
+import type { KeyboardEvent } from 'react';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
 import { useDefaultConvo, useNewConvo, useLocalize } from '~/hooks';
 import { getConvoSwitchLogic, getModelSpecIconURL } from '~/utils';
@@ -88,6 +89,39 @@ export default function ModelSpecsMenu({ modelSpecs }: { modelSpecs?: TModelSpec
     return spec;
   }, [modelSpecs, conversation?.spec]);
 
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const handleKeyDown = useCallback((event: KeyboardEvent) => {
+    const menuItems = menuRef.current?.querySelectorAll('[role="option"]');
+    if (!menuItems) {
+      return;
+    }
+    if (!menuItems.length) {
+      return;
+    }
+
+    const currentIndex = Array.from(menuItems).findIndex((item) => item === document.activeElement);
+
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault();
+        if (currentIndex < menuItems.length - 1) {
+          (menuItems[currentIndex + 1] as HTMLElement).focus();
+        } else {
+          (menuItems[0] as HTMLElement).focus();
+        }
+        break;
+      case 'ArrowUp':
+        event.preventDefault();
+        if (currentIndex > 0) {
+          (menuItems[currentIndex - 1] as HTMLElement).focus();
+        } else {
+          (menuItems[menuItems.length - 1] as HTMLElement).focus();
+        }
+        break;
+    }
+  }, []);
+
   return (
     <Root>
       <MenuButton
@@ -114,6 +148,8 @@ export default function ModelSpecsMenu({ modelSpecs }: { modelSpecs?: TModelSpec
               align="start"
               id="llm-menu"
               role="listbox"
+              ref={menuRef}
+              onKeyDown={handleKeyDown}
               aria-label={localize('com_ui_llms_available')}
               className="models-scrollbar mt-2 max-h-[65vh] min-w-[340px] max-w-xs overflow-y-auto rounded-lg border border-gray-100 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-700 dark:text-white lg:max-h-[75vh]"
             >

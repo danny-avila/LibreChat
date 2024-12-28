@@ -48,10 +48,10 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                           }}
                         >
                           <link.icon className="h-4 w-4 text-text-secondary" />
-                          <span className="sr-only">{link.title}</span>
+                          <span className="sr-only">{localize(link.title)}</span>
                         </Button>
                       }
-                    ></TooltipAnchor>
+                    />
                   ) : (
                     <Accordion
                       key={index}
@@ -80,7 +80,7 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                                 <span
                                   className={cn(
                                     'ml-auto opacity-100 transition-all duration-300 ease-in-out',
-                                    variant === 'default' ? 'text-background dark:text-white' : '',
+                                    variant === 'default' ? 'text-text-primary' : '',
                                   )}
                                 >
                                   {link.label}
@@ -90,7 +90,7 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                           </AccordionPrimitive.Trigger>
                         </AccordionPrimitive.Header>
 
-                        <AccordionContent className="w-full dark:text-white">
+                        <AccordionContent className="w-full text-text-primary">
                           {link.Component && <link.Component />}
                         </AccordionContent>
                       </AccordionItem>
