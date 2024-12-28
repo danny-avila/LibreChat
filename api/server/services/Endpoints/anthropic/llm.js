@@ -39,20 +39,15 @@ function getLLMConfig(apiKey, options = {}) {
     stopSequences: mergedOptions.stop,
     maxTokens:
       mergedOptions.maxOutputTokens || anthropicSettings.maxOutputTokens.reset(mergedOptions.model),
+    clientOptions: {},
   };
 
-  /** @type {AnthropicClientOptions['clientOptions']} */
-  const clientOptions = {};
   if (options.proxy) {
-    clientOptions.httpAgent = new HttpsProxyAgent(options.proxy);
+    requestOptions.clientOptions.httpAgent = new HttpsProxyAgent(options.proxy);
   }
 
   if (options.reverseProxyUrl) {
-    clientOptions.baseURL = options.reverseProxyUrl;
-  }
-
-  if (Object.keys(clientOptions).length > 0) {
-    requestOptions.clientOptions = clientOptions;
+    requestOptions.clientOptions.baseURL = options.reverseProxyUrl;
   }
 
   return { llmConfig: removeNullishValues(requestOptions) };
