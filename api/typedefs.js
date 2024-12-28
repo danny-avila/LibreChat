@@ -39,6 +39,12 @@
  */
 
 /**
+ * @exports AnthropicClientOptions
+ * @typedef {import('@librechat/agents').AnthropicClientOptions} AnthropicClientOptions
+ * @memberof typedefs
+ */
+
+/**
  * @exports BedrockClientOptions
  * @typedef {import('@librechat/agents').BedrockConverseClientOptions} BedrockClientOptions
  * @memberof typedefs
