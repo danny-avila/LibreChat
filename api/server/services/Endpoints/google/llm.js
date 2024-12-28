@@ -35,15 +35,6 @@ function getSafetySettings() {
  *
  * @param {string | object} credentials - Either a JSON string or an object containing Google keys
  * @param {object} [options={}]         - The same shape as the "GoogleClient" constructor options
- * @returns {{
- *   provider: string,
- *   llmConfig: object,
- *   requestOptions: object|null,
- *   project_id: string|null,
- *   serviceKey: object|null,
- *   apiKey: string|null,
- *   safetySettings: object[]
- * }}
  */
 
 function getLLMConfig(credentials, options = {}) {
@@ -70,6 +61,7 @@ function getLLMConfig(credentials, options = {}) {
   const reverseProxyUrl = options.reverseProxyUrl;
   const authHeader = options.authHeader;
 
+  /** @type {GoogleClientOptions | VertexAIClientOptions} */
   let llmConfig = {
     ...(options.modelOptions || {}),
     safetySettings: getSafetySettings(),
@@ -96,6 +88,7 @@ function getLLMConfig(credentials, options = {}) {
 
   // If we have a GCP project => Vertex AI
   if (project_id && provider === Providers.VERTEXAI) {
+    /** @type {VertexAIClientOptions['authOptions']} */
     llmConfig.authOptions = {
       credentials: { ...serviceKey },
       projectId: project_id,
@@ -137,7 +130,9 @@ function getLLMConfig(credentials, options = {}) {
 
   // Return the final shape
   return {
+    /** @type {Providers.GOOGLE | Providers.VERTEXAI} */
     provider,
+    /** @type {GoogleClientOptions | VertexAIClientOptions} */
     llmConfig,
   };
 }

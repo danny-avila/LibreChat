@@ -50,7 +50,10 @@ function getLLMConfig(apiKey, options = {}) {
     requestOptions.clientOptions.baseURL = options.reverseProxyUrl;
   }
 
-  return { llmConfig: removeNullishValues(requestOptions) };
+  return {
+    /** @type {AnthropicClientOptions} */
+    llmConfig: removeNullishValues(requestOptions),
+  };
 }
 
 module.exports = { getLLMConfig };

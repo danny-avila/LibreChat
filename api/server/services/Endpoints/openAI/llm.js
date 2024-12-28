@@ -118,7 +118,12 @@ function getLLMConfig(apiKey, options = {}) {
     llmConfig.organization = process.env.OPENAI_ORGANIZATION;
   }
 
-  return { llmConfig, configOptions };
+  return {
+    /** @type {OpenAIClientOptions} */
+    llmConfig,
+    /** @type {OpenAIClientOptions['configuration']} */
+    configOptions,
+  };
 }
 
 module.exports = { getLLMConfig };

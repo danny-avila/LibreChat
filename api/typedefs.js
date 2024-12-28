@@ -57,6 +57,18 @@
  */
 
 /**
+ * @exports VertexAIClientOptions
+ * @typedef {import('@librechat/agents').VertexAIClientOptions} VertexAIClientOptions
+ * @memberof typedefs
+ */
+
+/**
+ * @exports GoogleClientOptions
+ * @typedef {import('@librechat/agents').GoogleClientOptions} GoogleClientOptions
+ * @memberof typedefs
+ */
+
+/**
  * @exports StreamEventData
  * @typedef {import('@librechat/agents').StreamEventData} StreamEventData
  * @memberof typedefs
