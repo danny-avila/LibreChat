@@ -39,6 +39,12 @@
  */
 
 /**
+ * @exports OpenAIClientOptions
+ * @typedef {import('@librechat/agents').OpenAIClientOptions} OpenAIClientOptions
+ * @memberof typedefs
+ */
+
+/**
  * @exports AnthropicClientOptions
  * @typedef {import('@librechat/agents').AnthropicClientOptions} AnthropicClientOptions
  * @memberof typedefs

@@ -38,6 +38,7 @@ function getLLMConfig(apiKey, options = {}) {
     dropParams,
   } = options;
 
+  /** @type {OpenAIClientOptions} */
   let llmConfig = {
     streaming,
   };
@@ -54,29 +55,28 @@ function getLLMConfig(apiKey, options = {}) {
     });
   }
 
+  /** @type {OpenAIClientOptions['configuration']} */
   const configOptions = {};
 
   // Handle OpenRouter or custom reverse proxy
   if (useOpenRouter || reverseProxyUrl === 'https://openrouter.ai/api/v1') {
-    configOptions.basePath = 'https://openrouter.ai/api/v1';
-    configOptions.baseOptions = {
-      headers: Object.assign(
-        {
-          'HTTP-Referer': 'https://librechat.ai',
-          'X-Title': 'LibreChat',
-        },
-        headers,
-      ),
-    };
+    configOptions.baseURL = 'https://openrouter.ai/api/v1';
+    configOptions.defaultHeaders = Object.assign(
+      {
+        'HTTP-Referer': 'https://librechat.ai',
+        'X-Title': 'LibreChat',
+      },
+      headers,
+    );
   } else if (reverseProxyUrl) {
-    configOptions.basePath = reverseProxyUrl;
+    configOptions.baseURL = reverseProxyUrl;
     if (headers) {
-      configOptions.baseOptions = { headers };
+      configOptions.defaultHeaders = headers;
     }
   }
 
   if (defaultQuery) {
-    configOptions.baseOptions.defaultQuery = defaultQuery;
+    configOptions.defaultQuery = defaultQuery;
   }
 
   if (proxy) {
@@ -97,9 +97,9 @@ function getLLMConfig(apiKey, options = {}) {
       llmConfig.model = process.env.AZURE_OPENAI_DEFAULT_MODEL;
     }
 
-    if (configOptions.basePath) {
+    if (configOptions.baseURL) {
       const azureURL = constructAzureURL({
-        baseURL: configOptions.basePath,
+        baseURL: configOptions.baseURL,
         azureOptions: azure,
       });
       azure.azureOpenAIBasePath = azureURL.split(`/${azure.azureOpenAIApiDeploymentName}`)[0];
