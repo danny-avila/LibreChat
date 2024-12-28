@@ -370,12 +370,12 @@ class OpenAIClient extends BaseClient {
    * @returns {Promise<MongoFile[]>}
    */
   async addFileURLs(message, attachments) {
-    const { files, image_urls } = await encodeAndFormat(
+    const { files, file_urls } = await encodeAndFormat(
       this.options.req,
       attachments,
       this.options.endpoint,
     );
-    message.image_urls = image_urls.length ? image_urls : undefined;
+    message.image_urls = file_urls.length ? file_urls : undefined;
     return files;
   }
 

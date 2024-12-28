@@ -257,17 +257,16 @@ class GoogleClient extends BaseClient {
     for (const _message of messages) {
       const role = _message.isCreatedByUser ? this.userLabel : this.modelLabel;
       const parts = [];
-      parts.push({ text: _message.text });
-      if (!_message.image_urls?.length) {
-        formattedMessages.push({ role, parts });
-        continue;
-      }
 
-      for (const images of _message.image_urls) {
-        if (images.inlineData) {
-          parts.push({ inlineData: images.inlineData });
+      if (_message.file_urls?.length) {
+        for (const fileParts of _message.file_urls) {
+          if (fileParts.inlineData) {
+            parts.push({ inlineData: fileParts.inlineData });
+          }
         }
       }
+
+      parts.push({ text: _message.text });
 
       formattedMessages.push({ role, parts });
     }
@@ -284,13 +283,13 @@ class GoogleClient extends BaseClient {
    * @returns {Promise<MongoFile[]>}
    */
   async addFileURLs(message, attachments, mode = '') {
-    const { files, image_urls } = await encodeAndFormat(
+    const { files, file_urls } = await encodeAndFormat(
       this.options.req,
       attachments,
       EModelEndpoint.google,
       mode,
     );
-    message.image_urls = image_urls.length ? image_urls : undefined;
+    message.file_urls = file_urls.length ? file_urls : undefined;
     return files;
   }
 
@@ -833,7 +832,7 @@ class GoogleClient extends BaseClient {
         text: `Please generate ${titleInstruction}
 
     ${convo}
-    
+
     ||>Title:`,
         isCreatedByUser: true,
         author: this.userLabel,

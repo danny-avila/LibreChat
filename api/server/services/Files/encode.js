@@ -50,7 +50,7 @@ async function encodeAndFormat(req, files, endpoint, mode) {
   const encodingMethods = {};
   const result = {
     files: [],
-    image_urls: [],
+    file_urls: [],
   };
 
   if (!files || !files.length) {
@@ -144,7 +144,7 @@ async function encodeAndFormat(req, files, endpoint, mode) {
     }
 
     // Add to the result arrays
-    result.image_urls.push(filePart);
+    result.file_urls.push(filePart);
     result.files.push(fileMetadata);
   }
   return result;
