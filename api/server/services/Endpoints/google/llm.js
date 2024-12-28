@@ -8,8 +8,7 @@ function getSafetySettings() {
   return [
     {
       category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-      threshold:
-        process.env.GOOGLE_SAFETY_SEXUALLY_EXPLICIT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+      threshold: process.env.GOOGLE_SAFETY_SEXUALLY_EXPLICIT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
     },
     {
       category: 'HARM_CATEGORY_HATE_SPEECH',
@@ -17,13 +16,11 @@ function getSafetySettings() {
     },
     {
       category: 'HARM_CATEGORY_HARASSMENT',
-      threshold:
-        process.env.GOOGLE_SAFETY_HARASSMENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+      threshold: process.env.GOOGLE_SAFETY_HARASSMENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
     },
     {
       category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
-      threshold:
-        process.env.GOOGLE_SAFETY_DANGEROUS_CONTENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+      threshold: process.env.GOOGLE_SAFETY_DANGEROUS_CONTENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
     },
     {
       category: 'HARM_CATEGORY_CIVIC_INTEGRITY',
@@ -97,19 +94,15 @@ function getLLMConfig(credentials, options = {}) {
     provider = Providers.GOOGLE;
   }
 
-  let authOptions = {};
-
   // If we have a GCP project => Vertex AI
   if (project_id && provider === Providers.VERTEXAI) {
-    authOptions = {
+    llmConfig.authOptions = {
       credentials: { ...serviceKey },
       projectId: project_id,
     };
   } else if (apiKey && provider === Providers.GOOGLE) {
-    authOptions = { apiKey };
+    llmConfig.apiKey = apiKey;
   }
-
-  llmConfig = { ...llmConfig, ...authOptions };
 
   /*
   let legacyOptions = {};
