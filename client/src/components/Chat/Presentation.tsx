@@ -98,7 +98,7 @@ export default function Presentation({
               ) : null
           }
         >
-          <main className="flex h-full flex-col" role="main">
+          <main className="flex h-full flex-col overflow-y-auto" role="main">
             {children}
           </main>
         </SidePanel>
