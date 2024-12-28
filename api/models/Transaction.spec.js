@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+const { Transaction } = require('./Transaction');
 const Balance = require('./Balance');
 const { spendTokens, spendStructuredTokens } = require('./spendTokens');
 const { getMultiplier, getCacheMultiplier } = require('./tx');
@@ -344,5 +345,30 @@ describe('Structured Token Spending Tests', () => {
     const result = await spendStructuredTokens(txData, tokenUsage);
 
     expect(result.completion.completion).toBeCloseTo(-50 * 15 * 1.15, 0); // Assuming multiplier is 15 and cancelRate is 1.15
+  });
+});
+
+describe('NaN Handling Tests', () => {
+  test('should skip transaction creation when rawAmount is NaN', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 10000000;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'gpt-3.5-turbo';
+    const txData = {
+      user: userId,
+      conversationId: 'test-conversation-id',
+      model,
+      context: 'test',
+      endpointTokenConfig: null,
+      rawAmount: NaN,
+      tokenType: 'prompt',
+    };
+
+    const result = await Transaction.create(txData);
+    expect(result).toBeUndefined();
+
+    const balance = await Balance.findOne({ user: userId });
+    expect(balance.tokenCredits).toBe(initialBalance);
   });
 });
