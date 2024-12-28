@@ -124,22 +124,20 @@ function getLLMConfig(credentials, options = {}) {
   }
   */
 
-  // 7. If using a reverse proxy, build requestOptions
-  let requestOptions = null;
   if (reverseProxyUrl) {
-    requestOptions = { baseUrl: reverseProxyUrl };
-    if (authHeader) {
-      requestOptions.customHeaders = {
-        Authorization: `Bearer ${apiKey}`,
-      };
-    }
+    llmConfig.baseUrl = reverseProxyUrl;
+  }
+
+  if (authHeader) {
+    llmConfig.customHeaders = {
+      Authorization: `Bearer ${apiKey}`,
+    };
   }
 
   // Return the final shape
   return {
     provider,
     llmConfig,
-    requestOptions,
   };
 }
 
