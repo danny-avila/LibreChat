@@ -346,9 +346,15 @@ class AnthropicClient extends BaseClient {
     if (this.options.attachments) {
       const attachments = await this.options.attachments;
       const images = attachments.filter((file) => file.type.includes('image'));
+      const documents = attachments.filter((file) => file.type == 'application/pdf');
 
       if (images.length && !this.isVisionModel) {
         throw new Error('Images are only supported with the Claude 3 family of models');
+      }
+      if (documents.length && !this.modelOptions.model.includes('3-5-sonnet')) {
+        throw new Error(
+          'PDF documents are only supported with the Claude 3.5 Sonnet family of models',
+        );
       }
 
       const latestMessage = orderedMessages[orderedMessages.length - 1];
@@ -399,10 +405,17 @@ class AnthropicClient extends BaseClient {
             continue;
           }
 
-          orderedMessages[i].tokenCount += this.calculateImageTokenCost({
-            width: file.width,
-            height: file.height,
-          });
+          if (file.type.includes('image')) {
+            orderedMessages[i].tokenCount += this.calculateImageTokenCost({
+              width: file.width,
+              height: file.height,
+            });
+          } else {
+            // File is a pdf.
+            // A reasonable estimate is 1500-3000 tokens per page
+            // without parsing the pdf to get the page count, assume it has one.
+            orderedMessages[i].tokenCount += 2000;
+          }
         }
       }
 

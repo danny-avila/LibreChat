@@ -129,7 +129,7 @@ async function encodeAndFormat(req, files, endpoint, mode) {
     } else if (validEndpoint && endpoint === EModelEndpoint.google) {
       filePart.image_url = dataURL;
     } else if (validEndpoint && endpoint === EModelEndpoint.anthropic) {
-      filePart.type = 'image';
+      filePart.type = file.type.includes('image') ? 'image' : 'document';
       filePart.source = {
         type: 'base64',
         media_type: file.type,
