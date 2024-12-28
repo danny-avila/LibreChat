@@ -649,15 +649,17 @@ class BaseClient {
 
     this.responsePromise = this.saveMessageToDatabase(responseMessage, saveOptions, user);
     this.savedMessageIds.add(responseMessage.messageId);
-    const messageCache = getLogStores(CacheKeys.MESSAGES);
-    messageCache.set(
-      responseMessageId,
-      {
-        text: responseMessage.text,
-        complete: true,
-      },
-      Time.FIVE_MINUTES,
-    );
+    if (responseMessage.text) {
+      const messageCache = getLogStores(CacheKeys.MESSAGES);
+      messageCache.set(
+        responseMessageId,
+        {
+          text: responseMessage.text,
+          complete: true,
+        },
+        Time.FIVE_MINUTES,
+      );
+    }
     delete responseMessage.tokenCount;
     return responseMessage;
   }

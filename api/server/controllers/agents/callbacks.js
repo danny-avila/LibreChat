@@ -1,8 +1,10 @@
 const { Tools, StepTypes, imageGenTools, FileContext } = require('librechat-data-provider');
 const {
   EnvVar,
+  Providers,
   GraphEvents,
   ToolEndHandler,
+  handleToolCalls,
   ChatModelStreamHandler,
 } = require('@librechat/agents');
 const { processCodeOutput } = require('~/server/services/Files/Code/process');
@@ -57,13 +59,22 @@ class ModelEndHandler {
       return;
     }
 
-    const usage = data?.output?.usage_metadata;
-    if (metadata?.model) {
-      usage.model = metadata.model;
-    }
+    try {
+      if (metadata.provider === Providers.GOOGLE) {
+        handleToolCalls(data?.output?.tool_calls, metadata, graph);
+      }
 
-    if (usage) {
+      const usage = data?.output?.usage_metadata;
+      if (!usage) {
+        return;
+      }
+      if (metadata?.model) {
+        usage.model = metadata.model;
+      }
+
       this.collectedUsage.push(usage);
+    } catch (error) {
+      logger.error('Error handling model end event:', error);
     }
   }
 }
