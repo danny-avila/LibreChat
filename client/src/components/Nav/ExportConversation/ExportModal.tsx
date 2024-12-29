@@ -10,11 +10,13 @@ export default function ExportModal({
   onOpenChange,
   conversation,
   triggerRef,
+  children,
 }: {
   open: boolean;
   conversation: TConversation | null;
   onOpenChange: (open: boolean) => void;
-  triggerRef: React.RefObject<HTMLButtonElement>;
+  triggerRef?: React.RefObject<HTMLButtonElement>;
+  children?: React.ReactNode;
 }) {
   const localize = useLocalize();
 
@@ -34,7 +36,7 @@ export default function ExportModal({
   ];
 
   useEffect(() => {
-    if (!open && triggerRef.current) {
+    if (!open && triggerRef && triggerRef.current) {
       triggerRef.current.focus();
     }
   }, [open, triggerRef]);
@@ -70,6 +72,7 @@ export default function ExportModal({
 
   return (
     <OGDialog open={open} onOpenChange={onOpenChange} triggerRef={triggerRef}>
+      {children}
       <OGDialogTemplate
         title={localize('com_nav_export_conversation')}
         className="max-w-full sm:max-w-2xl"

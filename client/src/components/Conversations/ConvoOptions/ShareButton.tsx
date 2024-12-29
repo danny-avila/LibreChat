@@ -14,11 +14,13 @@ export default function ShareButton({
   title,
   showShareDialog,
   setShowShareDialog,
+  children,
 }: {
   conversationId: string;
   title: string;
   showShareDialog: boolean;
   setShowShareDialog: (value: boolean) => void;
+  children?: React.ReactNode;
 }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -55,6 +57,10 @@ export default function ShareButton({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  if (!conversationId) {
+    return null;
+  }
+
   const buttons = share && (
     <SharedLinkButton
       share={share}
@@ -67,6 +73,7 @@ export default function ShareButton({
 
   return (
     <OGDialog open={showShareDialog} onOpenChange={setShowShareDialog}>
+      {children}
       <OGDialogTemplate
         buttons={buttons}
         showCloseButton={true}
@@ -87,7 +94,7 @@ export default function ShareButton({
                     : localize('com_ui_share_updated_message');
                 }
 
-                return share?.isPublic
+                return share?.isPublic === true
                   ? localize('com_ui_share_update_message')
                   : localize('com_ui_share_create_message');
               })()}

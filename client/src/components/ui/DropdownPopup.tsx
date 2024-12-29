@@ -1,18 +1,11 @@
 import React from 'react';
 import * as Ariakit from '@ariakit/react';
+import type * as t from '~/common';
 import { cn } from '~/utils';
 
 interface DropdownProps {
   trigger: React.ReactNode;
-  items: {
-    label?: string;
-    onClick?: (e: React.MouseEvent<HTMLButtonElement | HTMLDivElement>) => void;
-    icon?: React.ReactNode;
-    kbd?: string;
-    show?: boolean;
-    disabled?: boolean;
-    separate?: boolean;
-  }[];
+  items: t.MenuItemProps[];
   isOpen: boolean;
   setIsOpen: (isOpen: boolean) => void;
   className?: string;
@@ -52,10 +45,11 @@ const DropdownPopup: React.FC<DropdownProps> = ({
       >
         {items
           .filter((item) => item.show !== false)
-          .map((item, index) =>
-            item.separate === true ? (
-              <Ariakit.MenuSeparator key={index} className="my-1 h-px bg-white/10" />
-            ) : (
+          .map((item, index) => {
+            if (item.separate === true) {
+              return <Ariakit.MenuSeparator key={index} className="my-1 h-px bg-white/10" />;
+            }
+            return (
               <Ariakit.MenuItem
                 key={index}
                 className={cn(
@@ -63,10 +57,14 @@ const DropdownPopup: React.FC<DropdownProps> = ({
                   itemClassName,
                 )}
                 disabled={item.disabled}
+                hideOnClick={item.hideOnClick}
                 onClick={(event) => {
                   event.preventDefault();
                   if (item.onClick) {
                     item.onClick(event);
+                  }
+                  if (item.hideOnClick === false) {
+                    return;
                   }
                   menu.hide();
                 }}
@@ -83,8 +81,8 @@ const DropdownPopup: React.FC<DropdownProps> = ({
                   </kbd>
                 )}
               </Ariakit.MenuItem>
-            ),
-          )}
+            );
+          })}
       </Ariakit.Menu>
     </Ariakit.MenuProvider>
   );
