@@ -3,8 +3,8 @@ import { useRecoilValue } from 'recoil';
 import { CSSTransition } from 'react-transition-group';
 import type { ReactNode } from 'react';
 import type { TMessage } from 'librechat-data-provider';
+import { useScreenshot, useMessageScrolling, useLocalize } from '~/hooks';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
-import { useScreenshot, useMessageScrolling } from '~/hooks';
 import MultiMessage from './MultiMessage';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -16,6 +16,7 @@ export default function MessagesView({
   messagesTree?: TMessage[] | null;
   Header?: ReactNode;
 }) {
+  const localize = useLocalize();
   const fontSize = useRecoilValue(store.fontSize);
   const { screenshotTargetRef } = useScreenshot();
   const [currentEditId, setCurrentEditId] = useState<number | string | null>(-1);
@@ -47,11 +48,11 @@ export default function MessagesView({
             {(_messagesTree && _messagesTree.length == 0) || _messagesTree === null ? (
               <div
                 className={cn(
-                  'flex w-full items-center justify-center gap-1 bg-gray-50 p-3 text-gray-500 dark:border-gray-800/50 dark:bg-gray-800 dark:text-gray-300',
+                  'flex w-full items-center justify-center p-3 text-text-secondary',
                   fontSize,
                 )}
               >
-                Nothing found
+                {localize('com_ui_nothing_found')}
               </div>
             ) : (
               <>

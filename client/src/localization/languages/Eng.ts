@@ -763,6 +763,7 @@ export default {
   com_nav_theme_dark: 'Dark',
   com_nav_theme_light: 'Light',
   com_nav_enter_to_send: 'Press Enter to send messages',
+  com_nav_maximize_chat_space: 'Maximize chat space',
   com_nav_user_name_display: 'Display username in messages',
   com_nav_save_drafts: 'Save drafts locally',
   com_nav_chat_direction: 'Chat direction',
