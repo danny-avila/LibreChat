@@ -26,8 +26,8 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags, isSmallScreen }: Boo
         <>
           <MenuButton
             className={cn(
-              'mt-text-sm flex h-10 w-full items-center gap-2 rounded-lg p-2 text-sm transition-colors duration-200 hover:bg-surface-hover',
-              open ? 'bg-surface-hover' : '',
+              'mt-text-sm flex h-10 w-full items-center gap-2 rounded-lg p-2 text-sm transition-colors duration-200 hover:bg-surface-active-alt',
+              open ? 'bg-surface-active-alt' : '',
               isSmallScreen ? 'h-12' : '',
             )}
             data-testid="bookmark-menu"
@@ -45,7 +45,7 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags, isSmallScreen }: Boo
               {tags.length > 0 ? tags.join(', ') : localize('com_ui_bookmarks')}
             </div>
           </MenuButton>
-          <MenuItems className="absolute left-0 top-full z-[100] mt-1 w-full translate-y-0 overflow-hidden rounded-lg bg-header-primary p-1.5 shadow-lg outline-none">
+          <MenuItems className="absolute left-0 top-full z-[100] mt-1 w-full translate-y-0 overflow-hidden rounded-lg bg-surface-active-alt  p-1.5 shadow-lg outline-none">
             {data && conversation && (
               <BookmarkContext.Provider value={{ bookmarks: data.filter((tag) => tag.count > 0) }}>
                 <BookmarkNavItems

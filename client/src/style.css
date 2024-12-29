@@ -51,6 +51,7 @@ html {
   --surface-active: var(--gray-100);
   --surface-active-alt: var(--gray-200);
   --surface-hover: var(--gray-200);
+  --surface-hover-alt: var(--gray-300);
   --surface-primary: var(--white);
   --surface-primary-alt: var(--gray-50);
   --surface-primary-contrast: var(--gray-100);
@@ -104,6 +105,7 @@ html {
   --surface-active: var(--gray-500);
   --surface-active-alt: var(--gray-700);
   --surface-hover: var(--gray-600);
+  --surface-hover-alt: var(--gray-600);
   --surface-primary: var(--gray-900);
   --surface-primary-alt: var(--gray-850);
   --surface-primary-contrast: var(--gray-850);
