@@ -25,7 +25,6 @@ export default function MaximizeChatSpace({
     <div className="flex items-center justify-between">
       <div className="flex items-center space-x-2">
         <div>{localize('com_nav_maximize_chat_space')}</div>
-        <HoverCardSettings side="bottom" text="com_nav_info_enter_to_send" />
       </div>
       <Switch
         id="maximizeChatSpace"
