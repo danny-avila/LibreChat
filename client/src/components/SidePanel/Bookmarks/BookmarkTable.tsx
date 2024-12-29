@@ -3,13 +3,14 @@ import { BookmarkPlusIcon } from 'lucide-react';
 import type { ConversationTagsResponse, TConversationTag } from 'librechat-data-provider';
 import {
   Table,
-  TableHeader,
-  TableHead,
-  TableBody,
-  TableRow,
-  TableCell,
   Input,
   Button,
+  TableRow,
+  TableHead,
+  TableBody,
+  TableCell,
+  TableHeader,
+  OGDialogTrigger,
 } from '~/components/ui';
 import { BookmarkContext, useBookmarkContext } from '~/Providers/BookmarkContext';
 import { BookmarkEditDialog } from '~/components/Bookmarks';
@@ -105,16 +106,19 @@ const BookmarkTable = () => {
 
         <div className="flex items-center justify-between">
           <div className="flex justify-between gap-2">
-            <BookmarkEditDialog context="BookmarkPanel" open={open} setOpen={setOpen} />
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full gap-2 text-sm"
-              onClick={() => setOpen(!open)}
-            >
-              <BookmarkPlusIcon className="size-4" />
-              <div className="break-all">{localize('com_ui_bookmarks_new')}</div>
-            </Button>
+            <BookmarkEditDialog context="BookmarkPanel" open={open} setOpen={setOpen}>
+              <OGDialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full gap-2 text-sm"
+                  onClick={() => setOpen(!open)}
+                >
+                  <BookmarkPlusIcon className="size-4" />
+                  <div className="break-all">{localize('com_ui_bookmarks_new')}</div>
+                </Button>
+              </OGDialogTrigger>
+            </BookmarkEditDialog>
           </div>
           <div className="flex items-center gap-2" role="navigation" aria-label="Pagination">
             <Button

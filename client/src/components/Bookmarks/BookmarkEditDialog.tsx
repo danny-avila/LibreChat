@@ -10,23 +10,25 @@ import { useLocalize } from '~/hooks';
 import { logger } from '~/utils';
 
 type BookmarkEditDialogProps = {
+  open: boolean;
+  setOpen: Dispatch<SetStateAction<boolean>>;
+  tags?: string[];
+  setTags?: (tags: string[]) => void;
   context: string;
   bookmark?: TConversationTag;
   conversation?: TConversation;
-  tags?: string[];
-  setTags?: (tags: string[]) => void;
-  open: boolean;
-  setOpen: Dispatch<SetStateAction<boolean>>;
+  children?: React.ReactNode;
 };
 
 const BookmarkEditDialog = ({
+  open,
+  setOpen,
+  tags,
+  setTags,
   context,
   bookmark,
   conversation,
-  tags,
-  setTags,
-  open,
-  setOpen,
+  children,
 }: BookmarkEditDialogProps) => {
   const localize = useLocalize();
   const formRef = useRef<HTMLFormElement>(null);
@@ -71,6 +73,7 @@ const BookmarkEditDialog = ({
 
   return (
     <OGDialog open={open} onOpenChange={setOpen}>
+      {children}
       <OGDialogTemplate
         title="Bookmark"
         showCloseButton={false}
