@@ -36,6 +36,7 @@ export default function ConvoOptions({
   const { navigateToConvo } = useNavigateToConvo(index);
   const { showToast } = useToastContext();
   const shareButtonRef = useRef<HTMLButtonElement>(null);
+  const deleteButtonRef = useRef<HTMLButtonElement>(null);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
@@ -68,7 +69,6 @@ export default function ConvoOptions({
   };
 
   const deleteHandler = () => {
-    setIsPopoverActive(false);
     setShowDeleteDialog(true);
   };
 
@@ -109,6 +109,9 @@ export default function ConvoOptions({
       label: localize('com_ui_delete'),
       onClick: deleteHandler,
       icon: <Trash className="icon-sm mr-2 text-text-primary" />,
+      hideOnClick: false,
+      ref: deleteButtonRef,
+      render: (props) => <button {...props} />,
     },
   ];
 
@@ -152,6 +155,7 @@ export default function ConvoOptions({
           conversationId={conversationId ?? ''}
           showDeleteDialog={showDeleteDialog}
           setShowDeleteDialog={setShowDeleteDialog}
+          triggerRef={deleteButtonRef}
         />
       )}
     </>

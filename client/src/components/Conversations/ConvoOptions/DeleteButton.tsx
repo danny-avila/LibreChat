@@ -14,6 +14,7 @@ type DeleteButtonProps = {
   title: string;
   showDeleteDialog?: boolean;
   setShowDeleteDialog?: (value: boolean) => void;
+  triggerRef?: React.RefObject<HTMLButtonElement>;
 };
 
 export function DeleteConversationDialog({
@@ -81,6 +82,7 @@ export default function DeleteButton({
   title,
   showDeleteDialog,
   setShowDeleteDialog,
+  triggerRef,
 }: DeleteButtonProps) {
   if (showDeleteDialog === undefined && setShowDeleteDialog === undefined) {
     return null;
@@ -91,7 +93,7 @@ export default function DeleteButton({
   }
 
   return (
-    <OGDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+    <OGDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog} triggerRef={triggerRef}>
       <DeleteConversationDialog
         conversationId={conversationId}
         retainView={retainView}
