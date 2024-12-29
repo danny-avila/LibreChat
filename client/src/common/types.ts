@@ -7,33 +7,6 @@ import type * as t from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type { LucideIcon } from 'lucide-react';
 
-export type RenderProp<
-  P = // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  React.HTMLAttributes<any> & {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ref?: React.Ref<any>;
-  },
-> = (props: P) => React.ReactNode;
-
-export interface MenuItemProps {
-  label?: string;
-  onClick?: (e: React.MouseEvent<HTMLButtonElement | HTMLDivElement>) => void;
-  icon?: React.ReactNode;
-  kbd?: string;
-  show?: boolean;
-  disabled?: boolean;
-  separate?: boolean;
-  hideOnClick?: boolean;
-  dialog?: React.ReactElement;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ref?: React.Ref<any>;
-  render?: // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  | RenderProp<React.HTMLAttributes<any> & { ref?: React.Ref<any> | undefined }>
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    | React.ReactElement<any, string | React.JSXElementConstructor<any>>
-    | undefined;
-}
-
 export type CodeBarProps = {
   lang: string;
   error?: boolean;
