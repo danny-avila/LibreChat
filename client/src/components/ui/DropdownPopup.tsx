@@ -15,6 +15,7 @@ interface DropdownProps {
   anchor?: { x: string; y: string };
   gutter?: number;
   modal?: boolean;
+  focusLoop?: boolean;
   menuId: string;
 }
 
@@ -28,10 +29,11 @@ const DropdownPopup: React.FC<DropdownProps> = ({
   gutter = 8,
   sameWidth,
   className,
+  focusLoop,
   iconClassName,
   itemClassName,
 }) => {
-  const menu = Ariakit.useMenuStore({ open: isOpen, setOpen: setIsOpen });
+  const menu = Ariakit.useMenuStore({ open: isOpen, setOpen: setIsOpen, focusLoop });
 
   return (
     <Ariakit.MenuProvider store={menu}>

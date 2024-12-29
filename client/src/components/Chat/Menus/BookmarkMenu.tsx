@@ -9,10 +9,10 @@ import type { TConversationTag } from 'librechat-data-provider';
 import type { FC } from 'react';
 import type * as t from '~/common';
 import { useConversationTagsQuery, useTagConversationMutation } from '~/data-provider';
+import { DropdownPopup, TooltipAnchor } from '~/components/ui';
 import { BookmarkContext } from '~/Providers/BookmarkContext';
 import { BookmarkEditDialog } from '~/components/Bookmarks';
 import { useBookmarkSuccess, useLocalize } from '~/hooks';
-import { DropdownPopup } from '~/components/ui';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
 import { Spinner } from '~/components';
@@ -151,21 +151,27 @@ const BookmarkMenu: FC = () => {
   return (
     <BookmarkContext.Provider value={{ bookmarks: data || [] }}>
       <DropdownPopup
+        focusLoop={true}
         menuId={menuId}
         isOpen={isMenuOpen}
         setIsOpen={setIsMenuOpen}
         trigger={
-          <Ariakit.MenuButton
-            id="bookmark-menu-button"
-            aria-label="Add bookmarks"
-            className={cn(
-              'mt-text-sm flex size-10 items-center justify-center gap-2 rounded-lg border border-border-light text-sm transition-colors duration-200 hover:bg-surface-hover',
-              isMenuOpen ? 'bg-surface-hover' : '',
-            )}
-            data-testid="bookmark-menu"
-          >
-            {renderButtonContent()}
-          </Ariakit.MenuButton>
+          <TooltipAnchor
+            description={localize('com_ui_bookmarks_add')}
+            render={
+              <Ariakit.MenuButton
+                id="bookmark-menu-button"
+                aria-label={localize('com_ui_bookmarks_add')}
+                className={cn(
+                  'mt-text-sm flex size-10 items-center justify-center gap-2 rounded-lg border border-border-light text-sm transition-colors duration-200 hover:bg-surface-hover',
+                  isMenuOpen ? 'bg-surface-hover' : '',
+                )}
+                data-testid="bookmark-menu"
+              >
+                {renderButtonContent()}
+              </Ariakit.MenuButton>
+            }
+          />
         }
         items={dropdownItems}
       />
