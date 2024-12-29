@@ -16,7 +16,7 @@ const EditBookmarkButton: FC<{
   const [open, setOpen] = useState(false);
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === 'Enter') {
+    if (event.key === 'Enter' || event.key === ' ') {
       setOpen(!open);
     }
   };
@@ -30,6 +30,8 @@ const EditBookmarkButton: FC<{
         setOpen={setOpen}
       />
       <TooltipAnchor
+        role="button"
+        aria-label={localize('com_ui_bookmarks_edit')}
         description={localize('com_ui_edit')}
         tabIndex={tabIndex}
         onFocus={onFocus}

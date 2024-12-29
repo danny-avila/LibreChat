@@ -433,6 +433,7 @@ export default {
   com_ui_bookmarks_delete_error: 'There was an error deleting the bookmark',
   com_ui_bookmarks_add_to_conversation: 'Add to current conversation',
   com_ui_bookmarks_filter: 'Filter bookmarks...',
+  com_ui_bookmarks_edit: 'Edit Bookmark',
   com_ui_bookmarks_delete: 'Delete Bookmark',
   com_ui_no_bookmarks: 'it seems like you have no bookmarks yet. Click on a chat and add a new one',
   com_ui_no_conversation_id: 'No conversation ID found',
