@@ -14,7 +14,7 @@ export default function ExportModal({
 }: {
   open: boolean;
   conversation: TConversation | null;
-  onOpenChange: (open: boolean) => void;
+  onOpenChange: React.Dispatch<React.SetStateAction<boolean>>;
   triggerRef?: React.RefObject<HTMLButtonElement>;
   children?: React.ReactNode;
 }) {
