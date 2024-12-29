@@ -86,6 +86,10 @@ export default function DeleteButton({
     return null;
   }
 
+  if (!conversationId) {
+    return null;
+  }
+
   return (
     <OGDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
       <DeleteConversationDialog
