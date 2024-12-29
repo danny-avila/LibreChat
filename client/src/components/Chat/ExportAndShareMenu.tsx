@@ -5,8 +5,8 @@ import { Upload, Share2 } from 'lucide-react';
 import type * as t from '~/common';
 import ExportModal from '~/components/Nav/ExportConversation/ExportModal';
 import { ShareButton } from '~/components/Conversations/ConvoOptions';
+import { DropdownPopup, TooltipAnchor } from '~/components/ui';
 import { useMediaQuery, useLocalize } from '~/hooks';
-import { DropdownPopup } from '~/components/ui';
 import store from '~/store';
 
 export default function ExportAndShareMenu({
@@ -73,13 +73,22 @@ export default function ExportAndShareMenu({
         isOpen={isPopoverActive}
         setIsOpen={setIsPopoverActive}
         trigger={
-          <Ariakit.MenuButton
-            id="export-menu-button"
-            aria-label="Export options"
-            className="inline-flex size-10 items-center justify-center rounded-lg border border-border-light bg-transparent text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
-          >
-            <Upload className="icon-md text-text-secondary" aria-hidden="true" focusable="false" />
-          </Ariakit.MenuButton>
+          <TooltipAnchor
+            description={localize('com_endpoint_export_share')}
+            render={
+              <Ariakit.MenuButton
+                id="export-menu-button"
+                aria-label="Export options"
+                className="inline-flex size-10 items-center justify-center rounded-lg border border-border-light bg-transparent text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
+              >
+                <Upload
+                  className="icon-md text-text-secondary"
+                  aria-hidden="true"
+                  focusable="false"
+                />
+              </Ariakit.MenuButton>
+            }
+          />
         }
         items={dropdownItems}
         className={isSmallScreen ? '' : 'absolute right-0 top-0 mt-2'}
