@@ -58,6 +58,7 @@ const DropdownPopup: React.FC<DropdownProps> = ({
                 )}
                 disabled={item.disabled}
                 render={item.render}
+                ref={item.ref}
                 hideOnClick={item.hideOnClick}
                 onClick={(event) => {
                   event.preventDefault();

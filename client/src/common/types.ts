@@ -25,6 +25,8 @@ export interface MenuItemProps {
   separate?: boolean;
   hideOnClick?: boolean;
   dialog?: React.ReactElement;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ref?: React.Ref<any>;
   render?: // eslint-disable-next-line @typescript-eslint/no-explicit-any
   | RenderProp<React.HTMLAttributes<any> & { ref?: React.Ref<any> | undefined }>
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

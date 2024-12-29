@@ -48,7 +48,9 @@ export default function ExportAndShareMenu({
       label: localize('com_endpoint_export'),
       onClick: exportHandler,
       icon: <Upload className="icon-md mr-2 text-text-secondary" />,
+      /** NOTE: THE FOLLOWING PROPS ARE REQUIRED FOR MENU ITEMS THAT OPEN DIALOGS */
       hideOnClick: false,
+      ref: exportButtonRef,
       render: (props) => <button {...props} />,
     },
     {
@@ -56,7 +58,9 @@ export default function ExportAndShareMenu({
       onClick: shareHandler,
       icon: <Share2 className="icon-md mr-2 text-text-secondary" />,
       show: isSharedButtonEnabled,
+      /** NOTE: THE FOLLOWING PROPS ARE REQUIRED FOR MENU ITEMS THAT OPEN DIALOGS */
       hideOnClick: false,
+      ref: shareButtonRef,
       render: (props) => <button {...props} />,
     },
   ];
