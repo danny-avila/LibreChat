@@ -931,6 +931,24 @@ class BaseClient {
             continue;
           }
 
+          if (item.type === 'tool_call' && item.tool_call != null) {
+            const toolName = item.tool_call?.name || '';
+            if (toolName != null && toolName && typeof toolName === 'string') {
+              numTokens += this.getTokenCount(toolName);
+            }
+
+            const args = item.tool_call?.args || '';
+            if (args != null && args && typeof args === 'string') {
+              numTokens += this.getTokenCount(args);
+            }
+
+            const output = item.tool_call?.output || '';
+            if (output != null && output && typeof output === 'string') {
+              numTokens += this.getTokenCount(output);
+            }
+            continue;
+          }
+
           const nestedValue = item[item.type];
 
           if (!nestedValue) {
