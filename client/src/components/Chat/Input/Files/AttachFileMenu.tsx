@@ -1,38 +1,66 @@
 import * as Ariakit from '@ariakit/react';
 import React, { useRef, useState, useMemo } from 'react';
-import { FileSearch, ImageUpIcon, TerminalSquareIcon } from 'lucide-react';
-import { EToolResources, EModelEndpoint } from 'librechat-data-provider';
+import { FileSearch, ImageUpIcon, FileUpIcon, TerminalSquareIcon } from 'lucide-react';
+import {
+  EToolResources,
+  AgentCapabilities,
+  BaseCapabilities,
+  EModelEndpoint,
+  mergeFileConfig,
+  supportsGenericFiles,
+  fileConfig as defaultFileConfig,
+} from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
+import { useGetFileConfig } from '~/data-provider';
 import { FileUpload, TooltipAnchor, DropdownPopup } from '~/components/ui';
 import { AttachmentIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 interface AttachFileProps {
+  endpoint: EModelEndpoint | null;
   isRTL: boolean;
   disabled?: boolean | null;
   handleFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
   setToolResource?: React.Dispatch<React.SetStateAction<string | undefined>>;
 }
 
-const AttachFile = ({ isRTL, disabled, setToolResource, handleFileChange }: AttachFileProps) => {
+const AttachFileMenu = ({
+  endpoint,
+  isRTL,
+  disabled,
+  setToolResource,
+  handleFileChange,
+}: AttachFileProps) => {
   const localize = useLocalize();
   const isUploadDisabled = disabled ?? false;
   const inputRef = useRef<HTMLInputElement>(null);
   const [isPopoverActive, setIsPopoverActive] = useState(false);
   const { data: endpointsConfig } = useGetEndpointsQuery();
+  const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
+    select: (data) => mergeFileConfig(data),
+  });
+
+  const _endpoint = endpoint ?? '';
+
+  const genericFiles = useMemo(() => supportsGenericFiles[_endpoint] ?? false, [endpoint]);
 
   const capabilities = useMemo(
-    () => endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? [],
-    [endpointsConfig],
+    () => endpointsConfig?.[_endpoint]?.capabilities ?? [],
+    [endpointsConfig, _endpoint],
   );
 
-  const handleUploadClick = (isImage?: boolean) => {
+  const fileFilter = useMemo(
+    () => fileConfig.endpoints[_endpoint]?.fileFilter ?? '',
+    [fileConfig, _endpoint],
+  );
+
+  const handleUploadClick = (isTool: boolean = true) => {
     if (!inputRef.current) {
       return;
     }
     inputRef.current.value = '';
-    inputRef.current.accept = isImage === true ? 'image/*' : '';
+    inputRef.current.accept = isTool ? '' : fileFilter;
     inputRef.current.click();
     inputRef.current.accept = '';
   };
@@ -40,16 +68,22 @@ const AttachFile = ({ isRTL, disabled, setToolResource, handleFileChange }: Atta
   const dropdownItems = useMemo(() => {
     const items = [
       {
-        label: localize('com_ui_upload_image_input'),
+        label: genericFiles
+          ? localize('com_ui_upload_file_input')
+          : localize('com_ui_upload_image_input'),
         onClick: () => {
           setToolResource?.(undefined);
-          handleUploadClick(true);
+          handleUploadClick(false);
         },
-        icon: <ImageUpIcon className="icon-md" />,
+        icon: genericFiles ? (
+          <FileUpIcon className="icon-md" />
+        ) : (
+          <ImageUpIcon className="icon-md" />
+        ),
       },
     ];
 
-    if (capabilities.includes(EToolResources.file_search)) {
+    if (capabilities.includes(BaseCapabilities.file_search)) {
       items.push({
         label: localize('com_ui_upload_file_search'),
         onClick: () => {
@@ -60,7 +94,7 @@ const AttachFile = ({ isRTL, disabled, setToolResource, handleFileChange }: Atta
       });
     }
 
-    if (capabilities.includes(EToolResources.execute_code)) {
+    if (capabilities.includes(AgentCapabilities.execute_code)) {
       items.push({
         label: localize('com_ui_upload_code_files'),
         onClick: () => {
@@ -114,4 +148,4 @@ const AttachFile = ({ isRTL, disabled, setToolResource, handleFileChange }: Atta
   );
 };
 
-export default React.memo(AttachFile);
+export default React.memo(AttachFileMenu);

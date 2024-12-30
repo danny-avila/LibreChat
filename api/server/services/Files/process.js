@@ -379,10 +379,12 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
  */
 const processFileUpload = async ({ req, res, metadata }) => {
   const isAssistantUpload = isAssistantsEndpoint(metadata.endpoint);
-  const has_rag = !!process.env.RAG_API_URL;
+  const isSearch = metadata.tool_resource === EToolResources.file_search;
+  console.log('Processing upload', metadata);
+
+  const localSource = isSearch ? FileSources.vectordb : req.app.locals.fileStrategy;
   const assistantSource =
     metadata.endpoint === EModelEndpoint.azureAssistants ? FileSources.azure : FileSources.openai;
-  const localSource = has_rag ? FileSources.vectordb : req.app.locals.fileStrategy;
 
   const source = isAssistantUpload ? assistantSource : localSource;
 

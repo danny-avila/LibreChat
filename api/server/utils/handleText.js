@@ -1,6 +1,7 @@
 const path = require('path');
 const crypto = require('crypto');
 const {
+  BaseCapabilities,
   Capabilities,
   EModelEndpoint,
   isAgentsEndpoint,
@@ -181,6 +182,8 @@ function generateConfig(key, baseURL, endpoint) {
     config.userProvideURL = isUserProvided(baseURL);
   }
 
+  // default capabilities:
+  config.capabilities = [BaseCapabilities.file_search];
   const assistants = isAssistantsEndpoint(endpoint);
   const agents = isAgentsEndpoint(endpoint);
   if (assistants) {
