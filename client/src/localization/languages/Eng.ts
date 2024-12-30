@@ -206,6 +206,7 @@ export default {
   com_ui_stop: 'Stop',
   com_ui_upload_files: 'Upload files',
   com_ui_upload_type: 'Select Upload Type',
+  com_ui_upload_file_input: 'Upload to provider',
   com_ui_upload_image_input: 'Upload Image',
   com_ui_upload_file_search: 'Upload for File Search',
   com_ui_upload_code_files: 'Upload for Code Interpreter',

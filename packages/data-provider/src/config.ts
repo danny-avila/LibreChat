@@ -140,11 +140,15 @@ export enum Capabilities {
   tools = 'tools',
 }
 
+export enum BaseCapabilities {
+  file_search = 'file_search',
+}
+
 export enum AgentCapabilities {
   hide_sequential_outputs = 'hide_sequential_outputs',
   end_after_tools = 'end_after_tools',
   execute_code = 'execute_code',
-  file_search = 'file_search',
+  file_search = BaseCapabilities.file_search,
   actions = 'actions',
   tools = 'tools',
 }
@@ -252,6 +256,10 @@ export const endpointSchema = baseEndpointSchema.merge(
     customOrder: z.number().optional(),
     directEndpoint: z.boolean().optional(),
     titleMessageRole: z.string().optional(),
+    capabilities: z
+      .array(z.nativeEnum(BaseCapabilities))
+      .optional()
+      .default([BaseCapabilities.file_search]),
   }),
 );
 

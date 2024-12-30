@@ -15,6 +15,19 @@ export const supportsFiles = {
   [EModelEndpoint.bedrock]: true,
 };
 
+// Has support for file types other than images
+export const supportsGenericFiles = {
+  [EModelEndpoint.openAI]: false,
+  [EModelEndpoint.google]: true,
+  [EModelEndpoint.assistants]: false,
+  [EModelEndpoint.azureAssistants]: false,
+  [EModelEndpoint.agents]: false,
+  [EModelEndpoint.azureOpenAI]: false,
+  [EModelEndpoint.anthropic]: true,
+  [EModelEndpoint.custom]: false,
+  [EModelEndpoint.bedrock]: false,
+};
+
 export const excelFileTypes = [
   'application/vnd.ms-excel',
   'application/msexcel',
@@ -135,9 +148,11 @@ export const codeInterpreterMimeTypes = [
   imageMimeTypes,
 ];
 
-export const googleMimeTypes = [textMimeTypes, pdfMimeType, imageMimeTypes, audioMimeTypes];
+const googleMimeTypes = [textMimeTypes, pdfMimeType, imageMimeTypes, audioMimeTypes];
+const googleFileFilter = 'text/*,application/pdf,image/*,audio/*';
 
-export const anthropicMimeTypes = [pdfMimeType, imageMimeTypes];
+const anthropicMimeTypes = [pdfMimeType, imageMimeTypes];
+const anthropicFileFilter = 'application/pdf,image/*';
 
 export const codeTypeMapping: { [key: string]: string } = {
   c: 'text/x-c',
@@ -165,11 +180,14 @@ export const megabyte = 1024 * 1024;
 export const mbToBytes = (mb: number): number => mb * megabyte;
 
 const defaultSizeLimit = mbToBytes(512);
+const defaultFileFilter = 'image/*';
+
 const assistantsFileConfig = {
   fileLimit: 10,
   fileSizeLimit: defaultSizeLimit,
   totalSizeLimit: defaultSizeLimit,
   supportedMimeTypes,
+  fileFilter: defaultFileFilter,
   disabled: false,
 };
 
@@ -178,6 +196,7 @@ const googleFileConfig = {
   fileSizeLimit: mbToBytes(20), // Limit for inline files
   totalSizeLimit: mbToBytes(20),
   supportedMimeTypes: googleMimeTypes,
+  fileFilter: googleFileFilter,
   disabled: false,
 };
 
@@ -186,6 +205,7 @@ const anthropicFileConfig = {
   fileSizeLimit: mbToBytes(20), // Limit for inline files
   totalSizeLimit: mbToBytes(20),
   supportedMimeTypes: anthropicMimeTypes,
+  fileFilter: anthropicFileFilter,
   disabled: false,
 };
 
@@ -201,6 +221,7 @@ export const fileConfig = {
       fileSizeLimit: defaultSizeLimit,
       totalSizeLimit: defaultSizeLimit,
       supportedMimeTypes,
+      fileFilter: defaultFileFilter,
       disabled: false,
     },
   },
