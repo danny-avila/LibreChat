@@ -1,14 +1,50 @@
+import React from 'react';
 import { useRecoilState } from 'recoil';
-import { Mic, Phone, PhoneOff } from 'lucide-react';
+import { Phone, PhoneOff } from 'lucide-react';
 import { OGDialog, OGDialogContent, Button } from '~/components';
-import { useWebRTC, useWebSocket, useCall } from '~/hooks';
+import { useWebSocket, useCall } from '~/hooks';
 import store from '~/store';
 
 export const Call: React.FC = () => {
-  const { isConnected } = useWebSocket();
-  const { isCalling, startCall, hangUp } = useCall();
+  const { isConnected, sendMessage } = useWebSocket();
+  const { isCalling, isProcessing, startCall, hangUp } = useCall();
 
   const [open, setOpen] = useRecoilState(store.callDialogOpen(0));
+
+  const [eventLog, setEventLog] = React.useState<string[]>([]);
+
+  const logEvent = (message: string) => {
+    console.log(message);
+    setEventLog((prev) => [...prev, message]);
+  };
+
+  React.useEffect(() => {
+    if (isConnected) {
+      logEvent('Connected to server.');
+    } else {
+      logEvent('Disconnected from server.');
+    }
+  }, [isConnected]);
+
+  React.useEffect(() => {
+    if (isCalling) {
+      logEvent('Call started.');
+    } else if (isProcessing) {
+      logEvent('Processing audio...');
+    } else {
+      logEvent('Call ended.');
+    }
+  }, [isCalling, isProcessing]);
+
+  const handleStartCall = () => {
+    logEvent('Attempting to start call...');
+    startCall();
+  };
+
+  const handleHangUp = () => {
+    logEvent('Attempting to hang up call...');
+    hangUp();
+  };
 
   return (
     <OGDialog open={open} onOpenChange={setOpen}>
@@ -27,24 +63,34 @@ export const Call: React.FC = () => {
             </span>
           </div>
 
-          {!isCalling ? (
+          {isCalling ? (
             <Button
-              onClick={startCall}
+              onClick={handleHangUp}
+              className="flex items-center gap-2 rounded-full bg-red-500 px-6 py-3 text-white hover:bg-red-600"
+            >
+              <PhoneOff size={20} />
+              <span>End Call</span>
+            </Button>
+          ) : (
+            <Button
+              onClick={handleStartCall}
               disabled={!isConnected}
               className="flex items-center gap-2 rounded-full bg-green-500 px-6 py-3 text-white hover:bg-green-600 disabled:opacity-50"
             >
               <Phone size={20} />
               <span>Start Call</span>
             </Button>
-          ) : (
-            <Button
-              onClick={hangUp}
-              className="flex items-center gap-2 rounded-full bg-red-500 px-6 py-3 text-white hover:bg-red-600"
-            >
-              <PhoneOff size={20} />
-              <span>End Call</span>
-            </Button>
           )}
+
+          {/* Debugging Information */}
+          <div className="mt-4 w-full rounded-md bg-gray-100 p-4 shadow-sm">
+            <h3 className="mb-2 text-lg font-medium">Event Log</h3>
+            <ul className="h-32 overflow-y-auto text-xs text-gray-600">
+              {eventLog.map((log, index) => (
+                <li key={index}>{log}</li>
+              ))}
+            </ul>
+          </div>
         </div>
       </OGDialogContent>
     </OGDialog>

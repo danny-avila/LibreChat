@@ -7,7 +7,7 @@ const SILENCE_THRESHOLD = -50;
 const SILENCE_DURATION = 1000;
 
 const useCall = () => {
-  const { sendMessage: wsMessage } = useWebSocket();
+  const { sendMessage: wsMessage, isConnected } = useWebSocket();
   const [isCalling, setIsCalling] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -23,9 +23,7 @@ const useCall = () => {
     }
 
     const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-    // Send audio through WebRTC data channel
     webrtcServiceRef.current?.sendAudioChunk(audioBlob);
-    // Signal processing start via WebSocket
     wsMessage({ type: 'processing-start' });
 
     audioChunksRef.current = [];
@@ -34,17 +32,18 @@ const useCall = () => {
 
   const handleRTCMessage = useCallback((message: RTCMessage) => {
     if (message.type === 'audio-received') {
-      // Backend confirmed audio receipt
       setIsProcessing(true);
     }
   }, []);
 
   const startCall = useCallback(async () => {
-    // Initialize WebRTC with message handler
+    if (!isConnected) {
+      return;
+    }
+
     webrtcServiceRef.current = new WebRTCService(handleRTCMessage);
     await webrtcServiceRef.current.initializeCall();
 
-    // Signal call start via WebSocket
     wsMessage({ type: 'call-start' });
 
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -53,7 +52,6 @@ const useCall = () => {
     analyserRef.current = audioContextRef.current.createAnalyser();
     source.connect(analyserRef.current);
 
-    // Start VAD monitoring
     intervalRef.current = window.setInterval(() => {
       if (!analyserRef.current || !isCalling) {
         return;
@@ -76,7 +74,7 @@ const useCall = () => {
     }, 100);
 
     setIsCalling(true);
-  }, [handleRTCMessage, wsMessage, sendAudioChunk]);
+  }, [handleRTCMessage, isConnected, wsMessage, sendAudioChunk, isCalling]);
 
   const hangUp = useCallback(async () => {
     if (intervalRef.current) {
