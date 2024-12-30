@@ -97,6 +97,7 @@
     "remark-gfm": "^4.0.0",
     "remark-math": "^6.0.0",
     "remark-supersub": "^1.0.0",
+    "socket.io-client": "^4.8.1",
     "sse.js": "^2.5.0",
     "tailwind-merge": "^1.9.1",
     "tailwindcss-animate": "^1.0.5",

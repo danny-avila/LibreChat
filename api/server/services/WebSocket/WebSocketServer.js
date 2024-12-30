@@ -1,10 +1,10 @@
-const { WebSocketServer } = require('ws');
+const { Server } = require('socket.io');
 const { RTCPeerConnection } = require('wrtc');
 
-module.exports.WebSocketService = class {
-  constructor(server) {
-    this.wss = new WebSocketServer({ server, path: '/ws' });
-    this.log('Server initialized');
+module.exports.SocketIOService = class {
+  constructor(httpServer) {
+    this.io = new Server(httpServer, { path: '/socket.io' });
+    this.log('Socket.IO Server initialized');
     this.activeClients = new Map();
     this.iceServers = [
       { urls: 'stun:stun.l.google.com:19302' },
@@ -14,14 +14,14 @@ module.exports.WebSocketService = class {
   }
 
   log(msg) {
-    console.log(`[WSS ${new Date().toISOString()}] ${msg}`);
+    console.log(`[Socket.IO ${new Date().toISOString()}] ${msg}`);
   }
 
   setupHandlers() {
-    this.wss.on('connection', (ws) => {
-      const clientId = Date.now().toString();
+    this.io.on('connection', (socket) => {
+      const clientId = socket.id;
       this.activeClients.set(clientId, {
-        ws,
+        socket,
         state: 'idle',
         audioBuffer: [],
         currentTranscription: '',
@@ -30,44 +30,19 @@ module.exports.WebSocketService = class {
 
       this.log(`Client connected: ${clientId}`);
 
-      ws.on('message', async (raw) => {
-        let message;
-        try {
-          message = JSON.parse(raw);
-        } catch {
-          return;
-        }
+      socket.on('call-start', () => this.handleCallStart(clientId));
+      socket.on('audio-chunk', (data) => this.handleAudioChunk(clientId, data));
+      socket.on('processing-start', () => this.processAudioStream(clientId));
+      socket.on('audio-received', () => this.confirmAudioReceived(clientId));
+      socket.on('call-ended', () => this.handleCallEnd(clientId));
 
-        switch (message.type) {
-          case 'call-start':
-            this.handleCallStart(clientId);
-            break;
-
-          case 'audio-chunk':
-            await this.handleAudioChunk(clientId, message.data);
-            break;
-
-          case 'processing-start':
-            await this.processAudioStream(clientId);
-            break;
-
-          case 'audio-received':
-            this.confirmAudioReceived(clientId);
-            break;
-
-          case 'call-ended':
-            this.handleCallEnd(clientId);
-            break;
-        }
-      });
-
-      ws.on('close', () => {
+      socket.on('disconnect', () => {
         this.handleCallEnd(clientId);
         this.activeClients.delete(clientId);
         this.log(`Client disconnected: ${clientId}`);
       });
 
-      ws.on('error', (error) => {
+      socket.on('error', (error) => {
         this.log(`Error for client ${clientId}: ${error.message}`);
         this.handleCallEnd(clientId);
       });
@@ -104,12 +79,7 @@ module.exports.WebSocketService = class {
 
       peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
-          client.ws.send(
-            JSON.stringify({
-              type: 'ice-candidate',
-              candidate: event.candidate,
-            }),
-          );
+          client.socket.emit('ice-candidate', { candidate: event.candidate });
         }
       };
 
@@ -117,12 +87,7 @@ module.exports.WebSocketService = class {
         try {
           const offer = await peerConnection.createOffer();
           await peerConnection.setLocalDescription(offer);
-          client.ws.send(
-            JSON.stringify({
-              type: 'webrtc-offer',
-              sdp: peerConnection.localDescription,
-            }),
-          );
+          client.socket.emit('webrtc-offer', { sdp: peerConnection.localDescription });
         } catch (error) {
           this.log(`Negotiation failed for ${clientId}: ${error}`);
         }
@@ -142,7 +107,7 @@ module.exports.WebSocketService = class {
     }
 
     client.audioBuffer.push(data);
-    client.ws.send(JSON.stringify({ type: 'audio-received' }));
+    client.socket.emit('audio-received');
   }
 
   async processAudioStream(clientId) {
@@ -155,28 +120,13 @@ module.exports.WebSocketService = class {
 
     try {
       // Process transcription
-      client.ws.send(
-        JSON.stringify({
-          type: 'transcription',
-          data: 'Processing audio...',
-        }),
-      );
+      client.socket.emit('transcription', { data: 'Processing audio...' });
 
       // Stream LLM response
-      client.ws.send(
-        JSON.stringify({
-          type: 'llm-response',
-          data: 'Processing response...',
-        }),
-      );
+      client.socket.emit('llm-response', { data: 'Processing response...' });
 
       // Stream TTS chunks
-      client.ws.send(
-        JSON.stringify({
-          type: 'tts-chunk',
-          data: 'audio_data_here',
-        }),
-      );
+      client.socket.emit('tts-chunk', { data: 'audio_data_here' });
     } catch (error) {
       this.log(`Processing error for client ${clientId}: ${error.message}`);
     } finally {
@@ -191,12 +141,7 @@ module.exports.WebSocketService = class {
       return;
     }
 
-    client.ws.send(
-      JSON.stringify({
-        type: 'audio-received',
-        data: null,
-      }),
-    );
+    client.socket.emit('audio-received', { data: null });
   }
 
   handleCallEnd(clientId) {

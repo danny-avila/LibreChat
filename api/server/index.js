@@ -15,7 +15,7 @@ const { connectDb, indexSync } = require('~/lib/db');
 const { isEnabled } = require('~/server/utils');
 const { ldapLogin } = require('~/strategies');
 const { logger } = require('~/config');
-const { WebSocketService } = require('./services/WebSocket/WebSocketServer');
+const { SocketIOService } = require('./services/WebSocket/WebSocketServer');
 const validateImageRequest = require('./middleware/validateImageRequest');
 const errorController = require('./controllers/ErrorController');
 const configureSocialLogins = require('./socialLogins');
@@ -48,7 +48,7 @@ const startServer = async () => {
     }),
   );
 
-  new WebSocketService(server);
+  new SocketIOService(server);
 
   await AppService(app);
 
@@ -149,7 +149,7 @@ const startServer = async () => {
       logger.info(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
     }
 
-    logger.info(`WebSocket endpoint: ws://${host}:${port}`);
+    logger.info(`Socket.IO endpoint: http://${host}:${port}`);
   });
 };
 

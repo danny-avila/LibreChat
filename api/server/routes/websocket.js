@@ -4,15 +4,16 @@ const router = express.Router();
 
 router.get('/', optionalJwtAuth, async (req, res) => {
   const isProduction = process.env.NODE_ENV === 'production';
-  const useSSL = isProduction && process.env.SERVER_DOMAIN?.startsWith('https');
 
-  const protocol = useSSL ? 'wss' : 'ws';
+  const protocol = isProduction && req.secure ? 'https' : 'http';
+
   const serverDomain = process.env.SERVER_DOMAIN
     ? process.env.SERVER_DOMAIN.replace(/^https?:\/\//, '')
     : req.headers.host;
-  const wsUrl = `${protocol}://${serverDomain}/ws`;
 
-  res.json({ url: wsUrl });
+  const socketIoUrl = `${protocol}://${serverDomain}`;
+
+  res.json({ url: socketIoUrl });
 });
 
 module.exports = router;
