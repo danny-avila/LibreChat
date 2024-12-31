@@ -38,6 +38,8 @@ function getGoogleIcon(model: string | null | undefined, size: number) {
 function getGoogleModelName(model: string | null | undefined) {
   if (model?.toLowerCase().includes('code') === true) {
     return 'Codey';
+  } else if (model?.toLowerCase().includes('learnlm') === true) {
+        return 'Gemini';
   } else if (model?.toLowerCase().includes('gemini') === true) {
     return 'Gemini';
   } else {
