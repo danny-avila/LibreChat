@@ -274,6 +274,8 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
       return modelLabel;
     } else if (model && model.includes('gemini')) {
       return 'Gemini';
+    } else if (model && model.includes('learnlm')) {
+      return 'Gemini';
     } else if (model && model.includes('code')) {
       return 'Codey';
     }
