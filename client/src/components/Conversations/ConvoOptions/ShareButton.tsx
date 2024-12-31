@@ -12,13 +12,17 @@ import { useLocalize } from '~/hooks';
 export default function ShareButton({
   conversationId,
   title,
-  showShareDialog,
-  setShowShareDialog,
+  open,
+  onOpenChange,
+  triggerRef,
+  children,
 }: {
   conversationId: string;
   title: string;
-  showShareDialog: boolean;
-  setShowShareDialog: (value: boolean) => void;
+  open: boolean;
+  onOpenChange: React.Dispatch<React.SetStateAction<boolean>>;
+  triggerRef?: React.RefObject<HTMLButtonElement>;
+  children?: React.ReactNode;
 }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -26,6 +30,12 @@ export default function ShareButton({
   const [share, setShare] = useState<TSharedLink | null>(null);
   const [isUpdated, setIsUpdated] = useState(false);
   const [isNewSharedLink, setIsNewSharedLink] = useState(false);
+
+  useEffect(() => {
+    if (!open && triggerRef && triggerRef.current) {
+      triggerRef.current.focus();
+    }
+  }, [open, triggerRef]);
 
   useEffect(() => {
     if (isLoading || share) {
@@ -55,6 +65,10 @@ export default function ShareButton({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  if (!conversationId) {
+    return null;
+  }
+
   const buttons = share && (
     <SharedLinkButton
       share={share}
@@ -66,7 +80,8 @@ export default function ShareButton({
   );
 
   return (
-    <OGDialog open={showShareDialog} onOpenChange={setShowShareDialog}>
+    <OGDialog open={open} onOpenChange={onOpenChange} triggerRef={triggerRef}>
+      {children}
       <OGDialogTemplate
         buttons={buttons}
         showCloseButton={true}
@@ -87,7 +102,7 @@ export default function ShareButton({
                     : localize('com_ui_share_updated_message');
                 }
 
-                return share?.isPublic
+                return share?.isPublic === true
                   ? localize('com_ui_share_update_message')
                   : localize('com_ui_share_create_message');
               })()}

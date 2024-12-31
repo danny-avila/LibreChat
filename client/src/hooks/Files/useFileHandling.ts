@@ -1,13 +1,14 @@
 import { v4 } from 'uuid';
 import debounce from 'lodash/debounce';
 import { useQueryClient } from '@tanstack/react-query';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   megabyte,
   QueryKeys,
   EModelEndpoint,
   codeTypeMapping,
   mergeFileConfig,
+  isAgentsEndpoint,
   isAssistantsEndpoint,
   defaultAssistantsVersion,
   fileConfig as defaultFileConfig,
@@ -38,6 +39,7 @@ const useFileHandling = (params?: UseFileHandling) => {
   const [errors, setErrors] = useState<string[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
   const { startUploadTimer, clearUploadTimer } = useDelayedUploadToast();
+  const [toolResource, setToolResource] = useState<string | undefined>();
   const { files, setFiles, setFilesLoading, conversation } = useChatContext();
   const setError = (error: string) => setErrors((prevErrors) => [...prevErrors, error]);
   const { addFile, replaceFile, updateFileById, deleteFileById } = useUpdateFiles(
@@ -47,14 +49,24 @@ const useFileHandling = (params?: UseFileHandling) => {
   const agent_id = params?.additionalMetadata?.agent_id ?? '';
   const assistant_id = params?.additionalMetadata?.assistant_id ?? '';
 
-  const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
+  const { data: fileConfig = null } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
-  const endpoint =
-    params?.overrideEndpoint ?? conversation?.endpointType ?? conversation?.endpoint ?? 'default';
 
-  const { fileLimit, fileSizeLimit, totalSizeLimit, supportedMimeTypes } =
-    fileConfig.endpoints[endpoint] ?? fileConfig.endpoints.default;
+  const endpoint = useMemo(
+    () =>
+      params?.overrideEndpoint ?? conversation?.endpointType ?? conversation?.endpoint ?? 'default',
+    [params?.overrideEndpoint, conversation?.endpointType, conversation?.endpoint],
+  );
+
+  const { fileLimit, fileSizeLimit, totalSizeLimit, supportedMimeTypes } = useMemo(
+    () =>
+      fileConfig?.endpoints[endpoint] ??
+      fileConfig?.endpoints.default ??
+      defaultFileConfig.endpoints[endpoint] ??
+      defaultFileConfig.endpoints.default,
+    [fileConfig, endpoint],
+  );
 
   const displayToast = useCallback(() => {
     if (errors.length > 1) {
@@ -137,6 +149,9 @@ const useFileHandling = (params?: UseFileHandling) => {
             : error?.response?.data?.message ?? 'com_error_files_upload';
         setError(errorMessage);
       },
+      onMutate: () => {
+        setToolResource(undefined);
+      },
     },
     abortControllerRef.current?.signal,
   );
@@ -146,6 +161,7 @@ const useFileHandling = (params?: UseFileHandling) => {
     startUploadTimer(extendedFile.file_id, filename, extendedFile.size);
 
     const formData = new FormData();
+    formData.append('endpoint', endpoint);
     formData.append('file', extendedFile.file as File, encodeURIComponent(filename));
     formData.append('file_id', extendedFile.file_id);
 
@@ -167,7 +183,18 @@ const useFileHandling = (params?: UseFileHandling) => {
       }
     }
 
-    formData.append('endpoint', endpoint);
+    if (isAgentsEndpoint(endpoint)) {
+      if (!agent_id) {
+        formData.append('message_file', 'true');
+      }
+      const tool_resource = extendedFile.tool_resource ?? toolResource;
+      if (tool_resource != null) {
+        formData.append('tool_resource', tool_resource);
+      }
+      if (conversation?.agent_id != null && formData.get('agent_id') == null) {
+        formData.append('agent_id', conversation.agent_id);
+      }
+    }
 
     if (!isAssistantsEndpoint(endpoint)) {
       uploadFile.mutate(formData);
@@ -203,81 +230,86 @@ const useFileHandling = (params?: UseFileHandling) => {
     uploadFile.mutate(formData);
   };
 
-  const validateFiles = (fileList: File[]) => {
-    const existingFiles = Array.from(files.values());
-    const incomingTotalSize = fileList.reduce((total, file) => total + file.size, 0);
-    if (incomingTotalSize === 0) {
-      setError('com_error_files_empty');
-      return false;
-    }
-    const currentTotalSize = existingFiles.reduce((total, file) => total + file.size, 0);
-
-    if (fileList.length + files.size > fileLimit) {
-      setError(`You can only upload up to ${fileLimit} files at a time.`);
-      return false;
-    }
-
-    for (let i = 0; i < fileList.length; i++) {
-      let originalFile = fileList[i];
-      let fileType = originalFile.type;
-      const extension = originalFile.name.split('.').pop() ?? '';
-      const knownCodeType = codeTypeMapping[extension];
-
-      // Infer MIME type for Known Code files when the type is empty or a mismatch
-      if (knownCodeType && (!fileType || fileType !== knownCodeType)) {
-        fileType = knownCodeType;
+  const validateFiles = useCallback(
+    (fileList: File[]) => {
+      const existingFiles = Array.from(files.values());
+      const incomingTotalSize = fileList.reduce((total, file) => total + file.size, 0);
+      if (incomingTotalSize === 0) {
+        setError('com_error_files_empty');
+        return false;
       }
+      const currentTotalSize = existingFiles.reduce((total, file) => total + file.size, 0);
 
-      // Check if the file type is still empty after the extension check
-      if (!fileType) {
-        setError('Unable to determine file type for: ' + originalFile.name);
+      if (fileList.length + files.size > fileLimit) {
+        setError(`You can only upload up to ${fileLimit} files at a time.`);
         return false;
       }
 
-      // Replace empty type with inferred type
-      if (originalFile.type !== fileType) {
-        const newFile = new File([originalFile], originalFile.name, { type: fileType });
-        originalFile = newFile;
-        fileList[i] = newFile;
+      for (let i = 0; i < fileList.length; i++) {
+        let originalFile = fileList[i];
+        let fileType = originalFile.type;
+        const extension = originalFile.name.split('.').pop() ?? '';
+        const knownCodeType = codeTypeMapping[extension];
+
+        // Infer MIME type for Known Code files when the type is empty or a mismatch
+        if (knownCodeType && (!fileType || fileType !== knownCodeType)) {
+          fileType = knownCodeType;
+        }
+
+        // Check if the file type is still empty after the extension check
+        if (!fileType) {
+          setError('Unable to determine file type for: ' + originalFile.name);
+          return false;
+        }
+
+        // Replace empty type with inferred type
+        if (originalFile.type !== fileType) {
+          const newFile = new File([originalFile], originalFile.name, { type: fileType });
+          originalFile = newFile;
+          fileList[i] = newFile;
+        }
+
+        if (!checkType(originalFile.type, supportedMimeTypes)) {
+          console.log(originalFile);
+          setError('Currently, unsupported file type: ' + originalFile.type);
+          return false;
+        }
+
+        if (originalFile.size >= fileSizeLimit) {
+          setError(`File size exceeds ${fileSizeLimit / megabyte} MB.`);
+          return false;
+        }
       }
 
-      if (!checkType(originalFile.type, supportedMimeTypes)) {
-        console.log(originalFile);
-        setError('Currently, unsupported file type: ' + originalFile.type);
+      if (currentTotalSize + incomingTotalSize > totalSizeLimit) {
+        setError(`The total size of the files cannot exceed ${totalSizeLimit / megabyte} MB.`);
         return false;
       }
 
-      if (originalFile.size >= fileSizeLimit) {
-        setError(`File size exceeds ${fileSizeLimit / megabyte} MB.`);
+      const combinedFilesInfo = [
+        ...existingFiles.map(
+          (file) =>
+            `${file.file?.name ?? file.filename}-${file.size}-${
+              file.type?.split('/')[0] ?? 'file'
+            }`,
+        ),
+        ...fileList.map(
+          (file: File | undefined) =>
+            `${file?.name}-${file?.size}-${file?.type.split('/')[0] ?? 'file'}`,
+        ),
+      ];
+
+      const uniqueFilesSet = new Set(combinedFilesInfo);
+
+      if (uniqueFilesSet.size !== combinedFilesInfo.length) {
+        setError('com_error_files_dupe');
         return false;
       }
-    }
 
-    if (currentTotalSize + incomingTotalSize > totalSizeLimit) {
-      setError(`The total size of the files cannot exceed ${totalSizeLimit / megabyte} MB.`);
-      return false;
-    }
-
-    const combinedFilesInfo = [
-      ...existingFiles.map(
-        (file) =>
-          `${file.file?.name ?? file.filename}-${file.size}-${file.type?.split('/')[0] ?? 'file'}`,
-      ),
-      ...fileList.map(
-        (file: File | undefined) =>
-          `${file?.name}-${file?.size}-${file?.type.split('/')[0] ?? 'file'}`,
-      ),
-    ];
-
-    const uniqueFilesSet = new Set(combinedFilesInfo);
-
-    if (uniqueFilesSet.size !== combinedFilesInfo.length) {
-      setError('com_error_files_dupe');
-      return false;
-    }
-
-    return true;
-  };
+      return true;
+    },
+    [files, fileLimit, fileSizeLimit, totalSizeLimit, supportedMimeTypes],
+  );
 
   const loadImage = (extendedFile: ExtendedFile, preview: string) => {
     const img = new Image();
@@ -296,7 +328,7 @@ const useFileHandling = (params?: UseFileHandling) => {
     img.src = preview;
   };
 
-  const handleFiles = async (_files: FileList | File[]) => {
+  const handleFiles = async (_files: FileList | File[], _toolResource?: string) => {
     abortControllerRef.current = new AbortController();
     const fileList = Array.from(_files);
     /* Validate files */
@@ -327,9 +359,22 @@ const useFileHandling = (params?: UseFileHandling) => {
           size: originalFile.size,
         };
 
+        if (_toolResource != null && _toolResource !== '') {
+          extendedFile.tool_resource = _toolResource;
+        }
+
+        const isImage = originalFile.type.split('/')[0] === 'image';
+        const tool_resource =
+          extendedFile.tool_resource ?? params?.additionalMetadata?.tool_resource ?? toolResource;
+        if (isAgentsEndpoint(endpoint) && !isImage && tool_resource == null) {
+          /** Note: this needs to be removed when we can support files to providers */
+          setError('com_error_files_unsupported_capability');
+          continue;
+        }
+
         addFile(extendedFile);
 
-        if (originalFile.type.split('/')[0] === 'image') {
+        if (isImage) {
           loadImage(extendedFile, preview);
           continue;
         }
@@ -363,6 +408,7 @@ const useFileHandling = (params?: UseFileHandling) => {
 
   return {
     handleFileChange,
+    setToolResource,
     handleFiles,
     abortUpload,
     setFiles,

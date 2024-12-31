@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import * as Select from '@ariakit/react/select';
-import { cn } from '~/utils/';
 import type { Option } from '~/common';
+import { cn } from '~/utils/';
 
 interface DropdownProps {
   value: string;

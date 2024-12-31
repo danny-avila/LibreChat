@@ -1,13 +1,12 @@
-const multer = require('multer');
 const express = require('express');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const { requireJwtAuth, generateCheckAccess } = require('~/server/middleware');
-const { getAvailableTools } = require('~/server/controllers/PluginController');
 const v1 = require('~/server/controllers/agents/v1');
 const actions = require('./actions');
+const tools = require('./tools');
 
-const upload = multer();
 const router = express.Router();
+const avatar = express.Router();
 
 const checkAgentAccess = generateCheckAccess(PermissionTypes.AGENTS, [Permissions.USE]);
 const checkAgentCreate = generateCheckAccess(PermissionTypes.AGENTS, [
@@ -35,9 +34,8 @@ router.use('/actions', actions);
 /**
  * Get a list of available tools for agents.
  * @route GET /agents/tools
- * @returns {TPlugin[]} 200 - application/json
  */
-router.use('/tools', getAvailableTools);
+router.use('/tools', tools);
 
 /**
  * Creates an agent.
@@ -65,6 +63,14 @@ router.get('/:id', checkAgentAccess, v1.getAgent);
 router.patch('/:id', checkGlobalAgentShare, v1.updateAgent);
 
 /**
+ * Duplicates an agent.
+ * @route POST /agents/:id/duplicate
+ * @param {string} req.params.id - Agent identifier.
+ * @returns {Agent} 201 - Success response - application/json
+ */
+router.post('/:id/duplicate', checkAgentCreate, v1.duplicateAgent);
+
+/**
  * Deletes an agent.
  * @route DELETE /agents/:id
  * @param {string} req.params.id - Agent identifier.
@@ -82,12 +88,12 @@ router.get('/', checkAgentAccess, v1.getListAgents);
 
 /**
  * Uploads and updates an avatar for a specific agent.
- * @route POST /avatar/:agent_id
+ * @route POST /agents/:agent_id/avatar
  * @param {string} req.params.agent_id - The ID of the agent.
  * @param {Express.Multer.File} req.file - The avatar image file.
  * @param {string} [req.body.metadata] - Optional metadata for the agent's avatar.
  * @returns {Object} 200 - success response - application/json
  */
-router.post('/avatar/:agent_id', checkAgentAccess, upload.single('file'), v1.uploadAgentAvatar);
+avatar.post('/:agent_id/avatar/', checkAgentAccess, v1.uploadAgentAvatar);
 
-module.exports = router;
+module.exports = { v1: router, avatar };

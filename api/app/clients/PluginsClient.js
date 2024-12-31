@@ -1,14 +1,13 @@
 const OpenAIClient = require('./OpenAIClient');
-const { CallbackManager } = require('langchain/callbacks');
 const { CacheKeys, Time } = require('librechat-data-provider');
+const { CallbackManager } = require('@langchain/core/callbacks/manager');
 const { BufferMemory, ChatMessageHistory } = require('langchain/memory');
-const { initializeCustomAgent, initializeFunctionsAgent } = require('./agents');
 const { addImages, buildErrorInput, buildPromptPrefix } = require('./output_parsers');
+const { initializeCustomAgent, initializeFunctionsAgent } = require('./agents');
 const { processFileURL } = require('~/server/services/Files/process');
 const { EModelEndpoint } = require('librechat-data-provider');
 const { formatLangChainMessages } = require('./prompts');
 const checkBalance = require('~/models/checkBalance');
-const { SelfReflectionTool } = require('./tools');
 const { isEnabled } = require('~/server/utils');
 const { extractBaseURL } = require('~/utils');
 const { loadTools } = require('./tools/util');
@@ -44,6 +43,7 @@ class PluginsClient extends OpenAIClient {
     return {
       artifacts: this.options.artifacts,
       chatGptLabel: this.options.chatGptLabel,
+      modelLabel: this.options.modelLabel,
       promptPrefix: this.options.promptPrefix,
       tools: this.options.tools,
       ...this.modelOptions,
@@ -106,7 +106,7 @@ class PluginsClient extends OpenAIClient {
       chatHistory: new ChatMessageHistory(pastMessages),
     });
 
-    this.tools = await loadTools({
+    const { loadedTools } = await loadTools({
       user,
       model,
       tools: this.options.tools,
@@ -120,13 +120,14 @@ class PluginsClient extends OpenAIClient {
         processFileURL,
         message,
       },
+      useSpecs: true,
     });
 
-    if (this.tools.length > 0 && !this.functionsAgent) {
-      this.tools.push(new SelfReflectionTool({ message, isGpt3: false }));
-    } else if (this.tools.length === 0) {
+    if (loadedTools.length === 0) {
       return;
     }
+
+    this.tools = loadedTools;
 
     logger.debug('[PluginsClient] Requested Tools', this.options.tools);
     logger.debug(
@@ -255,15 +256,17 @@ class PluginsClient extends OpenAIClient {
     }
 
     this.responsePromise = this.saveMessageToDatabase(responseMessage, saveOptions, user);
-    const messageCache = getLogStores(CacheKeys.MESSAGES);
-    messageCache.set(
-      responseMessage.messageId,
-      {
-        text: responseMessage.text,
-        complete: true,
-      },
-      Time.FIVE_MINUTES,
-    );
+    if (responseMessage.text) {
+      const messageCache = getLogStores(CacheKeys.MESSAGES);
+      messageCache.set(
+        responseMessage.messageId,
+        {
+          text: responseMessage.text,
+          complete: true,
+        },
+        Time.FIVE_MINUTES,
+      );
+    }
     delete responseMessage.tokenCount;
     return { ...responseMessage, ...result };
   }
@@ -458,7 +461,6 @@ class PluginsClient extends OpenAIClient {
 
     const instructionsPayload = {
       role: 'system',
-      name: 'instructions',
       content: promptPrefix,
     };
 

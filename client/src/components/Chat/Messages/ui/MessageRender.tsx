@@ -9,6 +9,7 @@ import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import Icon from '~/components/Chat/Messages/MessageIcon';
 import { Plugin } from '~/components/Messages/Content';
 import SubRow from '~/components/Chat/Messages/SubRow';
+import { MessageContext } from '~/Providers';
 import { useMessageActions } from '~/hooks';
 import { cn, logger } from '~/utils';
 import store from '~/store';
@@ -55,13 +56,14 @@ const MessageRender = memo(
       isMultiMessage,
       setCurrentEditId,
     });
-
     const fontSize = useRecoilValue(store.fontSize);
+    const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
     const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
     const { isCreatedByUser, error, unfinished } = msg ?? {};
+    const hasNoChildren = !(msg?.children?.length ?? 0);
     const isLast = useMemo(
-      () => !msg?.children?.length && (msg?.depth === latestMessage?.depth || msg?.depth === -1),
-      [msg?.children, msg?.depth, latestMessage?.depth],
+      () => hasNoChildren && (msg?.depth === latestMessage?.depth || msg?.depth === -1),
+      [hasNoChildren, msg?.depth, latestMessage?.depth],
     );
 
     if (!msg) {
@@ -80,16 +82,31 @@ const MessageRender = memo(
         }
         : undefined;
 
+    // Style classes
+    const baseClasses =
+      'final-completion group mx-auto flex flex-1 gap-3 transition-all duration-300 transform-gpu';
+    let layoutClasses = '';
+
+    if (isCard ?? false) {
+      layoutClasses =
+        'relative w-full gap-1 rounded-lg border border-border-medium bg-surface-primary-alt p-2 md:w-1/2 md:gap-3 md:p-4';
+    } else if (maximizeChatSpace) {
+      layoutClasses = 'md:max-w-full md:px-5';
+    } else {
+      layoutClasses = 'md:max-w-3xl md:px-5 lg:max-w-[40rem] lg:px-1 xl:max-w-[48rem] xl:px-5';
+    }
+
+    const latestCardClasses = isLatestCard ? 'bg-surface-secondary' : '';
+    const showRenderClasses = showCardRender ? 'cursor-pointer transition-colors duration-300' : '';
+
     return (
       <div
         aria-label={`message-${msg.depth}-${msg.messageId}`}
         className={cn(
-          'final-completion group mx-auto flex flex-1 gap-3',
-          isCard === true
-            ? 'relative w-full gap-1 rounded-lg border border-border-medium bg-surface-primary-alt p-2 md:w-1/2 md:gap-3 md:p-4'
-            : 'md:max-w-3xl md:px-5 lg:max-w-[40rem] lg:px-1 xl:max-w-[48rem] xl:px-5',
-          isLatestCard === true ? 'bg-surface-secondary' : '',
-          showCardRender ? 'cursor-pointer transition-colors duration-300' : '',
+          baseClasses,
+          layoutClasses,
+          latestCardClasses,
+          showRenderClasses,
           'focus:outline-none focus:ring-2 focus:ring-border-xheavy',
         )}
         onClick={clickHandler}
@@ -122,24 +139,31 @@ const MessageRender = memo(
           <h2 className={cn('select-none font-semibold', fontSize)}>{messageLabel}</h2>
           <div className="flex-col gap-1 md:gap-3">
             <div className="flex max-w-full flex-grow flex-col gap-0">
-              {msg.plugin && <Plugin plugin={msg.plugin} />}
-              <MessageContent
-                ask={ask}
-                edit={edit}
-                isLast={isLast}
-                text={msg.text || ''}
-                message={msg}
-                enterEdit={enterEdit}
-                error={!!(error ?? false)}
-                isSubmitting={isSubmitting}
-                unfinished={unfinished ?? false}
-                isCreatedByUser={isCreatedByUser ?? true}
-                siblingIdx={siblingIdx ?? 0}
-                setSiblingIdx={setSiblingIdx ?? (() => ({}))}
-              />
+              <MessageContext.Provider
+                value={{
+                  messageId: msg.messageId,
+                  conversationId: conversation?.conversationId,
+                }}
+              >
+                {msg.plugin && <Plugin plugin={msg.plugin} />}
+                <MessageContent
+                  ask={ask}
+                  edit={edit}
+                  isLast={isLast}
+                  text={msg.text || ''}
+                  message={msg}
+                  enterEdit={enterEdit}
+                  error={!!(error ?? false)}
+                  isSubmitting={isSubmitting}
+                  unfinished={unfinished ?? false}
+                  isCreatedByUser={isCreatedByUser ?? true}
+                  siblingIdx={siblingIdx ?? 0}
+                  setSiblingIdx={setSiblingIdx ?? (() => ({}))}
+                />
+              </MessageContext.Provider>
             </div>
           </div>
-          {!msg.children?.length && (isSubmittingFamily === true || isSubmitting) ? (
+          {hasNoChildren && (isSubmittingFamily === true || isSubmitting) ? (
             <PlaceholderRow isCard={isCard} />
           ) : (
             <SubRow classes="text-xs">

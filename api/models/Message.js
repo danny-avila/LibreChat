@@ -73,15 +73,17 @@ async function saveMessage(req, params, metadata) {
  * @async
  * @function bulkSaveMessages
  * @param {Object[]} messages - An array of message objects to save.
+ * @param {boolean} [overrideTimestamp=false] - Indicates whether to override the timestamps of the messages. Defaults to false.
  * @returns {Promise<Object>} The result of the bulk write operation.
  * @throws {Error} If there is an error in saving messages in bulk.
  */
-async function bulkSaveMessages(messages) {
+async function bulkSaveMessages(messages, overrideTimestamp=false) {
   try {
     const bulkOps = messages.map((message) => ({
       updateOne: {
         filter: { messageId: message.messageId },
         update: message,
+        timestamps: !overrideTimestamp,
         upsert: true,
       },
     }));
@@ -264,6 +266,26 @@ async function getMessages(filter, select) {
 }
 
 /**
+ * Retrieves a single message from the database.
+ * @async
+ * @function getMessage
+ * @param {{ user: string, messageId: string }} params - The search parameters
+ * @returns {Promise<TMessage | null>} The message that matches the criteria or null if not found
+ * @throws {Error} If there is an error in retrieving the message
+ */
+async function getMessage({ user, messageId }) {
+  try {
+    return await Message.findOne({
+      user,
+      messageId,
+    }).lean();
+  } catch (err) {
+    logger.error('Error getting message:', err);
+    throw err;
+  }
+}
+
+/**
  * Deletes messages from the database.
  *
  * @async
@@ -290,5 +312,6 @@ module.exports = {
   updateMessage,
   deleteMessagesSince,
   getMessages,
+  getMessage,
   deleteMessages,
 };

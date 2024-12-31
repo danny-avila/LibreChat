@@ -2,22 +2,18 @@ import React, { useEffect } from 'react';
 import { QueryKeys } from 'librechat-data-provider';
 import { Controller, useForm } from 'react-hook-form';
 import { useQueryClient } from '@tanstack/react-query';
-import type {
-  TConversation,
-  TConversationTag,
-  TConversationTagRequest,
-} from 'librechat-data-provider';
-import { cn, removeFocusOutlines, defaultTextProps, logger } from '~/utils';
+import type { TConversationTag, TConversationTagRequest } from 'librechat-data-provider';
 import { Checkbox, Label, TextareaAutosize, Input } from '~/components';
 import { useBookmarkContext } from '~/Providers/BookmarkContext';
 import { useConversationTagMutation } from '~/data-provider';
 import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
+import { cn, logger } from '~/utils';
 
 type TBookmarkFormProps = {
   tags?: string[];
   bookmark?: TConversationTag;
-  conversation?: TConversation;
+  conversationId?: string;
   formRef: React.RefObject<HTMLFormElement>;
   setOpen: React.Dispatch<React.SetStateAction<boolean>>;
   mutation: ReturnType<typeof useConversationTagMutation>;
@@ -26,7 +22,7 @@ const BookmarkForm = ({
   tags,
   bookmark,
   mutation,
-  conversation,
+  conversationId,
   setOpen,
   formRef,
 }: TBookmarkFormProps) => {
@@ -46,8 +42,8 @@ const BookmarkForm = ({
     defaultValues: {
       tag: bookmark?.tag ?? '',
       description: bookmark?.description ?? '',
-      conversationId: conversation?.conversationId ?? '',
-      addToConversation: conversation ? true : false,
+      conversationId: conversationId ?? '',
+      addToConversation: conversationId != null && conversationId ? true : false,
     },
   });
 
@@ -142,7 +138,7 @@ const BookmarkForm = ({
             )}
           />
         </div>
-        {conversation && (
+        {conversationId != null && conversationId && (
           <div className="mt-2 flex w-full items-center">
             <Controller
               name="addToConversation"

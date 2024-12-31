@@ -10,6 +10,7 @@ const openAI = require('~/server/services/Endpoints/openAI');
 const agents = require('~/server/services/Endpoints/agents');
 const custom = require('~/server/services/Endpoints/custom');
 const google = require('~/server/services/Endpoints/google');
+const { getConvoFiles } = require('~/models/Conversation');
 const { handleError } = require('~/server/utils');
 
 const buildFunction = {
@@ -27,7 +28,12 @@ const buildFunction = {
 
 async function buildEndpointOption(req, res, next) {
   const { endpoint, endpointType } = req.body;
-  let parsedBody = parseCompactConvo({ endpoint, endpointType, conversation: req.body });
+  let parsedBody;
+  try {
+    parsedBody = parseCompactConvo({ endpoint, endpointType, conversation: req.body });
+  } catch (error) {
+    return handleError(res, { text: 'Error parsing conversation' });
+  }
 
   if (req.app.locals.modelSpecs?.list && req.app.locals.modelSpecs?.enforce) {
     /** @type {{ list: TModelSpec[] }}*/
@@ -56,28 +62,47 @@ async function buildEndpointOption(req, res, next) {
       });
     }
 
-    parsedBody = parseCompactConvo({
-      endpoint,
-      endpointType,
-      conversation: currentModelSpec.preset,
-    });
+    try {
+      currentModelSpec.preset.spec = spec;
+      if (currentModelSpec.iconURL != null && currentModelSpec.iconURL !== '') {
+        currentModelSpec.preset.iconURL = currentModelSpec.iconURL;
+      }
+      parsedBody = parseCompactConvo({
+        endpoint,
+        endpointType,
+        conversation: currentModelSpec.preset,
+      });
+    } catch (error) {
+      return handleError(res, { text: 'Error parsing model spec' });
+    }
   }
 
-  const endpointFn = buildFunction[endpointType ?? endpoint];
-  const builder = isAgentsEndpoint(endpoint) ? (...args) => endpointFn(req, ...args) : endpointFn;
+  try {
+    const isAgents = isAgentsEndpoint(endpoint);
+    const endpointFn = buildFunction[endpointType ?? endpoint];
+    const builder = isAgents ? (...args) => endpointFn(req, ...args) : endpointFn;
 
-  // TODO: use object params
-  req.body.endpointOption = builder(endpoint, parsedBody, endpointType);
+    // TODO: use object params
+    req.body.endpointOption = await builder(endpoint, parsedBody, endpointType);
 
-  // TODO: use `getModelsConfig` only when necessary
-  const modelsConfig = await getModelsConfig(req);
-  req.body.endpointOption.modelsConfig = modelsConfig;
-
-  if (req.body.files) {
-    // hold the promise
-    req.body.endpointOption.attachments = processFiles(req.body.files);
+    // TODO: use `getModelsConfig` only when necessary
+    const modelsConfig = await getModelsConfig(req);
+    const { resendFiles = true } = req.body.endpointOption;
+    req.body.endpointOption.modelsConfig = modelsConfig;
+    if (isAgents && resendFiles && req.body.conversationId) {
+      const fileIds = await getConvoFiles(req.body.conversationId);
+      const requestFiles = req.body.files ?? [];
+      if (requestFiles.length || fileIds.length) {
+        req.body.endpointOption.attachments = processFiles(requestFiles, fileIds);
+      }
+    } else if (req.body.files) {
+      // hold the promise
+      req.body.endpointOption.attachments = processFiles(req.body.files);
+    }
+    next();
+  } catch (error) {
+    return handleError(res, { text: 'Error building endpoint option' });
   }
-  next();
 }
 
 module.exports = buildEndpointOption;

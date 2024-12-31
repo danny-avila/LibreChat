@@ -27,6 +27,9 @@ transactionSchema.methods.calculateTokenValue = function () {
  */
 transactionSchema.statics.create = async function (txData) {
   const Transaction = this;
+  if (txData.rawAmount != null && isNaN(txData.rawAmount)) {
+    return;
+  }
 
   const transaction = new Transaction(txData);
   transaction.endpointTokenConfig = txData.endpointTokenConfig;

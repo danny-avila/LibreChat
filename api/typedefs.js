@@ -39,8 +39,32 @@
  */
 
 /**
+ * @exports OpenAIClientOptions
+ * @typedef {import('@librechat/agents').OpenAIClientOptions} OpenAIClientOptions
+ * @memberof typedefs
+ */
+
+/**
+ * @exports AnthropicClientOptions
+ * @typedef {import('@librechat/agents').AnthropicClientOptions} AnthropicClientOptions
+ * @memberof typedefs
+ */
+
+/**
  * @exports BedrockClientOptions
  * @typedef {import('@librechat/agents').BedrockConverseClientOptions} BedrockClientOptions
+ * @memberof typedefs
+ */
+
+/**
+ * @exports VertexAIClientOptions
+ * @typedef {import('@librechat/agents').VertexAIClientOptions} VertexAIClientOptions
+ * @memberof typedefs
+ */
+
+/**
+ * @exports GoogleClientOptions
+ * @typedef {import('@librechat/agents').GoogleClientOptions} GoogleClientOptions
  * @memberof typedefs
  */
 
@@ -57,8 +81,35 @@
  */
 
 /**
+ * @exports BaseMessage
+ * @typedef {import('@langchain/core/messages').BaseMessage} BaseMessage
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ConversationSummaryBufferMemory
+ * @typedef {import('langchain/memory').ConversationSummaryBufferMemory} ConversationSummaryBufferMemory
+ * @memberof typedefs
+ */
+
+/**
  * @exports UsageMetadata
  * @typedef {import('@langchain/core/messages').UsageMetadata} UsageMetadata
+ * @memberof typedefs
+ */
+
+/**
+ * @exports GraphRunnableConfig
+ * @typedef {import('@langchain/core/runnables').RunnableConfig<{
+ *  req: ServerRequest;
+ * thread_id: string;
+ * run_id: string;
+ * agent_id: string;
+ * name: string;
+ * agent_index: number;
+ * last_agent_index: number;
+ * hide_sequential_outputs: boolean;
+ * }>} GraphRunnableConfig
  * @memberof typedefs
  */
 
@@ -690,6 +741,12 @@
  */
 
 /**
+ * @exports ToolCallData
+ * @typedef {import('~/models/schema/toolCallSchema.js').ToolCallData} ToolCallData
+ * @memberof typedefs
+ */
+
+/**
  * @exports MongoUser
  * @typedef {import('~/models/schema/userSchema.js').MongoUser} MongoUser
  * @memberof typedefs
@@ -716,6 +773,33 @@
 /**
  * @exports processFileURL
  * @typedef {import('~/server/services/Files/process').processFileURL} processFileURL
+ * @memberof typedefs
+ */
+
+/**
+ *
+ * @typedef {Object} ImageGenOptions
+ * @property {ServerRequest} req - The request object.
+ * @property {boolean} isAgent - Whether the request is from an agent.
+ * @property {FileSources} fileStrategy - The file strategy to use.
+ * @property {processFileURL} processFileURL - The function to process a file URL.
+ * @property {boolean} returnMetadata - Whether to return metadata.
+ * @property {uploadImageBuffer} uploadImageBuffer - The function to upload an image buffer.
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Partial<ImageGenOptions> & {
+ *   message?: string,
+ *   signal?: AbortSignal
+ *   memory?: ConversationSummaryBufferMemory
+ * }} LoadToolOptions
+ * @memberof typedefs
+ */
+
+/**
+ * @exports EModelEndpoint
+ * @typedef {import('librechat-data-provider').EModelEndpoint} EModelEndpoint
  * @memberof typedefs
  */
 
@@ -798,8 +882,20 @@
  */
 
 /**
+ * @exports TAgentsEndpoint
+ * @typedef {import('librechat-data-provider').TAgentsEndpoint} TAgentsEndpoint
+ * @memberof typedefs
+ */
+
+/**
  * @exports Agent
  * @typedef {import('librechat-data-provider').Agent} Agent
+ * @memberof typedefs
+ */
+
+/**
+ * @exports AgentToolResources
+ * @typedef {import('librechat-data-provider').AgentToolResources} AgentToolResources
  * @memberof typedefs
  */
 
@@ -824,6 +920,42 @@
 /**
  * @exports AgentListResponse
  * @typedef {import('librechat-data-provider').AgentListResponse} AgentListResponse
+ * @memberof typedefs
+ */
+
+/**
+ * @exports JsonSchemaType
+ * @typedef {import('librechat-data-provider').JsonSchemaType} JsonSchemaType
+ * @memberof typedefs
+ */
+
+/**
+ * @exports MCPServers
+ * @typedef {import('librechat-mcp').MCPServers} MCPServers
+ * @memberof typedefs
+ */
+
+/**
+ * @exports MCPManager
+ * @typedef {import('librechat-mcp').MCPManager} MCPManager
+ * @memberof typedefs
+ */
+
+/**
+ * @exports LCAvailableTools
+ * @typedef {import('librechat-mcp').LCAvailableTools} LCAvailableTools
+ * @memberof typedefs
+ */
+
+/**
+ * @exports LCTool
+ * @typedef {import('librechat-mcp').LCTool} LCTool
+ * @memberof typedefs
+ */
+
+/**
+ * @exports FormattedContent
+ * @typedef {import('librechat-mcp').FormattedContent} FormattedContent
  * @memberof typedefs
  */
 
@@ -939,6 +1071,28 @@
 /**
  * @exports TAgentClient
  * @typedef {import('./server/controllers/agents/client')} TAgentClient
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Object} AgentClientOptions
+ * @property {Agent} agent - The agent configuration object
+ * @property {string} endpoint - The endpoint identifier for the agent
+ * @property {Object} req - The request object
+ * @property {string} [name] - The username
+ * @property {string} [modelLabel] - The label for the model being used
+ * @property {number} [maxContextTokens] - Maximum number of tokens allowed in context
+ * @property {Object} [endpointTokenConfig] - Token configuration for the endpoint
+ * @property {boolean} [resendFiles] - Whether to resend files
+ * @property {string} [imageDetail] - Detail level for image processing
+ * @property {Object} [spec] - Specification object
+ * @property {Promise<MongoFile[]>} [attachments] - Promise resolving to file attachments
+ * @property {Object} [headers] - Additional headers for requests
+ * @property {string} [proxy] - Proxy configuration
+ * @property {Object} [tools] - Available tools for the agent
+ * @property {Object} [eventHandlers] - Custom event handlers
+ * @property {Object} [addParams] - Additional parameters to add to requests
+ * @property {string[]} [dropParams] - Parameters to remove from requests
  * @memberof typedefs
  */
 

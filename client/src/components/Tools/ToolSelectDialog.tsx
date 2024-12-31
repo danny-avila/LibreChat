@@ -90,7 +90,7 @@ function ToolSelectDialog({
   const onRemoveTool = (tool: string) => {
     setShowPluginAuthForm(false);
     updateUserPlugins.mutate(
-      { pluginKey: tool, action: 'uninstall', auth: null, isAssistantTool: true },
+      { pluginKey: tool, action: 'uninstall', auth: null, isEntityTool: true },
       {
         onError: (error: unknown) => {
           handleInstallError(error as TError);
@@ -151,22 +151,22 @@ function ToolSelectDialog({
       className="relative z-[102]"
     >
       {/* The backdrop, rendered as a fixed sibling to the panel container */}
-      <div className="fixed inset-0 bg-gray-600/65 transition-opacity dark:bg-black/80" />
+      <div className="fixed inset-0 bg-surface-primary opacity-60 transition-opacity dark:opacity-80" />
       {/* Full-screen container to center the panel */}
       <div className="fixed inset-0 flex items-center justify-center p-4">
         <DialogPanel
-          className="relative w-full transform overflow-hidden overflow-y-auto rounded-lg bg-white text-left shadow-xl transition-all dark:bg-gray-800 max-sm:h-full sm:mx-7 sm:my-8 sm:max-w-2xl lg:max-w-5xl xl:max-w-7xl"
+          className="relative w-full transform overflow-hidden overflow-y-auto rounded-lg bg-surface-secondary text-left shadow-xl transition-all max-sm:h-full sm:mx-7 sm:my-8 sm:max-w-2xl lg:max-w-5xl xl:max-w-7xl"
           style={{ minHeight: '610px' }}
         >
-          <div className="flex items-center justify-between border-b-[1px] border-black/10 px-4 pb-4 pt-5 dark:border-white/10 sm:p-6">
+          <div className="flex items-center justify-between border-b-[1px] border-border-medium px-4 pb-4 pt-5 sm:p-6">
             <div className="flex items-center">
               <div className="text-center sm:text-left">
-                <DialogTitle className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
+                <DialogTitle className="text-lg font-medium leading-6 text-text-primary">
                   {isAgentTools
                     ? localize('com_nav_tool_dialog_agents')
                     : localize('com_nav_tool_dialog')}
                 </DialogTitle>
-                <Description className="text-sm text-gray-500 dark:text-gray-300">
+                <Description className="text-sm text-text-secondary">
                   {localize('com_nav_tool_dialog_description')}
                 </Description>
               </div>
@@ -178,7 +178,7 @@ function ToolSelectDialog({
                     setIsOpen(false);
                     setCurrentPage(1);
                   }}
-                  className="inline-block text-gray-500 hover:text-gray-200"
+                  className="inline-block text-text-tertiary hover:text-text-secondary"
                   tabIndex={0}
                 >
                   <X />
@@ -199,20 +199,20 @@ function ToolSelectDialog({
               <PluginAuthForm
                 plugin={selectedPlugin}
                 onSubmit={(installActionData: TPluginAction) => handleInstall(installActionData)}
-                isAssistantTool={true}
+                isEntityTool={true}
               />
             </div>
           )}
           <div className="p-4 sm:p-6 sm:pt-4">
             <div className="mt-4 flex flex-col gap-4">
               <div className="flex items-center justify-center space-x-4">
-                <Search className="h-6 w-6 text-gray-500" />
+                <Search className="h-6 w-6 text-text-tertiary" />
                 <input
                   type="text"
                   value={searchValue}
                   onChange={handleSearch}
-                  placeholder={localize('com_nav_plugin_search')}
-                  className="w-64 rounded border border-gray-300 px-2 py-1 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
+                  placeholder={localize('com_nav_tool_search')}
+                  className="w-64 rounded border border-border-medium bg-transparent px-2 py-1 text-text-primary focus:outline-none"
                 />
               </div>
               <div

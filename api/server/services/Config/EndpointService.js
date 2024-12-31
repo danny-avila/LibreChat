@@ -49,10 +49,6 @@ module.exports = {
       process.env.BEDROCK_AWS_SECRET_ACCESS_KEY ?? process.env.BEDROCK_AWS_DEFAULT_REGION,
     ),
     /* key will be part of separate config */
-    [EModelEndpoint.agents]: generateConfig(
-      process.env.EXPERIMENTAL_AGENTS,
-      undefined,
-      EModelEndpoint.agents,
-    ),
+    [EModelEndpoint.agents]: generateConfig('true', undefined, EModelEndpoint.agents),
   },
 };

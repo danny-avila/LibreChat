@@ -6,7 +6,7 @@ const {
 } = require('librechat-data-provider');
 const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/UserService');
 const { getLLMConfig } = require('~/server/services/Endpoints/openAI/llm');
-const { isEnabled, isUserProvided } = require('~/server/utils');
+const { isEnabled, isUserProvided, sleep } = require('~/server/utils');
 const { getAzureCredentials } = require('~/utils');
 const { OpenAIClient } = require('~/app');
 
@@ -54,7 +54,7 @@ const initializeClient = async ({
   let apiKey = userProvidesKey ? userValues?.apiKey : credentials[endpoint];
   let baseURL = userProvidesURL ? userValues?.baseURL : baseURLOptions[endpoint];
 
-  const clientOptions = {
+  let clientOptions = {
     contextStrategy,
     proxy: PROXY ?? null,
     debug: isEnabled(DEBUG_OPENAI),
@@ -97,6 +97,12 @@ const initializeClient = async ({
 
     apiKey = azureOptions.azureOpenAIApiKey;
     clientOptions.azure = !serverless && azureOptions;
+    if (serverless === true) {
+      clientOptions.defaultQuery = azureOptions.azureOpenAIApiVersion
+        ? { 'api-version': azureOptions.azureOpenAIApiVersion }
+        : undefined;
+      clientOptions.headers['api-key'] = apiKey;
+    }
   } else if (isAzureOpenAI) {
     clientOptions.azure = userProvidesKey ? JSON.parse(userValues.apiKey) : getAzureCredentials();
     apiKey = clientOptions.azure.azureOpenAIApiKey;
@@ -128,13 +134,24 @@ const initializeClient = async ({
   }
 
   if (optionsOnly) {
-    const requestOptions = Object.assign(
+    clientOptions = Object.assign(
       {
         modelOptions: endpointOption.model_parameters,
       },
       clientOptions,
     );
-    return getLLMConfig(apiKey, requestOptions);
+    const options = getLLMConfig(apiKey, clientOptions);
+    if (!clientOptions.streamRate) {
+      return options;
+    }
+    options.llmConfig.callbacks = [
+      {
+        handleLLMNewToken: async () => {
+          await sleep(clientOptions.streamRate);
+        },
+      },
+    ];
+    return options;
   }
 
   const client = new OpenAIClient(apiKey, Object.assign({ req, res }, clientOptions));

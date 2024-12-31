@@ -1,4 +1,4 @@
-import { render } from 'test/layout-test-utils';
+import { render, getByTestId } from 'test/layout-test-utils';
 import userEvent from '@testing-library/user-event';
 import * as mockDataProvider from 'librechat-data-provider/react-query';
 import type { TStartupConfig } from 'librechat-data-provider';
@@ -112,7 +112,7 @@ test('submits login form', async () => {
   );
   const emailInput = getByLabelText(/email/i);
   const passwordInput = getByLabelText(/password/i);
-  const submitButton = getByRole('button', { name: /Sign in/i });
+  const submitButton = getByTestId(document.body, 'login-button');
 
   await userEvent.type(emailInput, 'test@example.com');
   await userEvent.type(passwordInput, 'password');
@@ -127,7 +127,7 @@ test('displays validation error messages', async () => {
   );
   const emailInput = getByLabelText(/email/i);
   const passwordInput = getByLabelText(/password/i);
-  const submitButton = getByRole('button', { name: /Sign in/i });
+  const submitButton = getByTestId(document.body, 'login-button');
 
   await userEvent.type(emailInput, 'test');
   await userEvent.type(passwordInput, 'pass');

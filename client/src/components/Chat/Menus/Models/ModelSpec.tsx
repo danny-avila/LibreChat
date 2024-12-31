@@ -33,10 +33,10 @@ const MenuItem: FC<MenuItemProps> = ({
   const [isDialogOpen, setDialogOpen] = useState(false);
   const { getExpiry } = useUserKey(endpoint ?? '');
   const localize = useLocalize();
-  const expiryTime = getExpiry();
+  const expiryTime = getExpiry() ?? '';
 
   const clickHandler = () => {
-    if (expiryTime == null) {
+    if (expiryTime) {
       setDialogOpen(true);
     }
     if (onClick) {
@@ -54,7 +54,9 @@ const MenuItem: FC<MenuItemProps> = ({
   return (
     <>
       <div
-        role="menuitem"
+        id={selected ? 'selected-llm' : undefined}
+        role="option"
+        aria-selected={selected}
         className="group m-1.5 flex cursor-pointer gap-2 rounded px-1 py-2.5 !pr-3 text-sm !opacity-100 hover:bg-black/5 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-white/5"
         tabIndex={0}
         {...rest}
@@ -71,7 +73,7 @@ const MenuItem: FC<MenuItemProps> = ({
           <div>
             <div className="flex items-center gap-2">
               {showIconInMenu && <SpecIcon currentSpec={spec} endpointsConfig={endpointsConfig} />}
-              <div className="break-all">
+              <div>
                 {title}
                 <div className="text-token-text-tertiary">{description}</div>
               </div>
@@ -81,10 +83,12 @@ const MenuItem: FC<MenuItemProps> = ({
             {userProvidesKey ? (
               <div className="text-token-text-primary" key={`set-key-${endpoint}`}>
                 <button
+                  tabIndex={0}
+                  aria-label={`${localize('com_endpoint_config_key')} for ${title}`}
                   className={cn(
-                    'invisible flex gap-x-1 group-hover:visible',
+                    'invisible flex gap-x-1 group-focus-within:visible group-hover:visible',
                     selected ? 'visible' : '',
-                    expiryTime != null
+                    expiryTime
                       ? 'w-full rounded-lg p-2 hover:bg-gray-200 dark:hover:bg-gray-900'
                       : '',
                   )}
@@ -93,16 +97,23 @@ const MenuItem: FC<MenuItemProps> = ({
                     e.stopPropagation();
                     setDialogOpen(true);
                   }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setDialogOpen(true);
+                    }
+                  }}
                 >
                   <div
                     className={cn(
-                      'invisible group-hover:visible',
-                      expiryTime != null ? 'text-xs' : '',
+                      'invisible group-focus-within:visible group-hover:visible',
+                      expiryTime ? 'text-xs' : '',
                     )}
                   >
                     {localize('com_endpoint_config_key')}
                   </div>
-                  <Settings className={cn(expiryTime != null ? 'icon-sm' : 'icon-md stroke-1')} />
+                  <Settings className={cn(expiryTime ? 'icon-sm' : 'icon-md stroke-1')} />
                 </button>
               </div>
             ) : null}
