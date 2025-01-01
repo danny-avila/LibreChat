@@ -54,8 +54,6 @@ export const router = createBrowserRouter([
     element: <AuthLayout />,
     children: [
       {
-        path: '/',
-        element: <LoginLayout />,
         children: [
           {
             path: 'login',
@@ -81,6 +79,10 @@ export const router = createBrowserRouter([
             element: <Search />,
           },
         ],
+      },
+      {
+        path: '*',
+        element: <Navigate to="/c/new" replace />,
       },
     ],
   },
