@@ -96,25 +96,18 @@ const updateAgent = async (searchParameter, updateData) => {
  */
 const addAgentResourceFile = async ({ agent_id, tool_resource, file_id }) => {
   const searchParameter = { id: agent_id };
-  const agent = await getAgent(searchParameter);
 
-  if (!agent) {
+  // build the update to push or create the file ids set
+  const fileIdsPath = `tool_resources.${tool_resource}.file_ids`;
+  const updateData = { $addToSet: { [fileIdsPath]: file_id } };
+
+  // return the updated agent or throw if no agent matches
+  const updatedAgent = await updateAgent(searchParameter, updateData);
+  if (updatedAgent) {
+    return updatedAgent;
+  } else {
     throw new Error('Agent not found for adding resource file');
   }
-
-  const tool_resources = agent.tool_resources || {};
-
-  if (!tool_resources[tool_resource]) {
-    tool_resources[tool_resource] = { file_ids: [] };
-  }
-
-  if (!tool_resources[tool_resource].file_ids.includes(file_id)) {
-    tool_resources[tool_resource].file_ids.push(file_id);
-  }
-
-  const updateData = { tool_resources };
-
-  return await updateAgent(searchParameter, updateData);
 };
 
 /**
