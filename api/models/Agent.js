@@ -82,7 +82,7 @@ const loadAgent = async ({ req, agent_id }) => {
  */
 const updateAgent = async (searchParameter, updateData) => {
   const options = { new: true, upsert: false };
-  return await Agent.findOneAndUpdate(searchParameter, updateData, options).lean();
+  return Agent.findOneAndUpdate(searchParameter, updateData, options).lean();
 };
 
 /**
