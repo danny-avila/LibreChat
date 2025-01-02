@@ -3,7 +3,7 @@ const axios = require('axios');
 const FormData = require('form-data');
 const { getCodeBaseURL } = require('@librechat/agents');
 
-const MAX_FILE_SIZE = 25 * 1024 * 1024;
+const MAX_FILE_SIZE = 150 * 1024 * 1024;
 
 /**
  * Retrieves a download stream for a specified file.
