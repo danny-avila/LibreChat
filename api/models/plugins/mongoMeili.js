@@ -186,8 +186,8 @@ const createMeiliMongooseModel = function ({ index, attributesToIndex }) {
 
       if (object.content && Array.isArray(object.content)) {
         object.text = object.content
-          .filter((item) => item.type === 'text' && item.text && item.text.value)
-          .map((item) => item.text.value)
+          .filter((item) => item.type === 'text' && item.text)
+          .map((item) => typeof item.text === 'string' ? item.text : item.text.value)
           .join(' ');
         delete object.content;
       }
