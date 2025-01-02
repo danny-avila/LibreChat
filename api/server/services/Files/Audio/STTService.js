@@ -2,6 +2,7 @@ const axios = require('axios');
 const fs = require('fs').promises;
 const FormData = require('form-data');
 const { Readable } = require('stream');
+const { createClient } = require('@deepgram/sdk');
 const { extractEnvVariable, STTProviders } = require('librechat-data-provider');
 const { getCustomConfig } = require('~/server/services/Config');
 const { genAzureEndpoint } = require('~/utils');
@@ -18,9 +19,13 @@ class STTService {
    */
   constructor(customConfig) {
     this.customConfig = customConfig;
-    this.providerStrategies = {
+    this.apiStrategies = {
       [STTProviders.OPENAI]: this.openAIProvider,
       [STTProviders.AZURE_OPENAI]: this.azureOpenAIProvider,
+    };
+
+    this.sdkStrategies = {
+      [STTProviders.DEEPGRAM]: this.deepgramSDKProvider,
     };
   }
 
@@ -106,7 +111,7 @@ class STTService {
       'Content-Type': 'multipart/form-data',
       ...(apiKey && { Authorization: `Bearer ${apiKey}` }),
     };
-    [headers].forEach(this.removeUndefined);
+    this.removeUndefined(headers);
 
     return [url, data, headers];
   }
@@ -154,6 +159,70 @@ class STTService {
   }
 
   /**
+   * Transcribes audio using the Deepgram SDK.
+   * @async
+   * @param {Object} sttSchema - The STT schema for Deepgram.
+   * @param {Stream} audioReadStream - The audio data to be transcribed.
+   * @returns {Promise<string>} A promise that resolves to the transcribed text.
+   * @throws {Error} If the transcription fails.
+   */
+  async deepgramSDKProvider(sttSchema, audioReadStream) {
+    const apiKey = extractEnvVariable(sttSchema.apiKey) || '';
+    const deepgram = createClient(apiKey);
+
+    const configOptions = {
+      // Model parameters
+      model: sttSchema.model?.model,
+      language: sttSchema.model?.language,
+      detect_language: sttSchema.model?.detect_language,
+      version: sttSchema.model?.version,
+
+      // Formatting parameters
+      smart_format: sttSchema.formatting?.smart_format,
+      diarize: sttSchema.formatting?.diarize,
+      filler_words: sttSchema.formatting?.filler_words,
+      numerals: sttSchema.formatting?.numerals,
+      punctuate: sttSchema.formatting?.punctuate,
+      paragraphs: sttSchema.formatting?.paragraphs,
+      profanity_filter: sttSchema.formatting?.profanity_filter,
+      redact: sttSchema.formatting?.redact,
+      utterances: sttSchema.formatting?.utterances,
+      utt_split: sttSchema.formatting?.utt_split,
+
+      // Custom vocabulary parameters
+      replace: sttSchema.custom_vocabulary?.replace,
+      keywords: sttSchema.custom_vocabulary?.keywords,
+
+      // Intelligence parameters
+      sentiment: sttSchema.intelligence?.sentiment,
+      intents: sttSchema.intelligence?.intents,
+      topics: sttSchema.intelligence?.topics,
+    };
+
+    this.removeUndefined(configOptions);
+
+    const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
+      audioReadStream,
+      configOptions,
+    );
+
+    if (error) {
+      throw error;
+    }
+
+    return result.results?.channels[0]?.alternatives[0]?.transcript || '';
+  }
+
+  // TODO: Implement a better way to determine if the SDK should be used
+  shouldUseSDK(provider) {
+    if (provider === STTProviders.DEEPGRAM) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
    * Sends an STT request to the specified provider.
    * @async
    * @param {string} provider - The STT provider to use.
@@ -165,27 +234,29 @@ class STTService {
    * @throws {Error} If the provider is invalid, the response status is not 200, or the response data is missing.
    */
   async sttRequest(provider, sttSchema, { audioBuffer, audioFile }) {
-    const strategy = this.providerStrategies[provider];
+    const useSDK = this.shouldUseSDK(provider);
+    const strategy = useSDK ? this.sdkStrategies[provider] : this.apiStrategies[provider];
+
     if (!strategy) {
-      throw new Error('Invalid provider');
+      throw new Error('Invalid provider or implementation');
     }
 
     const audioReadStream = Readable.from(audioBuffer);
-    audioReadStream.path = 'audio.wav';
 
-    const [url, data, headers] = strategy.call(this, sttSchema, audioReadStream, audioFile);
+    if (useSDK) {
+      return strategy.call(this, sttSchema, audioReadStream, audioFile);
+    }
+
+    const [url, data, headers] = strategy.call(this, sttSchema, audioReadStream);
 
     try {
       const response = await axios.post(url, data, { headers });
-
       if (response.status !== 200) {
         throw new Error('Invalid response from the STT API');
       }
-
       if (!response.data || !response.data.text) {
         throw new Error('Missing data in response from the STT API');
       }
-
       return response.data.text.trim();
     } catch (error) {
       logger.error(`STT request failed for provider ${provider}:`, error);
@@ -222,9 +293,9 @@ class STTService {
     } finally {
       try {
         await fs.unlink(req.file.path);
-        logger.debug('[/speech/stt] Temp. audio upload file deleted');
+        logger.debug('[/speech/stt] Temporary audio upload file deleted');
       } catch (error) {
-        logger.debug('[/speech/stt] Temp. audio upload file already deleted');
+        logger.debug('[/speech/stt] Temporary audio upload file already deleted');
       }
     }
   }
