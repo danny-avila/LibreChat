@@ -147,7 +147,6 @@ class AnthropicClient extends BaseClient {
 
     this.startToken = '||>';
     this.endToken = '';
-    this.gptEncoder = this.constructor.getTokenizer('cl100k_base');
 
     return this;
   }
@@ -848,7 +847,7 @@ class AnthropicClient extends BaseClient {
   }
 
   getEncoding() {
-    return 'o200k_base';
+    return 'cl100k_base';
   }
 
   /**

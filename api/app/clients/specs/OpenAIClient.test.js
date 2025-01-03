@@ -134,7 +134,7 @@ OpenAI.mockImplementation(() => ({
 }));
 
 describe('OpenAIClient', () => {
-  let client, client2;
+  let client;
   const model = 'gpt-4';
   const parentMessageId = '1';
   const messages = [
@@ -176,7 +176,6 @@ describe('OpenAIClient', () => {
   beforeEach(() => {
     const options = { ...defaultOptions };
     client = new OpenAIClient('test-api-key', options);
-    client2 = new OpenAIClient('test-api-key', options);
     client.summarizeMessages = jest.fn().mockResolvedValue({
       role: 'assistant',
       content: 'Refined answer',
@@ -185,7 +184,6 @@ describe('OpenAIClient', () => {
     client.buildPrompt = jest
       .fn()
       .mockResolvedValue({ prompt: messages.map((m) => m.text).join('\n') });
-    client.constructor.freeAndResetAllEncoders();
     client.getMessages = jest.fn().mockResolvedValue([]);
   });
 
@@ -335,75 +333,9 @@ describe('OpenAIClient', () => {
     });
   });
 
-  describe('selectTokenizer', () => {
-    it('should get the correct tokenizer based on the instance state', () => {
-      const tokenizer = client.selectTokenizer();
-      expect(tokenizer).toBeDefined();
-    });
-  });
-
-  describe('freeAllTokenizers', () => {
-    it('should free all tokenizers', () => {
-      // Create a tokenizer
-      const tokenizer = client.selectTokenizer();
-
-      // Mock 'free' method on the tokenizer
-      tokenizer.free = jest.fn();
-
-      client.constructor.freeAndResetAllEncoders();
-
-      // Check if 'free' method has been called on the tokenizer
-      expect(tokenizer.free).toHaveBeenCalled();
-    });
-  });
-
   describe('getTokenCount', () => {
     it('should return the correct token count', () => {
       const count = client.getTokenCount('Hello, world!');
-      expect(count).toBeGreaterThan(0);
-    });
-
-    it('should reset the encoder and count when count reaches 25', () => {
-      const freeAndResetEncoderSpy = jest.spyOn(client.constructor, 'freeAndResetAllEncoders');
-
-      // Call getTokenCount 25 times
-      for (let i = 0; i < 25; i++) {
-        client.getTokenCount('test text');
-      }
-
-      expect(freeAndResetEncoderSpy).toHaveBeenCalled();
-    });
-
-    it('should not reset the encoder and count when count is less than 25', () => {
-      const freeAndResetEncoderSpy = jest.spyOn(client.constructor, 'freeAndResetAllEncoders');
-      freeAndResetEncoderSpy.mockClear();
-
-      // Call getTokenCount 24 times
-      for (let i = 0; i < 24; i++) {
-        client.getTokenCount('test text');
-      }
-
-      expect(freeAndResetEncoderSpy).not.toHaveBeenCalled();
-    });
-
-    it('should handle errors and reset the encoder', () => {
-      const freeAndResetEncoderSpy = jest.spyOn(client.constructor, 'freeAndResetAllEncoders');
-
-      // Mock encode function to throw an error
-      client.selectTokenizer().encode = jest.fn().mockImplementation(() => {
-        throw new Error('Test error');
-      });
-
-      client.getTokenCount('test text');
-
-      expect(freeAndResetEncoderSpy).toHaveBeenCalled();
-    });
-
-    it('should not throw null pointer error when freeing the same encoder twice', () => {
-      client.constructor.freeAndResetAllEncoders();
-      client2.constructor.freeAndResetAllEncoders();
-
-      const count = client2.getTokenCount('test text');
       expect(count).toBeGreaterThan(0);
     });
   });
@@ -548,7 +480,6 @@ describe('OpenAIClient', () => {
     testCases.forEach((testCase) => {
       it(`should return ${testCase.expected} tokens for model ${testCase.model}`, () => {
         client.modelOptions.model = testCase.model;
-        client.selectTokenizer();
         // 3 tokens for assistant label
         let totalTokens = 3;
         for (let message of example_messages) {
@@ -582,7 +513,6 @@ describe('OpenAIClient', () => {
 
     it(`should return ${expectedTokens} tokens for model ${visionModel} (Vision Request)`, () => {
       client.modelOptions.model = visionModel;
-      client.selectTokenizer();
       // 3 tokens for assistant label
       let totalTokens = 3;
       for (let message of vision_request) {

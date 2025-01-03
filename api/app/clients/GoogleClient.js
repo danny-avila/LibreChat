@@ -176,25 +176,15 @@ class GoogleClient extends BaseClient {
       // without tripping the stop sequences, so I'm using "||>" instead.
       this.startToken = '||>';
       this.endToken = '';
-      this.gptEncoder = this.constructor.getTokenizer('cl100k_base');
     } else if (isTextModel) {
       this.startToken = '||>';
       this.endToken = '';
-      this.gptEncoder = this.constructor.getTokenizer('text-davinci-003', true, {
-        '<|im_start|>': 100264,
-        '<|im_end|>': 100265,
-      });
     } else {
       // Previously I was trying to use "<|endoftext|>" but there seems to be some bug with OpenAI's token counting
       // system that causes only the first "<|endoftext|>" to be counted as 1 token, and the rest are not treated
       // as a single token. So we're using this instead.
       this.startToken = '||>';
       this.endToken = '';
-      try {
-        this.gptEncoder = this.constructor.getTokenizer(this.modelOptions.model, true);
-      } catch {
-        this.gptEncoder = this.constructor.getTokenizer('text-davinci-003', true);
-      }
     }
 
     if (!this.modelOptions.stop) {
@@ -926,7 +916,7 @@ class GoogleClient extends BaseClient {
   }
 
   getEncoding() {
-    return 'o200k_base';
+    return 'cl100k_base';
   }
 
   /**
