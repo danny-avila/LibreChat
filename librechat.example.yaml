@@ -2,7 +2,7 @@
 # https://www.librechat.ai/docs/configuration/librechat_yaml
 
 # Configuration version (required)
-version: 1.2.0
+version: 1.2.1
 
 # Cache settings: Set to true to enable caching
 cache: true
@@ -149,6 +149,9 @@ endpoints:
   #   # (optional) Assistant Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["code_interpreter", "retrieval", "actions", "tools", "image_vision"]
   # agents:
+  #   (optional) Maximum recursion depth for agents, defaults to 25
+  #   recursionLimit: 50
+  #   (optional) Disable the builder interface for agents
   #   disableBuilder: false
   #   (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["execute_code", "file_search", "actions", "tools"]
