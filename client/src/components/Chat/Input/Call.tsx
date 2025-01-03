@@ -43,6 +43,8 @@ export const Call: React.FC = () => {
   useEffect(() => {
     if (remoteAudioRef.current && remoteStream) {
       remoteAudioRef.current.srcObject = remoteStream;
+
+      remoteAudioRef.current.play().catch((err) => console.error('Error playing audio:', err));
     }
   }, [remoteStream]);
 
@@ -97,6 +99,36 @@ export const Call: React.FC = () => {
 
   const isActive = callState === CallState.ACTIVE;
   const isError = callState === CallState.ERROR;
+
+  // TESTS
+
+  useEffect(() => {
+    if (remoteAudioRef.current && remoteStream) {
+      console.log('Setting up remote audio:', {
+        tracks: remoteStream.getTracks().length,
+        active: remoteStream.active,
+      });
+
+      remoteAudioRef.current.srcObject = remoteStream;
+      remoteAudioRef.current.muted = false;
+      remoteAudioRef.current.volume = 1.0;
+
+      const playPromise = remoteAudioRef.current.play();
+      if (playPromise) {
+        playPromise.catch((err) => {
+          console.error('Error playing audio:', err);
+          // Retry play on user interaction
+          document.addEventListener(
+            'click',
+            () => {
+              remoteAudioRef.current?.play();
+            },
+            { once: true },
+          );
+        });
+      }
+    }
+  }, [remoteStream]);
 
   return (
     <OGDialog open={open} onOpenChange={setOpen}>
@@ -200,7 +232,11 @@ export const Call: React.FC = () => {
           </div>
 
           {/* Hidden Audio Element */}
-          <audio ref={remoteAudioRef} autoPlay>
+          <audio
+            ref={remoteAudioRef}
+            autoPlay
+            playsInline
+          >
             <track kind="captions" />
           </audio>
         </div>

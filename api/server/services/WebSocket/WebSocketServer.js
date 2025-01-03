@@ -1,5 +1,5 @@
 const { Server } = require('socket.io');
-const { RTCPeerConnection, RTCIceCandidate } = require('wrtc');
+const { RTCPeerConnection, RTCIceCandidate, MediaStream } = require('wrtc');
 
 class WebRTCConnection {
   constructor(socket, config) {
@@ -14,38 +14,31 @@ class WebRTCConnection {
 
   async handleOffer(offer) {
     try {
-      // Create new peer connection if needed
       if (!this.peerConnection) {
         this.peerConnection = new RTCPeerConnection(this.config.rtcConfig);
         this.setupPeerConnectionListeners();
       }
 
-      // Set the remote description (client's offer)
       await this.peerConnection.setRemoteDescription(offer);
 
-      // Set up audio transceiver for two-way audio
+      // Create MediaStream instance properly
+      const mediaStream = new MediaStream();
+
       this.audioTransceiver = this.peerConnection.addTransceiver('audio', {
         direction: 'sendrecv',
+        streams: [mediaStream],
       });
 
-      // Create and set local description (answer)
       const answer = await this.peerConnection.createAnswer();
       await this.peerConnection.setLocalDescription(answer);
-
-      // Send answer to client
       this.socket.emit('webrtc-answer', answer);
-
-      // Process any pending ICE candidates
-      while (this.pendingCandidates.length) {
-        const candidate = this.pendingCandidates.shift();
-        await this.addIceCandidate(candidate);
-      }
-
-      this.state = 'connecting';
     } catch (error) {
       this.log(`Error handling offer: ${error}`, 'error');
-      this.socket.emit('error', { message: 'Failed to process offer' });
-      this.cleanup();
+      // Don't throw, handle gracefully
+      this.socket.emit('webrtc-error', {
+        message: error.message,
+        code: 'OFFER_ERROR',
+      });
     }
   }
 
