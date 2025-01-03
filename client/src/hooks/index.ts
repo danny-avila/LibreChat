@@ -23,7 +23,6 @@ export type { TranslationKeys } from './useLocalize';
 
 export { default as useCall } from './useCall';
 export { default as useToast } from './useToast';
-export { default as useWebRTC } from './useWebRTC';
 export { default as useTimeout } from './useTimeout';
 export { default as useNewConvo } from './useNewConvo';
 export { default as useLocalize } from './useLocalize';
