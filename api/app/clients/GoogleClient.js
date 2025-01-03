@@ -6,7 +6,6 @@ const { ChatGoogleVertexAI } = require('@langchain/google-vertexai');
 const { ChatGoogleGenerativeAI } = require('@langchain/google-genai');
 const { GoogleGenerativeAI: GenAI } = require('@google/generative-ai');
 const { AIMessage, HumanMessage, SystemMessage } = require('@langchain/core/messages');
-const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const {
   validateVisionModel,
   getResponseSender,
@@ -17,6 +16,7 @@ const {
   AuthKeys,
 } = require('librechat-data-provider');
 const { encodeAndFormat } = require('~/server/services/Files/images');
+const Tokenizer = require('~/server/services/Tokenizer');
 const { getModelMaxTokens } = require('~/utils');
 const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
@@ -31,7 +31,6 @@ const BaseClient = require('./BaseClient');
 const loc = process.env.GOOGLE_LOC || 'us-central1';
 const publisher = 'google';
 const endpointPrefix = `${loc}-aiplatform.googleapis.com`;
-const tokenizersCache = {};
 
 const settings = endpointSettings[EModelEndpoint.google];
 const EXCLUDED_GENAI_MODELS = /gemini-(?:1\.0|1-0|pro)/;
@@ -926,23 +925,18 @@ class GoogleClient extends BaseClient {
     ];
   }
 
-  /* TO-DO: Handle tokens with Google tokenization NOTE: these are required */
-  static getTokenizer(encoding, isModelName = false, extendSpecialTokens = {}) {
-    if (tokenizersCache[encoding]) {
-      return tokenizersCache[encoding];
-    }
-    let tokenizer;
-    if (isModelName) {
-      tokenizer = encodingForModel(encoding, extendSpecialTokens);
-    } else {
-      tokenizer = getEncoding(encoding, extendSpecialTokens);
-    }
-    tokenizersCache[encoding] = tokenizer;
-    return tokenizer;
+  getEncoding() {
+    return 'o200k_base';
   }
 
+  /**
+   * Returns the token count of a given text. It also checks and resets the tokenizers if necessary.
+   * @param {string} text - The text to get the token count for.
+   * @returns {number} The token count of the given text.
+   */
   getTokenCount(text) {
-    return this.gptEncoder.encode(text, 'all').length;
+    const encoding = this.getEncoding();
+    return Tokenizer.getTokenCount(text, encoding);
   }
 }
 
