@@ -29,6 +29,16 @@ const exampleConfig = {
         dropParams: ['stop'],
       },
       {
+        name: 'NovitaAI',
+        apiKey: '${MY_NOVITA_API_KEY}',
+        baseURL: 'https://api.novita.ai/v3/openai',
+        models: {
+          default: ['meta-llama/llama-3.3-70b-instruct'],
+          fetch: true,
+        },
+        dropParams: ['stop'],
+      },
+      {
         name: 'groq',
         apiKey: 'user_provided',
         baseURL: 'https://api.groq.com/openai/v1/',
@@ -208,11 +218,12 @@ describe('loadConfigModels', () => {
   it('loads models based on custom endpoint configuration respecting fetch rules', async () => {
     process.env.MY_PRECIOUS_MISTRAL_KEY = 'actual_mistral_api_key';
     process.env.MY_OPENROUTER_API_KEY = 'actual_openrouter_api_key';
-    // Setup custom configuration with specific API keys for Mistral and OpenRouter
+    process.env.MY_NOVITA_API_KEY = 'actual_novita_api_key';
+    // Setup custom configuration with specific API keys for Mistral, OpenRouter and Novita AI
     // and "user_provided" for groq and Ollama, indicating no fetch for the latter two
     getCustomConfig.mockResolvedValue(exampleConfig);
 
-    // Assuming fetchModels would be called only for Mistral and OpenRouter
+    // Assuming fetchModels would be called only for Mistral, OpenRouter and NovitaAI
     fetchModels.mockImplementation(({ name }) => {
       switch (name) {
         case 'Mistral':
@@ -224,6 +235,8 @@ describe('loadConfigModels', () => {
           ]);
         case 'OpenRouter':
           return Promise.resolve(['gpt-3.5-turbo']);
+        case 'NovitaAI':
+          return Promise.resolve(['meta-llama/llama-3.3-70b-instruct']);
         default:
           return Promise.resolve([]);
       }
@@ -231,7 +244,7 @@ describe('loadConfigModels', () => {
 
     const result = await loadConfigModels(mockRequest);
 
-    // Since fetch is true and apiKey is not "user_provided", fetching occurs for Mistral and OpenRouter
+    // Since fetch is true and apiKey is not "user_provided", fetching occurs for Mistral, OpenRouter and NovitaAI
     expect(result.Mistral).toEqual([
       'mistral-tiny',
       'mistral-small',
@@ -253,6 +266,13 @@ describe('loadConfigModels', () => {
       }),
     );
 
+    expect(result.NovitaAI).toEqual(['meta-llama/llama-3.3-70b-instruct']);
+    expect(fetchModels).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'NovitaAI',
+        apiKey: process.env.MY_NOVITA_API_KEY,
+      }),
+    );
     // For groq and ollama, since the apiKey is "user_provided", models should not be fetched
     // Depending on your implementation's behavior regarding "default" models without fetching,
     // you may need to adjust the following assertions:
