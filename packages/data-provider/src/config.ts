@@ -740,6 +740,7 @@ export const supportsBalanceCheck = {
 };
 
 export const visionModels = [
+  'o1',
   'gpt-4o',
   'gpt-4o-mini',
   'gpt-4-turbo',
@@ -776,7 +777,7 @@ export function validateVisionModel({
     return false;
   }
 
-  if (model === 'gpt-4-turbo-preview') {
+  if (model.includes('gpt-4-turbo-preview') || model.includes('o1-mini')) {
     return false;
   }
 
