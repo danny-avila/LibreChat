@@ -43,19 +43,15 @@ function FileFormWrapper({
   const isUploadDisabled = (disableInputs || endpointFileConfig?.disabled) ?? false;
 
   const renderAttachFile = () => {
-    if (isAgents) {
+    if (isAgents || (endpointSupportsFiles && !isUploadDisabled)) {
       return (
         <AttachFileMenu
+          endpoint={_endpoint}
           isRTL={isRTL}
           disabled={disableInputs}
           setToolResource={setToolResource}
           handleFileChange={handleFileChange}
         />
-      );
-    }
-    if (endpointSupportsFiles && !isUploadDisabled) {
-      return (
-        <AttachFile isRTL={isRTL} disabled={disableInputs} handleFileChange={handleFileChange} />
       );
     }
 

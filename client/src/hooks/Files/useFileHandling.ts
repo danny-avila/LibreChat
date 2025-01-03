@@ -183,13 +183,14 @@ const useFileHandling = (params?: UseFileHandling) => {
       }
     }
 
+    const tool_resource = extendedFile.tool_resource ?? toolResource;
+    if (tool_resource != null) {
+      formData.append('tool_resource', tool_resource);
+    }
+
     if (isAgentsEndpoint(endpoint)) {
       if (!agent_id) {
         formData.append('message_file', 'true');
-      }
-      const tool_resource = extendedFile.tool_resource ?? toolResource;
-      if (tool_resource != null) {
-        formData.append('tool_resource', tool_resource);
       }
       if (conversation?.agent_id != null && formData.get('agent_id') == null) {
         formData.append('agent_id', conversation.agent_id);

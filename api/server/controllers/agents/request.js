@@ -103,6 +103,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
         }
       }
       delete userMessage.image_urls;
+      delete userMessage.file_urls;
     }
 
     if (!abortController.signal.aborted) {

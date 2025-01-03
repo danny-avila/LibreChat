@@ -31,7 +31,7 @@ const {
   formatContentStrings,
   createContextHandlers,
 } = require('~/app/clients/prompts');
-const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { encodeAndFormat } = require('~/server/services/Files/encode');
 const { getBufferString, HumanMessage } = require('@langchain/core/messages');
 const Tokenizer = require('~/server/services/Tokenizer');
 const { spendTokens } = require('~/models/spendTokens');
@@ -206,14 +206,14 @@ class AgentClient extends BaseClient {
     };
   }
 
-  async addImageURLs(message, attachments) {
-    const { files, image_urls } = await encodeAndFormat(
+  async addFileURLs(message, attachments) {
+    const { files, file_urls } = await encodeAndFormat(
       this.options.req,
       attachments,
       this.options.agent.provider,
       VisionModes.agents,
     );
-    message.image_urls = image_urls.length ? image_urls : undefined;
+    message.image_urls = file_urls.length ? file_urls : undefined;
     return files;
   }
 
@@ -268,7 +268,7 @@ class AgentClient extends BaseClient {
         };
       }
 
-      const files = await this.addImageURLs(
+      const files = await this.addFileURLs(
         orderedMessages[orderedMessages.length - 1],
         attachments,
       );

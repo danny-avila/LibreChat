@@ -35,7 +35,7 @@ const firebaseStrategy = () => ({
   getFileURL: getFirebaseURL,
   deleteFile: deleteFirebaseFile,
   saveBuffer: saveBufferToFirebase,
-  prepareImagePayload: prepareImageURL,
+  prepareFilePayload: prepareImageURL,
   processAvatar: processFirebaseAvatar,
   handleImageUpload: uploadImageToFirebase,
   getDownloadStream: getFirebaseFileStream,
@@ -53,7 +53,7 @@ const localStrategy = () => ({
   deleteFile: deleteLocalFile,
   processAvatar: processLocalAvatar,
   handleImageUpload: uploadLocalImage,
-  prepareImagePayload: prepareImagesLocal,
+  prepareFilePayload: prepareImagesLocal,
   getDownloadStream: getLocalFileStream,
 });
 
@@ -73,7 +73,7 @@ const vectorStrategy = () => ({
   /** @type {typeof uploadLocalImage | null} */
   handleImageUpload: null,
   /** @type {typeof prepareImagesLocal | null} */
-  prepareImagePayload: null,
+  prepareFilePayload: null,
   /** @type {typeof getLocalFileStream | null} */
   getDownloadStream: null,
   handleFileUpload: uploadVectors,
@@ -97,7 +97,7 @@ const openAIStrategy = () => ({
   /** @type {typeof uploadLocalImage | null} */
   handleImageUpload: null,
   /** @type {typeof prepareImagesLocal | null} */
-  prepareImagePayload: null,
+  prepareFilePayload: null,
   deleteFile: deleteOpenAIFile,
   handleFileUpload: uploadOpenAIFile,
   getDownloadStream: getOpenAIFileStream,
@@ -120,7 +120,7 @@ const codeOutputStrategy = () => ({
   /** @type {typeof uploadLocalImage | null} */
   handleImageUpload: null,
   /** @type {typeof prepareImagesLocal | null} */
-  prepareImagePayload: null,
+  prepareFilePayload: null,
   /** @type {typeof deleteLocalFile | null} */
   deleteFile: null,
   handleFileUpload: uploadCodeEnvFile,

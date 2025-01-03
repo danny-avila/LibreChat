@@ -8,7 +8,7 @@ const {
   getResponseSender,
   validateVisionModel,
 } = require('librechat-data-provider');
-const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { encodeAndFormat } = require('~/server/services/Files/encode');
 const {
   truncateText,
   formatMessage,
@@ -284,13 +284,13 @@ class AnthropicClient extends BaseClient {
     return Math.ceil((width * height) / 750);
   }
 
-  async addImageURLs(message, attachments) {
-    const { files, image_urls } = await encodeAndFormat(
+  async addFileURLs(message, attachments) {
+    const { files, file_urls } = await encodeAndFormat(
       this.options.req,
       attachments,
       EModelEndpoint.anthropic,
     );
-    message.image_urls = image_urls.length ? image_urls : undefined;
+    message.image_urls = file_urls.length ? file_urls : undefined;
     return files;
   }
 
@@ -349,9 +349,15 @@ class AnthropicClient extends BaseClient {
     if (this.options.attachments) {
       const attachments = await this.options.attachments;
       const images = attachments.filter((file) => file.type.includes('image'));
+      const documents = attachments.filter((file) => file.type == 'application/pdf');
 
       if (images.length && !this.isVisionModel) {
         throw new Error('Images are only supported with the Claude 3 family of models');
+      }
+      if (documents.length && !this.modelOptions.model.includes('3-5-sonnet')) {
+        throw new Error(
+          'PDF documents are only supported with the Claude 3.5 Sonnet family of models',
+        );
       }
 
       const latestMessage = orderedMessages[orderedMessages.length - 1];
@@ -364,7 +370,7 @@ class AnthropicClient extends BaseClient {
         };
       }
 
-      const files = await this.addImageURLs(latestMessage, attachments);
+      const files = await this.addFileURLs(latestMessage, attachments);
 
       this.options.attachments = files;
     }
@@ -402,10 +408,17 @@ class AnthropicClient extends BaseClient {
             continue;
           }
 
-          orderedMessages[i].tokenCount += this.calculateImageTokenCost({
-            width: file.width,
-            height: file.height,
-          });
+          if (file.type.includes('image')) {
+            orderedMessages[i].tokenCount += this.calculateImageTokenCost({
+              width: file.width,
+              height: file.height,
+            });
+          } else {
+            // File is a pdf.
+            // A reasonable estimate is 1500-3000 tokens per page
+            // without parsing the pdf to get the page count, assume it has one.
+            orderedMessages[i].tokenCount += 2000;
+          }
         }
       }
 

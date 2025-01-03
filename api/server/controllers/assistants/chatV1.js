@@ -354,7 +354,7 @@ const chatV1 = async (req, res) => {
         role: 'user',
         content: '',
       };
-      const files = await client.addImageURLs(visionMessage, attachments);
+      const files = await client.addFileURLs(visionMessage, attachments);
       if (!visionMessage.image_urls?.length) {
         return;
       }
