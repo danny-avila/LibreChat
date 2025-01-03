@@ -11,7 +11,7 @@ endpoints:
     - group: "N2A East US"
       instanceName: "N2A OpenAI"
       apiKey: "${AZURE_OPENAI_API_KEY}"
-      baseURL: "https://service-internal.n2a.paychex.com/is/shared/azure"
+      baseURL: "${AZURE_OPENAI_BASEURL}"
       version: "2024-02-01"
       # Model-level configuration
       models:
