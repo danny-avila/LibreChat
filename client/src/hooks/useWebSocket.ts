@@ -1,62 +1,140 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useGetWebsocketUrlQuery } from 'librechat-data-provider/react-query';
+import type { MessagePayload } from '~/common';
 import { io, Socket } from 'socket.io-client';
-import type { RTCMessage } from '~/common';
+import { EventEmitter } from 'events';
 
-const useWebSocket = () => {
-  const { data } = useGetWebsocketUrlQuery();
-  const [isConnected, setIsConnected] = useState(false);
-  const socketRef = useRef<Socket | null>(null);
+export const WebSocketEvents = {
+  CALL_STARTED: 'call-started',
+  CALL_ERROR: 'call-error',
+  WEBRTC_ANSWER: 'webrtc-answer',
+  ICE_CANDIDATE: 'icecandidate',
+} as const;
 
-  const connect = useCallback(() => {
-    if (!data || !data.url) {
+type EventHandler = (...args: unknown[]) => void;
+
+class WebSocketManager extends EventEmitter {
+  private socket: Socket | null = null;
+  private reconnectAttempts = 0;
+  private readonly MAX_RECONNECT_ATTEMPTS = 5;
+  private isConnected = false;
+
+  connect(url: string) {
+    if (this.socket && this.socket.connected) {
+      return;
+    }
+    this.socket = io(url, {
+      transports: ['websocket'],
+      reconnectionAttempts: this.MAX_RECONNECT_ATTEMPTS,
+      timeout: 10000,
+    });
+    this.setupEventHandlers();
+  }
+
+  private setupEventHandlers() {
+    if (!this.socket) {
       return;
     }
 
-    socketRef.current = io(data.url, { transports: ['websocket'] });
-
-    socketRef.current.on('connect', () => {
-      setIsConnected(true);
+    this.socket.on('connect', () => {
+      this.isConnected = true;
+      this.reconnectAttempts = 0;
+      this.emit('connectionChange', true);
     });
 
-    socketRef.current.on('disconnect', () => {
-      setIsConnected(false);
+    this.socket.on('disconnect', (reason) => {
+      this.isConnected = false;
+      this.emit('connectionChange', false);
     });
 
-    socketRef.current.on('error', (err) => {
-      console.error('Socket.IO error:', err);
-    });
-
-    socketRef.current.on('transcription', (msg: RTCMessage) => {
-      // TODO: Handle transcription update
-    });
-
-    socketRef.current.on('llm-response', (msg: RTCMessage) => {
-      // TODO: Handle LLM streaming response
-    });
-
-    socketRef.current.on('tts-chunk', (msg: RTCMessage) => {
-      if (typeof msg.data === 'string') {
-        const audio = new Audio(`data:audio/mp3;base64,${msg.data}`);
-        audio.play().catch(console.error);
+    this.socket.on('connect_error', (error) => {
+      this.reconnectAttempts++;
+      this.emit('connectionChange', false);
+      if (this.reconnectAttempts >= this.MAX_RECONNECT_ATTEMPTS) {
+        this.emit('error', 'Failed to connect after maximum attempts');
+        this.disconnect();
       }
     });
-  }, [data?.url]);
+
+    // WebRTC signals
+    this.socket.on(WebSocketEvents.CALL_STARTED, () => {
+      this.emit(WebSocketEvents.CALL_STARTED);
+    });
+
+    this.socket.on(WebSocketEvents.WEBRTC_ANSWER, (answer) => {
+      this.emit(WebSocketEvents.WEBRTC_ANSWER, answer);
+    });
+
+    this.socket.on(WebSocketEvents.ICE_CANDIDATE, (candidate) => {
+      this.emit(WebSocketEvents.ICE_CANDIDATE, candidate);
+    });
+
+    this.socket.on('error', (error) => {
+      this.emit('error', error);
+    });
+  }
+
+  disconnect() {
+    if (this.socket) {
+      this.socket.disconnect();
+      this.socket = null;
+    }
+    this.isConnected = false;
+  }
+
+  sendMessage(type: string, payload?: MessagePayload) {
+    if (!this.socket || !this.socket.connected) {
+      return false;
+    }
+    this.socket.emit(type, payload);
+    return true;
+  }
+
+  getConnectionState() {
+    return this.isConnected;
+  }
+}
+
+export const webSocketManager = new WebSocketManager();
+
+const useWebSocket = () => {
+  const { data: wsConfig } = useGetWebsocketUrlQuery();
+  const [isConnected, setIsConnected] = useState(false);
+  const eventHandlersRef = useRef<Record<string, EventHandler>>({});
 
   useEffect(() => {
-    connect();
-    return () => {
-      socketRef.current?.disconnect();
-    };
-  }, [connect]);
+    if (wsConfig?.url && !webSocketManager.getConnectionState()) {
+      webSocketManager.connect(wsConfig.url);
 
-  const sendMessage = useCallback((message: Record<string, unknown>) => {
-    if (socketRef.current?.connected) {
-      socketRef.current.emit('message', message);
+      const handleConnectionChange = (connected: boolean) => setIsConnected(connected);
+      webSocketManager.on('connectionChange', handleConnectionChange);
+      webSocketManager.on('error', console.error);
+
+      return () => {
+        webSocketManager.off('connectionChange', handleConnectionChange);
+        webSocketManager.off('error', console.error);
+      };
     }
-  }, []);
+  }, [wsConfig, wsConfig?.url]);
 
-  return { isConnected, sendMessage };
+  const sendMessage = (message: { type: string; payload?: MessagePayload }) => {
+    return webSocketManager.sendMessage(message.type, message.payload);
+  };
+
+  const addEventListener = (event: string, handler: EventHandler) => {
+    eventHandlersRef.current[event] = handler;
+    webSocketManager.on(event, handler);
+    return () => {
+      webSocketManager.off(event, handler);
+      delete eventHandlersRef.current[event];
+    };
+  };
+
+  return {
+    isConnected,
+    sendMessage,
+    addEventListener,
+  };
 };
 
 export default useWebSocket;

@@ -55,8 +55,23 @@ export interface RTCMessage {
     | 'transcription'
     | 'llm-response'
     | 'tts-chunk'
-    | 'call-ended';
-  data?: string | ArrayBuffer | null;
+    | 'call-ended'
+    | 'webrtc-answer'
+    | 'icecandidate';
+  payload?: RTCSessionDescriptionInit | RTCIceCandidateInit;
+}
+
+export type MessagePayload =
+  | RTCSessionDescriptionInit
+  | RTCIceCandidateInit
+  | Record<string, never>;
+
+export enum CallState {
+  IDLE = 'idle',
+  CONNECTING = 'connecting',
+  ACTIVE = 'active',
+  ERROR = 'error',
+  ENDED = 'ended',
 }
 
 export type AssistantListItem = {

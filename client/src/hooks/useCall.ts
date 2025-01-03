@@ -1,101 +1,220 @@
-import { useState, useRef, useCallback } from 'react';
-import { WebRTCService } from '../services/WebRTC/WebRTCService';
-import type { RTCMessage } from '~/common';
-import useWebSocket from './useWebSocket';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { WebRTCService, ConnectionState } from '../services/WebRTC/WebRTCService';
+import useWebSocket, { WebSocketEvents } from './useWebSocket';
 
-const SILENCE_THRESHOLD = -50;
-const SILENCE_DURATION = 1000;
+interface CallError {
+  code: string;
+  message: string;
+}
+
+export enum CallState {
+  IDLE = 'idle',
+  CONNECTING = 'connecting',
+  ACTIVE = 'active',
+  ERROR = 'error',
+  ENDED = 'ended',
+}
+
+interface CallStatus {
+  callState: CallState;
+  isConnecting: boolean;
+  error: CallError | null;
+  localStream: MediaStream | null;
+  remoteStream: MediaStream | null;
+  connectionQuality: 'good' | 'poor' | 'unknown';
+}
+
+const INITIAL_STATUS: CallStatus = {
+  callState: CallState.IDLE,
+  isConnecting: false,
+  error: null,
+  localStream: null,
+  remoteStream: null,
+  connectionQuality: 'unknown',
+};
 
 const useCall = () => {
-  const { sendMessage: wsMessage, isConnected } = useWebSocket();
-  const [isCalling, setIsCalling] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const silenceStartRef = useRef<number | null>(null);
-  const intervalRef = useRef<number | null>(null);
+  const { isConnected, sendMessage, addEventListener } = useWebSocket();
+  const [status, setStatus] = useState<CallStatus>(INITIAL_STATUS);
   const webrtcServiceRef = useRef<WebRTCService | null>(null);
+  const statsIntervalRef = useRef<NodeJS.Timeout>();
 
-  const sendAudioChunk = useCallback(() => {
-    if (audioChunksRef.current.length === 0) {
-      return;
-    }
-
-    const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-    webrtcServiceRef.current?.sendAudioChunk(audioBlob);
-    wsMessage({ type: 'processing-start' });
-
-    audioChunksRef.current = [];
-    setIsProcessing(true);
-  }, [wsMessage]);
-
-  const handleRTCMessage = useCallback((message: RTCMessage) => {
-    if (message.type === 'audio-received') {
-      setIsProcessing(true);
-    }
+  const updateStatus = useCallback((updates: Partial<CallStatus>) => {
+    setStatus((prev) => ({ ...prev, ...updates }));
   }, []);
 
-  const startCall = useCallback(async () => {
-    if (!isConnected) {
+  useEffect(() => {
+    return () => {
+      if (statsIntervalRef.current) {
+        clearInterval(statsIntervalRef.current);
+      }
+      if (webrtcServiceRef.current) {
+        webrtcServiceRef.current.close();
+      }
+    };
+  }, []);
+
+  const handleConnectionStateChange = useCallback(
+    (state: ConnectionState) => {
+      switch (state) {
+        case ConnectionState.CONNECTED:
+          updateStatus({
+            callState: CallState.ACTIVE,
+            isConnecting: false,
+          });
+          break;
+        case ConnectionState.CONNECTING:
+        case ConnectionState.RECONNECTING:
+          updateStatus({
+            callState: CallState.CONNECTING,
+            isConnecting: true,
+          });
+          break;
+        case ConnectionState.FAILED:
+          updateStatus({
+            callState: CallState.ERROR,
+            isConnecting: false,
+            error: {
+              code: 'CONNECTION_FAILED',
+              message: 'Connection failed. Please try again.',
+            },
+          });
+          break;
+        case ConnectionState.CLOSED:
+          updateStatus({
+            callState: CallState.ENDED,
+            isConnecting: false,
+            localStream: null,
+            remoteStream: null,
+          });
+          break;
+      }
+    },
+    [updateStatus],
+  );
+
+  const startConnectionMonitoring = useCallback(() => {
+    if (!webrtcServiceRef.current) {
       return;
     }
 
-    webrtcServiceRef.current = new WebRTCService(handleRTCMessage);
-    await webrtcServiceRef.current.initializeCall();
-
-    wsMessage({ type: 'call-start' });
-
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    audioContextRef.current = new AudioContext();
-    const source = audioContextRef.current.createMediaStreamSource(stream);
-    analyserRef.current = audioContextRef.current.createAnalyser();
-    source.connect(analyserRef.current);
-
-    intervalRef.current = window.setInterval(() => {
-      if (!analyserRef.current || !isCalling) {
+    statsIntervalRef.current = setInterval(async () => {
+      const stats = await webrtcServiceRef.current?.getStats();
+      if (!stats) {
         return;
       }
 
-      const data = new Float32Array(analyserRef.current.frequencyBinCount);
-      analyserRef.current.getFloatFrequencyData(data);
-      const avg = data.reduce((a, b) => a + b) / data.length;
+      let totalRoundTripTime = 0;
+      let samplesCount = 0;
 
-      if (avg < SILENCE_THRESHOLD) {
-        if (silenceStartRef.current === null) {
-          silenceStartRef.current = Date.now();
-        } else if (Date.now() - silenceStartRef.current > SILENCE_DURATION) {
-          sendAudioChunk();
-          silenceStartRef.current = null;
+      stats.forEach((report) => {
+        if (report.type === 'candidate-pair' && report.currentRoundTripTime) {
+          totalRoundTripTime += report.currentRoundTripTime;
+          samplesCount++;
         }
-      } else {
-        silenceStartRef.current = null;
-      }
-    }, 100);
+      });
 
-    setIsCalling(true);
-  }, [handleRTCMessage, isConnected, wsMessage, sendAudioChunk, isCalling]);
+      const averageRTT = samplesCount > 0 ? totalRoundTripTime / samplesCount : 0;
+      updateStatus({
+        connectionQuality: averageRTT < 0.3 ? 'good' : 'poor',
+      });
+    }, 2000);
+  }, [updateStatus]);
 
-  const hangUp = useCallback(async () => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
+  const startCall = useCallback(async () => {
+    if (!isConnected) {
+      updateStatus({
+        callState: CallState.ERROR,
+        error: {
+          code: 'NOT_CONNECTED',
+          message: 'Not connected to server',
+        },
+      });
+      return;
     }
 
-    analyserRef.current = null;
-    audioContextRef.current?.close();
-    audioContextRef.current = null;
+    try {
+      if (webrtcServiceRef.current) {
+        webrtcServiceRef.current.close();
+      }
 
-    await webrtcServiceRef.current?.endCall();
-    webrtcServiceRef.current = null;
+      updateStatus({
+        callState: CallState.CONNECTING,
+        isConnecting: true,
+        error: null,
+      });
 
-    setIsCalling(false);
-    setIsProcessing(false);
-    wsMessage({ type: 'call-ended' });
-  }, [wsMessage]);
+      // TODO: Remove debug or make it configurable
+      webrtcServiceRef.current = new WebRTCService((message) => sendMessage(message), {
+        debug: true,
+      });
+
+      webrtcServiceRef.current.on('connectionStateChange', handleConnectionStateChange);
+
+      webrtcServiceRef.current.on('remoteStream', (stream: MediaStream) => {
+        updateStatus({ remoteStream: stream });
+      });
+
+      webrtcServiceRef.current.on('error', (error: string) => {
+        updateStatus({
+          callState: CallState.ERROR,
+          isConnecting: false,
+          error: {
+            code: 'WEBRTC_ERROR',
+            message: error,
+          },
+        });
+      });
+
+      await webrtcServiceRef.current.initialize();
+      startConnectionMonitoring();
+    } catch (error) {
+      updateStatus({
+        callState: CallState.ERROR,
+        isConnecting: false,
+        error: {
+          code: 'INITIALIZATION_FAILED',
+          message: error instanceof Error ? error.message : 'Failed to start call',
+        },
+      });
+    }
+  }, [
+    isConnected,
+    sendMessage,
+    handleConnectionStateChange,
+    startConnectionMonitoring,
+    updateStatus,
+  ]);
+
+  const hangUp = useCallback(() => {
+    if (webrtcServiceRef.current) {
+      webrtcServiceRef.current.close();
+      webrtcServiceRef.current = null;
+    }
+    if (statsIntervalRef.current) {
+      clearInterval(statsIntervalRef.current);
+    }
+    updateStatus({
+      ...INITIAL_STATUS,
+      callState: CallState.ENDED,
+    });
+  }, [updateStatus]);
+
+  useEffect(() => {
+    const cleanupFns = [
+      addEventListener(WebSocketEvents.WEBRTC_ANSWER, (answer: RTCSessionDescriptionInit) => {
+        webrtcServiceRef.current?.handleAnswer(answer);
+      }),
+      addEventListener(WebSocketEvents.ICE_CANDIDATE, (candidate: RTCIceCandidateInit) => {
+        webrtcServiceRef.current?.addIceCandidate(candidate);
+      }),
+    ];
+
+    return () => cleanupFns.forEach((fn) => fn());
+  }, [addEventListener]);
 
   return {
-    isCalling,
-    isProcessing,
+    ...status,
     startCall,
     hangUp,
   };
