@@ -18,5 +18,3 @@ endpoints:
         gpt-4o:
           deploymentName: gpt-4o
           version: "2024-02-01"
-registration:
-  socialLogins: ["openid"]
