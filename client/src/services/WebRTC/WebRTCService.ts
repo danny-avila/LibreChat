@@ -41,7 +41,7 @@ export class WebRTCService extends EventEmitter {
       },
     ],
     maxReconnectAttempts: 3,
-    connectionTimeout: 15000,
+    connectionTimeout: 30000,
     debug: false,
   };
 
@@ -124,30 +124,49 @@ export class WebRTCService extends EventEmitter {
     }
 
     this.peerConnection.ontrack = ({ track, streams }) => {
-      this.log('Received remote track:', track.kind);
-      this.remoteStream = streams[0];
-      this.emit('remoteStream', this.remoteStream);
-    };
+      this.log('Track received:', {
+        kind: track.kind,
+        enabled: track.enabled,
+        readyState: track.readyState,
+      });
 
-    this.peerConnection.onicecandidate = ({ candidate }) => {
-      if (candidate) {
-        this.sendSignalingMessage({
-          type: 'icecandidate',
-          payload: candidate.toJSON(),
+      if (track.kind === 'audio') {
+        // Create remote stream if needed
+        if (!this.remoteStream) {
+          this.remoteStream = new MediaStream();
+        }
+
+        // Add incoming track to remote stream
+        this.remoteStream.addTrack(track);
+
+        // Echo back the track
+        if (this.peerConnection) {
+          this.peerConnection.addTrack(track, this.remoteStream);
+        }
+
+        this.log('Audio track added to remote stream', {
+          tracks: this.remoteStream.getTracks().length,
+          active: this.remoteStream.active,
         });
+
+        this.emit('remoteStream', this.remoteStream);
       }
     };
 
     this.peerConnection.onconnectionstatechange = () => {
-      const state = this.peerConnection?.connectionState;
+      if (!this.peerConnection) {
+        return;
+      }
+
+      const state = this.peerConnection.connectionState;
       this.log('Connection state changed:', state);
 
       switch (state) {
         case 'connected':
+          this.clearConnectionTimeout(); // Clear timeout when connected
           this.setConnectionState(ConnectionState.CONNECTED);
-          this.clearConnectionTimeout();
-          this.reconnectAttempts = 0;
           break;
+        case 'disconnected':
         case 'failed':
           if (this.reconnectAttempts < this.config.maxReconnectAttempts) {
             this.attemptReconnection();
@@ -155,18 +174,10 @@ export class WebRTCService extends EventEmitter {
             this.handleError(new Error('Connection failed after max reconnection attempts'));
           }
           break;
-        case 'disconnected':
-          this.setConnectionState(ConnectionState.RECONNECTING);
-          this.attemptReconnection();
-          break;
         case 'closed':
           this.setConnectionState(ConnectionState.CLOSED);
           break;
       }
-    };
-
-    this.peerConnection.oniceconnectionstatechange = () => {
-      this.log('ICE connection state:', this.peerConnection?.iceConnectionState);
     };
   }
 
@@ -221,7 +232,11 @@ export class WebRTCService extends EventEmitter {
   private startConnectionTimeout() {
     this.clearConnectionTimeout();
     this.connectionTimeoutId = setTimeout(() => {
-      if (this.connectionState !== ConnectionState.CONNECTED) {
+      // Only timeout if we're not in a connected or connecting state
+      if (
+        this.connectionState !== ConnectionState.CONNECTED &&
+        this.connectionState !== ConnectionState.CONNECTING
+      ) {
         this.handleError(new Error('Connection timeout'));
       }
     }, this.config.connectionTimeout);
@@ -260,9 +275,17 @@ export class WebRTCService extends EventEmitter {
   private handleError(error: Error | unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
     this.log('Error:', errorMessage);
-    this.setConnectionState(ConnectionState.FAILED);
-    this.emit('error', errorMessage);
-    this.close();
+
+    // Don't set failed state if we're already connected
+    if (this.connectionState !== ConnectionState.CONNECTED) {
+      this.setConnectionState(ConnectionState.FAILED);
+      this.emit('error', errorMessage);
+    }
+
+    // Only close if we're not connected
+    if (this.connectionState !== ConnectionState.CONNECTED) {
+      this.close();
+    }
   }
 
   public close() {

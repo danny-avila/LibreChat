@@ -54,6 +54,46 @@ const useCall = () => {
     };
   }, []);
 
+  const handleRemoteStream = (stream: MediaStream | null) => {
+    console.log('[WebRTC] Remote stream received:', {
+      stream: stream,
+      active: stream?.active,
+      tracks: stream?.getTracks().map((t) => ({
+        kind: t.kind,
+        enabled: t.enabled,
+        muted: t.muted,
+      })),
+    });
+
+    if (!stream) {
+      console.error('[WebRTC] Received null remote stream');
+      updateStatus({
+        error: {
+          code: 'NO_REMOTE_STREAM',
+          message: 'No remote stream received',
+        },
+      });
+      return;
+    }
+
+    const audioTracks = stream.getAudioTracks();
+    if (!audioTracks.length) {
+      console.error('[WebRTC] No audio tracks in remote stream');
+      updateStatus({
+        error: {
+          code: 'NO_AUDIO_TRACKS',
+          message: 'Remote stream contains no audio',
+        },
+      });
+      return;
+    }
+
+    updateStatus({
+      remoteStream: stream,
+      callState: CallState.ACTIVE,
+    });
+  };
+
   const handleConnectionStateChange = useCallback(
     (state: ConnectionState) => {
       switch (state) {
@@ -123,6 +163,7 @@ const useCall = () => {
 
   const startCall = useCallback(async () => {
     if (!isConnected) {
+      console.log('Cannot start call - not connected to server');
       updateStatus({
         callState: CallState.ERROR,
         error: {
@@ -134,7 +175,10 @@ const useCall = () => {
     }
 
     try {
+      console.log('Starting new call...');
+
       if (webrtcServiceRef.current) {
+        console.log('Cleaning up existing WebRTC connection');
         webrtcServiceRef.current.close();
       }
 
@@ -149,13 +193,15 @@ const useCall = () => {
         debug: true,
       });
 
-      webrtcServiceRef.current.on('connectionStateChange', handleConnectionStateChange);
-
-      webrtcServiceRef.current.on('remoteStream', (stream: MediaStream) => {
-        updateStatus({ remoteStream: stream });
+      webrtcServiceRef.current.on('connectionStateChange', (state: ConnectionState) => {
+        console.log('WebRTC connection state changed:', state);
+        handleConnectionStateChange(state);
       });
 
+      webrtcServiceRef.current.on('remoteStream', handleRemoteStream);
+
       webrtcServiceRef.current.on('error', (error: string) => {
+        console.error('WebRTC error:', error);
         updateStatus({
           callState: CallState.ERROR,
           isConnecting: false,
@@ -166,9 +212,13 @@ const useCall = () => {
         });
       });
 
+      console.log('Initializing WebRTC connection...');
       await webrtcServiceRef.current.initialize();
+      console.log('WebRTC initialization complete');
+
       startConnectionMonitoring();
     } catch (error) {
+      console.error('Failed to start call:', error);
       updateStatus({
         callState: CallState.ERROR,
         isConnecting: false,
@@ -203,9 +253,11 @@ const useCall = () => {
   useEffect(() => {
     const cleanupFns = [
       addEventListener(WebSocketEvents.WEBRTC_ANSWER, (answer: RTCSessionDescriptionInit) => {
+        console.log('Received WebRTC answer:', answer);
         webrtcServiceRef.current?.handleAnswer(answer);
       }),
       addEventListener(WebSocketEvents.ICE_CANDIDATE, (candidate: RTCIceCandidateInit) => {
+        console.log('Received ICE candidate:', candidate);
         webrtcServiceRef.current?.addIceCandidate(candidate);
       }),
     ];
