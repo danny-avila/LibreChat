@@ -213,18 +213,21 @@ const Nav = ({
         navVisible={navVisible}
         className="fixed left-0 top-1/2 z-40 hidden md:flex"
       />
-      <div
-        role="button"
-        tabIndex={0}
-        className={`nav-mask ${navVisible ? 'active' : ''}`}
-        onClick={toggleNavVisible}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            toggleNavVisible();
-          }
-        }}
-        aria-label="Toggle navigation"
-      />
+      {isSmallScreen && (
+        <div
+          id="mobile-nav-mask-toggle"
+          role="button"
+          tabIndex={0}
+          className={`nav-mask ${navVisible ? 'active' : ''}`}
+          onClick={toggleNavVisible}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              toggleNavVisible();
+            }
+          }}
+          aria-label="Toggle navigation"
+        />
+      )}
     </>
   );
 };

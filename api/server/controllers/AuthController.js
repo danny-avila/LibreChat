@@ -7,7 +7,6 @@ const {
   requestPasswordReset,
 } = require('~/server/services/AuthService');
 const { findSession, getUserById, deleteAllUserSessions } = require('~/models');
-const { hashToken } = require('~/server/utils/crypto');
 const { logger } = require('~/config');
 
 const registrationController = async (req, res) => {
@@ -74,11 +73,9 @@ const refreshController = async (req, res) => {
       return res.status(200).send({ token, user });
     }
 
-    // Hash the refresh token
-    const hashedToken = await hashToken(refreshToken);
-
     // Find the session with the hashed refresh token
-    const session = await findSession({ userId: userId, refreshToken: hashedToken });
+    const session = await findSession({ userId: userId, refreshToken: refreshToken });
+
     if (session && session.expiration > new Date()) {
       const token = await setAuthTokens(userId, res, session._id);
       res.status(200).send({ token, user });

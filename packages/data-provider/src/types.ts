@@ -195,20 +195,23 @@ export type TConversationTagRequest = Partial<
 
 export type TConversationTagResponse = TConversationTag;
 
-// type for tagging conversation
 export type TTagConversationRequest = {
   tags: string[];
+  tag: string;
 };
+
 export type TTagConversationResponse = string[];
 
 export type TDuplicateConvoRequest = {
   conversationId?: string;
 };
 
-export type TDuplicateConvoResponse = {
-  conversation: TConversation;
-  messages: TMessage[];
-} | undefined;
+export type TDuplicateConvoResponse =
+  | {
+      conversation: TConversation;
+      messages: TMessage[];
+    }
+  | undefined;
 
 export type TForkConvoRequest = {
   messageId: string;

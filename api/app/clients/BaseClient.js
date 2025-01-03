@@ -649,15 +649,17 @@ class BaseClient {
 
     this.responsePromise = this.saveMessageToDatabase(responseMessage, saveOptions, user);
     this.savedMessageIds.add(responseMessage.messageId);
-    const messageCache = getLogStores(CacheKeys.MESSAGES);
-    messageCache.set(
-      responseMessageId,
-      {
-        text: responseMessage.text,
-        complete: true,
-      },
-      Time.FIVE_MINUTES,
-    );
+    if (responseMessage.text) {
+      const messageCache = getLogStores(CacheKeys.MESSAGES);
+      messageCache.set(
+        responseMessageId,
+        {
+          text: responseMessage.text,
+          complete: true,
+        },
+        Time.FIVE_MINUTES,
+      );
+    }
     delete responseMessage.tokenCount;
     return responseMessage;
   }
@@ -926,6 +928,24 @@ class BaseClient {
       if (Array.isArray(value)) {
         for (let item of value) {
           if (!item || !item.type || item.type === 'image_url') {
+            continue;
+          }
+
+          if (item.type === 'tool_call' && item.tool_call != null) {
+            const toolName = item.tool_call?.name || '';
+            if (toolName != null && toolName && typeof toolName === 'string') {
+              numTokens += this.getTokenCount(toolName);
+            }
+
+            const args = item.tool_call?.args || '';
+            if (args != null && args && typeof args === 'string') {
+              numTokens += this.getTokenCount(args);
+            }
+
+            const output = item.tool_call?.output || '';
+            if (output != null && output && typeof output === 'string') {
+              numTokens += this.getTokenCount(output);
+            }
             continue;
           }
 

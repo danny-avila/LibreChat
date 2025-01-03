@@ -74,8 +74,21 @@ export default function FileRow({
 
   const renderFiles = () => {
     const rowStyle = isRTL
-      ? { display: 'flex', flexDirection: 'row-reverse', gap: '4px' }
-      : { display: 'flex', gap: '4px' };
+      ? {
+        display: 'flex',
+        flexDirection: 'row-reverse',
+        flexWrap: 'wrap',
+        gap: '4px',
+        width: '100%',
+        maxWidth: '100%',
+      }
+      : {
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '4px',
+        width: '100%',
+        maxWidth: '100%',
+      };
 
     return (
       <div style={rowStyle as React.CSSProperties}>
@@ -98,18 +111,28 @@ export default function FileRow({
               deleteFile({ file, setFiles });
             };
             const isImage = file.type?.startsWith('image') ?? false;
-            if (isImage) {
-              return (
-                <Image
-                  key={index}
-                  url={file.preview ?? file.filepath}
-                  onDelete={handleDelete}
-                  progress={file.progress}
-                  source={file.source}
-                />
-              );
-            }
-            return <FileContainer key={index} file={file} onDelete={handleDelete} />;
+
+            return (
+              <div
+                key={index}
+                style={{
+                  flexBasis: '70px',
+                  flexGrow: 0,
+                  flexShrink: 0,
+                }}
+              >
+                {isImage ? (
+                  <Image
+                    url={file.preview ?? file.filepath}
+                    onDelete={handleDelete}
+                    progress={file.progress}
+                    source={file.source}
+                  />
+                ) : (
+                  <FileContainer file={file} onDelete={handleDelete} />
+                )}
+              </div>
+            );
           })}
       </div>
     );
