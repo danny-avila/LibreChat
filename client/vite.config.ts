@@ -4,6 +4,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 import { defineConfig, createLogger } from 'vite';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import type { Plugin } from 'vite';
+import { readFile, writeFile } from 'fs/promises';
 
 const logger = createLogger();
 const originalWarning = logger.warn;
@@ -97,6 +98,24 @@ export default defineConfig({
       },
     }),
     sourcemapExclude({ excludeNodeModules: true }),
+    {
+      name: 'modify-manifest-link',
+      enforce: 'post',
+      apply: 'build',
+      async closeBundle() {
+        const indexPath = path.resolve(__dirname, 'dist', 'index.html');
+        let html = await readFile(indexPath, 'utf-8');
+        // Modify the manifest link to include crossorigin="use-credentials".
+        // This is needed when the manifest is behind authentication (e.g., Cloudflare Access)
+        // as browsers won't send credentials by default when fetching manifest files.
+        // Once https://github.com/vitejs/vite/issues/6648 is addressed, this can be configured directly in Vite
+        html = html.replace(
+          /<link\s+rel=["']manifest["']([^>]*)>/i,
+          (_, attributes) => `<link rel="manifest"${attributes} crossorigin="use-credentials">`
+        );
+        await writeFile(indexPath, html);
+      },
+    },
   ],
   publicDir: './public',
   build: {
