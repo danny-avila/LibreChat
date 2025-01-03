@@ -494,6 +494,7 @@ class AgentClient extends BaseClient {
           last_agent_index: this.agentConfigs?.size ?? 0,
           hide_sequential_outputs: this.options.agent.hide_sequential_outputs,
         },
+        recursionLimit: this.options.req.app.locals[EModelEndpoint.agents]?.recursionLimit,
         signal: abortController.signal,
         streamMode: 'values',
         version: 'v2',
