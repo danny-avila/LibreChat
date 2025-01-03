@@ -1,5 +1,7 @@
+jest.mock('~/cache/getLogStores');
 require('dotenv').config();
 const OpenAI = require('openai');
+const getLogStores = require('~/cache/getLogStores');
 const { fetchEventSource } = require('@waylaidwanderer/fetch-event-source');
 const { genAzureChatCompletion } = require('~/utils/azureUtils');
 const OpenAIClient = require('../OpenAIClient');
@@ -134,6 +136,12 @@ OpenAI.mockImplementation(() => ({
 }));
 
 describe('OpenAIClient', () => {
+  const mockSet = jest.fn();
+  const mockCache = { set: mockSet };
+
+  beforeEach(() => {
+    getLogStores.mockReturnValue(mockCache);
+  });
   let client;
   const model = 'gpt-4';
   const parentMessageId = '1';
