@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Capabilities } from 'librechat-data-provider';
+import { Capabilities, EToolResources } from 'librechat-data-provider';
 import { useFormContext, useWatch } from 'react-hook-form';
 import type { TConfig, AssistantsEndpoint } from 'librechat-data-provider';
 import type { AssistantForm } from '~/common';
@@ -32,7 +32,14 @@ export default function CapabilitiesForm({
     if (typeof assistant === 'string') {
       return [];
     }
-    return assistant.code_files;
+    return assistant.code_files ?? [];
+  }, [assistant]);
+
+  const fileSearch = useMemo(() => {
+    if (typeof assistant === 'string') {
+      return [];
+    }
+    return assistant.search_files ?? [];
   }, [assistant]);
 
   const retrievalModels = useMemo(
@@ -55,6 +62,15 @@ export default function CapabilitiesForm({
       </div>
       <div className="flex flex-col items-start gap-2">
         {codeEnabled && <Code version={version} />}
+        {codeEnabled && version && (
+          <CodeFiles
+            assistant_id={assistant_id}
+            version={version}
+            endpoint={endpoint}
+            files={files}
+            tool_resource={EToolResources.code_interpreter}
+          />
+        )}
         {retrievalEnabled && (
           <Retrieval endpoint={endpoint} version={version} retrievalModels={retrievalModels} />
         )}
@@ -64,7 +80,8 @@ export default function CapabilitiesForm({
             assistant_id={assistant_id}
             version={version}
             endpoint={endpoint}
-            files={files}
+            files={fileSearch}
+            tool_resource={EToolResources.file_search}
           />
         )}
       </div>
