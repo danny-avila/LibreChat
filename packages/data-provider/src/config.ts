@@ -210,6 +210,7 @@ export type TAssistantEndpoint = z.infer<typeof assistantEndpointSchema>;
 export const agentsEndpointSChema = baseEndpointSchema.merge(
   z.object({
     /* agents specific */
+    recursionLimit: z.number().optional(),
     disableBuilder: z.boolean().optional(),
     capabilities: z
       .array(z.nativeEnum(AgentCapabilities))
