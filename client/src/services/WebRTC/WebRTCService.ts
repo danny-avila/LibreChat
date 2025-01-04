@@ -1,4 +1,6 @@
+import { useEffect } from 'react';
 import { EventEmitter } from 'events';
+import { useMicVAD } from '@ricky0123/vad-react';
 import type { MessagePayload } from '~/common';
 
 export enum ConnectionState {
@@ -24,6 +26,51 @@ interface WebRTCConfig {
   debug?: boolean;
 }
 
+export function useVADSetup(webrtcService: WebRTCService | null) {
+  const vad = useMicVAD({
+    startOnLoad: true,
+    onSpeechStart: () => {
+      // Only emit speech events if not muted
+      if (webrtcService && !webrtcService.isMuted()) {
+        webrtcService.handleVADStatusChange(true);
+      }
+    },
+    onSpeechEnd: () => {
+      // Only emit speech events if not muted
+      if (webrtcService && !webrtcService.isMuted()) {
+        webrtcService.handleVADStatusChange(false);
+      }
+    },
+    onVADMisfire: () => {
+      if (webrtcService && !webrtcService.isMuted()) {
+        webrtcService.handleVADStatusChange(false);
+      }
+    },
+  });
+
+  // Add effect to handle mute state changes
+  useEffect(() => {
+    if (webrtcService) {
+      const handleMuteChange = (muted: boolean) => {
+        if (muted) {
+          // Stop VAD processing when muted
+          vad.pause();
+        } else {
+          // Resume VAD processing when unmuted
+          vad.start();
+        }
+      };
+
+      webrtcService.on('muteStateChange', handleMuteChange);
+      return () => {
+        webrtcService.off('muteStateChange', handleMuteChange);
+      };
+    }
+  }, [webrtcService, vad]);
+
+  return vad;
+}
+
 export class WebRTCService extends EventEmitter {
   private peerConnection: RTCPeerConnection | null = null;
   private localStream: MediaStream | null = null;
@@ -33,6 +80,8 @@ export class WebRTCService extends EventEmitter {
   private config: Required<WebRTCConfig>;
   private connectionState: ConnectionState = ConnectionState.IDLE;
   private mediaState: MediaState = MediaState.INACTIVE;
+
+  private isUserSpeaking = false;
 
   private readonly DEFAULT_CONFIG: Required<WebRTCConfig> = {
     iceServers: [
@@ -72,6 +121,76 @@ export class WebRTCService extends EventEmitter {
     this.log('Media state changed to:', state);
   }
 
+  public handleVADStatusChange(isSpeaking: boolean) {
+    if (this.isUserSpeaking !== isSpeaking) {
+      this.isUserSpeaking = isSpeaking;
+      this.sendMessage({
+        type: 'vad-status',
+        payload: { speaking: isSpeaking },
+      });
+      this.emit('vadStatusChange', isSpeaking);
+    }
+  }
+
+  public setMuted(muted: boolean) {
+    if (this.localStream) {
+      this.localStream.getAudioTracks().forEach((track) => {
+        // Stop the track completely when muted instead of just disabling
+        if (muted) {
+          track.stop();
+        } else {
+          // If unmuting, we need to get a new audio track
+          this.refreshAudioTrack();
+        }
+      });
+
+      if (muted) {
+        // Ensure VAD knows we're not speaking when muted
+        this.handleVADStatusChange(false);
+      }
+
+      this.emit('muteStateChange', muted);
+    }
+  }
+
+  public isMuted(): boolean {
+    if (!this.localStream) {
+      return false;
+    }
+    const audioTrack = this.localStream.getAudioTracks()[0];
+    return audioTrack ? !audioTrack.enabled : false;
+  }
+
+  private async refreshAudioTrack() {
+    try {
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+
+      const newTrack = newStream.getAudioTracks()[0];
+      if (this.localStream && this.peerConnection) {
+        const oldTrack = this.localStream.getAudioTracks()[0];
+        if (oldTrack) {
+          this.localStream.removeTrack(oldTrack);
+        }
+        this.localStream.addTrack(newTrack);
+
+        // Update the sender with the new track
+        const senders = this.peerConnection.getSenders();
+        const audioSender = senders.find((sender) => sender.track?.kind === 'audio');
+        if (audioSender) {
+          audioSender.replaceTrack(newTrack);
+        }
+      }
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
   async initialize() {
     try {
       this.setConnectionState(ConnectionState.CONNECTING);
@@ -101,9 +220,7 @@ export class WebRTCService extends EventEmitter {
       });
 
       this.startConnectionTimeout();
-
       await this.createAndSendOffer();
-
       this.setMediaState(MediaState.ACTIVE);
     } catch (error) {
       this.log('Initialization error:', error);
@@ -131,15 +248,12 @@ export class WebRTCService extends EventEmitter {
       });
 
       if (track.kind === 'audio') {
-        // Create remote stream if needed
         if (!this.remoteStream) {
           this.remoteStream = new MediaStream();
         }
 
-        // Add incoming track to remote stream
         this.remoteStream.addTrack(track);
 
-        // Echo back the track
         if (this.peerConnection) {
           this.peerConnection.addTrack(track, this.remoteStream);
         }
@@ -163,7 +277,7 @@ export class WebRTCService extends EventEmitter {
 
       switch (state) {
         case 'connected':
-          this.clearConnectionTimeout(); // Clear timeout when connected
+          this.clearConnectionTimeout();
           this.setConnectionState(ConnectionState.CONNECTED);
           break;
         case 'disconnected':
@@ -232,7 +346,6 @@ export class WebRTCService extends EventEmitter {
   private startConnectionTimeout() {
     this.clearConnectionTimeout();
     this.connectionTimeoutId = setTimeout(() => {
-      // Only timeout if we're not in a connected or connecting state
       if (
         this.connectionState !== ConnectionState.CONNECTED &&
         this.connectionState !== ConnectionState.CONNECTING
@@ -276,13 +389,11 @@ export class WebRTCService extends EventEmitter {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
     this.log('Error:', errorMessage);
 
-    // Don't set failed state if we're already connected
     if (this.connectionState !== ConnectionState.CONNECTED) {
       this.setConnectionState(ConnectionState.FAILED);
       this.emit('error', errorMessage);
     }
 
-    // Only close if we're not connected
     if (this.connectionState !== ConnectionState.CONNECTED) {
       this.close();
     }
