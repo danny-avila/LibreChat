@@ -630,12 +630,6 @@ export const tConvoUpdateSchema = tConversationSchema.merge(
   }),
 );
 
-export const tPresetUpdateSchema = tConversationSchema.merge(
-  z.object({
-    endpoint: extendedModelEndpointSchema.nullable(),
-  }),
-);
-
 export type TPreset = z.infer<typeof tPresetSchema>;
 
 export type TSetOption = (
