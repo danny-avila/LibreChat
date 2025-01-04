@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
-import { getSettingsKeys, tPresetUpdateSchema } from 'librechat-data-provider';
+import { getSettingsKeys, tConvoUpdateSchema } from 'librechat-data-provider';
 import type { TPreset } from 'librechat-data-provider';
 import { SaveAsPresetDialog } from '~/components/Endpoints';
 import { useSetIndexOptions, useLocalize } from '~/hooks';
@@ -106,7 +106,7 @@ export default function Parameters() {
   }, [parameters, setConversation]);
 
   const openDialog = useCallback(() => {
-    const newPreset = tPresetUpdateSchema.parse({
+    const newPreset = tConvoUpdateSchema.parse({
       ...conversation,
     }) as TPreset;
     setPreset(newPreset);

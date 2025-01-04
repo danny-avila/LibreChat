@@ -2,7 +2,7 @@ import { useRecoilState } from 'recoil';
 import { Settings2 } from 'lucide-react';
 import { Root, Anchor } from '@radix-ui/react-popover';
 import { useState, useEffect, useMemo } from 'react';
-import { tPresetUpdateSchema, EModelEndpoint, isParamEndpoint } from 'librechat-data-provider';
+import { tConvoUpdateSchema, EModelEndpoint, isParamEndpoint } from 'librechat-data-provider';
 import type { TPreset, TInterfaceConfig } from 'librechat-data-provider';
 import { EndpointSettings, SaveAsPresetDialog, AlternativeSettings } from '~/components/Endpoints';
 import { PluginStoreDialog, TooltipAnchor } from '~/components';
@@ -123,7 +123,7 @@ export default function HeaderOptions({
                 open={saveAsDialogShow}
                 onOpenChange={setSaveAsDialogShow}
                 preset={
-                  tPresetUpdateSchema.parse({
+                  tConvoUpdateSchema.parse({
                     ...conversation,
                   }) as TPreset
                 }
