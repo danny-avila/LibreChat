@@ -72,7 +72,7 @@ export interface RTCMessage {
 export type MessagePayload =
   | RTCSessionDescriptionInit
   | RTCIceCandidateInit
-  | Record<string, never>;
+  | { speaking: boolean };
 
 export enum CallState {
   IDLE = 'idle',

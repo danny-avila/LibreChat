@@ -26,11 +26,12 @@ export const Call: React.FC = () => {
     localStream,
     remoteStream,
     connectionQuality,
+    isMuted,
+    toggleMute,
   } = useCall();
 
   const [open, setOpen] = useRecoilState(store.callDialogOpen(0));
   const [eventLog, setEventLog] = React.useState<string[]>([]);
-  const [isMuted, setIsMuted] = React.useState(false);
   const [isAudioEnabled, setIsAudioEnabled] = React.useState(true);
 
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
@@ -84,8 +85,8 @@ export const Call: React.FC = () => {
     hangUp();
   };
 
-  const toggleMute = () => {
-    setIsMuted((prev) => !prev);
+  const handleToggleMute = () => {
+    toggleMute();
     logEvent(`Microphone ${isMuted ? 'unmuted' : 'muted'}`);
   };
 
@@ -176,7 +177,7 @@ export const Call: React.FC = () => {
             {isActive && (
               <>
                 <Button
-                  onClick={toggleMute}
+                  onClick={handleToggleMute}
                   className={`rounded-full p-3 ${
                     isMuted ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'
                   }`}
@@ -218,25 +219,19 @@ export const Call: React.FC = () => {
           </div>
 
           {/* Event Log */}
-          <div className="mt-4 w-full rounded-md bg-gray-100 p-4 shadow-sm">
-            <h3 className="mb-2 text-lg font-medium">Event Log</h3>
-            <div className="h-32 overflow-y-auto rounded-md bg-white p-2 shadow-inner">
-              <ul className="space-y-1 text-xs text-gray-600">
-                {eventLog.map((log, index) => (
-                  <li key={index} className="font-mono">
-                    {log}
-                  </li>
-                ))}
-              </ul>
-            </div>
+          <h3 className="mb-2 text-lg font-medium">Event Log</h3>
+          <div className="h-64 overflow-y-auto rounded-md bg-surface-secondary p-2 shadow-inner">
+            <ul className="space-y-1 text-xs text-text-secondary">
+              {eventLog.map((log, index) => (
+                <li key={index} className="font-mono">
+                  {log}
+                </li>
+              ))}
+            </ul>
           </div>
 
           {/* Hidden Audio Element */}
-          <audio
-            ref={remoteAudioRef}
-            autoPlay
-            playsInline
-          >
+          <audio ref={remoteAudioRef} autoPlay>
             <track kind="captions" />
           </audio>
         </div>

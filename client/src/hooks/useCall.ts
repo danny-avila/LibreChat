@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { WebRTCService, ConnectionState } from '../services/WebRTC/WebRTCService';
+import { WebRTCService, ConnectionState, useVADSetup } from '../services/WebRTC/WebRTCService';
 import useWebSocket, { WebSocketEvents } from './useWebSocket';
 
 interface CallError {
@@ -22,6 +22,8 @@ interface CallStatus {
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
   connectionQuality: 'good' | 'poor' | 'unknown';
+  isUserSpeaking: boolean;
+  remoteAISpeaking: boolean;
 }
 
 const INITIAL_STATUS: CallStatus = {
@@ -31,6 +33,8 @@ const INITIAL_STATUS: CallStatus = {
   localStream: null,
   remoteStream: null,
   connectionQuality: 'unknown',
+  isUserSpeaking: false,
+  remoteAISpeaking: false,
 };
 
 const useCall = () => {
@@ -38,33 +42,19 @@ const useCall = () => {
   const [status, setStatus] = useState<CallStatus>(INITIAL_STATUS);
   const webrtcServiceRef = useRef<WebRTCService | null>(null);
   const statsIntervalRef = useRef<NodeJS.Timeout>();
+  const [isMuted, setIsMuted] = useState(false);
+
+  const vad = useVADSetup(webrtcServiceRef.current);
 
   const updateStatus = useCallback((updates: Partial<CallStatus>) => {
     setStatus((prev) => ({ ...prev, ...updates }));
   }, []);
 
   useEffect(() => {
-    return () => {
-      if (statsIntervalRef.current) {
-        clearInterval(statsIntervalRef.current);
-      }
-      if (webrtcServiceRef.current) {
-        webrtcServiceRef.current.close();
-      }
-    };
-  }, []);
+    updateStatus({ isUserSpeaking: vad.userSpeaking });
+  }, [vad.userSpeaking, updateStatus]);
 
   const handleRemoteStream = (stream: MediaStream | null) => {
-    console.log('[WebRTC] Remote stream received:', {
-      stream: stream,
-      active: stream?.active,
-      tracks: stream?.getTracks().map((t) => ({
-        kind: t.kind,
-        enabled: t.enabled,
-        muted: t.muted,
-      })),
-    });
-
     if (!stream) {
       console.error('[WebRTC] Received null remote stream');
       updateStatus({
@@ -122,10 +112,8 @@ const useCall = () => {
           break;
         case ConnectionState.CLOSED:
           updateStatus({
+            ...INITIAL_STATUS,
             callState: CallState.ENDED,
-            isConnecting: false,
-            localStream: null,
-            remoteStream: null,
           });
           break;
       }
@@ -188,17 +176,15 @@ const useCall = () => {
         error: null,
       });
 
-      // TODO: Remove debug or make it configurable
-      webrtcServiceRef.current = new WebRTCService((message) => sendMessage(message), {
+      webrtcServiceRef.current = new WebRTCService(sendMessage, {
         debug: true,
       });
 
-      webrtcServiceRef.current.on('connectionStateChange', (state: ConnectionState) => {
-        console.log('WebRTC connection state changed:', state);
-        handleConnectionStateChange(state);
-      });
-
+      webrtcServiceRef.current.on('connectionStateChange', handleConnectionStateChange);
       webrtcServiceRef.current.on('remoteStream', handleRemoteStream);
+      webrtcServiceRef.current.on('vadStatusChange', (speaking: boolean) => {
+        updateStatus({ isUserSpeaking: speaking });
+      });
 
       webrtcServiceRef.current.on('error', (error: string) => {
         console.error('WebRTC error:', error);
@@ -253,22 +239,42 @@ const useCall = () => {
   useEffect(() => {
     const cleanupFns = [
       addEventListener(WebSocketEvents.WEBRTC_ANSWER, (answer: RTCSessionDescriptionInit) => {
-        console.log('Received WebRTC answer:', answer);
         webrtcServiceRef.current?.handleAnswer(answer);
       }),
       addEventListener(WebSocketEvents.ICE_CANDIDATE, (candidate: RTCIceCandidateInit) => {
-        console.log('Received ICE candidate:', candidate);
         webrtcServiceRef.current?.addIceCandidate(candidate);
       }),
     ];
 
     return () => cleanupFns.forEach((fn) => fn());
-  }, [addEventListener]);
+  }, [addEventListener, updateStatus]);
+
+  const toggleMute = useCallback(() => {
+    if (webrtcServiceRef.current) {
+      const newMutedState = !isMuted;
+      webrtcServiceRef.current.setMuted(newMutedState);
+      setIsMuted(newMutedState);
+    }
+  }, [isMuted]);
+
+  useEffect(() => {
+    if (webrtcServiceRef.current) {
+      const handleMuteChange = (muted: boolean) => setIsMuted(muted);
+      webrtcServiceRef.current.on('muteStateChange', handleMuteChange);
+      return () => {
+        webrtcServiceRef.current?.off('muteStateChange', handleMuteChange);
+      };
+    }
+  }, []);
 
   return {
     ...status,
+    isMuted,
+    toggleMute,
     startCall,
     hangUp,
+    vadLoading: vad.loading,
+    vadError: vad.errored,
   };
 };
 

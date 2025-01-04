@@ -21,7 +21,6 @@ class WebRTCConnection {
 
       await this.peerConnection.setRemoteDescription(offer);
 
-      // Create MediaStream instance properly
       const mediaStream = new MediaStream();
 
       this.audioTransceiver = this.peerConnection.addTransceiver('audio', {
@@ -34,7 +33,6 @@ class WebRTCConnection {
       this.socket.emit('webrtc-answer', answer);
     } catch (error) {
       this.log(`Error handling offer: ${error}`, 'error');
-      // Don't throw, handle gracefully
       this.socket.emit('webrtc-error', {
         message: error.message,
         code: 'OFFER_ERROR',
@@ -47,13 +45,11 @@ class WebRTCConnection {
       return;
     }
 
-    // Handle incoming audio tracks
-    this.peerConnection.ontrack = ({ track, streams }) => {
+    this.peerConnection.ontrack = ({ track }) => {
       this.log(`Received ${track.kind} track from client`);
 
-      // For testing: Echo the audio back after a delay
       if (track.kind === 'audio') {
-        this.handleIncomingAudio(track, streams[0]);
+        this.handleIncomingAudio(track);
       }
 
       track.onended = () => {
@@ -71,27 +67,22 @@ class WebRTCConnection {
       if (!this.peerConnection) {
         return;
       }
+
       const state = this.peerConnection.connectionState;
       this.log(`Connection state changed to ${state}`);
       this.state = state;
+
       if (state === 'failed' || state === 'closed') {
         this.cleanup();
       }
     };
-
-    this.peerConnection.oniceconnectionstatechange = () => {
-      if (this.peerConnection) {
-        this.log(`ICE connection state: ${this.peerConnection.iceConnectionState}`);
-      }
-    };
   }
 
-  handleIncomingAudio(inputTrack) {
-    // For testing: Echo back the input track directly
-    this.peerConnection.addTrack(inputTrack);
-
-    // Log the track info for debugging
-    this.log(`Audio track added: ${inputTrack.id}, enabled: ${inputTrack.enabled}`);
+  handleIncomingAudio(track) {
+    if (this.peerConnection) {
+      const stream = new MediaStream([track]);
+      this.peerConnection.addTrack(track, stream);
+    }
   }
 
   async addIceCandidate(candidate) {
@@ -119,6 +110,7 @@ class WebRTCConnection {
       }
       this.peerConnection = null;
     }
+
     this.audioTransceiver = null;
     this.pendingCandidates = [];
     this.state = 'idle';
@@ -153,16 +145,10 @@ class SocketIOService {
     this.setupSocketHandlers();
   }
 
-  log(message, level = 'info') {
-    const timestamp = new Date().toISOString();
-    console.log(`[WebRTC ${timestamp}] [${level.toUpperCase()}] ${message}`);
-  }
-
   setupSocketHandlers() {
     this.io.on('connection', (socket) => {
       this.log(`Client connected: ${socket.id}`);
 
-      // Create a new WebRTC connection for this socket
       const rtcConnection = new WebRTCConnection(socket, {
         ...this.config,
         log: this.log.bind(this),
@@ -178,12 +164,21 @@ class SocketIOService {
         rtcConnection.addIceCandidate(candidate);
       });
 
+      socket.on('vad-status', (status) => {
+        this.log(`VAD status from ${socket.id}: ${JSON.stringify(status)}`);
+      });
+
       socket.on('disconnect', () => {
         this.log(`Client disconnected: ${socket.id}`);
         rtcConnection.cleanup();
         this.connections.delete(socket.id);
       });
     });
+  }
+
+  log(message, level = 'info') {
+    const timestamp = new Date().toISOString();
+    console.log(`[WebRTC ${timestamp}] [${level.toUpperCase()}] ${message}`);
   }
 
   shutdown() {
