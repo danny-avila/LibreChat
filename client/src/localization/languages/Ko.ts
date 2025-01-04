@@ -1143,4 +1143,10 @@ export default {
   com_ui_duplicate_agent_confirm: '이 에이전트를 복제하시겠습니까?',
   com_nav_welcome_agent: '에이전트를 선택해 주세요',
   com_ui_delete_shared_link: '공유 링크를 삭제하시겠습니까?',
+  com_ui_bookmarks_add: '북마크 추가',
+  com_ui_bookmarks_edit: '북마크 수정',
+  com_ui_page: '페이지',
+  com_endpoint_ai: '인공지능',
+  com_nav_maximize_chat_space: '채팅창 최대화',
+  com_endpoint_message_new: '메시지 {0} 또는 "@"를 입력하여 AI 전환',
 };
