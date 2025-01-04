@@ -30,13 +30,11 @@ export function useVADSetup(webrtcService: WebRTCService | null) {
   const vad = useMicVAD({
     startOnLoad: true,
     onSpeechStart: () => {
-      // Only emit speech events if not muted
       if (webrtcService && !webrtcService.isMuted()) {
         webrtcService.handleVADStatusChange(true);
       }
     },
     onSpeechEnd: () => {
-      // Only emit speech events if not muted
       if (webrtcService && !webrtcService.isMuted()) {
         webrtcService.handleVADStatusChange(false);
       }
@@ -48,15 +46,12 @@ export function useVADSetup(webrtcService: WebRTCService | null) {
     },
   });
 
-  // Add effect to handle mute state changes
   useEffect(() => {
     if (webrtcService) {
       const handleMuteChange = (muted: boolean) => {
         if (muted) {
-          // Stop VAD processing when muted
           vad.pause();
         } else {
-          // Resume VAD processing when unmuted
           vad.start();
         }
       };
@@ -135,17 +130,14 @@ export class WebRTCService extends EventEmitter {
   public setMuted(muted: boolean) {
     if (this.localStream) {
       this.localStream.getAudioTracks().forEach((track) => {
-        // Stop the track completely when muted instead of just disabling
         if (muted) {
           track.stop();
         } else {
-          // If unmuting, we need to get a new audio track
           this.refreshAudioTrack();
         }
       });
 
       if (muted) {
-        // Ensure VAD knows we're not speaking when muted
         this.handleVADStatusChange(false);
       }
 
@@ -179,7 +171,6 @@ export class WebRTCService extends EventEmitter {
         }
         this.localStream.addTrack(newTrack);
 
-        // Update the sender with the new track
         const senders = this.peerConnection.getSenders();
         const audioSender = senders.find((sender) => sender.track?.kind === 'audio');
         if (audioSender) {
