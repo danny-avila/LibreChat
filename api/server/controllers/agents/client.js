@@ -40,6 +40,7 @@ const { createRun } = require('./run');
 const { logger } = require('~/config');
 
 /** @typedef {import('@librechat/agents').MessageContentComplex} MessageContentComplex */
+/** @typedef {import('@langchain/core/runnables').RunnableConfig} RunnableConfig */
 
 const providerParsers = {
   [EModelEndpoint.openAI]: openAISchema,
@@ -488,6 +489,7 @@ class AgentClient extends BaseClient {
       //   });
       // }
 
+      /** @type {Partial<RunnableConfig> & { version: 'v1' | 'v2'; run_id?: string; streamMode: string }} */
       const config = {
         configurable: {
           thread_id: this.conversationId,
