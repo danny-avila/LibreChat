@@ -2,7 +2,13 @@ import { useEffect, useCallback, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, EModelEndpoint, tConvoUpdateSchema } from 'librechat-data-provider';
+import {
+  QueryKeys,
+  EModelEndpoint,
+  isAgentsEndpoint,
+  tConvoUpdateSchema,
+  isAssistantsEndpoint,
+} from 'librechat-data-provider';
 import type { TPreset, TEndpointsConfig } from 'librechat-data-provider';
 import type { ZodAny } from 'zod';
 import { getConvoSwitchLogic, removeUnavailableTools } from '~/utils';
@@ -39,6 +45,21 @@ const processValidSettings = (queryParams: Record<string, string>) => {
     }
   });
 
+  if (
+    validSettings.assistant_id != null &&
+    validSettings.assistant_id &&
+    !isAssistantsEndpoint(validSettings.endpoint)
+  ) {
+    validSettings.endpoint = EModelEndpoint.assistants;
+  }
+  if (
+    validSettings.agent_id != null &&
+    validSettings.agent_id &&
+    !isAgentsEndpoint(validSettings.endpoint)
+  ) {
+    validSettings.endpoint = EModelEndpoint.agents;
+  }
+
   return validSettings;
 };
 
@@ -59,7 +80,7 @@ export default function useQueryParams({
   const queryClient = useQueryClient();
   const { conversation, newConversation } = useChatContext();
 
-  const processQuery = useCallback(
+  const newQueryConvo = useCallback(
     (_newPreset?: TPreset) => {
       if (!_newPreset) {
         return;
@@ -162,7 +183,7 @@ export default function useQueryParams({
       }
 
       if (Object.keys(validSettings).length > 0) {
-        processQuery(validSettings);
+        newQueryConvo(validSettings);
       }
 
       success();
@@ -172,5 +193,5 @@ export default function useQueryParams({
       clearInterval(intervalId);
       console.log('Cleanup: `useQueryParams` interval cleared');
     };
-  }, [searchParams, methods, textAreaRef, processQuery, newConversation]);
+  }, [searchParams, methods, textAreaRef, newQueryConvo, newConversation]);
 }
