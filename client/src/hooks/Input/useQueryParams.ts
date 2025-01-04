@@ -6,7 +6,7 @@ import {
   QueryKeys,
   EModelEndpoint,
   isAgentsEndpoint,
-  tConvoUpdateSchema,
+  tQueryParamsSchema,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type { TPreset, TEndpointsConfig } from 'librechat-data-provider';
@@ -34,7 +34,7 @@ const processValidSettings = (queryParams: Record<string, string>) => {
 
   Object.entries(queryParams).forEach(([key, value]) => {
     try {
-      const schema = tConvoUpdateSchema.shape[key] as ZodAny | undefined;
+      const schema = tQueryParamsSchema.shape[key] as ZodAny | undefined;
       if (schema) {
         const parsedValue = parseQueryValue(value);
         const validValue = schema.parse(parsedValue);
