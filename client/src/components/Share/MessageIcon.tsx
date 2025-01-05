@@ -30,14 +30,15 @@ export default function MessageIcon(
     [conversation, message],
   );
 
-  const iconURL = messageSettings?.iconURL;
-  let endpoint = messageSettings?.endpoint;
+  const iconURL = messageSettings.iconURL ?? '';
+  let endpoint = messageSettings.endpoint;
   endpoint = getIconEndpoint({ endpointsConfig: undefined, iconURL, endpoint });
 
-  if (!message?.isCreatedByUser && iconURL && iconURL.includes('http')) {
+  if (message?.isCreatedByUser !== true && iconURL && iconURL.includes('http')) {
     return (
       <ConvoIconURL
-        preset={messageSettings as typeof messageSettings & TPreset}
+        iconURL={iconURL}
+        modelLabel={messageSettings.chatGptLabel ?? messageSettings.modelLabel ?? ''}
         context="message"
         assistantAvatar={assistantAvatar}
         assistantName={assistantName}
@@ -47,7 +48,7 @@ export default function MessageIcon(
     );
   }
 
-  if (message?.isCreatedByUser) {
+  if (message?.isCreatedByUser === true) {
     return (
       <div
         style={{
@@ -67,7 +68,7 @@ export default function MessageIcon(
     <MessageEndpointIcon
       {...messageSettings}
       endpoint={endpoint}
-      iconURL={!assistant ? undefined : assistantAvatar}
+      iconURL={assistant == null ? undefined : assistantAvatar}
       model={message?.model ?? conversation?.model}
       assistantName={assistantName}
       agentName={agentName}

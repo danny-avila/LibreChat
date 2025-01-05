@@ -35,7 +35,12 @@ const NewChatButtonIcon = ({ conversation }: { conversation: TConversation | nul
   return (
     <div className="h-7 w-7 flex-shrink-0">
       {iconURL && iconURL.includes('http') ? (
-        <ConvoIconURL preset={conversation} endpointIconURL={iconURL} context="nav" />
+        <ConvoIconURL
+          iconURL={iconURL}
+          modelLabel={conversation?.chatGptLabel ?? conversation?.modelLabel ?? ''}
+          endpointIconURL={iconURL}
+          context="nav"
+        />
       ) : (
         <div className="shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black">
           {endpoint && Icon != null && (
