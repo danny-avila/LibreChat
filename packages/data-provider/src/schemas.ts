@@ -16,16 +16,19 @@ export const authTypeSchema = z.nativeEnum(AuthType);
 export enum EModelEndpoint {
   azureOpenAI = 'azureOpenAI',
   openAI = 'openAI',
-  bingAI = 'bingAI',
-  chatGPTBrowser = 'chatGPTBrowser',
   google = 'google',
-  gptPlugins = 'gptPlugins',
   anthropic = 'anthropic',
   assistants = 'assistants',
   azureAssistants = 'azureAssistants',
   agents = 'agents',
   custom = 'custom',
   bedrock = 'bedrock',
+  /** @deprecated */
+  bingAI = 'bingAI',
+  /** @deprecated */
+  chatGPTBrowser = 'chatGPTBrowser',
+  /** @deprecated */
+  gptPlugins = 'gptPlugins',
 }
 
 export const paramEndpoints = new Set<EModelEndpoint | string>([
@@ -629,6 +632,69 @@ export const tConvoUpdateSchema = tConversationSchema.merge(
     endpoint: extendedModelEndpointSchema.nullable(),
   }),
 );
+
+export const tQueryParamsSchema = tConversationSchema
+  .pick({
+    // librechat settings
+    /** The AI context window, overrides the system-defined window as determined by `model` value */
+    maxContextTokens: true,
+    /**
+     * Whether or not to re-submit files from previous messages on subsequent messages
+     * */
+    resendFiles: true,
+    /**
+     * AKA Custom Instructions, dynamically added to chat history as a system message;
+     * for `bedrock` endpoint, this is used as the `system` model param if the provider uses it;
+     * for `assistants` endpoint, this is used as the `additional_instructions` model param:
+     * https://platform.openai.com/docs/api-reference/runs/createRun#runs-createrun-additional_instructions
+     * ; otherwise, a message with `system` role is added to the chat history
+     */
+    promptPrefix: true,
+    // Model parameters
+    /** @endpoints openAI, custom, azureOpenAI, google, anthropic, assistants, azureAssistants, bedrock */
+    model: true,
+    /** @endpoints openAI, custom, azureOpenAI, google, anthropic, bedrock */
+    temperature: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    presence_penalty: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    frequency_penalty: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    stop: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    top_p: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    max_tokens: true,
+    /** @endpoints google, anthropic, bedrock */
+    topP: true,
+    /** @endpoints google, anthropic */
+    topK: true,
+    /** @endpoints google, anthropic */
+    maxOutputTokens: true,
+    /** @endpoints anthropic */
+    promptCache: true,
+    /** @endpoints bedrock */
+    region: true,
+    /** @endpoints bedrock */
+    maxTokens: true,
+    /** @endpoints agents */
+    agent_id: true,
+    /** @endpoints assistants, azureAssistants */
+    assistant_id: true,
+    /**
+     * @endpoints assistants, azureAssistants
+     *
+     * Overrides existing assistant instructions, only used for the current run:
+     * https://platform.openai.com/docs/api-reference/runs/createRun#runs-createrun-instructions
+     * */
+    instructions: true,
+  })
+  .merge(
+    z.object({
+      /** @endpoints openAI, custom, azureOpenAI, google, anthropic, assistants, azureAssistants, bedrock, agents */
+      endpoint: extendedModelEndpointSchema.nullable(),
+    }),
+  );
 
 export type TPreset = z.infer<typeof tPresetSchema>;
 

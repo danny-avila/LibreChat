@@ -871,7 +871,8 @@ export default {
   com_error_invalid_action_error: 'تم رفض الطلب: نطاق الإجراء المحدد غير مسموح به',
   com_agents_code_interpreter_title: 'واجهة برمجة مُفسِّر الشفرة',
   com_agents_by_librechat: 'بواسطة LibreChat',
-  com_agents_code_interpreter: 'عند التمكين، يسمح للوكيل الخاص بك باستخدام واجهة برمجة التطبيقات لمفسر الشفرة LibreChat لتشغيل الشفرة المُنشأة، بما في ذلك معالجة الملفات، بشكل آمن. يتطلب مفتاح API صالح.',
+  com_agents_code_interpreter:
+    'عند التمكين، يسمح للوكيل الخاص بك باستخدام واجهة برمجة التطبيقات لمفسر الشفرة LibreChat لتشغيل الشفرة المُنشأة، بما في ذلك معالجة الملفات، بشكل آمن. يتطلب مفتاح API صالح.',
   com_ui_export_convo_modal: 'نافذة تصدير المحادثة',
   com_ui_endpoints_available: 'نقاط النهاية المتاحة',
   com_ui_endpoint_menu: 'قائمة نقطة نهاية LLM',
@@ -885,7 +886,8 @@ export default {
   com_ui_upload_code_files: 'تحميل لمفسر الكود',
   com_ui_zoom: 'تكبير',
   com_ui_role_select: 'الدور',
-  com_ui_admin_access_warning: 'قد يؤدي تعطيل وصول المسؤول إلى هذه الميزة إلى مشاكل غير متوقعة في واجهة المستخدم تتطلب تحديث الصفحة. في حالة الحفظ، الطريقة الوحيدة للتراجع هي عبر إعداد الواجهة في ملف librechat.yaml والذي يؤثر على جميع الأدوار.',
+  com_ui_admin_access_warning:
+    'قد يؤدي تعطيل وصول المسؤول إلى هذه الميزة إلى مشاكل غير متوقعة في واجهة المستخدم تتطلب تحديث الصفحة. في حالة الحفظ، الطريقة الوحيدة للتراجع هي عبر إعداد الواجهة في ملف librechat.yaml والذي يؤثر على جميع الأدوار.',
   com_ui_run_code_error: 'حدث خطأ أثناء تشغيل الكود',
   com_ui_duplication_success: 'تم نسخ المحادثة بنجاح',
   com_ui_duplication_processing: 'جارِ نسخ المحادثة...',
@@ -905,4 +907,10 @@ export default {
   com_ui_enter_openapi_schema: 'أدخل مخطط OpenAPI هنا',
   com_ui_delete_shared_link: 'حذف الرابط المشترك؟',
   com_nav_welcome_agent: 'الرجاء اختيار مساعد',
+  com_ui_bookmarks_edit: 'تعديل الإشارة المرجعية',
+  com_ui_page: 'صفحة',
+  com_ui_bookmarks_add: 'إضافة إشارات مرجعية',
+  com_endpoint_ai: 'الذكاء الاصطناعي',
+  com_endpoint_message_new: 'الرسالة {0} أو اكتب "@" للتبديل إلى الذكاء الاصطناعي',
+  com_nav_maximize_chat_space: 'تكبير مساحة الدردشة',
 };
