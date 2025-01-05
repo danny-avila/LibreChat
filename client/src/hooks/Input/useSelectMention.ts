@@ -144,6 +144,10 @@ export default function useSelectMention({
       if (assistant_id) {
         template.assistant_id = assistant_id;
       }
+      const agent_id = kwargs.agent_id ?? '';
+      if (agent_id) {
+        template.agent_id = agent_id;
+      }
 
       if (isExistingConversation && isCurrentModular && isNewModular && shouldSwitch) {
         template.endpointType = newEndpointType;

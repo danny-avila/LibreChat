@@ -951,4 +951,10 @@ export default {
   com_nav_welcome_agent: 'Seleziona un Assistente',
   com_endpoint_agent_placeholder: 'Seleziona un Agente',
   com_ui_delete_shared_link: 'Eliminare il link condiviso?',
+  com_ui_bookmarks_add: 'Aggiungi Segnalibri',
+  com_ui_bookmarks_edit: 'Modifica Segnalibro',
+  com_endpoint_message_new: 'Messaggio {0} oppure digita "@" per cambiare IA',
+  com_endpoint_ai: 'IA',
+  com_nav_maximize_chat_space: 'Massimizza spazio chat',
+  com_ui_page: 'Pagina',
 };
