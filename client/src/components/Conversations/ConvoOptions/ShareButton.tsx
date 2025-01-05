@@ -4,19 +4,16 @@ import { useGetSharedLinkQuery } from 'librechat-data-provider/react-query';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import SharedLinkButton from './SharedLinkButton';
 import { Spinner, OGDialog } from '~/components';
-import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 
 export default function ShareButton({
   conversationId,
-  title,
   open,
   onOpenChange,
   triggerRef,
   children,
 }: {
   conversationId: string;
-  title: string;
   open: boolean;
   onOpenChange: React.Dispatch<React.SetStateAction<boolean>>;
   triggerRef?: React.RefObject<HTMLButtonElement>;
@@ -81,7 +78,7 @@ export default function ShareButton({
                 </div>
               )}
 
-              {share?.shareId !=== undefined && (
+              {share?.shareId !== null && (
                 <div className="cursor-text break-all text-center text-sm text-text-secondary">
                   {sharedLink}
                 </div>
