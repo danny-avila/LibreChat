@@ -94,9 +94,9 @@ export default function useQueryParams({
         const normalizedNewEndpoint = newEndpoint.toLowerCase();
         for (const [key, value] of Object.entries(endpointsConfig)) {
           if (
-            key.toLowerCase() === normalizedNewEndpoint &&
             value &&
-            value.type === EModelEndpoint.custom
+            value.type === EModelEndpoint.custom &&
+            key.toLowerCase() === normalizedNewEndpoint
           ) {
             newEndpoint = key;
             newPreset.endpoint = key;
