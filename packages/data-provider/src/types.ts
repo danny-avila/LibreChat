@@ -170,14 +170,19 @@ export type TArchiveConversationResponse = TConversation;
 export type TSharedMessagesResponse = Omit<TSharedLink, 'messages'> & {
   messages: TMessage[];
 };
-export type TSharedLinkRequest = Partial<
-  Omit<TSharedLink, 'messages' | 'createdAt' | 'updatedAt'>
-> & {
-  conversationId: string;
+
+export type TCreateShareLinkRequest = Pick<TConversation, 'conversationId'>;
+
+export type TUpdateShareLinkRequest = Pick<TSharedLink, 'shareId'>;
+
+export type TSharedLinkResponse = Pick<TSharedLink, 'shareId'> &
+  Pick<TConversation, 'conversationId'>;
+
+export type TSharedLinkGetResponse = TSharedLinkResponse & {
+  success: boolean;
 };
 
-export type TSharedLinkResponse = TSharedLink;
-export type TSharedLinksResponse = TSharedLink[];
+export type TSharedLinksResponse = TSharedLinkResponse[];
 export type TDeleteSharedLinkResponse = TSharedLink;
 
 // type for getting conversation tags

@@ -75,6 +75,29 @@ export const useGetSharedMessages = (
   );
 };
 
+export const useGetSharedLinkQuery = (
+  conversationId: string,
+  config?: UseQueryOptions<t.TSharedLinkGetResponse>,
+): QueryObserverResult<t.TSharedLinkGetResponse> => {
+  const queryClient = useQueryClient();
+  return useQuery<t.TSharedLinkGetResponse>(
+    [QueryKeys.sharedLinks, conversationId],
+    () => dataService.getSharedLink(conversationId),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      onSuccess: (data) => {
+        queryClient.setQueryData([QueryKeys.sharedLinks, conversationId], {
+          conversationId: data.conversationId,
+          shareId: data.shareId,
+        });
+      },
+      ...config,
+    },
+  );
+};
+
 export const useGetUserBalance = (
   config?: UseQueryOptions<string>,
 ): QueryObserverResult<string> => {

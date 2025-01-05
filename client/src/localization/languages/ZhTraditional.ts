@@ -51,7 +51,6 @@ export default {
   com_ui_chats: '對話',
   com_ui_share: '分享',
   com_ui_copy_link: '複製連結',
-  com_ui_update_link: '更新連結',
   com_ui_create_link: '建立連結',
   com_ui_share_link_to_chat: '分享連結到聊天',
   com_ui_share_error: '分享聊天連結時發生錯誤',

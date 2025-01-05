@@ -354,7 +354,6 @@ export default {
   com_ui_share_var: 'Share {0}',
   com_ui_enter_var: 'Enter {0}',
   com_ui_copy_link: 'Copy link',
-  com_ui_update_link: 'Update link',
   com_ui_create_link: 'Create link',
   com_ui_share_to_all_users: 'Share to all users',
   com_ui_my_prompts: 'My Prompts',
@@ -442,6 +441,9 @@ export default {
   com_ui_add_multi_conversation: 'Add multi-conversation',
   com_ui_duplicate_agent_confirm: 'Are you sure you want to duplicate this agent?',
   com_ui_page: 'Page',
+  com_ui_refresh_link: 'Refresh link',
+  com_ui_show_qr: 'Show QR Code',
+  com_ui_hide_qr: 'Hide QR Code',
   com_auth_error_login:
     'Unable to login with the information provided. Please check your credentials and try again.',
   com_auth_error_login_rl:

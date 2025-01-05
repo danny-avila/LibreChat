@@ -18,9 +18,6 @@ import {
 } from './queries';
 import {
   logger,
-  /* Shared Links */
-  addSharedLink,
-  deleteSharedLink,
   /* Conversations */
   addConversation,
   updateConvoFields,
@@ -244,88 +241,52 @@ export const useArchiveConvoMutation = (options?: t.ArchiveConvoOptions) => {
 };
 
 export const useCreateSharedLinkMutation = (
-  options?: t.CreateSharedLinkOptions,
-): UseMutationResult<t.TSharedLinkResponse, unknown, t.TSharedLinkRequest, unknown> => {
+  options?: t.MutationOptions<t.TCreateShareLinkRequest, { conversationId: string }>,
+): UseMutationResult<t.TSharedLinkResponse, unknown, { conversationId: string }, unknown> => {
   const queryClient = useQueryClient();
-  const { refetch } = useSharedLinksInfiniteQuery();
+
   const { onSuccess, ..._options } = options || {};
-  return useMutation((payload: t.TSharedLinkRequest) => dataService.createSharedLink(payload), {
-    onSuccess: (_data, vars, context) => {
-      if (!vars.conversationId) {
-        return;
+  return useMutation(
+    ({ conversationId }: { conversationId: string }) => {
+      if (!conversationId) {
+        throw new Error('Conversation ID is required');
       }
 
-      const isPublic = vars.isPublic === true;
-
-      queryClient.setQueryData<t.SharedLinkListData>([QueryKeys.sharedLinks], (sharedLink) => {
-        if (!sharedLink) {
-          return sharedLink;
-        }
-        const pageSize = sharedLink.pages[0].pageSize as number;
-        return normalizeData(
-          // If the shared link is public, add it to the shared links cache list
-          isPublic ? addSharedLink(sharedLink, _data) : deleteSharedLink(sharedLink, _data.shareId),
-          InfiniteCollections.SHARED_LINKS,
-          pageSize,
-        );
-      });
-
-      queryClient.setQueryData([QueryKeys.sharedLinks, _data.shareId], _data);
-      if (!isPublic) {
-        const current = queryClient.getQueryData<t.ConversationData>([QueryKeys.sharedLinks]);
-        refetch({
-          refetchPage: (page, index) => index === ((current?.pages.length ?? 0) || 1) - 1,
-        });
-      }
-      onSuccess?.(_data, vars, context);
+      return dataService.createSharedLink(conversationId);
     },
-    ..._options,
-  });
+    {
+      onSuccess: (_data: t.TSharedLinkResponse, vars, context) => {
+        queryClient.setQueryData([QueryKeys.sharedLinks, _data.conversationId], _data);
+
+        onSuccess?.(_data, vars, context);
+      },
+      ..._options,
+    },
+  );
 };
 
 export const useUpdateSharedLinkMutation = (
-  options?: t.UpdateSharedLinkOptions,
-): UseMutationResult<t.TSharedLinkResponse, unknown, t.TSharedLinkRequest, unknown> => {
+  options?: t.MutationOptions<t.TUpdateShareLinkRequest, { shareId: string }>,
+): UseMutationResult<t.TSharedLinkResponse, unknown, { shareId: string }, unknown> => {
   const queryClient = useQueryClient();
-  const { refetch } = useSharedLinksInfiniteQuery();
+
   const { onSuccess, ..._options } = options || {};
-  return useMutation((payload: t.TSharedLinkRequest) => dataService.updateSharedLink(payload), {
-    onSuccess: (_data, vars, context) => {
-      if (!vars.conversationId) {
-        return;
+  return useMutation(
+    ({ shareId }) => {
+      if (!shareId) {
+        throw new Error('Share ID is required');
       }
-
-      const isPublic = vars.isPublic === true;
-
-      queryClient.setQueryData<t.SharedLinkListData>([QueryKeys.sharedLinks], (sharedLink) => {
-        if (!sharedLink) {
-          return sharedLink;
-        }
-
-        return normalizeData(
-          // If the shared link is public, add it to the shared links cache list.
-          isPublic
-            ? // Even if the SharedLink data exists in the database, it is not registered in the cache when isPublic is false.
-          // Therefore, when isPublic is true, use addSharedLink instead of updateSharedLink.
-            addSharedLink(sharedLink, _data)
-            : deleteSharedLink(sharedLink, _data.shareId),
-          InfiniteCollections.SHARED_LINKS,
-          sharedLink.pages[0].pageSize as number,
-        );
-      });
-
-      queryClient.setQueryData([QueryKeys.sharedLinks, _data.shareId], _data);
-      if (!isPublic) {
-        const current = queryClient.getQueryData<t.ConversationData>([QueryKeys.sharedLinks]);
-        refetch({
-          refetchPage: (page, index) => index === ((current?.pages.length ?? 0) || 1) - 1,
-        });
-      }
-
-      onSuccess?.(_data, vars, context);
+      return dataService.updateSharedLink(shareId);
     },
-    ..._options,
-  });
+    {
+      onSuccess: (_data: t.TSharedLinkResponse, vars, context) => {
+        queryClient.setQueryData([QueryKeys.sharedLinks, _data.conversationId], _data);
+
+        onSuccess?.(_data, vars, context);
+      },
+      ..._options,
+    },
+  );
 };
 
 export const useDeleteSharedLinkMutation = (

@@ -49,16 +49,16 @@ export const listSharedLinks = (
   return request.get(endpoints.getSharedLinks(pageNumber, isPublic));
 };
 
-export function getSharedLink(shareId: string): Promise<t.TSharedLinkResponse> {
-  return request.get(endpoints.shareMessages(shareId));
+export function getSharedLink(conversationId: string): Promise<t.TSharedLinkGetResponse> {
+  return request.get(endpoints.getSharedLink(conversationId));
 }
 
-export function createSharedLink(payload: t.TSharedLinkRequest): Promise<t.TSharedLinkResponse> {
-  return request.post(endpoints.createSharedLink, payload);
+export function createSharedLink(conversationId: string): Promise<t.TSharedLinkResponse> {
+  return request.post(endpoints.createSharedLink(conversationId));
 }
 
-export function updateSharedLink(payload: t.TSharedLinkRequest): Promise<t.TSharedLinkResponse> {
-  return request.patch(endpoints.updateSharedLink, payload);
+export function updateSharedLink(shareId: string): Promise<t.TSharedLinkResponse> {
+  return request.patch(endpoints.updateSharedLink(shareId));
 }
 
 export function deleteSharedLink(shareId: string): Promise<t.TDeleteSharedLinkResponse> {

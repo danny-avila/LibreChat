@@ -83,6 +83,7 @@ module.exports = {
         'surface-tertiary-alt': 'var(--surface-tertiary-alt)',
         'surface-dialog': 'var(--surface-dialog)',
         'surface-submit': 'var(--surface-submit)',
+        'surface-submit-hover': 'var(--surface-submit-hover)',
         'border-light': 'var(--border-light)',
         'border-medium': 'var(--border-medium)',
         'border-medium-alt': 'var(--border-medium-alt)',

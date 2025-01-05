@@ -1,6 +1,7 @@
 const express = require('express');
 
 const {
+  getSharedLink,
   getSharedMessages,
   createSharedLink,
   updateSharedLink,
@@ -65,9 +66,23 @@ router.get('/', requireJwtAuth, async (req, res) => {
   }
 });
 
-router.post('/', requireJwtAuth, async (req, res) => {
+router.get('/link/:conversationId', requireJwtAuth, async (req, res) => {
   try {
-    const created = await createSharedLink(req.user.id, req.body);
+    const share = await getSharedLink(req.user.id, req.params.conversationId);
+
+    return res.status(200).json({
+      success: share.success,
+      shareId: share.shareId,
+      conversationId: req.params.conversationId,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error getting shared link' });
+  }
+});
+
+router.post('/:conversationId', requireJwtAuth, async (req, res) => {
+  try {
+    const created = await createSharedLink(req.user.id, req.params.conversationId);
     if (created) {
       res.status(200).json(created);
     } else {
@@ -78,11 +93,11 @@ router.post('/', requireJwtAuth, async (req, res) => {
   }
 });
 
-router.patch('/', requireJwtAuth, async (req, res) => {
+router.patch('/:shareId', requireJwtAuth, async (req, res) => {
   try {
-    const updated = await updateSharedLink(req.user.id, req.body);
-    if (updated) {
-      res.status(200).json(updated);
+    const updatedShare = await updateSharedLink(req.user.id, req.params.shareId);
+    if (updatedShare) {
+      res.status(200).json(updatedShare);
     } else {
       res.status(404).end();
     }
@@ -93,7 +108,7 @@ router.patch('/', requireJwtAuth, async (req, res) => {
 
 router.delete('/:shareId', requireJwtAuth, async (req, res) => {
   try {
-    const deleted = await deleteSharedLink(req.user.id, { shareId: req.params.shareId });
+    const deleted = await deleteSharedLink(req.user.id, req.params.shareId);
     if (deleted) {
       res.status(200).json(deleted);
     } else {

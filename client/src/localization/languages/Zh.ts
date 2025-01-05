@@ -278,7 +278,6 @@ export default {
   com_ui_share_var: '共享 {0}',
   com_ui_enter_var: '输入 {0}',
   com_ui_copy_link: '复制链接',
-  com_ui_update_link: '更新链接',
   com_ui_create_link: '创建链接',
   com_ui_share_to_all_users: '共享给所有用户',
   com_ui_my_prompts: '我的提示词',

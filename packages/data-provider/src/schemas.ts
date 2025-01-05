@@ -726,6 +726,7 @@ export const tSharedLinkSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
 });
+
 export type TSharedLink = z.infer<typeof tSharedLinkSchema>;
 
 export const tConversationTagSchema = z.object({
