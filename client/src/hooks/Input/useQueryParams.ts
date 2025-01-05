@@ -87,8 +87,24 @@ export default function useQueryParams({
       }
 
       const newPreset = removeUnavailableTools(_newPreset, availableTools);
-      const newEndpoint = newPreset.endpoint ?? '';
+      let newEndpoint = newPreset.endpoint ?? '';
       const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
+
+      if (newEndpoint && endpointsConfig && !endpointsConfig[newEndpoint]) {
+        const normalizedNewEndpoint = newEndpoint.toLowerCase();
+        for (const [key, value] of Object.entries(endpointsConfig)) {
+          if (
+            key.toLowerCase() === normalizedNewEndpoint &&
+            value &&
+            value.type === EModelEndpoint.custom
+          ) {
+            newEndpoint = key;
+            newPreset.endpoint = key;
+            newPreset.endpointType = EModelEndpoint.custom;
+            break;
+          }
+        }
+      }
 
       const {
         template,
