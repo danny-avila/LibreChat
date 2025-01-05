@@ -12,9 +12,9 @@ export default function HeaderNewChat() {
   return (
     <button
       data-testid="wide-header-new-chat-button"
-      aria-label={localize("com_ui_new_chat")}
+      aria-label={localize('com_ui_new_chat')}
       type="button"
-      className="btn btn-neutral btn-small border-token-border-medium relative ml-2 flex hidden h-9 w-9 items-center justify-center whitespace-nowrap rounded-lg rounded-lg border focus:border-black-500 dark:focus:border-white-500 md:flex"
+      className="btn btn-neutral btn-small border-token-border-medium focus:border-black-500 dark:focus:border-white-500 relative ml-2 flex h-9 w-9 items-center justify-center whitespace-nowrap rounded-lg border md:flex"
       onClick={() => newConversation()}
     >
       <div className="flex w-full items-center justify-center gap-2">

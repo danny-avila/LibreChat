@@ -18,7 +18,6 @@ const MessageIcon = memo(
     const assistantAvatar = useMemo(() => assistant?.metadata?.avatar ?? '', [assistant]);
     const agentName = useMemo(() => props.agent?.name ?? '', [props.agent]);
     const agentAvatar = useMemo(() => props.agent?.avatar?.filepath ?? '', [props.agent]);
-    const isCreatedByUser = useMemo(() => iconData?.isCreatedByUser ?? false, [iconData]);
 
     let avatarURL = '';
 
@@ -39,7 +38,7 @@ const MessageIcon = memo(
       [endpointsConfig, endpoint],
     );
 
-    if (isCreatedByUser !== true && iconURL != null && iconURL.includes('http')) {
+    if (iconData?.isCreatedByUser !== true && iconURL != null && iconURL.includes('http')) {
       return (
         <ConvoIconURL
           iconURL={iconURL}
@@ -56,7 +55,7 @@ const MessageIcon = memo(
 
     return (
       <Icon
-        isCreatedByUser={isCreatedByUser}
+        isCreatedByUser={iconData?.isCreatedByUser ?? false}
         endpoint={endpoint}
         iconURL={avatarURL || endpointIconURL}
         model={iconData?.model}

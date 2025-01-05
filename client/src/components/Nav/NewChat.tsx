@@ -99,7 +99,7 @@ export default function NewChat({
         <a
           href="/"
           tabIndex={0}
-          data-testid="nav-new-chat"
+          data-testid="nav-new-chat-button"
           onClick={clickHandler}
           className={cn(
             'group flex h-10 items-center gap-2 rounded-lg px-2 font-medium transition-colors duration-200 hover:bg-surface-hover',
