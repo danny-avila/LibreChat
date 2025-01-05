@@ -207,7 +207,6 @@ export default function useQueryParams({
 
     return () => {
       clearInterval(intervalId);
-      console.log('Cleanup: `useQueryParams` interval cleared');
     };
   }, [searchParams, methods, textAreaRef, newQueryConvo, newConversation]);
 }
