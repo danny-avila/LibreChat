@@ -81,9 +81,11 @@ export default function ShareButton({
                 </div>
               )}
 
-              <div className="cursor-text break-all text-center text-sm text-text-secondary">
-                {sharedLink}
-              </div>
+              {share?.shareId !=== undefined && (
+                <div className="cursor-text break-all text-center text-sm text-text-secondary">
+                  {sharedLink}
+                </div>
+              )}
             </div>
           </div>
         }

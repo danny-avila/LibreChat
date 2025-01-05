@@ -29,7 +29,7 @@ export default function SharedLinkButton({
   const copyTimeoutRef = useRef<number | null>(null);
   const shareId = share?.shareId || undefined;
 
-  const { mutate, isLoading: isCreateLoading } = useCreateSharedLinkMutation({
+  const { mutateAsync: mutate, isLoading: isCreateLoading } = useCreateSharedLinkMutation({
     onError: () => {
       showToast({
         message: localize('com_ui_share_error'),
@@ -96,13 +96,27 @@ export default function SharedLinkButton({
     }, 1500);
   };
 
+  const createShareLink = async () => {
+    const share = await mutate({ conversationId });
+    const newLink = generateShareLink(share.shareId);
+    setSharedLink(newLink);
+
+    if (typeof copyTimeoutRef.current === 'number') {
+      clearTimeout(copyTimeoutRef.current);
+    }
+
+    setIsCopying(true);
+    copy(newLink);
+    copyTimeoutRef.current = window.setTimeout(() => {
+      setIsCopying(false);
+    }, 1500);
+  };
+
   const getHandler = (shareId?: string) => {
     if (shareId === undefined) {
       return {
         handler: async () => {
-          mutate({ conversationId });
-
-          setSharedLink(generateShareLink(shareId));
+          createShareLink();
         },
         label: (
           <>
