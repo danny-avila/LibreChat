@@ -56,7 +56,7 @@ export default function MessagesView({
               </div>
             ) : (
               <>
-                {Header && Header}
+                {Header != null && Header}
                 <div ref={screenshotTargetRef}>
                   <MultiMessage
                     key={conversationId} // avoid internal state mixture
