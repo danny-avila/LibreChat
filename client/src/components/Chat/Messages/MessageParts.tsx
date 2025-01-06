@@ -1,7 +1,8 @@
+import React, { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import type { TMessageContentParts } from 'librechat-data-provider';
+import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
-import Icon from '~/components/Chat/Messages/MessageIcon';
+import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import { useMessageHelpers, useLocalize } from '~/hooks';
 import ContentParts from './Content/ContentParts';
 import SiblingSwitch from './SiblingSwitch';
@@ -35,6 +36,26 @@ export default function Message(props: TMessageProps) {
   const fontSize = useRecoilValue(store.fontSize);
   const { children, messageId = null, isCreatedByUser } = message ?? {};
 
+  const iconData = useMemo(
+    () =>
+      ({
+        endpoint: conversation?.endpoint,
+        model: conversation?.model ?? message?.model,
+        iconURL: conversation?.iconURL ?? message?.iconURL ?? '',
+        modelLabel: conversation?.chatGptLabel ?? conversation?.modelLabel,
+        isCreatedByUser: message?.isCreatedByUser,
+      } as TMessage & { modelLabel?: string }),
+    [
+      conversation?.chatGptLabel,
+      conversation?.modelLabel,
+      conversation?.endpoint,
+      conversation?.iconURL,
+      conversation?.model,
+      message?.model,
+      message?.iconURL,
+      message?.isCreatedByUser,
+    ],
+  );
   if (!message) {
     return null;
   }
@@ -62,12 +83,7 @@ export default function Message(props: TMessageProps) {
               <div>
                 <div className="pt-0.5">
                   <div className="shadow-stroke flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-                    <Icon
-                      message={message}
-                      conversation={conversation}
-                      assistant={assistant}
-                      agent={agent}
-                    />
+                    <MessageIcon iconData={iconData} assistant={assistant} agent={agent} />
                   </div>
                 </div>
               </div>

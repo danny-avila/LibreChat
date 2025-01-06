@@ -6,7 +6,7 @@ import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
 import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
-import Icon from '~/components/Chat/Messages/MessageIcon';
+import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import SubRow from '~/components/Chat/Messages/SubRow';
 import { useMessageActions } from '~/hooks';
 import { cn, logger } from '~/utils';
@@ -65,6 +65,27 @@ const ContentRender = memo(
       [msg?.children, msg?.depth, latestMessage?.depth],
     );
 
+    const iconData = useMemo(
+      () =>
+        ({
+          endpoint: conversation?.endpoint,
+          model: conversation?.model ?? msg?.model,
+          iconURL: conversation?.iconURL ?? msg?.iconURL ?? '',
+          modelLabel: conversation?.chatGptLabel ?? conversation?.modelLabel,
+          isCreatedByUser: msg?.isCreatedByUser,
+        } as TMessage & { modelLabel?: string }),
+      [
+        conversation?.chatGptLabel,
+        conversation?.modelLabel,
+        conversation?.endpoint,
+        conversation?.iconURL,
+        conversation?.model,
+        msg?.model,
+        msg?.iconURL,
+        msg?.isCreatedByUser,
+      ],
+    );
+
     if (!msg) {
       return null;
     }
@@ -109,12 +130,7 @@ const ContentRender = memo(
           <div>
             <div className="pt-0.5">
               <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-                <Icon
-                  message={msg}
-                  conversation={conversation}
-                  assistant={assistant}
-                  agent={agent}
-                />
+                <MessageIcon iconData={iconData} assistant={assistant} agent={agent} />
               </div>
             </div>
           </div>

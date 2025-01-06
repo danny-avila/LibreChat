@@ -1,10 +1,10 @@
 import React, { memo } from 'react';
-import type { TPreset } from 'librechat-data-provider';
 import type { IconMapProps } from '~/common';
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 
 interface ConvoIconURLProps {
-  preset: TPreset | null;
+  iconURL?: string;
+  modelLabel?: string;
   endpointIconURL?: string;
   assistantName?: string;
   agentName?: string;
@@ -29,7 +29,8 @@ const styleImageMap = {
 };
 
 const ConvoIconURL: React.FC<ConvoIconURLProps> = ({
-  preset,
+  iconURL = '',
+  modelLabel = '',
   endpointIconURL,
   assistantAvatar,
   assistantName,
@@ -37,7 +38,6 @@ const ConvoIconURL: React.FC<ConvoIconURLProps> = ({
   agentName,
   context,
 }) => {
-  const { iconURL = '' } = preset ?? {};
   let Icon: (
     props: IconMapProps & {
       context?: string;
@@ -57,7 +57,7 @@ const ConvoIconURL: React.FC<ConvoIconURLProps> = ({
       >
         <img
           src={iconURL}
-          alt={preset?.chatGptLabel ?? preset?.modelLabel ?? ''}
+          alt={modelLabel}
           style={styleImageMap[context ?? 'default'] ?? styleImageMap.default}
           className="object-cover"
         />
