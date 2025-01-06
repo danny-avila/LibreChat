@@ -46,23 +46,40 @@ if (allowSharedLinks) {
  */
 router.get('/', requireJwtAuth, async (req, res) => {
   try {
-    let pageNumber = req.query.pageNumber || 1;
-    pageNumber = parseInt(pageNumber, 10);
+    const params = {
+      pageNumber: Math.max(1, parseInt(req.query.pageNumber) || 1),
+      pageSize: Math.max(1, parseInt(req.query.pageSize) || 10),
+      isPublic: isEnabled(req.query.isPublic),
+      sortBy: ['createdAt', 'title'].includes(req.query.sortBy) ? req.query.sortBy : 'createdAt',
+      sortDirection: ['asc', 'desc'].includes(req.query.sortDirection)
+        ? req.query.sortDirection
+        : 'desc',
+      search: req.query.search?.trim() || undefined,
+    };
 
-    if (isNaN(pageNumber) || pageNumber < 1) {
-      return res.status(400).json({ error: 'Invalid page number' });
-    }
+    const result = await getSharedLinks(
+      req.user.id,
+      params.pageNumber,
+      params.pageSize,
+      params.isPublic,
+      params.sortBy,
+      params.sortDirection,
+      params.search,
+    );
 
-    let pageSize = req.query.pageSize || 25;
-    pageSize = parseInt(pageSize, 10);
-
-    if (isNaN(pageSize) || pageSize < 1) {
-      return res.status(400).json({ error: 'Invalid page size' });
-    }
-    const isPublic = req.query.isPublic === 'true';
-    res.status(200).send(await getSharedLinks(req.user.id, pageNumber, pageSize, isPublic));
+    res.status(200).send({
+      links: result.sharedLinks,
+      totalCount: result.totalCount,
+      pageNumber: result.pageNumber,
+      pageSize: result.pageSize,
+      pages: result.pages,
+    });
   } catch (error) {
-    res.status(500).json({ message: 'Error getting shared links' });
+    console.error('Error getting shared links:', error);
+    res.status(500).json({
+      message: 'Error getting shared links',
+      error: error.message,
+    });
   }
 });
 

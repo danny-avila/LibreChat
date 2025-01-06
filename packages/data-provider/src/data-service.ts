@@ -44,9 +44,15 @@ export function getSharedMessages(shareId: string): Promise<t.TSharedMessagesRes
 export const listSharedLinks = (
   params?: q.SharedLinkListParams,
 ): Promise<q.SharedLinksResponse> => {
-  const pageNumber = (params?.pageNumber ?? '1') || '1'; // Default to page 1 if not provided
-  const isPublic = params?.isPublic ?? true; // Default to true if not provided
-  return request.get(endpoints.getSharedLinks(pageNumber, isPublic));
+  const pageNumber = params?.pageNumber ?? 1;
+  const pageSize = params?.pageSize ?? 10;
+  const isPublic = params?.isPublic ?? true;
+  const sortBy = params?.sortBy ?? 'createdAt';
+  const sortDirection = params?.sortDirection ?? 'desc';
+  const search = params?.search;
+  return request.get(
+    endpoints.getSharedLinks(pageNumber, pageSize, isPublic, sortBy, sortDirection, search),
+  );
 };
 
 export function getSharedLink(conversationId: string): Promise<t.TSharedLinkGetResponse> {

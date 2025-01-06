@@ -6,16 +6,12 @@ import {
 } from 'librechat-data-provider';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
-import type * as t from 'librechat-data-provider';
 import type { InfiniteData, UseMutationResult } from '@tanstack/react-query';
+import type * as t from 'librechat-data-provider';
+import { useConversationTagsQuery, useConversationsInfiniteQuery } from './queries';
 import useUpdateTagsInConvo from '~/hooks/Conversations/useUpdateTagsInConvo';
 import { updateConversationTag } from '~/utils/conversationTags';
 import { normalizeData } from '~/utils/collection';
-import {
-  useConversationTagsQuery,
-  useConversationsInfiniteQuery,
-  useSharedLinksInfiniteQuery,
-} from './queries';
 import {
   logger,
   /* Conversations */
@@ -293,7 +289,6 @@ export const useDeleteSharedLinkMutation = (
   options?: t.DeleteSharedLinkOptions,
 ): UseMutationResult<t.TDeleteSharedLinkResponse, unknown, { shareId: string }, unknown> => {
   const queryClient = useQueryClient();
-  const { refetch } = useSharedLinksInfiniteQuery();
   const { onSuccess, ..._options } = options || {};
   return useMutation(({ shareId }) => dataService.deleteSharedLink(shareId), {
     onSuccess: (_data, vars, context) => {
@@ -313,9 +308,6 @@ export const useDeleteSharedLinkMutation = (
         );
       });
       const current = queryClient.getQueryData<t.ConversationData>([QueryKeys.sharedLinks]);
-      refetch({
-        refetchPage: (page, index) => index === (current?.pages.length ?? 1) - 1,
-      });
       onSuccess?.(_data, vars, context);
     },
     ..._options,

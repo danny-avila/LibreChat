@@ -1,5 +1,6 @@
 const { nanoid } = require('nanoid');
 const { Constants } = require('librechat-data-provider');
+const { Conversation } = require('~/models/Conversation');
 const SharedLink = require('./schema/shareSchema');
 const { getMessages } = require('./Message');
 const logger = require('~/config/winston');
@@ -94,23 +95,50 @@ async function getSharedMessages(shareId) {
   }
 }
 
-async function getSharedLinks(user, pageNumber = 1, pageSize = 25, isPublic = true) {
-  const query = { user, isPublic };
-
+async function getSharedLinks(
+  user,
+  pageNumber = 1,
+  pageSize = 25,
+  isPublic = true,
+  sortBy = 'createdAt',
+  sortDirection = 'desc',
+  search = '',
+) {
   try {
+    const query = { user, isPublic };
+
+    if (search) {
+      const searchResults = await Conversation.meiliSearch(search, {
+        attributesToHighlight: ['title'],
+      });
+
+      const conversationIds = searchResults.hits.map((hit) => hit.id);
+
+      query['conversation'] = { $in: conversationIds };
+    }
+
+    const sort = {};
+    sort[sortBy] = sortDirection === 'desc' ? -1 : 1;
+
     const [totalConvos, sharedLinks] = await Promise.all([
       SharedLink.countDocuments(query).exec(),
       SharedLink.find(query)
-        .sort({ updatedAt: -1 })
+        .sort(sort)
         .skip((pageNumber - 1) * pageSize)
         .limit(pageSize)
-        .select('-_id -__v -user')
+        .select('-__v -user')
         .lean()
         .exec(),
     ]);
 
     return {
-      sharedLinks,
+      sharedLinks: sharedLinks.map((link) => ({
+        shareId: link.shareId,
+        title: link.conversation?.title || 'Untitled',
+        isPublic: link.isPublic,
+        createdAt: link.createdAt,
+      })),
+      totalCount: totalConvos,
       pages: Math.ceil((totalConvos || 1) / pageSize),
       pageNumber,
       pageSize,
@@ -155,11 +183,14 @@ async function createSharedLink(user, conversationId) {
       throw new ShareServiceError('Share already exists', 'SHARE_EXISTS');
     }
 
+    const title = conversationMessages[0]?.title || 'Untitled';
+
     const shareId = nanoid();
     await SharedLink.create({
       shareId,
       conversationId,
       messages: conversationMessages,
+      title,
       user,
     });
 

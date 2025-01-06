@@ -53,7 +53,7 @@ export default {
   com_download_expired: '(download expired)',
   com_download_expires: '(click here to download - expires {0})',
   com_click_to_download: '(click here to download)',
-  com_files_number_selected: '{0} of {1} file(s) selected',
+  com_files_number_selected: '{0} of {1} items(s) selected',
   com_sidepanel_select_assistant: 'Select an Assistant',
   com_sidepanel_parameters: 'Parameters',
   com_sidepanel_assistant_builder: 'Assistant Builder',

@@ -41,12 +41,29 @@ export type ConversationUpdater = (
 export type SharedMessagesResponse = Omit<s.TSharedLink, 'messages'> & {
   messages: s.TMessage[];
 };
-export type SharedLinkListParams = Omit<ConversationListParams, 'isArchived' | 'conversationId'> & {
-  isPublic?: boolean;
+
+export type SharedLinkListParams = {
+  pageNumber: number;
+  pageSize: number;
+  isPublic: boolean;
+  sortBy: 'createdAt' | 'title';
+  sortDirection: 'asc' | 'desc';
+  search?: string;
 };
 
-export type SharedLinksResponse = Omit<ConversationListResponse, 'conversations' | 'messages'> & {
-  sharedLinks: s.TSharedLink[];
+export type SharedLinkItem = {
+  shareId: string;
+  title: string;
+  isPublic: boolean;
+  createdAt: Date;
+};
+
+export type SharedLinksResponse = {
+  links: SharedLinkItem[];
+  totalCount: number;
+  pages: number;
+  pageNumber: number;
+  pageSize: number;
 };
 
 // Type for the response from the conversation list API

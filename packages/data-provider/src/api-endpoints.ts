@@ -15,8 +15,17 @@ export const messages = (conversationId: string, messageId?: string) =>
 const shareRoot = '/api/share';
 export const shareMessages = (shareId: string) => `${shareRoot}/${shareId}`;
 export const getSharedLink = (conversationId: string) => `${shareRoot}/link/${conversationId}`;
-export const getSharedLinks = (pageNumber: string, isPublic: boolean) =>
-  `${shareRoot}?pageNumber=${pageNumber}&isPublic=${isPublic}`;
+export const getSharedLinks = (
+  pageNumber: number,
+  pageSize: number,
+  isPublic: boolean,
+  sortBy: 'title' | 'createdAt',
+  sortDirection: 'asc' | 'desc',
+  search?: string,
+) =>
+  `${shareRoot}?pageNumber=${pageNumber}&pageSize=${pageSize}&isPublic=${isPublic}&sortBy=${sortBy}&sortDirection=${sortDirection}${
+    search ? `&search=${search}` : ''
+  }`;
 export const createSharedLink = (conversationId: string) => `${shareRoot}/${conversationId}`;
 export const updateSharedLink = (shareId: string) => `${shareRoot}/${shareId}`;
 

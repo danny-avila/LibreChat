@@ -139,25 +139,23 @@ export const useConversationsInfiniteQuery = (
   );
 };
 
-export const useSharedLinksInfiniteQuery = (
+export const useSharedLinksQuery = (
   params?: SharedLinkListParams,
   config?: UseInfiniteQueryOptions<SharedLinksResponse, unknown>,
 ) => {
   return useInfiniteQuery<SharedLinksResponse, unknown>(
     [QueryKeys.sharedLinks],
-    ({ pageParam = '' }) =>
+    () =>
       dataService.listSharedLinks({
         ...params,
-        pageNumber: pageParam?.toString(),
-        isPublic: params?.isPublic || true,
+        pageNumber: params?.pageNumber ?? 10,
+        pageSize: params?.pageSize ?? 10,
+        isPublic: params?.isPublic ?? true,
+        search: params?.search ?? '',
+        sortBy: params?.sortBy ?? 'createdAt',
+        sortDirection: params?.sortDirection ?? 'desc',
       }),
     {
-      getNextPageParam: (lastPage) => {
-        const currentPageNumber = Number(lastPage.pageNumber);
-        const totalPages = Number(lastPage.pages); // Convert totalPages to a number
-        // If the current page number is less than total pages, return the next page number
-        return currentPageNumber < totalPages ? currentPageNumber + 1 : undefined;
-      },
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,

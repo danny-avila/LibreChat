@@ -182,7 +182,6 @@ export type TSharedLinkGetResponse = TSharedLinkResponse & {
   success: boolean;
 };
 
-export type TSharedLinksResponse = TSharedLinkResponse[];
 export type TDeleteSharedLinkResponse = TSharedLink;
 
 // type for getting conversation tags
