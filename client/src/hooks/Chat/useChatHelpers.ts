@@ -116,7 +116,7 @@ export default function useChatHelpers(index = 0, paramId?: string) {
 
   const handleRegenerate = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
-    const parentMessageId = latestMessage?.parentMessageId;
+    const parentMessageId = latestMessage?.parentMessageId ?? '';
     if (!parentMessageId) {
       console.error('Failed to regenerate the message: parentMessageId not found.');
       return;
