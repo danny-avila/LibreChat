@@ -20,27 +20,20 @@ import {
   useQueryParams,
   useSubmitMessage,
 } from '~/hooks';
+import { cn, removeFocusRings, checkIfScrollable } from '~/utils';
 import FileFormWrapper from './Files/FileFormWrapper';
 import { TextareaAutosize } from '~/components/ui';
 import { useGetFileConfig } from '~/data-provider';
-import { cn, removeFocusRings } from '~/utils';
 import TextareaHeader from './TextareaHeader';
 import PromptsCommand from './PromptsCommand';
 import AudioRecorder from './AudioRecorder';
 import { mainTextareaId } from '~/common';
+import CollapseChat from './CollapseChat';
 import StreamAudio from './StreamAudio';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
 import Mention from './Mention';
 import store from '~/store';
-import CollapseChat from './CollapseChat';
-
-const checkIfScrollable = (element: HTMLTextAreaElement | null) => {
-  if (!element) {
-    return false;
-  }
-  return element.scrollHeight > element.clientHeight;
-};
 
 const ChatForm = ({ index = 0 }) => {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
@@ -75,6 +68,7 @@ const ChatForm = ({ index = 0 }) => {
   const { handlePaste, handleKeyDown, handleCompositionStart, handleCompositionEnd } = useTextarea({
     textAreaRef,
     submitButtonRef,
+    setIsScrollable,
     disabled: !!(requiresKey ?? false),
   });
 
@@ -139,6 +133,12 @@ const ChatForm = ({ index = 0 }) => {
       textAreaRef.current.focus();
     }
   }, [isSearching, disableInputs]);
+
+  useEffect(() => {
+    if (textAreaRef.current) {
+      checkIfScrollable(textAreaRef.current);
+    }
+  }, []);
 
   const endpointSupportsFiles: boolean = supportsFiles[endpointType ?? endpoint ?? ''] ?? false;
   const isUploadDisabled: boolean = endpointFileConfig?.disabled ?? false;
