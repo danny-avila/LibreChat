@@ -21,6 +21,7 @@ const EditMessage = ({
   setSiblingIdx,
 }: TEditProps) => {
   const { addedIndex } = useAddedChatContext();
+  const submitButtonRef = useRef<HTMLButtonElement | null>(null);
   const { getMessages, setMessages, conversation } = useChatContext();
   const [latestMultiMessage, setLatestMultiMessage] = useRecoilState(
     store.latestMessageFamily(addedIndex),
@@ -131,6 +132,10 @@ const EditMessage = ({
         e.preventDefault();
         enterEdit(true);
       }
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        submitButtonRef.current?.click();
+      }
     },
     [enterEdit],
   );
@@ -166,6 +171,7 @@ const EditMessage = ({
       </div>
       <div className="mt-2 flex w-full justify-center text-center">
         <button
+          ref={submitButtonRef}
           className="btn btn-primary relative mr-2"
           disabled={
             isSubmitting || (endpoint === EModelEndpoint.google && !message.isCreatedByUser)
