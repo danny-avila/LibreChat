@@ -225,6 +225,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     collectedUsage,
     artifactPromises,
     spec: endpointOption.spec,
+    iconURL: endpointOption.iconURL,
     agentConfigs,
     endpoint: EModelEndpoint.agents,
     maxContextTokens: primaryConfig.maxContextTokens,
