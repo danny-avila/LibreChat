@@ -11,15 +11,6 @@
 
 # EXAMPLE: if you want to use the config file and the latest numbered release docker image the result will be:
 
-version: '3.4'
- 
-services:
-  api:
-    volumes:
-    - type: bind
-      source: ./api/data/auth.json
-      target: /app/api/data/auth.json
-
 # services:
 #   api:
 #     volumes:
