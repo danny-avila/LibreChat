@@ -69,9 +69,9 @@ const MessageRender = memo(
     const iconData = useMemo(
       () =>
         ({
-          endpoint: conversation?.endpoint,
-          model: conversation?.model ?? msg?.model,
-          iconURL: conversation?.iconURL ?? msg?.iconURL ?? '',
+          endpoint: msg?.endpoint ?? conversation?.endpoint,
+          model: msg?.model ?? conversation?.model,
+          iconURL: msg?.iconURL ?? conversation?.iconURL,
           modelLabel: conversation?.chatGptLabel ?? conversation?.modelLabel,
           isCreatedByUser: msg?.isCreatedByUser,
         } as TMessage & { modelLabel?: string }),
@@ -83,6 +83,7 @@ const MessageRender = memo(
         conversation?.model,
         msg?.model,
         msg?.iconURL,
+        msg?.endpoint,
         msg?.isCreatedByUser,
       ],
     );

@@ -39,9 +39,9 @@ export default function Message(props: TMessageProps) {
   const iconData = useMemo(
     () =>
       ({
-        endpoint: conversation?.endpoint,
-        model: conversation?.model ?? message?.model,
-        iconURL: conversation?.iconURL ?? message?.iconURL ?? '',
+        endpoint: message?.endpoint ?? conversation?.endpoint,
+        model: message?.model ?? conversation?.model,
+        iconURL: message?.iconURL ?? conversation?.iconURL,
         modelLabel: conversation?.chatGptLabel ?? conversation?.modelLabel,
         isCreatedByUser: message?.isCreatedByUser,
       } as TMessage & { modelLabel?: string }),
@@ -53,6 +53,7 @@ export default function Message(props: TMessageProps) {
       conversation?.model,
       message?.model,
       message?.iconURL,
+      message?.endpoint,
       message?.isCreatedByUser,
     ],
   );
