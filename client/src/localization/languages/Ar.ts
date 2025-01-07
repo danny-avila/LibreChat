@@ -913,4 +913,5 @@ export default {
   com_endpoint_ai: 'الذكاء الاصطناعي',
   com_endpoint_message_new: 'الرسالة {0} أو اكتب "@" للتبديل إلى الذكاء الاصطناعي',
   com_nav_maximize_chat_space: 'تكبير مساحة الدردشة',
+  com_ui_collapse_chat: 'طي الدردشة',
 };

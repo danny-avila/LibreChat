@@ -36,6 +36,7 @@ export default function MessagesView({
     <div className="flex-1 overflow-hidden overflow-y-auto">
       <div className="relative h-full">
         <div
+          className="scrollbar-gutter-stable"
           onScroll={debouncedHandleScroll}
           ref={scrollableRef}
           style={{

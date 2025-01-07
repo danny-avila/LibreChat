@@ -963,4 +963,5 @@ export default {
   com_nav_maximize_chat_space: 'Maximiser l\'espace de discussion',
   com_endpoint_message_new: 'Message {0} ou tapez "@" pour changer d\'IA',
   com_ui_page: 'Page',
+  com_ui_collapse_chat: 'Réduire la discussion',
 };
