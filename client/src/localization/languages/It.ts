@@ -957,4 +957,5 @@ export default {
   com_endpoint_ai: 'IA',
   com_nav_maximize_chat_space: 'Massimizza spazio chat',
   com_ui_page: 'Pagina',
+  com_ui_collapse_chat: 'Comprimi Chat',
 };

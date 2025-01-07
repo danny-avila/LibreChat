@@ -1175,4 +1175,5 @@ export default {
   com_endpoint_message_new: 'Сообщение {0} или введите "@" для смены ИИ',
   com_nav_maximize_chat_space: 'Развернуть чат',
   com_ui_bookmarks_add: 'Добавить закладку',
+  com_ui_collapse_chat: 'Свернуть чат',
 };

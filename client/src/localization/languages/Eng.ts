@@ -3,6 +3,7 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets present in this file
 
 export default {
+  com_ui_collapse_chat: 'Collapse Chat',
   com_ui_enter_api_key: 'Enter API Key',
   com_ui_librechat_code_api_title: 'Run AI Code',
   com_ui_librechat_code_api_subtitle: 'Secure. Multi-language. Input/Output Files.',
