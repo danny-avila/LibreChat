@@ -945,4 +945,5 @@ export default {
   com_ui_bookmarks_add: 'Lesezeichen hinzufügen',
   com_endpoint_message_new: 'Nachricht {0} oder "@" eingeben, um KI zu wechseln',
   com_nav_maximize_chat_space: 'Chat-Bereich maximieren',
+  com_ui_collapse_chat: 'Chat einklappen',
 };

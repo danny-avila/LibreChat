@@ -911,4 +911,5 @@ export default {
   com_endpoint_ai: 'AI',
   com_endpoint_message_new: 'メッセージ {0} または「@」を入力してAIを切り替え',
   com_nav_maximize_chat_space: 'チャット画面を最大化',
+  com_ui_collapse_chat: 'チャットを折りたたむ',
 };

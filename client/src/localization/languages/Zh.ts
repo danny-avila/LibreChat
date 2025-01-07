@@ -903,4 +903,5 @@ export default {
   com_ui_page: '页面',
   com_nav_maximize_chat_space: '最大化聊天窗口',
   com_endpoint_message_new: '发送消息 {0} 或输入"@"切换AI',
+  com_ui_collapse_chat: '收起聊天',
 };

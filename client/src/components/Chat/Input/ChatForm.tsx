@@ -1,4 +1,4 @@
-import { memo, useRef, useMemo, useEffect } from 'react';
+import { memo, useRef, useMemo, useEffect, useState } from 'react';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import {
   supportsFiles,
@@ -33,11 +33,22 @@ import StopButton from './StopButton';
 import SendButton from './SendButton';
 import Mention from './Mention';
 import store from '~/store';
+import CollapseChat from './CollapseChat';
+
+const checkIfScrollable = (element: HTMLTextAreaElement | null) => {
+  if (!element) {
+    return false;
+  }
+  return element.scrollHeight > element.clientHeight;
+};
 
 const ChatForm = ({ index = 0 }) => {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
   useQueryParams({ textAreaRef });
+
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isScrollable, setIsScrollable] = useState(false);
 
   const SpeechToText = useRecoilValue(store.speechToText);
   const TextToSpeech = useRecoilValue(store.textToSpeech);
@@ -132,8 +143,10 @@ const ChatForm = ({ index = 0 }) => {
   const endpointSupportsFiles: boolean = supportsFiles[endpointType ?? endpoint ?? ''] ?? false;
   const isUploadDisabled: boolean = endpointFileConfig?.disabled ?? false;
 
-  const baseClasses =
-    'md:py-3.5 m-0 w-full resize-none bg-surface-tertiary py-[13px] placeholder-black/50 dark:placeholder-white/50 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)] max-h-[65vh] md:max-h-[75vh]';
+  const baseClasses = cn(
+    'md:py-3.5 m-0 w-full resize-none bg-surface-tertiary py-[13px] placeholder-black/50 dark:placeholder-white/50 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
+    isCollapsed ? 'max-h-[52px]' : 'max-h-[65vh] md:max-h-[75vh]',
+  );
 
   const uploadActive = endpointSupportsFiles && !isUploadDisabled;
   const speechClass = isRTL
@@ -172,25 +185,45 @@ const ChatForm = ({ index = 0 }) => {
             <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
             <FileFormWrapper disableInputs={disableInputs}>
               {endpoint && (
-                <TextareaAutosize
-                  {...registerProps}
-                  ref={(e) => {
-                    ref(e);
-                    textAreaRef.current = e;
-                  }}
-                  disabled={disableInputs}
-                  onPaste={handlePaste}
-                  onKeyDown={handleKeyDown}
-                  onKeyUp={handleKeyUp}
-                  onCompositionStart={handleCompositionStart}
-                  onCompositionEnd={handleCompositionEnd}
-                  id={mainTextareaId}
-                  tabIndex={0}
-                  data-testid="text-input"
-                  style={{ height: 44, overflowY: 'auto' }}
-                  rows={1}
-                  className={cn(baseClasses, speechClass, removeFocusRings)}
-                />
+                <>
+                  <CollapseChat
+                    isCollapsed={isCollapsed}
+                    isScrollable={isScrollable}
+                    setIsCollapsed={setIsCollapsed}
+                  />
+                  <TextareaAutosize
+                    {...registerProps}
+                    ref={(e) => {
+                      ref(e);
+                      textAreaRef.current = e;
+                    }}
+                    disabled={disableInputs}
+                    onPaste={handlePaste}
+                    onKeyDown={handleKeyDown}
+                    onKeyUp={handleKeyUp}
+                    onHeightChange={() => {
+                      if (textAreaRef.current) {
+                        const scrollable = checkIfScrollable(textAreaRef.current);
+                        setIsScrollable(scrollable);
+                      }
+                    }}
+                    onCompositionStart={handleCompositionStart}
+                    onCompositionEnd={handleCompositionEnd}
+                    id={mainTextareaId}
+                    tabIndex={0}
+                    data-testid="text-input"
+                    rows={1}
+                    onFocus={() => isCollapsed && setIsCollapsed(false)}
+                    onClick={() => isCollapsed && setIsCollapsed(false)}
+                    style={{ height: 44, overflowY: 'auto' }}
+                    className={cn(
+                      baseClasses,
+                      speechClass,
+                      removeFocusRings,
+                      'transition-[max-height] duration-200',
+                    )}
+                  />
+                </>
               )}
             </FileFormWrapper>
             {SpeechToText && (
