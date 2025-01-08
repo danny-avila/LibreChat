@@ -643,6 +643,13 @@ export const tQueryParamsSchema = tConversationSchema
      * */
     resendFiles: true,
     /**
+     * @endpoints openAI, custom, azureOpenAI
+     *
+     * System parameter that only affects the above endpoints.
+     * Image detail for re-sizing according to OpenAI spec, defaults to `auto`
+     * */
+    imageDetail: true,
+    /**
      * AKA Custom Instructions, dynamically added to chat history as a system message;
      * for `bedrock` endpoint, this is used as the `system` model param if the provider uses it;
      * for `assistants` endpoint, this is used as the `additional_instructions` model param:
