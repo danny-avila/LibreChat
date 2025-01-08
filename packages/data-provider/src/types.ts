@@ -108,7 +108,7 @@ export type TUser = {
   avatar: string;
   role: string;
   provider: string;
-  plugins: string[];
+  plugins?: string[];
   createdAt: string;
   updatedAt: string;
 };
