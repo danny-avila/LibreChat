@@ -41,17 +41,13 @@ export function getSharedMessages(shareId: string): Promise<t.TSharedMessagesRes
   return request.get(endpoints.shareMessages(shareId));
 }
 
-export const listSharedLinks = (
-  params?: q.SharedLinkListParams,
+export const listSharedLinks = async (
+  params: q.SharedLinksListParams,
 ): Promise<q.SharedLinksResponse> => {
-  const pageNumber = params?.pageNumber ?? 1;
-  const pageSize = params?.pageSize ?? 10;
-  const isPublic = params?.isPublic ?? true;
-  const sortBy = params?.sortBy ?? 'createdAt';
-  const sortDirection = params?.sortDirection ?? 'desc';
-  const search = params?.search;
+  const { pageSize, isPublic, sortBy, sortDirection, search, cursor } = params;
+
   return request.get(
-    endpoints.getSharedLinks(pageNumber, pageSize, isPublic, sortBy, sortDirection, search),
+    endpoints.getSharedLinks(pageSize, isPublic, sortBy, sortDirection, search, cursor),
   );
 };
 

@@ -95,17 +95,17 @@ async function getSharedMessages(shareId) {
   }
 }
 
-async function getSharedLinks(
-  user,
-  pageNumber = 1,
-  pageSize = 25,
-  isPublic = true,
-  sortBy = 'createdAt',
-  sortDirection = 'desc',
-  search = '',
-) {
+async function getSharedLinks(user, pageParam, pageSize, isPublic, sortBy, sortDirection, search) {
   try {
     const query = { user, isPublic };
+
+    if (pageParam) {
+      if (sortDirection === 'desc') {
+        query[sortBy] = { $lt: pageParam };
+      } else {
+        query[sortBy] = { $gt: pageParam };
+      }
+    }
 
     if (search) {
       const searchResults = await Conversation.meiliSearch(search, {
@@ -113,38 +113,36 @@ async function getSharedLinks(
       });
 
       const conversationIds = searchResults.hits.map((hit) => hit.id);
-
       query['conversation'] = { $in: conversationIds };
     }
 
     const sort = {};
     sort[sortBy] = sortDirection === 'desc' ? -1 : 1;
 
-    const [totalConvos, sharedLinks] = await Promise.all([
-      SharedLink.countDocuments(query).exec(),
-      SharedLink.find(query)
-        .sort(sort)
-        .skip((pageNumber - 1) * pageSize)
-        .limit(pageSize)
-        .select('-__v -user')
-        .lean()
-        .exec(),
-    ]);
+    const sharedLinks = await SharedLink.find(query)
+      .sort(sort)
+      .limit(pageSize + 1)
+      .select('-__v -user')
+      .lean()
+      .exec();
+
+    const hasNextPage = sharedLinks.length > pageSize;
+    const links = sharedLinks.slice(0, pageSize);
+
+    const nextCursor = hasNextPage ? links[links.length - 1][sortBy] : undefined;
 
     return {
-      sharedLinks: sharedLinks.map((link) => ({
+      links: links.map((link) => ({
         shareId: link.shareId,
-        title: link.conversation?.title || 'Untitled',
+        title: link?.title || 'Untitled',
         isPublic: link.isPublic,
         createdAt: link.createdAt,
       })),
-      totalCount: totalConvos,
-      pages: Math.ceil((totalConvos || 1) / pageSize),
-      pageNumber,
-      pageSize,
+      nextCursor,
+      hasNextPage,
     };
   } catch (error) {
-    logger.error('[getShareByPage] Error getting shares', {
+    logger.error('[getSharedLinks] Error getting shares', {
       error: error.message,
       user,
     });

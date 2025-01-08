@@ -24,7 +24,7 @@ import type {
   AssistantDocument,
   TEndpointsConfig,
   TCheckUserKeyResponse,
-  SharedLinkListParams,
+  SharedLinksListParams,
   SharedLinksResponse,
 } from 'librechat-data-provider';
 import { findPageForConversation } from '~/utils';
@@ -140,28 +140,29 @@ export const useConversationsInfiniteQuery = (
 };
 
 export const useSharedLinksQuery = (
-  params?: SharedLinkListParams,
+  params: SharedLinksListParams,
   config?: UseInfiniteQueryOptions<SharedLinksResponse, unknown>,
 ) => {
-  return useInfiniteQuery<SharedLinksResponse, unknown>(
-    [QueryKeys.sharedLinks],
-    () =>
+  const { pageSize, isPublic, search, sortBy, sortDirection } = params;
+
+  return useInfiniteQuery<SharedLinksResponse>({
+    queryKey: [QueryKeys.sharedLinks, { pageSize, isPublic, search, sortBy, sortDirection }],
+    queryFn: ({ pageParam }) =>
       dataService.listSharedLinks({
-        ...params,
-        pageNumber: params?.pageNumber ?? 10,
-        pageSize: params?.pageSize ?? 10,
-        isPublic: params?.isPublic ?? true,
-        search: params?.search ?? '',
-        sortBy: params?.sortBy ?? 'createdAt',
-        sortDirection: params?.sortDirection ?? 'desc',
+        cursor: pageParam?.toString(),
+        pageSize,
+        isPublic,
+        search,
+        sortBy,
+        sortDirection,
       }),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      ...config,
-    },
-  );
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+
+    keepPreviousData: true,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    cacheTime: 30 * 60 * 1000, // 30 minutes
+    ...config,
+  });
 };
 
 export const useConversationTagsQuery = (

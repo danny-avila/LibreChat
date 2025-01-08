@@ -42,14 +42,14 @@ export type SharedMessagesResponse = Omit<s.TSharedLink, 'messages'> & {
   messages: s.TMessage[];
 };
 
-export type SharedLinkListParams = {
-  pageNumber: number;
+export interface SharedLinksListParams {
   pageSize: number;
   isPublic: boolean;
-  sortBy: 'createdAt' | 'title';
+  sortBy: 'title' | 'createdAt';
   sortDirection: 'asc' | 'desc';
   search?: string;
-};
+  cursor?: string;
+}
 
 export type SharedLinkItem = {
   shareId: string;
@@ -58,13 +58,11 @@ export type SharedLinkItem = {
   createdAt: Date;
 };
 
-export type SharedLinksResponse = {
+export interface SharedLinksResponse {
   links: SharedLinkItem[];
-  totalCount: number;
-  pages: number;
-  pageNumber: number;
-  pageSize: number;
-};
+  nextCursor: string | null;
+  hasNextPage: boolean;
+}
 
 // Type for the response from the conversation list API
 export type SharedLinkListResponse = {

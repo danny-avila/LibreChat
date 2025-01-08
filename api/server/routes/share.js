@@ -47,7 +47,7 @@ if (allowSharedLinks) {
 router.get('/', requireJwtAuth, async (req, res) => {
   try {
     const params = {
-      pageNumber: Math.max(1, parseInt(req.query.pageNumber) || 1),
+      pageParam: req.query.cursor,
       pageSize: Math.max(1, parseInt(req.query.pageSize) || 10),
       isPublic: isEnabled(req.query.isPublic),
       sortBy: ['createdAt', 'title'].includes(req.query.sortBy) ? req.query.sortBy : 'createdAt',
@@ -59,7 +59,7 @@ router.get('/', requireJwtAuth, async (req, res) => {
 
     const result = await getSharedLinks(
       req.user.id,
-      params.pageNumber,
+      params.pageParam,
       params.pageSize,
       params.isPublic,
       params.sortBy,
@@ -68,11 +68,9 @@ router.get('/', requireJwtAuth, async (req, res) => {
     );
 
     res.status(200).send({
-      links: result.sharedLinks,
-      totalCount: result.totalCount,
-      pageNumber: result.pageNumber,
-      pageSize: result.pageSize,
-      pages: result.pages,
+      links: result.links,
+      nextCursor: result.nextCursor,
+      hasNextPage: result.hasNextPage,
     });
   } catch (error) {
     console.error('Error getting shared links:', error);

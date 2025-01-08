@@ -27,7 +27,6 @@ export * from './Pagination';
 export { default as Combobox } from './Combobox';
 export { default as Dropdown } from './Dropdown';
 export { default as FileUpload } from './FileUpload';
-export { default as PageScroller } from './PageScroller';
 export { default as DropdownPopup } from './DropdownPopup';
 export { default as DelayedRender } from './DelayedRender';
 export { default as ThemeSelector } from './ThemeSelector';
