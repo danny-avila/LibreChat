@@ -204,9 +204,9 @@ export function getIconEndpoint({
   iconURL,
   endpoint,
 }: {
-  endpointsConfig: t.TEndpointsConfig | undefined;
-  iconURL: string | undefined;
-  endpoint: string | null | undefined;
+  endpointsConfig?: t.TEndpointsConfig;
+  iconURL?: string | null;
+  endpoint?: string | null;
 }) {
   return (endpointsConfig?.[iconURL ?? ''] ? iconURL ?? endpoint : endpoint) ?? '';
 }
@@ -219,7 +219,7 @@ export function getIconKey({
   endpointIconURL: iconURL,
 }: {
   endpoint?: string | null;
-  endpointsConfig?: t.TEndpointsConfig | undefined;
+  endpointsConfig?: t.TEndpointsConfig;
   endpointType?: string | null;
   endpointIconURL?: string;
 }) {

@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
-import type { TMessageProps } from '~/common';
+import type { TMessageContentParts } from 'librechat-data-provider';
+import type { TMessageProps, TMessageIcon } from '~/common';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import { useMessageHelpers, useLocalize } from '~/hooks';
 import ContentParts from './Content/ContentParts';
@@ -35,19 +35,29 @@ export default function Message(props: TMessageProps) {
   } = useMessageHelpers(props);
   const fontSize = useRecoilValue(store.fontSize);
   const { children, messageId = null, isCreatedByUser } = message ?? {};
+  const name = useMemo(() => {
+    let result = '';
+    if (isCreatedByUser === true) {
+      result = localize('com_user_message');
+    } else if (assistant) {
+      result = assistant.name ?? localize('com_ui_assistant');
+    } else if (agent) {
+      result = agent.name ?? localize('com_ui_agent');
+    }
 
-  const iconData = useMemo(
-    () =>
-      ({
-        endpoint: message?.endpoint ?? conversation?.endpoint,
-        model: message?.model ?? conversation?.model,
-        iconURL: message?.iconURL ?? conversation?.iconURL,
-        modelLabel: conversation?.chatGptLabel ?? conversation?.modelLabel,
-        isCreatedByUser: message?.isCreatedByUser,
-      } as TMessage & { modelLabel?: string }),
+    return result;
+  }, [assistant, agent, isCreatedByUser, localize]);
+
+  const iconData: TMessageIcon = useMemo(
+    () => ({
+      endpoint: message?.endpoint ?? conversation?.endpoint,
+      model: message?.model ?? conversation?.model,
+      iconURL: message?.iconURL ?? conversation?.iconURL,
+      modelLabel: name,
+      isCreatedByUser: message?.isCreatedByUser,
+    }),
     [
-      conversation?.chatGptLabel,
-      conversation?.modelLabel,
+      name,
       conversation?.endpoint,
       conversation?.iconURL,
       conversation?.model,
@@ -59,16 +69,6 @@ export default function Message(props: TMessageProps) {
   );
   if (!message) {
     return null;
-  }
-
-  let name = '';
-
-  if (isCreatedByUser === true) {
-    name = localize('com_user_message');
-  } else if (assistant) {
-    name = assistant.name ?? localize('com_ui_assistant');
-  } else if (agent) {
-    name = agent.name ?? localize('com_ui_agent');
   }
 
   return (

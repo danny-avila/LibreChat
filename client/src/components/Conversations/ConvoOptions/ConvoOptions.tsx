@@ -1,4 +1,4 @@
-import { useState, useId, useRef } from 'react';
+import { useState, useId, useRef, memo } from 'react';
 import * as Menu from '@ariakit/react/menu';
 import { Ellipsis, Share2, Copy, Archive, Pen, Trash } from 'lucide-react';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
@@ -12,7 +12,7 @@ import DeleteButton from './DeleteButton';
 import ShareButton from './ShareButton';
 import { cn } from '~/utils';
 
-export default function ConvoOptions({
+function ConvoOptions({
   conversationId,
   title,
   retainView,
@@ -161,3 +161,5 @@ export default function ConvoOptions({
     </>
   );
 }
+
+export default memo(ConvoOptions);
