@@ -862,6 +862,7 @@ class GoogleClient extends BaseClient {
 
   getSaveOptions() {
     return {
+      endpointType: null,
       artifacts: this.options.artifacts,
       promptPrefix: this.options.promptPrefix,
       modelLabel: this.options.modelLabel,
