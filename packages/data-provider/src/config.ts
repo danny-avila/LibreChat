@@ -4,7 +4,7 @@ import type { ZodError } from 'zod';
 import type { TModelsConfig } from './types';
 import { EModelEndpoint, eModelEndpointSchema } from './schemas';
 import { fileConfigSchema } from './file-config';
-import { specsConfigSchema } from './models';
+import { specsConfigSchema, TSpecsConfig } from './models';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
 
@@ -427,6 +427,82 @@ export enum EImageOutputType {
   JPEG = 'jpeg',
 }
 
+export const intefaceSchema = z
+  .object({
+    privacyPolicy: z
+      .object({
+        externalUrl: z.string().optional(),
+        openNewTab: z.boolean().optional(),
+      })
+      .optional(),
+    termsOfService: z
+      .object({
+        externalUrl: z.string().optional(),
+        openNewTab: z.boolean().optional(),
+        modalAcceptance: z.boolean().optional(),
+        modalTitle: z.string().optional(),
+        modalContent: z.string().or(z.array(z.string())).optional(),
+      })
+      .optional(),
+    endpointsMenu: z.boolean().optional(),
+    modelSelect: z.boolean().optional(),
+    parameters: z.boolean().optional(),
+    sidePanel: z.boolean().optional(),
+    multiConvo: z.boolean().optional(),
+    bookmarks: z.boolean().optional(),
+    presets: z.boolean().optional(),
+    prompts: z.boolean().optional(),
+    agents: z.boolean().optional(),
+  })
+  .default({
+    endpointsMenu: true,
+    modelSelect: true,
+    parameters: true,
+    sidePanel: true,
+    presets: true,
+    multiConvo: true,
+    bookmarks: true,
+    prompts: true,
+    agents: true,
+  });
+
+export type TInterfaceConfig = z.infer<typeof intefaceSchema>;
+
+export type TStartupConfig = {
+  appTitle: string;
+  socialLogins?: string[];
+  interface?: TInterfaceConfig;
+  discordLoginEnabled: boolean;
+  facebookLoginEnabled: boolean;
+  githubLoginEnabled: boolean;
+  googleLoginEnabled: boolean;
+  openidLoginEnabled: boolean;
+  openidLabel: string;
+  openidImageUrl: string;
+  /** LDAP Auth Configuration */
+  ldap?: {
+    /** LDAP enabled */
+    enabled: boolean;
+    /** Whether LDAP uses username vs. email */
+    username?: boolean;
+  };
+  serverDomain: string;
+  emailLoginEnabled: boolean;
+  registrationEnabled: boolean;
+  socialLoginEnabled: boolean;
+  passwordResetEnabled: boolean;
+  emailEnabled: boolean;
+  checkBalance: boolean;
+  showBirthdayIcon: boolean;
+  helpAndFaqURL: string;
+  customFooter?: string;
+  modelSpecs?: TSpecsConfig;
+  sharedLinksEnabled: boolean;
+  publicSharedLinksEnabled: boolean;
+  analyticsGtmId?: string;
+  instanceProjectId: string;
+};
+
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().default(true),
@@ -435,44 +511,7 @@ export const configSchema = z.object({
   includedTools: z.array(z.string()).optional(),
   filteredTools: z.array(z.string()).optional(),
   mcpServers: MCPServersSchema.optional(),
-  interface: z
-    .object({
-      privacyPolicy: z
-        .object({
-          externalUrl: z.string().optional(),
-          openNewTab: z.boolean().optional(),
-        })
-        .optional(),
-      termsOfService: z
-        .object({
-          externalUrl: z.string().optional(),
-          openNewTab: z.boolean().optional(),
-          modalAcceptance: z.boolean().optional(),
-          modalTitle: z.string().optional(),
-          modalContent: z.string().or(z.array(z.string())).optional(),
-        })
-        .optional(),
-      endpointsMenu: z.boolean().optional(),
-      modelSelect: z.boolean().optional(),
-      parameters: z.boolean().optional(),
-      sidePanel: z.boolean().optional(),
-      multiConvo: z.boolean().optional(),
-      bookmarks: z.boolean().optional(),
-      presets: z.boolean().optional(),
-      prompts: z.boolean().optional(),
-      agents: z.boolean().optional(),
-    })
-    .default({
-      endpointsMenu: true,
-      modelSelect: true,
-      parameters: true,
-      sidePanel: true,
-      presets: true,
-      multiConvo: true,
-      bookmarks: true,
-      prompts: true,
-      agents: true,
-    }),
+  interface: intefaceSchema,
   fileStrategy: fileSourceSchema.default(FileSources.local),
   actions: z
     .object({

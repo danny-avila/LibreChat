@@ -173,7 +173,7 @@ export const updateUserPlugins = (payload: t.TUpdateUserPlugins) => {
 
 /* Config */
 
-export const getStartupConfig = (): Promise<t.TStartupConfig> => {
+export const getStartupConfig = (): Promise<config.TStartupConfig> => {
   return request.get(endpoints.config());
 };
 

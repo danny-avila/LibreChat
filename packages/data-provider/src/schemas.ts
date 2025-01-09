@@ -559,9 +559,9 @@ export const tConversationSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   /* Files */
+  resendFiles: z.boolean().optional(),
   file_ids: z.array(z.string()).optional(),
   /* vision */
-  resendFiles: z.boolean().optional(),
   imageDetail: eImageDetailSchema.optional(),
   /* assistant */
   assistant_id: z.string().optional(),
@@ -571,16 +571,17 @@ export const tConversationSchema = z.object({
   region: z.string().optional(),
   maxTokens: coerceNumber.optional(),
   additionalModelRequestFields: DocumentType.optional(),
-  /* assistant + agents */
+  /* assistants */
   instructions: z.string().optional(),
   additional_instructions: z.string().optional(),
+  append_current_datetime: z.boolean().optional(),
   /** Used to overwrite active conversation settings when saving a Preset */
   presetOverride: z.record(z.unknown()).optional(),
   stop: z.array(z.string()).optional(),
   /* frontend components */
-  iconURL: z.string().optional(),
   greeting: z.string().optional(),
-  spec: z.string().optional(),
+  spec: z.string().nullable().optional(),
+  iconURL: z.string().nullable().optional(),
   /*
   Deprecated fields
   */
@@ -606,7 +607,6 @@ export const tConversationSchema = z.object({
   agentOptions: tAgentOptionsSchema.nullable().optional(),
   /** @deprecated Prefer `modelLabel` over `chatGptLabel` */
   chatGptLabel: z.string().nullable().optional(),
-  append_current_datetime: z.boolean().optional(),
 });
 
 export const tPresetSchema = tConversationSchema
