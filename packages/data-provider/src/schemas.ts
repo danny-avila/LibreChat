@@ -688,6 +688,8 @@ export const tQueryParamsSchema = tConversationSchema
     agent_id: true,
     /** @endpoints assistants, azureAssistants */
     assistant_id: true,
+    /** @endpoints assistants, azureAssistants */
+    append_current_datetime: true,
     /**
      * @endpoints assistants, azureAssistants
      *
