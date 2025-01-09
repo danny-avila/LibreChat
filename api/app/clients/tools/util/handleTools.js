@@ -14,6 +14,7 @@ const {
   TraversaalSearch,
   StructuredWolfram,
   TavilySearchResults,
+  YouTubeTool,
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
@@ -178,6 +179,7 @@ const loadTools = async ({
     'azure-ai-search': StructuredACS,
     traversaal_search: TraversaalSearch,
     tavily_search_results_json: TavilySearchResults,
+    youtube: YouTubeTool,
   };
 
   const customConstructors = {
@@ -214,6 +216,7 @@ const loadTools = async ({
     serpapi: { location: 'Austin,Texas,United States', hl: 'en', gl: 'us' },
     dalle: imageGenOptions,
     'stable-diffusion': imageGenOptions,
+    youtube: { YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY },
   };
 
   const toolAuthFields = {};
