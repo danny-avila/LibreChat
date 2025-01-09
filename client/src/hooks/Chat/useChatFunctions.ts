@@ -208,7 +208,7 @@ export default function useChatFunctions({
     const responseText = isEditOrContinue ? generation : '';
 
     const responseMessageId = editedMessageId ?? latestMessage?.messageId ?? null;
-    const initialResponse: TMessage & { modelLabel?: string | null } = {
+    const initialResponse: TMessage = {
       sender: responseSender,
       text: responseText,
       endpoint: endpoint ?? '',
@@ -219,7 +219,6 @@ export default function useChatFunctions({
       unfinished: false,
       isCreatedByUser: false,
       isEdited: isEditOrContinue,
-      modelLabel: convo.chatGptLabel ?? convo.modelLabel,
       iconURL: convo.iconURL,
       model: convo.model,
       error: false,
