@@ -26,9 +26,9 @@ interface PopoverButtonProps {
   setActiveSetting: React.Dispatch<React.SetStateAction<string>>;
   sideOffset?: number;
   timeoutRef: React.MutableRefObject<NodeJS.Timeout | null>;
-  hoverInfo?: React.ReactNode;
-  hoverTitle?: React.ReactNode;
-  hoverDescription?: React.ReactNode;
+  hoverInfo?: React.ReactNode | string;
+  hoverTitle?: React.ReactNode | string;
+  hoverDescription?: React.ReactNode | string;
 }
 
 const optionLabels = {
@@ -73,7 +73,9 @@ const PopoverButton: React.FC<PopoverButtonProps> = ({
       >
         {children}
       </Popover.Close>
-      {(hoverInfo || hoverTitle || hoverDescription) && (
+      {((hoverInfo != null && hoverInfo !== '') ||
+        (hoverTitle != null && hoverTitle !== '') ||
+        (hoverDescription != null && hoverDescription !== '')) && (
         <HoverCardPortal>
           <HoverCardContent
             side="right"
@@ -82,9 +84,11 @@ const PopoverButton: React.FC<PopoverButtonProps> = ({
           >
             <div className="space-y-2">
               <p className="flex flex-col gap-2 text-sm text-gray-600 dark:text-gray-300">
-                {hoverInfo && hoverInfo}
-                {hoverTitle && <span className="flex flex-wrap gap-1 font-bold">{hoverTitle}</span>}
-                {hoverDescription && hoverDescription}
+                {hoverInfo != null && hoverInfo !== '' && hoverInfo}
+                {hoverTitle != null && hoverTitle !== '' && (
+                  <span className="flex flex-wrap gap-1 font-bold">{hoverTitle}</span>
+                )}
+                {hoverDescription != null && hoverDescription !== '' && hoverDescription}
               </p>
             </div>
           </HoverCardContent>
@@ -95,10 +99,10 @@ const PopoverButton: React.FC<PopoverButtonProps> = ({
 };
 
 export default function Fork({
-  isLast,
+  isLast = false,
   messageId,
-  conversationId,
-  forkingSupported,
+  conversationId: _convoId,
+  forkingSupported = false,
   latestMessageId,
 }: {
   isLast?: boolean;
@@ -119,13 +123,11 @@ export default function Fork({
   const [rememberGlobal, setRememberGlobal] = useRecoilState(store.rememberDefaultFork);
   const forkConvo = useForkConvoMutation({
     onSuccess: (data) => {
-      if (data) {
-        navigateToConvo(data.conversation);
-        showToast({
-          message: localize('com_ui_fork_success'),
-          status: 'success',
-        });
-      }
+      navigateToConvo(data.conversation);
+      showToast({
+        message: localize('com_ui_fork_success'),
+        status: 'success',
+      });
     },
     onMutate: () => {
       showToast({
@@ -141,6 +143,7 @@ export default function Fork({
     },
   });
 
+  const conversationId = _convoId ?? '';
   if (!forkingSupported || !conversationId || !messageId) {
     return null;
   }
