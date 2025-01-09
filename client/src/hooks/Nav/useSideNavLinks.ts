@@ -75,8 +75,7 @@ export default function useSideNavLinks({
       hasAccessToCreateAgents &&
       isAgentsEndpoint(endpoint) &&
       agents &&
-      agents.disableBuilder !== true &&
-      keyProvided
+      agents.disableBuilder !== true
     ) {
       links.push({
         title: 'com_sidepanel_agent_builder',
