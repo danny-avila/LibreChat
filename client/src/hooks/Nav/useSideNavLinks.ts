@@ -59,8 +59,7 @@ export default function useSideNavLinks({
       isAssistantsEndpoint(endpoint) &&
       assistants &&
       assistants.disableBuilder !== true &&
-      keyProvided &&
-      interfaceConfig.parameters === true
+      keyProvided
     ) {
       links.push({
         title: 'com_sidepanel_assistant_builder',
@@ -77,8 +76,7 @@ export default function useSideNavLinks({
       isAgentsEndpoint(endpoint) &&
       agents &&
       agents.disableBuilder !== true &&
-      keyProvided &&
-      interfaceConfig.parameters === true
+      keyProvided
     ) {
       links.push({
         title: 'com_sidepanel_agent_builder',
