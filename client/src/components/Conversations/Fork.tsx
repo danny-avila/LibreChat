@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { useRecoilState } from 'recoil';
 import { GitFork, InfoIcon } from 'lucide-react';
 import * as Popover from '@radix-ui/react-popover';
-import { ForkOptions, TMessage } from 'librechat-data-provider';
+import { ForkOptions } from 'librechat-data-provider';
 import { GitCommit, GitBranchPlus, ListTree } from 'lucide-react';
 import {
   Checkbox,
@@ -99,13 +99,13 @@ export default function Fork({
   messageId,
   conversationId,
   forkingSupported,
-  latestMessage,
+  latestMessageId,
 }: {
   isLast?: boolean;
   messageId: string;
   conversationId: string | null;
   forkingSupported?: boolean;
-  latestMessage: TMessage | null;
+  latestMessageId?: string;
 }) {
   const localize = useLocalize();
   const { index } = useChatContext();
@@ -156,7 +156,7 @@ export default function Fork({
       conversationId,
       option,
       splitAtTarget,
-      latestMessageId: latestMessage?.messageId,
+      latestMessageId,
     });
   };
 
@@ -177,7 +177,7 @@ export default function Fork({
                 splitAtTarget,
                 conversationId,
                 option: forkSetting,
-                latestMessageId: latestMessage?.messageId,
+                latestMessageId,
               });
             }
           }}
