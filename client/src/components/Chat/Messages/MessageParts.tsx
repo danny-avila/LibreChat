@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
-import type { TMessageProps } from '~/common';
+import type { TMessageContentParts } from 'librechat-data-provider';
+import type { TMessageProps, TMessageIcon } from '~/common';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import { useMessageHelpers, useLocalize } from '~/hooks';
 import ContentParts from './Content/ContentParts';
@@ -36,15 +36,14 @@ export default function Message(props: TMessageProps) {
   const fontSize = useRecoilValue(store.fontSize);
   const { children, messageId = null, isCreatedByUser } = message ?? {};
 
-  const iconData = useMemo(
-    () =>
-      ({
-        endpoint: message?.endpoint ?? conversation?.endpoint,
-        model: message?.model ?? conversation?.model,
-        iconURL: message?.iconURL ?? conversation?.iconURL,
-        modelLabel: conversation?.chatGptLabel ?? conversation?.modelLabel,
-        isCreatedByUser: message?.isCreatedByUser,
-      } as TMessage & { modelLabel?: string }),
+  const iconData: TMessageIcon = useMemo(
+    () => ({
+      endpoint: message?.endpoint ?? conversation?.endpoint,
+      model: message?.model ?? conversation?.model,
+      iconURL: message?.iconURL ?? conversation?.iconURL,
+      modelLabel: conversation?.chatGptLabel ?? conversation?.modelLabel,
+      isCreatedByUser: message?.isCreatedByUser,
+    }),
     [
       conversation?.chatGptLabel,
       conversation?.modelLabel,

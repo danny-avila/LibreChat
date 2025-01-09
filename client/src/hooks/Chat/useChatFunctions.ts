@@ -208,7 +208,7 @@ export default function useChatFunctions({
     const responseText = isEditOrContinue ? generation : '';
 
     const responseMessageId = editedMessageId ?? latestMessage?.messageId ?? null;
-    const initialResponse: TMessage = {
+    const initialResponse: TMessage & { modelLabel?: string | null } = {
       sender: responseSender,
       text: responseText,
       endpoint: endpoint ?? '',
@@ -219,7 +219,9 @@ export default function useChatFunctions({
       unfinished: false,
       isCreatedByUser: false,
       isEdited: isEditOrContinue,
+      modelLabel: convo.chatGptLabel ?? convo.modelLabel,
       iconURL: convo.iconURL,
+      model: convo.model,
       error: false,
     };
 
@@ -254,6 +256,7 @@ export default function useChatFunctions({
       currentMessages = currentMessages.filter((msg) => msg.messageId !== responseMessageId);
     }
 
+    logger.log('message_state', initialResponse);
     const submission: TSubmission = {
       conversation: {
         ...conversation,

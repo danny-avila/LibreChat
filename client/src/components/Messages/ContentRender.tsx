@@ -1,7 +1,7 @@
 import { useRecoilValue } from 'recoil';
 import { useCallback, useMemo, memo } from 'react';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
-import type { TMessageProps } from '~/common';
+import type { TMessageProps, TMessageIcon } from '~/common';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
 import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
@@ -65,15 +65,14 @@ const ContentRender = memo(
       [msg?.children, msg?.depth, latestMessage?.depth],
     );
 
-    const iconData = useMemo(
-      () =>
-        ({
-          endpoint: msg?.endpoint ?? conversation?.endpoint,
-          model: msg?.model ?? conversation?.model,
-          iconURL: msg?.iconURL ?? conversation?.iconURL,
-          modelLabel: conversation?.chatGptLabel ?? conversation?.modelLabel,
-          isCreatedByUser: msg?.isCreatedByUser,
-        } as TMessage & { modelLabel?: string }),
+    const iconData: TMessageIcon = useMemo(
+      () => ({
+        endpoint: msg?.endpoint ?? conversation?.endpoint,
+        model: msg?.model ?? conversation?.model,
+        iconURL: msg?.iconURL ?? conversation?.iconURL,
+        modelLabel: conversation?.chatGptLabel ?? conversation?.modelLabel,
+        isCreatedByUser: msg?.isCreatedByUser,
+      }),
       [
         conversation?.chatGptLabel,
         conversation?.modelLabel,
