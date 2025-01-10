@@ -6,7 +6,6 @@ const TextStream = require('./TextStream');
 const AnthropicClient = require('./AnthropicClient');
 const toolUtils = require('./tools/util');
 
-
 module.exports = {
   ChatGPTClient,
   OpenAIClient,
