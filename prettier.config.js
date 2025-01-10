@@ -17,4 +17,12 @@ module.exports = {
   endOfLine: 'auto',
   jsxSingleQuote: false,
   plugins: ['prettier-plugin-tailwindcss'],
+  overrides: [
+    {
+      files: ['*.yaml', '*.yml'],
+      options: {
+        singleQuote: false,
+      },
+    },
+  ],
 };
