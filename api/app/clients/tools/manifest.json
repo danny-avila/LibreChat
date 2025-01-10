@@ -100,7 +100,6 @@
     "pluginKey": "calculator",
     "description": "Perform simple and complex mathematical calculations.",
     "icon": "https://i.imgur.com/RHsSG5h.png",
-    "isAuthRequired": "false",
     "authConfig": []
   },
   {
@@ -135,7 +134,20 @@
       {
         "authField": "AZURE_AI_SEARCH_API_KEY",
         "label": "Azure AI Search API Key",
-        "description": "You need to provideq your API Key for Azure AI Search."
+        "description": "You need to provide your API Key for Azure AI Search."
+      }
+    ]
+  },
+  {
+    "name": "OpenWeather",
+    "pluginKey": "open_weather",
+    "description": "Get weather forecasts and historical data from the OpenWeather API",
+    "icon": "/assets/openweather.png",
+    "authConfig": [
+      {
+        "authField": "OPENWEATHER_API_KEY",
+        "label": "OpenWeather API Key",
+        "description": "Sign up at <a href=\"https://home.openweathermap.org/users/sign_up\" target=\"_blank\">OpenWeather</a>, then get your key at <a href=\"https://home.openweathermap.org/api_keys\" target=\"_blank\">API keys</a>."
       }
     ]
   }

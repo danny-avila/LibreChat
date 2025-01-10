@@ -1,7 +1,7 @@
 const Redis = require('ioredis');
 const passport = require('passport');
 const session = require('express-session');
-const MemoryStore = require('memorystore')(session)
+const MemoryStore = require('memorystore')(session);
 const RedisStore = require('connect-redis').default;
 const {
   setupOpenId,
@@ -51,8 +51,8 @@ const configureSocialLogins = (app) => {
       sessionOptions.store = new RedisStore({ client, prefix: 'librechat' });
     } else {
       sessionOptions.store = new MemoryStore({
-        checkPeriod: 86400000 // prune expired entries every 24h
-      })
+        checkPeriod: 86400000, // prune expired entries every 24h
+      });
     }
     app.use(session(sessionOptions));
     app.use(passport.session());
