@@ -1195,4 +1195,11 @@ export default {
   com_endpoint_agent_placeholder: 'Por favor seleccione un Agente',
   com_nav_welcome_agent: 'Seleccione un agente',
   com_ui_delete_shared_link: '¿Eliminar enlace compartido?',
+  com_ui_bookmarks_add: 'Agregar Marcadores',
+  com_ui_page: 'Página',
+  com_ui_bookmarks_edit: 'Editar Marcador',
+  com_endpoint_message_new: 'Mensaje {0} o escriba "@" para cambiar de IA',
+  com_nav_maximize_chat_space: 'Maximizar espacio del chat',
+  com_endpoint_ai: 'IA',
+  com_ui_collapse_chat: 'Contraer Chat',
 };

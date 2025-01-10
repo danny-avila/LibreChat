@@ -3,6 +3,7 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets present in this file
 
 export default {
+  com_ui_collapse_chat: 'Collapse Chat',
   com_ui_enter_api_key: 'Enter API Key',
   com_ui_librechat_code_api_title: 'Run AI Code',
   com_ui_librechat_code_api_subtitle: 'Secure. Multi-language. Input/Output Files.',
@@ -419,6 +420,7 @@ export default {
   com_ui_min_tags: 'Cannot remove more values, a minimum of {0} are required.',
   com_ui_max_tags: 'Maximum number allowed is {0}, using latest values.',
   com_ui_bookmarks: 'Bookmarks',
+  com_ui_bookmarks_add: 'Add Bookmarks',
   com_ui_bookmarks_new: 'New Bookmark',
   com_ui_bookmark_delete_confirm: 'Are you sure you want to delete this bookmark?',
   com_ui_bookmarks_title: 'Title',
@@ -433,6 +435,7 @@ export default {
   com_ui_bookmarks_delete_error: 'There was an error deleting the bookmark',
   com_ui_bookmarks_add_to_conversation: 'Add to current conversation',
   com_ui_bookmarks_filter: 'Filter bookmarks...',
+  com_ui_bookmarks_edit: 'Edit Bookmark',
   com_ui_bookmarks_delete: 'Delete Bookmark',
   com_ui_no_bookmarks: 'it seems like you have no bookmarks yet. Click on a chat and add a new one',
   com_ui_no_conversation_id: 'No conversation ID found',
@@ -523,6 +526,8 @@ export default {
     'WARNING: Misuse of this feature can get you BANNED from using Bing! Click on \'System Message\' for full instructions and the default message if omitted, which is the \'Sydney\' preset that is considered safe.',
   com_endpoint_system_message: 'System Message',
   com_endpoint_message: 'Message',
+  com_endpoint_ai: 'AI',
+  com_endpoint_message_new: 'Message {0} or type "@" to switch AI',
   com_endpoint_message_not_appendable: 'Edit your message or Regenerate.',
   com_endpoint_default_blank: 'default: blank',
   com_endpoint_default_false: 'default: false',
@@ -763,6 +768,7 @@ export default {
   com_nav_theme_dark: 'Dark',
   com_nav_theme_light: 'Light',
   com_nav_enter_to_send: 'Press Enter to send messages',
+  com_nav_maximize_chat_space: 'Maximize chat space',
   com_nav_user_name_display: 'Display username in messages',
   com_nav_save_drafts: 'Save drafts locally',
   com_nav_chat_direction: 'Chat direction',

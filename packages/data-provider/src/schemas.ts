@@ -16,16 +16,19 @@ export const authTypeSchema = z.nativeEnum(AuthType);
 export enum EModelEndpoint {
   azureOpenAI = 'azureOpenAI',
   openAI = 'openAI',
-  bingAI = 'bingAI',
-  chatGPTBrowser = 'chatGPTBrowser',
   google = 'google',
-  gptPlugins = 'gptPlugins',
   anthropic = 'anthropic',
   assistants = 'assistants',
   azureAssistants = 'azureAssistants',
   agents = 'agents',
   custom = 'custom',
   bedrock = 'bedrock',
+  /** @deprecated */
+  bingAI = 'bingAI',
+  /** @deprecated */
+  chatGPTBrowser = 'chatGPTBrowser',
+  /** @deprecated */
+  gptPlugins = 'gptPlugins',
 }
 
 export const paramEndpoints = new Set<EModelEndpoint | string>([
@@ -472,7 +475,7 @@ export const tMessageSchema = z.object({
   /* assistant */
   thread_id: z.string().optional(),
   /* frontend components */
-  iconURL: z.string().optional(),
+  iconURL: z.string().nullable().optional(),
 });
 
 export type TAttachmentMetadata = { messageId: string; toolCallId: string };
@@ -523,7 +526,7 @@ const DocumentType: z.ZodType<DocumentTypeValue> = z.lazy(() =>
 export const tConversationSchema = z.object({
   conversationId: z.string().nullable(),
   endpoint: eModelEndpointSchema.nullable(),
-  endpointType: eModelEndpointSchema.optional(),
+  endpointType: eModelEndpointSchema.nullable().optional(),
   isArchived: z.boolean().optional(),
   title: z.string().nullable().or(z.literal('New Chat')).default('New Chat'),
   user: z.string().optional(),
@@ -556,9 +559,9 @@ export const tConversationSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   /* Files */
+  resendFiles: z.boolean().optional(),
   file_ids: z.array(z.string()).optional(),
   /* vision */
-  resendFiles: z.boolean().optional(),
   imageDetail: eImageDetailSchema.optional(),
   /* assistant */
   assistant_id: z.string().optional(),
@@ -568,16 +571,17 @@ export const tConversationSchema = z.object({
   region: z.string().optional(),
   maxTokens: coerceNumber.optional(),
   additionalModelRequestFields: DocumentType.optional(),
-  /* assistant + agents */
+  /* assistants */
   instructions: z.string().optional(),
   additional_instructions: z.string().optional(),
+  append_current_datetime: z.boolean().optional(),
   /** Used to overwrite active conversation settings when saving a Preset */
   presetOverride: z.record(z.unknown()).optional(),
   stop: z.array(z.string()).optional(),
   /* frontend components */
-  iconURL: z.string().optional(),
   greeting: z.string().optional(),
-  spec: z.string().optional(),
+  spec: z.string().nullable().optional(),
+  iconURL: z.string().nullable().optional(),
   /*
   Deprecated fields
   */
@@ -603,7 +607,6 @@ export const tConversationSchema = z.object({
   agentOptions: tAgentOptionsSchema.nullable().optional(),
   /** @deprecated Prefer `modelLabel` over `chatGptLabel` */
   chatGptLabel: z.string().nullable().optional(),
-  append_current_datetime: z.boolean().optional(),
 });
 
 export const tPresetSchema = tConversationSchema
@@ -630,11 +633,77 @@ export const tConvoUpdateSchema = tConversationSchema.merge(
   }),
 );
 
-export const tPresetUpdateSchema = tConversationSchema.merge(
-  z.object({
-    endpoint: extendedModelEndpointSchema.nullable(),
-  }),
-);
+export const tQueryParamsSchema = tConversationSchema
+  .pick({
+    // librechat settings
+    /** The AI context window, overrides the system-defined window as determined by `model` value */
+    maxContextTokens: true,
+    /**
+     * Whether or not to re-submit files from previous messages on subsequent messages
+     * */
+    resendFiles: true,
+    /**
+     * @endpoints openAI, custom, azureOpenAI
+     *
+     * System parameter that only affects the above endpoints.
+     * Image detail for re-sizing according to OpenAI spec, defaults to `auto`
+     * */
+    imageDetail: true,
+    /**
+     * AKA Custom Instructions, dynamically added to chat history as a system message;
+     * for `bedrock` endpoint, this is used as the `system` model param if the provider uses it;
+     * for `assistants` endpoint, this is used as the `additional_instructions` model param:
+     * https://platform.openai.com/docs/api-reference/runs/createRun#runs-createrun-additional_instructions
+     * ; otherwise, a message with `system` role is added to the chat history
+     */
+    promptPrefix: true,
+    // Model parameters
+    /** @endpoints openAI, custom, azureOpenAI, google, anthropic, assistants, azureAssistants, bedrock */
+    model: true,
+    /** @endpoints openAI, custom, azureOpenAI, google, anthropic, bedrock */
+    temperature: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    presence_penalty: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    frequency_penalty: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    stop: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    top_p: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    max_tokens: true,
+    /** @endpoints google, anthropic, bedrock */
+    topP: true,
+    /** @endpoints google, anthropic */
+    topK: true,
+    /** @endpoints google, anthropic */
+    maxOutputTokens: true,
+    /** @endpoints anthropic */
+    promptCache: true,
+    /** @endpoints bedrock */
+    region: true,
+    /** @endpoints bedrock */
+    maxTokens: true,
+    /** @endpoints agents */
+    agent_id: true,
+    /** @endpoints assistants, azureAssistants */
+    assistant_id: true,
+    /** @endpoints assistants, azureAssistants */
+    append_current_datetime: true,
+    /**
+     * @endpoints assistants, azureAssistants
+     *
+     * Overrides existing assistant instructions, only used for the current run:
+     * https://platform.openai.com/docs/api-reference/runs/createRun#runs-createrun-instructions
+     * */
+    instructions: true,
+  })
+  .merge(
+    z.object({
+      /** @endpoints openAI, custom, azureOpenAI, google, anthropic, assistants, azureAssistants, bedrock, agents */
+      endpoint: extendedModelEndpointSchema.nullable(),
+    }),
+  );
 
 export type TPreset = z.infer<typeof tPresetSchema>;
 

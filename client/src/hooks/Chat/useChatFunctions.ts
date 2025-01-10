@@ -220,6 +220,7 @@ export default function useChatFunctions({
       isCreatedByUser: false,
       isEdited: isEditOrContinue,
       iconURL: convo.iconURL,
+      model: convo.model,
       error: false,
     };
 
@@ -254,6 +255,7 @@ export default function useChatFunctions({
       currentMessages = currentMessages.filter((msg) => msg.messageId !== responseMessageId);
     }
 
+    logger.log('message_state', initialResponse);
     const submission: TSubmission = {
       conversation: {
         ...conversation,

@@ -34,6 +34,7 @@ export default function ApiKeyDialog({
     'cplusplus.svg',
     'php.svg',
     'fortran.svg',
+    'r.svg',
   ];
 
   return (

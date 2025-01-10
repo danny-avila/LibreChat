@@ -4,7 +4,13 @@ import { useRecoilValue, useRecoilState } from 'recoil';
 import { Constants } from 'librechat-data-provider';
 import type { TEndpointOption } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
-import { forceResize, insertTextAtCursor, getEntityName, getEntity } from '~/utils';
+import {
+  forceResize,
+  insertTextAtCursor,
+  getEntityName,
+  getEntity,
+  checkIfScrollable,
+} from '~/utils';
 import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
 import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
 import useGetSender from '~/hooks/Conversations/useGetSender';
@@ -20,10 +26,12 @@ type KeyEvent = KeyboardEvent<HTMLTextAreaElement>;
 export default function useTextarea({
   textAreaRef,
   submitButtonRef,
+  setIsScrollable,
   disabled = false,
 }: {
   textAreaRef: React.RefObject<HTMLTextAreaElement>;
   submitButtonRef: React.RefObject<HTMLButtonElement>;
+  setIsScrollable: React.Dispatch<React.SetStateAction<boolean>>;
   disabled?: boolean;
 }) {
   const localize = useLocalize();
@@ -128,7 +136,10 @@ export default function useTextarea({
           ? getEntityName({ name: entityName, isAgent, localize })
           : getSender(conversation as TEndpointOption);
 
-      return `${localize('com_endpoint_message')} ${sender ? sender : 'AI'}`;
+      return `${localize(
+        'com_endpoint_message_new',
+        sender ? sender : localize('com_endpoint_ai'),
+      )}`;
     };
 
     const placeholder = getPlaceholderText();
@@ -167,6 +178,10 @@ export default function useTextarea({
 
   const handleKeyDown = useCallback(
     (e: KeyEvent) => {
+      if (textAreaRef.current && checkIfScrollable(textAreaRef.current)) {
+        const scrollable = checkIfScrollable(textAreaRef.current);
+        scrollable && setIsScrollable(scrollable);
+      }
       if (e.key === 'Enter' && isSubmitting) {
         return;
       }
@@ -206,7 +221,15 @@ export default function useTextarea({
         submitButtonRef.current?.click();
       }
     },
-    [isSubmitting, checkHealth, filesLoading, enterToSend, textAreaRef, submitButtonRef],
+    [
+      isSubmitting,
+      checkHealth,
+      filesLoading,
+      enterToSend,
+      setIsScrollable,
+      textAreaRef,
+      submitButtonRef,
+    ],
   );
 
   const handleCompositionStart = () => {

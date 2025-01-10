@@ -16,7 +16,6 @@ const keySchema = mongoose.Schema({
   },
   expiresAt: {
     type: Date,
-    expires: 0,
   },
 });
 

@@ -123,7 +123,7 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
     customOptions.streamRate = allConfig.streamRate;
   }
 
-  const clientOptions = {
+  let clientOptions = {
     reverseProxyUrl: baseURL ?? null,
     proxy: PROXY ?? null,
     req,
@@ -135,13 +135,13 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
   if (optionsOnly) {
     const modelOptions = endpointOption.model_parameters;
     if (endpoint !== Providers.OLLAMA) {
-      const requestOptions = Object.assign(
+      clientOptions = Object.assign(
         {
           modelOptions,
         },
         clientOptions,
       );
-      const options = getLLMConfig(apiKey, requestOptions);
+      const options = getLLMConfig(apiKey, clientOptions);
       if (!customOptions.streamRate) {
         return options;
       }

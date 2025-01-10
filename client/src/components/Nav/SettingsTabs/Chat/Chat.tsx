@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import MaximizeChatSpace from './MaximizeChatSpace';
 import FontSizeSelector from './FontSizeSelector';
 import SendMessageKeyEnter from './EnterToSend';
 import ShowCodeSwitch from './ShowCodeSwitch';
@@ -19,6 +20,9 @@ function Chat() {
       </div>
       <div className="pb-3">
         <SendMessageKeyEnter />
+      </div>
+      <div className="pb-3">
+        <MaximizeChatSpace />
       </div>
       <div className="pb-3">
         <ShowCodeSwitch />

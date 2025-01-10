@@ -102,10 +102,13 @@
     "prettier-plugin-tailwindcss": "^0.2.2"
   },
   "overrides": {
-    "vite-plugin-pwa": {
-      "rollup": "^4.22.4"
+    "mdast-util-gfm-autolink-literal": "2.0.0",
+    "remark-gfm": {
+      "mdast-util-gfm-autolink-literal": "2.0.0"
     },
-    "mdast-util-gfm-autolink-literal": "2.0.0"
+    "mdast-util-gfm": {
+      "mdast-util-gfm-autolink-literal": "2.0.0"
+    }
   },
   "nodemonConfig": {
     "ignore": [

@@ -1,5 +1,5 @@
 import React, { useRef, Dispatch, SetStateAction } from 'react';
-import { TConversationTag, TConversation } from 'librechat-data-provider';
+import { TConversationTag } from 'librechat-data-provider';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { useConversationTagMutation } from '~/data-provider';
 import { OGDialog, Button, Spinner } from '~/components';
@@ -10,23 +10,27 @@ import { useLocalize } from '~/hooks';
 import { logger } from '~/utils';
 
 type BookmarkEditDialogProps = {
-  context: string;
-  bookmark?: TConversationTag;
-  conversation?: TConversation;
-  tags?: string[];
-  setTags?: (tags: string[]) => void;
   open: boolean;
   setOpen: Dispatch<SetStateAction<boolean>>;
+  tags?: string[];
+  setTags?: (tags: string[]) => void;
+  context: string;
+  bookmark?: TConversationTag;
+  conversationId?: string;
+  children?: React.ReactNode;
+  triggerRef?: React.RefObject<HTMLButtonElement>;
 };
 
 const BookmarkEditDialog = ({
-  context,
-  bookmark,
-  conversation,
-  tags,
-  setTags,
   open,
   setOpen,
+  tags,
+  setTags,
+  context,
+  bookmark,
+  children,
+  triggerRef,
+  conversationId,
 }: BookmarkEditDialogProps) => {
   const localize = useLocalize();
   const formRef = useRef<HTMLFormElement>(null);
@@ -44,12 +48,26 @@ const BookmarkEditDialog = ({
         });
         setOpen(false);
         logger.log('tag_mutation', 'tags before setting', tags);
+
         if (setTags && vars.addToConversation === true) {
           const newTags = [...(tags || []), vars.tag].filter(
             (tag) => tag !== undefined,
           ) as string[];
           setTags(newTags);
+
           logger.log('tag_mutation', 'tags after', newTags);
+          if (vars.tag == null || vars.tag === '') {
+            return;
+          }
+
+          setTimeout(() => {
+            const tagElement = document.getElementById(vars.tag ?? '');
+            console.log('tagElement', tagElement);
+            if (!tagElement) {
+              return;
+            }
+            tagElement.focus();
+          }, 5);
         }
       },
       onError: () => {
@@ -70,7 +88,8 @@ const BookmarkEditDialog = ({
   };
 
   return (
-    <OGDialog open={open} onOpenChange={setOpen}>
+    <OGDialog open={open} onOpenChange={setOpen} triggerRef={triggerRef}>
+      {children}
       <OGDialogTemplate
         title="Bookmark"
         showCloseButton={false}
@@ -80,7 +99,7 @@ const BookmarkEditDialog = ({
             tags={tags}
             setOpen={setOpen}
             mutation={mutation}
-            conversation={conversation}
+            conversationId={conversationId}
             bookmark={bookmark}
             formRef={formRef}
           />
@@ -91,6 +110,7 @@ const BookmarkEditDialog = ({
             type="submit"
             disabled={mutation.isLoading}
             onClick={handleSubmitForm}
+            className="text-white"
           >
             {mutation.isLoading ? <Spinner /> : localize('com_ui_save')}
           </Button>

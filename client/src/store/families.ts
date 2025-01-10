@@ -141,7 +141,7 @@ const showStopButtonByIndex = atomFamily<boolean, string | number>({
   default: false,
 });
 
-const abortScrollFamily = atomFamily({
+const abortScrollFamily = atomFamily<boolean, string | number>({
   key: 'abortScrollByIndex',
   default: false,
   effects: [

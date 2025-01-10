@@ -10,7 +10,6 @@ import type {
   TConversationTag,
   TBanner,
 } from './schemas';
-import type { TSpecsConfig } from './models';
 export type TOpenAIMessage = OpenAI.Chat.ChatCompletionMessageParam;
 
 export * from './schemas';
@@ -108,7 +107,7 @@ export type TUser = {
   avatar: string;
   role: string;
   provider: string;
-  plugins: string[];
+  plugins?: string[];
   createdAt: string;
   updatedAt: string;
 };
@@ -195,20 +194,23 @@ export type TConversationTagRequest = Partial<
 
 export type TConversationTagResponse = TConversationTag;
 
-// type for tagging conversation
 export type TTagConversationRequest = {
   tags: string[];
+  tag: string;
 };
+
 export type TTagConversationResponse = string[];
 
 export type TDuplicateConvoRequest = {
   conversationId?: string;
 };
 
-export type TDuplicateConvoResponse = {
-  conversation: TConversation;
-  messages: TMessage[];
-} | undefined;
+export type TDuplicateConvoResponse =
+  | {
+      conversation: TConversation;
+      messages: TMessage[];
+    }
+  | undefined;
 
 export type TForkConvoRequest = {
   messageId: string;
@@ -308,63 +310,6 @@ export type TVerifyEmail = {
 };
 
 export type TResendVerificationEmail = Omit<TVerifyEmail, 'token'>;
-
-export type TInterfaceConfig = {
-  privacyPolicy?: {
-    externalUrl?: string;
-    openNewTab?: boolean;
-  };
-  termsOfService?: {
-    externalUrl?: string;
-    openNewTab?: boolean;
-    modalAcceptance?: boolean;
-    modalTitle?: string;
-    modalContent?: string;
-  };
-  endpointsMenu: boolean;
-  modelSelect: boolean;
-  parameters: boolean;
-  sidePanel: boolean;
-  presets: boolean;
-  multiConvo: boolean;
-  bookmarks: boolean;
-  prompts: boolean;
-};
-
-export type TStartupConfig = {
-  appTitle: string;
-  socialLogins?: string[];
-  interface?: TInterfaceConfig;
-  discordLoginEnabled: boolean;
-  facebookLoginEnabled: boolean;
-  githubLoginEnabled: boolean;
-  googleLoginEnabled: boolean;
-  openidLoginEnabled: boolean;
-  openidLabel: string;
-  openidImageUrl: string;
-  /** LDAP Auth Configuration */
-  ldap?: {
-    /** LDAP enabled */
-    enabled: boolean;
-    /** Whether LDAP uses username vs. email */
-    username?: boolean;
-  };
-  serverDomain: string;
-  emailLoginEnabled: boolean;
-  registrationEnabled: boolean;
-  socialLoginEnabled: boolean;
-  passwordResetEnabled: boolean;
-  emailEnabled: boolean;
-  checkBalance: boolean;
-  showBirthdayIcon: boolean;
-  helpAndFaqURL: string;
-  customFooter?: string;
-  modelSpecs?: TSpecsConfig;
-  sharedLinksEnabled: boolean;
-  publicSharedLinksEnabled: boolean;
-  analyticsGtmId?: string;
-  instanceProjectId: string;
-};
 
 export type TRefreshTokenResponse = {
   token: string;

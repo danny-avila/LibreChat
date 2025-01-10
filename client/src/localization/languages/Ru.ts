@@ -1169,4 +1169,11 @@ export default {
   com_nav_welcome_agent: 'Выберите агента',
   com_ui_duplicate_agent_confirm: 'Вы действительно хотите создать копию этого агента?',
   com_ui_delete_shared_link: 'Удалить общую ссылку?',
+  com_ui_bookmarks_edit: 'Редактировать закладку',
+  com_ui_page: 'Страница',
+  com_endpoint_ai: 'ИИ',
+  com_endpoint_message_new: 'Сообщение {0} или введите "@" для смены ИИ',
+  com_nav_maximize_chat_space: 'Развернуть чат',
+  com_ui_bookmarks_add: 'Добавить закладку',
+  com_ui_collapse_chat: 'Свернуть чат',
 };

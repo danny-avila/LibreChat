@@ -131,7 +131,7 @@ const standardDependencies = {
 
 const mermaidDependencies = Object.assign(
   {
-    mermaid: '^11.0.2',
+    mermaid: '^11.4.1',
     'react-zoom-pan-pinch': '^3.6.1',
   },
   standardDependencies,

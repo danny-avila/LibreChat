@@ -939,4 +939,11 @@ export default {
   com_nav_welcome_agent: 'Bitte wähle einen Agenten',
   com_endpoint_agent_placeholder: 'Bitte wähle einen Agenten aus',
   com_ui_delete_shared_link: 'Geteilten Link löschen?',
+  com_ui_bookmarks_edit: 'Lesezeichen bearbeiten',
+  com_endpoint_ai: 'KI',
+  com_ui_page: 'Seite',
+  com_ui_bookmarks_add: 'Lesezeichen hinzufügen',
+  com_endpoint_message_new: 'Nachricht {0} oder "@" eingeben, um KI zu wechseln',
+  com_nav_maximize_chat_space: 'Chat-Bereich maximieren',
+  com_ui_collapse_chat: 'Chat einklappen',
 };
