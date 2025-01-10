@@ -135,8 +135,16 @@
       {
         "authField": "AZURE_AI_SEARCH_API_KEY",
         "label": "Azure AI Search API Key",
-        "description": "You need to provideq your API Key for Azure AI Search."
+        "description": "You need to provide your API Key for Azure AI Search."
       }
     ]
+  },
+  {
+    "name": "OpenWeather",
+    "pluginKey": "OpenWeather",
+    "description": "Get weather forecasts and historical data from the OpenWeather API",
+    "icon": "/assets/flux.png",
+    "isAuthRequired": "false",
+    "authConfig": []
   }
 ]
