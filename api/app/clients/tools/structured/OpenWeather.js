@@ -3,18 +3,6 @@ const { z } = require('zod');
 const { getEnvironmentVariable } = require('@langchain/core/utils/env');
 const fetch = require('node-fetch');
 
-// Utility to retrieve API key
-function getApiKey(envVar, override, providedKey) {
-  if (providedKey) {
-    return providedKey;
-  }
-  const key = getEnvironmentVariable(envVar);
-  if (!key && !override) {
-    throw new Error(`Missing ${envVar} environment variable.`);
-  }
-  return key;
-}
-
 /**
  * Map user-friendly units to OpenWeather units.
  * Defaults to Celsius if not specified.
@@ -70,7 +58,7 @@ function roundTemperatures(obj) {
 }
 
 class OpenWeather extends Tool {
-  name = 'OpenWeather';
+  name = 'open_weather';
   description =
     'Provides weather data from OpenWeather One Call API 3.0. ' +
     'Actions: help, current_forecast, timestamp, daily_aggregation, overview. ' +
@@ -90,10 +78,19 @@ class OpenWeather extends Tool {
     tz: z.string().optional(),
   });
 
-  constructor(options = {}) {
+  constructor(fields = {}) {
     super();
-    const { apiKey, override = false } = options;
-    this.apiKey = getApiKey('OPENWEATHER_API_KEY', override, apiKey);
+    this.envVar = 'OPENWEATHER_API_KEY';
+    this.override = fields.override ?? false;
+    this.apiKey = fields[this.envVar] ?? this.getApiKey();
+  }
+
+  getApiKey() {
+    const key = getEnvironmentVariable(this.envVar);
+    if (!key && !this.override) {
+      throw new Error(`Missing ${this.envVar} environment variable.`);
+    }
+    return key;
   }
 
   async geocodeCity(city) {

@@ -179,7 +179,7 @@ const loadTools = async ({
     'azure-ai-search': StructuredACS,
     traversaal_search: TraversaalSearch,
     tavily_search_results_json: TavilySearchResults,
-    OpenWeather: OpenWeather,
+    open_weather: OpenWeather,
   };
 
   const customConstructors = {
