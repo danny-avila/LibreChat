@@ -118,5 +118,8 @@
       "admin/",
       "packages/"
     ]
+  },
+  "dependencies": {
+    "@aws-sdk/client-bedrock-agent": "^3.723.0"
   }
 }
