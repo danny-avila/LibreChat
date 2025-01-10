@@ -1,5 +1,5 @@
 // __tests__/openweather.test.js
-const OpenWeather = require('../structured/OpenWeather');
+const OpenWeather = require('../OpenWeather');
 const fetch = require('node-fetch');
 
 // Mock environment variable

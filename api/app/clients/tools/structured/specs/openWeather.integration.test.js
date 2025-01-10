@@ -1,11 +1,11 @@
 // __tests__/openWeather.integration.test.js
-const OpenWeather = require('../structured/OpenWeather');
+const OpenWeather = require('../OpenWeather');
 
 describe('OpenWeather Tool (Integration Test)', () => {
   let tool;
 
   beforeAll(() => {
-    tool = new OpenWeather();
+    tool = new OpenWeather({ override: true });
     console.log('API Key present:', !!process.env.OPENWEATHER_API_KEY);
   });
 
