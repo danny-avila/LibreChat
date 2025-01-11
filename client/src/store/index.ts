@@ -1,6 +1,5 @@
 import * as artifacts from './artifacts';
 import conversation from './conversation';
-import conversations from './conversations';
 import families from './families';
 import endpoints from './endpoints';
 import user from './user';
@@ -17,7 +16,6 @@ export default {
   ...artifacts,
   ...families,
   ...conversation,
-  ...conversations,
   ...endpoints,
   ...user,
   ...text,
