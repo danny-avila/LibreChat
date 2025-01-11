@@ -372,6 +372,7 @@ const updateConversationSelector = selectorFamily({
 });
 
 export default {
+  conversationKeysAtom,
   conversationByIndex,
   filesByIndex,
   presetByIndex,
