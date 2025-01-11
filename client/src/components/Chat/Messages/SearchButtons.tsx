@@ -23,7 +23,7 @@ export default function SearchButtons({ message }: { message: TMessage }) {
     }
 
     document.title = message.title ?? '';
-    navigateWithLastTools(conversation);
+    navigateWithLastTools(conversation, true, true);
   };
 
   return (

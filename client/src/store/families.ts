@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import {
   atom,
   selector,
@@ -12,8 +13,8 @@ import {
 import { LocalStorageKeys, Constants } from 'librechat-data-provider';
 import type { TMessage, TPreset, TConversation, TSubmission } from 'librechat-data-provider';
 import type { TOptionSettings, ExtendedFile } from '~/common';
+import { useSetConvoContext } from '~/Providers/SetConvoContext';
 import { storeEndpointSettings, logger } from '~/utils';
-import { useEffect } from 'react';
 
 const latestMessageKeysAtom = atom<(string | number)[]>({
   key: 'latestMessageKeys',
@@ -244,6 +245,7 @@ const messagesSiblingIdxFamily = atomFamily<number, string | null | undefined>({
 });
 
 function useCreateConversationAtom(key: string | number) {
+  const hasSetConversation = useSetConvoContext();
   const [keys, setKeys] = useRecoilState(conversationKeysAtom);
   const setConversation = useSetRecoilState(conversationByIndex(key));
   const conversation = useRecoilValue(conversationByIndex(key));
@@ -254,7 +256,7 @@ function useCreateConversationAtom(key: string | number) {
     }
   }, [key, keys, setKeys]);
 
-  return { conversation, setConversation };
+  return { hasSetConversation, conversation, setConversation };
 }
 
 function useClearConvoState() {
