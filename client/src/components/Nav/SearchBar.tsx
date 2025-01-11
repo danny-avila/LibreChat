@@ -1,27 +1,39 @@
 import debounce from 'lodash/debounce';
 import { Search, X } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
+import { useParams } from 'react-router-dom';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { forwardRef, useState, useCallback, useMemo, Ref } from 'react';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useNewConvo } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 
 type SearchBarProps = {
-  clearSearch: () => void;
   isSmallScreen?: boolean;
+  setPageNumber: React.Dispatch<React.SetStateAction<number>>;
 };
 
 const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) => {
-  const { clearSearch, isSmallScreen } = props;
+  const localize = useLocalize();
   const queryClient = useQueryClient();
+  const { conversationId } = useParams();
+  const { setPageNumber, isSmallScreen } = props;
+
+  const [text, setText] = useState('');
+  const [showClearIcon, setShowClearIcon] = useState(false);
+
+  const { newConversation } = useNewConvo(0);
   const clearConvoState = store.useClearConvoState();
   const setSearchQuery = useSetRecoilState(store.searchQuery);
-  const [showClearIcon, setShowClearIcon] = useState(false);
-  const [text, setText] = useState('');
   const setIsSearching = useSetRecoilState(store.isSearching);
-  const localize = useLocalize();
+
+  const clearSearch = useCallback(() => {
+    setPageNumber(1);
+    if (conversationId == 'search') {
+      newConversation();
+    }
+  }, [newConversation, setPageNumber, conversationId]);
 
   const clearText = useCallback(() => {
     setShowClearIcon(false);
