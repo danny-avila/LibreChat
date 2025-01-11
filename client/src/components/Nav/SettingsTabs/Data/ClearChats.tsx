@@ -7,7 +7,7 @@ import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 export const ClearChats = () => {
   const localize = useLocalize();
   const [open, setOpen] = useState(false);
-  const { newConversation } = useNewConvo(0);
+  const { newConversation } = useNewConvo();
   const clearConvosMutation = useClearConversationsMutation();
 
   const clearConvos = () => {

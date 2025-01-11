@@ -23,7 +23,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
   const [text, setText] = useState('');
   const [showClearIcon, setShowClearIcon] = useState(false);
 
-  const { newConversation } = useNewConvo(0);
+  const { newConversation } = useNewConvo();
   const clearConvoState = store.useClearConvoState();
   const setSearchQuery = useSetRecoilState(store.searchQuery);
   const setIsSearching = useSetRecoilState(store.isSearching);
