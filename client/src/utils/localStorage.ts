@@ -1,6 +1,6 @@
 import { LocalStorageKeys, TConversation } from 'librechat-data-provider';
 
-export default function getLocalStorageItems() {
+export function getLocalStorageItems() {
   const items = {
     lastSelectedModel: localStorage.getItem(LocalStorageKeys.LAST_MODEL) ?? '',
     lastSelectedTools: localStorage.getItem(LocalStorageKeys.LAST_TOOLS) ?? '',
