@@ -1,7 +1,7 @@
 import debounce from 'lodash/debounce';
 import { Search, X } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
-import { useParams } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { forwardRef, useState, useCallback, useMemo, Ref } from 'react';
@@ -16,8 +16,8 @@ type SearchBarProps = {
 
 const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) => {
   const localize = useLocalize();
+  const location = useLocation();
   const queryClient = useQueryClient();
-  const { conversationId } = useParams();
   const { setPageNumber, isSmallScreen } = props;
 
   const [text, setText] = useState('');
@@ -30,10 +30,10 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
 
   const clearSearch = useCallback(() => {
     setPageNumber(1);
-    if (conversationId == 'search') {
+    if (location.pathname.includes('/search')) {
       newConversation();
     }
-  }, [newConversation, setPageNumber, conversationId]);
+  }, [newConversation, setPageNumber, location.pathname]);
 
   const clearText = useCallback(() => {
     setShowClearIcon(false);
