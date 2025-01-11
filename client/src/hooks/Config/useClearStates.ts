@@ -1,5 +1,5 @@
 import { useRecoilCallback } from 'recoil';
-import { LocalStorageKeys } from 'librechat-data-provider';
+import { clearLocalStorage } from '~/utils/localStorage';
 import store from '~/store';
 
 export default function useClearStates() {
@@ -21,7 +21,6 @@ export default function useClearStates() {
             continue;
           }
 
-          // Reset atom families
           reset(store.filesByIndex(key));
           reset(store.presetByIndex(key));
           reset(store.textByIndex(key));
@@ -43,25 +42,6 @@ export default function useClearStates() {
           reset(store.audioRunFamily(key));
           reset(store.messagesSiblingIdxFamily(key.toString()));
         }
-
-        // Clear localStorage items if needed
-        const clearLocalStorage = (skipFirst?: boolean) => {
-          const keys = Object.keys(localStorage);
-          keys.forEach((key) => {
-            if (skipFirst === true && key.endsWith('0')) {
-              return;
-            }
-            if (
-              key.startsWith(LocalStorageKeys.ASST_ID_PREFIX) ||
-              key.startsWith(LocalStorageKeys.AGENT_ID_PREFIX) ||
-              key.startsWith(LocalStorageKeys.LAST_CONVO_SETUP) ||
-              key === LocalStorageKeys.LAST_SPEC ||
-              key === LocalStorageKeys.LAST_TOOLS
-            ) {
-              localStorage.removeItem(key);
-            }
-          });
-        };
 
         clearLocalStorage(skipFirst);
       },

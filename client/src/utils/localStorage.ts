@@ -23,3 +23,21 @@ export function getLocalStorageItems() {
     lastConversationSetup,
   };
 }
+
+export function clearLocalStorage(skipFirst?: boolean) {
+  const keys = Object.keys(localStorage);
+  keys.forEach((key) => {
+    if (skipFirst === true && key.endsWith('0')) {
+      return;
+    }
+    if (
+      key.startsWith(LocalStorageKeys.ASST_ID_PREFIX) ||
+      key.startsWith(LocalStorageKeys.AGENT_ID_PREFIX) ||
+      key.startsWith(LocalStorageKeys.LAST_CONVO_SETUP) ||
+      key === LocalStorageKeys.LAST_SPEC ||
+      key === LocalStorageKeys.LAST_TOOLS
+    ) {
+      localStorage.removeItem(key);
+    }
+  });
+}
