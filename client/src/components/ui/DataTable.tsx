@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState, memo, useMemo } from 'react';
 import { ListFilter } from 'lucide-react';
 import {
   flexRender,
@@ -10,6 +10,7 @@ import {
   SortingState,
   ColumnFiltersState,
   VisibilityState,
+  Row,
 } from '@tanstack/react-table';
 import {
   Button,
@@ -24,6 +25,7 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuTrigger,
+  Checkbox,
 } from './';
 import { TrashIcon, Spinner } from '~/components/svg';
 import { useLocalize, useMediaQuery } from '~/hooks';
@@ -49,6 +51,72 @@ interface DataTableProps<TData, TValue> {
   isFetchingNextPage?: boolean;
   hasNextPage?: boolean;
   fetchNextPage?: (options?: unknown) => Promise<unknown>;
+  enableRowSelection?: boolean;
+}
+
+const TableRowComponent = <TData, TValue>({
+  row,
+  isSmallScreen,
+  onSelectionChange,
+}: {
+  row: Row<TData>;
+  isSmallScreen: boolean;
+  onSelectionChange?: (rowId: string, selected: boolean) => void;
+}) => {
+  const handleRowClick = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('input[type="checkbox"]')) {
+      return;
+    }
+    if ((e.target as HTMLElement).closest('select')) {
+      return;
+    }
+    row.toggleSelected();
+    onSelectionChange?.(row.id, !row.getIsSelected());
+  };
+
+  return (
+    <TableRow
+      data-state={row.getIsSelected() ? 'selected' : undefined}
+      className="border-b border-border-light transition-colors hover:bg-surface-secondary"
+      onClick={handleRowClick}
+    >
+      {row.getVisibleCells().map((cell) => (
+        <TableCell
+          key={cell.id}
+          className="align-start overflow-x-auto px-2 py-1 text-xs sm:px-4 sm:py-2 sm:text-sm [tr[data-disabled=true]_&]:opacity-50"
+          style={getColumnStyle(cell.column.columnDef as TableColumn<TData, TValue>, isSmallScreen)}
+        >
+          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+        </TableCell>
+      ))}
+    </TableRow>
+  );
+};
+
+const MemoizedTableRow = memo(TableRowComponent, (prev, next) => {
+  return (
+    prev.row.id === next.row.id &&
+    prev.isSmallScreen === next.isSmallScreen &&
+    prev.row.getIsSelected() === next.row.getIsSelected()
+  );
+});
+
+function useVirtualizedWindow(totalItems: number, itemHeight: number, containerHeight: number) {
+  const [scrollTop, setScrollTop] = useState(0);
+  const visibleItems = Math.ceil(containerHeight / itemHeight);
+  const bufferSize = Math.ceil(visibleItems / 2);
+
+  const startIndex = Math.max(0, Math.floor(scrollTop / itemHeight) - bufferSize);
+  const endIndex = Math.min(
+    totalItems,
+    Math.floor(scrollTop / itemHeight) + visibleItems + bufferSize,
+  );
+
+  return {
+    startIndex,
+    endIndex,
+    setScrollTop,
+  };
 }
 
 function getColumnStyle<TData, TValue>(
@@ -62,6 +130,43 @@ function getColumnStyle<TData, TValue>(
   };
 }
 
+const DeleteButton = memo(
+  ({
+    onDelete,
+    isDeleting,
+    disabled,
+    isSmallScreen,
+    localize,
+  }: {
+    onDelete?: () => Promise<void>;
+    isDeleting: boolean;
+    disabled: boolean;
+    isSmallScreen: boolean;
+    localize: (key: string) => string;
+  }) => {
+    if (!onDelete) {
+      return null;
+    }
+    return (
+      <Button
+        variant="outline"
+        onClick={onDelete}
+        disabled={disabled}
+        className={cn('min-w-[40px] transition-all duration-200', isSmallScreen && 'px-2 py-1')}
+      >
+        {isDeleting ? (
+          <Spinner className="size-4" />
+        ) : (
+          <>
+            <TrashIcon className="size-3.5 text-red-400 sm:size-4" />
+            {!isSmallScreen && <span className="ml-2">{localize('com_ui_delete')}</span>}
+          </>
+        )}
+      </Button>
+    );
+  },
+);
+
 export default function DataTable<TData, TValue>({
   columns,
   data,
@@ -73,112 +178,168 @@ export default function DataTable<TData, TValue>({
   isFetchingNextPage = false,
   hasNextPage = false,
   fetchNextPage,
+  enableRowSelection = true,
 }: DataTableProps<TData, TValue>) {
   const localize = useLocalize();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  const [tableState, setTableState] = useState({
-    isDeleting: false,
-    rowSelection: {},
-    sorting: defaultSort as SortingState,
-    columnFilters: [] as ColumnFiltersState,
-    columnVisibility: {} as VisibilityState,
-  });
+  const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
+  const [sorting, setSorting] = useState<SortingState>(defaultSort);
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
+
+  const lastScrollTop = useRef(0);
+
+  const ROW_HEIGHT = 48;
+  const containerHeight = scrollRef.current?.clientHeight ?? 600;
+  const { startIndex, endIndex, setScrollTop } = useVirtualizedWindow(
+    data.length,
+    ROW_HEIGHT,
+    containerHeight,
+  );
+
+  const handleSelectionChange = useCallback((rowId: string, selected: boolean) => {
+    setRowSelection((prev) => ({ ...prev, [rowId]: selected }));
+  }, []);
+
+  const tableColumns = useMemo(() => {
+    if (!enableRowSelection) {
+      return columns;
+    }
+    const selectColumn = {
+      id: 'select',
+      header: ({ table }: { table: any }) => (
+        <div className="flex h-full w-[30px] items-center justify-center">
+          <Checkbox
+            checked={table.getIsAllPageRowsSelected()}
+            onCheckedChange={(value) => {
+              table.toggleAllPageRowsSelected(Boolean(value));
+            }}
+            aria-label="Select all"
+          />
+        </div>
+      ),
+      cell: ({ row }: { row: Row<TData> }) => {
+        const CheckboxCell = useMemo(() => {
+          return (
+            <div
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => e.stopPropagation()}
+              className="flex h-full w-[30px] items-center justify-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Checkbox
+                key={`checkbox-${row.id}-${row.getIsSelected()}`}
+                checked={row.getIsSelected()}
+                onCheckedChange={(value) => {
+                  row.toggleSelected(Boolean(value));
+                  handleSelectionChange(row.id, Boolean(value));
+                }}
+                aria-label="Select row"
+              />
+            </div>
+          );
+        }, [row.id, row.getIsSelected(), handleSelectionChange]);
+
+        return CheckboxCell;
+      },
+      meta: { size: '50px' },
+    };
+    return [selectColumn, ...columns];
+  }, [columns, enableRowSelection, handleSelectionChange]);
 
   const table = useReactTable({
     data,
-    columns,
+    columns: tableColumns,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
+    enableRowSelection,
+    enableMultiRowSelection: true,
     state: {
-      sorting: tableState.sorting,
-      columnFilters: tableState.columnFilters,
-      columnVisibility: tableState.columnVisibility,
-      rowSelection: tableState.rowSelection,
+      sorting,
+      columnFilters,
+      columnVisibility,
+      rowSelection,
     },
-    onSortingChange: (sorting) =>
-      setTableState((prev) => ({ ...prev, sorting: sorting as SortingState })),
-    onColumnFiltersChange: (filters) =>
-      setTableState((prev) => ({ ...prev, columnFilters: filters as ColumnFiltersState })),
-    onColumnVisibilityChange: (visibility) =>
-      setTableState((prev) => ({ ...prev, columnVisibility: visibility as VisibilityState })),
-    onRowSelectionChange: (selection) =>
-      setTableState((prev) => ({ ...prev, rowSelection: selection })),
+    onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
+    onColumnVisibilityChange: setColumnVisibility,
+    onRowSelectionChange: setRowSelection,
   });
-
-  useEffect(() => {
-    const div = scrollRef.current;
-    if (!div) {
-      return;
-    }
-
-    const onScroll = () => {
-      if (!hasNextPage || isFetchingNextPage) {
-        return;
-      }
-
-      const bottom = div.scrollHeight - div.scrollTop <= div.clientHeight * 1.5;
-      if (bottom) {
-        fetchNextPage?.();
-      }
-    };
-
-    div.addEventListener('scroll', onScroll);
-    return () => div.removeEventListener('scroll', onScroll);
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const handleDelete = useCallback(async () => {
     if (!onDelete) {
       return;
     }
-
-    setTableState((prev) => ({ ...prev, isDeleting: true }));
-    const itemsToDelete = table.getFilteredSelectedRowModel().rows.map((row) => row.original);
-
+    setIsDeleting(true);
+    const itemsToDelete = table.getFilteredSelectedRowModel().rows.map((r) => r.original);
     try {
       await onDelete(itemsToDelete);
     } finally {
-      setTableState((prev) => ({ ...prev, isDeleting: false, rowSelection: {} }));
+      setRowSelection({});
+      setIsDeleting(false);
     }
   }, [onDelete, table]);
 
   const selectedRowsCount = table.getFilteredSelectedRowModel().rows.length;
+  const visibleRows = table.getRowModel().rows.slice(startIndex, endIndex);
 
-  const DeleteButton = useCallback(() => {
-    if (!onDelete) {
-      return null;
-    }
-
-    return (
-      <Button
-        variant="outline"
-        onClick={handleDelete}
-        disabled={!selectedRowsCount || tableState.isDeleting}
-        className={cn('min-w-[40px] transition-all duration-200', isSmallScreen && 'px-2 py-1')}
-      >
-        {tableState.isDeleting ? (
-          <Spinner className="size-4" />
-        ) : (
-          <>
-            <TrashIcon className="size-3.5 text-red-400 sm:size-4" />
-            {!isSmallScreen && <span className="ml-2">{localize('com_ui_delete')}</span>}
-          </>
-        )}
-      </Button>
-    );
-  }, [onDelete, handleDelete, selectedRowsCount, tableState.isDeleting, isSmallScreen, localize]);
+  useEffect(() => {
+    let rafHandle: number;
+    const handleScroll = () => {
+      if (!scrollRef.current) {
+        return;
+      }
+      rafHandle = requestAnimationFrame(() => {
+        const el = scrollRef.current;
+        if (!el) {
+          return;
+        }
+        const currentScrollTop = el.scrollTop;
+        const scrollingDown = currentScrollTop > lastScrollTop.current;
+        lastScrollTop.current = currentScrollTop;
+        setScrollTop(currentScrollTop);
+        if (scrollingDown && !isFetchingNextPage && hasNextPage) {
+          const nearBottom = el.scrollHeight - currentScrollTop <= el.clientHeight * 1.5;
+          if (nearBottom) {
+            fetchNextPage?.();
+          }
+        }
+      });
+    };
+    const div = scrollRef.current;
+    div?.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      div?.removeEventListener('scroll', handleScroll);
+      if (rafHandle) {
+        cancelAnimationFrame(rafHandle);
+      }
+    };
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, setScrollTop]);
 
   return (
     <div className={cn('flex h-full flex-col gap-4', className)}>
       <div className="flex flex-wrap items-center gap-2 py-2 sm:gap-4 sm:py-4">
-        <DeleteButton />
-        {filterColumn && table.getColumn(filterColumn) && (
+        <DeleteButton
+          onDelete={handleDelete}
+          isDeleting={isDeleting}
+          disabled={!selectedRowsCount || isDeleting}
+          isSmallScreen={isSmallScreen}
+          localize={localize}
+        />
+        {typeof filterColumn === 'string' &&
+          filterColumn !== '' &&
+          table.getColumn(filterColumn) && (
           <Input
             placeholder={localize('com_files_filter')}
-            value={(table.getColumn(filterColumn)?.getFilterValue() as string) ?? ''}
-            onChange={(event) => table.getColumn(filterColumn)?.setFilterValue(event.target.value)}
+            value={table.getColumn(filterColumn)?.getFilterValue() as string}
+            onChange={(event) =>
+              table.getColumn(filterColumn)?.setFilterValue(event.target.value)
+            }
             className="flex-1 text-sm"
           />
         )}
@@ -194,15 +355,15 @@ export default function DataTable<TData, TValue>({
           >
             {table
               .getAllColumns()
-              .filter((column) => column.getCanHide())
-              .map((column) => (
+              .filter((col) => col.getCanHide())
+              .map((col) => (
                 <DropdownMenuCheckboxItem
-                  key={column.id}
+                  key={col.id}
                   className="cursor-pointer text-sm capitalize dark:text-white dark:hover:bg-gray-800"
-                  checked={column.getIsVisible()}
-                  onCheckedChange={(value) => column.toggleVisibility(!!value)}
+                  checked={col.getIsVisible()}
+                  onCheckedChange={(value) => col.toggleVisibility(Boolean(value))}
                 >
-                  {columnVisibilityMap[column.id] || localize(column.id)}
+                  {columnVisibilityMap[col.id] || localize('com_ui_' + col.id)}
                 </DropdownMenuCheckboxItem>
               ))}
           </DropdownMenuContent>
@@ -220,51 +381,42 @@ export default function DataTable<TData, TValue>({
           <TableHeader className="sticky top-0 z-50">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id} className="border-b border-border-light">
-                {headerGroup.headers.map((header) => (
-                  <TableHead
-                    key={header.id}
-                    onClick={
-                      header.column.getCanSort()
-                        ? header.column.getToggleSortingHandler()
-                        : undefined
-                    }
-                    className="cursor-pointer whitespace-nowrap bg-surface-secondary px-2 py-2 text-left text-sm font-medium text-text-secondary sm:px-4"
-                    style={getColumnStyle(
-                      header.column.columnDef as TableColumn<TData, TValue>,
-                      isSmallScreen,
-                    )}
-                  >
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(header.column.columnDef.header, header.getContext())}
-                  </TableHead>
-                ))}
+                {headerGroup.headers.map((header) => {
+                  const canSort = header.column.getCanSort();
+                  return (
+                    <TableHead
+                      key={header.id}
+                      className="cursor-pointer whitespace-nowrap bg-surface-secondary px-2 py-2 text-left text-sm font-medium text-text-secondary sm:px-4"
+                      style={getColumnStyle(
+                        header.column.columnDef as TableColumn<TData, TValue>,
+                        isSmallScreen,
+                      )}
+                      onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
+                    >
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(header.column.columnDef.header, header.getContext())}
+                    </TableHead>
+                  );
+                })}
               </TableRow>
             ))}
           </TableHeader>
-          <TableBody className="w-full">
-            {table.getRowModel().rows.map((row) => (
-              <TableRow
-                key={row.id}
-                data-state={row.getIsSelected() ? 'selected' : undefined}
-                className="border-b border-border-light transition-colors hover:bg-surface-secondary"
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell
-                    key={cell.id}
-                    className="align-start overflow-x-auto px-2 py-1 text-xs sm:px-4 sm:py-2 sm:text-sm [tr[data-disabled=true]_&]:opacity-50"
-                    style={getColumnStyle(
-                      cell.column.columnDef as TableColumn<TData, TValue>,
-                      isSmallScreen,
-                    )}
-                  >
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))}
 
-            {/* Infinite scroll loading indicator */}
+          <TableBody>
+            {startIndex > 0 && <tr style={{ height: `${startIndex * ROW_HEIGHT}px` }} />}
+            {visibleRows.map((row) => (
+              <MemoizedTableRow
+                key={row.id}
+                row={row}
+                isSmallScreen={isSmallScreen}
+                onSelectionChange={handleSelectionChange}
+              />
+            ))}
+            {endIndex < data.length && (
+              <tr style={{ height: `${(data.length - endIndex) * ROW_HEIGHT}px` }} />
+            )}
+
             {(isFetchingNextPage || hasNextPage) && (
               <TableRow className="items-center justify-center hover:bg-transparent">
                 <TableCell colSpan={columns.length} className="p-4">
