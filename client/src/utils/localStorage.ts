@@ -35,7 +35,9 @@ export function clearLocalStorage(skipFirst?: boolean) {
       key.startsWith(LocalStorageKeys.AGENT_ID_PREFIX) ||
       key.startsWith(LocalStorageKeys.LAST_CONVO_SETUP) ||
       key === LocalStorageKeys.LAST_SPEC ||
-      key === LocalStorageKeys.LAST_TOOLS
+      key === LocalStorageKeys.LAST_TOOLS ||
+      key === LocalStorageKeys.LAST_MODEL ||
+      key === LocalStorageKeys.FILES_TO_DELETE
     ) {
       localStorage.removeItem(key);
     }

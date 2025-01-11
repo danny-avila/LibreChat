@@ -10,14 +10,10 @@ import {
 import { useRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
 import { setTokenHeader, SystemRoles } from 'librechat-data-provider';
-import {
-  useGetUserQuery,
-  useLoginUserMutation,
-  useRefreshTokenMutation,
-} from 'librechat-data-provider/react-query';
+import { useGetUserQuery, useRefreshTokenMutation } from 'librechat-data-provider/react-query';
 import type { TLoginResponse, TLoginUser } from 'librechat-data-provider';
+import { useLoginUserMutation, useLogoutUserMutation, useGetRole } from '~/data-provider';
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
-import { useLogoutUserMutation, useGetRole } from '~/data-provider';
 import useTimeout from './useTimeout';
 import store from '~/store';
 
