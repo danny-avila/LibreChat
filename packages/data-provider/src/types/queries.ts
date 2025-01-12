@@ -56,6 +56,7 @@ export type SharedLinkItem = {
   title: string;
   isPublic: boolean;
   createdAt: Date;
+  conversationId: string;
 };
 
 export interface SharedLinksResponse {

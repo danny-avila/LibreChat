@@ -137,6 +137,7 @@ async function getSharedLinks(user, pageParam, pageSize, isPublic, sortBy, sortD
         title: link?.title || 'Untitled',
         isPublic: link.isPublic,
         createdAt: link.createdAt,
+        conversationId: link.conversationId,
       })),
       nextCursor,
       hasNextPage,
@@ -181,7 +182,8 @@ async function createSharedLink(user, conversationId) {
       throw new ShareServiceError('Share already exists', 'SHARE_EXISTS');
     }
 
-    const title = conversationMessages[0]?.title || 'Untitled';
+    const conversation = await Conversation.findOne({ conversationId }).lean();
+    const title = conversation?.title || 'Untitled';
 
     const shareId = nanoid();
     await SharedLink.create({

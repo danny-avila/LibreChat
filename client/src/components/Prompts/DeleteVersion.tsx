@@ -1,6 +1,6 @@
+import { Trash2 } from 'lucide-react';
 import { Button, OGDialog, OGDialogTrigger, Label } from '~/components/ui';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
-import { TrashIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 
 const DeleteVersion = ({
@@ -18,14 +18,15 @@ const DeleteVersion = ({
     <OGDialog>
       <OGDialogTrigger asChild>
         <Button
-          size={'sm'}
-          className="h-10 w-10 border border-transparent bg-red-600 text-red-500 transition-all hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-800"
+          variant="default"
+          size="sm"
+          className="h-10 w-10 border border-transparent bg-red-600 transition-all hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-800 p-0.5"
           disabled={disabled}
           onClick={(e) => {
             e.stopPropagation();
           }}
         >
-          <TrashIcon className="icon-lg cursor-pointer text-white dark:text-white" />
+          <Trash2 className="cursor-pointer text-white size-5" />
         </Button>
       </OGDialogTrigger>
       <OGDialogTemplate
