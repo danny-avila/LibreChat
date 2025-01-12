@@ -1,9 +1,14 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
 import copy from 'copy-to-clipboard';
-import { Copy, Link, QrCode, RotateCw, CopyCheck } from 'lucide-react';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { Copy, Link, QrCode, RotateCw, CopyCheck, Trash2 } from 'lucide-react';
 import type { TSharedLinkGetResponse } from 'librechat-data-provider';
-import { useCreateSharedLinkMutation, useUpdateSharedLinkMutation } from '~/data-provider';
-import { Button, Spinner, TooltipAnchor } from '~/components';
+import {
+  useCreateSharedLinkMutation,
+  useUpdateSharedLinkMutation,
+  useDeleteSharedLinkMutation,
+} from '~/data-provider';
+import { Button, OGDialog, Spinner, TooltipAnchor, Label } from '~/components';
+import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
@@ -11,6 +16,7 @@ import { useLocalize } from '~/hooks';
 export default function SharedLinkButton({
   share,
   conversationId,
+  setShareDialogOpen,
   showQR,
   setShowQR,
   sharedLink,
@@ -18,6 +24,7 @@ export default function SharedLinkButton({
 }: {
   share: TSharedLinkGetResponse | undefined;
   conversationId: string;
+  setShareDialogOpen: React.Dispatch<React.SetStateAction<boolean>>;
   showQR: boolean;
   setShowQR: (showQR: boolean) => void;
   sharedLink: string;
@@ -26,6 +33,7 @@ export default function SharedLinkButton({
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const [isCopying, setIsCopying] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const copyTimeoutRef = useRef<number | null>(null);
   const shareId = share?.shareId || undefined;
 
@@ -45,6 +53,20 @@ export default function SharedLinkButton({
         message: localize('com_ui_share_error'),
         severity: NotificationSeverity.ERROR,
         showIcon: true,
+      });
+    },
+  });
+
+  const deleteMutation = useDeleteSharedLinkMutation({
+    onSuccess: async () => {
+      setShowDeleteDialog(false);
+      setShareDialogOpen(false);
+    },
+    onError: (error) => {
+      console.error('Delete error:', error);
+      showToast({
+        message: localize('com_ui_share_delete_error'),
+        severity: NotificationSeverity.ERROR,
       });
     },
   });
@@ -110,6 +132,26 @@ export default function SharedLinkButton({
     copyTimeoutRef.current = window.setTimeout(() => {
       setIsCopying(false);
     }, 1500);
+  };
+
+  const handleDelete = async () => {
+    if (shareId === undefined) {
+      return;
+    }
+
+    try {
+      await deleteMutation.mutateAsync({ shareId });
+      showToast({
+        message: localize('com_ui_shared_link_delete_success'),
+        severity: NotificationSeverity.SUCCESS,
+      });
+    } catch (error) {
+      console.error('Failed to delete shared link:', error);
+      showToast({
+        message: localize('com_ui_share_delete_error'),
+        severity: NotificationSeverity.ERROR,
+      });
+    }
   };
 
   const getHandler = (shareId?: string) => {
@@ -190,8 +232,45 @@ export default function SharedLinkButton({
                 </Button>
               )}
             />
+
+            <TooltipAnchor
+              description={localize('com_ui_delete')}
+              render={(props) => (
+                <Button {...props} onClick={() => setShowDeleteDialog(true)} variant="destructive">
+                  <Trash2 className="size-4" />
+                </Button>
+              )}
+            />
           </div>
         )}
+
+        <OGDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <OGDialogTemplate
+            showCloseButton={false}
+            title={localize('com_ui_delete_shared_link')}
+            className="max-w-[450px]"
+            main={
+              <>
+                <div className="flex w-full flex-col items-center gap-2">
+                  <div className="grid w-full items-center gap-2">
+                    <Label
+                      htmlFor="dialog-confirm-delete"
+                      className="text-left text-sm font-medium"
+                    >
+                      {localize('com_ui_delete_confirm')} <strong>&quot;{shareId}&quot;</strong>
+                    </Label>
+                  </div>
+                </div>
+              </>
+            }
+            selection={{
+              selectHandler: handleDelete,
+              selectClasses:
+                'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 text-white',
+              selectText: localize('com_ui_delete'),
+            }}
+          />
+        </OGDialog>
       </div>
     </>
   );
