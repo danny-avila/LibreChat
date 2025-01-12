@@ -1,6 +1,6 @@
 import { useCallback, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { TrashIcon } from 'lucide-react';
+import { TrashIcon, MessageSquare } from 'lucide-react';
 import type { SharedLinkItem, SharedLinksListParams } from 'librechat-data-provider';
 import { OGDialog, OGDialogTrigger, Button, TooltipAnchor, Label } from '~/components/ui';
 import { useDeleteSharedLinkMutation, useSharedLinksQuery } from '~/data-provider';
@@ -82,7 +82,9 @@ export default function SharedLinks() {
 
         showToast({
           message: localize(
-            validRows.length === 1 ? 'com_ui_delete_success' : 'com_ui_bulk_delete_success',
+            validRows.length === 1
+              ? 'com_ui_shared_link_delete_success'
+              : 'com_ui_shared_link_bulk_delete_success',
           ),
           severity: NotificationSeverity.SUCCESS,
         });
@@ -138,7 +140,7 @@ export default function SharedLinks() {
         header: 'Date',
         cell: ({ row }) => formatDate(row.original.createdAt?.toString() ?? '', isSmallScreen),
         meta: {
-          size: '20%',
+          size: '15%',
           mobileSize: '15%',
         },
       },
@@ -146,13 +148,24 @@ export default function SharedLinks() {
         accessorKey: 'actions',
         header: 'Actions',
         meta: {
-          size: '15%',
-          mobileSize: '15%',
+          size: '10%',
+          mobileSize: '10%',
         },
         cell: ({ row }) => (
-          <TooltipAnchor
-            description={localize('com_ui_delete')}
-            render={
+          <div className="flex items-center gap-2">
+            <TooltipAnchor description={localize('com_ui_view_source')}>
+              <Button
+                variant="ghost"
+                className="h-8 w-8 p-0 hover:bg-surface-hover"
+                onClick={() => {
+                  window.open(`/c/${row.original.conversationId}`, '_blank');
+                }}
+                title={localize('com_ui_view_source')}
+              >
+                <MessageSquare className="size-4" />
+              </Button>
+            </TooltipAnchor>
+            <TooltipAnchor description={localize('com_ui_delete')}>
               <Button
                 variant="ghost"
                 className="h-8 w-8 p-0 hover:bg-surface-hover"
@@ -164,8 +177,8 @@ export default function SharedLinks() {
               >
                 <TrashIcon className="size-4" />
               </Button>
-            }
-          />
+            </TooltipAnchor>
+          </div>
         ),
       },
     ],

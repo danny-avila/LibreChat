@@ -447,6 +447,9 @@ export default {
   com_ui_show_qr: 'Show QR Code',
   com_ui_hide_qr: 'Hide QR Code',
   com_ui_title: 'Title',
+  com_ui_view_source: 'View source chat',
+  com_ui_shared_link_delete_success: 'Successfully deleted shared link',
+  com_ui_shared_link_bulk_delete_success: 'Successfully deleted shared links',
   com_auth_error_login:
     'Unable to login with the information provided. Please check your credentials and try again.',
   com_auth_error_login_rl:

@@ -403,8 +403,9 @@ export default function DataTable<TData, TValue>({
             }
             className="flex-1 text-sm"
           />
-        )}
-        <DropdownMenu>
+          )}
+        {/* TODO: Implement column visibility dropdown with the row cached */}
+        {/* <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" className={cn('min-w-[40px]', isSmallScreen && 'px-2 py-1')}>
               <ListFilter className="size-3.5 sm:size-4" />
@@ -428,7 +429,7 @@ export default function DataTable<TData, TValue>({
                 </DropdownMenuCheckboxItem>
               ))}
           </DropdownMenuContent>
-        </DropdownMenu>
+        </DropdownMenu> */}
       </div>
 
       <div
