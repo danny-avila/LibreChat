@@ -36,6 +36,7 @@ export default function ShareButton({
       <SharedLinkButton
         share={share}
         conversationId={conversationId}
+        setShareDialogOpen={onOpenChange}
         showQR={showQR}
         setShowQR={setShowQR}
         sharedLink={sharedLink}
