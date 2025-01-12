@@ -64,15 +64,10 @@ export interface SharedLinksResponse {
   hasNextPage: boolean;
 }
 
-// Type for the response from the conversation list API
-export type SharedLinkListResponse = {
-  sharedLinks: s.TSharedLink[];
-  pageNumber: string;
-  pageSize: string | number;
-  pages: string | number;
-};
-
-export type SharedLinkListData = InfiniteData<SharedLinkListResponse>;
+export interface SharedLinkQueryData {
+  pages: SharedLinksResponse[];
+  pageParams: (string | null)[];
+}
 
 export type AllPromptGroupsFilterRequest = {
   category: string;

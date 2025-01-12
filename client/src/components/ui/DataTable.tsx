@@ -39,6 +39,32 @@ type TableColumn<TData, TValue> = ColumnDef<TData, TValue> & {
   };
 };
 
+type SelectionHandler = (rowId: string, selected: boolean) => void;
+
+const SelectionCheckbox = memo(
+  ({
+    checked,
+    onChange,
+    ariaLabel,
+  }: {
+    checked: boolean;
+    onChange: (value: boolean) => void;
+    ariaLabel: string;
+  }) => (
+    <div
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => e.stopPropagation()}
+      className="flex h-full w-[30px] items-center justify-center"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <Checkbox checked={checked} onCheckedChange={onChange} aria-label={ariaLabel} />
+    </div>
+  ),
+);
+
+SelectionCheckbox.displayName = 'SelectionCheckbox';
+
 interface DataTableProps<TData, TValue> {
   columns: TableColumn<TData, TValue>[];
   data: TData[];
@@ -52,6 +78,7 @@ interface DataTableProps<TData, TValue> {
   hasNextPage?: boolean;
   fetchNextPage?: (options?: unknown) => Promise<unknown>;
   enableRowSelection?: boolean;
+  showCheckboxes?: boolean;
 }
 
 const TableRowComponent = <TData, TValue>({
@@ -61,48 +88,66 @@ const TableRowComponent = <TData, TValue>({
 }: {
   row: Row<TData>;
   isSmallScreen: boolean;
-  onSelectionChange?: (rowId: string, selected: boolean) => void;
+  onSelectionChange?: SelectionHandler;
 }) => {
-  const handleRowClick = (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('input[type="checkbox"]')) {
-      return;
-    }
-    if ((e.target as HTMLElement).closest('select')) {
-      return;
-    }
-    row.toggleSelected();
-    onSelectionChange?.(row.id, !row.getIsSelected());
-  };
+  const handleSelection = useCallback(
+    (value: boolean) => {
+      row.toggleSelected(value);
+      onSelectionChange?.(row.id, value);
+    },
+    [row, onSelectionChange],
+  );
 
   return (
     <TableRow
       data-state={row.getIsSelected() ? 'selected' : undefined}
       className="border-b border-border-light transition-colors hover:bg-surface-secondary"
-      onClick={handleRowClick}
     >
-      {row.getVisibleCells().map((cell) => (
-        <TableCell
-          key={cell.id}
-          className="align-start overflow-x-auto px-2 py-1 text-xs sm:px-4 sm:py-2 sm:text-sm [tr[data-disabled=true]_&]:opacity-50"
-          style={getColumnStyle(cell.column.columnDef as TableColumn<TData, TValue>, isSmallScreen)}
-        >
-          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-        </TableCell>
-      ))}
+      {row.getVisibleCells().map((cell) => {
+        if (cell.column.id === 'select') {
+          return (
+            <TableCell key={cell.id} className="px-2 py-1">
+              <SelectionCheckbox
+                checked={row.getIsSelected()}
+                onChange={handleSelection}
+                ariaLabel="Select row"
+              />
+            </TableCell>
+          );
+        }
+
+        return (
+          <TableCell
+            key={cell.id}
+            className="align-start overflow-x-auto px-2 py-1 text-xs sm:px-4 sm:py-2 sm:text-sm"
+            style={getColumnStyle(
+              cell.column.columnDef as TableColumn<TData, TValue>,
+              isSmallScreen,
+            )}
+          >
+            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+          </TableCell>
+        );
+      })}
     </TableRow>
   );
 };
 
-const MemoizedTableRow = memo(TableRowComponent, (prev, next) => {
-  return (
-    prev.row.id === next.row.id &&
-    prev.isSmallScreen === next.isSmallScreen &&
-    prev.row.getIsSelected() === next.row.getIsSelected()
-  );
-});
+const MemoizedTableRow = memo(
+  TableRowComponent as typeof TableRowComponent<any, any>,
+  (prev, next) => {
+    return (
+      prev.row.id === next.row.id &&
+      prev.isSmallScreen === next.isSmallScreen &&
+      prev.row.getIsSelected() === next.row.getIsSelected()
+    );
+  },
+) as typeof TableRowComponent;
 
 function useVirtualizedWindow(totalItems: number, itemHeight: number, containerHeight: number) {
   const [scrollTop, setScrollTop] = useState(0);
+  const [version, setVersion] = useState(0);
+
   const visibleItems = Math.ceil(containerHeight / itemHeight);
   const bufferSize = Math.ceil(visibleItems / 2);
 
@@ -112,10 +157,16 @@ function useVirtualizedWindow(totalItems: number, itemHeight: number, containerH
     Math.floor(scrollTop / itemHeight) + visibleItems + bufferSize,
   );
 
+  const refreshVirtualWindow = useCallback(() => {
+    setVersion((v) => v + 1);
+  }, []);
+
   return {
     startIndex,
     endIndex,
     setScrollTop,
+    refreshVirtualWindow,
+    version,
   };
 }
 
@@ -179,11 +230,13 @@ export default function DataTable<TData, TValue>({
   hasNextPage = false,
   fetchNextPage,
   enableRowSelection = true,
+  showCheckboxes = true,
 }: DataTableProps<TData, TValue>) {
   const localize = useLocalize();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const lastDataLength = useRef(data.length);
 
   const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
   const [sorting, setSorting] = useState<SortingState>(defaultSort);
@@ -194,18 +247,22 @@ export default function DataTable<TData, TValue>({
 
   const ROW_HEIGHT = 48;
   const containerHeight = scrollRef.current?.clientHeight ?? 600;
-  const { startIndex, endIndex, setScrollTop } = useVirtualizedWindow(
-    data.length,
-    ROW_HEIGHT,
-    containerHeight,
-  );
+  const { startIndex, endIndex, setScrollTop, refreshVirtualWindow, version } =
+    useVirtualizedWindow(data.length, ROW_HEIGHT, containerHeight);
+
+  useEffect(() => {
+    if (data.length !== lastDataLength.current) {
+      lastDataLength.current = data.length;
+      refreshVirtualWindow();
+    }
+  }, [data.length, refreshVirtualWindow]);
 
   const handleSelectionChange = useCallback((rowId: string, selected: boolean) => {
     setRowSelection((prev) => ({ ...prev, [rowId]: selected }));
   }, []);
 
   const tableColumns = useMemo(() => {
-    if (!enableRowSelection) {
+    if (!enableRowSelection || !showCheckboxes) {
       return columns;
     }
     const selectColumn = {
@@ -221,35 +278,29 @@ export default function DataTable<TData, TValue>({
           />
         </div>
       ),
-      cell: ({ row }: { row: Row<TData> }) => {
-        const CheckboxCell = useMemo(() => {
-          return (
-            <div
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => e.stopPropagation()}
-              className="flex h-full w-[30px] items-center justify-center"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <Checkbox
-                key={`checkbox-${row.id}-${row.getIsSelected()}`}
-                checked={row.getIsSelected()}
-                onCheckedChange={(value) => {
-                  row.toggleSelected(Boolean(value));
-                  handleSelectionChange(row.id, Boolean(value));
-                }}
-                aria-label="Select row"
-              />
-            </div>
-          );
-        }, [row.id, row.getIsSelected(), handleSelectionChange]);
-
-        return CheckboxCell;
-      },
+      cell: ({ row }: { row: Row<TData> }) => (
+        <div
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => e.stopPropagation()}
+          className="flex h-full w-[30px] items-center justify-center"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Checkbox
+            key={`checkbox-${row.id}-${row.getIsSelected()}`}
+            checked={row.getIsSelected()}
+            onCheckedChange={(value) => {
+              row.toggleSelected(Boolean(value));
+              handleSelectionChange(row.id, Boolean(value));
+            }}
+            aria-label="Select row"
+          />
+        </div>
+      ),
       meta: { size: '50px' },
     };
     return [selectColumn, ...columns];
-  }, [columns, enableRowSelection, handleSelectionChange]);
+  }, [columns, enableRowSelection, showCheckboxes, handleSelectionChange]);
 
   const table = useReactTable({
     data,
@@ -279,14 +330,17 @@ export default function DataTable<TData, TValue>({
     const itemsToDelete = table.getFilteredSelectedRowModel().rows.map((r) => r.original);
     try {
       await onDelete(itemsToDelete);
+      refreshVirtualWindow();
     } finally {
       setRowSelection({});
       setIsDeleting(false);
     }
-  }, [onDelete, table]);
+  }, [onDelete, table, refreshVirtualWindow]);
 
   const selectedRowsCount = table.getFilteredSelectedRowModel().rows.length;
-  const visibleRows = table.getRowModel().rows.slice(startIndex, endIndex);
+  const visibleRows = useMemo(() => {
+    return table.getRowModel().rows.slice(startIndex, endIndex);
+  }, [table, startIndex, endIndex, version]);
 
   useEffect(() => {
     let rafHandle: number;
@@ -294,15 +348,18 @@ export default function DataTable<TData, TValue>({
       if (!scrollRef.current) {
         return;
       }
+
       rafHandle = requestAnimationFrame(() => {
         const el = scrollRef.current;
         if (!el) {
           return;
         }
+
         const currentScrollTop = el.scrollTop;
         const scrollingDown = currentScrollTop > lastScrollTop.current;
         lastScrollTop.current = currentScrollTop;
         setScrollTop(currentScrollTop);
+
         if (scrollingDown && !isFetchingNextPage && hasNextPage) {
           const nearBottom = el.scrollHeight - currentScrollTop <= el.clientHeight * 1.5;
           if (nearBottom) {
@@ -311,8 +368,10 @@ export default function DataTable<TData, TValue>({
         }
       });
     };
+
     const div = scrollRef.current;
     div?.addEventListener('scroll', handleScroll, { passive: true });
+
     return () => {
       div?.removeEventListener('scroll', handleScroll);
       if (rafHandle) {
@@ -324,13 +383,15 @@ export default function DataTable<TData, TValue>({
   return (
     <div className={cn('flex h-full flex-col gap-4', className)}>
       <div className="flex flex-wrap items-center gap-2 py-2 sm:gap-4 sm:py-4">
-        <DeleteButton
-          onDelete={handleDelete}
-          isDeleting={isDeleting}
-          disabled={!selectedRowsCount || isDeleting}
-          isSmallScreen={isSmallScreen}
-          localize={localize}
-        />
+        {enableRowSelection && showCheckboxes && (
+          <DeleteButton
+            onDelete={handleDelete}
+            isDeleting={isDeleting}
+            disabled={!selectedRowsCount || isDeleting}
+            isSmallScreen={isSmallScreen}
+            localize={localize}
+          />
+        )}
         {typeof filterColumn === 'string' &&
           filterColumn !== '' &&
           table.getColumn(filterColumn) && (
@@ -363,7 +424,7 @@ export default function DataTable<TData, TValue>({
                   checked={col.getIsVisible()}
                   onCheckedChange={(value) => col.toggleVisibility(Boolean(value))}
                 >
-                  {columnVisibilityMap[col.id] || localize('com_ui_' + col.id)}
+                  {columnVisibilityMap[col.id] || localize(col.columnDef.header)}
                 </DropdownMenuCheckboxItem>
               ))}
           </DropdownMenuContent>
@@ -378,7 +439,7 @@ export default function DataTable<TData, TValue>({
         )}
       >
         <Table className="w-full min-w-[300px] border-separate border-spacing-0">
-          <TableHeader className="sticky top-0 z-50">
+          <TableHeader className="sticky top-0 z-50 bg-surface-secondary">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id} className="border-b border-border-light">
                 {headerGroup.headers.map((header) => {
@@ -407,10 +468,9 @@ export default function DataTable<TData, TValue>({
             {startIndex > 0 && <tr style={{ height: `${startIndex * ROW_HEIGHT}px` }} />}
             {visibleRows.map((row) => (
               <MemoizedTableRow
-                key={row.id}
+                key={`${row.id}-${version}`}
                 row={row}
                 isSmallScreen={isSmallScreen}
-                onSelectionChange={handleSelectionChange}
               />
             ))}
             {endIndex < data.length && (
@@ -418,9 +478,9 @@ export default function DataTable<TData, TValue>({
             )}
 
             {(isFetchingNextPage || hasNextPage) && (
-              <TableRow className="items-center justify-center hover:bg-transparent">
+              <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={columns.length} className="p-4">
-                  <div className="flex items-center justify-center">
+                  <div className="flex h-full items-center justify-center">
                     {isFetchingNextPage ? (
                       <Spinner className="size-4" />
                     ) : (

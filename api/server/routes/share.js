@@ -123,14 +123,15 @@ router.patch('/:shareId', requireJwtAuth, async (req, res) => {
 
 router.delete('/:shareId', requireJwtAuth, async (req, res) => {
   try {
-    const deleted = await deleteSharedLink(req.user.id, req.params.shareId);
-    if (deleted) {
-      res.status(200).json(deleted);
-    } else {
-      res.status(404).end();
+    const result = await deleteSharedLink(req.user.id, req.params.shareId);
+
+    if (!result) {
+      return res.status(404).json({ message: 'Share not found' });
     }
+
+    return res.status(200).json(result);
   } catch (error) {
-    res.status(500).json({ message: 'Error deleting shared link' });
+    return res.status(400).json({ message: error.message });
   }
 });
 

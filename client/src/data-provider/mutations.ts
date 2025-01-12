@@ -1,6 +1,5 @@
 import {
   Constants,
-  InfiniteCollections,
   defaultAssistantsVersion,
   ConversationListResponse,
 } from 'librechat-data-provider';
@@ -287,31 +286,76 @@ export const useUpdateSharedLinkMutation = (
 
 export const useDeleteSharedLinkMutation = (
   options?: t.DeleteSharedLinkOptions,
-): UseMutationResult<t.TDeleteSharedLinkResponse, unknown, { shareId: string }, unknown> => {
+): UseMutationResult<void, unknown, { shareId: string }, unknown> => {
   const queryClient = useQueryClient();
-  const { onSuccess, ..._options } = options || {};
-  return useMutation(({ shareId }) => dataService.deleteSharedLink(shareId), {
-    onSuccess: (_data, vars, context) => {
-      if (!vars.shareId) {
-        return;
-      }
+  const { onSuccess } = options || {};
 
-      queryClient.setQueryData([QueryKeys.sharedMessages, vars.shareId], null);
-      queryClient.setQueryData<t.SharedLinkListData>([QueryKeys.sharedLinks], (data) => {
-        if (!data) {
-          return data;
+  return useMutation<void, unknown, { shareId: string }>(
+    ({ shareId }) => dataService.deleteSharedLink(shareId),
+    {
+      onMutate: async ({ shareId }) => {
+        await queryClient.cancelQueries({
+          queryKey: ['sharedLinks'],
+          exact: false,
+        });
+
+        const previousQueries = new Map();
+        const queryKeys = queryClient.getQueryCache().findAll(['sharedLinks']);
+
+        queryKeys.forEach((query) => {
+          const previousData = queryClient.getQueryData(query.queryKey);
+          previousQueries.set(query.queryKey, previousData);
+
+          queryClient.setQueryData<t.SharedLinkQueryData>(query.queryKey, (old) => {
+            if (!old?.pages) {
+              return old;
+            }
+
+            const updatedPages = old.pages.map((page) => ({
+              ...page,
+              links: page.links.filter((link) => link.shareId !== shareId),
+            }));
+
+            const nonEmptyPages = updatedPages.filter((page) => page.links.length > 0);
+
+            return {
+              ...old,
+              pages: nonEmptyPages,
+            };
+          });
+        });
+
+        return { previousQueries };
+      },
+
+      onError: (err, variables, context) => {
+        if (context?.previousQueries) {
+          context.previousQueries.forEach((data, queryKey) => {
+            queryClient.setQueryData(queryKey, data);
+          });
         }
-        return normalizeData(
-          deleteSharedLink(data, vars.shareId),
-          InfiniteCollections.SHARED_LINKS,
-          data.pages[0].pageSize as number,
-        );
-      });
-      const current = queryClient.getQueryData<t.ConversationData>([QueryKeys.sharedLinks]);
-      onSuccess?.(_data, vars, context);
+      },
+
+      onSettled: () => {
+        queryClient.invalidateQueries({
+          queryKey: ['sharedLinks'],
+          exact: false,
+          refetchType: 'all',
+        });
+      },
+
+      onSuccess: async (data, variables) => {
+        if (onSuccess) {
+          await onSuccess(data, variables);
+        }
+
+        await queryClient.refetchQueries({
+          queryKey: ['sharedLinks'],
+          exact: false,
+        });
+      },
     },
-    ..._options,
-  });
+  );
 };
 
 // Add a tag or update tag information (tag, description, position, etc.)

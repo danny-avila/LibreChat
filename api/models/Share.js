@@ -280,15 +280,23 @@ async function updateSharedLink(user, shareId) {
   }
 }
 
-async function deleteSharedLink(user, { shareId }) {
+async function deleteSharedLink(user, shareId) {
   if (!user || !shareId) {
     throw new ShareServiceError('Missing required parameters', 'INVALID_PARAMS');
   }
 
   try {
-    const result = await SharedLink.findOneAndDelete({ shareId, user }).exec();
+    const result = await SharedLink.findOneAndDelete({ shareId, user }).lean().exec();
 
-    return result ? { message: 'Share deleted successfully' } : { message: 'Share not found' };
+    if (!result) {
+      return null;
+    }
+
+    return {
+      success: true,
+      shareId,
+      message: 'Share deleted successfully',
+    };
   } catch (error) {
     logger.error('[deleteSharedLink] Error deleting shared link', {
       error: error.message,

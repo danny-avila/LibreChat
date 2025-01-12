@@ -2,7 +2,7 @@ import { useCallback, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { TrashIcon } from 'lucide-react';
 import type { SharedLinkItem, SharedLinksListParams } from 'librechat-data-provider';
-import { OGDialog, OGDialogTrigger, Checkbox, Button, TooltipAnchor, Label } from '~/components/ui';
+import { OGDialog, OGDialogTrigger, Button, TooltipAnchor, Label } from '~/components/ui';
 import { useDeleteSharedLinkMutation, useSharedLinksQuery } from '~/data-provider';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { useLocalize, useMediaQuery } from '~/hooks';
@@ -11,11 +11,7 @@ import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
 import { formatDate } from '~/utils';
 
-interface TableRow extends SharedLinkItem {
-  id?: string;
-}
-
-const PAGE_SIZE = 250;
+const PAGE_SIZE = 25;
 
 const DEFAULT_PARAMS: SharedLinksListParams = {
   pageSize: PAGE_SIZE,
@@ -35,20 +31,29 @@ export default function SharedLinks() {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, refetch, isLoading } =
     useSharedLinksQuery(DEFAULT_PARAMS, {
       enabled: isOpen,
+      staleTime: 0,
+      cacheTime: 5 * 60 * 1000,
+      refetchOnWindowFocus: false,
+      refetchOnMount: false,
     });
 
   const allLinks = useMemo(() => {
     if (!data?.pages) {
       return [];
     }
-    return data.pages.flatMap((page) => page.links);
+
+    return data.pages.flatMap((page) => page.links.filter(Boolean));
   }, [data?.pages]);
 
   const deleteMutation = useDeleteSharedLinkMutation({
-    onSuccess: () => {
+    onSuccess: async () => {
       refetch();
+
+      setIsDeleteOpen(false);
+      setDeleteRow(null);
     },
-    onError: () => {
+    onError: (error) => {
+      console.error('Delete error:', error);
       showToast({
         message: localize('com_ui_share_delete_error'),
         severity: NotificationSeverity.ERROR,
@@ -57,15 +62,30 @@ export default function SharedLinks() {
   });
 
   const handleDelete = useCallback(
-    async (selectedRows: TableRow[]) => {
+    async (selectedRows: SharedLinkItem[]) => {
       const validRows = selectedRows.filter(
-        (row) => typeof row.id === 'string' && row.id.length > 0,
+        (row) => typeof row.shareId === 'string' && row.shareId.length > 0,
       );
 
+      if (validRows.length === 0) {
+        showToast({
+          message: localize('com_ui_no_valid_items'),
+          severity: NotificationSeverity.WARNING,
+        });
+        return;
+      }
+
       try {
-        await Promise.all(
-          validRows.map((row) => deleteMutation.mutateAsync({ shareId: row.id as string })),
-        );
+        for (const row of validRows) {
+          await deleteMutation.mutateAsync({ shareId: row.shareId });
+        }
+
+        showToast({
+          message: localize(
+            validRows.length === 1 ? 'com_ui_delete_success' : 'com_ui_bulk_delete_success',
+          ),
+          severity: NotificationSeverity.SUCCESS,
+        });
       } catch (error) {
         console.error('Failed to delete shared links:', error);
         showToast({
@@ -84,7 +104,7 @@ export default function SharedLinks() {
     await fetchNextPage();
   }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
-  const [deleteRow, setDeleteRow] = useState<TableRow | null>(null);
+  const [deleteRow, setDeleteRow] = useState<SharedLinkItem | null>(null);
 
   const confirmDelete = useCallback(() => {
     if (deleteRow) {
@@ -98,7 +118,7 @@ export default function SharedLinks() {
       {
         accessorKey: 'title',
         header: 'Name',
-        cell: ({ row }) =>  (
+        cell: ({ row }) => (
           <Link
             to={`/share/${row.original.shareId}`}
             target="_blank"
@@ -129,7 +149,7 @@ export default function SharedLinks() {
           size: '15%',
           mobileSize: '15%',
         },
-        cell: ({ row }) =>  (
+        cell: ({ row }) => (
           <TooltipAnchor
             description={localize('com_ui_delete')}
             render={
@@ -149,7 +169,7 @@ export default function SharedLinks() {
         ),
       },
     ],
-    [isSmallScreen, handleDelete, localize],
+    [isSmallScreen, localize],
   );
 
   return (
@@ -175,6 +195,7 @@ export default function SharedLinks() {
               hasNextPage={hasNextPage}
               isFetchingNextPage={isFetchingNextPage}
               fetchNextPage={handleFetchNextPage}
+              showCheckboxes={false}
             />
           }
         />
