@@ -46,6 +46,8 @@ function getGoogleModelName(model: string | null | undefined) {
     return 'Codey';
   } else if (model?.toLowerCase().includes('gemini') === true) {
     return 'Gemini';
+  } else if (model?.toLowerCase().includes('learnlm') === true) {
+    return 'Gemini';
   } else {
     return 'PaLM2';
   }
