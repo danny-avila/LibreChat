@@ -1,0 +1,4 @@
+Build : npm run frontend
+Run : npm run backend
+
+Tích hợp MyLinks nhé
