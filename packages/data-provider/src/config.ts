@@ -427,6 +427,16 @@ export enum EImageOutputType {
   JPEG = 'jpeg',
 }
 
+const termsOfServiceSchema = z.object({
+  externalUrl: z.string().optional(),
+  openNewTab: z.boolean().optional(),
+  modalAcceptance: z.boolean().optional(),
+  modalTitle: z.string().optional(),
+  modalContent: z.string().or(z.array(z.string())).optional(),
+});
+
+export type TTermsOfService = z.infer<typeof termsOfServiceSchema>;
+
 export const intefaceSchema = z
   .object({
     privacyPolicy: z
@@ -435,15 +445,7 @@ export const intefaceSchema = z
         openNewTab: z.boolean().optional(),
       })
       .optional(),
-    termsOfService: z
-      .object({
-        externalUrl: z.string().optional(),
-        openNewTab: z.boolean().optional(),
-        modalAcceptance: z.boolean().optional(),
-        modalTitle: z.string().optional(),
-        modalContent: z.string().or(z.array(z.string())).optional(),
-      })
-      .optional(),
+    termsOfService: termsOfServiceSchema.optional(),
     endpointsMenu: z.boolean().optional(),
     modelSelect: z.boolean().optional(),
     parameters: z.boolean().optional(),
