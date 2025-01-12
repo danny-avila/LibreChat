@@ -1,11 +1,9 @@
 import {
   Constants,
-  LocalStorageKeys,
   InfiniteCollections,
   defaultAssistantsVersion,
   ConversationListResponse,
 } from 'librechat-data-provider';
-import { useSetRecoilState } from 'recoil';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
@@ -13,7 +11,6 @@ import type { InfiniteData, UseMutationResult } from '@tanstack/react-query';
 import useUpdateTagsInConvo from '~/hooks/Conversations/useUpdateTagsInConvo';
 import { updateConversationTag } from '~/utils/conversationTags';
 import { normalizeData } from '~/utils/collection';
-import store from '~/store';
 import {
   useConversationTagsQuery,
   useConversationsInfiniteQuery,
@@ -692,34 +689,6 @@ export const useDeletePresetMutation = (
   });
 };
 
-/* login/logout */
-export const useLogoutUserMutation = (
-  options?: t.LogoutOptions,
-): UseMutationResult<unknown, unknown, undefined, unknown> => {
-  const queryClient = useQueryClient();
-  const setDefaultPreset = useSetRecoilState(store.defaultPreset);
-  return useMutation([MutationKeys.logoutUser], {
-    mutationFn: () => dataService.logout(),
-
-    ...(options || {}),
-    onSuccess: (...args) => {
-      options?.onSuccess?.(...args);
-    },
-    onMutate: (...args) => {
-      setDefaultPreset(null);
-      queryClient.removeQueries();
-      localStorage.removeItem(LocalStorageKeys.LAST_CONVO_SETUP);
-      localStorage.removeItem(`${LocalStorageKeys.LAST_CONVO_SETUP}_0`);
-      localStorage.removeItem(`${LocalStorageKeys.LAST_CONVO_SETUP}_1`);
-      localStorage.removeItem(LocalStorageKeys.LAST_MODEL);
-      localStorage.removeItem(LocalStorageKeys.LAST_TOOLS);
-      localStorage.removeItem(LocalStorageKeys.FILES_TO_DELETE);
-      // localStorage.removeItem('lastAssistant');
-      options?.onMutate?.(...args);
-    },
-  });
-};
-
 /* Avatar upload */
 export const useUploadAvatarMutation = (
   options?: t.UploadAvatarOptions,
@@ -732,32 +701,6 @@ export const useUploadAvatarMutation = (
   return useMutation([MutationKeys.avatarUpload], {
     mutationFn: (variables: FormData) => dataService.uploadAvatar(variables),
     ...(options || {}),
-  });
-};
-
-export const useDeleteUserMutation = (
-  options?: t.MutationOptions<unknown, undefined>,
-): UseMutationResult<unknown, unknown, undefined, unknown> => {
-  const queryClient = useQueryClient();
-  const setDefaultPreset = useSetRecoilState(store.defaultPreset);
-  return useMutation([MutationKeys.deleteUser], {
-    mutationFn: () => dataService.deleteUser(),
-
-    ...(options || {}),
-    onSuccess: (...args) => {
-      options?.onSuccess?.(...args);
-    },
-    onMutate: (...args) => {
-      setDefaultPreset(null);
-      queryClient.removeQueries();
-      localStorage.removeItem(LocalStorageKeys.LAST_CONVO_SETUP);
-      localStorage.removeItem(`${LocalStorageKeys.LAST_CONVO_SETUP}_0`);
-      localStorage.removeItem(`${LocalStorageKeys.LAST_CONVO_SETUP}_1`);
-      localStorage.removeItem(LocalStorageKeys.LAST_MODEL);
-      localStorage.removeItem(LocalStorageKeys.LAST_TOOLS);
-      localStorage.removeItem(LocalStorageKeys.FILES_TO_DELETE);
-      options?.onMutate?.(...args);
-    },
   });
 };
 

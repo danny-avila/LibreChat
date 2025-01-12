@@ -16,8 +16,6 @@ export * from './schemas';
 
 export type TMessages = TMessage[];
 
-export type TMessagesAtom = TMessages | null;
-
 /* TODO: Cleanup EndpointOption types */
 export type TEndpointOption = {
   endpoint: EModelEndpoint;
