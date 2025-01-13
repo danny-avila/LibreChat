@@ -84,6 +84,24 @@ function getFullName(userinfo) {
   return userinfo.username || userinfo.email;
 }
 
+function getRoles(tokenset, requiredRoleTokenKind) {
+  let decodedToken = '';
+  if (requiredRoleTokenKind === 'access') {
+    decodedToken = jwtDecode(tokenset.access_token);
+  } else if (requiredRoleTokenKind === 'id') {
+    decodedToken = jwtDecode(tokenset.id_token);
+  }
+  const roles = [];
+  if (decodedToken.resource_access) {
+    for (const key in decodedToken.resource_access) {
+    if (decodedToken.resource_access[key].roles) {
+      roles.push(...decodedToken.resource_access[key].roles);
+    }
+    }
+  }
+  return roles;
+}
+
 /**
  * Converts an input into a string suitable for a username.
  * If the input is a string, it will be returned as is.
@@ -150,35 +168,9 @@ async function setupOpenId() {
 
           const fullName = getFullName(userinfo);
 
-          if (requiredRole) {
-            let decodedToken = '';
-            if (requiredRoleTokenKind === 'access') {
-              decodedToken = jwtDecode(tokenset.access_token);
-            } else if (requiredRoleTokenKind === 'id') {
-              decodedToken = jwtDecode(tokenset.id_token);
-            }
-            const pathParts = requiredRoleParameterPath.split('.');
-            let found = true;
-            let roles = pathParts.reduce((o, key) => {
-              if (o === null || o === undefined || !(key in o)) {
-                found = false;
-                return [];
-              }
-              return o[key];
-            }, decodedToken);
+          const roles = getRoles(tokenset, requiredRoleTokenKind);
 
-            if (!found) {
-              logger.error(
-                `[openidStrategy] Key '${requiredRoleParameterPath}' not found in ${requiredRoleTokenKind} token!`,
-              );
-            }
-
-            if (!roles.includes(requiredRole)) {
-              return done(null, false, {
-                message: `You must have the "${requiredRole}" role to log in.`,
-              });
-            }
-          }
+          logger.info(`[openidStrategy] roles found: ${roles}`);
 
           let username = '';
           if (process.env.OPENID_USERNAME_CLAIM) {
@@ -197,6 +189,7 @@ async function setupOpenId() {
               email: userinfo.email || '',
               emailVerified: userinfo.email_verified || false,
               name: fullName,
+              role: roles,
             };
             user = await createUser(user, true, true);
           } else {
@@ -204,6 +197,7 @@ async function setupOpenId() {
             user.openidId = userinfo.sub;
             user.username = username;
             user.name = fullName;
+            user.role = roles;
           }
 
           if (userinfo.picture && !user.avatar?.includes('manual=true')) {
@@ -239,6 +233,7 @@ async function setupOpenId() {
                 username: user.username,
                 email: user.email,
                 name: user.name,
+                role: user.role,
               },
             },
           );

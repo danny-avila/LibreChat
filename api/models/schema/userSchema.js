@@ -78,8 +78,8 @@ const userSchema = mongoose.Schema(
       default: 'local',
     },
     role: {
-      type: String,
-      default: SystemRoles.USER,
+      type: Array,
+      default: [SystemRoles.USER],
     },
     googleId: {
       type: String,
