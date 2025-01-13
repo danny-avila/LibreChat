@@ -14,7 +14,6 @@ const {
   openAISchema,
   ContentTypes,
   EModelEndpoint,
-  KnownEndpoints,
   anthropicSchema,
   isAgentsEndpoint,
   bedrockOutputParser,
@@ -48,8 +47,6 @@ const providerParsers = {
   [EModelEndpoint.anthropic]: anthropicSchema,
   [EModelEndpoint.bedrock]: bedrockOutputParser,
 };
-
-const legacyContentEndpoints = new Set([KnownEndpoints.groq, KnownEndpoints.deepseek]);
 
 const noSystemModelRegex = [/\bo1\b/gi];
 
@@ -504,9 +501,6 @@ class AgentClient extends BaseClient {
       };
 
       const initialMessages = formatAgentMessages(payload);
-      if (legacyContentEndpoints.has(this.options.agent.endpoint)) {
-        formatContentStrings(initialMessages);
-      }
 
       /** @type {ReturnType<createRun>} */
       let run;

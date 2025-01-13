@@ -620,7 +620,7 @@ export const alternateName = {
   [KnownEndpoints.xai]: 'xAI',
 };
 
-const sharedOpenAIModels = [
+export const sharedOpenAIModels = [
   'gpt-4o-mini',
   'gpt-4o',
   'gpt-3.5-turbo',
@@ -640,7 +640,7 @@ const sharedOpenAIModels = [
   'gpt-3.5-turbo-0613',
 ];
 
-const sharedAnthropicModels = [
+export const sharedAnthropicModels = [
   'claude-3-5-haiku-20241022',
   'claude-3-5-sonnet-20241022',
   'claude-3-5-sonnet-20240620',
@@ -738,6 +738,8 @@ export const initialModelsConfig: TModelsConfig = {
   [EModelEndpoint.google]: defaultModels[EModelEndpoint.google],
   [EModelEndpoint.anthropic]: defaultModels[EModelEndpoint.anthropic],
   [EModelEndpoint.bedrock]: defaultModels[EModelEndpoint.bedrock],
+  [EModelEndpoint.bedrockAgent]: [], // Models populated dynamically from AWS Bedrock Agents
+  [EModelEndpoint.bedrockAgent]: [],
 };
 
 export const EndpointURLs: { [key in EModelEndpoint]: string } = {
@@ -753,6 +755,7 @@ export const EndpointURLs: { [key in EModelEndpoint]: string } = {
   [EModelEndpoint.assistants]: '/api/assistants/v2/chat',
   [EModelEndpoint.agents]: `/api/${EModelEndpoint.agents}/chat`,
   [EModelEndpoint.bedrock]: `/api/${EModelEndpoint.bedrock}/chat`,
+  [EModelEndpoint.bedrockAgent]: `/api/bedrock/agents/chat`,
 };
 
 export const modularEndpoints = new Set<EModelEndpoint | string>([
@@ -764,6 +767,7 @@ export const modularEndpoints = new Set<EModelEndpoint | string>([
   EModelEndpoint.custom,
   EModelEndpoint.agents,
   EModelEndpoint.bedrock,
+  EModelEndpoint.bedrockAgent,
 ]);
 
 export const supportsBalanceCheck = {
@@ -776,6 +780,7 @@ export const supportsBalanceCheck = {
   [EModelEndpoint.azureAssistants]: true,
   [EModelEndpoint.azureOpenAI]: true,
   [EModelEndpoint.bedrock]: true,
+  [EModelEndpoint.bedrockAgent]: true,
 };
 
 export const visionModels = [

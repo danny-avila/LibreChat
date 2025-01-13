@@ -5,6 +5,29 @@ import type { TFile } from './types/files';
 
 export const isUUID = z.string().uuid();
 
+import { defaultAssistantsVersion, imageGenTools } from './constants';
+export { defaultAssistantsVersion, imageGenTools };
+
+export const Capabilities = {
+  code_interpreter: 'code_interpreter',
+  image_vision: 'image_vision',
+  retrieval: 'retrieval',
+  actions: 'actions',
+  tools: 'tools',
+} as const;
+
+export const KnownEndpoints = {
+  groq: 'groq',
+  deepseek: 'deepseek',
+} as const;
+
+export const AgentCapabilities = {
+  execute_code: 'execute_code',
+  file_search: 'file_search',
+  actions: 'actions',
+  tools: 'tools',
+} as const;
+
 export enum AuthType {
   OVERRIDE_AUTH = 'override_auth',
   USER_PROVIDED = 'user_provided',
@@ -23,6 +46,7 @@ export enum EModelEndpoint {
   agents = 'agents',
   custom = 'custom',
   bedrock = 'bedrock',
+  bedrockAgent = 'bedrockAgent',
   /** @deprecated */
   bingAI = 'bingAI',
   /** @deprecated */
@@ -35,6 +59,7 @@ export const paramEndpoints = new Set<EModelEndpoint | string>([
   EModelEndpoint.agents,
   EModelEndpoint.openAI,
   EModelEndpoint.bedrock,
+  EModelEndpoint.bedrockAgent,
   EModelEndpoint.azureOpenAI,
   EModelEndpoint.anthropic,
   EModelEndpoint.custom,
@@ -350,12 +375,37 @@ export const agentsSettings = {
   },
 };
 
+export const bedrockAgentSettings = {
+  model: {
+    default: '',
+  },
+  temperature: {
+    min: 0,
+    max: 1,
+    step: 0.01,
+    default: 0.7,
+  },
+  maxOutputTokens: {
+    min: 1,
+    max: 4096,
+    step: 1,
+    default: 4096,
+  },
+  resendFiles: {
+    default: true,
+  },
+  maxContextTokens: {
+    default: undefined,
+  },
+};
+
 export const endpointSettings = {
   [EModelEndpoint.openAI]: openAISettings,
   [EModelEndpoint.google]: googleSettings,
   [EModelEndpoint.anthropic]: anthropicSettings,
   [EModelEndpoint.agents]: agentsSettings,
   [EModelEndpoint.bedrock]: agentsSettings,
+  [EModelEndpoint.bedrockAgent]: bedrockAgentSettings,
 };
 
 const google = endpointSettings[EModelEndpoint.google];
@@ -1187,3 +1237,5 @@ export const compactAgentsSchema = tConversationSchema
   })
   .transform(removeNullishValues)
   .catch(() => ({}));
+
+export { tBannerSchema };

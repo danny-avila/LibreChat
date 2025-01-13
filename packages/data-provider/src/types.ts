@@ -234,6 +234,16 @@ export type TSearchResults = {
   filter: object;
 };
 
+export type TBedrockAgent = {
+  agentId: string;
+  agentName: string;
+  agentAliasId?: string;
+  description?: string;
+  status?: string;
+  createdAt?: Date;
+  lastUpdatedAt?: Date;
+};
+
 export type TConfig = {
   order: number;
   type?: EModelEndpoint;

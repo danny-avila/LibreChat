@@ -157,6 +157,11 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
       bg: '#268672',
       name: alternateName[EModelEndpoint.bedrock],
     },
+    [EModelEndpoint.bedrockAgent]: {
+      icon: <BedrockIcon className="icon-xl text-white" />,
+      bg: '#268672',
+      name: alternateName[EModelEndpoint.bedrockAgent],
+    },
     [EModelEndpoint.bingAI]: {
       icon:
         jailbreak === true ? (

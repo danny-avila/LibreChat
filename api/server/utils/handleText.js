@@ -1,10 +1,8 @@
 const path = require('path');
 const crypto = require('crypto');
 const {
-  Capabilities,
   EModelEndpoint,
   isAgentsEndpoint,
-  AgentCapabilities,
   isAssistantsEndpoint,
   defaultRetrievalModels,
   defaultAssistantsVersion,
@@ -186,20 +184,20 @@ function generateConfig(key, baseURL, endpoint) {
   if (assistants) {
     config.retrievalModels = defaultRetrievalModels;
     config.capabilities = [
-      Capabilities.code_interpreter,
-      Capabilities.image_vision,
-      Capabilities.retrieval,
-      Capabilities.actions,
-      Capabilities.tools,
+      'code_interpreter',
+      'image_vision',
+      'retrieval',
+      'actions',
+      'tools',
     ];
   }
 
   if (agents) {
     config.capabilities = [
-      AgentCapabilities.execute_code,
-      AgentCapabilities.file_search,
-      AgentCapabilities.actions,
-      AgentCapabilities.tools,
+      'execute_code',
+      'file_search',
+      'actions',
+      'tools',
     ];
   }
 

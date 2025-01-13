@@ -1,7 +1,42 @@
 /* config */
 export * from './azure';
 export * from './bedrock';
-export * from './config';
+export {
+  defaultEndpoints,
+  defaultModels,
+  EndpointURLs,
+  modularEndpoints,
+  supportsBalanceCheck,
+  visionModels,
+  VisionModes,
+  validateVisionModel,
+  InfiniteCollections,
+  Time,
+  CacheKeys,
+  ViolationTypes,
+  ErrorTypes,
+  AuthKeys,
+  ImageDetailCost,
+  SettingsTabValues,
+  STTProviders,
+  TTSProviders,
+  Constants,
+  LocalStorageKeys,
+  ForkOptions,
+  CohereConstants,
+  SystemCategories,
+  SettingsViews,
+  getConfigDefaults,
+} from './config';
+export {
+  Capabilities,
+  AgentCapabilities,
+  KnownEndpoints,
+} from './schemas';
+export {
+  defaultAssistantsVersion,
+  imageGenTools,
+} from './constants';
 export * from './file-config';
 /* artifacts  */
 export * from './artifacts';

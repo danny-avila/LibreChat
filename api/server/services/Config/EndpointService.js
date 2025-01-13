@@ -48,6 +48,11 @@ module.exports = {
     [EModelEndpoint.bedrock]: generateConfig(
       process.env.BEDROCK_AWS_SECRET_ACCESS_KEY ?? process.env.BEDROCK_AWS_DEFAULT_REGION,
     ),
+    [EModelEndpoint.bedrockAgent]: generateConfig(
+      process.env.AWS_ACCESS_KEY_ID,
+      undefined,
+      EModelEndpoint.bedrockAgent,
+    ),
     /* key will be part of separate config */
     [EModelEndpoint.agents]: generateConfig('true', undefined, EModelEndpoint.agents),
   },

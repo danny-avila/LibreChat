@@ -56,6 +56,10 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
       icon: <BedrockIcon className="icon-xl text-text-primary" />,
       name: props.modelLabel ?? alternateName[EModelEndpoint.bedrock],
     },
+    [EModelEndpoint.bedrockAgent]: {
+      icon: <BedrockIcon className="icon-xl text-text-primary" />,
+      name: props.modelLabel ?? alternateName[EModelEndpoint.bedrockAgent],
+    },
     default: {
       icon: <UnknownIcon iconURL={iconURL} endpoint={endpoint} className="icon-sm" context="nav" />,
       name: endpoint,
