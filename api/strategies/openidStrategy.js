@@ -91,15 +91,15 @@ function getRoles(tokenset, requiredRoleTokenKind) {
   } else if (requiredRoleTokenKind === 'id') {
     decodedToken = jwtDecode(tokenset.id_token);
   }
-  const roles = [];
   if (decodedToken.resource_access) {
-    for (const key in decodedToken.resource_access) {
-    if (decodedToken.resource_access[key].roles) {
-      roles.push(...decodedToken.resource_access[key].roles);
-    }
-    }
+    return Object.keys(decodedToken.resource_access).map((key) => {
+      return {
+        client: key,
+        roles: decodedToken.resource_access[key].roles ?? []
+      }
+    });
   }
-  return roles;
+  return [];
 }
 
 /**
@@ -189,7 +189,7 @@ async function setupOpenId() {
               email: userinfo.email || '',
               emailVerified: userinfo.email_verified || false,
               name: fullName,
-              role: roles,
+              keycloakRoles: roles,
             };
             user = await createUser(user, true, true);
           } else {
@@ -197,7 +197,7 @@ async function setupOpenId() {
             user.openidId = userinfo.sub;
             user.username = username;
             user.name = fullName;
-            user.role = roles;
+            user.keycloakRoles = roles;
           }
 
           if (userinfo.picture && !user.avatar?.includes('manual=true')) {
@@ -233,7 +233,7 @@ async function setupOpenId() {
                 username: user.username,
                 email: user.email,
                 name: user.name,
-                role: user.role,
+                keycloakRoles: user.keycloakRoles,
               },
             },
           );
