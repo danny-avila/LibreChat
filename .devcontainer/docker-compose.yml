@@ -40,8 +40,8 @@ services:
     container_name: chat-mongodb
     expose:
       - 27017
-    # ports:
-    #   - 27018:27017
+    ports:
+      - 27018:27017 #TODO: remove in prod
     image: mongo
     # restart: always
     volumes:
