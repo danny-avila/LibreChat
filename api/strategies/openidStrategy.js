@@ -91,15 +91,15 @@ function getRoles(tokenset, requiredRoleTokenKind) {
   } else if (requiredRoleTokenKind === 'id') {
     decodedToken = jwtDecode(tokenset.id_token);
   }
+  let res = {}
   if (decodedToken.resource_access) {
-    return Object.keys(decodedToken.resource_access).map((key) => {
-      return {
-        client: key,
+    Object.keys(decodedToken.resource_access).forEach((key) => {
+      res[key] = {
         roles: decodedToken.resource_access[key].roles ?? []
       }
     });
   }
-  return [];
+  return res;
 }
 
 /**

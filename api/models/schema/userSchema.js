@@ -82,8 +82,8 @@ const userSchema = mongoose.Schema(
       default: SystemRoles.USER,
     },
     keycloakRoles: {
-      type: Array,
-      default: [],
+      type: Object,
+      default: {},
     },
     googleId: {
       type: String,
