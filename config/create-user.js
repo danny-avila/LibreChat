@@ -4,6 +4,35 @@ const { registerUser } = require('~/server/services/AuthService');
 const { askQuestion, silentExit } = require('./helpers');
 const User = require('~/models/User');
 const connect = require('./connect');
+const yargs = require('yargs');
+
+const argv = yargs
+  .option('email', {
+    describe: "User's email address",
+    type: 'string',
+  })
+  .option('name', {
+    describe: "User's name",
+    type: 'string',
+  })
+  .option('username', {
+    describe: "User's username",
+    type: 'string',
+  })
+  .option('password', {
+    describe: "User's password",
+    type: 'string',
+  })
+  .option('email-verified', {
+    describe: 'Set email as verified',
+    type: 'boolean',
+    default: true,
+  })
+  .usage('Usage: $0 [options]')
+  .example('$0 --email user@example.com --name "John Doe" --username johndoe --password mypassword')
+  .help()
+  .alias('help', 'h')
+  .epilogue('For more information, check the documentation.').argv;
 
 (async () => {
   await connect();
@@ -12,40 +41,14 @@ const connect = require('./connect');
   console.purple('Create a new user account!');
   console.purple('--------------------------');
 
-  if (process.argv.length < 5) {
-    console.orange('Usage: npm run create-user <email> <name> <username> [--email-verified=false]');
-    console.orange('Note: if you do not pass in the arguments, you will be prompted for them.');
-    console.orange(
-      'If you really need to pass in the password, you can do so as the 4th argument (not recommended for security).',
-    );
-    console.orange('Use --email-verified=false to set emailVerified to false. Default is true.');
-    console.purple('--------------------------');
-  }
+  let { email, name, username, password } = argv;
+  let emailVerified = argv['email-verified'];
 
-  let email = '';
-  let password = '';
-  let name = '';
-  let username = '';
-  let emailVerified = true;
-
-  // Parse command line arguments
-  for (let i = 2; i < process.argv.length; i++) {
-    if (process.argv[i].startsWith('--email-verified=')) {
-      emailVerified = process.argv[i].split('=')[1].toLowerCase() !== 'false';
-      continue;
-    }
-
-    if (!email) {
-      email = process.argv[i];
-    } else if (!name) {
-      name = process.argv[i];
-    } else if (!username) {
-      username = process.argv[i];
-    } else if (!password) {
-      console.red('Warning: password passed in as argument, this is not secure!');
-      password = process.argv[i];
-    }
-  }
+  // Handle positional arguments for backwards compatibility
+  if (!email && argv._[0]) email = argv._[0];
+  if (!name && argv._[1]) name = argv._[1];
+  if (!username && argv._[2]) username = argv._[2];
+  if (!password && argv._[3]) password = argv._[3];
 
   if (!email) {
     email = await askQuestion('Email:');
@@ -57,27 +60,27 @@ const connect = require('./connect');
 
   const defaultName = email.split('@')[0];
   if (!name) {
-    name = await askQuestion('Name: (default is: ' + defaultName + ')');
+    name = await askQuestion(`Name: (default is: ${defaultName})`);
     if (!name) {
       name = defaultName;
     }
   }
   if (!username) {
-    username = await askQuestion('Username: (default is: ' + defaultName + ')');
+    username = await askQuestion(`Username: (default is: ${defaultName})`);
     if (!username) {
       username = defaultName;
     }
   }
   if (!password) {
-    password = await askQuestion('Password: (leave blank, to generate one)');
+    password = await askQuestion('Password: (leave blank to generate one)');
     if (!password) {
       password = Math.random().toString(36).slice(-18);
-      console.orange('Your password is: ' + password);
+      console.orange('Your generated password is: ' + password);
     }
-  }
-
-  // Only prompt for emailVerified if it wasn't set via CLI
-  if (!process.argv.some((arg) => arg.startsWith('--email-verified='))) {
+  } else {
+    console.orange('Warning: Password provided via command line argument. This is not secure!');
+  } // Only prompt for emailVerified if it wasn't set via CLI
+  if (emailVerified === undefined) {
     const emailVerifiedInput = await askQuestion(`Email verified? (Y/n, default is Y):
 
 If \`y\`, the user's email will be considered verified.
@@ -89,12 +92,21 @@ or the user will need to attempt logging in to have a verification link sent to 
 
     if (emailVerifiedInput.toLowerCase() === 'n') {
       emailVerified = false;
+    } else {
+      emailVerified = true;
     }
   }
 
   const userExists = await User.findOne({ $or: [{ email }, { username }] });
   if (userExists) {
     console.red('Error: A user with that email or username already exists!');
+    if (userExists.email === email) {
+      console.red(`The email '${email}' is already in use.`);
+    }
+    if (userExists.username === username) {
+      console.red(`The username '${username}' is already taken.`);
+    }
+    console.orange('Please try again with a different email and/or username.');
     silentExit(1);
   }
 
