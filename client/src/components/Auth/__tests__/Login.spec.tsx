@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { getByTestId, render, waitFor } from 'test/layout-test-utils';
 import * as mockDataProvider from 'librechat-data-provider/react-query';
 import type { TStartupConfig } from 'librechat-data-provider';
+import * as authDataProvider from '~/data-provider/Auth/mutations';
 import AuthLayout from '~/components/Auth/AuthLayout';
 import Login from '~/components/Auth/Login';
 
@@ -61,7 +62,7 @@ const setup = ({
   },
 } = {}) => {
   const mockUseLoginUser = jest
-    .spyOn(mockDataProvider, 'useLoginUserMutation')
+    .spyOn(authDataProvider, 'useLoginUserMutation')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useLoginUserReturnValue);
   const mockUseGetUserQuery = jest

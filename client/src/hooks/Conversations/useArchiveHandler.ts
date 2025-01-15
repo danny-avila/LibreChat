@@ -1,7 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
 import { useArchiveConversationMutation } from '~/data-provider';
-import useConversations from './useConversations';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
 import useLocalize from '../useLocalize';
@@ -16,7 +15,6 @@ export default function useArchiveHandler(
   const navigate = useNavigate();
   const { showToast } = useToastContext();
   const { newConversation } = useNewConvo();
-  const { refreshConversations } = useConversations();
   const { conversationId: currentConvoId } = useParams();
 
   const archiveConvoMutation = useArchiveConversationMutation(conversationId ?? '');
@@ -38,7 +36,6 @@ export default function useArchiveHandler(
             newConversation();
             navigate('/c/new', { replace: true });
           }
-          refreshConversations();
           retainView();
         },
         onError: () => {

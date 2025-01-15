@@ -1,6 +1,5 @@
-import { useRecoilState, useRecoilValue } from 'recoil';
-import { EModelEndpoint } from 'librechat-data-provider';
 import { useRef, useEffect, useCallback } from 'react';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import { useForm } from 'react-hook-form';
 import { useUpdateMessageMutation } from 'librechat-data-provider/react-query';
 import type { TEditProps } from '~/common';
@@ -31,8 +30,6 @@ const EditMessage = ({
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const { conversationId, parentMessageId, messageId } = message;
-  const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };
-  const endpoint = endpointType ?? _endpoint;
   const updateMessageMutation = useUpdateMessageMutation(conversationId ?? '');
   const localize = useLocalize();
 
@@ -181,9 +178,7 @@ const EditMessage = ({
             <button
               ref={submitButtonRef}
               className="btn btn-primary relative mr-2"
-              disabled={
-                isSubmitting || (endpoint === EModelEndpoint.google && !message.isCreatedByUser)
-              }
+              disabled={isSubmitting}
               onClick={handleSubmit(resubmitMessage)}
             >
               {localize('com_ui_save_submit')}
