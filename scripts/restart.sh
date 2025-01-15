@@ -26,12 +26,12 @@ case "$1" in
 backend)
   echo "Restarting backend..."
   kill_port 3080
-  npm run backend:dev
+  PORT=3080 npm run backend:dev
   ;;
 frontend)
   echo "Restarting frontend..."
   kill_port 3090
-  npm run frontend:dev
+  PORT=3090 npm run frontend:dev
   ;;
 *)
   echo "Invalid argument. Use 'backend' or 'frontend'."

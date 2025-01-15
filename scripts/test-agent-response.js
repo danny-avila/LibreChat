@@ -1,3 +1,13 @@
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
+
+// Debug environment variables
+console.log('Environment Check:', {
+  region: process.env.AWS_REGION,
+  hasAccessKey: !!process.env.AWS_ACCESS_KEY_ID,
+  hasSecretKey: !!process.env.AWS_SECRET_ACCESS_KEY,
+});
+
 const {
   BedrockAgentRuntimeClient,
   InvokeAgentCommand,
