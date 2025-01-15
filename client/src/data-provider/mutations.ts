@@ -328,10 +328,10 @@ export const useDeleteSharedLinkMutation = (
         return { previousQueries };
       },
 
-      onError: (err, variables, context) => {
-        if (context?.previousQueries) {
-          context.previousQueries.forEach((data, queryKey) => {
-            queryClient.setQueryData(queryKey, data);
+      onError: (_err, _vars, context) => {
+        if (context && context.previousQueries) {
+          context.previousQueries.forEach((prevData: unknown, prevQueryKey: QueryKey) => {
+            queryClient.setQueryData(prevQueryKey, prevData);
           });
         }
       },
@@ -340,18 +340,17 @@ export const useDeleteSharedLinkMutation = (
         queryClient.invalidateQueries({
           queryKey: ['sharedLinks'],
           exact: false,
-          refetchType: 'all',
         });
       },
 
-      onSuccess: async (data, variables) => {
+      onSuccess: (data, variables) => {
         if (onSuccess) {
-          await onSuccess(data, variables);
+          onSuccess(data, variables);
         }
 
-        await queryClient.refetchQueries({
+        queryClient.refetchQueries({
           queryKey: ['sharedLinks'],
-          exact: false,
+          exact: true,
         });
       },
     },

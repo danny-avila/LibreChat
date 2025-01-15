@@ -450,6 +450,7 @@ export default {
   com_ui_view_source: 'View source chat',
   com_ui_shared_link_delete_success: 'Successfully deleted shared link',
   com_ui_shared_link_bulk_delete_success: 'Successfully deleted shared links',
+  com_ui_search: 'Search',
   com_auth_error_login:
     'Unable to login with the information provided. Please check your credentials and try again.',
   com_auth_error_login_rl:

@@ -1,8 +1,18 @@
-import { useCallback, useState, useMemo } from 'react';
+import { useCallback, useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { TrashIcon, MessageSquare } from 'lucide-react';
+import debounce from 'lodash/debounce';
+import { TrashIcon, MessageSquare, ArrowUpDown } from 'lucide-react';
 import type { SharedLinkItem, SharedLinksListParams } from 'librechat-data-provider';
-import { OGDialog, OGDialogTrigger, Button, TooltipAnchor, Label } from '~/components/ui';
+import {
+  OGDialog,
+  OGDialogTrigger,
+  OGDialogContent,
+  OGDialogHeader,
+  OGDialogTitle,
+  Button,
+  TooltipAnchor,
+  Label,
+} from '~/components/ui';
 import { useDeleteSharedLinkMutation, useSharedLinksQuery } from '~/data-provider';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { useLocalize, useMediaQuery } from '~/hooks';
@@ -25,17 +35,46 @@ export default function SharedLinks() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  const [queryParams, setQueryParams] = useState<SharedLinksListParams>(DEFAULT_PARAMS);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, refetch, isLoading } =
-    useSharedLinksQuery(DEFAULT_PARAMS, {
+    useSharedLinksQuery(queryParams, {
       enabled: isOpen,
       staleTime: 0,
       cacheTime: 5 * 60 * 1000,
       refetchOnWindowFocus: false,
       refetchOnMount: false,
     });
+
+  const handleSort = useCallback((sortField: string, sortOrder: 'asc' | 'desc') => {
+    setQueryParams((prev) => ({
+      ...prev,
+      sortBy: sortField as 'title' | 'createdAt',
+      sortDirection: sortOrder,
+    }));
+  }, []);
+
+  const handleFilterChange = useCallback((value: string) => {
+    const encodedValue = encodeURIComponent(value.trim());
+    setQueryParams((prev) => ({
+      ...prev,
+      search: encodedValue,
+    }));
+  }, []);
+
+  const debouncedFilterChange = useMemo(
+    () => debounce(handleFilterChange, 300),
+    [handleFilterChange],
+  );
+
+  // Clean up debounce on unmount
+  useEffect(() => {
+    return () => {
+      debouncedFilterChange.cancel();
+    };
+  }, [debouncedFilterChange]);
 
   const allLinks = useMemo(() => {
     if (!data?.pages) {
@@ -47,10 +86,10 @@ export default function SharedLinks() {
 
   const deleteMutation = useDeleteSharedLinkMutation({
     onSuccess: async () => {
-      refetch();
-
       setIsDeleteOpen(false);
       setDeleteRow(null);
+      // Explicitly refetch current page data
+      await refetch();
     },
     onError: (error) => {
       console.error('Delete error:', error);
@@ -76,6 +115,7 @@ export default function SharedLinks() {
       }
 
       try {
+        // Delete items sequentially
         for (const row of validRows) {
           await deleteMutation.mutateAsync({ shareId: row.shareId });
         }
@@ -119,65 +159,106 @@ export default function SharedLinks() {
     () => [
       {
         accessorKey: 'title',
-        header: 'Name',
-        cell: ({ row }) => (
-          <Link
-            to={`/share/${row.original.shareId}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-blue-500 hover:underline"
-          >
-            {row.original.title}
-          </Link>
-        ),
+        header: ({ column }) => {
+          return (
+            <Button
+              variant="ghost"
+              className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
+              onClick={() => handleSort('title', column.getIsSorted() === 'asc' ? 'desc' : 'asc')}
+            >
+              {localize('com_ui_name')}
+              <ArrowUpDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
+            </Button>
+          );
+        },
+        cell: ({ row }) => {
+          const { title, shareId } = row.original;
+
+          return (
+            <div className="flex items-center gap-2">
+              <Link
+                to={`/share/${shareId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block truncate text-blue-500 hover:underline"
+                title={title}
+              >
+                {title}
+              </Link>
+            </div>
+          );
+        },
         meta: {
-          size: '65%',
-          mobileSize: '70%',
+          size: '35%',
+          mobileSize: '50%',
         },
       },
       {
         accessorKey: 'createdAt',
-        header: 'Date',
+        header: ({ column }) => {
+          return (
+            <Button
+              variant="ghost"
+              className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
+              onClick={() =>
+                handleSort('createdAt', column.getIsSorted() === 'asc' ? 'desc' : 'asc')
+              }
+            >
+              {localize('com_ui_date')}
+              <ArrowUpDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
+            </Button>
+          );
+        },
         cell: ({ row }) => formatDate(row.original.createdAt?.toString() ?? '', isSmallScreen),
         meta: {
-          size: '15%',
-          mobileSize: '15%',
+          size: '10%',
+          mobileSize: '20%',
         },
       },
       {
         accessorKey: 'actions',
-        header: 'Actions',
+        header: () => (
+          <Label className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm">
+            {localize('com_assistants_actions')}
+          </Label>
+        ),
         meta: {
-          size: '10%',
-          mobileSize: '10%',
+          size: '7%',
+          mobileSize: '25%',
         },
         cell: ({ row }) => (
           <div className="flex items-center gap-2">
-            <TooltipAnchor description={localize('com_ui_view_source')}>
-              <Button
-                variant="ghost"
-                className="h-8 w-8 p-0 hover:bg-surface-hover"
-                onClick={() => {
-                  window.open(`/c/${row.original.conversationId}`, '_blank');
-                }}
-                title={localize('com_ui_view_source')}
-              >
-                <MessageSquare className="size-4" />
-              </Button>
-            </TooltipAnchor>
-            <TooltipAnchor description={localize('com_ui_delete')}>
-              <Button
-                variant="ghost"
-                className="h-8 w-8 p-0 hover:bg-surface-hover"
-                onClick={() => {
-                  setDeleteRow(row.original);
-                  setIsDeleteOpen(true);
-                }}
-                title={localize('com_ui_delete')}
-              >
-                <TrashIcon className="size-4" />
-              </Button>
-            </TooltipAnchor>
+            <TooltipAnchor
+              description={localize('com_ui_view_source')}
+              render={
+                <Button
+                  variant="ghost"
+                  className="h-8 w-8 p-0 hover:bg-surface-hover"
+                  onClick={() => {
+                    window.open(`/c/${row.original.conversationId}`, '_blank');
+                  }}
+                  title={localize('com_ui_view_source')}
+                >
+                  <MessageSquare className="size-4" />
+                </Button>
+              }
+            ></TooltipAnchor>
+            <TooltipAnchor
+              description={localize('com_ui_delete')}
+              render={
+                <Button
+                  variant="ghost"
+                  className="h-8 w-8 p-0 hover:bg-surface-hover"
+                  onClick={() => {
+                    setDeleteRow(row.original);
+                    setIsDeleteOpen(true);
+                  }}
+                  title={localize('com_ui_delete')}
+                >
+                  <TrashIcon className="size-4" />
+                </Button>
+              }
+            ></TooltipAnchor>
           </div>
         ),
       },
@@ -195,23 +276,27 @@ export default function SharedLinks() {
             {localize('com_nav_shared_links_manage')}
           </button>
         </OGDialogTrigger>
-        <OGDialogTemplate
-          title={localize('com_nav_shared_links')}
-          className="max-w-[1000px]"
-          showCancelButton={false}
-          main={
-            <DataTable
-              columns={columns}
-              data={allLinks}
-              onDelete={handleDelete}
-              filterColumn="title"
-              hasNextPage={hasNextPage}
-              isFetchingNextPage={isFetchingNextPage}
-              fetchNextPage={handleFetchNextPage}
-              showCheckboxes={false}
-            />
-          }
-        />
+
+        <OGDialogContent
+          title={localize('com_nav_my_files')}
+          className="w-11/12 max-w-5xl bg-background text-text-primary shadow-2xl"
+        >
+          <OGDialogHeader>
+            <OGDialogTitle>{localize('com_nav_shared_links')}</OGDialogTitle>
+          </OGDialogHeader>
+          <DataTable
+            columns={columns}
+            data={allLinks}
+            onDelete={handleDelete}
+            filterColumn="title"
+            hasNextPage={hasNextPage}
+            isFetchingNextPage={isFetchingNextPage}
+            fetchNextPage={handleFetchNextPage}
+            showCheckboxes={false}
+            onFilterChange={debouncedFilterChange}
+            filterValue={queryParams.search}
+          />
+        </OGDialogContent>
       </OGDialog>
       <OGDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
         <OGDialogTemplate

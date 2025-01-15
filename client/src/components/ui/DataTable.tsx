@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState, memo, useMemo } from 'react';
-import { ListFilter } from 'lucide-react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   flexRender,
   getCoreRowModel,
@@ -21,15 +21,15 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
+  Label,
   Checkbox,
+  AnimatedSearchInput,
 } from './';
 import { TrashIcon, Spinner } from '~/components/svg';
 import { useLocalize, useMediaQuery } from '~/hooks';
 import { cn } from '~/utils';
+import { min } from 'date-fns';
+import { Search } from 'lucide-react';
 
 type TableColumn<TData, TValue> = ColumnDef<TData, TValue> & {
   meta?: {
@@ -79,16 +79,22 @@ interface DataTableProps<TData, TValue> {
   fetchNextPage?: (options?: unknown) => Promise<unknown>;
   enableRowSelection?: boolean;
   showCheckboxes?: boolean;
+  onFilterChange?: (value: string) => void;
+  filterValue?: string;
 }
 
 const TableRowComponent = <TData, TValue>({
   row,
   isSmallScreen,
   onSelectionChange,
+  index,
+  isSearching,
 }: {
   row: Row<TData>;
   isSmallScreen: boolean;
-  onSelectionChange?: SelectionHandler;
+  onSelectionChange?: (rowId: string, selected: boolean) => void;
+  index: number;
+  isSearching: boolean;
 }) => {
   const handleSelection = useCallback(
     (value: boolean) => {
@@ -101,12 +107,23 @@ const TableRowComponent = <TData, TValue>({
   return (
     <TableRow
       data-state={row.getIsSelected() ? 'selected' : undefined}
-      className="border-b border-border-light transition-colors hover:bg-surface-secondary"
+      className={`
+        motion-safe:animate-fadeIn border-b
+        border-border-light transition-all duration-300
+        ease-out
+        hover:bg-surface-secondary
+        ${isSearching ? 'opacity-50' : 'opacity-100'}
+        ${isSearching ? 'scale-98' : 'scale-100'}
+      `}
+      style={{
+        animationDelay: `${index * 20}ms`,
+        transform: `translateY(${isSearching ? '4px' : '0'})`,
+      }}
     >
       {row.getVisibleCells().map((cell) => {
         if (cell.column.id === 'select') {
           return (
-            <TableCell key={cell.id} className="px-2 py-1">
+            <TableCell key={cell.id} className="px-2 py-1 transition-all duration-300">
               <SelectionCheckbox
                 checked={row.getIsSelected()}
                 onChange={handleSelection}
@@ -119,13 +136,20 @@ const TableRowComponent = <TData, TValue>({
         return (
           <TableCell
             key={cell.id}
-            className="align-start overflow-x-auto px-2 py-1 text-xs sm:px-4 sm:py-2 sm:text-sm"
+            className={`
+              w-0 max-w-0 px-2 py-1 align-middle text-xs
+              transition-all duration-300 sm:px-4
+              sm:py-2 sm:text-sm
+              ${isSearching ? 'blur-[0.3px]' : 'blur-0'}
+            `}
             style={getColumnStyle(
               cell.column.columnDef as TableColumn<TData, TValue>,
               isSmallScreen,
             )}
           >
-            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+            <div className="overflow-hidden text-ellipsis">
+              {flexRender(cell.column.columnDef.cell, cell.getContext())}
+            </div>
           </TableCell>
         );
       })}
@@ -133,42 +157,7 @@ const TableRowComponent = <TData, TValue>({
   );
 };
 
-const MemoizedTableRow = memo(
-  TableRowComponent as typeof TableRowComponent<any, any>,
-  (prev, next) => {
-    return (
-      prev.row.id === next.row.id &&
-      prev.isSmallScreen === next.isSmallScreen &&
-      prev.row.getIsSelected() === next.row.getIsSelected()
-    );
-  },
-) as typeof TableRowComponent;
-
-function useVirtualizedWindow(totalItems: number, itemHeight: number, containerHeight: number) {
-  const [scrollTop, setScrollTop] = useState(0);
-  const [version, setVersion] = useState(0);
-
-  const visibleItems = Math.ceil(containerHeight / itemHeight);
-  const bufferSize = Math.ceil(visibleItems / 2);
-
-  const startIndex = Math.max(0, Math.floor(scrollTop / itemHeight) - bufferSize);
-  const endIndex = Math.min(
-    totalItems,
-    Math.floor(scrollTop / itemHeight) + visibleItems + bufferSize,
-  );
-
-  const refreshVirtualWindow = useCallback(() => {
-    setVersion((v) => v + 1);
-  }, []);
-
-  return {
-    startIndex,
-    endIndex,
-    setScrollTop,
-    refreshVirtualWindow,
-    version,
-  };
-}
+const MemoizedTableRow = memo(TableRowComponent) as typeof TableRowComponent;
 
 function getColumnStyle<TData, TValue>(
   column: TableColumn<TData, TValue>,
@@ -231,35 +220,20 @@ export default function DataTable<TData, TValue>({
   fetchNextPage,
   enableRowSelection = true,
   showCheckboxes = true,
+  onFilterChange,
+  filterValue,
 }: DataTableProps<TData, TValue>) {
   const localize = useLocalize();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const tableContainerRef = useRef<HTMLDivElement>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const lastDataLength = useRef(data.length);
 
   const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
   const [sorting, setSorting] = useState<SortingState>(defaultSort);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
-
-  const lastScrollTop = useRef(0);
-
-  const ROW_HEIGHT = 48;
-  const containerHeight = scrollRef.current?.clientHeight ?? 600;
-  const { startIndex, endIndex, setScrollTop, refreshVirtualWindow, version } =
-    useVirtualizedWindow(data.length, ROW_HEIGHT, containerHeight);
-
-  useEffect(() => {
-    if (data.length !== lastDataLength.current) {
-      lastDataLength.current = data.length;
-      refreshVirtualWindow();
-    }
-  }, [data.length, refreshVirtualWindow]);
-
-  const handleSelectionChange = useCallback((rowId: string, selected: boolean) => {
-    setRowSelection((prev) => ({ ...prev, [rowId]: selected }));
-  }, []);
+  const [searchTerm, setSearchTerm] = useState(filterValue || '');
+  const [isSearching, setIsSearching] = useState(false);
 
   const tableColumns = useMemo(() => {
     if (!enableRowSelection || !showCheckboxes) {
@@ -271,36 +245,22 @@ export default function DataTable<TData, TValue>({
         <div className="flex h-full w-[30px] items-center justify-center">
           <Checkbox
             checked={table.getIsAllPageRowsSelected()}
-            onCheckedChange={(value) => {
-              table.toggleAllPageRowsSelected(Boolean(value));
-            }}
+            onCheckedChange={(value) => table.toggleAllPageRowsSelected(Boolean(value))}
             aria-label="Select all"
           />
         </div>
       ),
       cell: ({ row }: { row: Row<TData> }) => (
-        <div
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => e.stopPropagation()}
-          className="flex h-full w-[30px] items-center justify-center"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <Checkbox
-            key={`checkbox-${row.id}-${row.getIsSelected()}`}
-            checked={row.getIsSelected()}
-            onCheckedChange={(value) => {
-              row.toggleSelected(Boolean(value));
-              handleSelectionChange(row.id, Boolean(value));
-            }}
-            aria-label="Select row"
-          />
-        </div>
+        <SelectionCheckbox
+          checked={row.getIsSelected()}
+          onChange={(value) => row.toggleSelected(value)}
+          ariaLabel="Select row"
+        />
       ),
       meta: { size: '50px' },
     };
     return [selectColumn, ...columns];
-  }, [columns, enableRowSelection, showCheckboxes, handleSelectionChange]);
+  }, [columns, enableRowSelection, showCheckboxes]);
 
   const table = useReactTable({
     data,
@@ -322,162 +282,163 @@ export default function DataTable<TData, TValue>({
     onRowSelectionChange: setRowSelection,
   });
 
+  const { rows } = table.getRowModel();
+
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => tableContainerRef.current,
+    estimateSize: useCallback(() => 48, []),
+    overscan: 10,
+  });
+
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const totalSize = rowVirtualizer.getTotalSize();
+  const paddingTop = virtualRows.length > 0 ? virtualRows[0].start : 0;
+  const paddingBottom =
+    virtualRows.length > 0 ? totalSize - virtualRows[virtualRows.length - 1].end : 0;
+
+  useEffect(() => {
+    const scrollElement = tableContainerRef.current;
+    if (!scrollElement) {
+      return;
+    }
+
+    const handleScroll = () => {
+      if (!hasNextPage || isFetchingNextPage) {
+        return;
+      }
+
+      const { scrollTop, scrollHeight, clientHeight } = scrollElement;
+      if (scrollHeight - scrollTop <= clientHeight * 1.5) {
+        fetchNextPage?.();
+      }
+    };
+
+    scrollElement.addEventListener('scroll', handleScroll, { passive: true });
+    return () => scrollElement.removeEventListener('scroll', handleScroll);
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  useEffect(() => {
+    setIsSearching(true);
+    const timeout = setTimeout(() => {
+      onFilterChange?.(searchTerm);
+      setIsSearching(false);
+    }, 300);
+    return () => clearTimeout(timeout);
+  }, [searchTerm, onFilterChange]);
+
   const handleDelete = useCallback(async () => {
     if (!onDelete) {
       return;
     }
+
     setIsDeleting(true);
-    const itemsToDelete = table.getFilteredSelectedRowModel().rows.map((r) => r.original);
     try {
+      const itemsToDelete = table.getFilteredSelectedRowModel().rows.map((r) => r.original);
       await onDelete(itemsToDelete);
-      refreshVirtualWindow();
     } finally {
       setRowSelection({});
       setIsDeleting(false);
     }
-  }, [onDelete, table, refreshVirtualWindow]);
-
-  const selectedRowsCount = table.getFilteredSelectedRowModel().rows.length;
-  const visibleRows = useMemo(() => {
-    return table.getRowModel().rows.slice(startIndex, endIndex);
-  }, [table, startIndex, endIndex, version]);
-
-  useEffect(() => {
-    let rafHandle: number;
-    const handleScroll = () => {
-      if (!scrollRef.current) {
-        return;
-      }
-
-      rafHandle = requestAnimationFrame(() => {
-        const el = scrollRef.current;
-        if (!el) {
-          return;
-        }
-
-        const currentScrollTop = el.scrollTop;
-        const scrollingDown = currentScrollTop > lastScrollTop.current;
-        lastScrollTop.current = currentScrollTop;
-        setScrollTop(currentScrollTop);
-
-        if (scrollingDown && !isFetchingNextPage && hasNextPage) {
-          const nearBottom = el.scrollHeight - currentScrollTop <= el.clientHeight * 1.5;
-          if (nearBottom) {
-            fetchNextPage?.();
-          }
-        }
-      });
-    };
-
-    const div = scrollRef.current;
-    div?.addEventListener('scroll', handleScroll, { passive: true });
-
-    return () => {
-      div?.removeEventListener('scroll', handleScroll);
-      if (rafHandle) {
-        cancelAnimationFrame(rafHandle);
-      }
-    };
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage, setScrollTop]);
+  }, [onDelete, table]);
 
   return (
     <div className={cn('flex h-full flex-col gap-4', className)}>
+      {/* Table controls */}
       <div className="flex flex-wrap items-center gap-2 py-2 sm:gap-4 sm:py-4">
         {enableRowSelection && showCheckboxes && (
           <DeleteButton
             onDelete={handleDelete}
             isDeleting={isDeleting}
-            disabled={!selectedRowsCount || isDeleting}
+            disabled={!table.getFilteredSelectedRowModel().rows.length || isDeleting}
             isSmallScreen={isSmallScreen}
             localize={localize}
           />
         )}
-        {typeof filterColumn === 'string' &&
-          filterColumn !== '' &&
-          table.getColumn(filterColumn) && (
-          <Input
-            placeholder={localize('com_files_filter')}
-            value={table.getColumn(filterColumn)?.getFilterValue() as string}
-            onChange={(event) =>
-              table.getColumn(filterColumn)?.setFilterValue(event.target.value)
-            }
-            className="flex-1 text-sm"
-          />
-          )}
-        {/* TODO: Implement column visibility dropdown with the row cached */}
-        {/* <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" className={cn('min-w-[40px]', isSmallScreen && 'px-2 py-1')}>
-              <ListFilter className="size-3.5 sm:size-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="end"
-            className="max-h-[300px] overflow-y-auto dark:border-gray-700 dark:bg-gray-850"
-          >
-            {table
-              .getAllColumns()
-              .filter((col) => col.getCanHide())
-              .map((col) => (
-                <DropdownMenuCheckboxItem
-                  key={col.id}
-                  className="cursor-pointer text-sm capitalize dark:text-white dark:hover:bg-gray-800"
-                  checked={col.getIsVisible()}
-                  onCheckedChange={(value) => col.toggleVisibility(Boolean(value))}
-                >
-                  {columnVisibilityMap[col.id] || localize(col.columnDef.header)}
-                </DropdownMenuCheckboxItem>
-              ))}
-          </DropdownMenuContent>
-        </DropdownMenu> */}
+        {filterColumn && table.getColumn(filterColumn) && (
+          <div className="relative flex-1">
+            <AnimatedSearchInput
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              isSearching={isSearching}
+              placeholder={`${localize('com_ui_search')}...`}
+            />
+          </div>
+        )}
       </div>
 
+      {/* Virtualized table */}
       <div
-        ref={scrollRef}
+        ref={tableContainerRef}
         className={cn(
-          'relative h-[600px] max-w-full overflow-x-auto overflow-y-auto rounded-md border border-black/10 dark:border-white/10',
+          'relative h-[calc(100vh-20rem)] max-w-full overflow-x-auto overflow-y-auto rounded-md border border-black/10 dark:border-white/10',
+          'transition-all duration-300 ease-out',
+          isSearching && 'bg-surface-secondary/50',
           className,
         )}
       >
-        <Table className="w-full min-w-[300px] border-separate border-spacing-0">
+        <Table className="w-full min-w-[300px] table-fixed border-separate border-spacing-0">
           <TableHeader className="sticky top-0 z-50 bg-surface-secondary">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id} className="border-b border-border-light">
-                {headerGroup.headers.map((header) => {
-                  const canSort = header.column.getCanSort();
-                  return (
-                    <TableHead
-                      key={header.id}
-                      className="cursor-pointer whitespace-nowrap bg-surface-secondary px-2 py-2 text-left text-sm font-medium text-text-secondary sm:px-4"
-                      style={getColumnStyle(
-                        header.column.columnDef as TableColumn<TData, TValue>,
-                        isSmallScreen,
-                      )}
-                      onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
-                    >
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(header.column.columnDef.header, header.getContext())}
-                    </TableHead>
-                  );
-                })}
+                {headerGroup.headers.map((header) => (
+                  <TableHead
+                    key={header.id}
+                    className="whitespace-nowrap bg-surface-secondary px-2 py-2 text-left text-sm font-medium text-text-secondary sm:px-4"
+                    style={getColumnStyle(
+                      header.column.columnDef as TableColumn<TData, TValue>,
+                      isSmallScreen,
+                    )}
+                    onClick={
+                      header.column.getCanSort()
+                        ? header.column.getToggleSortingHandler()
+                        : undefined
+                    }
+                  >
+                    {header.isPlaceholder
+                      ? null
+                      : flexRender(header.column.columnDef.header, header.getContext())}
+                  </TableHead>
+                ))}
               </TableRow>
             ))}
           </TableHeader>
 
           <TableBody>
-            {startIndex > 0 && <tr style={{ height: `${startIndex * ROW_HEIGHT}px` }} />}
-            {visibleRows.map((row) => (
-              <MemoizedTableRow
-                key={`${row.id}-${version}`}
-                row={row}
-                isSmallScreen={isSmallScreen}
-              />
-            ))}
-            {endIndex < data.length && (
-              <tr style={{ height: `${(data.length - endIndex) * ROW_HEIGHT}px` }} />
+            {paddingTop > 0 && (
+              <tr>
+                <td style={{ height: `${paddingTop}px` }} />
+              </tr>
             )}
 
+            {virtualRows.map((virtualRow) => {
+              const row = rows[virtualRow.index];
+              return (
+                <MemoizedTableRow
+                  key={row.id}
+                  row={row}
+                  isSmallScreen={isSmallScreen}
+                  index={virtualRow.index}
+                  isSearching={isSearching}
+                />
+              );
+            })}
+
+            {!virtualRows.length && (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={columns.length} className="p-4 text-center">
+                  {localize('com_ui_no_data')}
+                </TableCell>
+              </TableRow>
+            )}
+
+            {paddingBottom > 0 && (
+              <tr>
+                <td style={{ height: `${paddingBottom}px` }} />
+              </tr>
+            )}
+
+            {/* Loading indicator */}
             {(isFetchingNextPage || hasNextPage) && (
               <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={columns.length} className="p-4">

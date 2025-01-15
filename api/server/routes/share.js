@@ -54,7 +54,9 @@ router.get('/', requireJwtAuth, async (req, res) => {
       sortDirection: ['asc', 'desc'].includes(req.query.sortDirection)
         ? req.query.sortDirection
         : 'desc',
-      search: req.query.search?.trim() || undefined,
+      search: req.query.search
+        ? decodeURIComponent(req.query.search.trim())
+        : undefined,
     };
 
     const result = await getSharedLinks(

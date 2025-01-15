@@ -107,17 +107,39 @@ async function getSharedLinks(user, pageParam, pageSize, isPublic, sortBy, sortD
       }
     }
 
-    if (search) {
-      const searchResults = await Conversation.meiliSearch(search, {
-        attributesToHighlight: ['title'],
-      });
+    if (search && search.trim()) {
+      try {
+        const searchResults = await Conversation.meiliSearch(search);
 
-      const conversationIds = searchResults.hits.map((hit) => hit.id);
-      query['conversation'] = { $in: conversationIds };
+        if (!searchResults?.hits?.length) {
+          return {
+            links: [],
+            nextCursor: undefined,
+            hasNextPage: false,
+          };
+        }
+
+        const conversationIds = searchResults.hits.map((hit) => hit.conversationId);
+        query['conversationId'] = { $in: conversationIds };
+      } catch (searchError) {
+        logger.error('[getSharedLinks] Meilisearch error', {
+          error: searchError.message,
+          user,
+        });
+        return {
+          links: [],
+          nextCursor: undefined,
+          hasNextPage: false,
+        };
+      }
     }
 
     const sort = {};
     sort[sortBy] = sortDirection === 'desc' ? -1 : 1;
+
+    if (Array.isArray(query.conversationId)) {
+      query.conversationId = { $in: query.conversationId };
+    }
 
     const sharedLinks = await SharedLink.find(query)
       .sort(sort)
