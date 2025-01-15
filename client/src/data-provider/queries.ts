@@ -156,8 +156,7 @@ export const useSharedLinksQuery = (
         sortBy,
         sortDirection,
       }),
-    getNextPageParam: (lastPage) => lastPage.nextCursor,
-
+    getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
     keepPreviousData: true,
     staleTime: 5 * 60 * 1000, // 5 minutes
     cacheTime: 30 * 60 * 1000, // 30 minutes

@@ -213,7 +213,6 @@ export default function DataTable<TData, TValue>({
   onDelete,
   filterColumn,
   defaultSort = [],
-  columnVisibilityMap = {},
   className = '',
   isFetchingNextPage = false,
   hasNextPage = false,
@@ -299,18 +298,18 @@ export default function DataTable<TData, TValue>({
 
   useEffect(() => {
     const scrollElement = tableContainerRef.current;
-    if (!scrollElement) {
-      return;
-    }
+    if (!scrollElement) return;
 
-    const handleScroll = () => {
-      if (!hasNextPage || isFetchingNextPage) {
-        return;
-      }
-
+    const handleScroll = async () => {
+      if (!hasNextPage || isFetchingNextPage) return;
       const { scrollTop, scrollHeight, clientHeight } = scrollElement;
       if (scrollHeight - scrollTop <= clientHeight * 1.5) {
-        fetchNextPage?.();
+        try {
+          // Safely fetch next page without breaking if lastPage is undefined
+          await fetchNextPage?.();
+        } catch (error) {
+          console.error('Unable to fetch next page:', error);
+        }
       }
     };
 
@@ -336,8 +335,9 @@ export default function DataTable<TData, TValue>({
     try {
       const itemsToDelete = table.getFilteredSelectedRowModel().rows.map((r) => r.original);
       await onDelete(itemsToDelete);
-    } finally {
       setRowSelection({});
+      // await fetchNextPage?.({ pageParam: lastPage?.nextCursor });
+    } finally {
       setIsDeleting(false);
     }
   }, [onDelete, table]);
@@ -355,7 +355,7 @@ export default function DataTable<TData, TValue>({
             localize={localize}
           />
         )}
-        {filterColumn && table.getColumn(filterColumn) && (
+        {filterColumn !== undefined && table.getColumn(filterColumn) && (
           <div className="relative flex-1">
             <AnimatedSearchInput
               value={searchTerm}

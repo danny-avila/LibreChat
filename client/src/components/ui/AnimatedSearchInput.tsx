@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Search } from 'lucide-react';
 
-const AnimatedSearchInput = ({ value, onChange, isSearching, placeholder }) => {
+const AnimatedSearchInput = ({ value, onChange, isSearching: searching, placeholder }) => {
   const [isFocused, setIsFocused] = useState(false);
+  const isSearching = searching === true;
 
   return (
     <div className="relative w-full">
@@ -52,7 +53,7 @@ const AnimatedSearchInput = ({ value, onChange, isSearching, placeholder }) => {
             className={`
               absolute right-3 top-1/2 -translate-y-1/2
               transition-all duration-500 ease-in-out
-              ${isSearching ? 'opacity-100 scale-100' : 'opacity-0 scale-0'}
+              ${isSearching ? 'scale-100 opacity-100' : 'scale-0 opacity-0'}
             `}
           >
             <div className="relative h-2 w-2">
@@ -68,18 +69,18 @@ const AnimatedSearchInput = ({ value, onChange, isSearching, placeholder }) => {
         className={`
           absolute -inset-8 -z-10
           transition-all duration-700 ease-in-out
-          ${isSearching ? 'opacity-100 scale-105' : 'opacity-0 scale-100'}
+          ${isSearching ? 'scale-105 opacity-100' : 'scale-100 opacity-0'}
         `}
       >
         <div className="absolute inset-0">
-          <div 
+          <div
             className={`
-              absolute inset-0 bg-gradient-radial from-blue-500/10 to-transparent
+              bg-gradient-radial absolute inset-0 from-blue-500/10 to-transparent
               transition-opacity duration-700 ease-in-out
               ${isSearching ? 'animate-pulse-slow opacity-100' : 'opacity-0'}
             `}
           />
-          <div 
+          <div
             className={`
               absolute inset-0 bg-gradient-to-r from-purple-500/5 via-blue-500/5 to-purple-500/5
               blur-xl transition-all duration-700 ease-in-out

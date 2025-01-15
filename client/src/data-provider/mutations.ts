@@ -328,10 +328,10 @@ export const useDeleteSharedLinkMutation = (
         return { previousQueries };
       },
 
-      onError: (_err, _vars, context) => {
-        if (context && context.previousQueries) {
-          context.previousQueries.forEach((prevData: unknown, prevQueryKey: QueryKey) => {
-            queryClient.setQueryData(prevQueryKey, prevData);
+      onError: (_err, _vars, context: { previousQueries?: Map<unknown, unknown> }) => {
+        if (context?.previousQueries) {
+          context.previousQueries.forEach((prevData: unknown, prevQueryKey: unknown) => {
+            queryClient.setQueryData(prevQueryKey as string[], prevData);
           });
         }
       },

@@ -20,6 +20,7 @@ import DataTable from '~/components/ui/DataTable';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
 import { formatDate } from '~/utils';
+import { Spinner } from '~/components/svg';
 
 const PAGE_SIZE = 25;
 
@@ -69,7 +70,6 @@ export default function SharedLinks() {
     [handleFilterChange],
   );
 
-  // Clean up debounce on unmount
   useEffect(() => {
     return () => {
       debouncedFilterChange.cancel();
@@ -88,7 +88,6 @@ export default function SharedLinks() {
     onSuccess: async () => {
       setIsDeleteOpen(false);
       setDeleteRow(null);
-      // Explicitly refetch current page data
       await refetch();
     },
     onError: (error) => {
@@ -115,7 +114,6 @@ export default function SharedLinks() {
       }
 
       try {
-        // Delete items sequentially
         for (const row of validRows) {
           await deleteMutation.mutateAsync({ shareId: row.shareId });
         }
@@ -316,9 +314,10 @@ export default function SharedLinks() {
           }
           selection={{
             selectHandler: confirmDelete,
-            selectClasses:
-              'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 text-white',
-            selectText: localize('com_ui_delete'),
+            selectClasses: `bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 text-white ${
+              deleteMutation.isLoading ? 'cursor-not-allowed opacity-80' : ''
+            }`,
+            selectText: deleteMutation.isLoading ? <Spinner /> : localize('com_ui_delete'),
           }}
         />
       </OGDialog>
