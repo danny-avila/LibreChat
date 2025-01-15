@@ -76,6 +76,7 @@
     "librechat-mcp": "*",
     "lodash": "^4.17.21",
     "meilisearch": "^0.38.0",
+    "memorystore": "^1.6.7",
     "mime": "^3.0.0",
     "module-alias": "^2.2.3",
     "mongoose": "^8.8.3",

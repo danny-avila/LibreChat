@@ -1,8 +1,7 @@
 import { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useAuthContext, useLocalize } from '~/hooks';
-import type { TMessage } from 'librechat-data-provider';
-import type { TMessageProps } from '~/common';
+import type { TMessageProps, TMessageIcon } from '~/common';
 import MinimalHoverButtons from '~/components/Chat/Messages/MinimalHoverButtons';
 import Icon from '~/components/Chat/Messages/MessageIcon';
 import SearchContent from './Content/SearchContent';
@@ -17,14 +16,13 @@ export default function Message({ message }: Pick<TMessageProps, 'message'>) {
   const { user } = useAuthContext();
   const localize = useLocalize();
 
-  const iconData = useMemo(
-    () =>
-      ({
-        endpoint: message?.endpoint,
-        model: message?.model,
-        iconURL: message?.iconURL ?? '',
-        isCreatedByUser: message?.isCreatedByUser,
-      } as TMessage & { modelLabel?: string }),
+  const iconData: TMessageIcon = useMemo(
+    () => ({
+      endpoint: message?.endpoint,
+      model: message?.model,
+      iconURL: message?.iconURL ?? '',
+      isCreatedByUser: message?.isCreatedByUser,
+    }),
     [message?.model, message?.iconURL, message?.endpoint, message?.isCreatedByUser],
   );
 

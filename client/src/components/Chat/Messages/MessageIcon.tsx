@@ -1,31 +1,38 @@
 import React, { useMemo, memo } from 'react';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
-import type { Assistant, Agent, TMessage } from 'librechat-data-provider';
+import type { Assistant, Agent } from 'librechat-data-provider';
+import type { TMessageIcon } from '~/common';
+import { getEndpointField, getIconEndpoint, logger } from '~/utils';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
-import { getEndpointField, getIconEndpoint } from '~/utils';
 import Icon from '~/components/Endpoints/Icon';
 
 const MessageIcon = memo(
-  (props: {
-    iconData?: TMessage & { modelLabel?: string };
+  ({
+    iconData,
+    assistant,
+    agent,
+  }: {
+    iconData?: TMessageIcon;
     assistant?: Assistant;
     agent?: Agent;
   }) => {
+    logger.log('icon_data', iconData, assistant, agent);
     const { data: endpointsConfig } = useGetEndpointsQuery();
-    const { iconData, assistant, agent } = props;
 
+    const agentName = useMemo(() => agent?.name ?? '', [agent]);
+    const agentAvatar = useMemo(() => agent?.avatar?.filepath ?? '', [agent]);
     const assistantName = useMemo(() => assistant?.name ?? '', [assistant]);
     const assistantAvatar = useMemo(() => assistant?.metadata?.avatar ?? '', [assistant]);
-    const agentName = useMemo(() => props.agent?.name ?? '', [props.agent]);
-    const agentAvatar = useMemo(() => props.agent?.avatar?.filepath ?? '', [props.agent]);
 
-    let avatarURL = '';
-
-    if (assistant) {
-      avatarURL = assistantAvatar;
-    } else if (agent) {
-      avatarURL = agentAvatar;
-    }
+    const avatarURL = useMemo(() => {
+      let result = '';
+      if (assistant) {
+        result = assistantAvatar;
+      } else if (agent) {
+        result = agentAvatar;
+      }
+      return result;
+    }, [assistant, agent, assistantAvatar, agentAvatar]);
 
     const iconURL = iconData?.iconURL;
     const endpoint = useMemo(

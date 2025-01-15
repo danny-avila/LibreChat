@@ -1,10 +1,11 @@
-import React, { memo } from 'react';
+import { memo, useMemo } from 'react';
 import type { IconMapProps } from '~/common';
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
+import { URLIcon } from '~/components/Endpoints/URLIcon';
 
 interface ConvoIconURLProps {
   iconURL?: string;
-  modelLabel?: string;
+  modelLabel?: string | null;
   endpointIconURL?: string;
   assistantName?: string;
   agentName?: string;
@@ -38,33 +39,26 @@ const ConvoIconURL: React.FC<ConvoIconURLProps> = ({
   agentName,
   context,
 }) => {
-  let Icon: (
+  const Icon: (
     props: IconMapProps & {
       context?: string;
       iconURL?: string;
     },
-  ) => React.JSX.Element;
-
-  const isURL = !!(iconURL && (iconURL.includes('http') || iconURL.startsWith('/images/')));
-
-  if (!isURL) {
-    Icon = icons[iconURL] ?? icons.unknown;
-  } else {
-    Icon = () => (
-      <div
+  ) => React.JSX.Element = useMemo(() => icons[iconURL] ?? icons.unknown, [iconURL]);
+  const isURL = useMemo(
+    () => !!(iconURL && (iconURL.includes('http') || iconURL.startsWith('/images/'))),
+    [iconURL],
+  );
+  if (isURL) {
+    return (
+      <URLIcon
+        iconURL={iconURL}
+        altName={modelLabel}
         className={classMap[context ?? 'default'] ?? classMap.default}
-        style={styleMap[context ?? 'default'] ?? styleMap.default}
-      >
-        <img
-          src={iconURL}
-          alt={modelLabel}
-          style={styleImageMap[context ?? 'default'] ?? styleImageMap.default}
-          className="object-cover"
-        />
-      </div>
+        containerStyle={styleMap[context ?? 'default'] ?? styleMap.default}
+        imageStyle={styleImageMap[context ?? 'default'] ?? styleImageMap.default}
+      />
     );
-
-    return <Icon context={context} />;
   }
 
   return (

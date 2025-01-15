@@ -20,8 +20,6 @@ const PresetsMenu: FC = () => {
     exportPreset,
   } = usePresets();
   const { preset } = useChatContext();
-
-  const presets = presetsQuery.data || [];
   return (
     <Root>
       <Trigger asChild>
@@ -54,7 +52,7 @@ const PresetsMenu: FC = () => {
             className="mt-2 max-h-[495px] overflow-x-hidden rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-700 dark:text-white md:min-w-[400px]"
           >
             <PresetItems
-              presets={presets}
+              presets={presetsQuery.data}
               onSetDefaultPreset={onSetDefaultPreset}
               onSelectPreset={onSelectPreset}
               onChangePreset={onChangePreset}
