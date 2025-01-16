@@ -1,25 +1,69 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useMemo } from 'react';
 import { useRecoilState } from 'recoil';
-import { useToastContext } from '~/Providers';
-import store from '~/store';
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
 import useGetAudioSettings from './useGetAudioSettings';
+import { useToastContext } from '~/Providers';
+import store from '~/store';
 
-const useSpeechToTextBrowser = () => {
+const useSpeechToTextBrowser = (
+  setText: (text: string) => void,
+  onTranscriptionComplete: (text: string) => void,
+) => {
   const { showToast } = useToastContext();
-  const [languageSTT] = useRecoilState<string>(store.languageSTT);
-  const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
   const { speechToTextEndpoint } = useGetAudioSettings();
   const isBrowserSTTEnabled = speechToTextEndpoint === 'browser';
-  const [isListening, setIsListening] = useState(false);
+
+  const lastTranscript = useRef<string | null>(null);
+  const lastInterim = useRef<string | null>(null);
+  const timeoutRef = useRef<NodeJS.Timeout | null>();
+  const [autoSendText] = useRecoilState(store.autoSendText);
+  const [languageSTT] = useRecoilState<string>(store.languageSTT);
+  const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
 
   const {
-    interimTranscript,
-    finalTranscript,
     listening,
-    browserSupportsSpeechRecognition,
+    finalTranscript,
+    resetTranscript,
+    interimTranscript,
     isMicrophoneAvailable,
+    browserSupportsSpeechRecognition,
   } = useSpeechRecognition();
+  const isListening = useMemo(() => listening, [listening]);
+
+  useEffect(() => {
+    if (interimTranscript == null || interimTranscript === '') {
+      return;
+    }
+
+    if (lastInterim.current === interimTranscript) {
+      return;
+    }
+
+    setText(interimTranscript);
+    lastInterim.current = interimTranscript;
+  }, [setText, interimTranscript]);
+
+  useEffect(() => {
+    if (finalTranscript == null || finalTranscript === '') {
+      return;
+    }
+
+    if (lastTranscript.current === finalTranscript) {
+      return;
+    }
+
+    setText(finalTranscript);
+    lastTranscript.current = finalTranscript;
+    resetTranscript();
+    if (autoSendText > -1 && finalTranscript.length > 0) {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+      timeoutRef.current = setTimeout(() => {
+        onTranscriptionComplete(finalTranscript);
+      }, autoSendText * 1000);
+    }
+  }, [setText, onTranscriptionComplete, resetTranscript, finalTranscript, autoSendText]);
 
   const toggleListening = () => {
     if (!browserSupportsSpeechRecognition) {
@@ -38,11 +82,9 @@ const useSpeechToTextBrowser = () => {
       return;
     }
 
-    if (listening) {
-      setIsListening(false);
+    if (isListening === true) {
       SpeechRecognition.stopListening();
     } else {
-      setIsListening(true);
       SpeechRecognition.startListening({
         language: languageSTT,
         continuous: autoTranscribeAudio,
@@ -61,17 +103,9 @@ const useSpeechToTextBrowser = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  useEffect(() => {
-    if (!listening) {
-      setIsListening(false);
-    }
-  }, [listening]);
-
   return {
     isListening,
     isLoading: false,
-    interimTranscript,
-    text: finalTranscript,
     startRecording: toggleListening,
     stopRecording: toggleListening,
   };
