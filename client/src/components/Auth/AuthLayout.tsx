@@ -65,7 +65,7 @@ function AuthLayout({
           <img
             src="/assets/logo.svg"
             className="h-full w-full object-contain"
-            alt={localize('com_ui_logo', startupConfig?.appTitle ?? 'LibreChat')}
+            alt={localize('com_ui_logo', startupConfig?.appTitle ?? 'Parser AI')}
           />
         </div>
       </BlinkAnimation>
