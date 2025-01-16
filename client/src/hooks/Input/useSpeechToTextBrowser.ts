@@ -55,14 +55,17 @@ const useSpeechToTextBrowser = (
     setText(finalTranscript);
     lastTranscript.current = finalTranscript;
     if (autoSendText > -1 && finalTranscript.length > 0) {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
       timeoutRef.current = setTimeout(() => {
         onTranscriptionComplete(finalTranscript);
         resetTranscript();
       }, autoSendText * 1000);
     }
+
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
   }, [setText, onTranscriptionComplete, resetTranscript, finalTranscript, autoSendText]);
 
   const toggleListening = () => {
