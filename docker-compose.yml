@@ -36,14 +36,15 @@ services:
     command: mongod --noauth
   meilisearch:
     container_name: chat-meilisearch
-    image: getmeili/meilisearch:v1.7.3
+    image: getmeili/meilisearch:v1.12.3
     restart: always
     user: "${UID}:${GID}"
     environment:
       - MEILI_HOST=http://meilisearch:7700
       - MEILI_NO_ANALYTICS=true
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
     volumes:
-      - ./meili_data_v1.7:/meili_data
+      - ./meili_data_v1.12:/meili_data
   vectordb:
     container_name: vectordb
     image: ankane/pgvector:latest
