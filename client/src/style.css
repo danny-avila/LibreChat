@@ -18,20 +18,18 @@
   --gray-800: #212121;
   --gray-850: #171717;
   --gray-900: #0d0d0d;
-  --green-50: #ecfdf5;
-  --green-100: #d1fae5;
-  --green-200: #a7f3d0;
-  --green-300: #6ee7b7;
-  --green-400: #34d399;
-  --green-500: #10b981;
-  --green-600: #059669;
-  --green-700: #047857;
-  --green-800: #065f46;
-  --green-900: #064e3b;
-  --green-950: #022c22;
   --gizmo-gray-500: #999;
   --gizmo-gray-600: #666;
   --gizmo-gray-950: #0f0f0f;
+  --blue-100: #c9cbd1;
+  --blue-200: #5d6271;
+  --blue-300: #a0c5e8;
+  --blue-400: #2e74b4;
+  --blue-500: #0c5394;
+  --blue-600: #262d42;
+  --red-100: #fdd0d2;
+  --red-200: #f9727c;
+  --red-300: #fa424d;
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.875rem;
   --font-size-base: 1rem;
@@ -60,7 +58,7 @@ html {
   --surface-tertiary: var(--gray-100);
   --surface-tertiary-alt: var(--white);
   --surface-dialog: var(--white);
-  --surface-submit: var(--green-500);
+  --surface-submit: var(--blue-300);
   --border-light: var(--gray-200);
   --border-medium-alt: var(--gray-300);
   --border-medium: var(--gray-300);
@@ -114,7 +112,7 @@ html {
   --surface-tertiary: var(--gray-700);
   --surface-tertiary-alt: var(--gray-700);
   --surface-dialog: var(--gray-850);
-  --surface-submit: var(--green-600);
+  --surface-submit: var(--blue-300);
   --border-light: var(--gray-700);
   --border-medium-alt: var(--gray-600);
   --border-medium: var(--gray-600);
@@ -449,7 +447,7 @@ Step 5: rebuild frontend code: `npm run frontend` (or rebuild docker).
 
 /* * {
   box-sizing: border-box;
-  outline: 1px solid limegreen !important;
+  outline: 1px solid limeblue !important;
 } */
 
 /* p small {
