@@ -886,32 +886,42 @@ class GoogleClient extends BaseClient {
   }
 
   getSafetySettings() {
+    const isGemini2 = this.modelOptions.model.includes('gemini-2.0');
+    const mapThreshold = (value) => {
+      if (isGemini2 && value === 'BLOCK_NONE') {
+        return 'OFF';
+      }
+      return value;
+    };
+
     return [
       {
         category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-        threshold:
+        threshold: mapThreshold(
           process.env.GOOGLE_SAFETY_SEXUALLY_EXPLICIT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+        ),
       },
       {
         category: 'HARM_CATEGORY_HATE_SPEECH',
-        threshold: process.env.GOOGLE_SAFETY_HATE_SPEECH || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+        threshold: mapThreshold(
+          process.env.GOOGLE_SAFETY_HATE_SPEECH || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+        ),
       },
       {
         category: 'HARM_CATEGORY_HARASSMENT',
-        threshold: process.env.GOOGLE_SAFETY_HARASSMENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+        threshold: mapThreshold(
+          process.env.GOOGLE_SAFETY_HARASSMENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+        ),
       },
       {
         category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
-        threshold:
+        threshold: mapThreshold(
           process.env.GOOGLE_SAFETY_DANGEROUS_CONTENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+        ),
       },
       {
         category: 'HARM_CATEGORY_CIVIC_INTEGRITY',
-        /**
-         * Note: this was added since `gemini-2.0-flash-thinking-exp-1219` does not
-         * accept 'HARM_BLOCK_THRESHOLD_UNSPECIFIED' for 'HARM_CATEGORY_CIVIC_INTEGRITY'
-         * */
-        threshold: process.env.GOOGLE_SAFETY_CIVIC_INTEGRITY || 'BLOCK_NONE',
+        threshold: mapThreshold(process.env.GOOGLE_SAFETY_CIVIC_INTEGRITY || 'BLOCK_NONE'),
       },
     ];
   }
