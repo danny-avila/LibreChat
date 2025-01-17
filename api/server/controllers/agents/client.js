@@ -858,6 +858,9 @@ class AgentClient extends BaseClient {
     }
   }
 
+  /** Silent method, as `recordCollectedUsage` is used instead */
+  async recordTokenUsage() {}
+
   getEncoding() {
     return 'o200k_base';
   }
