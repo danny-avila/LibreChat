@@ -130,17 +130,15 @@ export default function AgentConfig({
   const update = useUpdateAgentMutation({
     onSuccess: (data) => {
       showToast({
-        message: `${localize('com_assistants_update_success')} ${
-          data.name ?? localize('com_ui_agent')
-        }`,
+        message: `${localize('com_assistants_update_success')} ${data.name ?? localize('com_ui_agent')
+          }`,
       });
     },
     onError: (err) => {
       const error = err as Error;
       showToast({
-        message: `${localize('com_agents_update_error')}${
-          error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
-        }`,
+        message: `${localize('com_agents_update_error')}${error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
+          }`,
         status: 'error',
       });
     },
@@ -150,17 +148,15 @@ export default function AgentConfig({
     onSuccess: (data) => {
       setCurrentAgentId(data.id);
       showToast({
-        message: `${localize('com_assistants_create_success ')} ${
-          data.name ?? localize('com_ui_agent')
-        }`,
+        message: `${localize('com_assistants_create_success ')} ${data.name ?? localize('com_ui_agent')
+          }`,
       });
     },
     onError: (err) => {
       const error = err as Error;
       showToast({
-        message: `${localize('com_agents_create_error')}${
-          error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
-        }`,
+        message: `${localize('com_agents_create_error')}${error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
+          }`,
         status: 'error',
       });
     },
@@ -183,12 +179,12 @@ export default function AgentConfig({
   let iconKey: string | undefined;
   let Icon:
     | React.ComponentType<
-        React.SVGProps<SVGSVGElement> & {
-          endpoint: string;
-          endpointType: EModelEndpoint | undefined;
-          iconURL: string | undefined;
-        }
-      >
+      React.SVGProps<SVGSVGElement> & {
+        endpoint: string;
+        endpointType: EModelEndpoint | undefined;
+        iconURL: string | undefined;
+      }
+    >
     | undefined;
 
   if (providerValue !== undefined) {
@@ -415,17 +411,17 @@ export default function AgentConfig({
           />
           {(agent?.author === user?.id || user?.role === SystemRoles.ADMIN) &&
             hasAccessToShareAgents && (
-            <ShareAgent
-              agent_id={agent_id}
-              agentName={agent?.name ?? ''}
-              projectIds={agent?.projectIds ?? []}
-              isCollaborative={agent?.isCollaborative}
-            />
-          )}
+              <ShareAgent
+                agent_id={agent_id}
+                agentName={agent?.name ?? ''}
+                projectIds={agent?.projectIds ?? []}
+                isCollaborative={agent?.isCollaborative}
+              />
+            )}
           {agent && agent.author === user?.id && <DuplicateAgent agent_id={agent_id} />}
           {/* Submit Button */}
           <button
-            className="btn btn-primary focus:shadow-outline flex h-9 w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"
+            className="btn btn-primary focus:shadow-outline flex h-9 w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-brand-blue-600 focus:border-brand-blue-500"
             type="submit"
             disabled={create.isLoading || update.isLoading}
             aria-busy={create.isLoading || update.isLoading}

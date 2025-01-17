@@ -126,6 +126,24 @@ module.exports = {
         sm: 'calc(var(--radius) - 4px)',
       },
     },
+    colors: {
+      transparent: 'transparent',
+      current: 'currentColor',
+      white: '#fff',
+      'brand-blue': {
+        100: '#c9cbd1',
+        200: '#5d6271',
+        300: '#a0c5e8',
+        400: '#2e74b4',
+        500: '#0c5394',
+        600: '#262d42',
+      },
+      'brand-red': {
+        100: '#fdd0d2',
+        200: '#f9727c',
+        300: '#fa424d',
+      },
+    },
   },
   plugins: [
     require('tailwindcss-animate'),

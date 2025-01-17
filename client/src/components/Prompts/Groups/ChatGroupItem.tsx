@@ -59,7 +59,7 @@ function ChatGroupItem({
         }
       >
         <div className="flex flex-row items-center gap-2">
-          {groupIsGlobal === true && <EarthIcon className="icon-md text-green-400" />}
+          {groupIsGlobal === true && <EarthIcon className="icon-md text-brand-blue-400" />}
           <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <button

@@ -136,9 +136,8 @@ const EditPresetDialog = ({
       }}
     >
       <DialogTemplate
-        title={`${localize('com_ui_edit') + ' ' + localize('com_endpoint_preset')} - ${
-          preset?.title
-        }`}
+        title={`${localize('com_ui_edit') + ' ' + localize('com_endpoint_preset')} - ${preset?.title
+          }`}
         className="h-full max-w-full overflow-y-auto pb-4 sm:w-[680px] sm:pb-0 md:h-[720px] md:w-[750px] md:overflow-y-hidden lg:w-[950px] xl:h-[720px]"
         main={
           <div className="flex w-full flex-col items-center gap-2 md:h-[550px] md:overflow-y-auto">
@@ -213,7 +212,7 @@ const EditPresetDialog = ({
             </DialogButton>
             <DialogClose
               onClick={submitPreset}
-              className="ml-2 bg-green-500 text-white hover:bg-green-600 dark:hover:bg-green-600"
+              className="ml-2 bg-brand-blue-500 text-white hover:bg-brand-blue-600 dark:hover:bg-brand-blue-600"
             >
               {localize('com_ui_save')}
             </DialogClose>

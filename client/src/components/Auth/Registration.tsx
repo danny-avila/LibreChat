@@ -71,7 +71,7 @@ const Registration: React.FC = () => {
           aria-invalid={!!errors[id]}
           className="
             webkit-dark-styles transition-color peer w-full rounded-2xl border border-border-light
-            bg-surface-primary px-3.5 pb-2.5 pt-3 text-text-primary duration-200 focus:border-green-500 focus:outline-none
+            bg-surface-primary px-3.5 pb-2.5 pt-3 text-text-primary duration-200 focus:border-brand-blue-500 focus:outline-none
           "
           placeholder=" "
           data-testid={id}
@@ -81,7 +81,7 @@ const Registration: React.FC = () => {
           className="
             absolute start-3 top-1.5 z-10 origin-[0] -translate-y-4 scale-75 transform bg-surface-primary px-2 text-sm text-text-secondary-alt duration-200
             peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:scale-100
-            peer-focus:top-1.5 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:px-2 peer-focus:text-green-500
+            peer-focus:top-1.5 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:px-2 peer-focus:text-brand-blue-500
             rtl:peer-focus:left-auto rtl:peer-focus:translate-x-1/4
           "
         >
@@ -105,7 +105,7 @@ const Registration: React.FC = () => {
       )}
       {registerUser.isSuccess && countdown > 0 && (
         <div
-          className="rounded-md border border-green-500 bg-green-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200"
+          className="rounded-md border border-brand-blue-500 bg-brand-blue-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200"
           role="alert"
         >
           {localize(
@@ -184,10 +184,10 @@ const Registration: React.FC = () => {
                 type="submit"
                 aria-label="Submit registration"
                 className="
-            w-full rounded-2xl bg-green-600 px-4 py-3 text-sm font-medium text-white
-            transition-colors hover:bg-green-700 focus:outline-none focus:ring-2
-            focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50
-            disabled:hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-700
+            w-full rounded-2xl bg-brand-blue-600 px-4 py-3 text-sm font-medium text-white
+            transition-colors hover:bg-brand-blue-500 focus:outline-none focus:ring-2
+            focus:ring-brand-blue-500 focus:ring-offset-2 disabled:opacity-50
+            disabled:hover:bg-brand-blue-600 dark:bg-brand-blue-600 dark:hover:bg-brand-blue-500
           "
               >
                 {isSubmitting ? <Spinner /> : localize('com_auth_continue')}
@@ -200,7 +200,7 @@ const Registration: React.FC = () => {
             <a
               href="/login"
               aria-label="Login"
-              className="inline-flex p-1 text-sm font-medium text-green-600 transition-colors hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
+              className="inline-flex p-1 text-sm font-medium text-brand-blue-600 transition-colors hover:text-brand-blue-700 dark:text-brand-blue-400 dark:hover:text-brand-blue-300"
             >
               {localize('com_auth_login')}
             </a>

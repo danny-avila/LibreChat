@@ -94,17 +94,15 @@ export default function AssistantPanel({
   const update = useUpdateAssistantMutation({
     onSuccess: (data) => {
       showToast({
-        message: `${localize('com_assistants_update_success')} ${
-          data.name ?? localize('com_ui_assistant')
-        }`,
+        message: `${localize('com_assistants_update_success')} ${data.name ?? localize('com_ui_assistant')
+          }`,
       });
     },
     onError: (err) => {
       const error = err as Error;
       showToast({
-        message: `${localize('com_assistants_update_error')}${
-          error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
-        }`,
+        message: `${localize('com_assistants_update_error')}${error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
+          }`,
         status: 'error',
       });
     },
@@ -114,17 +112,15 @@ export default function AssistantPanel({
     onSuccess: (data) => {
       setCurrentAssistantId(data.id);
       showToast({
-        message: `${localize('com_assistants_create_success')} ${
-          data.name ?? localize('com_ui_assistant')
-        }`,
+        message: `${localize('com_assistants_create_success')} ${data.name ?? localize('com_ui_assistant')
+          }`,
       });
     },
     onError: (err) => {
       const error = err as Error;
       showToast({
-        message: `${localize('com_assistants_create_error')}${
-          error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
-        }`,
+        message: `${localize('com_assistants_create_error')}${error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
+          }`,
         status: 'error',
       });
     },
@@ -236,7 +232,7 @@ export default function AssistantPanel({
           {/* Select Button */}
           {assistant_id && (
             <button
-              className="btn btn-primary focus:shadow-outline mx-2 mt-1 h-[40px] rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0"
+              className="btn btn-primary focus:shadow-outline mx-2 mt-1 h-[40px] rounded bg-brand-blue-500 px-4 py-2 font-semibold text-white hover:bg-brand-blue-400 focus:border-brand-blue-500 focus:outline-none focus:ring-0"
               type="button"
               disabled={!assistant_id}
               onClick={(e) => {
@@ -459,7 +455,7 @@ export default function AssistantPanel({
             />
             {/* Submit Button */}
             <button
-              className="btn btn-primary focus:shadow-outline flex w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"
+              className="btn btn-primary focus:shadow-outline flex w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-brand-blue-600 focus:border-brand-blue-500"
               type="submit"
             >
               {submitContext}
