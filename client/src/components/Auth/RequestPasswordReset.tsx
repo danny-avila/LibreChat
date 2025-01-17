@@ -10,7 +10,7 @@ import { useLocalize } from '~/hooks';
 const BodyTextWrapper: FC<{ children: ReactNode }> = ({ children }) => {
   return (
     <div
-      className="relative mt-6 rounded-lg border border-brand-blue-500/20 bg-brand-blue-50/50 px-6 py-4 text-brand-blue-700 shadow-sm transition-all dark:bg-brand-blue-950/30 dark:text-brand-blue-100"
+      className="relative mt-6 rounded-lg border border-brand-blue-500/20 bg-brand-blue-50/50 px-6 py-4 text-brand-blue-400 shadow-sm transition-all dark:bg-brand-blue-950/30 dark:text-brand-blue-100"
       role="alert"
     >
       {children}
@@ -24,7 +24,7 @@ const ResetPasswordBodyText = () => {
     <div className="flex flex-col space-y-4">
       <p>{localize('com_auth_reset_password_if_email_exists')}</p>
       <a
-        className="inline-flex text-sm font-medium text-brand-blue-600 transition-colors hover:text-brand-blue-700 dark:text-brand-blue-400 dark:hover:text-brand-blue-300"
+        className="inline-flex text-sm font-medium text-brand-blue-600 transition-colors hover:text-brand-blue-400 dark:text-brand-blue-400 dark:hover:text-brand-blue-300"
         href="/login"
       >
         {localize('com_auth_back_to_login')}
@@ -147,7 +147,7 @@ function RequestPasswordReset() {
         </button>
         <a
           href="/login"
-          className="block text-center text-sm font-medium text-brand-blue-600 transition-colors hover:text-brand-blue-700 dark:text-brand-blue-400 dark:hover:text-brand-blue-300"
+          className="block text-center text-sm font-medium text-brand-blue-600 transition-colors hover:text-brand-blue-600 dark:text-brand-blue-400 dark:hover:text-brand-blue-300"
         >
           {localize('com_auth_back_to_login')}
         </a>

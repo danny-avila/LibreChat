@@ -155,7 +155,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
         {startupConfig.passwordResetEnabled && (
           <a
             href="/forgot-password"
-            className="inline-flex p-1 text-sm font-medium text-brand-blue-600 transition-colors hover:text-brand-blue-700 dark:text-brand-blue-400 dark:hover:text-brand-blue-300"
+            className="inline-flex p-1 text-sm font-medium text-brand-blue-400 transition-colors hover:text-brand-blue-600 dark:text-brand-blue-400 dark:hover:text-brand-blue-300"
           >
             {localize('com_auth_password_forgot')}
           </a>

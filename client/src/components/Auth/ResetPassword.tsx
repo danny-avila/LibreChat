@@ -35,7 +35,7 @@ function ResetPassword() {
     return (
       <>
         <div
-          className="relative mb-8 mt-4 rounded-2xl border border-brand-blue-400 bg-brand-blue-100 px-4 py-3 text-center text-brand-blue-700 dark:bg-gray-900 dark:text-white"
+          className="relative mb-8 mt-4 rounded-2xl border border-brand-blue-400 bg-brand-blue-100 px-4 py-3 text-center text-brand-blue-400 dark:bg-gray-900 dark:text-white"
           role="alert"
         >
           {localize('com_auth_login_with_new_password')}
