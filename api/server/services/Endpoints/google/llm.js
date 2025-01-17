@@ -44,9 +44,7 @@ function getSafetySettings(isGemini2) {
     },
     {
       category: 'HARM_CATEGORY_CIVIC_INTEGRITY',
-      threshold: mapThreshold(
-        process.env.GOOGLE_SAFETY_CIVIC_INTEGRITY || (isGemini2 === true ? 'OFF' : 'BLOCK_NONE'),
-      ),
+      threshold: mapThreshold(process.env.GOOGLE_SAFETY_CIVIC_INTEGRITY || 'BLOCK_NONE'),
     },
   ];
 }
