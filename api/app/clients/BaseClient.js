@@ -645,7 +645,7 @@ class BaseClient {
         await this.updateUserMessageTokenCount({ usage, tokenCountMap, userMessage, opts });
       } else {
         responseMessage.tokenCount = this.getTokenCountForResponse(responseMessage);
-        completionTokens = this.getTokenCount(completion);
+        completionTokens = responseMessage.tokenCount;
       }
 
       await this.recordTokenUsage({ promptTokens, completionTokens, usage });
