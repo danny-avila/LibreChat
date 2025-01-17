@@ -4,27 +4,47 @@ const { AuthKeys } = require('librechat-data-provider');
 // Example internal constant from your code
 const EXCLUDED_GENAI_MODELS = /gemini-(?:1\.0|1-0|pro)/;
 
-function getSafetySettings() {
+/**
+ *
+ * @param {boolean} isGemini2
+ * @returns {Array<{category: string, threshold: string}>}
+ */
+function getSafetySettings(isGemini2) {
+  const mapThreshold = (value) => {
+    if (isGemini2 && value === 'BLOCK_NONE') {
+      return 'OFF';
+    }
+    return value;
+  };
+
   return [
     {
       category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-      threshold: process.env.GOOGLE_SAFETY_SEXUALLY_EXPLICIT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+      threshold: mapThreshold(
+        process.env.GOOGLE_SAFETY_SEXUALLY_EXPLICIT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+      ),
     },
     {
       category: 'HARM_CATEGORY_HATE_SPEECH',
-      threshold: process.env.GOOGLE_SAFETY_HATE_SPEECH || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+      threshold: mapThreshold(
+        process.env.GOOGLE_SAFETY_HATE_SPEECH || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+      ),
     },
     {
       category: 'HARM_CATEGORY_HARASSMENT',
-      threshold: process.env.GOOGLE_SAFETY_HARASSMENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+      threshold: mapThreshold(
+        process.env.GOOGLE_SAFETY_HARASSMENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+      ),
     },
     {
       category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
-      threshold: process.env.GOOGLE_SAFETY_DANGEROUS_CONTENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+      threshold: mapThreshold(
+        process.env.GOOGLE_SAFETY_DANGEROUS_CONTENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+      ),
     },
     {
       category: 'HARM_CATEGORY_CIVIC_INTEGRITY',
-      threshold: process.env.GOOGLE_SAFETY_CIVIC_INTEGRITY || 'BLOCK_NONE',
+      threshold: mapThreshold(process.env.GOOGLE_SAFETY_CIVIC_INTEGRITY || 'BLOCK_NONE'),
     },
   ];
 }
@@ -64,13 +84,15 @@ function getLLMConfig(credentials, options = {}) {
   /** @type {GoogleClientOptions | VertexAIClientOptions} */
   let llmConfig = {
     ...(options.modelOptions || {}),
-    safetySettings: getSafetySettings(),
     maxRetries: 2,
   };
 
+  const isGemini2 = llmConfig.model.includes('gemini-2.0');
   const isGenerativeModel = llmConfig.model.includes('gemini');
   const isChatModel = !isGenerativeModel && llmConfig.model.includes('chat');
   const isTextModel = !isGenerativeModel && !isChatModel && /code|text/.test(llmConfig.model);
+
+  llmConfig.safetySettings = getSafetySettings(isGemini2);
 
   let provider;
 

@@ -1293,7 +1293,7 @@ ${convo}
           });
 
         for await (const chunk of stream) {
-          const token = chunk.choices[0]?.delta?.content || '';
+          const token = chunk?.choices?.[0]?.delta?.content || '';
           intermediateReply.push(token);
           onProgress(token);
           if (abortController.signal.aborted) {
