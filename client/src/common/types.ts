@@ -548,5 +548,6 @@ export type TThread = { id: string; createdAt: string };
 declare global {
   interface Window {
     google_tag_manager?: unknown;
+    showSaveFilePicker: (options?: any) => Promise<FileSystemFileHandle>;
   }
 }

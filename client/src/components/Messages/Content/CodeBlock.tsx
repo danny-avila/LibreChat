@@ -9,6 +9,7 @@ import { useToolCallsMapContext, useMessageContext } from '~/Providers';
 import RunCode from '~/components/Messages/Content/RunCode';
 import Clipboard from '~/components/svg/Clipboard';
 import CheckMark from '~/components/svg/CheckMark';
+import { DownloadCodeButton } from '~/components/Artifacts/Code';
 import useLocalize from '~/hooks/useLocalize';
 import cn from '~/utils/cn';
 
@@ -24,6 +25,12 @@ const CodeBar: React.FC<CodeBarProps> = React.memo(
   ({ lang, error, codeRef, blockIndex, plugin = null, allowExecution = true }) => {
     const localize = useLocalize();
     const [isCopied, setIsCopied] = useState(false);
+    const [codeString, setCodeString] = useState<string | null>(null);
+
+    useEffect(() => {
+      setCodeString(codeRef.current?.innerText ?? '');
+    }, [codeRef]);
+
     return (
       <div className="relative flex items-center justify-between rounded-tl-md rounded-tr-md bg-gray-700 px-4 py-2 font-sans text-xs text-gray-200 dark:bg-gray-700">
         <span className="">{lang}</span>
@@ -41,7 +48,6 @@ const CodeBar: React.FC<CodeBarProps> = React.memo(
                 error === true ? 'h-4 w-4 items-start text-white/50' : '',
               )}
               onClick={async () => {
-                const codeString = codeRef.current?.textContent;
                 if (codeString != null) {
                   setIsCopied(true);
                   copy(codeString.trim(), { format: 'text/plain' });
@@ -64,6 +70,14 @@ const CodeBar: React.FC<CodeBarProps> = React.memo(
                 </>
               )}
             </button>
+            <DownloadCodeButton
+              className={cn(
+                'ml-auto flex gap-2',
+                error === true ? 'h-4 w-4 items-start text-white/50' : '',
+              )}
+              content={codeString ?? ''}>
+              {localize('com_ui_save')}
+            </DownloadCodeButton>
           </div>
         )}
       </div>

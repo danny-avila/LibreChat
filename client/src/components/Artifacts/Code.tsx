@@ -7,6 +7,7 @@ import { handleDoubleClick, langSubset } from '~/utils';
 import Clipboard from '~/components/svg/Clipboard';
 import CheckMark from '~/components/svg/CheckMark';
 import useLocalize from '~/hooks/useLocalize';
+import { SaveIcon } from '../svg';
 
 type TCodeProps = {
   inline: boolean;
@@ -114,6 +115,44 @@ export const CopyCodeButton: React.FC<{ content: string }> = ({ content }) => {
       aria-label={isCopied ? localize('com_ui_copied') : localize('com_ui_copy_code')}
     >
       {isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard />}
+    </button>
+  );
+};
+
+export const DownloadCodeButton: React.FC<{ content: string, fileName?: string, children?: React.ReactNode, className?: string }> = ({ content, fileName, children, className = '', }) => {
+  const localize = useLocalize();
+  const [isDownloaded, setIsDownloaded] = useState(false);
+
+  const handleDownload = async () => {
+    try {
+      const fileHandle = await window.showSaveFilePicker({
+        suggestedName: fileName ?? 'code.txt',
+        types: [
+          {
+            description: 'Text Files',
+            accept: { 'text/plain': ['.txt'] },
+          },
+        ],
+      });
+
+      const writable = await fileHandle.createWritable();
+      await writable.write(content);
+      setIsDownloaded(true);
+      await writable.close();
+      setTimeout(() => setIsDownloaded(false), 3000);
+    } catch (error) {
+      console.error('File save canceled or failed:', error);
+    }
+  };
+
+  return (
+    <button
+      className={`mr-2 text-text-secondary ${className}`}
+      onClick={handleDownload}
+      aria-label={isDownloaded ? localize('com_ui_saved') : localize('com_ui_save')}
+    >
+      {isDownloaded ? <CheckMark className="h-[18px] w-[18px]" /> : <SaveIcon size='1.5em' className='' />}
+      {children}
     </button>
   );
 };

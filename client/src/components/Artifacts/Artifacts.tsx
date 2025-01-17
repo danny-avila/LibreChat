@@ -4,7 +4,7 @@ import { useSetRecoilState } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
 import { SandpackPreviewRef } from '@codesandbox/sandpack-react';
 import useArtifacts from '~/hooks/Artifacts/useArtifacts';
-import { CodeMarkdown, CopyCodeButton } from './Code';
+import { CodeMarkdown, CopyCodeButton, DownloadCodeButton } from './Code';
 import { getFileExtension } from '~/utils/artifacts';
 import { ArtifactPreview } from './ArtifactPreview';
 import { cn } from '~/utils';
@@ -180,6 +180,7 @@ export default function Artifacts() {
             </div>
             <div className="flex items-center">
               <CopyCodeButton content={currentArtifact.content ?? ''} />
+              <DownloadCodeButton content={currentArtifact.content ?? ''} />
               {/* Download Button */}
               {/* <button className="mr-2 text-text-secondary">
                 <svg
