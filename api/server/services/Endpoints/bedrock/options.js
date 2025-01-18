@@ -62,7 +62,9 @@ const getOptions = async ({ req, endpointOption }) => {
 
   /** @type {BedrockClientOptions} */
   const requestOptions = {
-    model: endpointOption.model,
+    model: undefined,
+    agentId: process.env.AWS_BEDROCK_AGENT_ID,
+    agentAliasId: process.env.AWS_BEDROCK_AGENT_ALIAS_ID,
     region: BEDROCK_AWS_DEFAULT_REGION,
     streaming: true,
     streamUsage: true,

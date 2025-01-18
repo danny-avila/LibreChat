@@ -593,7 +593,33 @@ class AgentClient extends BaseClient {
         });
       };
 
-      await runAgent(this.options.agent, initialMessages);
+      if (this.options.endpoint === EModelEndpoint.bedrock && this.options.bedrockClient) {
+        const message = initialMessages[initialMessages.length - 1].content;
+        const response = await this.options.bedrockClient.sendMessage({
+          agentId: this.options.agent.model_parameters.agentId,
+          agentAliasId: this.options.agent.model_parameters.agentAliasId,
+          sessionId: this.conversationId,
+          inputText: typeof message === 'string' ? message : message[0].text
+        });
+
+        // Initialize a basic run object for Bedrock agents
+        this.run = {
+          Graph: {
+            contentData: [],
+            getRunMessages: () => []
+          }
+        };
+
+        if (this.options.eventHandlers?.onProgress) {
+          this.options.eventHandlers.onProgress(response.text);
+        }
+        this.contentParts.push({
+          type: ContentTypes.TEXT,
+          text: response.text
+        });
+      } else {
+        await runAgent(this.options.agent, initialMessages);
+      }
 
       let finalContentStart = 0;
       if (this.agentConfigs && this.agentConfigs.size > 0) {

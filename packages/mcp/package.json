@@ -70,6 +70,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.3",
+    "@modelcontextprotocol/server-filesystem": "^2025.1.14",
+    "@modelcontextprotocol/server-puppeteer": "^0.6.2",
     "diff": "^7.0.0",
     "eventsource": "^3.0.1",
     "express": "^4.21.2"

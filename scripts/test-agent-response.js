@@ -22,7 +22,7 @@ class ConfigurationError extends Error {
 }
 
 function validateConfig() {
-  const requiredEnvVars = ['AWS_REGION', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'];
+  const requiredEnvVars = ['BEDROCK_AWS_DEFAULT_REGION', 'BEDROCK_AWS_ACCESS_KEY_ID', 'BEDROCK_AWS_SECRET_ACCESS_KEY'];
   const missing = requiredEnvVars.filter((varName) => !process.env[varName]);
 
   if (missing.length > 0) {
@@ -30,10 +30,10 @@ function validateConfig() {
   }
 
   return {
-    region: process.env.AWS_REGION,
+    region: process.env.BEDROCK_AWS_DEFAULT_REGION,
     credentials: {
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      accessKeyId: process.env.BEDROCK_AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.BEDROCK_AWS_SECRET_ACCESS_KEY,
     },
   };
 }
