@@ -35,7 +35,7 @@ interface:
 registration:
 #  socialLogins: ['google']
   allowedDomains:
-  - "ames-foundation.com"
+  - "g-p-solutions.de"
   - "crystalflowai.de"
   - "crystalflow.ai"
 
@@ -73,7 +73,7 @@ endpoints:
     pollIntervalMs: 3000  # Polling interval for checking assistant updates
     timeoutMs: 180000  # Timeout for assistant operations
     # Should only be one or the other, either `supportedIds` or `excludedIds`
-    supportedIds: ["asst_YngmPje1iTdgDZCF8pL6uZqD"]
+    supportedIds: ["asst_WyjSF7NzoEamVZ1vBvSjoks9"]
     # excludedIds: ["asst_excludedAssistantId"]
     # Only show assistants that the user created or that were created externally (e.g. in Assistants playground).
     # privateAssistants: false # Does not work with `supportedIds` or `excludedIds`
