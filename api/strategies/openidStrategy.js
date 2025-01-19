@@ -115,7 +115,7 @@ async function setupOpenId() {
     }
     const issuer = await Issuer.discover(process.env.OPENID_ISSUER);
     const supported_alg = {
-      id_token_signed_response_alg: issuer.id_token_signing_alg_values_supported[0] || 'RS256',
+      id_token_signed_response_alg: issuer.id_token_signing_alg_values_supported?.[0] || 'RS256',
       // request_object_signing_alg: jar ? alg : undefined, // Both in v5 and v6
       // userinfo_signed_response_alg: jwtUserinfo ? alg : undefined, // Only in v6
       // introspection_signed_response_alg: alg, // Only in v6
