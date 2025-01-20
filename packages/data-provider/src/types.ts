@@ -205,12 +205,10 @@ export type TDuplicateConvoRequest = {
   conversationId?: string;
 };
 
-export type TDuplicateConvoResponse =
-  | {
-      conversation: TConversation;
-      messages: TMessage[];
-    }
-  | undefined;
+export type TDuplicateConvoResponse = {
+  conversation: TConversation;
+  messages: TMessage[];
+};
 
 export type TForkConvoRequest = {
   messageId: string;

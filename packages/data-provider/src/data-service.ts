@@ -63,7 +63,7 @@ export function updateSharedLink(shareId: string): Promise<t.TSharedLinkResponse
   return request.patch(endpoints.updateSharedLink(shareId));
 }
 
-export function deleteSharedLink(shareId: string): Promise<void> {
+export function deleteSharedLink(shareId: string): Promise<m.TDeleteSharedLinkResponse> {
   return request.delete(endpoints.shareMessages(shareId));
 }
 

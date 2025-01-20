@@ -286,75 +286,77 @@ export const useUpdateSharedLinkMutation = (
 
 export const useDeleteSharedLinkMutation = (
   options?: t.DeleteSharedLinkOptions,
-): UseMutationResult<void, unknown, { shareId: string }, unknown> => {
+): UseMutationResult<
+  t.TDeleteSharedLinkResponse,
+  unknown,
+  { shareId: string },
+  t.DeleteSharedLinkContext
+> => {
   const queryClient = useQueryClient();
   const { onSuccess } = options || {};
 
-  return useMutation<void, unknown, { shareId: string }>(
-    ({ shareId }) => dataService.deleteSharedLink(shareId),
-    {
-      onMutate: async ({ shareId }) => {
-        await queryClient.cancelQueries({
-          queryKey: ['sharedLinks'],
-          exact: false,
+  return useMutation((vars) => dataService.deleteSharedLink(vars.shareId), {
+    onMutate: async (vars) => {
+      await queryClient.cancelQueries({
+        queryKey: [QueryKeys.sharedLinks],
+        exact: false,
+      });
+
+      const previousQueries = new Map();
+      const queryKeys = queryClient.getQueryCache().findAll([QueryKeys.sharedLinks]);
+
+      queryKeys.forEach((query) => {
+        const previousData = queryClient.getQueryData(query.queryKey);
+        previousQueries.set(query.queryKey, previousData);
+
+        queryClient.setQueryData<t.SharedLinkQueryData>(query.queryKey, (old) => {
+          if (!old?.pages) {
+            return old;
+          }
+
+          const updatedPages = old.pages.map((page) => ({
+            ...page,
+            links: page.links.filter((link) => link.shareId !== vars.shareId),
+          }));
+
+          const nonEmptyPages = updatedPages.filter((page) => page.links.length > 0);
+
+          return {
+            ...old,
+            pages: nonEmptyPages,
+          };
         });
+      });
 
-        const previousQueries = new Map();
-        const queryKeys = queryClient.getQueryCache().findAll(['sharedLinks']);
-
-        queryKeys.forEach((query) => {
-          const previousData = queryClient.getQueryData(query.queryKey);
-          previousQueries.set(query.queryKey, previousData);
-
-          queryClient.setQueryData<t.SharedLinkQueryData>(query.queryKey, (old) => {
-            if (!old?.pages) {
-              return old;
-            }
-
-            const updatedPages = old.pages.map((page) => ({
-              ...page,
-              links: page.links.filter((link) => link.shareId !== shareId),
-            }));
-
-            const nonEmptyPages = updatedPages.filter((page) => page.links.length > 0);
-
-            return {
-              ...old,
-              pages: nonEmptyPages,
-            };
-          });
-        });
-
-        return { previousQueries };
-      },
-
-      onError: (_err, _vars, context: { previousQueries?: Map<unknown, unknown> }) => {
-        if (context?.previousQueries) {
-          context.previousQueries.forEach((prevData: unknown, prevQueryKey: unknown) => {
-            queryClient.setQueryData(prevQueryKey as string[], prevData);
-          });
-        }
-      },
-
-      onSettled: () => {
-        queryClient.invalidateQueries({
-          queryKey: ['sharedLinks'],
-          exact: false,
-        });
-      },
-
-      onSuccess: (data, variables) => {
-        if (onSuccess) {
-          onSuccess(data, variables);
-        }
-
-        queryClient.refetchQueries({
-          queryKey: ['sharedLinks'],
-          exact: true,
-        });
-      },
+      return { previousQueries };
     },
-  );
+
+    onError: (_err, _vars, context) => {
+      if (context?.previousQueries) {
+        context.previousQueries.forEach((prevData: unknown, prevQueryKey: unknown) => {
+          queryClient.setQueryData(prevQueryKey as string[], prevData);
+        });
+      }
+    },
+
+    onSettled: () => {
+      queryClient.invalidateQueries({
+        queryKey: [QueryKeys.sharedLinks],
+        exact: false,
+      });
+    },
+
+    onSuccess: (data, variables) => {
+      if (onSuccess) {
+        onSuccess(data, variables);
+      }
+
+      queryClient.refetchQueries({
+        queryKey: [QueryKeys.sharedLinks],
+        exact: true,
+      });
+    },
+  });
 };
 
 // Add a tag or update tag information (tag, description, position, etc.)
@@ -571,36 +573,33 @@ export const useDuplicateConversationMutation = (
 ): UseMutationResult<t.TDuplicateConvoResponse, unknown, t.TDuplicateConvoRequest, unknown> => {
   const queryClient = useQueryClient();
   const { onSuccess, ..._options } = options ?? {};
-  return useMutation(
-    (payload: t.TDuplicateConvoRequest) => dataService.duplicateConversation(payload),
-    {
-      onSuccess: (data, vars, context) => {
-        const originalId = vars.conversationId ?? '';
-        if (originalId.length === 0) {
-          return;
+  return useMutation((payload) => dataService.duplicateConversation(payload), {
+    onSuccess: (data, vars, context) => {
+      const originalId = vars.conversationId ?? '';
+      if (originalId.length === 0) {
+        return;
+      }
+      if (data == null) {
+        return;
+      }
+      queryClient.setQueryData(
+        [QueryKeys.conversation, data.conversation.conversationId],
+        data.conversation,
+      );
+      queryClient.setQueryData<t.ConversationData>([QueryKeys.allConversations], (convoData) => {
+        if (!convoData) {
+          return convoData;
         }
-        if (data == null) {
-          return;
-        }
-        queryClient.setQueryData(
-          [QueryKeys.conversation, data.conversation.conversationId],
-          data.conversation,
-        );
-        queryClient.setQueryData<t.ConversationData>([QueryKeys.allConversations], (convoData) => {
-          if (!convoData) {
-            return convoData;
-          }
-          return addConversation(convoData, data.conversation);
-        });
-        queryClient.setQueryData<t.TMessage[]>(
-          [QueryKeys.messages, data.conversation.conversationId],
-          data.messages,
-        );
-        onSuccess?.(data, vars, context);
-      },
-      ..._options,
+        return addConversation(convoData, data.conversation);
+      });
+      queryClient.setQueryData<t.TMessage[]>(
+        [QueryKeys.messages, data.conversation.conversationId],
+        data.messages,
+      );
+      onSuccess?.(data, vars, context);
     },
-  );
+    ..._options,
+  });
 };
 
 export const useForkConvoMutation = (
