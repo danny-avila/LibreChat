@@ -945,4 +945,6 @@ export default {
   com_ui_bookmarks_add: 'Lesezeichen hinzufügen',
   com_nav_maximize_chat_space: 'Chat-Bereich maximieren',
   com_ui_collapse_chat: 'Chat einklappen',
+  com_ui_speech_while_submitting: 'Spracheingabe nicht möglich während eine Antwort generiert wird',
+  com_endpoint_message_new: 'Nachricht {0}',
 };

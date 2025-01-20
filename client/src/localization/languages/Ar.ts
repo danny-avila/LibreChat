@@ -913,4 +913,6 @@ export default {
   com_endpoint_ai: 'الذكاء الاصطناعي',
   com_nav_maximize_chat_space: 'تكبير مساحة الدردشة',
   com_ui_collapse_chat: 'طي الدردشة',
+  com_endpoint_message_new: 'رسالة {0}',
+  com_ui_speech_while_submitting: 'لا يمكن إرسال الكلام أثناء إنشاء الرد',
 };

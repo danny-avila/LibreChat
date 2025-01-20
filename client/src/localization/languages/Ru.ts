@@ -1175,4 +1175,6 @@ export default {
   com_nav_maximize_chat_space: 'Развернуть чат',
   com_ui_bookmarks_add: 'Добавить закладку',
   com_ui_collapse_chat: 'Свернуть чат',
+  com_endpoint_message_new: 'Сообщение {0}',
+  com_ui_speech_while_submitting: 'Невозможно отправить голосовой ввод во время генерации ответа',
 };

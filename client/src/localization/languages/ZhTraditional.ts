@@ -880,4 +880,6 @@ export default {
   com_nav_maximize_chat_space: '最大化聊天視窗',
   com_endpoint_ai: 'AI',
   com_ui_collapse_chat: '收合對話',
+  com_endpoint_message_new: '訊息 {0}',
+  com_ui_speech_while_submitting: '正在產生回應時無法送出語音',
 };
