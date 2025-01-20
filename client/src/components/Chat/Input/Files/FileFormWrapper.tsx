@@ -27,7 +27,7 @@ function FileFormWrapper({
   const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };
   const isAgents = useMemo(() => isAgentsEndpoint(_endpoint), [_endpoint]);
 
-  const { handleFileChange, abortUpload, setToolResource } = useFileHandling();
+  const { handleFileChange, abortUpload } = useFileHandling();
 
   const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
@@ -48,7 +48,6 @@ function FileFormWrapper({
         <AttachFileMenu
           isRTL={isRTL}
           disabled={disableInputs}
-          setToolResource={setToolResource}
           handleFileChange={handleFileChange}
         />
       );

@@ -56,6 +56,7 @@ const ContentRender = memo(
       setCurrentEditId,
     });
 
+    const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
     const fontSize = useRecoilValue(store.fontSize);
     const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
     // const { isCreatedByUser, error, unfinished } = msg ?? {};
@@ -101,17 +102,31 @@ const ContentRender = memo(
         }
         : undefined;
 
+    const baseClasses =
+      'final-completion group mx-auto flex flex-1 gap-3 transition-all duration-300 transform-gpu';
+
+    const cardClasses =
+      'relative w-full gap-1 rounded-lg border border-border-medium bg-surface-primary-alt p-2 md:w-1/2 md:gap-3 md:p-4';
+
+    const chatSpaceClasses = maximizeChatSpace
+      ? 'w-full max-w-full md:px-5 lg:px-1 xl:px-5'
+      : 'md:max-w-3xl md:px-5 lg:max-w-[40rem] lg:px-1 xl:max-w-[48rem] xl:px-5';
+
+    const conditionalClasses = {
+      latestCard: isLatestCard ? 'bg-surface-secondary' : '',
+      cardRender: showCardRender ? 'cursor-pointer transition-colors duration-300' : '',
+      focus: 'focus:outline-none focus:ring-2 focus:ring-border-xheavy',
+    };
+
     return (
       <div
         aria-label={`message-${msg.depth}-${msg.messageId}`}
         className={cn(
-          'final-completion group mx-auto flex flex-1 gap-3',
-          isCard === true
-            ? 'relative w-full gap-1 rounded-lg border border-border-medium bg-surface-primary-alt p-2 md:w-1/2 md:gap-3 md:p-4'
-            : 'md:max-w-3xl md:px-5 lg:max-w-[40rem] lg:px-1 xl:max-w-[48rem] xl:px-5',
-          isLatestCard === true ? 'bg-surface-secondary' : '',
-          showCardRender ? 'cursor-pointer transition-colors duration-300' : '',
-          'focus:outline-none focus:ring-2 focus:ring-border-xheavy',
+          baseClasses,
+          isCard ? cardClasses : chatSpaceClasses,
+          conditionalClasses.latestCard,
+          conditionalClasses.cardRender,
+          conditionalClasses.focus,
         )}
         onClick={clickHandler}
         onKeyDown={(e) => {
