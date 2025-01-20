@@ -5,7 +5,7 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/danny-avila/librechat
+  repository: ghcr.io/m-bertolino-lund/LibreChat-PoC
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
   tag: "latest"
