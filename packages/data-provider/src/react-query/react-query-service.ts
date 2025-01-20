@@ -329,15 +329,18 @@ export const useRegisterUserMutation = (
   options?: m.RegistrationOptions,
 ): UseMutationResult<t.TError, unknown, t.TRegisterUser, unknown> => {
   const queryClient = useQueryClient();
-  return useMutation((payload: t.TRegisterUser) => dataService.register(payload), {
-    ...options,
-    onSuccess: (...args) => {
-      queryClient.invalidateQueries([QueryKeys.user]);
-      if (options?.onSuccess) {
-        options.onSuccess(...args);
-      }
+  return useMutation<t.TRegisterUserResponse, t.TError, t.TRegisterUser>(
+    (payload: t.TRegisterUser) => dataService.register(payload),
+    {
+      ...options,
+      onSuccess: (...args) => {
+        queryClient.invalidateQueries([QueryKeys.user]);
+        if (options?.onSuccess) {
+          options.onSuccess(...args);
+        }
+      },
     },
-  });
+  );
 };
 
 export const useRefreshTokenMutation = (): UseMutationResult<

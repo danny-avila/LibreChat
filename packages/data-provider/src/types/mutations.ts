@@ -24,7 +24,12 @@ export type MutationOptions<
   onSuccess?: (data: Response, variables: Request, context?: Context) => void;
   onMutate?: (variables: Request) => Snapshot | Promise<Snapshot>;
   onError?: (error: Error, variables: Request, context?: Context, snapshot?: Snapshot) => void;
-  onSettled?: (data: Response | undefined, error: Error | undefined, variables: Request) => void;
+  onSettled?: (
+    data: Response | undefined,
+    error: Error | null,
+    variables: Request,
+    context?: Context,
+  ) => void;
 };
 
 export type TGenTitleRequest = {
