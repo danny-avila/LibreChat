@@ -879,6 +879,5 @@ export default {
   com_ui_page: '頁面',
   com_nav_maximize_chat_space: '最大化聊天視窗',
   com_endpoint_ai: 'AI',
-  com_endpoint_message_new: '輸入訊息 {0} 或輸入 "@" 以切換 AI',
   com_ui_collapse_chat: '收合對話',
 };

@@ -1148,6 +1148,5 @@ export default {
   com_ui_page: '페이지',
   com_endpoint_ai: '인공지능',
   com_nav_maximize_chat_space: '채팅창 최대화',
-  com_endpoint_message_new: '메시지 {0} 또는 "@"를 입력하여 AI 전환',
   com_ui_collapse_chat: '채팅 접기',
 };
