@@ -264,17 +264,24 @@ class BaseClient {
   /**
    * Adds instructions to the messages array. If the instructions object is empty or undefined,
    * the original messages array is returned. Otherwise, the instructions are added to the messages
-   * array, preserving the last message at the end.
+   * array either at the beginning (default) or preserving the last message at the end.
    *
    * @param {Array} messages - An array of messages.
    * @param {Object} instructions - An object containing instructions to be added to the messages.
+   * @param {boolean} [beforeLast=false] - If true, adds instructions before the last message; if false, adds at the beginning.
    * @returns {Array} An array containing messages and instructions, or the original messages if instructions are empty.
    */
-  addInstructions(messages, instructions) {
-    const payload = [];
+  addInstructions(messages, instructions, beforeLast = false) {
     if (!instructions || Object.keys(instructions).length === 0) {
       return messages;
     }
+
+    if (!beforeLast) {
+      return [instructions, ...messages];
+    }
+
+    // Legacy behavior: add instructions before the last message
+    const payload = [];
     if (messages.length > 1) {
       payload.push(...messages.slice(0, -1));
     }

@@ -953,9 +953,11 @@ export default {
   com_ui_delete_shared_link: 'Eliminare il link condiviso?',
   com_ui_bookmarks_add: 'Aggiungi Segnalibri',
   com_ui_bookmarks_edit: 'Modifica Segnalibro',
-  com_endpoint_message_new: 'Messaggio {0} oppure digita "@" per cambiare IA',
   com_endpoint_ai: 'IA',
   com_nav_maximize_chat_space: 'Massimizza spazio chat',
   com_ui_page: 'Pagina',
   com_ui_collapse_chat: 'Comprimi Chat',
+  com_endpoint_message_new: 'Messaggio {0}',
+  com_ui_speech_while_submitting:
+    'Impossibile inviare il messaggio mentre è in corso la generazione di una risposta',
 };
