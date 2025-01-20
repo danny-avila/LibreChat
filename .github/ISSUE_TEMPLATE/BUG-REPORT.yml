@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to fill out this bug report!
+        Please check existing issues before filing one. Thank you for taking the time to fill out this bug report!
   - type: textarea
     id: what-happened
     attributes:

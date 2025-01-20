@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thank you for taking the time to fill this out!
+        Please check existing issues before filing one. Thank you for taking the time to fill this out!
   - type: textarea
     id: what
     attributes:
