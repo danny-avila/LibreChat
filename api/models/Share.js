@@ -233,7 +233,7 @@ async function getSharedLink(user, conversationId) {
   }
 
   try {
-    const share = await SharedLink.findOne({ conversationId, user })
+    const share = await SharedLink.findOne({ conversationId, user, isPublic: true })
       .select('shareId -_id')
       .lean()
       .exec();
