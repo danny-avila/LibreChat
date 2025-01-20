@@ -527,7 +527,7 @@ export default {
   com_endpoint_system_message: 'System Message',
   com_endpoint_message: 'Message',
   com_endpoint_ai: 'AI',
-  com_endpoint_message_new: 'Message {0} or type "@" to switch AI',
+  com_endpoint_message_new: 'Message {0}',
   com_endpoint_message_not_appendable: 'Edit your message or Regenerate.',
   com_endpoint_default_blank: 'default: blank',
   com_endpoint_default_false: 'default: false',

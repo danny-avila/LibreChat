@@ -943,7 +943,8 @@ export default {
   com_endpoint_ai: 'KI',
   com_ui_page: 'Seite',
   com_ui_bookmarks_add: 'Lesezeichen hinzufügen',
-  com_endpoint_message_new: 'Nachricht {0} oder "@" eingeben, um KI zu wechseln',
   com_nav_maximize_chat_space: 'Chat-Bereich maximieren',
   com_ui_collapse_chat: 'Chat einklappen',
+  com_ui_speech_while_submitting: 'Spracheingabe nicht möglich während eine Antwort generiert wird',
+  com_endpoint_message_new: 'Nachricht {0}',
 };
