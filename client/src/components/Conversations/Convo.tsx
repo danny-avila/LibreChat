@@ -6,7 +6,7 @@ import { Constants } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
 import type { TConversation } from 'librechat-data-provider';
-import { useConversations, useNavigateToConvo, useMediaQuery, useLocalize } from '~/hooks';
+import { useNavigateToConvo, useMediaQuery, useLocalize } from '~/hooks';
 import { useUpdateConversationMutation } from '~/data-provider';
 import EndpointIcon from '~/components/Endpoints/EndpointIcon';
 import { NotificationSeverity } from '~/common';
@@ -36,7 +36,6 @@ export default function Conversation({
   const activeConvos = useRecoilValue(store.allConversationsSelector);
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { navigateWithLastTools } = useNavigateToConvo();
-  const { refreshConversations } = useConversations();
   const { showToast } = useToastContext();
   const { conversationId, title } = conversation;
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -97,7 +96,6 @@ export default function Conversation({
       updateConvoMutation.mutate(
         { conversationId, title: titleInput ?? '' },
         {
-          onSuccess: () => refreshConversations(),
           onError: () => {
             setTitleInput(title);
             showToast({
@@ -109,7 +107,7 @@ export default function Conversation({
         },
       );
     },
-    [title, titleInput, conversationId, showToast, refreshConversations, updateConvoMutation],
+    [title, titleInput, conversationId, showToast, updateConvoMutation],
   );
 
   const handleKeyDown = useCallback(
