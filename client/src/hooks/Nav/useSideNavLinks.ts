@@ -99,6 +99,7 @@ export default function useSideNavLinks({
     if (
       interfaceConfig.parameters === true &&
       isParamEndpoint(endpoint ?? '', endpointType ?? '') === true &&
+      !isAgentsEndpoint(endpoint) &&
       keyProvided
     ) {
       links.push({
