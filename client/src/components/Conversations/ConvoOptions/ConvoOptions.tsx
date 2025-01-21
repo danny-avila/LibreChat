@@ -124,7 +124,7 @@ function ConvoOptions({
         setIsOpen={setIsPopoverActive}
         trigger={
           <Menu.MenuButton
-            id="conversation-menu-button"
+            id={`conversation-menu-${conversationId}`}
             aria-label={localize('com_nav_convo_menu_options')}
             className={cn(
               'z-30 inline-flex h-7 w-7 items-center justify-center gap-2 rounded-md border-none p-0 text-sm font-medium ring-ring-primary transition-all duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
