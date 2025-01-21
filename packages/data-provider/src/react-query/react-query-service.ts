@@ -75,6 +75,29 @@ export const useGetSharedMessages = (
   );
 };
 
+export const useGetSharedLinkQuery = (
+  conversationId: string,
+  config?: UseQueryOptions<t.TSharedLinkGetResponse>,
+): QueryObserverResult<t.TSharedLinkGetResponse> => {
+  const queryClient = useQueryClient();
+  return useQuery<t.TSharedLinkGetResponse>(
+    [QueryKeys.sharedLinks, conversationId],
+    () => dataService.getSharedLink(conversationId),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      onSuccess: (data) => {
+        queryClient.setQueryData([QueryKeys.sharedLinks, conversationId], {
+          conversationId: data.conversationId,
+          shareId: data.shareId,
+        });
+      },
+      ...config,
+    },
+  );
+};
+
 export const useGetUserBalance = (
   config?: UseQueryOptions<string>,
 ): QueryObserverResult<string> => {
@@ -306,15 +329,18 @@ export const useRegisterUserMutation = (
   options?: m.RegistrationOptions,
 ): UseMutationResult<t.TError, unknown, t.TRegisterUser, unknown> => {
   const queryClient = useQueryClient();
-  return useMutation((payload: t.TRegisterUser) => dataService.register(payload), {
-    ...options,
-    onSuccess: (...args) => {
-      queryClient.invalidateQueries([QueryKeys.user]);
-      if (options?.onSuccess) {
-        options.onSuccess(...args);
-      }
+  return useMutation<t.TRegisterUserResponse, t.TError, t.TRegisterUser>(
+    (payload: t.TRegisterUser) => dataService.register(payload),
+    {
+      ...options,
+      onSuccess: (...args) => {
+        queryClient.invalidateQueries([QueryKeys.user]);
+        if (options?.onSuccess) {
+          options.onSuccess(...args);
+        }
+      },
     },
-  });
+  );
 };
 
 export const useRefreshTokenMutation = (): UseMutationResult<

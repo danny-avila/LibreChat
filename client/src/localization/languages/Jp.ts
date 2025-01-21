@@ -291,7 +291,6 @@ export default {
   com_ui_share_var: '{0} を共有',
   com_ui_enter_var: '{0} を入力',
   com_ui_copy_link: 'リンクをコピー',
-  com_ui_update_link: 'リンクを更新する',
   com_ui_create_link: 'リンクを作成する',
   com_ui_share_to_all_users: '全ユーザーと共有',
   com_ui_my_prompts: 'マイ プロンプト',
