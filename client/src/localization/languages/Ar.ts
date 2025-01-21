@@ -52,7 +52,6 @@ export default {
   com_ui_chats: 'الدردشات',
   com_ui_share: 'مشاركة',
   com_ui_copy_link: 'نسخ الرابط',
-  com_ui_update_link: 'رابط التحديث',
   com_ui_create_link: 'إنشاء رابط',
   com_ui_share_link_to_chat: 'شارك الرابط في الدردشة',
   com_ui_share_error: 'حدث خطأ أثناء مشاركة رابط الدردشة',

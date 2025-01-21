@@ -72,6 +72,7 @@
     "lucide-react": "^0.394.0",
     "match-sorter": "^6.3.4",
     "msedge-tts": "^1.3.4",
+    "qrcode.react": "^4.2.0",
     "rc-input-number": "^7.4.2",
     "react": "^18.2.0",
     "react-avatar-editor": "^13.0.2",

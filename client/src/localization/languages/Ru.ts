@@ -70,7 +70,6 @@ export default {
   com_ui_connect: 'Подключить',
   com_ui_share: 'Поделиться',
   com_ui_copy_link: 'Скопировать ссылку',
-  com_ui_update_link: 'Обновить ссылку',
   com_ui_create_link: 'Создать ссылку',
   com_ui_share_link_to_chat: 'Поделиться ссылкой в чате',
   com_ui_share_error: 'Произошла ошибка при попытке поделиться ссылкой на чат',

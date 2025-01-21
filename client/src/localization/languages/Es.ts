@@ -142,7 +142,6 @@ export default {
   com_ui_create: 'Crear',
   com_ui_share: 'Compartir',
   com_ui_copy_link: 'Copiar enlace',
-  com_ui_update_link: 'Actualizar enlace',
   com_ui_create_link: 'Crear enlace',
   com_ui_share_link_to_chat: 'Compartir enlace en el chat',
   com_ui_share_error: 'Hubo un error al compartir el enlace del chat',

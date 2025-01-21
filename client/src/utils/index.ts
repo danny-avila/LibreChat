@@ -11,7 +11,6 @@ export * from './textarea';
 export * from './messages';
 export * from './languages';
 export * from './endpoints';
-export * from './sharedLink';
 export * from './localStorage';
 export * from './promptGroups';
 export { default as cn } from './cn';

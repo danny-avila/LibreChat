@@ -52,7 +52,6 @@ export default {
   com_ui_chats: 'chattar',
   com_ui_share: 'Dela',
   com_ui_copy_link: 'Kopiera länk',
-  com_ui_update_link: 'Uppdatera länk',
   com_ui_create_link: 'Skapa länk',
   com_ui_share_link_to_chat: 'Dela länk till chatt',
   com_ui_share_error: 'Ett fel uppstod vid delning av chattlänken',
