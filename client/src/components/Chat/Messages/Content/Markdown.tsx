@@ -1,4 +1,5 @@
 import React, { memo, useMemo, useRef, useEffect } from 'react';
+import remarkEmoji from 'remark-emoji';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import supersub from 'remark-supersub';
@@ -190,6 +191,7 @@ const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentPr
   const remarkPlugins: Pluggable[] = useMemo(
     () => [
       supersub,
+      remarkEmoji,
       remarkGfm,
       remarkDirective,
       artifactPlugin,

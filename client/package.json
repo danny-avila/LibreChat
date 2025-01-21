@@ -96,6 +96,7 @@
     "rehype-highlight": "^6.0.0",
     "rehype-katex": "^6.0.3",
     "remark-directive": "^3.0.0",
+    "remark-emoji": "^5.0.1",
     "remark-gfm": "^4.0.0",
     "remark-math": "^6.0.0",
     "remark-supersub": "^1.0.0",
