@@ -527,7 +527,7 @@ export default {
   com_endpoint_system_message: 'System Message',
   com_endpoint_message: 'Message',
   com_endpoint_ai: 'AI',
-  com_endpoint_message_new: 'Message {0} or type "@" to switch AI',
+  com_endpoint_message_new: 'Message {0}',
   com_endpoint_message_not_appendable: 'Edit your message or Regenerate.',
   com_endpoint_default_blank: 'default: blank',
   com_endpoint_default_false: 'default: false',
@@ -895,6 +895,7 @@ export default {
   com_ui_decline: 'I do not accept',
   com_ui_terms_and_conditions: 'Terms and Conditions',
   com_ui_no_terms_content: 'No terms and conditions content to display',
+  com_ui_speech_while_submitting: 'Can\'t submit speech while a response is being generated',
 
   // custom:
   com_ui_custom_footer: 'Parser AI can make mistakes. Please double check the answers.',

@@ -1198,8 +1198,10 @@ export default {
   com_ui_bookmarks_add: 'Agregar Marcadores',
   com_ui_page: 'Página',
   com_ui_bookmarks_edit: 'Editar Marcador',
-  com_endpoint_message_new: 'Mensaje {0} o escriba "@" para cambiar de IA',
   com_nav_maximize_chat_space: 'Maximizar espacio del chat',
   com_endpoint_ai: 'IA',
   com_ui_collapse_chat: 'Contraer Chat',
+  com_endpoint_message_new: 'Mensaje {0}',
+  com_ui_speech_while_submitting:
+    'No se puede enviar un mensaje de voz mientras se está generando una respuesta',
 };

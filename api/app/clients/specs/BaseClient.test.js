@@ -89,6 +89,19 @@ describe('BaseClient', () => {
     const instructions = { content: 'Please respond to the question.' };
     const result = TestClient.addInstructions(messages, instructions);
     const expected = [
+      { content: 'Please respond to the question.' },
+      { content: 'Hello' },
+      { content: 'How are you?' },
+      { content: 'Goodbye' },
+    ];
+    expect(result).toEqual(expected);
+  });
+
+  test('returns the input messages with instructions properly added when addInstructions() with legacy flag', () => {
+    const messages = [{ content: 'Hello' }, { content: 'How are you?' }, { content: 'Goodbye' }];
+    const instructions = { content: 'Please respond to the question.' };
+    const result = TestClient.addInstructions(messages, instructions, true);
+    const expected = [
       { content: 'Hello' },
       { content: 'How are you?' },
       { content: 'Please respond to the question.' },
@@ -615,9 +628,9 @@ describe('BaseClient', () => {
     test('getTokenCount for response is called with the correct arguments', async () => {
       const tokenCountMap = {}; // Mock tokenCountMap
       TestClient.buildMessages.mockReturnValue({ prompt: [], tokenCountMap });
-      TestClient.getTokenCount = jest.fn();
+      TestClient.getTokenCountForResponse = jest.fn();
       const response = await TestClient.sendMessage('Hello, world!', {});
-      expect(TestClient.getTokenCount).toHaveBeenCalledWith(response.text);
+      expect(TestClient.getTokenCountForResponse).toHaveBeenCalledWith(response);
     });
 
     test('returns an object with the correct shape', async () => {

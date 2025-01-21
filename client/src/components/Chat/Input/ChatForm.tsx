@@ -228,11 +228,12 @@ const ChatForm = ({ index = 0 }) => {
             </FileFormWrapper>
             {SpeechToText && (
               <AudioRecorder
-                disabled={!!disableInputs}
-                textAreaRef={textAreaRef}
-                ask={submitMessage}
                 isRTL={isRTL}
                 methods={methods}
+                ask={submitMessage}
+                textAreaRef={textAreaRef}
+                disabled={!!disableInputs}
+                isSubmitting={isSubmitting}
               />
             )}
             {TextToSpeech && automaticPlayback && <StreamAudio index={index} />}

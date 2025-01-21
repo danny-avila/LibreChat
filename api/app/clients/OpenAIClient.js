@@ -614,8 +614,6 @@ class OpenAIClient extends BaseClient {
     model = 'gpt-4o-mini',
     modelName,
     temperature = 0.2,
-    presence_penalty = 0,
-    frequency_penalty = 0,
     max_tokens,
     streaming,
     context,
@@ -626,8 +624,6 @@ class OpenAIClient extends BaseClient {
     const modelOptions = {
       modelName: modelName ?? model,
       temperature,
-      presence_penalty,
-      frequency_penalty,
       user: this.user,
     };
 
@@ -1065,6 +1061,7 @@ ${convo}
     let error = null;
     const errorCallback = (err) => (error = err);
     const intermediateReply = [];
+    const reasoningTokens = [];
     try {
       if (!abortController) {
         abortController = new AbortController();
@@ -1292,8 +1289,23 @@ ${convo}
             }
           });
 
+        let reasoningCompleted = false;
         for await (const chunk of stream) {
-          const token = chunk.choices[0]?.delta?.content || '';
+          if (chunk?.choices?.[0]?.delta?.reasoning_content) {
+            const reasoning_content = chunk?.choices?.[0]?.delta?.reasoning_content || '';
+            intermediateReply.push(reasoning_content);
+            reasoningTokens.push(reasoning_content);
+            onProgress(reasoning_content);
+          }
+
+          const token = chunk?.choices?.[0]?.delta?.content || '';
+          if (!reasoningCompleted && reasoningTokens.length > 0 && token) {
+            reasoningCompleted = true;
+            const separatorTokens = '\n\n---\n';
+            reasoningTokens.push(separatorTokens);
+            onProgress(separatorTokens);
+          }
+
           intermediateReply.push(token);
           onProgress(token);
           if (abortController.signal.aborted) {
@@ -1358,6 +1370,10 @@ ${convo}
           { intermediateReply: reply },
         );
         return reply;
+      }
+
+      if (reasoningTokens.length > 0) {
+        return reasoningTokens.join('') + message.content;
       }
 
       return message.content;
