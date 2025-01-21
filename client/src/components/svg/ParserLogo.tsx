@@ -1,6 +1,6 @@
 import { cn } from '~/utils';
 
-export default function ParserFullLogoIcon({ className = '' }) {
+export default function ParserLogoIcon({ className = '' }) {
   return (
     <svg
       fill="none"
