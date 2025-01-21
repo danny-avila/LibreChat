@@ -1,6 +1,5 @@
-import copy from 'copy-to-clipboard';
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { Copy, Link, QrCode, RotateCw, CopyCheck, Trash2 } from 'lucide-react';
+import { useState, useCallback } from 'react';
+import { QrCode, RotateCw, Trash2 } from 'lucide-react';
 import type { TSharedLinkGetResponse } from 'librechat-data-provider';
 import {
   useCreateSharedLinkMutation,
@@ -19,7 +18,6 @@ export default function SharedLinkButton({
   setShareDialogOpen,
   showQR,
   setShowQR,
-  sharedLink,
   setSharedLink,
 }: {
   share: TSharedLinkGetResponse | undefined;
@@ -27,15 +25,12 @@ export default function SharedLinkButton({
   setShareDialogOpen: React.Dispatch<React.SetStateAction<boolean>>;
   showQR: boolean;
   setShowQR: (showQR: boolean) => void;
-  sharedLink: string;
   setSharedLink: (sharedLink: string) => void;
 }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const [isCopying, setIsCopying] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const copyTimeoutRef = useRef<number | null>(null);
-  const shareId = share?.shareId || undefined;
+  const shareId = share?.shareId ?? '';
 
   const { mutateAsync: mutate, isLoading: isCreateLoading } = useCreateSharedLinkMutation({
     onError: () => {
@@ -75,67 +70,23 @@ export default function SharedLinkButton({
     return `${window.location.protocol}//${window.location.host}/share/${shareId}`;
   }, []);
 
-  const copyLink = () => {
-    if (shareId === undefined) {
-      return;
-    }
-
-    if (typeof copyTimeoutRef.current === 'number') {
-      clearTimeout(copyTimeoutRef.current);
-    }
-
-    setIsCopying(true);
-    copy(sharedLink);
-    copyTimeoutRef.current = window.setTimeout(() => {
-      setIsCopying(false);
-    }, 1500);
-  };
-
-  useEffect(() => {
-    return () => {
-      if (typeof copyTimeoutRef.current === 'number') {
-        clearTimeout(copyTimeoutRef.current);
-      }
-    };
-  }, []);
-
   const updateSharedLink = async () => {
-    if (shareId === undefined) {
+    if (!shareId) {
       return;
     }
     const updateShare = await mutateAsync({ shareId });
     const newLink = generateShareLink(updateShare.shareId);
     setSharedLink(newLink);
-
-    if (typeof copyTimeoutRef.current === 'number') {
-      clearTimeout(copyTimeoutRef.current);
-    }
-
-    setIsCopying(true);
-    copy(newLink);
-    copyTimeoutRef.current = window.setTimeout(() => {
-      setIsCopying(false);
-    }, 1500);
   };
 
   const createShareLink = async () => {
     const share = await mutate({ conversationId });
     const newLink = generateShareLink(share.shareId);
     setSharedLink(newLink);
-
-    if (typeof copyTimeoutRef.current === 'number') {
-      clearTimeout(copyTimeoutRef.current);
-    }
-
-    setIsCopying(true);
-    copy(newLink);
-    copyTimeoutRef.current = window.setTimeout(() => {
-      setIsCopying(false);
-    }, 1500);
   };
 
   const handleDelete = async () => {
-    if (shareId === undefined) {
+    if (!shareId) {
       return;
     }
 
@@ -154,57 +105,16 @@ export default function SharedLinkButton({
     }
   };
 
-  const getHandler = (shareId?: string) => {
-    if (shareId === undefined) {
-      return {
-        handler: async () => {
-          createShareLink();
-        },
-        label: (
-          <>
-            <Link className="mr-2 size-4" />
-            {localize('com_ui_create_link')}
-          </>
-        ),
-      };
-    }
-
-    return {
-      handler: async () => {
-        copyLink();
-      },
-      label: (
-        <>
-          <Copy className="mr-2 size-4" />
-          {localize('com_ui_copy_link')}
-        </>
-      ),
-    };
-  };
-
-  const handlers = getHandler(shareId);
-
   return (
     <>
       <div className="flex gap-2">
-        <Button
-          disabled={isCreateLoading || isCopying}
-          variant="submit"
-          onClick={() => {
-            handlers.handler();
-          }}
-        >
-          {!isCopying && !isCreateLoading && handlers.label}
-          {isCreateLoading && <Spinner className="size-4" />}
-          {isCopying && (
-            <>
-              <CopyCheck className="size-4" />
-              {localize('com_ui_copied')}
-            </>
-          )}
-        </Button>
-
-        {shareId !== undefined && (
+        {!shareId && (
+          <Button disabled={isCreateLoading} variant="submit" onClick={createShareLink}>
+            {!isCreateLoading && localize('com_ui_create_link')}
+            {isCreateLoading && <Spinner className="size-4" />}
+          </Button>
+        )}
+        {shareId && (
           <div className="flex items-center gap-2">
             <TooltipAnchor
               description={localize('com_ui_refresh_link')}
@@ -243,7 +153,6 @@ export default function SharedLinkButton({
             />
           </div>
         )}
-
         <OGDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
           <OGDialogTemplate
             showCloseButton={false}

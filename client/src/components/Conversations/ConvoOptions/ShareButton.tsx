@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
+import { Copy, CopyCheck } from 'lucide-react';
 import { useGetSharedLinkQuery } from 'librechat-data-provider/react-query';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
+import { useLocalize, useCopyToClipboard } from '~/hooks';
+import { Button, Spinner, OGDialog } from '~/components';
 import SharedLinkButton from './SharedLinkButton';
-import { Spinner, OGDialog } from '~/components';
-import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 
 export default function ShareButton({
   conversationId,
@@ -20,9 +22,11 @@ export default function ShareButton({
   children?: React.ReactNode;
 }) {
   const localize = useLocalize();
-  const { data: share, isLoading } = useGetSharedLinkQuery(conversationId);
-  const [sharedLink, setSharedLink] = useState('');
   const [showQR, setShowQR] = useState(false);
+  const [sharedLink, setSharedLink] = useState('');
+  const [isCopying, setIsCopying] = useState(false);
+  const { data: share, isLoading } = useGetSharedLinkQuery(conversationId);
+  const copyLink = useCopyToClipboard({ text: sharedLink });
 
   useEffect(() => {
     if (share?.shareId !== undefined) {
@@ -39,10 +43,11 @@ export default function ShareButton({
         setShareDialogOpen={onOpenChange}
         showQR={showQR}
         setShowQR={setShowQR}
-        sharedLink={sharedLink}
         setSharedLink={setSharedLink}
       />
     );
+
+  const shareId = share?.shareId ?? '';
 
   return (
     <OGDialog open={open} onOpenChange={onOpenChange} triggerRef={triggerRef}>
@@ -61,12 +66,6 @@ export default function ShareButton({
                   return <Spinner className="m-auto h-14 animate-spin" />;
                 }
 
-                // if (isUpdated) {
-                //   return isNewSharedLink
-                //     ? localize('com_ui_share_created_message')
-                //     : localize('com_ui_share_updated_message');
-                // }
-
                 return share?.success === true
                   ? localize('com_ui_share_update_message')
                   : localize('com_ui_share_create_message');
@@ -79,9 +78,22 @@ export default function ShareButton({
                 </div>
               )}
 
-              {share?.shareId !== null && (
-                <div className="cursor-text break-all text-center text-sm text-text-secondary">
-                  {sharedLink}
+              {shareId && (
+                <div className="flex items-center gap-2 rounded-md bg-surface-secondary p-2">
+                  <div className="flex-1 break-all text-sm text-text-secondary">{sharedLink}</div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      if (isCopying) {
+                        return;
+                      }
+                      copyLink(setIsCopying);
+                    }}
+                    className={cn('shrink-0', isCopying ? 'cursor-default' : '')}
+                  >
+                    {isCopying ? <CopyCheck className="size-4" /> : <Copy className="size-4" />}
+                  </Button>
                 </div>
               )}
             </div>
