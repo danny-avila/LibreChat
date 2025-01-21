@@ -108,6 +108,15 @@
     },
     "mdast-util-gfm": {
       "mdast-util-gfm-autolink-literal": "2.0.0"
+    },
+    "katex": "^0.16.21",
+    "rehype-katex": {
+      "katex": "^0.16.21"
+    },
+    "remark-math": {
+      "micromark-extension-math": {
+        "katex": "^0.16.21"
+      }
     }
   },
   "nodemonConfig": {
