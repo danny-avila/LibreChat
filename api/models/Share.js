@@ -65,14 +65,13 @@ function anonymizeMessages(messages, newConvoId) {
 
 async function getSharedMessages(shareId) {
   try {
-    const share = await SharedLink.findOne({ shareId })
+    const share = await SharedLink.findOne({ shareId, isPublic: true })
       .populate({
         path: 'messages',
         select: '-_id -__v -user',
       })
       .select('-_id -__v -user')
-      .lean()
-      .exec();
+      .lean();
 
     if (!share?.conversationId || !share.isPublic) {
       return null;
@@ -145,8 +144,7 @@ async function getSharedLinks(user, pageParam, pageSize, isPublic, sortBy, sortD
       .sort(sort)
       .limit(pageSize + 1)
       .select('-__v -user')
-      .lean()
-      .exec();
+      .lean();
 
     const hasNextPage = sharedLinks.length > pageSize;
     const links = sharedLinks.slice(0, pageSize);
@@ -175,7 +173,7 @@ async function getSharedLinks(user, pageParam, pageSize, isPublic, sortBy, sortD
 
 async function deleteAllSharedLinks(user) {
   try {
-    const result = await SharedLink.deleteMany({ user }).exec();
+    const result = await SharedLink.deleteMany({ user });
     return {
       message: 'All shared links deleted successfully',
       deletedCount: result.deletedCount,
@@ -196,12 +194,14 @@ async function createSharedLink(user, conversationId) {
 
   try {
     const [existingShare, conversationMessages] = await Promise.all([
-      SharedLink.findOne({ conversationId }).select('-_id -__v -user').lean().exec(),
+      SharedLink.findOne({ conversationId, isPublic: true }).select('-_id -__v -user').lean(),
       getMessages({ conversationId }),
     ]);
 
-    if (existingShare) {
+    if (existingShare && existingShare.isPublic) {
       throw new ShareServiceError('Share already exists', 'SHARE_EXISTS');
+    } else if (existingShare) {
+      await SharedLink.deleteOne({ conversationId });
     }
 
     const conversation = await Conversation.findOne({ conversationId }).lean();
@@ -235,8 +235,7 @@ async function getSharedLink(user, conversationId) {
   try {
     const share = await SharedLink.findOne({ conversationId, user, isPublic: true })
       .select('shareId -_id')
-      .lean()
-      .exec();
+      .lean();
 
     if (!share) {
       return { shareId: null, success: false };
@@ -259,7 +258,7 @@ async function updateSharedLink(user, shareId) {
   }
 
   try {
-    const share = await SharedLink.findOne({ shareId }).select('-_id -__v -user').lean().exec();
+    const share = await SharedLink.findOne({ shareId }).select('-_id -__v -user').lean();
 
     if (!share) {
       throw new ShareServiceError('Share not found', 'SHARE_NOT_FOUND');
@@ -280,9 +279,7 @@ async function updateSharedLink(user, shareId) {
       new: true,
       upsert: false,
       runValidators: true,
-    })
-      .lean()
-      .exec();
+    }).lean();
 
     if (!updatedShare) {
       throw new ShareServiceError('Share update failed', 'SHARE_UPDATE_ERROR');
@@ -310,7 +307,7 @@ async function deleteSharedLink(user, shareId) {
   }
 
   try {
-    const result = await SharedLink.findOneAndDelete({ shareId, user }).lean().exec();
+    const result = await SharedLink.findOneAndDelete({ shareId, user }).lean();
 
     if (!result) {
       return null;
