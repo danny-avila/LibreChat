@@ -1,35 +1,32 @@
 import React, { useCallback, useEffect, useRef, useState, memo, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
-  flexRender,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getSortedRowModel,
-  useReactTable,
-  ColumnDef,
-  SortingState,
-  ColumnFiltersState,
-  VisibilityState,
   Row,
+  ColumnDef,
+  flexRender,
+  SortingState,
+  useReactTable,
+  getCoreRowModel,
+  VisibilityState,
+  getSortedRowModel,
+  ColumnFiltersState,
+  getFilteredRowModel,
 } from '@tanstack/react-table';
+import type { Table as TTable } from '@tanstack/react-table';
 import {
   Button,
-  Input,
   Table,
+  Checkbox,
+  TableRow,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
-  TableRow,
-  Label,
-  Checkbox,
   AnimatedSearchInput,
 } from './';
 import { TrashIcon, Spinner } from '~/components/svg';
 import { useLocalize, useMediaQuery } from '~/hooks';
 import { cn } from '~/utils';
-import { min } from 'date-fns';
-import { Search } from 'lucide-react';
 
 type TableColumn<TData, TValue> = ColumnDef<TData, TValue> & {
   meta?: {
@@ -38,8 +35,6 @@ type TableColumn<TData, TValue> = ColumnDef<TData, TValue> & {
     minWidth?: string | number;
   };
 };
-
-type SelectionHandler = (rowId: string, selected: boolean) => void;
 
 const SelectionCheckbox = memo(
   ({
@@ -231,7 +226,7 @@ export default function DataTable<TData, TValue>({
   const [sorting, setSorting] = useState<SortingState>(defaultSort);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
-  const [searchTerm, setSearchTerm] = useState(filterValue || '');
+  const [searchTerm, setSearchTerm] = useState(filterValue ?? '');
   const [isSearching, setIsSearching] = useState(false);
 
   const tableColumns = useMemo(() => {
@@ -240,7 +235,7 @@ export default function DataTable<TData, TValue>({
     }
     const selectColumn = {
       id: 'select',
-      header: ({ table }: { table: any }) => (
+      header: ({ table }: { table: TTable<TData> }) => (
         <div className="flex h-full w-[30px] items-center justify-center">
           <Checkbox
             checked={table.getIsAllPageRowsSelected()}
@@ -298,10 +293,14 @@ export default function DataTable<TData, TValue>({
 
   useEffect(() => {
     const scrollElement = tableContainerRef.current;
-    if (!scrollElement) return;
+    if (!scrollElement) {
+      return;
+    }
 
     const handleScroll = async () => {
-      if (!hasNextPage || isFetchingNextPage) return;
+      if (!hasNextPage || isFetchingNextPage) {
+        return;
+      }
       const { scrollTop, scrollHeight, clientHeight } = scrollElement;
       if (scrollHeight - scrollTop <= clientHeight * 1.5) {
         try {
