@@ -52,7 +52,7 @@ export default function AgentSelect({
         provider: createProviderOption(fullAgent.provider),
         label: fullAgent.name ?? '',
         value: fullAgent.id || '',
-        icon: isGlobal ? <EarthIcon className={'icon-lg text-green-400'} /> : null,
+        icon: isGlobal ? <EarthIcon className={'icon-lg text-brand-blue-400'} /> : null,
       };
 
       const capabilities: TAgentCapabilities = {
@@ -186,7 +186,7 @@ export default function AgentSelect({
       )}
       className={cn(
         'rounded-md dark:border-gray-700 dark:bg-gray-850',
-        'z-50 flex h-[40px] w-full flex-none items-center justify-center truncate px-4 hover:cursor-pointer hover:border-green-500 focus:border-gray-400',
+        'z-50 flex h-[40px] w-full flex-none items-center justify-center truncate px-4 hover:cursor-pointer hover:border-brand-blue-500 focus:border-gray-400',
       )}
       renderOption={() => (
         <span className="flex items-center gap-1.5 truncate">

@@ -34,15 +34,6 @@ export default function Footer({ className }: { className?: string }) {
     </a>
   );
 
-  const mainContentParts = (
-    typeof config?.customFooter === 'string'
-      ? config.customFooter
-      : '[LibreChat ' +
-        Constants.VERSION +
-        '](https://librechat.ai) - ' +
-        localize('com_ui_latest_footer')
-  ).split('|');
-
   useEffect(() => {
     if (config?.analyticsGtmId != null && typeof window.google_tag_manager === 'undefined') {
       const tagManagerArgs = {
@@ -52,34 +43,9 @@ export default function Footer({ className }: { className?: string }) {
     }
   }, [config?.analyticsGtmId]);
 
-  const mainContentRender = mainContentParts.map((text, index) => (
-    <React.Fragment key={`main-content-part-${index}`}>
-      <ReactMarkdown
-        components={{
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          a: ({ node: _n, href, children, ...otherProps }) => {
-            return (
-              <a
-                className="text-text-secondary underline"
-                href={href}
-                target="_blank"
-                rel="noreferrer"
-                {...otherProps}
-              >
-                {children}
-              </a>
-            );
-          },
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          p: ({ node: _n, ...props }) => <span {...props} />,
-        }}
-      >
-        {text.trim()}
-      </ReactMarkdown>
-    </React.Fragment>
-  ));
+  const mainContentRender = <p className="text-text-secondary my-2">{localize('com_ui_custom_footer')}</p>;
 
-  const footerElements = [...mainContentRender, privacyPolicyRender, termsOfServiceRender].filter(
+  const footerElements = [mainContentRender, privacyPolicyRender, termsOfServiceRender].filter(
     Boolean,
   );
 

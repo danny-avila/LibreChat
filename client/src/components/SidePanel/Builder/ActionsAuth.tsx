@@ -106,7 +106,7 @@ export default function ActionsAuth({
         {/* Cancel/Save */}
         <div className="mt-5 flex flex-col gap-3 sm:mt-4 sm:flex-row-reverse">
           <button
-            className="btn relative bg-green-500 text-white hover:bg-green-600 dark:hover:bg-green-600"
+            className="btn relative bg-brand-blue-500 text-white hover:bg-brand-blue-600 dark:hover:bg-brand-blue-600"
             onClick={async () => {
               const result = await trigger(undefined, { shouldFocus: true });
               setValue('saved_auth_fields', result);

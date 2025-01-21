@@ -45,7 +45,7 @@ function AuthLayout({
       return (
         <ErrorRender>
           {localize('com_auth_error_invalid_reset_token')}{' '}
-          <a className="font-semibold text-green-600 hover:underline" href="/forgot-password">
+          <a className="font-semibold text-brand-blue-600 hover:underline" href="/forgot-password">
             {localize('com_auth_click_here')}
           </a>{' '}
           {localize('com_auth_to_try_again')}
@@ -65,7 +65,7 @@ function AuthLayout({
           <img
             src="/assets/logo.svg"
             className="h-full w-full object-contain"
-            alt={localize('com_ui_logo', startupConfig?.appTitle ?? 'LibreChat')}
+            alt={localize('com_ui_logo', startupConfig?.appTitle ?? 'Parser AI')}
           />
         </div>
       </BlinkAnimation>

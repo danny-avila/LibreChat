@@ -21,7 +21,7 @@ const PromptVersions = ({
   return (
     <>
       <h2 className="mb-4 flex gap-2 text-base font-semibold dark:text-gray-200">
-        <Layers3 className="icon-lg text-green-500" />
+        <Layers3 className="icon-lg text-brand-blue-500" />
         {localize('com_ui_versions')}
       </h2>
       <ul className="flex flex-col gap-3">
@@ -60,13 +60,13 @@ const PromptVersions = ({
                         className={cn(
                           'w-fit border border-transparent bg-blue-100 text-blue-500 dark:border-blue-500 dark:bg-transparent dark:text-blue-500',
                           tag === 'production' &&
-                            'bg-green-100 text-green-500 dark:border-green-500 dark:bg-transparent dark:text-green-500',
+                          'bg-brand-blue-100 text-brand-blue-500 dark:border-brand-blue-500 dark:bg-transparent dark:text-brand-blue-500',
                         )}
                         labelClassName="flex m-0 justify-center gap-1"
                         LabelNode={
                           tag === 'production' ? (
                             <div className="flex items-center ">
-                              <span className="slow-pulse h-[0.4rem] w-[0.4rem] rounded-full bg-green-400" />
+                              <span className="slow-pulse h-[0.4rem] w-[0.4rem] rounded-full bg-brand-blue-400" />
                             </div>
                           ) : null
                         }

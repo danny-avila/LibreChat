@@ -895,4 +895,7 @@ export default {
   com_ui_decline: 'I do not accept',
   com_ui_terms_and_conditions: 'Terms and Conditions',
   com_ui_no_terms_content: 'No terms and conditions content to display',
+
+  // custom:
+  com_ui_custom_footer: 'Parser AI can make mistakes. Please double check the answers.',
 };

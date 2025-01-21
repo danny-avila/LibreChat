@@ -97,7 +97,7 @@ const TermsAndConditionsModal = ({
             </button>
             <button
               onClick={handleAccept}
-              className="inline-flex h-10 items-center justify-center rounded-lg border border-border-heavy bg-surface-secondary px-4 py-2 text-sm text-text-primary hover:bg-green-500 hover:text-white focus:bg-green-500 focus:text-white dark:hover:bg-green-600 dark:focus:bg-green-600"
+              className="inline-flex h-10 items-center justify-center rounded-lg border border-border-heavy bg-surface-secondary px-4 py-2 text-sm text-text-primary hover:bg-brand-blue-500 hover:text-white focus:bg-brand-blue-500 focus:text-white dark:hover:bg-brand-blue-600 dark:focus:bg-brand-blue-600"
             >
               {localize('com_ui_accept')}
             </button>

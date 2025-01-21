@@ -158,7 +158,7 @@ export default function DashGroupItem({
                 <div className="flex flex-row items-center gap-1">
                   {groupIsGlobal === true && (
                     <EarthIcon
-                      className="icon-md text-green-400"
+                      className="icon-md text-brand-blue-400"
                       aria-label={localize('com_ui_global_group')}
                     />
                   )}

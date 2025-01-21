@@ -12,6 +12,7 @@ import { useLocalize, useNewConvo } from '~/hooks';
 import { NewChatIcon } from '~/components/svg';
 import { cn } from '~/utils';
 import store from '~/store';
+import ParserFullLogoIcon from '../svg/ParserFullLogo';
 
 const NewChatButtonIcon = ({ conversation }: { conversation: TConversation | null }) => {
   const searchQuery = useRecoilValue(store.searchQuery);
@@ -95,6 +96,10 @@ export default function NewChat({
 
   return (
     <div className="sticky left-0 right-0 top-0 z-50 bg-surface-primary-alt pt-3.5">
+      <div className='m-2 mb-8'>
+        <ParserFullLogoIcon className='max-w-40' />
+      </div>
+
       <div className="pb-0.5 last:pb-0" style={{ transform: 'none' }}>
         <a
           href="/"
