@@ -1,11 +1,11 @@
-import { ThemeContext, useLocalize } from '~/hooks';
+import { useLocalize } from '~/hooks';
 import { BlinkAnimation } from './BlinkAnimation';
 import { TStartupConfig } from 'librechat-data-provider';
 import SocialLoginRender from './SocialLoginRender';
 import { ThemeSelector } from '~/components/ui';
 import { Banner } from '../Banners';
 import Footer from './Footer';
-import { useContext } from 'react';
+import ParserFullLogoIcon from '../svg/ParserFullLogo';
 
 const ErrorRender = ({ children }: { children: React.ReactNode }) => (
   <div className="mt-16 flex justify-center">
@@ -37,7 +37,6 @@ function AuthLayout({
   error: string | null;
 }) {
   const localize = useLocalize();
-  const { theme } = useContext(ThemeContext);
 
   const hasStartupConfigError = startupConfigError !== null && startupConfigError !== undefined;
   const DisplayError = () => {
@@ -93,11 +92,7 @@ function AuthLayout({
         </div>
       </div>
       <div className="mt-6 h-6 bg-cover">
-        <img
-          src={theme === 'dark' ? '/assets/logo-dark.svg' : '/assets/logo.svg'}
-          className="h-full w-full object-contain"
-          alt={localize('com_ui_logo', startupConfig?.appTitle ?? 'Parser AI')}
-        />
+        <ParserFullLogoIcon className='h-full w-full object-contain' />
       </div>
       <Footer startupConfig={startupConfig} />
     </div>
