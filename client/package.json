@@ -79,6 +79,7 @@
     "react-dnd": "^16.0.1",
     "react-dnd-html5-backend": "^16.0.1",
     "react-dom": "^18.2.0",
+    "react-error-boundary": "^5.0.0",
     "react-flip-toolkit": "^7.1.0",
     "react-gtm-module": "^2.0.11",
     "react-hook-form": "^7.43.9",
