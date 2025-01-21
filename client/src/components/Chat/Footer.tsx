@@ -43,7 +43,7 @@ export default function Footer({ className }: { className?: string }) {
     }
   }, [config?.analyticsGtmId]);
 
-  const mainContentRender = <p className="text-text-secondary my-2">Parser AI can make mistakes. Please double check the answers.</p>;
+  const mainContentRender = <p className="text-text-secondary my-2">{localize('com_ui_custom_footer')}</p>;
 
   const footerElements = [mainContentRender, privacyPolicyRender, termsOfServiceRender].filter(
     Boolean,
