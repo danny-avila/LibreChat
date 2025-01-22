@@ -97,7 +97,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
             assistantMap={assistantMap}
             conversation={conversation}
             endpointsConfig={endpointsConfig}
-            containerClassName={containerClassNam2e}
+            containerClassName={containerClassName}
             context="landing"
             className="h-2/3 w-2/3"
             size={41}
