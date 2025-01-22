@@ -121,6 +121,7 @@ const MessageRender = memo(
 
     return (
       <div
+        id={msg.messageId}
         aria-label={`message-${msg.depth}-${msg.messageId}`}
         className={cn(
           baseClasses,

@@ -1,6 +1,9 @@
 import React, { useMemo, memo } from 'react';
-import { Sandpack } from '@codesandbox/sandpack-react';
 import { removeNullishValues } from 'librechat-data-provider';
+import {
+  SandpackCodeEditor,
+  SandpackProvider as StyledProvider,
+} from '@codesandbox/sandpack-react';
 import { SandpackPreview, SandpackProvider } from '@codesandbox/sandpack-react/unstyled';
 import type { SandpackPreviewRef } from '@codesandbox/sandpack-react/unstyled';
 import type { Artifact } from '~/common';
@@ -44,20 +47,22 @@ export const ArtifactPreview = memo(function ({
   }
 
   return showEditor ? (
-    <Sandpack
-      options={{
-        showNavigator: true,
-        editorHeight: '80vh',
-        showTabs: true,
-        ...sharedOptions,
-      }}
+    <StyledProvider
+      theme="dark"
       files={{
         ...files,
         ...sharedFiles,
       }}
+      options={{ ...sharedOptions }}
       {...sharedProps}
       template={template}
-    />
+    >
+      <SandpackCodeEditor
+        showTabs={false}
+        showRunButton={false}
+        className="hljs language-javascript bg-black"
+      />
+    </StyledProvider>
   ) : (
     <SandpackProvider
       files={{

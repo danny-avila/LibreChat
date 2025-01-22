@@ -4,9 +4,8 @@ import { useSetRecoilState } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
 import { SandpackPreviewRef } from '@codesandbox/sandpack-react';
 import useArtifacts from '~/hooks/Artifacts/useArtifacts';
-import { CodeMarkdown, CopyCodeButton } from './Code';
-import { getFileExtension } from '~/utils/artifacts';
 import { ArtifactPreview } from './ArtifactPreview';
+import { CopyCodeButton } from './Code';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -23,7 +22,6 @@ export default function Artifacts() {
   const {
     activeTab,
     isMermaid,
-    isSubmitting,
     setActiveTab,
     currentIndex,
     cycleArtifact,
@@ -129,15 +127,11 @@ export default function Artifacts() {
             </div>
           </div>
           {/* Content */}
-          <Tabs.Content
-            value="code"
-            className={cn('flex-grow overflow-x-auto overflow-y-scroll bg-gray-900 p-4')}
-          >
-            <CodeMarkdown
-              content={`\`\`\`${getFileExtension(currentArtifact.type)}\n${
-                currentArtifact.content ?? ''
-              }\`\`\``}
-              isSubmitting={isSubmitting}
+          <Tabs.Content value="code" id="artifacts-code" className={cn('flex-grow overflow-auto')}>
+            <ArtifactPreview
+              artifact={currentArtifact}
+              showEditor={true}
+              previewRef={previewRef as React.MutableRefObject<SandpackPreviewRef>}
             />
           </Tabs.Content>
           <Tabs.Content
