@@ -82,7 +82,6 @@
     "mongoose": "^8.9.5",
     "multer": "^1.4.5-lts.1",
     "nanoid": "^3.3.7",
-    "nodejs-gpt": "^1.37.4",
     "nodemailer": "^6.9.15",
     "ollama": "^0.5.0",
     "openai": "^4.47.1",
