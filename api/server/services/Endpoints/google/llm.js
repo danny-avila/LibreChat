@@ -87,7 +87,8 @@ function getLLMConfig(credentials, options = {}) {
     maxRetries: 2,
   };
 
-  const isGemini2 = llmConfig.model.includes('gemini-2.0');
+  /** Used only for Safety Settings */
+  const isGemini2 = llmConfig.model.includes('gemini-2.0') && !llmConfig.model.includes('thinking');
   const isGenerativeModel = llmConfig.model.includes('gemini');
   const isChatModel = !isGenerativeModel && llmConfig.model.includes('chat');
   const isTextModel = !isGenerativeModel && !isChatModel && /code|text/.test(llmConfig.model);
