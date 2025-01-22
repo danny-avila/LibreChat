@@ -82,7 +82,8 @@ const anthropicModels = {
 };
 
 const deepseekModels = {
-  deepseek: 127500,
+  'deepseek-reasoner': 63000, // -1000 from max (API)
+  deepseek: 63000, // -1000 from max (API)
 };
 
 const metaModels = {
