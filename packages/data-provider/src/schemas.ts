@@ -719,13 +719,12 @@ export const tSharedLinkSchema = z.object({
   conversationId: z.string(),
   shareId: z.string(),
   messages: z.array(z.string()),
-  isAnonymous: z.boolean(),
   isPublic: z.boolean(),
-  isVisible: z.boolean(),
   title: z.string(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
+
 export type TSharedLink = z.infer<typeof tSharedLinkSchema>;
 
 export const tConversationTagSchema = z.object({

@@ -6,6 +6,7 @@ const { Issuer, Strategy: OpenIDStrategy, custom } = require('openid-client');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { findUser, createUser, updateUser } = require('~/models/userMethods');
 const { hashToken } = require('~/server/utils/crypto');
+const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
 
 let crypto;
@@ -132,11 +133,23 @@ async function setupOpenId() {
       logger.info(`[openidStrategy] proxy agent added: ${process.env.PROXY}`);
     }
     const issuer = await Issuer.discover(process.env.OPENID_ISSUER);
-    const client = new issuer.Client({
+    /* Supported Algorithms, openid-client v5 doesn't set it automatically as discovered from server.
+      - id_token_signed_response_alg      // defaults to 'RS256'
+      - request_object_signing_alg        // defaults to 'RS256'
+      - userinfo_signed_response_alg      // not in v5
+      - introspection_signed_response_alg // not in v5
+      - authorization_signed_response_alg // not in v5
+    */
+    /** @type {import('openid-client').ClientMetadata} */
+    const clientMetadata = {
       client_id: process.env.OPENID_CLIENT_ID,
       client_secret: process.env.OPENID_CLIENT_SECRET,
       redirect_uris: [process.env.DOMAIN_SERVER + process.env.OPENID_CALLBACK_URL],
-    });
+    };
+    if (isEnabled(process.env.OPENID_SET_FIRST_SUPPORTED_ALGORITHM)) {
+      clientMetadata.id_token_signed_response_alg = issuer.id_token_signing_alg_values_supported?.[0] || 'RS256';
+    }
+    const client = new issuer.Client(clientMetadata);
     const requiredRole = process.env.OPENID_REQUIRED_ROLE;
     const requiredRoleParameterPath = process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH;
     const requiredRoleTokenKind = process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND;

@@ -141,7 +141,6 @@ function ConvoOptions({
       />
       {showShareDialog && (
         <ShareButton
-          title={title ?? ''}
           conversationId={conversationId ?? ''}
           open={showShareDialog}
           onOpenChange={setShowShareDialog}
