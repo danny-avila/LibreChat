@@ -886,7 +886,8 @@ class GoogleClient extends BaseClient {
   }
 
   getSafetySettings() {
-    const isGemini2 = this.modelOptions.model.includes('gemini-2.0');
+    const model = this.modelOptions.model;
+    const isGemini2 = model.includes('gemini-2.0') && !model.includes('thinking');
     const mapThreshold = (value) => {
       if (isGemini2 && value === 'BLOCK_NONE') {
         return 'OFF';
