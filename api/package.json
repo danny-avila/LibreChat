@@ -45,6 +45,7 @@
     "@langchain/google-vertexai": "^0.1.6",
     "@langchain/textsplitters": "^0.1.0",
     "@librechat/agents": "^1.9.94",
+    "@waylaidwanderer/fetch-event-source": "^3.0.1",
     "axios": "^1.7.7",
     "bcryptjs": "^2.4.3",
     "cheerio": "^1.0.0-rc.12",
@@ -82,7 +83,6 @@
     "mongoose": "^8.9.5",
     "multer": "^1.4.5-lts.1",
     "nanoid": "^3.3.7",
-    "nodejs-gpt": "^1.37.4",
     "nodemailer": "^6.9.15",
     "ollama": "^0.5.0",
     "openai": "^4.47.1",
@@ -102,6 +102,7 @@
     "tiktoken": "^1.0.15",
     "traverse": "^0.6.7",
     "ua-parser-js": "^1.0.36",
+    "undici": "^7.2.3",
     "winston": "^3.11.0",
     "winston-daily-rotate-file": "^4.7.1",
     "zod": "^3.22.4"
