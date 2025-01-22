@@ -17,12 +17,13 @@ export default function ArtifactTabs({
   editorRef: React.MutableRefObject<CodeEditorRef>;
   previewRef: React.MutableRefObject<SandpackPreviewRef>;
 }) {
-  const { files, template, sharedProps } = useArtifactProps({ artifact });
+  const { files, fileKey, template, sharedProps } = useArtifactProps({ artifact });
   return (
     <>
       <Tabs.Content value="code" id="artifacts-code" className={cn('flex-grow overflow-auto')}>
         <ArtifactCodeEditor
           files={files}
+          fileKey={fileKey}
           template={template}
           editorRef={editorRef}
           sharedProps={sharedProps}

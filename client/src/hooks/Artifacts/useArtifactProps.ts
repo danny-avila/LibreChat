@@ -5,13 +5,16 @@ import { getKey, getProps, getTemplate, getArtifactFilename } from '~/utils/arti
 import { getMermaidFiles } from '~/utils/mermaid';
 
 export default function useArtifactProps({ artifact }: { artifact: Artifact }) {
-  const files = useMemo(() => {
+  const [fileKey, files] = useMemo(() => {
     if (getKey(artifact.type ?? '', artifact.language).includes('mermaid')) {
-      return getMermaidFiles(artifact.content ?? '');
+      return ['App.tsx', getMermaidFiles(artifact.content ?? '')];
     }
-    return removeNullishValues({
-      [getArtifactFilename(artifact.type ?? '', artifact.language)]: artifact.content,
+
+    const fileKey = getArtifactFilename(artifact.type ?? '', artifact.language);
+    const files = removeNullishValues({
+      [fileKey]: artifact.content,
     });
+    return [fileKey, files];
   }, [artifact.type, artifact.content, artifact.language]);
 
   const template = useMemo(
@@ -23,6 +26,7 @@ export default function useArtifactProps({ artifact }: { artifact: Artifact }) {
 
   return {
     files,
+    fileKey,
     template,
     sharedProps,
   };

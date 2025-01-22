@@ -1,5 +1,6 @@
-import React, { memo } from 'react';
+import React, { memo, useEffect } from 'react';
 import {
+  useSandpack,
   SandpackCodeEditor,
   SandpackProvider as StyledProvider,
 } from '@codesandbox/sandpack-react';
@@ -8,13 +9,36 @@ import type { CodeEditorRef } from '@codesandbox/sandpack-react';
 import type { ArtifactFiles } from '~/common';
 import { sharedFiles, sharedOptions } from '~/utils/artifacts';
 
+const CodeEditor = ({
+  fileKey,
+  editorRef,
+}: {
+  fileKey: string;
+  editorRef: React.MutableRefObject<CodeEditorRef>;
+}) => {
+  const { sandpack } = useSandpack();
+  useEffect(() => {
+    console.log(sandpack.files['/' + fileKey]);
+  }, [sandpack.files, fileKey]);
+  return (
+    <SandpackCodeEditor
+      ref={editorRef}
+      showTabs={false}
+      showRunButton={false}
+      className="hljs language-javascript bg-black"
+    />
+  );
+};
+
 export const ArtifactCodeEditor = memo(function ({
   files,
+  fileKey,
+  template,
   editorRef,
   sharedProps,
-  template,
 }: {
   files: ArtifactFiles;
+  fileKey: string;
   template: SandpackProviderProps['template'];
   sharedProps: Partial<SandpackProviderProps>;
   editorRef: React.MutableRefObject<CodeEditorRef>;
@@ -34,12 +58,7 @@ export const ArtifactCodeEditor = memo(function ({
       {...sharedProps}
       template={template}
     >
-      <SandpackCodeEditor
-        ref={editorRef}
-        showTabs={false}
-        showRunButton={false}
-        className="hljs language-javascript bg-black"
-      />
+      <CodeEditor editorRef={editorRef} fileKey={fileKey} />
     </StyledProvider>
   );
 });
