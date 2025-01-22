@@ -101,6 +101,7 @@
     "tiktoken": "^1.0.15",
     "traverse": "^0.6.7",
     "ua-parser-js": "^1.0.36",
+    "undici": "^7.2.3",
     "winston": "^3.11.0",
     "winston-daily-rotate-file": "^4.7.1",
     "zod": "^3.22.4"
