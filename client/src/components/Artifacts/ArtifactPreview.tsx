@@ -1,69 +1,29 @@
-import React, { useMemo, memo } from 'react';
-import { removeNullishValues } from 'librechat-data-provider';
+import React, { memo } from 'react';
 import {
-  SandpackCodeEditor,
-  SandpackProvider as StyledProvider,
-} from '@codesandbox/sandpack-react';
-import { SandpackPreview, SandpackProvider } from '@codesandbox/sandpack-react/unstyled';
+  SandpackPreview,
+  SandpackProvider,
+  SandpackProviderProps,
+} from '@codesandbox/sandpack-react/unstyled';
 import type { SandpackPreviewRef } from '@codesandbox/sandpack-react/unstyled';
-import type { Artifact } from '~/common';
-import {
-  getKey,
-  getProps,
-  sharedFiles,
-  getTemplate,
-  sharedOptions,
-  getArtifactFilename,
-} from '~/utils/artifacts';
-import { getMermaidFiles } from '~/utils/mermaid';
+import type { ArtifactFiles } from '~/common';
+import { sharedFiles, sharedOptions } from '~/utils/artifacts';
 
 export const ArtifactPreview = memo(function ({
-  showEditor = false,
-  artifact,
+  files,
   previewRef,
+  sharedProps,
+  template,
 }: {
-  showEditor?: boolean;
-  artifact: Artifact;
+  files: ArtifactFiles;
+  template: SandpackProviderProps['template'];
+  sharedProps: Partial<SandpackProviderProps>;
   previewRef: React.MutableRefObject<SandpackPreviewRef>;
 }) {
-  const files = useMemo(() => {
-    if (getKey(artifact.type ?? '', artifact.language).includes('mermaid')) {
-      return getMermaidFiles(artifact.content ?? '');
-    }
-    return removeNullishValues({
-      [getArtifactFilename(artifact.type ?? '', artifact.language)]: artifact.content,
-    });
-  }, [artifact.type, artifact.content, artifact.language]);
-
-  const template = useMemo(
-    () => getTemplate(artifact.type ?? '', artifact.language),
-    [artifact.type, artifact.language],
-  );
-
-  const sharedProps = useMemo(() => getProps(artifact.type ?? ''), [artifact.type]);
-
   if (Object.keys(files).length === 0) {
     return null;
   }
 
-  return showEditor ? (
-    <StyledProvider
-      theme="dark"
-      files={{
-        ...files,
-        ...sharedFiles,
-      }}
-      options={{ ...sharedOptions }}
-      {...sharedProps}
-      template={template}
-    >
-      <SandpackCodeEditor
-        showTabs={false}
-        showRunButton={false}
-        className="hljs language-javascript bg-black"
-      />
-    </StyledProvider>
-  ) : (
+  return (
     <SandpackProvider
       files={{
         ...files,

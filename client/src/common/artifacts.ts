@@ -13,3 +13,13 @@ export interface Artifact {
   title?: string;
   type?: string;
 }
+
+export type ArtifactFiles =
+  | {
+      'App.tsx': string;
+      'index.tsx': string;
+      '/components/ui/MermaidDiagram.tsx': string;
+    }
+  | Partial<{
+      [x: string]: string | undefined;
+    }>;
