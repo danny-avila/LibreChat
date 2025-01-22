@@ -47,10 +47,10 @@ export default function Artifacts() {
   return (
     <Tabs.Root value={activeTab} onValueChange={setActiveTab} asChild>
       {/* Main Parent */}
-      <div className="flex h-full w-full items-center justify-center py-2">
+      <div className="flex h-full w-full items-center justify-center">
         {/* Main Container */}
         <div
-          className={`flex h-[97%] w-[97%] flex-col overflow-hidden rounded-xl border border-border-medium bg-surface-primary text-xl text-text-primary shadow-xl transition-all duration-300 ease-in-out ${
+          className={`flex h-full w-full flex-col overflow-hidden border border-border-medium bg-surface-primary text-xl text-text-primary shadow-xl transition-all duration-300 ease-in-out ${
             isVisible
               ? 'translate-x-0 scale-100 opacity-100'
               : 'translate-x-full scale-95 opacity-0'
