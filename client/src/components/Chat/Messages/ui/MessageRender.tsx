@@ -128,7 +128,7 @@ const MessageRender = memo(
           layoutClasses,
           latestCardClasses,
           showRenderClasses,
-          'focus:outline-none focus:ring-2 focus:ring-border-xheavy',
+          'message-render focus:outline-none focus:ring-2 focus:ring-border-xheavy',
         )}
         onClick={clickHandler}
         onKeyDown={(e) => {

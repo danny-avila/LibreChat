@@ -5,6 +5,7 @@ import { useSetRecoilState } from 'recoil';
 import type { Pluggable } from 'unified';
 import type { Artifact } from '~/common';
 import { artifactsState } from '~/store/artifacts';
+import { useMessageContext } from '~/Providers';
 import ArtifactButton from './ArtifactButton';
 import { logger } from '~/utils';
 
@@ -44,6 +45,7 @@ export function Artifact({
   children: React.ReactNode | { props: { children: React.ReactNode } };
   node: unknown;
 }) {
+  const { messageId } = useMessageContext();
   const setArtifacts = useSetRecoilState(artifactsState);
   const [artifact, setArtifact] = useState<Artifact | null>(null);
 
@@ -76,6 +78,7 @@ export function Artifact({
         type,
         content,
         lastUpdateTime: now,
+        messageId,
       };
 
       setArtifacts((prevArtifacts) => {
@@ -94,7 +97,7 @@ export function Artifact({
 
       setArtifact(currentArtifact);
     });
-  }, [props.type, props.title, setArtifacts, props.children, props.identifier]);
+  }, [props.type, props.title, setArtifacts, props.children, props.identifier, messageId]);
 
   useEffect(() => {
     updateArtifact();

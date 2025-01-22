@@ -11,9 +11,11 @@ import { sharedFiles, sharedOptions } from '~/utils/artifacts';
 
 const CodeEditor = ({
   fileKey,
+  readOnly,
   editorRef,
 }: {
   fileKey: string;
+  readOnly: boolean;
   editorRef: React.MutableRefObject<CodeEditorRef>;
 }) => {
   const { sandpack } = useSandpack();
@@ -24,6 +26,7 @@ const CodeEditor = ({
     <SandpackCodeEditor
       ref={editorRef}
       showTabs={false}
+      readOnly={readOnly}
       showRunButton={false}
       className="hljs language-javascript bg-black"
     />
@@ -36,9 +39,11 @@ export const ArtifactCodeEditor = memo(function ({
   template,
   editorRef,
   sharedProps,
+  isSubmitting,
 }: {
-  files: ArtifactFiles;
   fileKey: string;
+  files: ArtifactFiles;
+  isSubmitting: boolean;
   template: SandpackProviderProps['template'];
   sharedProps: Partial<SandpackProviderProps>;
   editorRef: React.MutableRefObject<CodeEditorRef>;
@@ -58,7 +63,7 @@ export const ArtifactCodeEditor = memo(function ({
       {...sharedProps}
       template={template}
     >
-      <CodeEditor editorRef={editorRef} fileKey={fileKey} />
+      <CodeEditor editorRef={editorRef} fileKey={fileKey} readOnly={isSubmitting} />
     </StyledProvider>
   );
 });

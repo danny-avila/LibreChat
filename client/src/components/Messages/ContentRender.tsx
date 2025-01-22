@@ -128,6 +128,7 @@ const ContentRender = memo(
           conditionalClasses.latestCard,
           conditionalClasses.cardRender,
           conditionalClasses.focus,
+          'message-render',
         )}
         onClick={clickHandler}
         onKeyDown={(e) => {
