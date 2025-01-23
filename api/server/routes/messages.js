@@ -1,4 +1,3 @@
-const dedent = require('dedent');
 const express = require('express');
 const { ContentTypes } = require('librechat-data-provider');
 const {
@@ -9,6 +8,7 @@ const {
   updateMessage,
   deleteMessages,
 } = require('~/models');
+const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
 const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
 const { countTokens } = require('~/server/utils');
 const { logger } = require('~/config');
@@ -16,57 +16,45 @@ const { logger } = require('~/config');
 const router = express.Router();
 router.use(requireJwtAuth);
 
-const replaceArtifact = (text, original, updated) => {
-  const dedentedText = dedent(text);
-  const dedentedOriginal = dedent(original);
-  const index = dedentedText.indexOf(dedentedOriginal);
-
-  if (index === -1) {
-    return null;
-  }
-
-  return text.substring(0, index) + updated + '\n' + text.substring(index + original.length);
-};
-
 router.post('/artifact/:messageId', async (req, res) => {
   try {
     const { messageId } = req.params;
-    const { original, updated } = req.body;
+    const { index, original, updated } = req.body;
 
-    if (!original || !updated) {
-      return res.status(400).json({ error: 'Original and updated text required' });
+    if (typeof index !== 'number' || index < 0 || !original || !updated) {
+      return res.status(400).json({ error: 'Invalid request parameters' });
     }
 
     const message = await getMessage({ user: req.user.id, messageId });
-
     if (!message) {
       return res.status(404).json({ error: 'Message not found' });
     }
 
-    let isUpdated = false;
-
-    // Check content array first if it exists and has length
-    if (message.content?.length) {
-      for (const part of message.content) {
-        if (part.type === 'text' && typeof part.text === 'string') {
-          const replacedText = replaceArtifact(part.text, original, updated);
-          if (replacedText !== null) {
-            part.text = replacedText;
-            isUpdated = true;
-          }
-        }
-      }
-    } else if (message.text) {
-      const replacedText = replaceArtifact(message.text, original, updated);
-      if (replacedText === null) {
-        return res.status(400).json({ error: 'Original text not found in message' });
-      }
-      message.text = replacedText;
-      isUpdated = true;
+    // Find all artifacts in the message
+    const artifacts = findAllArtifacts(message);
+    if (index >= artifacts.length) {
+      return res.status(400).json({ error: 'Artifact index out of bounds' });
     }
 
-    if (!isUpdated) {
-      return res.status(400).json({ error: 'No text content found to update' });
+    const targetArtifact = artifacts[index];
+    let updatedText = null;
+
+    // Perform the replacement
+    if (targetArtifact.source === 'content') {
+      const part = message.content[targetArtifact.partIndex];
+      updatedText = replaceArtifactContent(part.text, targetArtifact, original, updated);
+      if (updatedText) {
+        part.text = updatedText;
+      }
+    } else {
+      updatedText = replaceArtifactContent(message.text, targetArtifact, original, updated);
+      if (updatedText) {
+        message.text = updatedText;
+      }
+    }
+
+    if (!updatedText) {
+      return res.status(400).json({ error: 'Original content not found in target artifact' });
     }
 
     const savedMessage = await saveMessage(
@@ -81,17 +69,13 @@ router.post('/artifact/:messageId', async (req, res) => {
       { context: 'POST /api/messages/artifact/:messageId' },
     );
 
-    if (!savedMessage) {
-      return res.status(400).json({ error: 'Message not saved' });
-    }
-
     res.status(200).json({
-      conversationId: savedMessage.conversationId,
+      messageId: savedMessage.messageId,
       content: savedMessage.content,
       text: savedMessage.text,
     });
   } catch (error) {
-    logger.error('Error editing message:', error);
+    logger.error('Error editing artifact:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

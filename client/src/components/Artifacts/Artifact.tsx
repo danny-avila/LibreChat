@@ -4,8 +4,8 @@ import { visit } from 'unist-util-visit';
 import { useSetRecoilState } from 'recoil';
 import type { Pluggable } from 'unified';
 import type { Artifact } from '~/common';
+import { useMessageContext, useArtifactContext } from '~/Providers';
 import { artifactsState } from '~/store/artifacts';
-import { useMessageContext } from '~/Providers';
 import ArtifactButton from './ArtifactButton';
 import { logger } from '~/utils';
 
@@ -46,6 +46,9 @@ export function Artifact({
   node: unknown;
 }) {
   const { messageId } = useMessageContext();
+  const { getNextIndex, resetCounter } = useArtifactContext();
+  const artifactIndex = useRef(getNextIndex(false)).current;
+
   const setArtifacts = useSetRecoilState(artifactsState);
   const [artifact, setArtifact] = useState<Artifact | null>(null);
 
@@ -77,8 +80,9 @@ export function Artifact({
         title,
         type,
         content,
-        lastUpdateTime: now,
         messageId,
+        index: artifactIndex,
+        lastUpdateTime: now,
       };
 
       setArtifacts((prevArtifacts) => {
@@ -97,11 +101,20 @@ export function Artifact({
 
       setArtifact(currentArtifact);
     });
-  }, [props.type, props.title, setArtifacts, props.children, props.identifier, messageId]);
+  }, [
+    props.type,
+    props.title,
+    setArtifacts,
+    props.children,
+    props.identifier,
+    messageId,
+    artifactIndex,
+  ]);
 
   useEffect(() => {
+    resetCounter();
     updateArtifact();
-  }, [updateArtifact]);
+  }, [updateArtifact, resetCounter]);
 
   return <ArtifactButton artifact={artifact} />;
 }

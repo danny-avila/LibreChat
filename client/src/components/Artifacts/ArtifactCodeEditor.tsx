@@ -12,7 +12,12 @@ import { sharedFiles, sharedOptions } from '~/utils/artifacts';
 import { useEditArtifact } from '~/data-provider';
 
 const createDebouncedMutation = (
-  callback: (messageId: string, original: string, updated: string) => void,
+  callback: (params: {
+    index: number;
+    messageId: string;
+    original: string;
+    updated: string;
+  }) => void,
 ) => debounce(callback, 3000);
 
 const CodeEditor = ({
@@ -41,12 +46,8 @@ const CodeEditor = ({
   });
 
   const mutationCallback = useCallback(
-    (messageId: string, original: string, updated: string) => {
-      editArtifact.mutate({
-        messageId,
-        original,
-        updated,
-      });
+    (params: { index: number; messageId: string; original: string; updated: string }) => {
+      editArtifact.mutate(params);
     },
     [editArtifact],
   );
@@ -67,7 +68,12 @@ const CodeEditor = ({
     const currentCode = sandpack.files['/' + fileKey].code;
 
     if (currentCode && currentCode !== artifact.content) {
-      debouncedMutation(artifact.messageId ?? '', artifact.content, currentCode);
+      debouncedMutation({
+        index: artifact.index,
+        messageId: artifact.messageId ?? '',
+        original: artifact.content,
+        updated: currentCode,
+      });
     }
 
     return () => {
@@ -77,6 +83,7 @@ const CodeEditor = ({
     isMutating,
     sandpack.files,
     fileKey,
+    artifact.index,
     artifact.content,
     artifact.messageId,
     readOnly,

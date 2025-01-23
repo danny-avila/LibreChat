@@ -78,13 +78,9 @@ export function updateMessage(payload: t.TUpdateMessageRequest): Promise<unknown
 
 export const editArtifact = async ({
   messageId,
-  original,
-  updated,
+  ...params
 }: m.TEditArtifactRequest): Promise<m.TEditArtifactResponse> => {
-  return request.post(`/api/messages/artifact/${messageId}`, {
-    original,
-    updated,
-  });
+  return request.post(`/api/messages/artifact/${messageId}`, params);
 };
 
 export function updateMessageContent(payload: t.TUpdateMessageContent): Promise<unknown> {

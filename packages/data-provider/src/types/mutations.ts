@@ -317,6 +317,7 @@ export type TDeleteSharedLinkResponse = {
 };
 
 export type TEditArtifactRequest = {
+  index: number;
   messageId: string;
   original: string;
   updated: string;

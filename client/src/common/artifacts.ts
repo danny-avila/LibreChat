@@ -7,6 +7,7 @@ export interface CodeBlock {
 export interface Artifact {
   id: string;
   lastUpdateTime: number;
+  index?: number;
   messageId?: string;
   identifier?: string;
   language?: string;
