@@ -5,15 +5,19 @@ import * as Tabs from '@radix-ui/react-tabs';
 import type { SandpackPreviewRef, CodeEditorRef } from '@codesandbox/sandpack-react';
 import useArtifacts from '~/hooks/Artifacts/useArtifacts';
 import DownloadArtifact from './DownloadArtifact';
+import { useEditorContext } from '~/Providers';
+import useLocalize from '~/hooks/useLocalize';
 import ArtifactTabs from './ArtifactTabs';
 import { CopyCodeButton } from './Code';
 import store from '~/store';
 
 export default function Artifacts() {
+  const localize = useLocalize();
+  const { isMutating } = useEditorContext();
   const editorRef = useRef<CodeEditorRef>();
   const previewRef = useRef<SandpackPreviewRef>();
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const setArtifactsVisible = useSetRecoilState(store.artifactsVisible);
 
   useEffect(() => {
@@ -95,18 +99,23 @@ export default function Artifacts() {
                   />
                 </button>
               )}
+              {activeTab !== 'preview' && isMutating && (
+                <RefreshCw size={16} className="mr-2 animate-spin text-text-secondary" />
+              )}
+              {/* Tabs */}
               <Tabs.List className="mr-2 inline-flex h-7 rounded-full border border-border-medium bg-surface-tertiary">
                 <Tabs.Trigger
                   value="preview"
+                  disabled={isMutating}
                   className="border-0.5 flex items-center gap-1 rounded-full border-transparent py-1 pl-2.5 pr-2.5 text-xs font-medium text-text-secondary data-[state=active]:border-border-light data-[state=active]:bg-surface-primary-alt data-[state=active]:text-text-primary"
                 >
-                  Preview
+                  {localize('com_ui_preview')}
                 </Tabs.Trigger>
                 <Tabs.Trigger
                   value="code"
                   className="border-0.5 flex items-center gap-1 rounded-full border-transparent py-1 pl-2.5 pr-2.5 text-xs font-medium text-text-secondary data-[state=active]:border-border-light data-[state=active]:bg-surface-primary-alt data-[state=active]:text-text-primary"
                 >
-                  Code
+                  {localize('com_ui_code')}
                 </Tabs.Trigger>
               </Tabs.List>
               <button

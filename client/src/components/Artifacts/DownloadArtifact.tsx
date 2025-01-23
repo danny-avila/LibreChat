@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Download } from 'lucide-react';
 import type { Artifact } from '~/common';
 import useArtifactProps from '~/hooks/Artifacts/useArtifactProps';
+import { useEditorContext } from '~/Providers';
 import { CheckMark } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 
@@ -13,12 +14,13 @@ const DownloadArtifact = ({
   className?: string;
 }) => {
   const localize = useLocalize();
+  const { currentCode } = useEditorContext();
   const [isDownloaded, setIsDownloaded] = useState(false);
   const { fileKey: fileName } = useArtifactProps({ artifact });
 
   const handleDownload = () => {
     try {
-      const content = artifact.content ?? '';
+      const content = currentCode ?? artifact.content ?? '';
       if (!content) {
         return;
       }

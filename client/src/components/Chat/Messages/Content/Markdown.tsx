@@ -10,8 +10,8 @@ import remarkDirective from 'remark-directive';
 import type { Pluggable } from 'unified';
 import {
   useToastContext,
-  CodeBlockProvider,
   ArtifactProvider,
+  CodeBlockProvider,
   useCodeBlockContext,
 } from '~/Providers';
 import { Artifact, artifactPlugin } from '~/components/Artifacts/Artifact';

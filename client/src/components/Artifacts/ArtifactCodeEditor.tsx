@@ -1,5 +1,5 @@
 import debounce from 'lodash/debounce';
-import React, { memo, useEffect, useMemo, useState, useCallback } from 'react';
+import React, { memo, useEffect, useMemo, useCallback } from 'react';
 import {
   useSandpack,
   SandpackCodeEditor,
@@ -10,6 +10,7 @@ import type { CodeEditorRef } from '@codesandbox/sandpack-react';
 import type { ArtifactFiles, Artifact } from '~/common';
 import { sharedFiles, sharedOptions } from '~/utils/artifacts';
 import { useEditArtifact } from '~/data-provider';
+import { useEditorContext } from '~/Providers';
 
 const createDebouncedMutation = (
   callback: (params: {
@@ -18,7 +19,7 @@ const createDebouncedMutation = (
     original: string;
     updated: string;
   }) => void,
-) => debounce(callback, 3000);
+) => debounce(callback, 500);
 
 const CodeEditor = ({
   fileKey,
@@ -31,8 +32,8 @@ const CodeEditor = ({
   artifact: Artifact;
   editorRef: React.MutableRefObject<CodeEditorRef>;
 }) => {
-  const [isMutating, setIsMutating] = useState(false);
   const { sandpack } = useSandpack();
+  const { isMutating, setIsMutating, setCurrentCode } = useEditorContext();
   const editArtifact = useEditArtifact({
     onMutate: () => {
       setIsMutating(true);
@@ -42,6 +43,7 @@ const CodeEditor = ({
     },
     onError: () => {
       setIsMutating(false);
+      setCurrentCode(artifact.content);
     },
   });
 
@@ -68,6 +70,7 @@ const CodeEditor = ({
     const currentCode = sandpack.files['/' + fileKey].code;
 
     if (currentCode && artifact.content != null && currentCode.trim() !== artifact.content.trim()) {
+      setCurrentCode(currentCode);
       debouncedMutation({
         index: artifact.index,
         messageId: artifact.messageId ?? '',
@@ -80,13 +83,15 @@ const CodeEditor = ({
       debouncedMutation.cancel();
     };
   }, [
-    isMutating,
-    sandpack.files,
     fileKey,
     artifact.index,
     artifact.content,
     artifact.messageId,
     readOnly,
+    isMutating,
+    sandpack.files,
+    setIsMutating,
+    setCurrentCode,
     debouncedMutation,
   ]);
 

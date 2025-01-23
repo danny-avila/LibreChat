@@ -64,16 +64,13 @@ const replaceArtifactContent = (originalText, artifact, original, updated) => {
   }
 
   const absoluteIndex = artifact.start + relativeIndex;
-  const hasTrailingNewline = originalText
-    .substring(absoluteIndex + original.length)
-    .startsWith('\n');
+  const endText = originalText.substring(absoluteIndex + original.length);
+  const hasTrailingNewline = endText.startsWith('\n');
 
-  return (
-    originalText.substring(0, absoluteIndex) +
-    updated +
-    (hasTrailingNewline ? '' : '\n') +
-    originalText.substring(absoluteIndex + original.length)
-  );
+  const updatedText =
+    originalText.substring(0, absoluteIndex) + updated + (hasTrailingNewline ? '' : '\n') + endText;
+
+  return updatedText.replace(/\n+(?=```\n:::)/g, '\n');
 };
 
 module.exports = {

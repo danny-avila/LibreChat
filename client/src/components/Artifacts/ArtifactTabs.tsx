@@ -49,6 +49,7 @@ export default function ArtifactTabs({
       >
         <ArtifactPreview
           files={files}
+          fileKey={fileKey}
           template={template}
           previewRef={previewRef}
           sharedProps={sharedProps}
