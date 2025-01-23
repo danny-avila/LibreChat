@@ -67,7 +67,7 @@ const CodeEditor = ({
 
     const currentCode = sandpack.files['/' + fileKey].code;
 
-    if (currentCode && currentCode !== artifact.content) {
+    if (currentCode && artifact.content != null && currentCode.trim() !== artifact.content.trim()) {
       debouncedMutation({
         index: artifact.index,
         messageId: artifact.messageId ?? '',
@@ -96,6 +96,8 @@ const CodeEditor = ({
       showTabs={false}
       readOnly={readOnly}
       showRunButton={false}
+      showLineNumbers={true}
+      showInlineErrors={true}
       className="hljs language-javascript bg-black"
     />
   );

@@ -69,7 +69,9 @@ export function Artifact({
     const title = props.title ?? 'Untitled Artifact';
     const type = props.type ?? 'unknown';
     const identifier = props.identifier ?? 'no-identifier';
-    const artifactKey = `${identifier}_${type}_${title}`.replace(/\s+/g, '_').toLowerCase();
+    const artifactKey = `${identifier}_${type}_${title}_${messageId}`
+      .replace(/\s+/g, '_')
+      .toLowerCase();
 
     throttledUpdateRef.current(() => {
       const now = Date.now();

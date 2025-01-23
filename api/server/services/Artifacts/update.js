@@ -1,5 +1,3 @@
-const dedent = require('dedent');
-
 const ARTIFACT_START = ':::artifact';
 const ARTIFACT_END = ':::';
 
@@ -59,15 +57,13 @@ const findAllArtifacts = (message) => {
 
 const replaceArtifactContent = (originalText, artifact, original, updated) => {
   const artifactContent = artifact.text.substring(artifact.start, artifact.end);
-  const dedentedContent = dedent(artifactContent);
-  const dedentedOriginal = dedent(original);
+  const relativeIndex = artifactContent.indexOf(original);
 
-  const relativeIndex = dedentedContent.indexOf(dedentedOriginal);
   if (relativeIndex === -1) {
     return null;
   }
 
-  const absoluteIndex = artifact.start + artifactContent.indexOf(original);
+  const absoluteIndex = artifact.start + relativeIndex;
   const hasTrailingNewline = originalText
     .substring(absoluteIndex + original.length)
     .startsWith('\n');

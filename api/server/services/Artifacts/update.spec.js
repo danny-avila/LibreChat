@@ -147,11 +147,12 @@ describe('replaceArtifactContent', () => {
 
 describe('replaceArtifactContent with shared text', () => {
   test('should replace correct artifact when text is shared', () => {
+    const artifactContent = '    hi    '; // Preserve exact spacing
     const sharedText = `LOREM IPSUM
 
 :::artifact{identifier="calculator" type="application/vnd.react" title="Calculator"}
 \`\`\`
-hi
+${artifactContent}
 \`\`\`
 :::
 
@@ -159,7 +160,7 @@ LOREM IPSUM
 
 :::artifact{identifier="calculator2" type="application/vnd.react" title="Calculator"}
 \`\`\`
-hi
+${artifactContent}
 \`\`\`
 :::`;
 
@@ -167,15 +168,19 @@ hi
     const artifacts = findAllArtifacts(message);
     expect(artifacts).toHaveLength(2);
 
-    // Target the second artifact (index 1)
     const targetArtifact = artifacts[1];
-    const result = replaceArtifactContent(sharedText, targetArtifact, 'hi', 'updated content');
-
-    // Fix the regex patterns to match actual content structure
-    expect(result).toMatch(/:::artifact\{identifier="calculator".*\n```\nhi\n```\n:::/s);
-    expect(result).toMatch(
-      /:::artifact\{identifier="calculator2".*\n```\nupdated content\n```\n:::/s,
+    const updatedContent = '    updated content    ';
+    const result = replaceArtifactContent(
+      sharedText,
+      targetArtifact,
+      artifactContent,
+      updatedContent,
     );
+
+    // Verify exact matches with preserved formatting
+    expect(result).toContain(artifactContent); // First artifact unchanged
+    expect(result).toContain(updatedContent); // Second artifact updated
+    expect(result.indexOf(updatedContent)).toBeGreaterThan(result.indexOf(artifactContent));
   });
 
   const codeExample = `

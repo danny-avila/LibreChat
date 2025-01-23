@@ -30,7 +30,6 @@ router.post('/artifact/:messageId', async (req, res) => {
       return res.status(404).json({ error: 'Message not found' });
     }
 
-    // Find all artifacts in the message
     const artifacts = findAllArtifacts(message);
     if (index >= artifacts.length) {
       return res.status(400).json({ error: 'Artifact index out of bounds' });
@@ -39,7 +38,6 @@ router.post('/artifact/:messageId', async (req, res) => {
     const targetArtifact = artifacts[index];
     let updatedText = null;
 
-    // Perform the replacement
     if (targetArtifact.source === 'content') {
       const part = message.content[targetArtifact.partIndex];
       updatedText = replaceArtifactContent(part.text, targetArtifact, original, updated);
@@ -70,7 +68,7 @@ router.post('/artifact/:messageId', async (req, res) => {
     );
 
     res.status(200).json({
-      messageId: savedMessage.messageId,
+      conversationId: savedMessage.conversationId,
       content: savedMessage.content,
       text: savedMessage.text,
     });
