@@ -8,9 +8,14 @@ import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkDirective from 'remark-directive';
 import type { Pluggable } from 'unified';
+import {
+  useToastContext,
+  ArtifactProvider,
+  CodeBlockProvider,
+  useCodeBlockContext,
+} from '~/Providers';
 import { Artifact, artifactPlugin } from '~/components/Artifacts/Artifact';
 import { langSubset, preprocessLaTeX, handleDoubleClick } from '~/utils';
-import { useToastContext, CodeBlockProvider, useCodeBlockContext } from '~/Providers';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
 import { useFileDownload } from '~/data-provider';
 import useLocalize from '~/hooks/useLocalize';
@@ -194,27 +199,29 @@ const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentPr
     : [supersub, remarkGfm, [remarkMath, { singleDollarTextMath: true }]];
 
   return (
-    <CodeBlockProvider>
-      <ReactMarkdown
-        /** @ts-ignore */
-        remarkPlugins={remarkPlugins}
-        /* @ts-ignore */
-        rehypePlugins={rehypePlugins}
-        // linkTarget="_new"
-        components={
-          {
-            code,
-            a,
-            p,
-            artifact: Artifact,
-          } as {
-            [nodeType: string]: React.ElementType;
+    <ArtifactProvider>
+      <CodeBlockProvider>
+        <ReactMarkdown
+          /** @ts-ignore */
+          remarkPlugins={remarkPlugins}
+          /* @ts-ignore */
+          rehypePlugins={rehypePlugins}
+          // linkTarget="_new"
+          components={
+            {
+              code,
+              a,
+              p,
+              artifact: Artifact,
+            } as {
+              [nodeType: string]: React.ElementType;
+            }
           }
-        }
-      >
-        {isLatestMessage && showCursor === true ? currentContent + cursor : currentContent}
-      </ReactMarkdown>
-    </CodeBlockProvider>
+        >
+          {isLatestMessage && showCursor === true ? currentContent + cursor : currentContent}
+        </ReactMarkdown>
+      </CodeBlockProvider>
+    </ArtifactProvider>
   );
 });
 

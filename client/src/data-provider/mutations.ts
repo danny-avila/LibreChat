@@ -579,9 +579,6 @@ export const useDuplicateConversationMutation = (
       if (originalId.length === 0) {
         return;
       }
-      if (data == null) {
-        return;
-      }
       queryClient.setQueryData(
         [QueryKeys.conversation, data.conversation.conversationId],
         data.conversation,

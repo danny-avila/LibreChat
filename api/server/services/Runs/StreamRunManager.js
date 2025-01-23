@@ -508,12 +508,30 @@ class StreamRunManager {
    * @param {RequiredAction[]} actions - The required actions.
    * @returns {ToolOutput[]} completeOutputs - The complete outputs.
    */
-  checkMissingOutputs(tool_outputs, actions) {
+  checkMissingOutputs(tool_outputs = [], actions = []) {
     const missingOutputs = [];
+    const MISSING_OUTPUT_MESSAGE =
+      'The tool failed to produce an output. The tool may not be currently available or experienced an unhandled error.';
+    const outputIds = new Set();
+    const validatedOutputs = tool_outputs.map((output) => {
+      if (!output) {
+        logger.warn('Tool output is undefined');
+        return;
+      }
+      outputIds.add(output.tool_call_id);
+      if (!output.output) {
+        logger.warn(`Tool output exists but has no output property (ID: ${output.tool_call_id})`);
+        return {
+          ...output,
+          output: MISSING_OUTPUT_MESSAGE,
+        };
+      }
+      return output;
+    });
 
     for (const item of actions) {
       const { tool, toolCallId, run_id, thread_id } = item;
-      const outputExists = tool_outputs.some((output) => output.tool_call_id === toolCallId);
+      const outputExists = outputIds.has(toolCallId);
 
       if (!outputExists) {
         logger.warn(
@@ -521,13 +539,12 @@ class StreamRunManager {
         );
         missingOutputs.push({
           tool_call_id: toolCallId,
-          output:
-            'The tool failed to produce an output. The tool may not be currently available or experienced an unhandled error.',
+          output: MISSING_OUTPUT_MESSAGE,
         });
       }
     }
 
-    return [...tool_outputs, ...missingOutputs];
+    return [...validatedOutputs, ...missingOutputs];
   }
 
   /* <------------------ Run Event handlers ------------------> */
