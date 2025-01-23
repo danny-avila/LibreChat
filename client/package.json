@@ -29,7 +29,7 @@
   "homepage": "https://librechat.ai",
   "dependencies": {
     "@ariakit/react": "^0.4.11",
-    "@codesandbox/sandpack-react": "^2.18.2",
+    "@codesandbox/sandpack-react": "^2.19.10",
     "@dicebear/collection": "^7.0.4",
     "@dicebear/core": "^7.0.4",
     "@headlessui/react": "^2.1.2",

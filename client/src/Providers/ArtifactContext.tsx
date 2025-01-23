@@ -1,14 +1,14 @@
 import { createContext, useContext, ReactNode, useCallback, useRef } from 'react';
 
-type TCodeBlockContext = {
+type TArtifactContext = {
   getNextIndex: (skip: boolean) => number;
   resetCounter: () => void;
 };
 
-export const CodeBlockContext = createContext<TCodeBlockContext>({} as TCodeBlockContext);
-export const useCodeBlockContext = () => useContext(CodeBlockContext);
+export const ArtifactContext = createContext<TArtifactContext>({} as TArtifactContext);
+export const useArtifactContext = () => useContext(ArtifactContext);
 
-export function CodeBlockProvider({ children }: { children: ReactNode }) {
+export function ArtifactProvider({ children }: { children: ReactNode }) {
   const counterRef = useRef(0);
 
   const getNextIndex = useCallback((skip: boolean) => {
@@ -25,8 +25,8 @@ export function CodeBlockProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <CodeBlockContext.Provider value={{ getNextIndex, resetCounter }}>
+    <ArtifactContext.Provider value={{ getNextIndex, resetCounter }}>
       {children}
-    </CodeBlockContext.Provider>
+    </ArtifactContext.Provider>
   );
 }

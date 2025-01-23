@@ -147,6 +147,8 @@ export default {
   com_ui_date_november: 'November',
   com_ui_date_december: 'December',
   com_ui_field_required: 'This field is required',
+  com_ui_download_artifact: 'Download Artifact',
+  com_ui_download: 'Download',
   com_ui_download_error: 'Error downloading file. The file may have been deleted.',
   com_ui_attach_error_type: 'Unsupported file type for endpoint:',
   com_ui_attach_error_openai: 'Cannot attach Assistant files to other endpoints',
