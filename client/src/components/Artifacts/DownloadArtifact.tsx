@@ -46,11 +46,7 @@ const DownloadArtifact = ({
       onClick={handleDownload}
       aria-label={localize('com_ui_download_artifact')}
     >
-      {isDownloaded ? (
-        <CheckMark className="h-[18px] w-[18px]" />
-      ) : (
-        <Download size="1.5em" className="" />
-      )}
+      {isDownloaded ? <CheckMark className="h-4 w-4" /> : <Download className="h-4 w-4" />}
     </button>
   );
 };

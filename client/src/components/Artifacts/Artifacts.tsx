@@ -174,10 +174,10 @@ export default function Artifacts() {
                 </svg>
               </button>
             </div>
-            <div className="flex items-center">
+            <div className="flex items-center gap-2">
               <CopyCodeButton content={currentArtifact.content ?? ''} />
               {/* Download Button */}
-              <DownloadArtifact artifact={currentArtifact} className="ml-2" />
+              <DownloadArtifact artifact={currentArtifact} />
               {/* Publish button */}
               {/* <button className="border-0.5 min-w-[4rem] whitespace-nowrap rounded-md border-border-medium bg-[radial-gradient(ellipse,_var(--tw-gradient-stops))] from-surface-active from-50% to-surface-active px-3 py-1 text-xs font-medium text-text-primary transition-colors hover:bg-surface-active hover:text-text-primary active:scale-[0.985] active:bg-surface-active">
                 Publish
