@@ -37,6 +37,7 @@ export default function ArtifactTabs({
           files={files}
           fileKey={fileKey}
           template={template}
+          artifact={artifact}
           editorRef={editorRef}
           sharedProps={sharedProps}
           isSubmitting={isSubmitting}

@@ -315,3 +315,18 @@ export type TDeleteSharedLinkResponse = {
   shareId: string;
   message: string;
 };
+
+export type TEditArtifactRequest = {
+  messageId: string;
+  original: string;
+  updated: string;
+};
+
+export type TEditArtifactResponse = Pick<types.TMessage, 'content' | 'text' | 'conversationId'>;
+
+export type EditArtifactOptions = MutationOptions<
+  TEditArtifactResponse,
+  TEditArtifactRequest,
+  unknown,
+  Error
+>;

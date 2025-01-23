@@ -1,4 +1,5 @@
-import React, { memo, useEffect } from 'react';
+import debounce from 'lodash/debounce';
+import React, { memo, useEffect, useMemo, useState, useCallback } from 'react';
 import {
   useSandpack,
   SandpackCodeEditor,
@@ -6,22 +7,82 @@ import {
 } from '@codesandbox/sandpack-react';
 import { SandpackProviderProps } from '@codesandbox/sandpack-react/unstyled';
 import type { CodeEditorRef } from '@codesandbox/sandpack-react';
-import type { ArtifactFiles } from '~/common';
+import type { ArtifactFiles, Artifact } from '~/common';
 import { sharedFiles, sharedOptions } from '~/utils/artifacts';
+import { useEditArtifact } from '~/data-provider';
+
+const createDebouncedMutation = (
+  callback: (messageId: string, original: string, updated: string) => void,
+) => debounce(callback, 3000);
 
 const CodeEditor = ({
   fileKey,
   readOnly,
+  artifact,
   editorRef,
 }: {
   fileKey: string;
   readOnly: boolean;
+  artifact: Artifact;
   editorRef: React.MutableRefObject<CodeEditorRef>;
 }) => {
+  const [isMutating, setIsMutating] = useState(false);
   const { sandpack } = useSandpack();
+  const editArtifact = useEditArtifact({
+    onMutate: () => {
+      setIsMutating(true);
+    },
+    onSuccess: () => {
+      setIsMutating(false);
+    },
+    onError: () => {
+      setIsMutating(false);
+    },
+  });
+
+  const mutationCallback = useCallback(
+    (messageId: string, original: string, updated: string) => {
+      editArtifact.mutate({
+        messageId,
+        original,
+        updated,
+      });
+    },
+    [editArtifact],
+  );
+
+  const debouncedMutation = useMemo(
+    () => createDebouncedMutation(mutationCallback),
+    [mutationCallback],
+  );
+
   useEffect(() => {
-    console.log(sandpack.files['/' + fileKey]);
-  }, [sandpack.files, fileKey]);
+    if (readOnly) {
+      return;
+    }
+    if (isMutating) {
+      return;
+    }
+
+    const currentCode = sandpack.files['/' + fileKey].code;
+
+    if (currentCode && currentCode !== artifact.content) {
+      debouncedMutation(artifact.messageId ?? '', artifact.content, currentCode);
+    }
+
+    return () => {
+      debouncedMutation.cancel();
+    };
+  }, [
+    isMutating,
+    sandpack.files,
+    fileKey,
+    artifact.content,
+    artifact.messageId,
+    readOnly,
+    debouncedMutation,
+  ]);
+
   return (
     <SandpackCodeEditor
       ref={editorRef}
@@ -37,11 +98,13 @@ export const ArtifactCodeEditor = memo(function ({
   files,
   fileKey,
   template,
+  artifact,
   editorRef,
   sharedProps,
   isSubmitting,
 }: {
   fileKey: string;
+  artifact: Artifact;
   files: ArtifactFiles;
   isSubmitting: boolean;
   template: SandpackProviderProps['template'];
@@ -63,7 +126,12 @@ export const ArtifactCodeEditor = memo(function ({
       {...sharedProps}
       template={template}
     >
-      <CodeEditor editorRef={editorRef} fileKey={fileKey} readOnly={isSubmitting} />
+      <CodeEditor
+        editorRef={editorRef}
+        fileKey={fileKey}
+        readOnly={isSubmitting}
+        artifact={artifact}
+      />
     </StyledProvider>
   );
 });

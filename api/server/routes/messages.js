@@ -1,12 +1,100 @@
+const dedent = require('dedent');
 const express = require('express');
 const { ContentTypes } = require('librechat-data-provider');
-const { saveConvo, saveMessage, getMessages, updateMessage, deleteMessages } = require('~/models');
+const {
+  saveConvo,
+  saveMessage,
+  getMessage,
+  getMessages,
+  updateMessage,
+  deleteMessages,
+} = require('~/models');
 const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
 const { countTokens } = require('~/server/utils');
 const { logger } = require('~/config');
 
 const router = express.Router();
 router.use(requireJwtAuth);
+
+const replaceArtifact = (text, original, updated) => {
+  const dedentedText = dedent(text);
+  const dedentedOriginal = dedent(original);
+  const index = dedentedText.indexOf(dedentedOriginal);
+
+  if (index === -1) {
+    return null;
+  }
+
+  return text.substring(0, index) + updated + '\n' + text.substring(index + original.length);
+};
+
+router.post('/artifact/:messageId', async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const { original, updated } = req.body;
+
+    if (!original || !updated) {
+      return res.status(400).json({ error: 'Original and updated text required' });
+    }
+
+    const message = await getMessage({ user: req.user.id, messageId });
+
+    if (!message) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    let isUpdated = false;
+
+    // Check content array first if it exists and has length
+    if (message.content?.length) {
+      for (const part of message.content) {
+        if (part.type === 'text' && typeof part.text === 'string') {
+          const replacedText = replaceArtifact(part.text, original, updated);
+          if (replacedText !== null) {
+            part.text = replacedText;
+            isUpdated = true;
+          }
+        }
+      }
+    } else if (message.text) {
+      const replacedText = replaceArtifact(message.text, original, updated);
+      if (replacedText === null) {
+        return res.status(400).json({ error: 'Original text not found in message' });
+      }
+      message.text = replacedText;
+      isUpdated = true;
+    }
+
+    if (!isUpdated) {
+      return res.status(400).json({ error: 'No text content found to update' });
+    }
+
+    const savedMessage = await saveMessage(
+      req,
+      {
+        messageId,
+        conversationId: message.conversationId,
+        text: message.text,
+        content: message.content,
+        user: req.user.id,
+      },
+      { context: 'POST /api/messages/artifact/:messageId' },
+    );
+
+    if (!savedMessage) {
+      return res.status(400).json({ error: 'Message not saved' });
+    }
+
+    res.status(200).json({
+      conversationId: savedMessage.conversationId,
+      content: savedMessage.content,
+      text: savedMessage.text,
+    });
+  } catch (error) {
+    logger.error('Error editing message:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 /* Note: It's necessary to add `validateMessageReq` within route definition for correct params */
 router.get('/:conversationId', validateMessageReq, async (req, res) => {
