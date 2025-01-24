@@ -12,9 +12,9 @@ import {
   HoverCardContent,
 } from '~/components/ui';
 import OptionHover from '~/components/SidePanel/Parameters/OptionHover';
-import { useToastContext, useChatContext } from '~/Providers';
 import { useLocalize, useNavigateToConvo } from '~/hooks';
 import { useForkConvoMutation } from '~/data-provider';
+import { useToastContext } from '~/Providers';
 import { ESide } from '~/common';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -112,10 +112,9 @@ export default function Fork({
   latestMessageId?: string;
 }) {
   const localize = useLocalize();
-  const { index } = useChatContext();
   const { showToast } = useToastContext();
   const [remember, setRemember] = useState(false);
-  const { navigateToConvo } = useNavigateToConvo(index);
+  const { navigateToConvo } = useNavigateToConvo();
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [forkSetting, setForkSetting] = useRecoilState(store.forkSetting);
   const [activeSetting, setActiveSetting] = useState(optionLabels.default);
