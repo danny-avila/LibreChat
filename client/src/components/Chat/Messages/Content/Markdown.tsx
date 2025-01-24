@@ -17,6 +17,7 @@ import {
 import { Artifact, artifactPlugin } from '~/components/Artifacts/Artifact';
 import { langSubset, preprocessLaTeX, handleDoubleClick } from '~/utils';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
+import Thinking from '~/components/Artifacts/Thinking';
 import { useFileDownload } from '~/data-provider';
 import useLocalize from '~/hooks/useLocalize';
 import store from '~/store';
@@ -213,6 +214,7 @@ const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentPr
               a,
               p,
               artifact: Artifact,
+              thinking: Thinking,
             } as {
               [nodeType: string]: React.ElementType;
             }
