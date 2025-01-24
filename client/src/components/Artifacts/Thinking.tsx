@@ -16,6 +16,10 @@ const Thinking = ({ children }: ThinkingProps) => {
     setIsExpanded(!isExpanded);
   };
 
+  if (children == null) {
+    return null;
+  }
+
   return (
     <div className="mb-3">
       <button
