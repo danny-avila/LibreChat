@@ -157,13 +157,13 @@ type TContentProps = {
 
 const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentProps) => {
   const LaTeXParsing = useRecoilValue<boolean>(store.LaTeXParsing);
-  const codeArtifacts = useRecoilValue<boolean>(store.codeArtifacts);
 
   const isInitializing = content === '';
 
   let currentContent = content;
   if (!isInitializing) {
-    currentContent = currentContent.replace('z-index: 1;', '') || '';
+    currentContent = currentContent.replace('<think>', ':::thinking') || '';
+    currentContent = currentContent.replace('</think>', ':::') || '';
     currentContent = LaTeXParsing ? preprocessLaTeX(currentContent) : currentContent;
   }
 
@@ -189,15 +189,13 @@ const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentPr
     );
   }
 
-  const remarkPlugins: Pluggable[] = codeArtifacts
-    ? [
-      supersub,
-      remarkGfm,
-      [remarkMath, { singleDollarTextMath: true }],
-      remarkDirective,
-      artifactPlugin,
-    ]
-    : [supersub, remarkGfm, [remarkMath, { singleDollarTextMath: true }]];
+  const remarkPlugins: Pluggable[] = [
+    supersub,
+    remarkGfm,
+    artifactPlugin,
+    remarkDirective,
+    [remarkMath, { singleDollarTextMath: true }],
+  ];
 
   return (
     <ArtifactProvider>
