@@ -105,11 +105,16 @@
     "undici": "^7.2.3",
     "winston": "^3.11.0",
     "winston-daily-rotate-file": "^4.7.1",
-    "zod": "^3.22.4"
+    "zod": "^3.22.4",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
+    "@octokit/rest": "^20.1.1",
+    "@okta/okta-auth-js": "^7.10.1",
+    "google-auth-library": "^9.15.1"
   },
   "devDependencies": {
     "jest": "^29.7.0",
     "mongodb-memory-server": "^10.0.0",
+    "@microsoft/microsoft-graph-types-beta": "^0.43.0-preview",
     "nodemon": "^3.0.1",
     "supertest": "^6.3.3"
   }

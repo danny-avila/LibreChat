@@ -8,6 +8,8 @@ const { findUser, createUser, updateUser } = require('~/models/userMethods');
 const { hashToken } = require('~/server/utils/crypto');
 const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
+const { SystemRoles } = require('librechat-data-provider');
+const OpenIdDataMapper = require('./OpenId/openidDataMapper');
 
 let crypto;
 try {
@@ -105,6 +107,48 @@ function convertToUsername(input, defaultValue = '') {
   return defaultValue;
 }
 
+/**
+ * Decodes a JWT token safely.
+ * @param {string} token
+ * @returns {Object|null}
+ */
+function safeDecode(token) {
+  try {
+    const decoded = jwtDecode(token);
+    if (decoded && typeof decoded === 'object') {
+      return decoded;
+    }
+    logger.error('[openidStrategy] Decoded token is not an object.');
+    return null;
+  } catch (error) {
+    logger.error('[openidStrategy] safeDecode: Error decoding token:', error);
+    return null;
+  }
+}
+
+/**
+ * Extracts roles from a decoded token based on the provided path.
+ * @param {Object} decodedToken
+ * @param {string} parameterPath
+ * @returns {string[]}
+ */
+function extractRolesFromToken(decodedToken, parameterPath) {
+  if (!decodedToken) {
+    return [];
+  }
+
+  const roles = parameterPath.split('.').reduce((obj, key) => (obj?.[key] ?? null), decodedToken);
+  if (!Array.isArray(roles)) {
+    logger.error('[openidStrategy] extractRolesFromToken: Roles extracted from token are not in array format.');
+    return [];
+  }
+
+  return roles;
+}
+
+/**
+ * Initializes and configures the OpenID Connect strategy for Passport.
+ */
 async function setupOpenId() {
   try {
     if (process.env.PROXY) {
@@ -115,6 +159,7 @@ async function setupOpenId() {
       logger.info(`[openidStrategy] proxy agent added: ${process.env.PROXY}`);
     }
     const issuer = await Issuer.discover(process.env.OPENID_ISSUER);
+    logger.info(`[openidStrategy] Discovered issuer: ${issuer.issuer}`);
     /* Supported Algorithms, openid-client v5 doesn't set it automatically as discovered from server.
       - id_token_signed_response_alg      // defaults to 'RS256'
       - request_object_signing_alg        // defaults to 'RS256'
@@ -135,6 +180,10 @@ async function setupOpenId() {
     const requiredRole = process.env.OPENID_REQUIRED_ROLE;
     const requiredRoleParameterPath = process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH;
     const requiredRoleTokenKind = process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND;
+    const adminRole = process.env.OPENID_ADMIN_ROLE;
+    logger.info('[openidStrategy] OpenID client created.');
+
+    // Define the OpenID Strategy
     const openidLogin = new OpenIDStrategy(
       {
         client,
@@ -147,61 +196,74 @@ async function setupOpenId() {
           logger.info(`[openidStrategy] verify login openidId: ${userinfo.sub}`);
           logger.debug('[openidStrategy] very login tokenset and userinfo', { tokenset, userinfo });
 
+          // Find existing user or create a new one
           let user = await findUser({ openidId: userinfo.sub });
-          logger.info(
-            `[openidStrategy] user ${user ? 'found' : 'not found'} with openidId: ${userinfo.sub}`,
-          );
-
-          if (!user) {
+          if (user) {
+            logger.info(`[openidStrategy] User found with openidId: ${userinfo.sub}`);
+          } else {
             user = await findUser({ email: userinfo.email });
-            logger.info(
-              `[openidStrategy] user ${user ? 'found' : 'not found'} with email: ${
-                userinfo.email
-              } for openidId: ${userinfo.sub}`,
-            );
+            if (user) {
+              logger.info(`[openidStrategy] User found with email: ${userinfo.email} for openidId: ${userinfo.sub}`);
+            } else {
+              logger.info(`[openidStrategy] No user found with openidId: ${userinfo.sub} or email: ${userinfo.email}`);
+            }
           }
 
           const fullName = getFullName(userinfo);
+          const username = process.env.OPENID_USERNAME_CLAIM
+            ? userinfo[process.env.OPENID_USERNAME_CLAIM]
+            : convertToUsername(userinfo.username || userinfo.given_name || userinfo.email);
 
+          // Enforce required role if configured
           if (requiredRole) {
-            let decodedToken = '';
-            if (requiredRoleTokenKind === 'access') {
-              decodedToken = jwtDecode(tokenset.access_token);
-            } else if (requiredRoleTokenKind === 'id') {
-              decodedToken = jwtDecode(tokenset.id_token);
-            }
-            const pathParts = requiredRoleParameterPath.split('.');
-            let found = true;
-            let roles = pathParts.reduce((o, key) => {
-              if (o === null || o === undefined || !(key in o)) {
-                found = false;
-                return [];
-              }
-              return o[key];
-            }, decodedToken);
+            const token =
+                  requiredRoleTokenKind === 'access' ? tokenset.access_token : tokenset.id_token;
+            const decodedToken = safeDecode(token);
 
-            if (!found) {
-              logger.error(
-                `[openidStrategy] Key '${requiredRoleParameterPath}' not found in ${requiredRoleTokenKind} token!`,
-              );
+            if (!decodedToken) {
+              return done(null, false, { message: 'Invalid token.' });
             }
 
+            const roles = extractRolesFromToken(decodedToken, requiredRoleParameterPath);
             if (!roles.includes(requiredRole)) {
-              return done(null, false, {
-                message: `You must have the "${requiredRole}" role to log in.`,
-              });
+              logger.warn(`[openidStrategy] User does not have the required role: ${requiredRole}`);
+              return done(null, false, { message: `You must have the "${requiredRole}" role to log in.` });
+            }
+
+            logger.debug(`[openidStrategy] User has required role: ${requiredRole}`);
+          }
+
+          // Initialize custom OpenID data
+          let customOpenIdData = new Map();
+
+          // Fetch and map custom OpenID data if configured
+          if (process.env.OPENID_CUSTOM_DATA) {
+            const dataMapper = OpenIdDataMapper.getMapper(process.env.OPENID_PROVIDER.toLowerCase());
+            customOpenIdData = await dataMapper.mapCustomData(tokenset.access_token, process.env.OPENID_CUSTOM_DATA);
+
+            // Integrate raw token-based roles directly into customOpenIdData
+            const tokenBasedRoles =
+                  requiredRole &&
+                  extractRolesFromToken(
+                    safeDecode(requiredRoleTokenKind === 'access' ? tokenset.access_token : tokenset.id_token),
+                    requiredRoleParameterPath,
+                  );
+            if (tokenBasedRoles && tokenBasedRoles.length) {
+              customOpenIdData.set('roles', tokenBasedRoles);
+            } else {
+              logger.warn('[openidStrategy] tokenBasedRoles is missing or invalid.');
             }
           }
 
-          let username = '';
-          if (process.env.OPENID_USERNAME_CLAIM) {
-            username = userinfo[process.env.OPENID_USERNAME_CLAIM];
-          } else {
-            username = convertToUsername(
-              userinfo.username || userinfo.given_name || userinfo.email,
-            );
-          }
+          // Determine user role based on OPENID_ADMIN_ROLE
+          const token = requiredRoleTokenKind === 'access' ? tokenset.access_token : tokenset.id_token;
+          const decodedToken = safeDecode(token);
+          const tokenBasedRoles = extractRolesFromToken(decodedToken, requiredRoleParameterPath);
+          const isAdmin = tokenBasedRoles.includes(adminRole);
+          const assignedRole = isAdmin ? SystemRoles.ADMIN : SystemRoles.USER;
+          logger.debug(`[openidStrategy] Assigned system role: ${assignedRole} (isAdmin: ${isAdmin})`);
 
+          // Create or update the user object
           if (!user) {
             user = {
               provider: 'openid',
@@ -210,15 +272,29 @@ async function setupOpenId() {
               email: userinfo.email || '',
               emailVerified: userinfo.email_verified || false,
               name: fullName,
+              role: assignedRole,
+              customOpenIdData: customOpenIdData,
             };
+
             user = await createUser(user, true, true);
+            logger.info(`[openidStrategy] Created new user: ${user.email}`);
           } else {
-            user.provider = 'openid';
-            user.openidId = userinfo.sub;
-            user.username = username;
-            user.name = fullName;
+            // Update existing user
+            const updateFields = {
+              provider: 'openid',
+              openidId: userinfo.sub,
+              username,
+              name: fullName,
+              role: assignedRole,
+              customOpenIdData: customOpenIdData,
+            };
+
+            user = { ...user, ...updateFields };
+            await updateUser(user._id, updateFields);
+            logger.info(`[openidStrategy] Updated existing user: ${user.email}`);
           }
 
+          // Handle avatar
           if (userinfo.picture && !user.avatar?.includes('manual=true')) {
             /** @type {string | undefined} */
             const imageUrl = userinfo.picture;
@@ -239,11 +315,12 @@ async function setupOpenId() {
                 buffer: imageBuffer,
               });
               user.avatar = imagePath ?? '';
+              logger.debug(`[openidStrategy] Updated user avatar: ${user.avatar}`);
             }
           }
 
-          user = await updateUser(user._id, user);
-
+          // Final user update
+          await updateUser(user._id, { avatar: user.avatar });
           logger.info(
             `[openidStrategy] login success openidId: ${user.openidId} | email: ${user.email} | username: ${user.username} `,
             {
@@ -258,13 +335,15 @@ async function setupOpenId() {
 
           done(null, user);
         } catch (err) {
-          logger.error('[openidStrategy] login failed', err);
+          logger.error('[openidStrategy] Login failed:', err);
           done(err);
         }
       },
     );
 
+    // Register the OpenID strategy with Passport
     passport.use('openid', openidLogin);
+    logger.info('[openidStrategy] OpenID strategy configured successfully.');
   } catch (err) {
     logger.error('[openidStrategy]', err);
   }
