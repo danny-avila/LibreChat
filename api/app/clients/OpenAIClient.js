@@ -1292,6 +1292,12 @@ ${convo}
         let reasoningCompleted = false;
         for await (const chunk of stream) {
           if (chunk?.choices?.[0]?.delta?.reasoning_content) {
+            if (reasoningTokens.length === 0) {
+              const thinkingDirective = ':::thinking\n';
+              intermediateReply.push(thinkingDirective);
+              reasoningTokens.push(thinkingDirective);
+              onProgress(thinkingDirective);
+            }
             const reasoning_content = chunk?.choices?.[0]?.delta?.reasoning_content || '';
             intermediateReply.push(reasoning_content);
             reasoningTokens.push(reasoning_content);
@@ -1301,7 +1307,7 @@ ${convo}
           const token = chunk?.choices?.[0]?.delta?.content || '';
           if (!reasoningCompleted && reasoningTokens.length > 0 && token) {
             reasoningCompleted = true;
-            const separatorTokens = '\n\n---\n';
+            const separatorTokens = '\n:::\n';
             reasoningTokens.push(separatorTokens);
             onProgress(separatorTokens);
           }
