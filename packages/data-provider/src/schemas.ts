@@ -38,6 +38,7 @@ export const paramEndpoints = new Set<EModelEndpoint | string>([
   EModelEndpoint.azureOpenAI,
   EModelEndpoint.anthropic,
   EModelEndpoint.custom,
+  EModelEndpoint.google,
 ]);
 
 export enum BedrockProviders {

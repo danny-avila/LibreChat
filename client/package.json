@@ -90,6 +90,7 @@
     "react-speech-recognition": "^3.10.0",
     "react-textarea-autosize": "^8.4.0",
     "react-transition-group": "^4.4.5",
+    "react-virtualized": "^9.22.6",
     "recoil": "^0.7.7",
     "regenerator-runtime": "^0.14.1",
     "rehype-highlight": "^6.0.0",
