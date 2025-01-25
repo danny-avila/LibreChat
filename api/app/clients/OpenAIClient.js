@@ -794,7 +794,11 @@ ${convo}
         }
 
         title = (
-          await this.sendPayload(instructionsPayload, { modelOptions, useChatCompletion })
+          await this.sendPayload(instructionsPayload, {
+            modelOptions,
+            useChatCompletion,
+            context: 'title',
+          })
         ).replaceAll('"', '');
 
         const completionTokens = this.getTokenCount(title);
@@ -1384,7 +1388,7 @@ ${convo}
         return reply;
       }
 
-      if (reasoningTokens.length > 0) {
+      if (reasoningTokens.length > 0 && this.options.context !== 'title') {
         return reasoningTokens.join('') + message.content;
       }
 
