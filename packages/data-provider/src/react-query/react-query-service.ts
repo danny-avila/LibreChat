@@ -4,7 +4,7 @@ import type {
   UseMutationResult,
   QueryObserverResult,
 } from '@tanstack/react-query';
-import { initialModelsConfig, LocalStorageKeys } from '../config';
+import { initialModelsConfig } from '../config';
 import type { TStartupConfig } from '../config';
 import { defaultOrderQuery } from '../types/assistants';
 import * as dataService from '../data-service';
@@ -70,6 +70,29 @@ export const useGetSharedMessages = (
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
+      ...config,
+    },
+  );
+};
+
+export const useGetSharedLinkQuery = (
+  conversationId: string,
+  config?: UseQueryOptions<t.TSharedLinkGetResponse>,
+): QueryObserverResult<t.TSharedLinkGetResponse> => {
+  const queryClient = useQueryClient();
+  return useQuery<t.TSharedLinkGetResponse>(
+    [QueryKeys.sharedLinks, conversationId],
+    () => dataService.getSharedLink(conversationId),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      onSuccess: (data) => {
+        queryClient.setQueryData([QueryKeys.sharedLinks, conversationId], {
+          conversationId: data.conversationId,
+          shareId: data.shareId,
+        });
+      },
       ...config,
     },
   );
@@ -302,40 +325,22 @@ export const useUpdateTokenCountMutation = (): UseMutationResult<
   });
 };
 
-export const useLoginUserMutation = (): UseMutationResult<
-  t.TLoginResponse,
-  unknown,
-  t.TLoginUser,
-  unknown
-> => {
-  const queryClient = useQueryClient();
-  return useMutation((payload: t.TLoginUser) => dataService.login(payload), {
-    onMutate: () => {
-      queryClient.removeQueries();
-      localStorage.removeItem(LocalStorageKeys.LAST_CONVO_SETUP);
-      localStorage.removeItem(`${LocalStorageKeys.LAST_CONVO_SETUP}_0`);
-      localStorage.removeItem(`${LocalStorageKeys.LAST_CONVO_SETUP}_1`);
-      localStorage.removeItem(LocalStorageKeys.LAST_MODEL);
-      localStorage.removeItem(LocalStorageKeys.LAST_TOOLS);
-      localStorage.removeItem(LocalStorageKeys.FILES_TO_DELETE);
-      // localStorage.removeItem('lastAssistant');
-    },
-  });
-};
-
 export const useRegisterUserMutation = (
   options?: m.RegistrationOptions,
 ): UseMutationResult<t.TError, unknown, t.TRegisterUser, unknown> => {
   const queryClient = useQueryClient();
-  return useMutation((payload: t.TRegisterUser) => dataService.register(payload), {
-    ...options,
-    onSuccess: (...args) => {
-      queryClient.invalidateQueries([QueryKeys.user]);
-      if (options?.onSuccess) {
-        options.onSuccess(...args);
-      }
+  return useMutation<t.TRegisterUserResponse, t.TError, t.TRegisterUser>(
+    (payload: t.TRegisterUser) => dataService.register(payload),
+    {
+      ...options,
+      onSuccess: (...args) => {
+        queryClient.invalidateQueries([QueryKeys.user]);
+        if (options?.onSuccess) {
+          options.onSuccess(...args);
+        }
+      },
     },
-  });
+  );
 };
 
 export const useRefreshTokenMutation = (): UseMutationResult<

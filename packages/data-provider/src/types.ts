@@ -16,8 +16,6 @@ export * from './schemas';
 
 export type TMessages = TMessage[];
 
-export type TMessagesAtom = TMessages | null;
-
 /* TODO: Cleanup EndpointOption types */
 export type TEndpointOption = {
   endpoint: EModelEndpoint;
@@ -172,15 +170,17 @@ export type TArchiveConversationResponse = TConversation;
 export type TSharedMessagesResponse = Omit<TSharedLink, 'messages'> & {
   messages: TMessage[];
 };
-export type TSharedLinkRequest = Partial<
-  Omit<TSharedLink, 'messages' | 'createdAt' | 'updatedAt'>
-> & {
-  conversationId: string;
-};
 
-export type TSharedLinkResponse = TSharedLink;
-export type TSharedLinksResponse = TSharedLink[];
-export type TDeleteSharedLinkResponse = TSharedLink;
+export type TCreateShareLinkRequest = Pick<TConversation, 'conversationId'>;
+
+export type TUpdateShareLinkRequest = Pick<TSharedLink, 'shareId'>;
+
+export type TSharedLinkResponse = Pick<TSharedLink, 'shareId'> &
+  Pick<TConversation, 'conversationId'>;
+
+export type TSharedLinkGetResponse = TSharedLinkResponse & {
+  success: boolean;
+};
 
 // type for getting conversation tags
 export type TConversationTagsResponse = TConversationTag[];
@@ -205,12 +205,10 @@ export type TDuplicateConvoRequest = {
   conversationId?: string;
 };
 
-export type TDuplicateConvoResponse =
-  | {
-      conversation: TConversation;
-      messages: TMessage[];
-    }
-  | undefined;
+export type TDuplicateConvoResponse = {
+  conversation: TConversation;
+  messages: TMessage[];
+};
 
 export type TForkConvoRequest = {
   messageId: string;

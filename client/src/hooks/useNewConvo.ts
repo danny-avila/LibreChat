@@ -117,7 +117,11 @@ const useNewConvo = (index = 0) => {
               ) ?? assistants[0]?.id;
           }
 
-          if (currentAssistantId && isAssistantEndpoint && conversation.conversationId === Constants.NEW_CONVO) {
+          if (
+            currentAssistantId &&
+            isAssistantEndpoint &&
+            conversation.conversationId === Constants.NEW_CONVO
+          ) {
             const assistant = assistants.find((asst) => asst.id === currentAssistantId);
             conversation.model = assistant?.model;
             updateLastSelectedModel({
@@ -168,7 +172,7 @@ const useNewConvo = (index = 0) => {
   );
 
   const newConversation = useCallback(
-    ({
+    function createNewConvo({
       template: _template = {},
       preset: _preset,
       modelsData,
@@ -182,7 +186,7 @@ const useNewConvo = (index = 0) => {
       buildDefault?: boolean;
       keepLatestMessage?: boolean;
       keepAddedConvos?: boolean;
-    } = {}) => {
+    } = {}) {
       pauseGlobalAudio();
 
       const templateConvoId = _template.conversationId ?? '';

@@ -42,13 +42,11 @@ function ConvoOptions({
 
   const duplicateConversation = useDuplicateConversationMutation({
     onSuccess: (data) => {
-      if (data != null) {
-        navigateToConvo(data.conversation);
-        showToast({
-          message: localize('com_ui_duplication_success'),
-          status: 'success',
-        });
-      }
+      navigateToConvo(data.conversation);
+      showToast({
+        message: localize('com_ui_duplication_success'),
+        status: 'success',
+      });
     },
     onMutate: () => {
       showToast({
@@ -141,7 +139,6 @@ function ConvoOptions({
       />
       {showShareDialog && (
         <ShareButton
-          title={title ?? ''}
           conversationId={conversationId ?? ''}
           open={showShareDialog}
           onOpenChange={setShowShareDialog}
