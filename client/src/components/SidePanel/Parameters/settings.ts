@@ -2,6 +2,7 @@ import {
   ImageDetail,
   EModelEndpoint,
   openAISettings,
+  googleSettings,
   BedrockProviders,
   anthropicSettings,
 } from 'librechat-data-provider';
@@ -352,6 +353,87 @@ const meta: Record<string, SettingDefinition> = {
   }),
 };
 
+const google: Record<string, SettingDefinition> = {
+  temperature: createDefinition(baseDefinitions.temperature, {
+    default: googleSettings.temperature.default,
+    range: {
+      min: googleSettings.temperature.min,
+      max: googleSettings.temperature.max,
+      step: googleSettings.temperature.step,
+    },
+  }),
+  topP: createDefinition(baseDefinitions.topP, {
+    default: googleSettings.topP.default,
+    range: {
+      min: googleSettings.topP.min,
+      max: googleSettings.topP.max,
+      step: googleSettings.topP.step,
+    },
+  }),
+  topK: {
+    key: 'topK',
+    label: 'com_endpoint_top_k',
+    labelCode: true,
+    description: 'com_endpoint_google_topk',
+    descriptionCode: true,
+    type: 'number',
+    default: googleSettings.topK.default,
+    range: {
+      min: googleSettings.topK.min,
+      max: googleSettings.topK.max,
+      step: googleSettings.topK.step,
+    },
+    component: 'slider',
+    optionType: 'model',
+    columnSpan: 4,
+  },
+  maxOutputTokens: {
+    key: 'maxOutputTokens',
+    label: 'com_endpoint_max_output_tokens',
+    labelCode: true,
+    type: 'number',
+    component: 'input',
+    description: 'com_endpoint_google_maxoutputtokens',
+    descriptionCode: true,
+    placeholder: 'com_nav_theme_system',
+    placeholderCode: true,
+    default: googleSettings.maxOutputTokens.default,
+    range: {
+      min: googleSettings.maxOutputTokens.min,
+      max: googleSettings.maxOutputTokens.max,
+      step: googleSettings.maxOutputTokens.step,
+    },
+    optionType: 'model',
+    columnSpan: 2,
+  },
+};
+
+const googleConfig: SettingsConfiguration = [
+  librechat.modelLabel,
+  librechat.promptPrefix,
+  librechat.maxContextTokens,
+  google.maxOutputTokens,
+  google.temperature,
+  google.topP,
+  google.topK,
+  librechat.resendFiles,
+];
+
+const googleCol1: SettingsConfiguration = [
+  baseDefinitions.model as SettingDefinition,
+  librechat.modelLabel,
+  librechat.promptPrefix,
+];
+
+const googleCol2: SettingsConfiguration = [
+  librechat.maxContextTokens,
+  google.maxOutputTokens,
+  google.temperature,
+  google.topP,
+  google.topK,
+  librechat.resendFiles,
+];
+
 const openAI: SettingsConfiguration = [
   openAIParams.chatGptLabel,
   librechat.promptPrefix,
@@ -529,6 +611,7 @@ export const settings: Record<string, SettingsConfiguration | undefined> = {
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Meta}`]: bedrockGeneral,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.AI21}`]: bedrockGeneral,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Amazon}`]: bedrockGeneral,
+  [EModelEndpoint.google]: googleConfig,
 };
 
 const openAIColumns = {
@@ -571,6 +654,10 @@ export const presetSettings: Record<
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Meta}`]: bedrockGeneralColumns,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.AI21}`]: bedrockGeneralColumns,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Amazon}`]: bedrockGeneralColumns,
+  [EModelEndpoint.google]: {
+    col1: googleCol1,
+    col2: googleCol2,
+  },
 };
 
 export const agentSettings: Record<string, SettingsConfiguration | undefined> = Object.entries(
