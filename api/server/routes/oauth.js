@@ -147,7 +147,6 @@ router.get(
 /**
  * Apple Routes
  */
-// Apply body-parser only to Apple routes
 router.get(
   '/apple',
   passport.authenticate('apple', {
@@ -155,7 +154,6 @@ router.get(
   }),
 );
 
-// Apply body-parser middleware only to POST callback route
 router.post(
   '/apple/callback',
   passport.authenticate('apple', {
