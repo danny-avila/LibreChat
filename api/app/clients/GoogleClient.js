@@ -5,7 +5,7 @@ const { GoogleVertexAI } = require('@langchain/google-vertexai');
 const { ChatGoogleVertexAI } = require('@langchain/google-vertexai');
 const { ChatGoogleGenerativeAI } = require('@langchain/google-genai');
 const { GoogleGenerativeAI: GenAI } = require('@google/generative-ai');
-const { AIMessage, HumanMessage, SystemMessage } = require('@langchain/core/messages');
+const { HumanMessage, SystemMessage } = require('@langchain/core/messages');
 const {
   googleGenConfigSchema,
   validateVisionModel,
@@ -176,6 +176,7 @@ class GoogleClient extends BaseClient {
       this.completionsUrl = this.constructUrl();
     }
 
+    this.initializeClient();
     return this;
   }
 
@@ -308,7 +309,6 @@ class GoogleClient extends BaseClient {
           messages: [new HumanMessage(formatMessage({ message: latestMessage }))],
         },
       ],
-      parameters: this.modelOptions,
     };
     return { prompt: payload };
   }
@@ -352,7 +352,6 @@ class GoogleClient extends BaseClient {
             .map((message) => formatMessage({ message, langChain: true })),
         },
       ],
-      parameters: this.modelOptions,
     };
 
     let promptPrefix = (this.options.promptPrefix ?? '').trim();
@@ -585,16 +584,8 @@ class GoogleClient extends BaseClient {
     return new ChatGoogleGenerativeAI({ ...clientOptions, apiKey: this.apiKey });
   }
 
-  async getCompletion(_payload, options = {}) {
-    const { parameters, instances } = _payload;
-    const { onProgress, abortController } = options;
-    const safetySettings = this.getSafetySettings();
-    const streamRate = this.options.streamRate ?? Constants.DEFAULT_STREAM_RATE;
-    const { messages: _messages, context, examples: _examples } = instances?.[0] ?? {};
-
-    let examples;
-
-    let clientOptions = { ...parameters, maxRetries: 2 };
+  initializeClient() {
+    let clientOptions = { ...this.modelOptions, maxRetries: 2 };
 
     if (this.project_id) {
       clientOptions['authOptions'] = {
@@ -605,33 +596,21 @@ class GoogleClient extends BaseClient {
       };
     }
 
-    if (!parameters) {
-      clientOptions = { ...clientOptions, ...this.modelOptions };
-    }
-
     if (this.isGenerativeModel && !this.project_id) {
       clientOptions.modelName = clientOptions.model;
       delete clientOptions.model;
     }
 
-    if (_examples && _examples.length) {
-      examples = _examples
-        .map((ex) => {
-          const { input, output } = ex;
-          if (!input || !output) {
-            return undefined;
-          }
-          return {
-            input: new HumanMessage(input.content),
-            output: new AIMessage(output.content),
-          };
-        })
-        .filter((ex) => ex);
+    this.client = this.createLLM(clientOptions);
+  }
 
-      clientOptions.examples = examples;
-    }
-
-    const model = this.createLLM(clientOptions);
+  async getCompletion(_payload, options = {}) {
+    const { instances } = _payload;
+    const safetySettings = this.getSafetySettings();
+    const { onProgress, abortController } = options;
+    const streamRate = this.options.streamRate ?? Constants.DEFAULT_STREAM_RATE;
+    const modelName = this.modelOptions.modelName ?? this.modelOptions.model ?? '';
+    const { messages: _messages, context, examples: _examples } = instances?.[0] ?? {};
 
     let reply = '';
     const messages = this.isTextModel ? _payload.trim() : _messages;
@@ -640,15 +619,14 @@ class GoogleClient extends BaseClient {
       messages.unshift(new SystemMessage(context));
     }
 
-    const modelName = clientOptions.modelName ?? clientOptions.model ?? '';
     if (!EXCLUDED_GENAI_MODELS.test(modelName) && !this.project_id) {
       /** @type {GenAI} */
-      const client = model;
+      const client = this.client;
       /** @type {import('@google/generative-ai').GenerateContentRequest} */
       const requestOptions = {
         safetySettings,
         contents: _payload,
-        generationConfig: googleGenConfigSchema.parse(clientOptions),
+        generationConfig: googleGenConfigSchema.parse(this.modelOptions),
       };
 
       let promptPrefix = (this.options.promptPrefix ?? '').trim();
@@ -679,7 +657,7 @@ class GoogleClient extends BaseClient {
       return reply;
     }
 
-    const stream = await model.stream(messages, {
+    const stream = await this.client.stream(messages, {
       signal: abortController.signal,
       safetySettings,
     });
@@ -711,46 +689,22 @@ class GoogleClient extends BaseClient {
    */
   async titleChatCompletion(_payload, options = {}) {
     const { abortController } = options;
-    const { parameters, instances } = _payload;
+    const { instances } = _payload;
     const safetySettings = this.getSafetySettings();
     const { messages: _messages, examples: _examples } = instances?.[0] ?? {};
-
-    let clientOptions = { ...parameters, maxRetries: 2 };
-
-    logger.debug('Initialized title client options');
-
-    if (this.project_id) {
-      clientOptions['authOptions'] = {
-        credentials: {
-          ...this.serviceKey,
-        },
-        projectId: this.project_id,
-      };
-    }
-
-    if (!parameters) {
-      clientOptions = { ...clientOptions, ...this.modelOptions };
-    }
-
-    if (this.isGenerativeModel && !this.project_id) {
-      clientOptions.modelName = clientOptions.model;
-      delete clientOptions.model;
-    }
-
-    const model = this.createLLM(clientOptions);
 
     let reply = '';
     const messages = this.isTextModel ? _payload.trim() : _messages;
 
-    const modelName = clientOptions.modelName ?? clientOptions.model ?? '';
+    const modelName = this.modelOptions.modelName ?? this.modelOptions.model ?? '';
     if (!EXCLUDED_GENAI_MODELS.test(modelName) && !this.project_id) {
       logger.debug('Identified titling model as GenAI version');
       /** @type {GenerativeModel} */
-      const client = model;
+      const client = this.client;
       const requestOptions = {
         contents: _payload,
         safetySettings,
-        generationConfig: googleGenConfigSchema.parse(clientOptions),
+        generationConfig: googleGenConfigSchema.parse(this.modelOptions),
       };
 
       let promptPrefix = (this.options.promptPrefix ?? '').trim();
@@ -775,7 +729,7 @@ class GoogleClient extends BaseClient {
       return reply;
     } else {
       logger.debug('Beginning titling');
-      const titleResponse = await model.invoke(messages, {
+      const titleResponse = await this.client.invoke(messages, {
         signal: abortController.signal,
         timeout: 7000,
         safetySettings,
@@ -810,8 +764,7 @@ class GoogleClient extends BaseClient {
       logger.warn(
         `Current vision model does not support titling without an attachment; falling back to default model ${settings.model.default}`,
       );
-
-      payload.parameters = { ...payload.parameters, model: settings.model.default };
+      this.modelOptions.model = settings.model.default;
     }
 
     try {
