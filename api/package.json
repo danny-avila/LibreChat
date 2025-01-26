@@ -89,6 +89,7 @@
     "openai-chat-tokens": "^0.2.8",
     "openid-client": "^5.4.2",
     "passport": "^0.6.0",
+    "passport-apple": "^2.0.2",
     "passport-custom": "^1.1.1",
     "passport-discord": "^0.1.4",
     "passport-facebook": "^3.0.0",
