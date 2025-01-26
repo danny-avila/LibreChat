@@ -455,6 +455,7 @@ export const intefaceSchema = z
     presets: z.boolean().optional(),
     prompts: z.boolean().optional(),
     agents: z.boolean().optional(),
+    temporaryChat: z.boolean().optional(),
   })
   .default({
     endpointsMenu: true,
@@ -466,6 +467,7 @@ export const intefaceSchema = z
     bookmarks: true,
     prompts: true,
     agents: true,
+    temporaryChat: true,
   });
 
 export type TInterfaceConfig = z.infer<typeof intefaceSchema>;
