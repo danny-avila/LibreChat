@@ -1,5 +1,6 @@
 import { useRecoilValue } from 'recoil';
 import { SelectDropDown, SelectDropDownPop, Tabs, TabsList, TabsTrigger } from '~/components/ui';
+import { TemporaryChat } from './TemporaryChat';
 import { cn, cardStyle } from '~/utils/';
 import type { TModelSelectProps } from '~/common';
 import store from '~/store';
@@ -45,6 +46,7 @@ export default function BingAI({
           'z-50 flex h-[40px] w-36 flex-none items-center justify-center px-4 ring-0 hover:cursor-pointer hover:bg-gray-50 focus:ring-0 focus:ring-offset-0 data-[state=open]:bg-gray-50 dark:bg-gray-800 dark:hover:bg-gray-700 dark:data-[state=open]:bg-gray-600',
           showBingToneSetting ? 'hidden' : '',
         )}
+        footer={<TemporaryChat />}
       />
       <Tabs
         value={toneStyle ?? 'creative'}

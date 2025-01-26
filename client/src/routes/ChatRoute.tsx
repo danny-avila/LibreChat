@@ -13,13 +13,16 @@ import { getDefaultModelSpec, getModelSpecIconURL } from '~/utils';
 import { ToolCallsMapProvider } from '~/Providers';
 import ChatView from '~/components/Chat/ChatView';
 import useAuthRedirect from './useAuthRedirect';
+import temporaryStore from '~/store/temporary';
 import { Spinner } from '~/components/svg';
+import { useRecoilState } from 'recoil';
 import store from '~/store';
 
 export default function ChatRoute() {
   useHealthCheck();
   const { data: startupConfig } = useGetStartupConfig();
   const { isAuthenticated, user } = useAuthRedirect();
+  const [isTemporary, setIsTemporary] = useRecoilState(temporaryStore.isTemporary);
   useAppStartup({ startupConfig, user });
 
   const index = 0;
@@ -138,6 +141,14 @@ export default function ChatRoute() {
   // if conversationId is null
   if (!conversationId) {
     return null;
+  }
+
+  const isTemporaryChat = conversation && conversation.expiredAt ? true : false;
+
+  if (conversationId !== Constants.NEW_CONVO && !isTemporaryChat) {
+    setIsTemporary(false);
+  } else if (isTemporaryChat) {
+    setIsTemporary(isTemporaryChat);
   }
 
   return (
