@@ -1,0 +1,18 @@
+Build : npm run frontend
+Run : npm run backend
+
+Tích hợp MyLinks nhé
+
+sudo systemctl restart nginx
+
+sudo systemctl stop nginx
+
+sudo nginx -t
+
+docker-compose down
+
+docker-compose up -d
+
+docker logs <container_id_or_name>
+
+D:\AI\langflow\AIApps\LibreChat

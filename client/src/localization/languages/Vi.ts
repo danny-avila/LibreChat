@@ -1,4 +1,6 @@
-// Vietnamese phrases
+// English phrases
+// file deepcode ignore NoHardcodedPasswords: No hardcoded values present in this file
+// file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets present in this file
 
 export default {
   com_ui_examples: 'Ví dụ',
@@ -54,6 +56,7 @@ export default {
   com_ui_chats: 'cuộc trò chuyện',
   com_ui_share: 'Chia sẻ',
   com_ui_copy_link: 'Sao chép liên kết',
+  com_ui_update_link: 'Cập nhật liên kết',
   com_ui_create_link: 'Tạo liên kết',
   com_ui_share_link_to_chat: 'Chia sẻ liên kết đến cuộc trò chuyện',
   com_ui_share_error: 'Có lỗi xảy ra khi chia sẻ liên kết trò chuyện',
