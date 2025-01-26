@@ -107,9 +107,8 @@
     "winston-daily-rotate-file": "^4.7.1",
     "zod": "^3.22.4",
     "@microsoft/microsoft-graph-client": "^3.0.7",
-    "@octokit/rest": "^20.1.1",
-    "@okta/okta-auth-js": "^7.10.1",
-    "google-auth-library": "^9.15.1"
+    "@keycloak/keycloak-admin-client": "^26.1.0",
+    "@aws-sdk/client-cognito-identity-provider": "^3.734.0"
   },
   "devDependencies": {
     "jest": "^29.7.0",
