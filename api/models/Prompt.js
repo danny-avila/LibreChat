@@ -417,7 +417,12 @@ module.exports = {
   deletePrompt: async ({ promptId, groupId, author, role }) => {
     const query = { _id: promptId, groupId, author };
     if (role === SystemRoles.ADMIN) {
-      delete query.author;
+      const prompt = await Prompt.findOne({ _id: promptId, groupId }).lean();
+      if (!prompt) {
+        throw new Error('Failed to delete the prompt: prompt not found');
+      }
+
+      query.author = prompt.author;
     }
     const { deletedCount } = await Prompt.deleteOne(query);
     if (deletedCount === 0) {
