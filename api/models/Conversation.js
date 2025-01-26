@@ -183,6 +183,7 @@ module.exports = {
           Conversation.findOne({
             user,
             conversationId: convo.conversationId,
+            $or: [{ expiredAt: { $exists: false } }, { expiredAt: null }],
           }).lean(),
         ),
       );
