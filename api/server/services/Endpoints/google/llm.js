@@ -1,9 +1,6 @@
 const { Providers } = require('@librechat/agents');
 const { AuthKeys } = require('librechat-data-provider');
 
-// Example internal constant from your code
-const EXCLUDED_GENAI_MODELS = /gemini-(?:1\.0|1-0|pro)/;
-
 /**
  *
  * @param {boolean} isGemini2
@@ -89,22 +86,12 @@ function getLLMConfig(credentials, options = {}) {
 
   /** Used only for Safety Settings */
   const isGemini2 = llmConfig.model.includes('gemini-2.0') && !llmConfig.model.includes('thinking');
-  const isGenerativeModel = llmConfig.model.includes('gemini');
-  const isChatModel = !isGenerativeModel && llmConfig.model.includes('chat');
-  const isTextModel = !isGenerativeModel && !isChatModel && /code|text/.test(llmConfig.model);
-
   llmConfig.safetySettings = getSafetySettings(isGemini2);
 
   let provider;
 
-  if (project_id && isTextModel) {
+  if (project_id) {
     provider = Providers.VERTEXAI;
-  } else if (project_id && isChatModel) {
-    provider = Providers.VERTEXAI;
-  } else if (project_id) {
-    provider = Providers.VERTEXAI;
-  } else if (!EXCLUDED_GENAI_MODELS.test(llmConfig.model)) {
-    provider = Providers.GOOGLE;
   } else {
     provider = Providers.GOOGLE;
   }
