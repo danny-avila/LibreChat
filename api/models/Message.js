@@ -54,7 +54,7 @@ async function saveMessage(req, params, metadata) {
       messageId: params.newMessageId || params.messageId,
     };
 
-    if (req.body.isTemporary) {
+    if (req?.body?.isTemporary) {
       const expiredAt = new Date();
       expiredAt.setDate(expiredAt.getDate() + 30);
       update.expiredAt = expiredAt;
