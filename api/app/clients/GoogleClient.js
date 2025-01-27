@@ -1,5 +1,4 @@
 const { google } = require('googleapis');
-const { Agent, ProxyAgent } = require('undici');
 const { ChatVertexAI } = require('@langchain/google-vertexai');
 const { ChatGoogleGenerativeAI } = require('@langchain/google-genai');
 const { GoogleGenerativeAI: GenAI } = require('@google/generative-ai');
@@ -386,10 +385,7 @@ class GoogleClient extends BaseClient {
       parentMessageId,
     });
 
-    const formattedMessages = orderedMessages.map((message) => ({
-      author: message.isCreatedByUser ? this.userLabel : this.modelLabel,
-      content: message?.content ?? message.text,
-    }));
+    const formattedMessages = orderedMessages.map(this.formatMessages());
 
     let lastAuthor = '';
     let groupedMessages = [];
@@ -521,34 +517,6 @@ class GoogleClient extends BaseClient {
     );
 
     return { prompt, context };
-  }
-
-  async _getCompletion(payload, abortController = null) {
-    if (!abortController) {
-      abortController = new AbortController();
-    }
-    const { debug } = this.options;
-    const url = this.completionsUrl;
-    if (debug) {
-      logger.debug('GoogleClient _getCompletion', { url, payload });
-    }
-    const opts = {
-      method: 'POST',
-      agent: new Agent({
-        bodyTimeout: 0,
-        headersTimeout: 0,
-      }),
-      signal: abortController.signal,
-    };
-
-    if (this.options.proxy) {
-      opts.agent = new ProxyAgent(this.options.proxy);
-    }
-
-    const client = await this.getClient();
-    const res = await client.request({ url, method: 'POST', data: payload });
-    logger.debug('GoogleClient _getCompletion', { res });
-    return res.data;
   }
 
   createLLM(clientOptions) {
@@ -704,21 +672,6 @@ class GoogleClient extends BaseClient {
         safetySettings,
         generationConfig: googleGenConfigSchema.parse(this.modelOptions),
       };
-
-      let promptPrefix = (this.options.promptPrefix ?? '').trim();
-      if (typeof this.options.artifactsPrompt === 'string' && this.options.artifactsPrompt) {
-        promptPrefix = `${promptPrefix ?? ''}\n${this.options.artifactsPrompt}`.trim();
-      }
-
-      if (this.options?.promptPrefix?.length) {
-        requestOptions.systemInstruction = {
-          parts: [
-            {
-              text: promptPrefix,
-            },
-          ],
-        };
-      }
 
       const result = await client.generateContent(requestOptions);
 
