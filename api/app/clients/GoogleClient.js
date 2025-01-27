@@ -135,12 +135,8 @@ class GoogleClient extends BaseClient {
     this.options.attachments?.then((attachments) => this.checkVisionRequest(attachments));
 
     /** @type {boolean} Whether using a "GenerativeAI" Model */
-    this.isGenerativeModel = this.modelOptions.model.includes('gemini');
-    const { isGenerativeModel } = this;
-    this.isChatModel = !isGenerativeModel && this.modelOptions.model.includes('chat');
-    const { isChatModel } = this;
-    this.isTextModel =
-      !isGenerativeModel && !isChatModel && /code|text/.test(this.modelOptions.model);
+    this.isGenerativeModel =
+      this.modelOptions.model.includes('gemini') || this.modelOptions.model.includes('learnlm');
 
     this.maxContextTokens =
       this.options.maxContextTokens ??
@@ -341,9 +337,7 @@ class GoogleClient extends BaseClient {
    */
   async buildMessages(_messages = [], parentMessageId) {
     if (!this.isGenerativeModel && !this.project_id) {
-      throw new Error(
-        '[GoogleClient] a Service Account JSON Key is required for PaLM 2 and Codey models (Vertex AI)',
-      );
+      throw new Error('[GoogleClient] PaLM 2 and Codey models are no longer supported.');
     }
 
     if (this.options.promptPrefix) {
@@ -608,15 +602,12 @@ class GoogleClient extends BaseClient {
   }
 
   async getCompletion(_payload, options = {}) {
-    const { instances } = _payload;
     const safetySettings = this.getSafetySettings();
     const { onProgress, abortController } = options;
-    const { messages: _messages, context } = instances?.[0] ?? {};
     const streamRate = this.options.streamRate ?? Constants.DEFAULT_STREAM_RATE;
     const modelName = this.modelOptions.modelName ?? this.modelOptions.model ?? '';
 
     let reply = '';
-    const messages = this.isTextModel ? _payload.trim() : _messages;
 
     if (!this.isVisionModel && context && messages?.length > 0) {
       messages.unshift(new SystemMessage(context));
@@ -667,6 +658,9 @@ class GoogleClient extends BaseClient {
       }
       return reply;
     }
+
+    const { instances } = _payload;
+    const { messages: messages, context } = instances?.[0] ?? {};
 
     /** @type {import('@langchain/core/messages').AIMessageChunk['usage_metadata']} */
     let usageMetadata;
@@ -767,12 +761,9 @@ class GoogleClient extends BaseClient {
    */
   async titleChatCompletion(_payload, options = {}) {
     const { abortController } = options;
-    const { instances } = _payload;
     const safetySettings = this.getSafetySettings();
-    const { messages: _messages } = instances?.[0] ?? {};
 
     let reply = '';
-    const messages = this.isTextModel ? _payload.trim() : _messages;
 
     const modelName = this.modelOptions.modelName ?? this.modelOptions.model ?? '';
     if (!EXCLUDED_GENAI_MODELS.test(modelName) && !this.project_id) {
@@ -782,16 +773,17 @@ class GoogleClient extends BaseClient {
       const requestOptions = {
         contents: _payload,
         safetySettings,
-        generationConfig: googleGenConfigSchema.parse(this.modelOptions),
+        generationConfig: {
+          temperature: 0.5,
+        },
       };
 
       const result = await client.generateContent(requestOptions);
-
       reply = result.response?.text();
-
       return reply;
     } else {
-      logger.debug('Beginning titling');
+      const { instances } = _payload;
+      const { messages } = instances?.[0] ?? {};
       const titleResponse = await this.client.invoke(messages, {
         signal: abortController.signal,
         timeout: 7000,
