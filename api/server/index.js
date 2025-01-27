@@ -9,7 +9,7 @@ const passport = require('passport');
 const mongoSanitize = require('express-mongo-sanitize');
 const fs = require('fs');
 const cookieParser = require('cookie-parser');
-const { jwtLogin, passportLogin } = require('~/strategies');
+const { jwtLogin, passportLogin, passkeyStrategy } = require('~/strategies');
 const { connectDb, indexSync } = require('~/lib/db');
 const { isEnabled } = require('~/server/utils');
 const { ldapLogin } = require('~/strategies');
@@ -77,6 +77,9 @@ const startServer = async () => {
     passport.use(ldapLogin);
   }
 
+  // IMPORTANT: Register the passkey (webauthn) strategy
+  passport.use(passkeyStrategy());
+
   if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
     configureSocialLogins(app);
   }
@@ -84,6 +87,7 @@ const startServer = async () => {
   app.use('/oauth', routes.oauth);
   /* API Endpoints */
   app.use('/api/auth', routes.auth);
+  app.use('/api/passkeys', routes.passkeys);
   app.use('/api/keys', routes.keys);
   app.use('/api/user', routes.user);
   app.use('/api/search', routes.search);
