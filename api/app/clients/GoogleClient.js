@@ -605,10 +605,6 @@ class GoogleClient extends BaseClient {
 
     let reply = '';
 
-    if (!this.isVisionModel && context && messages?.length > 0) {
-      messages.unshift(new SystemMessage(context));
-    }
-
     if (!EXCLUDED_GENAI_MODELS.test(modelName) && !this.project_id) {
       /** @type {GenAI} */
       const client = this.client;
@@ -657,6 +653,10 @@ class GoogleClient extends BaseClient {
 
     const { instances } = _payload;
     const { messages: messages, context } = instances?.[0] ?? {};
+
+    if (!this.isVisionModel && context && messages?.length > 0) {
+      messages.unshift(new SystemMessage(context));
+    }
 
     /** @type {import('@langchain/core/messages').AIMessageChunk['usage_metadata']} */
     let usageMetadata;
@@ -743,7 +743,7 @@ class GoogleClient extends BaseClient {
     await spendTokens(
       {
         context,
-        user: this.user,
+        user: this.user ?? this.options.req?.user?.id,
         conversationId: this.conversationId,
         model: model ?? this.modelOptions.model,
         endpointTokenConfig: this.options.endpointTokenConfig,
@@ -761,8 +761,8 @@ class GoogleClient extends BaseClient {
 
     let reply = '';
 
-    const modelName = this.modelOptions.modelName ?? this.modelOptions.model ?? '';
-    if (!EXCLUDED_GENAI_MODELS.test(modelName) && !this.project_id) {
+    const model = this.modelOptions.modelName ?? this.modelOptions.model ?? '';
+    if (!EXCLUDED_GENAI_MODELS.test(model) && !this.project_id) {
       logger.debug('Identified titling model as GenAI version');
       /** @type {GenerativeModel} */
       const client = this.client;
@@ -786,8 +786,16 @@ class GoogleClient extends BaseClient {
         safetySettings,
       });
 
+      if (titleResponse.usage_metadata) {
+        await this.recordTokenUsage({
+          model,
+          promptTokens: titleResponse.usage_metadata.input_tokens,
+          completionTokens: titleResponse.usage_metadata.output_tokens,
+          context: 'title',
+        });
+      }
+
       reply = titleResponse.content;
-      // TODO: RECORD TOKEN USAGE
       return reply;
     }
   }
@@ -811,6 +819,10 @@ class GoogleClient extends BaseClient {
       },
     ]);
 
+    const model = process.env.GOOGLE_TITLE_MODEL ?? this.modelOptions.model;
+    const availableModels = this.options.modelsConfig?.[EModelEndpoint.google];
+    this.isVisionModel = validateVisionModel({ model, availableModels });
+
     if (this.isVisionModel) {
       logger.warn(
         `Current vision model does not support titling without an attachment; falling back to default model ${settings.model.default}`,
@@ -819,6 +831,7 @@ class GoogleClient extends BaseClient {
     }
 
     try {
+      this.initializeClient();
       title = await this.titleChatCompletion(payload, {
         abortController: new AbortController(),
         onProgress: () => {},
