@@ -107,7 +107,6 @@
     "winston-daily-rotate-file": "^4.7.1",
     "zod": "^3.22.4",
     "@microsoft/microsoft-graph-client": "^3.0.7",
-    "@keycloak/keycloak-admin-client": "^26.1.0",
     "@aws-sdk/client-cognito-identity-provider": "^3.734.0"
   },
   "devDependencies": {
