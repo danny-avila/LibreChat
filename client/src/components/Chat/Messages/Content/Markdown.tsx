@@ -167,35 +167,31 @@ const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentPr
     currentContent = LaTeXParsing ? preprocessLaTeX(currentContent) : currentContent;
   }
 
-  const rehypePlugins = [
-    [rehypeKatex, { output: 'mathml' }],
-    [
-      rehypeHighlight,
-      {
-        detect: true,
-        ignoreMissing: true,
-        subset: langSubset,
-      },
+  const rehypePlugins = useMemo(
+    () => [
+      [rehypeKatex, { output: 'mathml' }],
+      [
+        rehypeHighlight,
+        {
+          detect: true,
+          ignoreMissing: true,
+          subset: langSubset,
+        },
+      ],
     ],
-  ];
+    [LaTeXParsing],
+  );
 
-  if (isInitializing) {
-    return (
-      <div className="absolute">
-        <p className="relative">
-          <span className={isLatestMessage ? 'result-thinking' : ''} />
-        </p>
-      </div>
-    );
-  }
-
-  const remarkPlugins: Pluggable[] = [
-    supersub,
-    remarkGfm,
-    remarkDirective,
-    artifactPlugin,
-    [remarkMath, { singleDollarTextMath: true }],
-  ];
+  const remarkPlugins: Pluggable[] = useMemo(
+    () => [
+      supersub,
+      remarkGfm,
+      remarkDirective,
+      artifactPlugin,
+      [remarkMath, { singleDollarTextMath: true }],
+    ],
+    [],
+  );
 
   return (
     <ArtifactProvider>
