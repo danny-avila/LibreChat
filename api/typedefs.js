@@ -156,6 +156,12 @@
  */
 
 /**
+ * @exports GenerateContentRequest
+ * @typedef {import('@google/generative-ai').GenerateContentRequest} GenerateContentRequest
+ * @memberof typedefs
+ */
+
+/**
  * @exports AssistantStreamEvent
  * @typedef {import('openai').default.Beta.AssistantStreamEvent} AssistantStreamEvent
  * @memberof typedefs

@@ -323,6 +323,10 @@ class GoogleClient extends BaseClient {
     return { prompt: formattedMessages };
   }
 
+  /**
+   * @param {TMessage[]} [messages=[]]
+   * @param {string} [parentMessageId]
+   */
   async buildMessages(messages = [], parentMessageId) {
     if (!this.isGenerativeModel && !this.project_id) {
       throw new Error(
@@ -616,7 +620,7 @@ class GoogleClient extends BaseClient {
     if (!EXCLUDED_GENAI_MODELS.test(modelName) && !this.project_id) {
       /** @type {GenAI} */
       const client = this.client;
-      /** @type {import('@google/generative-ai').GenerateContentRequest} */
+      /** @type {GenerateContentRequest} */
       const requestOptions = {
         safetySettings,
         contents: _payload,
@@ -855,19 +859,15 @@ class GoogleClient extends BaseClient {
         contents: [{ role: 'user', parts: [{ text }] }],
       },
     });
-    console.dir(result, { depth: null });
     return result;
   }
 
   /**
    * Returns the token count of a given text. It also checks and resets the tokenizers if necessary.
    * @param {string} text - The text to get the token count for.
-   * @returns {Promise<number>} The token count of the given text.
+   * @returns {number} The token count of the given text.
    */
-  async getTokenCount(text) {
-    if (this.client instanceof ChatVertexAI) {
-      return await this.getVertexTokenCount(text);
-    }
+  getTokenCount(text) {
     const encoding = this.getEncoding();
     return Tokenizer.getTokenCount(text, encoding);
   }
