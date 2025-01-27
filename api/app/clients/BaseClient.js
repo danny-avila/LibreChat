@@ -347,15 +347,22 @@ class BaseClient {
    * If the token limit would be exceeded by adding a message, that message is not added to the context and remains in the original array.
    * The method uses `push` and `pop` operations for efficient array manipulation, and reverses the context array at the end to maintain the original order of the messages.
    *
-   * @param {Array} _messages - An array of messages, each with a `tokenCount` property. The messages should be ordered from oldest to newest.
-   * @param {number} [maxContextTokens] - The max number of tokens allowed in the context. If not provided, defaults to `this.maxContextTokens`.
-   * @returns {Object} An object with four properties: `context`, `summaryIndex`, `remainingContextTokens`, and `messagesToRefine`.
+   * @param {Object} params
+   * @param {TMessage[]} params.messages - An array of messages, each with a `tokenCount` property. The messages should be ordered from oldest to newest.
+   * @param {number} [params.maxContextTokens] - The max number of tokens allowed in the context. If not provided, defaults to `this.maxContextTokens`.
+   * @param {string} [params.instructions] - Instructions already added to the context.
+   * @returns {Promise<{
+   *  context: TMessage[],
+   *  remainingContextTokens: number,
+   *  messagesToRefine: TMessage[],
+   *  summaryIndex: number,
+   * }>} An object with four properties: `context`, `summaryIndex`, `remainingContextTokens`, and `messagesToRefine`.
    *    `context` is an array of messages that fit within the token limit.
    *    `summaryIndex` is the index of the first message in the `messagesToRefine` array.
    *    `remainingContextTokens` is the number of tokens remaining within the limit after adding the messages to the context.
    *    `messagesToRefine` is an array of messages that were not added to the context because they would have exceeded the token limit.
    */
-  async getMessagesWithinTokenLimit(_messages, maxContextTokens) {
+  async getMessagesWithinTokenLimit({ messages: _messages, maxContextTokens }) {
     // Every reply is primed with <|start|>assistant<|message|>, so we
     // start with 3 tokens for the label after all messages have been counted.
     let currentTokenCount = 3;
@@ -403,6 +410,10 @@ class BaseClient {
     if (instructions) {
       ({ tokenCount, ..._instructions } = instructions);
     }
+
+    if (tokenCount && !isNaN(tokenCount)) {
+      this.maxContextTokens = this.maxContextTokens - tokenCount;
+    }
     _instructions && logger.debug('[BaseClient] instructions tokenCount: ' + tokenCount);
     let payload = this.addInstructions(formattedMessages, _instructions);
     let orderedWithInstructions = this.addInstructions(orderedMessages, instructions);
@@ -423,7 +434,10 @@ class BaseClient {
     }
 
     let { context, remainingContextTokens, messagesToRefine, summaryIndex } =
-      await this.getMessagesWithinTokenLimit(orderedWithInstructions);
+      await this.getMessagesWithinTokenLimit({
+        messages: orderedWithInstructions,
+        instructions: _instructions,
+      });
 
     logger.debug('[BaseClient] Context Count (1/2)', {
       remainingContextTokens,

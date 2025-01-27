@@ -159,7 +159,7 @@ describe('BaseClient', () => {
       expectedMessagesToRefine?.[expectedMessagesToRefine.length - 1] ?? {};
     const expectedIndex = messages.findIndex((msg) => msg.content === lastExpectedMessage?.content);
 
-    const result = await TestClient.getMessagesWithinTokenLimit(messages);
+    const result = await TestClient.getMessagesWithinTokenLimit({ messages });
 
     expect(result.context).toEqual(expectedContext);
     expect(result.summaryIndex).toEqual(expectedIndex);
@@ -195,7 +195,7 @@ describe('BaseClient', () => {
       expectedMessagesToRefine?.[expectedMessagesToRefine.length - 1] ?? {};
     const expectedIndex = messages.findIndex((msg) => msg.content === lastExpectedMessage?.content);
 
-    const result = await TestClient.getMessagesWithinTokenLimit(messages);
+    const result = await TestClient.getMessagesWithinTokenLimit({ messages });
 
     expect(result.context).toEqual(expectedContext);
     expect(result.summaryIndex).toEqual(expectedIndex);
